@@ -1,0 +1,106 @@
+name: Desktop builds
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.artifact }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            artifact: go-bigger-boy-linux-x64
+            archive: go-bigger-boy-linux-x64.tar.gz
+          - runner: windows-2025
+            artifact: go-bigger-boy-windows-x64
+            archive: go-bigger-boy-windows-x64.zip
+          - runner: macos-15
+            artifact: go-bigger-boy-macos-arm64
+            archive: go-bigger-boy-macos-arm64.tar.gz
+          - runner: macos-15-intel
+            artifact: go-bigger-boy-macos-x64
+            archive: go-bigger-boy-macos-x64.tar.gz
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up SDL3
+        id: sdl
+        uses: libsdl-org/setup-sdl@afd98199e97f9c2aa739474be7e0886d149a5e47
+        with:
+          version: 3.4.2
+          build-type: Release
+          install-linux-dependencies: true
+          add-to-environment: true
+
+      - name: Configure
+        run: >-
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DGAMEBOY_BUILD_TESTS=ON
+          -DGAMEBOY_BUILD_SDL=ON
+          "-DCMAKE_PREFIX_PATH=${{ steps.sdl.outputs.prefix }}"
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Stage package
+        run: cmake --install build --config Release --prefix package
+
+      - name: Package Windows artifact
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path package\* -DestinationPath ${{ matrix.archive }}
+
+      - name: Package Unix artifact
+        if: runner.os != 'Windows'
+        shell: bash
+        run: tar -czf "${{ matrix.archive }}" -C package .
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.archive }}
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Download platform archives
+        uses: actions/download-artifact@v8
+        with:
+          pattern: go-bigger-boy-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "${{ github.ref_name }}"
+          release-assets/*
+          --verify-tag
+          --generate-notes
+          --title "Go Bigger Boy ${{ github.ref_name }}"

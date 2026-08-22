@@ -1,0 +1,8 @@
+/build/
+/.cache/
+/compile_commands.json
+*.rom
+*.gb
+*.gbc
+*.sav
+*.sav.tmp

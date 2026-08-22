@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Go Bigger Boy (GBB)
+Comment=Run Game Boy ROMs
+Exec=gbb %f
+Icon=go-bigger-boy
+Terminal=false
+Categories=Game;Emulator;
+MimeType=application/x-gameboy-rom;application/x-gameboy-color-rom;
+Keywords=Game Boy;Emulator;ROM;
+StartupNotify=true

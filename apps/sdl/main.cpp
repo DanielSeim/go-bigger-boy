@@ -1,0 +1,568 @@
+#include "gameboy/emulator.hpp"
+
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_main.h>
+
+#include <algorithm>
+#include <array>
+#include <chrono>
+#include <cstdlib>
+#include <exception>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <stdexcept>
+#include <string>
+#include <thread>
+#include <vector>
+
+namespace {
+
+[[noreturn]] void sdl_error(const std::string& action) {
+    throw std::runtime_error(action + ": " + SDL_GetError());
+}
+
+class SdlResources {
+public:
+    SdlResources() {
+        if (!SDL_SetAppMetadata("Go Bigger Boy (GBB)", "0.1.0",
+                                "go-bigger-boy")) {
+            sdl_error("Could not set application metadata");
+        }
+        if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
+            sdl_error("Could not initialize SDL");
+        }
+        window = SDL_CreateWindow(
+            "Go Bigger Boy (GBB) - Drop a ROM here or press Ctrl+O", 640, 576,
+            SDL_WINDOW_RESIZABLE);
+        if (window == nullptr) sdl_error("Could not create window");
+        renderer = SDL_CreateRenderer(window, nullptr);
+        if (renderer == nullptr) sdl_error("Could not create renderer");
+        if (!SDL_SetRenderLogicalPresentation(
+                renderer, static_cast<int>(gameboy::Ppu::screen_width),
+                static_cast<int>(gameboy::Ppu::screen_height),
+                SDL_LOGICAL_PRESENTATION_LETTERBOX)) {
+            sdl_error("Could not configure logical presentation");
+        }
+        texture = SDL_CreateTexture(
+            renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
+            static_cast<int>(gameboy::Ppu::screen_width),
+            static_cast<int>(gameboy::Ppu::screen_height));
+        if (texture == nullptr) sdl_error("Could not create framebuffer texture");
+        if (!SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST)) {
+            sdl_error("Could not configure nearest-neighbor scaling");
+        }
+        static_cast<void>(SDL_SetRenderDrawColor(renderer, 16, 20, 16, 255));
+    }
+
+    ~SdlResources() {
+        if (gamepad != nullptr) SDL_CloseGamepad(gamepad);
+        if (texture != nullptr) SDL_DestroyTexture(texture);
+        if (renderer != nullptr) SDL_DestroyRenderer(renderer);
+        if (window != nullptr) SDL_DestroyWindow(window);
+        SDL_Quit();
+    }
+
+    SdlResources(const SdlResources&) = delete;
+    SdlResources& operator=(const SdlResources&) = delete;
+
+    SDL_Window* window{};
+    SDL_Renderer* renderer{};
+    SDL_Texture* texture{};
+    SDL_Gamepad* gamepad{};
+};
+
+struct DialogState {
+    std::mutex mutex;
+    bool active{};
+    std::optional<std::string> selected_path;
+    std::optional<std::string> error;
+};
+
+constexpr std::array<gameboy::Button, 8> button_order{
+    gameboy::Button::right, gameboy::Button::left, gameboy::Button::up,
+    gameboy::Button::down, gameboy::Button::a, gameboy::Button::b,
+    gameboy::Button::select, gameboy::Button::start,
+};
+
+constexpr std::array<const char*, 8> button_names{
+    "Right", "Left", "Up", "Down", "A", "B", "Select", "Start",
+};
+
+struct InputBindings {
+    std::array<SDL_Keycode, 8> keys{
+        SDLK_RIGHT, SDLK_LEFT, SDLK_UP, SDLK_DOWN,
+        SDLK_X, SDLK_Z, SDLK_BACKSPACE, SDLK_RETURN,
+    };
+};
+
+std::filesystem::path preference_directory() {
+    char* raw_path = SDL_GetPrefPath("Go Bigger Boy", "GBB");
+    if (raw_path == nullptr) return {};
+    const auto path = std::filesystem::u8path(raw_path);
+    SDL_free(raw_path);
+    return path;
+}
+
+std::vector<std::string> load_recent_roms(const std::filesystem::path& directory) {
+    std::vector<std::string> paths;
+    if (directory.empty()) return paths;
+    std::ifstream input(directory / "recent-roms.txt");
+    std::string path;
+    while (paths.size() < 9 && std::getline(input, path)) {
+        if (!path.empty()) paths.push_back(path);
+    }
+    return paths;
+}
+
+void save_recent_roms(const std::filesystem::path& directory,
+                      const std::vector<std::string>& paths) {
+    if (directory.empty()) return;
+    std::ofstream output(directory / "recent-roms.txt", std::ios::trunc);
+    for (const auto& path : paths) output << path << '\n';
+}
+
+void remember_rom(const std::string& path, std::vector<std::string>& recent,
+                  const std::filesystem::path& directory) {
+    recent.erase(std::remove(recent.begin(), recent.end(), path), recent.end());
+    recent.insert(recent.begin(), path);
+    if (recent.size() > 9) recent.resize(9);
+    save_recent_roms(directory, recent);
+}
+
+InputBindings load_bindings(const std::filesystem::path& directory) {
+    InputBindings bindings;
+    if (directory.empty()) return bindings;
+    std::ifstream input(directory / "controls.txt");
+    auto loaded = bindings.keys;
+    for (auto& key : loaded) {
+        long long value = 0;
+        if (!(input >> value)) return bindings;
+        key = static_cast<SDL_Keycode>(value);
+    }
+    bindings.keys = loaded;
+    return bindings;
+}
+
+void save_bindings(const std::filesystem::path& directory,
+                   const InputBindings& bindings) {
+    if (directory.empty()) return;
+    std::ofstream output(directory / "controls.txt", std::ios::trunc);
+    for (const auto key : bindings.keys) {
+        output << static_cast<long long>(key) << '\n';
+    }
+}
+
+void SDLCALL file_dialog_callback(void* userdata,
+                                  const char* const* filelist, int) {
+    auto& state = *static_cast<DialogState*>(userdata);
+    std::lock_guard<std::mutex> lock(state.mutex);
+    state.active = false;
+    if (filelist == nullptr) {
+        state.error = SDL_GetError();
+    } else if (filelist[0] != nullptr) {
+        state.selected_path = filelist[0];
+    }
+}
+
+void show_rom_dialog(DialogState& state, SDL_Window* window) {
+    {
+        std::lock_guard<std::mutex> lock(state.mutex);
+        if (state.active) return;
+        state.active = true;
+    }
+    static constexpr SDL_DialogFileFilter filters[] = {
+        {"Game Boy ROMs", "gb;gbc"},
+        {"All files", "*"},
+    };
+    SDL_ShowOpenFileDialog(file_dialog_callback, &state, window, filters,
+                           static_cast<int>(std::size(filters)), nullptr, false);
+}
+
+bool dialog_active(DialogState& state) {
+    std::lock_guard<std::mutex> lock(state.mutex);
+    return state.active;
+}
+
+void collect_dialog_result(DialogState& state,
+                           std::optional<std::string>& path,
+                           std::optional<std::string>& error) {
+    std::lock_guard<std::mutex> lock(state.mutex);
+    if (state.selected_path) {
+        path = std::move(*state.selected_path);
+        state.selected_path.reset();
+    }
+    if (state.error) {
+        error = std::move(*state.error);
+        state.error.reset();
+    }
+}
+
+std::optional<gameboy::Button> keyboard_button(const InputBindings& bindings,
+                                               const SDL_Keycode key) {
+    for (std::size_t index = 0; index < bindings.keys.size(); ++index) {
+        if (bindings.keys[index] == key) return button_order[index];
+    }
+    return std::nullopt;
+}
+
+std::optional<gameboy::Button> gamepad_button(const Uint8 button) {
+    switch (static_cast<SDL_GamepadButton>(button)) {
+    case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: return gameboy::Button::right;
+    case SDL_GAMEPAD_BUTTON_DPAD_LEFT: return gameboy::Button::left;
+    case SDL_GAMEPAD_BUTTON_DPAD_UP: return gameboy::Button::up;
+    case SDL_GAMEPAD_BUTTON_DPAD_DOWN: return gameboy::Button::down;
+    case SDL_GAMEPAD_BUTTON_SOUTH: return gameboy::Button::a;
+    case SDL_GAMEPAD_BUTTON_EAST: return gameboy::Button::b;
+    case SDL_GAMEPAD_BUTTON_BACK: return gameboy::Button::select;
+    case SDL_GAMEPAD_BUTTON_START: return gameboy::Button::start;
+    default: return std::nullopt;
+    }
+}
+
+void release_all_buttons(gameboy::Emulator& emulator) {
+    for (const auto button : button_order) emulator.set_button(button, false);
+}
+
+void update_window_title(SDL_Window* window, const std::string& current_rom,
+                         const bool paused,
+                         const std::optional<std::size_t> configuring) {
+    std::string title = "Go Bigger Boy (GBB)";
+    if (configuring) {
+        title += " - Press a key for ";
+        title += button_names[*configuring];
+        title += " (Esc: cancel)";
+    } else {
+        if (!current_rom.empty()) {
+            title += " - " +
+                     std::filesystem::u8path(current_rom).filename().u8string();
+        } else {
+            title += " - Drop a ROM here or press Ctrl+O";
+        }
+        if (paused) title += " [PAUSED]";
+        title += "  (F1: Help)";
+    }
+    if (!SDL_SetWindowTitle(window, title.c_str())) {
+        sdl_error("Could not update window title");
+    }
+}
+
+std::optional<std::string> show_recent_dialog(
+    SDL_Window* window, const std::vector<std::string>& recent) {
+    if (recent.empty()) {
+        static_cast<void>(SDL_ShowSimpleMessageBox(
+            SDL_MESSAGEBOX_INFORMATION, "Recent ROMs",
+            "No ROMs have been opened yet.", window));
+        return std::nullopt;
+    }
+
+    std::vector<std::string> labels;
+    std::vector<SDL_MessageBoxButtonData> buttons;
+    labels.reserve(recent.size() + 1);
+    buttons.reserve(recent.size() + 1);
+    for (std::size_t index = 0; index < recent.size(); ++index) {
+        labels.push_back(std::to_string(index + 1) + ". " +
+                         std::filesystem::u8path(recent[index])
+                             .filename().u8string());
+    }
+    labels.emplace_back("Cancel");
+    for (std::size_t index = 0; index < recent.size(); ++index) {
+        buttons.push_back({0, static_cast<int>(index), labels[index].c_str()});
+    }
+    buttons.push_back({SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, -1,
+                       labels.back().c_str()});
+
+    const SDL_MessageBoxData box{
+        SDL_MESSAGEBOX_INFORMATION, window, "Recent ROMs",
+        "Choose a ROM to open:", static_cast<int>(buttons.size()),
+        buttons.data(), nullptr,
+    };
+    auto selection = -1;
+    if (!SDL_ShowMessageBox(&box, &selection) || selection < 0 ||
+        static_cast<std::size_t>(selection) >= recent.size()) {
+        return std::nullopt;
+    }
+    return recent[static_cast<std::size_t>(selection)];
+}
+
+void show_help(SDL_Window* window) {
+    static_cast<void>(SDL_ShowSimpleMessageBox(
+        SDL_MESSAGEBOX_INFORMATION, "Go Bigger Boy (GBB) controls",
+        "Space: Pause/resume\n"
+        "Ctrl+R: Reset\n"
+        "Ctrl+O: Open ROM\n"
+        "Ctrl+L: Recent ROMs\n"
+        "Ctrl+K: Configure keyboard\n"
+        "Ctrl+1 through Ctrl+9: Open recent ROM\n"
+        "F11: Toggle fullscreen\n"
+        "F1: Show this help\n"
+        "Escape: Quit",
+        window));
+}
+
+void show_error(SDL_Window* window, const std::string& message);
+
+void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
+                    SdlResources& sdl, DialogState& dialog,
+                    const std::filesystem::path& preference_path,
+                    InputBindings& bindings,
+                    InputBindings& configuration_backup,
+                    const std::vector<std::string>& recent,
+                    const std::string& current_rom,
+                    std::optional<std::size_t>& configuring,
+                    std::optional<std::string>& pending_rom, bool& paused,
+                    bool& fullscreen, bool& reset_requested, bool& running) {
+    SDL_Event event;
+    while (SDL_PollEvent(&event)) {
+        switch (event.type) {
+        case SDL_EVENT_QUIT:
+            running = false;
+            break;
+        case SDL_EVENT_DROP_FILE:
+            if (event.drop.data != nullptr) pending_rom = event.drop.data;
+            break;
+        case SDL_EVENT_KEY_DOWN:
+        case SDL_EVENT_KEY_UP:
+            if (configuring) {
+                if (event.type != SDL_EVENT_KEY_DOWN || event.key.repeat) break;
+                if (event.key.key == SDLK_ESCAPE) {
+                    bindings = configuration_backup;
+                    configuring.reset();
+                    update_window_title(sdl.window, current_rom, paused,
+                                        configuring);
+                    break;
+                }
+                const auto duplicate = std::find(bindings.keys.begin(),
+                                                 bindings.keys.end(),
+                                                 event.key.key);
+                if (duplicate != bindings.keys.end() &&
+                    static_cast<std::size_t>(duplicate - bindings.keys.begin()) !=
+                        *configuring) {
+                    show_error(sdl.window, "That key is already assigned.");
+                    break;
+                }
+                bindings.keys[*configuring] = event.key.key;
+                ++*configuring;
+                if (*configuring == bindings.keys.size()) {
+                    configuring.reset();
+                    save_bindings(preference_path, bindings);
+                    static_cast<void>(SDL_ShowSimpleMessageBox(
+                        SDL_MESSAGEBOX_INFORMATION, "Keyboard controls",
+                        "Keyboard bindings saved.", sdl.window));
+                }
+                update_window_title(sdl.window, current_rom, paused,
+                                    configuring);
+                break;
+            }
+
+            if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+                event.key.key == SDLK_O && (event.key.mod & SDL_KMOD_CTRL) != 0) {
+                show_rom_dialog(dialog, sdl.window);
+            } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+                       event.key.key == SDLK_L &&
+                       (event.key.mod & SDL_KMOD_CTRL) != 0) {
+                if (emulator) release_all_buttons(*emulator);
+                if (const auto selected = show_recent_dialog(sdl.window, recent)) {
+                    pending_rom = *selected;
+                }
+            } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+                       event.key.key == SDLK_K &&
+                       (event.key.mod & SDL_KMOD_CTRL) != 0) {
+                if (emulator) release_all_buttons(*emulator);
+                configuration_backup = bindings;
+                configuring = 0;
+                update_window_title(sdl.window, current_rom, paused,
+                                    configuring);
+            } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+                       event.key.key >= SDLK_1 && event.key.key <= SDLK_9 &&
+                       (event.key.mod & SDL_KMOD_CTRL) != 0) {
+                const auto index = static_cast<std::size_t>(event.key.key - SDLK_1);
+                if (index < recent.size()) pending_rom = recent[index];
+            } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+                       event.key.key == SDLK_R &&
+                       (event.key.mod & SDL_KMOD_CTRL) != 0 && emulator) {
+                reset_requested = true;
+            } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+                       event.key.key == SDLK_SPACE && emulator) {
+                paused = !paused;
+                release_all_buttons(*emulator);
+                update_window_title(sdl.window, current_rom, paused,
+                                    configuring);
+            } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+                       event.key.key == SDLK_F11) {
+                fullscreen = !fullscreen;
+                if (!SDL_SetWindowFullscreen(sdl.window, fullscreen)) {
+                    fullscreen = !fullscreen;
+                    show_error(sdl.window, SDL_GetError());
+                }
+            } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+                       event.key.key == SDLK_F1) {
+                if (emulator) release_all_buttons(*emulator);
+                show_help(sdl.window);
+            } else if (event.key.key == SDLK_ESCAPE &&
+                       event.type == SDL_EVENT_KEY_DOWN) {
+                running = false;
+            } else if (emulator && !event.key.repeat) {
+                if (const auto button = keyboard_button(bindings, event.key.key)) {
+                    emulator->set_button(*button,
+                                         event.type == SDL_EVENT_KEY_DOWN);
+                }
+            }
+            break;
+        case SDL_EVENT_WINDOW_FOCUS_LOST:
+            if (emulator) release_all_buttons(*emulator);
+            break;
+        case SDL_EVENT_GAMEPAD_ADDED:
+            if (sdl.gamepad == nullptr) {
+                sdl.gamepad = SDL_OpenGamepad(event.gdevice.which);
+            }
+            break;
+        case SDL_EVENT_GAMEPAD_REMOVED:
+            if (sdl.gamepad != nullptr &&
+                SDL_GetGamepadID(sdl.gamepad) == event.gdevice.which) {
+                SDL_CloseGamepad(sdl.gamepad);
+                sdl.gamepad = nullptr;
+            }
+            break;
+        case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+        case SDL_EVENT_GAMEPAD_BUTTON_UP:
+            if (emulator) {
+                if (const auto button = gamepad_button(event.gbutton.button)) {
+                    emulator->set_button(
+                        *button, event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN);
+                }
+            }
+            break;
+        default:
+            break;
+        }
+    }
+}
+
+void show_error(SDL_Window* window, const std::string& message) {
+    std::cerr << "Error: " << message << '\n';
+    static_cast<void>(SDL_ShowSimpleMessageBox(
+        SDL_MESSAGEBOX_ERROR, "Go Bigger Boy (GBB)", message.c_str(), window));
+}
+
+void load_rom(const std::string& path,
+              std::unique_ptr<gameboy::Emulator>& emulator) {
+    auto replacement = std::make_unique<gameboy::Emulator>(
+        gameboy::Cartridge::from_file(std::filesystem::u8path(path)));
+    if (emulator) emulator->flush_battery();
+    emulator = std::move(replacement);
+}
+
+void present(const gameboy::Emulator* emulator, SdlResources& sdl) {
+    if (!SDL_RenderClear(sdl.renderer)) {
+        sdl_error("Could not clear framebuffer");
+    }
+    if (emulator != nullptr) {
+        const auto& pixels = emulator->framebuffer();
+        if (!SDL_UpdateTexture(sdl.texture, nullptr, pixels.data(),
+                               static_cast<int>(gameboy::Ppu::screen_width *
+                                                sizeof(std::uint32_t))) ||
+            !SDL_RenderTexture(sdl.renderer, sdl.texture, nullptr, nullptr)) {
+            sdl_error("Could not present framebuffer");
+        }
+    }
+    if (!SDL_RenderPresent(sdl.renderer)) {
+        sdl_error("Could not present framebuffer");
+    }
+}
+
+} // namespace
+
+int main(int argc, char** argv) {
+    try {
+        DialogState dialog;
+        SdlResources sdl;
+        const auto preference_path = preference_directory();
+        auto recent_roms = load_recent_roms(preference_path);
+        auto bindings = load_bindings(preference_path);
+        auto configuration_backup = bindings;
+        std::unique_ptr<gameboy::Emulator> emulator;
+        std::string current_rom;
+        std::optional<std::string> pending_rom;
+        std::optional<std::size_t> configuring;
+        auto paused = false;
+        auto fullscreen = false;
+        auto reset_requested = false;
+        auto running = true;
+
+        if (argc == 2) {
+            pending_rom = argv[1];
+        } else {
+            if (argc > 2) {
+                show_error(sdl.window, "Only one ROM can be opened at a time.");
+            }
+            show_rom_dialog(dialog, sdl.window);
+        }
+
+        using Clock = std::chrono::steady_clock;
+        constexpr auto cycles_per_frame = 70224U;
+        const auto frame_duration = std::chrono::duration<double>(
+            static_cast<double>(cycles_per_frame) / 4194304.0);
+        auto next_frame = Clock::now();
+
+        while (running) {
+            process_events(emulator, sdl, dialog, preference_path, bindings,
+                           configuration_backup, recent_roms, current_rom,
+                           configuring, pending_rom, paused, fullscreen,
+                           reset_requested, running);
+
+            std::optional<std::string> dialog_error;
+            collect_dialog_result(dialog, pending_rom, dialog_error);
+            if (dialog_error) show_error(sdl.window, *dialog_error);
+
+            if (reset_requested) {
+                if (!current_rom.empty()) pending_rom = current_rom;
+                reset_requested = false;
+            }
+
+            if (pending_rom) {
+                try {
+                    const bool reopening_current =
+                        emulator && *pending_rom == current_rom;
+                    load_rom(*pending_rom, emulator);
+                    current_rom = *pending_rom;
+                    if (!reopening_current) paused = false;
+                    remember_rom(current_rom, recent_roms, preference_path);
+                    update_window_title(sdl.window, current_rom, paused,
+                                        configuring);
+                } catch (const std::exception& error) {
+                    show_error(sdl.window, error.what());
+                }
+                pending_rom.reset();
+                next_frame = Clock::now();
+            }
+
+            if (emulator && !paused && !configuring &&
+                !dialog_active(dialog)) {
+                unsigned cycles = 0;
+                while (running && cycles < cycles_per_frame &&
+                       !emulator->frame_ready()) {
+                    cycles += emulator->step();
+                }
+                if (emulator->frame_ready()) emulator->consume_frame();
+            }
+            present(emulator.get(), sdl);
+
+            next_frame += std::chrono::duration_cast<Clock::duration>(frame_duration);
+            const auto now = Clock::now();
+            if (next_frame > now) {
+                std::this_thread::sleep_until(next_frame);
+            } else if (now - next_frame > std::chrono::milliseconds(100)) {
+                next_frame = now;
+            }
+        }
+        if (emulator) emulator->flush_battery();
+    } catch (const std::exception& error) {
+        std::cerr << "Error: " << error.what() << '\n';
+        return EXIT_FAILURE;
+    }
+    return EXIT_SUCCESS;
+}
