@@ -41,6 +41,11 @@ public:
     void flush_battery();
     [[nodiscard]] bool has_battery() const noexcept;
     [[nodiscard]] bool has_rtc() const noexcept;
+    [[nodiscard]] bool has_rumble() const noexcept;
+    [[nodiscard]] bool rumble_active() const noexcept;
+    [[nodiscard]] bool has_camera() const noexcept;
+    void set_camera_frame(const std::uint8_t* grayscale,
+                          std::size_t size) noexcept;
     [[nodiscard]] std::vector<std::uint8_t> export_battery_ram() const;
     void import_battery_ram(const std::vector<std::uint8_t>& data);
     [[nodiscard]] std::vector<std::uint8_t> export_rtc_data() const;

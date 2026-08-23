@@ -622,6 +622,65 @@ void test_mbc5_banking_and_rumble() {
     rumble.write(0x4000, 3);
     check(!rumble.rumble_active() && rumble.read(0xA000) == 0x77,
           "MBC5 rumble uses only the low three bits for its RAM bank");
+
+    gameboy::Emulator rumble_emulator{
+        gameboy::Cartridge{banked_rom(2, 0x1E, 0x00, 0x03)}};
+    rumble_emulator.bus().write8(0x4000, 0x08);
+    check(rumble_emulator.has_rumble() && rumble_emulator.rumble_active(),
+          "emulator exposes MBC5 rumble state to platform frontends");
+}
+
+void test_gameboy_camera() {
+    gameboy::Cartridge camera{banked_rom(64, 0xFC, 0x05, 0x04)};
+    check(camera.has_camera() && camera.has_battery() &&
+              camera.ram_size() == 0x20000,
+          "Game Boy Camera cartridges expose camera hardware and save RAM");
+    camera.write(0x2000, 7);
+    check(camera.read(0x4000) == 7,
+          "Game Boy Camera mapper selects ROM banks");
+
+    camera.write(0x0000, 0x0A);
+    camera.write(0x4000, 3);
+    camera.write(0xA000, 0x5A);
+    camera.write(0x4000, 2);
+    camera.write(0xA000, 0xA5);
+    camera.write(0x4000, 3);
+    check(camera.read(0xA000) == 0x5A,
+          "Game Boy Camera mapper selects independent RAM banks");
+
+    std::array<std::uint8_t,
+               gameboy::Cartridge::camera_width *
+                   gameboy::Cartridge::camera_height> frame{};
+    frame.fill(80);
+    camera.set_camera_frame(frame.data(), frame.size());
+    camera.write(0x4000, 0x10);
+    for (std::uint16_t matrix = 0; matrix < 16; ++matrix) {
+        const auto address = static_cast<std::uint16_t>(0xA006 + matrix * 3);
+        camera.write(address, 50);
+        camera.write(static_cast<std::uint16_t>(address + 1), 100);
+        camera.write(static_cast<std::uint16_t>(address + 2), 150);
+    }
+    camera.write(0xA001, 4); // Unity gain.
+    camera.write(0xA002, 0x10); // Unity exposure.
+    camera.write(0xA000, 1);
+    check((camera.read(0xA000) & 1) == 0,
+          "Game Boy Camera capture completes and clears its busy flag");
+    camera.write(0x4000, 0);
+    check(camera.read(0xA100) == 0x00 && camera.read(0xA101) == 0xFF,
+          "Game Boy Camera converts a webcam frame into 2bpp sensor tiles");
+
+    gameboy::Emulator emulator{
+        gameboy::Cartridge{banked_rom(64, 0xFC, 0x05, 0x04)}};
+    check(emulator.has_camera(),
+          "emulator exposes camera cartridges to frontends");
+    emulator.bus().write8(0x0000, 0x0A);
+    emulator.bus().write8(0x4000, 0x10);
+    emulator.bus().write8(0xA006, 42);
+    const auto state = emulator.save_state();
+    emulator.bus().write8(0xA006, 99);
+    emulator.load_state(state);
+    check(!state.empty() && emulator.has_camera(),
+          "save states preserve Game Boy Camera cartridge state");
 }
 
 void test_memory_map() {
@@ -889,6 +948,79 @@ void test_serial_transfer() {
               (bus.read8(0xFF02) & 0x80) != 0 &&
               (bus.read8(0xFF0F) & 0x08) == 0,
           "external-clock serial transfer waits for an external peer");
+}
+
+void test_gameboy_printer() {
+    gameboy::GameBoyPrinter printer;
+    const auto send_packet = [&printer](const std::uint8_t command,
+                                        const std::uint8_t compression,
+                                        const std::vector<std::uint8_t>& data,
+                                        const bool valid_checksum = true) {
+        const auto length = static_cast<std::uint16_t>(data.size());
+        auto checksum = static_cast<std::uint16_t>(
+            command + compression + (length & 0xFF) + (length >> 8));
+        static_cast<void>(printer.transfer(0x88));
+        static_cast<void>(printer.transfer(0x33));
+        static_cast<void>(printer.transfer(command));
+        static_cast<void>(printer.transfer(compression));
+        static_cast<void>(printer.transfer(static_cast<std::uint8_t>(length)));
+        static_cast<void>(
+            printer.transfer(static_cast<std::uint8_t>(length >> 8)));
+        for (const auto byte : data) {
+            checksum = static_cast<std::uint16_t>(checksum + byte);
+            static_cast<void>(printer.transfer(byte));
+        }
+        if (!valid_checksum) ++checksum;
+        static_cast<void>(
+            printer.transfer(static_cast<std::uint8_t>(checksum)));
+        static_cast<void>(
+            printer.transfer(static_cast<std::uint8_t>(checksum >> 8)));
+        const auto acknowledgement = printer.transfer(0);
+        const auto status = printer.transfer(0);
+        check(acknowledgement == (valid_checksum ? 0x81 : 0),
+              "Game Boy Printer only acknowledges valid complete packets");
+        return status;
+    };
+
+    check(send_packet(0x01, 0, {}) == 0,
+          "Game Boy Printer initialization clears its status");
+    std::vector<std::uint8_t> tile(16, 0);
+    tile[0] = 0xFF; // Eight color-1 pixels on the first row.
+    check(send_packet(0x04, 0, tile) == 0,
+          "Game Boy Printer accepts uncompressed tile data");
+    check(send_packet(0x04, 1, {0x8E, 0x00}) == 0x08,
+          "Game Boy Printer expands compressed run-length tile data");
+    check(send_packet(0x02, 0, {1, 0, 0xE4, 0x40}) == 0x08,
+          "Game Boy Printer completes a print command");
+    auto images = printer.take_images();
+    check(images.size() == 1 && images[0].height == 8 &&
+              images[0].pixels.size() == gameboy::PrinterImage::width * 8 &&
+              images[0].pixels[0] == 1 && images[0].pixels[7] == 1 &&
+              images[0].pixels[8] == 0,
+          "Game Boy Printer converts 2bpp tiles and print palettes into an image");
+    const auto bitmap = gameboy::encode_printer_bmp(images[0]);
+    constexpr auto bitmap_row_size = gameboy::PrinterImage::width * 4 * 3;
+    const auto top_row_offset = 54 + (images[0].height * 4 - 1) *
+                                         bitmap_row_size;
+    check(bitmap.size() == 54 + images[0].height * 4 * bitmap_row_size &&
+              bitmap[0] == 'B' && bitmap[1] == 'M' &&
+              bitmap[18] == 0x80 && bitmap[19] == 0x02 &&
+              bitmap[22] == 0x20 && bitmap[top_row_offset] == 170,
+          "printer images encode as scaled lossless 24-bit BMP files");
+    check(printer.take_images().empty(),
+          "taking printer images drains the completed print queue");
+    check(send_packet(0x0F, 0, {}) == 0x04,
+          "Game Boy Printer reports a completed page to status inquiries");
+    check(send_packet(0x0F, 0, {}, false) == 0,
+          "Game Boy Printer rejects invalid packet checksums without an acknowledgement");
+
+    gameboy::MemoryBus bus{gameboy::Cartridge{test_rom()}};
+    bus.connect_printer();
+    bus.write8(0xFF01, 0x88);
+    bus.write8(0xFF02, 0x81);
+    bus.tick(4096);
+    check(bus.read8(0xFF01) == 0 && bus.take_serial_output().empty(),
+          "a connected printer exchanges serial bytes without buffering a debug transcript");
 }
 
 void test_cpu_state_normalization() {
@@ -2384,10 +2516,12 @@ void test_save_state_round_trip_and_validation() {
         0x6000 + 0x2000 + 0x40 + 0x40 + 4 + 6 + 2;
     constexpr std::size_t version_five_ppu_size = 1;
     constexpr std::size_t version_six_state_size = 5;
+    constexpr std::size_t version_seven_camera_size = 1;
     auto version_one = saved;
     version_one.resize(version_one.size() - version_two_dma_size -
                        version_three_ppu_size - version_four_cgb_size -
-                       version_five_ppu_size - version_six_state_size);
+                       version_five_ppu_size - version_six_state_size -
+                       version_seven_camera_size);
     version_one[8] = 1;
     const auto old_payload_size = static_cast<std::uint32_t>(
         version_one.size() - state_header_size);
@@ -2405,7 +2539,7 @@ void test_save_state_round_trip_and_validation() {
     auto version_two = saved;
     version_two.resize(version_two.size() - version_three_ppu_size -
                        version_four_cgb_size - version_five_ppu_size -
-                       version_six_state_size);
+                       version_six_state_size - version_seven_camera_size);
     version_two[8] = 2;
     const auto version_two_payload_size = static_cast<std::uint32_t>(
         version_two.size() - state_header_size);
@@ -2423,7 +2557,8 @@ void test_save_state_round_trip_and_validation() {
 
     auto version_three = saved;
     version_three.resize(version_three.size() - version_four_cgb_size -
-                         version_five_ppu_size - version_six_state_size);
+                         version_five_ppu_size - version_six_state_size -
+                         version_seven_camera_size);
     version_three[8] = 3;
     const auto version_three_payload_size = static_cast<std::uint32_t>(
         version_three.size() - state_header_size);
@@ -2441,8 +2576,11 @@ void test_save_state_round_trip_and_validation() {
 
     auto version_four = saved;
     version_four.erase(version_four.end() - version_four_cgb_size -
-                           version_five_ppu_size - version_six_state_size,
-                       version_four.end() - version_four_cgb_size);
+                           version_five_ppu_size - version_six_state_size -
+                           version_seven_camera_size,
+                       version_four.end() - version_four_cgb_size -
+                           version_seven_camera_size);
+    version_four.pop_back();
     version_four[8] = 4;
     const auto version_four_payload_size = static_cast<std::uint32_t>(
         version_four.size() - state_header_size);
@@ -2460,8 +2598,10 @@ void test_save_state_round_trip_and_validation() {
 
     auto version_five = saved;
     version_five.erase(version_five.end() - version_four_cgb_size -
-                           version_six_state_size,
-                       version_five.end() - version_four_cgb_size);
+                           version_six_state_size - version_seven_camera_size,
+                       version_five.end() - version_four_cgb_size -
+                           version_seven_camera_size);
+    version_five.pop_back();
     version_five[8] = 5;
     const auto version_five_payload_size = static_cast<std::uint32_t>(
         version_five.size() - state_header_size);
@@ -2478,6 +2618,23 @@ void test_save_state_round_trip_and_validation() {
               version_five_loader.cpu().total_cycles() == saved_cycles &&
               version_five_loader.bus().read8(0xA123) == 0x5A,
           "version 5 save states remain loadable after adding PPU startup state");
+
+    auto version_six = saved;
+    version_six.pop_back();
+    version_six[8] = 6;
+    const auto version_six_payload_size = static_cast<std::uint32_t>(
+        version_six.size() - state_header_size);
+    write_little_u32(version_six, 20, version_six_payload_size);
+    write_little_u32(
+        version_six, 24,
+        state_crc32(version_six.data() + state_header_size,
+                    version_six_payload_size));
+    gameboy::Emulator version_six_loader{gameboy::Cartridge{rom}};
+    version_six_loader.load_state(version_six);
+    check(version_six_loader.cpu().registers().pc == saved_pc &&
+              version_six_loader.cpu().total_cycles() == saved_cycles &&
+              version_six_loader.bus().read8(0xA123) == 0x5A,
+          "version 6 save states remain loadable after adding camera state");
 
     emulator.bus().write8(0xA123, 0x99);
     emulator.bus().write8(0xC000, 0x11);
@@ -2526,7 +2683,7 @@ void test_save_state_round_trip_and_validation() {
           "truncated save states are rejected without changing emulator state");
 
     auto future_version = saved;
-    future_version[8] = 7;
+    future_version[8] = 8;
     auto rejected_version = false;
     try {
         emulator.load_state(future_version);
@@ -2581,6 +2738,7 @@ int main() {
         test_mbc3_banking_and_rtc();
         test_mbc3_rtc_persistence();
         test_mbc5_banking_and_rumble();
+        test_gameboy_camera();
         test_memory_map();
         test_apu_power_registers_and_wave_ram();
         test_active_wave_ram_timing();
@@ -2588,6 +2746,7 @@ int main() {
         test_apu_pulse2_samples_and_length();
         test_apu_pulse1_sweep_wave_and_noise();
         test_serial_transfer();
+        test_gameboy_printer();
         test_cpu_state_normalization();
         test_register_load_matrix();
         test_immediate_load_table();

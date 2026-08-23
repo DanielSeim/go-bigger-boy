@@ -37,6 +37,11 @@ public:
     [[nodiscard]] bool has_rtc() const noexcept;
     [[nodiscard]] bool has_rumble() const noexcept;
     [[nodiscard]] bool rumble_active() const noexcept;
+    [[nodiscard]] bool has_camera() const noexcept;
+    static constexpr std::size_t camera_width = 128;
+    static constexpr std::size_t camera_height = 112;
+    void set_camera_frame(const std::uint8_t* grayscale,
+                          std::size_t size) noexcept;
     [[nodiscard]] std::uint64_t rom_fingerprint() const noexcept;
     [[nodiscard]] std::vector<std::uint8_t> export_battery_ram() const;
     void import_battery_ram(const std::vector<std::uint8_t>& data);
@@ -53,6 +58,7 @@ private:
         mbc2,
         mbc3,
         mbc5,
+        camera,
     };
 
     [[nodiscard]] std::uint8_t read_rom_bank(std::size_t bank,
@@ -65,6 +71,11 @@ private:
     void load_battery();
     void load_rtc();
     void flush_rtc();
+    [[nodiscard]] std::uint8_t read_camera_register(
+        std::uint16_t address) const noexcept;
+    void write_camera_register(std::uint16_t address,
+                               std::uint8_t value) noexcept;
+    void capture_camera_image() noexcept;
 
     std::vector<std::uint8_t> rom_;
     std::vector<std::uint8_t> ram_;
@@ -90,6 +101,10 @@ private:
     std::array<std::uint8_t, 5> latched_rtc_{};
     mutable std::int64_t rtc_last_update_{};
     mutable bool rtc_dirty_{};
+    bool camera_registers_mapped_{};
+    std::array<std::uint8_t, 0x36> camera_registers_{};
+    std::vector<std::uint8_t> camera_frame_;
+    std::vector<std::uint8_t> camera_image_;
 };
 
 } // namespace gameboy

@@ -13,6 +13,7 @@ namespace {
 constexpr std::size_t minimum_header_size = 0x150;
 constexpr std::size_t rom_bank_size = 0x4000;
 constexpr std::size_t ram_bank_size = 0x2000;
+constexpr std::size_t camera_image_size = 16 * 14 * 16;
 constexpr std::uint64_t rtc_day_seconds = 24 * 60 * 60;
 constexpr std::uint64_t rtc_period_seconds = 512 * rtc_day_seconds;
 constexpr std::array<char, 8> rtc_magic{'G', 'B', 'B', 'R', 'T', 'C', '1', 0};
@@ -187,6 +188,19 @@ Cartridge::Cartridge(std::vector<std::uint8_t> rom) : rom_(std::move(rom)) {
         battery_ = true;
         rumble_present_ = true;
         break;
+    case 0xFC:
+        controller_ = Controller::camera;
+        ram_capacity = header_ram_size(rom_[0x149]);
+        battery_ = true;
+        camera_frame_.resize(camera_width * camera_height);
+        camera_image_.resize(camera_image_size);
+        for (std::size_t y = 0; y < camera_height; ++y) {
+            for (std::size_t x = 0; x < camera_width; ++x) {
+                camera_frame_[y * camera_width + x] =
+                    static_cast<std::uint8_t>((x + y) & 0xFF);
+            }
+        }
+        break;
     default:
         throw std::invalid_argument("Unsupported cartridge controller type: " +
                                     std::to_string(type()));
@@ -223,7 +237,8 @@ Cartridge::Cartridge(std::vector<std::uint8_t> rom) : rom_(std::move(rom)) {
         if (ram_capacity > 0x10000) {
             throw std::invalid_argument("MBC3 RAM exceeds the 64 KiB MBC30 limit");
         }
-    } else if (controller_ == Controller::mbc5) {
+    } else if (controller_ == Controller::mbc5 ||
+               controller_ == Controller::camera) {
         if (expected_rom_size > 0x800000) {
             throw std::invalid_argument("MBC5 ROM exceeds the 8 MiB address limit");
         }
@@ -270,7 +285,11 @@ Cartridge::Cartridge(Cartridge&& other) noexcept
       rtc_(other.rtc_),
       latched_rtc_(other.latched_rtc_),
       rtc_last_update_(other.rtc_last_update_),
-      rtc_dirty_(other.rtc_dirty_) {
+      rtc_dirty_(other.rtc_dirty_),
+      camera_registers_mapped_(other.camera_registers_mapped_),
+      camera_registers_(other.camera_registers_),
+      camera_frame_(std::move(other.camera_frame_)),
+      camera_image_(std::move(other.camera_image_)) {
     other.ram_dirty_ = false;
     other.rtc_dirty_ = false;
     other.save_path_.clear();
@@ -321,12 +340,22 @@ std::uint8_t Cartridge::read(const std::uint16_t address) const noexcept {
                    (rom_bank_low_ & (mbc1_multicart_ ? 0x0F : 0x1F));
         } else if (controller_ == Controller::mbc2 ||
                    controller_ == Controller::mbc3 ||
-                   controller_ == Controller::mbc5) {
+                   controller_ == Controller::mbc5 ||
+                   controller_ == Controller::camera) {
             bank = selected_rom_bank_;
         }
         return read_rom_bank(bank, address - 0x4000);
     }
     if (address >= 0xA000 && address <= 0xBFFF && ram_enabled_) {
+        if (controller_ == Controller::camera) {
+            if (camera_registers_mapped_) {
+                return read_camera_register(address);
+            }
+            if (ram_rtc_select_ == 0 && address >= 0xA100 &&
+                address <= 0xAEFF && !camera_image_.empty()) {
+                return camera_image_[address - 0xA100];
+            }
+        }
         if (controller_ == Controller::mbc2) {
             return static_cast<std::uint8_t>(
                 0xF0 | ram_[(address - 0xA000) & 0x01FF]);
@@ -392,7 +421,8 @@ void Cartridge::write(const std::uint16_t address,
         return;
     }
 
-    if (controller_ == Controller::mbc5 && address <= 0x7FFF) {
+    if ((controller_ == Controller::mbc5 ||
+         controller_ == Controller::camera) && address <= 0x7FFF) {
         if (address <= 0x1FFF) {
             ram_enabled_ = (value & 0x0F) == 0x0A;
         } else if (address <= 0x2FFF) {
@@ -402,14 +432,23 @@ void Cartridge::write(const std::uint16_t address,
             selected_rom_bank_ = static_cast<std::uint16_t>(
                 (selected_rom_bank_ & 0xFF) | ((value & 1) << 8));
         } else if (address <= 0x5FFF) {
-            rumble_active_ = rumble_present_ && (value & 0x08) != 0;
-            ram_rtc_select_ = static_cast<std::uint8_t>(
-                value & (rumble_present_ ? 0x07 : 0x0F));
+            if (controller_ == Controller::camera) {
+                camera_registers_mapped_ = (value & 0x10) != 0;
+                ram_rtc_select_ = static_cast<std::uint8_t>(value & 0x0F);
+            } else {
+                rumble_active_ = rumble_present_ && (value & 0x08) != 0;
+                ram_rtc_select_ = static_cast<std::uint8_t>(
+                    value & (rumble_present_ ? 0x07 : 0x0F));
+            }
         }
         return;
     }
 
     if (address >= 0xA000 && address <= 0xBFFF && ram_enabled_) {
+        if (controller_ == Controller::camera && camera_registers_mapped_) {
+            write_camera_register(address, value);
+            return;
+        }
         if (controller_ == Controller::mbc2) {
             const auto index = static_cast<std::size_t>(
                 (address - 0xA000) & 0x01FF);
@@ -491,6 +530,19 @@ bool Cartridge::has_rtc() const noexcept { return rtc_present_; }
 bool Cartridge::has_rumble() const noexcept { return rumble_present_; }
 
 bool Cartridge::rumble_active() const noexcept { return rumble_active_; }
+
+bool Cartridge::has_camera() const noexcept {
+    return controller_ == Controller::camera;
+}
+
+void Cartridge::set_camera_frame(const std::uint8_t* grayscale,
+                                 const std::size_t size) noexcept {
+    if (!has_camera() || grayscale == nullptr ||
+        size != camera_width * camera_height) {
+        return;
+    }
+    std::copy_n(grayscale, size, camera_frame_.begin());
+}
 
 std::uint64_t Cartridge::rom_fingerprint() const noexcept {
     auto hash = UINT64_C(14695981039346656037);
@@ -594,13 +646,107 @@ std::uint8_t Cartridge::read_rom_bank(const std::size_t bank,
 }
 
 std::size_t Cartridge::selected_ram_bank() const noexcept {
-    if (controller_ == Controller::mbc3 || controller_ == Controller::mbc5) {
+    if (controller_ == Controller::mbc3 || controller_ == Controller::mbc5 ||
+        controller_ == Controller::camera) {
         return ram_rtc_select_;
     }
     return controller_ == Controller::mbc1 && !large_mbc1_rom_ &&
                    banking_mode_ != 0
                ? bank_upper_
                : 0;
+}
+
+std::uint8_t Cartridge::read_camera_register(
+    const std::uint16_t address) const noexcept {
+    const auto index = static_cast<std::size_t>((address - 0xA000) & 0x7F);
+    return index == 0 ? camera_registers_[0] : 0;
+}
+
+void Cartridge::write_camera_register(const std::uint16_t address,
+                                      const std::uint8_t value) noexcept {
+    const auto index = static_cast<std::size_t>((address - 0xA000) & 0x7F);
+    if (index >= camera_registers_.size()) return;
+    if (index == 0) {
+        const auto was_capturing = (camera_registers_[0] & 1) != 0;
+        camera_registers_[0] = static_cast<std::uint8_t>(value & 0x07);
+        if (!was_capturing && (value & 1) != 0) capture_camera_image();
+        return;
+    }
+    camera_registers_[index] = value;
+}
+
+void Cartridge::capture_camera_image() noexcept {
+    if (camera_frame_.size() != camera_width * camera_height ||
+        camera_image_.size() != camera_image_size) {
+        camera_registers_[0] &= 0x06;
+        return;
+    }
+
+    const auto exposure = static_cast<unsigned>(camera_registers_[2]) << 8 |
+                          camera_registers_[3];
+    constexpr std::array<double, 32> gain{
+        0.8809390, 0.9149149, 0.9457498, 0.9739758,
+        1.0000000, 1.0241412, 1.0466537, 1.0677433,
+        1.0875793, 1.1240310, 1.1568911, 1.1868043,
+        1.2142561, 1.2396208, 1.2743837, 1.3157323,
+        1.3525190, 1.3856512, 1.4157897, 1.4434309,
+        1.4689574, 1.4926697, 1.5148087, 1.5355703,
+        1.5551159, 1.5735801, 1.5910762, 1.6077008,
+        1.6235366, 1.6386550, 1.6531183, 1.6669808,
+    };
+    const auto gain_value = gain[camera_registers_[1] & 0x1F];
+    const auto processed_luminance = [&](int x, int y) {
+        x = std::clamp(x, 0, static_cast<int>(camera_width) - 1);
+        y = std::clamp(y, 0, static_cast<int>(camera_height) - 1);
+        return static_cast<double>(
+                   camera_frame_[static_cast<std::size_t>(y) * camera_width +
+                                 static_cast<std::size_t>(x)]) *
+               gain_value * static_cast<double>(exposure) / 0x1000;
+    };
+    constexpr std::array<double, 8> edge_ratios{
+        0.5, 0.75, 1.0, 1.25, 2.0, 3.0, 4.0, 5.0,
+    };
+    const auto enhance_edges = (camera_registers_[1] & 0xE0) == 0xE0;
+    const auto edge_ratio = edge_ratios[(camera_registers_[4] >> 4) & 7];
+    std::fill(camera_image_.begin(), camera_image_.end(), 0);
+
+    for (std::size_t y = 0; y < camera_height; ++y) {
+        for (std::size_t x = 0; x < camera_width; ++x) {
+            auto luminance = processed_luminance(static_cast<int>(x),
+                                                 static_cast<int>(y));
+            if (enhance_edges) {
+                luminance += luminance * 4 * edge_ratio;
+                luminance -= processed_luminance(static_cast<int>(x) - 1,
+                                                  static_cast<int>(y)) *
+                             edge_ratio;
+                luminance -= processed_luminance(static_cast<int>(x) + 1,
+                                                  static_cast<int>(y)) *
+                             edge_ratio;
+                luminance -= processed_luminance(static_cast<int>(x),
+                                                  static_cast<int>(y) - 1) *
+                             edge_ratio;
+                luminance -= processed_luminance(static_cast<int>(x),
+                                                  static_cast<int>(y) + 1) *
+                             edge_ratio;
+            }
+            const auto matrix = ((x & 3) + (y & 3) * 4) * 3 + 6;
+            const auto t0 = camera_registers_[matrix];
+            const auto t1 = camera_registers_[matrix + 1];
+            const auto t2 = camera_registers_[matrix + 2];
+            std::uint8_t shade = 0;
+            if (luminance < t0) shade = 3;
+            else if (luminance < t1) shade = 2;
+            else if (luminance < t2) shade = 1;
+
+            const auto tile = (y / 8) * 16 + x / 8;
+            const auto row = y & 7;
+            const auto offset = tile * 16 + row * 2;
+            const auto bit = static_cast<std::uint8_t>(0x80 >> (x & 7));
+            if ((shade & 1) != 0) camera_image_[offset] |= bit;
+            if ((shade & 2) != 0) camera_image_[offset + 1] |= bit;
+        }
+    }
+    camera_registers_[0] &= 0x06;
 }
 
 void Cartridge::load_battery() {

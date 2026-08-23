@@ -5,6 +5,7 @@
 #include "gameboy/hardware_model.hpp"
 #include "gameboy/joypad.hpp"
 #include "gameboy/ppu.hpp"
+#include "gameboy/printer.hpp"
 #include "gameboy/timer.hpp"
 
 #include <array>
@@ -42,6 +43,8 @@ public:
     void consume_frame() noexcept;
     [[nodiscard]] std::vector<std::int16_t> take_audio_samples();
     [[nodiscard]] std::string take_serial_output();
+    void connect_printer(bool connected = true) noexcept;
+    [[nodiscard]] std::vector<PrinterImage> take_printer_images();
 
 private:
     friend class Cpu;
@@ -68,6 +71,8 @@ private:
     Ppu ppu_{};
     Timer timer_{};
     std::string serial_output_{};
+    GameBoyPrinter printer_{};
+    bool printer_connected_{};
     unsigned serial_cycles_remaining_{};
     std::uint16_t serial_clock_{};
     std::uint16_t oam_dma_source_{};

@@ -254,8 +254,17 @@ void MemoryBus::tick(const unsigned cycles) noexcept {
     if (serial_cycles_remaining_ != 0) {
         if (cycles >= serial_cycles_remaining_) {
             serial_cycles_remaining_ = 0;
-            serial_output_.push_back(static_cast<char>(io_[0x01]));
-            io_[0x01] = 0xFF;
+            if (printer_connected_) {
+                try {
+                    io_[0x01] = printer_.transfer(io_[0x01]);
+                } catch (...) {
+                    printer_.reset();
+                    io_[0x01] = 0xFF;
+                }
+            } else {
+                serial_output_.push_back(static_cast<char>(io_[0x01]));
+                io_[0x01] = 0xFF;
+            }
             io_[0x02] = static_cast<std::uint8_t>(io_[0x02] & ~0x80U);
             request_interrupt(3);
         } else {
@@ -442,6 +451,15 @@ std::string MemoryBus::take_serial_output() {
     auto output = std::move(serial_output_);
     serial_output_.clear();
     return output;
+}
+
+void MemoryBus::connect_printer(const bool connected) noexcept {
+    printer_connected_ = connected;
+    printer_.reset();
+}
+
+std::vector<PrinterImage> MemoryBus::take_printer_images() {
+    return printer_.take_images();
 }
 
 } // namespace gameboy

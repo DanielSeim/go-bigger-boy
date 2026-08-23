@@ -13,7 +13,7 @@ namespace {
 constexpr std::array<std::uint8_t, 8> state_magic{
     'G', 'B', 'B', 'S', 'T', 'A', 'T', 'E',
 };
-constexpr std::uint32_t state_version = 6;
+constexpr std::uint32_t state_version = 7;
 constexpr std::uint32_t oldest_supported_state_version = 1;
 constexpr std::size_t maximum_state_size = 2 * 1024 * 1024;
 constexpr std::size_t maximum_serial_output = 1024 * 1024;
@@ -333,6 +333,15 @@ private:
         writer.boolean(bus.hdma_active_);
         writer.boolean(bus.double_speed_);
         writer.boolean(bus.speed_switch_requested_);
+        writer.boolean(bus.cartridge_.has_camera());
+        if (bus.cartridge_.has_camera()) {
+            writer.boolean(bus.cartridge_.camera_registers_mapped_);
+            write_bytes(writer, bus.cartridge_.camera_registers_);
+            writer.bytes(bus.cartridge_.camera_frame_.data(),
+                         bus.cartridge_.camera_frame_.size());
+            writer.bytes(bus.cartridge_.camera_image_.data(),
+                         bus.cartridge_.camera_image_.size());
+        }
     }
 
     static void read_bus(Reader& reader, MemoryBus& bus,
@@ -451,6 +460,29 @@ private:
             bus.speed_switch_requested_ = false;
             bus.timer_.set_double_speed(false);
         }
+        if (version >= 7) {
+            const auto contains_camera = reader.boolean();
+            if (contains_camera != bus.cartridge_.has_camera()) {
+                throw SaveStateError(
+                    "Save-state camera hardware does not match cartridge");
+            }
+            if (contains_camera) {
+                bus.cartridge_.camera_registers_mapped_ = reader.boolean();
+                read_bytes(reader, bus.cartridge_.camera_registers_);
+                reader.bytes(bus.cartridge_.camera_frame_.data(),
+                             bus.cartridge_.camera_frame_.size());
+                reader.bytes(bus.cartridge_.camera_image_.data(),
+                             bus.cartridge_.camera_image_.size());
+            }
+        } else if (bus.cartridge_.has_camera()) {
+            bus.cartridge_.camera_registers_mapped_ = false;
+            bus.cartridge_.camera_registers_.fill(0);
+            bus.cartridge_.capture_camera_image();
+        }
+        // The printer represents an external device and is deliberately not
+        // embedded in emulator save states. Loading a state starts a fresh
+        // printer session while preserving whether it is connected.
+        if (bus.printer_connected_) bus.printer_.reset();
     }
 
     static void write_cartridge(Writer& writer, const Cartridge& cartridge) {

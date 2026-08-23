@@ -25,6 +25,9 @@ shared everywhere.
 - Headless command-line runner
 - Headless Mooneye/serial conformance test runner
 - Emscripten/WebAssembly browser frontend with IndexedDB cartridge saves
+- Game Boy Printer serial protocol with automatic desktop image export
+- Game Boy Camera cartridge support with live SDL3 webcam input on desktop
+- MBC5 rumble output through compatible SDL3 gamepads on desktop
 - Versioned, ROM-validated save states with desktop quick-save controls
 - Dependency-free unit tests
 
@@ -133,11 +136,25 @@ stored in SDL's per-user preferences directory. The Ctrl+K controls dialog can
 rebind either input device or restore the default mappings; Escape cancels an
 in-progress setup.
 
-Battery-backed MBC1, MBC2, MBC3, and MBC5 games use a sibling file with the ROM's
-base name and a `.sav` extension. MBC3 real-time clocks use an additional
-`.rtc` file. MBC5 rumble register state is exposed by the core for frontends;
-physical rumble output is not connected yet. Unsupported cartridge controllers
-are rejected explicitly instead of running with incorrect banking.
+Battery-backed MBC1, MBC2, MBC3, MBC5, and Game Boy Camera games use a sibling
+file with the ROM's base name and a `.sav` extension. MBC3 real-time clocks use
+an additional `.rtc` file. MBC5 rumble cartridges drive the currently connected
+SDL gamepad on desktop when it supports vibration. Rumble stops while paused,
+unfocused, or inside a modal dialog. Unsupported cartridge controllers are
+rejected explicitly instead of running with incorrect banking.
+
+Game Boy Printer-compatible games can print normally from their in-game menus.
+The desktop frontend emulates the printer protocol and saves each completed
+page as a lossless, nearest-neighbor 4× BMP image. Files are placed in the
+`prints` folder below SDL's per-user Go Bigger Boy preferences directory; the
+emulator displays that folder after a print completes. No physical printer is
+required.
+
+Game Boy Camera ROMs use the first webcam reported by SDL on Windows and Linux.
+The operating system may request camera permission when the cartridge opens.
+Frames are center-cropped, reduced to the original 128×112 four-shade sensor
+image, and front-facing cameras are mirrored. If no webcam is available or
+permission is denied, the cartridge remains playable with a fallback image.
 
 ROM files are not included. Only use cartridge dumps you are legally entitled
 to use.

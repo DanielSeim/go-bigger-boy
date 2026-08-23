@@ -65,6 +65,23 @@ bool Emulator::has_battery() const noexcept {
 
 bool Emulator::has_rtc() const noexcept { return bus_.cartridge().has_rtc(); }
 
+bool Emulator::has_rumble() const noexcept {
+    return bus_.cartridge().has_rumble();
+}
+
+bool Emulator::rumble_active() const noexcept {
+    return bus_.cartridge().rumble_active();
+}
+
+bool Emulator::has_camera() const noexcept {
+    return bus_.cartridge().has_camera();
+}
+
+void Emulator::set_camera_frame(const std::uint8_t* grayscale,
+                                const std::size_t size) noexcept {
+    bus_.cartridge().set_camera_frame(grayscale, size);
+}
+
 std::vector<std::uint8_t> Emulator::export_battery_ram() const {
     return bus_.cartridge().export_battery_ram();
 }

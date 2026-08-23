@@ -86,7 +86,11 @@ public:
     }
 
     ~SdlResources() {
-        if (gamepad != nullptr) SDL_CloseGamepad(gamepad);
+        if (camera != nullptr) SDL_CloseCamera(camera);
+        if (gamepad != nullptr) {
+            static_cast<void>(SDL_RumbleGamepad(gamepad, 0, 0, 0));
+            SDL_CloseGamepad(gamepad);
+        }
         if (audio_stream != nullptr) SDL_DestroyAudioStream(audio_stream);
         if (texture != nullptr) SDL_DestroyTexture(texture);
         if (renderer != nullptr) SDL_DestroyRenderer(renderer);
@@ -102,6 +106,12 @@ public:
     SDL_Texture* texture{};
     SDL_Gamepad* gamepad{};
     SDL_AudioStream* audio_stream{};
+    SDL_Camera* camera{};
+    bool mirror_camera{};
+    bool camera_warning_shown{};
+    bool rumble_output_active{};
+    bool rumble_warning_shown{};
+    std::chrono::steady_clock::time_point rumble_refresh{};
 };
 
 struct DialogState {
@@ -280,6 +290,61 @@ void replace_file_atomically(const std::filesystem::path& temporary,
 #endif
 }
 
+void save_printer_bitmap(const std::filesystem::path& path,
+                         const gameboy::PrinterImage& image) {
+    const auto bytes = gameboy::encode_printer_bmp(image);
+    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    if (!output) {
+        throw std::runtime_error("Could not create printer image: " +
+                                 path.u8string());
+    }
+    output.write(reinterpret_cast<const char*>(bytes.data()),
+                 static_cast<std::streamsize>(bytes.size()));
+    if (!output) {
+        throw std::runtime_error("Could not write printer image: " +
+                                 path.u8string());
+    }
+}
+
+void save_completed_prints(gameboy::Emulator* emulator, SDL_Window* window,
+                           const std::filesystem::path& preference_path,
+                           const std::string& current_rom,
+                           std::uint64_t& print_sequence) {
+    if (emulator == nullptr) return;
+    auto images = emulator->bus().take_printer_images();
+    if (images.empty()) return;
+
+    const auto directory = preference_path.empty()
+                               ? std::filesystem::current_path() / "GBB Prints"
+                               : preference_path / "prints";
+    std::filesystem::create_directories(directory);
+    auto rom_name = std::filesystem::u8path(current_rom).stem().u8string();
+    if (rom_name.empty()) rom_name = "gameboy";
+    const auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+                               std::chrono::system_clock::now()
+                                   .time_since_epoch())
+                               .count();
+    std::vector<std::filesystem::path> paths;
+    paths.reserve(images.size());
+    for (const auto& image : images) {
+        const auto filename = rom_name + "-print-" +
+                              std::to_string(timestamp) + "-" +
+                              std::to_string(++print_sequence) + ".bmp";
+        auto path = directory / std::filesystem::u8path(filename);
+        save_printer_bitmap(path, image);
+        paths.push_back(std::move(path));
+    }
+
+    std::ostringstream message;
+    message << "Saved " << paths.size() << " printer image";
+    if (paths.size() != 1) message << 's';
+    message << " to:\n" << directory.u8string();
+    const auto text = message.str();
+    std::cerr << text << '\n';
+    static_cast<void>(SDL_ShowSimpleMessageBox(
+        SDL_MESSAGEBOX_INFORMATION, "Game Boy Printer", text.c_str(), window));
+}
+
 void save_quick_state(const std::filesystem::path& preference_path,
                       const gameboy::Emulator& emulator) {
     const auto path = quick_state_path(preference_path, emulator);
@@ -401,6 +466,41 @@ bool reserved_gameplay_key(const SDL_Keycode key) {
 
 void release_all_buttons(gameboy::Emulator& emulator) {
     for (const auto button : button_order) emulator.set_button(button, false);
+}
+
+void stop_rumble(SdlResources& sdl) noexcept {
+    if (sdl.gamepad != nullptr && sdl.rumble_output_active) {
+        static_cast<void>(SDL_RumbleGamepad(sdl.gamepad, 0, 0, 0));
+    }
+    sdl.rumble_output_active = false;
+    sdl.rumble_refresh = {};
+}
+
+void update_rumble(const gameboy::Emulator* emulator, SdlResources& sdl,
+                   const bool enabled) {
+    const auto desired = enabled && emulator != nullptr &&
+                         emulator->has_rumble() && emulator->rumble_active();
+    if (!desired || sdl.gamepad == nullptr) {
+        stop_rumble(sdl);
+        return;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    if (now < sdl.rumble_refresh) return;
+    constexpr auto duration_ms = 500U;
+    if (SDL_RumbleGamepad(sdl.gamepad, 0xC000, 0x6000, duration_ms)) {
+        sdl.rumble_output_active = true;
+        sdl.rumble_refresh = now + std::chrono::milliseconds(250);
+    } else {
+        sdl.rumble_output_active = false;
+        sdl.rumble_refresh = now + std::chrono::seconds(5);
+        if (!sdl.rumble_warning_shown) {
+            std::cerr << "Warning: the connected gamepad does not provide "
+                         "rumble output: "
+                      << SDL_GetError() << '\n';
+            sdl.rumble_warning_shown = true;
+        }
+    }
 }
 
 void update_window_title(SDL_Window* window, const std::string& current_rom,
@@ -546,7 +646,10 @@ void show_help(SDL_Window* window) {
         "F8: Load quick save\n"
         "F11: Toggle fullscreen\n"
         "F1: Show this help\n"
-        "Escape: Quit",
+        "Escape: Quit\n\n"
+        "Game Boy Printer pages are saved automatically as BMP images.\n"
+        "Game Boy Camera cartridges use the first available webcam.\n"
+        "Rumble cartridges vibrate the connected gamepad when supported.",
         window));
 }
 
@@ -727,10 +830,12 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
             break;
         case SDL_EVENT_WINDOW_FOCUS_LOST:
             if (emulator) release_all_buttons(*emulator);
+            stop_rumble(sdl);
             break;
         case SDL_EVENT_GAMEPAD_ADDED:
             if (sdl.gamepad == nullptr) {
                 sdl.gamepad = SDL_OpenGamepad(event.gdevice.which);
+                sdl.rumble_warning_shown = false;
             }
             break;
         case SDL_EVENT_GAMEPAD_REMOVED:
@@ -738,6 +843,8 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                 SDL_GetGamepadID(sdl.gamepad) == event.gdevice.which) {
                 SDL_CloseGamepad(sdl.gamepad);
                 sdl.gamepad = nullptr;
+                sdl.rumble_output_active = false;
+                sdl.rumble_warning_shown = false;
             }
             break;
         case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
@@ -789,14 +896,129 @@ void show_error(SDL_Window* window, const std::string& message) {
         SDL_MESSAGEBOX_ERROR, "Go Bigger Boy (GBB)", message.c_str(), window));
 }
 
+void close_camera(SdlResources& sdl) noexcept {
+    if (sdl.camera != nullptr) {
+        SDL_CloseCamera(sdl.camera);
+        sdl.camera = nullptr;
+    }
+    sdl.camera_warning_shown = false;
+}
+
+void configure_camera(SdlResources& sdl, const gameboy::Emulator& emulator) {
+    close_camera(sdl);
+    if (!emulator.has_camera()) return;
+
+    if (!SDL_InitSubSystem(SDL_INIT_CAMERA)) {
+        std::cerr << "Warning: camera subsystem is unavailable: "
+                  << SDL_GetError() << '\n';
+        sdl.camera_warning_shown = true;
+        return;
+    }
+    int count = 0;
+    SDL_CameraID* cameras = SDL_GetCameras(&count);
+    if (cameras == nullptr || count == 0) {
+        SDL_free(cameras);
+        std::cerr << "Warning: no webcam was found; the Game Boy Camera "
+                     "will use its fallback image.\n";
+        sdl.camera_warning_shown = true;
+        return;
+    }
+
+    const auto camera_id = cameras[0];
+    sdl.mirror_camera =
+        SDL_GetCameraPosition(camera_id) == SDL_CAMERA_POSITION_FRONT_FACING;
+    sdl.camera = SDL_OpenCamera(camera_id, nullptr);
+    SDL_free(cameras);
+    if (sdl.camera == nullptr) {
+        std::cerr << "Warning: webcam could not be opened: " << SDL_GetError()
+                  << '\n';
+        sdl.camera_warning_shown = true;
+    }
+}
+
+void update_camera_frame(gameboy::Emulator* emulator, SdlResources& sdl) {
+    if (emulator == nullptr || !emulator->has_camera() || sdl.camera == nullptr) {
+        return;
+    }
+    const auto permission = SDL_GetCameraPermissionState(sdl.camera);
+    if (permission == SDL_CAMERA_PERMISSION_STATE_DENIED) {
+        if (!sdl.camera_warning_shown) {
+            std::cerr << "Warning: webcam permission was denied; the Game Boy "
+                         "Camera will use its fallback image.\n";
+            sdl.camera_warning_shown = true;
+        }
+        return;
+    }
+    if (permission != SDL_CAMERA_PERMISSION_STATE_APPROVED) return;
+
+    SDL_Surface* source = SDL_AcquireCameraFrame(sdl.camera, nullptr);
+    if (source == nullptr) return;
+    SDL_Surface* rgba = SDL_ConvertSurface(source, SDL_PIXELFORMAT_RGBA32);
+    SDL_ReleaseCameraFrame(sdl.camera, source);
+    if (rgba == nullptr) {
+        if (!sdl.camera_warning_shown) {
+            std::cerr << "Warning: webcam frame conversion failed: "
+                      << SDL_GetError() << '\n';
+            sdl.camera_warning_shown = true;
+        }
+        return;
+    }
+
+    const auto needs_lock = SDL_MUSTLOCK(rgba);
+    if (needs_lock && !SDL_LockSurface(rgba)) {
+        SDL_DestroySurface(rgba);
+        return;
+    }
+    constexpr auto target_width = gameboy::Cartridge::camera_width;
+    constexpr auto target_height = gameboy::Cartridge::camera_height;
+    auto crop_x = 0;
+    auto crop_y = 0;
+    auto crop_width = rgba->w;
+    auto crop_height = rgba->h;
+    if (static_cast<std::int64_t>(rgba->w) * target_height >
+        static_cast<std::int64_t>(rgba->h) * target_width) {
+        crop_width = static_cast<int>(
+            static_cast<std::int64_t>(rgba->h) * target_width / target_height);
+        crop_x = (rgba->w - crop_width) / 2;
+    } else {
+        crop_height = static_cast<int>(
+            static_cast<std::int64_t>(rgba->w) * target_height / target_width);
+        crop_y = (rgba->h - crop_height) / 2;
+    }
+
+    std::array<std::uint8_t, target_width * target_height> grayscale{};
+    const auto* pixels = static_cast<const std::uint8_t*>(rgba->pixels);
+    for (std::size_t y = 0; y < target_height; ++y) {
+        const auto source_y = crop_y + static_cast<int>(
+            (y * 2 + 1) * static_cast<std::size_t>(crop_height) /
+            (target_height * 2));
+        const auto* row = pixels + source_y * rgba->pitch;
+        for (std::size_t x = 0; x < target_width; ++x) {
+            auto sample_x = crop_x + static_cast<int>(
+                (x * 2 + 1) * static_cast<std::size_t>(crop_width) /
+                (target_width * 2));
+            if (sdl.mirror_camera) sample_x = rgba->w - 1 - sample_x;
+            const auto* pixel = row + sample_x * 4;
+            grayscale[y * target_width + x] = static_cast<std::uint8_t>(
+                (77U * pixel[0] + 150U * pixel[1] + 29U * pixel[2]) >> 8);
+        }
+    }
+    if (needs_lock) SDL_UnlockSurface(rgba);
+    SDL_DestroySurface(rgba);
+    emulator->set_camera_frame(grayscale.data(), grayscale.size());
+}
+
 void load_rom(const std::string& path,
               std::unique_ptr<gameboy::Emulator>& emulator,
-              const gameboy::DisplayPalette& palette) {
+              const gameboy::DisplayPalette& palette, SdlResources& sdl) {
     auto replacement = std::make_unique<gameboy::Emulator>(
         gameboy::Cartridge::from_file(std::filesystem::u8path(path)));
+    replacement->bus().connect_printer();
     replacement->set_dmg_compatibility_colors(palette.cgb_compatibility);
+    stop_rumble(sdl);
     if (emulator) emulator->flush_battery();
     emulator = std::move(replacement);
+    configure_camera(sdl, *emulator);
 }
 
 void present(const gameboy::Emulator* emulator, SdlResources& sdl,
@@ -858,6 +1080,7 @@ int main(int argc, char** argv) {
         auto fullscreen = false;
         auto reset_requested = false;
         auto running = true;
+        std::uint64_t print_sequence = 0;
 
         if (argc == 2) {
             pending_rom = argv[1];
@@ -894,7 +1117,7 @@ int main(int argc, char** argv) {
                     const bool reopening_current =
                         emulator && *pending_rom == current_rom;
                     load_rom(*pending_rom, emulator,
-                             gameboy::display_palettes[display_palette]);
+                             gameboy::display_palettes[display_palette], sdl);
                     if (sdl.audio_stream != nullptr) {
                         static_cast<void>(SDL_ClearAudioStream(sdl.audio_stream));
                     }
@@ -910,6 +1133,8 @@ int main(int argc, char** argv) {
                 next_frame = Clock::now();
             }
 
+            update_camera_frame(emulator.get(), sdl);
+
             if (emulator && !paused && !configuring &&
                 !dialog_active(dialog)) {
                 unsigned cycles = 0;
@@ -919,7 +1144,16 @@ int main(int argc, char** argv) {
                 }
                 if (emulator->frame_ready()) emulator->consume_frame();
             }
+            update_rumble(emulator.get(), sdl,
+                          !paused && !configuring && !dialog_active(dialog));
             submit_audio(emulator.get(), sdl);
+            try {
+                save_completed_prints(emulator.get(), sdl.window,
+                                      preference_path, current_rom,
+                                      print_sequence);
+            } catch (const std::exception& error) {
+                show_error(sdl.window, error.what());
+            }
             present(emulator.get(), sdl,
                     gameboy::display_palettes[display_palette]);
 
