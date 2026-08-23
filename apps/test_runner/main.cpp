@@ -107,7 +107,6 @@ int main(int argc, char** argv) {
         std::string serial_output;
         std::string memory_output;
         auto saw_blargg = false;
-        auto saw_blargg_running = false;
 
         while (emulator.cpu().total_cycles() < options.max_cycles) {
             const bool watches_blargg = options.protocol == Protocol::automatic ||
@@ -121,12 +120,10 @@ int main(int argc, char** argv) {
                     memory_output = current_output;
                 }
                 const auto status = emulator.bus().read8(0xA000);
-                if (status == 0x80) {
-                    saw_blargg_running = true;
-                } else if (saw_blargg_running &&
-                           ((status == 0 &&
-                             memory_output.find("Passed") != std::string::npos) ||
-                            (status != 0 && contains_failure(memory_output)))) {
+                if ((status == 0 &&
+                     memory_output.find("Passed") != std::string::npos) ||
+                    (status != 0 && status != 0x80 &&
+                     contains_failure(memory_output))) {
                     if (status == 0) {
                         std::cout << "\nPASS (Blargg memory)\n";
                         return EXIT_SUCCESS;
@@ -144,13 +141,20 @@ int main(int argc, char** argv) {
                                           !saw_blargg);
             if (watches_mooneye &&
                 emulator.bus().read8(registers.pc) == 0x40) { // LD B,B
+                const auto automatic_failure_signature =
+                    registers.b == 0x42 && registers.c == 0x42 &&
+                    registers.d == 0x42 && registers.e == 0x42 &&
+                    registers.h == 0x42 && registers.l == 0x42;
                 if (mooneye_success(registers)) {
                     std::cout << "PASS (Mooneye)\n";
                     return EXIT_SUCCESS;
                 }
-                std::cerr << "FAIL (Mooneye result registers)\n";
-                print_state(emulator.cpu());
-                return EXIT_FAILURE;
+                if (options.protocol == Protocol::mooneye ||
+                    automatic_failure_signature) {
+                    std::cerr << "FAIL (Mooneye result registers)\n";
+                    print_state(emulator.cpu());
+                    return EXIT_FAILURE;
+                }
             }
 
             static_cast<void>(emulator.step());

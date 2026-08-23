@@ -417,7 +417,7 @@ unsigned Cpu::execute_instruction(MemoryBus& bus) {
         registers_.a = read8(bus, fetch16(bus));
         return 16;
     case 0xFB:
-        ime_enable_delay_ = 2;
+        if (!ime_ && ime_enable_delay_ == 0) ime_enable_delay_ = 2;
         return 4;
     case 0xFE:
         compare(fetch8(bus));

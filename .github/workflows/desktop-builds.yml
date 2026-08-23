@@ -9,6 +9,43 @@ permissions:
   contents: read
 
 jobs:
+  accuracy:
+    name: Accuracy test ROMs
+    runs-on: ubuntu-24.04
+    env:
+      TEST_ROMS_URL: https://github.com/c-sp/game-boy-test-roms/releases/download/v7.0/game-boy-test-roms-v7.0.zip
+      TEST_ROMS_SHA256: b9a9d7a1075aa35a3d07c07c34974048672d8520dca9e07a50178f5860c3832c
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Download pinned test ROM bundle
+        run: curl --fail --location --retry 3 "$TEST_ROMS_URL" --output test-roms.zip
+
+      - name: Verify test ROM bundle
+        run: echo "$TEST_ROMS_SHA256  test-roms.zip" | sha256sum --check -
+
+      - name: Extract test ROM bundle
+        run: unzip -q test-roms.zip -d test-roms
+
+      - name: Configure headless accuracy tests
+        run: >-
+          cmake -S . -B build-accuracy
+          -DCMAKE_BUILD_TYPE=Release
+          -DGAMEBOY_BUILD_TESTS=ON
+          -DGAMEBOY_BUILD_SDL=OFF
+          -DGAMEBOY_TEST_ROM_DIR="$PWD/test-roms"
+
+      - name: Build headless test runner
+        run: cmake --build build-accuracy --config Release --parallel
+
+      - name: Run accuracy baseline
+        run: >-
+          ctest --test-dir build-accuracy -C Release
+          --label-regex conformance
+          --output-on-failure
+          --parallel 2
+
   build:
     name: ${{ matrix.artifact }}
     runs-on: ${{ matrix.runner }}
@@ -80,7 +117,7 @@ jobs:
   release:
     name: Publish GitHub Release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    needs: [accuracy, build]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

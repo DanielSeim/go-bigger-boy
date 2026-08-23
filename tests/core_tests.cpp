@@ -1411,6 +1411,24 @@ void test_interrupt_and_low_power_states() {
     check(interrupt_cpu.total_cycles() == 44,
           "CPU accumulates instruction, idle, and interrupt cycles");
 
+    gameboy::MemoryBus repeated_ei_bus{
+        gameboy::Cartridge{test_rom({0xFB, 0xFB, 0x00})}};
+    repeated_ei_bus.write8(0xFFFF, 1);
+    repeated_ei_bus.write8(0xFF0F, 1);
+    gameboy::Cpu repeated_ei_cpu;
+    repeated_ei_cpu.load_registers(initial_registers());
+    static_cast<void>(repeated_ei_cpu.step(repeated_ei_bus));
+    static_cast<void>(repeated_ei_cpu.step(repeated_ei_bus));
+    check(repeated_ei_cpu.interrupts_enabled() &&
+              repeated_ei_cpu.step(repeated_ei_bus) == 20,
+          "repeating EI does not postpone an already scheduled IME enable");
+
+    gameboy::MemoryBus interrupt_register_bus{
+        gameboy::Cartridge{test_rom()}};
+    interrupt_register_bus.write8(0xFF0F, 0x08);
+    check(interrupt_register_bus.read8(0xFF0F) == 0xE8,
+          "unused IF bits read high while writable interrupt flags are retained");
+
     gameboy::MemoryBus di_bus{
         gameboy::Cartridge{test_rom({0xFB, 0xF3, 0x00})}};
     di_bus.write8(0xFFFF, 1);

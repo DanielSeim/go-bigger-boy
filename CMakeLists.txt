@@ -7,7 +7,7 @@ include(GNUInstallDirs)
 option(GAMEBOY_BUILD_TESTS "Build the unit tests" ON)
 option(GAMEBOY_BUILD_SDL "Build the SDL3 desktop frontend when SDL3 is available" ON)
 set(GAMEBOY_TEST_ROM_DIR "" CACHE PATH
-    "Optional directory of conformance .gb ROMs to register with CTest")
+    "Optional root of the c-sp Game Boy test ROM bundle")
 
 add_library(gameboy_core
     src/apu.cpp
@@ -125,23 +125,6 @@ if(GAMEBOY_BUILD_TESTS)
     add_test(NAME gameboy_core_tests COMMAND gameboy_tests)
 
     if(GAMEBOY_TEST_ROM_DIR)
-        file(GLOB_RECURSE GAMEBOY_CONFORMANCE_ROMS CONFIGURE_DEPENDS
-             "${GAMEBOY_TEST_ROM_DIR}/*.gb")
-        foreach(ROM IN LISTS GAMEBOY_CONFORMANCE_ROMS)
-            file(RELATIVE_PATH ROM_NAME "${GAMEBOY_TEST_ROM_DIR}" "${ROM}")
-            string(MAKE_C_IDENTIFIER "${ROM_NAME}" TEST_NAME)
-            set(TEST_PROTOCOL auto)
-            set(TEST_CYCLE_LIMIT 100000000)
-            if(ROM_NAME MATCHES "(^|/)(dmg_sound|cgb_sound)(/|$)")
-                set(TEST_PROTOCOL blargg)
-                set(TEST_CYCLE_LIMIT 200000000)
-            endif()
-            add_test(NAME "conformance_${TEST_NAME}"
-                     COMMAND gameboy_test_runner "${ROM}"
-                             --max-cycles ${TEST_CYCLE_LIMIT}
-                             --protocol ${TEST_PROTOCOL})
-            set_tests_properties("conformance_${TEST_NAME}"
-                                 PROPERTIES LABELS conformance TIMEOUT 30)
-        endforeach()
+        include(cmake/ConformanceTests.cmake)
     endif()
 endif()

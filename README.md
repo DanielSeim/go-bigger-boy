@@ -56,19 +56,20 @@ Run an individual acceptance-test ROM with a bounded cycle budget:
 The runner recognizes Mooneye's `LD B,B` result protocol and serial test output
 containing `Passed` or `Failed`, plus Blargg's `$A000` memory result protocol.
 Use `--protocol mooneye`, `--protocol serial`, or `--protocol blargg` to disable
-automatic protocol detection. CMake selects the Blargg protocol automatically
-for ROMs inside `dmg_sound` and `cgb_sound` directories.
+automatic protocol detection.
 
 The DMG APU passes all 12 upstream Blargg `dmg_sound` tests, including active
 wave-RAM reads/writes and the original hardware's channel 3 retrigger corruption.
+The current headless CI accuracy gate passes 64 curated Mooneye and Blargg ROMs;
+see the [accuracy report](docs/accuracy.md) for its coverage and remaining gaps.
 
-To register a directory of legally obtained `.gb` test ROMs with CTest, set
-the opt-in cache path when configuring. Test ROMs are deliberately not bundled
-or downloaded by the build:
+To register the curated 64-ROM CI baseline locally, download and extract the
+`c-sp/game-boy-test-roms` v7.0 bundle, then set its root as the opt-in cache
+path. Test ROMs are deliberately not bundled or downloaded by the build:
 
 ```sh
 cmake -S . -B build-conformance \
-  -DGAMEBOY_TEST_ROM_DIR=/path/to/mooneye-test-suite/build
+  -DGAMEBOY_TEST_ROM_DIR=/path/to/game-boy-test-roms-v7.0
 cmake --build build-conformance
 ctest --test-dir build-conformance -L conformance --output-on-failure
 ```

@@ -63,6 +63,7 @@ std::uint8_t MemoryBus::read8(const std::uint16_t address) const noexcept {
     case 0xFF05: return timer_.counter();
     case 0xFF06: return timer_.modulo();
     case 0xFF07: return timer_.control();
+    case 0xFF0F: return static_cast<std::uint8_t>(0xE0 | io_[0x0F]);
     case 0xFF4D:
         return cgb_mode_
                    ? static_cast<std::uint8_t>(
@@ -175,6 +176,8 @@ void MemoryBus::write8(const std::uint16_t address, const std::uint8_t value) no
         timer_.write_modulo(value);
     } else if (address == 0xFF07) {
         timer_.write_control(value);
+    } else if (address == 0xFF0F) {
+        io_[0x0F] = static_cast<std::uint8_t>(value & 0x1F);
     } else if (address == 0xFF46) {
         io_[0x46] = value;
         const auto source_page = value >= 0xE0
