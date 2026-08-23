@@ -5,6 +5,7 @@
 namespace gameboy {
 
 Emulator::Emulator(Cartridge cartridge) : bus_(std::move(cartridge)) {
+    cpu_.reset(bus_.cgb_mode());
     bus_.initialize_post_boot();
 }
 
@@ -13,7 +14,7 @@ Emulator Emulator::from_file(const std::filesystem::path& path) {
 }
 
 void Emulator::reset() noexcept {
-    cpu_.reset();
+    cpu_.reset(bus_.cgb_mode());
 }
 
 unsigned Emulator::step() {

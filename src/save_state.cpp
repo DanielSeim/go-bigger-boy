@@ -13,7 +13,7 @@ namespace {
 constexpr std::array<std::uint8_t, 8> state_magic{
     'G', 'B', 'B', 'S', 'T', 'A', 'T', 'E',
 };
-constexpr std::uint32_t state_version = 2;
+constexpr std::uint32_t state_version = 4;
 constexpr std::uint32_t oldest_supported_state_version = 1;
 constexpr std::size_t maximum_state_size = 2 * 1024 * 1024;
 constexpr std::size_t maximum_serial_output = 1024 * 1024;
@@ -311,6 +311,23 @@ private:
         writer.u8(static_cast<std::uint8_t>(bus.oam_dma_cycle_));
         writer.u8(static_cast<std::uint8_t>(bus.oam_dma_pending_source_ >> 8));
         writer.u8(static_cast<std::uint8_t>(bus.oam_dma_start_delay_));
+        writer.u32(bus.ppu_.mode3_end_dot_);
+        writer.u8(bus.ppu_.window_line_);
+        writer.boolean(bus.ppu_.window_y_triggered_);
+        write_bytes(writer, bus.cgb_wram_);
+        write_bytes(writer, bus.ppu_.cgb_vram_);
+        write_bytes(writer, bus.ppu_.cgb_bg_palette_);
+        write_bytes(writer, bus.ppu_.cgb_object_palette_);
+        writer.u8(bus.wram_bank_);
+        writer.u8(bus.ppu_.vram_bank_);
+        writer.u8(bus.ppu_.bg_palette_index_);
+        writer.u8(bus.ppu_.object_palette_index_);
+        writer.u16(bus.hdma_source_);
+        writer.u16(bus.hdma_destination_);
+        writer.u8(bus.hdma_blocks_remaining_);
+        writer.boolean(bus.hdma_active_);
+        writer.boolean(bus.double_speed_);
+        writer.boolean(bus.speed_switch_requested_);
     }
 
     static void read_bus(Reader& reader, MemoryBus& bus,
@@ -346,6 +363,69 @@ private:
             bus.oam_dma_cycle_ = 0;
             bus.oam_dma_pending_source_ = 0;
             bus.oam_dma_start_delay_ = 0;
+        }
+        if (version >= 3) {
+            bus.ppu_.mode3_end_dot_ = reader.u32();
+            bus.ppu_.window_line_ = reader.u8();
+            bus.ppu_.window_y_triggered_ = reader.boolean();
+            if (bus.ppu_.mode3_end_dot_ < 252 ||
+                bus.ppu_.mode3_end_dot_ > 369 ||
+                bus.ppu_.window_line_ > Ppu::screen_height) {
+                throw SaveStateError("Save state contains invalid PPU timing state");
+            }
+        } else {
+            bus.ppu_.mode3_end_dot_ = 252;
+            bus.ppu_.window_y_triggered_ = bus.ppu_.ly_ >= bus.ppu_.window_y_;
+            bus.ppu_.window_line_ = bus.ppu_.window_y_triggered_
+                                        ? static_cast<std::uint8_t>(
+                                              bus.ppu_.ly_ - bus.ppu_.window_y_)
+                                        : 0;
+        }
+        if (version >= 4) {
+            read_bytes(reader, bus.cgb_wram_);
+            read_bytes(reader, bus.ppu_.cgb_vram_);
+            read_bytes(reader, bus.ppu_.cgb_bg_palette_);
+            read_bytes(reader, bus.ppu_.cgb_object_palette_);
+            bus.wram_bank_ = reader.u8();
+            bus.ppu_.vram_bank_ = reader.u8();
+            bus.ppu_.bg_palette_index_ = reader.u8();
+            bus.ppu_.object_palette_index_ = reader.u8();
+            bus.hdma_source_ = reader.u16();
+            bus.hdma_destination_ = reader.u16();
+            bus.hdma_blocks_remaining_ = reader.u8();
+            bus.hdma_active_ = reader.boolean();
+            bus.double_speed_ = reader.boolean();
+            bus.speed_switch_requested_ = reader.boolean();
+            if (bus.wram_bank_ < 1 || bus.wram_bank_ > 7 ||
+                bus.ppu_.vram_bank_ > 1 ||
+                (bus.ppu_.bg_palette_index_ & 0x40) != 0 ||
+                (bus.ppu_.object_palette_index_ & 0x40) != 0 ||
+                bus.hdma_destination_ < 0x8000 ||
+                bus.hdma_destination_ > 0x9FFF ||
+                (bus.hdma_destination_ & 0x000F) != 0 ||
+                (bus.hdma_source_ & 0x000F) != 0 ||
+                (bus.hdma_active_ && bus.hdma_blocks_remaining_ == 0) ||
+                (!bus.cgb_mode_ &&
+                 (bus.double_speed_ || bus.speed_switch_requested_))) {
+                throw SaveStateError("Save state contains invalid CGB bank state");
+            }
+            bus.timer_.set_double_speed(bus.double_speed_);
+        } else {
+            bus.cgb_wram_.fill(0);
+            bus.ppu_.cgb_vram_.fill(0);
+            bus.ppu_.cgb_bg_palette_.fill(0xFF);
+            bus.ppu_.cgb_object_palette_.fill(0xFF);
+            bus.wram_bank_ = 1;
+            bus.ppu_.vram_bank_ = 0;
+            bus.ppu_.bg_palette_index_ = 0;
+            bus.ppu_.object_palette_index_ = 0;
+            bus.hdma_source_ = 0;
+            bus.hdma_destination_ = 0x8000;
+            bus.hdma_blocks_remaining_ = 0;
+            bus.hdma_active_ = false;
+            bus.double_speed_ = false;
+            bus.speed_switch_requested_ = false;
+            bus.timer_.set_double_speed(false);
         }
     }
 

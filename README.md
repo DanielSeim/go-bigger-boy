@@ -12,7 +12,10 @@ shared everywhere.
 - Interrupt dispatch, EI delay, HALT/STOP states, HALT bug, and machine-cycle bus timing
 - Cycle-driven DIV/TIMA/TMA/TAC timer with overflow interrupts and write-edge behavior
 - DMG PPU modes, LCD/STAT interrupts, VRAM/OAM arbitration, and RGBA framebuffer
-- Background, window, and 8×8/8×16 sprite scanline rendering
+- Background, window, and 8×8/8×16 sprite scanline rendering, including the
+  window's internal line counter and variable Mode 3 fetch timing
+- Game Boy Color mode with banked VRAM/WRAM, RGB555 palettes, tile attributes,
+  CGB sprite priority, VRAM DMA, fast serial, and double-speed CPU switching
 - Active-low joypad matrix with keyboard/gamepad input and interrupts
 - Cycle-timed OAM DMA with source-bus conflicts and an optional SDL3 desktop frontend
 - Four-channel DMG audio with 48 kHz stereo SDL3 playback
@@ -25,7 +28,9 @@ shared everywhere.
 - Versioned, ROM-validated save states with desktop quick-save controls
 - Dependency-free unit tests
 
-This is an early emulator with incomplete game compatibility.
+This is an early emulator with incomplete game compatibility. Game Boy Color
+support covers the primary execution and rendering paths, but hardware-edge
+accuracy and compatibility-mode boot palettes are still being refined.
 
 ## Build
 

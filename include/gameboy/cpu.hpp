@@ -30,7 +30,7 @@ class Cpu {
 public:
     Cpu();
 
-    void reset() noexcept;
+    void reset(bool cgb_mode = false) noexcept;
     void load_registers(CpuRegisters registers) noexcept;
     [[nodiscard]] unsigned step(MemoryBus& bus);
     [[nodiscard]] const CpuRegisters& registers() const noexcept;

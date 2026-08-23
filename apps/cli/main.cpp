@@ -19,6 +19,11 @@ int main(int argc, char** argv) {
                   << "ROM bytes: " << cartridge.rom_size() << '\n'
                   << "RAM bytes: " << cartridge.ram_size() << '\n'
                   << "Battery: " << (cartridge.has_battery() ? "yes" : "no") << '\n'
+                  << "Color mode: "
+                  << (cartridge.supports_cgb()
+                          ? (cartridge.requires_cgb() ? "CGB only" : "CGB enhanced")
+                          : "DMG")
+                  << '\n'
                   << "Cartridge type: 0x" << std::hex << std::setw(2)
                   << std::setfill('0') << static_cast<unsigned>(cartridge.type()) << '\n';
 

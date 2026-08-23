@@ -17,6 +17,7 @@ public:
     void write_counter(std::uint8_t value) noexcept;
     void write_modulo(std::uint8_t value) noexcept;
     void write_control(std::uint8_t value) noexcept;
+    void set_double_speed(bool enabled) noexcept;
 
     // Returns true when TIMA reload requests the timer interrupt.
     [[nodiscard]] bool tick(unsigned cycles) noexcept;
@@ -34,6 +35,7 @@ private:
     std::uint8_t control_{};
     unsigned reload_delay_{};
     unsigned apu_ticks_{};
+    bool double_speed_{};
 };
 
 } // namespace gameboy

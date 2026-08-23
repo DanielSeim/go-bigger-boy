@@ -31,6 +31,8 @@ public:
 
     [[nodiscard]] const Cartridge& cartridge() const noexcept;
     [[nodiscard]] Cartridge& cartridge() noexcept;
+    [[nodiscard]] bool cgb_mode() const noexcept;
+    [[nodiscard]] bool double_speed() const noexcept;
     void flush_battery();
     [[nodiscard]] const Ppu::Framebuffer& framebuffer() const noexcept;
     [[nodiscard]] bool frame_ready() const noexcept;
@@ -45,10 +47,16 @@ private:
     [[nodiscard]] std::uint8_t cpu_read8(std::uint16_t address) const noexcept;
     void cpu_write8(std::uint16_t address, std::uint8_t value) noexcept;
     [[nodiscard]] bool oam_dma_blocks(std::uint16_t address) const noexcept;
+    [[nodiscard]] std::uint8_t read_wram(std::uint16_t address) const noexcept;
+    void write_wram(std::uint16_t address, std::uint8_t value) noexcept;
     void tick_oam_dma(unsigned cycles) noexcept;
+    void write_hdma_register(std::uint16_t address, std::uint8_t value) noexcept;
+    void transfer_hdma_block() noexcept;
+    [[nodiscard]] bool try_speed_switch() noexcept;
 
     Cartridge cartridge_;
     std::array<std::uint8_t, 0x2000> wram_{};
+    std::array<std::uint8_t, 0x6000> cgb_wram_{};
     std::array<std::uint8_t, 0x80> io_{};
     std::array<std::uint8_t, 0x7F> hram_{};
     std::uint8_t interrupt_enable_{};
@@ -64,6 +72,14 @@ private:
     bool oam_dma_active_{};
     std::uint16_t oam_dma_pending_source_{};
     unsigned oam_dma_start_delay_{};
+    std::uint8_t wram_bank_{1};
+    bool cgb_mode_{};
+    std::uint16_t hdma_source_{};
+    std::uint16_t hdma_destination_{0x8000};
+    std::uint8_t hdma_blocks_remaining_{};
+    bool hdma_active_{};
+    bool double_speed_{};
+    bool speed_switch_requested_{};
 };
 
 } // namespace gameboy

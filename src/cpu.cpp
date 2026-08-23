@@ -19,10 +19,12 @@ UnsupportedOpcode::UnsupportedOpcode(const std::uint8_t opcode,
 
 Cpu::Cpu() { reset(); }
 
-void Cpu::reset() noexcept {
-    registers_ = {
-        0x01, 0xB0, 0x00, 0x13, 0x00, 0xD8, 0x01, 0x4D, 0xFFFE, 0x0100,
-    };
+void Cpu::reset(const bool cgb_mode) noexcept {
+    registers_ = cgb_mode
+                     ? CpuRegisters{0x11, 0x80, 0x00, 0x00, 0x00, 0x08,
+                                    0x00, 0x7C, 0xFFFE, 0x0100}
+                     : CpuRegisters{0x01, 0xB0, 0x00, 0x13, 0x00, 0xD8,
+                                    0x01, 0x4D, 0xFFFE, 0x0100};
     ime_ = false;
     halted_ = false;
     stopped_ = false;
@@ -238,7 +240,7 @@ unsigned Cpu::execute_instruction(MemoryBus& bus) {
         static_cast<void>(bus.read8(registers_.pc));
         ++registers_.pc;
         bus.write8(0xFF04, 0);
-        stopped_ = true;
+        stopped_ = !bus.try_speed_switch();
         return 4;
     case 0x12:
         write8(bus, de(), registers_.a);

@@ -61,6 +61,13 @@ std::vector<std::uint8_t> test_rom(
     return rom;
 }
 
+std::vector<std::uint8_t> cgb_test_rom(
+    const std::vector<std::uint8_t>& program = {}, const bool cgb_only = false) {
+    auto rom = test_rom(program);
+    rom[0x143] = cgb_only ? 0xC0 : 0x80;
+    return rom;
+}
+
 std::vector<std::uint8_t> banked_rom(const unsigned banks,
                                      const std::uint8_t type,
                                      const std::uint8_t rom_size_code,
@@ -107,6 +114,122 @@ void test_cartridge_header() {
     gameboy::Cartridge cartridge{test_rom()};
     check(cartridge.title() == "CORE TEST", "cartridge title is parsed");
     check(cartridge.rom_size() == 0x8000, "ROM size is reported");
+
+    gameboy::Cartridge compatible{cgb_test_rom()};
+    gameboy::Cartridge exclusive{cgb_test_rom({}, true)};
+    check(compatible.supports_cgb() && !compatible.requires_cgb() &&
+              exclusive.supports_cgb() && exclusive.requires_cgb(),
+          "the CGB header flag distinguishes enhanced and CGB-only ROMs");
+}
+
+void test_cgb_memory_and_rendering() {
+    gameboy::Emulator speed{gameboy::Cartridge{cgb_test_rom({
+        0x3E, 0x01, // LD A,1
+        0xE0, 0x4D, // LDH (KEY1),A
+        0x10, 0x00, // STOP: switch to double speed
+        0x3E, 0x01, 0xE0, 0x4D, 0x10, 0x00,
+    })}};
+    static_cast<void>(speed.step());
+    static_cast<void>(speed.step());
+    check(speed.bus().read8(0xFF4D) == 0x7F,
+          "KEY1 exposes a requested CGB speed switch");
+    static_cast<void>(speed.step());
+    check(speed.bus().double_speed() && !speed.cpu().stopped() &&
+              speed.bus().read8(0xFF4D) == 0xFE,
+          "CGB STOP performs an armed double-speed switch");
+    static_cast<void>(speed.step());
+    static_cast<void>(speed.step());
+    static_cast<void>(speed.step());
+    check(!speed.bus().double_speed() && !speed.cpu().stopped(),
+          "a second armed STOP returns the CGB CPU to normal speed");
+
+    gameboy::Emulator emulator{gameboy::Cartridge{cgb_test_rom()}};
+    auto& bus = emulator.bus();
+    check(bus.cgb_mode() && emulator.cpu().registers().a == 0x11 &&
+              emulator.cpu().registers().f == 0x80 &&
+              emulator.cpu().registers().e == 0x08 &&
+              emulator.cpu().registers().l == 0x7C,
+          "CGB cartridges start with CGB hardware detection state");
+
+    bus.write8(0xFF40, 0);
+    bus.write8(0x8000, 0x12);
+    bus.write8(0xFF4F, 1);
+    bus.write8(0x8000, 0x34);
+    check(bus.read8(0xFF4F) == 0xFF && bus.read8(0x8000) == 0x34,
+          "VBK selects the second CGB VRAM bank");
+    bus.write8(0xFF4F, 0);
+    check(bus.read8(0x8000) == 0x12,
+          "switching VBK restores the first CGB VRAM bank");
+
+    bus.write8(0xD000, 0x11);
+    bus.write8(0xFF70, 2);
+    bus.write8(0xD000, 0x22);
+    bus.write8(0xFF70, 0);
+    check(bus.read8(0xFF70) == 0xF9 && bus.read8(0xD000) == 0x11,
+          "SVBK zero aliases bank one and preserves switched WRAM banks");
+    bus.write8(0xFF70, 2);
+    check(bus.read8(0xD000) == 0x22 && bus.read8(0xF000) == 0x22,
+          "CGB switched WRAM is mirrored through echo RAM");
+
+    bus.write8(0xFF4F, 1);
+    bus.write8(0x8000, 0x80);
+    bus.write8(0x8001, 0x00); // Bank 1 tile 0, first pixel color 1.
+    bus.write8(0x9800, 0x08); // Tile attribute selects VRAM bank 1.
+    bus.write8(0xFF4F, 0);
+    bus.write8(0x9800, 0);
+    bus.write8(0xFF68, 0x82); // Palette 0, color 1, auto-increment.
+    bus.write8(0xFF69, 0x1F);
+    bus.write8(0xFF69, 0x00); // RGB555 red.
+    check(bus.read8(0xFF68) == 0xC4,
+          "CGB palette writes auto-increment their six-bit index");
+    bus.write8(0xFF40, 0x91);
+    bus.tick(252);
+    check(bus.framebuffer()[0] == 0xFFFF0000,
+          "CGB tile attributes select VRAM banks and RGB555 palettes");
+
+    bus.write8(0xFF40, 0);
+    for (unsigned byte = 0; byte < 0x30; ++byte) {
+        bus.write8(static_cast<std::uint16_t>(0xC000 + byte),
+                   static_cast<std::uint8_t>(0x40 + byte));
+    }
+    bus.write8(0xFF4F, 1);
+    bus.write8(0xFF51, 0xC0);
+    bus.write8(0xFF52, 0x00);
+    bus.write8(0xFF53, 0x01);
+    bus.write8(0xFF54, 0x00);
+    bus.write8(0xFF55, 0x00);
+    check(bus.read8(0x8100) == 0x40 && bus.read8(0x810F) == 0x4F &&
+              bus.read8(0xFF55) == 0xFF,
+          "CGB general-purpose VRAM DMA copies complete 16-byte blocks");
+
+    bus.write8(0xFF51, 0xC0);
+    bus.write8(0xFF52, 0x10);
+    bus.write8(0xFF53, 0x01);
+    bus.write8(0xFF54, 0x20);
+    bus.write8(0xFF40, 0x91);
+    bus.write8(0xFF55, 0x81);
+    bus.tick(252);
+    check(bus.read8(0xFF55) == 0x00 && bus.read8(0x8120) == 0x50,
+          "CGB HBlank DMA transfers one block at each HBlank");
+    bus.tick(456);
+    check(bus.read8(0xFF55) == 0xFF && bus.read8(0x8130) == 0x60,
+          "CGB HBlank DMA completes after its requested block count");
+
+    const auto cgb_state = emulator.save_state();
+    bus.write8(0xFF40, 0);
+    bus.write8(0xFF4F, 1);
+    bus.write8(0x8100, 0);
+    bus.write8(0xFF70, 2);
+    bus.write8(0xD000, 0);
+    emulator.load_state(cgb_state);
+    check(bus.read8(0xFF4F) == 0xFF && bus.read8(0x8100) == 0x40 &&
+              bus.read8(0xD000) == 0x22,
+          "save states preserve CGB VRAM, WRAM, palettes, and bank selection");
+
+    gameboy::MemoryBus dmg{gameboy::Cartridge{test_rom()}};
+    check(!dmg.cgb_mode() && dmg.read8(0xFF4F) == 0xFF &&
+              dmg.read8(0xFF68) == 0xFF && dmg.read8(0xFF70) == 0xFF,
+          "CGB-only registers remain unavailable to monochrome cartridges");
 }
 
 void test_cartridge_file_loading() {
@@ -1661,6 +1784,38 @@ void test_ppu_modes_and_memory_access() {
     bus.write8(0xFF40, 0);
     check(bus.read8(0xFF44) == 0 && (bus.read8(0xFF41) & 0x03) == 0,
           "disabling LCD resets LY and reports mode 0");
+
+    gameboy::MemoryBus scrolling{gameboy::Cartridge{test_rom()}};
+    scrolling.write8(0xFF43, 5);
+    scrolling.write8(0xFF40, 0x81);
+    scrolling.tick(252);
+    check((scrolling.read8(0xFF41) & 0x03) == 3,
+          "fine horizontal scrolling lengthens mode 3");
+    scrolling.tick(5);
+    check((scrolling.read8(0xFF41) & 0x03) == 0,
+          "mode 3 includes the SCX fine-scroll discard penalty");
+
+    gameboy::MemoryBus window_timing{gameboy::Cartridge{test_rom()}};
+    window_timing.write8(0xFF4A, 0);
+    window_timing.write8(0xFF4B, 7);
+    window_timing.write8(0xFF40, 0xA1);
+    window_timing.tick(257);
+    check((window_timing.read8(0xFF41) & 0x03) == 3,
+          "starting the window stalls the background fetcher for six dots");
+    window_timing.tick(1);
+    check((window_timing.read8(0xFF41) & 0x03) == 0,
+          "window fetch startup extends mode 3 by six dots");
+
+    gameboy::MemoryBus sprite_timing{gameboy::Cartridge{test_rom()}};
+    sprite_timing.write8(0xFE00, 16);
+    sprite_timing.write8(0xFE01, 8);
+    sprite_timing.write8(0xFF40, 0x83);
+    sprite_timing.tick(262);
+    check((sprite_timing.read8(0xFF41) & 0x03) == 3,
+          "a selected aligned sprite extends mode 3 by eleven dots");
+    sprite_timing.tick(1);
+    check((sprite_timing.read8(0xFF41) & 0x03) == 0,
+          "sprite fetch timing controls the start of HBlank");
 }
 
 void test_ppu_stat_interrupts() {
@@ -1728,9 +1883,31 @@ void test_ppu_background_window_and_sprites() {
     window.write8(0xFF4A, 0);
     window.write8(0xFF4B, 7);
     window.write8(0xFF40, 0xF1);
-    window.tick(252);
+    window.tick(258);
     check(window.framebuffer()[0] == 0xFFAAAAAA,
           "enabled window uses WX/WY and its selected tile map");
+
+    gameboy::MemoryBus window_lines{gameboy::Cartridge{test_rom()}};
+    window_lines.write8(0xFF47, 0xE4);
+    window_lines.write8(0x8010, 0xFF); // Tile 1 row 0: color 1.
+    window_lines.write8(0x8011, 0x00);
+    window_lines.write8(0x8012, 0x00); // Tile 1 row 1: color 2.
+    window_lines.write8(0x8013, 0xFF);
+    window_lines.write8(0x8014, 0xFF); // Tile 1 row 2: color 3.
+    window_lines.write8(0x8015, 0xFF);
+    window_lines.write8(0x9C00, 0x01);
+    window_lines.write8(0xFF4A, 0);
+    window_lines.write8(0xFF4B, 7);
+    window_lines.write8(0xFF40, 0xF1);
+    window_lines.tick(258);
+    window_lines.write8(0xFF40, 0xD1); // Hide the window for line 1.
+    window_lines.tick(198);
+    window_lines.tick(456);
+    window_lines.write8(0xFF40, 0xF1);
+    window_lines.tick(258);
+    check(window_lines.framebuffer()[2 * gameboy::Ppu::screen_width] ==
+              0xFF555555,
+          "the internal window line advances only on lines that draw the window");
 
     gameboy::MemoryBus sprites{gameboy::Cartridge{test_rom()}};
     sprites.write8(0xFF47, 0xE4);
@@ -1742,7 +1919,7 @@ void test_ppu_background_window_and_sprites() {
     sprites.write8(0xFE02, 1);
     sprites.write8(0xFE03, 0);
     sprites.write8(0xFF40, 0x93);
-    sprites.tick(252);
+    sprites.tick(263);
     check(sprites.framebuffer()[0] == 0xFF555555,
           "visible OBJ pixels render with their selected DMG palette");
 }
@@ -1975,8 +2152,12 @@ void test_save_state_round_trip_and_validation() {
 
     constexpr std::size_t state_header_size = 28;
     constexpr std::size_t version_two_dma_size = 7;
+    constexpr std::size_t version_three_ppu_size = 6;
+    constexpr std::size_t version_four_cgb_size =
+        0x6000 + 0x2000 + 0x40 + 0x40 + 4 + 6 + 2;
     auto version_one = saved;
-    version_one.resize(version_one.size() - version_two_dma_size);
+    version_one.resize(version_one.size() - version_two_dma_size -
+                       version_three_ppu_size - version_four_cgb_size);
     version_one[8] = 1;
     const auto old_payload_size = static_cast<std::uint32_t>(
         version_one.size() - state_header_size);
@@ -1990,6 +2171,41 @@ void test_save_state_round_trip_and_validation() {
               old_state_loader.cpu().total_cycles() == saved_cycles &&
               old_state_loader.bus().read8(0xA123) == 0x5A,
           "version 1 save states remain loadable after adding DMA state");
+
+    auto version_two = saved;
+    version_two.resize(version_two.size() - version_three_ppu_size -
+                       version_four_cgb_size);
+    version_two[8] = 2;
+    const auto version_two_payload_size = static_cast<std::uint32_t>(
+        version_two.size() - state_header_size);
+    write_little_u32(version_two, 20, version_two_payload_size);
+    write_little_u32(
+        version_two, 24,
+        state_crc32(version_two.data() + state_header_size,
+                    version_two_payload_size));
+    gameboy::Emulator version_two_loader{gameboy::Cartridge{rom}};
+    version_two_loader.load_state(version_two);
+    check(version_two_loader.cpu().registers().pc == saved_pc &&
+              version_two_loader.cpu().total_cycles() == saved_cycles &&
+              version_two_loader.bus().read8(0xA123) == 0x5A,
+          "version 2 save states remain loadable after adding PPU timing state");
+
+    auto version_three = saved;
+    version_three.resize(version_three.size() - version_four_cgb_size);
+    version_three[8] = 3;
+    const auto version_three_payload_size = static_cast<std::uint32_t>(
+        version_three.size() - state_header_size);
+    write_little_u32(version_three, 20, version_three_payload_size);
+    write_little_u32(
+        version_three, 24,
+        state_crc32(version_three.data() + state_header_size,
+                    version_three_payload_size));
+    gameboy::Emulator version_three_loader{gameboy::Cartridge{rom}};
+    version_three_loader.load_state(version_three);
+    check(version_three_loader.cpu().registers().pc == saved_pc &&
+              version_three_loader.cpu().total_cycles() == saved_cycles &&
+              version_three_loader.bus().read8(0xA123) == 0x5A,
+          "version 3 save states remain loadable after adding CGB state");
 
     emulator.bus().write8(0xA123, 0x99);
     emulator.bus().write8(0xC000, 0x11);
@@ -2038,7 +2254,7 @@ void test_save_state_round_trip_and_validation() {
           "truncated save states are rejected without changing emulator state");
 
     auto future_version = saved;
-    future_version[8] = 3;
+    future_version[8] = 5;
     auto rejected_version = false;
     try {
         emulator.load_state(future_version);
@@ -2084,6 +2300,7 @@ int main() {
     try {
         test_cartridge_header();
         test_cartridge_file_loading();
+        test_cgb_memory_and_rendering();
         test_mbc1_rom_banking();
         test_mbc1_ram_banking();
         test_battery_ram_persistence();

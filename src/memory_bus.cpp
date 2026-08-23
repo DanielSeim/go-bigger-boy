@@ -10,7 +10,10 @@ constexpr unsigned oam_dma_size = 0xA0;
 constexpr unsigned oam_dma_start_cycles = 8;
 }
 
-MemoryBus::MemoryBus(Cartridge cartridge) : cartridge_(std::move(cartridge)) {}
+MemoryBus::MemoryBus(Cartridge cartridge)
+    : cartridge_(std::move(cartridge)), cgb_mode_(cartridge_.supports_cgb()) {
+    ppu_.set_cgb_mode(cgb_mode_);
+}
 
 void MemoryBus::initialize_post_boot() noexcept {
     apu_.initialize_post_boot();
@@ -36,11 +39,8 @@ std::uint8_t MemoryBus::read8(const std::uint16_t address) const noexcept {
     if (address <= 0x9FFF) {
         return ppu_.read_vram(address);
     }
-    if (address <= 0xDFFF) {
-        return wram_[address - 0xC000];
-    }
     if (address <= 0xFDFF) {
-        return wram_[address - 0xE000];
+        return read_wram(address);
     }
     if (address <= 0xFE9F) {
         return ppu_.read_oam(address);
@@ -54,11 +54,40 @@ std::uint8_t MemoryBus::read8(const std::uint16_t address) const noexcept {
     switch (address) {
     case 0xFF01: return io_[0x01];
     case 0xFF02:
-        return static_cast<std::uint8_t>(0x7E | (io_[0x02] & 0x81));
+        return static_cast<std::uint8_t>((cgb_mode_ ? 0x7C : 0x7E) |
+                                         (io_[0x02] &
+                                          (cgb_mode_ ? 0x83 : 0x81)));
     case 0xFF04: return timer_.divider();
     case 0xFF05: return timer_.counter();
     case 0xFF06: return timer_.modulo();
     case 0xFF07: return timer_.control();
+    case 0xFF4D:
+        return cgb_mode_
+                   ? static_cast<std::uint8_t>(
+                         0x7E | (double_speed_ ? 0x80 : 0) |
+                         (speed_switch_requested_ ? 0x01 : 0))
+                   : 0xFF;
+    case 0xFF51: return cgb_mode_ ? static_cast<std::uint8_t>(hdma_source_ >> 8)
+                                  : 0xFF;
+    case 0xFF52: return cgb_mode_ ? static_cast<std::uint8_t>(hdma_source_ & 0xF0)
+                                  : 0xFF;
+    case 0xFF53:
+        return cgb_mode_ ? static_cast<std::uint8_t>(0xE0 |
+                                                     ((hdma_destination_ >> 8) & 0x1F))
+                         : 0xFF;
+    case 0xFF54:
+        return cgb_mode_ ? static_cast<std::uint8_t>(hdma_destination_ & 0xF0)
+                         : 0xFF;
+    case 0xFF55:
+        if (!cgb_mode_) return 0xFF;
+        return hdma_active_
+                   ? static_cast<std::uint8_t>(hdma_blocks_remaining_ - 1)
+                   : static_cast<std::uint8_t>(
+                         0x80 | (hdma_blocks_remaining_ == 0
+                                     ? 0x7F
+                                     : hdma_blocks_remaining_ - 1));
+    case 0xFF70:
+        return cgb_mode_ ? static_cast<std::uint8_t>(0xF8 | wram_bank_) : 0xFF;
     default: break;
     }
     if (Apu::handles_register(address)) {
@@ -113,10 +142,8 @@ void MemoryBus::write8(const std::uint16_t address, const std::uint8_t value) no
         cartridge_.write(address, value);
     } else if (address <= 0x9FFF) {
         ppu_.write_vram(address, value);
-    } else if (address <= 0xDFFF) {
-        wram_[address - 0xC000] = value;
     } else if (address <= 0xFDFF) {
-        wram_[address - 0xE000] = value;
+        write_wram(address, value);
     } else if (address <= 0xFE9F) {
         ppu_.write_oam(address, value);
     } else if (address <= 0xFEFF) {
@@ -128,9 +155,12 @@ void MemoryBus::write8(const std::uint16_t address, const std::uint8_t value) no
     } else if (address == 0xFF01) {
         io_[0x01] = value;
     } else if (address == 0xFF02) {
-        io_[0x02] = static_cast<std::uint8_t>(value & 0x81);
+        io_[0x02] = static_cast<std::uint8_t>(
+            value & (cgb_mode_ ? 0x83 : 0x81));
         serial_cycles_remaining_ = (io_[0x02] & 0x81) == 0x81
-                                       ? serial_transfer_cycles
+                                       ? (cgb_mode_ && (io_[0x02] & 0x02) != 0
+                                              ? 128
+                                              : serial_transfer_cycles)
                                        : 0;
     } else if (address == 0xFF04) {
         timer_.write_divider();
@@ -151,6 +181,15 @@ void MemoryBus::write8(const std::uint16_t address, const std::uint8_t value) no
         oam_dma_pending_source_ =
             static_cast<std::uint16_t>(source_page << 8);
         oam_dma_start_delay_ = oam_dma_start_cycles;
+    } else if (address == 0xFF4D) {
+        if (cgb_mode_) speed_switch_requested_ = (value & 0x01) != 0;
+    } else if (address >= 0xFF51 && address <= 0xFF55) {
+        write_hdma_register(address, value);
+    } else if (address == 0xFF70) {
+        if (cgb_mode_) {
+            wram_bank_ = static_cast<std::uint8_t>(value & 0x07);
+            if (wram_bank_ == 0) wram_bank_ = 1;
+        }
     } else if (Apu::handles_register(address)) {
         apu_.write_register(address, value);
     } else if (Ppu::handles_register(address)) {
@@ -167,8 +206,9 @@ void MemoryBus::write8(const std::uint16_t address, const std::uint8_t value) no
 }
 
 void MemoryBus::tick(const unsigned cycles) noexcept {
-    tick_oam_dma(cycles);
-    apu_.tick(cycles);
+    const auto peripheral_cycles = double_speed_ ? cycles / 2 : cycles;
+    tick_oam_dma(peripheral_cycles);
+    apu_.tick(peripheral_cycles);
     if (serial_cycles_remaining_ != 0) {
         if (cycles >= serial_cycles_remaining_) {
             serial_cycles_remaining_ = 0;
@@ -186,13 +226,67 @@ void MemoryBus::tick(const unsigned cycles) noexcept {
     for (auto ticks = timer_.take_apu_ticks(); ticks > 0; --ticks) {
         apu_.clock_frame_sequencer();
     }
-    const auto ppu_requests = ppu_.tick(cycles);
+    const auto ppu_requests = ppu_.tick(peripheral_cycles);
     if ((ppu_requests & 0x01) != 0) {
         request_interrupt(0);
     }
     if ((ppu_requests & 0x02) != 0) {
         request_interrupt(1);
     }
+    if ((ppu_requests & 0x04) != 0 && hdma_active_) {
+        transfer_hdma_block();
+    }
+}
+
+void MemoryBus::write_hdma_register(const std::uint16_t address,
+                                    const std::uint8_t value) noexcept {
+    if (!cgb_mode_) return;
+    switch (address) {
+    case 0xFF51:
+        hdma_source_ = static_cast<std::uint16_t>((value << 8) |
+                                                  (hdma_source_ & 0x00F0));
+        break;
+    case 0xFF52:
+        hdma_source_ = static_cast<std::uint16_t>((hdma_source_ & 0xFF00) |
+                                                  (value & 0xF0));
+        break;
+    case 0xFF53:
+        hdma_destination_ = static_cast<std::uint16_t>(
+            0x8000 | ((value & 0x1F) << 8) | (hdma_destination_ & 0x00F0));
+        break;
+    case 0xFF54:
+        hdma_destination_ = static_cast<std::uint16_t>(
+            (hdma_destination_ & 0xFF00) | (value & 0xF0));
+        break;
+    case 0xFF55:
+        if (hdma_active_ && (value & 0x80) == 0) {
+            hdma_active_ = false;
+            return;
+        }
+        hdma_blocks_remaining_ = static_cast<std::uint8_t>((value & 0x7F) + 1);
+        hdma_active_ = (value & 0x80) != 0 &&
+                       (ppu_.read_register(0xFF40) & 0x80) != 0;
+        if (!hdma_active_) {
+            while (hdma_blocks_remaining_ != 0) transfer_hdma_block();
+        }
+        break;
+    default: break;
+    }
+}
+
+void MemoryBus::transfer_hdma_block() noexcept {
+    if (hdma_blocks_remaining_ == 0) {
+        hdma_active_ = false;
+        return;
+    }
+    for (unsigned byte = 0; byte < 0x10; ++byte) {
+        ppu_.dma_write_vram(hdma_destination_, read8(hdma_source_));
+        hdma_source_ = static_cast<std::uint16_t>(hdma_source_ + 1);
+        hdma_destination_ = static_cast<std::uint16_t>(
+            0x8000 | ((hdma_destination_ + 1) & 0x1FFF));
+    }
+    --hdma_blocks_remaining_;
+    if (hdma_blocks_remaining_ == 0) hdma_active_ = false;
 }
 
 void MemoryBus::tick_oam_dma(const unsigned cycles) noexcept {
@@ -249,6 +343,40 @@ const Cartridge& MemoryBus::cartridge() const noexcept {
 }
 
 Cartridge& MemoryBus::cartridge() noexcept { return cartridge_; }
+
+bool MemoryBus::cgb_mode() const noexcept { return cgb_mode_; }
+
+bool MemoryBus::double_speed() const noexcept { return double_speed_; }
+
+bool MemoryBus::try_speed_switch() noexcept {
+    if (!cgb_mode_ || !speed_switch_requested_) return false;
+    speed_switch_requested_ = false;
+    double_speed_ = !double_speed_;
+    timer_.set_double_speed(double_speed_);
+    return true;
+}
+
+std::uint8_t MemoryBus::read_wram(std::uint16_t address) const noexcept {
+    if (address >= 0xE000) address = static_cast<std::uint16_t>(address - 0x2000);
+    if (address < 0xD000 || !cgb_mode_ || wram_bank_ == 1) {
+        return wram_[address - 0xC000];
+    }
+    const auto offset = static_cast<std::size_t>(wram_bank_ - 2) * 0x1000 +
+                        (address - 0xD000);
+    return cgb_wram_[offset];
+}
+
+void MemoryBus::write_wram(std::uint16_t address,
+                           const std::uint8_t value) noexcept {
+    if (address >= 0xE000) address = static_cast<std::uint16_t>(address - 0x2000);
+    if (address < 0xD000 || !cgb_mode_ || wram_bank_ == 1) {
+        wram_[address - 0xC000] = value;
+        return;
+    }
+    const auto offset = static_cast<std::size_t>(wram_bank_ - 2) * 0x1000 +
+                        (address - 0xD000);
+    cgb_wram_[offset] = value;
+}
 
 void MemoryBus::flush_battery() { cartridge_.flush_battery(); }
 

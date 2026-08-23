@@ -799,10 +799,14 @@ void present(const gameboy::Emulator* emulator, SdlResources& sdl,
     }
     if (emulator != nullptr) {
         const auto& pixels = emulator->framebuffer();
+        const auto cgb_mode = emulator->bus().cgb_mode();
         gameboy::Ppu::Framebuffer colored_pixels{};
         std::transform(pixels.begin(), pixels.end(), colored_pixels.begin(),
-                       [&palette](const std::uint32_t pixel) {
-                           return gameboy::apply_display_palette(pixel, palette);
+                       [&palette, cgb_mode](const std::uint32_t pixel) {
+                           return cgb_mode
+                                      ? pixel
+                                      : gameboy::apply_display_palette(pixel,
+                                                                       palette);
                        });
         if (!SDL_UpdateTexture(sdl.texture, nullptr, colored_pixels.data(),
                                static_cast<int>(gameboy::Ppu::screen_width *

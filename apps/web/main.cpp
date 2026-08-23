@@ -147,9 +147,13 @@ void present(WebApp& app) {
     if (app.emulator) {
         const auto& pixels = app.emulator->framebuffer();
         const auto& palette = gameboy::display_palettes[app.display_palette];
+        const auto cgb_mode = app.emulator->bus().cgb_mode();
         std::transform(pixels.begin(), pixels.end(), app.display_pixels.begin(),
-                       [&palette](const std::uint32_t pixel) {
-                           return gameboy::apply_display_palette(pixel, palette);
+                       [&palette, cgb_mode](const std::uint32_t pixel) {
+                           return cgb_mode
+                                      ? pixel
+                                      : gameboy::apply_display_palette(pixel,
+                                                                       palette);
                        });
         static_cast<void>(SDL_UpdateTexture(
             app.texture, nullptr, app.display_pixels.data(),

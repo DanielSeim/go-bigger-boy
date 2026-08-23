@@ -344,13 +344,22 @@ void Cartridge::write(const std::uint16_t address,
 
 std::string Cartridge::title() const {
     constexpr std::size_t title_begin = 0x134;
-    constexpr std::size_t title_end = 0x144;
+    const auto title_end = supports_cgb() ? std::size_t{0x143}
+                                          : std::size_t{0x144};
     const auto end = std::find(rom_.begin() + title_begin,
                                rom_.begin() + title_end, 0);
     return {rom_.begin() + title_begin, end};
 }
 
 std::uint8_t Cartridge::type() const noexcept { return rom_[0x147]; }
+
+bool Cartridge::supports_cgb() const noexcept {
+    return (rom_[0x143] & 0x80) != 0;
+}
+
+bool Cartridge::requires_cgb() const noexcept {
+    return (rom_[0x143] & 0xC0) == 0xC0;
+}
 
 std::size_t Cartridge::rom_size() const noexcept { return rom_.size(); }
 

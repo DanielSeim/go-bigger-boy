@@ -18,7 +18,8 @@ std::uint8_t Timer::control() const noexcept {
 
 void Timer::write_divider() noexcept {
     const auto old_signal = input_signal();
-    const auto old_apu_signal = (divider_counter_ & (1U << 12)) != 0;
+    const auto apu_bit = double_speed_ ? 13U : 12U;
+    const auto old_apu_signal = (divider_counter_ & (1U << apu_bit)) != 0;
     divider_counter_ = 0;
     if (old_signal && !input_signal()) {
         increment_counter();
@@ -41,6 +42,10 @@ void Timer::write_control(const std::uint8_t value) noexcept {
     }
 }
 
+void Timer::set_double_speed(const bool enabled) noexcept {
+    double_speed_ = enabled;
+}
+
 bool Timer::tick(const unsigned cycles) noexcept {
     auto interrupt_requested = false;
     for (unsigned cycle = 0; cycle < cycles; ++cycle) {
@@ -50,12 +55,13 @@ bool Timer::tick(const unsigned cycles) noexcept {
         }
 
         const auto old_signal = input_signal();
-        const auto old_apu_signal = (divider_counter_ & (1U << 12)) != 0;
+        const auto apu_bit = double_speed_ ? 13U : 12U;
+        const auto old_apu_signal = (divider_counter_ & (1U << apu_bit)) != 0;
         ++divider_counter_;
         if (old_signal && !input_signal()) {
             increment_counter();
         }
-        const auto new_apu_signal = (divider_counter_ & (1U << 12)) != 0;
+        const auto new_apu_signal = (divider_counter_ & (1U << apu_bit)) != 0;
         if (old_apu_signal && !new_apu_signal) ++apu_ticks_;
     }
     return interrupt_requested;
