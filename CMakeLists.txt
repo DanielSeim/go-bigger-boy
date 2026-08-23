@@ -59,6 +59,7 @@ if(GAMEBOY_BUILD_SDL)
                 "-sMAXIMUM_MEMORY=536870912"
                 "-sENVIRONMENT=web"
                 "-sEXPORTED_FUNCTIONS=['_main','_malloc','_free','_gbb_load_rom','_gbb_resume_audio']"
+                "-sEXPORTED_RUNTIME_METHODS=['HEAPU8']"
             )
             set_target_properties(gameboy_web PROPERTIES
                 OUTPUT_NAME index
