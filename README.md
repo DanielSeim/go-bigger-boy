@@ -27,6 +27,7 @@ shared everywhere.
 - Headless command-line runner
 - Headless Mooneye/serial conformance test runner
 - Emscripten/WebAssembly browser frontend with IndexedDB cartridge saves
+- Initial Android SDL3 frontend with native ROM picker and multitouch controls
 - Game Boy Printer serial protocol with automatic desktop image export
 - Game Boy Camera cartridge support with live SDL3 webcam input on desktop
 - MBC5 rumble output through compatible SDL3 gamepads on desktop
@@ -171,6 +172,30 @@ permission is denied, the cartridge remains playable with a fallback image.
 
 ROM files are not included. Only use cartridge dumps you are legally entitled
 to use.
+
+### Android build
+
+The Android project in `android/` uses SDL3's official Android AAR and the same
+C++ core/frontend as desktop. It currently supports the Android document
+picker, landscape multitouch controls, external gamepads, audio, rumble,
+battery saves, and optional camera permission. ROMs selected through Android's
+`content://` document interface are read through SDL and are never copied into
+the application; save data is stored privately by ROM fingerprint.
+
+Install JDK 17, Android SDK 36, NDK r28c, CMake 3.31.6, and Gradle 8.13, then
+fetch the pinned SDL3 AAR and build a debug APK:
+
+```sh
+./android/fetch-sdl.sh
+cd android
+gradle assembleDebug
+```
+
+The APK is written to `android/app/build/outputs/apk/debug/app-debug.apk`.
+Tapping the folder button in the upper-left opens another ROM. The translucent
+controls provide a D-pad, A, B, Select, and Start; Bluetooth and USB gamepads
+continue to work through SDL. The `Android build` GitHub Actions workflow runs
+the same build and uploads an unsigned debug APK on every push.
 
 ### Web build
 

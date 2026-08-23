@@ -7,3 +7,7 @@
 *.gbc
 *.sav
 *.sav.tmp
+/android/.gradle/
+/android/app/build/
+/android/app/.cxx/
+/android/app/libs/*.aar

@@ -1,6 +1,8 @@
 #include "gameboy/emulator.hpp"
 #include "gameboy/display_palette.hpp"
+#ifndef __ANDROID__
 #include "update_checker.hpp"
+#endif
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
@@ -117,6 +119,15 @@ public:
     bool rumble_output_active{};
     bool rumble_warning_shown{};
     std::chrono::steady_clock::time_point rumble_refresh{};
+#ifdef __ANDROID__
+    struct TouchPoint {
+        SDL_FingerID id{};
+        float x{};
+        float y{};
+    };
+    std::vector<TouchPoint> touches;
+    std::array<bool, 8> touch_buttons{};
+#endif
 };
 
 struct DialogState {
@@ -454,6 +465,74 @@ std::optional<gameboy::Button> gamepad_button(const InputBindings& bindings,
     }
     return std::nullopt;
 }
+
+#ifdef __ANDROID__
+std::optional<std::size_t> touch_button_index(const float x, const float y) {
+    const auto inside = [x, y](const float center_x, const float center_y,
+                               const float radius) {
+        const auto dx = x - center_x;
+        const auto dy = y - center_y;
+        return dx * dx + dy * dy <= radius * radius;
+    };
+    if (inside(0.80F, 0.70F, 0.11F)) return 4; // A
+    if (inside(0.66F, 0.80F, 0.11F)) return 5; // B
+    if (inside(0.56F, 0.91F, 0.075F)) return 7; // Start
+    if (inside(0.43F, 0.91F, 0.075F)) return 6; // Select
+    if (x < 0.42F && y > 0.48F) {
+        const auto dx = x - 0.20F;
+        const auto dy = y - 0.73F;
+        if (dx * dx + dy * dy < 0.0025F ||
+            dx * dx + dy * dy > 0.050F) {
+            return std::nullopt;
+        }
+        if (std::abs(dx) > std::abs(dy)) return dx > 0 ? 0 : 1;
+        return dy < 0 ? 2 : 3;
+    }
+    return std::nullopt;
+}
+
+void refresh_touch_buttons(gameboy::Emulator* emulator, SdlResources& sdl) {
+    std::array<bool, 8> pressed{};
+    for (const auto& touch : sdl.touches) {
+        if (const auto index = touch_button_index(touch.x, touch.y)) {
+            pressed[*index] = true;
+        }
+    }
+    if (emulator != nullptr) {
+        for (std::size_t index = 0; index < pressed.size(); ++index) {
+            if (pressed[index] != sdl.touch_buttons[index]) {
+                emulator->set_button(button_order[index], pressed[index]);
+            }
+        }
+    }
+    sdl.touch_buttons = pressed;
+}
+
+void clear_touch_buttons(gameboy::Emulator* emulator, SdlResources& sdl) {
+    sdl.touches.clear();
+    if (emulator != nullptr) {
+        for (std::size_t index = 0; index < sdl.touch_buttons.size(); ++index) {
+            if (sdl.touch_buttons[index]) {
+                emulator->set_button(button_order[index], false);
+            }
+        }
+    }
+    sdl.touch_buttons.fill(false);
+}
+
+std::pair<float, float> logical_touch_position(const SDL_TouchFingerEvent& event,
+                                                SdlResources& sdl) {
+    int width = 1;
+    int height = 1;
+    static_cast<void>(SDL_GetWindowSize(sdl.window, &width, &height));
+    auto x = event.x * static_cast<float>(width);
+    auto y = event.y * static_cast<float>(height);
+    static_cast<void>(
+        SDL_RenderCoordinatesFromWindow(sdl.renderer, x, y, &x, &y));
+    return {x / static_cast<float>(gameboy::Ppu::screen_width),
+            y / static_cast<float>(gameboy::Ppu::screen_height)};
+}
+#endif
 
 bool reserved_gameplay_key(const SDL_Keycode key) {
     switch (key) {
@@ -834,8 +913,47 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                 }
             }
             break;
+#ifdef __ANDROID__
+        case SDL_EVENT_FINGER_DOWN:
+        case SDL_EVENT_FINGER_MOTION:
+        case SDL_EVENT_FINGER_UP: {
+            const auto finger = event.tfinger.fingerID;
+            const auto [touch_x, touch_y] =
+                logical_touch_position(event.tfinger, sdl);
+            const auto existing = std::find_if(
+                sdl.touches.begin(), sdl.touches.end(),
+                [finger](const SdlResources::TouchPoint& point) {
+                    return point.id == finger;
+                });
+            if (event.type == SDL_EVENT_FINGER_UP) {
+                if (existing != sdl.touches.end()) sdl.touches.erase(existing);
+            } else if (existing == sdl.touches.end()) {
+                sdl.touches.push_back({finger, touch_x, touch_y});
+            } else {
+                existing->x = touch_x;
+                existing->y = touch_y;
+            }
+            if (event.type == SDL_EVENT_FINGER_DOWN &&
+                touch_x < 0.13F && touch_y < 0.16F) {
+                show_rom_dialog(dialog, sdl.window);
+            }
+            refresh_touch_buttons(emulator.get(), sdl);
+            break;
+        }
+        case SDL_EVENT_WILL_ENTER_BACKGROUND:
+            clear_touch_buttons(emulator.get(), sdl);
+            if (emulator) emulator->flush_battery();
+            paused = true;
+            break;
+        case SDL_EVENT_DID_ENTER_FOREGROUND:
+            paused = false;
+            break;
+#endif
         case SDL_EVENT_WINDOW_FOCUS_LOST:
             if (emulator) release_all_buttons(*emulator);
+#ifdef __ANDROID__
+            clear_touch_buttons(emulator.get(), sdl);
+#endif
             stop_rumble(sdl);
             break;
         case SDL_EVENT_GAMEPAD_ADDED:
@@ -902,6 +1020,7 @@ void show_error(SDL_Window* window, const std::string& message) {
         SDL_MESSAGEBOX_ERROR, "Go Bigger Boy (GBB)", message.c_str(), window));
 }
 
+#ifndef __ANDROID__
 bool offer_update(const gbb_desktop::UpdateInfo& update,
                   gameboy::Emulator* emulator, SdlResources& sdl) {
     stop_rumble(sdl);
@@ -959,6 +1078,7 @@ bool installation_is_writable(const std::filesystem::path& root) {
     std::filesystem::remove(probe, ignored);
     return !ignored;
 }
+#endif
 
 void close_camera(SdlResources& sdl) noexcept {
     if (sdl.camera != nullptr) {
@@ -1074,9 +1194,34 @@ void update_camera_frame(gameboy::Emulator* emulator, SdlResources& sdl) {
 
 void load_rom(const std::string& path,
               std::unique_ptr<gameboy::Emulator>& emulator,
-              const gameboy::DisplayPalette& palette, SdlResources& sdl) {
+              const gameboy::DisplayPalette& palette, SdlResources& sdl,
+              const std::filesystem::path& preference_path) {
+#ifdef __ANDROID__
+    std::size_t byte_count{};
+    void* loaded = SDL_LoadFile(path.c_str(), &byte_count);
+    if (loaded == nullptr) {
+        throw std::runtime_error(std::string{"Could not read ROM: "} +
+                                 SDL_GetError());
+    }
+    const std::unique_ptr<void, decltype(&SDL_free)> owned(loaded, SDL_free);
+    const auto* begin = static_cast<const std::uint8_t*>(loaded);
+    std::vector<std::uint8_t> bytes(begin, begin + byte_count);
+    gameboy::Cartridge cartridge(std::move(bytes));
+    if (cartridge.has_battery() && !preference_path.empty()) {
+        const auto save_directory = preference_path / "saves";
+        std::filesystem::create_directories(save_directory);
+        std::ostringstream name;
+        name << std::hex << std::setw(16) << std::setfill('0')
+             << cartridge.rom_fingerprint() << ".gb";
+        cartridge.set_persistence_path(save_directory / name.str());
+    }
+    auto replacement = std::make_unique<gameboy::Emulator>(
+        std::move(cartridge));
+#else
+    static_cast<void>(preference_path);
     auto replacement = std::make_unique<gameboy::Emulator>(
         gameboy::Cartridge::from_file(std::filesystem::u8path(path)));
+#endif
     replacement->bus().connect_printer();
     replacement->set_dmg_compatibility_colors(palette.cgb_compatibility);
     stop_rumble(sdl);
@@ -1084,6 +1229,35 @@ void load_rom(const std::string& path,
     emulator = std::move(replacement);
     configure_camera(sdl, *emulator);
 }
+
+#ifdef __ANDROID__
+void present_touch_controls(SdlResources& sdl) {
+    static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
+                                                 SDL_BLENDMODE_BLEND));
+    const auto draw = [&sdl](const SDL_FRect& rect, const bool pressed) {
+        static_cast<void>(SDL_SetRenderDrawColor(
+            sdl.renderer, pressed ? 139 : 220, pressed ? 207 : 235,
+            pressed ? 105 : 220, pressed ? 190 : 100));
+        static_cast<void>(SDL_RenderFillRect(sdl.renderer, &rect));
+    };
+
+    draw({24, 90, 16, 42}, sdl.touch_buttons[1] || sdl.touch_buttons[0]);
+    draw({11, 103, 42, 16}, sdl.touch_buttons[2] || sdl.touch_buttons[3]);
+    draw({126, 91, 22, 22}, sdl.touch_buttons[4]);
+    draw({103, 108, 22, 22}, sdl.touch_buttons[5]);
+    draw({83, 130, 18, 7}, sdl.touch_buttons[7]);
+    draw({61, 130, 18, 7}, sdl.touch_buttons[6]);
+    draw({3, 3, 15, 11}, false);
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 16, 20, 16, 150));
+    const std::array<SDL_FRect, 3> menu_lines{{
+        {6, 5, 9, 1.5F}, {6, 8, 9, 1.5F}, {6, 11, 9, 1.5F}}};
+    for (const auto& line : menu_lines) {
+        static_cast<void>(SDL_RenderFillRect(sdl.renderer, &line));
+    }
+    static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
+                                                 SDL_BLENDMODE_NONE));
+}
+#endif
 
 void present(const gameboy::Emulator* emulator, SdlResources& sdl,
              const gameboy::DisplayPalette& palette) {
@@ -1109,6 +1283,9 @@ void present(const gameboy::Emulator* emulator, SdlResources& sdl,
             sdl_error("Could not present framebuffer");
         }
     }
+#ifdef __ANDROID__
+    present_touch_controls(sdl);
+#endif
     if (!SDL_RenderPresent(sdl.renderer)) {
         sdl_error("Could not present framebuffer");
     }
@@ -1144,9 +1321,11 @@ int main(int argc, char** argv) {
         std::string current_rom;
         std::optional<std::string> pending_rom;
         std::optional<BindingConfiguration> configuring;
+#ifndef __ANDROID__
         gbb_desktop::UpdateChecker update_checker{GBB_VERSION};
         std::optional<gbb_desktop::UpdateInfo> available_update;
         std::unique_ptr<gbb_desktop::UpdateDownload> update_download;
+#endif
         auto paused = false;
         auto fullscreen = false;
         auto reset_requested = false;
@@ -1178,6 +1357,7 @@ int main(int argc, char** argv) {
             collect_dialog_result(dialog, pending_rom, dialog_error);
             if (dialog_error) show_error(sdl.window, *dialog_error);
 
+#ifndef __ANDROID__
             std::string update_error;
             std::optional<gbb_desktop::UpdateInfo> update_result;
             if (update_checker.take_result(update_result, update_error)) {
@@ -1187,6 +1367,7 @@ int main(int argc, char** argv) {
                 }
                 available_update = std::move(update_result);
             }
+#endif
 
             if (reset_requested) {
                 if (!current_rom.empty()) pending_rom = current_rom;
@@ -1198,7 +1379,8 @@ int main(int argc, char** argv) {
                     const bool reopening_current =
                         emulator && *pending_rom == current_rom;
                     load_rom(*pending_rom, emulator,
-                             gameboy::display_palettes[display_palette], sdl);
+                             gameboy::display_palettes[display_palette], sdl,
+                             preference_path);
                     if (sdl.audio_stream != nullptr) {
                         static_cast<void>(SDL_ClearAudioStream(sdl.audio_stream));
                     }
@@ -1214,6 +1396,7 @@ int main(int argc, char** argv) {
                 next_frame = Clock::now();
             }
 
+#ifndef __ANDROID__
             if (available_update && !dialog_active(dialog) && !configuring &&
                 !pending_rom) {
                 if (offer_update(*available_update, emulator.get(), sdl)) {
@@ -1273,6 +1456,7 @@ int main(int argc, char** argv) {
                     }
                 }
             }
+#endif
 
             update_camera_frame(emulator.get(), sdl);
 

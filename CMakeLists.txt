@@ -36,13 +36,15 @@ else()
     target_compile_options(gameboy_core PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-add_executable(gameboy_cli apps/cli/main.cpp)
-target_link_libraries(gameboy_cli PRIVATE gameboy_core)
-set_target_properties(gameboy_cli PROPERTIES OUTPUT_NAME gbb_cli)
+if(NOT ANDROID)
+    add_executable(gameboy_cli apps/cli/main.cpp)
+    target_link_libraries(gameboy_cli PRIVATE gameboy_core)
+    set_target_properties(gameboy_cli PROPERTIES OUTPUT_NAME gbb_cli)
 
-add_executable(gameboy_test_runner apps/test_runner/main.cpp)
-target_link_libraries(gameboy_test_runner PRIVATE gameboy_core)
-set_target_properties(gameboy_test_runner PROPERTIES OUTPUT_NAME gbb_test_runner)
+    add_executable(gameboy_test_runner apps/test_runner/main.cpp)
+    target_link_libraries(gameboy_test_runner PRIVATE gameboy_core)
+    set_target_properties(gameboy_test_runner PROPERTIES OUTPUT_NAME gbb_test_runner)
+endif()
 
 if(GAMEBOY_BUILD_SDL)
     if(EMSCRIPTEN)
@@ -78,6 +80,10 @@ if(GAMEBOY_BUILD_SDL)
                         "${CMAKE_BINARY_DIR}/web/go_bigger_boy_logo.png"
                 VERBATIM
             )
+        elseif(ANDROID)
+            add_library(gameboy_sdl SHARED apps/sdl/main.cpp)
+            set_target_properties(gameboy_core PROPERTIES
+                                  POSITION_INDEPENDENT_CODE ON)
         elseif(WIN32)
             enable_language(RC)
             add_executable(gameboy_sdl WIN32
@@ -117,7 +123,9 @@ if(GAMEBOY_BUILD_SDL)
                     "${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows"
                 )
             endif()
-            if(APPLE)
+            if(ANDROID)
+                set_target_properties(gameboy_sdl PROPERTIES OUTPUT_NAME main)
+            elseif(APPLE)
                 set_target_properties(gameboy_sdl PROPERTIES
                     OUTPUT_NAME "Go Bigger Boy"
                     MACOSX_BUNDLE_BUNDLE_NAME "Go Bigger Boy"
@@ -132,46 +140,48 @@ if(GAMEBOY_BUILD_SDL)
             else()
                 set_target_properties(gameboy_sdl PROPERTIES OUTPUT_NAME gbb)
             endif()
-            if(WIN32)
-                install(TARGETS gameboy_sdl RUNTIME DESTINATION .)
-            elseif(APPLE)
-                set_target_properties(gameboy_sdl PROPERTIES
-                    INSTALL_RPATH "@executable_path/../Frameworks"
-                )
-                install(TARGETS gameboy_sdl BUNDLE DESTINATION .)
-            else()
-                set_target_properties(gameboy_sdl PROPERTIES
-                                      INSTALL_RPATH "$ORIGIN/../lib")
-                install(TARGETS gameboy_sdl
-                        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-            endif()
+            if(NOT ANDROID)
+                if(WIN32)
+                    install(TARGETS gameboy_sdl RUNTIME DESTINATION .)
+                elseif(APPLE)
+                    set_target_properties(gameboy_sdl PROPERTIES
+                        INSTALL_RPATH "@executable_path/../Frameworks"
+                    )
+                    install(TARGETS gameboy_sdl BUNDLE DESTINATION .)
+                else()
+                    set_target_properties(gameboy_sdl PROPERTIES
+                                          INSTALL_RPATH "$ORIGIN/../lib")
+                    install(TARGETS gameboy_sdl
+                            RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+                endif()
 
-            if(WIN32 AND TARGET SDL3::SDL3-shared)
-                add_custom_command(TARGET gameboy_sdl POST_BUILD
-                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                if(WIN32 AND TARGET SDL3::SDL3-shared)
+                    add_custom_command(TARGET gameboy_sdl POST_BUILD
+                        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                                $<TARGET_FILE:SDL3::SDL3-shared>
+                                $<TARGET_FILE_DIR:gameboy_sdl>
+                        VERBATIM)
+                    install(FILES $<TARGET_FILE:SDL3::SDL3-shared> DESTINATION .)
+                elseif(APPLE AND TARGET SDL3::SDL3-shared)
+                    install(FILES $<TARGET_FILE:SDL3::SDL3-shared>
+                            DESTINATION
+                                "Go Bigger Boy.app/Contents/Frameworks")
+                elseif(UNIX AND TARGET SDL3::SDL3-shared)
+                    install(FILES
                             $<TARGET_FILE:SDL3::SDL3-shared>
-                            $<TARGET_FILE_DIR:gameboy_sdl>
-                    VERBATIM)
-                install(FILES $<TARGET_FILE:SDL3::SDL3-shared> DESTINATION .)
-            elseif(APPLE AND TARGET SDL3::SDL3-shared)
-                install(FILES $<TARGET_FILE:SDL3::SDL3-shared>
-                        DESTINATION
-                            "Go Bigger Boy.app/Contents/Frameworks")
-            elseif(UNIX AND TARGET SDL3::SDL3-shared)
-                install(FILES
-                        $<TARGET_FILE:SDL3::SDL3-shared>
-                        $<TARGET_SONAME_FILE:SDL3::SDL3-shared>
-                        DESTINATION ${CMAKE_INSTALL_LIBDIR})
+                            $<TARGET_SONAME_FILE:SDL3::SDL3-shared>
+                            DESTINATION ${CMAKE_INSTALL_LIBDIR})
+                endif()
+                if(UNIX AND NOT APPLE)
+                    install(FILES packaging/linux/go-bigger-boy.desktop
+                            DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+                    install(FILES packaging/linux/go-bigger-boy.png
+                            DESTINATION
+                                ${CMAKE_INSTALL_DATADIR}/icons/hicolor/512x512/apps
+                            RENAME go-bigger-boy.png)
+                endif()
+                install(FILES README.md DESTINATION .)
             endif()
-            if(UNIX AND NOT APPLE)
-                install(FILES packaging/linux/go-bigger-boy.desktop
-                        DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
-                install(FILES packaging/linux/go-bigger-boy.png
-                        DESTINATION
-                            ${CMAKE_INSTALL_DATADIR}/icons/hicolor/512x512/apps
-                        RENAME go-bigger-boy.png)
-            endif()
-            install(FILES README.md DESTINATION .)
         endif()
     else()
         message(STATUS "SDL3 not found; skipping the GBB SDL frontend")

@@ -326,19 +326,25 @@ Cartridge Cartridge::from_file(const std::filesystem::path& path) {
     }
 
     Cartridge cartridge(std::move(bytes));
-    if (cartridge.battery_) {
-        if (!cartridge.ram_.empty()) {
-            cartridge.save_path_ = path;
-            cartridge.save_path_.replace_extension(".sav");
-            cartridge.load_battery();
-        }
-        if (cartridge.rtc_present_) {
-            cartridge.rtc_path_ = path;
-            cartridge.rtc_path_.replace_extension(".rtc");
-            cartridge.load_rtc();
-        }
-    }
+    cartridge.set_persistence_path(path);
     return cartridge;
+}
+
+void Cartridge::set_persistence_path(const std::filesystem::path& base_path) {
+    if (!save_path_.empty() || !rtc_path_.empty()) flush_battery();
+    save_path_.clear();
+    rtc_path_.clear();
+    if (!battery_ || base_path.empty()) return;
+    if (!ram_.empty()) {
+        save_path_ = base_path;
+        save_path_.replace_extension(".sav");
+        load_battery();
+    }
+    if (rtc_present_) {
+        rtc_path_ = base_path;
+        rtc_path_.replace_extension(".rtc");
+        load_rtc();
+    }
 }
 
 std::uint8_t Cartridge::read(const std::uint16_t address) const noexcept {

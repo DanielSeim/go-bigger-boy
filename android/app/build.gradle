@@ -1,0 +1,50 @@
+plugins {
+    id "com.android.application"
+}
+
+android {
+    namespace "com.danielseim.gbb"
+    compileSdk 36
+    ndkVersion "28.2.13676358"
+
+    defaultConfig {
+        applicationId "com.danielseim.gbb"
+        minSdk 21
+        targetSdk 36
+        versionCode 1
+        versionName "0.9.0"
+
+        externalNativeBuild {
+            cmake {
+                arguments "-DGAMEBOY_BUILD_TESTS=OFF",
+                          "-DGAMEBOY_BUILD_SDL=ON"
+                abiFilters "arm64-v8a", "x86_64"
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            applicationIdSuffix ".debug"
+            versionNameSuffix "-debug"
+        }
+        release {
+            minifyEnabled false
+        }
+    }
+
+    buildFeatures {
+        prefab true
+    }
+
+    externalNativeBuild {
+        cmake {
+            path file("../../CMakeLists.txt")
+            version "3.31.6"
+        }
+    }
+}
+
+dependencies {
+    implementation files("libs/SDL3-3.4.2.aar")
+}

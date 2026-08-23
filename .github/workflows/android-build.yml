@@ -1,0 +1,54 @@
+name: Android build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: go-bigger-boy-android
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: "8.13"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android toolchain
+        run: >-
+          sdkmanager
+          "platforms;android-36"
+          "build-tools;35.0.0"
+          "ndk;28.2.13676358"
+          "cmake;3.31.6"
+
+      - name: Fetch pinned SDL3 Android archive
+        run: android/fetch-sdl.sh
+
+      - name: Build debug APK
+        working-directory: android
+        run: gradle --no-daemon assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: go-bigger-boy-android-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14

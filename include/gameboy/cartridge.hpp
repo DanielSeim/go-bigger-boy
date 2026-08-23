@@ -22,6 +22,7 @@ public:
     Cartridge& operator=(Cartridge&&) = delete;
 
     static Cartridge from_file(const std::filesystem::path& path);
+    void set_persistence_path(const std::filesystem::path& base_path);
 
     [[nodiscard]] std::uint8_t read(std::uint16_t address) const noexcept;
     void write(std::uint16_t address, std::uint8_t value) noexcept;
