@@ -26,6 +26,28 @@ void check(const bool condition, const std::string& message) {
     }
 }
 
+std::uint32_t state_crc32(const std::uint8_t* data,
+                          const std::size_t size) noexcept {
+    auto crc = UINT32_C(0xFFFFFFFF);
+    for (std::size_t index = 0; index < size; ++index) {
+        crc ^= data[index];
+        for (unsigned bit = 0; bit < 8; ++bit) {
+            crc = (crc >> 1) ^
+                  ((crc & 1) != 0 ? UINT32_C(0xEDB88320) : 0);
+        }
+    }
+    return ~crc;
+}
+
+void write_little_u32(std::vector<std::uint8_t>& bytes,
+                      const std::size_t offset,
+                      const std::uint32_t value) {
+    for (unsigned byte = 0; byte < 4; ++byte) {
+        bytes[offset + byte] =
+            static_cast<std::uint8_t>(value >> (byte * 8));
+    }
+}
+
 std::vector<std::uint8_t> test_rom(
     const std::vector<std::uint8_t>& program = {}) {
     std::vector<std::uint8_t> rom(0x8000, 0);
@@ -1720,15 +1742,158 @@ void test_oam_dma() {
     gameboy::MemoryBus bus{gameboy::Cartridge{test_rom()}};
     for (unsigned offset = 0; offset < 0xA0; ++offset) {
         bus.write8(static_cast<std::uint16_t>(0xC000 + offset),
-                   static_cast<std::uint8_t>(offset));
+                   static_cast<std::uint8_t>(offset + 1));
     }
     bus.write8(0xFF46, 0xC0);
+    check(bus.read8(0xFE00) == 0,
+          "OAM DMA does not copy its first byte immediately");
+    bus.tick(7);
+    check(bus.read8(0xFE00) == 0,
+          "fresh OAM DMA observes its startup delay");
+    bus.tick(1);
+    bus.tick(3);
+    check(bus.read8(0xFE00) == 0,
+          "active OAM DMA waits four cycles to finish its first byte");
+    bus.tick(1);
+    check(bus.read8(0xFE00) == 1 && bus.read8(0xFE01) == 0,
+          "OAM DMA copies one byte every four active cycles");
+    bus.tick(4 * 158);
+    check(bus.read8(0xFE9E) == 0x9F && bus.read8(0xFE9F) == 0,
+          "OAM DMA remains active until the final byte interval");
+    bus.tick(4);
     for (unsigned offset = 0; offset < 0xA0; ++offset) {
         check(bus.read8(static_cast<std::uint16_t>(0xFE00 + offset)) ==
-                  static_cast<std::uint8_t>(offset),
+                  static_cast<std::uint8_t>(offset + 1),
               "OAM DMA copies all 160 source bytes");
     }
     check(bus.read8(0xFF46) == 0xC0, "DMA register retains its source page");
+
+    gameboy::MemoryBus high_source{gameboy::Cartridge{test_rom()}};
+    high_source.write8(0xDE00, 0xA5);
+    high_source.write8(0xDF00, 0x5A);
+    high_source.write8(0xFF46, 0xFE);
+    high_source.tick(648);
+    check(high_source.read8(0xFE00) == 0xA5,
+          "DMG OAM DMA aliases source page FE to WRAM page DE");
+    high_source.write8(0xFF46, 0xFF);
+    high_source.tick(648);
+    check(high_source.read8(0xFE00) == 0x5A,
+          "DMG OAM DMA aliases source page FF to WRAM page DF");
+
+    gameboy::MemoryBus startup{
+        gameboy::Cartridge{test_rom({0x3E, 0x42})}}; // LD A,42
+    startup.write8(0xFF46, 0xC0);
+    gameboy::Cpu startup_cpu;
+    check(startup_cpu.step(startup) == 8 &&
+              startup_cpu.registers().pc == 0x0102 &&
+              startup_cpu.registers().a == 0xFF,
+          "fresh DMA permits the first CPU cycle before blocking the bus");
+
+    gameboy::MemoryBus video_dma{
+        gameboy::Cartridge{test_rom({0xFA, 0x00, 0xC0})}}; // LD A,(C000)
+    video_dma.write8(0x8000, 0x66);
+    video_dma.write8(0xC000, 0x42);
+    video_dma.write8(0xFF46, 0x80);
+    gameboy::Cpu video_dma_cpu;
+    check(video_dma_cpu.step(video_dma) == 16 &&
+              video_dma_cpu.registers().a == 0x42,
+          "VRAM-source DMA leaves the CPU main bus accessible");
+
+    gameboy::MemoryBus split_buses{gameboy::Cartridge{test_rom()}};
+    split_buses.write8(0x8000, 0x66);
+    split_buses.write8(0xFF80, 0xFA); // LD A,(8000), executing from HRAM.
+    split_buses.write8(0xFF81, 0x00);
+    split_buses.write8(0xFF82, 0x80);
+    split_buses.write8(0xFF46, 0x80);
+    split_buses.tick(8);
+    gameboy::Cpu split_cpu;
+    auto split_registers = split_cpu.registers();
+    split_registers.pc = 0xFF80;
+    split_cpu.load_registers(split_registers);
+    check(split_cpu.step(split_buses) == 16 &&
+              split_cpu.registers().a == 0xFF,
+          "VRAM-source DMA blocks CPU accesses to the video bus");
+
+    split_buses.write8(0xFF46, 0xC0);
+    split_buses.tick(8);
+    split_registers = split_cpu.registers();
+    split_registers.pc = 0xFF80;
+    split_cpu.load_registers(split_registers);
+    check(split_cpu.step(split_buses) == 16 &&
+              split_cpu.registers().a == 0x66,
+          "main-bus DMA leaves CPU VRAM accesses available");
+
+    gameboy::MemoryBus blocked{gameboy::Cartridge{test_rom()}};
+    blocked.write8(0xC000, 0x42);
+    blocked.write8(0xC100, 0x24);
+    blocked.write8(0xD000, 0x99);
+    blocked.write8(0xFF80, 0xFA); // LD A,(C000), executing from HRAM.
+    blocked.write8(0xFF81, 0x00);
+    blocked.write8(0xFF82, 0xC0);
+    blocked.write8(0xFF83, 0xE0); // LDH (46),A, restart from page D0.
+    blocked.write8(0xFF84, 0x46);
+    blocked.write8(0xFF85, 0xEA); // LD (C000),A; blocked during DMA.
+    blocked.write8(0xFF86, 0x00);
+    blocked.write8(0xFF87, 0xC0);
+    blocked.write8(0xFF88, 0xF0); // LDH A,(46); readable during DMA.
+    blocked.write8(0xFF89, 0x46);
+    blocked.write8(0xFF46, 0xC1);
+
+    gameboy::Cpu cpu;
+    auto registers = cpu.registers();
+    registers.pc = 0xFF80;
+    cpu.load_registers(registers);
+    check(cpu.step(blocked) == 16 && cpu.registers().a == 0xFF,
+          "OAM DMA blocks CPU reads outside high RAM");
+    registers = cpu.registers();
+    registers.a = 0xD0;
+    cpu.load_registers(registers);
+    check(cpu.step(blocked) == 12,
+          "the CPU continues executing DMA routines from high RAM");
+    check(cpu.step(blocked) == 16 && blocked.read8(0xC000) == 0x42,
+          "OAM DMA ignores CPU writes outside high RAM");
+    check(blocked.read8(0xFE00) == 0x99 && blocked.read8(0xC000) == 0x42,
+          "writing FF46 during OAM DMA restarts the transfer");
+    check(cpu.step(blocked) == 12 && cpu.registers().a == 0xD0,
+          "the CPU can read the FF46 register during OAM DMA");
+
+    gameboy::Emulator snapshot{gameboy::Cartridge{test_rom()}};
+    snapshot.bus().write8(0xFF40, 0); // Keep OAM visible to the test harness.
+    snapshot.bus().write8(0xC000, 0x11);
+    snapshot.bus().write8(0xC001, 0x22);
+    snapshot.bus().write8(0xC002, 0x33);
+    snapshot.bus().write8(0xFF46, 0xC0);
+    snapshot.bus().tick(18);
+    const auto state = snapshot.save_state();
+    snapshot.bus().tick(2);
+    check(snapshot.bus().read8(0xFE02) == 0x33,
+          "an active OAM DMA transfer continues before state restoration");
+    snapshot.load_state(state);
+    check(snapshot.bus().read8(0xFE02) == 0,
+          "save states restore partially copied OAM DMA data");
+    snapshot.bus().tick(1);
+    check(snapshot.bus().read8(0xFE02) == 0,
+          "save states restore the OAM DMA sub-byte cycle");
+    snapshot.bus().tick(1);
+    check(snapshot.bus().read8(0xFE02) == 0x33,
+          "restored OAM DMA resumes on the original cycle");
+
+    gameboy::Emulator pending_snapshot{gameboy::Cartridge{test_rom()}};
+    pending_snapshot.bus().write8(0xFF40, 0);
+    pending_snapshot.bus().write8(0xC000, 0x77);
+    pending_snapshot.bus().write8(0xFF46, 0xC0);
+    pending_snapshot.bus().tick(3);
+    const auto pending_state = pending_snapshot.save_state();
+    pending_snapshot.bus().tick(9);
+    check(pending_snapshot.bus().read8(0xFE00) == 0x77,
+          "pending OAM DMA reaches its first byte before restoration");
+    pending_snapshot.load_state(pending_state);
+    pending_snapshot.bus().tick(8);
+    check(pending_snapshot.bus().read8(0xFE00) == 0,
+          "save states restore the fresh OAM DMA startup delay");
+    pending_snapshot.bus().tick(1);
+    check(pending_snapshot.bus().read8(0xFE00) == 0x77,
+          "restored pending OAM DMA resumes at the original startup cycle");
 }
 
 void test_save_state_round_trip_and_validation() {
@@ -1762,6 +1927,24 @@ void test_save_state_round_trip_and_validation() {
     const auto saved_cycles = emulator.cpu().total_cycles();
     check(saved.size() > 100000 && emulator.bus().read8(0xA123) == 0x5A,
           "save states include framebuffer, mapper RAM, and subsystem state");
+
+    constexpr std::size_t state_header_size = 28;
+    constexpr std::size_t version_two_dma_size = 7;
+    auto version_one = saved;
+    version_one.resize(version_one.size() - version_two_dma_size);
+    version_one[8] = 1;
+    const auto old_payload_size = static_cast<std::uint32_t>(
+        version_one.size() - state_header_size);
+    write_little_u32(version_one, 20, old_payload_size);
+    write_little_u32(
+        version_one, 24,
+        state_crc32(version_one.data() + state_header_size, old_payload_size));
+    gameboy::Emulator old_state_loader{gameboy::Cartridge{rom}};
+    old_state_loader.load_state(version_one);
+    check(old_state_loader.cpu().registers().pc == saved_pc &&
+              old_state_loader.cpu().total_cycles() == saved_cycles &&
+              old_state_loader.bus().read8(0xA123) == 0x5A,
+          "version 1 save states remain loadable after adding DMA state");
 
     emulator.bus().write8(0xA123, 0x99);
     emulator.bus().write8(0xC000, 0x11);
@@ -1810,7 +1993,7 @@ void test_save_state_round_trip_and_validation() {
           "truncated save states are rejected without changing emulator state");
 
     auto future_version = saved;
-    future_version[8] = 2;
+    future_version[8] = 3;
     auto rejected_version = false;
     try {
         emulator.load_state(future_version);

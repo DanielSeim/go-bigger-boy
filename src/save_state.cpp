@@ -13,7 +13,8 @@ namespace {
 constexpr std::array<std::uint8_t, 8> state_magic{
     'G', 'B', 'B', 'S', 'T', 'A', 'T', 'E',
 };
-constexpr std::uint32_t state_version = 1;
+constexpr std::uint32_t state_version = 2;
+constexpr std::uint32_t oldest_supported_state_version = 1;
 constexpr std::size_t maximum_state_size = 2 * 1024 * 1024;
 constexpr std::size_t maximum_serial_output = 1024 * 1024;
 
@@ -216,7 +217,7 @@ public:
         if (magic != state_magic) throw SaveStateError("Not a GBB save state");
 
         const auto version = header.u32();
-        if (version != state_version) {
+        if (version < oldest_supported_state_version || version > state_version) {
             throw SaveStateError("Unsupported save-state version: " +
                                  std::to_string(version));
         }
@@ -235,7 +236,7 @@ public:
 
         Reader payload(state, payload_position, payload_size);
         read_cpu(payload, emulator.cpu_);
-        read_bus(payload, emulator.bus_);
+        read_bus(payload, emulator.bus_, version);
         payload.finish();
     }
 
@@ -304,9 +305,16 @@ private:
         write_timer(writer, bus.timer_);
         writer.string(bus.serial_output_);
         writer.u32(bus.serial_cycles_remaining_);
+        writer.boolean(bus.oam_dma_active_);
+        writer.u8(static_cast<std::uint8_t>(bus.oam_dma_source_ >> 8));
+        writer.u16(bus.oam_dma_index_);
+        writer.u8(static_cast<std::uint8_t>(bus.oam_dma_cycle_));
+        writer.u8(static_cast<std::uint8_t>(bus.oam_dma_pending_source_ >> 8));
+        writer.u8(static_cast<std::uint8_t>(bus.oam_dma_start_delay_));
     }
 
-    static void read_bus(Reader& reader, MemoryBus& bus) {
+    static void read_bus(Reader& reader, MemoryBus& bus,
+                         const std::uint32_t version) {
         read_cartridge(reader, bus.cartridge_);
         read_bytes(reader, bus.wram_);
         read_bytes(reader, bus.io_);
@@ -318,6 +326,27 @@ private:
         read_timer(reader, bus.timer_);
         bus.serial_output_ = reader.string();
         bus.serial_cycles_remaining_ = reader.u32();
+        if (version >= 2) {
+            bus.oam_dma_active_ = reader.boolean();
+            bus.oam_dma_source_ = static_cast<std::uint16_t>(reader.u8() << 8);
+            bus.oam_dma_index_ = reader.u16();
+            bus.oam_dma_cycle_ = reader.u8();
+            bus.oam_dma_pending_source_ =
+                static_cast<std::uint16_t>(reader.u8() << 8);
+            bus.oam_dma_start_delay_ = reader.u8();
+            if (bus.oam_dma_index_ > 0xA0 || bus.oam_dma_cycle_ >= 4 ||
+                bus.oam_dma_start_delay_ > 8 ||
+                (bus.oam_dma_active_ && bus.oam_dma_index_ == 0xA0)) {
+                throw SaveStateError("Save state contains invalid OAM DMA state");
+            }
+        } else {
+            bus.oam_dma_active_ = false;
+            bus.oam_dma_source_ = 0;
+            bus.oam_dma_index_ = 0;
+            bus.oam_dma_cycle_ = 0;
+            bus.oam_dma_pending_source_ = 0;
+            bus.oam_dma_start_delay_ = 0;
+        }
     }
 
     static void write_cartridge(Writer& writer, const Cartridge& cartridge) {

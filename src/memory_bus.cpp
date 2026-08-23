@@ -5,6 +5,9 @@
 namespace gameboy {
 namespace {
 constexpr unsigned serial_transfer_cycles = 4096;
+constexpr unsigned oam_dma_byte_cycles = 4;
+constexpr unsigned oam_dma_size = 0xA0;
+constexpr unsigned oam_dma_start_cycles = 8;
 }
 
 MemoryBus::MemoryBus(Cartridge cartridge) : cartridge_(std::move(cartridge)) {}
@@ -79,6 +82,32 @@ std::uint16_t MemoryBus::read16(const std::uint16_t address) const noexcept {
     return static_cast<std::uint16_t>(low | (static_cast<std::uint16_t>(high) << 8));
 }
 
+std::uint8_t MemoryBus::cpu_read8(const std::uint16_t address) const noexcept {
+    if (address == 0xFF46) return read8(address);
+    if (oam_dma_blocks(address)) return 0xFF;
+    return read8(address);
+}
+
+void MemoryBus::cpu_write8(const std::uint16_t address,
+                           const std::uint8_t value) noexcept {
+    if (address != 0xFF46 && oam_dma_blocks(address)) return;
+    write8(address, value);
+}
+
+bool MemoryBus::oam_dma_blocks(const std::uint16_t address) const noexcept {
+    if (!oam_dma_active_) return false;
+    if (address >= 0xFE00 && address <= 0xFE9F) return true;
+
+    const auto dma_uses_video_bus =
+        oam_dma_source_ >= 0x8000 && oam_dma_source_ <= 0x9FFF;
+    if (address >= 0x8000 && address <= 0x9FFF) {
+        return dma_uses_video_bus;
+    }
+    const auto cpu_uses_main_bus = address <= 0x7FFF ||
+                                   (address >= 0xA000 && address <= 0xFDFF);
+    return cpu_uses_main_bus && !dma_uses_video_bus;
+}
+
 void MemoryBus::write8(const std::uint16_t address, const std::uint8_t value) noexcept {
     if (address <= 0x7FFF || (address >= 0xA000 && address <= 0xBFFF)) {
         cartridge_.write(address, value);
@@ -116,11 +145,12 @@ void MemoryBus::write8(const std::uint16_t address, const std::uint8_t value) no
         timer_.write_control(value);
     } else if (address == 0xFF46) {
         io_[0x46] = value;
-        const auto source = static_cast<std::uint16_t>(value << 8);
-        for (unsigned offset = 0; offset < 0xA0; ++offset) {
-            ppu_.dma_write_oam(
-                offset, read8(static_cast<std::uint16_t>(source + offset)));
-        }
+        const auto source_page = value >= 0xE0
+                                     ? static_cast<std::uint8_t>(value - 0x20)
+                                     : value;
+        oam_dma_pending_source_ =
+            static_cast<std::uint16_t>(source_page << 8);
+        oam_dma_start_delay_ = oam_dma_start_cycles;
     } else if (Apu::handles_register(address)) {
         apu_.write_register(address, value);
     } else if (Ppu::handles_register(address)) {
@@ -137,6 +167,7 @@ void MemoryBus::write8(const std::uint16_t address, const std::uint8_t value) no
 }
 
 void MemoryBus::tick(const unsigned cycles) noexcept {
+    tick_oam_dma(cycles);
     apu_.tick(cycles);
     if (serial_cycles_remaining_ != 0) {
         if (cycles >= serial_cycles_remaining_) {
@@ -161,6 +192,37 @@ void MemoryBus::tick(const unsigned cycles) noexcept {
     }
     if ((ppu_requests & 0x02) != 0) {
         request_interrupt(1);
+    }
+}
+
+void MemoryBus::tick_oam_dma(const unsigned cycles) noexcept {
+    const auto copy_byte = [this]() {
+        const auto source = static_cast<std::uint16_t>(oam_dma_source_ +
+                                                       oam_dma_index_);
+        ppu_.dma_write_oam(oam_dma_index_, read8(source));
+        ++oam_dma_index_;
+        if (oam_dma_index_ == oam_dma_size) {
+            oam_dma_active_ = false;
+            oam_dma_cycle_ = 0;
+        }
+    };
+
+    for (unsigned cycle = 0; cycle < cycles; ++cycle) {
+        if (oam_dma_start_delay_ != 0) {
+            --oam_dma_start_delay_;
+            if (oam_dma_start_delay_ == 0) {
+                oam_dma_source_ = oam_dma_pending_source_;
+                oam_dma_index_ = 0;
+                oam_dma_cycle_ = 0;
+                oam_dma_active_ = true;
+                continue;
+            }
+        }
+        if (!oam_dma_active_) continue;
+        if (++oam_dma_cycle_ == oam_dma_byte_cycles) {
+            oam_dma_cycle_ = 0;
+            copy_byte();
+        }
     }
 }
 

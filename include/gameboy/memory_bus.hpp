@@ -14,6 +14,7 @@
 namespace gameboy {
 
 class SaveStateCodec;
+class Cpu;
 
 class MemoryBus {
 public:
@@ -37,7 +38,13 @@ public:
     [[nodiscard]] std::string take_serial_output();
 
 private:
+    friend class Cpu;
     friend class SaveStateCodec;
+
+    [[nodiscard]] std::uint8_t cpu_read8(std::uint16_t address) const noexcept;
+    void cpu_write8(std::uint16_t address, std::uint8_t value) noexcept;
+    [[nodiscard]] bool oam_dma_blocks(std::uint16_t address) const noexcept;
+    void tick_oam_dma(unsigned cycles) noexcept;
 
     Cartridge cartridge_;
     std::array<std::uint8_t, 0x2000> wram_{};
@@ -50,6 +57,12 @@ private:
     Timer timer_{};
     std::string serial_output_{};
     unsigned serial_cycles_remaining_{};
+    std::uint16_t oam_dma_source_{};
+    std::uint16_t oam_dma_index_{};
+    unsigned oam_dma_cycle_{};
+    bool oam_dma_active_{};
+    std::uint16_t oam_dma_pending_source_{};
+    unsigned oam_dma_start_delay_{};
 };
 
 } // namespace gameboy

@@ -551,13 +551,13 @@ void Cpu::idle(MemoryBus& bus, const unsigned cycles) noexcept {
 
 std::uint8_t Cpu::read8(MemoryBus& bus, const std::uint16_t address) noexcept {
     idle(bus, 4);
-    return bus.read8(address);
+    return bus.cpu_read8(address);
 }
 
 void Cpu::write8(MemoryBus& bus, const std::uint16_t address,
                  const std::uint8_t value) noexcept {
     idle(bus, 4);
-    bus.write8(address, value);
+    bus.cpu_write8(address, value);
 }
 
 void Cpu::push(MemoryBus& bus, const std::uint16_t value) noexcept {
