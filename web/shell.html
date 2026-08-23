@@ -77,7 +77,7 @@
         const pointer = Module._malloc(bytes.length);
         if (!pointer) throw new Error('The emulator could not allocate ROM memory.');
         try {
-          Module.HEAPU8.set(bytes, pointer);
+          Module.writeArrayToMemory(bytes, pointer);
           if (!Module._gbb_load_rom(pointer, bytes.length)) return;
         } finally {
           Module._free(pointer);
