@@ -50,4 +50,26 @@ void Emulator::set_button(const Button button, const bool pressed) noexcept {
 
 void Emulator::flush_battery() { bus_.flush_battery(); }
 
+bool Emulator::has_battery() const noexcept {
+    return bus_.cartridge().has_battery();
+}
+
+bool Emulator::has_rtc() const noexcept { return bus_.cartridge().has_rtc(); }
+
+std::vector<std::uint8_t> Emulator::export_battery_ram() const {
+    return bus_.cartridge().export_battery_ram();
+}
+
+void Emulator::import_battery_ram(const std::vector<std::uint8_t>& data) {
+    bus_.cartridge().import_battery_ram(data);
+}
+
+std::vector<std::uint8_t> Emulator::export_rtc_data() const {
+    return bus_.cartridge().export_rtc_data();
+}
+
+void Emulator::import_rtc_data(const std::vector<std::uint8_t>& data) {
+    bus_.cartridge().import_rtc_data(data);
+}
+
 } // namespace gameboy

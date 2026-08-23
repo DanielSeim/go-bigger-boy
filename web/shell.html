@@ -25,11 +25,15 @@
     canvas:focus-visible { box-shadow: 0 0 0 3px #8bcf69; }
     #status { min-height: 1.5em; margin: 12px 2px 0; color: #b8c8bb; }
     #status.error { color: #ff9d96; }
+    .save-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 12px 2px 0; }
+    .save-actions button { padding: 8px 12px; background: #26382c; color: #dce9df; }
+    .save-actions span { color: #8fa593; font-size: .9rem; }
     .help { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin-top: 18px; color: #a7b9aa; }
     .help p { margin: 0; padding: 12px; border-radius: 9px; background: #111a15; }
     a { color: #aadc91; }
     input { display: none; }
-    @media (max-width: 560px) { header { align-items: flex-start; flex-direction: column; } .actions, button { width: 100%; } .actions { align-items: stretch; flex-direction: column; } main { padding-top: 16px; } }
+    [hidden] { display: none !important; }
+    @media (max-width: 560px) { header { align-items: flex-start; flex-direction: column; } .actions, header button { width: 100%; } .actions { align-items: stretch; flex-direction: column; } main { padding-top: 16px; } }
   </style>
 </head>
 <body>
@@ -52,10 +56,17 @@
         <button id="open-rom" type="button" disabled>Choose ROM</button>
       </div>
       <input id="rom-file" type="file" accept=".gb,.gbc,application/octet-stream">
+      <input id="save-file" type="file" accept=".sav,.rtc,application/octet-stream">
     </header>
     <section class="screen" id="drop-zone" aria-label="Emulator screen and ROM drop zone">
       <canvas id="canvas" width="640" height="576" tabindex="0" oncontextmenu="event.preventDefault()"></canvas>
       <p id="status" role="status">Downloading emulator…</p>
+      <div class="save-actions" id="save-actions" hidden>
+        <button id="import-save" type="button">Import .sav or .rtc</button>
+        <button id="export-save" type="button">Export .sav</button>
+        <button id="export-rtc" type="button" hidden>Export .rtc</button>
+        <span id="save-storage-status">Automatic browser saves enabled</span>
+      </div>
     </section>
     <section class="help" aria-label="Controls">
       <p><strong>D-pad:</strong> Arrow keys<br><strong>A / B:</strong> X / Z</p>
@@ -71,6 +82,112 @@
     const statusLine = document.getElementById('status');
     const dropZone = document.getElementById('drop-zone');
     const palettePicker = document.getElementById('display-palette');
+    const savePicker = document.getElementById('save-file');
+    const saveActions = document.getElementById('save-actions');
+    const importSaveButton = document.getElementById('import-save');
+    const exportSaveButton = document.getElementById('export-save');
+    const exportRtcButton = document.getElementById('export-rtc');
+    const saveStorageStatus = document.getElementById('save-storage-status');
+    let currentRom = null;
+    let saveDatabasePromise = null;
+    let saveQueue = Promise.resolve();
+    let storageAvailable = true;
+
+    function saveDatabase() {
+      if (saveDatabasePromise) return saveDatabasePromise;
+      saveDatabasePromise = new Promise((resolve, reject) => {
+        if (!window.indexedDB) {
+          reject(new Error('IndexedDB is unavailable'));
+          return;
+        }
+        const request = indexedDB.open('go-bigger-boy', 1);
+        request.onupgradeneeded = () => {
+          if (!request.result.objectStoreNames.contains('cartridge-saves')) {
+            request.result.createObjectStore('cartridge-saves');
+          }
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error ||
+          new Error('Could not open browser save storage'));
+      });
+      return saveDatabasePromise;
+    }
+
+    async function readStoredSave(key) {
+      const database = await saveDatabase();
+      return new Promise((resolve, reject) => {
+        const transaction = database.transaction('cartridge-saves', 'readonly');
+        const request = transaction.objectStore('cartridge-saves').get(key);
+        request.onsuccess = () => resolve(request.result || null);
+        request.onerror = () => reject(request.error ||
+          new Error('Could not read the browser save'));
+      });
+    }
+
+    async function writeStoredSave(key, value) {
+      const database = await saveDatabase();
+      return new Promise((resolve, reject) => {
+        const transaction = database.transaction('cartridge-saves', 'readwrite');
+        transaction.objectStore('cartridge-saves').put(value, key);
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error ||
+          new Error('Could not write the browser save'));
+        transaction.onabort = () => reject(transaction.error ||
+          new Error('Browser save transaction was aborted'));
+      });
+    }
+
+    function noteStorageFailure(error) {
+      if (storageAvailable) {
+        console.warn('Automatic browser saves are unavailable:', error);
+      }
+      storageAvailable = false;
+      saveStorageStatus.textContent = 'Browser storage unavailable — export backups';
+    }
+
+    async function persistCurrentSave() {
+      const rom = currentRom;
+      if (!rom || !rom.battery || !storageAvailable) return;
+      const ram = Module.exportSaveRam();
+      const rtc = rom.rtc ? Module.exportRtcData() : new Uint8Array();
+      await writeStoredSave(rom.key, {
+        ram: ram.length ? ram.slice().buffer : null,
+        rtc: rtc.length ? rtc.slice().buffer : null,
+        updatedAt: Date.now()
+      });
+    }
+
+    function queuePersistentSave() {
+      saveQueue = saveQueue.catch(() => {}).then(persistCurrentSave);
+      saveQueue.catch(noteStorageFailure);
+      return saveQueue;
+    }
+
+    function updateSaveControls() {
+      const enabled = Boolean(currentRom && currentRom.battery);
+      saveActions.hidden = !enabled;
+      if (!enabled) return;
+      exportSaveButton.disabled = Module.exportSaveRam().length === 0;
+      exportRtcButton.hidden = !currentRom.rtc;
+      saveStorageStatus.textContent = storageAvailable
+        ? 'Automatic browser saves enabled'
+        : 'Browser storage unavailable — export backups';
+    }
+
+    function downloadBytes(bytes, filename) {
+      const url = URL.createObjectURL(new Blob([bytes], {
+        type: 'application/octet-stream'
+      }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    }
+
+    function saveBaseName() {
+      return currentRom.name.replace(/\.(gb|gbc)$/i, '') || 'gameboy-save';
+    }
 
     function restorePalette() {
       try {
@@ -103,13 +220,64 @@
       if (!file || !Module.loadRom) return;
       Module._gbb_resume_audio();
       Module.gbbSetStatus(`Loading ${file.name}…`, false);
+      let loaded = false;
       try {
         const bytes = new Uint8Array(await file.arrayBuffer());
+        try {
+          await queuePersistentSave();
+        } catch (error) {
+          noteStorageFailure(error);
+        }
         if (!Module.loadRom(bytes)) return;
+        loaded = true;
+        currentRom = {
+          key: Module.romFingerprint(),
+          name: file.name,
+          battery: Module.hasBattery(),
+          rtc: Module.hasRtc()
+        };
+
+        let restored = false;
+        if (currentRom.battery && storageAvailable) {
+          let stored = null;
+          try {
+            stored = await readStoredSave(currentRom.key);
+          } catch (error) {
+            noteStorageFailure(error);
+          }
+          if (stored) {
+            try {
+              if (stored.ram) {
+                Module.importSaveRam(new Uint8Array(stored.ram));
+                restored = true;
+              }
+              if (stored.rtc && currentRom.rtc) {
+                Module.importRtcData(new Uint8Array(stored.rtc));
+                restored = true;
+              }
+            } catch (error) {
+              console.error('Stored cartridge save is invalid:', error);
+              Module.gbbSetStatus(
+                `ROM loaded, but its stored save is invalid: ${error.message || error}`,
+                true);
+            }
+          }
+        }
+
+        updateSaveControls();
         document.title = `${file.name} — Go Bigger Boy`;
+        if (!statusLine.classList.contains('error')) {
+          Module.gbbSetStatus(
+            restored
+              ? 'ROM loaded. Battery save restored from this browser.'
+              : 'ROM loaded. Click the screen if keyboard input is inactive.',
+            false);
+        }
         canvas.focus();
       } catch (error) {
         Module.gbbSetStatus(error.message || String(error), true);
+      } finally {
+        if (loaded) Module._gbb_start_rom();
       }
     }
 
@@ -127,6 +295,48 @@
         localStorage.setItem('gbb-display-palette', palettePicker.value);
       } catch (error) {
         console.warn('Could not save the display palette:', error);
+      }
+      canvas.focus();
+    });
+    importSaveButton.addEventListener('click', () => savePicker.click());
+    exportSaveButton.addEventListener('click', () => {
+      if (!currentRom) return;
+      try {
+        const bytes = Module.exportSaveRam();
+        if (!bytes.length) throw new Error('This cartridge has no save RAM');
+        downloadBytes(bytes, `${saveBaseName()}.sav`);
+        Module.gbbSetStatus('Battery save exported.', false);
+      } catch (error) {
+        Module.gbbSetStatus(error.message || String(error), true);
+      }
+    });
+    exportRtcButton.addEventListener('click', () => {
+      if (!currentRom) return;
+      try {
+        const bytes = Module.exportRtcData();
+        if (!bytes.length) throw new Error('This cartridge has no clock data');
+        downloadBytes(bytes, `${saveBaseName()}.rtc`);
+        Module.gbbSetStatus('Clock data exported.', false);
+      } catch (error) {
+        Module.gbbSetStatus(error.message || String(error), true);
+      }
+    });
+    savePicker.addEventListener('change', async () => {
+      const file = savePicker.files[0];
+      savePicker.value = '';
+      if (!file || !currentRom) return;
+      try {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        if (/\.rtc$/i.test(file.name)) {
+          Module.importRtcData(bytes);
+          Module.gbbSetStatus('Clock data imported.', false);
+        } else {
+          Module.importSaveRam(bytes);
+          Module.gbbSetStatus('Battery save imported.', false);
+        }
+        await queuePersistentSave();
+      } catch (error) {
+        Module.gbbSetStatus(error.message || String(error), true);
       }
       canvas.focus();
     });
@@ -150,6 +360,11 @@
       Module._gbb_resume_audio();
       loadRom(event.dataTransfer.files[0]);
     });
+    setInterval(queuePersistentSave, 5000);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') queuePersistentSave();
+    });
+    window.addEventListener('pagehide', queuePersistentSave);
   </script>
   {{{ SCRIPT }}}
 </body>

@@ -248,6 +248,8 @@ const Cartridge& MemoryBus::cartridge() const noexcept {
     return cartridge_;
 }
 
+Cartridge& MemoryBus::cartridge() noexcept { return cartridge_; }
+
 void MemoryBus::flush_battery() { cartridge_.flush_battery(); }
 
 const Ppu::Framebuffer& MemoryBus::framebuffer() const noexcept {

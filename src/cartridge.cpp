@@ -358,6 +358,8 @@ std::size_t Cartridge::ram_size() const noexcept { return ram_.size(); }
 
 bool Cartridge::has_battery() const noexcept { return battery_; }
 
+bool Cartridge::has_rtc() const noexcept { return rtc_present_; }
+
 bool Cartridge::has_rumble() const noexcept { return rumble_present_; }
 
 bool Cartridge::rumble_active() const noexcept { return rumble_active_; }
@@ -369,6 +371,68 @@ std::uint64_t Cartridge::rom_fingerprint() const noexcept {
         hash *= UINT64_C(1099511628211);
     }
     return hash;
+}
+
+std::vector<std::uint8_t> Cartridge::export_battery_ram() const {
+    return battery_ ? ram_ : std::vector<std::uint8_t>{};
+}
+
+void Cartridge::import_battery_ram(const std::vector<std::uint8_t>& data) {
+    if (!battery_ || ram_.empty()) {
+        throw std::invalid_argument(
+            "Cartridge has no battery-backed save RAM");
+    }
+    if (data.size() != ram_.size()) {
+        throw std::invalid_argument(
+            "Save RAM size does not match the loaded cartridge");
+    }
+    ram_ = data;
+    ram_dirty_ = true;
+}
+
+std::vector<std::uint8_t> Cartridge::export_rtc_data() const {
+    if (!rtc_present_) return {};
+    update_rtc();
+
+    std::vector<std::uint8_t> data;
+    data.reserve(rtc_magic.size() + rtc_.size() + sizeof(std::uint64_t));
+    for (const auto byte : rtc_magic) {
+        data.push_back(static_cast<std::uint8_t>(byte));
+    }
+    data.insert(data.end(), rtc_.begin(), rtc_.end());
+    const auto timestamp = static_cast<std::uint64_t>(rtc_last_update_);
+    for (unsigned byte = 0; byte < sizeof(timestamp); ++byte) {
+        data.push_back(static_cast<std::uint8_t>(timestamp >> (byte * 8)));
+    }
+    return data;
+}
+
+void Cartridge::import_rtc_data(const std::vector<std::uint8_t>& data) {
+    constexpr auto rtc_data_size = rtc_magic.size() + 5 + sizeof(std::uint64_t);
+    if (!rtc_present_) {
+        throw std::invalid_argument("Cartridge has no real-time clock");
+    }
+    if (data.size() != rtc_data_size ||
+        !std::equal(rtc_magic.begin(), rtc_magic.end(), data.begin())) {
+        throw std::invalid_argument("Invalid RTC data");
+    }
+
+    std::copy_n(data.begin() + static_cast<std::ptrdiff_t>(rtc_magic.size()),
+                rtc_.size(), rtc_.begin());
+    std::uint64_t timestamp = 0;
+    const auto timestamp_offset = rtc_magic.size() + rtc_.size();
+    for (unsigned byte = 0; byte < sizeof(timestamp); ++byte) {
+        timestamp |= static_cast<std::uint64_t>(data[timestamp_offset + byte])
+                     << (byte * 8);
+    }
+    rtc_last_update_ = static_cast<std::int64_t>(timestamp);
+    rtc_[0] %= 60;
+    rtc_[1] %= 60;
+    rtc_[2] %= 24;
+    rtc_[4] &= 0xC1;
+    update_rtc();
+    latched_rtc_ = rtc_;
+    rtc_dirty_ = true;
 }
 
 void Cartridge::flush_battery() {

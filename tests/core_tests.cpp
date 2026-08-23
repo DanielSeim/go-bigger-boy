@@ -226,6 +226,51 @@ void test_battery_ram_persistence() {
     std::filesystem::remove(rom_path);
 }
 
+void test_battery_data_import_export() {
+    gameboy::Cartridge source{banked_rom(4, 0x03, 0x01, 0x02)};
+    source.write(0x0000, 0x0A);
+    source.write(0xA000, 0x5A);
+    source.write(0xBFFF, 0xC3);
+    const auto save = source.export_battery_ram();
+    check(save.size() == 0x2000 && save.front() == 0x5A && save.back() == 0xC3,
+          "battery RAM exports in desktop .sav byte order");
+
+    gameboy::Cartridge restored{banked_rom(4, 0x03, 0x01, 0x02)};
+    restored.import_battery_ram(save);
+    restored.write(0x0000, 0x0A);
+    check(restored.read(0xA000) == 0x5A && restored.read(0xBFFF) == 0xC3,
+          "battery RAM imports into a fresh cartridge");
+
+    auto wrong_size = save;
+    wrong_size.pop_back();
+    auto rejected = false;
+    try {
+        restored.import_battery_ram(wrong_size);
+    } catch (const std::invalid_argument&) {
+        rejected = true;
+    }
+    check(rejected, "battery RAM import rejects a save for another cartridge");
+
+    gameboy::Cartridge clock{banked_rom(2, 0x0F, 0x00, 0x00)};
+    clock.write(0x0000, 0x0A);
+    clock.write(0x4000, 0x0C);
+    clock.write(0xA000, 0x40); // Halt for deterministic persistence.
+    clock.write(0x4000, 0x08);
+    clock.write(0xA000, 47);
+    const auto rtc = clock.export_rtc_data();
+    check(clock.has_rtc() && rtc.size() == 21 && rtc[8] == 47,
+          "MBC3 RTC exports in the desktop .rtc format");
+
+    gameboy::Cartridge restored_clock{banked_rom(2, 0x0F, 0x00, 0x00)};
+    restored_clock.import_rtc_data(rtc);
+    restored_clock.write(0x0000, 0x0A);
+    restored_clock.write(0x6000, 0);
+    restored_clock.write(0x6000, 1);
+    restored_clock.write(0x4000, 0x08);
+    check(restored_clock.read(0xA000) == 47,
+          "MBC3 RTC imports into a fresh cartridge");
+}
+
 void test_mbc3_banking_and_rtc() {
     gameboy::Cartridge cartridge{banked_rom(128, 0x10, 0x06, 0x03)};
     check(cartridge.read(0x4000) == 1,
@@ -2042,6 +2087,7 @@ int main() {
         test_mbc1_rom_banking();
         test_mbc1_ram_banking();
         test_battery_ram_persistence();
+        test_battery_data_import_export();
         test_mbc3_banking_and_rtc();
         test_mbc3_rtc_persistence();
         test_mbc5_banking_and_rumble();

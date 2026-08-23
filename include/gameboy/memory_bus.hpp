@@ -30,6 +30,7 @@ public:
     void set_button(Button button, bool pressed) noexcept;
 
     [[nodiscard]] const Cartridge& cartridge() const noexcept;
+    [[nodiscard]] Cartridge& cartridge() noexcept;
     void flush_battery();
     [[nodiscard]] const Ppu::Framebuffer& framebuffer() const noexcept;
     [[nodiscard]] bool frame_ready() const noexcept;

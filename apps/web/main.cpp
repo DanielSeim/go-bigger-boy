@@ -15,7 +15,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <exception>
+#include <iomanip>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -54,6 +56,28 @@ struct WebApp {
 };
 
 WebApp* active_app{};
+
+std::vector<std::uint8_t> copy_browser_bytes(const emscripten::val& bytes) {
+    if (bytes.isUndefined() || bytes.isNull()) return {};
+    const auto size = bytes["length"].as<std::size_t>();
+    std::vector<std::uint8_t> copied(size);
+    if (!copied.empty()) {
+        auto destination = emscripten::val(
+            emscripten::typed_memory_view(copied.size(), copied.data()));
+        destination.call<void>("set", bytes);
+    }
+    return copied;
+}
+
+emscripten::val browser_bytes(const std::vector<std::uint8_t>& bytes) {
+    auto result = emscripten::val::global("Uint8Array").new_(bytes.size());
+    if (!bytes.empty()) {
+        result.call<void>(
+            "set", emscripten::val(
+                       emscripten::typed_memory_view(bytes.size(), bytes.data())));
+    }
+    return result;
+}
 
 void set_status(const std::string& message, const bool error = false) {
     EM_ASM({
@@ -148,23 +172,18 @@ void destroy(WebApp* app) {
 int load_rom_from_browser(emscripten::val bytes) noexcept {
     if (!active_app || bytes.isUndefined() || bytes.isNull()) return 0;
     try {
-        const auto size = bytes["length"].as<std::size_t>();
-        if (size == 0) return 0;
-        std::vector<std::uint8_t> rom(size);
-        auto destination = emscripten::val(
-            emscripten::typed_memory_view(rom.size(), rom.data()));
-        destination.call<void>("set", bytes);
+        auto rom = copy_browser_bytes(bytes);
+        if (rom.empty()) return 0;
         active_app->emulator = std::make_unique<gameboy::Emulator>(
             gameboy::Cartridge(std::move(rom)));
-        active_app->paused = false;
+        // Browser storage is asynchronous. Remain paused until JavaScript has
+        // restored battery RAM and RTC data for this ROM.
+        active_app->paused = true;
         active_app->cycle_credit = 0.0;
         active_app->previous_time = std::chrono::steady_clock::now();
         if (active_app->audio_stream) {
             static_cast<void>(SDL_ClearAudioStream(active_app->audio_stream));
-            static_cast<void>(
-                SDL_ResumeAudioStreamDevice(active_app->audio_stream));
         }
-        set_status("ROM loaded. Click the screen if keyboard input is inactive.");
         return 1;
     } catch (const std::exception& error) {
         set_status(error.what(), true);
@@ -172,12 +191,75 @@ int load_rom_from_browser(emscripten::val bytes) noexcept {
     }
 }
 
+std::string browser_rom_fingerprint() {
+    if (!active_app || !active_app->emulator) return {};
+    std::ostringstream fingerprint;
+    fingerprint << std::hex << std::setw(16) << std::setfill('0')
+                << active_app->emulator->rom_fingerprint();
+    return fingerprint.str();
+}
+
+bool browser_has_battery() noexcept {
+    return active_app && active_app->emulator &&
+           active_app->emulator->has_battery();
+}
+
+bool browser_has_rtc() noexcept {
+    return active_app && active_app->emulator && active_app->emulator->has_rtc();
+}
+
+emscripten::val export_browser_save_ram() {
+    if (!active_app || !active_app->emulator) {
+        return emscripten::val::global("Uint8Array").new_(0);
+    }
+    return browser_bytes(active_app->emulator->export_battery_ram());
+}
+
+void import_browser_save_ram(const emscripten::val bytes) {
+    if (!active_app || !active_app->emulator) {
+        throw std::runtime_error("No ROM is loaded");
+    }
+    active_app->emulator->import_battery_ram(copy_browser_bytes(bytes));
+}
+
+emscripten::val export_browser_rtc_data() {
+    if (!active_app || !active_app->emulator) {
+        return emscripten::val::global("Uint8Array").new_(0);
+    }
+    return browser_bytes(active_app->emulator->export_rtc_data());
+}
+
+void import_browser_rtc_data(const emscripten::val bytes) {
+    if (!active_app || !active_app->emulator) {
+        throw std::runtime_error("No ROM is loaded");
+    }
+    active_app->emulator->import_rtc_data(copy_browser_bytes(bytes));
+}
+
 EMSCRIPTEN_BINDINGS(gbb_web_bindings) {
     emscripten::function("loadRom", &load_rom_from_browser);
+    emscripten::function("romFingerprint", &browser_rom_fingerprint);
+    emscripten::function("hasBattery", &browser_has_battery);
+    emscripten::function("hasRtc", &browser_has_rtc);
+    emscripten::function("exportSaveRam", &export_browser_save_ram);
+    emscripten::function("importSaveRam", &import_browser_save_ram);
+    emscripten::function("exportRtcData", &export_browser_rtc_data);
+    emscripten::function("importRtcData", &import_browser_rtc_data);
 }
 
 extern "C" EMSCRIPTEN_KEEPALIVE void gbb_resume_audio() noexcept {
     if (active_app && active_app->audio_stream) {
+        static_cast<void>(
+            SDL_ResumeAudioStreamDevice(active_app->audio_stream));
+    }
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE void gbb_start_rom() noexcept {
+    if (!active_app || !active_app->emulator) return;
+    active_app->paused = false;
+    active_app->cycle_credit = 0.0;
+    active_app->previous_time = std::chrono::steady_clock::now();
+    if (active_app->audio_stream) {
         static_cast<void>(
             SDL_ResumeAudioStreamDevice(active_app->audio_stream));
     }

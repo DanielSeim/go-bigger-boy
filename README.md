@@ -21,7 +21,7 @@ shared everywhere.
 - Table-driven CPU tests for opcode matrices, timing, flags, PC, stack, and memory effects
 - Headless command-line runner
 - Headless Mooneye/serial conformance test runner
-- Emscripten/WebAssembly browser frontend
+- Emscripten/WebAssembly browser frontend with IndexedDB cartridge saves
 - Versioned, ROM-validated save states with desktop quick-save controls
 - Dependency-free unit tests
 
@@ -138,8 +138,10 @@ The browser frontend uses SDL3 and Emscripten. It accepts local `.gb` and
 `.gbc` files from the picker or by drag and drop; ROM data stays in the browser
 and is never uploaded. Keyboard and standard gamepad controls match the desktop
 frontend. The display palette selector offers the same four palettes as the
-desktop frontend and remembers the selection in browser storage. Battery saves
-are currently session-only in the web build.
+desktop frontend and remembers the selection in browser storage. Battery-backed
+RAM and MBC3 clock state are saved automatically in IndexedDB for each ROM.
+Browser saves can also be imported from or exported to desktop-compatible
+`.sav` and `.rtc` files.
 
 With the Emscripten SDK active and an SDL3 installation built for Emscripten:
 
