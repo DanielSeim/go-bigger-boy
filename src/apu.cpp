@@ -1,6 +1,7 @@
 #include "gameboy/apu.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 namespace gameboy {
 namespace {
@@ -30,11 +31,11 @@ void Apu::initialize_post_boot() noexcept {
     registers_[0x13] = 0xBF; // NR44
     registers_[0x14] = 0x77; // NR50
     registers_[0x15] = 0xF3; // NR51
+    pulse1_.dac_enabled = true;
 }
 
 bool Apu::handles_register(const std::uint16_t address) noexcept {
-    return (address >= 0xFF10 && address <= 0xFF26) ||
-           (address >= 0xFF30 && address <= 0xFF3F);
+    return address >= 0xFF10 && address <= 0xFF3F;
 }
 
 std::uint8_t Apu::read_register(const std::uint16_t address) const noexcept {
@@ -91,7 +92,24 @@ void Apu::write_register(const std::uint16_t address,
         }
         return;
     }
-    if (!powered_) return;
+    if (!powered_) {
+        switch (address) {
+        case 0xFF11:
+            pulse1_.length = static_cast<std::uint8_t>(64 - (value & 0x3F));
+            break;
+        case 0xFF16:
+            pulse2_.length = static_cast<std::uint8_t>(64 - (value & 0x3F));
+            break;
+        case 0xFF1B:
+            wave_.length = static_cast<std::uint16_t>(256 - value);
+            break;
+        case 0xFF20:
+            noise_.length = static_cast<std::uint8_t>(64 - (value & 0x3F));
+            break;
+        default: break;
+        }
+        return;
+    }
 
     const auto index = static_cast<std::size_t>(address - 0xFF10);
     const auto old_value = registers_[index];
@@ -110,6 +128,11 @@ void Apu::write_register(const std::uint16_t address,
         if (!pulse1_.dac_enabled) pulse1_.enabled = false;
         break;
     case 0xFF14:
+        if (!pulse1_.length_enabled && (value & 0x40) != 0 &&
+            next_step_skips_length() && pulse1_.length != 0 &&
+            --pulse1_.length == 0 && (value & 0x80) == 0) {
+            pulse1_.enabled = false;
+        }
         pulse1_.length_enabled = (value & 0x40) != 0;
         if ((value & 0x80) != 0) trigger_pulse1();
         break;
@@ -121,6 +144,11 @@ void Apu::write_register(const std::uint16_t address,
         if (!pulse2_.dac_enabled) pulse2_.enabled = false;
         break;
     case 0xFF19:
+        if (!pulse2_.length_enabled && (value & 0x40) != 0 &&
+            next_step_skips_length() && pulse2_.length != 0 &&
+            --pulse2_.length == 0 && (value & 0x80) == 0) {
+            pulse2_.enabled = false;
+        }
         pulse2_.length_enabled = (value & 0x40) != 0;
         if ((value & 0x80) != 0) trigger_pulse2();
         break;
@@ -132,6 +160,11 @@ void Apu::write_register(const std::uint16_t address,
         wave_.length = static_cast<std::uint16_t>(256 - value);
         break;
     case 0xFF1E:
+        if (!wave_.length_enabled && (value & 0x40) != 0 &&
+            next_step_skips_length() && wave_.length != 0 &&
+            --wave_.length == 0 && (value & 0x80) == 0) {
+            wave_.enabled = false;
+        }
         wave_.length_enabled = (value & 0x40) != 0;
         if ((value & 0x80) != 0) trigger_wave();
         break;
@@ -143,6 +176,11 @@ void Apu::write_register(const std::uint16_t address,
         if (!noise_.dac_enabled) noise_.enabled = false;
         break;
     case 0xFF23:
+        if (!noise_.length_enabled && (value & 0x40) != 0 &&
+            next_step_skips_length() && noise_.length != 0 &&
+            --noise_.length == 0 && (value & 0x80) == 0) {
+            noise_.enabled = false;
+        }
         noise_.length_enabled = (value & 0x40) != 0;
         if ((value & 0x80) != 0) trigger_noise();
         break;
@@ -184,6 +222,10 @@ std::vector<std::int16_t> Apu::take_samples() {
 }
 
 void Apu::power_off() noexcept {
+    const auto pulse1_length = pulse1_.length;
+    const auto pulse2_length = pulse2_.length;
+    const auto wave_length = wave_.length;
+    const auto noise_length = noise_.length;
     powered_ = false;
     std::fill(registers_.begin(), registers_.end(), 0);
     pulse1_ = {};
@@ -191,6 +233,10 @@ void Apu::power_off() noexcept {
     wave_ = {};
     noise_ = {};
     noise_.lfsr = 0x7FFF;
+    pulse1_.length = pulse1_length;
+    pulse2_.length = pulse2_length;
+    wave_.length = wave_length;
+    noise_.length = noise_length;
     sweep_shadow_frequency_ = 0;
     sweep_timer_ = 0;
     sweep_enabled_ = false;
@@ -200,9 +246,15 @@ void Apu::power_off() noexcept {
 
 void Apu::trigger_pulse1() noexcept {
     pulse1_.enabled = pulse1_.dac_enabled;
-    if (pulse1_.length == 0) pulse1_.length = 64;
-    pulse1_.timer = pulse_period(0x01);
+    if (pulse1_.length == 0) {
+        pulse1_.length = static_cast<std::uint8_t>(
+            64 - (pulse1_.length_enabled && next_step_skips_length() ? 1 : 0));
+    }
+    pulse1_.timer = (pulse1_.timer & 3U) | (pulse_period(0x01) & ~3U);
     trigger_envelope(pulse1_.envelope, registers_[0x02]);
+    if (frame_sequencer_step_ == 7 && pulse1_.envelope.running) {
+        ++pulse1_.envelope.timer;
+    }
 
     sweep_shadow_frequency_ = static_cast<std::uint16_t>(
         static_cast<unsigned>(registers_[0x03]) |
@@ -219,24 +271,39 @@ void Apu::trigger_pulse1() noexcept {
 
 void Apu::trigger_pulse2() noexcept {
     pulse2_.enabled = pulse2_.dac_enabled;
-    if (pulse2_.length == 0) pulse2_.length = 64;
-    pulse2_.timer = pulse_period(0x06);
+    if (pulse2_.length == 0) {
+        pulse2_.length = static_cast<std::uint8_t>(
+            64 - (pulse2_.length_enabled && next_step_skips_length() ? 1 : 0));
+    }
+    pulse2_.timer = (pulse2_.timer & 3U) | (pulse_period(0x06) & ~3U);
     trigger_envelope(pulse2_.envelope, registers_[0x07]);
+    if (frame_sequencer_step_ == 7 && pulse2_.envelope.running) {
+        ++pulse2_.envelope.timer;
+    }
 }
 
 void Apu::trigger_wave() noexcept {
     wave_.enabled = wave_.dac_enabled;
-    if (wave_.length == 0) wave_.length = 256;
+    if (wave_.length == 0) {
+        wave_.length = static_cast<std::uint16_t>(
+            256 - (wave_.length_enabled && next_step_skips_length() ? 1 : 0));
+    }
     wave_.timer = wave_period();
     wave_.position = 0;
 }
 
 void Apu::trigger_noise() noexcept {
     noise_.enabled = noise_.dac_enabled;
-    if (noise_.length == 0) noise_.length = 64;
+    if (noise_.length == 0) {
+        noise_.length = static_cast<std::uint8_t>(
+            64 - (noise_.length_enabled && next_step_skips_length() ? 1 : 0));
+    }
     noise_.timer = noise_period();
     noise_.lfsr = 0x7FFF;
     trigger_envelope(noise_.envelope, registers_[0x11]);
+    if (frame_sequencer_step_ == 7 && noise_.envelope.running) {
+        ++noise_.envelope.timer;
+    }
 }
 
 void Apu::trigger_envelope(EnvelopeState& envelope,
@@ -270,13 +337,14 @@ void Apu::clock_sweep() noexcept {
     const auto pace = static_cast<std::uint8_t>((registers_[0x00] >> 4) & 7);
     const auto shift = static_cast<std::uint8_t>(registers_[0x00] & 7);
     sweep_timer_ = pace == 0 ? 8 : pace;
-    if (!sweep_enabled_ || pace == 0 || shift == 0) return;
+    if (!sweep_enabled_ || pace == 0) return;
 
     const auto frequency = calculate_sweep_frequency();
     if (frequency > 2047) {
         pulse1_.enabled = false;
         return;
     }
+    if (shift == 0) return;
     sweep_shadow_frequency_ = static_cast<std::uint16_t>(frequency);
     registers_[0x03] = static_cast<std::uint8_t>(frequency);
     registers_[0x04] = static_cast<std::uint8_t>(
@@ -362,11 +430,33 @@ void Apu::emit_sample() {
     const auto volumes = registers_[0x14];
     left *= static_cast<float>(((volumes >> 4) & 7) + 1) / 8.0F;
     right *= static_cast<float>((volumes & 7) + 1) / 8.0F;
-    constexpr auto gain = 0.20F * 32767.0F;
+    const auto dacs_enabled = any_dac_enabled();
+    left = high_pass(left, dacs_enabled, left_capacitor_);
+    right = high_pass(right, dacs_enabled, right_capacitor_);
+    constexpr auto gain = 0.25F * 32767.0F;
     samples_.push_back(static_cast<std::int16_t>(
         std::clamp(left * gain, -32767.0F, 32767.0F)));
     samples_.push_back(static_cast<std::int16_t>(
         std::clamp(right * gain, -32767.0F, 32767.0F)));
+}
+
+bool Apu::next_step_skips_length() const noexcept {
+    return (frame_sequencer_step_ & 1) != 0;
+}
+
+bool Apu::any_dac_enabled() const noexcept {
+    return pulse1_.dac_enabled || pulse2_.dac_enabled || wave_.dac_enabled ||
+           noise_.dac_enabled;
+}
+
+float Apu::high_pass(const float input, const bool dacs_enabled,
+                     float& capacitor) noexcept {
+    if (!dacs_enabled) return 0.0F;
+    static const auto charge_factor = static_cast<float>(
+        std::pow(0.999958, static_cast<double>(master_clock) / sample_rate));
+    const auto output = input - capacitor;
+    capacitor = input - output * charge_factor;
+    return output;
 }
 
 unsigned Apu::pulse_period(const unsigned register_offset) const noexcept {
@@ -401,30 +491,28 @@ unsigned Apu::calculate_sweep_frequency() noexcept {
 
 float Apu::pulse_output(const PulseState& pulse,
                         const unsigned register_offset) const noexcept {
-    if (!pulse.enabled || !pulse.dac_enabled || pulse.envelope.volume == 0) {
-        return 0.0F;
-    }
+    if (!pulse.dac_enabled) return 0.0F;
     const auto duty = static_cast<std::size_t>(registers_[register_offset] >> 6);
     const auto high = duty_patterns[duty][pulse.duty_step] != 0;
-    const auto magnitude = static_cast<float>(pulse.envelope.volume) / 15.0F;
-    return high ? magnitude : -magnitude;
+    const auto digital = pulse.enabled && high ? pulse.envelope.volume : 0;
+    return 1.0F - static_cast<float>(digital) * (2.0F / 15.0F);
 }
 
 float Apu::wave_output() const noexcept {
-    if (!wave_.enabled || !wave_.dac_enabled) return 0.0F;
+    if (!wave_.dac_enabled) return 0.0F;
     const auto level = static_cast<unsigned>((registers_[0x0C] >> 5) & 3);
-    if (level == 0) return 0.0F;
-    const auto centered =
-        (static_cast<float>(wave_.sample) / 15.0F) * 2.0F - 1.0F;
-    return centered / static_cast<float>(1U << (level - 1));
+    const auto digital = !wave_.enabled || level == 0
+                             ? 0U
+                             : static_cast<unsigned>(wave_.sample) >> (level - 1);
+    return 1.0F - static_cast<float>(digital) * (2.0F / 15.0F);
 }
 
 float Apu::noise_output() const noexcept {
-    if (!noise_.enabled || !noise_.dac_enabled || noise_.envelope.volume == 0) {
-        return 0.0F;
-    }
-    const auto magnitude = static_cast<float>(noise_.envelope.volume) / 15.0F;
-    return (noise_.lfsr & 1) == 0 ? magnitude : -magnitude;
+    if (!noise_.dac_enabled) return 0.0F;
+    const auto digital = noise_.enabled && (noise_.lfsr & 1) == 0
+                             ? noise_.envelope.volume
+                             : 0;
+    return 1.0F - static_cast<float>(digital) * (2.0F / 15.0F);
 }
 
 } // namespace gameboy

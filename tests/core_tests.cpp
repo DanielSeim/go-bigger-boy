@@ -365,6 +365,10 @@ void test_apu_power_registers_and_wave_ram() {
           "post-boot APU state has master power enabled");
     check(bus.read8(0xFF24) == 0x77 && bus.read8(0xFF25) == 0xF3,
           "post-boot APU mixer registers have their DMG values");
+    bus.write8(0xFF27, 0);
+    bus.write8(0xFF2F, 0);
+    check(bus.read8(0xFF27) == 0xFF && bus.read8(0xFF2F) == 0xFF,
+          "unused APU register space ignores writes and reads as FF");
 
     bus.write8(0xFF30, 0xA5);
     bus.write8(0xFF26, 0);
@@ -375,9 +379,39 @@ void test_apu_power_registers_and_wave_ram() {
           "powered-down APU registers ignore ordinary writes");
     check(bus.read8(0xFF30) == 0xA5,
           "wave RAM remains accessible while the APU is powered down");
+    bus.write8(0xFF16, 0xBF); // DMG permits length writes while powered down.
     bus.write8(0xFF26, 0x80);
     check((bus.read8(0xFF26) & 0x80) != 0,
           "setting NR52 restores APU master power");
+    bus.write8(0xFF17, 0xF0);
+    bus.write8(0xFF19, 0xC0);
+    bus.tick(4096);
+    bus.write8(0xFF04, 0);
+    check((bus.read8(0xFF26) & 0x02) == 0,
+          "DMG length-counter writes survive an APU power cycle");
+}
+
+void test_apu_high_pass_filter() {
+    gameboy::MemoryBus bus{gameboy::Cartridge{test_rom()}};
+    bus.initialize_post_boot();
+    bus.write8(0xFF24, 0x77);
+    bus.write8(0xFF25, 0x11); // Inactive channel 1 DAC routed both ways.
+    bus.tick(41943);
+    const auto filtered = bus.take_audio_samples();
+    const auto magnitude = [](const std::int16_t sample) {
+        return sample < 0 ? -static_cast<int>(sample) : static_cast<int>(sample);
+    };
+    check(filtered.size() > 4 &&
+              magnitude(filtered.front()) >
+                  magnitude(filtered[filtered.size() - 2]),
+          "the DMG high-pass filter removes an inactive DAC's DC bias");
+
+    bus.write8(0xFF12, 0); // Disconnect the final active DAC.
+    bus.tick(4096);
+    const auto disconnected = bus.take_audio_samples();
+    check(std::all_of(disconnected.begin(), disconnected.end(),
+                      [](const std::int16_t sample) { return sample == 0; }),
+          "disconnecting every DAC forces the mixed output to silence");
 }
 
 void test_apu_pulse2_samples_and_length() {
@@ -416,6 +450,16 @@ void test_apu_pulse2_samples_and_length() {
     length_bus.write8(0xFF04, 0);    // Its falling edge clocks length.
     check((length_bus.read8(0xFF26) & 0x02) == 0,
           "resetting DIV on its APU edge clocks and expires channel length");
+
+    gameboy::MemoryBus extra_clock_bus{gameboy::Cartridge{test_rom()}};
+    extra_clock_bus.initialize_post_boot();
+    extra_clock_bus.write8(0xFF16, 0xBF);
+    extra_clock_bus.write8(0xFF17, 0xF0);
+    extra_clock_bus.write8(0xFF19, 0x80); // Trigger with length disabled.
+    extra_clock_bus.tick(8192);           // Next sequencer step skips length.
+    extra_clock_bus.write8(0xFF19, 0x40); // Enabling length adds a clock.
+    check((extra_clock_bus.read8(0xFF26) & 0x02) == 0,
+          "enabling length before a non-length step performs the DMG extra clock");
 }
 
 void test_apu_pulse1_sweep_wave_and_noise() {
@@ -1644,6 +1688,7 @@ int main() {
         test_mbc5_banking_and_rumble();
         test_memory_map();
         test_apu_power_registers_and_wave_ram();
+        test_apu_high_pass_filter();
         test_apu_pulse2_samples_and_length();
         test_apu_pulse1_sweep_wave_and_noise();
         test_serial_transfer();

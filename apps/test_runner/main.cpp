@@ -10,7 +10,7 @@
 
 namespace {
 
-enum class Protocol { automatic, mooneye, serial };
+enum class Protocol { automatic, mooneye, serial, blargg };
 
 struct Options {
     std::string rom_path;
@@ -20,7 +20,7 @@ struct Options {
 
 void usage() {
     std::cerr << "Usage: gbb_test_runner <rom.gb> "
-                 "[--max-cycles N] [--protocol auto|mooneye|serial]\n";
+                 "[--max-cycles N] [--protocol auto|mooneye|serial|blargg]\n";
 }
 
 std::uint64_t parse_cycles(const std::string& text) {
@@ -47,6 +47,7 @@ Options parse_options(const int argc, char** argv) {
             if (value == "auto") options.protocol = Protocol::automatic;
             else if (value == "mooneye") options.protocol = Protocol::mooneye;
             else if (value == "serial") options.protocol = Protocol::serial;
+            else if (value == "blargg") options.protocol = Protocol::blargg;
             else throw std::invalid_argument("unknown protocol: " + value);
         } else {
             throw std::invalid_argument("unknown or incomplete option: " + argument);
@@ -82,6 +83,21 @@ bool contains_failure(const std::string& output) {
            output.find("failed") != std::string::npos;
 }
 
+bool has_blargg_signature(const gameboy::MemoryBus& bus) {
+    return bus.read8(0xA001) == 0xDE && bus.read8(0xA002) == 0xB0 &&
+           bus.read8(0xA003) == 0x61;
+}
+
+std::string blargg_output(const gameboy::MemoryBus& bus) {
+    std::string output;
+    for (std::uint16_t address = 0xA004; address < 0xC000; ++address) {
+        const auto value = bus.read8(address);
+        if (value == 0) break;
+        output.push_back(static_cast<char>(value));
+    }
+    return output;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -89,10 +105,43 @@ int main(int argc, char** argv) {
         const auto options = parse_options(argc, argv);
         auto emulator = gameboy::Emulator::from_file(options.rom_path);
         std::string serial_output;
+        std::string memory_output;
+        auto saw_blargg = false;
+        auto saw_blargg_running = false;
 
         while (emulator.cpu().total_cycles() < options.max_cycles) {
+            const bool watches_blargg = options.protocol == Protocol::automatic ||
+                                         options.protocol == Protocol::blargg;
+            if (watches_blargg && has_blargg_signature(emulator.bus())) {
+                saw_blargg = true;
+                const auto current_output = blargg_output(emulator.bus());
+                if (current_output.size() > memory_output.size()) {
+                    std::cout << current_output.substr(memory_output.size())
+                              << std::flush;
+                    memory_output = current_output;
+                }
+                const auto status = emulator.bus().read8(0xA000);
+                if (status == 0x80) {
+                    saw_blargg_running = true;
+                } else if (saw_blargg_running &&
+                           ((status == 0 &&
+                             memory_output.find("Passed") != std::string::npos) ||
+                            (status != 0 && contains_failure(memory_output)))) {
+                    if (status == 0) {
+                        std::cout << "\nPASS (Blargg memory)\n";
+                        return EXIT_SUCCESS;
+                    }
+                    std::cerr << "\nFAIL (Blargg result code "
+                              << static_cast<unsigned>(status) << ")\n";
+                    print_state(emulator.cpu());
+                    return EXIT_FAILURE;
+                }
+            }
+
             const auto& registers = emulator.cpu().registers();
-            const bool watches_mooneye = options.protocol != Protocol::serial;
+            const bool watches_mooneye = options.protocol == Protocol::mooneye ||
+                                         (options.protocol == Protocol::automatic &&
+                                          !saw_blargg);
             if (watches_mooneye &&
                 emulator.bus().read8(registers.pc) == 0x40) { // LD B,B
                 if (mooneye_success(registers)) {
@@ -111,7 +160,8 @@ int main(int argc, char** argv) {
                 std::cout << bytes << std::flush;
             }
 
-            const bool watches_serial = options.protocol != Protocol::mooneye;
+            const bool watches_serial = options.protocol == Protocol::serial ||
+                                        options.protocol == Protocol::automatic;
             if (watches_serial && serial_output.find("Passed") != std::string::npos) {
                 std::cout << "\nPASS (serial)\n";
                 return EXIT_SUCCESS;

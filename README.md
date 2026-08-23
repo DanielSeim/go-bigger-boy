@@ -46,8 +46,14 @@ Run an individual acceptance-test ROM with a bounded cycle budget:
 ```
 
 The runner recognizes Mooneye's `LD B,B` result protocol and serial test output
-containing `Passed` or `Failed`. Use `--protocol mooneye` or
-`--protocol serial` to disable automatic protocol detection.
+containing `Passed` or `Failed`, plus Blargg's `$A000` memory result protocol.
+Use `--protocol mooneye`, `--protocol serial`, or `--protocol blargg` to disable
+automatic protocol detection. CMake selects the Blargg protocol automatically
+for ROMs inside `dmg_sound` and `cgb_sound` directories.
+
+The DMG APU currently passes upstream Blargg `dmg_sound` tests 01 through 08
+and test 11. Tests 09, 10, and 12 exercise active wave-RAM access and retrigger
+timing that requires finer-grained CPU bus timing than the core currently has.
 
 To register a directory of legally obtained `.gb` test ROMs with CTest, set
 the opt-in cache path when configuring. Test ROMs are deliberately not bundled

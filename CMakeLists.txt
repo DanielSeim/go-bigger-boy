@@ -100,9 +100,16 @@ if(GAMEBOY_BUILD_TESTS)
         foreach(ROM IN LISTS GAMEBOY_CONFORMANCE_ROMS)
             file(RELATIVE_PATH ROM_NAME "${GAMEBOY_TEST_ROM_DIR}" "${ROM}")
             string(MAKE_C_IDENTIFIER "${ROM_NAME}" TEST_NAME)
+            set(TEST_PROTOCOL auto)
+            set(TEST_CYCLE_LIMIT 100000000)
+            if(ROM_NAME MATCHES "(^|/)(dmg_sound|cgb_sound)(/|$)")
+                set(TEST_PROTOCOL blargg)
+                set(TEST_CYCLE_LIMIT 200000000)
+            endif()
             add_test(NAME "conformance_${TEST_NAME}"
                      COMMAND gameboy_test_runner "${ROM}"
-                             --max-cycles 100000000)
+                             --max-cycles ${TEST_CYCLE_LIMIT}
+                             --protocol ${TEST_PROTOCOL})
             set_tests_properties("conformance_${TEST_NAME}"
                                  PROPERTIES LABELS conformance TIMEOUT 30)
         endforeach()
