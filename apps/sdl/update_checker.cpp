@@ -1,0 +1,520 @@
+#include "update_checker.hpp"
+
+#include <algorithm>
+#include <array>
+#include <charconv>
+#include <cstdio>
+#include <cstdlib>
+#include <exception>
+#include <filesystem>
+#include <fstream>
+#include <string_view>
+#include <utility>
+
+#ifndef _WIN32
+#include <sys/types.h>
+#include <unistd.h>
+#endif
+
+#ifdef _WIN32
+#define NOMINMAX
+#include <windows.h>
+#include <winhttp.h>
+#endif
+
+namespace gbb_desktop {
+namespace {
+constexpr std::string_view latest_release_url =
+    "https://github.com/DanielSeim/go-bigger-boy/releases/latest";
+constexpr std::size_t maximum_response_size = 256 * 1024;
+
+std::string platform_asset_name() {
+#ifdef _WIN32
+    return "go-bigger-boy-windows-x64.zip";
+#elif defined(__APPLE__) && defined(__aarch64__)
+    return "go-bigger-boy-macos-arm64.tar.gz";
+#elif defined(__APPLE__)
+    return "go-bigger-boy-macos-x64.tar.gz";
+#elif defined(__x86_64__)
+    return "go-bigger-boy-linux-x64.tar.gz";
+#else
+    return {};
+#endif
+}
+
+std::optional<std::array<unsigned, 3>> parse_version(std::string_view text) {
+    if (!text.empty() && (text.front() == 'v' || text.front() == 'V')) {
+        text.remove_prefix(1);
+    }
+    std::array<unsigned, 3> version{};
+    for (std::size_t part = 0; part < version.size(); ++part) {
+        const auto* begin = text.data();
+        const auto* end = begin + text.size();
+        const auto parsed = std::from_chars(begin, end, version[part]);
+        if (parsed.ec != std::errc{} || parsed.ptr == begin) return std::nullopt;
+        const auto consumed = static_cast<std::size_t>(parsed.ptr - begin);
+        text.remove_prefix(consumed);
+        if (part + 1 < version.size()) {
+            if (text.empty() || text.front() != '.') return std::nullopt;
+            text.remove_prefix(1);
+        }
+    }
+    if (!text.empty() && text.front() != '-' && text.front() != '+') {
+        return std::nullopt;
+    }
+    return version;
+}
+
+std::optional<std::string> json_string_field(const std::string& json,
+                                             const std::string_view field) {
+    const auto key = '"' + std::string(field) + '"';
+    auto position = json.find(key);
+    if (position == std::string::npos) return std::nullopt;
+    position = json.find(':', position + key.size());
+    if (position == std::string::npos) return std::nullopt;
+    position = json.find('"', position + 1);
+    if (position == std::string::npos) return std::nullopt;
+    const auto end = json.find('"', position + 1);
+    if (end == std::string::npos) return std::nullopt;
+    return json.substr(position + 1, end - position - 1);
+}
+
+std::optional<std::string> asset_string_field(const std::string& json,
+                                              const std::string& asset,
+                                              const std::string_view field) {
+    const auto marker = "\"name\":\"" + asset + "\"";
+    const auto asset_position = json.find(marker);
+    if (asset_position == std::string::npos) return std::nullopt;
+    const auto next_asset = json.find("\"name\":\"", asset_position + marker.size());
+    const auto key = '"' + std::string(field) + '"';
+    auto position = json.find(key, asset_position);
+    if (position == std::string::npos ||
+        (next_asset != std::string::npos && position >= next_asset)) {
+        return std::nullopt;
+    }
+    position = json.find(':', position + key.size());
+    position = position == std::string::npos ? position : json.find('"', position + 1);
+    if (position == std::string::npos) return std::nullopt;
+    const auto end = json.find('"', position + 1);
+    if (end == std::string::npos) return std::nullopt;
+    return json.substr(position + 1, end - position - 1);
+}
+
+std::string shell_quote(const std::string& value) {
+    std::string quoted{"'"};
+    for (const auto character : value) {
+        if (character == '\'') quoted += "'\\''";
+        else quoted += character;
+    }
+    return quoted + '\'';
+}
+
+#ifdef _WIN32
+std::wstring widen(const std::string& value) {
+    if (value.empty()) return {};
+    const auto size = MultiByteToWideChar(CP_UTF8, 0, value.data(),
+                                          static_cast<int>(value.size()),
+                                          nullptr, 0);
+    std::wstring wide(static_cast<std::size_t>(size), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, value.data(),
+                        static_cast<int>(value.size()), wide.data(), size);
+    return wide;
+}
+
+bool run_hidden(std::string command, const bool wait, std::string& error) {
+    auto wide = widen(command);
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
+    PROCESS_INFORMATION process{};
+    if (!CreateProcessW(nullptr, wide.data(), nullptr, nullptr, FALSE,
+                        CREATE_NO_WINDOW, nullptr, nullptr, &startup,
+                        &process)) {
+        error = "could not start the Windows update helper";
+        return false;
+    }
+    CloseHandle(process.hThread);
+    if (!wait) {
+        CloseHandle(process.hProcess);
+        return true;
+    }
+    WaitForSingleObject(process.hProcess, INFINITE);
+    DWORD status = 1;
+    GetExitCodeProcess(process.hProcess, &status);
+    CloseHandle(process.hProcess);
+    if (status != 0) error = "the update command failed";
+    return status == 0;
+}
+
+std::string powershell_quote(std::string value) {
+    std::size_t position = 0;
+    while ((position = value.find('\'', position)) != std::string::npos) {
+        value.insert(position, 1, '\'');
+        position += 2;
+    }
+    return '\'' + value + '\'';
+}
+#endif
+
+bool download_asset(const UpdateInfo& release,
+                    const std::filesystem::path& archive,
+                    std::string& error) {
+    std::filesystem::create_directories(archive.parent_path());
+#ifdef _WIN32
+    const auto command = "curl.exe -fL --max-time 120 -o \"" +
+                         archive.u8string() + "\" \"" + release.asset_url +
+                         "\"";
+    return run_hidden(command, true, error);
+#else
+    const auto command = "curl -fL --max-time 120 -o " +
+                         shell_quote(archive.u8string()) + " " +
+                         shell_quote(release.asset_url) + " >/dev/null 2>&1";
+    if (std::system(command.c_str()) != 0) {
+        error = "release download failed";
+        return false;
+    }
+    return true;
+#endif
+}
+
+bool verify_asset(const UpdateInfo& release,
+                  const std::filesystem::path& archive,
+                  std::string& error) {
+#ifdef _WIN32
+    const auto script = "$h=(Get-FileHash -Algorithm SHA256 -LiteralPath " +
+        powershell_quote(archive.u8string()) +
+        ").Hash.ToLower();if($h -ne '" + release.sha256 + "'){exit 1}";
+    return run_hidden("powershell.exe -NoProfile -Command \"" + script + "\"",
+                      true, error);
+#elif defined(__APPLE__)
+    const auto command = "test \"$(shasum -a 256 " +
+        shell_quote(archive.u8string()) + " | cut -d ' ' -f 1)\" = " +
+        shell_quote(release.sha256);
+#else
+    const auto command = "test \"$(sha256sum " +
+        shell_quote(archive.u8string()) + " | cut -d ' ' -f 1)\" = " +
+        shell_quote(release.sha256);
+#endif
+#ifndef _WIN32
+    if (std::system(command.c_str()) != 0) {
+        error = "downloaded update failed SHA-256 verification";
+        return false;
+    }
+    return true;
+#endif
+}
+
+#ifdef _WIN32
+class InternetHandle {
+public:
+    explicit InternetHandle(HINTERNET value = nullptr) : value_(value) {}
+    ~InternetHandle() {
+        if (value_ != nullptr) WinHttpCloseHandle(value_);
+    }
+    InternetHandle(const InternetHandle&) = delete;
+    InternetHandle& operator=(const InternetHandle&) = delete;
+    [[nodiscard]] HINTERNET get() const noexcept { return value_; }
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return value_ != nullptr;
+    }
+
+private:
+    HINTERNET value_{};
+};
+
+std::string fetch_latest_release(std::string& error) {
+    InternetHandle session{WinHttpOpen(
+        L"Go-Bigger-Boy/1.0", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+        WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0)};
+    if (!session) {
+        error = "could not initialize Windows HTTP";
+        return {};
+    }
+    static_cast<void>(WinHttpSetTimeouts(session.get(), 3000, 3000, 5000,
+                                         5000));
+    InternetHandle connection{
+        WinHttpConnect(session.get(), L"api.github.com", INTERNET_DEFAULT_HTTPS_PORT, 0)};
+    if (!connection) {
+        error = "could not connect to GitHub";
+        return {};
+    }
+    InternetHandle request{WinHttpOpenRequest(
+        connection.get(), L"GET",
+        L"/repos/DanielSeim/go-bigger-boy/releases/latest", nullptr,
+        WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE)};
+    if (!request) {
+        error = "could not create the GitHub update request";
+        return {};
+    }
+    constexpr auto headers =
+        L"Accept: application/vnd.github+json\r\n"
+        L"X-GitHub-Api-Version: 2022-11-28\r\n";
+    if (!WinHttpSendRequest(request.get(), headers, static_cast<DWORD>(-1L),
+                            WINHTTP_NO_REQUEST_DATA, 0, 0, 0) ||
+        !WinHttpReceiveResponse(request.get(), nullptr)) {
+        error = "GitHub update request failed";
+        return {};
+    }
+    DWORD status = 0;
+    DWORD status_size = sizeof(status);
+    if (!WinHttpQueryHeaders(request.get(),
+                             WINHTTP_QUERY_STATUS_CODE |
+                                 WINHTTP_QUERY_FLAG_NUMBER,
+                             WINHTTP_HEADER_NAME_BY_INDEX, &status,
+                             &status_size, WINHTTP_NO_HEADER_INDEX) ||
+        status != 200) {
+        error = "GitHub returned HTTP status " + std::to_string(status);
+        return {};
+    }
+
+    std::string response;
+    while (response.size() < maximum_response_size) {
+        DWORD available = 0;
+        if (!WinHttpQueryDataAvailable(request.get(), &available)) {
+            error = "could not read the GitHub update response";
+            return {};
+        }
+        if (available == 0) return response;
+        const auto remaining = maximum_response_size - response.size();
+        const auto requested = static_cast<DWORD>(
+            std::min<std::size_t>(available, remaining));
+        const auto offset = response.size();
+        response.resize(offset + requested);
+        DWORD read = 0;
+        if (!WinHttpReadData(request.get(), response.data() + offset,
+                             requested, &read)) {
+            error = "could not read the GitHub update response";
+            return {};
+        }
+        response.resize(offset + read);
+    }
+    error = "GitHub update response was unexpectedly large";
+    return {};
+}
+#else
+std::string fetch_latest_release(std::string& error) {
+    constexpr auto command =
+        "curl -fsSL --max-time 5 -A 'Go-Bigger-Boy/1.0' "
+        "-H 'Accept: application/vnd.github+json' "
+        "-H 'X-GitHub-Api-Version: 2022-11-28' "
+        "https://api.github.com/repos/DanielSeim/go-bigger-boy/releases/latest "
+        "2>/dev/null";
+    FILE* pipe = popen(command, "r");
+    if (pipe == nullptr) {
+        error = "could not start the system HTTP client";
+        return {};
+    }
+    std::string response;
+    std::array<char, 4096> buffer{};
+    while (response.size() < maximum_response_size) {
+        const auto count = std::fread(buffer.data(), 1, buffer.size(), pipe);
+        response.append(buffer.data(), count);
+        if (count < buffer.size()) break;
+    }
+    const auto status = pclose(pipe);
+    if (status != 0) {
+        error = "GitHub update request failed";
+        return {};
+    }
+    if (response.size() >= maximum_response_size) {
+        error = "GitHub update response was unexpectedly large";
+        return {};
+    }
+    return response;
+}
+#endif
+} // namespace
+
+UpdateChecker::UpdateChecker(std::string current_version) {
+    try {
+        worker_ = std::thread(
+            [this, current_version = std::move(current_version)] {
+                std::string error;
+                std::optional<UpdateInfo> update;
+                try {
+                    const auto response = fetch_latest_release(error);
+                    if (error.empty()) {
+                        const auto tag =
+                            json_string_field(response, "tag_name");
+                        const auto current = parse_version(current_version);
+                        const auto latest =
+                            tag ? parse_version(*tag) : std::nullopt;
+                        if (!tag || !latest) {
+                            error =
+                                "GitHub returned an invalid release version";
+                        } else if (!current) {
+                            error = "this build has an invalid version";
+                        } else if (*latest > *current) {
+                            const auto asset = platform_asset_name();
+                            if (asset.empty()) {
+                                error = "automatic updates are unavailable for "
+                                        "this platform architecture";
+                            }
+                            const auto asset_url = asset_string_field(
+                                response, asset, "browser_download_url");
+                            const auto digest = asset_string_field(
+                                response, asset, "digest");
+                            if (error.empty() && (!asset_url || !digest ||
+                                digest->rfind("sha256:", 0) != 0 ||
+                                digest->size() != 71)) {
+                                error = "latest release has no verified asset " +
+                                        asset;
+                            } else if (error.empty()) {
+                                update = UpdateInfo{
+                                    *tag, std::string(latest_release_url), asset,
+                                    *asset_url, digest->substr(7)};
+                            }
+                        }
+                    }
+                } catch (const std::exception& exception) {
+                    error = std::string("update check failed: ") +
+                            exception.what();
+                } catch (...) {
+                    error = "update check failed unexpectedly";
+                }
+                const std::lock_guard lock(mutex_);
+                update_ = std::move(update);
+                error_ = std::move(error);
+                complete_ = true;
+            });
+    } catch (const std::exception& exception) {
+        error_ = std::string("could not start update check: ") +
+                 exception.what();
+        complete_ = true;
+    }
+}
+
+UpdateChecker::~UpdateChecker() {
+    if (worker_.joinable()) worker_.join();
+}
+
+bool UpdateChecker::take_result(std::optional<UpdateInfo>& update,
+                                std::string& error) {
+    const std::lock_guard lock(mutex_);
+    if (!complete_ || consumed_) return false;
+    update = std::move(update_);
+    error = std::move(error_);
+    consumed_ = true;
+    return true;
+}
+
+UpdateDownload::UpdateDownload(UpdateInfo release,
+                               std::filesystem::path directory) {
+    try {
+        worker_ = std::thread(
+            [this, release = std::move(release),
+             directory = std::move(directory)]() mutable {
+                std::string error;
+                std::optional<DownloadedUpdate> update;
+                try {
+                    const auto archive = directory / release.asset_name;
+                    if (download_asset(release, archive, error) &&
+                        verify_asset(release, archive, error)) {
+                        update = DownloadedUpdate{std::move(release), archive};
+                    } else {
+                        std::error_code ignored;
+                        std::filesystem::remove(archive, ignored);
+                    }
+                } catch (const std::exception& exception) {
+                    error = std::string("update download failed: ") +
+                            exception.what();
+                }
+                const std::lock_guard lock(mutex_);
+                update_ = std::move(update);
+                error_ = std::move(error);
+                complete_ = true;
+            });
+    } catch (const std::exception& exception) {
+        error_ = std::string("could not start update download: ") +
+                 exception.what();
+        complete_ = true;
+    }
+}
+
+UpdateDownload::~UpdateDownload() {
+    if (worker_.joinable()) worker_.join();
+}
+
+bool UpdateDownload::take_result(std::optional<DownloadedUpdate>& update,
+                                 std::string& error) {
+    const std::lock_guard lock(mutex_);
+    if (!complete_ || consumed_) return false;
+    update = std::move(update_);
+    error = std::move(error_);
+    consumed_ = true;
+    return true;
+}
+
+bool launch_update_installer(const DownloadedUpdate& update,
+                             const std::filesystem::path& installation_root,
+                             const std::filesystem::path& executable,
+                             std::string& error) {
+    const auto directory = update.archive.parent_path();
+    const auto staging = directory / "extracted";
+#ifdef _WIN32
+    const auto script_path = directory / "install-update.ps1";
+    std::ofstream script(script_path, std::ios::trunc);
+    if (!script) {
+        error = "could not create the Windows update helper";
+        return false;
+    }
+    script << "$ErrorActionPreference='Stop'\n"
+           << "Wait-Process -Id " << GetCurrentProcessId()
+           << " -ErrorAction SilentlyContinue\n"
+           << "if((Get-FileHash -Algorithm SHA256 -LiteralPath "
+           << powershell_quote(update.archive.u8string())
+           << ").Hash.ToLower() -ne '" << update.release.sha256
+           << "'){exit 2}\n"
+           << "Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "
+           << powershell_quote(staging.u8string()) << "\n"
+           << "Expand-Archive -LiteralPath "
+           << powershell_quote(update.archive.u8string()) << " -DestinationPath "
+           << powershell_quote(staging.u8string()) << " -Force\n"
+           << "Copy-Item -Path " << powershell_quote((staging / "*").u8string())
+           << " -Destination " << powershell_quote(installation_root.u8string())
+           << " -Recurse -Force\n"
+           << "Start-Process -FilePath " << powershell_quote(executable.u8string())
+           << "\n";
+    script.close();
+    return run_hidden("powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"" +
+                          script_path.u8string() + "\"",
+                      false, error);
+#else
+    const auto script_path = directory / "install-update.sh";
+    std::ofstream script(script_path, std::ios::trunc);
+    if (!script) {
+        error = "could not create the update helper";
+        return false;
+    }
+    script << "#!/bin/sh\nset -e\n"
+           << "while kill -0 " << getpid()
+           << " 2>/dev/null; do sleep 1; done\n"
+#ifdef __APPLE__
+           << "test \"$(shasum -a 256 "
+#else
+           << "test \"$(sha256sum "
+#endif
+           << shell_quote(update.archive.u8string())
+           << " | cut -d ' ' -f 1)\" = "
+           << shell_quote(update.release.sha256) << "\n"
+           << "rm -rf " << shell_quote(staging.u8string()) << "\n"
+           << "mkdir -p " << shell_quote(staging.u8string()) << "\n"
+           << "tar -xzf " << shell_quote(update.archive.u8string()) << " -C "
+           << shell_quote(staging.u8string()) << "\n"
+           << "cp -a " << shell_quote((staging / ".").u8string()) << " "
+           << shell_quote(installation_root.u8string()) << "\n"
+           << "exec " << shell_quote(executable.u8string()) << "\n";
+    script.close();
+    const auto child = fork();
+    if (child < 0) {
+        error = "could not start the update helper";
+        return false;
+    }
+    if (child == 0) {
+        execl("/bin/sh", "sh", script_path.c_str(), nullptr);
+        _exit(127);
+    }
+    return true;
+#endif
+}
+
+} // namespace gbb_desktop

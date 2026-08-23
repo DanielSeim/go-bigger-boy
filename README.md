@@ -1,4 +1,6 @@
-# Go Bigger Boy (GBB)
+<p align="center">
+  <img src="go_bigger_boy_logo.png" alt="Go Bigger Boy (GBB)" width="720">
+</p>
 
 A portable, dependency-free C++17 Game Boy emulator. Platform frontends
 (desktop, Android, and Switch) will live outside the core so emulation logic is
@@ -88,7 +90,8 @@ without arguments opens a native ROM picker:
 
 You can also pass a ROM path, press Ctrl+O to choose another ROM, or drag a
 `.gb`/`.gbc` file onto the emulator window. On Windows, build with Visual
-Studio and an SDL3 installation visible to CMake:
+Studio and an SDL3 installation visible to CMake. `gbb --version` prints the
+version embedded in a desktop build:
 
 ```powershell
 cmake -S . -B build-windows -G "Visual Studio 17 2022" -A x64 `
@@ -102,11 +105,11 @@ the executable.
 
 ### Linux desktop
 
-Install a C++ compiler, CMake, SDL3 development files, and an XDG desktop
+Install a C++ compiler, CMake, SDL3 development files, curl, and an XDG desktop
 portal. On Debian/Ubuntu distributions where SDL3 packages are available:
 
 ```sh
-sudo apt install build-essential cmake libsdl3-dev xdg-desktop-portal
+sudo apt install build-essential cmake curl libsdl3-dev xdg-desktop-portal
 cmake -S . -B build-linux -DCMAKE_BUILD_TYPE=Release
 cmake --build build-linux --parallel
 ./build-linux/gbb
@@ -135,6 +138,16 @@ keyboard and gamepad bindings, the display palette, and per-ROM quick saves are
 stored in SDL's per-user preferences directory. The Ctrl+K controls dialog can
 rebind either input device or restore the default mappings; Escape cancels an
 in-progress setup.
+
+At startup, the desktop app checks GitHub's latest stable release in a
+background thread. If its semantic version is newer than the running build,
+GBB can download the matching platform archive, verify GitHub's published
+SHA-256 digest, replace a user-writable installation after the emulator exits,
+and restart the updated executable. Nothing is downloaded without confirmation.
+Network failures remain non-blocking and do not display a dialog. Windows uses
+the system HTTP service and PowerShell extraction; Linux and macOS use the
+system `curl` and archive tools. System-wide read-only installations must still
+be updated through their package manager or replaced manually.
 
 Battery-backed MBC1, MBC2, MBC3, MBC5, and Game Boy Camera games use a sibling
 file with the ROM's base name and a `.sav` extension. MBC3 real-time clocks use
@@ -200,9 +213,11 @@ platform. The Windows and macOS archives include the SDL3 runtime. The Linux
 archive includes SDL3 alongside the executable plus the desktop launcher and
 icon. ROM files are never included in CI artifacts.
 
-Pushing a version tag such as `v0.1.0` waits for every platform build to pass,
+Pushing a version tag such as `v0.10.0` waits for every platform build to pass,
 then automatically creates a GitHub Release with all four archives and
-generated release notes. A failed platform build prevents the release.
+generated release notes. Tagged builds derive their displayed version from the
+tag so the startup update comparison remains accurate. A failed platform build
+prevents the release.
 
 ## Layout
 

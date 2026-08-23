@@ -4,14 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#111a15">
+  <link rel="icon" type="image/png" href="go_bigger_boy_icon.png">
   <title>Go Bigger Boy (GBB)</title>
   <style>
     :root { color-scheme: dark; font-family: system-ui, sans-serif; }
     * { box-sizing: border-box; }
     body { margin: 0; min-height: 100vh; background: #0b100d; color: #e7f0e9; }
     main { width: min(94vw, 880px); margin: 0 auto; padding: 24px 0 40px; }
-    header { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
-    h1 { margin: 0; font-size: clamp(1.5rem, 4vw, 2.25rem); }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 16px; border: 1px solid #202823; border-radius: 14px; background: #000; }
+    h1 { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+    .brand { display: block; width: min(78vw, 500px); height: auto; }
     .subtitle { margin: 4px 0 0; color: #a7b9aa; }
     button { border: 0; border-radius: 8px; padding: 11px 16px; font: inherit; font-weight: 700; background: #8bcf69; color: #10200d; cursor: pointer; }
     button:disabled { cursor: wait; opacity: .55; }
@@ -40,7 +42,8 @@
   <main>
     <header>
       <div>
-        <h1>Go Bigger Boy <span aria-hidden="true">(GBB)</span></h1>
+        <h1>Go Bigger Boy (GBB)</h1>
+        <img class="brand" src="go_bigger_boy_logo.png" alt="Go Bigger Boy">
         <p class="subtitle">A Game Boy emulator running locally in your browser.</p>
       </div>
       <div class="actions">

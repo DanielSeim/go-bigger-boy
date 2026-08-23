@@ -1,5 +1,6 @@
 #include "gameboy/emulator.hpp"
 #include "gameboy/display_palette.hpp"
+#include "update_checker.hpp"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
@@ -33,6 +34,10 @@
 
 namespace {
 
+#ifndef GBB_VERSION
+#define GBB_VERSION "0.9.0"
+#endif
+
 [[noreturn]] void sdl_error(const std::string& action) {
     throw std::runtime_error(action + ": " + SDL_GetError());
 }
@@ -40,7 +45,7 @@ namespace {
 class SdlResources {
 public:
     SdlResources() {
-        if (!SDL_SetAppMetadata("Go Bigger Boy (GBB)", "0.1.0",
+        if (!SDL_SetAppMetadata("Go Bigger Boy (GBB)", GBB_VERSION,
                                 "go-bigger-boy")) {
             sdl_error("Could not set application metadata");
         }
@@ -633,8 +638,7 @@ std::optional<std::size_t> show_palette_dialog(SDL_Window* window,
 }
 
 void show_help(SDL_Window* window) {
-    static_cast<void>(SDL_ShowSimpleMessageBox(
-        SDL_MESSAGEBOX_INFORMATION, "Go Bigger Boy (GBB) controls",
+    const auto message = std::string("Version ") + GBB_VERSION + "\n\n" +
         "Space: Pause/resume\n"
         "Ctrl+R: Reset\n"
         "Ctrl+O: Open ROM\n"
@@ -649,8 +653,10 @@ void show_help(SDL_Window* window) {
         "Escape: Quit\n\n"
         "Game Boy Printer pages are saved automatically as BMP images.\n"
         "Game Boy Camera cartridges use the first available webcam.\n"
-        "Rumble cartridges vibrate the connected gamepad when supported.",
-        window));
+        "Rumble cartridges vibrate the connected gamepad when supported.";
+    static_cast<void>(SDL_ShowSimpleMessageBox(
+        SDL_MESSAGEBOX_INFORMATION, "Go Bigger Boy (GBB) controls",
+        message.c_str(), window));
 }
 
 void show_error(SDL_Window* window, const std::string& message);
@@ -896,6 +902,64 @@ void show_error(SDL_Window* window, const std::string& message) {
         SDL_MESSAGEBOX_ERROR, "Go Bigger Boy (GBB)", message.c_str(), window));
 }
 
+bool offer_update(const gbb_desktop::UpdateInfo& update,
+                  gameboy::Emulator* emulator, SdlResources& sdl) {
+    stop_rumble(sdl);
+    if (emulator != nullptr) release_all_buttons(*emulator);
+    const auto message =
+        std::string("Go Bigger Boy ") + update.version +
+        " is available.\n\nYou are running version " GBB_VERSION
+        ". Would you like GBB to install the update and restart?\n\n"
+        "You can keep playing while the verified archive downloads.";
+    constexpr std::array<SDL_MessageBoxButtonData, 2> buttons{{
+        {SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, 1, "Update and restart"},
+        {SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, "Later"},
+    }};
+    const SDL_MessageBoxData box{
+        SDL_MESSAGEBOX_INFORMATION,
+        sdl.window,
+        "Go Bigger Boy update available",
+        message.c_str(),
+        static_cast<int>(buttons.size()),
+        buttons.data(),
+        nullptr,
+    };
+    auto selection = 0;
+    return SDL_ShowMessageBox(&box, &selection) && selection == 1;
+}
+
+std::pair<std::filesystem::path, std::filesystem::path> installation_paths() {
+    const auto* base = SDL_GetBasePath();
+    if (base == nullptr) throw std::runtime_error(SDL_GetError());
+    auto executable_directory = std::filesystem::u8path(base).lexically_normal();
+#ifdef _WIN32
+    const auto executable = executable_directory / "gbb.exe";
+    return {executable_directory, executable};
+#elif defined(__APPLE__)
+    const auto bundle = executable_directory.parent_path().parent_path();
+    const auto executable = bundle / "Contents" / "MacOS" /
+                            "Go Bigger Boy";
+    return {bundle.parent_path(), executable};
+#else
+    const auto executable = executable_directory / "gbb";
+    const auto root = executable_directory.filename() == "bin"
+                          ? executable_directory.parent_path()
+                          : executable_directory;
+    return {root, executable};
+#endif
+}
+
+bool installation_is_writable(const std::filesystem::path& root) {
+    const auto probe = root / ".gbb-update-write-test";
+    std::ofstream output(probe, std::ios::trunc);
+    if (!output) return false;
+    output << "write test";
+    output.close();
+    std::error_code ignored;
+    std::filesystem::remove(probe, ignored);
+    return !ignored;
+}
+
 void close_camera(SdlResources& sdl) noexcept {
     if (sdl.camera != nullptr) {
         SDL_CloseCamera(sdl.camera);
@@ -1065,6 +1129,10 @@ void submit_audio(gameboy::Emulator* emulator, SdlResources& sdl) {
 
 int main(int argc, char** argv) {
     try {
+        if (argc == 2 && std::string_view(argv[1]) == "--version") {
+            std::cout << "Go Bigger Boy " GBB_VERSION << '\n';
+            return EXIT_SUCCESS;
+        }
         DialogState dialog;
         SdlResources sdl;
         const auto preference_path = preference_directory();
@@ -1076,6 +1144,9 @@ int main(int argc, char** argv) {
         std::string current_rom;
         std::optional<std::string> pending_rom;
         std::optional<BindingConfiguration> configuring;
+        gbb_desktop::UpdateChecker update_checker{GBB_VERSION};
+        std::optional<gbb_desktop::UpdateInfo> available_update;
+        std::unique_ptr<gbb_desktop::UpdateDownload> update_download;
         auto paused = false;
         auto fullscreen = false;
         auto reset_requested = false;
@@ -1107,6 +1178,16 @@ int main(int argc, char** argv) {
             collect_dialog_result(dialog, pending_rom, dialog_error);
             if (dialog_error) show_error(sdl.window, *dialog_error);
 
+            std::string update_error;
+            std::optional<gbb_desktop::UpdateInfo> update_result;
+            if (update_checker.take_result(update_result, update_error)) {
+                if (!update_error.empty()) {
+                    std::cerr << "Warning: update check unavailable: "
+                              << update_error << '\n';
+                }
+                available_update = std::move(update_result);
+            }
+
             if (reset_requested) {
                 if (!current_rom.empty()) pending_rom = current_rom;
                 reset_requested = false;
@@ -1131,6 +1212,66 @@ int main(int argc, char** argv) {
                 }
                 pending_rom.reset();
                 next_frame = Clock::now();
+            }
+
+            if (available_update && !dialog_active(dialog) && !configuring &&
+                !pending_rom) {
+                if (offer_update(*available_update, emulator.get(), sdl)) {
+                    try {
+                        const auto [root, executable] = installation_paths();
+                        if (!installation_is_writable(root)) {
+                            throw std::runtime_error(
+                                "The installation directory is not writable. "
+                                "Install GBB in a user-writable folder to use "
+                                "automatic updates.");
+                        }
+                        const auto directory =
+                            (preference_path.empty()
+                                 ? std::filesystem::temp_directory_path() /
+                                       "go-bigger-boy"
+                                 : preference_path) /
+                            "updates" / available_update->version;
+                        update_download =
+                            std::make_unique<gbb_desktop::UpdateDownload>(
+                                *available_update, directory);
+                        static_cast<void>(SDL_SetWindowTitle(
+                            sdl.window,
+                            "Go Bigger Boy (GBB) - Downloading update..."));
+                    } catch (const std::exception& error) {
+                        show_error(sdl.window, error.what());
+                    }
+                }
+                available_update.reset();
+                next_frame = Clock::now();
+            }
+
+            if (update_download) {
+                std::optional<gbb_desktop::DownloadedUpdate> downloaded;
+                std::string download_error;
+                if (update_download->take_result(downloaded, download_error)) {
+                    update_download.reset();
+                    if (!download_error.empty() || !downloaded) {
+                        show_error(sdl.window,
+                                   download_error.empty()
+                                       ? "The update download failed."
+                                       : download_error);
+                        update_window_title(sdl.window, current_rom, paused,
+                                            configuring);
+                    } else {
+                        try {
+                            const auto [root, executable] = installation_paths();
+                            std::string installer_error;
+                            if (!gbb_desktop::launch_update_installer(
+                                    *downloaded, root, executable,
+                                    installer_error)) {
+                                throw std::runtime_error(installer_error);
+                            }
+                            running = false;
+                        } catch (const std::exception& error) {
+                            show_error(sdl.window, error.what());
+                        }
+                    }
+                }
             }
 
             update_camera_frame(emulator.get(), sdl);

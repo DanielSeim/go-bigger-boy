@@ -59,6 +59,8 @@ jobs:
           test -s build-web/web/index.wasm
           grep -Fq "index.js?v=${GITHUB_SHA}" build-web/web/index.html
           grep -Fq "index.wasm?v=${GITHUB_SHA}" build-web/web/index.js
+          test -s build-web/web/go_bigger_boy_icon.png
+          test -s build-web/web/go_bigger_boy_logo.png
 
       - name: Configure GitHub Pages
         if: github.event_name != 'pull_request'

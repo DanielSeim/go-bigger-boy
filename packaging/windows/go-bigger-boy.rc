@@ -1,0 +1,4 @@
+#include <windows.h>
+
+#define IDI_GBB_ICON 101
+IDI_GBB_ICON ICON "go-bigger-boy.ico"
