@@ -191,11 +191,15 @@ cd android
 gradle assembleDebug
 ```
 
-The APK is written to `android/app/build/outputs/apk/debug/app-debug.apk`.
+The debug APK is written to
+`android/app/build/outputs/apk/debug/app-debug.apk`.
 Tapping the folder button in the upper-left opens another ROM. The translucent
 controls provide a D-pad, A, B, Select, and Start; Bluetooth and USB gamepads
 continue to work through SDL. The `Android build` GitHub Actions workflow runs
-the same build and uploads an unsigned debug APK on every push.
+pull requests as an automatically debug-signed APK. Pushes to the repository
+use encrypted GitHub secrets to produce a consistently signed release APK and
+Play-ready Android App Bundle. The signing key must be kept permanently:
+Android will not accept future updates signed with a different key.
 
 ### Web build
 

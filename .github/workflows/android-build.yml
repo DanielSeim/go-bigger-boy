@@ -42,13 +42,56 @@ jobs:
         run: android/fetch-sdl.sh
 
       - name: Build debug APK
+        if: github.event_name == 'pull_request'
         working-directory: android
         run: gradle --no-daemon assembleDebug
 
-      - name: Upload APK
+      - name: Restore release signing key
+        if: github.event_name != 'pull_request'
+        working-directory: android
+        env:
+          GBB_ANDROID_KEYSTORE_BASE64: ${{ secrets.GBB_ANDROID_KEYSTORE_BASE64 }}
+          GBB_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.GBB_ANDROID_KEYSTORE_PASSWORD }}
+          GBB_ANDROID_KEY_PASSWORD: ${{ secrets.GBB_ANDROID_KEY_PASSWORD }}
+        run: |
+          test -n "$GBB_ANDROID_KEYSTORE_BASE64"
+          test -n "$GBB_ANDROID_KEYSTORE_PASSWORD"
+          test -n "$GBB_ANDROID_KEY_PASSWORD"
+          umask 077
+          printf '%s' "$GBB_ANDROID_KEYSTORE_BASE64" | base64 --decode > app/gbb-release.p12
+
+      - name: Build signed release APK and bundle
+        if: github.event_name != 'pull_request'
+        working-directory: android
+        env:
+          GBB_ANDROID_KEYSTORE_FILE: ${{ github.workspace }}/android/app/gbb-release.p12
+          GBB_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.GBB_ANDROID_KEYSTORE_PASSWORD }}
+          GBB_ANDROID_KEY_PASSWORD: ${{ secrets.GBB_ANDROID_KEY_PASSWORD }}
+        run: gradle --no-daemon assembleRelease bundleRelease
+
+      - name: Stage signed release packages
+        if: github.event_name != 'pull_request'
+        run: |
+          mkdir -p android/release
+          cp android/app/build/outputs/apk/release/app-release.apk \
+             android/release/go-bigger-boy-android.apk
+          cp android/app/build/outputs/bundle/release/app-release.aab \
+             android/release/go-bigger-boy-android.aab
+
+      - name: Upload debug APK
+        if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v7
         with:
           name: go-bigger-boy-android-debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload signed release packages
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: go-bigger-boy-android
+          path: android/release/*
           if-no-files-found: error
           retention-days: 14

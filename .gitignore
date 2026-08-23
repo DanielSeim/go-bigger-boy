@@ -11,3 +11,5 @@
 /android/app/build/
 /android/app/.cxx/
 /android/app/libs/*.aar
+/.android-signing/
+/android/app/gbb-release.p12

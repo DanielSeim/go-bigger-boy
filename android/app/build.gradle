@@ -2,6 +2,10 @@ plugins {
     id "com.android.application"
 }
 
+def releaseKeystore = System.getenv("GBB_ANDROID_KEYSTORE_FILE")
+def releaseStorePassword = System.getenv("GBB_ANDROID_KEYSTORE_PASSWORD")
+def releaseKeyPassword = System.getenv("GBB_ANDROID_KEY_PASSWORD")
+
 android {
     namespace "com.danielseim.gbb"
     compileSdk 36
@@ -23,6 +27,17 @@ android {
         }
     }
 
+    signingConfigs {
+        release {
+            if (releaseKeystore && releaseStorePassword && releaseKeyPassword) {
+                storeFile file(releaseKeystore)
+                storePassword releaseStorePassword
+                keyAlias "gbb"
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         debug {
             applicationIdSuffix ".debug"
@@ -30,6 +45,9 @@ android {
         }
         release {
             minifyEnabled false
+            if (releaseKeystore && releaseStorePassword && releaseKeyPassword) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 
