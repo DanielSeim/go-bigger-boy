@@ -358,6 +358,140 @@ void test_memory_map() {
     check(bus.read8(0xFEA0) == 0xFF, "unusable memory reads as FF");
 }
 
+void test_apu_power_registers_and_wave_ram() {
+    gameboy::MemoryBus bus{gameboy::Cartridge{test_rom()}};
+    bus.initialize_post_boot();
+    check(bus.read8(0xFF26) == 0xF0,
+          "post-boot APU state has master power enabled");
+    check(bus.read8(0xFF24) == 0x77 && bus.read8(0xFF25) == 0xF3,
+          "post-boot APU mixer registers have their DMG values");
+
+    bus.write8(0xFF30, 0xA5);
+    bus.write8(0xFF26, 0);
+    check(bus.read8(0xFF26) == 0x70,
+          "clearing NR52 powers down the APU and its channels");
+    bus.write8(0xFF17, 0xF0);
+    check(bus.read8(0xFF17) == 0,
+          "powered-down APU registers ignore ordinary writes");
+    check(bus.read8(0xFF30) == 0xA5,
+          "wave RAM remains accessible while the APU is powered down");
+    bus.write8(0xFF26, 0x80);
+    check((bus.read8(0xFF26) & 0x80) != 0,
+          "setting NR52 restores APU master power");
+}
+
+void test_apu_pulse2_samples_and_length() {
+    gameboy::MemoryBus bus{gameboy::Cartridge{test_rom()}};
+    bus.initialize_post_boot();
+    bus.write8(0xFF24, 0x77); // Full left and right master volume.
+    bus.write8(0xFF25, 0x22); // Route channel 2 to both outputs.
+    bus.write8(0xFF16, 0x80); // 50% duty.
+    bus.write8(0xFF17, 0xF0); // Initial volume 15, envelope disabled.
+    bus.write8(0xFF18, 0x00);
+    bus.write8(0xFF19, 0x87); // Trigger at frequency 1792.
+    check((bus.read8(0xFF26) & 0x02) != 0,
+          "triggering pulse channel 2 marks it active in NR52");
+
+    bus.tick(41943); // Approximately 10 ms at the DMG master clock.
+    const auto samples = bus.take_audio_samples();
+    check(samples.size() >= 950 && samples.size() <= 970 &&
+              samples.size() % 2 == 0,
+          "the APU resamples master-clock cycles into 48 kHz stereo frames");
+    check(std::any_of(samples.begin(), samples.end(),
+                      [](const std::int16_t sample) { return sample != 0; }),
+          "an active pulse channel produces audible non-zero PCM samples");
+    auto stereo_matches = true;
+    for (std::size_t index = 0; index + 1 < samples.size(); index += 2) {
+        stereo_matches = stereo_matches && samples[index] == samples[index + 1];
+    }
+    check(stereo_matches,
+          "routing pulse channel 2 to both terminals produces matching stereo");
+
+    gameboy::MemoryBus length_bus{gameboy::Cartridge{test_rom()}};
+    length_bus.initialize_post_boot();
+    length_bus.write8(0xFF16, 0xBF); // 50% duty and a one-tick length.
+    length_bus.write8(0xFF17, 0xF0);
+    length_bus.write8(0xFF19, 0xC0); // Trigger with length enabled.
+    length_bus.tick(4096);           // Raise the internal DIV-APU bit.
+    length_bus.write8(0xFF04, 0);    // Its falling edge clocks length.
+    check((length_bus.read8(0xFF26) & 0x02) == 0,
+          "resetting DIV on its APU edge clocks and expires channel length");
+}
+
+void test_apu_pulse1_sweep_wave_and_noise() {
+    gameboy::MemoryBus pulse_bus{gameboy::Cartridge{test_rom()}};
+    pulse_bus.initialize_post_boot();
+    pulse_bus.write8(0xFF24, 0x77);
+    pulse_bus.write8(0xFF25, 0x01); // Channel 1 to right output only.
+    pulse_bus.write8(0xFF10, 0x11); // Sweep pace 1, add, shift 1.
+    pulse_bus.write8(0xFF11, 0x80);
+    pulse_bus.write8(0xFF12, 0xF0);
+    pulse_bus.write8(0xFF13, 0xE8); // Frequency 1000.
+    pulse_bus.write8(0xFF14, 0x83);
+    check((pulse_bus.read8(0xFF26) & 0x01) != 0,
+          "triggering pulse channel 1 marks it active in NR52");
+    pulse_bus.tick(4096);
+    const auto pulse_samples = pulse_bus.take_audio_samples();
+    auto right_only_audio = false;
+    for (std::size_t index = 0; index + 1 < pulse_samples.size(); index += 2) {
+        right_only_audio = right_only_audio ||
+                           (pulse_samples[index] == 0 &&
+                            pulse_samples[index + 1] != 0);
+    }
+    check(right_only_audio,
+          "NR51 can route pulse channel 1 exclusively to the right terminal");
+    pulse_bus.tick(3 * 8192);
+    check((pulse_bus.read8(0xFF26) & 0x01) == 0,
+          "pulse channel 1 sweep disables the channel on frequency overflow");
+
+    gameboy::MemoryBus overflow_bus{gameboy::Cartridge{test_rom()}};
+    overflow_bus.initialize_post_boot();
+    overflow_bus.write8(0xFF10, 0x01); // Pace zero, add, shift one.
+    overflow_bus.write8(0xFF11, 0x80);
+    overflow_bus.write8(0xFF12, 0xF0);
+    overflow_bus.write8(0xFF13, 0xDC); // Frequency 1500.
+    overflow_bus.write8(0xFF14, 0x85);
+    check((overflow_bus.read8(0xFF26) & 0x01) == 0,
+          "pulse channel 1 checks sweep overflow even when pace is zero");
+
+    gameboy::MemoryBus wave_bus{gameboy::Cartridge{test_rom()}};
+    wave_bus.initialize_post_boot();
+    wave_bus.write8(0xFF24, 0x77);
+    wave_bus.write8(0xFF25, 0x44); // Channel 3 to both terminals.
+    for (unsigned index = 0; index < 16; ++index) {
+        wave_bus.write8(static_cast<std::uint16_t>(0xFF30 + index),
+                        index % 2 == 0 ? 0xF0 : 0x1E);
+    }
+    wave_bus.write8(0xFF1A, 0x80);
+    wave_bus.write8(0xFF1C, 0x20); // Full output level.
+    wave_bus.write8(0xFF1D, 0x00);
+    wave_bus.write8(0xFF1E, 0x87);
+    wave_bus.tick(4096);
+    const auto wave_samples = wave_bus.take_audio_samples();
+    check((wave_bus.read8(0xFF26) & 0x04) != 0 &&
+              std::any_of(wave_samples.begin(), wave_samples.end(),
+                          [](const std::int16_t sample) { return sample != 0; }),
+          "wave channel 3 plays packed four-bit samples from wave RAM");
+
+    gameboy::MemoryBus noise_bus{gameboy::Cartridge{test_rom()}};
+    noise_bus.initialize_post_boot();
+    noise_bus.write8(0xFF24, 0x77);
+    noise_bus.write8(0xFF25, 0x88); // Channel 4 to both terminals.
+    noise_bus.write8(0xFF21, 0xF0);
+    noise_bus.write8(0xFF22, 0x08); // Fast 7-bit LFSR mode.
+    noise_bus.write8(0xFF23, 0x80);
+    noise_bus.tick(4096);
+    const auto noise_samples = noise_bus.take_audio_samples();
+    check((noise_bus.read8(0xFF26) & 0x08) != 0 &&
+              std::any_of(noise_samples.begin(), noise_samples.end(),
+                          [](const std::int16_t sample) { return sample != 0; }),
+          "noise channel 4 produces PCM through its short-mode LFSR");
+
+    noise_bus.write8(0xFF21, 0);
+    check((noise_bus.read8(0xFF26) & 0x08) == 0,
+          "disabling a channel DAC immediately clears its NR52 status bit");
+}
+
 void test_serial_transfer() {
     gameboy::MemoryBus bus{gameboy::Cartridge{test_rom()}};
     bus.write8(0xFF0F, 0);
@@ -1509,6 +1643,9 @@ int main() {
         test_mbc3_rtc_persistence();
         test_mbc5_banking_and_rumble();
         test_memory_map();
+        test_apu_power_registers_and_wave_ram();
+        test_apu_pulse2_samples_and_length();
+        test_apu_pulse1_sweep_wave_and_noise();
         test_serial_transfer();
         test_cpu_state_normalization();
         test_register_load_matrix();

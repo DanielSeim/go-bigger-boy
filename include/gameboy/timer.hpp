@@ -18,6 +18,7 @@ public:
 
     // Returns true when TIMA reload requests the timer interrupt.
     [[nodiscard]] bool tick(unsigned cycles) noexcept;
+    [[nodiscard]] unsigned take_apu_ticks() noexcept;
 
 private:
     [[nodiscard]] bool input_signal() const noexcept;
@@ -28,6 +29,7 @@ private:
     std::uint8_t modulo_{};
     std::uint8_t control_{};
     unsigned reload_delay_{};
+    unsigned apu_ticks_{};
 };
 
 } // namespace gameboy

@@ -44,6 +44,10 @@ bool Emulator::frame_ready() const noexcept { return bus_.frame_ready(); }
 
 void Emulator::consume_frame() noexcept { bus_.consume_frame(); }
 
+std::vector<std::int16_t> Emulator::take_audio_samples() {
+    return bus_.take_audio_samples();
+}
+
 void Emulator::set_button(const Button button, const bool pressed) noexcept {
     bus_.set_button(button, pressed);
 }

@@ -10,6 +10,7 @@ constexpr unsigned serial_transfer_cycles = 4096;
 MemoryBus::MemoryBus(Cartridge cartridge) : cartridge_(std::move(cartridge)) {}
 
 void MemoryBus::initialize_post_boot() noexcept {
+    apu_.initialize_post_boot();
     static_cast<void>(joypad_.write(0x00));
     io_[0x0F] = 0xE1;
     static_cast<void>(ppu_.write_register(0xFF42, 0x00));
@@ -57,6 +58,9 @@ std::uint8_t MemoryBus::read8(const std::uint16_t address) const noexcept {
     case 0xFF07: return timer_.control();
     default: break;
     }
+    if (Apu::handles_register(address)) {
+        return apu_.read_register(address);
+    }
     if (Ppu::handles_register(address)) {
         return ppu_.read_register(address);
     }
@@ -101,6 +105,9 @@ void MemoryBus::write8(const std::uint16_t address, const std::uint8_t value) no
                                        : 0;
     } else if (address == 0xFF04) {
         timer_.write_divider();
+        for (auto ticks = timer_.take_apu_ticks(); ticks > 0; --ticks) {
+            apu_.clock_frame_sequencer();
+        }
     } else if (address == 0xFF05) {
         timer_.write_counter(value);
     } else if (address == 0xFF06) {
@@ -114,6 +121,8 @@ void MemoryBus::write8(const std::uint16_t address, const std::uint8_t value) no
             ppu_.dma_write_oam(
                 offset, read8(static_cast<std::uint16_t>(source + offset)));
         }
+    } else if (Apu::handles_register(address)) {
+        apu_.write_register(address, value);
     } else if (Ppu::handles_register(address)) {
         if (ppu_.write_register(address, value)) {
             request_interrupt(1);
@@ -128,6 +137,7 @@ void MemoryBus::write8(const std::uint16_t address, const std::uint8_t value) no
 }
 
 void MemoryBus::tick(const unsigned cycles) noexcept {
+    apu_.tick(cycles);
     if (serial_cycles_remaining_ != 0) {
         if (cycles >= serial_cycles_remaining_) {
             serial_cycles_remaining_ = 0;
@@ -141,6 +151,9 @@ void MemoryBus::tick(const unsigned cycles) noexcept {
     }
     if (timer_.tick(cycles)) {
         request_interrupt(2);
+    }
+    for (auto ticks = timer_.take_apu_ticks(); ticks > 0; --ticks) {
+        apu_.clock_frame_sequencer();
     }
     const auto ppu_requests = ppu_.tick(cycles);
     if ((ppu_requests & 0x01) != 0) {
@@ -182,6 +195,10 @@ const Ppu::Framebuffer& MemoryBus::framebuffer() const noexcept {
 bool MemoryBus::frame_ready() const noexcept { return ppu_.frame_ready(); }
 
 void MemoryBus::consume_frame() noexcept { ppu_.consume_frame(); }
+
+std::vector<std::int16_t> MemoryBus::take_audio_samples() {
+    return apu_.take_samples();
+}
 
 std::string MemoryBus::take_serial_output() {
     auto output = std::move(serial_output_);

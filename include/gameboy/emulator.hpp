@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <vector>
 
 namespace gameboy {
 
@@ -23,6 +24,7 @@ public:
     [[nodiscard]] const Ppu::Framebuffer& framebuffer() const noexcept;
     [[nodiscard]] bool frame_ready() const noexcept;
     void consume_frame() noexcept;
+    [[nodiscard]] std::vector<std::int16_t> take_audio_samples();
     void set_button(Button button, bool pressed) noexcept;
     void flush_battery();
 

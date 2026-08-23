@@ -55,11 +55,27 @@ public:
         if (!SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST)) {
             sdl_error("Could not configure nearest-neighbor scaling");
         }
+        if (SDL_InitSubSystem(SDL_INIT_AUDIO)) {
+            const SDL_AudioSpec audio_spec{
+                SDL_AUDIO_S16, 2, static_cast<int>(gameboy::Apu::sample_rate)};
+            audio_stream = SDL_OpenAudioDeviceStream(
+                SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &audio_spec, nullptr, nullptr);
+            if (audio_stream != nullptr &&
+                !SDL_ResumeAudioStreamDevice(audio_stream)) {
+                SDL_DestroyAudioStream(audio_stream);
+                audio_stream = nullptr;
+            }
+        }
+        if (audio_stream == nullptr) {
+            std::cerr << "Warning: audio output is unavailable: "
+                      << SDL_GetError() << '\n';
+        }
         static_cast<void>(SDL_SetRenderDrawColor(renderer, 16, 20, 16, 255));
     }
 
     ~SdlResources() {
         if (gamepad != nullptr) SDL_CloseGamepad(gamepad);
+        if (audio_stream != nullptr) SDL_DestroyAudioStream(audio_stream);
         if (texture != nullptr) SDL_DestroyTexture(texture);
         if (renderer != nullptr) SDL_DestroyRenderer(renderer);
         if (window != nullptr) SDL_DestroyWindow(window);
@@ -73,6 +89,7 @@ public:
     SDL_Renderer* renderer{};
     SDL_Texture* texture{};
     SDL_Gamepad* gamepad{};
+    SDL_AudioStream* audio_stream{};
 };
 
 struct DialogState {
@@ -474,6 +491,17 @@ void present(const gameboy::Emulator* emulator, SdlResources& sdl) {
     }
 }
 
+void submit_audio(gameboy::Emulator* emulator, SdlResources& sdl) {
+    if (emulator == nullptr) return;
+    const auto samples = emulator->take_audio_samples();
+    if (sdl.audio_stream != nullptr && !samples.empty() &&
+        !SDL_PutAudioStreamData(
+            sdl.audio_stream, samples.data(),
+            static_cast<int>(samples.size() * sizeof(samples.front())))) {
+        sdl_error("Could not queue audio samples");
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -528,6 +556,9 @@ int main(int argc, char** argv) {
                     const bool reopening_current =
                         emulator && *pending_rom == current_rom;
                     load_rom(*pending_rom, emulator);
+                    if (sdl.audio_stream != nullptr) {
+                        static_cast<void>(SDL_ClearAudioStream(sdl.audio_stream));
+                    }
                     current_rom = *pending_rom;
                     if (!reopening_current) paused = false;
                     remember_rom(current_rom, recent_roms, preference_path);
@@ -549,6 +580,7 @@ int main(int argc, char** argv) {
                 }
                 if (emulator->frame_ready()) emulator->consume_frame();
             }
+            submit_audio(emulator.get(), sdl);
             present(emulator.get(), sdl);
 
             next_frame += std::chrono::duration_cast<Clock::duration>(frame_duration);

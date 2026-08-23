@@ -10,6 +10,7 @@ set(GAMEBOY_TEST_ROM_DIR "" CACHE PATH
     "Optional directory of conformance .gb ROMs to register with CTest")
 
 add_library(gameboy_core
+    src/apu.cpp
     src/cartridge.cpp
     src/cpu.cpp
     src/emulator.cpp

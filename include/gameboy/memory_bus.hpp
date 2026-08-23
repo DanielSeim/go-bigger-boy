@@ -1,5 +1,6 @@
 #pragma once
 
+#include "gameboy/apu.hpp"
 #include "gameboy/cartridge.hpp"
 #include "gameboy/joypad.hpp"
 #include "gameboy/ppu.hpp"
@@ -8,6 +9,7 @@
 #include <array>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace gameboy {
 
@@ -29,6 +31,7 @@ public:
     [[nodiscard]] const Ppu::Framebuffer& framebuffer() const noexcept;
     [[nodiscard]] bool frame_ready() const noexcept;
     void consume_frame() noexcept;
+    [[nodiscard]] std::vector<std::int16_t> take_audio_samples();
     [[nodiscard]] std::string take_serial_output();
 
 private:
@@ -38,6 +41,7 @@ private:
     std::array<std::uint8_t, 0x7F> hram_{};
     std::uint8_t interrupt_enable_{};
     Joypad joypad_{};
+    Apu apu_{};
     Ppu ppu_{};
     Timer timer_{};
     std::string serial_output_{};

@@ -18,10 +18,12 @@ std::uint8_t Timer::control() const noexcept {
 
 void Timer::write_divider() noexcept {
     const auto old_signal = input_signal();
+    const auto old_apu_signal = (divider_counter_ & (1U << 12)) != 0;
     divider_counter_ = 0;
     if (old_signal && !input_signal()) {
         increment_counter();
     }
+    if (old_apu_signal) ++apu_ticks_;
 }
 
 void Timer::write_counter(const std::uint8_t value) noexcept {
@@ -48,12 +50,21 @@ bool Timer::tick(const unsigned cycles) noexcept {
         }
 
         const auto old_signal = input_signal();
+        const auto old_apu_signal = (divider_counter_ & (1U << 12)) != 0;
         ++divider_counter_;
         if (old_signal && !input_signal()) {
             increment_counter();
         }
+        const auto new_apu_signal = (divider_counter_ & (1U << 12)) != 0;
+        if (old_apu_signal && !new_apu_signal) ++apu_ticks_;
     }
     return interrupt_requested;
+}
+
+unsigned Timer::take_apu_ticks() noexcept {
+    const auto ticks = apu_ticks_;
+    apu_ticks_ = 0;
+    return ticks;
 }
 
 bool Timer::input_signal() const noexcept {
