@@ -28,6 +28,7 @@ void Cpu::reset() noexcept {
     stopped_ = false;
     halt_bug_ = false;
     ime_enable_delay_ = 0;
+    step_cycles_ = 0;
     total_cycles_ = 0;
 }
 
@@ -37,9 +38,11 @@ void Cpu::load_registers(CpuRegisters registers) noexcept {
 }
 
 unsigned Cpu::step(MemoryBus& bus) {
+    step_cycles_ = 0;
     const auto pending = pending_interrupts(bus);
     if (halted_ || stopped_) {
         if (pending == 0) {
+            if (halted_) idle(bus, 4);
             total_cycles_ += 4;
             return 4;
         }
@@ -49,11 +52,16 @@ unsigned Cpu::step(MemoryBus& bus) {
 
     if (ime_ && pending != 0) {
         const auto cycles = service_interrupt(bus, pending);
+        if (step_cycles_ < cycles) idle(bus, cycles - step_cycles_);
         total_cycles_ += cycles;
         return cycles;
     }
 
     const auto cycles = execute_instruction(bus);
+    if (step_cycles_ > cycles) {
+        throw std::logic_error("CPU bus accesses exceeded instruction timing");
+    }
+    if (step_cycles_ < cycles) idle(bus, cycles - step_cycles_);
     if (ime_enable_delay_ != 0 && --ime_enable_delay_ == 0) {
         ime_ = true;
     }
@@ -147,9 +155,7 @@ unsigned Cpu::execute_instruction(MemoryBus& bus) {
     }
     if ((opcode & 0xCF) == 0xC1) { // POP qq
         const auto pair = static_cast<unsigned>((opcode >> 4) & 0x03);
-        const auto value = bus.read16(registers_.sp);
-        registers_.sp = static_cast<std::uint16_t>(registers_.sp + 2);
-        set_stack_register_pair(pair, value);
+        set_stack_register_pair(pair, pop(bus));
         return 12;
     }
     if ((opcode & 0xCF) == 0xC5) { // PUSH qq
@@ -189,6 +195,7 @@ unsigned Cpu::execute_instruction(MemoryBus& bus) {
         if (!condition((opcode >> 3) & 0x03)) {
             return 8;
         }
+        idle(bus, 4);
         registers_.pc = pop(bus);
         return 20;
     }
@@ -201,7 +208,7 @@ unsigned Cpu::execute_instruction(MemoryBus& bus) {
     switch (opcode) {
     case 0x00: return 4; // NOP
     case 0x02:
-        bus.write8(bc(), registers_.a);
+        write8(bus, bc(), registers_.a);
         return 8;
     case 0x07: { // RLCA
         const auto carry = (registers_.a & 0x80) != 0;
@@ -212,11 +219,13 @@ unsigned Cpu::execute_instruction(MemoryBus& bus) {
     }
     case 0x08: {
         const auto address = fetch16(bus);
-        bus.write16(address, registers_.sp);
+        write8(bus, address, static_cast<std::uint8_t>(registers_.sp));
+        write8(bus, static_cast<std::uint16_t>(address + 1),
+               static_cast<std::uint8_t>(registers_.sp >> 8));
         return 20;
     }
     case 0x0A:
-        registers_.a = bus.read8(bc());
+        registers_.a = read8(bus, bc());
         return 8;
     case 0x0F: { // RRCA
         const auto carry = (registers_.a & 0x01) != 0;
@@ -226,12 +235,13 @@ unsigned Cpu::execute_instruction(MemoryBus& bus) {
         return 4;
     }
     case 0x10: // STOP 0
-        static_cast<void>(fetch8(bus));
+        static_cast<void>(bus.read8(registers_.pc));
+        ++registers_.pc;
         bus.write8(0xFF04, 0);
         stopped_ = true;
         return 4;
     case 0x12:
-        bus.write8(de(), registers_.a);
+        write8(bus, de(), registers_.a);
         return 8;
     case 0x17: { // RLA
         const auto old_carry = flag(carry_flag);
@@ -250,7 +260,7 @@ unsigned Cpu::execute_instruction(MemoryBus& bus) {
         return 12;
     }
     case 0x1A:
-        registers_.a = bus.read8(de());
+        registers_.a = read8(bus, de());
         return 8;
     case 0x1F: { // RRA
         const auto old_carry = flag(carry_flag);
@@ -261,14 +271,14 @@ unsigned Cpu::execute_instruction(MemoryBus& bus) {
         return 4;
     }
     case 0x22:
-        bus.write8(hl(), registers_.a);
+        write8(bus, hl(), registers_.a);
         set_hl(static_cast<std::uint16_t>(hl() + 1));
         return 8;
     case 0x27:
         decimal_adjust();
         return 4;
     case 0x2A:
-        registers_.a = bus.read8(hl());
+        registers_.a = read8(bus, hl());
         set_hl(static_cast<std::uint16_t>(hl() + 1));
         return 8;
     case 0x2F:
@@ -277,7 +287,7 @@ unsigned Cpu::execute_instruction(MemoryBus& bus) {
             registers_.f | subtract_flag | half_carry_flag);
         return 4;
     case 0x32:
-        bus.write8(hl(), registers_.a);
+        write8(bus, hl(), registers_.a);
         set_hl(static_cast<std::uint16_t>(hl() - 1));
         return 8;
     case 0x37:
@@ -285,7 +295,7 @@ unsigned Cpu::execute_instruction(MemoryBus& bus) {
             (registers_.f & zero_flag) | carry_flag);
         return 4;
     case 0x3A:
-        registers_.a = bus.read8(hl());
+        registers_.a = read8(bus, hl());
         set_hl(static_cast<std::uint16_t>(hl() - 1));
         return 8;
     case 0x3F:
@@ -332,10 +342,10 @@ unsigned Cpu::execute_instruction(MemoryBus& bus) {
         subtract(fetch8(bus), true);
         return 8;
     case 0xE0:
-        bus.write8(static_cast<std::uint16_t>(0xFF00 | fetch8(bus)), registers_.a);
+        write8(bus, static_cast<std::uint16_t>(0xFF00 | fetch8(bus)), registers_.a);
         return 12;
     case 0xE2:
-        bus.write8(static_cast<std::uint16_t>(0xFF00 | registers_.c), registers_.a);
+        write8(bus, static_cast<std::uint16_t>(0xFF00 | registers_.c), registers_.a);
         return 8;
     case 0xE6:
         registers_.a &= fetch8(bus);
@@ -361,7 +371,7 @@ unsigned Cpu::execute_instruction(MemoryBus& bus) {
         return 4;
     case 0xEA: {
         const auto address = fetch16(bus);
-        bus.write8(address, registers_.a);
+        write8(bus, address, registers_.a);
         return 16;
     }
     case 0xEE:
@@ -369,11 +379,11 @@ unsigned Cpu::execute_instruction(MemoryBus& bus) {
         registers_.f = registers_.a == 0 ? zero_flag : 0;
         return 8;
     case 0xF0:
-        registers_.a = bus.read8(
+        registers_.a = read8(bus,
             static_cast<std::uint16_t>(0xFF00 | fetch8(bus)));
         return 12;
     case 0xF2:
-        registers_.a = bus.read8(
+        registers_.a = read8(bus,
             static_cast<std::uint16_t>(0xFF00 | registers_.c));
         return 8;
     case 0xF3:
@@ -402,7 +412,7 @@ unsigned Cpu::execute_instruction(MemoryBus& bus) {
         registers_.sp = hl();
         return 8;
     case 0xFA:
-        registers_.a = bus.read8(fetch16(bus));
+        registers_.a = read8(bus, fetch16(bus));
         return 16;
     case 0xFB:
         ime_enable_delay_ = 2;
@@ -515,7 +525,12 @@ unsigned Cpu::service_interrupt(MemoryBus& bus,
     halted_ = false;
     stopped_ = false;
     halt_bug_ = false;
-    push(bus, registers_.pc);
+    idle(bus, 8);
+    --registers_.sp;
+    write8(bus, registers_.sp, static_cast<std::uint8_t>(registers_.pc >> 8));
+    --registers_.sp;
+    write8(bus, registers_.sp, static_cast<std::uint8_t>(registers_.pc));
+    idle(bus, 4);
     registers_.pc = static_cast<std::uint16_t>(0x0040 + interrupt * 8);
     return 20;
 }
@@ -529,19 +544,39 @@ bool Cpu::condition(const unsigned index) const noexcept {
     }
 }
 
+void Cpu::idle(MemoryBus& bus, const unsigned cycles) noexcept {
+    bus.tick(cycles);
+    step_cycles_ += cycles;
+}
+
+std::uint8_t Cpu::read8(MemoryBus& bus, const std::uint16_t address) noexcept {
+    idle(bus, 4);
+    return bus.read8(address);
+}
+
+void Cpu::write8(MemoryBus& bus, const std::uint16_t address,
+                 const std::uint8_t value) noexcept {
+    idle(bus, 4);
+    bus.write8(address, value);
+}
+
 void Cpu::push(MemoryBus& bus, const std::uint16_t value) noexcept {
-    registers_.sp = static_cast<std::uint16_t>(registers_.sp - 2);
-    bus.write16(registers_.sp, value);
+    idle(bus, 4);
+    --registers_.sp;
+    write8(bus, registers_.sp, static_cast<std::uint8_t>(value >> 8));
+    --registers_.sp;
+    write8(bus, registers_.sp, static_cast<std::uint8_t>(value));
 }
 
 std::uint16_t Cpu::pop(MemoryBus& bus) noexcept {
-    const auto value = bus.read16(registers_.sp);
-    registers_.sp = static_cast<std::uint16_t>(registers_.sp + 2);
-    return value;
+    const auto low = read8(bus, registers_.sp++);
+    const auto high = read8(bus, registers_.sp++);
+    return static_cast<std::uint16_t>(
+        low | (static_cast<std::uint16_t>(high) << 8));
 }
 
 std::uint8_t Cpu::fetch8(MemoryBus& bus) noexcept {
-    const auto value = bus.read8(registers_.pc);
+    const auto value = read8(bus, registers_.pc);
     if (halt_bug_) {
         halt_bug_ = false;
     } else {
@@ -556,7 +591,7 @@ std::uint16_t Cpu::fetch16(MemoryBus& bus) noexcept {
     return static_cast<std::uint16_t>(low | (static_cast<std::uint16_t>(high) << 8));
 }
 
-std::uint8_t Cpu::read_register(const unsigned index, MemoryBus& bus) const noexcept {
+std::uint8_t Cpu::read_register(const unsigned index, MemoryBus& bus) noexcept {
     switch (index) {
     case 0: return registers_.b;
     case 1: return registers_.c;
@@ -564,7 +599,7 @@ std::uint8_t Cpu::read_register(const unsigned index, MemoryBus& bus) const noex
     case 3: return registers_.e;
     case 4: return registers_.h;
     case 5: return registers_.l;
-    case 6: return bus.read8(hl());
+    case 6: return read8(bus, hl());
     default: return registers_.a;
     }
 }
@@ -578,7 +613,7 @@ void Cpu::write_register(const unsigned index, const std::uint8_t value,
     case 3: registers_.e = value; break;
     case 4: registers_.h = value; break;
     case 5: registers_.l = value; break;
-    case 6: bus.write8(hl(), value); break;
+    case 6: write8(bus, hl(), value); break;
     default: registers_.a = value; break;
     }
 }

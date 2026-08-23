@@ -45,6 +45,8 @@ private:
         std::uint8_t position{};
         std::uint8_t sample{};
         unsigned timer{};
+        bool clock_phase{};
+        bool wave_ram_accessible{};
     };
 
     struct NoiseState {

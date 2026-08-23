@@ -9,7 +9,7 @@ shared everywhere.
 - Cartridge loading and basic header parsing
 - Initial DMG memory map, including work RAM echo behavior
 - Complete legal CPU opcode set, including all 256 CB-prefixed operations
-- Interrupt dispatch, EI delay, HALT/STOP states, HALT bug, and cycle accounting
+- Interrupt dispatch, EI delay, HALT/STOP states, HALT bug, and machine-cycle bus timing
 - Cycle-driven DIV/TIMA/TMA/TAC timer with overflow interrupts and write-edge behavior
 - DMG PPU modes, LCD/STAT interrupts, VRAM/OAM arbitration, and RGBA framebuffer
 - Background, window, and 8×8/8×16 sprite scanline rendering
@@ -52,9 +52,8 @@ Use `--protocol mooneye`, `--protocol serial`, or `--protocol blargg` to disable
 automatic protocol detection. CMake selects the Blargg protocol automatically
 for ROMs inside `dmg_sound` and `cgb_sound` directories.
 
-The DMG APU currently passes upstream Blargg `dmg_sound` tests 01 through 08
-and test 11. Tests 09, 10, and 12 exercise active wave-RAM access and retrigger
-timing that requires finer-grained CPU bus timing than the core currently has.
+The DMG APU passes all 12 upstream Blargg `dmg_sound` tests, including active
+wave-RAM reads/writes and the original hardware's channel 3 retrigger corruption.
 
 To register a directory of legally obtained `.gb` test ROMs with CTest, set
 the opt-in cache path when configuring. Test ROMs are deliberately not bundled

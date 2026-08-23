@@ -17,11 +17,7 @@ void Emulator::reset() noexcept {
 }
 
 unsigned Emulator::step() {
-    const auto cycles = cpu_.step(bus_);
-    if (!cpu_.stopped()) {
-        bus_.tick(cycles);
-    }
-    return cycles;
+    return cpu_.step(bus_);
 }
 
 const Cpu& Emulator::cpu() const noexcept {

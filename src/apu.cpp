@@ -40,7 +40,9 @@ bool Apu::handles_register(const std::uint16_t address) noexcept {
 
 std::uint8_t Apu::read_register(const std::uint16_t address) const noexcept {
     if (address >= 0xFF30 && address <= 0xFF3F) {
-        return wave_ram_[address - 0xFF30];
+        if (!wave_.enabled) return wave_ram_[address - 0xFF30];
+        if (!wave_.wave_ram_accessible) return 0xFF;
+        return wave_ram_[wave_.position / 2];
     }
     if (address < 0xFF10 || address > 0xFF26) return 0xFF;
 
@@ -78,7 +80,11 @@ std::uint8_t Apu::read_register(const std::uint16_t address) const noexcept {
 void Apu::write_register(const std::uint16_t address,
                          const std::uint8_t value) noexcept {
     if (address >= 0xFF30 && address <= 0xFF3F) {
-        wave_ram_[address - 0xFF30] = value;
+        if (!wave_.enabled) {
+            wave_ram_[address - 0xFF30] = value;
+        } else if (wave_.wave_ram_accessible) {
+            wave_ram_[wave_.position / 2] = value;
+        }
         return;
     }
     if (address < 0xFF10 || address > 0xFF26) return;
@@ -283,13 +289,28 @@ void Apu::trigger_pulse2() noexcept {
 }
 
 void Apu::trigger_wave() noexcept {
+    if (wave_.enabled && wave_.timer == 0) {
+        const auto current_byte = static_cast<std::size_t>(
+            ((wave_.position + 1) & 31) / 2);
+        if (current_byte < 4) {
+            wave_ram_[0] = wave_ram_[current_byte];
+        } else {
+            const auto source = current_byte & ~std::size_t{3};
+            const std::array<std::uint8_t, 4> copied{
+                wave_ram_[source], wave_ram_[source + 1],
+                wave_ram_[source + 2], wave_ram_[source + 3],
+            };
+            std::copy(copied.begin(), copied.end(), wave_ram_.begin());
+        }
+    }
     wave_.enabled = wave_.dac_enabled;
     if (wave_.length == 0) {
         wave_.length = static_cast<std::uint16_t>(
             256 - (wave_.length_enabled && next_step_skips_length() ? 1 : 0));
     }
-    wave_.timer = wave_period();
+    wave_.timer = wave_period() + 3;
     wave_.position = 0;
+    wave_.wave_ram_accessible = false;
 }
 
 void Apu::trigger_noise() noexcept {
@@ -385,13 +406,19 @@ void Apu::tick_pulse(PulseState& pulse,
 }
 
 void Apu::tick_wave() noexcept {
-    if (wave_.timer > 0) --wave_.timer;
+    wave_.clock_phase = !wave_.clock_phase;
+    if (wave_.clock_phase) return;
+
+    wave_.wave_ram_accessible = false;
     if (wave_.timer == 0) {
         wave_.timer = wave_period();
         wave_.position = static_cast<std::uint8_t>((wave_.position + 1) & 31);
         const auto packed = wave_ram_[wave_.position / 2];
         wave_.sample = static_cast<std::uint8_t>(
             (wave_.position & 1) == 0 ? packed >> 4 : packed & 0x0F);
+        wave_.wave_ram_accessible = wave_.enabled;
+    } else {
+        --wave_.timer;
     }
 }
 
@@ -470,7 +497,7 @@ unsigned Apu::pulse_period(const unsigned register_offset) const noexcept {
 unsigned Apu::wave_period() const noexcept {
     const auto frequency = static_cast<unsigned>(registers_[0x0D]) |
                            (static_cast<unsigned>(registers_[0x0E] & 7) << 8);
-    return (2048 - frequency) * 2;
+    return 2047 - frequency;
 }
 
 unsigned Apu::noise_period() const noexcept {

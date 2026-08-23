@@ -391,6 +391,50 @@ void test_apu_power_registers_and_wave_ram() {
           "DMG length-counter writes survive an APU power cycle");
 }
 
+void test_active_wave_ram_timing() {
+    gameboy::MemoryBus bus{gameboy::Cartridge{test_rom()}};
+    bus.initialize_post_boot();
+    for (unsigned index = 0; index < 16; ++index) {
+        bus.write8(static_cast<std::uint16_t>(0xFF30 + index),
+                   static_cast<std::uint8_t>(0x40 + index));
+    }
+    bus.write8(0xFF1A, 0x80);
+    bus.write8(0xFF1D, 0xFC); // Frequency 2044: one sample every 8 clocks.
+    bus.write8(0xFF1E, 0x87);
+
+    check(bus.read8(0xFF30) == 0xFF,
+          "active wave RAM is blocked between channel 3 fetches");
+    bus.tick(14); // Trigger adds a six-clock startup delay.
+    check(bus.read8(0xFF3F) == 0x40,
+          "active wave RAM addresses expose the byte channel 3 just fetched");
+    bus.write8(0xFF3F, 0xA5);
+    bus.tick(2);
+    bus.write8(0xFF30, 0x99);
+    check(bus.read8(0xFF30) == 0xFF,
+          "the channel 3 wave RAM access window lasts two clocks");
+    bus.write8(0xFF1A, 0);
+    check(bus.read8(0xFF30) == 0xA5,
+          "active wave writes target the fetched byte and blocked writes are ignored");
+
+    gameboy::MemoryBus corruption{gameboy::Cartridge{test_rom()}};
+    corruption.initialize_post_boot();
+    for (unsigned index = 0; index < 16; ++index) {
+        corruption.write8(static_cast<std::uint16_t>(0xFF30 + index),
+                          static_cast<std::uint8_t>(index));
+    }
+    corruption.write8(0xFF1A, 0x80);
+    corruption.write8(0xFF1D, 0xFC);
+    corruption.write8(0xFF1E, 0x87);
+    corruption.tick(68); // Channel 3 is about to fetch wave byte 4.
+    corruption.write8(0xFF1E, 0x87);
+    corruption.write8(0xFF1A, 0);
+    check(corruption.read8(0xFF30) == 4 &&
+              corruption.read8(0xFF31) == 5 &&
+              corruption.read8(0xFF32) == 6 &&
+              corruption.read8(0xFF33) == 7,
+          "retriggering channel 3 during a fetch reproduces DMG wave corruption");
+}
+
 void test_apu_high_pass_filter() {
     gameboy::MemoryBus bus{gameboy::Cartridge{test_rom()}};
     bus.initialize_post_boot();
@@ -1498,6 +1542,19 @@ void test_emulator_timer_integration() {
           "the system divider remains frozen while STOP is active");
 }
 
+void test_cpu_machine_cycle_bus_timing() {
+    gameboy::MemoryBus bus{
+        gameboy::Cartridge{test_rom({0xFA, 0x05, 0xFF})}}; // LD A,(FF05)
+    bus.write8(0xFF07, 0x05); // TIMA increments every 16 clocks.
+    bus.tick(12);
+
+    gameboy::Cpu cpu;
+    check(cpu.step(bus) == 16 && cpu.registers().a == 1,
+          "CPU memory reads observe hardware changes from earlier machine cycles");
+    check(bus.read8(0xFF04) == 0 && bus.read8(0xFF05) == 1,
+          "calling Cpu::step directly advances bus hardware exactly once");
+}
+
 void test_ppu_modes_and_memory_access() {
     gameboy::MemoryBus bus{gameboy::Cartridge{test_rom()}};
     bus.write8(0x8000, 0x12);
@@ -1688,6 +1745,7 @@ int main() {
         test_mbc5_banking_and_rumble();
         test_memory_map();
         test_apu_power_registers_and_wave_ram();
+        test_active_wave_ram_timing();
         test_apu_high_pass_filter();
         test_apu_pulse2_samples_and_length();
         test_apu_pulse1_sweep_wave_and_noise();
@@ -1714,6 +1772,7 @@ int main() {
         test_timer_overflow_pipeline();
         test_timer_write_edges();
         test_emulator_timer_integration();
+        test_cpu_machine_cycle_bus_timing();
         test_ppu_modes_and_memory_access();
         test_ppu_stat_interrupts();
         test_ppu_vblank_and_frame_publication();

@@ -50,12 +50,17 @@ private:
     [[nodiscard]] unsigned service_interrupt(MemoryBus& bus,
                                              std::uint8_t pending) noexcept;
     [[nodiscard]] bool condition(unsigned index) const noexcept;
+    void idle(MemoryBus& bus, unsigned cycles) noexcept;
+    [[nodiscard]] std::uint8_t read8(MemoryBus& bus,
+                                     std::uint16_t address) noexcept;
+    void write8(MemoryBus& bus, std::uint16_t address,
+                std::uint8_t value) noexcept;
     void push(MemoryBus& bus, std::uint16_t value) noexcept;
     [[nodiscard]] std::uint16_t pop(MemoryBus& bus) noexcept;
     [[nodiscard]] std::uint8_t fetch8(MemoryBus& bus) noexcept;
     [[nodiscard]] std::uint16_t fetch16(MemoryBus& bus) noexcept;
     [[nodiscard]] std::uint8_t read_register(unsigned index,
-                                             MemoryBus& bus) const noexcept;
+                                             MemoryBus& bus) noexcept;
     void write_register(unsigned index, std::uint8_t value,
                         MemoryBus& bus) noexcept;
     [[nodiscard]] std::uint16_t bc() const noexcept;
@@ -82,6 +87,7 @@ private:
     bool stopped_{};
     bool halt_bug_{};
     unsigned ime_enable_delay_{};
+    unsigned step_cycles_{};
     std::uint64_t total_cycles_{};
 };
 
