@@ -658,6 +658,11 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                 if (const auto selected =
                         show_palette_dialog(sdl.window, display_palette)) {
                     display_palette = *selected;
+                    if (emulator) {
+                        emulator->set_dmg_compatibility_colors(
+                            gameboy::display_palettes[display_palette]
+                                .cgb_compatibility);
+                    }
                     save_display_palette(preference_path, display_palette);
                 }
             } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
@@ -785,9 +790,11 @@ void show_error(SDL_Window* window, const std::string& message) {
 }
 
 void load_rom(const std::string& path,
-              std::unique_ptr<gameboy::Emulator>& emulator) {
+              std::unique_ptr<gameboy::Emulator>& emulator,
+              const gameboy::DisplayPalette& palette) {
     auto replacement = std::make_unique<gameboy::Emulator>(
         gameboy::Cartridge::from_file(std::filesystem::u8path(path)));
+    replacement->set_dmg_compatibility_colors(palette.cgb_compatibility);
     if (emulator) emulator->flush_battery();
     emulator = std::move(replacement);
 }
@@ -799,11 +806,12 @@ void present(const gameboy::Emulator* emulator, SdlResources& sdl,
     }
     if (emulator != nullptr) {
         const auto& pixels = emulator->framebuffer();
-        const auto cgb_mode = emulator->bus().cgb_mode();
+        const auto native_colors =
+            emulator->bus().cgb_mode() || palette.cgb_compatibility;
         gameboy::Ppu::Framebuffer colored_pixels{};
         std::transform(pixels.begin(), pixels.end(), colored_pixels.begin(),
-                       [&palette, cgb_mode](const std::uint32_t pixel) {
-                           return cgb_mode
+                       [&palette, native_colors](const std::uint32_t pixel) {
+                           return native_colors
                                       ? pixel
                                       : gameboy::apply_display_palette(pixel,
                                                                        palette);
@@ -885,7 +893,8 @@ int main(int argc, char** argv) {
                 try {
                     const bool reopening_current =
                         emulator && *pending_rom == current_rom;
-                    load_rom(*pending_rom, emulator);
+                    load_rom(*pending_rom, emulator,
+                             gameboy::display_palettes[display_palette]);
                     if (sdl.audio_stream != nullptr) {
                         static_cast<void>(SDL_ClearAudioStream(sdl.audio_stream));
                     }

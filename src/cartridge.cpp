@@ -17,6 +17,39 @@ constexpr std::uint64_t rtc_day_seconds = 24 * 60 * 60;
 constexpr std::uint64_t rtc_period_seconds = 512 * rtc_day_seconds;
 constexpr std::array<char, 8> rtc_magic{'G', 'B', 'B', 'R', 'T', 'C', '1', 0};
 
+// CGB boot ROM DMG-colorization lookup data. See gbdev.io/pandocs/
+// Power_Up_Sequence.html#compatibility-palettes.
+constexpr std::array<std::uint8_t, 94> title_checksums{
+    0x00, 0x88, 0x16, 0x36, 0xD1, 0xDB, 0xF2, 0x3C, 0x8C,
+    0x92, 0x3D, 0x5C, 0x58, 0xC9, 0x3E, 0x70, 0x1D, 0x59, 0x69, 0x19,
+    0x35, 0xA8, 0x14, 0xAA, 0x75, 0x95, 0x99, 0x34, 0x6F, 0x15, 0xFF,
+    0x97, 0x4B, 0x90, 0x17, 0x10, 0x39, 0xF7, 0xF6, 0xA2, 0x49, 0x4E,
+    0x43, 0x68, 0xE0, 0x8B, 0xF0, 0xCE, 0x0C, 0x29, 0xE8, 0xB7, 0x86,
+    0x9A, 0x52, 0x01, 0x9D, 0x71, 0x9C, 0xBD, 0x5D, 0x6D, 0x67, 0x3F,
+    0x6B, 0xB3, 0x46, 0x28, 0xA5, 0xC6, 0xD3, 0x27, 0x61, 0x18, 0x66,
+    0x6A, 0xBF, 0x0D, 0xF4, 0xB3, 0x46, 0x28, 0xA5, 0xC6, 0xD3, 0x27,
+    0x61, 0x18, 0x66, 0x6A, 0xBF, 0x0D, 0xF4, 0xB3,
+};
+
+constexpr std::array<std::uint8_t, 94> palette_per_checksum{
+    0, 4, 5, 35, 34, 3, 31, 15, 10, 5, 19, 36, 0x87, 37,
+    30, 44, 21, 32, 31, 20, 5, 33, 13, 14, 5, 29, 5, 18, 9, 3, 2, 26,
+    25, 25, 41, 42, 26, 45, 42, 45, 36, 38, 0x9A, 42, 30, 41, 34, 34,
+    5, 42, 6, 5, 33, 25, 42, 42, 40, 2, 16, 25, 42, 42, 5, 0, 39, 36,
+    22, 25, 6, 32, 12, 36, 11, 39, 18, 39, 24, 31, 50, 17, 46, 6, 27,
+    0, 47, 41, 41, 0, 0, 19, 34, 23, 18, 29,
+};
+
+constexpr std::array duplicate_title_letters{
+    'B', 'E', 'F', 'A', 'A', 'R', 'B', 'E', 'K', 'E', 'K', ' ', 'R', '-',
+    'U', 'R', 'A', 'R', ' ', 'I', 'N', 'A', 'I', 'L', 'I', 'C', 'E', ' ', 'R',
+};
+
+constexpr std::size_t first_duplicate_checksum = 65;
+static_assert(title_checksums.size() == palette_per_checksum.size());
+static_assert(title_checksums.size() - first_duplicate_checksum ==
+              duplicate_title_letters.size());
+
 std::int64_t current_unix_seconds() noexcept {
     return std::chrono::duration_cast<std::chrono::seconds>(
                std::chrono::system_clock::now().time_since_epoch())
@@ -359,6 +392,29 @@ bool Cartridge::supports_cgb() const noexcept {
 
 bool Cartridge::requires_cgb() const noexcept {
     return (rom_[0x143] & 0xC0) == 0xC0;
+}
+
+std::uint8_t Cartridge::cgb_compatibility_palette_id() const noexcept {
+    const auto old_licensee = rom_[0x14B];
+    const auto is_nintendo = old_licensee == 0x01 ||
+                             (old_licensee == 0x33 && rom_[0x144] == '0' &&
+                              rom_[0x145] == '1');
+    if (!is_nintendo) return 0;
+
+    std::uint8_t checksum = 0;
+    for (std::size_t address = 0x134; address <= 0x143; ++address) {
+        checksum = static_cast<std::uint8_t>(checksum + rom_[address]);
+    }
+    for (std::size_t index = 0; index < title_checksums.size(); ++index) {
+        if (title_checksums[index] != checksum) continue;
+        if (index >= first_duplicate_checksum &&
+            rom_[0x137] != duplicate_title_letters[index -
+                                                    first_duplicate_checksum]) {
+            continue;
+        }
+        return static_cast<std::uint8_t>(palette_per_checksum[index] & 0x7F);
+    }
+    return 0;
 }
 
 std::size_t Cartridge::rom_size() const noexcept { return rom_.size(); }

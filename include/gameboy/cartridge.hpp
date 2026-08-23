@@ -30,6 +30,7 @@ public:
     [[nodiscard]] std::uint8_t type() const noexcept;
     [[nodiscard]] bool supports_cgb() const noexcept;
     [[nodiscard]] bool requires_cgb() const noexcept;
+    [[nodiscard]] std::uint8_t cgb_compatibility_palette_id() const noexcept;
     [[nodiscard]] std::size_t rom_size() const noexcept;
     [[nodiscard]] std::size_t ram_size() const noexcept;
     [[nodiscard]] bool has_battery() const noexcept;

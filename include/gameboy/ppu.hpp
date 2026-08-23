@@ -1,5 +1,7 @@
 #pragma once
 
+#include "gameboy/dmg_palette.hpp"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -19,6 +21,7 @@ public:
 
     void set_cgb_mode(bool enabled) noexcept;
     [[nodiscard]] bool cgb_mode() const noexcept;
+    void set_dmg_palette(const DmgPalette& palette) noexcept;
 
     [[nodiscard]] std::uint8_t read_vram(std::uint16_t address) const noexcept;
     void write_vram(std::uint16_t address, std::uint8_t value) noexcept;
@@ -50,8 +53,9 @@ private:
     [[nodiscard]] bool window_active_on_line() const noexcept;
     void begin_visible_line() noexcept;
     void render_scanline() noexcept;
-    [[nodiscard]] std::uint32_t palette_color(std::uint8_t palette,
-                                              std::uint8_t color) const noexcept;
+    [[nodiscard]] std::uint32_t palette_color(
+        std::uint8_t palette, std::uint8_t color,
+        const std::array<std::uint32_t, 4>& colors) const noexcept;
     [[nodiscard]] std::uint32_t cgb_palette_color(
         const std::array<std::uint8_t, 0x40>& palette, std::uint8_t number,
         std::uint8_t color) const noexcept;
@@ -70,6 +74,7 @@ private:
     std::uint8_t bg_palette_{};
     std::uint8_t object_palette_0_{};
     std::uint8_t object_palette_1_{};
+    DmgPalette dmg_palette_{grayscale_dmg_palette};
     std::uint8_t window_y_{};
     std::uint8_t window_x_{};
     std::array<std::uint8_t, 0x40> cgb_bg_palette_{};

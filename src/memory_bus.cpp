@@ -350,6 +350,10 @@ bool MemoryBus::cgb_mode() const noexcept { return cgb_mode_; }
 
 bool MemoryBus::double_speed() const noexcept { return double_speed_; }
 
+void MemoryBus::set_dmg_palette(const DmgPalette& palette) noexcept {
+    ppu_.set_dmg_palette(palette);
+}
+
 bool MemoryBus::try_speed_switch() noexcept {
     if (!cgb_mode_ || !speed_switch_requested_) return false;
     speed_switch_requested_ = false;

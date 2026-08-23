@@ -21,6 +21,10 @@ void Ppu::set_cgb_mode(const bool enabled) noexcept { cgb_mode_ = enabled; }
 
 bool Ppu::cgb_mode() const noexcept { return cgb_mode_; }
 
+void Ppu::set_dmg_palette(const DmgPalette& palette) noexcept {
+    dmg_palette_ = palette;
+}
+
 std::uint8_t Ppu::read_vram(const std::uint16_t address) const noexcept {
     if (lcd_enabled() && mode_ == 3) {
         return 0xFF;
@@ -382,7 +386,8 @@ void Ppu::render_scanline() noexcept {
         background_colors[x] = color;
         framebuffer_[static_cast<std::size_t>(ly_) * screen_width + x] =
             cgb_mode_ ? cgb_palette_color(cgb_bg_palette_, palette_number, color)
-                      : palette_color(bg_palette_, color);
+                      : palette_color(bg_palette_, color,
+                                      dmg_palette_.background);
     }
 
     if (window_enabled) {
@@ -458,10 +463,12 @@ void Ppu::render_scanline() noexcept {
                     ? cgb_palette_color(cgb_object_palette_,
                                         static_cast<std::uint8_t>(attributes & 0x07),
                                         color)
-                    : palette_color((attributes & 0x10) != 0
-                                        ? object_palette_1_
-                                        : object_palette_0_,
-                                    color);
+                    : palette_color(
+                          (attributes & 0x10) != 0 ? object_palette_1_
+                                                  : object_palette_0_,
+                          color, (attributes & 0x10) != 0
+                                     ? dmg_palette_.object_1
+                                     : dmg_palette_.object_0);
         }
     }
 }
@@ -481,9 +488,10 @@ std::uint32_t Ppu::cgb_palette_color(
     return UINT32_C(0xFF000000) | (red << 16) | (green << 8) | blue;
 }
 
-std::uint32_t Ppu::palette_color(const std::uint8_t palette,
-                                 const std::uint8_t color) const noexcept {
-    return dmg_colors[(palette >> (color * 2)) & 0x03];
+std::uint32_t Ppu::palette_color(
+    const std::uint8_t palette, const std::uint8_t color,
+    const std::array<std::uint32_t, 4>& colors) const noexcept {
+    return colors[(palette >> (color * 2)) & 0x03];
 }
 
 } // namespace gameboy

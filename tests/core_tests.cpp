@@ -1,4 +1,5 @@
 #include "gameboy/cpu.hpp"
+#include "gameboy/dmg_palette.hpp"
 #include "gameboy/emulator.hpp"
 #include "gameboy/memory_bus.hpp"
 
@@ -11,6 +12,7 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -120,6 +122,29 @@ void test_cartridge_header() {
     check(compatible.supports_cgb() && !compatible.requires_cgb() &&
               exclusive.supports_cgb() && exclusive.requires_cgb(),
           "the CGB header flag distinguishes enhanced and CGB-only ROMs");
+
+    auto pokemon_blue_rom = test_rom();
+    std::fill(pokemon_blue_rom.begin() + 0x134,
+              pokemon_blue_rom.begin() + 0x144, 0);
+    constexpr std::string_view pokemon_blue = "POKEMON BLUE";
+    std::copy(pokemon_blue.begin(), pokemon_blue.end(),
+              pokemon_blue_rom.begin() + 0x134);
+    pokemon_blue_rom[0x14B] = 0x01;
+    gameboy::Cartridge pokemon_blue_cartridge{pokemon_blue_rom};
+    check(pokemon_blue_cartridge.cgb_compatibility_palette_id() == 11,
+          "Nintendo title checksum selects Pokemon Blue's CGB palette");
+
+    pokemon_blue_rom[0x14B] = 0;
+    gameboy::Cartridge unlicensed{std::move(pokemon_blue_rom)};
+    check(unlicensed.cgb_compatibility_palette_id() == 0,
+          "non-Nintendo cartridges use the default CGB compatibility palette");
+
+    const auto blue_palette = gameboy::cgb_compatibility_palette(11);
+    check(blue_palette.background[0] == 0xFFFFFFFF &&
+              blue_palette.background[2] == 0xFF0000FF &&
+              blue_palette.background[3] == 0xFF000000 &&
+              blue_palette.object_0 != blue_palette.background,
+          "CGB compatibility palettes expand RGB555 and preserve layer colors");
 }
 
 void test_cgb_memory_and_rendering() {
@@ -1922,6 +1947,32 @@ void test_ppu_background_window_and_sprites() {
     sprites.tick(263);
     check(sprites.framebuffer()[0] == 0xFF555555,
           "visible OBJ pixels render with their selected DMG palette");
+
+    gameboy::MemoryBus colored{gameboy::Cartridge{test_rom()}};
+    gameboy::DmgPalette layer_colors{
+        {0xFFFF0000, 0xFFFF0000, 0xFFFF0000, 0xFFFF0000},
+        {0xFF00FF00, 0xFF00FF00, 0xFF00FF00, 0xFF00FF00},
+        {0xFF0000FF, 0xFF0000FF, 0xFF0000FF, 0xFF0000FF}};
+    colored.set_dmg_palette(layer_colors);
+    colored.write8(0xFF47, 0xE4);
+    colored.write8(0xFF48, 0xE4);
+    colored.write8(0xFF49, 0xE4);
+    colored.write8(0x8010, 0x00);
+    colored.write8(0x8011, 0x80);
+    colored.write8(0xFE00, 16);
+    colored.write8(0xFE01, 8);
+    colored.write8(0xFE02, 1);
+    colored.write8(0xFE03, 0);
+    colored.write8(0xFE04, 16);
+    colored.write8(0xFE05, 16);
+    colored.write8(0xFE06, 1);
+    colored.write8(0xFE07, 0x10);
+    colored.write8(0xFF40, 0x93);
+    colored.tick(274);
+    check(colored.framebuffer()[0] == 0xFF00FF00 &&
+              colored.framebuffer()[8] == 0xFF0000FF &&
+              colored.framebuffer()[9] == 0xFFFF0000,
+          "DMG rendering routes background, OBJ0, and OBJ1 independently");
 }
 
 void test_joypad_matrix_and_interrupts() {

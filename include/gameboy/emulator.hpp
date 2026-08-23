@@ -42,6 +42,7 @@ public:
     [[nodiscard]] std::vector<std::uint8_t> export_rtc_data() const;
     void import_rtc_data(const std::vector<std::uint8_t>& data);
     [[nodiscard]] std::uint64_t rom_fingerprint() const noexcept;
+    void set_dmg_compatibility_colors(bool enabled) noexcept;
     [[nodiscard]] std::vector<std::uint8_t> save_state() const;
     void load_state(const std::vector<std::uint8_t>& state);
 
@@ -50,6 +51,7 @@ private:
 
     MemoryBus bus_;
     Cpu cpu_;
+    DmgPalette automatic_dmg_palette_{grayscale_dmg_palette};
 };
 
 } // namespace gameboy

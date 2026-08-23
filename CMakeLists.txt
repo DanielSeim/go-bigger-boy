@@ -13,6 +13,7 @@ add_library(gameboy_core
     src/apu.cpp
     src/cartridge.cpp
     src/cpu.cpp
+    src/dmg_palette.cpp
     src/emulator.cpp
     src/joypad.cpp
     src/memory_bus.cpp

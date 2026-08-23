@@ -30,7 +30,8 @@ shared everywhere.
 
 This is an early emulator with incomplete game compatibility. Game Boy Color
 support covers the primary execution and rendering paths, but hardware-edge
-accuracy and compatibility-mode boot palettes are still being refined.
+accuracy is still being refined. DMG games can use the automatic Game Boy Color
+compatibility palettes selected from their cartridge headers.
 
 ## Build
 
@@ -121,7 +122,8 @@ Start, Backspace for Select, and Escape to quit. Standard gamepads are also
 supported. Desktop shortcuts are Space to pause, Ctrl+R to reset, F11 for
 fullscreen, Ctrl+L for the recent-ROM list, Ctrl+1 through Ctrl+9 for quick
 recent selection, Ctrl+K to configure and persist controls, Ctrl+P to choose
-between Grayscale, Classic green, Game Boy Pocket, and Amber display palettes,
+between Grayscale, Classic green, Game Boy Pocket, Amber, and the automatic
+Game Boy Color compatibility palette,
 F5 to quick-save, F8 to load the quick save, and F1 for help. Recent ROMs,
 keyboard and gamepad bindings, the display palette, and per-ROM quick saves are
 stored in SDL's per-user preferences directory. The Ctrl+K controls dialog can
@@ -142,7 +144,7 @@ to use.
 The browser frontend uses SDL3 and Emscripten. It accepts local `.gb` and
 `.gbc` files from the picker or by drag and drop; ROM data stays in the browser
 and is never uploaded. Keyboard and standard gamepad controls match the desktop
-frontend. The display palette selector offers the same four palettes as the
+frontend. The display palette selector offers the same five palettes as the
 desktop frontend and remembers the selection in browser storage. Battery-backed
 RAM and MBC3 clock state are saved automatically in IndexedDB for each ROM.
 Browser saves can also be imported from or exported to desktop-compatible

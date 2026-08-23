@@ -147,10 +147,11 @@ void present(WebApp& app) {
     if (app.emulator) {
         const auto& pixels = app.emulator->framebuffer();
         const auto& palette = gameboy::display_palettes[app.display_palette];
-        const auto cgb_mode = app.emulator->bus().cgb_mode();
+        const auto native_colors = app.emulator->bus().cgb_mode() ||
+                                   palette.cgb_compatibility;
         std::transform(pixels.begin(), pixels.end(), app.display_pixels.begin(),
-                       [&palette, cgb_mode](const std::uint32_t pixel) {
-                           return cgb_mode
+                       [&palette, native_colors](const std::uint32_t pixel) {
+                           return native_colors
                                       ? pixel
                                       : gameboy::apply_display_palette(pixel,
                                                                        palette);
@@ -180,6 +181,9 @@ int load_rom_from_browser(emscripten::val bytes) noexcept {
         if (rom.empty()) return 0;
         active_app->emulator = std::make_unique<gameboy::Emulator>(
             gameboy::Cartridge(std::move(rom)));
+        active_app->emulator->set_dmg_compatibility_colors(
+            gameboy::display_palettes[active_app->display_palette]
+                .cgb_compatibility);
         // Browser storage is asynchronous. Remain paused until JavaScript has
         // restored battery RAM and RTC data for this ROM.
         active_app->paused = true;
@@ -273,6 +277,10 @@ extern "C" EMSCRIPTEN_KEEPALIVE void gbb_set_palette(
     const unsigned palette) noexcept {
     if (active_app && palette < gameboy::display_palettes.size()) {
         active_app->display_palette = palette;
+        if (active_app->emulator) {
+            active_app->emulator->set_dmg_compatibility_colors(
+                gameboy::display_palettes[palette].cgb_compatibility);
+        }
     }
 }
 

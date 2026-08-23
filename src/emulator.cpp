@@ -5,6 +5,8 @@
 namespace gameboy {
 
 Emulator::Emulator(Cartridge cartridge) : bus_(std::move(cartridge)) {
+    automatic_dmg_palette_ = cgb_compatibility_palette(
+        bus_.cartridge().cgb_compatibility_palette_id());
     cpu_.reset(bus_.cgb_mode());
     bus_.initialize_post_boot();
 }
@@ -71,6 +73,11 @@ std::vector<std::uint8_t> Emulator::export_rtc_data() const {
 
 void Emulator::import_rtc_data(const std::vector<std::uint8_t>& data) {
     bus_.cartridge().import_rtc_data(data);
+}
+
+void Emulator::set_dmg_compatibility_colors(const bool enabled) noexcept {
+    bus_.set_dmg_palette(enabled ? automatic_dmg_palette_
+                                 : grayscale_dmg_palette);
 }
 
 } // namespace gameboy
