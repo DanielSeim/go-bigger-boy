@@ -125,6 +125,19 @@ struct InputBindings {
         SDLK_RIGHT, SDLK_LEFT, SDLK_UP, SDLK_DOWN,
         SDLK_X, SDLK_Z, SDLK_BACKSPACE, SDLK_RETURN,
     };
+    std::array<SDL_GamepadButton, 8> gamepad_buttons{
+        SDL_GAMEPAD_BUTTON_DPAD_RIGHT, SDL_GAMEPAD_BUTTON_DPAD_LEFT,
+        SDL_GAMEPAD_BUTTON_DPAD_UP, SDL_GAMEPAD_BUTTON_DPAD_DOWN,
+        SDL_GAMEPAD_BUTTON_SOUTH, SDL_GAMEPAD_BUTTON_EAST,
+        SDL_GAMEPAD_BUTTON_BACK, SDL_GAMEPAD_BUTTON_START,
+    };
+};
+
+enum class BindingDevice { keyboard, gamepad };
+
+struct BindingConfiguration {
+    BindingDevice device{};
+    std::size_t index{};
 };
 
 constexpr std::uintmax_t maximum_quick_state_size = 2 * 1024 * 1024;
@@ -173,7 +186,32 @@ InputBindings load_bindings(const std::filesystem::path& directory) {
         if (!(input >> value)) return bindings;
         key = static_cast<SDL_Keycode>(value);
     }
+    if (std::find(loaded.begin(), loaded.end(), SDLK_UNKNOWN) != loaded.end()) {
+        return bindings;
+    }
+    auto unique_keys = loaded;
+    std::sort(unique_keys.begin(), unique_keys.end());
+    if (std::adjacent_find(unique_keys.begin(), unique_keys.end()) !=
+        unique_keys.end()) {
+        return bindings;
+    }
     bindings.keys = loaded;
+
+    // Older controls files contain only the eight keyboard bindings.
+    auto loaded_gamepad = bindings.gamepad_buttons;
+    for (auto& button : loaded_gamepad) {
+        int value = 0;
+        if (!(input >> value)) return bindings;
+        if (value < 0 || value >= SDL_GAMEPAD_BUTTON_COUNT) return bindings;
+        button = static_cast<SDL_GamepadButton>(value);
+    }
+    auto unique_buttons = loaded_gamepad;
+    std::sort(unique_buttons.begin(), unique_buttons.end());
+    if (std::adjacent_find(unique_buttons.begin(), unique_buttons.end()) !=
+        unique_buttons.end()) {
+        return bindings;
+    }
+    bindings.gamepad_buttons = loaded_gamepad;
     return bindings;
 }
 
@@ -183,6 +221,9 @@ void save_bindings(const std::filesystem::path& directory,
     std::ofstream output(directory / "controls.txt", std::ios::trunc);
     for (const auto key : bindings.keys) {
         output << static_cast<long long>(key) << '\n';
+    }
+    for (const auto button : bindings.gamepad_buttons) {
+        output << static_cast<int>(button) << '\n';
     }
 }
 
@@ -309,17 +350,28 @@ std::optional<gameboy::Button> keyboard_button(const InputBindings& bindings,
     return std::nullopt;
 }
 
-std::optional<gameboy::Button> gamepad_button(const Uint8 button) {
-    switch (static_cast<SDL_GamepadButton>(button)) {
-    case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: return gameboy::Button::right;
-    case SDL_GAMEPAD_BUTTON_DPAD_LEFT: return gameboy::Button::left;
-    case SDL_GAMEPAD_BUTTON_DPAD_UP: return gameboy::Button::up;
-    case SDL_GAMEPAD_BUTTON_DPAD_DOWN: return gameboy::Button::down;
-    case SDL_GAMEPAD_BUTTON_SOUTH: return gameboy::Button::a;
-    case SDL_GAMEPAD_BUTTON_EAST: return gameboy::Button::b;
-    case SDL_GAMEPAD_BUTTON_BACK: return gameboy::Button::select;
-    case SDL_GAMEPAD_BUTTON_START: return gameboy::Button::start;
-    default: return std::nullopt;
+std::optional<gameboy::Button> gamepad_button(const InputBindings& bindings,
+                                              const Uint8 button) {
+    for (std::size_t index = 0; index < bindings.gamepad_buttons.size(); ++index) {
+        if (bindings.gamepad_buttons[index] ==
+            static_cast<SDL_GamepadButton>(button)) {
+            return button_order[index];
+        }
+    }
+    return std::nullopt;
+}
+
+bool reserved_gameplay_key(const SDL_Keycode key) {
+    switch (key) {
+    case SDLK_ESCAPE:
+    case SDLK_SPACE:
+    case SDLK_F1:
+    case SDLK_F5:
+    case SDLK_F8:
+    case SDLK_F11:
+        return true;
+    default:
+        return false;
     }
 }
 
@@ -329,11 +381,13 @@ void release_all_buttons(gameboy::Emulator& emulator) {
 
 void update_window_title(SDL_Window* window, const std::string& current_rom,
                          const bool paused,
-                         const std::optional<std::size_t> configuring) {
+                         const std::optional<BindingConfiguration>& configuring) {
     std::string title = "Go Bigger Boy (GBB)";
     if (configuring) {
-        title += " - Press a key for ";
-        title += button_names[*configuring];
+        title += configuring->device == BindingDevice::keyboard
+                     ? " - Press a key for "
+                     : " - Press a gamepad button for ";
+        title += button_names[configuring->index];
         title += " (Esc: cancel)";
     } else {
         if (!current_rom.empty()) {
@@ -347,6 +401,42 @@ void update_window_title(SDL_Window* window, const std::string& current_rom,
     }
     if (!SDL_SetWindowTitle(window, title.c_str())) {
         sdl_error("Could not update window title");
+    }
+}
+
+enum class ControlsAction { cancel, keyboard, gamepad, reset };
+
+ControlsAction show_controls_dialog(SDL_Window* window,
+                                    const InputBindings& bindings) {
+    std::ostringstream message;
+    message << "Current controls:\n";
+    for (std::size_t index = 0; index < button_names.size(); ++index) {
+        message << button_names[index] << ": "
+                << SDL_GetKeyName(bindings.keys[index]) << " / "
+                << SDL_GetGamepadStringForButton(
+                       bindings.gamepad_buttons[index])
+                << '\n';
+    }
+    message << "\nChoose which controls to configure.";
+
+    constexpr std::array<SDL_MessageBoxButtonData, 4> buttons{{
+        {SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, "Cancel"},
+        {0, 1, "Keyboard"},
+        {0, 2, "Gamepad"},
+        {0, 3, "Restore defaults"},
+    }};
+    const auto text = message.str();
+    const SDL_MessageBoxData box{
+        SDL_MESSAGEBOX_INFORMATION, window, "Configure controls", text.c_str(),
+        static_cast<int>(buttons.size()), buttons.data(), nullptr,
+    };
+    auto selection = 0;
+    if (!SDL_ShowMessageBox(&box, &selection)) return ControlsAction::cancel;
+    switch (selection) {
+    case 1: return ControlsAction::keyboard;
+    case 2: return ControlsAction::gamepad;
+    case 3: return ControlsAction::reset;
+    default: return ControlsAction::cancel;
     }
 }
 
@@ -395,7 +485,7 @@ void show_help(SDL_Window* window) {
         "Ctrl+R: Reset\n"
         "Ctrl+O: Open ROM\n"
         "Ctrl+L: Recent ROMs\n"
-        "Ctrl+K: Configure keyboard\n"
+        "Ctrl+K: Configure controls\n"
         "Ctrl+1 through Ctrl+9: Open recent ROM\n"
         "F5: Quick save\n"
         "F8: Load quick save\n"
@@ -414,7 +504,7 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                     InputBindings& configuration_backup,
                     const std::vector<std::string>& recent,
                     const std::string& current_rom,
-                    std::optional<std::size_t>& configuring,
+                    std::optional<BindingConfiguration>& configuring,
                     std::optional<std::string>& pending_rom, bool& paused,
                     bool& fullscreen, bool& reset_requested, bool& running) {
     SDL_Event event;
@@ -437,18 +527,24 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                                         configuring);
                     break;
                 }
+                if (configuring->device != BindingDevice::keyboard) break;
+                if (reserved_gameplay_key(event.key.key)) {
+                    show_error(sdl.window,
+                               "That key is reserved for an emulator shortcut.");
+                    break;
+                }
                 const auto duplicate = std::find(bindings.keys.begin(),
                                                  bindings.keys.end(),
                                                  event.key.key);
                 if (duplicate != bindings.keys.end() &&
                     static_cast<std::size_t>(duplicate - bindings.keys.begin()) !=
-                        *configuring) {
+                        configuring->index) {
                     show_error(sdl.window, "That key is already assigned.");
                     break;
                 }
-                bindings.keys[*configuring] = event.key.key;
-                ++*configuring;
-                if (*configuring == bindings.keys.size()) {
+                bindings.keys[configuring->index] = event.key.key;
+                ++configuring->index;
+                if (configuring->index == bindings.keys.size()) {
                     configuring.reset();
                     save_bindings(preference_path, bindings);
                     static_cast<void>(SDL_ShowSimpleMessageBox(
@@ -474,8 +570,29 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                        event.key.key == SDLK_K &&
                        (event.key.mod & SDL_KMOD_CTRL) != 0) {
                 if (emulator) release_all_buttons(*emulator);
-                configuration_backup = bindings;
-                configuring = 0;
+                const auto action = show_controls_dialog(sdl.window, bindings);
+                if (action == ControlsAction::reset) {
+                    bindings = InputBindings{};
+                    save_bindings(preference_path, bindings);
+                    static_cast<void>(SDL_ShowSimpleMessageBox(
+                        SDL_MESSAGEBOX_INFORMATION, "Controls",
+                        "Keyboard and gamepad bindings restored to defaults.",
+                        sdl.window));
+                } else if (action == ControlsAction::keyboard ||
+                           action == ControlsAction::gamepad) {
+                    if (action == ControlsAction::gamepad &&
+                        sdl.gamepad == nullptr) {
+                        show_error(sdl.window,
+                                   "Connect a gamepad before configuring it.");
+                    } else {
+                        configuration_backup = bindings;
+                        configuring = BindingConfiguration{
+                            action == ControlsAction::keyboard
+                                ? BindingDevice::keyboard
+                                : BindingDevice::gamepad,
+                            0};
+                    }
+                }
                 update_window_title(sdl.window, current_rom, paused,
                                     configuring);
             } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
@@ -555,8 +672,36 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
             break;
         case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
         case SDL_EVENT_GAMEPAD_BUTTON_UP:
-            if (emulator) {
-                if (const auto button = gamepad_button(event.gbutton.button)) {
+            if (configuring &&
+                configuring->device == BindingDevice::gamepad) {
+                if (event.type != SDL_EVENT_GAMEPAD_BUTTON_DOWN) break;
+                const auto pressed = static_cast<SDL_GamepadButton>(
+                    event.gbutton.button);
+                const auto duplicate = std::find(
+                    bindings.gamepad_buttons.begin(),
+                    bindings.gamepad_buttons.end(), pressed);
+                if (duplicate != bindings.gamepad_buttons.end() &&
+                    static_cast<std::size_t>(
+                        duplicate - bindings.gamepad_buttons.begin()) !=
+                        configuring->index) {
+                    show_error(sdl.window,
+                               "That gamepad button is already assigned.");
+                    break;
+                }
+                bindings.gamepad_buttons[configuring->index] = pressed;
+                ++configuring->index;
+                if (configuring->index == bindings.gamepad_buttons.size()) {
+                    configuring.reset();
+                    save_bindings(preference_path, bindings);
+                    static_cast<void>(SDL_ShowSimpleMessageBox(
+                        SDL_MESSAGEBOX_INFORMATION, "Gamepad controls",
+                        "Gamepad bindings saved.", sdl.window));
+                }
+                update_window_title(sdl.window, current_rom, paused,
+                                    configuring);
+            } else if (emulator) {
+                if (const auto button = gamepad_button(bindings,
+                                                       event.gbutton.button)) {
                     emulator->set_button(
                         *button, event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN);
                 }
@@ -624,7 +769,7 @@ int main(int argc, char** argv) {
         std::unique_ptr<gameboy::Emulator> emulator;
         std::string current_rom;
         std::optional<std::string> pending_rom;
-        std::optional<std::size_t> configuring;
+        std::optional<BindingConfiguration> configuring;
         auto paused = false;
         auto fullscreen = false;
         auto reset_requested = false;
