@@ -1,0 +1,82 @@
+name: Web build and Pages
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build WebAssembly frontend
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Emscripten
+        uses: emscripten-core/setup-emsdk@v15
+        with:
+          version: 4.0.15
+          actions-cache-folder: emsdk-cache
+
+      - name: Set up SDL3 for WebAssembly
+        id: sdl
+        uses: libsdl-org/setup-sdl@afd98199e97f9c2aa739474be7e0886d149a5e47
+        with:
+          version: 3.4.2
+          build-type: Release
+          cmake-toolchain-file: ${{ env.EMSDK }}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake
+          cmake-arguments: -DSDL_SHARED=OFF -DSDL_STATIC=ON
+          discriminator: emscripten-4.0.15
+
+      - name: Configure
+        run: >-
+          emcmake cmake -S . -B build-web
+          -DCMAKE_BUILD_TYPE=Release
+          -DGAMEBOY_BUILD_TESTS=OFF
+          -DGAMEBOY_BUILD_SDL=ON
+          "-DSDL3_DIR=${{ steps.sdl.outputs.prefix }}/lib/cmake/SDL3"
+
+      - name: Build
+        run: cmake --build build-web --target gameboy_web --parallel
+
+      - name: Stage site
+        shell: bash
+        run: |
+          touch build-web/web/.nojekyll
+          test -s build-web/web/index.html
+          test -s build-web/web/index.js
+          test -s build-web/web/index.wasm
+
+      - name: Configure GitHub Pages
+        if: github.event_name != 'pull_request'
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: build-web/web
+
+  deploy:
+    name: Deploy GitHub Pages
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

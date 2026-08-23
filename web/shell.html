@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111a15">
+  <title>Go Bigger Boy (GBB)</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: #0b100d; color: #e7f0e9; }
+    main { width: min(94vw, 880px); margin: 0 auto; padding: 24px 0 40px; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+    h1 { margin: 0; font-size: clamp(1.5rem, 4vw, 2.25rem); }
+    .subtitle { margin: 4px 0 0; color: #a7b9aa; }
+    button { border: 0; border-radius: 8px; padding: 11px 16px; font: inherit; font-weight: 700; background: #8bcf69; color: #10200d; cursor: pointer; }
+    button:disabled { cursor: wait; opacity: .55; }
+    .screen { margin-top: 22px; padding: 14px; border: 1px solid #34493a; border-radius: 14px; background: #111a15; box-shadow: 0 18px 60px #0008; }
+    canvas { display: block; width: 100%; aspect-ratio: 10 / 9; background: #101410; image-rendering: pixelated; outline: none; }
+    canvas:focus-visible { box-shadow: 0 0 0 3px #8bcf69; }
+    #status { min-height: 1.5em; margin: 12px 2px 0; color: #b8c8bb; }
+    #status.error { color: #ff9d96; }
+    .help { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin-top: 18px; color: #a7b9aa; }
+    .help p { margin: 0; padding: 12px; border-radius: 9px; background: #111a15; }
+    a { color: #aadc91; }
+    input { display: none; }
+    @media (max-width: 560px) { header { align-items: flex-start; flex-direction: column; } button { width: 100%; } main { padding-top: 16px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>Go Bigger Boy <span aria-hidden="true">(GBB)</span></h1>
+        <p class="subtitle">A Game Boy emulator running locally in your browser.</p>
+      </div>
+      <button id="open-rom" type="button" disabled>Choose ROM</button>
+      <input id="rom-file" type="file" accept=".gb,.gbc,application/octet-stream">
+    </header>
+    <section class="screen" id="drop-zone" aria-label="Emulator screen and ROM drop zone">
+      <canvas id="canvas" width="640" height="576" tabindex="0" oncontextmenu="event.preventDefault()"></canvas>
+      <p id="status" role="status">Downloading emulator…</p>
+    </section>
+    <section class="help" aria-label="Controls">
+      <p><strong>D-pad:</strong> Arrow keys<br><strong>A / B:</strong> X / Z</p>
+      <p><strong>Start:</strong> Enter<br><strong>Select:</strong> Backspace</p>
+      <p><strong>Pause:</strong> Space<br><strong>Gamepad:</strong> Supported</p>
+      <p>ROMs stay on this device. Use only dumps you are legally entitled to use.</p>
+    </section>
+  </main>
+  <script>
+    const canvas = document.getElementById('canvas');
+    const picker = document.getElementById('rom-file');
+    const openButton = document.getElementById('open-rom');
+    const statusLine = document.getElementById('status');
+    const dropZone = document.getElementById('drop-zone');
+
+    var Module = {
+      canvas,
+      printErr: (...parts) => console.error(...parts),
+      gbbSetStatus(message, isError) {
+        statusLine.textContent = message;
+        statusLine.classList.toggle('error', isError);
+      },
+      onRuntimeInitialized() {
+        openButton.disabled = false;
+        Module.gbbSetStatus('Ready. Choose or drop a Game Boy ROM.', false);
+      }
+    };
+
+    async function loadRom(file) {
+      if (!file || !Module._gbb_load_rom) return;
+      Module._gbb_resume_audio();
+      Module.gbbSetStatus(`Loading ${file.name}…`, false);
+      try {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const pointer = Module._malloc(bytes.length);
+        if (!pointer) throw new Error('The emulator could not allocate ROM memory.');
+        try {
+          Module.HEAPU8.set(bytes, pointer);
+          if (!Module._gbb_load_rom(pointer, bytes.length)) return;
+        } finally {
+          Module._free(pointer);
+        }
+        document.title = `${file.name} — Go Bigger Boy`;
+        canvas.focus();
+      } catch (error) {
+        Module.gbbSetStatus(error.message || String(error), true);
+      }
+    }
+
+    openButton.addEventListener('click', () => {
+      Module._gbb_resume_audio();
+      picker.click();
+    });
+    canvas.addEventListener('pointerdown', () => {
+      Module._gbb_resume_audio();
+      canvas.focus();
+    });
+    picker.addEventListener('change', () => {
+      loadRom(picker.files[0]);
+      picker.value = '';
+    });
+    for (const eventName of ['dragenter', 'dragover']) {
+      dropZone.addEventListener(eventName, event => {
+        event.preventDefault();
+        dropZone.style.borderColor = '#8bcf69';
+      });
+    }
+    for (const eventName of ['dragleave', 'drop']) {
+      dropZone.addEventListener(eventName, event => {
+        event.preventDefault();
+        dropZone.style.borderColor = '';
+      });
+    }
+    dropZone.addEventListener('drop', event => {
+      Module._gbb_resume_audio();
+      loadRom(event.dataTransfer.files[0]);
+    });
+  </script>
+  {{{ SCRIPT }}}
+</body>
+</html>

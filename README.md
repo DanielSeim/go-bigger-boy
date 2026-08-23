@@ -21,6 +21,7 @@ shared everywhere.
 - Table-driven CPU tests for opcode matrices, timing, flags, PC, stack, and memory effects
 - Headless command-line runner
 - Headless Mooneye/serial conformance test runner
+- Emscripten/WebAssembly browser frontend
 - Dependency-free unit tests
 
 This is an early emulator with incomplete game compatibility.
@@ -127,6 +128,28 @@ are rejected explicitly instead of running with incorrect banking.
 ROM files are not included. Only use cartridge dumps you are legally entitled
 to use.
 
+### Web build
+
+The browser frontend uses SDL3 and Emscripten. It accepts local `.gb` and
+`.gbc` files from the picker or by drag and drop; ROM data stays in the browser
+and is never uploaded. Keyboard and standard gamepad controls match the desktop
+frontend. Battery saves are currently session-only in the web build.
+
+With the Emscripten SDK active and an SDL3 installation built for Emscripten:
+
+```sh
+emcmake cmake -S . -B build-web -DCMAKE_BUILD_TYPE=Release \
+  -DGAMEBOY_BUILD_TESTS=OFF \
+  -DSDL3_DIR=/path/to/emscripten-sdl3/lib/cmake/SDL3
+cmake --build build-web --target gameboy_web --parallel
+emrun build-web/web/index.html
+```
+
+The `Web build and Pages` workflow repeats this build on every push to `main`
+and deploys the result to GitHub Pages. Pull requests build the WebAssembly site
+without deploying it. The repository's Pages source must be set to **GitHub
+Actions** before the first deployment.
+
 ## Automated desktop builds
 
 The `Desktop builds` GitHub Actions workflow builds and tests downloadable
@@ -153,5 +176,7 @@ include/gameboy/  Public core API
 src/              Emulator implementation
 apps/cli/         Headless development frontend
 apps/test_runner/ Conformance ROM runner
+apps/web/         Emscripten browser frontend
+web/              Browser page shell
 tests/            Core unit tests
 ```

@@ -23,6 +23,10 @@ add_library(gameboy_core
 target_include_directories(gameboy_core PUBLIC include)
 target_compile_features(gameboy_core PUBLIC cxx_std_17)
 
+if(EMSCRIPTEN)
+    target_compile_options(gameboy_core PRIVATE -fexceptions)
+endif()
+
 if(MSVC)
     target_compile_options(gameboy_core PRIVATE /W4 /permissive-)
 else()
@@ -38,53 +42,76 @@ target_link_libraries(gameboy_test_runner PRIVATE gameboy_core)
 set_target_properties(gameboy_test_runner PROPERTIES OUTPUT_NAME gbb_test_runner)
 
 if(GAMEBOY_BUILD_SDL)
-    find_package(SDL3 3.2 QUIET CONFIG)
+    if(EMSCRIPTEN)
+        find_package(SDL3 3.2 REQUIRED CONFIG)
+    else()
+        find_package(SDL3 3.2 QUIET CONFIG)
+    endif()
     if(SDL3_FOUND)
-        if(WIN32)
+        if(EMSCRIPTEN)
+            add_executable(gameboy_web apps/web/main.cpp)
+            target_link_libraries(gameboy_web PRIVATE gameboy_core SDL3::SDL3)
+            target_compile_options(gameboy_web PRIVATE -fexceptions)
+            target_link_options(gameboy_web PRIVATE
+                -fexceptions
+                "--shell-file=${CMAKE_CURRENT_SOURCE_DIR}/web/shell.html"
+                "-sALLOW_MEMORY_GROWTH=1"
+                "-sMAXIMUM_MEMORY=536870912"
+                "-sENVIRONMENT=web"
+                "-sEXPORTED_FUNCTIONS=['_main','_malloc','_free','_gbb_load_rom','_gbb_resume_audio']"
+            )
+            set_target_properties(gameboy_web PROPERTIES
+                OUTPUT_NAME index
+                SUFFIX ".html"
+                RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/web"
+            )
+        elseif(WIN32)
             add_executable(gameboy_sdl WIN32 apps/sdl/main.cpp)
         else()
             add_executable(gameboy_sdl apps/sdl/main.cpp)
         endif()
-        target_link_libraries(gameboy_sdl PRIVATE gameboy_core SDL3::SDL3)
-        set_target_properties(gameboy_sdl PROPERTIES OUTPUT_NAME gbb)
-        if(WIN32)
-            install(TARGETS gameboy_sdl RUNTIME DESTINATION .)
-        elseif(APPLE)
-            set_target_properties(gameboy_sdl PROPERTIES
-                                  INSTALL_RPATH "@loader_path")
-            install(TARGETS gameboy_sdl RUNTIME DESTINATION .)
-        else()
-            set_target_properties(gameboy_sdl PROPERTIES
-                                  INSTALL_RPATH "$ORIGIN/../lib")
-            install(TARGETS gameboy_sdl
-                    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-        endif()
+        if(NOT EMSCRIPTEN)
+            target_link_libraries(gameboy_sdl PRIVATE gameboy_core SDL3::SDL3)
+            set_target_properties(gameboy_sdl PROPERTIES OUTPUT_NAME gbb)
+            if(WIN32)
+                install(TARGETS gameboy_sdl RUNTIME DESTINATION .)
+            elseif(APPLE)
+                set_target_properties(gameboy_sdl PROPERTIES
+                                      INSTALL_RPATH "@loader_path")
+                install(TARGETS gameboy_sdl RUNTIME DESTINATION .)
+            else()
+                set_target_properties(gameboy_sdl PROPERTIES
+                                      INSTALL_RPATH "$ORIGIN/../lib")
+                install(TARGETS gameboy_sdl
+                        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+            endif()
 
-        if(WIN32 AND TARGET SDL3::SDL3-shared)
-            add_custom_command(TARGET gameboy_sdl POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            if(WIN32 AND TARGET SDL3::SDL3-shared)
+                add_custom_command(TARGET gameboy_sdl POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                            $<TARGET_FILE:SDL3::SDL3-shared>
+                            $<TARGET_FILE_DIR:gameboy_sdl>
+                    VERBATIM)
+                install(FILES $<TARGET_FILE:SDL3::SDL3-shared> DESTINATION .)
+            elseif(APPLE AND TARGET SDL3::SDL3-shared)
+                install(FILES $<TARGET_FILE:SDL3::SDL3-shared> DESTINATION .)
+            elseif(UNIX AND TARGET SDL3::SDL3-shared)
+                install(FILES
                         $<TARGET_FILE:SDL3::SDL3-shared>
-                        $<TARGET_FILE_DIR:gameboy_sdl>
-                VERBATIM)
-            install(FILES $<TARGET_FILE:SDL3::SDL3-shared> DESTINATION .)
-        elseif(APPLE AND TARGET SDL3::SDL3-shared)
-            install(FILES $<TARGET_FILE:SDL3::SDL3-shared> DESTINATION .)
-        elseif(UNIX AND TARGET SDL3::SDL3-shared)
-            install(FILES
-                    $<TARGET_FILE:SDL3::SDL3-shared>
-                    $<TARGET_SONAME_FILE:SDL3::SDL3-shared>
-                    DESTINATION ${CMAKE_INSTALL_LIBDIR})
+                        $<TARGET_SONAME_FILE:SDL3::SDL3-shared>
+                        DESTINATION ${CMAKE_INSTALL_LIBDIR})
+            endif()
+            if(UNIX AND NOT APPLE)
+                install(FILES packaging/linux/go-bigger-boy.desktop
+                        DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+                install(FILES packaging/linux/go-bigger-boy.svg
+                        DESTINATION
+                            ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
+            endif()
+            install(FILES README.md DESTINATION .)
         endif()
-        if(UNIX AND NOT APPLE)
-            install(FILES packaging/linux/go-bigger-boy.desktop
-                    DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
-            install(FILES packaging/linux/go-bigger-boy.svg
-                    DESTINATION
-                        ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
-        endif()
-        install(FILES README.md DESTINATION .)
     else()
-        message(STATUS "SDL3 not found; skipping the GBB desktop frontend")
+        message(STATUS "SDL3 not found; skipping the GBB SDL frontend")
     endif()
 endif()
 
