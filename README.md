@@ -115,11 +115,13 @@ Keyboard controls are arrows for the D-pad, X for A, Z for B, Enter for
 Start, Backspace for Select, and Escape to quit. Standard gamepads are also
 supported. Desktop shortcuts are Space to pause, Ctrl+R to reset, F11 for
 fullscreen, Ctrl+L for the recent-ROM list, Ctrl+1 through Ctrl+9 for quick
-recent selection, Ctrl+K to configure and persist controls, F5 to
-quick-save, F8 to load the quick save, and F1 for help. Recent ROMs, keyboard
-and gamepad bindings, and per-ROM quick saves are stored in SDL's per-user
-preferences directory. The Ctrl+K controls dialog can rebind either input
-device or restore the default mappings; Escape cancels an in-progress setup.
+recent selection, Ctrl+K to configure and persist controls, Ctrl+P to choose
+between Grayscale, Classic green, Game Boy Pocket, and Amber display palettes,
+F5 to quick-save, F8 to load the quick save, and F1 for help. Recent ROMs,
+keyboard and gamepad bindings, the display palette, and per-ROM quick saves are
+stored in SDL's per-user preferences directory. The Ctrl+K controls dialog can
+rebind either input device or restore the default mappings; Escape cancels an
+in-progress setup.
 
 Battery-backed MBC1, MBC3, and MBC5 games use a sibling file with the ROM's
 base name and a `.sav` extension. MBC3 real-time clocks use an additional
@@ -135,7 +137,9 @@ to use.
 The browser frontend uses SDL3 and Emscripten. It accepts local `.gb` and
 `.gbc` files from the picker or by drag and drop; ROM data stays in the browser
 and is never uploaded. Keyboard and standard gamepad controls match the desktop
-frontend. Battery saves are currently session-only in the web build.
+frontend. The display palette selector offers the same four palettes as the
+desktop frontend and remembers the selection in browser storage. Battery saves
+are currently session-only in the web build.
 
 With the Emscripten SDK active and an SDL3 installation built for Emscripten:
 

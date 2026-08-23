@@ -3,6 +3,7 @@
 #include <SDL3/SDL_main.h>
 
 #include "gameboy/emulator.hpp"
+#include "gameboy/display_palette.hpp"
 
 #include <emscripten.h>
 #include <emscripten/bind.h>
@@ -47,6 +48,7 @@ struct WebApp {
     std::chrono::steady_clock::time_point previous_time{
         std::chrono::steady_clock::now()};
     double cycle_credit{};
+    std::size_t display_palette{};
     bool paused{};
 };
 
@@ -119,8 +121,14 @@ void present(WebApp& app) {
     static_cast<void>(SDL_RenderClear(app.renderer));
     if (app.emulator) {
         const auto& pixels = app.emulator->framebuffer();
+        gameboy::Ppu::Framebuffer colored_pixels{};
+        const auto& palette = gameboy::display_palettes[app.display_palette];
+        std::transform(pixels.begin(), pixels.end(), colored_pixels.begin(),
+                       [&palette](const std::uint32_t pixel) {
+                           return gameboy::apply_display_palette(pixel, palette);
+                       });
         static_cast<void>(SDL_UpdateTexture(
-            app.texture, nullptr, pixels.data(),
+            app.texture, nullptr, colored_pixels.data(),
             static_cast<int>(gameboy::Ppu::screen_width * sizeof(std::uint32_t))));
         static_cast<void>(
             SDL_RenderTexture(app.renderer, app.texture, nullptr, nullptr));
@@ -172,6 +180,13 @@ extern "C" EMSCRIPTEN_KEEPALIVE void gbb_resume_audio() noexcept {
     if (active_app && active_app->audio_stream) {
         static_cast<void>(
             SDL_ResumeAudioStreamDevice(active_app->audio_stream));
+    }
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE void gbb_set_palette(
+    const unsigned palette) noexcept {
+    if (active_app && palette < gameboy::display_palettes.size()) {
+        active_app->display_palette = palette;
     }
 }
 

@@ -1,4 +1,5 @@
 #include "gameboy/emulator.hpp"
+#include "gameboy/display_palette.hpp"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
@@ -225,6 +226,29 @@ void save_bindings(const std::filesystem::path& directory,
     for (const auto button : bindings.gamepad_buttons) {
         output << static_cast<int>(button) << '\n';
     }
+}
+
+std::size_t load_display_palette(const std::filesystem::path& directory) {
+    if (directory.empty()) return 0;
+    std::ifstream input(directory / "palette.txt");
+    std::string id;
+    if (!(input >> id)) return 0;
+    const auto found = std::find_if(
+        gameboy::display_palettes.begin(), gameboy::display_palettes.end(),
+        [&id](const gameboy::DisplayPalette& palette) {
+            return id == palette.id;
+        });
+    return found == gameboy::display_palettes.end()
+               ? 0
+               : static_cast<std::size_t>(found -
+                                          gameboy::display_palettes.begin());
+}
+
+void save_display_palette(const std::filesystem::path& directory,
+                          const std::size_t palette) {
+    if (directory.empty() || palette >= gameboy::display_palettes.size()) return;
+    std::ofstream output(directory / "palette.txt", std::ios::trunc);
+    output << gameboy::display_palettes[palette].id << '\n';
 }
 
 std::filesystem::path quick_state_path(
@@ -478,6 +502,36 @@ std::optional<std::string> show_recent_dialog(
     return recent[static_cast<std::size_t>(selection)];
 }
 
+std::optional<std::size_t> show_palette_dialog(SDL_Window* window,
+                                               const std::size_t current) {
+    std::array<SDL_MessageBoxButtonData,
+               gameboy::display_palettes.size() + 1>
+        buttons{};
+    for (std::size_t index = 0; index < gameboy::display_palettes.size();
+         ++index) {
+        buttons[index] = {0, static_cast<int>(index),
+                          gameboy::display_palettes[index].name};
+    }
+    buttons.back() = {SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, -1, "Cancel"};
+
+    const auto current_name = current < gameboy::display_palettes.size()
+                                  ? gameboy::display_palettes[current].name
+                                  : gameboy::display_palettes.front().name;
+    const auto message = std::string("Current palette: ") + current_name +
+                         "\n\nChoose a display palette:";
+    const SDL_MessageBoxData box{
+        SDL_MESSAGEBOX_INFORMATION, window, "Display palette", message.c_str(),
+        static_cast<int>(buttons.size()), buttons.data(), nullptr,
+    };
+    auto selection = -1;
+    if (!SDL_ShowMessageBox(&box, &selection) || selection < 0 ||
+        static_cast<std::size_t>(selection) >=
+            gameboy::display_palettes.size()) {
+        return std::nullopt;
+    }
+    return static_cast<std::size_t>(selection);
+}
+
 void show_help(SDL_Window* window) {
     static_cast<void>(SDL_ShowSimpleMessageBox(
         SDL_MESSAGEBOX_INFORMATION, "Go Bigger Boy (GBB) controls",
@@ -486,6 +540,7 @@ void show_help(SDL_Window* window) {
         "Ctrl+O: Open ROM\n"
         "Ctrl+L: Recent ROMs\n"
         "Ctrl+K: Configure controls\n"
+        "Ctrl+P: Choose display palette\n"
         "Ctrl+1 through Ctrl+9: Open recent ROM\n"
         "F5: Quick save\n"
         "F8: Load quick save\n"
@@ -505,8 +560,9 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                     const std::vector<std::string>& recent,
                     const std::string& current_rom,
                     std::optional<BindingConfiguration>& configuring,
-                    std::optional<std::string>& pending_rom, bool& paused,
-                    bool& fullscreen, bool& reset_requested, bool& running) {
+                    std::optional<std::string>& pending_rom,
+                    std::size_t& display_palette, bool& paused, bool& fullscreen,
+                    bool& reset_requested, bool& running) {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         switch (event.type) {
@@ -595,6 +651,15 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                 }
                 update_window_title(sdl.window, current_rom, paused,
                                     configuring);
+            } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+                       event.key.key == SDLK_P &&
+                       (event.key.mod & SDL_KMOD_CTRL) != 0) {
+                if (emulator) release_all_buttons(*emulator);
+                if (const auto selected =
+                        show_palette_dialog(sdl.window, display_palette)) {
+                    display_palette = *selected;
+                    save_display_palette(preference_path, display_palette);
+                }
             } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
                        event.key.key >= SDLK_1 && event.key.key <= SDLK_9 &&
                        (event.key.mod & SDL_KMOD_CTRL) != 0) {
@@ -727,13 +792,19 @@ void load_rom(const std::string& path,
     emulator = std::move(replacement);
 }
 
-void present(const gameboy::Emulator* emulator, SdlResources& sdl) {
+void present(const gameboy::Emulator* emulator, SdlResources& sdl,
+             const gameboy::DisplayPalette& palette) {
     if (!SDL_RenderClear(sdl.renderer)) {
         sdl_error("Could not clear framebuffer");
     }
     if (emulator != nullptr) {
         const auto& pixels = emulator->framebuffer();
-        if (!SDL_UpdateTexture(sdl.texture, nullptr, pixels.data(),
+        gameboy::Ppu::Framebuffer colored_pixels{};
+        std::transform(pixels.begin(), pixels.end(), colored_pixels.begin(),
+                       [&palette](const std::uint32_t pixel) {
+                           return gameboy::apply_display_palette(pixel, palette);
+                       });
+        if (!SDL_UpdateTexture(sdl.texture, nullptr, colored_pixels.data(),
                                static_cast<int>(gameboy::Ppu::screen_width *
                                                 sizeof(std::uint32_t))) ||
             !SDL_RenderTexture(sdl.renderer, sdl.texture, nullptr, nullptr)) {
@@ -766,6 +837,7 @@ int main(int argc, char** argv) {
         auto recent_roms = load_recent_roms(preference_path);
         auto bindings = load_bindings(preference_path);
         auto configuration_backup = bindings;
+        auto display_palette = load_display_palette(preference_path);
         std::unique_ptr<gameboy::Emulator> emulator;
         std::string current_rom;
         std::optional<std::string> pending_rom;
@@ -793,8 +865,8 @@ int main(int argc, char** argv) {
         while (running) {
             process_events(emulator, sdl, dialog, preference_path, bindings,
                            configuration_backup, recent_roms, current_rom,
-                           configuring, pending_rom, paused, fullscreen,
-                           reset_requested, running);
+                           configuring, pending_rom, display_palette, paused,
+                           fullscreen, reset_requested, running);
 
             std::optional<std::string> dialog_error;
             collect_dialog_result(dialog, pending_rom, dialog_error);
@@ -835,7 +907,8 @@ int main(int argc, char** argv) {
                 if (emulator->frame_ready()) emulator->consume_frame();
             }
             submit_audio(emulator.get(), sdl);
-            present(emulator.get(), sdl);
+            present(emulator.get(), sdl,
+                    gameboy::display_palettes[display_palette]);
 
             next_frame += std::chrono::duration_cast<Clock::duration>(frame_duration);
             const auto now = Clock::now();

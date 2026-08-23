@@ -60,7 +60,7 @@ if(GAMEBOY_BUILD_SDL)
                 "-sALLOW_MEMORY_GROWTH=1"
                 "-sMAXIMUM_MEMORY=536870912"
                 "-sENVIRONMENT=web"
-                "-sEXPORTED_FUNCTIONS=['_main','_gbb_resume_audio']"
+                "-sEXPORTED_FUNCTIONS=['_main','_gbb_resume_audio','_gbb_set_palette']"
             )
             set_target_properties(gameboy_web PROPERTIES
                 OUTPUT_NAME index
