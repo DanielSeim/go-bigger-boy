@@ -17,6 +17,7 @@ add_library(gameboy_core
     src/joypad.cpp
     src/memory_bus.cpp
     src/ppu.cpp
+    src/save_state.cpp
     src/timer.cpp
 )
 

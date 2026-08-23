@@ -6,6 +6,8 @@
 
 namespace gameboy {
 
+class SaveStateCodec;
+
 class Apu {
 public:
     static constexpr unsigned sample_rate = 48000;
@@ -21,6 +23,8 @@ public:
     [[nodiscard]] std::vector<std::int16_t> take_samples();
 
 private:
+    friend class SaveStateCodec;
+
     struct EnvelopeState {
         bool running{};
         std::uint8_t volume{};

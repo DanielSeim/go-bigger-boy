@@ -22,6 +22,7 @@ shared everywhere.
 - Headless command-line runner
 - Headless Mooneye/serial conformance test runner
 - Emscripten/WebAssembly browser frontend
+- Versioned, ROM-validated save states with desktop quick-save controls
 - Dependency-free unit tests
 
 This is an early emulator with incomplete game compatibility.
@@ -114,9 +115,10 @@ Keyboard controls are arrows for the D-pad, X for A, Z for B, Enter for
 Start, Backspace for Select, and Escape to quit. Standard gamepads are also
 supported. Desktop shortcuts are Space to pause, Ctrl+R to reset, F11 for
 fullscreen, Ctrl+L for the recent-ROM list, Ctrl+1 through Ctrl+9 for quick
-recent selection, Ctrl+K to configure and persist keyboard controls, and F1
-for help. Recent ROMs and keyboard bindings are stored in SDL's per-user
-preferences directory.
+recent selection, Ctrl+K to configure and persist keyboard controls, F5 to
+quick-save, F8 to load the quick save, and F1 for help. Recent ROMs, keyboard
+bindings, and per-ROM quick saves are stored in SDL's per-user preferences
+directory.
 
 Battery-backed MBC1, MBC3, and MBC5 games use a sibling file with the ROM's
 base name and a `.sav` extension. MBC3 real-time clocks use an additional

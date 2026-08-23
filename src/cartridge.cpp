@@ -362,6 +362,15 @@ bool Cartridge::has_rumble() const noexcept { return rumble_present_; }
 
 bool Cartridge::rumble_active() const noexcept { return rumble_active_; }
 
+std::uint64_t Cartridge::rom_fingerprint() const noexcept {
+    auto hash = UINT64_C(14695981039346656037);
+    for (const auto byte : rom_) {
+        hash ^= byte;
+        hash *= UINT64_C(1099511628211);
+    }
+    return hash;
+}
+
 void Cartridge::flush_battery() {
     if (!battery_) return;
 

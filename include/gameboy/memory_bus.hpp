@@ -13,6 +13,8 @@
 
 namespace gameboy {
 
+class SaveStateCodec;
+
 class MemoryBus {
 public:
     explicit MemoryBus(Cartridge cartridge);
@@ -35,6 +37,8 @@ public:
     [[nodiscard]] std::string take_serial_output();
 
 private:
+    friend class SaveStateCodec;
+
     Cartridge cartridge_;
     std::array<std::uint8_t, 0x2000> wram_{};
     std::array<std::uint8_t, 0x80> io_{};

@@ -6,6 +6,8 @@
 
 namespace gameboy {
 
+class SaveStateCodec;
+
 class Ppu {
 public:
     static constexpr std::size_t screen_width = 160;
@@ -34,6 +36,8 @@ public:
     void consume_frame() noexcept;
 
 private:
+    friend class SaveStateCodec;
+
     [[nodiscard]] bool lcd_enabled() const noexcept;
     [[nodiscard]] bool stat_condition() const noexcept;
     [[nodiscard]] bool update_stat_line() noexcept;

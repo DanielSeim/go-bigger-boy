@@ -4,6 +4,8 @@
 
 namespace gameboy {
 
+class SaveStateCodec;
+
 enum class Button {
     right,
     left,
@@ -24,6 +26,8 @@ public:
     [[nodiscard]] bool set_button(Button button, bool pressed) noexcept;
 
 private:
+    friend class SaveStateCodec;
+
     [[nodiscard]] std::uint8_t input_lines() const noexcept;
 
     std::uint8_t select_ = 0x30;

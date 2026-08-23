@@ -4,6 +4,8 @@
 
 namespace gameboy {
 
+class SaveStateCodec;
+
 class Timer {
 public:
     [[nodiscard]] std::uint8_t divider() const noexcept;
@@ -21,6 +23,8 @@ public:
     [[nodiscard]] unsigned take_apu_ticks() noexcept;
 
 private:
+    friend class SaveStateCodec;
+
     [[nodiscard]] bool input_signal() const noexcept;
     void increment_counter() noexcept;
 

@@ -5,9 +5,17 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <stdexcept>
 #include <vector>
 
 namespace gameboy {
+
+class SaveStateCodec;
+
+class SaveStateError final : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
 
 class Emulator {
 public:
@@ -27,8 +35,13 @@ public:
     [[nodiscard]] std::vector<std::int16_t> take_audio_samples();
     void set_button(Button button, bool pressed) noexcept;
     void flush_battery();
+    [[nodiscard]] std::uint64_t rom_fingerprint() const noexcept;
+    [[nodiscard]] std::vector<std::uint8_t> save_state() const;
+    void load_state(const std::vector<std::uint8_t>& state);
 
 private:
+    friend class SaveStateCodec;
+
     MemoryBus bus_;
     Cpu cpu_;
 };

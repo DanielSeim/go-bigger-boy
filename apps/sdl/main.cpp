@@ -6,18 +6,29 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cerrno>
+#include <cstdio>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
+#include <iterator>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <sstream>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include <thread>
 #include <vector>
+
+#ifdef _WIN32
+#define NOMINMAX
+#include <windows.h>
+#endif
 
 namespace {
 
@@ -116,6 +127,8 @@ struct InputBindings {
     };
 };
 
+constexpr std::uintmax_t maximum_quick_state_size = 2 * 1024 * 1024;
+
 std::filesystem::path preference_directory() {
     char* raw_path = SDL_GetPrefPath("Go Bigger Boy", "GBB");
     if (raw_path == nullptr) return {};
@@ -171,6 +184,76 @@ void save_bindings(const std::filesystem::path& directory,
     for (const auto key : bindings.keys) {
         output << static_cast<long long>(key) << '\n';
     }
+}
+
+std::filesystem::path quick_state_path(
+    const std::filesystem::path& preference_path,
+    const gameboy::Emulator& emulator) {
+    if (preference_path.empty()) {
+        throw std::runtime_error("Could not locate the preferences directory");
+    }
+    std::ostringstream name;
+    name << std::hex << std::setw(16) << std::setfill('0')
+         << emulator.rom_fingerprint() << ".gbbs";
+    return preference_path / "states" / name.str();
+}
+
+void replace_file_atomically(const std::filesystem::path& temporary,
+                             const std::filesystem::path& destination) {
+#ifdef _WIN32
+    if (!MoveFileExW(temporary.c_str(), destination.c_str(),
+                     MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+        throw std::system_error(static_cast<int>(GetLastError()),
+                                std::system_category(),
+                                "Could not publish quick save");
+    }
+#else
+    if (std::rename(temporary.c_str(), destination.c_str()) != 0) {
+        throw std::system_error(errno, std::generic_category(),
+                                "Could not publish quick save");
+    }
+#endif
+}
+
+void save_quick_state(const std::filesystem::path& preference_path,
+                      const gameboy::Emulator& emulator) {
+    const auto path = quick_state_path(preference_path, emulator);
+    std::filesystem::create_directories(path.parent_path());
+    auto temporary = path;
+    temporary += ".tmp";
+    try {
+        const auto state = emulator.save_state();
+        std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+        if (!output) {
+            throw std::runtime_error("Could not open temporary quick-save file");
+        }
+        output.write(reinterpret_cast<const char*>(state.data()),
+                     static_cast<std::streamsize>(state.size()));
+        output.flush();
+        if (!output) throw std::runtime_error("Could not write quick save");
+        output.close();
+        replace_file_atomically(temporary, path);
+    } catch (...) {
+        std::error_code ignored;
+        std::filesystem::remove(temporary, ignored);
+        throw;
+    }
+}
+
+void load_quick_state(const std::filesystem::path& preference_path,
+                      gameboy::Emulator& emulator) {
+    const auto path = quick_state_path(preference_path, emulator);
+    std::error_code size_error;
+    const auto size = std::filesystem::file_size(path, size_error);
+    if (!size_error && size > maximum_quick_state_size) {
+        throw std::runtime_error("Quick save is too large");
+    }
+    std::ifstream input(path, std::ios::binary);
+    if (!input) throw std::runtime_error("No quick save exists for this ROM");
+    std::vector<std::uint8_t> state(
+        std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{});
+    if (input.bad()) throw std::runtime_error("Could not read quick save");
+    emulator.load_state(state);
 }
 
 void SDLCALL file_dialog_callback(void* userdata,
@@ -314,6 +397,8 @@ void show_help(SDL_Window* window) {
         "Ctrl+L: Recent ROMs\n"
         "Ctrl+K: Configure keyboard\n"
         "Ctrl+1 through Ctrl+9: Open recent ROM\n"
+        "F5: Quick save\n"
+        "F8: Load quick save\n"
         "F11: Toggle fullscreen\n"
         "F1: Show this help\n"
         "Escape: Quit",
@@ -408,6 +493,30 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                 release_all_buttons(*emulator);
                 update_window_title(sdl.window, current_rom, paused,
                                     configuring);
+            } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+                       event.key.key == SDLK_F5 && emulator) {
+                try {
+                    save_quick_state(preference_path, *emulator);
+                    static_cast<void>(SDL_ShowSimpleMessageBox(
+                        SDL_MESSAGEBOX_INFORMATION, "Quick save",
+                        "State saved.", sdl.window));
+                } catch (const std::exception& error) {
+                    show_error(sdl.window, error.what());
+                }
+            } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+                       event.key.key == SDLK_F8 && emulator) {
+                try {
+                    load_quick_state(preference_path, *emulator);
+                    release_all_buttons(*emulator);
+                    if (sdl.audio_stream != nullptr) {
+                        static_cast<void>(SDL_ClearAudioStream(sdl.audio_stream));
+                    }
+                    static_cast<void>(SDL_ShowSimpleMessageBox(
+                        SDL_MESSAGEBOX_INFORMATION, "Quick save",
+                        "State loaded.", sdl.window));
+                } catch (const std::exception& error) {
+                    show_error(sdl.window, error.what());
+                }
             } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
                        event.key.key == SDLK_F11) {
                 fullscreen = !fullscreen;

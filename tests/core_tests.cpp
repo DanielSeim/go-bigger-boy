@@ -1731,6 +1731,125 @@ void test_oam_dma() {
     check(bus.read8(0xFF46) == 0xC0, "DMA register retains its source page");
 }
 
+void test_save_state_round_trip_and_validation() {
+    auto rom = banked_rom(4, 0x03, 0x01, 0x03);
+    const std::array<std::uint8_t, 7> program{
+        0x3E, 0x42,       // LD A,42
+        0xEA, 0x00, 0xC0, // LD (C000),A
+        0x04,             // INC B
+        0x00,             // NOP
+    };
+    std::copy(program.begin(), program.end(), rom.begin() + program_address);
+
+    gameboy::Emulator emulator{gameboy::Cartridge{rom}};
+    emulator.bus().write8(0x0000, 0x0A);
+    emulator.bus().write8(0x6000, 1);
+    emulator.bus().write8(0x4000, 2);
+    emulator.bus().write8(0xA123, 0x5A);
+    emulator.bus().write8(0xFF07, 0x05);
+    emulator.bus().write8(0xFF06, 0x77);
+    emulator.bus().write8(0xFF24, 0x77);
+    emulator.bus().write8(0xFF25, 0x22);
+    emulator.bus().write8(0xFF17, 0xF0);
+    emulator.bus().write8(0xFF19, 0x80);
+    emulator.set_button(gameboy::Button::start, true);
+    static_cast<void>(emulator.step());
+    static_cast<void>(emulator.step());
+    emulator.bus().tick(1234);
+
+    const auto saved = emulator.save_state();
+    const auto saved_pc = emulator.cpu().registers().pc;
+    const auto saved_cycles = emulator.cpu().total_cycles();
+    check(saved.size() > 100000 && emulator.bus().read8(0xA123) == 0x5A,
+          "save states include framebuffer, mapper RAM, and subsystem state");
+
+    emulator.bus().write8(0xA123, 0x99);
+    emulator.bus().write8(0xC000, 0x11);
+    emulator.set_button(gameboy::Button::start, false);
+    static_cast<void>(emulator.step());
+    emulator.bus().tick(4096);
+    emulator.load_state(saved);
+    check(emulator.cpu().registers().pc == saved_pc &&
+              emulator.cpu().total_cycles() == saved_cycles &&
+              emulator.bus().read8(0xC000) == 0x42 &&
+              emulator.bus().read8(0xA123) == 0x5A,
+          "loading a save state restores CPU, memory, and mapper state");
+    check(emulator.save_state() == saved,
+          "save-state serialization round trips byte for byte");
+
+    gameboy::Emulator replay{gameboy::Cartridge{rom}};
+    replay.load_state(saved);
+    for (unsigned instruction = 0; instruction < 64; ++instruction) {
+        static_cast<void>(emulator.step());
+        static_cast<void>(replay.step());
+    }
+    check(emulator.save_state() == replay.save_state(),
+          "restored emulators continue deterministically");
+
+    const auto unchanged = emulator.save_state();
+    auto corrupted = saved;
+    corrupted.back() ^= 0x80;
+    auto rejected_corruption = false;
+    try {
+        emulator.load_state(corrupted);
+    } catch (const gameboy::SaveStateError&) {
+        rejected_corruption = true;
+    }
+    check(rejected_corruption && emulator.save_state() == unchanged,
+          "corrupt save states are rejected without changing emulator state");
+
+    auto truncated = saved;
+    truncated.resize(truncated.size() - 1);
+    auto rejected_truncation = false;
+    try {
+        emulator.load_state(truncated);
+    } catch (const gameboy::SaveStateError&) {
+        rejected_truncation = true;
+    }
+    check(rejected_truncation && emulator.save_state() == unchanged,
+          "truncated save states are rejected without changing emulator state");
+
+    auto future_version = saved;
+    future_version[8] = 2;
+    auto rejected_version = false;
+    try {
+        emulator.load_state(future_version);
+    } catch (const gameboy::SaveStateError&) {
+        rejected_version = true;
+    }
+    check(rejected_version && emulator.save_state() == unchanged,
+          "unknown save-state versions are rejected without changing emulator state");
+
+    auto other_rom = rom;
+    other_rom[0x0200] ^= 1;
+    gameboy::Emulator other{gameboy::Cartridge{std::move(other_rom)}};
+    const auto other_unchanged = other.save_state();
+    auto rejected_rom = false;
+    try {
+        other.load_state(saved);
+    } catch (const gameboy::SaveStateError&) {
+        rejected_rom = true;
+    }
+    check(rejected_rom && other.save_state() == other_unchanged,
+          "save states cannot be loaded into a different ROM");
+
+    gameboy::Emulator rtc_emulator{
+        gameboy::Cartridge{banked_rom(2, 0x10, 0x00, 0x03)}};
+    rtc_emulator.bus().write8(0x0000, 0x0A);
+    rtc_emulator.bus().write8(0x4000, 0x0C);
+    rtc_emulator.bus().write8(0xA000, 0x40); // Halt the RTC for determinism.
+    rtc_emulator.bus().write8(0x4000, 0x08);
+    rtc_emulator.bus().write8(0xA000, 12);
+    rtc_emulator.bus().write8(0x6000, 0);
+    rtc_emulator.bus().write8(0x6000, 1);
+    const auto rtc_state = rtc_emulator.save_state();
+    rtc_emulator.bus().write8(0xA000, 34);
+    rtc_emulator.load_state(rtc_state);
+    check(rtc_emulator.bus().read8(0xA000) == 12 &&
+              rtc_emulator.save_state() == rtc_state,
+          "save states restore live and latched MBC3 RTC state");
+}
+
 } // namespace
 
 int main() {
@@ -1779,6 +1898,7 @@ int main() {
         test_ppu_background_window_and_sprites();
         test_joypad_matrix_and_interrupts();
         test_oam_dma();
+        test_save_state_round_trip_and_validation();
     } catch (const std::exception& error) {
         std::cerr << "Unexpected exception: " << error.what() << '\n';
         return 1;

@@ -6,6 +6,7 @@
 namespace gameboy {
 
 class MemoryBus;
+class SaveStateCodec;
 
 struct CpuRegisters {
     std::uint8_t a{};
@@ -39,6 +40,8 @@ public:
     [[nodiscard]] std::uint64_t total_cycles() const noexcept;
 
 private:
+    friend class SaveStateCodec;
+
     static constexpr std::uint8_t zero_flag = 0x80;
     static constexpr std::uint8_t subtract_flag = 0x40;
     static constexpr std::uint8_t half_carry_flag = 0x20;

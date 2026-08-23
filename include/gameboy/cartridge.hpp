@@ -9,6 +9,8 @@
 
 namespace gameboy {
 
+class SaveStateCodec;
+
 class Cartridge {
 public:
     explicit Cartridge(std::vector<std::uint8_t> rom);
@@ -31,9 +33,12 @@ public:
     [[nodiscard]] bool has_battery() const noexcept;
     [[nodiscard]] bool has_rumble() const noexcept;
     [[nodiscard]] bool rumble_active() const noexcept;
+    [[nodiscard]] std::uint64_t rom_fingerprint() const noexcept;
     void flush_battery();
 
 private:
+    friend class SaveStateCodec;
+
     enum class Controller {
         rom_only,
         mbc1,
