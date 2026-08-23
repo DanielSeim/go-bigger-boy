@@ -15,7 +15,8 @@ shared everywhere.
 - Background, window, and 8×8/8×16 sprite scanline rendering
 - Active-low joypad matrix with keyboard/gamepad input and interrupts
 - Basic OAM DMA and an optional SDL3 desktop frontend
-- ROM-only and MBC1 banking with persistent battery-backed `.sav` RAM
+- ROM-only, MBC1, MBC3 (including RTC), and MBC5 banking
+- Persistent battery-backed `.sav` RAM and MBC3 `.rtc` clock state
 - Table-driven CPU tests for opcode matrices, timing, flags, PC, stack, and memory effects
 - Headless command-line runner
 - Headless Mooneye/serial conformance test runner
@@ -110,9 +111,11 @@ recent selection, Ctrl+K to configure and persist keyboard controls, and F1
 for help. Recent ROMs and keyboard bindings are stored in SDL's per-user
 preferences directory.
 
-Battery-backed MBC1 games use a sibling file with the ROM's base name and a
-`.sav` extension. Unsupported cartridge controllers are rejected explicitly
-instead of running with incorrect banking.
+Battery-backed MBC1, MBC3, and MBC5 games use a sibling file with the ROM's
+base name and a `.sav` extension. MBC3 real-time clocks use an additional
+`.rtc` file. MBC5 rumble register state is exposed by the core for frontends;
+physical rumble output is not connected yet. Unsupported cartridge controllers
+are rejected explicitly instead of running with incorrect banking.
 
 ROM files are not included. Only use cartridge dumps you are legally entitled
 to use.

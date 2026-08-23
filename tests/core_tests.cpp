@@ -39,15 +39,17 @@ std::vector<std::uint8_t> test_rom(
     return rom;
 }
 
-std::vector<std::uint8_t> mbc1_rom(const unsigned banks,
-                                   const std::uint8_t type,
-                                   const std::uint8_t rom_size_code,
-                                   const std::uint8_t ram_size_code) {
+std::vector<std::uint8_t> banked_rom(const unsigned banks,
+                                     const std::uint8_t type,
+                                     const std::uint8_t rom_size_code,
+                                     const std::uint8_t ram_size_code) {
     std::vector<std::uint8_t> rom(static_cast<std::size_t>(banks) * 0x4000);
     for (unsigned bank = 0; bank < banks; ++bank) {
         std::fill(rom.begin() + static_cast<std::size_t>(bank) * 0x4000,
                   rom.begin() + static_cast<std::size_t>(bank + 1) * 0x4000,
                   static_cast<std::uint8_t>(bank));
+        rom[static_cast<std::size_t>(bank) * 0x4000 + 1] =
+            static_cast<std::uint8_t>(bank >> 8);
     }
     const std::string title = "MBC1 TEST";
     for (std::size_t index = 0; index < title.size(); ++index) {
@@ -102,7 +104,7 @@ void test_cartridge_file_loading() {
 }
 
 void test_mbc1_rom_banking() {
-    gameboy::Cartridge cartridge{mbc1_rom(128, 0x01, 0x06, 0x00)};
+    gameboy::Cartridge cartridge{banked_rom(128, 0x01, 0x06, 0x00)};
     check(cartridge.read(0x4000) == 1,
           "MBC1 powers up with ROM bank 1 selected");
     cartridge.write(0x2000, 2);
@@ -121,14 +123,14 @@ void test_mbc1_rom_banking() {
     check(cartridge.read(0x0000) == 32 && cartridge.read(0x4000) == 34,
           "MBC1 mode 1 maps upper bits into both ROM windows");
 
-    gameboy::Cartridge masked{mbc1_rom(16, 0x01, 0x03, 0x00)};
+    gameboy::Cartridge masked{banked_rom(16, 0x01, 0x03, 0x00)};
     masked.write(0x2000, 0x10);
     check(masked.read(0x4000) == 0,
           "MBC1 bank-zero translation occurs before physical ROM masking");
 }
 
 void test_mbc1_ram_banking() {
-    gameboy::Cartridge cartridge{mbc1_rom(32, 0x02, 0x04, 0x03)};
+    gameboy::Cartridge cartridge{banked_rom(32, 0x02, 0x04, 0x03)};
     check(cartridge.ram_size() == 0x8000 && !cartridge.has_battery(),
           "MBC1+RAM allocates header-declared non-battery RAM");
     cartridge.write(0xA000, 0x11);
@@ -156,7 +158,7 @@ void test_mbc1_ram_banking() {
     check(cartridge.read(0xA000) == 0xFF,
           "disabling MBC1 RAM restores open-bus reads");
 
-    gameboy::Cartridge large{mbc1_rom(64, 0x02, 0x05, 0x02)};
+    gameboy::Cartridge large{banked_rom(64, 0x02, 0x05, 0x02)};
     large.write(0x0000, 0x0A);
     large.write(0x6000, 1);
     large.write(0x4000, 3);
@@ -173,7 +175,7 @@ void test_battery_ram_persistence() {
                            ".gb");
     auto save_path = rom_path;
     save_path.replace_extension(".sav");
-    const auto rom = mbc1_rom(4, 0x03, 0x01, 0x02);
+    const auto rom = banked_rom(4, 0x03, 0x01, 0x02);
     {
         std::ofstream output(rom_path, std::ios::binary);
         output.write(reinterpret_cast<const char*>(rom.data()),
@@ -200,6 +202,144 @@ void test_battery_ram_persistence() {
     }
     std::filesystem::remove(save_path);
     std::filesystem::remove(rom_path);
+}
+
+void test_mbc3_banking_and_rtc() {
+    gameboy::Cartridge cartridge{banked_rom(128, 0x10, 0x06, 0x03)};
+    check(cartridge.read(0x4000) == 1,
+          "MBC3 powers up with ROM bank 1 selected");
+    cartridge.write(0x2000, 0);
+    check(cartridge.read(0x4000) == 1,
+          "MBC3 remaps switchable ROM bank zero to bank one");
+    cartridge.write(0x2000, 0x20);
+    check(cartridge.read(0x4000) == 0x20 && cartridge.read(0x0000) == 0,
+          "MBC3 selects a seven-bit ROM bank while keeping bank zero fixed");
+
+    cartridge.write(0x0000, 0x0A);
+    for (std::uint8_t bank = 0; bank < 4; ++bank) {
+        cartridge.write(0x4000, bank);
+        cartridge.write(0xA000, static_cast<std::uint8_t>(0x30 + bank));
+    }
+    for (std::uint8_t bank = 0; bank < 4; ++bank) {
+        cartridge.write(0x4000, bank);
+        check(cartridge.read(0xA000) == static_cast<std::uint8_t>(0x30 + bank),
+              "MBC3 selects independent external RAM banks");
+    }
+
+    cartridge.write(0x4000, 0x0C);
+    cartridge.write(0xA000, 0xC1); // Halt, carry, and day bit 8.
+    cartridge.write(0x4000, 0x08);
+    cartridge.write(0xA000, 42);
+    cartridge.write(0x4000, 0x09);
+    cartridge.write(0xA000, 37);
+    cartridge.write(0x4000, 0x0A);
+    cartridge.write(0xA000, 19);
+    cartridge.write(0x4000, 0x0B);
+    cartridge.write(0xA000, 0xA5);
+    cartridge.write(0x6000, 0);
+    cartridge.write(0x6000, 1);
+    cartridge.write(0x4000, 0x08);
+    check(cartridge.read(0xA000) == 42,
+          "MBC3 latches and reads the RTC seconds register");
+    cartridge.write(0x4000, 0x0A);
+    check(cartridge.read(0xA000) == 19,
+          "MBC3 latches and reads the RTC hours register");
+    cartridge.write(0x4000, 0x0B);
+    check(cartridge.read(0xA000) == 0xA5,
+          "MBC3 latches and reads the RTC day counter");
+    cartridge.write(0x4000, 0x0C);
+    check(cartridge.read(0xA000) == 0xC1,
+          "MBC3 preserves RTC day-high, halt, and carry flags");
+
+    cartridge.write(0x4000, 0x08);
+    cartridge.write(0xA000, 7);
+    check(cartridge.read(0xA000) == 42,
+          "MBC3 RTC reads remain stable until the next latch transition");
+    cartridge.write(0x6000, 0);
+    cartridge.write(0x6000, 1);
+    check(cartridge.read(0xA000) == 7,
+          "MBC3 refreshes its RTC snapshot on a zero-to-one latch transition");
+    cartridge.write(0x0000, 0);
+    check(cartridge.read(0xA000) == 0xFF,
+          "disabled MBC3 RAM and RTC registers read as open bus");
+}
+
+void test_mbc3_rtc_persistence() {
+    const auto unique = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto rom_path = std::filesystem::temp_directory_path() /
+                          ("gameboy-rtc-test-" + std::to_string(unique) + ".gb");
+    auto rtc_path = rom_path;
+    rtc_path.replace_extension(".rtc");
+    auto save_path = rom_path;
+    save_path.replace_extension(".sav");
+    const auto rom = banked_rom(2, 0x0F, 0x00, 0x00);
+    {
+        std::ofstream output(rom_path, std::ios::binary);
+        output.write(reinterpret_cast<const char*>(rom.data()),
+                     static_cast<std::streamsize>(rom.size()));
+    }
+    {
+        auto cartridge = gameboy::Cartridge::from_file(rom_path);
+        cartridge.write(0x0000, 0x0A);
+        cartridge.write(0x4000, 0x0C);
+        cartridge.write(0xA000, 0x40); // Halt for deterministic persistence.
+        cartridge.write(0x4000, 0x08);
+        cartridge.write(0xA000, 51);
+        cartridge.flush_battery();
+    }
+    check(std::filesystem::exists(rtc_path) &&
+              std::filesystem::file_size(rtc_path) == 21 &&
+              !std::filesystem::exists(save_path),
+          "timer-only MBC3 cartridges persist a sibling RTC file without RAM");
+    {
+        auto cartridge = gameboy::Cartridge::from_file(rom_path);
+        cartridge.write(0x0000, 0x0A);
+        cartridge.write(0x6000, 0);
+        cartridge.write(0x6000, 1);
+        cartridge.write(0x4000, 0x08);
+        check(cartridge.read(0xA000) == 51,
+              "MBC3 reloads persisted RTC state into a new cartridge instance");
+    }
+    std::filesystem::remove(rtc_path);
+    std::filesystem::remove(rom_path);
+}
+
+void test_mbc5_banking_and_rumble() {
+    gameboy::Cartridge cartridge{banked_rom(512, 0x1B, 0x08, 0x04)};
+    check(cartridge.has_battery() && cartridge.read(0x4000) == 1,
+          "MBC5 battery cartridges load with ROM bank one selected");
+    cartridge.write(0x2000, 0);
+    check(cartridge.read(0x4000) == 0,
+          "MBC5 permits ROM bank zero in the switchable window");
+    cartridge.write(0x2000, 1);
+    cartridge.write(0x3000, 1);
+    check(cartridge.read(0x4000) == 1 && cartridge.read(0x4001) == 1,
+          "MBC5 combines its low eight and high one ROM-bank bits");
+    check(cartridge.read(0x0001) == 0,
+          "MBC5 keeps the lower ROM window fixed at bank zero");
+
+    cartridge.write(0x0000, 0x0A);
+    cartridge.write(0x4000, 0);
+    cartridge.write(0xA000, 0x55);
+    cartridge.write(0x4000, 15);
+    cartridge.write(0xA000, 0xAA);
+    cartridge.write(0x4000, 0);
+    check(cartridge.read(0xA000) == 0x55,
+          "MBC5 selects external RAM bank zero");
+    cartridge.write(0x4000, 15);
+    check(cartridge.read(0xA000) == 0xAA,
+          "MBC5 uses all four RAM-bank bits on non-rumble cartridges");
+
+    gameboy::Cartridge rumble{banked_rom(2, 0x1E, 0x00, 0x03)};
+    check(rumble.has_rumble() && !rumble.rumble_active(),
+          "MBC5 rumble cartridges expose an initially inactive motor");
+    rumble.write(0x0000, 0x0A);
+    rumble.write(0x4000, 0x0B); // Rumble on, RAM bank 3.
+    rumble.write(0xA000, 0x77);
+    check(rumble.rumble_active(), "MBC5 bit three activates rumble");
+    rumble.write(0x4000, 3);
+    check(!rumble.rumble_active() && rumble.read(0xA000) == 0x77,
+          "MBC5 rumble uses only the low three bits for its RAM bank");
 }
 
 void test_memory_map() {
@@ -1365,6 +1505,9 @@ int main() {
         test_mbc1_rom_banking();
         test_mbc1_ram_banking();
         test_battery_ram_persistence();
+        test_mbc3_banking_and_rtc();
+        test_mbc3_rtc_persistence();
+        test_mbc5_banking_and_rumble();
         test_memory_map();
         test_serial_transfer();
         test_cpu_state_normalization();
