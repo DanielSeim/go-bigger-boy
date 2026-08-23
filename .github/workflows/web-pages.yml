@@ -51,10 +51,14 @@ jobs:
       - name: Stage site
         shell: bash
         run: |
+          sed -i "s#index.js#index.js?v=${GITHUB_SHA}#g" build-web/web/index.html
+          sed -i "s#index.wasm#index.wasm?v=${GITHUB_SHA}#g" build-web/web/index.js
           touch build-web/web/.nojekyll
           test -s build-web/web/index.html
           test -s build-web/web/index.js
           test -s build-web/web/index.wasm
+          grep -Fq "index.js?v=${GITHUB_SHA}" build-web/web/index.html
+          grep -Fq "index.wasm?v=${GITHUB_SHA}" build-web/web/index.js
 
       - name: Configure GitHub Pages
         if: github.event_name != 'pull_request'
