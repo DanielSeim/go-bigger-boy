@@ -15,8 +15,8 @@ android {
         applicationId "com.danielseim.gbb"
         minSdk 21
         targetSdk 36
-        versionCode 3
-        versionName "0.11.0"
+        versionCode 4
+        versionName "0.11.1"
 
         externalNativeBuild {
             cmake {

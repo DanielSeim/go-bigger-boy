@@ -38,7 +38,7 @@
 namespace {
 
 #ifndef GBB_VERSION
-#define GBB_VERSION "0.11.0"
+#define GBB_VERSION "0.11.1"
 #endif
 
 [[noreturn]] void sdl_error(const std::string& action) {
