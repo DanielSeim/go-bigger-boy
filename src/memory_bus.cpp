@@ -11,7 +11,9 @@ constexpr unsigned oam_dma_start_cycles = 8;
 }
 
 MemoryBus::MemoryBus(Cartridge cartridge)
-    : cartridge_(std::move(cartridge)), cgb_mode_(cartridge_.supports_cgb()) {
+    : cartridge_(std::move(cartridge)),
+      cgb_wram_(std::make_unique<std::array<std::uint8_t, 0x6000>>()),
+      cgb_mode_(cartridge_.supports_cgb()) {
     ppu_.set_cgb_mode(cgb_mode_);
 }
 
@@ -363,7 +365,7 @@ std::uint8_t MemoryBus::read_wram(std::uint16_t address) const noexcept {
     }
     const auto offset = static_cast<std::size_t>(wram_bank_ - 2) * 0x1000 +
                         (address - 0xD000);
-    return cgb_wram_[offset];
+    return (*cgb_wram_)[offset];
 }
 
 void MemoryBus::write_wram(std::uint16_t address,
@@ -375,7 +377,7 @@ void MemoryBus::write_wram(std::uint16_t address,
     }
     const auto offset = static_cast<std::size_t>(wram_bank_ - 2) * 0x1000 +
                         (address - 0xD000);
-    cgb_wram_[offset] = value;
+    (*cgb_wram_)[offset] = value;
 }
 
 void MemoryBus::flush_battery() { cartridge_.flush_battery(); }

@@ -8,6 +8,7 @@
 
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -56,7 +57,7 @@ private:
 
     Cartridge cartridge_;
     std::array<std::uint8_t, 0x2000> wram_{};
-    std::array<std::uint8_t, 0x6000> cgb_wram_{};
+    std::unique_ptr<std::array<std::uint8_t, 0x6000>> cgb_wram_;
     std::array<std::uint8_t, 0x80> io_{};
     std::array<std::uint8_t, 0x7F> hram_{};
     std::uint8_t interrupt_enable_{};

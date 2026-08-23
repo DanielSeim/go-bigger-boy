@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 
 namespace gameboy {
 
@@ -14,7 +15,7 @@ public:
     static constexpr std::size_t screen_height = 144;
     using Framebuffer = std::array<std::uint32_t, screen_width * screen_height>;
 
-    Ppu() noexcept;
+    Ppu();
 
     void set_cgb_mode(bool enabled) noexcept;
     [[nodiscard]] bool cgb_mode() const noexcept;
@@ -56,7 +57,7 @@ private:
         std::uint8_t color) const noexcept;
 
     std::array<std::uint8_t, 0x2000> vram_{};
-    std::array<std::uint8_t, 0x2000> cgb_vram_{};
+    std::unique_ptr<std::array<std::uint8_t, 0x2000>> cgb_vram_;
     std::array<std::uint8_t, 0xA0> oam_{};
     Framebuffer framebuffer_{};
 

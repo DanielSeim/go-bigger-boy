@@ -10,7 +10,8 @@ constexpr std::array<std::uint32_t, 4> dmg_colors{
 };
 } // namespace
 
-Ppu::Ppu() noexcept {
+Ppu::Ppu()
+    : cgb_vram_(std::make_unique<std::array<std::uint8_t, 0x2000>>()) {
     framebuffer_.fill(dmg_colors[0]);
     cgb_bg_palette_.fill(0xFF);
     cgb_object_palette_.fill(0xFF);
@@ -24,21 +25,21 @@ std::uint8_t Ppu::read_vram(const std::uint16_t address) const noexcept {
     if (lcd_enabled() && mode_ == 3) {
         return 0xFF;
     }
-    const auto& bank = cgb_mode_ && vram_bank_ != 0 ? cgb_vram_ : vram_;
+    const auto& bank = cgb_mode_ && vram_bank_ != 0 ? *cgb_vram_ : vram_;
     return bank[address - 0x8000];
 }
 
 void Ppu::write_vram(const std::uint16_t address,
                      const std::uint8_t value) noexcept {
     if (!lcd_enabled() || mode_ != 3) {
-        auto& bank = cgb_mode_ && vram_bank_ != 0 ? cgb_vram_ : vram_;
+        auto& bank = cgb_mode_ && vram_bank_ != 0 ? *cgb_vram_ : vram_;
         bank[address - 0x8000] = value;
     }
 }
 
 void Ppu::dma_write_vram(const std::uint16_t address,
                          const std::uint8_t value) noexcept {
-    auto& bank = cgb_mode_ && vram_bank_ != 0 ? cgb_vram_ : vram_;
+    auto& bank = cgb_mode_ && vram_bank_ != 0 ? *cgb_vram_ : vram_;
     bank[address - 0x8000] = value;
 }
 
@@ -354,7 +355,7 @@ void Ppu::render_scanline() noexcept {
                                       : ((lcdc_ & 0x08) != 0 ? 0x1C00U : 0x1800U);
             const auto map_offset = map_base + (pixel_y / 8) * 32 + pixel_x / 8;
             const auto tile_number = vram_[map_offset & 0x1FFF];
-            const auto attributes = cgb_mode_ ? cgb_vram_[map_offset & 0x1FFF]
+            const auto attributes = cgb_mode_ ? (*cgb_vram_)[map_offset & 0x1FFF]
                                               : std::uint8_t{0};
             unsigned tile_offset = 0;
             if ((lcdc_ & 0x10) != 0) {
@@ -368,7 +369,7 @@ void Ppu::render_scanline() noexcept {
             auto tile_row = pixel_y & 7U;
             if ((attributes & 0x40) != 0) tile_row = 7 - tile_row;
             const auto row = tile_row * 2;
-            const auto& tile_bank = (attributes & 0x08) != 0 ? cgb_vram_ : vram_;
+            const auto& tile_bank = (attributes & 0x08) != 0 ? *cgb_vram_ : vram_;
             const auto low = tile_bank[tile_offset + row];
             const auto high = tile_bank[tile_offset + row + 1];
             const auto column = pixel_x & 7U;
@@ -429,7 +430,7 @@ void Ppu::render_scanline() noexcept {
         }
         const auto tile_offset = static_cast<unsigned>(tile) * 16 + row * 2;
         const auto& tile_bank = cgb_mode_ && (attributes & 0x08) != 0
-                                    ? cgb_vram_
+                                    ? *cgb_vram_
                                     : vram_;
         const auto low = tile_bank[tile_offset];
         const auto high = tile_bank[tile_offset + 1];

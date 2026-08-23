@@ -314,8 +314,8 @@ private:
         writer.u32(bus.ppu_.mode3_end_dot_);
         writer.u8(bus.ppu_.window_line_);
         writer.boolean(bus.ppu_.window_y_triggered_);
-        write_bytes(writer, bus.cgb_wram_);
-        write_bytes(writer, bus.ppu_.cgb_vram_);
+        write_bytes(writer, *bus.cgb_wram_);
+        write_bytes(writer, *bus.ppu_.cgb_vram_);
         write_bytes(writer, bus.ppu_.cgb_bg_palette_);
         write_bytes(writer, bus.ppu_.cgb_object_palette_);
         writer.u8(bus.wram_bank_);
@@ -382,8 +382,8 @@ private:
                                         : 0;
         }
         if (version >= 4) {
-            read_bytes(reader, bus.cgb_wram_);
-            read_bytes(reader, bus.ppu_.cgb_vram_);
+            read_bytes(reader, *bus.cgb_wram_);
+            read_bytes(reader, *bus.ppu_.cgb_vram_);
             read_bytes(reader, bus.ppu_.cgb_bg_palette_);
             read_bytes(reader, bus.ppu_.cgb_object_palette_);
             bus.wram_bank_ = reader.u8();
@@ -411,8 +411,8 @@ private:
             }
             bus.timer_.set_double_speed(bus.double_speed_);
         } else {
-            bus.cgb_wram_.fill(0);
-            bus.ppu_.cgb_vram_.fill(0);
+            bus.cgb_wram_->fill(0);
+            bus.ppu_.cgb_vram_->fill(0);
             bus.ppu_.cgb_bg_palette_.fill(0xFF);
             bus.ppu_.cgb_object_palette_.fill(0xFF);
             bus.wram_bank_ = 1;
