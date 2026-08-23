@@ -19,6 +19,7 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -199,6 +200,13 @@ int load_rom_from_browser(emscripten::val bytes) noexcept {
     }
 }
 
+int load_rom_from_browser_with_palette(emscripten::val bytes,
+                                       const unsigned palette) noexcept {
+    if (!active_app || palette >= gameboy::display_palettes.size()) return 0;
+    active_app->display_palette = palette;
+    return load_rom_from_browser(std::move(bytes));
+}
+
 std::string browser_rom_fingerprint() {
     if (!active_app || !active_app->emulator) return {};
     std::ostringstream fingerprint;
@@ -246,6 +254,8 @@ void import_browser_rtc_data(const emscripten::val bytes) {
 
 EMSCRIPTEN_BINDINGS(gbb_web_bindings) {
     emscripten::function("loadRom", &load_rom_from_browser);
+    emscripten::function("loadRomWithPalette",
+                         &load_rom_from_browser_with_palette);
     emscripten::function("romFingerprint", &browser_rom_fingerprint);
     emscripten::function("hasBattery", &browser_has_battery);
     emscripten::function("hasRtc", &browser_has_rtc);

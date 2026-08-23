@@ -199,7 +199,6 @@
       } catch (error) {
         console.warn('Could not restore the display palette:', error);
       }
-      Module._gbb_set_palette(Number(palettePicker.value));
       palettePicker.disabled = false;
     }
 
@@ -218,7 +217,7 @@
     };
 
     async function loadRom(file) {
-      if (!file || !Module.loadRom) return;
+      if (!file || !Module.loadRomWithPalette) return;
       Module._gbb_resume_audio();
       Module.gbbSetStatus(`Loading ${file.name}…`, false);
       let loaded = false;
@@ -229,7 +228,11 @@
         } catch (error) {
           noteStorageFailure(error);
         }
-        if (!Module.loadRom(bytes)) return;
+        // Emscripten's runtime callback can run before SDL_AppInit, so pass the
+        // restored selection together with the ROM instead of relying on an
+        // earlier setter call that may not have an active C++ app yet.
+        if (!Module.loadRomWithPalette(
+            bytes, Number(palettePicker.value))) return;
         loaded = true;
         currentRom = {
           key: Module.romFingerprint(),
