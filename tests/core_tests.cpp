@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -2278,7 +2279,9 @@ void test_save_state_round_trip_and_validation() {
     check(saved.size() > 100000 && emulator.bus().read8(0xA123) == 0x5A,
           "save states include framebuffer, mapper RAM, and subsystem state");
 
-    gameboy::Emulator startup_snapshot{gameboy::Cartridge{rom}};
+    auto startup_snapshot_storage = std::make_unique<gameboy::Emulator>(
+        gameboy::Cartridge{rom});
+    auto& startup_snapshot = *startup_snapshot_storage;
     startup_snapshot.bus().tick(79);
     const auto startup_saved = startup_snapshot.save_state();
     startup_snapshot.bus().tick(1);
@@ -2291,7 +2294,9 @@ void test_save_state_round_trip_and_validation() {
     check((startup_snapshot.bus().read8(0xFF41) & 0x03) == 3,
           "restored LCD startup resumes on the original dot");
 
-    gameboy::Emulator pipeline_snapshot{gameboy::Cartridge{rom}};
+    auto pipeline_snapshot_storage = std::make_unique<gameboy::Emulator>(
+        gameboy::Cartridge{rom});
+    auto& pipeline_snapshot = *pipeline_snapshot_storage;
     pipeline_snapshot.bus().tick(452 + 80);
     const auto pipeline_saved = pipeline_snapshot.save_state();
     check((pipeline_snapshot.bus().read8(0xFF41) & 0x03) == 2 &&
@@ -2399,7 +2404,9 @@ void test_save_state_round_trip_and_validation() {
         version_five, 24,
         state_crc32(version_five.data() + state_header_size,
                     version_five_payload_size));
-    gameboy::Emulator version_five_loader{gameboy::Cartridge{rom}};
+    auto version_five_loader_storage = std::make_unique<gameboy::Emulator>(
+        gameboy::Cartridge{rom});
+    auto& version_five_loader = *version_five_loader_storage;
     version_five_loader.load_state(version_five);
     check(version_five_loader.cpu().registers().pc == saved_pc &&
               version_five_loader.cpu().total_cycles() == saved_cycles &&
