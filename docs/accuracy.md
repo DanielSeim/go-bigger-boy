@@ -8,11 +8,11 @@ bundle. GitHub Actions verifies the archive checksum before running any ROM.
 
 | Suite | Passing | Coverage |
 | --- | ---: | --- |
-| Mooneye acceptance | 50 | CPU timing, interrupts, OAM DMA, timers, and selected PPU timing |
+| Mooneye acceptance | 52 | CPU timing, interrupts, OAM DMA, timers, and selected PPU timing |
 | Blargg | 14 | All 11 individual CPU instruction ROMs plus instruction and memory timing |
-| Total CI gate | **64** | Every listed ROM must pass before a release can be published |
+| Total CI gate | **66** | Every listed ROM must pass before a release can be published |
 
-The Mooneye figure is 50 of the 75 acceptance ROMs in the pinned bundle. Tests
+The Mooneye figure is 52 of the 75 acceptance ROMs in the pinned bundle. Tests
 that target a different boot-ROM hardware revision are counted during the full
 audit but are not necessarily applicable to GBB's current post-boot DMG model.
 
@@ -23,7 +23,7 @@ can be moved into `cmake/ConformanceTests.cmake` immediately:
 
 - Boot state and model-specific unused I/O behavior: 12
 - Interrupt-entry `IE` stack-write interaction: 1
-- PPU mode, LCD-enable, STAT/LYC, and VBlank timing: 8
+- PPU mode and LCD-enable timing: 6
 - Serial boot-clock alignment: 1
 - Timer reload and rapid-toggle edge cases: 3
 

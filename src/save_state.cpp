@@ -13,7 +13,7 @@ namespace {
 constexpr std::array<std::uint8_t, 8> state_magic{
     'G', 'B', 'B', 'S', 'T', 'A', 'T', 'E',
 };
-constexpr std::uint32_t state_version = 4;
+constexpr std::uint32_t state_version = 5;
 constexpr std::uint32_t oldest_supported_state_version = 1;
 constexpr std::size_t maximum_state_size = 2 * 1024 * 1024;
 constexpr std::size_t maximum_serial_output = 1024 * 1024;
@@ -314,6 +314,7 @@ private:
         writer.u32(bus.ppu_.mode3_end_dot_);
         writer.u8(bus.ppu_.window_line_);
         writer.boolean(bus.ppu_.window_y_triggered_);
+        writer.boolean(bus.ppu_.coincidence_);
         write_bytes(writer, *bus.cgb_wram_);
         write_bytes(writer, *bus.ppu_.cgb_vram_);
         write_bytes(writer, bus.ppu_.cgb_bg_palette_);
@@ -380,6 +381,11 @@ private:
                                         ? static_cast<std::uint8_t>(
                                               bus.ppu_.ly_ - bus.ppu_.window_y_)
                                         : 0;
+        }
+        if (version >= 5) {
+            bus.ppu_.coincidence_ = reader.boolean();
+        } else {
+            bus.ppu_.coincidence_ = bus.ppu_.ly_ == bus.ppu_.lyc_;
         }
         if (version >= 4) {
             read_bytes(reader, *bus.cgb_wram_);

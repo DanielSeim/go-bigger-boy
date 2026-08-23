@@ -1,5 +1,6 @@
 #include "gameboy/emulator.hpp"
 
+#include <array>
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
@@ -77,6 +78,16 @@ void print_state(const gameboy::Cpu& cpu) {
               << std::dec << " cycles=" << cpu.total_cycles() << '\n';
 }
 
+void print_recent_pcs(const std::array<std::uint16_t, 64>& pcs,
+                      const std::size_t next, const std::size_t count) {
+    std::cerr << "Recent PCs:" << std::hex << std::setfill('0');
+    const auto begin = (next + pcs.size() - count) % pcs.size();
+    for (std::size_t index = 0; index < count; ++index) {
+        std::cerr << ' ' << std::setw(4) << pcs[(begin + index) % pcs.size()];
+    }
+    std::cerr << std::dec << '\n';
+}
+
 bool contains_failure(const std::string& output) {
     return output.find("Failed") != std::string::npos ||
            output.find("FAILED") != std::string::npos ||
@@ -107,6 +118,10 @@ int main(int argc, char** argv) {
         std::string serial_output;
         std::string memory_output;
         auto saw_blargg = false;
+        std::array<std::uint16_t, 64> recent_pcs{};
+        std::size_t recent_pc_next = 0;
+        std::size_t recent_pc_count = 0;
+        std::uint16_t last_low_rom_pc = 0x0100;
 
         while (emulator.cpu().total_cycles() < options.max_cycles) {
             const bool watches_blargg = options.protocol == Protocol::automatic ||
@@ -131,6 +146,10 @@ int main(int argc, char** argv) {
                     std::cerr << "\nFAIL (Blargg result code "
                               << static_cast<unsigned>(status) << ")\n";
                     print_state(emulator.cpu());
+                    print_recent_pcs(recent_pcs, recent_pc_next,
+                                     recent_pc_count);
+                    std::cerr << "Last low ROM PC=" << std::hex
+                              << last_low_rom_pc << std::dec << '\n';
                     return EXIT_FAILURE;
                 }
             }
@@ -153,10 +172,19 @@ int main(int argc, char** argv) {
                     automatic_failure_signature) {
                     std::cerr << "FAIL (Mooneye result registers)\n";
                     print_state(emulator.cpu());
+                    print_recent_pcs(recent_pcs, recent_pc_next,
+                                     recent_pc_count);
+                    std::cerr << "Last low ROM PC=" << std::hex
+                              << last_low_rom_pc << std::dec << '\n';
                     return EXIT_FAILURE;
                 }
             }
 
+            recent_pcs[recent_pc_next] = registers.pc;
+            if (registers.pc < 0x4000) last_low_rom_pc = registers.pc;
+            recent_pc_next = (recent_pc_next + 1) % recent_pcs.size();
+            recent_pc_count = std::min(recent_pc_count + 1,
+                                       recent_pcs.size());
             static_cast<void>(emulator.step());
             auto bytes = emulator.bus().take_serial_output();
             if (!bytes.empty()) {
@@ -173,6 +201,9 @@ int main(int argc, char** argv) {
             if (watches_serial && contains_failure(serial_output)) {
                 std::cerr << "\nFAIL (serial)\n";
                 print_state(emulator.cpu());
+                print_recent_pcs(recent_pcs, recent_pc_next, recent_pc_count);
+                std::cerr << "Last low ROM PC=" << std::hex << last_low_rom_pc
+                          << std::dec << '\n';
                 return EXIT_FAILURE;
             }
         }

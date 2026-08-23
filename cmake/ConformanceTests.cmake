@@ -50,6 +50,8 @@ set(gbb_mooneye_tests
     acceptance/ppu/intr_1_2_timing-GS.gb
     acceptance/ppu/intr_2_0_timing.gb
     acceptance/ppu/stat_irq_blocking.gb
+    acceptance/ppu/stat_lyc_onoff.gb
+    acceptance/ppu/vblank_stat_intr-GS.gb
     acceptance/push_timing.gb
     acceptance/rapid_di_ei.gb
     acceptance/ret_cc_timing.gb

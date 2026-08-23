@@ -88,6 +88,7 @@ private:
     std::uint8_t window_line_{};
     bool window_y_triggered_{};
     bool cgb_mode_{};
+    bool coincidence_{};
     bool stat_line_{};
     bool frame_ready_{};
 };

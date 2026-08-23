@@ -208,7 +208,7 @@ void test_cgb_memory_and_rendering() {
     check(bus.read8(0xFF68) == 0xC4,
           "CGB palette writes auto-increment their six-bit index");
     bus.write8(0xFF40, 0x91);
-    bus.tick(252);
+    bus.tick(254);
     check(bus.framebuffer()[0] == 0xFFFF0000,
           "CGB tile attributes select VRAM banks and RGB555 palettes");
 
@@ -233,7 +233,7 @@ void test_cgb_memory_and_rendering() {
     bus.write8(0xFF54, 0x20);
     bus.write8(0xFF40, 0x91);
     bus.write8(0xFF55, 0x81);
-    bus.tick(252);
+    bus.tick(254);
     check(bus.read8(0xFF55) == 0x00 && bus.read8(0x8120) == 0x50,
           "CGB HBlank DMA transfers one block at each HBlank");
     bus.tick(456);
@@ -1793,32 +1793,32 @@ void test_ppu_modes_and_memory_access() {
     bus.write8(0x8000, 0x12);
     bus.write8(0xFE00, 0x34);
     bus.write8(0xFF40, 0x80);
-    check((bus.read8(0xFF41) & 0x03) == 2 && bus.read8(0xFF44) == 0,
-          "enabling LCD starts line zero in OAM scan mode");
+    check((bus.read8(0xFF41) & 0x03) == 0 && bus.read8(0xFF44) == 0,
+          "enabling LCD starts line zero in startup mode 0");
     check(bus.read8(0x8000) == 0x12,
-          "VRAM remains accessible during mode 2");
-    check(bus.read8(0xFE00) == 0xFF,
-          "OAM is blocked during mode 2");
+          "VRAM remains accessible during startup mode 0");
+    check(bus.read8(0xFE00) == 0x34,
+          "OAM remains accessible during startup mode 0");
 
-    bus.tick(79);
-    check((bus.read8(0xFF41) & 0x03) == 2,
-          "mode 2 lasts eighty dots");
+    bus.tick(81);
+    check((bus.read8(0xFF41) & 0x03) == 0,
+          "line-zero startup lasts eighty-two dots");
     bus.tick(1);
     check((bus.read8(0xFF41) & 0x03) == 3,
-          "mode 3 begins on dot eighty");
+          "line-zero mode 3 begins on dot eighty-two");
     check(bus.read8(0x8000) == 0xFF && bus.read8(0xFE00) == 0xFF,
           "VRAM and OAM are blocked during mode 3");
     bus.write8(0x8000, 0x99);
 
     bus.tick(172);
     check((bus.read8(0xFF41) & 0x03) == 0,
-          "minimum-length mode 3 ends on dot 252");
+          "line-zero minimum-length mode 3 ends on dot 254");
     check(bus.read8(0x8000) == 0x12,
           "writes to VRAM during mode 3 are ignored");
     check(bus.read8(0xFE00) == 0x34,
           "OAM becomes accessible during HBlank");
 
-    bus.tick(204);
+    bus.tick(202);
     check(bus.read8(0xFF44) == 1 && (bus.read8(0xFF41) & 0x03) == 2,
           "a 456-dot visible line advances LY and returns to mode 2");
     bus.write8(0xFF44, 99);
@@ -1831,7 +1831,7 @@ void test_ppu_modes_and_memory_access() {
     gameboy::MemoryBus scrolling{gameboy::Cartridge{test_rom()}};
     scrolling.write8(0xFF43, 5);
     scrolling.write8(0xFF40, 0x81);
-    scrolling.tick(252);
+    scrolling.tick(254);
     check((scrolling.read8(0xFF41) & 0x03) == 3,
           "fine horizontal scrolling lengthens mode 3");
     scrolling.tick(5);
@@ -1842,7 +1842,7 @@ void test_ppu_modes_and_memory_access() {
     window_timing.write8(0xFF4A, 0);
     window_timing.write8(0xFF4B, 7);
     window_timing.write8(0xFF40, 0xA1);
-    window_timing.tick(257);
+    window_timing.tick(259);
     check((window_timing.read8(0xFF41) & 0x03) == 3,
           "starting the window stalls the background fetcher for six dots");
     window_timing.tick(1);
@@ -1853,7 +1853,7 @@ void test_ppu_modes_and_memory_access() {
     sprite_timing.write8(0xFE00, 16);
     sprite_timing.write8(0xFE01, 8);
     sprite_timing.write8(0xFF40, 0x83);
-    sprite_timing.tick(262);
+    sprite_timing.tick(264);
     check((sprite_timing.read8(0xFF41) & 0x03) == 3,
           "a selected aligned sprite extends mode 3 by eleven dots");
     sprite_timing.tick(1);
@@ -1872,18 +1872,32 @@ void test_ppu_stat_interrupts() {
               (coincidence.read8(0xFF0F) & 0x02) != 0,
           "LY=LYC raises the coincidence flag and STAT interrupt");
 
+    gameboy::MemoryBus retained{gameboy::Cartridge{test_rom()}};
+    retained.write8(0xFF41, 0x40);
+    retained.write8(0xFF45, 0);
+    retained.write8(0xFF40, 0x80);
+    retained.write8(0xFF40, 0);
+    retained.write8(0xFF0F, 0);
+    retained.write8(0xFF45, 1);
+    check((retained.read8(0xFF41) & 0x04) != 0,
+          "LCD-off LYC writes retain the stopped coincidence result");
+    retained.write8(0xFF40, 0x80);
+    check((retained.read8(0xFF41) & 0x07) == 0 &&
+              (retained.read8(0xFF0F) & 0x02) == 0,
+          "LCD startup refreshes coincidence without a stale STAT edge");
+
     gameboy::MemoryBus modes{gameboy::Cartridge{test_rom()}};
     modes.write8(0xFF41, 0x28); // Mode 2 and mode 0 interrupt sources.
     modes.write8(0xFF40, 0x80);
     check((modes.read8(0xFF0F) & 0x02) != 0,
-          "enabling LCD in mode 2 can raise STAT");
+          "enabling LCD in startup mode 0 can raise STAT");
     modes.write8(0xFF0F, 0);
-    modes.tick(80);
+    modes.tick(82);
     modes.tick(172);
     check((modes.read8(0xFF0F) & 0x02) != 0,
           "entering enabled mode 0 raises STAT on a rising edge");
     modes.write8(0xFF0F, 0);
-    modes.tick(204);
+    modes.tick(202);
     check((modes.read8(0xFF0F) & 0x02) == 0,
           "adjacent enabled STAT sources block a second interrupt edge");
 }
@@ -1899,6 +1913,23 @@ void test_ppu_vblank_and_frame_publication() {
     check((bus.read8(0xFF0F) & 0x03) == 0x03,
           "entering VBlank requests VBlank and enabled mode-1 STAT interrupts");
     check(bus.frame_ready(), "entering VBlank publishes the completed frame");
+
+    gameboy::MemoryBus mode2_vblank{gameboy::Cartridge{test_rom()}};
+    mode2_vblank.write8(0xFF41, 0x20);
+    mode2_vblank.write8(0xFF40, 0x80);
+    mode2_vblank.write8(0xFF0F, 0);
+    mode2_vblank.tick(456 * 144);
+    check((mode2_vblank.read8(0xFF0F) & 0x02) != 0,
+          "DMG mode-2 STAT selection also interrupts at VBlank entry");
+
+    gameboy::MemoryBus wrapped_coincidence{
+        gameboy::Cartridge{test_rom()}};
+    wrapped_coincidence.write8(0xFF45, 0);
+    wrapped_coincidence.write8(0xFF40, 0x80);
+    wrapped_coincidence.tick(456 * 154);
+    check(wrapped_coincidence.read8(0xFF44) == 0 &&
+              (wrapped_coincidence.read8(0xFF41) & 0x04) != 0,
+          "LY wraparound refreshes the cached coincidence flag for line zero");
     bus.consume_frame();
     check(!bus.frame_ready(), "frontend can acknowledge a published frame");
     bus.tick(456 * 10);
@@ -1913,7 +1944,7 @@ void test_ppu_background_window_and_sprites() {
     background.write8(0x8001, 0x80); // Tile 0, first pixel color 3.
     background.write8(0x9800, 0x00);
     background.write8(0xFF40, 0x91);
-    background.tick(252);
+    background.tick(254);
     check(background.framebuffer()[0] == 0xFF000000 &&
               background.framebuffer()[1] == 0xFFFFFFFF,
           "background tile data renders through BGP into the framebuffer");
@@ -1926,7 +1957,7 @@ void test_ppu_background_window_and_sprites() {
     window.write8(0xFF4A, 0);
     window.write8(0xFF4B, 7);
     window.write8(0xFF40, 0xF1);
-    window.tick(258);
+    window.tick(260);
     check(window.framebuffer()[0] == 0xFFAAAAAA,
           "enabled window uses WX/WY and its selected tile map");
 
@@ -1942,7 +1973,7 @@ void test_ppu_background_window_and_sprites() {
     window_lines.write8(0xFF4A, 0);
     window_lines.write8(0xFF4B, 7);
     window_lines.write8(0xFF40, 0xF1);
-    window_lines.tick(258);
+    window_lines.tick(260);
     window_lines.write8(0xFF40, 0xD1); // Hide the window for line 1.
     window_lines.tick(198);
     window_lines.tick(456);
@@ -1962,7 +1993,7 @@ void test_ppu_background_window_and_sprites() {
     sprites.write8(0xFE02, 1);
     sprites.write8(0xFE03, 0);
     sprites.write8(0xFF40, 0x93);
-    sprites.tick(263);
+    sprites.tick(265);
     check(sprites.framebuffer()[0] == 0xFF555555,
           "visible OBJ pixels render with their selected DMG palette");
 
@@ -1986,7 +2017,7 @@ void test_ppu_background_window_and_sprites() {
     colored.write8(0xFE06, 1);
     colored.write8(0xFE07, 0x10);
     colored.write8(0xFF40, 0x93);
-    colored.tick(274);
+    colored.tick(276);
     check(colored.framebuffer()[0] == 0xFF00FF00 &&
               colored.framebuffer()[8] == 0xFF0000FF &&
               colored.framebuffer()[9] == 0xFFFF0000,
@@ -2224,9 +2255,11 @@ void test_save_state_round_trip_and_validation() {
     constexpr std::size_t version_three_ppu_size = 6;
     constexpr std::size_t version_four_cgb_size =
         0x6000 + 0x2000 + 0x40 + 0x40 + 4 + 6 + 2;
+    constexpr std::size_t version_five_ppu_size = 1;
     auto version_one = saved;
     version_one.resize(version_one.size() - version_two_dma_size -
-                       version_three_ppu_size - version_four_cgb_size);
+                       version_three_ppu_size - version_four_cgb_size -
+                       version_five_ppu_size);
     version_one[8] = 1;
     const auto old_payload_size = static_cast<std::uint32_t>(
         version_one.size() - state_header_size);
@@ -2243,7 +2276,7 @@ void test_save_state_round_trip_and_validation() {
 
     auto version_two = saved;
     version_two.resize(version_two.size() - version_three_ppu_size -
-                       version_four_cgb_size);
+                       version_four_cgb_size - version_five_ppu_size);
     version_two[8] = 2;
     const auto version_two_payload_size = static_cast<std::uint32_t>(
         version_two.size() - state_header_size);
@@ -2260,7 +2293,8 @@ void test_save_state_round_trip_and_validation() {
           "version 2 save states remain loadable after adding PPU timing state");
 
     auto version_three = saved;
-    version_three.resize(version_three.size() - version_four_cgb_size);
+    version_three.resize(version_three.size() - version_four_cgb_size -
+                         version_five_ppu_size);
     version_three[8] = 3;
     const auto version_three_payload_size = static_cast<std::uint32_t>(
         version_three.size() - state_header_size);
@@ -2275,6 +2309,24 @@ void test_save_state_round_trip_and_validation() {
               version_three_loader.cpu().total_cycles() == saved_cycles &&
               version_three_loader.bus().read8(0xA123) == 0x5A,
           "version 3 save states remain loadable after adding CGB state");
+
+    auto version_four = saved;
+    version_four.erase(version_four.end() - version_four_cgb_size -
+                       version_five_ppu_size);
+    version_four[8] = 4;
+    const auto version_four_payload_size = static_cast<std::uint32_t>(
+        version_four.size() - state_header_size);
+    write_little_u32(version_four, 20, version_four_payload_size);
+    write_little_u32(
+        version_four, 24,
+        state_crc32(version_four.data() + state_header_size,
+                    version_four_payload_size));
+    gameboy::Emulator version_four_loader{gameboy::Cartridge{rom}};
+    version_four_loader.load_state(version_four);
+    check(version_four_loader.cpu().registers().pc == saved_pc &&
+              version_four_loader.cpu().total_cycles() == saved_cycles &&
+              version_four_loader.bus().read8(0xA123) == 0x5A,
+          "version 4 save states remain loadable after adding PPU coincidence state");
 
     emulator.bus().write8(0xA123, 0x99);
     emulator.bus().write8(0xC000, 0x11);
@@ -2323,7 +2375,7 @@ void test_save_state_round_trip_and_validation() {
           "truncated save states are rejected without changing emulator state");
 
     auto future_version = saved;
-    future_version[8] = 5;
+    future_version[8] = 6;
     auto rejected_version = false;
     try {
         emulator.load_state(future_version);

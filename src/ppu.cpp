@@ -78,7 +78,7 @@ std::uint8_t Ppu::read_register(const std::uint16_t address) const noexcept {
     case 0xFF40: return lcdc_;
     case 0xFF41:
         return static_cast<std::uint8_t>(
-            0x80 | stat_select_ | (ly_ == lyc_ ? 0x04 : 0) |
+            0x80 | stat_select_ | (coincidence_ ? 0x04 : 0) |
             (lcd_enabled() ? mode_ : 0));
     case 0xFF42: return scy_;
     case 0xFF43: return scx_;
@@ -123,7 +123,6 @@ bool Ppu::write_register(const std::uint16_t address,
             mode3_end_dot_ = 252;
             window_line_ = 0;
             window_y_triggered_ = false;
-            stat_line_ = false;
             frame_ready_ = false;
             framebuffer_.fill(dmg_colors[0]);
             return false;
@@ -131,8 +130,11 @@ bool Ppu::write_register(const std::uint16_t address,
         if (!was_enabled && lcd_enabled()) {
             dot_ = 0;
             ly_ = 0;
-            mode_ = 2;
+            // The first scanline begins in an LCD-startup mode 0 period and
+            // transitions directly to mode 3. Mode 2 begins on line 1.
+            mode_ = 0;
             window_line_ = 0;
+            coincidence_ = ly_ == lyc_;
             begin_visible_line();
         }
         break;
@@ -141,7 +143,10 @@ bool Ppu::write_register(const std::uint16_t address,
     case 0xFF42: scy_ = value; break;
     case 0xFF43: scx_ = value; break;
     case 0xFF44: break; // LY is read-only.
-    case 0xFF45: lyc_ = value; break;
+    case 0xFF45:
+        lyc_ = value;
+        if (lcd_enabled()) coincidence_ = ly_ == lyc_;
+        break;
     case 0xFF47: bg_palette_ = value; break;
     case 0xFF48: object_palette_0_ = value; break;
     case 0xFF49: object_palette_1_ = value; break;
@@ -180,6 +185,7 @@ bool Ppu::write_register(const std::uint16_t address,
         break;
     default: break;
     }
+    if (!lcd_enabled()) return false;
     return update_stat_line();
 }
 
@@ -192,9 +198,11 @@ std::uint8_t Ppu::tick(const unsigned cycles) noexcept {
     for (unsigned cycle = 0; cycle < cycles; ++cycle) {
         ++dot_;
         if (ly_ < screen_height) {
-            if (dot_ == 80) {
+            const auto mode3_start_dot =
+                mode_ == 0 && ly_ == 0 ? 82U : 80U;
+            if (dot_ == mode3_start_dot) {
                 mode_ = 3;
-                mode3_end_dot_ = 80 + mode3_duration();
+                mode3_end_dot_ = mode3_start_dot + mode3_duration();
                 if (update_stat_line()) requests |= 0x02;
             } else if (dot_ == mode3_end_dot_) {
                 render_scanline();
@@ -207,12 +215,14 @@ std::uint8_t Ppu::tick(const unsigned cycles) noexcept {
         if (dot_ == 456) {
             dot_ = 0;
             ++ly_;
+            coincidence_ = ly_ == lyc_;
             if (ly_ == screen_height) {
                 mode_ = 1;
                 frame_ready_ = true;
                 requests |= 0x01;
             } else if (ly_ > 153) {
                 ly_ = 0;
+                coincidence_ = ly_ == lyc_;
                 mode_ = 2;
                 window_line_ = 0;
                 window_y_triggered_ = false;
@@ -241,8 +251,9 @@ bool Ppu::stat_condition() const noexcept {
     if (!lcd_enabled()) {
         return false;
     }
-    return ((stat_select_ & 0x40) != 0 && ly_ == lyc_) ||
-           ((stat_select_ & 0x20) != 0 && mode_ == 2) ||
+    return ((stat_select_ & 0x40) != 0 && coincidence_) ||
+           ((stat_select_ & 0x20) != 0 &&
+            (mode_ == 2 || (mode_ == 1 && ly_ == screen_height))) ||
            ((stat_select_ & 0x10) != 0 && mode_ == 1) ||
            ((stat_select_ & 0x08) != 0 && mode_ == 0);
 }
