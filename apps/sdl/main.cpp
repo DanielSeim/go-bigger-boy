@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cctype>
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
@@ -37,7 +38,7 @@
 namespace {
 
 #ifndef GBB_VERSION
-#define GBB_VERSION "0.10.0"
+#define GBB_VERSION "0.11.0"
 #endif
 
 [[noreturn]] void sdl_error(const std::string& action) {
@@ -167,6 +168,18 @@ struct BindingConfiguration {
     std::size_t index{};
 };
 
+enum class DashboardAction { resume, open_rom, recent_rom, quit };
+
+struct DashboardItem {
+    DashboardAction action{};
+    std::size_t recent_index{};
+    std::string label;
+};
+
+constexpr std::size_t dashboard_visible_rows = 5;
+constexpr float dashboard_first_row_y = 39.0F;
+constexpr float dashboard_row_height = 18.0F;
+
 constexpr std::uintmax_t maximum_quick_state_size = 2 * 1024 * 1024;
 
 std::filesystem::path preference_directory() {
@@ -201,6 +214,61 @@ void remember_rom(const std::string& path, std::vector<std::string>& recent,
     recent.insert(recent.begin(), path);
     if (recent.size() > 9) recent.resize(9);
     save_recent_roms(directory, recent);
+}
+
+std::string dashboard_text(std::string text, const std::size_t maximum = 16) {
+    for (auto& character : text) {
+        const auto byte = static_cast<unsigned char>(character);
+        if (byte < 32 || byte > 126) character = '?';
+    }
+    if (text.size() > maximum) {
+        text.resize(maximum > 3 ? maximum - 3 : maximum);
+        if (maximum > 3) text += "...";
+    }
+    return text;
+}
+
+std::string rom_filename(const std::string& path) {
+    auto name = std::filesystem::u8path(path).filename().u8string();
+#ifdef __ANDROID__
+    if (name.size() > 17 && name[16] == '-' &&
+        std::all_of(name.begin(), name.begin() + 16, [](const char character) {
+            return std::isxdigit(static_cast<unsigned char>(character)) != 0;
+        })) {
+        name.erase(0, 17);
+    }
+#endif
+    return name.empty() ? path : name;
+}
+
+std::string rom_display_name(const std::string& path) {
+    return dashboard_text(rom_filename(path));
+}
+
+std::vector<DashboardItem> dashboard_items(
+    const bool can_resume, const std::vector<std::string>& recent) {
+    std::vector<DashboardItem> items;
+    items.reserve(recent.size() + 3);
+    if (can_resume) {
+        items.push_back({DashboardAction::resume, 0, "Resume game"});
+    }
+    items.push_back({DashboardAction::open_rom, 0, "+ Open a ROM"});
+    for (std::size_t index = 0; index < recent.size(); ++index) {
+        items.push_back({DashboardAction::recent_rom, index,
+                         rom_display_name(recent[index])});
+    }
+    items.push_back({DashboardAction::quit, 0, "Exit GBB"});
+    return items;
+}
+
+std::size_t dashboard_first_visible(const std::size_t selection,
+                                    const std::size_t item_count) {
+    if (item_count <= dashboard_visible_rows ||
+        selection < dashboard_visible_rows) {
+        return 0;
+    }
+    return std::min(selection - dashboard_visible_rows + 1,
+                    item_count - dashboard_visible_rows);
 }
 
 InputBindings load_bindings(const std::filesystem::path& directory) {
@@ -599,8 +667,7 @@ void update_window_title(SDL_Window* window, const std::string& current_rom,
         title += " (Esc: cancel)";
     } else {
         if (!current_rom.empty()) {
-            title += " - " +
-                     std::filesystem::u8path(current_rom).filename().u8string();
+            title += " - " + rom_filename(current_rom);
         } else {
             title += " - Drop a ROM here or press Ctrl+O";
         }
@@ -648,44 +715,6 @@ ControlsAction show_controls_dialog(SDL_Window* window,
     }
 }
 
-std::optional<std::string> show_recent_dialog(
-    SDL_Window* window, const std::vector<std::string>& recent) {
-    if (recent.empty()) {
-        static_cast<void>(SDL_ShowSimpleMessageBox(
-            SDL_MESSAGEBOX_INFORMATION, "Recent ROMs",
-            "No ROMs have been opened yet.", window));
-        return std::nullopt;
-    }
-
-    std::vector<std::string> labels;
-    std::vector<SDL_MessageBoxButtonData> buttons;
-    labels.reserve(recent.size() + 1);
-    buttons.reserve(recent.size() + 1);
-    for (std::size_t index = 0; index < recent.size(); ++index) {
-        labels.push_back(std::to_string(index + 1) + ". " +
-                         std::filesystem::u8path(recent[index])
-                             .filename().u8string());
-    }
-    labels.emplace_back("Cancel");
-    for (std::size_t index = 0; index < recent.size(); ++index) {
-        buttons.push_back({0, static_cast<int>(index), labels[index].c_str()});
-    }
-    buttons.push_back({SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, -1,
-                       labels.back().c_str()});
-
-    const SDL_MessageBoxData box{
-        SDL_MESSAGEBOX_INFORMATION, window, "Recent ROMs",
-        "Choose a ROM to open:", static_cast<int>(buttons.size()),
-        buttons.data(), nullptr,
-    };
-    auto selection = -1;
-    if (!SDL_ShowMessageBox(&box, &selection) || selection < 0 ||
-        static_cast<std::size_t>(selection) >= recent.size()) {
-        return std::nullopt;
-    }
-    return recent[static_cast<std::size_t>(selection)];
-}
-
 std::optional<std::size_t> show_palette_dialog(SDL_Window* window,
                                                const std::size_t current) {
     std::array<SDL_MessageBoxButtonData,
@@ -721,7 +750,7 @@ void show_help(SDL_Window* window) {
         "Space: Pause/resume\n"
         "Ctrl+R: Reset\n"
         "Ctrl+O: Open ROM\n"
-        "Ctrl+L: Recent ROMs\n"
+        "Ctrl+L: Open game library\n"
         "Ctrl+K: Configure controls\n"
         "Ctrl+P: Choose display palette\n"
         "Ctrl+1 through Ctrl+9: Open recent ROM\n"
@@ -740,6 +769,47 @@ void show_help(SDL_Window* window) {
 
 void show_error(SDL_Window* window, const std::string& message);
 
+void activate_dashboard_selection(
+    const std::size_t selection, const std::vector<std::string>& recent,
+    const bool can_resume, DialogState& dialog, SdlResources& sdl,
+    std::optional<std::string>& pending_rom, bool& dashboard_visible,
+    bool& running) {
+    const auto items = dashboard_items(can_resume, recent);
+    if (selection >= items.size()) return;
+    const auto& item = items[selection];
+    switch (item.action) {
+    case DashboardAction::resume:
+        dashboard_visible = false;
+        break;
+    case DashboardAction::open_rom:
+        show_rom_dialog(dialog, sdl.window);
+        break;
+    case DashboardAction::recent_rom:
+        if (item.recent_index < recent.size()) {
+            pending_rom = recent[item.recent_index];
+        }
+        break;
+    case DashboardAction::quit:
+        running = false;
+        break;
+    }
+}
+
+std::optional<std::size_t> dashboard_row_at(
+    const float logical_x, const float logical_y, const std::size_t selection,
+    const std::size_t item_count) {
+    if (logical_x < 9.0F || logical_x > 151.0F ||
+        logical_y < dashboard_first_row_y) {
+        return std::nullopt;
+    }
+    const auto row = static_cast<std::size_t>(
+        (logical_y - dashboard_first_row_y) / dashboard_row_height);
+    if (row >= dashboard_visible_rows) return std::nullopt;
+    const auto index = dashboard_first_visible(selection, item_count) + row;
+    return index < item_count ? std::optional<std::size_t>{index}
+                              : std::nullopt;
+}
+
 void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                     SdlResources& sdl, DialogState& dialog,
                     const std::filesystem::path& preference_path,
@@ -749,8 +819,9 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                     const std::string& current_rom,
                     std::optional<BindingConfiguration>& configuring,
                     std::optional<std::string>& pending_rom,
-                    std::size_t& display_palette, bool& paused, bool& fullscreen,
-                    bool& reset_requested, bool& running) {
+                    std::size_t& display_palette, bool& dashboard_visible,
+                    std::size_t& dashboard_selection, bool& paused,
+                    bool& fullscreen, bool& reset_requested, bool& running) {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         switch (event.type) {
@@ -762,6 +833,35 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
             break;
         case SDL_EVENT_KEY_DOWN:
         case SDL_EVENT_KEY_UP:
+            if (dashboard_visible) {
+                if (event.type != SDL_EVENT_KEY_DOWN || event.key.repeat) break;
+                const auto item_count =
+                    dashboard_items(emulator != nullptr, recent).size();
+                dashboard_selection =
+                    std::min(dashboard_selection, item_count - 1);
+                if (event.key.key == SDLK_UP) {
+                    dashboard_selection = dashboard_selection == 0
+                                              ? item_count - 1
+                                              : dashboard_selection - 1;
+                } else if (event.key.key == SDLK_DOWN) {
+                    dashboard_selection =
+                        (dashboard_selection + 1) % item_count;
+                } else if (event.key.key == SDLK_RETURN ||
+                           event.key.key == SDLK_SPACE) {
+                    activate_dashboard_selection(
+                        dashboard_selection, recent, emulator != nullptr,
+                        dialog, sdl, pending_rom, dashboard_visible, running);
+                } else if (event.key.key == SDLK_O) {
+                    show_rom_dialog(dialog, sdl.window);
+                } else if (event.key.key == SDLK_ESCAPE) {
+                    if (emulator) {
+                        dashboard_visible = false;
+                    } else {
+                        running = false;
+                    }
+                }
+                break;
+            }
             if (configuring) {
                 if (event.type != SDL_EVENT_KEY_DOWN || event.key.repeat) break;
                 if (event.key.key == SDLK_ESCAPE) {
@@ -807,9 +907,8 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                        event.key.key == SDLK_L &&
                        (event.key.mod & SDL_KMOD_CTRL) != 0) {
                 if (emulator) release_all_buttons(*emulator);
-                if (const auto selected = show_recent_dialog(sdl.window, recent)) {
-                    pending_rom = *selected;
-                }
+                dashboard_visible = true;
+                dashboard_selection = 0;
             } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
                        event.key.key == SDLK_K &&
                        (event.key.mod & SDL_KMOD_CTRL) != 0) {
@@ -913,6 +1012,30 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                 }
             }
             break;
+        case SDL_EVENT_MOUSE_BUTTON_UP:
+            if (event.button.button == SDL_BUTTON_LEFT) {
+                auto x = event.button.x;
+                auto y = event.button.y;
+                static_cast<void>(SDL_RenderCoordinatesFromWindow(
+                    sdl.renderer, x, y, &x, &y));
+                if (dashboard_visible) {
+                    const auto item_count =
+                        dashboard_items(emulator != nullptr, recent).size();
+                    if (const auto selected = dashboard_row_at(
+                            x, y, dashboard_selection, item_count)) {
+                        dashboard_selection = *selected;
+                        activate_dashboard_selection(
+                            dashboard_selection, recent, emulator != nullptr,
+                            dialog, sdl, pending_rom, dashboard_visible,
+                            running);
+                    }
+                } else if (x < 20.0F && y < 17.0F) {
+                    if (emulator) release_all_buttons(*emulator);
+                    dashboard_visible = true;
+                    dashboard_selection = 0;
+                }
+            }
+            break;
 #ifdef __ANDROID__
         case SDL_EVENT_FINGER_DOWN:
         case SDL_EVENT_FINGER_MOTION:
@@ -920,6 +1043,23 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
             const auto finger = event.tfinger.fingerID;
             const auto [touch_x, touch_y] =
                 logical_touch_position(event.tfinger, sdl);
+            if (dashboard_visible) {
+                if (event.type == SDL_EVENT_FINGER_UP) {
+                    const auto item_count =
+                        dashboard_items(emulator != nullptr, recent).size();
+                    if (const auto selected = dashboard_row_at(
+                            touch_x * gameboy::Ppu::screen_width,
+                            touch_y * gameboy::Ppu::screen_height,
+                            dashboard_selection, item_count)) {
+                        dashboard_selection = *selected;
+                        activate_dashboard_selection(
+                            dashboard_selection, recent, emulator != nullptr,
+                            dialog, sdl, pending_rom, dashboard_visible,
+                            running);
+                    }
+                }
+                break;
+            }
             const auto existing = std::find_if(
                 sdl.touches.begin(), sdl.touches.end(),
                 [finger](const SdlResources::TouchPoint& point) {
@@ -935,7 +1075,9 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
             }
             if (event.type == SDL_EVENT_FINGER_DOWN &&
                 touch_x < 0.13F && touch_y < 0.16F) {
-                show_rom_dialog(dialog, sdl.window);
+                clear_touch_buttons(emulator.get(), sdl);
+                dashboard_visible = true;
+                dashboard_selection = 0;
             }
             refresh_touch_buttons(emulator.get(), sdl);
             break;
@@ -973,7 +1115,29 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
             break;
         case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
         case SDL_EVENT_GAMEPAD_BUTTON_UP:
-            if (configuring &&
+            if (dashboard_visible) {
+                if (event.type != SDL_EVENT_GAMEPAD_BUTTON_DOWN) break;
+                const auto item_count =
+                    dashboard_items(emulator != nullptr, recent).size();
+                dashboard_selection =
+                    std::min(dashboard_selection, item_count - 1);
+                const auto button = static_cast<SDL_GamepadButton>(
+                    event.gbutton.button);
+                if (button == SDL_GAMEPAD_BUTTON_DPAD_UP) {
+                    dashboard_selection = dashboard_selection == 0
+                                              ? item_count - 1
+                                              : dashboard_selection - 1;
+                } else if (button == SDL_GAMEPAD_BUTTON_DPAD_DOWN) {
+                    dashboard_selection =
+                        (dashboard_selection + 1) % item_count;
+                } else if (button == SDL_GAMEPAD_BUTTON_SOUTH) {
+                    activate_dashboard_selection(
+                        dashboard_selection, recent, emulator != nullptr,
+                        dialog, sdl, pending_rom, dashboard_visible, running);
+                } else if (button == SDL_GAMEPAD_BUTTON_EAST && emulator) {
+                    dashboard_visible = false;
+                }
+            } else if (configuring &&
                 configuring->device == BindingDevice::gamepad) {
                 if (event.type != SDL_EVENT_GAMEPAD_BUTTON_DOWN) break;
                 const auto pressed = static_cast<SDL_GamepadButton>(
@@ -1192,6 +1356,60 @@ void update_camera_frame(gameboy::Emulator* emulator, SdlResources& sdl) {
     emulator->set_camera_frame(grayscale.data(), grayscale.size());
 }
 
+#ifdef __ANDROID__
+std::string persist_android_rom(const std::string& source,
+                                const std::filesystem::path& preference_path) {
+    if (preference_path.empty()) return source;
+    const auto rom_directory = (preference_path / "roms").lexically_normal();
+    const auto source_path = std::filesystem::u8path(source).lexically_normal();
+    if (source_path.parent_path() == rom_directory) return source;
+
+    std::size_t byte_count{};
+    void* loaded = SDL_LoadFile(source.c_str(), &byte_count);
+    if (loaded == nullptr) {
+        throw std::runtime_error(std::string{"Could not import ROM: "} +
+                                 SDL_GetError());
+    }
+    const std::unique_ptr<void, decltype(&SDL_free)> owned(loaded, SDL_free);
+    const auto* bytes = static_cast<const std::uint8_t*>(loaded);
+    std::uint64_t fingerprint = 14695981039346656037ULL;
+    for (std::size_t index = 0; index < byte_count; ++index) {
+        fingerprint ^= bytes[index];
+        fingerprint *= 1099511628211ULL;
+    }
+
+    auto display_name = source;
+    if (const auto query = display_name.find_first_of("?#");
+        query != std::string::npos) {
+        display_name.resize(query);
+    }
+    if (const auto separator = display_name.find_last_of("/\\:");
+        separator != std::string::npos) {
+        display_name.erase(0, separator + 1);
+    }
+    for (auto& character : display_name) {
+        const auto byte = static_cast<unsigned char>(character);
+        if (!std::isalnum(byte) && character != '.' && character != '-' &&
+            character != '_') {
+            character = '_';
+        }
+    }
+    if (display_name.empty()) display_name = "game.gb";
+    if (display_name.size() > 48) display_name.resize(48);
+
+    std::filesystem::create_directories(rom_directory);
+    std::ostringstream filename;
+    filename << std::hex << std::setw(16) << std::setfill('0') << fingerprint
+             << '-' << display_name;
+    const auto destination = rom_directory / filename.str();
+    std::ofstream output(destination, std::ios::binary | std::ios::trunc);
+    output.write(reinterpret_cast<const char*>(bytes),
+                 static_cast<std::streamsize>(byte_count));
+    if (!output) throw std::runtime_error("Could not retain the imported ROM");
+    return destination.u8string();
+}
+#endif
+
 void load_rom(const std::string& path,
               std::unique_ptr<gameboy::Emulator>& emulator,
               const gameboy::DisplayPalette& palette, SdlResources& sdl,
@@ -1230,6 +1448,22 @@ void load_rom(const std::string& path,
     configure_camera(sdl, *emulator);
 }
 
+void present_menu_button(SdlResources& sdl) {
+    static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
+                                                 SDL_BLENDMODE_BLEND));
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 220, 235, 220, 100));
+    const SDL_FRect button{3, 3, 15, 11};
+    static_cast<void>(SDL_RenderFillRect(sdl.renderer, &button));
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 16, 20, 16, 150));
+    const std::array<SDL_FRect, 3> menu_lines{{
+        {6, 5, 9, 1.5F}, {6, 8, 9, 1.5F}, {6, 11, 9, 1.5F}}};
+    for (const auto& line : menu_lines) {
+        static_cast<void>(SDL_RenderFillRect(sdl.renderer, &line));
+    }
+    static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
+                                                 SDL_BLENDMODE_NONE));
+}
+
 #ifdef __ANDROID__
 void present_touch_controls(SdlResources& sdl) {
     static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
@@ -1247,24 +1481,72 @@ void present_touch_controls(SdlResources& sdl) {
     draw({103, 108, 22, 22}, sdl.touch_buttons[5]);
     draw({83, 130, 18, 7}, sdl.touch_buttons[7]);
     draw({61, 130, 18, 7}, sdl.touch_buttons[6]);
-    draw({3, 3, 15, 11}, false);
-    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 16, 20, 16, 150));
-    const std::array<SDL_FRect, 3> menu_lines{{
-        {6, 5, 9, 1.5F}, {6, 8, 9, 1.5F}, {6, 11, 9, 1.5F}}};
-    for (const auto& line : menu_lines) {
-        static_cast<void>(SDL_RenderFillRect(sdl.renderer, &line));
-    }
     static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
                                                  SDL_BLENDMODE_NONE));
 }
 #endif
 
+void present_dashboard(SdlResources& sdl,
+                       const std::vector<std::string>& recent,
+                       const bool can_resume, std::size_t& selection) {
+    const auto items = dashboard_items(can_resume, recent);
+    selection = std::min(selection, items.size() - 1);
+    const auto first = dashboard_first_visible(selection, items.size());
+    const auto visible = std::min(dashboard_visible_rows, items.size() - first);
+
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 139, 172, 95, 255));
+    const SDL_FRect header{0, 0, 160, 34};
+    static_cast<void>(SDL_RenderFillRect(sdl.renderer, &header));
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 20, 40, 28, 255));
+    static_cast<void>(SDL_RenderDebugText(sdl.renderer, 28, 5,
+                                          "GO BIGGER BOY"));
+    static_cast<void>(SDL_RenderDebugText(sdl.renderer, 12, 18,
+                                          "YOUR GAME LIBRARY"));
+    static_cast<void>(SDL_RenderLine(sdl.renderer, 9, 32, 151, 32));
+
+    for (std::size_t row = 0; row < visible; ++row) {
+        const auto index = first + row;
+        const auto selected = index == selection;
+        const auto y = dashboard_first_row_y +
+                       static_cast<float>(row) * dashboard_row_height;
+        const SDL_FRect card{9, y, 142, 15};
+        static_cast<void>(SDL_SetRenderDrawColor(
+            sdl.renderer, selected ? 36 : 201, selected ? 67 : 220,
+            selected ? 46 : 174, 255));
+        static_cast<void>(SDL_RenderFillRect(sdl.renderer, &card));
+        static_cast<void>(SDL_SetRenderDrawColor(
+            sdl.renderer, selected ? 232 : 35, selected ? 242 : 58,
+            selected ? 205 : 40, 255));
+        const auto label = std::string(selected ? "> " : "  ") +
+                           dashboard_text(items[index].label, 14);
+        static_cast<void>(SDL_RenderDebugText(sdl.renderer, 13, y + 3,
+                                              label.c_str()));
+    }
+
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 35, 58, 40, 255));
+    if (first > 0) {
+        static_cast<void>(SDL_RenderDebugText(sdl.renderer, 153, 39, "^"));
+    }
+    if (first + visible < items.size()) {
+        static_cast<void>(SDL_RenderDebugText(sdl.renderer, 153, 111, "v"));
+    }
+    static_cast<void>(SDL_RenderDebugText(sdl.renderer, 20, 134,
+                                          "UP/DOWN + ENTER"));
+}
+
 void present(const gameboy::Emulator* emulator, SdlResources& sdl,
-             const gameboy::DisplayPalette& palette) {
+             const gameboy::DisplayPalette& palette,
+             const std::vector<std::string>& recent,
+             const bool dashboard_visible,
+             std::size_t& dashboard_selection) {
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 16, 20, 16, 255));
     if (!SDL_RenderClear(sdl.renderer)) {
         sdl_error("Could not clear framebuffer");
     }
-    if (emulator != nullptr) {
+    if (dashboard_visible) {
+        present_dashboard(sdl, recent, emulator != nullptr,
+                          dashboard_selection);
+    } else if (emulator != nullptr) {
         const auto& pixels = emulator->framebuffer();
         const auto native_colors =
             emulator->bus().cgb_mode() || palette.cgb_compatibility;
@@ -1284,8 +1566,9 @@ void present(const gameboy::Emulator* emulator, SdlResources& sdl,
         }
     }
 #ifdef __ANDROID__
-    present_touch_controls(sdl);
+    if (!dashboard_visible) present_touch_controls(sdl);
 #endif
+    if (!dashboard_visible) present_menu_button(sdl);
     if (!SDL_RenderPresent(sdl.renderer)) {
         sdl_error("Could not present framebuffer");
     }
@@ -1330,6 +1613,8 @@ int main(int argc, char** argv) {
         auto fullscreen = false;
         auto reset_requested = false;
         auto running = true;
+        auto dashboard_visible = argc != 2;
+        std::size_t dashboard_selection = 0;
         std::uint64_t print_sequence = 0;
 
         if (argc == 2) {
@@ -1338,7 +1623,8 @@ int main(int argc, char** argv) {
             if (argc > 2) {
                 show_error(sdl.window, "Only one ROM can be opened at a time.");
             }
-            show_rom_dialog(dialog, sdl.window);
+            static_cast<void>(SDL_SetWindowTitle(
+                sdl.window, "Go Bigger Boy (GBB) - Game Library"));
         }
 
         using Clock = std::chrono::steady_clock;
@@ -1350,8 +1636,10 @@ int main(int argc, char** argv) {
         while (running) {
             process_events(emulator, sdl, dialog, preference_path, bindings,
                            configuration_backup, recent_roms, current_rom,
-                           configuring, pending_rom, display_palette, paused,
-                           fullscreen, reset_requested, running);
+                           configuring, pending_rom, display_palette,
+                           dashboard_visible, dashboard_selection, paused,
+                           fullscreen,
+                           reset_requested, running);
 
             std::optional<std::string> dialog_error;
             collect_dialog_result(dialog, pending_rom, dialog_error);
@@ -1376,21 +1664,31 @@ int main(int argc, char** argv) {
 
             if (pending_rom) {
                 try {
+                    auto requested_rom = *pending_rom;
+#ifdef __ANDROID__
+                    requested_rom =
+                        persist_android_rom(requested_rom, preference_path);
+#endif
                     const bool reopening_current =
-                        emulator && *pending_rom == current_rom;
-                    load_rom(*pending_rom, emulator,
+                        emulator && requested_rom == current_rom;
+                    load_rom(requested_rom, emulator,
                              gameboy::display_palettes[display_palette], sdl,
                              preference_path);
                     if (sdl.audio_stream != nullptr) {
                         static_cast<void>(SDL_ClearAudioStream(sdl.audio_stream));
                     }
-                    current_rom = *pending_rom;
+                    current_rom = requested_rom;
                     if (!reopening_current) paused = false;
+                    dashboard_visible = false;
                     remember_rom(current_rom, recent_roms, preference_path);
                     update_window_title(sdl.window, current_rom, paused,
                                         configuring);
                 } catch (const std::exception& error) {
                     show_error(sdl.window, error.what());
+                    if (!emulator) {
+                        dashboard_visible = true;
+                        dashboard_selection = 0;
+                    }
                 }
                 pending_rom.reset();
                 next_frame = Clock::now();
@@ -1460,7 +1758,7 @@ int main(int argc, char** argv) {
 
             update_camera_frame(emulator.get(), sdl);
 
-            if (emulator && !paused && !configuring &&
+            if (emulator && !paused && !dashboard_visible && !configuring &&
                 !dialog_active(dialog)) {
                 unsigned cycles = 0;
                 while (running && cycles < cycles_per_frame &&
@@ -1470,7 +1768,8 @@ int main(int argc, char** argv) {
                 if (emulator->frame_ready()) emulator->consume_frame();
             }
             update_rumble(emulator.get(), sdl,
-                          !paused && !configuring && !dialog_active(dialog));
+                          !paused && !dashboard_visible && !configuring &&
+                              !dialog_active(dialog));
             submit_audio(emulator.get(), sdl);
             try {
                 save_completed_prints(emulator.get(), sdl.window,
@@ -1480,7 +1779,8 @@ int main(int argc, char** argv) {
                 show_error(sdl.window, error.what());
             }
             present(emulator.get(), sdl,
-                    gameboy::display_palettes[display_palette]);
+                    gameboy::display_palettes[display_palette], recent_roms,
+                    dashboard_visible, dashboard_selection);
 
             next_frame += std::chrono::duration_cast<Clock::duration>(frame_duration);
             const auto now = Clock::now();

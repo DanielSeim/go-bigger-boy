@@ -28,6 +28,7 @@ shared everywhere.
 - Headless Mooneye/serial conformance test runner
 - Emscripten/WebAssembly browser frontend with IndexedDB cartridge saves
 - Initial Android SDL3 frontend with native ROM picker and multitouch controls
+- Shared desktop/Android game library with persistent recent-ROM launching
 - Game Boy Printer serial protocol with automatic desktop image export
 - Game Boy Camera cartridge support with live SDL3 webcam input on desktop
 - MBC5 rumble output through compatible SDL3 gamepads on desktop
@@ -83,12 +84,15 @@ ctest --test-dir build-conformance -L conformance --output-on-failure
 ```
 
 When SDL3 is installed, CMake also builds the desktop frontend. Launching it
-without arguments opens a native ROM picker:
+without arguments opens the game library dashboard:
 
 ```sh
 ./build/gbb
 ```
 
+The dashboard lists the nine most recently played ROMs and can be navigated
+with a keyboard, gamepad, or mouse. Press Ctrl+L or click the upper-left menu
+button to return to it while playing.
 You can also pass a ROM path, press Ctrl+O to choose another ROM, or drag a
 `.gb`/`.gbc` file onto the emulator window. On Windows, build with Visual
 Studio and an SDL3 installation visible to CMake. `gbb --version` prints the
@@ -179,8 +183,9 @@ The Android project in `android/` uses SDL3's official Android AAR and the same
 C++ core/frontend as desktop. It currently supports the Android document
 picker, landscape multitouch controls, external gamepads, audio, rumble,
 battery saves, and optional camera permission. ROMs selected through Android's
-`content://` document interface are read through SDL and are never copied into
-the application; save data is stored privately by ROM fingerprint.
+`content://` document interface are imported into private app storage so recent
+games remain launchable after a restart; they are never uploaded. Save data is
+stored privately by ROM fingerprint.
 
 Install JDK 17, Android SDK 36, NDK r28c, CMake 3.31.6, and Gradle 8.13, then
 fetch the pinned SDL3 AAR and build a debug APK:
@@ -193,9 +198,10 @@ gradle assembleDebug
 
 The debug APK is written to
 `android/app/build/outputs/apk/debug/app-debug.apk`.
-Tapping the folder button in the upper-left opens another ROM. The translucent
-controls provide a D-pad, A, B, Select, and Start; Bluetooth and USB gamepads
-continue to work through SDL. The `Android build` GitHub Actions workflow runs
+The app opens on the touch-friendly game library dashboard. Tapping the menu
+button in the upper-left returns to it while playing. The translucent controls
+provide a D-pad, A, B, Select, and Start; Bluetooth and USB gamepads continue
+to work through SDL. The `Android build` GitHub Actions workflow runs
 pull requests as an automatically debug-signed APK. Pushes to the repository
 use encrypted GitHub secrets to produce a consistently signed release APK and
 Play-ready Android App Bundle. The signing key must be kept permanently:
