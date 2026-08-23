@@ -5,6 +5,8 @@
 #include "gameboy/emulator.hpp"
 
 #include <emscripten.h>
+#include <emscripten/bind.h>
+#include <emscripten/val.h>
 
 #include <algorithm>
 #include <array>
@@ -135,11 +137,15 @@ void destroy(WebApp* app) {
 
 } // namespace
 
-extern "C" EMSCRIPTEN_KEEPALIVE int gbb_load_rom(
-    const std::uint8_t* bytes, const std::size_t size) noexcept {
-    if (!active_app || !bytes || size == 0) return 0;
+int load_rom_from_browser(emscripten::val bytes) noexcept {
+    if (!active_app || bytes.isUndefined() || bytes.isNull()) return 0;
     try {
-        std::vector<std::uint8_t> rom(bytes, bytes + size);
+        const auto size = bytes["length"].as<std::size_t>();
+        if (size == 0) return 0;
+        std::vector<std::uint8_t> rom(size);
+        auto destination = emscripten::val(
+            emscripten::typed_memory_view(rom.size(), rom.data()));
+        destination.call<void>("set", bytes);
         active_app->emulator = std::make_unique<gameboy::Emulator>(
             gameboy::Cartridge(std::move(rom)));
         active_app->paused = false;
@@ -156,6 +162,10 @@ extern "C" EMSCRIPTEN_KEEPALIVE int gbb_load_rom(
         set_status(error.what(), true);
         return 0;
     }
+}
+
+EMSCRIPTEN_BINDINGS(gbb_web_bindings) {
+    emscripten::function("loadRom", &load_rom_from_browser);
 }
 
 extern "C" EMSCRIPTEN_KEEPALIVE void gbb_resume_audio() noexcept {

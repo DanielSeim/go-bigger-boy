@@ -69,19 +69,12 @@
     };
 
     async function loadRom(file) {
-      if (!file || !Module._gbb_load_rom) return;
+      if (!file || !Module.loadRom) return;
       Module._gbb_resume_audio();
       Module.gbbSetStatus(`Loading ${file.name}…`, false);
       try {
         const bytes = new Uint8Array(await file.arrayBuffer());
-        const pointer = Module._malloc(bytes.length);
-        if (!pointer) throw new Error('The emulator could not allocate ROM memory.');
-        try {
-          Module.writeArrayToMemory(bytes, pointer);
-          if (!Module._gbb_load_rom(pointer, bytes.length)) return;
-        } finally {
-          Module._free(pointer);
-        }
+        if (!Module.loadRom(bytes)) return;
         document.title = `${file.name} — Go Bigger Boy`;
         canvas.focus();
       } catch (error) {

@@ -54,12 +54,12 @@ if(GAMEBOY_BUILD_SDL)
             target_compile_options(gameboy_web PRIVATE -fexceptions)
             target_link_options(gameboy_web PRIVATE
                 -fexceptions
+                --bind
                 "--shell-file=${CMAKE_CURRENT_SOURCE_DIR}/web/shell.html"
                 "-sALLOW_MEMORY_GROWTH=1"
                 "-sMAXIMUM_MEMORY=536870912"
                 "-sENVIRONMENT=web"
-                "-sEXPORTED_FUNCTIONS=['_main','_malloc','_free','_gbb_load_rom','_gbb_resume_audio']"
-                "-sEXPORTED_RUNTIME_METHODS=['writeArrayToMemory']"
+                "-sEXPORTED_FUNCTIONS=['_main','_gbb_resume_audio']"
             )
             set_target_properties(gameboy_web PROPERTIES
                 OUTPUT_NAME index
