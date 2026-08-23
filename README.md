@@ -181,7 +181,9 @@ frontend. The display palette selector offers the same five palettes as the
 desktop frontend and remembers the selection in browser storage. Battery-backed
 RAM and MBC3 clock state are saved automatically in IndexedDB for each ROM.
 Browser saves can also be imported from or exported to desktop-compatible
-`.sav` and `.rtc` files.
+`.sav` and `.rtc` files. Game Boy Camera cartridges request webcam permission
+and use a center-cropped 128×112 live image; when access is unavailable, they
+remain playable with the built-in fallback image.
 
 With the Emscripten SDK active and an SDL3 installation built for Emscripten:
 

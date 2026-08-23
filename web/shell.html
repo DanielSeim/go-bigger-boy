@@ -96,6 +96,101 @@
     let saveDatabasePromise = null;
     let saveQueue = Promise.resolve();
     let storageAvailable = true;
+    let cameraStream = null;
+    let cameraTimer = null;
+    let cameraVideo = null;
+
+    function stopCamera() {
+      if (cameraTimer !== null) clearInterval(cameraTimer);
+      cameraTimer = null;
+      if (cameraStream) {
+        for (const track of cameraStream.getTracks()) track.stop();
+      }
+      cameraStream = null;
+      cameraVideo = null;
+    }
+
+    async function configureCamera(rom) {
+      stopCamera();
+      if (!rom.camera) return false;
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        console.warn('Webcam access is unavailable in this browser.');
+        return false;
+      }
+
+      Module.gbbSetStatus('Waiting for webcam permission…', false);
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 640 }, height: { ideal: 480 } },
+          audio: false
+        });
+        if (currentRom !== rom) {
+          for (const track of stream.getTracks()) track.stop();
+          return false;
+        }
+        cameraStream = stream;
+
+        const video = document.createElement('video');
+        video.muted = true;
+        video.playsInline = true;
+        video.srcObject = stream;
+        cameraVideo = video;
+        await video.play();
+
+        const frameCanvas = document.createElement('canvas');
+        frameCanvas.width = 128;
+        frameCanvas.height = 112;
+        const context = frameCanvas.getContext('2d', {
+          alpha: false,
+          willReadFrequently: true
+        });
+        if (!context) throw new Error('Could not create webcam frame buffer');
+        const grayscale = new Uint8Array(128 * 112);
+        const facingMode = stream.getVideoTracks()[0]?.getSettings()
+          .facingMode;
+
+        const updateFrame = () => {
+          if (currentRom !== rom || video.readyState < 2 ||
+              document.visibilityState === 'hidden') return;
+          const sourceRatio = video.videoWidth / video.videoHeight;
+          const targetRatio = 128 / 112;
+          let sourceX = 0;
+          let sourceY = 0;
+          let sourceWidth = video.videoWidth;
+          let sourceHeight = video.videoHeight;
+          if (sourceRatio > targetRatio) {
+            sourceWidth = video.videoHeight * targetRatio;
+            sourceX = (video.videoWidth - sourceWidth) / 2;
+          } else {
+            sourceHeight = video.videoWidth / targetRatio;
+            sourceY = (video.videoHeight - sourceHeight) / 2;
+          }
+          context.save();
+          if (facingMode === 'user') {
+            context.translate(128, 0);
+            context.scale(-1, 1);
+          }
+          context.drawImage(video, sourceX, sourceY, sourceWidth,
+            sourceHeight, 0, 0, 128, 112);
+          context.restore();
+          const rgba = context.getImageData(0, 0, 128, 112).data;
+          for (let pixel = 0; pixel < grayscale.length; ++pixel) {
+            const offset = pixel * 4;
+            grayscale[pixel] = (rgba[offset] * 77 +
+              rgba[offset + 1] * 150 + rgba[offset + 2] * 29) >> 8;
+          }
+          Module.setCameraFrame(grayscale);
+        };
+
+        updateFrame();
+        cameraTimer = setInterval(updateFrame, 100);
+        return true;
+      } catch (error) {
+        stopCamera();
+        console.warn('Webcam is unavailable; using the fallback image:', error);
+        return false;
+      }
+    }
 
     function saveDatabase() {
       if (saveDatabasePromise) return saveDatabasePromise;
@@ -231,6 +326,7 @@
         } catch (error) {
           noteStorageFailure(error);
         }
+        stopCamera();
         // Emscripten's runtime callback can run before SDL_AppInit, so pass the
         // restored selection together with the ROM instead of relying on an
         // earlier setter call that may not have an active C++ app yet.
@@ -241,8 +337,11 @@
           key: Module.romFingerprint(),
           name: file.name,
           battery: Module.hasBattery(),
-          rtc: Module.hasRtc()
+          rtc: Module.hasRtc(),
+          camera: Module.hasCamera()
         };
+
+        const cameraConnected = await configureCamera(currentRom);
 
         let restored = false;
         if (currentRom.battery && storageAvailable) {
@@ -275,9 +374,13 @@
         document.title = `${file.name} — Go Bigger Boy`;
         if (!statusLine.classList.contains('error')) {
           Module.gbbSetStatus(
-            restored
-              ? 'ROM loaded. Battery save restored from this browser.'
-              : 'ROM loaded. Click the screen if keyboard input is inactive.',
+            currentRom.camera
+              ? (cameraConnected
+                  ? 'Camera ROM loaded. Webcam connected.'
+                  : 'Camera ROM loaded. Webcam unavailable; using fallback image.')
+              : (restored
+                  ? 'ROM loaded. Battery save restored from this browser.'
+                  : 'ROM loaded. Click the screen if keyboard input is inactive.'),
             false);
         }
         canvas.focus();
@@ -372,6 +475,7 @@
       if (document.visibilityState === 'hidden') queuePersistentSave();
     });
     window.addEventListener('pagehide', queuePersistentSave);
+    window.addEventListener('pagehide', stopCamera);
   </script>
   {{{ SCRIPT }}}
 </body>

@@ -224,6 +224,25 @@ bool browser_has_rtc() noexcept {
     return active_app && active_app->emulator && active_app->emulator->has_rtc();
 }
 
+bool browser_has_camera() noexcept {
+    return active_app && active_app->emulator &&
+           active_app->emulator->has_camera();
+}
+
+void set_browser_camera_frame(const emscripten::val bytes) {
+    if (!active_app || !active_app->emulator ||
+        !active_app->emulator->has_camera()) {
+        throw std::runtime_error("No Game Boy Camera ROM is loaded");
+    }
+    auto frame = copy_browser_bytes(bytes);
+    constexpr auto expected_size = gameboy::Cartridge::camera_width *
+                                   gameboy::Cartridge::camera_height;
+    if (frame.size() != expected_size) {
+        throw std::invalid_argument("Invalid Game Boy Camera frame size");
+    }
+    active_app->emulator->set_camera_frame(frame.data(), frame.size());
+}
+
 emscripten::val export_browser_save_ram() {
     if (!active_app || !active_app->emulator) {
         return emscripten::val::global("Uint8Array").new_(0);
@@ -259,6 +278,8 @@ EMSCRIPTEN_BINDINGS(gbb_web_bindings) {
     emscripten::function("romFingerprint", &browser_rom_fingerprint);
     emscripten::function("hasBattery", &browser_has_battery);
     emscripten::function("hasRtc", &browser_has_rtc);
+    emscripten::function("hasCamera", &browser_has_camera);
+    emscripten::function("setCameraFrame", &set_browser_camera_frame);
     emscripten::function("exportSaveRam", &export_browser_save_ram);
     emscripten::function("importSaveRam", &import_browser_save_ram);
     emscripten::function("exportRtcData", &export_browser_rtc_data);

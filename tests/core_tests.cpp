@@ -631,13 +631,38 @@ void test_mbc5_banking_and_rumble() {
 }
 
 void test_gameboy_camera() {
-    gameboy::Cartridge camera{banked_rom(64, 0xFC, 0x05, 0x04)};
+    // Camera SRAM is fixed hardware and must not depend on the often-invalid
+    // generic RAM-size byte in patched/development camera ROM headers.
+    gameboy::Cartridge camera{banked_rom(64, 0xFC, 0x05, 0xFF)};
     check(camera.has_camera() && camera.has_battery() &&
               camera.ram_size() == 0x20000,
           "Game Boy Camera cartridges expose camera hardware and save RAM");
+
+    auto hacked_rom = banked_rom(64, 0x1B, 0x05, 0xFF);
+    constexpr std::string_view camera_title = "GAMEBOYCAMERA";
+    std::copy(camera_title.begin(), camera_title.end(),
+              hacked_rom.begin() + 0x134);
+    gameboy::Cartridge hacked_camera{std::move(hacked_rom)};
+    check(hacked_camera.has_camera() && hacked_camera.ram_size() == 0x20000,
+          "MBC-type Game Boy Camera header hacks retain camera hardware");
+
     camera.write(0x2000, 7);
     check(camera.read(0x4000) == 7,
           "Game Boy Camera mapper selects ROM banks");
+    camera.write(0x3000, 12);
+    check(camera.read(0x4000) == 12,
+          "Game Boy Camera uses one ROM bank register across 2000-3FFF");
+    camera.write(0x3000, 0);
+    check(camera.read(0x4000) == 0,
+          "Game Boy Camera permits ROM bank zero in the switchable window");
+
+    camera.write(0x4000, 0x10);
+    camera.write(0xA001, 4);
+    check(camera.read(0xA000) == 0,
+          "Game Boy Camera registers work without SRAM write enable");
+    camera.write(0x4000, 0);
+    check(camera.read(0xA000) == 0,
+          "Game Boy Camera SRAM can be read while writes are disabled");
 
     camera.write(0x0000, 0x0A);
     camera.write(0x4000, 3);

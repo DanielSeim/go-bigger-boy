@@ -101,7 +101,30 @@ Cartridge::Cartridge(std::vector<std::uint8_t> rom) : rom_(std::move(rom)) {
     }
     rom_bank_count_ = expected_rom_size / rom_bank_size;
 
+    constexpr std::array<std::uint8_t, 13> camera_title{
+        'G', 'A', 'M', 'E', 'B', 'O', 'Y', 'C', 'A', 'M', 'E', 'R', 'A'};
+    const auto is_mbc_type_camera_hack =
+        type() == 0x1B &&
+        std::equal(camera_title.begin(), camera_title.end(),
+                   rom_.begin() + 0x134);
+
     auto ram_capacity = std::size_t{0};
+    const auto configure_camera = [&] {
+        controller_ = Controller::camera;
+        // The Pocket Camera always contains a 128 KiB SRAM chip. Some patched
+        // and development ROMs leave the generic RAM-size header byte invalid,
+        // but that byte does not describe configurable camera hardware.
+        ram_capacity = 0x20000;
+        battery_ = true;
+        camera_frame_.resize(camera_width * camera_height);
+        camera_image_.resize(camera_image_size);
+        for (std::size_t y = 0; y < camera_height; ++y) {
+            for (std::size_t x = 0; x < camera_width; ++x) {
+                camera_frame_[y * camera_width + x] =
+                    static_cast<std::uint8_t>((x + y) & 0xFF);
+            }
+        }
+    };
     switch (type()) {
     case 0x00:
         controller_ = Controller::rom_only;
@@ -169,9 +192,13 @@ Cartridge::Cartridge(std::vector<std::uint8_t> rom) : rom_(std::move(rom)) {
         ram_capacity = header_ram_size(rom_[0x149]);
         break;
     case 0x1B:
-        controller_ = Controller::mbc5;
-        ram_capacity = header_ram_size(rom_[0x149]);
-        battery_ = true;
+        if (is_mbc_type_camera_hack) {
+            configure_camera();
+        } else {
+            controller_ = Controller::mbc5;
+            ram_capacity = header_ram_size(rom_[0x149]);
+            battery_ = true;
+        }
         break;
     case 0x1C:
         controller_ = Controller::mbc5;
@@ -189,17 +216,7 @@ Cartridge::Cartridge(std::vector<std::uint8_t> rom) : rom_(std::move(rom)) {
         rumble_present_ = true;
         break;
     case 0xFC:
-        controller_ = Controller::camera;
-        ram_capacity = header_ram_size(rom_[0x149]);
-        battery_ = true;
-        camera_frame_.resize(camera_width * camera_height);
-        camera_image_.resize(camera_image_size);
-        for (std::size_t y = 0; y < camera_height; ++y) {
-            for (std::size_t x = 0; x < camera_width; ++x) {
-                camera_frame_[y * camera_width + x] =
-                    static_cast<std::uint8_t>((x + y) & 0xFF);
-            }
-        }
+        configure_camera();
         break;
     default:
         throw std::invalid_argument("Unsupported cartridge controller type: " +
@@ -346,7 +363,7 @@ std::uint8_t Cartridge::read(const std::uint16_t address) const noexcept {
         }
         return read_rom_bank(bank, address - 0x4000);
     }
-    if (address >= 0xA000 && address <= 0xBFFF && ram_enabled_) {
+    if (address >= 0xA000 && address <= 0xBFFF) {
         if (controller_ == Controller::camera) {
             if (camera_registers_mapped_) {
                 return read_camera_register(address);
@@ -356,6 +373,8 @@ std::uint8_t Cartridge::read(const std::uint16_t address) const noexcept {
                 return camera_image_[address - 0xA100];
             }
         }
+        // Camera SRAM reads are not controlled by its write-enable latch.
+        if (!ram_enabled_ && controller_ != Controller::camera) return 0xFF;
         if (controller_ == Controller::mbc2) {
             return static_cast<std::uint8_t>(
                 0xF0 | ram_[(address - 0xA000) & 0x01FF]);
@@ -421,8 +440,19 @@ void Cartridge::write(const std::uint16_t address,
         return;
     }
 
-    if ((controller_ == Controller::mbc5 ||
-         controller_ == Controller::camera) && address <= 0x7FFF) {
+    if (controller_ == Controller::camera && address <= 0x7FFF) {
+        if (address <= 0x1FFF) {
+            ram_enabled_ = (value & 0x0F) == 0x0A;
+        } else if (address <= 0x3FFF) {
+            selected_rom_bank_ = static_cast<std::uint16_t>(value & 0x3F);
+        } else if (address <= 0x5FFF) {
+            camera_registers_mapped_ = (value & 0x10) != 0;
+            ram_rtc_select_ = static_cast<std::uint8_t>(value & 0x0F);
+        }
+        return;
+    }
+
+    if (controller_ == Controller::mbc5 && address <= 0x7FFF) {
         if (address <= 0x1FFF) {
             ram_enabled_ = (value & 0x0F) == 0x0A;
         } else if (address <= 0x2FFF) {
@@ -432,23 +462,19 @@ void Cartridge::write(const std::uint16_t address,
             selected_rom_bank_ = static_cast<std::uint16_t>(
                 (selected_rom_bank_ & 0xFF) | ((value & 1) << 8));
         } else if (address <= 0x5FFF) {
-            if (controller_ == Controller::camera) {
-                camera_registers_mapped_ = (value & 0x10) != 0;
-                ram_rtc_select_ = static_cast<std::uint8_t>(value & 0x0F);
-            } else {
-                rumble_active_ = rumble_present_ && (value & 0x08) != 0;
-                ram_rtc_select_ = static_cast<std::uint8_t>(
-                    value & (rumble_present_ ? 0x07 : 0x0F));
-            }
+            rumble_active_ = rumble_present_ && (value & 0x08) != 0;
+            ram_rtc_select_ = static_cast<std::uint8_t>(
+                value & (rumble_present_ ? 0x07 : 0x0F));
         }
         return;
     }
 
-    if (address >= 0xA000 && address <= 0xBFFF && ram_enabled_) {
+    if (address >= 0xA000 && address <= 0xBFFF) {
         if (controller_ == Controller::camera && camera_registers_mapped_) {
             write_camera_register(address, value);
             return;
         }
+        if (!ram_enabled_) return;
         if (controller_ == Controller::mbc2) {
             const auto index = static_cast<std::size_t>(
                 (address - 0xA000) & 0x01FF);
