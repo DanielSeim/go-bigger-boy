@@ -19,7 +19,14 @@ Ppu::Ppu()
     cgb_object_palette_.fill(0xFF);
 }
 
-void Ppu::set_cgb_mode(const bool enabled) noexcept { cgb_mode_ = enabled; }
+void Ppu::set_cgb_mode(const bool enabled) noexcept {
+    cgb_mode_ = enabled;
+    if (enabled) cgb_hardware_ = true;
+}
+
+void Ppu::set_cgb_hardware(const bool enabled) noexcept {
+    cgb_hardware_ = enabled;
+}
 
 bool Ppu::cgb_mode() const noexcept { return cgb_mode_; }
 
@@ -28,6 +35,11 @@ void Ppu::set_dmg_palette(const DmgPalette& palette) noexcept {
 }
 
 void Ppu::initialize_post_boot_phase(const HardwareModel model) noexcept {
+    if (model == HardwareModel::cgb0 || model == HardwareModel::cgb) {
+        bg_palette_index_ = 0x88;
+        object_palette_index_ = 0x90;
+        return;
+    }
     if (model != HardwareModel::dmg0) return;
 
     // The original DMG boot ROM hands control to the cartridge near the end
@@ -111,16 +123,18 @@ std::uint8_t Ppu::read_register(const std::uint16_t address) const noexcept {
     case 0xFF4A: return window_y_;
     case 0xFF4B: return window_x_;
     case 0xFF4F:
-        return cgb_mode_ ? static_cast<std::uint8_t>(0xFE | vram_bank_) : 0xFF;
+        return cgb_hardware_ ? static_cast<std::uint8_t>(0xFE | vram_bank_)
+                             : 0xFF;
     case 0xFF68:
-        return cgb_mode_ ? static_cast<std::uint8_t>(0x40 | bg_palette_index_)
-                         : 0xFF;
+        return cgb_hardware_
+                   ? static_cast<std::uint8_t>(0x40 | bg_palette_index_)
+                   : 0xFF;
     case 0xFF69:
         return cgb_mode_ && mode_ != 3
                    ? cgb_bg_palette_[bg_palette_index_ & 0x3F]
                    : 0xFF;
     case 0xFF6A:
-        return cgb_mode_
+        return cgb_hardware_
                    ? static_cast<std::uint8_t>(0x40 | object_palette_index_)
                    : 0xFF;
     case 0xFF6B:
@@ -176,10 +190,12 @@ bool Ppu::write_register(const std::uint16_t address,
     case 0xFF4A: window_y_ = value; break;
     case 0xFF4B: window_x_ = value; break;
     case 0xFF4F:
-        if (cgb_mode_) vram_bank_ = static_cast<std::uint8_t>(value & 0x01);
+        if (cgb_hardware_) vram_bank_ = static_cast<std::uint8_t>(value & 0x01);
         break;
     case 0xFF68:
-        if (cgb_mode_) bg_palette_index_ = static_cast<std::uint8_t>(value & 0xBF);
+        if (cgb_hardware_) {
+            bg_palette_index_ = static_cast<std::uint8_t>(value & 0xBF);
+        }
         break;
     case 0xFF69:
         if (cgb_mode_) {
@@ -191,7 +207,7 @@ bool Ppu::write_register(const std::uint16_t address,
         }
         break;
     case 0xFF6A:
-        if (cgb_mode_) {
+        if (cgb_hardware_) {
             object_palette_index_ = static_cast<std::uint8_t>(value & 0xBF);
         }
         break;
@@ -253,6 +269,14 @@ std::uint8_t Ppu::tick(const unsigned cycles) noexcept {
                 render_scanline();
                 mode_ = 0;
                 requests |= 0x04;
+            }
+
+            // On CGB hardware the mode-2 STAT source associated with line 144
+            // rises one M-cycle before the VBlank request and visible mode 1.
+            if (cgb_hardware_ && ly_ == screen_height - 1 && dot_ == 452 &&
+                (stat_select_ & 0x20) != 0 && !stat_line_) {
+                stat_line_ = true;
+                requests |= 0x02;
             }
         }
 

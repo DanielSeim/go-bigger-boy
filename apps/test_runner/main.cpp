@@ -23,7 +23,7 @@ struct Options {
 void usage() {
     std::cerr << "Usage: gbb_test_runner <rom.gb> "
                  "[--max-cycles N] [--protocol auto|mooneye|serial|blargg] "
-                 "[--model auto|dmg0|dmg|mgb|sgb|sgb2|cgb]\n";
+                 "[--model auto|dmg0|dmg|mgb|sgb|sgb2|cgb0|cgb]\n";
 }
 
 gameboy::HardwareModel parse_model(const std::string& value) {
@@ -33,6 +33,7 @@ gameboy::HardwareModel parse_model(const std::string& value) {
     if (value == "mgb") return gameboy::HardwareModel::mgb;
     if (value == "sgb") return gameboy::HardwareModel::sgb;
     if (value == "sgb2") return gameboy::HardwareModel::sgb2;
+    if (value == "cgb0") return gameboy::HardwareModel::cgb0;
     if (value == "cgb") return gameboy::HardwareModel::cgb;
     throw std::invalid_argument("unknown hardware model: " + value);
 }

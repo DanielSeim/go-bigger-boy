@@ -50,6 +50,7 @@ private:
     enum class Controller {
         rom_only,
         mbc1,
+        mbc2,
         mbc3,
         mbc5,
     };
@@ -76,6 +77,7 @@ private:
     bool rumble_present_{};
     bool rumble_active_{};
     bool large_mbc1_rom_{};
+    bool mbc1_multicart_{};
     bool ram_enabled_{};
     bool ram_dirty_{};
     std::uint8_t rom_bank_low_ = 1;

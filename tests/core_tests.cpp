@@ -256,6 +256,22 @@ void test_cgb_memory_and_rendering() {
     check(!dmg.cgb_mode() && dmg.read8(0xFF4F) == 0xFF &&
               dmg.read8(0xFF68) == 0xFF && dmg.read8(0xFF70) == 0xFF,
           "CGB-only registers remain unavailable to monochrome cartridges");
+
+    gameboy::Emulator compatibility{
+        gameboy::Cartridge{test_rom()}, gameboy::HardwareModel::cgb};
+    auto& compatibility_bus = compatibility.bus();
+    compatibility_bus.write8(0xFF72, 0x12);
+    compatibility_bus.write8(0xFF73, 0x34);
+    compatibility_bus.write8(0xFF75, 0xFF);
+    check(!compatibility_bus.cgb_mode() &&
+              compatibility_bus.read8(0xFF4F) == 0xFE &&
+              compatibility_bus.read8(0xFF68) == 0xC8 &&
+              compatibility_bus.read8(0xFF69) == 0xFF &&
+              compatibility_bus.read8(0xFF72) == 0x12 &&
+              compatibility_bus.read8(0xFF73) == 0x34 &&
+              compatibility_bus.read8(0xFF75) == 0xFF &&
+              compatibility_bus.read8(0xFF76) == 0,
+          "DMG software on CGB hardware exposes compatibility-mode registers");
 }
 
 void test_cartridge_file_loading() {
@@ -298,6 +314,56 @@ void test_mbc1_rom_banking() {
     masked.write(0x2000, 0x10);
     check(masked.read(0x4000) == 0,
           "MBC1 bank-zero translation occurs before physical ROM masking");
+
+    auto multicart_rom = banked_rom(64, 0x01, 0x05, 0x00);
+    constexpr std::array<std::uint8_t, 48> nintendo_logo{
+        0xCE, 0xED, 0x66, 0x66, 0xCC, 0x0D, 0x00, 0x0B,
+        0x03, 0x73, 0x00, 0x83, 0x00, 0x0C, 0x00, 0x0D,
+        0x00, 0x08, 0x11, 0x1F, 0x88, 0x89, 0x00, 0x0E,
+        0xDC, 0xCC, 0x6E, 0xE6, 0xDD, 0xDD, 0xD9, 0x99,
+        0xBB, 0xBB, 0x67, 0x63, 0x6E, 0x0E, 0xEC, 0xCC,
+        0xDD, 0xDC, 0x99, 0x9F, 0xBB, 0xB9, 0x33, 0x3E,
+    };
+    for (const auto offset : {std::size_t{0}, std::size_t{0x40000},
+                              std::size_t{0x80000}, std::size_t{0xC0000}}) {
+        std::copy(nintendo_logo.begin(), nintendo_logo.end(),
+                  multicart_rom.begin() + offset + 0x0104);
+    }
+    gameboy::Cartridge multicart{std::move(multicart_rom)};
+    multicart.write(0x4000, 1);
+    multicart.write(0x2000, 2);
+    check(multicart.read(0x4000) == 18,
+          "MBC1 multicarts wire the upper register at ROM address bit 18");
+    multicart.write(0x2000, 0x10);
+    check(multicart.read(0x4000) == 16,
+          "MBC1 multicarts ignore low-register bit four after zero remapping");
+    multicart.write(0x6000, 1);
+    check(multicart.read(0x0000) == 16,
+          "MBC1 multicart mode one switches the lower ROM window by subgame");
+}
+
+void test_mbc2_banking_and_ram() {
+    gameboy::Cartridge cartridge{banked_rom(16, 0x05, 0x03, 0x00)};
+    check(cartridge.ram_size() == 0x200 && !cartridge.has_battery(),
+          "MBC2 provides 512 built-in four-bit RAM cells");
+    cartridge.write(0x2100, 2);
+    check(cartridge.read(0x4000) == 2,
+          "MBC2 uses address bit eight to select its ROM bank register");
+    cartridge.write(0x2000, 3);
+    check(cartridge.read(0x4000) == 2,
+          "MBC2 ignores ROM bank writes with address bit eight clear");
+    cartridge.write(0x0000, 0x0A);
+    cartridge.write(0xA000, 0xAB);
+    check(cartridge.read(0xA000) == 0xFB &&
+              cartridge.read(0xA200) == 0xFB,
+          "MBC2 RAM stores low nibbles, reads high bits set, and mirrors");
+    cartridge.write(0x0000, 0);
+    check(cartridge.read(0xA000) == 0xFF,
+          "disabled MBC2 RAM reads as open bus");
+
+    gameboy::Cartridge battery{banked_rom(16, 0x06, 0x03, 0x00)};
+    check(battery.has_battery() && battery.export_battery_ram().size() == 0x200,
+          "MBC2 battery cartridges expose their internal RAM for persistence");
 }
 
 void test_mbc1_ram_banking() {
@@ -2509,6 +2575,7 @@ int main() {
         test_cgb_memory_and_rendering();
         test_mbc1_rom_banking();
         test_mbc1_ram_banking();
+        test_mbc2_banking_and_ram();
         test_battery_ram_persistence();
         test_battery_data_import_export();
         test_mbc3_banking_and_rtc();

@@ -21,6 +21,7 @@ public:
     Ppu();
 
     void set_cgb_mode(bool enabled) noexcept;
+    void set_cgb_hardware(bool enabled) noexcept;
     [[nodiscard]] bool cgb_mode() const noexcept;
     void set_dmg_palette(const DmgPalette& palette) noexcept;
     void initialize_post_boot_phase(HardwareModel model) noexcept;
@@ -92,6 +93,7 @@ private:
     std::uint8_t window_line_{};
     bool window_y_triggered_{};
     bool cgb_mode_{};
+    bool cgb_hardware_{};
     bool coincidence_{};
     bool lcd_startup_{};
     bool stat_line_{};

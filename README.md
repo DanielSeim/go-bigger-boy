@@ -19,7 +19,7 @@ shared everywhere.
 - Active-low joypad matrix with keyboard/gamepad input and interrupts
 - Cycle-timed OAM DMA with source-bus conflicts and an optional SDL3 desktop frontend
 - Four-channel DMG audio with 48 kHz stereo SDL3 playback
-- ROM-only, MBC1, MBC3 (including RTC), and MBC5 banking
+- ROM-only, MBC1/MBC1M, MBC2, MBC3 (including RTC), and MBC5 banking
 - Persistent battery-backed `.sav` RAM and MBC3 `.rtc` clock state
 - Table-driven CPU tests for opcode matrices, timing, flags, PC, stack, and memory effects
 - Headless command-line runner
@@ -57,14 +57,15 @@ The runner recognizes Mooneye's `LD B,B` result protocol and serial test output
 containing `Passed` or `Failed`, plus Blargg's `$A000` memory result protocol.
 Use `--protocol mooneye`, `--protocol serial`, or `--protocol blargg` to disable
 automatic protocol detection. Model-specific post-boot tests can select
-`--model dmg0`, `dmg`, `mgb`, `sgb`, `sgb2`, or `cgb`.
+`--model dmg0`, `dmg`, `mgb`, `sgb`, `sgb2`, `cgb0`, or `cgb`.
 
 The DMG APU passes all 12 upstream Blargg `dmg_sound` tests, including active
 wave-RAM reads/writes and the original hardware's channel 3 retrigger corruption.
-The current headless CI accuracy gate passes all 75 Mooneye acceptance ROMs and
-14 curated Blargg ROMs; see the [accuracy report](docs/accuracy.md) for details.
+The current headless CI accuracy gate passes all 75 Mooneye acceptance ROMs,
+all 6 applicable CGB misc ROMs, all 28 emulator-only mapper ROMs, and 14
+curated Blargg ROMs; see the [accuracy report](docs/accuracy.md) for details.
 
-To register the curated 89-ROM CI baseline locally, download and extract the
+To register the curated 123-ROM CI baseline locally, download and extract the
 `c-sp/game-boy-test-roms` v7.0 bundle, then set its root as the opt-in cache
 path. Test ROMs are deliberately not bundled or downloaded by the build:
 
@@ -132,7 +133,7 @@ stored in SDL's per-user preferences directory. The Ctrl+K controls dialog can
 rebind either input device or restore the default mappings; Escape cancels an
 in-progress setup.
 
-Battery-backed MBC1, MBC3, and MBC5 games use a sibling file with the ROM's
+Battery-backed MBC1, MBC2, MBC3, and MBC5 games use a sibling file with the ROM's
 base name and a `.sav` extension. MBC3 real-time clocks use an additional
 `.rtc` file. MBC5 rumble register state is exposed by the core for frontends;
 physical rumble output is not connected yet. Unsupported cartridge controllers

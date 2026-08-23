@@ -16,6 +16,14 @@ constexpr std::size_t ram_bank_size = 0x2000;
 constexpr std::uint64_t rtc_day_seconds = 24 * 60 * 60;
 constexpr std::uint64_t rtc_period_seconds = 512 * rtc_day_seconds;
 constexpr std::array<char, 8> rtc_magic{'G', 'B', 'B', 'R', 'T', 'C', '1', 0};
+constexpr std::array<std::uint8_t, 48> nintendo_logo{
+    0xCE, 0xED, 0x66, 0x66, 0xCC, 0x0D, 0x00, 0x0B,
+    0x03, 0x73, 0x00, 0x83, 0x00, 0x0C, 0x00, 0x0D,
+    0x00, 0x08, 0x11, 0x1F, 0x88, 0x89, 0x00, 0x0E,
+    0xDC, 0xCC, 0x6E, 0xE6, 0xDD, 0xDD, 0xD9, 0x99,
+    0xBB, 0xBB, 0x67, 0x63, 0x6E, 0x0E, 0xEC, 0xCC,
+    0xDD, 0xDC, 0x99, 0x9F, 0xBB, 0xB9, 0x33, 0x3E,
+};
 
 // CGB boot ROM DMG-colorization lookup data. See gbdev.io/pandocs/
 // Power_Up_Sequence.html#compatibility-palettes.
@@ -109,6 +117,15 @@ Cartridge::Cartridge(std::vector<std::uint8_t> rom) : rom_(std::move(rom)) {
         ram_capacity = header_ram_size(rom_[0x149]);
         battery_ = true;
         break;
+    case 0x05:
+        controller_ = Controller::mbc2;
+        ram_capacity = 0x200;
+        break;
+    case 0x06:
+        controller_ = Controller::mbc2;
+        ram_capacity = 0x200;
+        battery_ = true;
+        break;
     case 0x08:
         controller_ = Controller::rom_only;
         ram_capacity = header_ram_size(rom_[0x149]);
@@ -183,6 +200,22 @@ Cartridge::Cartridge(std::vector<std::uint8_t> rom) : rom_(std::move(rom)) {
             throw std::invalid_argument("MBC1 RAM exceeds the 32 KiB address limit");
         }
         large_mbc1_rom_ = expected_rom_size > 0x80000;
+        if (expected_rom_size == 0x100000) {
+            constexpr std::size_t logo_offset = 0x0104;
+            constexpr std::size_t sub_rom_size = 0x40000;
+            auto valid_sub_headers = 0U;
+            for (auto offset = std::size_t{0}; offset < expected_rom_size;
+                 offset += sub_rom_size) {
+                valid_sub_headers += std::equal(
+                    nintendo_logo.begin(), nintendo_logo.end(),
+                    rom_.begin() + offset + logo_offset);
+            }
+            mbc1_multicart_ = valid_sub_headers >= 2;
+        }
+    } else if (controller_ == Controller::mbc2) {
+        if (expected_rom_size > 0x40000) {
+            throw std::invalid_argument("MBC2 ROM exceeds the 256 KiB address limit");
+        }
     } else if (controller_ == Controller::mbc3) {
         if (expected_rom_size > 0x400000) {
             throw std::invalid_argument("MBC3 ROM exceeds the 4 MiB MBC30 limit");
@@ -225,6 +258,7 @@ Cartridge::Cartridge(Cartridge&& other) noexcept
       rumble_present_(other.rumble_present_),
       rumble_active_(other.rumble_active_),
       large_mbc1_rom_(other.large_mbc1_rom_),
+      mbc1_multicart_(other.mbc1_multicart_),
       ram_enabled_(other.ram_enabled_),
       ram_dirty_(other.ram_dirty_),
       rom_bank_low_(other.rom_bank_low_),
@@ -274,22 +308,29 @@ Cartridge Cartridge::from_file(const std::filesystem::path& path) {
 std::uint8_t Cartridge::read(const std::uint16_t address) const noexcept {
     if (address <= 0x3FFF) {
         const auto bank = controller_ == Controller::mbc1 && banking_mode_ != 0
-                              ? static_cast<std::size_t>(bank_upper_) << 5
+                              ? static_cast<std::size_t>(bank_upper_)
+                                    << (mbc1_multicart_ ? 4 : 5)
                               : 0;
         return read_rom_bank(bank, address);
     }
     if (address <= 0x7FFF) {
         auto bank = std::size_t{1};
         if (controller_ == Controller::mbc1) {
-            bank = (static_cast<std::size_t>(bank_upper_) << 5) |
-                   rom_bank_low_;
-        } else if (controller_ == Controller::mbc3 ||
+            bank = (static_cast<std::size_t>(bank_upper_)
+                    << (mbc1_multicart_ ? 4 : 5)) |
+                   (rom_bank_low_ & (mbc1_multicart_ ? 0x0F : 0x1F));
+        } else if (controller_ == Controller::mbc2 ||
+                   controller_ == Controller::mbc3 ||
                    controller_ == Controller::mbc5) {
             bank = selected_rom_bank_;
         }
         return read_rom_bank(bank, address - 0x4000);
     }
     if (address >= 0xA000 && address <= 0xBFFF && ram_enabled_) {
+        if (controller_ == Controller::mbc2) {
+            return static_cast<std::uint8_t>(
+                0xF0 | ram_[(address - 0xA000) & 0x01FF]);
+        }
         if (controller_ == Controller::mbc3 && rtc_present_ &&
             ram_rtc_select_ >= 0x08 && ram_rtc_select_ <= 0x0C) {
             return read_rtc_register();
@@ -311,12 +352,24 @@ void Cartridge::write(const std::uint16_t address,
         if (address <= 0x1FFF) {
             ram_enabled_ = (value & 0x0F) == 0x0A;
         } else if (address <= 0x3FFF) {
+            // MBC1M ignores bit 4 at the ROM pins, but the controller's
+            // forbidden-bank remap still considers the full five-bit write.
             rom_bank_low_ = static_cast<std::uint8_t>(value & 0x1F);
             if (rom_bank_low_ == 0) rom_bank_low_ = 1;
         } else if (address <= 0x5FFF) {
             bank_upper_ = static_cast<std::uint8_t>(value & 0x03);
         } else {
             banking_mode_ = static_cast<std::uint8_t>(value & 0x01);
+        }
+        return;
+    }
+
+    if (controller_ == Controller::mbc2 && address <= 0x3FFF) {
+        if ((address & 0x0100) == 0) {
+            ram_enabled_ = (value & 0x0F) == 0x0A;
+        } else {
+            selected_rom_bank_ = static_cast<std::uint8_t>(value & 0x0F);
+            if (selected_rom_bank_ == 0) selected_rom_bank_ = 1;
         }
         return;
     }
@@ -357,6 +410,16 @@ void Cartridge::write(const std::uint16_t address,
     }
 
     if (address >= 0xA000 && address <= 0xBFFF && ram_enabled_) {
+        if (controller_ == Controller::mbc2) {
+            const auto index = static_cast<std::size_t>(
+                (address - 0xA000) & 0x01FF);
+            const auto nibble = static_cast<std::uint8_t>(value & 0x0F);
+            if (ram_[index] != nibble) {
+                ram_[index] = nibble;
+                ram_dirty_ = true;
+            }
+            return;
+        }
         if (controller_ == Controller::mbc3 && rtc_present_ &&
             ram_rtc_select_ >= 0x08 && ram_rtc_select_ <= 0x0C) {
             write_rtc_register(value);

@@ -13,11 +13,15 @@ constexpr unsigned oam_dma_start_cycles = 8;
 MemoryBus::MemoryBus(Cartridge cartridge)
     : cartridge_(std::move(cartridge)),
       cgb_wram_(std::make_unique<std::array<std::uint8_t, 0x6000>>()),
-      cgb_mode_(cartridge_.supports_cgb()) {
+      cgb_mode_(cartridge_.supports_cgb()),
+      cgb_hardware_(cgb_mode_) {
     ppu_.set_cgb_mode(cgb_mode_);
 }
 
 void MemoryBus::initialize_post_boot(const HardwareModel model) noexcept {
+    cgb_hardware_ = model == HardwareModel::cgb0 ||
+                    model == HardwareModel::cgb;
+    ppu_.set_cgb_hardware(cgb_hardware_);
     timer_.initialize_post_boot(model);
     // The serial divider is reset-derived and is not synchronized when a
     // transfer starts. Preserve the phase at the boot-ROM handoff.
@@ -27,7 +31,8 @@ void MemoryBus::initialize_post_boot(const HardwareModel model) noexcept {
                         : 0;
     apu_.initialize_post_boot(model);
     static_cast<void>(joypad_.write(
-        model == HardwareModel::sgb || model == HardwareModel::sgb2
+        model == HardwareModel::sgb || model == HardwareModel::sgb2 ||
+                cgb_hardware_
             ? 0x30
             : 0x00));
     io_[0x0F] = 0xE1;
@@ -103,6 +108,14 @@ std::uint8_t MemoryBus::read8(const std::uint16_t address) const noexcept {
                                      : hdma_blocks_remaining_ - 1));
     case 0xFF70:
         return cgb_mode_ ? static_cast<std::uint8_t>(0xF8 | wram_bank_) : 0xFF;
+    case 0xFF72:
+    case 0xFF73: return cgb_hardware_ ? io_[address - 0xFF00] : 0xFF;
+    case 0xFF75:
+        return cgb_hardware_
+                   ? static_cast<std::uint8_t>(0x8F | (io_[0x75] & 0x70))
+                   : 0xFF;
+    case 0xFF76:
+    case 0xFF77: return cgb_hardware_ ? 0x00 : 0xFF;
     default: break;
     }
     if (Apu::handles_register(address)) {
@@ -213,6 +226,11 @@ void MemoryBus::write8(const std::uint16_t address, const std::uint8_t value) no
             wram_bank_ = static_cast<std::uint8_t>(value & 0x07);
             if (wram_bank_ == 0) wram_bank_ = 1;
         }
+    } else if (cgb_hardware_ &&
+               (address == 0xFF72 || address == 0xFF73)) {
+        io_[address - 0xFF00] = value;
+    } else if (cgb_hardware_ && address == 0xFF75) {
+        io_[0x75] = static_cast<std::uint8_t>(value & 0x70);
     } else if (Apu::handles_register(address)) {
         apu_.write_register(address, value);
     } else if (Ppu::handles_register(address)) {

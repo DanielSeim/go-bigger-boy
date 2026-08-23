@@ -118,6 +118,62 @@ gbb_add_conformance_test(mooneye
     "mooneye-test-suite/acceptance/serial/boot_sclk_align-dmgABCmgb.gb"
     mooneye 20000000 dmg)
 
+# CGB and CGB0 post-boot behavior that Mooneye keeps in misc because these
+# ROMs are not applicable to every Game Boy hardware model. The two AGB-only
+# misc ROMs are intentionally excluded because GBB does not emulate an AGB.
+gbb_add_conformance_test(mooneye-cgb
+    "mooneye-test-suite/misc/boot_div-cgb0.gb" mooneye 20000000 cgb0)
+set(gbb_mooneye_cgb_tests
+    misc/bits/unused_hwio-C.gb
+    misc/boot_div-cgbABCDE.gb
+    misc/boot_hwio-C.gb
+    misc/boot_regs-cgb.gb
+    misc/ppu/vblank_stat_intr-C.gb
+)
+foreach(relative_path IN LISTS gbb_mooneye_cgb_tests)
+    gbb_add_conformance_test(
+        mooneye-cgb "mooneye-test-suite/${relative_path}"
+        mooneye 20000000 cgb)
+endforeach()
+
+# Mapper behavior is deterministic in an emulator and does not depend on a
+# particular physical console revision.
+set(gbb_mooneye_emulator_only_tests
+    emulator-only/mbc1/bits_bank1.gb
+    emulator-only/mbc1/bits_bank2.gb
+    emulator-only/mbc1/bits_mode.gb
+    emulator-only/mbc1/bits_ramg.gb
+    emulator-only/mbc1/multicart_rom_8Mb.gb
+    emulator-only/mbc1/ram_256kb.gb
+    emulator-only/mbc1/ram_64kb.gb
+    emulator-only/mbc1/rom_16Mb.gb
+    emulator-only/mbc1/rom_1Mb.gb
+    emulator-only/mbc1/rom_2Mb.gb
+    emulator-only/mbc1/rom_4Mb.gb
+    emulator-only/mbc1/rom_512kb.gb
+    emulator-only/mbc1/rom_8Mb.gb
+    emulator-only/mbc2/bits_ramg.gb
+    emulator-only/mbc2/bits_romb.gb
+    emulator-only/mbc2/bits_unused.gb
+    emulator-only/mbc2/ram.gb
+    emulator-only/mbc2/rom_1Mb.gb
+    emulator-only/mbc2/rom_2Mb.gb
+    emulator-only/mbc2/rom_512kb.gb
+    emulator-only/mbc5/rom_16Mb.gb
+    emulator-only/mbc5/rom_1Mb.gb
+    emulator-only/mbc5/rom_2Mb.gb
+    emulator-only/mbc5/rom_32Mb.gb
+    emulator-only/mbc5/rom_4Mb.gb
+    emulator-only/mbc5/rom_512kb.gb
+    emulator-only/mbc5/rom_64Mb.gb
+    emulator-only/mbc5/rom_8Mb.gb
+)
+foreach(relative_path IN LISTS gbb_mooneye_emulator_only_tests)
+    gbb_add_conformance_test(
+        mooneye-emulator-only "mooneye-test-suite/${relative_path}"
+        mooneye 100000000)
+endforeach()
+
 # Blargg tests use automatic detection because some report over serial while
 # others publish the equivalent result through their memory protocol.
 set(gbb_blargg_tests

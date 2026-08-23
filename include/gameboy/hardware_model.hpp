@@ -9,6 +9,7 @@ enum class HardwareModel {
     mgb,
     sgb,
     sgb2,
+    cgb0,
     cgb,
 };
 
