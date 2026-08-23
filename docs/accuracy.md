@@ -8,24 +8,19 @@ bundle. GitHub Actions verifies the archive checksum before running any ROM.
 
 | Suite | Passing | Coverage |
 | --- | ---: | --- |
-| Mooneye acceptance | 52 | CPU timing, interrupts, OAM DMA, timers, and selected PPU timing |
+| Mooneye acceptance | 75/75 | Complete acceptance directory, with model-specific boot profiles |
 | Blargg | 14 | All 11 individual CPU instruction ROMs plus instruction and memory timing |
-| Total CI gate | **66** | Every listed ROM must pass before a release can be published |
+| Total CI gate | **89** | Every listed ROM must pass before a release can be published |
 
-The Mooneye figure is 52 of the 75 acceptance ROMs in the pinned bundle. Tests
-that target a different boot-ROM hardware revision are counted during the full
-audit but are not necessarily applicable to GBB's current post-boot DMG model.
+The Mooneye figure covers every acceptance ROM in the pinned bundle. Tests with
+mutually exclusive boot-ROM expectations run under explicit DMG0, DMG/MGB,
+SGB, or SGB2 post-boot hardware profiles.
 
 ## Next accuracy work
 
-The remaining Mooneye acceptance gaps are grouped here so that newly fixed ROMs
-can be moved into `cmake/ConformanceTests.cmake` immediately:
-
-- Boot state and model-specific unused I/O behavior: 12
-- Interrupt-entry `IE` stack-write interaction: 1
-- PPU mode and LCD-enable timing: 6
-- Serial boot-clock alignment: 1
-- Timer reload and rapid-toggle edge cases: 3
+With acceptance coverage complete, the next accuracy milestone is expanding
+the automated gate to Mooneye's emulator-only and manual-test groups, then
+adding broader CGB-specific timing suites.
 
 Run the exact CI baseline locally with:
 

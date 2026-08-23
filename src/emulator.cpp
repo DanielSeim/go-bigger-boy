@@ -4,19 +4,25 @@
 
 namespace gameboy {
 
-Emulator::Emulator(Cartridge cartridge) : bus_(std::move(cartridge)) {
+Emulator::Emulator(Cartridge cartridge, const HardwareModel model)
+    : bus_(std::move(cartridge)) {
+    hardware_model_ = model == HardwareModel::automatic
+                          ? (bus_.cgb_mode() ? HardwareModel::cgb
+                                             : HardwareModel::dmg)
+                          : model;
     automatic_dmg_palette_ = cgb_compatibility_palette(
         bus_.cartridge().cgb_compatibility_palette_id());
-    cpu_.reset(bus_.cgb_mode());
-    bus_.initialize_post_boot();
+    cpu_.reset(hardware_model_);
+    bus_.initialize_post_boot(hardware_model_);
 }
 
-Emulator Emulator::from_file(const std::filesystem::path& path) {
-    return Emulator(Cartridge::from_file(path));
+Emulator Emulator::from_file(const std::filesystem::path& path,
+                             const HardwareModel model) {
+    return Emulator(Cartridge::from_file(path), model);
 }
 
 void Emulator::reset() noexcept {
-    cpu_.reset(bus_.cgb_mode());
+    cpu_.reset(hardware_model_);
 }
 
 unsigned Emulator::step() {

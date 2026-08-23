@@ -13,7 +13,7 @@ namespace {
 constexpr std::array<std::uint8_t, 8> state_magic{
     'G', 'B', 'B', 'S', 'T', 'A', 'T', 'E',
 };
-constexpr std::uint32_t state_version = 5;
+constexpr std::uint32_t state_version = 6;
 constexpr std::uint32_t oldest_supported_state_version = 1;
 constexpr std::size_t maximum_state_size = 2 * 1024 * 1024;
 constexpr std::size_t maximum_serial_output = 1024 * 1024;
@@ -315,6 +315,10 @@ private:
         writer.u8(bus.ppu_.window_line_);
         writer.boolean(bus.ppu_.window_y_triggered_);
         writer.boolean(bus.ppu_.coincidence_);
+        writer.u8(bus.ppu_.stat_mode_);
+        writer.boolean(bus.ppu_.lcd_startup_);
+        writer.boolean(bus.timer_.reload_happened_);
+        writer.u16(bus.serial_clock_);
         write_bytes(writer, *bus.cgb_wram_);
         write_bytes(writer, *bus.ppu_.cgb_vram_);
         write_bytes(writer, bus.ppu_.cgb_bg_palette_);
@@ -386,6 +390,20 @@ private:
             bus.ppu_.coincidence_ = reader.boolean();
         } else {
             bus.ppu_.coincidence_ = bus.ppu_.ly_ == bus.ppu_.lyc_;
+        }
+        if (version >= 6) {
+            bus.ppu_.stat_mode_ = reader.u8();
+            if (bus.ppu_.stat_mode_ > 3) {
+                throw SaveStateError("invalid PPU STAT mode");
+            }
+            bus.ppu_.lcd_startup_ = reader.boolean();
+            bus.timer_.reload_happened_ = reader.boolean();
+            bus.serial_clock_ = reader.u16();
+        } else {
+            bus.ppu_.stat_mode_ = bus.ppu_.mode_;
+            bus.ppu_.lcd_startup_ = false;
+            bus.timer_.reload_happened_ = false;
+            bus.serial_clock_ = 0;
         }
         if (version >= 4) {
             read_bytes(reader, *bus.cgb_wram_);

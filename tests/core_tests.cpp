@@ -576,7 +576,7 @@ void test_memory_map() {
 void test_apu_power_registers_and_wave_ram() {
     gameboy::MemoryBus bus{gameboy::Cartridge{test_rom()}};
     bus.initialize_post_boot();
-    check(bus.read8(0xFF26) == 0xF0,
+    check((bus.read8(0xFF26) & 0xF0) == 0xF0,
           "post-boot APU state has master power enabled");
     check(bus.read8(0xFF24) == 0x77 && bus.read8(0xFF25) == 0xF3,
           "post-boot APU mixer registers have their DMG values");
@@ -1747,6 +1747,7 @@ void test_emulator_timer_integration() {
 
     gameboy::Emulator halted{
         gameboy::Cartridge{test_rom({0x76, 0x00})}};
+    halted.bus().write8(0xFF04, 0);
     halted.bus().write8(0xFFFF, 0x04);
     halted.bus().write8(0xFF05, 0xFF);
     halted.bus().write8(0xFF06, 0x00);
@@ -1763,7 +1764,7 @@ void test_emulator_timer_integration() {
     gameboy::Emulator stopped{
         gameboy::Cartridge{test_rom({0x10, 0x00, 0x00})}};
     stopped.bus().tick(300);
-    check(stopped.bus().read8(0xFF04) == 1,
+    check(stopped.bus().read8(0xFF04) != 0,
           "STOP integration begins with an advanced divider");
     static_cast<void>(stopped.step());
     check(stopped.cpu().stopped() && stopped.bus().read8(0xFF04) == 0,
@@ -1800,27 +1801,31 @@ void test_ppu_modes_and_memory_access() {
     check(bus.read8(0xFE00) == 0x34,
           "OAM remains accessible during startup mode 0");
 
-    bus.tick(81);
+    bus.tick(79);
     check((bus.read8(0xFF41) & 0x03) == 0,
-          "line-zero startup lasts eighty-two dots");
+          "line-zero startup mode lasts eighty dots");
     bus.tick(1);
     check((bus.read8(0xFF41) & 0x03) == 3,
-          "line-zero mode 3 begins on dot eighty-two");
+          "line-zero mode 3 begins on dot eighty");
     check(bus.read8(0x8000) == 0xFF && bus.read8(0xFE00) == 0xFF,
           "VRAM and OAM are blocked during mode 3");
     bus.write8(0x8000, 0x99);
 
     bus.tick(172);
     check((bus.read8(0xFF41) & 0x03) == 0,
-          "line-zero minimum-length mode 3 ends on dot 254");
+          "line-zero minimum-length mode 3 ends on dot 252");
     check(bus.read8(0x8000) == 0x12,
           "writes to VRAM during mode 3 are ignored");
     check(bus.read8(0xFE00) == 0x34,
           "OAM becomes accessible during HBlank");
 
-    bus.tick(202);
-    check(bus.read8(0xFF44) == 1 && (bus.read8(0xFF41) & 0x03) == 2,
-          "a 456-dot visible line advances LY and returns to mode 2");
+    bus.tick(200);
+    check(bus.read8(0xFF44) == 1 && (bus.read8(0xFF41) & 0x03) == 0 &&
+              bus.read8(0xFE00) == 0xFF,
+          "the 452-dot startup line begins OAM scan before mode 2 is visible");
+    bus.tick(1);
+    check((bus.read8(0xFF41) & 0x03) == 2,
+          "CPU-visible mode 2 follows its internal boundary by one dot");
     bus.write8(0xFF44, 99);
     check(bus.read8(0xFF44) == 1, "LY ignores CPU writes");
 
@@ -1842,7 +1847,7 @@ void test_ppu_modes_and_memory_access() {
     window_timing.write8(0xFF4A, 0);
     window_timing.write8(0xFF4B, 7);
     window_timing.write8(0xFF40, 0xA1);
-    window_timing.tick(259);
+    window_timing.tick(257);
     check((window_timing.read8(0xFF41) & 0x03) == 3,
           "starting the window stalls the background fetcher for six dots");
     window_timing.tick(1);
@@ -1853,12 +1858,26 @@ void test_ppu_modes_and_memory_access() {
     sprite_timing.write8(0xFE00, 16);
     sprite_timing.write8(0xFE01, 8);
     sprite_timing.write8(0xFF40, 0x83);
-    sprite_timing.tick(264);
+    sprite_timing.tick(262);
     check((sprite_timing.read8(0xFF41) & 0x03) == 3,
           "a selected aligned sprite extends mode 3 by eleven dots");
     sprite_timing.tick(1);
     check((sprite_timing.read8(0xFF41) & 0x03) == 0,
           "sprite fetch timing controls the start of HBlank");
+
+    gameboy::MemoryBus arbitration{gameboy::Cartridge{test_rom()}};
+    arbitration.write8(0xFE00, 0x34);
+    arbitration.write8(0xFF40, 0x80);
+    arbitration.tick(452 + 79);
+    arbitration.write8(0xFE00, 0x55);
+    arbitration.tick(1);
+    check((arbitration.read8(0xFF41) & 0x03) == 2 &&
+              arbitration.read8(0x8000) == 0xFF,
+          "VRAM locks on the internal mode-3 boundary before STAT changes");
+    arbitration.write8(0xFE00, 0x66);
+    arbitration.tick(173);
+    check(arbitration.read8(0xFE00) == 0x66,
+          "DMG OAM accepts a write on the mode 2-to-3 transition dot");
 }
 
 void test_ppu_stat_interrupts() {
@@ -1867,7 +1886,10 @@ void test_ppu_stat_interrupts() {
     coincidence.write8(0xFF41, 0x40);
     coincidence.write8(0xFF40, 0x80);
     coincidence.write8(0xFF0F, 0);
-    coincidence.tick(456);
+    coincidence.tick(452);
+    check((coincidence.read8(0xFF41) & 0x04) == 0,
+          "coincidence clears while a new visible line is starting");
+    coincidence.tick(1);
     check((coincidence.read8(0xFF41) & 0x04) != 0 &&
               (coincidence.read8(0xFF0F) & 0x02) != 0,
           "LY=LYC raises the coincidence flag and STAT interrupt");
@@ -1892,22 +1914,25 @@ void test_ppu_stat_interrupts() {
     check((modes.read8(0xFF0F) & 0x02) != 0,
           "enabling LCD in startup mode 0 can raise STAT");
     modes.write8(0xFF0F, 0);
-    modes.tick(82);
-    modes.tick(172);
+    modes.tick(251);
+    check((modes.read8(0xFF0F) & 0x02) == 0,
+          "mode-0 STAT remains low through the last mode-3 dot");
+    modes.tick(1);
     check((modes.read8(0xFF0F) & 0x02) != 0,
           "entering enabled mode 0 raises STAT on a rising edge");
     modes.write8(0xFF0F, 0);
-    modes.tick(202);
+    modes.tick(200);
     check((modes.read8(0xFF0F) & 0x02) == 0,
           "adjacent enabled STAT sources block a second interrupt edge");
 }
 
 void test_ppu_vblank_and_frame_publication() {
+    constexpr auto startup_visible_cycles = 452U + 456U * 143U;
     gameboy::MemoryBus bus{gameboy::Cartridge{test_rom()}};
     bus.write8(0xFF41, 0x10); // Mode 1 STAT source.
     bus.write8(0xFF40, 0x80);
     bus.write8(0xFF0F, 0);
-    bus.tick(456 * 144);
+    bus.tick(startup_visible_cycles);
     check(bus.read8(0xFF44) == 144 && (bus.read8(0xFF41) & 0x03) == 1,
           "line 144 begins VBlank mode");
     check((bus.read8(0xFF0F) & 0x03) == 0x03,
@@ -1918,7 +1943,7 @@ void test_ppu_vblank_and_frame_publication() {
     mode2_vblank.write8(0xFF41, 0x20);
     mode2_vblank.write8(0xFF40, 0x80);
     mode2_vblank.write8(0xFF0F, 0);
-    mode2_vblank.tick(456 * 144);
+    mode2_vblank.tick(startup_visible_cycles);
     check((mode2_vblank.read8(0xFF0F) & 0x02) != 0,
           "DMG mode-2 STAT selection also interrupts at VBlank entry");
 
@@ -1926,15 +1951,18 @@ void test_ppu_vblank_and_frame_publication() {
         gameboy::Cartridge{test_rom()}};
     wrapped_coincidence.write8(0xFF45, 0);
     wrapped_coincidence.write8(0xFF40, 0x80);
-    wrapped_coincidence.tick(456 * 154);
+    wrapped_coincidence.tick(452 + 456 * 153);
     check(wrapped_coincidence.read8(0xFF44) == 0 &&
               (wrapped_coincidence.read8(0xFF41) & 0x04) != 0,
           "LY wraparound refreshes the cached coincidence flag for line zero");
     bus.consume_frame();
     check(!bus.frame_ready(), "frontend can acknowledge a published frame");
     bus.tick(456 * 10);
-    check(bus.read8(0xFF44) == 0 && (bus.read8(0xFF41) & 0x03) == 2,
-          "ten VBlank lines wrap LY to zero and begin mode 2");
+    check(bus.read8(0xFF44) == 0 && (bus.read8(0xFF41) & 0x03) == 0,
+          "ten VBlank lines wrap LY before mode 2 becomes visible");
+    bus.tick(1);
+    check((bus.read8(0xFF41) & 0x03) == 2,
+          "mode 2 becomes visible one dot after VBlank wraps");
 }
 
 void test_ppu_background_window_and_sprites() {
@@ -2250,16 +2278,45 @@ void test_save_state_round_trip_and_validation() {
     check(saved.size() > 100000 && emulator.bus().read8(0xA123) == 0x5A,
           "save states include framebuffer, mapper RAM, and subsystem state");
 
+    gameboy::Emulator startup_snapshot{gameboy::Cartridge{rom}};
+    startup_snapshot.bus().tick(79);
+    const auto startup_saved = startup_snapshot.save_state();
+    startup_snapshot.bus().tick(1);
+    check((startup_snapshot.bus().read8(0xFF41) & 0x03) == 3,
+          "LCD startup advances after a saved boundary");
+    startup_snapshot.load_state(startup_saved);
+    check((startup_snapshot.bus().read8(0xFF41) & 0x03) == 0,
+          "save states restore the LCD startup phase");
+    startup_snapshot.bus().tick(1);
+    check((startup_snapshot.bus().read8(0xFF41) & 0x03) == 3,
+          "restored LCD startup resumes on the original dot");
+
+    gameboy::Emulator pipeline_snapshot{gameboy::Cartridge{rom}};
+    pipeline_snapshot.bus().tick(452 + 80);
+    const auto pipeline_saved = pipeline_snapshot.save_state();
+    check((pipeline_snapshot.bus().read8(0xFF41) & 0x03) == 2 &&
+              pipeline_snapshot.bus().read8(0x8000) == 0xFF,
+          "internal mode 3 can precede its CPU-visible STAT mode");
+    pipeline_snapshot.bus().tick(1);
+    pipeline_snapshot.load_state(pipeline_saved);
+    check((pipeline_snapshot.bus().read8(0xFF41) & 0x03) == 2 &&
+              pipeline_snapshot.bus().read8(0x8000) == 0xFF,
+          "save states restore the internal STAT pipeline phase");
+    pipeline_snapshot.bus().tick(1);
+    check((pipeline_snapshot.bus().read8(0xFF41) & 0x03) == 3,
+          "restored STAT mode becomes visible on the original dot");
+
     constexpr std::size_t state_header_size = 28;
     constexpr std::size_t version_two_dma_size = 7;
     constexpr std::size_t version_three_ppu_size = 6;
     constexpr std::size_t version_four_cgb_size =
         0x6000 + 0x2000 + 0x40 + 0x40 + 4 + 6 + 2;
     constexpr std::size_t version_five_ppu_size = 1;
+    constexpr std::size_t version_six_state_size = 5;
     auto version_one = saved;
     version_one.resize(version_one.size() - version_two_dma_size -
                        version_three_ppu_size - version_four_cgb_size -
-                       version_five_ppu_size);
+                       version_five_ppu_size - version_six_state_size);
     version_one[8] = 1;
     const auto old_payload_size = static_cast<std::uint32_t>(
         version_one.size() - state_header_size);
@@ -2276,7 +2333,8 @@ void test_save_state_round_trip_and_validation() {
 
     auto version_two = saved;
     version_two.resize(version_two.size() - version_three_ppu_size -
-                       version_four_cgb_size - version_five_ppu_size);
+                       version_four_cgb_size - version_five_ppu_size -
+                       version_six_state_size);
     version_two[8] = 2;
     const auto version_two_payload_size = static_cast<std::uint32_t>(
         version_two.size() - state_header_size);
@@ -2294,7 +2352,7 @@ void test_save_state_round_trip_and_validation() {
 
     auto version_three = saved;
     version_three.resize(version_three.size() - version_four_cgb_size -
-                         version_five_ppu_size);
+                         version_five_ppu_size - version_six_state_size);
     version_three[8] = 3;
     const auto version_three_payload_size = static_cast<std::uint32_t>(
         version_three.size() - state_header_size);
@@ -2312,7 +2370,8 @@ void test_save_state_round_trip_and_validation() {
 
     auto version_four = saved;
     version_four.erase(version_four.end() - version_four_cgb_size -
-                       version_five_ppu_size);
+                           version_five_ppu_size - version_six_state_size,
+                       version_four.end() - version_four_cgb_size);
     version_four[8] = 4;
     const auto version_four_payload_size = static_cast<std::uint32_t>(
         version_four.size() - state_header_size);
@@ -2327,6 +2386,25 @@ void test_save_state_round_trip_and_validation() {
               version_four_loader.cpu().total_cycles() == saved_cycles &&
               version_four_loader.bus().read8(0xA123) == 0x5A,
           "version 4 save states remain loadable after adding PPU coincidence state");
+
+    auto version_five = saved;
+    version_five.erase(version_five.end() - version_four_cgb_size -
+                           version_six_state_size,
+                       version_five.end() - version_four_cgb_size);
+    version_five[8] = 5;
+    const auto version_five_payload_size = static_cast<std::uint32_t>(
+        version_five.size() - state_header_size);
+    write_little_u32(version_five, 20, version_five_payload_size);
+    write_little_u32(
+        version_five, 24,
+        state_crc32(version_five.data() + state_header_size,
+                    version_five_payload_size));
+    gameboy::Emulator version_five_loader{gameboy::Cartridge{rom}};
+    version_five_loader.load_state(version_five);
+    check(version_five_loader.cpu().registers().pc == saved_pc &&
+              version_five_loader.cpu().total_cycles() == saved_cycles &&
+              version_five_loader.bus().read8(0xA123) == 0x5A,
+          "version 5 save states remain loadable after adding PPU startup state");
 
     emulator.bus().write8(0xA123, 0x99);
     emulator.bus().write8(0xC000, 0x11);
@@ -2375,7 +2453,7 @@ void test_save_state_round_trip_and_validation() {
           "truncated save states are rejected without changing emulator state");
 
     auto future_version = saved;
-    future_version[8] = 6;
+    future_version[8] = 7;
     auto rejected_version = false;
     try {
         emulator.load_state(future_version);

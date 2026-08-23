@@ -1,8 +1,24 @@
 #include "gameboy/timer.hpp"
 
+#include "gameboy/hardware_model.hpp"
+
 #include <array>
 
 namespace gameboy {
+
+void Timer::initialize_post_boot(const HardwareModel model) noexcept {
+    // Boot ROM revisions hand control to the cartridge at different phases of
+    // the free-running system divider.
+    switch (model) {
+    case HardwareModel::dmg0: divider_counter_ = 0x182C; break;
+    case HardwareModel::sgb: divider_counter_ = 0xD85C; break;
+    case HardwareModel::sgb2: divider_counter_ = 0xD84C; break;
+    case HardwareModel::automatic:
+    case HardwareModel::dmg:
+    case HardwareModel::mgb: divider_counter_ = 0xABC8; break;
+    case HardwareModel::cgb: divider_counter_ = 0x1EA0; break;
+    }
+}
 
 std::uint8_t Timer::divider() const noexcept {
     return static_cast<std::uint8_t>(divider_counter_ >> 8);
@@ -28,14 +44,30 @@ void Timer::write_divider() noexcept {
 }
 
 void Timer::write_counter(const std::uint8_t value) noexcept {
-    counter_ = value;
-    reload_delay_ = 0;
+    if (!reload_happened_) {
+        counter_ = value;
+        reload_delay_ = 0;
+    }
+    reload_happened_ = false;
 }
 
-void Timer::write_modulo(const std::uint8_t value) noexcept { modulo_ = value; }
+void Timer::write_modulo(const std::uint8_t value) noexcept {
+    modulo_ = value;
+    if (reload_happened_) counter_ = value;
+    reload_happened_ = false;
+}
 
-void Timer::write_control(const std::uint8_t value) noexcept {
-    const auto old_signal = input_signal();
+void Timer::write_control(const std::uint8_t value,
+                          const bool cpu_bus_cycle) noexcept {
+    constexpr std::array<unsigned, 4> divider_bits{9, 3, 5, 7};
+    const auto bit = divider_bits[control_ & 0x03];
+    // TAC's mux transition reaches the counter after a two-M-cycle hardware
+    // propagation window. Sampling that phase is observable during rapid
+    // enable/disable sequences even though ordinary timer periods are unchanged.
+    const auto sample_counter = static_cast<std::uint16_t>(
+        divider_counter_ + (cpu_bus_cycle ? 8 : 0));
+    const auto old_signal = (control_ & 0x04) != 0 &&
+                            (sample_counter & (1U << bit)) != 0;
     control_ = static_cast<std::uint8_t>(value & 0x07);
     if (old_signal && !input_signal()) {
         increment_counter();
@@ -48,9 +80,11 @@ void Timer::set_double_speed(const bool enabled) noexcept {
 
 bool Timer::tick(const unsigned cycles) noexcept {
     auto interrupt_requested = false;
+    reload_happened_ = false;
     for (unsigned cycle = 0; cycle < cycles; ++cycle) {
         if (reload_delay_ != 0 && --reload_delay_ == 0) {
             counter_ = modulo_;
+            reload_happened_ = true;
             interrupt_requested = true;
         }
 

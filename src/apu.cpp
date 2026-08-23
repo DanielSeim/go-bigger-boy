@@ -1,5 +1,7 @@
 #include "gameboy/apu.hpp"
 
+#include "gameboy/hardware_model.hpp"
+
 #include <algorithm>
 #include <cmath>
 
@@ -16,7 +18,7 @@ constexpr std::array<std::array<std::uint8_t, 8>, 4> duty_patterns{{
 }};
 } // namespace
 
-void Apu::initialize_post_boot() noexcept {
+void Apu::initialize_post_boot(const HardwareModel model) noexcept {
     power_off();
     powered_ = true;
     registers_[0x00] = 0x80; // NR10
@@ -32,6 +34,8 @@ void Apu::initialize_post_boot() noexcept {
     registers_[0x14] = 0x77; // NR50
     registers_[0x15] = 0xF3; // NR51
     pulse1_.dac_enabled = true;
+    pulse1_.enabled = model != HardwareModel::sgb &&
+                      model != HardwareModel::sgb2;
 }
 
 bool Apu::handles_register(const std::uint16_t address) noexcept {

@@ -56,14 +56,15 @@ Run an individual acceptance-test ROM with a bounded cycle budget:
 The runner recognizes Mooneye's `LD B,B` result protocol and serial test output
 containing `Passed` or `Failed`, plus Blargg's `$A000` memory result protocol.
 Use `--protocol mooneye`, `--protocol serial`, or `--protocol blargg` to disable
-automatic protocol detection.
+automatic protocol detection. Model-specific post-boot tests can select
+`--model dmg0`, `dmg`, `mgb`, `sgb`, `sgb2`, or `cgb`.
 
 The DMG APU passes all 12 upstream Blargg `dmg_sound` tests, including active
 wave-RAM reads/writes and the original hardware's channel 3 retrigger corruption.
-The current headless CI accuracy gate passes 66 curated Mooneye and Blargg ROMs;
-see the [accuracy report](docs/accuracy.md) for its coverage and remaining gaps.
+The current headless CI accuracy gate passes all 75 Mooneye acceptance ROMs and
+14 curated Blargg ROMs; see the [accuracy report](docs/accuracy.md) for details.
 
-To register the curated 66-ROM CI baseline locally, download and extract the
+To register the curated 89-ROM CI baseline locally, download and extract the
 `c-sp/game-boy-test-roms` v7.0 bundle, then set its root as the opt-in cache
 path. Test ROMs are deliberately not bundled or downloaded by the build:
 

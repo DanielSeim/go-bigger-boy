@@ -17,9 +17,19 @@ MemoryBus::MemoryBus(Cartridge cartridge)
     ppu_.set_cgb_mode(cgb_mode_);
 }
 
-void MemoryBus::initialize_post_boot() noexcept {
-    apu_.initialize_post_boot();
-    static_cast<void>(joypad_.write(0x00));
+void MemoryBus::initialize_post_boot(const HardwareModel model) noexcept {
+    timer_.initialize_post_boot(model);
+    // The serial divider is reset-derived and is not synchronized when a
+    // transfer starts. Preserve the phase at the boot-ROM handoff.
+    serial_clock_ = model == HardwareModel::dmg ||
+                            model == HardwareModel::mgb
+                        ? 460
+                        : 0;
+    apu_.initialize_post_boot(model);
+    static_cast<void>(joypad_.write(
+        model == HardwareModel::sgb || model == HardwareModel::sgb2
+            ? 0x30
+            : 0x00));
     io_[0x0F] = 0xE1;
     static_cast<void>(ppu_.write_register(0xFF42, 0x00));
     static_cast<void>(ppu_.write_register(0xFF43, 0x00));
@@ -32,6 +42,7 @@ void MemoryBus::initialize_post_boot() noexcept {
     if (ppu_.write_register(0xFF40, 0x91)) {
         request_interrupt(1);
     }
+    ppu_.initialize_post_boot_phase(model);
 }
 
 std::uint8_t MemoryBus::read8(const std::uint16_t address) const noexcept {
@@ -64,6 +75,7 @@ std::uint8_t MemoryBus::read8(const std::uint16_t address) const noexcept {
     case 0xFF06: return timer_.modulo();
     case 0xFF07: return timer_.control();
     case 0xFF0F: return static_cast<std::uint8_t>(0xE0 | io_[0x0F]);
+    case 0xFF46: return io_[0x46];
     case 0xFF4D:
         return cgb_mode_
                    ? static_cast<std::uint8_t>(
@@ -100,7 +112,8 @@ std::uint8_t MemoryBus::read8(const std::uint16_t address) const noexcept {
         return ppu_.read_register(address);
     }
     if (address <= 0xFF7F) {
-        return io_[address - 0xFF00];
+        // Unmapped hardware I/O reads as an open bus with every bit set.
+        return 0xFF;
     }
     if (address <= 0xFFFE) {
         return hram_[address - 0xFF80];
@@ -123,6 +136,10 @@ std::uint8_t MemoryBus::cpu_read8(const std::uint16_t address) const noexcept {
 void MemoryBus::cpu_write8(const std::uint16_t address,
                            const std::uint8_t value) noexcept {
     if (address != 0xFF46 && oam_dma_blocks(address)) return;
+    if (address == 0xFF07) {
+        timer_.write_control(value, true);
+        return;
+    }
     write8(address, value);
 }
 
@@ -163,7 +180,8 @@ void MemoryBus::write8(const std::uint16_t address, const std::uint8_t value) no
         serial_cycles_remaining_ = (io_[0x02] & 0x81) == 0x81
                                        ? (cgb_mode_ && (io_[0x02] & 0x02) != 0
                                               ? 128
-                                              : serial_transfer_cycles)
+                                              : serial_transfer_cycles -
+                                                    (serial_clock_ & 0x01FF))
                                        : 0;
     } else if (address == 0xFF04) {
         timer_.write_divider();
@@ -202,7 +220,7 @@ void MemoryBus::write8(const std::uint16_t address, const std::uint8_t value) no
             request_interrupt(1);
         }
     } else if (address <= 0xFF7F) {
-        io_[address - 0xFF00] = value;
+        // Writes to unmapped hardware I/O are ignored.
     } else if (address <= 0xFFFE) {
         hram_[address - 0xFF80] = value;
     } else {
@@ -211,6 +229,7 @@ void MemoryBus::write8(const std::uint16_t address, const std::uint8_t value) no
 }
 
 void MemoryBus::tick(const unsigned cycles) noexcept {
+    serial_clock_ = static_cast<std::uint16_t>(serial_clock_ + cycles);
     const auto peripheral_cycles = double_speed_ ? cycles / 2 : cycles;
     tick_oam_dma(peripheral_cycles);
     apu_.tick(peripheral_cycles);

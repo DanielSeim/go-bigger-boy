@@ -1,6 +1,7 @@
 #pragma once
 
 #include "gameboy/cpu.hpp"
+#include "gameboy/hardware_model.hpp"
 #include "gameboy/memory_bus.hpp"
 
 #include <cstdint>
@@ -19,9 +20,12 @@ public:
 
 class Emulator {
 public:
-    explicit Emulator(Cartridge cartridge);
+    explicit Emulator(Cartridge cartridge,
+                      HardwareModel model = HardwareModel::automatic);
 
-    static Emulator from_file(const std::filesystem::path& path);
+    static Emulator from_file(
+        const std::filesystem::path& path,
+        HardwareModel model = HardwareModel::automatic);
 
     void reset() noexcept;
     [[nodiscard]] unsigned step();
@@ -51,6 +55,7 @@ private:
 
     MemoryBus bus_;
     Cpu cpu_;
+    HardwareModel hardware_model_{HardwareModel::dmg};
     DmgPalette automatic_dmg_palette_{grayscale_dmg_palette};
 };
 

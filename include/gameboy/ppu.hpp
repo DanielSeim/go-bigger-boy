@@ -10,6 +10,7 @@
 namespace gameboy {
 
 class SaveStateCodec;
+enum class HardwareModel;
 
 class Ppu {
 public:
@@ -22,6 +23,7 @@ public:
     void set_cgb_mode(bool enabled) noexcept;
     [[nodiscard]] bool cgb_mode() const noexcept;
     void set_dmg_palette(const DmgPalette& palette) noexcept;
+    void initialize_post_boot_phase(HardwareModel model) noexcept;
 
     [[nodiscard]] std::uint8_t read_vram(std::uint16_t address) const noexcept;
     void write_vram(std::uint16_t address, std::uint8_t value) noexcept;
@@ -84,11 +86,14 @@ private:
     std::uint8_t object_palette_index_{};
     unsigned dot_{};
     unsigned mode3_end_dot_{252};
+    // STAT interrupt sources switch one dot before CPU-visible mode bits.
     std::uint8_t mode_{};
+    std::uint8_t stat_mode_{};
     std::uint8_t window_line_{};
     bool window_y_triggered_{};
     bool cgb_mode_{};
     bool coincidence_{};
+    bool lcd_startup_{};
     bool stat_line_{};
     bool frame_ready_{};
 };

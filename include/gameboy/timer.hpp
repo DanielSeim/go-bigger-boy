@@ -5,6 +5,7 @@
 namespace gameboy {
 
 class SaveStateCodec;
+enum class HardwareModel;
 
 class Timer {
 public:
@@ -16,8 +17,10 @@ public:
     void write_divider() noexcept;
     void write_counter(std::uint8_t value) noexcept;
     void write_modulo(std::uint8_t value) noexcept;
-    void write_control(std::uint8_t value) noexcept;
+    void write_control(std::uint8_t value,
+                       bool cpu_bus_cycle = false) noexcept;
     void set_double_speed(bool enabled) noexcept;
+    void initialize_post_boot(HardwareModel model) noexcept;
 
     // Returns true when TIMA reload requests the timer interrupt.
     [[nodiscard]] bool tick(unsigned cycles) noexcept;
@@ -35,6 +38,7 @@ private:
     std::uint8_t control_{};
     unsigned reload_delay_{};
     unsigned apu_ticks_{};
+    bool reload_happened_{};
     bool double_speed_{};
 };
 

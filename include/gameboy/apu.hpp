@@ -7,12 +7,13 @@
 namespace gameboy {
 
 class SaveStateCodec;
+enum class HardwareModel;
 
 class Apu {
 public:
     static constexpr unsigned sample_rate = 48000;
 
-    void initialize_post_boot() noexcept;
+    void initialize_post_boot(HardwareModel model) noexcept;
 
     [[nodiscard]] static bool handles_register(std::uint16_t address) noexcept;
     [[nodiscard]] std::uint8_t read_register(std::uint16_t address) const noexcept;

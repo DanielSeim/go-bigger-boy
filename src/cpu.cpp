@@ -20,11 +20,37 @@ UnsupportedOpcode::UnsupportedOpcode(const std::uint8_t opcode,
 Cpu::Cpu() { reset(); }
 
 void Cpu::reset(const bool cgb_mode) noexcept {
-    registers_ = cgb_mode
-                     ? CpuRegisters{0x11, 0x80, 0x00, 0x00, 0x00, 0x08,
-                                    0x00, 0x7C, 0xFFFE, 0x0100}
-                     : CpuRegisters{0x01, 0xB0, 0x00, 0x13, 0x00, 0xD8,
-                                    0x01, 0x4D, 0xFFFE, 0x0100};
+    reset(cgb_mode ? HardwareModel::cgb : HardwareModel::dmg);
+}
+
+void Cpu::reset(const HardwareModel model) noexcept {
+    switch (model) {
+    case HardwareModel::dmg0:
+        registers_ = {0x01, 0x00, 0xFF, 0x13, 0x00, 0xC1,
+                      0x84, 0x03, 0xFFFE, 0x0100};
+        break;
+    case HardwareModel::mgb:
+        registers_ = {0xFF, 0xB0, 0x00, 0x13, 0x00, 0xD8,
+                      0x01, 0x4D, 0xFFFE, 0x0100};
+        break;
+    case HardwareModel::sgb:
+        registers_ = {0x01, 0x00, 0x00, 0x14, 0x00, 0x00,
+                      0xC0, 0x60, 0xFFFE, 0x0100};
+        break;
+    case HardwareModel::sgb2:
+        registers_ = {0xFF, 0x00, 0x00, 0x14, 0x00, 0x00,
+                      0xC0, 0x60, 0xFFFE, 0x0100};
+        break;
+    case HardwareModel::cgb:
+        registers_ = {0x11, 0x80, 0x00, 0x00, 0x00, 0x08,
+                      0x00, 0x7C, 0xFFFE, 0x0100};
+        break;
+    case HardwareModel::automatic:
+    case HardwareModel::dmg:
+        registers_ = {0x01, 0xB0, 0x00, 0x13, 0x00, 0xD8,
+                      0x01, 0x4D, 0xFFFE, 0x0100};
+        break;
+    }
     ime_ = false;
     halted_ = false;
     stopped_ = false;
@@ -516,12 +542,7 @@ std::uint8_t Cpu::pending_interrupts(const MemoryBus& bus) const noexcept {
 
 unsigned Cpu::service_interrupt(MemoryBus& bus,
                                 const std::uint8_t pending) noexcept {
-    unsigned interrupt = 0;
-    while ((pending & (1U << interrupt)) == 0) {
-        ++interrupt;
-    }
-    const auto mask = static_cast<std::uint8_t>(1U << interrupt);
-    bus.write8(0xFF0F, static_cast<std::uint8_t>(bus.read8(0xFF0F) & ~mask));
+    (void)pending;
     ime_ = false;
     ime_enable_delay_ = 0;
     halted_ = false;
@@ -531,9 +552,27 @@ unsigned Cpu::service_interrupt(MemoryBus& bus,
     --registers_.sp;
     write8(bus, registers_.sp, static_cast<std::uint8_t>(registers_.pc >> 8));
     --registers_.sp;
-    write8(bus, registers_.sp, static_cast<std::uint8_t>(registers_.pc));
     idle(bus, 4);
-    registers_.pc = static_cast<std::uint16_t>(0x0040 + interrupt * 8);
+
+    // Interrupt arbitration occurs during the low-byte stack write. In
+    // particular, a high-byte write to IE can cancel the dispatch or select a
+    // different interrupt, while a low-byte write to IE is already too late.
+    const auto dispatched = pending_interrupts(bus);
+    bus.cpu_write8(registers_.sp, static_cast<std::uint8_t>(registers_.pc));
+
+    unsigned interrupt = 0;
+    if (dispatched != 0) {
+        while ((dispatched & (1U << interrupt)) == 0) {
+            ++interrupt;
+        }
+        const auto mask = static_cast<std::uint8_t>(1U << interrupt);
+        bus.write8(0xFF0F,
+                   static_cast<std::uint8_t>(bus.read8(0xFF0F) & ~mask));
+    }
+    idle(bus, 4);
+    registers_.pc = dispatched == 0
+                        ? 0
+                        : static_cast<std::uint16_t>(0x0040 + interrupt * 8);
     return 20;
 }
 

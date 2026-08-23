@@ -1,5 +1,7 @@
 #include "gameboy/ppu.hpp"
 
+#include "gameboy/hardware_model.hpp"
+
 #include <algorithm>
 #include <array>
 
@@ -25,8 +27,22 @@ void Ppu::set_dmg_palette(const DmgPalette& palette) noexcept {
     dmg_palette_ = palette;
 }
 
+void Ppu::initialize_post_boot_phase(const HardwareModel model) noexcept {
+    if (model != HardwareModel::dmg0) return;
+
+    // The original DMG boot ROM hands control to the cartridge near the end
+    // of a frame, unlike later DMG/MGB boot ROM revisions.
+    ly_ = 145;
+    dot_ = 200;
+    mode_ = 1;
+    stat_mode_ = 1;
+    coincidence_ = ly_ == lyc_;
+    lcd_startup_ = false;
+    static_cast<void>(update_stat_line());
+}
+
 std::uint8_t Ppu::read_vram(const std::uint16_t address) const noexcept {
-    if (lcd_enabled() && mode_ == 3) {
+    if (lcd_enabled() && (stat_mode_ == 3 || mode_ == 3)) {
         return 0xFF;
     }
     const auto& bank = cgb_mode_ && vram_bank_ != 0 ? *cgb_vram_ : vram_;
@@ -48,7 +64,8 @@ void Ppu::dma_write_vram(const std::uint16_t address,
 }
 
 std::uint8_t Ppu::read_oam(const std::uint16_t address) const noexcept {
-    if (lcd_enabled() && (mode_ == 2 || mode_ == 3)) {
+    if (lcd_enabled() &&
+        (stat_mode_ == 2 || mode_ == 2 || mode_ == 3)) {
         return 0xFF;
     }
     return oam_[address - 0xFE00];
@@ -56,7 +73,11 @@ std::uint8_t Ppu::read_oam(const std::uint16_t address) const noexcept {
 
 void Ppu::write_oam(const std::uint16_t address,
                     const std::uint8_t value) noexcept {
-    if (!lcd_enabled() || (mode_ != 2 && mode_ != 3)) {
+    // DMG hardware accepts a write on the internal mode 2-to-3 handoff dot,
+    // even though reads remain blocked throughout the transition.
+    const auto mode_transition_write = !lcd_startup_ && dot_ == 80;
+    if (!lcd_enabled() || (mode_ != 2 && mode_ != 3) ||
+        mode_transition_write) {
         oam_[address - 0xFE00] = value;
     }
 }
@@ -120,9 +141,11 @@ bool Ppu::write_register(const std::uint16_t address,
             dot_ = 0;
             ly_ = 0;
             mode_ = 0;
+            stat_mode_ = 0;
             mode3_end_dot_ = 252;
             window_line_ = 0;
             window_y_triggered_ = false;
+            lcd_startup_ = false;
             frame_ready_ = false;
             framebuffer_.fill(dmg_colors[0]);
             return false;
@@ -130,11 +153,11 @@ bool Ppu::write_register(const std::uint16_t address,
         if (!was_enabled && lcd_enabled()) {
             dot_ = 0;
             ly_ = 0;
-            // The first scanline begins in an LCD-startup mode 0 period and
-            // transitions directly to mode 3. Mode 2 begins on line 1.
             mode_ = 0;
+            stat_mode_ = 0;
             window_line_ = 0;
             coincidence_ = ly_ == lyc_;
+            lcd_startup_ = true;
             begin_visible_line();
         }
         break;
@@ -198,37 +221,65 @@ std::uint8_t Ppu::tick(const unsigned cycles) noexcept {
     for (unsigned cycle = 0; cycle < cycles; ++cycle) {
         ++dot_;
         if (ly_ < screen_height) {
-            const auto mode3_start_dot =
-                mode_ == 0 && ly_ == 0 ? 82U : 80U;
-            if (dot_ == mode3_start_dot) {
+            // LCD startup exposes its transitions immediately. On subsequent
+            // lines, STAT sources and memory arbitration change internally
+            // one dot before the mode bits visible to the CPU.
+            if (lcd_startup_ && dot_ == 80) {
+                stat_mode_ = 3;
                 mode_ = 3;
-                mode3_end_dot_ = mode3_start_dot + mode3_duration();
+                mode3_end_dot_ = 80 + mode3_duration();
                 if (update_stat_line()) requests |= 0x02;
-            } else if (dot_ == mode3_end_dot_) {
+            } else if (!lcd_startup_ && dot_ == 1) {
+                mode_ = 2;
+                coincidence_ = ly_ == lyc_;
+                if (update_stat_line()) requests |= 0x02;
+            } else if (!lcd_startup_ && dot_ == 80) {
+                stat_mode_ = 3;
+                mode3_end_dot_ = 80 + mode3_duration();
+                if (update_stat_line()) requests |= 0x02;
+            } else if (!lcd_startup_ && dot_ == 81) {
+                mode_ = 3;
+            }
+
+            if (dot_ == mode3_end_dot_) {
+                stat_mode_ = 0;
+                if (lcd_startup_) {
+                    render_scanline();
+                    mode_ = 0;
+                    requests |= 0x04;
+                }
+                if (update_stat_line()) requests |= 0x02;
+            } else if (!lcd_startup_ && dot_ == mode3_end_dot_ + 1) {
                 render_scanline();
                 mode_ = 0;
                 requests |= 0x04;
-                if (update_stat_line()) requests |= 0x02;
             }
         }
 
-        if (dot_ == 456) {
+        // The shortened first line is a DMG LCD-enable startup quirk.
+        const auto line_length = lcd_startup_ ? 452U : 456U;
+        if (dot_ == line_length) {
             dot_ = 0;
             ++ly_;
-            coincidence_ = ly_ == lyc_;
+            lcd_startup_ = false;
             if (ly_ == screen_height) {
+                coincidence_ = ly_ == lyc_;
                 mode_ = 1;
+                stat_mode_ = 1;
                 frame_ready_ = true;
                 requests |= 0x01;
             } else if (ly_ > 153) {
                 ly_ = 0;
                 coincidence_ = ly_ == lyc_;
-                mode_ = 2;
+                mode_ = 0;
+                stat_mode_ = 2;
                 window_line_ = 0;
                 window_y_triggered_ = false;
                 begin_visible_line();
             } else if (ly_ < screen_height) {
-                mode_ = 2;
+                coincidence_ = false;
+                mode_ = 0;
+                stat_mode_ = 2;
                 begin_visible_line();
             }
             if (update_stat_line()) requests |= 0x02;
@@ -253,9 +304,10 @@ bool Ppu::stat_condition() const noexcept {
     }
     return ((stat_select_ & 0x40) != 0 && coincidence_) ||
            ((stat_select_ & 0x20) != 0 &&
-            (mode_ == 2 || (mode_ == 1 && ly_ == screen_height))) ||
-           ((stat_select_ & 0x10) != 0 && mode_ == 1) ||
-           ((stat_select_ & 0x08) != 0 && mode_ == 0);
+            (stat_mode_ == 2 ||
+             (stat_mode_ == 1 && ly_ == screen_height))) ||
+           ((stat_select_ & 0x10) != 0 && stat_mode_ == 1) ||
+           ((stat_select_ & 0x08) != 0 && stat_mode_ == 0);
 }
 
 bool Ppu::update_stat_line() noexcept {

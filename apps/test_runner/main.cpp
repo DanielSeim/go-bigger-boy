@@ -17,11 +17,24 @@ struct Options {
     std::string rom_path;
     std::uint64_t max_cycles = 100'000'000;
     Protocol protocol = Protocol::automatic;
+    gameboy::HardwareModel model = gameboy::HardwareModel::automatic;
 };
 
 void usage() {
     std::cerr << "Usage: gbb_test_runner <rom.gb> "
-                 "[--max-cycles N] [--protocol auto|mooneye|serial|blargg]\n";
+                 "[--max-cycles N] [--protocol auto|mooneye|serial|blargg] "
+                 "[--model auto|dmg0|dmg|mgb|sgb|sgb2|cgb]\n";
+}
+
+gameboy::HardwareModel parse_model(const std::string& value) {
+    if (value == "auto") return gameboy::HardwareModel::automatic;
+    if (value == "dmg0") return gameboy::HardwareModel::dmg0;
+    if (value == "dmg") return gameboy::HardwareModel::dmg;
+    if (value == "mgb") return gameboy::HardwareModel::mgb;
+    if (value == "sgb") return gameboy::HardwareModel::sgb;
+    if (value == "sgb2") return gameboy::HardwareModel::sgb2;
+    if (value == "cgb") return gameboy::HardwareModel::cgb;
+    throw std::invalid_argument("unknown hardware model: " + value);
 }
 
 std::uint64_t parse_cycles(const std::string& text) {
@@ -50,6 +63,8 @@ Options parse_options(const int argc, char** argv) {
             else if (value == "serial") options.protocol = Protocol::serial;
             else if (value == "blargg") options.protocol = Protocol::blargg;
             else throw std::invalid_argument("unknown protocol: " + value);
+        } else if (argument == "--model" && index + 1 < argc) {
+            options.model = parse_model(argv[++index]);
         } else {
             throw std::invalid_argument("unknown or incomplete option: " + argument);
         }
@@ -88,6 +103,15 @@ void print_recent_pcs(const std::array<std::uint16_t, 64>& pcs,
     std::cerr << std::dec << '\n';
 }
 
+void print_hram_head(const gameboy::MemoryBus& bus) {
+    std::cerr << "HRAM FF80:" << std::hex << std::setfill('0');
+    for (std::uint16_t address = 0xFF80; address < 0xFF90; ++address) {
+        std::cerr << ' ' << std::setw(2)
+                  << static_cast<unsigned>(bus.read8(address));
+    }
+    std::cerr << std::dec << '\n';
+}
+
 bool contains_failure(const std::string& output) {
     return output.find("Failed") != std::string::npos ||
            output.find("FAILED") != std::string::npos ||
@@ -114,7 +138,8 @@ std::string blargg_output(const gameboy::MemoryBus& bus) {
 int main(int argc, char** argv) {
     try {
         const auto options = parse_options(argc, argv);
-        auto emulator = gameboy::Emulator::from_file(options.rom_path);
+        auto emulator = gameboy::Emulator::from_file(options.rom_path,
+                                                      options.model);
         std::string serial_output;
         std::string memory_output;
         auto saw_blargg = false;
@@ -176,6 +201,7 @@ int main(int argc, char** argv) {
                                      recent_pc_count);
                     std::cerr << "Last low ROM PC=" << std::hex
                               << last_low_rom_pc << std::dec << '\n';
+                    print_hram_head(emulator.bus());
                     return EXIT_FAILURE;
                 }
             }

@@ -2,6 +2,7 @@
 
 #include "gameboy/apu.hpp"
 #include "gameboy/cartridge.hpp"
+#include "gameboy/hardware_model.hpp"
 #include "gameboy/joypad.hpp"
 #include "gameboy/ppu.hpp"
 #include "gameboy/timer.hpp"
@@ -20,7 +21,7 @@ class Cpu;
 class MemoryBus {
 public:
     explicit MemoryBus(Cartridge cartridge);
-    void initialize_post_boot() noexcept;
+    void initialize_post_boot(HardwareModel model = HardwareModel::dmg) noexcept;
 
     [[nodiscard]] std::uint8_t read8(std::uint16_t address) const noexcept;
     [[nodiscard]] std::uint16_t read16(std::uint16_t address) const noexcept;
@@ -68,6 +69,7 @@ private:
     Timer timer_{};
     std::string serial_output_{};
     unsigned serial_cycles_remaining_{};
+    std::uint16_t serial_clock_{};
     std::uint16_t oam_dma_source_{};
     std::uint16_t oam_dma_index_{};
     unsigned oam_dma_cycle_{};

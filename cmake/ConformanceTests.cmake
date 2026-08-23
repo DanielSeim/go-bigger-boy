@@ -6,18 +6,22 @@ function(gbb_add_conformance_test suite relative_path protocol cycle_limit)
 
     string(MAKE_C_IDENTIFIER "${suite}_${relative_path}" test_id)
     set(test_name "conformance_${test_id}")
-    add_test(NAME "${test_name}"
-             COMMAND gameboy_test_runner "${rom}"
+    set(test_command gameboy_test_runner "${rom}"
                      --max-cycles "${cycle_limit}"
                      --protocol "${protocol}")
+    if(ARGC GREATER 4)
+        list(APPEND test_command --model "${ARGV4}")
+    endif()
+    add_test(NAME "${test_name}" COMMAND ${test_command})
     set_tests_properties("${test_name}" PROPERTIES
                          LABELS "conformance;${suite}"
                          TIMEOUT 30)
 endfunction()
 
-# Passing DMG-focused baseline from Mooneye Test Suite 8d742b9d55.
+# Complete acceptance baseline from Mooneye Test Suite 8d742b9d55.
 set(gbb_mooneye_tests
     acceptance/add_sp_e_timing.gb
+    acceptance/bits/unused_hwio-GS.gb
     acceptance/bits/mem_oam.gb
     acceptance/bits/reg_f.gb
     acceptance/boot_regs-dmgABC.gb
@@ -34,6 +38,7 @@ set(gbb_mooneye_tests
     acceptance/halt_ime1_timing.gb
     acceptance/halt_ime1_timing2-GS.gb
     acceptance/if_ie_registers.gb
+    acceptance/interrupts/ie_push.gb
     acceptance/instr/daa.gb
     acceptance/intr_timing.gb
     acceptance/jp_cc_timing.gb
@@ -49,6 +54,12 @@ set(gbb_mooneye_tests
     acceptance/ppu/hblank_ly_scx_timing-GS.gb
     acceptance/ppu/intr_1_2_timing-GS.gb
     acceptance/ppu/intr_2_0_timing.gb
+    acceptance/ppu/intr_2_mode0_timing.gb
+    acceptance/ppu/intr_2_mode0_timing_sprites.gb
+    acceptance/ppu/intr_2_mode3_timing.gb
+    acceptance/ppu/intr_2_oam_ok_timing.gb
+    acceptance/ppu/lcdon_timing-GS.gb
+    acceptance/ppu/lcdon_write_timing-GS.gb
     acceptance/ppu/stat_irq_blocking.gb
     acceptance/ppu/stat_lyc_onoff.gb
     acceptance/ppu/vblank_stat_intr-GS.gb
@@ -69,12 +80,43 @@ set(gbb_mooneye_tests
     acceptance/timer/tim11.gb
     acceptance/timer/tim11_div_trigger.gb
     acceptance/timer/tima_reload.gb
+    acceptance/timer/rapid_toggle.gb
+    acceptance/timer/tima_write_reloading.gb
+    acceptance/timer/tma_write_reloading.gb
 )
 
 foreach(relative_path IN LISTS gbb_mooneye_tests)
     gbb_add_conformance_test(
         mooneye "mooneye-test-suite/${relative_path}" mooneye 20000000)
 endforeach()
+
+# Post-boot state is hardware-model-specific. These ROMs intentionally have
+# mutually exclusive expectations and therefore run with an explicit model.
+gbb_add_conformance_test(mooneye
+    "mooneye-test-suite/acceptance/boot_div-dmg0.gb" mooneye 20000000 dmg0)
+gbb_add_conformance_test(mooneye
+    "mooneye-test-suite/acceptance/boot_div-dmgABCmgb.gb" mooneye 20000000 dmg)
+gbb_add_conformance_test(mooneye
+    "mooneye-test-suite/acceptance/boot_div-S.gb" mooneye 20000000 sgb)
+gbb_add_conformance_test(mooneye
+    "mooneye-test-suite/acceptance/boot_div2-S.gb" mooneye 20000000 sgb2)
+gbb_add_conformance_test(mooneye
+    "mooneye-test-suite/acceptance/boot_hwio-dmg0.gb" mooneye 20000000 dmg0)
+gbb_add_conformance_test(mooneye
+    "mooneye-test-suite/acceptance/boot_hwio-dmgABCmgb.gb" mooneye 20000000 dmg)
+gbb_add_conformance_test(mooneye
+    "mooneye-test-suite/acceptance/boot_hwio-S.gb" mooneye 20000000 sgb)
+gbb_add_conformance_test(mooneye
+    "mooneye-test-suite/acceptance/boot_regs-dmg0.gb" mooneye 20000000 dmg0)
+gbb_add_conformance_test(mooneye
+    "mooneye-test-suite/acceptance/boot_regs-mgb.gb" mooneye 20000000 mgb)
+gbb_add_conformance_test(mooneye
+    "mooneye-test-suite/acceptance/boot_regs-sgb.gb" mooneye 20000000 sgb)
+gbb_add_conformance_test(mooneye
+    "mooneye-test-suite/acceptance/boot_regs-sgb2.gb" mooneye 20000000 sgb2)
+gbb_add_conformance_test(mooneye
+    "mooneye-test-suite/acceptance/serial/boot_sclk_align-dmgABCmgb.gb"
+    mooneye 20000000 dmg)
 
 # Blargg tests use automatic detection because some report over serial while
 # others publish the equivalent result through their memory protocol.
