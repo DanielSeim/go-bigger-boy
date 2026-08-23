@@ -1195,7 +1195,7 @@ bool offer_update(const gbb_desktop::UpdateInfo& update,
         ". Would you like GBB to install the update and restart?\n\n"
         "You can keep playing while the verified archive downloads.";
     constexpr std::array<SDL_MessageBoxButtonData, 2> buttons{{
-        {SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, 1, "Update and restart"},
+        {SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, 1, "Update now"},
         {SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, "Later"},
     }};
     const SDL_MessageBoxData box{
