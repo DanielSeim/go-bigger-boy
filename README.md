@@ -168,15 +168,18 @@ stored in SDL's per-user preferences directory. The Ctrl+K controls dialog can
 rebind either input device or restore the default mappings; Escape cancels an
 in-progress setup.
 
-At startup, the desktop app checks GitHub's latest stable release in a
+At startup, the desktop and Android apps check GitHub's latest stable release in a
 background thread. If its semantic version is newer than the running build,
-GBB can download the matching platform archive, verify GitHub's published
-SHA-256 digest, replace a user-writable installation after the emulator exits,
-and restart the updated executable. Nothing is downloaded without confirmation.
-Network failures remain non-blocking and do not display a dialog. Windows uses
-the system HTTP service and PowerShell extraction; Linux and macOS use the
-system `curl` and archive tools. System-wide read-only installations must still
-be updated through their package manager or replaced manually.
+GBB can download the matching release asset and verify GitHub's published
+SHA-256 digest. Nothing is downloaded without confirmation. Network failures
+remain non-blocking and do not display a dialog. On desktop, a user-writable
+installation is replaced after the emulator exits and the updated executable
+restarts. Windows uses the system HTTP service and PowerShell extraction;
+Linux and macOS use the system `curl` and archive tools. Android downloads the
+signed APK, then opens the system package installer; Android may require enabling
+“Allow from this source” and always controls the final confirmation. System-wide
+read-only desktop installations must still be updated through their package
+manager or replaced manually.
 
 Battery-backed MBC1, MBC2, MBC3, MBC5, and Game Boy Camera games use a sibling
 file with the ROM's base name and a `.sav` extension. MBC3 real-time clocks use
@@ -225,11 +228,15 @@ The debug APK is written to
 The app opens on the touch-friendly game library dashboard. Tapping the menu
 button in the upper-left returns to it while playing. The translucent controls
 provide a D-pad, A, B, Select, and Start; Bluetooth and USB gamepads continue
-to work through SDL. The `Android build` GitHub Actions workflow runs
+to work through SDL. Game Boy Camera input follows the phone's physical
+orientation even though the emulator interface remains in landscape. The
+`Android build` GitHub Actions workflow runs
 pull requests as an automatically debug-signed APK. Pushes to the repository
 use encrypted GitHub secrets to produce a consistently signed release APK and
 Play-ready Android App Bundle. The signing key must be kept permanently:
 Android will not accept future updates signed with a different key.
+Tagged builds attach both signed packages to the matching GitHub release so
+installed copies can discover and verify the APK through the in-app updater.
 
 ### Web build
 

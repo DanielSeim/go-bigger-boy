@@ -35,10 +35,14 @@
 #include <windows.h>
 #endif
 
+#ifdef __ANDROID__
+#include <jni.h>
+#endif
+
 namespace {
 
 #ifndef GBB_VERSION
-#define GBB_VERSION "0.12.0"
+#define GBB_VERSION "0.12.1"
 #endif
 
 [[noreturn]] void sdl_error(const std::string& action) {
@@ -95,6 +99,7 @@ public:
 
     ~SdlResources() {
         if (camera != nullptr) SDL_CloseCamera(camera);
+        if (camera_frame != nullptr) SDL_DestroySurface(camera_frame);
         if (gamepad != nullptr) {
             static_cast<void>(SDL_RumbleGamepad(gamepad, 0, 0, 0));
             SDL_CloseGamepad(gamepad);
@@ -115,8 +120,11 @@ public:
     SDL_Gamepad* gamepad{};
     SDL_AudioStream* audio_stream{};
     SDL_Camera* camera{};
+    SDL_Surface* camera_frame{};
     bool mirror_camera{};
+    bool camera_back_facing{};
     bool camera_warning_shown{};
+    std::chrono::steady_clock::time_point next_camera_frame{};
     bool rumble_output_active{};
     bool rumble_warning_shown{};
     std::chrono::steady_clock::time_point rumble_refresh{};
@@ -1249,8 +1257,51 @@ void close_camera(SdlResources& sdl) noexcept {
         SDL_CloseCamera(sdl.camera);
         sdl.camera = nullptr;
     }
+    if (sdl.camera_frame != nullptr) {
+        SDL_DestroySurface(sdl.camera_frame);
+        sdl.camera_frame = nullptr;
+    }
+    sdl.next_camera_frame = {};
     sdl.camera_warning_shown = false;
 }
+
+#ifdef __ANDROID__
+std::optional<int> android_camera_orientation_degrees() noexcept {
+    auto* environment = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
+    auto activity = static_cast<jobject>(SDL_GetAndroidActivity());
+    if (environment == nullptr || activity == nullptr) return std::nullopt;
+
+    static jmethodID orientation_method{};
+    if (orientation_method == nullptr) {
+        const auto activity_class = environment->GetObjectClass(activity);
+        if (activity_class != nullptr) {
+            orientation_method = environment->GetMethodID(
+                activity_class, "getCameraOrientationDegrees", "()I");
+            environment->DeleteLocalRef(activity_class);
+        }
+    }
+    std::optional<int> orientation;
+    if (orientation_method != nullptr) {
+        orientation = static_cast<int>(
+            environment->CallIntMethod(activity, orientation_method));
+    }
+    if (environment->ExceptionCheck()) {
+        environment->ExceptionClear();
+        orientation.reset();
+    }
+    environment->DeleteLocalRef(activity);
+    return orientation;
+}
+
+int display_orientation_degrees(SDL_Window* window) noexcept {
+    switch (SDL_GetCurrentDisplayOrientation(SDL_GetDisplayForWindow(window))) {
+    case SDL_ORIENTATION_LANDSCAPE: return 90;
+    case SDL_ORIENTATION_PORTRAIT_FLIPPED: return 180;
+    case SDL_ORIENTATION_LANDSCAPE_FLIPPED: return 270;
+    default: return 0;
+    }
+}
+#endif
 
 void configure_camera(SdlResources& sdl, const gameboy::Emulator& emulator) {
     close_camera(sdl);
@@ -1273,13 +1324,35 @@ void configure_camera(SdlResources& sdl, const gameboy::Emulator& emulator) {
     }
 
     const auto camera_id = cameras[0];
+    const auto camera_position = SDL_GetCameraPosition(camera_id);
     sdl.mirror_camera =
-        SDL_GetCameraPosition(camera_id) == SDL_CAMERA_POSITION_FRONT_FACING;
-    sdl.camera = SDL_OpenCamera(camera_id, nullptr);
+        camera_position == SDL_CAMERA_POSITION_FRONT_FACING;
+    sdl.camera_back_facing =
+        camera_position == SDL_CAMERA_POSITION_BACK_FACING;
+    constexpr SDL_CameraSpec camera_spec{
+        SDL_PIXELFORMAT_RGBA32,
+        SDL_COLORSPACE_SRGB,
+        static_cast<int>(gameboy::Cartridge::camera_width),
+        static_cast<int>(gameboy::Cartridge::camera_height),
+        15,
+        1,
+    };
+    sdl.camera = SDL_OpenCamera(camera_id, &camera_spec);
     SDL_free(cameras);
     if (sdl.camera == nullptr) {
         std::cerr << "Warning: webcam could not be opened: " << SDL_GetError()
                   << '\n';
+        sdl.camera_warning_shown = true;
+        return;
+    }
+    sdl.camera_frame = SDL_CreateSurface(
+        static_cast<int>(gameboy::Cartridge::camera_width),
+        static_cast<int>(gameboy::Cartridge::camera_height),
+        SDL_PIXELFORMAT_RGBA32);
+    if (sdl.camera_frame == nullptr) {
+        std::cerr << "Warning: webcam conversion surface could not be created: "
+                  << SDL_GetError() << '\n';
+        close_camera(sdl);
         sdl.camera_warning_shown = true;
     }
 }
@@ -1299,60 +1372,116 @@ void update_camera_frame(gameboy::Emulator* emulator, SdlResources& sdl) {
     }
     if (permission != SDL_CAMERA_PERMISSION_STATE_APPROVED) return;
 
+    const auto now = std::chrono::steady_clock::now();
+    if (now < sdl.next_camera_frame) return;
+    sdl.next_camera_frame = now + std::chrono::milliseconds(66);
+
     SDL_Surface* source = SDL_AcquireCameraFrame(sdl.camera, nullptr);
     if (source == nullptr) return;
-    SDL_Surface* rgba = SDL_ConvertSurface(source, SDL_PIXELFORMAT_RGBA32);
-    SDL_ReleaseCameraFrame(sdl.camera, source);
-    if (rgba == nullptr) {
-        if (!sdl.camera_warning_shown) {
-            std::cerr << "Warning: webcam frame conversion failed: "
-                      << SDL_GetError() << '\n';
-            sdl.camera_warning_shown = true;
-        }
-        return;
+    auto rotation_degrees = SDL_GetFloatProperty(
+        SDL_GetSurfaceProperties(source), SDL_PROP_SURFACE_ROTATION_FLOAT, 0.0F);
+#ifdef __ANDROID__
+    if (const auto physical_orientation =
+            android_camera_orientation_degrees()) {
+        const auto correction = *physical_orientation -
+                                display_orientation_degrees(sdl.window);
+        rotation_degrees += static_cast<float>(
+            sdl.camera_back_facing ? -correction : correction);
     }
-
-    const auto needs_lock = SDL_MUSTLOCK(rgba);
-    if (needs_lock && !SDL_LockSurface(rgba)) {
-        SDL_DestroySurface(rgba);
-        return;
-    }
+#endif
+    auto rotation_quarters = static_cast<int>(
+        rotation_degrees / 90.0F + (rotation_degrees < 0.0F ? -0.5F : 0.5F));
+    rotation_quarters = (rotation_quarters % 4 + 4) % 4;
     constexpr auto target_width = gameboy::Cartridge::camera_width;
     constexpr auto target_height = gameboy::Cartridge::camera_height;
-    auto crop_x = 0;
-    auto crop_y = 0;
-    auto crop_width = rgba->w;
-    auto crop_height = rgba->h;
-    if (static_cast<std::int64_t>(rgba->w) * target_height >
-        static_cast<std::int64_t>(rgba->h) * target_width) {
-        crop_width = static_cast<int>(
-            static_cast<std::int64_t>(rgba->h) * target_width / target_height);
-        crop_x = (rgba->w - crop_width) / 2;
-    } else {
-        crop_height = static_cast<int>(
-            static_cast<std::int64_t>(rgba->w) * target_height / target_width);
-        crop_y = (rgba->h - crop_height) / 2;
+    SDL_Surface* frame = source;
+    if (source->format != SDL_PIXELFORMAT_RGBA32 ||
+        source->w != static_cast<int>(target_width) ||
+        source->h != static_cast<int>(target_height)) {
+        SDL_Rect crop{0, 0, source->w, source->h};
+        if (static_cast<std::int64_t>(source->w) * target_height >
+            static_cast<std::int64_t>(source->h) * target_width) {
+            crop.w = static_cast<int>(static_cast<std::int64_t>(source->h) *
+                                      target_width / target_height);
+            crop.x = (source->w - crop.w) / 2;
+        } else {
+            crop.h = static_cast<int>(static_cast<std::int64_t>(source->w) *
+                                      target_height / target_width);
+            crop.y = (source->h - crop.h) / 2;
+        }
+        if (!SDL_BlitSurfaceScaled(source, &crop, sdl.camera_frame, nullptr,
+                                   SDL_SCALEMODE_NEAREST)) {
+            SDL_ReleaseCameraFrame(sdl.camera, source);
+            if (!sdl.camera_warning_shown) {
+                std::cerr << "Warning: webcam frame conversion failed: "
+                          << SDL_GetError() << '\n';
+                sdl.camera_warning_shown = true;
+            }
+            return;
+        }
+        frame = sdl.camera_frame;
     }
 
+    const auto needs_lock = SDL_MUSTLOCK(frame);
+    if (needs_lock && !SDL_LockSurface(frame)) {
+        SDL_ReleaseCameraFrame(sdl.camera, source);
+        return;
+    }
     std::array<std::uint8_t, target_width * target_height> grayscale{};
-    const auto* pixels = static_cast<const std::uint8_t*>(rgba->pixels);
+    const auto* pixels = static_cast<const std::uint8_t*>(frame->pixels);
+    const auto rotated_width = rotation_quarters % 2 == 0 ? frame->w : frame->h;
+    const auto rotated_height = rotation_quarters % 2 == 0 ? frame->h : frame->w;
+    auto crop_x = 0;
+    auto crop_y = 0;
+    auto crop_width = rotated_width;
+    auto crop_height = rotated_height;
+    if (static_cast<std::int64_t>(rotated_width) * target_height >
+        static_cast<std::int64_t>(rotated_height) * target_width) {
+        crop_width = static_cast<int>(
+            static_cast<std::int64_t>(rotated_height) * target_width /
+            target_height);
+        crop_x = (rotated_width - crop_width) / 2;
+    } else {
+        crop_height = static_cast<int>(
+            static_cast<std::int64_t>(rotated_width) * target_height /
+            target_width);
+        crop_y = (rotated_height - crop_height) / 2;
+    }
     for (std::size_t y = 0; y < target_height; ++y) {
-        const auto source_y = crop_y + static_cast<int>(
-            (y * 2 + 1) * static_cast<std::size_t>(crop_height) /
-            (target_height * 2));
-        const auto* row = pixels + source_y * rgba->pitch;
         for (std::size_t x = 0; x < target_width; ++x) {
-            auto sample_x = crop_x + static_cast<int>(
+            auto rotated_x = crop_x + static_cast<int>(
                 (x * 2 + 1) * static_cast<std::size_t>(crop_width) /
                 (target_width * 2));
-            if (sdl.mirror_camera) sample_x = rgba->w - 1 - sample_x;
-            const auto* pixel = row + sample_x * 4;
+            const auto rotated_y = crop_y + static_cast<int>(
+                (y * 2 + 1) * static_cast<std::size_t>(crop_height) /
+                (target_height * 2));
+            if (sdl.mirror_camera) {
+                rotated_x = rotated_width - 1 - rotated_x;
+            }
+            auto sample_x = rotated_x;
+            auto sample_y = rotated_y;
+            switch (rotation_quarters) {
+            case 1:
+                sample_x = rotated_y;
+                sample_y = frame->h - 1 - rotated_x;
+                break;
+            case 2:
+                sample_x = frame->w - 1 - rotated_x;
+                sample_y = frame->h - 1 - rotated_y;
+                break;
+            case 3:
+                sample_x = frame->w - 1 - rotated_y;
+                sample_y = rotated_x;
+                break;
+            default: break;
+            }
+            const auto* pixel = pixels + sample_y * frame->pitch + sample_x * 4;
             grayscale[y * target_width + x] = static_cast<std::uint8_t>(
                 (77U * pixel[0] + 150U * pixel[1] + 29U * pixel[2]) >> 8);
         }
     }
-    if (needs_lock) SDL_UnlockSurface(rgba);
-    SDL_DestroySurface(rgba);
+    if (needs_lock) SDL_UnlockSurface(frame);
+    SDL_ReleaseCameraFrame(sdl.camera, source);
     emulator->set_camera_frame(grayscale.data(), grayscale.size());
 }
 

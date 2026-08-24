@@ -10,6 +10,7 @@ __pycache__/
 *.sav
 *.sav.tmp
 /android/.gradle/
+/android/build/
 /android/app/build/
 /android/app/.cxx/
 /android/app/libs/*.aar
