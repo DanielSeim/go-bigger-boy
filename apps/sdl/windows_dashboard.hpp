@@ -11,7 +11,7 @@
 
 namespace gbb_desktop {
 
-enum class DashboardResultAction { resume, open_rom, quit };
+enum class DashboardResultAction { resume, open_rom, configure_controls, quit };
 
 struct DashboardResult {
     DashboardResultAction action{DashboardResultAction::resume};

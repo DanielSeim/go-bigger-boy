@@ -36,6 +36,7 @@ constexpr int id_resume = 105;
 constexpr int id_quit = 106;
 constexpr int id_palette = 107;
 constexpr int id_remove = 108;
+constexpr int id_controls = 109;
 constexpr UINT artwork_ready = WM_APP + 1;
 
 struct MetadataRecord {
@@ -103,6 +104,8 @@ struct State {
     HWND palette{};
     HWND settings_heading{};
     HWND palette_label{};
+    HWND controls_label{};
+    HWND controls{};
     HWND logo{};
     HBITMAP logo_bitmap{};
     HIMAGELIST covers{};
@@ -111,6 +114,31 @@ struct State {
     std::atomic_bool closing{};
     HFONT title_font{};
 };
+
+std::optional<POINT> load_window_position(
+    const std::filesystem::path& preference_directory) {
+    if (preference_directory.empty()) return std::nullopt;
+    std::ifstream input(preference_directory / "dashboard-window.txt");
+    POINT position{};
+    if (!(input >> position.x >> position.y)) return std::nullopt;
+    const RECT rectangle{position.x, position.y, position.x + 820,
+                         position.y + 620};
+    return MonitorFromRect(&rectangle, MONITOR_DEFAULTTONULL) == nullptr
+               ? std::nullopt
+               : std::optional<POINT>{position};
+}
+
+void save_window_position(const State& state) {
+    if (state.preference_directory.empty() || state.window == nullptr ||
+        IsIconic(state.window)) {
+        return;
+    }
+    RECT rectangle{};
+    if (!GetWindowRect(state.window, &rectangle)) return;
+    std::ofstream output(state.preference_directory / "dashboard-window.txt",
+                         std::ios::trunc);
+    output << rectangle.left << ' ' << rectangle.top << '\n';
+}
 
 void show_page(State& state, const bool settings) {
     ShowWindow(state.list, settings ? SW_HIDE : SW_SHOW);
@@ -121,6 +149,8 @@ void show_page(State& state, const bool settings) {
     ShowWindow(state.settings_heading, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.palette_label, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.palette, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.controls_label, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.controls, settings ? SW_SHOW : SW_HIDE);
 }
 
 std::optional<std::size_t> selected_entry_index(const State& state) {
@@ -141,6 +171,7 @@ std::optional<std::size_t> selected_entry_index(const State& state) {
 
 void finish(State& state, const DashboardResultAction action,
             const std::string& path = {}) {
+    save_window_position(state);
     state.result.action = action;
     state.result.rom_path = path;
     state.closing = true;
@@ -207,6 +238,9 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
         case id_resume: finish(*state, DashboardResultAction::resume); return 0;
         case id_quit: finish(*state, DashboardResultAction::quit); return 0;
         case id_remove: remove_selection(*state); return 0;
+        case id_controls:
+            finish(*state, DashboardResultAction::configure_controls);
+            return 0;
         case id_palette:
             if (HIWORD(wparam) == CBN_SELCHANGE) {
                 const auto selected = SendMessageW(state->palette, CB_GETCURSEL,
@@ -617,10 +651,13 @@ DashboardResult show_windows_dashboard(
     state.can_resume = can_resume;
     state.result.palette = palette;
     state.preference_directory = preference_directory;
+    const auto saved_position = load_window_position(preference_directory);
     state.window = CreateWindowExW(
         WS_EX_APPWINDOW, class_name, L"Go Bigger Boy - Game Library",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
-        CW_USEDEFAULT, CW_USEDEFAULT, 820, 620, owner, nullptr, instance, &state);
+        saved_position ? saved_position->x : CW_USEDEFAULT,
+        saved_position ? saved_position->y : CW_USEDEFAULT,
+        820, 620, owner, nullptr, instance, &state);
     if (state.window == nullptr) {
         state.result.action = can_resume ? DashboardResultAction::resume
                                          : DashboardResultAction::quit;
@@ -744,6 +781,10 @@ DashboardResult show_windows_dashboard(
     }
     SendMessageW(state.palette, CB_SETCURSEL,
                  static_cast<WPARAM>(palette), 0);
+    state.controls_label = control(state, L"STATIC", L"Input controls",
+        0, 24, 318, 180, 24, 0);
+    state.controls = control(state, L"BUTTON", L"Configure controls...",
+        BS_PUSHBUTTON, 24, 348, 180, 36, id_controls);
     show_page(state, false);
 
     if (owner != nullptr) EnableWindow(owner, FALSE);

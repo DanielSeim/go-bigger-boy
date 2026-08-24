@@ -494,6 +494,8 @@ bool launch_update_installer(const DownloadedUpdate& update,
                              std::string& error) {
     const auto directory = update.archive.parent_path();
     const auto staging = directory / "extracted";
+    const auto settings = installation_root / "settings.ini";
+    const auto settings_backup = directory / "settings.ini.user";
 #ifdef _WIN32
     const auto script_path = directory / "install-update.ps1";
     std::ofstream script(script_path, std::ios::trunc);
@@ -513,9 +515,19 @@ bool launch_update_installer(const DownloadedUpdate& update,
            << "Expand-Archive -LiteralPath "
            << powershell_quote(update.archive.u8string()) << " -DestinationPath "
            << powershell_quote(staging.u8string()) << " -Force\n"
+           << "$hadSettings=Test-Path -LiteralPath "
+           << powershell_quote(settings.u8string()) << "\n"
+           << "if($hadSettings){Copy-Item -LiteralPath "
+           << powershell_quote(settings.u8string()) << " -Destination "
+           << powershell_quote(settings_backup.u8string()) << " -Force}\n"
            << "Copy-Item -Path " << powershell_quote((staging / "*").u8string())
            << " -Destination " << powershell_quote(installation_root.u8string())
            << " -Recurse -Force\n"
+           << "if($hadSettings){Copy-Item -LiteralPath "
+           << powershell_quote(settings_backup.u8string()) << " -Destination "
+           << powershell_quote(settings.u8string())
+           << " -Force}else{Remove-Item -Force -ErrorAction SilentlyContinue "
+           << powershell_quote(settings.u8string()) << "}\n"
            << "Start-Process -FilePath " << powershell_quote(executable.u8string())
            << "\n";
     script.close();
@@ -544,8 +556,16 @@ bool launch_update_installer(const DownloadedUpdate& update,
            << "mkdir -p " << shell_quote(staging.u8string()) << "\n"
            << "tar -xzf " << shell_quote(update.archive.u8string()) << " -C "
            << shell_quote(staging.u8string()) << "\n"
+           << "had_settings=0\nif [ -f " << shell_quote(settings.u8string())
+           << " ]; then had_settings=1; cp "
+           << shell_quote(settings.u8string()) << " "
+           << shell_quote(settings_backup.u8string()) << "; fi\n"
            << "cp -a " << shell_quote((staging / ".").u8string()) << " "
            << shell_quote(installation_root.u8string()) << "\n"
+           << "if [ \"$had_settings\" -eq 1 ]; then cp "
+           << shell_quote(settings_backup.u8string()) << " "
+           << shell_quote(settings.u8string()) << "; else rm -f "
+           << shell_quote(settings.u8string()) << "; fi\n"
            << "exec " << shell_quote(executable.u8string()) << "\n";
     script.close();
     const auto child = fork();

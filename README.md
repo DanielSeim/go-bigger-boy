@@ -44,6 +44,7 @@ for the suite-by-suite breakdown.
 - Emscripten/WebAssembly browser frontend with IndexedDB cartridge saves
 - Android native library/settings dashboard with SDL3 gameplay and multitouch controls
 - Shared desktop/Android ROM catalog with fingerprint-deduplicated history and metadata
+- Portable desktop `settings.ini` with shareable palette, keyboard, and gamepad mappings
 - Game Boy Printer serial protocol with automatic desktop image export
 - Game Boy Camera cartridge support with live SDL3 webcam input on desktop
 - MBC5 rumble output through compatible SDL3 gamepads on desktop
@@ -116,8 +117,9 @@ without arguments opens the game library dashboard:
 
 The dashboard lists up to twelve fingerprint-deduplicated recent ROMs. Windows
 uses a native library window with game, platform, language, and last-played
-columns plus a dedicated Settings page. Entries can be removed without deleting
-ROM or save files. It resolves canonical metadata and caches box artwork from
+columns plus a dedicated Settings page for palettes and control remapping.
+Entries can be removed without deleting ROM or save files. It resolves canonical
+metadata and caches box artwork from
 Libretro without uploading ROM contents. Press Ctrl+L or click the
 upper-left menu button to return to the platform dashboard while playing.
 You can also pass a ROM path, press Ctrl+O to choose another ROM, or drag a
@@ -166,10 +168,19 @@ recent selection, Ctrl+K to configure and persist controls, Ctrl+P to choose
 between Grayscale, Classic green, Game Boy Pocket, Amber, and the automatic
 Game Boy Color compatibility palette,
 F5 to quick-save, F8 to load the quick save, and F1 for help. Recent ROMs,
-keyboard and gamepad bindings, the display palette, and per-ROM quick saves are
-stored in SDL's per-user preferences directory. The Ctrl+K controls dialog can
-rebind either input device or restore the default mappings; Escape cancels an
-in-progress setup. On Android, tap the top-left menu button and choose
+window positions, and per-ROM quick saves are stored in SDL's per-user
+preferences directory. Desktop keyboard/gamepad bindings and the display palette
+are stored in the human-readable `settings.ini` at the installation root. Each
+Game Boy button accepts up to two space-separated keyboard keys (for example,
+`keyboard.B = Z Y`). Copy the file to another GBB installation to share the
+same setup. The Settings page or Ctrl+K controls dialog can rebind either input
+device or restore the default mappings; Space skips an optional secondary key
+and Escape cancels an in-progress setup. GBB generates a complete default
+`settings.ini` at startup whenever it is missing and appends defaults for any
+recognized entries omitted from an existing file. Older `controls.txt` and
+`palette.txt` preferences migrate automatically when `settings.ini` is first
+created, and automatic updates preserve an existing portable file. On Android,
+tap the top-left menu button and choose
 `Display palette` to select and persist the same five palette options.
 
 At startup, the desktop and Android apps check GitHub's latest stable release in a

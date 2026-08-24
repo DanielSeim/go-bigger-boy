@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(go_bigger_boy VERSION 0.13.3 LANGUAGES CXX)
+project(go_bigger_boy VERSION 0.13.4 LANGUAGES CXX)
+
+configure_file(settings.ini settings.ini COPYONLY)
 
 include(GNUInstallDirs)
 
@@ -183,6 +185,7 @@ if(GAMEBOY_BUILD_SDL)
                                 ${CMAKE_INSTALL_DATADIR}/icons/hicolor/512x512/apps
                             RENAME go-bigger-boy.png)
                 endif()
+                install(FILES settings.ini DESTINATION .)
                 install(FILES README.md DESTINATION .)
             endif()
         endif()

@@ -46,7 +46,7 @@
 namespace {
 
 #ifndef GBB_VERSION
-#define GBB_VERSION "0.13.3"
+#define GBB_VERSION "0.13.4"
 #endif
 
 #ifdef __ANDROID__
@@ -183,14 +183,16 @@ constexpr std::array<const char*, 8> button_names{
 };
 
 struct InputBindings {
-    std::array<SDL_Keycode, 8> keys{
-        SDLK_RIGHT, SDLK_LEFT, SDLK_UP, SDLK_DOWN,
-        SDLK_X, SDLK_Z, SDLK_BACKSPACE, SDLK_RETURN,
-    };
+    std::array<std::array<SDL_Keycode, 2>, 8> keys{{
+        {{SDLK_RIGHT, SDLK_UNKNOWN}}, {{SDLK_LEFT, SDLK_UNKNOWN}},
+        {{SDLK_UP, SDLK_UNKNOWN}}, {{SDLK_DOWN, SDLK_UNKNOWN}},
+        {{SDLK_X, SDLK_UNKNOWN}}, {{SDLK_Z, SDLK_UNKNOWN}},
+        {{SDLK_BACKSPACE, SDLK_UNKNOWN}}, {{SDLK_RETURN, SDLK_UNKNOWN}},
+    }};
     std::array<SDL_GamepadButton, 8> gamepad_buttons{
         SDL_GAMEPAD_BUTTON_DPAD_RIGHT, SDL_GAMEPAD_BUTTON_DPAD_LEFT,
         SDL_GAMEPAD_BUTTON_DPAD_UP, SDL_GAMEPAD_BUTTON_DPAD_DOWN,
-        SDL_GAMEPAD_BUTTON_SOUTH, SDL_GAMEPAD_BUTTON_EAST,
+        SDL_GAMEPAD_BUTTON_EAST, SDL_GAMEPAD_BUTTON_SOUTH,
         SDL_GAMEPAD_BUTTON_BACK, SDL_GAMEPAD_BUTTON_START,
     };
 };
@@ -200,6 +202,7 @@ enum class BindingDevice { keyboard, gamepad };
 struct BindingConfiguration {
     BindingDevice device{};
     std::size_t index{};
+    std::size_t slot{};
 };
 
 enum class DashboardAction { resume, open_rom, palette, recent_rom, quit };
@@ -222,6 +225,67 @@ std::filesystem::path preference_directory() {
     const auto path = std::filesystem::u8path(raw_path);
     SDL_free(raw_path);
     return path;
+}
+
+struct WindowGeometry {
+    int x{};
+    int y{};
+    int width{};
+    int height{};
+};
+
+bool geometry_is_visible(const WindowGeometry& geometry) {
+    int display_count = 0;
+    SDL_DisplayID* displays = SDL_GetDisplays(&display_count);
+    if (displays == nullptr) return true;
+    const SDL_Rect window{geometry.x, geometry.y, geometry.width,
+                          geometry.height};
+    bool visible = false;
+    for (int index = 0; index < display_count; ++index) {
+        SDL_Rect bounds{};
+        if (!SDL_GetDisplayBounds(displays[index], &bounds)) continue;
+        SDL_Rect intersection{};
+        if (SDL_GetRectIntersection(&window, &bounds, &intersection) &&
+            intersection.w >= 64 && intersection.h >= 64) {
+            visible = true;
+            break;
+        }
+    }
+    SDL_free(displays);
+    return visible;
+}
+
+void restore_game_window_geometry(
+    SDL_Window* window, const std::filesystem::path& directory) {
+    if (directory.empty()) return;
+    std::ifstream input(directory / "game-window.txt");
+    WindowGeometry geometry;
+    if (!(input >> geometry.x >> geometry.y >> geometry.width >>
+          geometry.height) ||
+        geometry.width < 320 || geometry.height < 288 ||
+        !geometry_is_visible(geometry)) {
+        return;
+    }
+    static_cast<void>(
+        SDL_SetWindowSize(window, geometry.width, geometry.height));
+    static_cast<void>(SDL_SetWindowPosition(window, geometry.x, geometry.y));
+}
+
+void save_game_window_geometry(
+    SDL_Window* window, const std::filesystem::path& directory) {
+    if (directory.empty() ||
+        (SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) != 0) {
+        return;
+    }
+    WindowGeometry geometry;
+    if (!SDL_GetWindowPosition(window, &geometry.x, &geometry.y) ||
+        !SDL_GetWindowSize(window, &geometry.width, &geometry.height) ||
+        geometry.width < 320 || geometry.height < 288) {
+        return;
+    }
+    std::ofstream output(directory / "game-window.txt", std::ios::trunc);
+    output << geometry.x << ' ' << geometry.y << ' ' << geometry.width << ' '
+           << geometry.height << '\n';
 }
 
 std::vector<std::string> load_legacy_recent_roms(
@@ -321,20 +385,21 @@ std::size_t dashboard_first_visible(const std::size_t selection,
                     item_count - dashboard_visible_rows);
 }
 
-InputBindings load_bindings(const std::filesystem::path& directory) {
+InputBindings load_legacy_bindings(const std::filesystem::path& directory) {
     InputBindings bindings;
     if (directory.empty()) return bindings;
     std::ifstream input(directory / "controls.txt");
     auto loaded = bindings.keys;
-    for (auto& key : loaded) {
+    for (auto& keys : loaded) {
         long long value = 0;
         if (!(input >> value)) return bindings;
-        key = static_cast<SDL_Keycode>(value);
+        keys[0] = static_cast<SDL_Keycode>(value);
     }
-    if (std::find(loaded.begin(), loaded.end(), SDLK_UNKNOWN) != loaded.end()) {
-        return bindings;
-    }
-    auto unique_keys = loaded;
+    std::array<SDL_Keycode, 8> unique_keys{};
+    std::transform(loaded.begin(), loaded.end(), unique_keys.begin(),
+                   [](const auto& keys) { return keys[0]; });
+    if (std::find(unique_keys.begin(), unique_keys.end(), SDLK_UNKNOWN) !=
+        unique_keys.end()) return bindings;
     std::sort(unique_keys.begin(), unique_keys.end());
     if (std::adjacent_find(unique_keys.begin(), unique_keys.end()) !=
         unique_keys.end()) {
@@ -360,19 +425,22 @@ InputBindings load_bindings(const std::filesystem::path& directory) {
     return bindings;
 }
 
-void save_bindings(const std::filesystem::path& directory,
-                   const InputBindings& bindings) {
+#ifdef __ANDROID__
+void save_legacy_bindings(const std::filesystem::path& directory,
+                          const InputBindings& bindings) {
     if (directory.empty()) return;
     std::ofstream output(directory / "controls.txt", std::ios::trunc);
-    for (const auto key : bindings.keys) {
-        output << static_cast<long long>(key) << '\n';
+    for (const auto& keys : bindings.keys) {
+        output << static_cast<long long>(keys[0]) << '\n';
     }
     for (const auto button : bindings.gamepad_buttons) {
         output << static_cast<int>(button) << '\n';
     }
 }
+#endif
 
-std::size_t load_display_palette(const std::filesystem::path& directory) {
+std::size_t load_legacy_display_palette(
+    const std::filesystem::path& directory) {
     if (directory.empty()) return 0;
     std::ifstream input(directory / "palette.txt");
     std::string id;
@@ -388,11 +456,271 @@ std::size_t load_display_palette(const std::filesystem::path& directory) {
                                           gameboy::display_palettes.begin());
 }
 
-void save_display_palette(const std::filesystem::path& directory,
-                          const std::size_t palette) {
+#ifdef __ANDROID__
+void save_legacy_display_palette(const std::filesystem::path& directory,
+                                 const std::size_t palette) {
     if (directory.empty() || palette >= gameboy::display_palettes.size()) return;
     std::ofstream output(directory / "palette.txt", std::ios::trunc);
     output << gameboy::display_palettes[palette].id << '\n';
+}
+#endif
+
+struct AppSettings {
+    InputBindings bindings;
+    std::size_t palette{};
+};
+
+#ifndef __ANDROID__
+std::filesystem::path portable_settings_path() {
+    const auto* raw_base = SDL_GetBasePath();
+    if (raw_base == nullptr) return {};
+    auto directory = std::filesystem::u8path(raw_base).lexically_normal();
+    if (directory.filename().empty()) directory = directory.parent_path();
+#ifdef __APPLE__
+    directory = directory.parent_path().parent_path().parent_path();
+#elif !defined(_WIN32)
+    if (directory.filename() == "bin") directory = directory.parent_path();
+#endif
+    return directory / "settings.ini";
+}
+
+std::string trimmed_setting(std::string value) {
+    const auto first = value.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) return {};
+    value.erase(0, first);
+    const auto last = value.find_last_not_of(" \t\r\n");
+    value.resize(last + 1);
+    return value;
+}
+
+const char* gamepad_button_setting_name(const SDL_GamepadButton button) {
+    switch (button) {
+    case SDL_GAMEPAD_BUTTON_SOUTH: return "south";
+    case SDL_GAMEPAD_BUTTON_EAST: return "east";
+    case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: return "dpad_right";
+    case SDL_GAMEPAD_BUTTON_DPAD_LEFT: return "dpad_left";
+    case SDL_GAMEPAD_BUTTON_DPAD_UP: return "dpad_up";
+    case SDL_GAMEPAD_BUTTON_DPAD_DOWN: return "dpad_down";
+    default: return SDL_GetGamepadStringForButton(button);
+    }
+}
+
+SDL_GamepadButton gamepad_button_from_setting(const std::string& value) {
+    if (value == "south") return SDL_GAMEPAD_BUTTON_SOUTH;
+    if (value == "east") return SDL_GAMEPAD_BUTTON_EAST;
+    if (value == "dpad_right") return SDL_GAMEPAD_BUTTON_DPAD_RIGHT;
+    if (value == "dpad_left") return SDL_GAMEPAD_BUTTON_DPAD_LEFT;
+    if (value == "dpad_up") return SDL_GAMEPAD_BUTTON_DPAD_UP;
+    if (value == "dpad_down") return SDL_GAMEPAD_BUTTON_DPAD_DOWN;
+    return SDL_GetGamepadButtonFromString(value.c_str());
+}
+
+void append_missing_portable_settings(
+    const std::filesystem::path& path, const AppSettings& settings,
+    const bool has_palette, const std::array<bool, 8>& has_keyboard,
+    const std::array<bool, 8>& has_gamepad) {
+    const auto complete = has_palette &&
+        std::all_of(has_keyboard.begin(), has_keyboard.end(),
+                    [](const bool value) { return value; }) &&
+        std::all_of(has_gamepad.begin(), has_gamepad.end(),
+                    [](const bool value) { return value; });
+    if (complete) return;
+    std::ofstream output(path, std::ios::app);
+    if (!output) {
+        std::cerr << "Warning: could not complete portable settings file: "
+                  << path << '\n';
+        return;
+    }
+    output << "\n# Missing entries added automatically by GBB\n";
+    if (!has_palette) {
+        output << "palette = "
+               << gameboy::display_palettes[settings.palette].id << '\n';
+    }
+    for (std::size_t index = 0; index < button_names.size(); ++index) {
+        if (has_keyboard[index]) continue;
+        output << "keyboard." << button_names[index] << " = "
+               << SDL_GetKeyName(settings.bindings.keys[index][0]);
+        if (settings.bindings.keys[index][1] != SDLK_UNKNOWN) {
+            output << ' '
+                   << SDL_GetKeyName(settings.bindings.keys[index][1]);
+        }
+        output << '\n';
+    }
+    for (std::size_t index = 0; index < button_names.size(); ++index) {
+        if (has_gamepad[index]) continue;
+        output << "gamepad." << button_names[index] << " = "
+               << gamepad_button_setting_name(
+                      settings.bindings.gamepad_buttons[index])
+               << '\n';
+    }
+}
+
+void write_portable_settings(const AppSettings& settings) {
+    const auto path = portable_settings_path();
+    if (path.empty()) return;
+    std::ofstream output(path, std::ios::trunc);
+    if (!output) {
+        std::cerr << "Warning: could not write portable settings file: "
+                  << path << '\n';
+        return;
+    }
+    output << "# Go Bigger Boy portable settings\n"
+              "# Copy this file beside another GBB installation to share "
+              "these settings.\n"
+              "# Add an optional second keyboard key after the first, for "
+              "example: Z Y\n\n"
+              "palette = "
+           << gameboy::display_palettes[settings.palette].id << "\n\n";
+    for (std::size_t index = 0; index < button_names.size(); ++index) {
+        output << "keyboard." << button_names[index] << " = "
+               << SDL_GetKeyName(settings.bindings.keys[index][0]);
+        if (settings.bindings.keys[index][1] != SDLK_UNKNOWN) {
+            output << ' '
+                   << SDL_GetKeyName(settings.bindings.keys[index][1]);
+        }
+        output << '\n';
+    }
+    output << '\n';
+    for (std::size_t index = 0; index < button_names.size(); ++index) {
+        output << "gamepad." << button_names[index] << " = "
+               << gamepad_button_setting_name(
+                      settings.bindings.gamepad_buttons[index])
+               << '\n';
+    }
+}
+
+AppSettings load_portable_settings(
+    const std::filesystem::path& preference_directory) {
+    AppSettings settings;
+    const auto path = portable_settings_path();
+    std::ifstream input(path);
+    if (!input) {
+        settings.bindings = load_legacy_bindings(preference_directory);
+        settings.palette = load_legacy_display_palette(preference_directory);
+        write_portable_settings(settings);
+        return settings;
+    }
+
+    auto loaded_keys = settings.bindings.keys;
+    auto loaded_buttons = settings.bindings.gamepad_buttons;
+    bool has_palette = false;
+    std::array<bool, 8> has_keyboard{};
+    std::array<bool, 8> has_gamepad{};
+    constexpr std::array<const char*, 8> names{{
+        "Right", "Left", "Up", "Down", "A", "B", "Select", "Start"}};
+    std::string line;
+    while (std::getline(input, line)) {
+        const auto comment = line.find_first_of("#;");
+        if (comment != std::string::npos) line.resize(comment);
+        const auto separator = line.find('=');
+        if (separator == std::string::npos) continue;
+        const auto key = trimmed_setting(line.substr(0, separator));
+        const auto value = trimmed_setting(line.substr(separator + 1));
+        if (key == "palette") {
+            has_palette = true;
+            const auto found = std::find_if(
+                gameboy::display_palettes.begin(),
+                gameboy::display_palettes.end(),
+                [&value](const gameboy::DisplayPalette& palette) {
+                    return value == palette.id;
+                });
+            if (found != gameboy::display_palettes.end()) {
+                settings.palette = static_cast<std::size_t>(
+                    found - gameboy::display_palettes.begin());
+            }
+            continue;
+        }
+        for (std::size_t index = 0; index < names.size(); ++index) {
+            if (key == std::string("keyboard.") + names[index]) {
+                has_keyboard[index] = true;
+                std::array<SDL_Keycode, 2> parsed_keys{
+                    SDLK_UNKNOWN, SDLK_UNKNOWN};
+                const auto whole = SDL_GetKeyFromName(value.c_str());
+                if (whole != SDLK_UNKNOWN) {
+                    parsed_keys[0] = whole;
+                } else {
+                    std::istringstream values(value);
+                    std::string name;
+                    std::size_t slot = 0;
+                    while (slot < parsed_keys.size() && values >> name) {
+                        const auto parsed = SDL_GetKeyFromName(name.c_str());
+                        if (parsed != SDLK_UNKNOWN) parsed_keys[slot++] = parsed;
+                    }
+                }
+                if (parsed_keys[0] != SDLK_UNKNOWN) {
+                    loaded_keys[index] = parsed_keys;
+                }
+            } else if (key == std::string("gamepad.") + names[index]) {
+                has_gamepad[index] = true;
+                const auto parsed = gamepad_button_from_setting(value);
+                if (parsed >= 0 && parsed < SDL_GAMEPAD_BUTTON_COUNT) {
+                    loaded_buttons[index] = parsed;
+                }
+            }
+        }
+    }
+    std::vector<SDL_Keycode> unique_keys;
+    for (const auto& keys : loaded_keys) {
+        for (const auto key : keys) {
+            if (key != SDLK_UNKNOWN) unique_keys.push_back(key);
+        }
+    }
+    std::sort(unique_keys.begin(), unique_keys.end());
+    if (std::adjacent_find(unique_keys.begin(), unique_keys.end()) ==
+        unique_keys.end()) {
+        settings.bindings.keys = loaded_keys;
+    }
+    auto unique_buttons = loaded_buttons;
+    std::sort(unique_buttons.begin(), unique_buttons.end());
+    if (std::adjacent_find(unique_buttons.begin(), unique_buttons.end()) ==
+        unique_buttons.end()) {
+        settings.bindings.gamepad_buttons = loaded_buttons;
+    }
+    append_missing_portable_settings(path, settings, has_palette,
+                                     has_keyboard, has_gamepad);
+    return settings;
+}
+#endif
+
+AppSettings load_app_settings(
+    const std::filesystem::path& preference_directory) {
+#ifdef __ANDROID__
+    return {load_legacy_bindings(preference_directory),
+            load_legacy_display_palette(preference_directory)};
+#else
+    return load_portable_settings(preference_directory);
+#endif
+}
+
+void save_app_settings(const std::filesystem::path& preference_directory,
+                       const InputBindings& bindings,
+                       const std::size_t palette) {
+    if (palette >= gameboy::display_palettes.size()) return;
+#ifdef __ANDROID__
+    save_legacy_bindings(preference_directory, bindings);
+    save_legacy_display_palette(preference_directory, palette);
+#else
+    static_cast<void>(preference_directory);
+    write_portable_settings({bindings, palette});
+#endif
+}
+
+InputBindings load_bindings(const std::filesystem::path& directory) {
+    return load_app_settings(directory).bindings;
+}
+
+std::size_t load_display_palette(const std::filesystem::path& directory) {
+    return load_app_settings(directory).palette;
+}
+
+void save_bindings(const std::filesystem::path& directory,
+                   const InputBindings& bindings) {
+    save_app_settings(directory, bindings, load_display_palette(directory));
+}
+
+void save_display_palette(const std::filesystem::path& directory,
+                          const std::size_t palette) {
+    save_app_settings(directory, load_bindings(directory), palette);
 }
 
 std::filesystem::path quick_state_path(
@@ -568,7 +896,10 @@ void collect_dialog_result(DialogState& state,
 std::optional<gameboy::Button> keyboard_button(const InputBindings& bindings,
                                                const SDL_Keycode key) {
     for (std::size_t index = 0; index < bindings.keys.size(); ++index) {
-        if (bindings.keys[index] == key) return button_order[index];
+        if (std::find(bindings.keys[index].begin(), bindings.keys[index].end(),
+                      key) != bindings.keys[index].end()) {
+            return button_order[index];
+        }
     }
     return std::nullopt;
 }
@@ -714,6 +1045,11 @@ void update_window_title(SDL_Window* window, const std::string& current_rom,
                      ? " - Press a key for "
                      : " - Press a gamepad button for ";
         title += button_names[configuring->index];
+        if (configuring->device == BindingDevice::keyboard) {
+            title += configuring->slot == 0
+                         ? " (primary)"
+                         : " (secondary; Space: none)";
+        }
         title += " (Esc: cancel)";
     } else {
         if (!current_rom.empty()) {
@@ -731,18 +1067,35 @@ void update_window_title(SDL_Window* window, const std::string& current_rom,
 
 enum class ControlsAction { cancel, keyboard, gamepad, reset };
 
+void begin_binding_configuration(
+    InputBindings& bindings, InputBindings& backup,
+    std::optional<BindingConfiguration>& configuring,
+    const BindingDevice device) {
+    backup = bindings;
+    if (device == BindingDevice::keyboard) {
+        for (auto& keys : bindings.keys) keys.fill(SDLK_UNKNOWN);
+    }
+    configuring = BindingConfiguration{device, 0, 0};
+}
+
 ControlsAction show_controls_dialog(SDL_Window* window,
                                     const InputBindings& bindings) {
     std::ostringstream message;
     message << "Current controls:\n";
     for (std::size_t index = 0; index < button_names.size(); ++index) {
         message << button_names[index] << ": "
-                << SDL_GetKeyName(bindings.keys[index]) << " / "
+                << SDL_GetKeyName(bindings.keys[index][0]);
+        if (bindings.keys[index][1] != SDLK_UNKNOWN) {
+            message << " or " << SDL_GetKeyName(bindings.keys[index][1]);
+        }
+        message << " / "
                 << SDL_GetGamepadStringForButton(
                        bindings.gamepad_buttons[index])
                 << '\n';
     }
-    message << "\nChoose which controls to configure.";
+    message << "\nChoose which controls to configure. Keyboard setup asks "
+               "for a primary and optional secondary key; press Space to "
+               "skip a secondary key.";
 
     constexpr std::array<SDL_MessageBoxButtonData, 4> buttons{{
         {SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, "Cancel"},
@@ -972,28 +1325,55 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                     break;
                 }
                 if (configuring->device != BindingDevice::keyboard) break;
+                if (configuring->slot == 1 && event.key.key == SDLK_SPACE) {
+                    bindings.keys[configuring->index][1] = SDLK_UNKNOWN;
+                    configuring->slot = 0;
+                    ++configuring->index;
+                    if (configuring->index == bindings.keys.size()) {
+                        configuring.reset();
+                        save_bindings(preference_path, bindings);
+                        static_cast<void>(SDL_ShowSimpleMessageBox(
+                            SDL_MESSAGEBOX_INFORMATION, "Keyboard controls",
+                            "Keyboard bindings saved.", sdl.window));
+                    }
+                    update_window_title(sdl.window, current_rom, paused,
+                                        configuring);
+                    break;
+                }
                 if (reserved_gameplay_key(event.key.key)) {
                     show_error(sdl.window,
                                "That key is reserved for an emulator shortcut.");
                     break;
                 }
-                const auto duplicate = std::find(bindings.keys.begin(),
-                                                 bindings.keys.end(),
-                                                 event.key.key);
-                if (duplicate != bindings.keys.end() &&
-                    static_cast<std::size_t>(duplicate - bindings.keys.begin()) !=
-                        configuring->index) {
+                bool duplicate = false;
+                for (std::size_t index = 0; index < bindings.keys.size(); ++index) {
+                    for (std::size_t slot = 0;
+                         slot < bindings.keys[index].size(); ++slot) {
+                        if (bindings.keys[index][slot] == event.key.key &&
+                            (index != configuring->index ||
+                             slot != configuring->slot)) {
+                            duplicate = true;
+                        }
+                    }
+                }
+                if (duplicate) {
                     show_error(sdl.window, "That key is already assigned.");
                     break;
                 }
-                bindings.keys[configuring->index] = event.key.key;
-                ++configuring->index;
-                if (configuring->index == bindings.keys.size()) {
-                    configuring.reset();
-                    save_bindings(preference_path, bindings);
-                    static_cast<void>(SDL_ShowSimpleMessageBox(
-                        SDL_MESSAGEBOX_INFORMATION, "Keyboard controls",
-                        "Keyboard bindings saved.", sdl.window));
+                bindings.keys[configuring->index][configuring->slot] =
+                    event.key.key;
+                if (configuring->slot == 0) {
+                    configuring->slot = 1;
+                } else {
+                    configuring->slot = 0;
+                    ++configuring->index;
+                    if (configuring->index == bindings.keys.size()) {
+                        configuring.reset();
+                        save_bindings(preference_path, bindings);
+                        static_cast<void>(SDL_ShowSimpleMessageBox(
+                            SDL_MESSAGEBOX_INFORMATION, "Keyboard controls",
+                            "Keyboard bindings saved.", sdl.window));
+                    }
                 }
                 update_window_title(sdl.window, current_rom, paused,
                                     configuring);
@@ -1035,12 +1415,11 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                         show_error(sdl.window,
                                    "Connect a gamepad before configuring it.");
                     } else {
-                        configuration_backup = bindings;
-                        configuring = BindingConfiguration{
+                        begin_binding_configuration(
+                            bindings, configuration_backup, configuring,
                             action == ControlsAction::keyboard
                                 ? BindingDevice::keyboard
-                                : BindingDevice::gamepad,
-                            0};
+                                : BindingDevice::gamepad);
                     }
                 }
                 update_window_title(sdl.window, current_rom, paused,
@@ -1947,6 +2326,7 @@ int main(int argc, char** argv) {
         DialogState dialog;
         SdlResources sdl;
         const auto preference_path = preference_directory();
+        restore_game_window_geometry(sdl.window, preference_path);
         auto rom_library = load_rom_library(preference_path);
         auto recent_roms = recent_paths(rom_library);
         auto bindings = load_bindings(preference_path);
@@ -1967,6 +2347,7 @@ int main(int argc, char** argv) {
 #endif
 #ifdef _WIN32
         bool reveal_sdl_after_present = false;
+        bool return_to_dashboard_after_configuration = false;
 #endif
         auto paused = false;
         auto fullscreen = false;
@@ -2024,6 +2405,7 @@ int main(int argc, char** argv) {
 #ifdef _WIN32
             if (dashboard_visible && update_check_complete &&
                 !available_update && !update_download) {
+                save_game_window_geometry(sdl.window, preference_path);
                 SDL_HideWindow(sdl.window);
                 const auto result = gbb_desktop::show_windows_dashboard(
                     nullptr, rom_library, emulator != nullptr, display_palette,
@@ -2054,6 +2436,38 @@ int main(int argc, char** argv) {
                     dashboard_visible = false;
                     reveal_sdl_after_present = true;
                     break;
+                case gbb_desktop::DashboardResultAction::configure_controls: {
+                    const auto action = show_controls_dialog(sdl.window,
+                                                             bindings);
+                    if (action == ControlsAction::reset) {
+                        bindings = InputBindings{};
+                        save_bindings(preference_path, bindings);
+                        dashboard_visible = true;
+                    } else if (action == ControlsAction::keyboard ||
+                               action == ControlsAction::gamepad) {
+                        if (action == ControlsAction::gamepad &&
+                            sdl.gamepad == nullptr) {
+                            show_error(
+                                sdl.window,
+                                "Connect a gamepad before configuring it.");
+                            dashboard_visible = true;
+                        } else {
+                            begin_binding_configuration(
+                                bindings, configuration_backup, configuring,
+                                action == ControlsAction::keyboard
+                                    ? BindingDevice::keyboard
+                                    : BindingDevice::gamepad);
+                            dashboard_visible = false;
+                            return_to_dashboard_after_configuration = true;
+                            update_window_title(sdl.window, current_rom, paused,
+                                                configuring);
+                            SDL_ShowWindow(sdl.window);
+                        }
+                    } else {
+                        dashboard_visible = true;
+                    }
+                    break;
+                }
                 case gbb_desktop::DashboardResultAction::quit:
                     running = false;
                     break;
@@ -2067,12 +2481,22 @@ int main(int argc, char** argv) {
                 pending_rom_name = std::move(requested->display_name);
             }
 #endif
+            const bool was_configuring = configuring.has_value();
             process_events(emulator, sdl, dialog, preference_path, bindings,
                            configuration_backup, recent_roms, current_rom,
                            configuring, pending_rom, display_palette,
                            dashboard_visible, dashboard_selection, paused,
                            fullscreen,
                            reset_requested, running);
+#ifdef _WIN32
+            if (return_to_dashboard_after_configuration && was_configuring &&
+                !configuring) {
+                return_to_dashboard_after_configuration = false;
+                dashboard_visible = true;
+                dashboard_selection = 0;
+                SDL_HideWindow(sdl.window);
+            }
+#endif
 
             std::optional<std::string> dialog_error;
             collect_dialog_result(dialog, pending_rom, dialog_error);
@@ -2230,6 +2654,7 @@ int main(int argc, char** argv) {
                 next_frame = now;
             }
         }
+        save_game_window_geometry(sdl.window, preference_path);
         if (emulator) emulator->flush_battery();
     } catch (const std::exception& error) {
         std::cerr << "Error: " << error.what() << '\n';
