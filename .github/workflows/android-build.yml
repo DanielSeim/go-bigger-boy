@@ -115,8 +115,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           for attempt in {1..60}; do
-            if gh release view "${{ github.ref_name }}" >/dev/null 2>&1; then
-              gh release upload "${{ github.ref_name }}" android-release/* --clobber
+            if gh release view "${{ github.ref_name }}" \
+                  --repo "${{ github.repository }}" >/dev/null 2>&1; then
+              gh release upload "${{ github.ref_name }}" android-release/* \
+                --repo "${{ github.repository }}" --clobber
               exit 0
             fi
             sleep 10
