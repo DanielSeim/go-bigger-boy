@@ -42,7 +42,7 @@
 namespace {
 
 #ifndef GBB_VERSION
-#define GBB_VERSION "0.12.3"
+#define GBB_VERSION "0.12.4"
 #endif
 
 [[noreturn]] void sdl_error(const std::string& action) {
@@ -176,7 +176,7 @@ struct BindingConfiguration {
     std::size_t index{};
 };
 
-enum class DashboardAction { resume, open_rom, recent_rom, quit };
+enum class DashboardAction { resume, open_rom, palette, recent_rom, quit };
 
 struct DashboardItem {
     DashboardAction action{};
@@ -256,11 +256,12 @@ std::string rom_display_name(const std::string& path) {
 std::vector<DashboardItem> dashboard_items(
     const bool can_resume, const std::vector<std::string>& recent) {
     std::vector<DashboardItem> items;
-    items.reserve(recent.size() + 3);
+    items.reserve(recent.size() + 4);
     if (can_resume) {
         items.push_back({DashboardAction::resume, 0, "Resume game"});
     }
     items.push_back({DashboardAction::open_rom, 0, "+ Open a ROM"});
+    items.push_back({DashboardAction::palette, 0, "Display palette"});
     for (std::size_t index = 0; index < recent.size(); ++index) {
         items.push_back({DashboardAction::recent_rom, index,
                          rom_display_name(recent[index])});
@@ -753,6 +754,20 @@ std::optional<std::size_t> show_palette_dialog(SDL_Window* window,
     return static_cast<std::size_t>(selection);
 }
 
+void choose_display_palette(gameboy::Emulator* emulator, SdlResources& sdl,
+                            const std::filesystem::path& preference_path,
+                            std::size_t& display_palette) {
+    if (emulator != nullptr) release_all_buttons(*emulator);
+    const auto selected = show_palette_dialog(sdl.window, display_palette);
+    if (!selected) return;
+    display_palette = *selected;
+    if (emulator != nullptr) {
+        emulator->set_dmg_compatibility_colors(
+            gameboy::display_palettes[display_palette].cgb_compatibility);
+    }
+    save_display_palette(preference_path, display_palette);
+}
+
 void show_help(SDL_Window* window) {
     const auto message = std::string("Version ") + GBB_VERSION + "\n\n" +
         "Space: Pause/resume\n"
@@ -779,10 +794,11 @@ void show_error(SDL_Window* window, const std::string& message);
 
 void activate_dashboard_selection(
     const std::size_t selection, const std::vector<std::string>& recent,
-    const bool can_resume, DialogState& dialog, SdlResources& sdl,
+    gameboy::Emulator* emulator, DialogState& dialog, SdlResources& sdl,
+    const std::filesystem::path& preference_path,
     std::optional<std::string>& pending_rom, bool& dashboard_visible,
-    bool& running) {
-    const auto items = dashboard_items(can_resume, recent);
+    std::size_t& display_palette, bool& running) {
+    const auto items = dashboard_items(emulator != nullptr, recent);
     if (selection >= items.size()) return;
     const auto& item = items[selection];
     switch (item.action) {
@@ -791,6 +807,10 @@ void activate_dashboard_selection(
         break;
     case DashboardAction::open_rom:
         show_rom_dialog(dialog, sdl.window);
+        break;
+    case DashboardAction::palette:
+        choose_display_palette(emulator, sdl, preference_path,
+                               display_palette);
         break;
     case DashboardAction::recent_rom:
         if (item.recent_index < recent.size()) {
@@ -857,8 +877,9 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                 } else if (event.key.key == SDLK_RETURN ||
                            event.key.key == SDLK_SPACE) {
                     activate_dashboard_selection(
-                        dashboard_selection, recent, emulator != nullptr,
-                        dialog, sdl, pending_rom, dashboard_visible, running);
+                        dashboard_selection, recent, emulator.get(), dialog,
+                        sdl, preference_path, pending_rom, dashboard_visible,
+                        display_palette, running);
                 } else if (event.key.key == SDLK_O) {
                     show_rom_dialog(dialog, sdl.window);
                 } else if (event.key.key == SDLK_ESCAPE) {
@@ -949,17 +970,8 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
             } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
                        event.key.key == SDLK_P &&
                        (event.key.mod & SDL_KMOD_CTRL) != 0) {
-                if (emulator) release_all_buttons(*emulator);
-                if (const auto selected =
-                        show_palette_dialog(sdl.window, display_palette)) {
-                    display_palette = *selected;
-                    if (emulator) {
-                        emulator->set_dmg_compatibility_colors(
-                            gameboy::display_palettes[display_palette]
-                                .cgb_compatibility);
-                    }
-                    save_display_palette(preference_path, display_palette);
-                }
+                choose_display_palette(emulator.get(), sdl, preference_path,
+                                       display_palette);
             } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
                        event.key.key >= SDLK_1 && event.key.key <= SDLK_9 &&
                        (event.key.mod & SDL_KMOD_CTRL) != 0) {
@@ -1033,9 +1045,9 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                             x, y, dashboard_selection, item_count)) {
                         dashboard_selection = *selected;
                         activate_dashboard_selection(
-                            dashboard_selection, recent, emulator != nullptr,
-                            dialog, sdl, pending_rom, dashboard_visible,
-                            running);
+                            dashboard_selection, recent, emulator.get(), dialog,
+                            sdl, preference_path, pending_rom,
+                            dashboard_visible, display_palette, running);
                     }
                 } else if (x < 20.0F && y < 17.0F) {
                     if (emulator) release_all_buttons(*emulator);
@@ -1061,9 +1073,9 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                             dashboard_selection, item_count)) {
                         dashboard_selection = *selected;
                         activate_dashboard_selection(
-                            dashboard_selection, recent, emulator != nullptr,
-                            dialog, sdl, pending_rom, dashboard_visible,
-                            running);
+                            dashboard_selection, recent, emulator.get(), dialog,
+                            sdl, preference_path, pending_rom,
+                            dashboard_visible, display_palette, running);
                     }
                 }
                 break;
@@ -1140,8 +1152,9 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                         (dashboard_selection + 1) % item_count;
                 } else if (button == SDL_GAMEPAD_BUTTON_SOUTH) {
                     activate_dashboard_selection(
-                        dashboard_selection, recent, emulator != nullptr,
-                        dialog, sdl, pending_rom, dashboard_visible, running);
+                        dashboard_selection, recent, emulator.get(), dialog,
+                        sdl, preference_path, pending_rom, dashboard_visible,
+                        display_palette, running);
                 } else if (button == SDL_GAMEPAD_BUTTON_EAST && emulator) {
                     dashboard_visible = false;
                 }

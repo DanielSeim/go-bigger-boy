@@ -166,7 +166,8 @@ F5 to quick-save, F8 to load the quick save, and F1 for help. Recent ROMs,
 keyboard and gamepad bindings, the display palette, and per-ROM quick saves are
 stored in SDL's per-user preferences directory. The Ctrl+K controls dialog can
 rebind either input device or restore the default mappings; Escape cancels an
-in-progress setup.
+in-progress setup. On Android, tap the top-left menu button and choose
+`Display palette` to select and persist the same five palette options.
 
 At startup, the desktop and Android apps check GitHub's latest stable release in a
 background thread. If its semantic version is newer than the running build,

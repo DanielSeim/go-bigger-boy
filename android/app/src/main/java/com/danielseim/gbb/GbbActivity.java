@@ -47,7 +47,10 @@ public final class GbbActivity extends SDLActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        cameraOrientationDegrees = SDLActivity.getCurrentRotation();
+        // OrientationEventListener angles run opposite to display rotations.
+        // Seed the sensor value from the display until the first event arrives.
+        cameraOrientationDegrees =
+                (360 - SDLActivity.getCurrentRotation()) % 360;
         cameraOrientationListener = new OrientationEventListener(
                 this, SensorManager.SENSOR_DELAY_NORMAL) {
             @Override
@@ -86,11 +89,13 @@ public final class GbbActivity extends SDLActivity {
 
     /**
      * Queried by the native camera path while the SDL window stays landscape.
-     * Both values use Android's rotation convention, avoiding a conversion
-     * through SDL's display-orientation enum.
+     * The orientation sensor increases counter to the display-rotation API,
+     * so convert it before comparing it with SDL's current display rotation.
      */
     public int getCameraOrientationCorrectionDegrees() {
-        return cameraOrientationDegrees - SDLActivity.getCurrentRotation();
+        final int physicalDisplayRotation =
+                (360 - cameraOrientationDegrees) % 360;
+        return physicalDisplayRotation - SDLActivity.getCurrentRotation();
     }
 
     private void checkForUpdates() {
