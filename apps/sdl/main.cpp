@@ -46,7 +46,7 @@
 namespace {
 
 #ifndef GBB_VERSION
-#define GBB_VERSION "0.13.4"
+#define GBB_VERSION "0.13.5"
 #endif
 
 #ifdef __ANDROID__
@@ -493,6 +493,10 @@ std::string trimmed_setting(std::string value) {
     return value;
 }
 
+const char* keyboard_key_setting_name(const SDL_Keycode key) {
+    return key == SDLK_UNKNOWN ? "None" : SDL_GetKeyName(key);
+}
+
 const char* gamepad_button_setting_name(const SDL_GamepadButton button) {
     switch (button) {
     case SDL_GAMEPAD_BUTTON_SOUTH: return "south";
@@ -539,10 +543,10 @@ void append_missing_portable_settings(
     for (std::size_t index = 0; index < button_names.size(); ++index) {
         if (has_keyboard[index]) continue;
         output << "keyboard." << button_names[index] << " = "
-               << SDL_GetKeyName(settings.bindings.keys[index][0]);
+               << keyboard_key_setting_name(settings.bindings.keys[index][0]);
         if (settings.bindings.keys[index][1] != SDLK_UNKNOWN) {
             output << ' '
-                   << SDL_GetKeyName(settings.bindings.keys[index][1]);
+                   << keyboard_key_setting_name(settings.bindings.keys[index][1]);
         }
         output << '\n';
     }
@@ -573,10 +577,10 @@ void write_portable_settings(const AppSettings& settings) {
            << gameboy::display_palettes[settings.palette].id << "\n\n";
     for (std::size_t index = 0; index < button_names.size(); ++index) {
         output << "keyboard." << button_names[index] << " = "
-               << SDL_GetKeyName(settings.bindings.keys[index][0]);
+               << keyboard_key_setting_name(settings.bindings.keys[index][0]);
         if (settings.bindings.keys[index][1] != SDLK_UNKNOWN) {
             output << ' '
-                   << SDL_GetKeyName(settings.bindings.keys[index][1]);
+                   << keyboard_key_setting_name(settings.bindings.keys[index][1]);
         }
         output << '\n';
     }
@@ -635,19 +639,31 @@ AppSettings load_portable_settings(
                 has_keyboard[index] = true;
                 std::array<SDL_Keycode, 2> parsed_keys{
                     SDLK_UNKNOWN, SDLK_UNKNOWN};
-                const auto whole = SDL_GetKeyFromName(value.c_str());
+                bool parsed_mapping = value == "None";
+                const auto whole = parsed_mapping
+                                       ? SDLK_UNKNOWN
+                                       : SDL_GetKeyFromName(value.c_str());
                 if (whole != SDLK_UNKNOWN) {
                     parsed_keys[0] = whole;
+                    parsed_mapping = true;
                 } else {
                     std::istringstream values(value);
                     std::string name;
                     std::size_t slot = 0;
                     while (slot < parsed_keys.size() && values >> name) {
+                        if (name == "None") {
+                            ++slot;
+                            parsed_mapping = true;
+                            continue;
+                        }
                         const auto parsed = SDL_GetKeyFromName(name.c_str());
-                        if (parsed != SDLK_UNKNOWN) parsed_keys[slot++] = parsed;
+                        if (parsed != SDLK_UNKNOWN) {
+                            parsed_keys[slot++] = parsed;
+                            parsed_mapping = true;
+                        }
                     }
                 }
-                if (parsed_keys[0] != SDLK_UNKNOWN) {
+                if (parsed_mapping) {
                     loaded_keys[index] = parsed_keys;
                 }
             } else if (key == std::string("gamepad.") + names[index]) {
@@ -2347,7 +2363,6 @@ int main(int argc, char** argv) {
 #endif
 #ifdef _WIN32
         bool reveal_sdl_after_present = false;
-        bool return_to_dashboard_after_configuration = false;
 #endif
         auto paused = false;
         auto fullscreen = false;
@@ -2407,9 +2422,18 @@ int main(int argc, char** argv) {
                 !available_update && !update_download) {
                 save_game_window_geometry(sdl.window, preference_path);
                 SDL_HideWindow(sdl.window);
+                gbb_desktop::KeyboardBindings dashboard_bindings{};
+                for (std::size_t index = 0; index < bindings.keys.size();
+                     ++index) {
+                    for (std::size_t slot = 0;
+                         slot < bindings.keys[index].size(); ++slot) {
+                        dashboard_bindings[index][slot] =
+                            static_cast<std::int64_t>(bindings.keys[index][slot]);
+                    }
+                }
                 const auto result = gbb_desktop::show_windows_dashboard(
                     nullptr, rom_library, emulator != nullptr, display_palette,
-                    preference_path);
+                    dashboard_bindings, preference_path);
                 if (!result.removed_fingerprints.empty()) {
                     for (const auto fingerprint : result.removed_fingerprints) {
                         static_cast<void>(rom_library.remove(fingerprint));
@@ -2427,6 +2451,18 @@ int main(int argc, char** argv) {
                                 .cgb_compatibility);
                     }
                 }
+                if (result.keyboard_bindings_changed) {
+                    for (std::size_t index = 0; index < bindings.keys.size();
+                         ++index) {
+                        for (std::size_t slot = 0;
+                             slot < bindings.keys[index].size(); ++slot) {
+                            bindings.keys[index][slot] =
+                                static_cast<SDL_Keycode>(
+                                    result.keyboard_bindings[index][slot]);
+                        }
+                    }
+                    save_bindings(preference_path, bindings);
+                }
                 switch (result.action) {
                 case gbb_desktop::DashboardResultAction::open_rom:
                     pending_rom = result.rom_path;
@@ -2436,38 +2472,6 @@ int main(int argc, char** argv) {
                     dashboard_visible = false;
                     reveal_sdl_after_present = true;
                     break;
-                case gbb_desktop::DashboardResultAction::configure_controls: {
-                    const auto action = show_controls_dialog(sdl.window,
-                                                             bindings);
-                    if (action == ControlsAction::reset) {
-                        bindings = InputBindings{};
-                        save_bindings(preference_path, bindings);
-                        dashboard_visible = true;
-                    } else if (action == ControlsAction::keyboard ||
-                               action == ControlsAction::gamepad) {
-                        if (action == ControlsAction::gamepad &&
-                            sdl.gamepad == nullptr) {
-                            show_error(
-                                sdl.window,
-                                "Connect a gamepad before configuring it.");
-                            dashboard_visible = true;
-                        } else {
-                            begin_binding_configuration(
-                                bindings, configuration_backup, configuring,
-                                action == ControlsAction::keyboard
-                                    ? BindingDevice::keyboard
-                                    : BindingDevice::gamepad);
-                            dashboard_visible = false;
-                            return_to_dashboard_after_configuration = true;
-                            update_window_title(sdl.window, current_rom, paused,
-                                                configuring);
-                            SDL_ShowWindow(sdl.window);
-                        }
-                    } else {
-                        dashboard_visible = true;
-                    }
-                    break;
-                }
                 case gbb_desktop::DashboardResultAction::quit:
                     running = false;
                     break;
@@ -2481,22 +2485,12 @@ int main(int argc, char** argv) {
                 pending_rom_name = std::move(requested->display_name);
             }
 #endif
-            const bool was_configuring = configuring.has_value();
             process_events(emulator, sdl, dialog, preference_path, bindings,
                            configuration_backup, recent_roms, current_rom,
                            configuring, pending_rom, display_palette,
                            dashboard_visible, dashboard_selection, paused,
                            fullscreen,
                            reset_requested, running);
-#ifdef _WIN32
-            if (return_to_dashboard_after_configuration && was_configuring &&
-                !configuring) {
-                return_to_dashboard_after_configuration = false;
-                dashboard_visible = true;
-                dashboard_selection = 0;
-                SDL_HideWindow(sdl.window);
-            }
-#endif
 
             std::optional<std::string> dialog_error;
             collect_dialog_result(dialog, pending_rom, dialog_error);

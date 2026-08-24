@@ -173,9 +173,13 @@ preferences directory. Desktop keyboard/gamepad bindings and the display palette
 are stored in the human-readable `settings.ini` at the installation root. Each
 Game Boy button accepts up to two space-separated keyboard keys (for example,
 `keyboard.B = Z Y`). Copy the file to another GBB installation to share the
-same setup. The Settings page or Ctrl+K controls dialog can rebind either input
-device or restore the default mappings; Space skips an optional secondary key
-and Escape cancels an in-progress setup. GBB generates a complete default
+same setup. On Windows, the native Settings page presents primary and secondary
+buttons over a Game Boy control illustration: click a slot and press its new
+key, press Delete while capturing a secondary slot to clear it, or reset every
+keyboard control at once. Reusing a key automatically removes its earlier
+assignment. The Ctrl+K dialog can also rebind keyboard or gamepad input; Space
+skips an optional secondary key and Escape cancels an in-progress setup. GBB
+generates a complete default
 `settings.ini` at startup whenever it is missing and appends defaults for any
 recognized entries omitted from an existing file. Older `controls.txt` and
 `palette.txt` preferences migrate automatically when `settings.ini` is first

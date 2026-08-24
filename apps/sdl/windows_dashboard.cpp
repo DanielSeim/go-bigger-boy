@@ -4,6 +4,8 @@
 
 #ifdef _WIN32
 
+#include <SDL3/SDL.h>
+
 #include <commctrl.h>
 #include <commdlg.h>
 #include <wincodec.h>
@@ -36,7 +38,9 @@ constexpr int id_resume = 105;
 constexpr int id_quit = 106;
 constexpr int id_palette = 107;
 constexpr int id_remove = 108;
-constexpr int id_controls = 109;
+constexpr int id_gameboy_background = 110;
+constexpr int id_reset_controls = 111;
+constexpr int id_binding_first = 200;
 constexpr UINT artwork_ready = WM_APP + 1;
 
 struct MetadataRecord {
@@ -105,7 +109,13 @@ struct State {
     HWND settings_heading{};
     HWND palette_label{};
     HWND controls_label{};
-    HWND controls{};
+    HWND controls_instruction{};
+    HWND gameboy_background{};
+    std::array<HWND, 8> binding_labels{};
+    std::array<HWND, 2> primary_headings{};
+    std::array<HWND, 2> secondary_headings{};
+    std::array<std::array<HWND, 2>, 8> binding_buttons{};
+    HWND reset_controls{};
     HWND logo{};
     HBITMAP logo_bitmap{};
     HIMAGELIST covers{};
@@ -113,6 +123,7 @@ struct State {
     std::thread artwork_worker;
     std::atomic_bool closing{};
     HFONT title_font{};
+    std::optional<std::pair<std::size_t, std::size_t>> capturing_binding;
 };
 
 std::optional<POINT> load_window_position(
@@ -140,7 +151,168 @@ void save_window_position(const State& state) {
     output << rectangle.left << ' ' << rectangle.top << '\n';
 }
 
+constexpr std::array<const wchar_t*, 8> control_names{{
+    L"Right", L"Left", L"Up", L"Down", L"A", L"B", L"Select", L"Start"}};
+
+KeyboardBindings default_keyboard_bindings() {
+    return {{{{SDLK_RIGHT, SDLK_UNKNOWN}}, {{SDLK_LEFT, SDLK_UNKNOWN}},
+             {{SDLK_UP, SDLK_UNKNOWN}}, {{SDLK_DOWN, SDLK_UNKNOWN}},
+             {{SDLK_X, SDLK_UNKNOWN}}, {{SDLK_Z, SDLK_UNKNOWN}},
+             {{SDLK_BACKSPACE, SDLK_UNKNOWN}},
+             {{SDLK_RETURN, SDLK_UNKNOWN}}}};
+}
+
+std::wstring binding_name(const std::int64_t value) {
+    if (value == SDLK_UNKNOWN) return L"None";
+    return widen(SDL_GetKeyName(static_cast<SDL_Keycode>(value)));
+}
+
+void refresh_binding_buttons(State& state) {
+    for (std::size_t index = 0; index < state.binding_buttons.size(); ++index) {
+        for (std::size_t slot = 0;
+             slot < state.binding_buttons[index].size(); ++slot) {
+            auto text = binding_name(state.result.keyboard_bindings[index][slot]);
+            if (state.capturing_binding ==
+                std::optional<std::pair<std::size_t, std::size_t>>{
+                    {index, slot}}) {
+                text = L"Press a key...";
+            }
+            SetWindowTextW(state.binding_buttons[index][slot], text.c_str());
+        }
+    }
+}
+
+bool reserved_binding_key(const SDL_Keycode key) {
+    switch (key) {
+    case SDLK_ESCAPE:
+    case SDLK_SPACE:
+    case SDLK_F1:
+    case SDLK_F5:
+    case SDLK_F8:
+    case SDLK_F11: return true;
+    default: return false;
+    }
+}
+
+SDL_Keycode keycode_from_windows(const WPARAM virtual_key,
+                                 const LPARAM key_data) {
+    if (virtual_key >= 'A' && virtual_key <= 'Z') {
+        return static_cast<SDL_Keycode>(SDLK_A + virtual_key - 'A');
+    }
+    if (virtual_key >= '0' && virtual_key <= '9') {
+        return static_cast<SDL_Keycode>(SDLK_0 + virtual_key - '0');
+    }
+    if (virtual_key >= VK_F1 && virtual_key <= VK_F24) {
+        return static_cast<SDL_Keycode>(SDLK_F1 + virtual_key - VK_F1);
+    }
+    switch (virtual_key) {
+    case VK_BACK: return SDLK_BACKSPACE;
+    case VK_TAB: return SDLK_TAB;
+    case VK_RETURN: return SDLK_RETURN;
+    case VK_ESCAPE: return SDLK_ESCAPE;
+    case VK_SPACE: return SDLK_SPACE;
+    case VK_PRIOR: return SDLK_PAGEUP;
+    case VK_NEXT: return SDLK_PAGEDOWN;
+    case VK_END: return SDLK_END;
+    case VK_HOME: return SDLK_HOME;
+    case VK_LEFT: return SDLK_LEFT;
+    case VK_UP: return SDLK_UP;
+    case VK_RIGHT: return SDLK_RIGHT;
+    case VK_DOWN: return SDLK_DOWN;
+    case VK_INSERT: return SDLK_INSERT;
+    case VK_DELETE: return SDLK_DELETE;
+    case VK_SHIFT: {
+        const auto scan_code = static_cast<UINT>((key_data >> 16) & 0xFF);
+        return scan_code == MapVirtualKeyW(VK_RSHIFT, MAPVK_VK_TO_VSC)
+                   ? SDLK_RSHIFT
+                   : SDLK_LSHIFT;
+    }
+    case VK_CONTROL:
+        return (key_data & (LPARAM{1} << 24)) != 0 ? SDLK_RCTRL : SDLK_LCTRL;
+    case VK_MENU:
+        return (key_data & (LPARAM{1} << 24)) != 0 ? SDLK_RALT : SDLK_LALT;
+    case VK_LSHIFT: return SDLK_LSHIFT;
+    case VK_RSHIFT: return SDLK_RSHIFT;
+    case VK_LCONTROL: return SDLK_LCTRL;
+    case VK_RCONTROL: return SDLK_RCTRL;
+    case VK_LMENU: return SDLK_LALT;
+    case VK_RMENU: return SDLK_RALT;
+    default: break;
+    }
+    std::array<wchar_t, 8> translated{};
+    std::array<BYTE, 256> keyboard_state{};
+    GetKeyboardState(keyboard_state.data());
+    const auto scan_code = static_cast<UINT>((key_data >> 16) & 0xFF);
+    if (ToUnicode(static_cast<UINT>(virtual_key), scan_code,
+                  keyboard_state.data(), translated.data(),
+                  static_cast<int>(translated.size()), 0) == 1) {
+        return SDL_GetKeyFromName(narrow(translated.data()).c_str());
+    }
+    return SDLK_UNKNOWN;
+}
+
+void assign_captured_binding(State& state, const SDL_Keycode key) {
+    if (!state.capturing_binding) return;
+    const auto [target_index, target_slot] = *state.capturing_binding;
+    if (state.result.keyboard_bindings[target_index][target_slot] == key) {
+        state.capturing_binding.reset();
+        SetWindowTextW(state.controls_instruction,
+                       L"Binding unchanged. Click another binding to continue.");
+        refresh_binding_buttons(state);
+        return;
+    }
+    for (auto& bindings : state.result.keyboard_bindings) {
+        if (bindings[0] == key) {
+            bindings[0] = bindings[1];
+            bindings[1] = SDLK_UNKNOWN;
+        } else if (bindings[1] == key) {
+            bindings[1] = SDLK_UNKNOWN;
+        }
+    }
+    state.result.keyboard_bindings[target_index][target_slot] = key;
+    state.result.keyboard_bindings_changed = true;
+    state.capturing_binding.reset();
+    SetWindowTextW(state.controls_instruction,
+                   L"Click a binding, then press a key. Delete clears a secondary binding.");
+    refresh_binding_buttons(state);
+}
+
+void draw_gameboy_background(const DRAWITEMSTRUCT& item) {
+    const auto device = CreateSolidBrush(RGB(214, 215, 204));
+    const auto screen = CreateSolidBrush(RGB(174, 190, 166));
+    const auto accent = CreateSolidBrush(RGB(74, 72, 82));
+    const auto red = CreateSolidBrush(RGB(145, 55, 91));
+    RECT body{6, 2, item.rcItem.right - 6, item.rcItem.bottom - 2};
+    FillRect(item.hDC, &item.rcItem,
+             reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1));
+    const auto old_pen = SelectObject(item.hDC, GetStockObject(NULL_PEN));
+    const auto old_brush = SelectObject(item.hDC, device);
+    RoundRect(item.hDC, body.left, body.top, body.right, body.bottom, 24, 24);
+    RECT display{190, 14, item.rcItem.right - 190, 64};
+    FillRect(item.hDC, &display, screen);
+    SelectObject(item.hDC, accent);
+    RECT dpad_horizontal{40, 112, 122, 140};
+    RECT dpad_vertical{67, 85, 95, 167};
+    FillRect(item.hDC, &dpad_horizontal, accent);
+    FillRect(item.hDC, &dpad_vertical, accent);
+    SelectObject(item.hDC, red);
+    Ellipse(item.hDC, item.rcItem.right - 115, 92,
+            item.rcItem.right - 75, 132);
+    Ellipse(item.hDC, item.rcItem.right - 165, 125,
+            item.rcItem.right - 125, 165);
+    SelectObject(item.hDC, old_brush);
+    SelectObject(item.hDC, old_pen);
+    DeleteObject(device);
+    DeleteObject(screen);
+    DeleteObject(accent);
+    DeleteObject(red);
+}
+
 void show_page(State& state, const bool settings) {
+    if (!settings && state.capturing_binding) {
+        state.capturing_binding.reset();
+        refresh_binding_buttons(state);
+    }
     ShowWindow(state.list, settings ? SW_HIDE : SW_SHOW);
     ShowWindow(state.play, settings ? SW_HIDE : SW_SHOW);
     ShowWindow(state.open, settings ? SW_HIDE : SW_SHOW);
@@ -150,7 +322,23 @@ void show_page(State& state, const bool settings) {
     ShowWindow(state.palette_label, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.palette, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.controls_label, settings ? SW_SHOW : SW_HIDE);
-    ShowWindow(state.controls, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.controls_instruction, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.gameboy_background, settings ? SW_SHOW : SW_HIDE);
+    for (const auto heading : state.primary_headings) {
+        ShowWindow(heading, settings ? SW_SHOW : SW_HIDE);
+    }
+    for (const auto heading : state.secondary_headings) {
+        ShowWindow(heading, settings ? SW_SHOW : SW_HIDE);
+    }
+    for (const auto label : state.binding_labels) {
+        ShowWindow(label, settings ? SW_SHOW : SW_HIDE);
+    }
+    for (const auto& buttons : state.binding_buttons) {
+        for (const auto button : buttons) {
+            ShowWindow(button, settings ? SW_SHOW : SW_HIDE);
+        }
+    }
+    ShowWindow(state.reset_controls, settings ? SW_SHOW : SW_HIDE);
 }
 
 std::optional<std::size_t> selected_entry_index(const State& state) {
@@ -229,7 +417,59 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
     }
     if (state == nullptr) return DefWindowProcW(window, message, wparam, lparam);
 
+    if ((message == WM_KEYDOWN || message == WM_SYSKEYDOWN) &&
+        state->capturing_binding) {
+        if (wparam == VK_ESCAPE) {
+            state->capturing_binding.reset();
+            SetWindowTextW(
+                state->controls_instruction,
+                L"Click a binding, then press a key. Delete clears a secondary binding.");
+            refresh_binding_buttons(*state);
+            return 0;
+        }
+        const auto [index, slot] = *state->capturing_binding;
+        if (slot == 1 && wparam == VK_DELETE) {
+            state->result.keyboard_bindings[index][slot] = SDLK_UNKNOWN;
+            state->result.keyboard_bindings_changed = true;
+            state->capturing_binding.reset();
+            SetWindowTextW(
+                state->controls_instruction,
+                L"Secondary binding removed. Click another binding to continue.");
+            refresh_binding_buttons(*state);
+            return 0;
+        }
+        const auto key = keycode_from_windows(wparam, lparam);
+        if (key == SDLK_UNKNOWN) {
+            MessageBoxW(window, L"That key is not supported.",
+                        L"Configure controls", MB_OK | MB_ICONWARNING);
+            return 0;
+        }
+        if (reserved_binding_key(key)) {
+            MessageBoxW(window,
+                        L"That key is reserved for an emulator shortcut.",
+                        L"Configure controls", MB_OK | MB_ICONWARNING);
+            return 0;
+        }
+        assign_captured_binding(*state, key);
+        return 0;
+    }
+
     if (message == WM_COMMAND) {
+        const auto command = LOWORD(wparam);
+        if (command >= id_binding_first &&
+            command < id_binding_first + 16) {
+            const auto binding = static_cast<std::size_t>(
+                command - id_binding_first);
+            state->capturing_binding = {binding / 2, binding % 2};
+            SetWindowTextW(
+                state->controls_instruction,
+                binding % 2 == 0
+                    ? L"Press a key for the primary binding (Escape cancels)."
+                    : L"Press a key for the secondary binding, or Delete to clear it.");
+            refresh_binding_buttons(*state);
+            SetFocus(state->window);
+            return 0;
+        }
         switch (LOWORD(wparam)) {
         case id_library: show_page(*state, false); return 0;
         case id_settings: show_page(*state, true); return 0;
@@ -238,8 +478,19 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
         case id_resume: finish(*state, DashboardResultAction::resume); return 0;
         case id_quit: finish(*state, DashboardResultAction::quit); return 0;
         case id_remove: remove_selection(*state); return 0;
-        case id_controls:
-            finish(*state, DashboardResultAction::configure_controls);
+        case id_reset_controls:
+            if (MessageBoxW(
+                    window,
+                    L"Restore all keyboard controls to their defaults?",
+                    L"Reset controls",
+                    MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) == IDYES) {
+                state->result.keyboard_bindings = default_keyboard_bindings();
+                state->result.keyboard_bindings_changed = true;
+                state->capturing_binding.reset();
+                SetWindowTextW(state->controls_instruction,
+                               L"All keyboard controls restored to defaults.");
+                refresh_binding_buttons(*state);
+            }
             return 0;
         case id_palette:
             if (HIWORD(wparam) == CBN_SELCHANGE) {
@@ -253,6 +504,11 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
             return 0;
         default: break;
         }
+    } else if (message == WM_DRAWITEM &&
+               wparam == id_gameboy_background) {
+        draw_gameboy_background(
+            *reinterpret_cast<const DRAWITEMSTRUCT*>(lparam));
+        return TRUE;
     } else if (message == WM_NOTIFY) {
         const auto* notification = reinterpret_cast<NMHDR*>(lparam);
         if (notification->idFrom == id_list && notification->code == NM_DBLCLK) {
@@ -632,6 +888,7 @@ HWND control(State& state, const wchar_t* type, const wchar_t* text,
 DashboardResult show_windows_dashboard(
     HWND owner, const gameboy::RomLibrary& library, const bool can_resume,
     const std::size_t palette,
+    const KeyboardBindings& keyboard_bindings,
     const std::filesystem::path& preference_directory) {
     INITCOMMONCONTROLSEX controls{sizeof(controls), ICC_LISTVIEW_CLASSES};
     InitCommonControlsEx(&controls);
@@ -650,6 +907,7 @@ DashboardResult show_windows_dashboard(
     state.library = &library;
     state.can_resume = can_resume;
     state.result.palette = palette;
+    state.result.keyboard_bindings = keyboard_bindings;
     state.preference_directory = preference_directory;
     const auto saved_position = load_window_position(preference_directory);
     state.window = CreateWindowExW(
@@ -766,12 +1024,12 @@ DashboardResult show_windows_dashboard(
     state.quit = control(state, L"BUTTON", L"Quit",
         WS_VISIBLE | BS_PUSHBUTTON, 664, 515, 110, 38, id_quit);
 
-    state.settings_heading = control(state, L"STATIC", L"Display settings",
+    state.settings_heading = control(state, L"STATIC", L"Display and controls",
         0, 24, 174, 300, 28, 0);
     state.palette_label = control(state, L"STATIC", L"Color palette",
-        0, 24, 220, 180, 24, 0);
+        0, 24, 204, 96, 24, 0);
     state.palette = control(state, L"COMBOBOX", L"",
-        CBS_DROPDOWNLIST | WS_VSCROLL, 24, 250, 320, 180, id_palette);
+        CBS_DROPDOWNLIST | WS_VSCROLL, 122, 198, 222, 180, id_palette);
     constexpr std::array<const wchar_t*, 5> palettes{{
         L"Grayscale", L"Classic green", L"Game Boy Pocket", L"Amber",
         L"Game Boy Color (automatic)"}};
@@ -781,10 +1039,47 @@ DashboardResult show_windows_dashboard(
     }
     SendMessageW(state.palette, CB_SETCURSEL,
                  static_cast<WPARAM>(palette), 0);
-    state.controls_label = control(state, L"STATIC", L"Input controls",
-        0, 24, 318, 180, 24, 0);
-    state.controls = control(state, L"BUTTON", L"Configure controls...",
-        BS_PUSHBUTTON, 24, 348, 180, 36, id_controls);
+    state.controls_label = control(state, L"STATIC", L"Keyboard controls",
+        0, 374, 174, 180, 24, 0);
+    state.controls_instruction = control(
+        state, L"STATIC",
+        L"Click a binding, then press a key. Delete clears a secondary binding.",
+        0, 374, 198, 390, 24, 0);
+    state.gameboy_background = control(
+        state, L"STATIC", L"", SS_OWNERDRAW, 24, 232, 750, 266,
+        id_gameboy_background);
+
+    for (int column = 0; column < 2; ++column) {
+        const auto base_x = column == 0 ? 52 : 406;
+        state.primary_headings[static_cast<std::size_t>(column)] = control(
+            state, L"STATIC", L"Primary", 0,
+            base_x + 58, 260, 92, 22, 0);
+        state.secondary_headings[static_cast<std::size_t>(column)] = control(
+            state, L"STATIC", L"Secondary", 0,
+            base_x + 156, 260, 92, 22, 0);
+    }
+    constexpr std::array<std::size_t, 8> control_order{{
+        2, 1, 0, 3, 4, 5, 6, 7}};
+    for (std::size_t position = 0; position < control_order.size(); ++position) {
+        const auto index = control_order[position];
+        const auto column = position < 4 ? 0 : 1;
+        const auto row = static_cast<int>(position % 4);
+        const auto base_x = column == 0 ? 52 : 406;
+        const auto y = 286 + row * 42;
+        state.binding_labels[index] = control(
+            state, L"STATIC", control_names[index], 0,
+            base_x, y + 7, 54, 24, 0);
+        for (std::size_t slot = 0; slot < 2; ++slot) {
+            state.binding_buttons[index][slot] = control(
+                state, L"BUTTON", L"", BS_PUSHBUTTON,
+                base_x + 58 + static_cast<int>(slot) * 98, y,
+                92, 34,
+                id_binding_first + static_cast<int>(index * 2 + slot));
+        }
+    }
+    state.reset_controls = control(state, L"BUTTON", L"Reset all controls",
+        BS_PUSHBUTTON, 24, 515, 160, 38, id_reset_controls);
+    refresh_binding_buttons(state);
     show_page(state, false);
 
     if (owner != nullptr) EnableWindow(owner, FALSE);
