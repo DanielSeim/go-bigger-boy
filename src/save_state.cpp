@@ -13,7 +13,7 @@ namespace {
 constexpr std::array<std::uint8_t, 8> state_magic{
     'G', 'B', 'B', 'S', 'T', 'A', 'T', 'E',
 };
-constexpr std::uint32_t state_version = 10;
+constexpr std::uint32_t state_version = 11;
 constexpr std::uint32_t oldest_supported_state_version = 1;
 constexpr std::size_t maximum_state_size = 2 * 1024 * 1024;
 constexpr std::size_t maximum_serial_output = 1024 * 1024;
@@ -391,6 +391,8 @@ private:
         writer.u8(bus.ppu_.window_trigger_x_);
         writer.boolean(bus.ppu_.window_trigger_pending_);
         writer.u16(bus.ppu_.window_disable_source_x_);
+        writer.boolean(bus.ppu_.discard_first_fetch_);
+        writer.u8(bus.ppu_.fetched_source_y_);
     }
 
     static void read_bus(Reader& reader, MemoryBus& bus,
@@ -594,6 +596,10 @@ private:
                               (bus.ppu_.window_source_x_ + 7U) & ~7U)
                         : std::uint16_t{0};
             }
+            bus.ppu_.discard_first_fetch_ =
+                version >= 11 ? reader.boolean() : false;
+            bus.ppu_.fetched_source_y_ =
+                version >= 11 ? reader.u8() : bus.ppu_.fetched_row_;
             if (bus.ppu_.background_fifo_size_ >
                     bus.ppu_.background_fifo_.size() ||
                 bus.ppu_.fetcher_phase_ > 4 ||
@@ -621,6 +627,7 @@ private:
             bus.ppu_.fetched_low_ = 0;
             bus.ppu_.fetched_high_ = 0;
             bus.ppu_.fetched_row_ = 0;
+            bus.ppu_.fetched_source_y_ = 0;
             bus.ppu_.line_sprite_count_ = 0;
             bus.ppu_.next_line_sprite_ = 0;
             bus.ppu_.output_x_ = 0;
@@ -648,6 +655,7 @@ private:
             bus.ppu_.window_trigger_x_ = 0;
             bus.ppu_.window_trigger_pending_ = false;
             bus.ppu_.window_disable_source_x_ = 0;
+            bus.ppu_.discard_first_fetch_ = false;
         }
         // The printer represents an external device and is deliberately not
         // embedded in emulator save states. Loading a state starts a fresh

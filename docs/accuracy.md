@@ -31,10 +31,14 @@ The PPU emits pixels through a dot-stepped fetcher instead of looking up a tile
 directly for each output pixel. The fetcher performs tile, low-bitplane,
 high-bitplane, sleep, and push phases; feeds a 16-pixel background FIFO; applies
 the initial `SCX` discard; restarts for the window; and pauses output for
-selected sprite fetches. Sprite pixels are latched into a scanline buffer and
-mixed with background pixels as the FIFO is popped. Save-state version 9 also
-preserves this in-flight pipeline so a state taken during mode 3 resumes
-deterministically.
+selected sprite fetches. The first mode-3 tile fetch is discarded and tile zero
+is fetched again, matching the hardware pipeline's observable register-sampling
+sequence rather than reusing the visually identical speculative data. Tile-map
+and tile bitplane data are read at their individual fetcher bus phases, including
+the delayed high-bitplane read while the FIFO is blocked. Sprite pixels are
+latched into a scanline buffer and mixed with background pixels as the FIFO is
+popped. Save-state version 11 preserves this in-flight pipeline so a state taken
+during mode 3 resumes deterministically.
 
 The visual gate covers native DMG and CGB Acid2, DMG software under the CGB
 compatibility palette, Scribbl rendering and STAT timing, six Mealybug window
@@ -48,13 +52,16 @@ realigns without dropping the first queued window pixel.
 DMG window-enable changes also latch a comparator already inside the queued
 tile, cancel fetches during their first two pixels, insert the color-zero pixel
 at the tile-name boundary, and delay off-screen-left disables through the next
-full visible tile.
+full visible tile. `WX=0` now also pays its extra DMG activation dot when fine
+`SCX` scrolling is active. Later monochrome post-boot profiles reproduce the
+registered-trademark tile that the boot ROM leaves at `$8190`, so edge tests do
+not accidentally run against zero-filled startup VRAM.
 
 The next PPU refinement is the hardware-revision-specific edge behavior around
 object-fetch cancellation, window triggers changed before the first visible
-pixel, `WX < 7`, and bitplane reads that overlap precisely timed SCY/LCDC
-writes. Those cases remain outside the release gate until their framebuffer
-references match exactly.
+pixel (including the remaining `WX=1..6` comparator cases), and the output-pipeline
+collisions caused by precisely timed SCY/LCDC writes. Those cases remain outside
+the release gate until their framebuffer references match exactly.
 
 Run the exact CI baseline locally with:
 

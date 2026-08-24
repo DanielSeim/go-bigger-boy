@@ -2149,6 +2149,18 @@ void test_ppu_modes_and_memory_access() {
     check((window_timing.read8(0xFF41) & 0x03) == 0,
           "window fetch startup extends mode 3 by six dots");
 
+    gameboy::MemoryBus wx_zero_timing{gameboy::Cartridge{test_rom()}};
+    wx_zero_timing.write8(0xFF43, 1);
+    wx_zero_timing.write8(0xFF4A, 0);
+    wx_zero_timing.write8(0xFF4B, 0);
+    wx_zero_timing.write8(0xFF40, 0xA1);
+    wx_zero_timing.tick(259);
+    check((wx_zero_timing.read8(0xFF41) & 0x03) == 3,
+          "WX zero adds its DMG window stall with fractional SCX");
+    wx_zero_timing.tick(1);
+    check((wx_zero_timing.read8(0xFF41) & 0x03) == 0,
+          "the WX-zero fractional-scroll stall extends mode 3 by one dot");
+
     gameboy::MemoryBus sprite_timing{gameboy::Cartridge{test_rom()}};
     sprite_timing.write8(0xFE00, 16);
     sprite_timing.write8(0xFE01, 8);
@@ -2261,6 +2273,19 @@ void test_ppu_vblank_and_frame_publication() {
 }
 
 void test_ppu_background_window_and_sprites() {
+    gameboy::Emulator dmg_post_boot{
+        gameboy::Cartridge{test_rom()}, gameboy::HardwareModel::dmg};
+    constexpr std::array<std::uint8_t, 16> trademark_tile{
+        0x3C, 0x00, 0x42, 0x00, 0xB9, 0x00, 0xA5, 0x00,
+        0xB9, 0x00, 0xA5, 0x00, 0x42, 0x00, 0x3C, 0x00,
+    };
+    for (std::size_t index = 0; index < trademark_tile.size(); ++index) {
+        check(dmg_post_boot.bus().read8(
+                  static_cast<std::uint16_t>(0x8190 + index)) ==
+                  trademark_tile[index],
+              "DMG post-boot state preserves the trademark VRAM tile");
+    }
+
     gameboy::MemoryBus background{gameboy::Cartridge{test_rom()}};
     background.write8(0xFF47, 0xE4); // Identity DMG palette.
     background.write8(0x8000, 0x80);
@@ -2296,9 +2321,9 @@ void test_ppu_background_window_and_sprites() {
     fetch_latency.tick(93);
     fetch_latency.write8(0xFF40, 0x99); // Select $9C00 during mode 3.
     fetch_latency.tick(30);
-    check(fetch_latency.framebuffer()[15] == 0xFFFFFFFF &&
-              fetch_latency.framebuffer()[16] == 0xFF000000,
-          "tile-map writes take effect at a future fetch boundary, not the next pixel");
+    check(fetch_latency.framebuffer()[7] == 0xFFFFFFFF &&
+              fetch_latency.framebuffer()[8] == 0xFF000000,
+          "tile-map changes take effect at the fetcher's tile-map read phase");
 
     gameboy::MemoryBus window{gameboy::Cartridge{test_rom()}};
     window.write8(0xFF47, 0xE4);
@@ -2643,8 +2668,9 @@ void test_save_state_round_trip_and_validation() {
     constexpr std::size_t version_seven_camera_size = 1;
     constexpr std::size_t version_eight_ppu_size = 1;
     constexpr std::size_t version_ten_window_latch_size = 4;
+    constexpr std::size_t version_eleven_fetcher_size = 2;
     constexpr std::size_t version_nine_fetcher_size =
-        737 + version_ten_window_latch_size;
+        737 + version_ten_window_latch_size + version_eleven_fetcher_size;
     auto version_one = saved;
     version_one.resize(version_one.size() - version_two_dma_size -
                        version_three_ppu_size - version_four_cgb_size -
@@ -2810,7 +2836,8 @@ void test_save_state_round_trip_and_validation() {
           "version 8 save states remain loadable after adding PPU fetcher state");
 
     auto version_nine = saved;
-    version_nine.resize(version_nine.size() - version_ten_window_latch_size);
+    version_nine.resize(version_nine.size() - version_ten_window_latch_size -
+                        version_eleven_fetcher_size);
     version_nine[8] = 9;
     const auto version_nine_payload_size = static_cast<std::uint32_t>(
         version_nine.size() - state_header_size);
@@ -2827,6 +2854,23 @@ void test_save_state_round_trip_and_validation() {
               version_nine_loader.cpu().total_cycles() == saved_cycles &&
               version_nine_loader.bus().read8(0xA123) == 0x5A,
           "version 9 save states remain loadable after adding window latches");
+
+    auto version_ten = saved;
+    version_ten.resize(version_ten.size() - version_eleven_fetcher_size);
+    version_ten[8] = 10;
+    const auto version_ten_payload_size = static_cast<std::uint32_t>(
+        version_ten.size() - state_header_size);
+    write_little_u32(version_ten, 20, version_ten_payload_size);
+    write_little_u32(
+        version_ten, 24,
+        state_crc32(version_ten.data() + state_header_size,
+                    version_ten_payload_size));
+    gameboy::Emulator version_ten_loader{gameboy::Cartridge{rom}};
+    version_ten_loader.load_state(version_ten);
+    check(version_ten_loader.cpu().registers().pc == saved_pc &&
+              version_ten_loader.cpu().total_cycles() == saved_cycles &&
+              version_ten_loader.bus().read8(0xA123) == 0x5A,
+          "version 10 save states remain loadable after refining fetch startup");
 
     emulator.bus().write8(0xA123, 0x99);
     emulator.bus().write8(0xC000, 0x11);
@@ -2875,7 +2919,7 @@ void test_save_state_round_trip_and_validation() {
           "truncated save states are rejected without changing emulator state");
 
     auto future_version = saved;
-    future_version[8] = 11;
+    future_version[8] = 12;
     auto rejected_version = false;
     try {
         emulator.load_state(future_version);

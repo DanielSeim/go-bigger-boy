@@ -36,6 +36,18 @@ void Ppu::set_dmg_palette(const DmgPalette& palette) noexcept {
 }
 
 void Ppu::initialize_post_boot_phase(const HardwareModel model) noexcept {
+    if (model == HardwareModel::dmg || model == HardwareModel::mgb ||
+        model == HardwareModel::sgb || model == HardwareModel::sgb2) {
+        // Later monochrome boot ROMs leave the registered-trademark tile at
+        // $8190. The emulator skips the boot ROM, so reproduce that observable
+        // post-boot VRAM state explicitly.
+        constexpr std::array<std::uint8_t, 16> trademark_tile{
+            0x3C, 0x00, 0x42, 0x00, 0xB9, 0x00, 0xA5, 0x00,
+            0xB9, 0x00, 0xA5, 0x00, 0x42, 0x00, 0x3C, 0x00,
+        };
+        std::copy(trademark_tile.begin(), trademark_tile.end(),
+                  vram_.begin() + 0x190);
+    }
     if (model == HardwareModel::cgb0 || model == HardwareModel::cgb) {
         bg_palette_index_ = 0x88;
         object_palette_index_ = 0x90;
@@ -474,6 +486,7 @@ void Ppu::begin_mode3() noexcept {
     window_delay_ = 0;
     sprite_delay_ = 0;
     fetched_window_ = false;
+    discard_first_fetch_ = true;
     using_window_ = false;
     window_glitch_x_ = 0;
     window_glitch_applied_x_ = 0;
@@ -558,6 +571,12 @@ void Ppu::tick_background_fetcher() noexcept {
     if (fetcher_phase_ticks_ != 0 && --fetcher_phase_ticks_ != 0) return;
 
     const auto push_pixels = [this]() {
+        if (discard_first_fetch_) {
+            discard_first_fetch_ = false;
+            fetcher_phase_ = 0;
+            fetcher_phase_ticks_ = 2;
+            return;
+        }
         for (unsigned column = 0; column < 8; ++column) {
             const auto source_x =
                 static_cast<unsigned>(fetched_source_x_) + column;
@@ -612,6 +631,21 @@ void Ppu::tick_background_fetcher() noexcept {
         fetcher_phase_ticks_ = 2;
     };
 
+    const auto read_bitplane = [this](const unsigned byte) {
+        auto row = fetched_row_;
+        unsigned tile_offset = 0;
+        if ((lcdc_ & 0x10) != 0) {
+            tile_offset = static_cast<unsigned>(fetched_tile_) * 16;
+        } else {
+            const auto tile = static_cast<std::int8_t>(fetched_tile_);
+            tile_offset = static_cast<unsigned>(0x1000 + tile * 16);
+        }
+        const auto& bank = (fetched_attributes_ & 0x08) != 0
+                               ? *cgb_vram_
+                               : vram_;
+        return bank[tile_offset + row * 2 + byte];
+    };
+
     switch (fetcher_phase_) {
     case 0: {
         fetched_window_ = using_window_;
@@ -624,10 +658,16 @@ void Ppu::tick_background_fetcher() noexcept {
                 static_cast<std::uint8_t>((scx_ & 0xF8) +
                                           fetcher_tile_index_ * 8));
         }
-        const auto source_y = fetched_window_
-                                  ? static_cast<unsigned>(window_fetch_line_)
-                                  : static_cast<unsigned>(
-                                        static_cast<std::uint8_t>(ly_ + scy_));
+        fetched_source_y_ = fetched_window_
+                                ? window_fetch_line_
+                                : static_cast<std::uint8_t>(ly_ + scy_);
+        fetched_row_ = static_cast<std::uint8_t>(fetched_source_y_ & 7U);
+        fetcher_phase_ = 1;
+        fetcher_phase_ticks_ = 2;
+        return;
+    }
+    case 1: {
+        const auto source_y = static_cast<unsigned>(fetched_source_y_);
         const auto source_x = static_cast<unsigned>(fetched_source_x_) & 0xFFU;
         const auto map_base = fetched_window_
                                   ? ((lcdc_ & 0x40) != 0 ? 0x1C00U : 0x1800U)
@@ -640,57 +680,26 @@ void Ppu::tick_background_fetcher() noexcept {
         auto row = static_cast<std::uint8_t>(source_y & 7U);
         if ((fetched_attributes_ & 0x40) != 0) row = 7 - row;
         fetched_row_ = row;
-        fetcher_phase_ = 1;
-        fetcher_phase_ticks_ = 2;
-        return;
-    }
-    case 1: {
-        auto row = fetched_row_;
         if (!cgb_hardware_) {
-            const auto source_y = fetched_window_
-                                      ? static_cast<unsigned>(window_fetch_line_)
-                                      : static_cast<unsigned>(
-                                            static_cast<std::uint8_t>(ly_ + scy_));
-            row = static_cast<std::uint8_t>(source_y & 7U);
-            if ((fetched_attributes_ & 0x40) != 0) row = 7 - row;
+            const auto live_y = fetched_window_
+                                    ? window_fetch_line_
+                                    : static_cast<std::uint8_t>(ly_ + scy_);
+            fetched_row_ = static_cast<std::uint8_t>(live_y & 7U);
         }
-        unsigned tile_offset = 0;
-        if ((lcdc_ & 0x10) != 0) {
-            tile_offset = static_cast<unsigned>(fetched_tile_) * 16;
-        } else {
-            const auto tile = static_cast<std::int8_t>(fetched_tile_);
-            tile_offset = static_cast<unsigned>(0x1000 + tile * 16);
-        }
-        const auto& bank = (fetched_attributes_ & 0x08) != 0
-                               ? *cgb_vram_
-                               : vram_;
-        fetched_low_ = bank[tile_offset + row * 2];
         fetcher_phase_ = 2;
         fetcher_phase_ticks_ = 2;
         return;
     }
     case 2: {
-        auto row = fetched_row_;
+        fetched_low_ = read_bitplane(0);
         if (!cgb_hardware_) {
-            const auto source_y = fetched_window_
-                                      ? static_cast<unsigned>(window_fetch_line_)
-                                      : static_cast<unsigned>(
-                                            static_cast<std::uint8_t>(ly_ + scy_));
-            row = static_cast<std::uint8_t>(source_y & 7U);
-            if ((fetched_attributes_ & 0x40) != 0) row = 7 - row;
+            const auto live_y = fetched_window_
+                                    ? window_fetch_line_
+                                    : static_cast<std::uint8_t>(ly_ + scy_);
+            fetched_row_ = static_cast<std::uint8_t>(live_y & 7U);
         }
-        unsigned tile_offset = 0;
-        if ((lcdc_ & 0x10) != 0) {
-            tile_offset = static_cast<unsigned>(fetched_tile_) * 16;
-        } else {
-            const auto tile = static_cast<std::int8_t>(fetched_tile_);
-            tile_offset = static_cast<unsigned>(0x1000 + tile * 16);
-        }
-        const auto& bank = (fetched_attributes_ & 0x08) != 0
-                               ? *cgb_vram_
-                               : vram_;
-        fetched_high_ = bank[tile_offset + row * 2 + 1];
         if (background_fifo_size_ == 0) {
+            fetched_high_ = read_bitplane(1);
             push_pixels();
             return;
         }
@@ -699,6 +708,7 @@ void Ppu::tick_background_fetcher() noexcept {
         return;
     }
     case 3:
+        fetched_high_ = read_bitplane(1);
         fetcher_phase_ = 4;
         [[fallthrough]];
     case 4:
@@ -723,7 +733,8 @@ void Ppu::begin_window_fetch() noexcept {
     fetcher_phase_ = 0;
     fetcher_phase_ticks_ = 2;
     fetcher_tile_index_ = 0;
-    window_delay_ = 5;
+    window_delay_ = static_cast<std::uint8_t>(
+        5 + (!cgb_hardware_ && window_x_ == 0 && (scx_ & 7U) != 0));
     window_source_x_ = static_cast<std::uint16_t>(
         std::max(0, 7 - static_cast<int>(window_x_)));
     window_fetch_start_x_ = static_cast<std::uint8_t>(window_source_x_);

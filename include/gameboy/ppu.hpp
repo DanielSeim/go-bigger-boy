@@ -137,6 +137,7 @@ private:
     std::uint8_t fetched_low_{};
     std::uint8_t fetched_high_{};
     std::uint8_t fetched_row_{};
+    std::uint8_t fetched_source_y_{};
     std::uint8_t line_sprite_count_{};
     std::uint8_t next_line_sprite_{};
     std::uint8_t output_x_{};
@@ -156,6 +157,7 @@ private:
     std::uint16_t window_disable_source_x_{};
     std::uint32_t window_glitch_restore_color_{};
     bool fetched_window_{};
+    bool discard_first_fetch_{};
     bool using_window_{};
     bool previous_sprite_was_window_{};
     bool have_previous_sprite_tile_{};
