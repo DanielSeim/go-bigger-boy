@@ -35,11 +35,12 @@ import java.util.Locale;
 /** Android entry point; SDLActivity owns the native surface and lifecycle. */
 public final class GbbActivity extends SDLActivity {
     public static final String EXTRA_ROM = "com.danielseim.gbb.ROM";
+    public static final String EXTRA_ROM_NAME = "com.danielseim.gbb.ROM_NAME";
     private static final String TAG = "GBB updater";
     private static final String RELEASE_API =
             "https://api.github.com/repos/DanielSeim/go-bigger-boy/releases/latest";
     private static final String APK_ASSET = "go-bigger-boy-android.apk";
-    private static final String ACTION_INSTALL_RESULT =
+    static final String ACTION_INSTALL_RESULT =
             "com.danielseim.gbb.INSTALL_UPDATE_RESULT";
     private static final long MAXIMUM_APK_SIZE = 256L * 1024L * 1024L;
 
@@ -48,13 +49,14 @@ public final class GbbActivity extends SDLActivity {
     private volatile int cameraOrientationDegrees;
     private OrientationEventListener cameraOrientationListener;
 
-    private static native void nativeOpenRom(String rom);
+    private static native void nativeOpenRom(String rom, String displayName);
 
     @Override
     protected String[] getArguments() {
         final String rom = getIntent().getStringExtra(EXTRA_ROM);
+        final String name = getIntent().getStringExtra(EXTRA_ROM_NAME);
         return rom == null || rom.isEmpty() ? new String[0]
-                                            : new String[]{rom};
+                : new String[]{rom, name == null ? "" : name};
     }
 
     @Override
@@ -72,16 +74,17 @@ public final class GbbActivity extends SDLActivity {
                 cameraOrientationDegrees = ((orientation + 45) / 90 % 4) * 90;
             }
         };
-        if (!handleInstallResult(getIntent())) checkForUpdates();
+        checkForUpdates();
     }
 
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
-        if (!handleInstallResult(intent)) {
-            final String rom = intent.getStringExtra(EXTRA_ROM);
-            if (rom != null && !rom.isEmpty()) nativeOpenRom(rom);
+        final String rom = intent.getStringExtra(EXTRA_ROM);
+        final String name = intent.getStringExtra(EXTRA_ROM_NAME);
+        if (rom != null && !rom.isEmpty()) {
+            nativeOpenRom(rom, name == null ? "" : name);
         }
     }
 
@@ -257,7 +260,7 @@ public final class GbbActivity extends SDLActivity {
                     session.fsync(output);
                 }
 
-                final Intent result = new Intent(this, GbbActivity.class)
+                final Intent result = new Intent(this, UpdateResultActivity.class)
                         .setAction(ACTION_INSTALL_RESULT)
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK |
                                   Intent.FLAG_ACTIVITY_CLEAR_TOP |
@@ -295,37 +298,6 @@ public final class GbbActivity extends SDLActivity {
                             installPendingUpdate())
                     .show());
         }
-    }
-
-    private boolean handleInstallResult(Intent intent) {
-        if (intent == null || !ACTION_INSTALL_RESULT.equals(intent.getAction())) {
-            return false;
-        }
-        final int status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS,
-                PackageInstaller.STATUS_FAILURE);
-        if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
-            final Intent confirmation;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                confirmation = intent.getParcelableExtra(Intent.EXTRA_INTENT,
-                                                         Intent.class);
-            } else {
-                //noinspection deprecation
-                confirmation = intent.getParcelableExtra(Intent.EXTRA_INTENT);
-            }
-            if (confirmation != null) startActivity(confirmation);
-        } else if (status != PackageInstaller.STATUS_SUCCESS) {
-            final String message = intent.getStringExtra(
-                    PackageInstaller.EXTRA_STATUS_MESSAGE);
-            Log.e(TAG, "Package installation failed: " + message);
-            Toast.makeText(this, "Go Bigger Boy update failed.",
-                    Toast.LENGTH_LONG).show();
-        } else {
-            startActivity(new Intent(this, LibraryActivity.class)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK |
-                              Intent.FLAG_ACTIVITY_CLEAR_TASK));
-            finish();
-        }
-        return true;
     }
 
     private String installedVersion() throws Exception {

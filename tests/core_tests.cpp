@@ -163,6 +163,7 @@ void test_rom_library_metadata_and_deduplication() {
     check(metadata.title == "POKEMON BLUE" &&
               metadata.platform == gameboy::RomPlatform::game_boy_color &&
               metadata.language == "English, French, German" &&
+              metadata.crc32 != 0 &&
               metadata.cover_name ==
                   "Pokemon Blue (USA) (En,Fr,De)",
           "ROM library extracts header and filename metadata");
@@ -194,6 +195,10 @@ void test_rom_library_metadata_and_deduplication() {
               library.entries().front().metadata.language == "Japanese",
           "ROM library keeps distinct games ordered by recent use");
 
+    const auto german = gameboy::inspect_rom(rom, "Pokemon Blue (Germany).gbc");
+    check(german.language == "German",
+          "ROM library recognizes localized No-Intro region names");
+
     const auto directory = std::filesystem::temp_directory_path() /
                            "gbb-rom-library-test";
     std::filesystem::remove_all(directory);
@@ -202,6 +207,7 @@ void test_rom_library_metadata_and_deduplication() {
     check(restored.entries().size() == 2 &&
               restored.entries()[0].metadata.fingerprint ==
                   other.fingerprint &&
+              restored.entries()[0].metadata.crc32 == other.crc32 &&
               restored.entries()[1].metadata.fingerprint ==
                   metadata.fingerprint,
           "ROM library metadata persists in recency order");

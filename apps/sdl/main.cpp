@@ -34,6 +34,7 @@
 #ifdef _WIN32
 #define NOMINMAX
 #include <windows.h>
+#include "windows_dashboard.hpp"
 #endif
 
 #ifdef __ANDROID__
@@ -43,14 +44,19 @@
 namespace {
 
 #ifndef GBB_VERSION
-#define GBB_VERSION "0.13.0"
+#define GBB_VERSION "0.13.1"
 #endif
 
 #ifdef __ANDROID__
-std::mutex android_rom_request_mutex;
-std::optional<std::string> android_rom_request;
+struct AndroidRomRequest {
+    std::string path;
+    std::string display_name;
+};
 
-std::optional<std::string> take_android_rom_request() {
+std::mutex android_rom_request_mutex;
+std::optional<AndroidRomRequest> android_rom_request;
+
+std::optional<AndroidRomRequest> take_android_rom_request() {
     std::lock_guard<std::mutex> lock(android_rom_request_mutex);
     auto request = std::move(android_rom_request);
     android_rom_request.reset();
@@ -1580,7 +1586,8 @@ void update_camera_frame(gameboy::Emulator* emulator, SdlResources& sdl) {
 
 #ifdef __ANDROID__
 std::string persist_android_rom(const std::string& source,
-                                const std::filesystem::path& preference_path) {
+                                const std::filesystem::path& preference_path,
+                                const std::string& preferred_display_name) {
     if (preference_path.empty()) return source;
     const auto rom_directory = (preference_path / "roms").lexically_normal();
     const auto source_path = std::filesystem::u8path(source).lexically_normal();
@@ -1600,7 +1607,9 @@ std::string persist_android_rom(const std::string& source,
         fingerprint *= 1099511628211ULL;
     }
 
-    auto display_name = source;
+    auto display_name = preferred_display_name.empty()
+                            ? source
+                            : preferred_display_name;
     if (const auto query = display_name.find_first_of("?#");
         query != std::string::npos) {
         display_name.resize(query);
@@ -1848,6 +1857,7 @@ Java_com_danielseim_gbb_LibraryActivity_nativeLibraryEntries(
         const auto& entry = entries[index];
         std::ostringstream encoded;
         encoded << std::hex << entry.metadata.fingerprint << '\x1f'
+                << entry.metadata.crc32 << '\x1f'
                 << entry.path.u8string() << '\x1f'
                 << entry.metadata.title << '\x1f'
                 << gameboy::platform_name(entry.metadata.platform) << '\x1f'
@@ -1866,12 +1876,20 @@ Java_com_danielseim_gbb_LibraryActivity_nativeLibraryEntries(
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_danielseim_gbb_GbbActivity_nativeOpenRom(
-    JNIEnv* environment, jclass, jstring rom) {
+    JNIEnv* environment, jclass, jstring rom, jstring display_name) {
     const auto* raw_rom = environment->GetStringUTFChars(rom, nullptr);
     if (raw_rom == nullptr) return;
+    const auto* raw_name = display_name == nullptr
+                               ? nullptr
+                               : environment->GetStringUTFChars(display_name,
+                                                                 nullptr);
     {
         std::lock_guard<std::mutex> lock(android_rom_request_mutex);
-        android_rom_request = raw_rom;
+        android_rom_request = AndroidRomRequest{
+            raw_rom, raw_name == nullptr ? std::string{} : std::string{raw_name}};
+    }
+    if (raw_name != nullptr) {
+        environment->ReleaseStringUTFChars(display_name, raw_name);
     }
     environment->ReleaseStringUTFChars(rom, raw_rom);
 }
@@ -1894,6 +1912,9 @@ int main(int argc, char** argv) {
         std::unique_ptr<gameboy::Emulator> emulator;
         std::string current_rom;
         std::optional<std::string> pending_rom;
+#ifdef __ANDROID__
+        std::string pending_rom_name;
+#endif
         std::optional<BindingConfiguration> configuring;
 #ifndef __ANDROID__
         gbb_desktop::UpdateChecker update_checker{GBB_VERSION};
@@ -1904,16 +1925,27 @@ int main(int argc, char** argv) {
         auto fullscreen = false;
         auto reset_requested = false;
         auto running = true;
+#ifdef __ANDROID__
+        auto dashboard_visible = argc < 2;
+#else
         auto dashboard_visible = argc != 2;
+#endif
         std::size_t dashboard_selection = 0;
         std::uint64_t print_sequence = 0;
 
+#ifdef __ANDROID__
+        if (argc >= 2) {
+            pending_rom = argv[1];
+            if (argc >= 3) pending_rom_name = argv[2];
+        } else {
+#else
         if (argc == 2) {
             pending_rom = argv[1];
         } else {
             if (argc > 2) {
                 show_error(sdl.window, "Only one ROM can be opened at a time.");
             }
+#endif
             static_cast<void>(SDL_SetWindowTitle(
                 sdl.window, "Go Bigger Boy (GBB) - Game Library"));
         }
@@ -1925,9 +1957,41 @@ int main(int argc, char** argv) {
         auto next_frame = Clock::now();
 
         while (running) {
+#ifdef _WIN32
+            if (dashboard_visible) {
+                SDL_HideWindow(sdl.window);
+                const auto result = gbb_desktop::show_windows_dashboard(
+                    nullptr, rom_library, emulator != nullptr, display_palette);
+                if (result.palette_changed &&
+                    result.palette < gameboy::display_palettes.size()) {
+                    display_palette = result.palette;
+                    save_display_palette(preference_path, display_palette);
+                    if (emulator) {
+                        emulator->set_dmg_compatibility_colors(
+                            gameboy::display_palettes[display_palette]
+                                .cgb_compatibility);
+                    }
+                }
+                switch (result.action) {
+                case gbb_desktop::DashboardResultAction::open_rom:
+                    pending_rom = result.rom_path;
+                    dashboard_visible = false;
+                    break;
+                case gbb_desktop::DashboardResultAction::resume:
+                    dashboard_visible = false;
+                    break;
+                case gbb_desktop::DashboardResultAction::quit:
+                    running = false;
+                    break;
+                }
+                if (!running) break;
+                SDL_ShowWindow(sdl.window);
+            }
+#endif
 #ifdef __ANDROID__
             if (auto requested = take_android_rom_request()) {
-                pending_rom = std::move(*requested);
+                pending_rom = std::move(requested->path);
+                pending_rom_name = std::move(requested->display_name);
             }
 #endif
             process_events(emulator, sdl, dialog, preference_path, bindings,
@@ -1963,7 +2027,8 @@ int main(int argc, char** argv) {
                     auto requested_rom = *pending_rom;
 #ifdef __ANDROID__
                     requested_rom =
-                        persist_android_rom(requested_rom, preference_path);
+                        persist_android_rom(requested_rom, preference_path,
+                                            pending_rom_name);
 #endif
                     const bool reopening_current =
                         emulator && requested_rom == current_rom;
@@ -1990,6 +2055,9 @@ int main(int argc, char** argv) {
                     }
                 }
                 pending_rom.reset();
+#ifdef __ANDROID__
+                pending_rom_name.clear();
+#endif
                 next_frame = Clock::now();
             }
 

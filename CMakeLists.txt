@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(go_bigger_boy VERSION 0.13.0 LANGUAGES CXX)
+project(go_bigger_boy VERSION 0.13.1 LANGUAGES CXX)
 
 include(GNUInstallDirs)
 
@@ -89,6 +89,7 @@ if(GAMEBOY_BUILD_SDL)
             enable_language(RC)
             add_executable(gameboy_sdl WIN32
                 apps/sdl/main.cpp
+                apps/sdl/windows_dashboard.cpp
                 apps/sdl/update_checker.cpp
                 packaging/windows/go-bigger-boy.rc
             )
@@ -119,7 +120,7 @@ if(GAMEBOY_BUILD_SDL)
                 GBB_VERSION="${GAMEBOY_DESKTOP_VERSION}"
             )
             if(WIN32)
-                target_link_libraries(gameboy_sdl PRIVATE winhttp)
+                target_link_libraries(gameboy_sdl PRIVATE winhttp comctl32 comdlg32)
                 target_include_directories(gameboy_sdl PRIVATE
                     "${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows"
                 )

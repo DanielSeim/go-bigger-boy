@@ -12,6 +12,7 @@ enum class RomPlatform { game_boy, game_boy_color };
 
 struct RomMetadata {
     std::uint64_t fingerprint{};
+    std::uint32_t crc32{};
     std::string title;
     RomPlatform platform{RomPlatform::game_boy};
     std::string language;

@@ -114,9 +114,10 @@ without arguments opens the game library dashboard:
 ./build/gbb
 ```
 
-The dashboard lists the nine most recently played ROMs and can be navigated
-with a keyboard, gamepad, or mouse. Press Ctrl+L or click the upper-left menu
-button to return to it while playing.
+The dashboard lists up to twelve fingerprint-deduplicated recent ROMs. Windows
+uses a native library window with game, platform, and language columns plus a
+dedicated Settings page. Press Ctrl+L or click the upper-left menu button to
+return to the platform dashboard while playing.
 You can also pass a ROM path, press Ctrl+O to choose another ROM, or drag a
 `.gb`/`.gbc` file onto the emulator window. On Windows, build with Visual
 Studio and an SDL3 installation visible to CMake. `gbb --version` prints the
@@ -229,7 +230,9 @@ The debug APK is written to
 `android/app/build/outputs/apk/debug/app-debug.apk`.
 The app opens on a native Android game library. Its recent cards are deduplicated
 by ROM fingerprint and show the cartridge title, Game Boy platform, inferred
-language, and cached cover artwork. The separate Settings screen controls the
+language, and cached cover artwork. Game identity is matched locally by CRC
+against a cached copy of Libretro's No-Intro metadata, which also provides the
+exact canonical artwork name. The separate Settings screen controls the
 display palette and whether artwork may be downloaded from Libretro's public
 thumbnail service; ROM contents are never sent to that service. Tapping the menu
 button in the upper-left returns to the library while preserving the running

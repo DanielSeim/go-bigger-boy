@@ -3,11 +3,13 @@ package com.danielseim.gbb;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.provider.OpenableColumns;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -33,6 +35,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.zip.CRC32;
 
 /** Native Android library and settings dashboard. */
 public final class LibraryActivity extends Activity {
@@ -160,7 +163,7 @@ public final class LibraryActivity extends Activity {
 
     private void addGameCard(String encoded) {
         final String[] fields = encoded.split(String.valueOf(FIELD_SEPARATOR), -1);
-        if (fields.length != 7) return;
+        if (fields.length != 8) return;
 
         final LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.HORIZONTAL);
@@ -170,7 +173,7 @@ public final class LibraryActivity extends Activity {
         card.setElevation(dp(2));
         card.setClickable(true);
         card.setFocusable(true);
-        card.setOnClickListener(view -> launchRom(fields[1]));
+        card.setOnClickListener(view -> launchRom(fields[2], ""));
         final LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         cardParams.bottomMargin = dp(12);
@@ -183,20 +186,19 @@ public final class LibraryActivity extends Activity {
         final LinearLayout details = new LinearLayout(this);
         details.setOrientation(LinearLayout.VERTICAL);
         details.setPadding(dp(16), 0, 0, 0);
-        final TextView title = text(fields[2], 19, Color.rgb(24, 29, 39));
+        final TextView title = text(fields[3], 19, Color.rgb(24, 29, 39));
         title.setTypeface(null, android.graphics.Typeface.BOLD);
         details.addView(title);
-        final TextView platform = text(fields[3], 15, Color.rgb(69, 91, 171));
+        final TextView platform = text(fields[4], 15, Color.rgb(69, 91, 171));
         platform.setPadding(0, dp(7), 0, dp(3));
         details.addView(platform);
-        details.addView(text("Language: " + fields[4], 14, Color.DKGRAY));
+        final TextView language = text("Language: " + fields[5], 14, Color.DKGRAY);
+        details.addView(language);
         card.addView(details, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         content.addView(card, cardParams);
 
-        if (preferences.getBoolean("cover_artwork", true)) {
-            loadCover(cover, fields[0], fields[5], fields[6]);
-        }
+        resolveMetadata(cover, title, language, fields);
     }
 
     private void populateSettings() {
@@ -269,12 +271,26 @@ public final class LibraryActivity extends Activity {
             getContentResolver().takePersistableUriPermission(uri, flags);
         } catch (SecurityException ignored) {
         }
-        launchRom(uri.toString());
+        launchRom(uri.toString(), displayName(uri));
     }
 
-    private void launchRom(String path) {
+    private String displayName(Uri uri) {
+        try (Cursor cursor = getContentResolver().query(
+                uri, new String[]{OpenableColumns.DISPLAY_NAME},
+                null, null, null)) {
+            if (cursor != null && cursor.moveToFirst()) {
+                final int column = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                if (column >= 0) return cursor.getString(column);
+            }
+        } catch (Exception ignored) {
+        }
+        return "";
+    }
+
+    private void launchRom(String path, String displayName) {
         startActivity(new Intent(this, GbbActivity.class)
-                .putExtra(GbbActivity.EXTRA_ROM, path));
+                .putExtra(GbbActivity.EXTRA_ROM, path)
+                .putExtra(GbbActivity.EXTRA_ROM_NAME, displayName));
     }
 
     private int currentPalette() {
@@ -321,7 +337,7 @@ public final class LibraryActivity extends Activity {
                     if (!directory.exists() && !directory.mkdirs()) return;
                     final URL url = new URL("https://thumbnails.libretro.com/" +
                             pathSegment(system) + "/Named_Boxarts/" +
-                            pathSegment(name) + ".png");
+                            pathSegment(thumbnailName(name)) + ".png");
                     connection = (HttpURLConnection) url.openConnection();
                     connection.setConnectTimeout(5000);
                     connection.setReadTimeout(8000);
@@ -350,5 +366,51 @@ public final class LibraryActivity extends Activity {
             final Bitmap result = bitmap;
             if (result != null) runOnUiThread(() -> view.setImageBitmap(result));
         });
+    }
+
+    private void resolveMetadata(ImageView cover, TextView title,
+                                 TextView language, String[] fields) {
+        artworkExecutor.execute(() -> {
+            long crc = 0;
+            try {
+                crc = Long.parseLong(fields[1], 16);
+            } catch (NumberFormatException ignored) {
+            }
+            if (crc == 0) crc = crcForFile(fields[2]);
+            final LibretroMetadata.Record record =
+                    LibretroMetadata.find(this, fields[6], crc);
+            String coverName = fields[7];
+            if (record != null) {
+                coverName = record.name;
+                runOnUiThread(() -> {
+                    title.setText(displayTitle(record.name));
+                    language.setText("Language: " + record.language);
+                });
+            }
+            if (preferences.getBoolean("cover_artwork", true)) {
+                loadCover(cover, fields[0], fields[6], coverName);
+            }
+        });
+    }
+
+    private long crcForFile(String path) {
+        final CRC32 crc = new CRC32();
+        try (InputStream input = new BufferedInputStream(new FileInputStream(path))) {
+            final byte[] buffer = new byte[16 * 1024];
+            int count;
+            while ((count = input.read(buffer)) != -1) crc.update(buffer, 0, count);
+            return crc.getValue();
+        } catch (Exception ignored) {
+            return 0;
+        }
+    }
+
+    private static String displayTitle(String canonicalName) {
+        final int tags = canonicalName.indexOf(" (");
+        return tags < 0 ? canonicalName : canonicalName.substring(0, tags);
+    }
+
+    private static String thumbnailName(String name) {
+        return name.replaceAll("[&*/:`<>?\\\\|]", "_");
     }
 }

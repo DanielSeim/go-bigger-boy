@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iterator>
+#include <sstream>
 #include <stdexcept>
 #include <string_view>
 
@@ -81,7 +82,20 @@ std::string language_from_filename(const std::filesystem::path& source_name,
     }
     if (!languages.empty()) return languages;
     if (filename.find("(japan") != std::string::npos) return "Japanese";
-    if (filename.find("(usa") != std::string::npos) return "English";
+    constexpr std::pair<std::string_view, std::string_view> regions[]{
+        {"(germany", "German"}, {"(france", "French"},
+        {"(spain", "Spanish"}, {"(italy", "Italian"},
+        {"(netherlands", "Dutch"}, {"(portugal", "Portuguese"},
+        {"(sweden", "Swedish"}, {"(norway", "Norwegian"},
+        {"(denmark", "Danish"}, {"(finland", "Finnish"},
+        {"(usa", "English"}, {"(europe", "English"},
+        {"(australia", "English"}, {"(canada", "English"},
+    };
+    for (const auto& [region, language] : regions) {
+        if (filename.find(region) != std::string::npos) {
+            return std::string{language};
+        }
+    }
     if (filename.find("(world") != std::string::npos) return "International";
     return japanese_destination ? "Japanese" : "International";
 }
@@ -112,10 +126,19 @@ RomMetadata inspect_rom(const std::vector<std::uint8_t>& bytes,
     }
     RomMetadata metadata;
     metadata.fingerprint = UINT64_C(14695981039346656037);
+    metadata.crc32 = UINT32_C(0xFFFFFFFF);
     for (const auto byte : bytes) {
         metadata.fingerprint ^= byte;
         metadata.fingerprint *= UINT64_C(1099511628211);
+        metadata.crc32 ^= byte;
+        for (auto bit = 0; bit < 8; ++bit) {
+            metadata.crc32 = (metadata.crc32 >> 1) ^
+                (UINT32_C(0xEDB88320) &
+                 static_cast<std::uint32_t>(-
+                     static_cast<std::int32_t>(metadata.crc32 & 1)));
+        }
     }
+    metadata.crc32 ^= UINT32_C(0xFFFFFFFF);
     metadata.title = trimmed_ascii_title(bytes);
     if (metadata.title.empty()) metadata.title = filename_title(source_name);
     if (metadata.title.empty()) metadata.title = "Unknown game";
@@ -148,23 +171,32 @@ const char* cover_system_name(const RomPlatform platform) noexcept {
 RomLibrary RomLibrary::load(const std::filesystem::path& preference_directory) {
     RomLibrary library;
     std::ifstream input(preference_directory / "rom-library.txt");
-    std::uint64_t fingerprint = 0;
-    std::int64_t last_played = 0;
-    int platform = 0;
-    std::string path;
-    std::string title;
-    std::string language;
-    std::string cover;
+    std::string line;
     while (library.entries_.size() < maximum_entries &&
-           input >> std::hex >> fingerprint >> std::dec >> last_played >>
-               platform >> std::quoted(path) >> std::quoted(title) >>
-               std::quoted(language) >> std::quoted(cover)) {
+           std::getline(input, line)) {
+        std::istringstream record(line);
+        std::uint64_t fingerprint = 0;
+        std::uint32_t crc32 = 0;
+        std::int64_t last_played = 0;
+        int platform = 0;
+        std::string path;
+        std::string title;
+        std::string language;
+        std::string cover;
+        if (!(record >> std::hex >> fingerprint >> std::dec >> last_played >>
+              platform >> std::quoted(path) >> std::quoted(title) >>
+              std::quoted(language) >> std::quoted(cover))) {
+            continue;
+        }
+        // CRC-32 was appended in library format 2. Missing values keep old
+        // installations readable and are refreshed the next time a ROM runs.
+        static_cast<void>(record >> std::hex >> crc32);
         if (path.empty() || fingerprint == 0 || platform < 0 || platform > 1) {
             continue;
         }
         library.remember(
             std::filesystem::u8path(path),
-            {fingerprint, std::move(title), static_cast<RomPlatform>(platform),
+            {fingerprint, crc32, std::move(title), static_cast<RomPlatform>(platform),
              std::move(language), std::move(cover)},
             last_played);
     }
@@ -206,7 +238,8 @@ void RomLibrary::save(
                << std::quoted(entry.path.u8string()) << ' '
                << std::quoted(entry.metadata.title) << ' '
                << std::quoted(entry.metadata.language) << ' '
-               << std::quoted(entry.metadata.cover_name) << '\n';
+               << std::quoted(entry.metadata.cover_name) << ' '
+               << std::hex << entry.metadata.crc32 << std::dec << '\n';
     }
 }
 

@@ -31,5 +31,11 @@
             android:exported="false"
             android:launchMode="singleTask"
             android:screenOrientation="sensorLandscape" />
+        <activity
+            android:name=".UpdateResultActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:theme="@style/UpdateResultTheme" />
     </application>
 </manifest>
