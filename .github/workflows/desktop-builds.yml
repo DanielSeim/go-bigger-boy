@@ -46,6 +46,15 @@ jobs:
           --output-on-failure
           --parallel 2
 
+      - name: Upload visual test captures
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: accuracy-visual-results
+          path: build-accuracy/visual-results
+          if-no-files-found: ignore
+          retention-days: 14
+
   build:
     name: ${{ matrix.artifact }}
     runs-on: ${{ matrix.runner }}

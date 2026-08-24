@@ -2201,6 +2201,19 @@ void test_ppu_background_window_and_sprites() {
               background.framebuffer()[1] == 0xFFFFFFFF,
           "background tile data renders through BGP into the framebuffer");
 
+    gameboy::MemoryBus mid_scanline{gameboy::Cartridge{test_rom()}};
+    mid_scanline.write8(0xFF47, 0xE4);
+    mid_scanline.write8(0x8000, 0xFF); // Tile 0 is color 1 throughout.
+    mid_scanline.write8(0x8001, 0x00);
+    mid_scanline.write8(0x9800, 0x00);
+    mid_scanline.write8(0xFF40, 0x91);
+    mid_scanline.tick(100);            // Pixels 0 through 8 have been emitted.
+    mid_scanline.write8(0xFF47, 0xE8); // Map color 1 from shade 1 to shade 2.
+    mid_scanline.tick(152);
+    check(mid_scanline.framebuffer()[8] == 0xFFAAAAAA &&
+              mid_scanline.framebuffer()[9] == 0xFF555555,
+          "mode-3 palette writes affect only pixels emitted afterward");
+
     gameboy::MemoryBus window{gameboy::Cartridge{test_rom()}};
     window.write8(0xFF47, 0xE4);
     window.write8(0x8010, 0xFF);
@@ -2542,11 +2555,12 @@ void test_save_state_round_trip_and_validation() {
     constexpr std::size_t version_five_ppu_size = 1;
     constexpr std::size_t version_six_state_size = 5;
     constexpr std::size_t version_seven_camera_size = 1;
+    constexpr std::size_t version_eight_ppu_size = 1;
     auto version_one = saved;
     version_one.resize(version_one.size() - version_two_dma_size -
                        version_three_ppu_size - version_four_cgb_size -
                        version_five_ppu_size - version_six_state_size -
-                       version_seven_camera_size);
+                       version_seven_camera_size - version_eight_ppu_size);
     version_one[8] = 1;
     const auto old_payload_size = static_cast<std::uint32_t>(
         version_one.size() - state_header_size);
@@ -2564,7 +2578,8 @@ void test_save_state_round_trip_and_validation() {
     auto version_two = saved;
     version_two.resize(version_two.size() - version_three_ppu_size -
                        version_four_cgb_size - version_five_ppu_size -
-                       version_six_state_size - version_seven_camera_size);
+                       version_six_state_size - version_seven_camera_size -
+                       version_eight_ppu_size);
     version_two[8] = 2;
     const auto version_two_payload_size = static_cast<std::uint32_t>(
         version_two.size() - state_header_size);
@@ -2583,7 +2598,7 @@ void test_save_state_round_trip_and_validation() {
     auto version_three = saved;
     version_three.resize(version_three.size() - version_four_cgb_size -
                          version_five_ppu_size - version_six_state_size -
-                         version_seven_camera_size);
+                         version_seven_camera_size - version_eight_ppu_size);
     version_three[8] = 3;
     const auto version_three_payload_size = static_cast<std::uint32_t>(
         version_three.size() - state_header_size);
@@ -2602,10 +2617,11 @@ void test_save_state_round_trip_and_validation() {
     auto version_four = saved;
     version_four.erase(version_four.end() - version_four_cgb_size -
                            version_five_ppu_size - version_six_state_size -
-                           version_seven_camera_size,
+                           version_seven_camera_size - version_eight_ppu_size,
                        version_four.end() - version_four_cgb_size -
-                           version_seven_camera_size);
-    version_four.pop_back();
+                           version_seven_camera_size - version_eight_ppu_size);
+    version_four.resize(version_four.size() - version_seven_camera_size -
+                        version_eight_ppu_size);
     version_four[8] = 4;
     const auto version_four_payload_size = static_cast<std::uint32_t>(
         version_four.size() - state_header_size);
@@ -2623,10 +2639,12 @@ void test_save_state_round_trip_and_validation() {
 
     auto version_five = saved;
     version_five.erase(version_five.end() - version_four_cgb_size -
-                           version_six_state_size - version_seven_camera_size,
+                           version_six_state_size - version_seven_camera_size -
+                           version_eight_ppu_size,
                        version_five.end() - version_four_cgb_size -
-                           version_seven_camera_size);
-    version_five.pop_back();
+                           version_seven_camera_size - version_eight_ppu_size);
+    version_five.resize(version_five.size() - version_seven_camera_size -
+                        version_eight_ppu_size);
     version_five[8] = 5;
     const auto version_five_payload_size = static_cast<std::uint32_t>(
         version_five.size() - state_header_size);
@@ -2645,7 +2663,8 @@ void test_save_state_round_trip_and_validation() {
           "version 5 save states remain loadable after adding PPU startup state");
 
     auto version_six = saved;
-    version_six.pop_back();
+    version_six.resize(version_six.size() - version_seven_camera_size -
+                       version_eight_ppu_size);
     version_six[8] = 6;
     const auto version_six_payload_size = static_cast<std::uint32_t>(
         version_six.size() - state_header_size);
@@ -2660,6 +2679,23 @@ void test_save_state_round_trip_and_validation() {
               version_six_loader.cpu().total_cycles() == saved_cycles &&
               version_six_loader.bus().read8(0xA123) == 0x5A,
           "version 6 save states remain loadable after adding camera state");
+
+    auto version_seven = saved;
+    version_seven.resize(version_seven.size() - version_eight_ppu_size);
+    version_seven[8] = 7;
+    const auto version_seven_payload_size = static_cast<std::uint32_t>(
+        version_seven.size() - state_header_size);
+    write_little_u32(version_seven, 20, version_seven_payload_size);
+    write_little_u32(
+        version_seven, 24,
+        state_crc32(version_seven.data() + state_header_size,
+                    version_seven_payload_size));
+    gameboy::Emulator version_seven_loader{gameboy::Cartridge{rom}};
+    version_seven_loader.load_state(version_seven);
+    check(version_seven_loader.cpu().registers().pc == saved_pc &&
+              version_seven_loader.cpu().total_cycles() == saved_cycles &&
+              version_seven_loader.bus().read8(0xA123) == 0x5A,
+          "version 7 save states remain loadable after adding PPU dot state");
 
     emulator.bus().write8(0xA123, 0x99);
     emulator.bus().write8(0xC000, 0x11);
@@ -2708,7 +2744,7 @@ void test_save_state_round_trip_and_validation() {
           "truncated save states are rejected without changing emulator state");
 
     auto future_version = saved;
-    future_version[8] = 8;
+    future_version[8] = 9;
     auto rejected_version = false;
     try {
         emulator.load_state(future_version);

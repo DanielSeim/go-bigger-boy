@@ -159,6 +159,7 @@ bool Ppu::write_register(const std::uint16_t address,
             mode3_end_dot_ = 252;
             window_line_ = 0;
             window_y_triggered_ = false;
+            window_rendered_this_line_ = false;
             lcd_startup_ = false;
             frame_ready_ = false;
             framebuffer_.fill(dmg_colors[0]);
@@ -170,6 +171,7 @@ bool Ppu::write_register(const std::uint16_t address,
             mode_ = 0;
             stat_mode_ = 0;
             window_line_ = 0;
+            window_rendered_this_line_ = false;
             coincidence_ = ly_ == lyc_;
             lcd_startup_ = true;
             begin_visible_line();
@@ -257,16 +259,24 @@ std::uint8_t Ppu::tick(const unsigned cycles) noexcept {
                 mode_ = 3;
             }
 
+            if (stat_mode_ == 3) {
+                const auto pixel_start_dot = mode3_end_dot_ - screen_width;
+                if (dot_ >= pixel_start_dot && dot_ < mode3_end_dot_) {
+                    render_pixel(dot_ - pixel_start_dot);
+                }
+            }
+
             if (dot_ == mode3_end_dot_) {
                 stat_mode_ = 0;
+                if (window_rendered_this_line_) {
+                    ++window_line_;
+                }
                 if (lcd_startup_) {
-                    render_scanline();
                     mode_ = 0;
                     requests |= 0x04;
                 }
                 if (update_stat_line()) requests |= 0x02;
             } else if (!lcd_startup_ && dot_ == mode3_end_dot_ + 1) {
-                render_scanline();
                 mode_ = 0;
                 requests |= 0x04;
             }
@@ -348,6 +358,7 @@ bool Ppu::window_active_on_line() const noexcept {
 }
 
 void Ppu::begin_visible_line() noexcept {
+    window_rendered_this_line_ = false;
     if (ly_ == window_y_) {
         window_y_triggered_ = true;
     }
@@ -419,67 +430,67 @@ unsigned Ppu::mode3_duration() const noexcept {
     return std::min(duration, 289U);
 }
 
-void Ppu::render_scanline() noexcept {
-    std::array<std::uint8_t, screen_width> background_colors{};
-    std::array<bool, screen_width> background_priorities{};
+void Ppu::render_pixel(const unsigned x) noexcept {
+    std::uint8_t background_color = 0;
+    auto background_priority = false;
     const auto background_enabled = cgb_mode_ || (lcdc_ & 0x01) != 0;
-    const auto window_enabled = window_active_on_line();
+    const auto window_enabled =
+        background_enabled && (lcdc_ & 0x20) != 0 &&
+        window_y_triggered_ && window_x_ <= 166;
     const auto window_start = static_cast<int>(window_x_) - 7;
 
-    for (unsigned x = 0; x < screen_width; ++x) {
-        std::uint8_t color = 0;
-        std::uint8_t palette_number = 0;
-        if (background_enabled) {
-            const auto use_window = window_enabled &&
-                                    static_cast<int>(x) >= window_start;
-            const auto pixel_x = use_window
-                                     ? static_cast<unsigned>(
-                                           static_cast<int>(x) - window_start)
-                                     : static_cast<unsigned>(
-                                           static_cast<std::uint8_t>(x + scx_));
-            const auto pixel_y = use_window
-                                     ? static_cast<unsigned>(window_line_)
-                                     : static_cast<unsigned>(
-                                           static_cast<std::uint8_t>(ly_ + scy_));
-            const auto map_base = use_window
-                                      ? ((lcdc_ & 0x40) != 0 ? 0x1C00U : 0x1800U)
-                                      : ((lcdc_ & 0x08) != 0 ? 0x1C00U : 0x1800U);
-            const auto map_offset = map_base + (pixel_y / 8) * 32 + pixel_x / 8;
-            const auto tile_number = vram_[map_offset & 0x1FFF];
-            const auto attributes = cgb_mode_ ? (*cgb_vram_)[map_offset & 0x1FFF]
-                                              : std::uint8_t{0};
-            unsigned tile_offset = 0;
-            if ((lcdc_ & 0x10) != 0) {
-                tile_offset = static_cast<unsigned>(tile_number) * 16;
-            } else {
-                const auto signed_tile = tile_number < 0x80
-                                             ? static_cast<int>(tile_number)
-                                             : static_cast<int>(tile_number) - 0x100;
-                tile_offset = static_cast<unsigned>(0x1000 + signed_tile * 16);
-            }
-            auto tile_row = pixel_y & 7U;
-            if ((attributes & 0x40) != 0) tile_row = 7 - tile_row;
-            const auto row = tile_row * 2;
-            const auto& tile_bank = (attributes & 0x08) != 0 ? *cgb_vram_ : vram_;
-            const auto low = tile_bank[tile_offset + row];
-            const auto high = tile_bank[tile_offset + row + 1];
-            const auto column = pixel_x & 7U;
-            const auto bit = (attributes & 0x20) != 0 ? column : 7U - column;
-            color = static_cast<std::uint8_t>(
-                ((low >> bit) & 1U) | (((high >> bit) & 1U) << 1));
-            palette_number = static_cast<std::uint8_t>(attributes & 0x07);
-            background_priorities[x] = (attributes & 0x80) != 0;
+    std::uint8_t palette_number = 0;
+    if (background_enabled) {
+        const auto use_window = window_enabled &&
+                                static_cast<int>(x) >= window_start;
+        if (use_window) window_rendered_this_line_ = true;
+        const auto pixel_x = use_window
+                                 ? static_cast<unsigned>(
+                                       static_cast<int>(x) - window_start)
+                                 : static_cast<unsigned>(
+                                       static_cast<std::uint8_t>(x + scx_));
+        const auto pixel_y = use_window
+                                 ? static_cast<unsigned>(window_line_)
+                                 : static_cast<unsigned>(
+                                       static_cast<std::uint8_t>(ly_ + scy_));
+        const auto map_base = use_window
+                                  ? ((lcdc_ & 0x40) != 0 ? 0x1C00U : 0x1800U)
+                                  : ((lcdc_ & 0x08) != 0 ? 0x1C00U : 0x1800U);
+        const auto map_offset = map_base + (pixel_y / 8) * 32 + pixel_x / 8;
+        const auto tile_number = vram_[map_offset & 0x1FFF];
+        const auto attributes = cgb_mode_ ? (*cgb_vram_)[map_offset & 0x1FFF]
+                                          : std::uint8_t{0};
+        unsigned tile_offset = 0;
+        if ((lcdc_ & 0x10) != 0) {
+            tile_offset = static_cast<unsigned>(tile_number) * 16;
+        } else {
+            const auto signed_tile = tile_number < 0x80
+                                         ? static_cast<int>(tile_number)
+                                         : static_cast<int>(tile_number) - 0x100;
+            tile_offset = static_cast<unsigned>(0x1000 + signed_tile * 16);
         }
-        background_colors[x] = color;
-        framebuffer_[static_cast<std::size_t>(ly_) * screen_width + x] =
-            cgb_mode_ ? cgb_palette_color(cgb_bg_palette_, palette_number, color)
-                      : palette_color(bg_palette_, color,
-                                      dmg_palette_.background);
+        auto tile_row = pixel_y & 7U;
+        if ((attributes & 0x40) != 0) tile_row = 7 - tile_row;
+        const auto row = tile_row * 2;
+        const auto& tile_bank = (attributes & 0x08) != 0 ? *cgb_vram_ : vram_;
+        const auto low = tile_bank[tile_offset + row];
+        const auto high = tile_bank[tile_offset + row + 1];
+        const auto column = pixel_x & 7U;
+        const auto bit = (attributes & 0x20) != 0 ? column : 7U - column;
+        background_color = static_cast<std::uint8_t>(
+            ((low >> bit) & 1U) | (((high >> bit) & 1U) << 1));
+        palette_number = static_cast<std::uint8_t>(attributes & 0x07);
+        background_priority = (attributes & 0x80) != 0;
     }
 
-    if (window_enabled) {
-        ++window_line_;
-    }
+    const auto framebuffer_offset =
+        static_cast<std::size_t>(ly_) * screen_width + x;
+    framebuffer_[framebuffer_offset] =
+        cgb_mode_
+            ? cgb_palette_color(cgb_bg_palette_, palette_number,
+                                background_color)
+            : palette_color(bg_palette_, background_color,
+                            dmg_palette_.background);
 
     if ((lcdc_ & 0x02) == 0) {
         return;
@@ -526,37 +537,34 @@ void Ppu::render_scanline() noexcept {
                                     : vram_;
         const auto low = tile_bank[tile_offset];
         const auto high = tile_bank[tile_offset + 1];
-        for (unsigned pixel = 0; pixel < 8; ++pixel) {
-            const auto screen_x = sprite_x + static_cast<int>(pixel);
-            if (screen_x < 0 || screen_x >= static_cast<int>(screen_width)) {
-                continue;
-            }
-            const auto bit = (attributes & 0x20) != 0 ? pixel : 7U - pixel;
-            const auto color = static_cast<std::uint8_t>(
-                ((low >> bit) & 1U) | (((high >> bit) & 1U) << 1));
-            const auto background_blocks_object =
-                background_colors[screen_x] != 0 &&
-                (cgb_mode_
-                     ? (lcdc_ & 0x01) != 0 &&
-                           (background_priorities[screen_x] ||
-                            (attributes & 0x80) != 0)
-                     : (attributes & 0x80) != 0);
-            if (color == 0 || background_blocks_object) {
-                continue;
-            }
-            framebuffer_[static_cast<std::size_t>(ly_) * screen_width +
-                         static_cast<unsigned>(screen_x)] =
-                cgb_mode_
-                    ? cgb_palette_color(cgb_object_palette_,
-                                        static_cast<std::uint8_t>(attributes & 0x07),
-                                        color)
-                    : palette_color(
-                          (attributes & 0x10) != 0 ? object_palette_1_
-                                                  : object_palette_0_,
-                          color, (attributes & 0x10) != 0
-                                     ? dmg_palette_.object_1
-                                     : dmg_palette_.object_0);
+        if (static_cast<int>(x) < sprite_x ||
+            static_cast<int>(x) >= sprite_x + 8) {
+            continue;
         }
+        const auto pixel = static_cast<unsigned>(static_cast<int>(x) - sprite_x);
+        const auto bit = (attributes & 0x20) != 0 ? pixel : 7U - pixel;
+        const auto color = static_cast<std::uint8_t>(
+            ((low >> bit) & 1U) | (((high >> bit) & 1U) << 1));
+        const auto background_blocks_object =
+            background_color != 0 &&
+            (cgb_mode_
+                 ? (lcdc_ & 0x01) != 0 &&
+                       (background_priority || (attributes & 0x80) != 0)
+                 : (attributes & 0x80) != 0);
+        if (color == 0 || background_blocks_object) {
+            continue;
+        }
+        framebuffer_[framebuffer_offset] =
+            cgb_mode_
+                ? cgb_palette_color(cgb_object_palette_,
+                                    static_cast<std::uint8_t>(attributes & 0x07),
+                                    color)
+                : palette_color(
+                      (attributes & 0x10) != 0 ? object_palette_1_
+                                              : object_palette_0_,
+                      color, (attributes & 0x10) != 0
+                                 ? dmg_palette_.object_1
+                                 : dmg_palette_.object_0);
     }
 }
 

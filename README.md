@@ -69,10 +69,12 @@ automatic protocol detection. Model-specific post-boot tests can select
 The DMG APU passes all 12 upstream Blargg `dmg_sound` tests, including active
 wave-RAM reads/writes and the original hardware's channel 3 retrigger corruption.
 The current headless CI accuracy gate passes all 75 Mooneye acceptance ROMs,
-all 6 applicable CGB misc ROMs, all 28 emulator-only mapper ROMs, and 14
-curated Blargg ROMs; see the [accuracy report](docs/accuracy.md) for details.
+all 6 applicable CGB misc ROMs, all 28 emulator-only mapper ROMs, 14 curated
+Blargg ROMs, and 15 exact Acid2/Scribbltests/Mealybug/Gambatte framebuffer
+comparisons; see the
+[accuracy report](docs/accuracy.md) for details.
 
-To register the curated 123-ROM CI baseline locally, download and extract the
+To register the curated 138-ROM CI baseline locally, download and extract the
 `c-sp/game-boy-test-roms` v7.0 bundle, then set its root as the opt-in cache
 path. Test ROMs are deliberately not bundled or downloaded by the build:
 
@@ -81,6 +83,13 @@ cmake -S . -B build-conformance \
   -DGAMEBOY_TEST_ROM_DIR=/path/to/game-boy-test-roms-v7.0
 cmake --build build-conformance
 ctest --test-dir build-conformance -L conformance --output-on-failure
+```
+
+The headless runner can also capture a deterministic framebuffer without SDL:
+
+```sh
+./build-conformance/gbb_test_runner test.gb \
+  --model dmg --frames 60 --frame-output capture.ppm
 ```
 
 When SDL3 is installed, CMake also builds the desktop frontend. Launching it

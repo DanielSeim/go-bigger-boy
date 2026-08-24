@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
+#include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <stdexcept>
@@ -18,12 +20,19 @@ struct Options {
     std::uint64_t max_cycles = 100'000'000;
     Protocol protocol = Protocol::automatic;
     gameboy::HardwareModel model = gameboy::HardwareModel::automatic;
+    std::uint64_t frames{};
+    std::filesystem::path frame_output;
+    bool dmg_compatibility_colors{};
+    bool frame_on_ld_bb{};
 };
 
 void usage() {
     std::cerr << "Usage: gbb_test_runner <rom.gb> "
                  "[--max-cycles N] [--protocol auto|mooneye|serial|blargg] "
-                 "[--model auto|dmg0|dmg|mgb|sgb|sgb2|cgb0|cgb]\n";
+                 "[--model auto|dmg0|dmg|mgb|sgb|sgb2|cgb0|cgb] "
+                 "[--frames N --frame-output capture.ppm] "
+                 "[--frame-on-ld-bb --frame-output capture.ppm] "
+                 "[--dmg-compatibility-colors]\n";
 }
 
 gameboy::HardwareModel parse_model(const std::string& value) {
@@ -66,11 +75,55 @@ Options parse_options(const int argc, char** argv) {
             else throw std::invalid_argument("unknown protocol: " + value);
         } else if (argument == "--model" && index + 1 < argc) {
             options.model = parse_model(argv[++index]);
+        } else if (argument == "--frames" && index + 1 < argc) {
+            options.frames = parse_cycles(argv[++index]);
+        } else if (argument == "--frame-output" && index + 1 < argc) {
+            options.frame_output = argv[++index];
+        } else if (argument == "--dmg-compatibility-colors") {
+            options.dmg_compatibility_colors = true;
+        } else if (argument == "--frame-on-ld-bb") {
+            options.frame_on_ld_bb = true;
         } else {
             throw std::invalid_argument("unknown or incomplete option: " + argument);
         }
     }
+    if (options.frames != 0 && options.frame_on_ld_bb) {
+        throw std::invalid_argument(
+            "--frames and --frame-on-ld-bb are mutually exclusive");
+    }
+    const auto captures_frame = options.frames != 0 || options.frame_on_ld_bb;
+    if (captures_frame && options.frame_output.empty()) {
+        throw std::invalid_argument("frame capture requires --frame-output");
+    }
+    if (!captures_frame && !options.frame_output.empty()) {
+        throw std::invalid_argument(
+            "--frame-output requires --frames or --frame-on-ld-bb");
+    }
     return options;
+}
+
+void write_frame(const std::filesystem::path& path,
+                 const gameboy::Ppu::Framebuffer& framebuffer) {
+    if (path.has_parent_path()) {
+        std::filesystem::create_directories(path.parent_path());
+    }
+    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    if (!output) {
+        throw std::runtime_error("could not open frame output: " + path.string());
+    }
+    output << "P6\n" << gameboy::Ppu::screen_width << ' '
+           << gameboy::Ppu::screen_height << "\n255\n";
+    for (const auto pixel : framebuffer) {
+        const std::array<char, 3> rgb{
+            static_cast<char>((pixel >> 16) & 0xFF),
+            static_cast<char>((pixel >> 8) & 0xFF),
+            static_cast<char>(pixel & 0xFF),
+        };
+        output.write(rgb.data(), static_cast<std::streamsize>(rgb.size()));
+    }
+    if (!output) {
+        throw std::runtime_error("could not write frame output: " + path.string());
+    }
 }
 
 bool mooneye_success(const gameboy::CpuRegisters& registers) {
@@ -141,6 +194,7 @@ int main(int argc, char** argv) {
         const auto options = parse_options(argc, argv);
         auto emulator = gameboy::Emulator::from_file(options.rom_path,
                                                       options.model);
+        emulator.set_dmg_compatibility_colors(options.dmg_compatibility_colors);
         std::string serial_output;
         std::string memory_output;
         auto saw_blargg = false;
@@ -148,10 +202,22 @@ int main(int argc, char** argv) {
         std::size_t recent_pc_next = 0;
         std::size_t recent_pc_count = 0;
         std::uint16_t last_low_rom_pc = 0x0100;
+        std::uint64_t completed_frames = 0;
+        const bool captures_frame = options.frames != 0 ||
+                                    options.frame_on_ld_bb;
 
         while (emulator.cpu().total_cycles() < options.max_cycles) {
-            const bool watches_blargg = options.protocol == Protocol::automatic ||
-                                         options.protocol == Protocol::blargg;
+            if (options.frame_on_ld_bb &&
+                emulator.bus().read8(emulator.cpu().registers().pc) == 0x40) {
+                write_frame(options.frame_output, emulator.framebuffer());
+                std::cout << "Captured LD B,B framebuffer to "
+                          << options.frame_output << '\n';
+                return EXIT_SUCCESS;
+            }
+            const bool watches_blargg =
+                !captures_frame &&
+                (options.protocol == Protocol::automatic ||
+                 options.protocol == Protocol::blargg);
             if (watches_blargg && has_blargg_signature(emulator.bus())) {
                 saw_blargg = true;
                 const auto current_output = blargg_output(emulator.bus());
@@ -181,9 +247,10 @@ int main(int argc, char** argv) {
             }
 
             const auto& registers = emulator.cpu().registers();
-            const bool watches_mooneye = options.protocol == Protocol::mooneye ||
-                                         (options.protocol == Protocol::automatic &&
-                                          !saw_blargg);
+            const bool watches_mooneye =
+                !captures_frame &&
+                (options.protocol == Protocol::mooneye ||
+                 (options.protocol == Protocol::automatic && !saw_blargg));
             if (watches_mooneye &&
                 emulator.bus().read8(registers.pc) == 0x40) { // LD B,B
                 const auto automatic_failure_signature =
@@ -213,14 +280,26 @@ int main(int argc, char** argv) {
             recent_pc_count = std::min(recent_pc_count + 1,
                                        recent_pcs.size());
             static_cast<void>(emulator.step());
+            if (captures_frame && emulator.frame_ready()) {
+                ++completed_frames;
+                if (completed_frames == options.frames) {
+                    write_frame(options.frame_output, emulator.framebuffer());
+                    std::cout << "Captured frame " << completed_frames << " to "
+                              << options.frame_output << '\n';
+                    return EXIT_SUCCESS;
+                }
+                emulator.consume_frame();
+            }
             auto bytes = emulator.bus().take_serial_output();
             if (!bytes.empty()) {
                 serial_output += bytes;
                 std::cout << bytes << std::flush;
             }
 
-            const bool watches_serial = options.protocol == Protocol::serial ||
-                                        options.protocol == Protocol::automatic;
+            const bool watches_serial =
+                !captures_frame &&
+                (options.protocol == Protocol::serial ||
+                 options.protocol == Protocol::automatic);
             if (watches_serial && serial_output.find("Passed") != std::string::npos) {
                 std::cout << "\nPASS (serial)\n";
                 return EXIT_SUCCESS;

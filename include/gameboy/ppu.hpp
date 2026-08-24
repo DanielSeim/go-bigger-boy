@@ -55,7 +55,7 @@ private:
     [[nodiscard]] unsigned mode3_duration() const noexcept;
     [[nodiscard]] bool window_active_on_line() const noexcept;
     void begin_visible_line() noexcept;
-    void render_scanline() noexcept;
+    void render_pixel(unsigned x) noexcept;
     [[nodiscard]] std::uint32_t palette_color(
         std::uint8_t palette, std::uint8_t color,
         const std::array<std::uint32_t, 4>& colors) const noexcept;
@@ -92,6 +92,7 @@ private:
     std::uint8_t stat_mode_{};
     std::uint8_t window_line_{};
     bool window_y_triggered_{};
+    bool window_rendered_this_line_{};
     bool cgb_mode_{};
     bool cgb_hardware_{};
     bool coincidence_{};

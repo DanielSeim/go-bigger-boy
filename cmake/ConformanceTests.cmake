@@ -18,6 +18,41 @@ function(gbb_add_conformance_test suite relative_path protocol cycle_limit)
                          TIMEOUT 30)
 endfunction()
 
+find_package(Python3 3.8 REQUIRED COMPONENTS Interpreter)
+
+function(gbb_add_visual_test name rom_path reference_path model frames
+         dmg_compatibility_colors)
+    set(rom "${GAMEBOY_TEST_ROM_DIR}/${rom_path}")
+    set(reference "${GAMEBOY_TEST_ROM_DIR}/${reference_path}")
+    if(NOT EXISTS "${rom}")
+        message(FATAL_ERROR "Missing visual test ROM: ${rom}")
+    endif()
+    if(NOT EXISTS "${reference}")
+        message(FATAL_ERROR "Missing visual test reference: ${reference}")
+    endif()
+
+    set(actual "${CMAKE_CURRENT_BINARY_DIR}/visual-results/${name}.ppm")
+    set(command "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_frame.py"
+                --runner $<TARGET_FILE:gameboy_test_runner>
+                --rom "${rom}"
+                --reference "${reference}"
+                --actual "${actual}"
+                --model "${model}")
+    if(frames STREQUAL "ld-bb")
+        list(APPEND command --frame-on-ld-bb)
+    else()
+        list(APPEND command --frames "${frames}")
+    endif()
+    if(dmg_compatibility_colors)
+        list(APPEND command --dmg-compatibility-colors)
+    endif()
+    add_test(NAME "visual_${name}" COMMAND ${command})
+    set_tests_properties("visual_${name}" PROPERTIES
+                         LABELS "conformance;visual"
+                         TIMEOUT 30)
+endfunction()
+
 # Complete acceptance baseline from Mooneye Test Suite 8d742b9d55.
 set(gbb_mooneye_tests
     acceptance/add_sp_e_timing.gb
@@ -197,3 +232,52 @@ foreach(relative_path IN LISTS gbb_blargg_tests)
     gbb_add_conformance_test(
         blargg "blargg/${relative_path}" auto 100000000)
 endforeach()
+
+# Exact framebuffer comparisons against the reference images distributed with
+# the pinned ROM bundle. Captures and magenta difference images are retained in
+# the build tree when a comparison fails.
+gbb_add_visual_test(dmg_acid2
+    "dmg-acid2/dmg-acid2.gb" "dmg-acid2/dmg-acid2-dmg.png" dmg 60 OFF)
+gbb_add_visual_test(cgb_acid2
+    "cgb-acid2/cgb-acid2.gbc" "cgb-acid2/cgb-acid2.png" cgb 60 OFF)
+gbb_add_visual_test(dmg_acid2_cgb
+    "dmg-acid2/dmg-acid2.gb" "dmg-acid2/dmg-acid2-cgb.png" cgb 60 ON)
+gbb_add_visual_test(scribbl_scxly_dmg
+    "scribbltests/scxly/scxly.gb"
+    "scribbltests/scxly/scxly-dmg.png" dmg 60 OFF)
+gbb_add_visual_test(scribbl_lycscx_dmg
+    "scribbltests/lycscx/lycscx.gb"
+    "scribbltests/lycscx/lycscx-cgb-dmg.png" dmg 60 OFF)
+gbb_add_visual_test(scribbl_lycscx_cgb
+    "scribbltests/lycscx/lycscx.gb"
+    "scribbltests/lycscx/lycscx-cgb-dmg.png" cgb 60 ON)
+gbb_add_visual_test(scribbl_lycscy_dmg
+    "scribbltests/lycscy/lycscy.gb"
+    "scribbltests/lycscy/lycscy-cgb-dmg.png" dmg 60 OFF)
+gbb_add_visual_test(scribbl_lycscy_cgb
+    "scribbltests/lycscy/lycscy.gb"
+    "scribbltests/lycscy/lycscy-cgb-dmg.png" cgb 60 ON)
+gbb_add_visual_test(scribbl_palettely_dmg
+    "scribbltests/palettely/palettely.gb"
+    "scribbltests/palettely/palettely-dmg.png" dmg 60 OFF)
+gbb_add_visual_test(scribbl_palettely_cgb
+    "scribbltests/palettely/palettely.gb"
+    "scribbltests/palettely/palettely-cgb.png" cgb 60 ON)
+gbb_add_visual_test(scribbl_statcount_dmg
+    "scribbltests/statcount/statcount-auto.gb"
+    "scribbltests/statcount/statcount_auto-cgb-dmg.png" dmg 360 OFF)
+gbb_add_visual_test(scribbl_statcount_cgb
+    "scribbltests/statcount/statcount-auto.gb"
+    "scribbltests/statcount/statcount_auto-cgb-dmg.png" cgb 360 ON)
+gbb_add_visual_test(mealybug_m2_win_en_toggle_dmg
+    "mealybug-tearoom-tests/ppu/m2_win_en_toggle.gb"
+    "mealybug-tearoom-tests/ppu/m2_win_en_toggle_dmg_blob.png"
+    dmg ld-bb OFF)
+gbb_add_visual_test(gambatte_dmgpalette_m3_1
+    "gambatte/dmgpalette_during_m3/dmgpalette_during_m3_1.gb"
+    "gambatte/dmgpalette_during_m3/dmgpalette_during_m3_1_dmg08.png"
+    dmg 60 OFF)
+gbb_add_visual_test(gambatte_dmgpalette_m3_scx1_1
+    "gambatte/dmgpalette_during_m3/dmgpalette_during_m3_scx1_1.gb"
+    "gambatte/dmgpalette_during_m3/dmgpalette_during_m3_scx1_1_dmg08.png"
+    dmg 60 OFF)
