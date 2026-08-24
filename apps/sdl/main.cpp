@@ -32,7 +32,9 @@
 #include <vector>
 
 #ifdef _WIN32
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include <windows.h>
 #include "windows_dashboard.hpp"
 #endif
@@ -44,7 +46,7 @@
 namespace {
 
 #ifndef GBB_VERSION
-#define GBB_VERSION "0.13.1"
+#define GBB_VERSION "0.13.2"
 #endif
 
 #ifdef __ANDROID__
@@ -1008,6 +1010,9 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
 #ifdef __ANDROID__
                 open_android_library();
 #else
+#ifdef _WIN32
+                SDL_HideWindow(sdl.window);
+#endif
                 dashboard_visible = true;
                 dashboard_selection = 0;
 #endif
@@ -1127,6 +1132,9 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
 #ifdef __ANDROID__
                     open_android_library();
 #else
+#ifdef _WIN32
+                    SDL_HideWindow(sdl.window);
+#endif
                     dashboard_visible = true;
                     dashboard_selection = 0;
 #endif
@@ -1961,7 +1969,8 @@ int main(int argc, char** argv) {
             if (dashboard_visible) {
                 SDL_HideWindow(sdl.window);
                 const auto result = gbb_desktop::show_windows_dashboard(
-                    nullptr, rom_library, emulator != nullptr, display_palette);
+                    nullptr, rom_library, emulator != nullptr, display_palette,
+                    preference_path);
                 if (result.palette_changed &&
                     result.palette < gameboy::display_palettes.size()) {
                     display_palette = result.palette;
@@ -2050,6 +2059,9 @@ int main(int argc, char** argv) {
                 } catch (const std::exception& error) {
                     show_error(sdl.window, error.what());
                     if (!emulator) {
+#ifdef _WIN32
+                        SDL_HideWindow(sdl.window);
+#endif
                         dashboard_visible = true;
                         dashboard_selection = 0;
                     }

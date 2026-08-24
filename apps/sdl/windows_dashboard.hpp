@@ -21,7 +21,7 @@ struct DashboardResult {
 
 DashboardResult show_windows_dashboard(
     HWND owner, const gameboy::RomLibrary& library, bool can_resume,
-    std::size_t palette);
+    std::size_t palette, const std::filesystem::path& preference_directory);
 
 } // namespace gbb_desktop
 #endif

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(go_bigger_boy VERSION 0.13.1 LANGUAGES CXX)
+project(go_bigger_boy VERSION 0.13.2 LANGUAGES CXX)
 
 include(GNUInstallDirs)
 
@@ -120,7 +120,8 @@ if(GAMEBOY_BUILD_SDL)
                 GBB_VERSION="${GAMEBOY_DESKTOP_VERSION}"
             )
             if(WIN32)
-                target_link_libraries(gameboy_sdl PRIVATE winhttp comctl32 comdlg32)
+                target_link_libraries(gameboy_sdl PRIVATE
+                    winhttp comctl32 comdlg32 ole32 windowscodecs)
                 target_include_directories(gameboy_sdl PRIVATE
                     "${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows"
                 )

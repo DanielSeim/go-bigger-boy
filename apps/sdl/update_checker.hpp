@@ -64,4 +64,8 @@ private:
     const std::filesystem::path& executable,
     std::string& error);
 
+[[nodiscard]] bool download_public_file(
+    const std::string& url, const std::filesystem::path& destination,
+    std::uintmax_t maximum_size, std::string& error);
+
 } // namespace gbb_desktop

@@ -17,7 +17,9 @@
 #endif
 
 #ifdef _WIN32
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include <windows.h>
 #include <winhttp.h>
 #endif
@@ -100,6 +102,7 @@ std::optional<std::string> asset_string_field(const std::string& json,
     return json.substr(position + 1, end - position - 1);
 }
 
+#ifndef _WIN32
 std::string shell_quote(const std::string& value) {
     std::string quoted{"'"};
     for (const auto character : value) {
@@ -108,6 +111,7 @@ std::string shell_quote(const std::string& value) {
     }
     return quoted + '\'';
 }
+#endif
 
 #ifdef _WIN32
 std::wstring widen(const std::string& value) {
@@ -323,6 +327,46 @@ std::string fetch_latest_release(std::string& error) {
 }
 #endif
 } // namespace
+
+bool download_public_file(const std::string& url,
+                          const std::filesystem::path& destination,
+                          const std::uintmax_t maximum_size,
+    std::string& error) {
+    std::filesystem::create_directories(destination.parent_path());
+    auto temporary = destination;
+    temporary += ".download";
+#ifdef _WIN32
+    const auto command = "curl.exe -fL --max-time 20 -o \"" +
+                         temporary.u8string() +
+                         "\" \"" + url + "\"";
+    if (!run_hidden(command, true, error)) return false;
+#else
+    const auto command = "curl -fL --max-time 20 -o " +
+                         shell_quote(temporary.u8string()) + " " + shell_quote(url) +
+                         " >/dev/null 2>&1";
+    if (std::system(command.c_str()) != 0) {
+        error = "download failed";
+        return false;
+    }
+#endif
+    std::error_code size_error;
+    const auto size = std::filesystem::file_size(temporary, size_error);
+    if (size_error || size == 0 || size > maximum_size) {
+        std::filesystem::remove(temporary);
+        error = "downloaded file has an invalid size";
+        return false;
+    }
+    std::error_code replace_error;
+    std::filesystem::remove(destination, replace_error);
+    replace_error.clear();
+    std::filesystem::rename(temporary, destination, replace_error);
+    if (replace_error) {
+        std::filesystem::remove(temporary);
+        error = "could not store downloaded file";
+        return false;
+    }
+    return true;
+}
 
 UpdateChecker::UpdateChecker(std::string current_version) {
     try {

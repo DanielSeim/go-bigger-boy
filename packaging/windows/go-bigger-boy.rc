@@ -1,4 +1,5 @@
 #include <windows.h>
+#include "resource.h"
 
-#define IDI_GBB_ICON 101
 IDI_GBB_ICON ICON "go-bigger-boy.ico"
+IDR_GBB_LOGO RCDATA "../../go_bigger_boy_logo.png"

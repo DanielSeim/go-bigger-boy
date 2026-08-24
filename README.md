@@ -116,8 +116,9 @@ without arguments opens the game library dashboard:
 
 The dashboard lists up to twelve fingerprint-deduplicated recent ROMs. Windows
 uses a native library window with game, platform, and language columns plus a
-dedicated Settings page. Press Ctrl+L or click the upper-left menu button to
-return to the platform dashboard while playing.
+dedicated Settings page. It resolves canonical metadata and caches box artwork
+from Libretro without uploading ROM contents. Press Ctrl+L or click the
+upper-left menu button to return to the platform dashboard while playing.
 You can also pass a ROM path, press Ctrl+O to choose another ROM, or drag a
 `.gb`/`.gbc` file onto the emulator window. On Windows, build with Visual
 Studio and an SDL3 installation visible to CMake. `gbb --version` prints the
