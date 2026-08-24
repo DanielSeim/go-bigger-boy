@@ -167,9 +167,13 @@ bool Ppu::write_register(const std::uint16_t address,
         if (window_was_enabled && (value & 0x20) == 0) {
             if (using_window_) {
                 if (window_source_x_ != 0 && window_source_x_ <= 2) {
-                    const auto activation_x = output_x_ - window_source_x_;
-                    for (auto x = static_cast<unsigned>(activation_x);
-                         x < output_x_; ++x) {
+                    // The first window tile can still be queued before its
+                    // hidden left-side pixels have been emitted. Clamp the
+                    // rewind point instead of allowing unsigned underflow.
+                    const auto activation_x = output_x_ > window_source_x_
+                                                  ? output_x_ - window_source_x_
+                                                  : 0U;
+                    for (auto x = activation_x; x < output_x_; ++x) {
                         const auto offset = static_cast<std::size_t>(ly_) *
                                                 screen_width + x;
                         (*framebuffer_)[offset] =
@@ -299,9 +303,10 @@ bool Ppu::write_register(const std::uint16_t address,
                 window_glitch_pending_ = true;
             }
         }
+        const auto comparator_start = std::max(0, new_window_start);
         if (window_activation_count_ != 0 &&
-            new_window_start >= output_x_ &&
-            new_window_start < static_cast<int>(screen_width)) {
+            comparator_start >= static_cast<int>(output_x_) &&
+            comparator_start < static_cast<int>(screen_width)) {
             window_retrigger_armed_ = true;
         }
         window_x_ = value;

@@ -63,6 +63,11 @@ pixel (including the remaining `WX=1..6` comparator cases), and the output-pipel
 collisions caused by precisely timed SCY/LCDC writes. Those cases remain outside
 the release gate until their framebuffer references match exactly.
 
+Window comparator positions are normalized at the visible left edge for
+`WX<7`, including writes made while the current window tile is still queued.
+The remaining `WX=6` sequence still needs the underlying fetch cancellation and
+pixel-output pipeline modeled cycle by cycle.
+
 Run the exact CI baseline locally with:
 
 ```sh
