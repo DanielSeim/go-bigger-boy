@@ -42,7 +42,7 @@
 namespace {
 
 #ifndef GBB_VERSION
-#define GBB_VERSION "0.12.1"
+#define GBB_VERSION "0.12.2"
 #endif
 
 [[noreturn]] void sdl_error(const std::string& action) {
@@ -1266,7 +1266,7 @@ void close_camera(SdlResources& sdl) noexcept {
 }
 
 #ifdef __ANDROID__
-std::optional<int> android_camera_orientation_degrees() noexcept {
+std::optional<int> android_camera_orientation_correction_degrees() noexcept {
     auto* environment = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
     auto activity = static_cast<jobject>(SDL_GetAndroidActivity());
     if (environment == nullptr || activity == nullptr) return std::nullopt;
@@ -1276,7 +1276,7 @@ std::optional<int> android_camera_orientation_degrees() noexcept {
         const auto activity_class = environment->GetObjectClass(activity);
         if (activity_class != nullptr) {
             orientation_method = environment->GetMethodID(
-                activity_class, "getCameraOrientationDegrees", "()I");
+                activity_class, "getCameraOrientationCorrectionDegrees", "()I");
             environment->DeleteLocalRef(activity_class);
         }
     }
@@ -1291,15 +1291,6 @@ std::optional<int> android_camera_orientation_degrees() noexcept {
     }
     environment->DeleteLocalRef(activity);
     return orientation;
-}
-
-int display_orientation_degrees(SDL_Window* window) noexcept {
-    switch (SDL_GetCurrentDisplayOrientation(SDL_GetDisplayForWindow(window))) {
-    case SDL_ORIENTATION_LANDSCAPE: return 90;
-    case SDL_ORIENTATION_PORTRAIT_FLIPPED: return 180;
-    case SDL_ORIENTATION_LANDSCAPE_FLIPPED: return 270;
-    default: return 0;
-    }
 }
 #endif
 
@@ -1381,12 +1372,10 @@ void update_camera_frame(gameboy::Emulator* emulator, SdlResources& sdl) {
     auto rotation_degrees = SDL_GetFloatProperty(
         SDL_GetSurfaceProperties(source), SDL_PROP_SURFACE_ROTATION_FLOAT, 0.0F);
 #ifdef __ANDROID__
-    if (const auto physical_orientation =
-            android_camera_orientation_degrees()) {
-        const auto correction = *physical_orientation -
-                                display_orientation_degrees(sdl.window);
+    if (const auto correction =
+            android_camera_orientation_correction_degrees()) {
         rotation_degrees += static_cast<float>(
-            sdl.camera_back_facing ? -correction : correction);
+            sdl.camera_back_facing ? -*correction : *correction);
     }
 #endif
     auto rotation_quarters = static_cast<int>(

@@ -84,9 +84,13 @@ public final class GbbActivity extends SDLActivity {
         super.onPause();
     }
 
-    /** Queried by the native camera path while the SDL window stays landscape. */
-    public int getCameraOrientationDegrees() {
-        return cameraOrientationDegrees;
+    /**
+     * Queried by the native camera path while the SDL window stays landscape.
+     * Both values use Android's rotation convention, avoiding a conversion
+     * through SDL's display-orientation enum.
+     */
+    public int getCameraOrientationCorrectionDegrees() {
+        return cameraOrientationDegrees - SDLActivity.getCurrentRotation();
     }
 
     private void checkForUpdates() {
