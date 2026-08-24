@@ -196,26 +196,31 @@ public final class GbbActivity extends SDLActivity {
         final File apk = pendingUpdate;
         pendingUpdate = null;
         if (apk == null || !apk.isFile()) return;
+        new Thread(() -> stageAndCommitUpdate(apk), "gbb-update-install").start();
+    }
+
+    private void stageAndCommitUpdate(File apk) {
+        PackageInstaller installer = null;
+        int sessionId = -1;
         try {
-            final PackageInstaller installer = getPackageManager().getPackageInstaller();
+            installer = getPackageManager().getPackageInstaller();
             final PackageInstaller.SessionParams parameters =
                     new PackageInstaller.SessionParams(
                             PackageInstaller.SessionParams.MODE_FULL_INSTALL);
             parameters.setAppPackageName(getPackageName());
-            final int sessionId = installer.createSession(parameters);
+            sessionId = installer.createSession(parameters);
             try (PackageInstaller.Session session = installer.openSession(sessionId)) {
                 try (InputStream input =
                              new BufferedInputStream(new FileInputStream(apk));
-                     OutputStream sessionOutput = session.openWrite(
-                             "go-bigger-boy.apk", 0, apk.length());
-                     OutputStream output = new BufferedOutputStream(sessionOutput)) {
+                     OutputStream output = session.openWrite(
+                             "go-bigger-boy.apk", 0, apk.length())) {
                     final byte[] buffer = new byte[64 * 1024];
                     int count;
                     while ((count = input.read(buffer)) != -1) {
                         output.write(buffer, 0, count);
                     }
                     output.flush();
-                    session.fsync(sessionOutput);
+                    session.fsync(output);
                 }
 
                 final Intent result = new Intent(this, UpdateInstallReceiver.class)
@@ -226,12 +231,23 @@ public final class GbbActivity extends SDLActivity {
                 session.commit(pendingResult.getIntentSender());
             }
         } catch (Exception error) {
+            if (installer != null && sessionId != -1) {
+                try {
+                    installer.abandonSession(sessionId);
+                } catch (Exception ignored) {
+                    Log.w(TAG, "Could not abandon failed install session", ignored);
+                }
+            }
+            pendingUpdate = apk;
             Log.e(TAG, "Could not start package installer", error);
-            new AlertDialog.Builder(this)
+            runOnUiThread(() -> new AlertDialog.Builder(this)
                     .setTitle("Update failed")
-                    .setMessage("Android could not start the update installer.")
-                    .setPositiveButton("OK", null)
-                    .show();
+                    .setMessage("Android could not start the update installer. " +
+                            "Please try again.")
+                    .setNegativeButton("Cancel", null)
+                    .setPositiveButton("Retry", (dialog, which) ->
+                            installPendingUpdate())
+                    .show());
         }
     }
 
