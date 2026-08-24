@@ -152,8 +152,48 @@ bool Ppu::write_register(const std::uint16_t address,
     case 0xFF40: {
         const auto was_enabled = lcd_enabled();
         const auto window_was_enabled = (lcdc_ & 0x20) != 0;
-        if (using_window_ && window_was_enabled && (value & 0x20) == 0) {
-            window_disable_pending_ = true;
+        if (window_was_enabled && (value & 0x20) == 0) {
+            if (using_window_) {
+                if (window_source_x_ != 0 && window_source_x_ <= 2) {
+                    const auto activation_x = output_x_ - window_source_x_;
+                    for (auto x = static_cast<unsigned>(activation_x);
+                         x < output_x_; ++x) {
+                        const auto offset = static_cast<std::size_t>(ly_) *
+                                                screen_width + x;
+                        (*framebuffer_)[offset] =
+                            compose_pixel(x, background_pixel_at_screen(x));
+                    }
+                    resume_background_fetch();
+                    const auto source_offset =
+                        static_cast<unsigned>(scx_ & 7U) + output_x_;
+                    fetcher_tile_index_ = static_cast<std::uint8_t>(
+                        source_offset / 8U);
+                    scroll_discard_ = static_cast<std::uint8_t>(
+                        source_offset & 7U);
+                } else if (window_source_x_ == 0 &&
+                           (output_x_ & 7U) == 0) {
+                    resume_background_fetch();
+                    window_glitch_x_ = output_x_;
+                    window_glitch_pending_ = true;
+                } else {
+                    window_disable_pending_ = true;
+                    window_disable_source_x_ = static_cast<std::uint16_t>(
+                        (window_source_x_ + 7U) & ~7U);
+                    if (output_x_ == 0 && window_source_x_ != 0) {
+                        window_disable_source_x_ = static_cast<std::uint16_t>(
+                            window_disable_source_x_ + 8U);
+                    }
+                }
+            } else if (stat_mode_ == 3 && window_y_triggered_ &&
+                       window_x_ <= 166 && window_activation_count_ == 0) {
+                const auto window_start = std::max(0, static_cast<int>(window_x_) - 7);
+                if (window_start <= static_cast<int>(output_x_) + 7) {
+                    window_trigger_x_ = static_cast<std::uint8_t>(
+                        std::max(window_start,
+                                 static_cast<int>(output_x_) + 1));
+                    window_trigger_pending_ = true;
+                }
+            }
         }
         lcdc_ = value;
         if (was_enabled && !lcd_enabled()) {
@@ -169,6 +209,10 @@ bool Ppu::write_register(const std::uint16_t address,
             line_sprite_count_ = 0;
             output_x_ = 0;
             using_window_ = false;
+            window_disable_pending_ = false;
+            window_disable_source_x_ = 0;
+            window_trigger_pending_ = false;
+            window_trigger_x_ = 0;
             lcd_startup_ = false;
             frame_ready_ = false;
             framebuffer_->fill(dmg_colors[0]);
@@ -203,13 +247,33 @@ bool Ppu::write_register(const std::uint16_t address,
         const auto new_window_start = static_cast<int>(value) - 7;
         if (window_glitch_applied_ &&
             output_x_ <= static_cast<unsigned>(window_glitch_applied_x_) + 3) {
-            for (auto x = static_cast<unsigned>(window_glitch_applied_x_);
-                 x < output_x_ && background_fifo_size_ != 0; ++x) {
-                const auto background = pop_background_pixel();
+            const auto applied_x =
+                static_cast<unsigned>(window_glitch_applied_x_);
+            const auto affected_pixels = output_x_ - applied_x;
+            if (affected_pixels <= 2) {
                 const auto offset = static_cast<std::size_t>(ly_) *
-                                        screen_width + x;
-                (*framebuffer_)[offset] = compose_pixel(x, background);
-                ++window_source_x_;
+                                        screen_width + applied_x;
+                (*framebuffer_)[offset] = window_glitch_restore_color_;
+                if (background_fifo_size_ != 0) {
+                    const auto last_x = static_cast<unsigned>(output_x_ - 1);
+                    if (last_x != applied_x) {
+                        (*framebuffer_)[static_cast<std::size_t>(ly_) *
+                                            screen_width + last_x] =
+                            compose_pixel(last_x, pop_background_pixel());
+                    } else {
+                        static_cast<void>(pop_background_pixel());
+                    }
+                    ++window_source_x_;
+                }
+            } else {
+                for (auto x = applied_x;
+                     x < output_x_ && background_fifo_size_ != 0; ++x) {
+                    const auto background = pop_background_pixel();
+                    const auto offset = static_cast<std::size_t>(ly_) *
+                                            screen_width + x;
+                    (*framebuffer_)[offset] = compose_pixel(x, background);
+                    ++window_source_x_;
+                }
             }
         }
         window_glitch_applied_ = false;
@@ -422,6 +486,9 @@ void Ppu::begin_mode3() noexcept {
     window_fetch_start_x_ = 0;
     window_retrigger_armed_ = false;
     window_disable_pending_ = false;
+    window_disable_source_x_ = 0;
+    window_trigger_pending_ = false;
+    window_trigger_x_ = 0;
     previous_sprite_tile_ = 0;
     previous_sprite_was_window_ = false;
     have_previous_sprite_tile_ = false;
@@ -456,15 +523,19 @@ void Ppu::tick_mode3() noexcept {
     }
 
     if (using_window_ && window_disable_pending_ &&
-        (window_source_x_ & 7U) == 0) {
+        window_source_x_ >= window_disable_source_x_) {
         resume_background_fetch();
         return;
     }
 
     const auto window_start = static_cast<int>(window_x_) - 7;
-    if (!using_window_ && window_active_on_line() &&
+    const auto window_triggered = window_active_on_line() ||
+                                  window_trigger_pending_;
+    if (!using_window_ && window_triggered &&
         (window_activation_count_ == 0 || window_retrigger_armed_) &&
-        static_cast<int>(output_x_) >= std::max(0, window_start)) {
+        static_cast<int>(output_x_) >=
+            (window_trigger_pending_ ? window_trigger_x_
+                                     : std::max(0, window_start))) {
         begin_window_fetch();
         return;
     }
@@ -642,6 +713,7 @@ void Ppu::tick_background_fetcher() noexcept {
 }
 
 void Ppu::begin_window_fetch() noexcept {
+    window_trigger_pending_ = false;
     using_window_ = true;
     window_fetch_line_ = static_cast<std::uint8_t>(
         window_line_ + window_activation_count_);
@@ -798,6 +870,41 @@ Ppu::BackgroundPixel Ppu::pop_background_pixel() noexcept {
     }
     --background_fifo_size_;
     return pixel;
+}
+
+Ppu::BackgroundPixel Ppu::background_pixel_at_screen(
+    const unsigned x) const noexcept {
+    const auto source_x = static_cast<unsigned>(
+        static_cast<std::uint8_t>(scx_ + x));
+    const auto source_y = static_cast<unsigned>(
+        static_cast<std::uint8_t>(scy_ + ly_));
+    const auto map_base = (lcdc_ & 0x08) != 0 ? 0x1C00U : 0x1800U;
+    const auto map_offset = map_base + (source_y / 8U) * 32U +
+                            source_x / 8U;
+    const auto tile_number = vram_[map_offset & 0x1FFFU];
+    const auto attributes = cgb_mode_
+                                ? (*cgb_vram_)[map_offset & 0x1FFFU]
+                                : std::uint8_t{0};
+    unsigned tile_offset = 0;
+    if ((lcdc_ & 0x10) != 0) {
+        tile_offset = static_cast<unsigned>(tile_number) * 16U;
+    } else {
+        tile_offset = static_cast<unsigned>(
+            0x1000 + static_cast<std::int8_t>(tile_number) * 16);
+    }
+    auto row = source_y & 7U;
+    if ((attributes & 0x40) != 0) row = 7U - row;
+    const auto& bank = (attributes & 0x08) != 0 ? *cgb_vram_ : vram_;
+    const auto low = bank[tile_offset + row * 2U];
+    const auto high = bank[tile_offset + row * 2U + 1U];
+    const auto column = source_x & 7U;
+    const auto bit = (attributes & 0x20) != 0 ? column : 7U - column;
+    return BackgroundPixel{
+        static_cast<std::uint8_t>(
+            ((low >> bit) & 1U) | (((high >> bit) & 1U) << 1U)),
+        static_cast<std::uint8_t>(attributes & 0x07U),
+        (attributes & 0x80) != 0,
+    };
 }
 
 std::uint32_t Ppu::compose_pixel(

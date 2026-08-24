@@ -13,7 +13,7 @@ namespace {
 constexpr std::array<std::uint8_t, 8> state_magic{
     'G', 'B', 'B', 'S', 'T', 'A', 'T', 'E',
 };
-constexpr std::uint32_t state_version = 9;
+constexpr std::uint32_t state_version = 10;
 constexpr std::uint32_t oldest_supported_state_version = 1;
 constexpr std::size_t maximum_state_size = 2 * 1024 * 1024;
 constexpr std::size_t maximum_serial_output = 1024 * 1024;
@@ -388,6 +388,9 @@ private:
         writer.boolean(bus.ppu_.window_retrigger_armed_);
         writer.u8(bus.ppu_.window_fetch_start_x_);
         writer.boolean(bus.ppu_.window_disable_pending_);
+        writer.u8(bus.ppu_.window_trigger_x_);
+        writer.boolean(bus.ppu_.window_trigger_pending_);
+        writer.u16(bus.ppu_.window_disable_source_x_);
     }
 
     static void read_bus(Reader& reader, MemoryBus& bus,
@@ -578,6 +581,19 @@ private:
             bus.ppu_.window_retrigger_armed_ = reader.boolean();
             bus.ppu_.window_fetch_start_x_ = reader.u8();
             bus.ppu_.window_disable_pending_ = reader.boolean();
+            if (version >= 10) {
+                bus.ppu_.window_trigger_x_ = reader.u8();
+                bus.ppu_.window_trigger_pending_ = reader.boolean();
+                bus.ppu_.window_disable_source_x_ = reader.u16();
+            } else {
+                bus.ppu_.window_trigger_x_ = 0;
+                bus.ppu_.window_trigger_pending_ = false;
+                bus.ppu_.window_disable_source_x_ =
+                    bus.ppu_.window_disable_pending_
+                        ? static_cast<std::uint16_t>(
+                              (bus.ppu_.window_source_x_ + 7U) & ~7U)
+                        : std::uint16_t{0};
+            }
             if (bus.ppu_.background_fifo_size_ >
                     bus.ppu_.background_fifo_.size() ||
                 bus.ppu_.fetcher_phase_ > 4 ||
@@ -587,7 +603,9 @@ private:
                 bus.ppu_.output_x_ > Ppu::screen_width ||
                 bus.ppu_.scroll_discard_ > 7 ||
                 bus.ppu_.window_glitch_x_ >= Ppu::screen_width ||
-                bus.ppu_.window_glitch_applied_x_ >= Ppu::screen_width) {
+                bus.ppu_.window_glitch_applied_x_ >= Ppu::screen_width ||
+                bus.ppu_.window_trigger_x_ >= Ppu::screen_width ||
+                bus.ppu_.window_disable_source_x_ > 256) {
                 throw SaveStateError("Save state contains invalid PPU fetcher state");
             }
         } else {
@@ -627,6 +645,9 @@ private:
             bus.ppu_.window_retrigger_armed_ = false;
             bus.ppu_.window_fetch_start_x_ = 0;
             bus.ppu_.window_disable_pending_ = false;
+            bus.ppu_.window_trigger_x_ = 0;
+            bus.ppu_.window_trigger_pending_ = false;
+            bus.ppu_.window_disable_source_x_ = 0;
         }
         // The printer represents an external device and is deliberately not
         // embedded in emulator save states. Loading a state starts a fresh

@@ -77,6 +77,8 @@ private:
     void fetch_object(unsigned index) noexcept;
     void emit_pixel() noexcept;
     [[nodiscard]] BackgroundPixel pop_background_pixel() noexcept;
+    [[nodiscard]] BackgroundPixel background_pixel_at_screen(
+        unsigned x) const noexcept;
     [[nodiscard]] std::uint32_t compose_pixel(
         unsigned x, BackgroundPixel background) const noexcept;
     [[nodiscard]] std::uint32_t palette_color(
@@ -147,9 +149,11 @@ private:
     std::uint8_t window_activation_count_{};
     std::uint8_t window_fetch_line_{};
     std::uint8_t window_fetch_start_x_{};
+    std::uint8_t window_trigger_x_{};
     std::int16_t fetched_source_x_{};
     std::int16_t previous_sprite_tile_{};
     std::uint16_t window_source_x_{};
+    std::uint16_t window_disable_source_x_{};
     std::uint32_t window_glitch_restore_color_{};
     bool fetched_window_{};
     bool using_window_{};
@@ -159,6 +163,7 @@ private:
     bool window_glitch_applied_{};
     bool window_retrigger_armed_{};
     bool window_disable_pending_{};
+    bool window_trigger_pending_{};
 };
 
 } // namespace gameboy

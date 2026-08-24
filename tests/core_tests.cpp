@@ -2574,7 +2574,9 @@ void test_save_state_round_trip_and_validation() {
     constexpr std::size_t version_six_state_size = 5;
     constexpr std::size_t version_seven_camera_size = 1;
     constexpr std::size_t version_eight_ppu_size = 1;
-    constexpr std::size_t version_nine_fetcher_size = 737;
+    constexpr std::size_t version_ten_window_latch_size = 4;
+    constexpr std::size_t version_nine_fetcher_size =
+        737 + version_ten_window_latch_size;
     auto version_one = saved;
     version_one.resize(version_one.size() - version_two_dma_size -
                        version_three_ppu_size - version_four_cgb_size -
@@ -2739,6 +2741,25 @@ void test_save_state_round_trip_and_validation() {
               version_eight_loader.bus().read8(0xA123) == 0x5A,
           "version 8 save states remain loadable after adding PPU fetcher state");
 
+    auto version_nine = saved;
+    version_nine.resize(version_nine.size() - version_ten_window_latch_size);
+    version_nine[8] = 9;
+    const auto version_nine_payload_size = static_cast<std::uint32_t>(
+        version_nine.size() - state_header_size);
+    write_little_u32(version_nine, 20, version_nine_payload_size);
+    write_little_u32(
+        version_nine, 24,
+        state_crc32(version_nine.data() + state_header_size,
+                    version_nine_payload_size));
+    auto version_nine_loader_storage = std::make_unique<gameboy::Emulator>(
+        gameboy::Cartridge{rom});
+    auto& version_nine_loader = *version_nine_loader_storage;
+    version_nine_loader.load_state(version_nine);
+    check(version_nine_loader.cpu().registers().pc == saved_pc &&
+              version_nine_loader.cpu().total_cycles() == saved_cycles &&
+              version_nine_loader.bus().read8(0xA123) == 0x5A,
+          "version 9 save states remain loadable after adding window latches");
+
     emulator.bus().write8(0xA123, 0x99);
     emulator.bus().write8(0xC000, 0x11);
     emulator.set_button(gameboy::Button::start, false);
@@ -2786,7 +2807,7 @@ void test_save_state_round_trip_and_validation() {
           "truncated save states are rejected without changing emulator state");
 
     auto future_version = saved;
-    future_version[8] = 10;
+    future_version[8] = 11;
     auto rejected_version = false;
     try {
         emulator.load_state(future_version);

@@ -2,11 +2,26 @@
   <img src="go_bigger_boy_logo.png" alt="Go Bigger Boy (GBB)" width="720">
 </p>
 
+<p align="center">
+  <a href="https://github.com/DanielSeim/go-bigger-boy/actions/workflows/desktop-builds.yml"><img src="https://github.com/DanielSeim/go-bigger-boy/actions/workflows/desktop-builds.yml/badge.svg" alt="Desktop builds"></a>
+  <a href="https://github.com/DanielSeim/go-bigger-boy/actions/workflows/android-build.yml"><img src="https://github.com/DanielSeim/go-bigger-boy/actions/workflows/android-build.yml/badge.svg" alt="Android build"></a>
+  <a href="https://github.com/DanielSeim/go-bigger-boy/actions/workflows/web-pages.yml"><img src="https://github.com/DanielSeim/go-bigger-boy/actions/workflows/web-pages.yml/badge.svg" alt="Web build and Pages"></a>
+</p>
+
+<p align="center">
+  <a href="https://danielseim.github.io/go-bigger-boy/"><strong>Try the latest web build on GitHub Pages</strong></a>
+</p>
+
 A portable, dependency-free C++17 Game Boy emulator. Platform frontends
 (desktop, Android, and Switch) will live outside the core so emulation logic is
 shared everywhere.
 
 ## Current status
+
+The current automated baseline passes **144/144 tests**: 143 ROM and
+framebuffer conformance cases, including **20/20 exact visual comparisons**,
+plus the core unit-test executable. See the [accuracy report](docs/accuracy.md)
+for the suite-by-suite breakdown.
 
 - Cartridge loading and basic header parsing
 - Initial DMG memory map, including work RAM echo behavior
@@ -70,11 +85,11 @@ The DMG APU passes all 12 upstream Blargg `dmg_sound` tests, including active
 wave-RAM reads/writes and the original hardware's channel 3 retrigger corruption.
 The current headless CI accuracy gate passes all 75 Mooneye acceptance ROMs,
 all 6 applicable CGB misc ROMs, all 28 emulator-only mapper ROMs, 14 curated
-Blargg ROMs, and 18 exact Acid2/Scribbltests/Mealybug/Gambatte framebuffer
+Blargg ROMs, and 20 exact Acid2/Scribbltests/Mealybug/Gambatte framebuffer
 comparisons; see the
 [accuracy report](docs/accuracy.md) for details.
 
-To register the curated 141-ROM CI baseline locally, download and extract the
+To register the curated 143-ROM CI baseline locally, download and extract the
 `c-sp/game-boy-test-roms` v7.0 bundle, then set its root as the opt-in cache
 path. Test ROMs are deliberately not bundled or downloaded by the build:
 
