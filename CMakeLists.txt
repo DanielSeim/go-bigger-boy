@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(go_bigger_boy VERSION 0.13.2 LANGUAGES CXX)
+project(go_bigger_boy VERSION 0.13.3 LANGUAGES CXX)
 
 include(GNUInstallDirs)
 

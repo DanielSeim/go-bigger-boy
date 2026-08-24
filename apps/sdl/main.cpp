@@ -46,7 +46,7 @@
 namespace {
 
 #ifndef GBB_VERSION
-#define GBB_VERSION "0.13.2"
+#define GBB_VERSION "0.13.3"
 #endif
 
 #ifdef __ANDROID__
@@ -1746,6 +1746,7 @@ void present_touch_controls(SdlResources& sdl) {
 }
 #endif
 
+#ifndef _WIN32
 void present_dashboard(SdlResources& sdl,
                        const std::vector<std::string>& recent,
                        const bool can_resume, std::size_t& selection) {
@@ -1793,6 +1794,7 @@ void present_dashboard(SdlResources& sdl,
     static_cast<void>(SDL_RenderDebugText(sdl.renderer, 20, 134,
                                           "UP/DOWN + ENTER"));
 }
+#endif
 
 void present(const gameboy::Emulator* emulator, SdlResources& sdl,
              const gameboy::DisplayPalette& palette,
@@ -1804,8 +1806,13 @@ void present(const gameboy::Emulator* emulator, SdlResources& sdl,
         sdl_error("Could not clear framebuffer");
     }
     if (dashboard_visible) {
+#ifndef _WIN32
         present_dashboard(sdl, recent, emulator != nullptr,
                           dashboard_selection);
+#else
+        static_cast<void>(recent);
+        static_cast<void>(dashboard_selection);
+#endif
     } else if (emulator != nullptr) {
         const auto& pixels = emulator->framebuffer();
         const auto native_colors =
@@ -1871,7 +1878,8 @@ Java_com_danielseim_gbb_LibraryActivity_nativeLibraryEntries(
                 << gameboy::platform_name(entry.metadata.platform) << '\x1f'
                 << entry.metadata.language << '\x1f'
                 << gameboy::cover_system_name(entry.metadata.platform) << '\x1f'
-                << entry.metadata.cover_name;
+                << entry.metadata.cover_name << '\x1f'
+                << std::dec << entry.last_played;
         const auto text = encoded.str();
         const auto value = environment->NewStringUTF(text.c_str());
         environment->SetObjectArrayElement(
@@ -1880,6 +1888,33 @@ Java_com_danielseim_gbb_LibraryActivity_nativeLibraryEntries(
     }
     environment->DeleteLocalRef(string_class);
     return result;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_danielseim_gbb_LibraryActivity_nativeRemoveLibraryEntry(
+    JNIEnv* environment, jclass, jstring directory, jstring fingerprint) {
+    const auto* raw_directory = environment->GetStringUTFChars(directory, nullptr);
+    const auto* raw_fingerprint =
+        environment->GetStringUTFChars(fingerprint, nullptr);
+    if (raw_directory == nullptr || raw_fingerprint == nullptr) {
+        if (raw_directory != nullptr) {
+            environment->ReleaseStringUTFChars(directory, raw_directory);
+        }
+        if (raw_fingerprint != nullptr) {
+            environment->ReleaseStringUTFChars(fingerprint, raw_fingerprint);
+        }
+        return JNI_FALSE;
+    }
+    auto library = gameboy::RomLibrary::load(
+        std::filesystem::u8path(raw_directory));
+    std::uint64_t value{};
+    std::istringstream parser(raw_fingerprint);
+    parser >> std::hex >> value;
+    const auto removed = parser && library.remove(value);
+    if (removed) library.save(std::filesystem::u8path(raw_directory));
+    environment->ReleaseStringUTFChars(directory, raw_directory);
+    environment->ReleaseStringUTFChars(fingerprint, raw_fingerprint);
+    return removed ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -1928,6 +1963,10 @@ int main(int argc, char** argv) {
         gbb_desktop::UpdateChecker update_checker{GBB_VERSION};
         std::optional<gbb_desktop::UpdateInfo> available_update;
         std::unique_ptr<gbb_desktop::UpdateDownload> update_download;
+        bool update_check_complete = false;
+#endif
+#ifdef _WIN32
+        bool reveal_sdl_after_present = false;
 #endif
         auto paused = false;
         auto fullscreen = false;
@@ -1957,6 +1996,9 @@ int main(int argc, char** argv) {
             static_cast<void>(SDL_SetWindowTitle(
                 sdl.window, "Go Bigger Boy (GBB) - Game Library"));
         }
+#ifdef _WIN32
+        if (dashboard_visible) SDL_HideWindow(sdl.window);
+#endif
 
         using Clock = std::chrono::steady_clock;
         constexpr auto cycles_per_frame = 70224U;
@@ -1965,12 +2007,34 @@ int main(int argc, char** argv) {
         auto next_frame = Clock::now();
 
         while (running) {
+#ifndef __ANDROID__
+            if (!update_check_complete) {
+                std::string update_error;
+                std::optional<gbb_desktop::UpdateInfo> update_result;
+                if (update_checker.take_result(update_result, update_error)) {
+                    update_check_complete = true;
+                    if (!update_error.empty()) {
+                        std::cerr << "Warning: update check unavailable: "
+                                  << update_error << '\n';
+                    }
+                    available_update = std::move(update_result);
+                }
+            }
+#endif
 #ifdef _WIN32
-            if (dashboard_visible) {
+            if (dashboard_visible && update_check_complete &&
+                !available_update && !update_download) {
                 SDL_HideWindow(sdl.window);
                 const auto result = gbb_desktop::show_windows_dashboard(
                     nullptr, rom_library, emulator != nullptr, display_palette,
                     preference_path);
+                if (!result.removed_fingerprints.empty()) {
+                    for (const auto fingerprint : result.removed_fingerprints) {
+                        static_cast<void>(rom_library.remove(fingerprint));
+                    }
+                    rom_library.save(preference_path);
+                    recent_roms = recent_paths(rom_library);
+                }
                 if (result.palette_changed &&
                     result.palette < gameboy::display_palettes.size()) {
                     display_palette = result.palette;
@@ -1988,13 +2052,13 @@ int main(int argc, char** argv) {
                     break;
                 case gbb_desktop::DashboardResultAction::resume:
                     dashboard_visible = false;
+                    reveal_sdl_after_present = true;
                     break;
                 case gbb_desktop::DashboardResultAction::quit:
                     running = false;
                     break;
                 }
                 if (!running) break;
-                SDL_ShowWindow(sdl.window);
             }
 #endif
 #ifdef __ANDROID__
@@ -2013,18 +2077,6 @@ int main(int argc, char** argv) {
             std::optional<std::string> dialog_error;
             collect_dialog_result(dialog, pending_rom, dialog_error);
             if (dialog_error) show_error(sdl.window, *dialog_error);
-
-#ifndef __ANDROID__
-            std::string update_error;
-            std::optional<gbb_desktop::UpdateInfo> update_result;
-            if (update_checker.take_result(update_result, update_error)) {
-                if (!update_error.empty()) {
-                    std::cerr << "Warning: update check unavailable: "
-                              << update_error << '\n';
-                }
-                available_update = std::move(update_result);
-            }
-#endif
 
             if (reset_requested) {
                 if (!current_rom.empty()) pending_rom = current_rom;
@@ -2050,6 +2102,9 @@ int main(int argc, char** argv) {
                     current_rom = requested_rom;
                     if (!reopening_current) paused = false;
                     dashboard_visible = false;
+#ifdef _WIN32
+                    reveal_sdl_after_present = true;
+#endif
                     rom_library.remember(
                         current_rom, gameboy::inspect_rom_file(current_rom));
                     rom_library.save(preference_path);
@@ -2160,6 +2215,12 @@ int main(int argc, char** argv) {
             present(emulator.get(), sdl,
                     gameboy::display_palettes[display_palette], recent_roms,
                     dashboard_visible, dashboard_selection);
+#ifdef _WIN32
+            if (reveal_sdl_after_present && !dashboard_visible) {
+                SDL_ShowWindow(sdl.window);
+                reveal_sdl_after_present = false;
+            }
+#endif
 
             next_frame += std::chrono::duration_cast<Clock::duration>(frame_duration);
             const auto now = Clock::now();

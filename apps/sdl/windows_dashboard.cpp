@@ -12,10 +12,12 @@
 #include <atomic>
 #include <array>
 #include <cctype>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -33,6 +35,7 @@ constexpr int id_play = 104;
 constexpr int id_resume = 105;
 constexpr int id_quit = 106;
 constexpr int id_palette = 107;
+constexpr int id_remove = 108;
 constexpr UINT artwork_ready = WM_APP + 1;
 
 struct MetadataRecord {
@@ -73,6 +76,18 @@ std::string narrow(const std::wstring& value) {
     return result;
 }
 
+std::wstring formatted_last_played(const std::int64_t timestamp) {
+    if (timestamp <= 0) return L"Unknown";
+    const auto value = static_cast<std::time_t>(timestamp);
+    std::tm local{};
+    if (localtime_s(&local, &value) != 0) return L"Unknown";
+    std::array<wchar_t, 64> result{};
+    return std::wcsftime(result.data(), result.size(), L"%Y-%m-%d %H:%M",
+                         &local) == 0
+               ? std::wstring{L"Unknown"}
+               : std::wstring{result.data()};
+}
+
 struct State {
     const gameboy::RomLibrary* library{};
     DashboardResult result;
@@ -84,6 +99,7 @@ struct State {
     HWND open{};
     HWND resume{};
     HWND quit{};
+    HWND remove{};
     HWND palette{};
     HWND settings_heading{};
     HWND palette_label{};
@@ -100,10 +116,27 @@ void show_page(State& state, const bool settings) {
     ShowWindow(state.list, settings ? SW_HIDE : SW_SHOW);
     ShowWindow(state.play, settings ? SW_HIDE : SW_SHOW);
     ShowWindow(state.open, settings ? SW_HIDE : SW_SHOW);
+    ShowWindow(state.remove, settings ? SW_HIDE : SW_SHOW);
     ShowWindow(state.resume, settings || !state.can_resume ? SW_HIDE : SW_SHOW);
     ShowWindow(state.settings_heading, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.palette_label, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.palette, settings ? SW_SHOW : SW_HIDE);
+}
+
+std::optional<std::size_t> selected_entry_index(const State& state) {
+    const auto selected = ListView_GetNextItem(state.list, -1, LVNI_SELECTED);
+    if (selected < 0) return std::nullopt;
+    LVITEMW item{};
+    item.mask = LVIF_PARAM;
+    item.iItem = selected;
+    if (!SendMessageW(state.list, LVM_GETITEMW, 0,
+                      reinterpret_cast<LPARAM>(&item))) {
+        return std::nullopt;
+    }
+    const auto index = static_cast<std::size_t>(item.lParam);
+    return index < state.library->entries().size()
+               ? std::optional<std::size_t>{index}
+               : std::nullopt;
 }
 
 void finish(State& state, const DashboardResultAction action,
@@ -116,14 +149,25 @@ void finish(State& state, const DashboardResultAction action,
 }
 
 void play_selection(State& state) {
-    const auto selected = ListView_GetNextItem(state.list, -1, LVNI_SELECTED);
-    if (selected < 0 ||
-        static_cast<std::size_t>(selected) >= state.library->entries().size()) {
-        return;
-    }
+    const auto selected = selected_entry_index(state);
+    if (!selected) return;
     finish(state, DashboardResultAction::open_rom,
-           state.library->entries()[static_cast<std::size_t>(selected)]
-               .path.u8string());
+           state.library->entries()[*selected].path.u8string());
+}
+
+void remove_selection(State& state) {
+    const auto selected = selected_entry_index(state);
+    if (!selected) return;
+    const auto answer = MessageBoxW(
+        state.window,
+        L"Remove this game from the recently played list?\n\n"
+        L"The ROM file and saved game will not be deleted.",
+        L"Remove recent game", MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2);
+    if (answer != IDYES) return;
+    state.result.removed_fingerprints.push_back(
+        state.library->entries()[*selected].metadata.fingerprint);
+    const auto row = ListView_GetNextItem(state.list, -1, LVNI_SELECTED);
+    if (row >= 0) ListView_DeleteItem(state.list, row);
 }
 
 void open_rom(State& state) {
@@ -162,6 +206,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
         case id_play: play_selection(*state); return 0;
         case id_resume: finish(*state, DashboardResultAction::resume); return 0;
         case id_quit: finish(*state, DashboardResultAction::quit); return 0;
+        case id_remove: remove_selection(*state); return 0;
         case id_palette:
             if (HIWORD(wparam) == CBN_SELCHANGE) {
                 const auto selected = SendMessageW(state->palette, CB_GETCURSEL,
@@ -184,18 +229,25 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
         const std::unique_ptr<ArtworkUpdate> update(
             reinterpret_cast<ArtworkUpdate*>(lparam));
         if (update->index >= state->library->entries().size()) return 0;
+        LVFINDINFOW find{};
+        find.flags = LVFI_PARAM;
+        find.lParam = static_cast<LPARAM>(update->index);
+        const auto row = static_cast<int>(SendMessageW(
+            state->list, LVM_FINDITEMW, static_cast<WPARAM>(-1),
+            reinterpret_cast<LPARAM>(&find)));
+        if (row < 0) return 0;
         LVITEMW item{};
         auto title = widen(update->title);
         item.iSubItem = 1;
         item.pszText = title.data();
         SendMessageW(state->list, LVM_SETITEMTEXTW,
-                     static_cast<WPARAM>(update->index),
+                     static_cast<WPARAM>(row),
                      reinterpret_cast<LPARAM>(&item));
         auto language = widen(update->language);
         item.iSubItem = 3;
         item.pszText = language.data();
         SendMessageW(state->list, LVM_SETITEMTEXTW,
-                     static_cast<WPARAM>(update->index),
+                     static_cast<WPARAM>(row),
                      reinterpret_cast<LPARAM>(&item));
         if (!update->cover.empty()) {
             if (auto bitmap = load_file_bitmap(update->cover, 48, 66)) {
@@ -204,7 +256,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                 if (image >= 0) {
                     LVITEMW image_item{};
                     image_item.mask = LVIF_IMAGE;
-                    image_item.iItem = static_cast<int>(update->index);
+                    image_item.iItem = row;
                     image_item.iImage = image;
                     SendMessageW(state->list, LVM_SETITEMW, 0,
                                  reinterpret_cast<LPARAM>(&image_item));
@@ -617,9 +669,9 @@ DashboardResult show_windows_dashboard(
         }
         ListView_SetImageList(state.list, state.covers, LVSIL_SMALL);
     }
-    constexpr std::array<std::pair<const wchar_t*, int>, 4> columns{{
-        {L"Cover", 62}, {L"Game", 326}, {L"Platform", 170},
-        {L"Language", 165}}};
+    constexpr std::array<std::pair<const wchar_t*, int>, 5> columns{{
+        {L"Cover", 56}, {L"Game", 224}, {L"Platform", 116},
+        {L"Language", 106}, {L"Last played", 210}}};
     for (std::size_t index = 0; index < columns.size(); ++index) {
         LVCOLUMNW column{};
         column.mask = LVCF_TEXT | LVCF_WIDTH;
@@ -633,10 +685,11 @@ DashboardResult show_windows_dashboard(
         const auto& entry = library.entries()[index];
         auto title = widen(entry.metadata.title);
         LVITEMW item{};
-        item.mask = LVIF_TEXT | LVIF_IMAGE;
+        item.mask = LVIF_TEXT | LVIF_IMAGE | LVIF_PARAM;
         item.iItem = static_cast<int>(index);
         item.pszText = const_cast<wchar_t*>(L"");
         item.iImage = 0;
+        item.lParam = static_cast<LPARAM>(index);
         SendMessageW(state.list, LVM_INSERTITEMW, 0,
                      reinterpret_cast<LPARAM>(&item));
         LVITEMW subitem{};
@@ -657,14 +710,22 @@ DashboardResult show_windows_dashboard(
         SendMessageW(state.list, LVM_SETITEMTEXTW,
                      static_cast<WPARAM>(index),
                      reinterpret_cast<LPARAM>(&subitem));
+        auto last_played = formatted_last_played(entry.last_played);
+        subitem.iSubItem = 4;
+        subitem.pszText = last_played.data();
+        SendMessageW(state.list, LVM_SETITEMTEXTW,
+                     static_cast<WPARAM>(index),
+                     reinterpret_cast<LPARAM>(&subitem));
     }
     state.open = control(state, L"BUTTON", L"Open ROM...",
         WS_VISIBLE | BS_PUSHBUTTON, 24, 515, 130, 38, id_open);
     state.play = control(state, L"BUTTON", L"Play selected",
         WS_VISIBLE | BS_DEFPUSHBUTTON, 164, 515, 140, 38, id_play);
+    state.remove = control(state, L"BUTTON", L"Remove from list",
+        WS_VISIBLE | BS_PUSHBUTTON, 314, 515, 140, 38, id_remove);
     state.resume = control(state, L"BUTTON", L"Resume game",
         (can_resume ? WS_VISIBLE : 0) | BS_PUSHBUTTON,
-        314, 515, 140, 38, id_resume);
+        464, 515, 130, 38, id_resume);
     state.quit = control(state, L"BUTTON", L"Quit",
         WS_VISIBLE | BS_PUSHBUTTON, 664, 515, 110, 38, id_quit);
 

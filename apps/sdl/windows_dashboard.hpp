@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <string>
+#include <vector>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -17,6 +18,7 @@ struct DashboardResult {
     std::string rom_path;
     std::size_t palette{};
     bool palette_changed{};
+    std::vector<std::uint64_t> removed_fingerprints;
 };
 
 DashboardResult show_windows_dashboard(

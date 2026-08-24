@@ -39,6 +39,7 @@ public:
     static RomLibrary load(const std::filesystem::path& preference_directory);
     void remember(const std::filesystem::path& path, RomMetadata metadata,
                   std::int64_t last_played = 0);
+    bool remove(std::uint64_t fingerprint);
     void save(const std::filesystem::path& preference_directory) const;
 
     [[nodiscard]] const std::vector<RomLibraryEntry>& entries() const noexcept;

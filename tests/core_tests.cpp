@@ -211,6 +211,11 @@ void test_rom_library_metadata_and_deduplication() {
               restored.entries()[1].metadata.fingerprint ==
                   metadata.fingerprint,
           "ROM library metadata persists in recency order");
+    auto removable = restored;
+    check(removable.remove(other.fingerprint) &&
+              removable.entries().size() == 1 &&
+              !removable.remove(other.fingerprint),
+          "ROM library entries can be removed by stable fingerprint");
     std::filesystem::remove_all(directory);
 }
 

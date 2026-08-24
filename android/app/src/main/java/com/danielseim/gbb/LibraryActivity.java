@@ -1,6 +1,7 @@
 package com.danielseim.gbb;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.database.Cursor;
@@ -33,6 +34,8 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.text.DateFormat;
+import java.util.Date;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.zip.CRC32;
@@ -55,6 +58,8 @@ public final class LibraryActivity extends Activity {
     }
 
     private static native String[] nativeLibraryEntries(String directory);
+    private static native boolean nativeRemoveLibraryEntry(
+            String directory, String fingerprint);
 
     private final ExecutorService artworkExecutor =
             Executors.newFixedThreadPool(2);
@@ -163,7 +168,7 @@ public final class LibraryActivity extends Activity {
 
     private void addGameCard(String encoded) {
         final String[] fields = encoded.split(String.valueOf(FIELD_SEPARATOR), -1);
-        if (fields.length != 8) return;
+        if (fields.length != 9) return;
 
         final LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.HORIZONTAL);
@@ -194,6 +199,24 @@ public final class LibraryActivity extends Activity {
         details.addView(platform);
         final TextView language = text("Language: " + fields[5], 14, Color.DKGRAY);
         details.addView(language);
+        details.addView(text("Last played: " + formattedLastPlayed(fields[8]),
+                13, Color.GRAY));
+        final Button remove = new Button(this);
+        remove.setText("Remove from list");
+        remove.setOnClickListener(view -> new AlertDialog.Builder(this)
+                .setTitle("Remove recent game?")
+                .setMessage("The ROM file and saved game will not be deleted.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Remove", (dialog, which) -> {
+                    if (nativeRemoveLibraryEntry(
+                            getFilesDir().getAbsolutePath(), fields[0])) {
+                        showDashboard(false);
+                    } else {
+                        Toast.makeText(this, "Could not remove recent game",
+                                Toast.LENGTH_SHORT).show();
+                    }
+                }).show());
+        details.addView(remove);
         card.addView(details, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         content.addView(card, cardParams);
@@ -408,6 +431,16 @@ public final class LibraryActivity extends Activity {
     private static String displayTitle(String canonicalName) {
         final int tags = canonicalName.indexOf(" (");
         return tags < 0 ? canonicalName : canonicalName.substring(0, tags);
+    }
+
+    private static String formattedLastPlayed(String timestamp) {
+        try {
+            return DateFormat.getDateTimeInstance(DateFormat.MEDIUM,
+                    DateFormat.SHORT).format(
+                    new Date(Long.parseLong(timestamp) * 1000L));
+        } catch (Exception ignored) {
+            return "Unknown";
+        }
     }
 
     private static String thumbnailName(String name) {

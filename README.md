@@ -115,9 +115,10 @@ without arguments opens the game library dashboard:
 ```
 
 The dashboard lists up to twelve fingerprint-deduplicated recent ROMs. Windows
-uses a native library window with game, platform, and language columns plus a
-dedicated Settings page. It resolves canonical metadata and caches box artwork
-from Libretro without uploading ROM contents. Press Ctrl+L or click the
+uses a native library window with game, platform, language, and last-played
+columns plus a dedicated Settings page. Entries can be removed without deleting
+ROM or save files. It resolves canonical metadata and caches box artwork from
+Libretro without uploading ROM contents. Press Ctrl+L or click the
 upper-left menu button to return to the platform dashboard while playing.
 You can also pass a ROM path, press Ctrl+O to choose another ROM, or drag a
 `.gb`/`.gbc` file onto the emulator window. On Windows, build with Visual
@@ -231,7 +232,8 @@ The debug APK is written to
 `android/app/build/outputs/apk/debug/app-debug.apk`.
 The app opens on a native Android game library. Its recent cards are deduplicated
 by ROM fingerprint and show the cartridge title, Game Boy platform, inferred
-language, and cached cover artwork. Game identity is matched locally by CRC
+language, last-played time, and cached cover artwork. Entries can be removed
+without deleting imported ROM or save files. Game identity is matched locally by CRC
 against a cached copy of Libretro's No-Intro metadata, which also provides the
 exact canonical artwork name. The separate Settings screen controls the
 display palette and whether artwork may be downloaded from Libretro's public

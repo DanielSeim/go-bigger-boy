@@ -225,6 +225,17 @@ void RomLibrary::remember(const std::filesystem::path& path,
     if (entries_.size() > maximum_entries) entries_.resize(maximum_entries);
 }
 
+bool RomLibrary::remove(const std::uint64_t fingerprint) {
+    const auto previous_size = entries_.size();
+    entries_.erase(
+        std::remove_if(entries_.begin(), entries_.end(),
+                       [fingerprint](const RomLibraryEntry& entry) {
+                           return entry.metadata.fingerprint == fingerprint;
+                       }),
+        entries_.end());
+    return entries_.size() != previous_size;
+}
+
 void RomLibrary::save(
     const std::filesystem::path& preference_directory) const {
     if (preference_directory.empty()) return;
