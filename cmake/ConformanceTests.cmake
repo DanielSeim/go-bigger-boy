@@ -273,6 +273,18 @@ gbb_add_visual_test(mealybug_m2_win_en_toggle_dmg
     "mealybug-tearoom-tests/ppu/m2_win_en_toggle.gb"
     "mealybug-tearoom-tests/ppu/m2_win_en_toggle_dmg_blob.png"
     dmg ld-bb OFF)
+gbb_add_visual_test(mealybug_m3_wx_4_change_sprites_dmg
+    "mealybug-tearoom-tests/ppu/m3_wx_4_change_sprites.gb"
+    "mealybug-tearoom-tests/ppu/m3_wx_4_change_sprites_dmg_blob.png"
+    dmg ld-bb OFF)
+gbb_add_visual_test(mealybug_m3_wx_5_change_dmg
+    "mealybug-tearoom-tests/ppu/m3_wx_5_change.gb"
+    "mealybug-tearoom-tests/ppu/m3_wx_5_change_dmg_blob.png"
+    dmg ld-bb OFF)
+gbb_add_visual_test(mealybug_m3_window_toggle_multiple_dmg
+    "mealybug-tearoom-tests/ppu/m3_lcdc_win_en_change_multiple.gb"
+    "mealybug-tearoom-tests/ppu/m3_lcdc_win_en_change_multiple_dmg_blob.png"
+    dmg ld-bb OFF)
 gbb_add_visual_test(gambatte_dmgpalette_m3_1
     "gambatte/dmgpalette_during_m3/dmgpalette_during_m3_1.gb"
     "gambatte/dmgpalette_during_m3/dmgpalette_during_m3_1_dmg08.png"

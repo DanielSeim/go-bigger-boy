@@ -70,11 +70,11 @@ The DMG APU passes all 12 upstream Blargg `dmg_sound` tests, including active
 wave-RAM reads/writes and the original hardware's channel 3 retrigger corruption.
 The current headless CI accuracy gate passes all 75 Mooneye acceptance ROMs,
 all 6 applicable CGB misc ROMs, all 28 emulator-only mapper ROMs, 14 curated
-Blargg ROMs, and 15 exact Acid2/Scribbltests/Mealybug/Gambatte framebuffer
+Blargg ROMs, and 18 exact Acid2/Scribbltests/Mealybug/Gambatte framebuffer
 comparisons; see the
 [accuracy report](docs/accuracy.md) for details.
 
-To register the curated 138-ROM CI baseline locally, download and extract the
+To register the curated 141-ROM CI baseline locally, download and extract the
 `c-sp/game-boy-test-roms` v7.0 bundle, then set its root as the opt-in cache
 path. Test ROMs are deliberately not bundled or downloaded by the build:
 

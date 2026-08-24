@@ -19,6 +19,9 @@
 
 namespace {
 
+static_assert(sizeof(gameboy::Ppu) < 16 * 1024,
+              "Keep large PPU buffers heap-backed for Windows stack safety");
+
 constexpr std::uint16_t program_address = 0x0100;
 int failures = 0;
 
@@ -2214,6 +2217,21 @@ void test_ppu_background_window_and_sprites() {
               mid_scanline.framebuffer()[9] == 0xFF555555,
           "mode-3 palette writes affect only pixels emitted afterward");
 
+    gameboy::MemoryBus fetch_latency{gameboy::Cartridge{test_rom()}};
+    fetch_latency.write8(0xFF47, 0xE4);
+    fetch_latency.write8(0x8010, 0xFF);
+    fetch_latency.write8(0x8011, 0xFF); // Tile 1 is color 3.
+    for (unsigned tile = 0; tile < 32; ++tile) {
+        fetch_latency.write8(static_cast<std::uint16_t>(0x9C00 + tile), 1);
+    }
+    fetch_latency.write8(0xFF40, 0x91);
+    fetch_latency.tick(93);
+    fetch_latency.write8(0xFF40, 0x99); // Select $9C00 during mode 3.
+    fetch_latency.tick(30);
+    check(fetch_latency.framebuffer()[15] == 0xFFFFFFFF &&
+              fetch_latency.framebuffer()[16] == 0xFF000000,
+          "tile-map writes take effect at a future fetch boundary, not the next pixel");
+
     gameboy::MemoryBus window{gameboy::Cartridge{test_rom()}};
     window.write8(0xFF47, 0xE4);
     window.write8(0x8010, 0xFF);
@@ -2556,11 +2574,13 @@ void test_save_state_round_trip_and_validation() {
     constexpr std::size_t version_six_state_size = 5;
     constexpr std::size_t version_seven_camera_size = 1;
     constexpr std::size_t version_eight_ppu_size = 1;
+    constexpr std::size_t version_nine_fetcher_size = 737;
     auto version_one = saved;
     version_one.resize(version_one.size() - version_two_dma_size -
                        version_three_ppu_size - version_four_cgb_size -
                        version_five_ppu_size - version_six_state_size -
-                       version_seven_camera_size - version_eight_ppu_size);
+                       version_seven_camera_size - version_eight_ppu_size -
+                       version_nine_fetcher_size);
     version_one[8] = 1;
     const auto old_payload_size = static_cast<std::uint32_t>(
         version_one.size() - state_header_size);
@@ -2579,7 +2599,7 @@ void test_save_state_round_trip_and_validation() {
     version_two.resize(version_two.size() - version_three_ppu_size -
                        version_four_cgb_size - version_five_ppu_size -
                        version_six_state_size - version_seven_camera_size -
-                       version_eight_ppu_size);
+                       version_eight_ppu_size - version_nine_fetcher_size);
     version_two[8] = 2;
     const auto version_two_payload_size = static_cast<std::uint32_t>(
         version_two.size() - state_header_size);
@@ -2598,7 +2618,8 @@ void test_save_state_round_trip_and_validation() {
     auto version_three = saved;
     version_three.resize(version_three.size() - version_four_cgb_size -
                          version_five_ppu_size - version_six_state_size -
-                         version_seven_camera_size - version_eight_ppu_size);
+                         version_seven_camera_size - version_eight_ppu_size -
+                         version_nine_fetcher_size);
     version_three[8] = 3;
     const auto version_three_payload_size = static_cast<std::uint32_t>(
         version_three.size() - state_header_size);
@@ -2617,11 +2638,13 @@ void test_save_state_round_trip_and_validation() {
     auto version_four = saved;
     version_four.erase(version_four.end() - version_four_cgb_size -
                            version_five_ppu_size - version_six_state_size -
-                           version_seven_camera_size - version_eight_ppu_size,
+                           version_seven_camera_size - version_eight_ppu_size -
+                           version_nine_fetcher_size,
                        version_four.end() - version_four_cgb_size -
-                           version_seven_camera_size - version_eight_ppu_size);
+                           version_seven_camera_size - version_eight_ppu_size -
+                           version_nine_fetcher_size);
     version_four.resize(version_four.size() - version_seven_camera_size -
-                        version_eight_ppu_size);
+                        version_eight_ppu_size - version_nine_fetcher_size);
     version_four[8] = 4;
     const auto version_four_payload_size = static_cast<std::uint32_t>(
         version_four.size() - state_header_size);
@@ -2640,11 +2663,12 @@ void test_save_state_round_trip_and_validation() {
     auto version_five = saved;
     version_five.erase(version_five.end() - version_four_cgb_size -
                            version_six_state_size - version_seven_camera_size -
-                           version_eight_ppu_size,
+                           version_eight_ppu_size - version_nine_fetcher_size,
                        version_five.end() - version_four_cgb_size -
-                           version_seven_camera_size - version_eight_ppu_size);
+                           version_seven_camera_size - version_eight_ppu_size -
+                           version_nine_fetcher_size);
     version_five.resize(version_five.size() - version_seven_camera_size -
-                        version_eight_ppu_size);
+                        version_eight_ppu_size - version_nine_fetcher_size);
     version_five[8] = 5;
     const auto version_five_payload_size = static_cast<std::uint32_t>(
         version_five.size() - state_header_size);
@@ -2664,7 +2688,7 @@ void test_save_state_round_trip_and_validation() {
 
     auto version_six = saved;
     version_six.resize(version_six.size() - version_seven_camera_size -
-                       version_eight_ppu_size);
+                       version_eight_ppu_size - version_nine_fetcher_size);
     version_six[8] = 6;
     const auto version_six_payload_size = static_cast<std::uint32_t>(
         version_six.size() - state_header_size);
@@ -2681,7 +2705,8 @@ void test_save_state_round_trip_and_validation() {
           "version 6 save states remain loadable after adding camera state");
 
     auto version_seven = saved;
-    version_seven.resize(version_seven.size() - version_eight_ppu_size);
+    version_seven.resize(version_seven.size() - version_eight_ppu_size -
+                         version_nine_fetcher_size);
     version_seven[8] = 7;
     const auto version_seven_payload_size = static_cast<std::uint32_t>(
         version_seven.size() - state_header_size);
@@ -2696,6 +2721,23 @@ void test_save_state_round_trip_and_validation() {
               version_seven_loader.cpu().total_cycles() == saved_cycles &&
               version_seven_loader.bus().read8(0xA123) == 0x5A,
           "version 7 save states remain loadable after adding PPU dot state");
+
+    auto version_eight = saved;
+    version_eight.resize(version_eight.size() - version_nine_fetcher_size);
+    version_eight[8] = 8;
+    const auto version_eight_payload_size = static_cast<std::uint32_t>(
+        version_eight.size() - state_header_size);
+    write_little_u32(version_eight, 20, version_eight_payload_size);
+    write_little_u32(
+        version_eight, 24,
+        state_crc32(version_eight.data() + state_header_size,
+                    version_eight_payload_size));
+    gameboy::Emulator version_eight_loader{gameboy::Cartridge{rom}};
+    version_eight_loader.load_state(version_eight);
+    check(version_eight_loader.cpu().registers().pc == saved_pc &&
+              version_eight_loader.cpu().total_cycles() == saved_cycles &&
+              version_eight_loader.bus().read8(0xA123) == 0x5A,
+          "version 8 save states remain loadable after adding PPU fetcher state");
 
     emulator.bus().write8(0xA123, 0x99);
     emulator.bus().write8(0xC000, 0x11);
@@ -2744,7 +2786,7 @@ void test_save_state_round_trip_and_validation() {
           "truncated save states are rejected without changing emulator state");
 
     auto future_version = saved;
-    future_version[8] = 9;
+    future_version[8] = 10;
     auto rejected_version = false;
     try {
         emulator.load_state(future_version);

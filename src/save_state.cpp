@@ -13,7 +13,7 @@ namespace {
 constexpr std::array<std::uint8_t, 8> state_magic{
     'G', 'B', 'B', 'S', 'T', 'A', 'T', 'E',
 };
-constexpr std::uint32_t state_version = 8;
+constexpr std::uint32_t state_version = 9;
 constexpr std::uint32_t oldest_supported_state_version = 1;
 constexpr std::size_t maximum_state_size = 2 * 1024 * 1024;
 constexpr std::size_t maximum_serial_output = 1024 * 1024;
@@ -343,6 +343,51 @@ private:
                          bus.cartridge_.camera_image_.size());
         }
         writer.boolean(bus.ppu_.window_rendered_this_line_);
+        writer.u8(bus.ppu_.background_fifo_size_);
+        for (const auto& pixel : bus.ppu_.background_fifo_) {
+            writer.u8(pixel.color);
+            writer.u8(pixel.palette);
+            writer.boolean(pixel.priority);
+        }
+        for (const auto& pixel : bus.ppu_.object_pixels_) {
+            writer.u8(pixel.color);
+            writer.u8(pixel.attributes);
+            writer.u8(pixel.oam_index);
+            writer.boolean(pixel.valid);
+        }
+        write_bytes(writer, bus.ppu_.line_sprites_);
+        writer.u8(bus.ppu_.fetcher_phase_);
+        writer.u8(bus.ppu_.fetcher_phase_ticks_);
+        writer.u8(bus.ppu_.fetcher_tile_index_);
+        writer.u8(bus.ppu_.fetched_tile_);
+        writer.u8(bus.ppu_.fetched_attributes_);
+        writer.u8(bus.ppu_.fetched_low_);
+        writer.u8(bus.ppu_.fetched_high_);
+        writer.u8(bus.ppu_.fetched_row_);
+        writer.u8(bus.ppu_.line_sprite_count_);
+        writer.u8(bus.ppu_.next_line_sprite_);
+        writer.u8(bus.ppu_.output_x_);
+        writer.u8(bus.ppu_.startup_delay_);
+        writer.u8(bus.ppu_.scroll_discard_);
+        writer.u8(bus.ppu_.window_delay_);
+        writer.u8(bus.ppu_.sprite_delay_);
+        writer.u16(static_cast<std::uint16_t>(bus.ppu_.fetched_source_x_));
+        writer.u16(static_cast<std::uint16_t>(bus.ppu_.previous_sprite_tile_));
+        writer.boolean(bus.ppu_.fetched_window_);
+        writer.boolean(bus.ppu_.using_window_);
+        writer.boolean(bus.ppu_.previous_sprite_was_window_);
+        writer.boolean(bus.ppu_.have_previous_sprite_tile_);
+        writer.u8(bus.ppu_.window_glitch_x_);
+        writer.boolean(bus.ppu_.window_glitch_pending_);
+        writer.u16(bus.ppu_.window_source_x_);
+        writer.u8(bus.ppu_.window_glitch_applied_x_);
+        writer.u32(bus.ppu_.window_glitch_restore_color_);
+        writer.boolean(bus.ppu_.window_glitch_applied_);
+        writer.u8(bus.ppu_.window_activation_count_);
+        writer.u8(bus.ppu_.window_fetch_line_);
+        writer.boolean(bus.ppu_.window_retrigger_armed_);
+        writer.u8(bus.ppu_.window_fetch_start_x_);
+        writer.boolean(bus.ppu_.window_disable_pending_);
     }
 
     static void read_bus(Reader& reader, MemoryBus& bus,
@@ -485,6 +530,104 @@ private:
         } else {
             bus.ppu_.window_rendered_this_line_ = false;
         }
+        if (version >= 9) {
+            bus.ppu_.background_fifo_size_ = reader.u8();
+            for (auto& pixel : bus.ppu_.background_fifo_) {
+                pixel.color = reader.u8();
+                pixel.palette = reader.u8();
+                pixel.priority = reader.boolean();
+            }
+            for (auto& pixel : bus.ppu_.object_pixels_) {
+                pixel.color = reader.u8();
+                pixel.attributes = reader.u8();
+                pixel.oam_index = reader.u8();
+                pixel.valid = reader.boolean();
+            }
+            read_bytes(reader, bus.ppu_.line_sprites_);
+            bus.ppu_.fetcher_phase_ = reader.u8();
+            bus.ppu_.fetcher_phase_ticks_ = reader.u8();
+            bus.ppu_.fetcher_tile_index_ = reader.u8();
+            bus.ppu_.fetched_tile_ = reader.u8();
+            bus.ppu_.fetched_attributes_ = reader.u8();
+            bus.ppu_.fetched_low_ = reader.u8();
+            bus.ppu_.fetched_high_ = reader.u8();
+            bus.ppu_.fetched_row_ = reader.u8();
+            bus.ppu_.line_sprite_count_ = reader.u8();
+            bus.ppu_.next_line_sprite_ = reader.u8();
+            bus.ppu_.output_x_ = reader.u8();
+            bus.ppu_.startup_delay_ = reader.u8();
+            bus.ppu_.scroll_discard_ = reader.u8();
+            bus.ppu_.window_delay_ = reader.u8();
+            bus.ppu_.sprite_delay_ = reader.u8();
+            bus.ppu_.fetched_source_x_ =
+                static_cast<std::int16_t>(reader.u16());
+            bus.ppu_.previous_sprite_tile_ =
+                static_cast<std::int16_t>(reader.u16());
+            bus.ppu_.fetched_window_ = reader.boolean();
+            bus.ppu_.using_window_ = reader.boolean();
+            bus.ppu_.previous_sprite_was_window_ = reader.boolean();
+            bus.ppu_.have_previous_sprite_tile_ = reader.boolean();
+            bus.ppu_.window_glitch_x_ = reader.u8();
+            bus.ppu_.window_glitch_pending_ = reader.boolean();
+            bus.ppu_.window_source_x_ = reader.u16();
+            bus.ppu_.window_glitch_applied_x_ = reader.u8();
+            bus.ppu_.window_glitch_restore_color_ = reader.u32();
+            bus.ppu_.window_glitch_applied_ = reader.boolean();
+            bus.ppu_.window_activation_count_ = reader.u8();
+            bus.ppu_.window_fetch_line_ = reader.u8();
+            bus.ppu_.window_retrigger_armed_ = reader.boolean();
+            bus.ppu_.window_fetch_start_x_ = reader.u8();
+            bus.ppu_.window_disable_pending_ = reader.boolean();
+            if (bus.ppu_.background_fifo_size_ >
+                    bus.ppu_.background_fifo_.size() ||
+                bus.ppu_.fetcher_phase_ > 4 ||
+                bus.ppu_.fetcher_phase_ticks_ > 2 ||
+                bus.ppu_.line_sprite_count_ > bus.ppu_.line_sprites_.size() ||
+                bus.ppu_.next_line_sprite_ > bus.ppu_.line_sprite_count_ ||
+                bus.ppu_.output_x_ > Ppu::screen_width ||
+                bus.ppu_.scroll_discard_ > 7 ||
+                bus.ppu_.window_glitch_x_ >= Ppu::screen_width ||
+                bus.ppu_.window_glitch_applied_x_ >= Ppu::screen_width) {
+                throw SaveStateError("Save state contains invalid PPU fetcher state");
+            }
+        } else {
+            bus.ppu_.background_fifo_.fill(Ppu::BackgroundPixel{});
+            bus.ppu_.object_pixels_.fill(Ppu::ObjectPixel{});
+            bus.ppu_.line_sprites_.fill(0);
+            bus.ppu_.background_fifo_size_ = 0;
+            bus.ppu_.fetcher_phase_ = 0;
+            bus.ppu_.fetcher_phase_ticks_ = 2;
+            bus.ppu_.fetcher_tile_index_ = 0;
+            bus.ppu_.fetched_tile_ = 0;
+            bus.ppu_.fetched_attributes_ = 0;
+            bus.ppu_.fetched_low_ = 0;
+            bus.ppu_.fetched_high_ = 0;
+            bus.ppu_.fetched_row_ = 0;
+            bus.ppu_.line_sprite_count_ = 0;
+            bus.ppu_.next_line_sprite_ = 0;
+            bus.ppu_.output_x_ = 0;
+            bus.ppu_.startup_delay_ = 0;
+            bus.ppu_.scroll_discard_ = 0;
+            bus.ppu_.window_delay_ = 0;
+            bus.ppu_.sprite_delay_ = 0;
+            bus.ppu_.fetched_source_x_ = 0;
+            bus.ppu_.previous_sprite_tile_ = 0;
+            bus.ppu_.fetched_window_ = false;
+            bus.ppu_.using_window_ = false;
+            bus.ppu_.previous_sprite_was_window_ = false;
+            bus.ppu_.have_previous_sprite_tile_ = false;
+            bus.ppu_.window_glitch_x_ = 0;
+            bus.ppu_.window_glitch_pending_ = false;
+            bus.ppu_.window_source_x_ = 0;
+            bus.ppu_.window_glitch_applied_x_ = 0;
+            bus.ppu_.window_glitch_restore_color_ = 0;
+            bus.ppu_.window_glitch_applied_ = false;
+            bus.ppu_.window_activation_count_ = 0;
+            bus.ppu_.window_fetch_line_ = bus.ppu_.window_line_;
+            bus.ppu_.window_retrigger_armed_ = false;
+            bus.ppu_.window_fetch_start_x_ = 0;
+            bus.ppu_.window_disable_pending_ = false;
+        }
         // The printer represents an external device and is deliberately not
         // embedded in emulator save states. Loading a state starts a fresh
         // printer session while preserving whether it is connected.
@@ -564,7 +707,7 @@ private:
     static void write_ppu(Writer& writer, const Ppu& ppu) {
         write_bytes(writer, ppu.vram_);
         write_bytes(writer, ppu.oam_);
-        for (const auto pixel : ppu.framebuffer_) writer.u32(pixel);
+        for (const auto pixel : *ppu.framebuffer_) writer.u32(pixel);
         writer.u8(ppu.lcdc_);
         writer.u8(ppu.stat_select_);
         writer.u8(ppu.scy_);
@@ -585,7 +728,7 @@ private:
     static void read_ppu(Reader& reader, Ppu& ppu) {
         read_bytes(reader, ppu.vram_);
         read_bytes(reader, ppu.oam_);
-        for (auto& pixel : ppu.framebuffer_) pixel = reader.u32();
+        for (auto& pixel : *ppu.framebuffer_) pixel = reader.u32();
         ppu.lcdc_ = reader.u8();
         ppu.stat_select_ = static_cast<std::uint8_t>(reader.u8() & 0x78);
         ppu.scy_ = reader.u8();

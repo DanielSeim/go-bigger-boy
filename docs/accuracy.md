@@ -12,8 +12,8 @@ bundle. GitHub Actions verifies the archive checksum before running any ROM.
 | Mooneye CGB misc | 6/6 | Every CGB/CGB0 ROM applicable to emulated Game Boy Color hardware |
 | Mooneye emulator-only | 28/28 | Complete MBC1, MBC2, and MBC5 mapper directories |
 | Blargg | 14 | All 11 individual CPU instruction ROMs plus instruction and memory timing |
-| Visual PPU | 15/15 | Acid2, Scribbltests, Mealybug, and Gambatte framebuffer comparisons |
-| Total CI gate | **138** | Every listed ROM must pass before a release can be published |
+| Visual PPU | 18/18 | Acid2, Scribbltests, Mealybug, and Gambatte framebuffer comparisons |
+| Total CI gate | **141** | Every listed ROM must pass before a release can be published |
 
 The acceptance figure covers every acceptance ROM in the pinned bundle. Tests with
 mutually exclusive boot-ROM expectations run under explicit DMG0, DMG/MGB,
@@ -27,16 +27,28 @@ PPM capture, and compares every RGB pixel with the suite's reference PNG. A
 failure keeps both the captured frame and a magenta difference image under the
 build directory's `visual-results` folder.
 
-The PPU now emits pixels incrementally during mode 3 instead of rendering an
-entire line at the mode-0 boundary. The visual gate covers native DMG and CGB
-Acid2, DMG software under the CGB compatibility palette, Scribbl rendering and
-STAT timing, a Mealybug window case captured at its `LD B,B` breakpoint, and two
-Gambatte mid-scanline palette cases.
+The PPU emits pixels through a dot-stepped fetcher instead of looking up a tile
+directly for each output pixel. The fetcher performs tile, low-bitplane,
+high-bitplane, sleep, and push phases; feeds a 16-pixel background FIFO; applies
+the initial `SCX` discard; restarts for the window; and pauses output for
+selected sprite fetches. Sprite pixels are latched into a scanline buffer and
+mixed with background pixels as the FIFO is popped. Save-state version 9 also
+preserves this in-flight pipeline so a state taken during mode 3 resumes
+deterministically.
 
-The next PPU milestone is replacing the incremental renderer's direct tile
-lookups with a fetcher/FIFO pipeline. That is required for the remaining
-Mealybug and Gambatte cases involving fetch latency, sprite stalls, and
-mid-scanline SCX/SCY/LCDC changes.
+The visual gate covers native DMG and CGB Acid2, DMG software under the CGB
+compatibility palette, Scribbl rendering and STAT timing, four Mealybug window
+and WX cases captured at their `LD B,B` breakpoints, and two Gambatte
+mid-scanline palette cases. The window pipeline now inserts the reactivation
+color-zero pixel without consuming the queued window pixel, latches disable
+requests through the next tile boundary, resumes background fetching, and can
+restart on a later WX position using the next internal window row.
+
+The next PPU refinement is the hardware-revision-specific edge behavior around
+object-fetch cancellation, window triggers changed before the first visible
+pixel, `WX < 7`, and bitplane reads that overlap precisely timed SCY/LCDC
+writes. Those cases remain outside the release gate until their framebuffer
+references match exactly.
 
 Run the exact CI baseline locally with:
 
