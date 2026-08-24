@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(go_bigger_boy VERSION 0.12.4 LANGUAGES CXX)
+project(go_bigger_boy VERSION 0.13.0 LANGUAGES CXX)
 
 include(GNUInstallDirs)
 
@@ -19,6 +19,7 @@ add_library(gameboy_core
     src/memory_bus.cpp
     src/ppu.cpp
     src/printer.cpp
+    src/rom_library.cpp
     src/save_state.cpp
     src/timer.cpp
 )

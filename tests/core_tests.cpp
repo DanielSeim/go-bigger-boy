@@ -2,6 +2,7 @@
 #include "gameboy/dmg_palette.hpp"
 #include "gameboy/emulator.hpp"
 #include "gameboy/memory_bus.hpp"
+#include "gameboy/rom_library.hpp"
 
 #include <algorithm>
 #include <array>
@@ -149,6 +150,62 @@ void test_cartridge_header() {
               blue_palette.background[3] == 0xFF000000 &&
               blue_palette.object_0 != blue_palette.background,
           "CGB compatibility palettes expand RGB555 and preserve layer colors");
+}
+
+void test_rom_library_metadata_and_deduplication() {
+    auto rom = cgb_test_rom();
+    std::fill(rom.begin() + 0x134, rom.begin() + 0x143, 0);
+    constexpr std::string_view title = "POKEMON BLUE";
+    std::copy(title.begin(), title.end(), rom.begin() + 0x134);
+    rom[0x14A] = 1;
+    const auto metadata = gameboy::inspect_rom(
+        rom, "Pokemon Blue (USA) (En,Fr,De).gbc");
+    check(metadata.title == "POKEMON BLUE" &&
+              metadata.platform == gameboy::RomPlatform::game_boy_color &&
+              metadata.language == "English, French, German" &&
+              metadata.cover_name ==
+                  "Pokemon Blue (USA) (En,Fr,De)",
+          "ROM library extracts header and filename metadata");
+    check(std::string{gameboy::platform_name(metadata.platform)} ==
+              "Game Boy Color" &&
+              std::string{gameboy::cover_system_name(metadata.platform)} ==
+                  "Nintendo - Game Boy Color",
+          "ROM library maps platforms to display and cover-system names");
+
+    const auto imported = gameboy::inspect_rom(
+        rom, "0123456789abcdef-Pokemon Blue (USA) (En,Fr,De).gbc");
+    check(imported.cover_name == metadata.cover_name &&
+              imported.language == metadata.language,
+          "ROM library ignores Android's fingerprint filename prefix");
+
+    gameboy::RomLibrary library;
+    library.remember("first/Pokemon Blue.gbc", metadata, 100);
+    library.remember("renamed/Pokemon Blue.gbc", metadata, 200);
+    check(library.entries().size() == 1 &&
+              library.entries().front().path ==
+                  std::filesystem::path{"renamed/Pokemon Blue.gbc"},
+          "ROM library deduplicates renamed copies by fingerprint");
+
+    auto other_rom = test_rom();
+    other_rom[0x200] = 1;
+    auto other = gameboy::inspect_rom(other_rom, "Other Game (Japan).gb");
+    library.remember("Other Game.gb", other, 300);
+    check(library.entries().size() == 2 &&
+              library.entries().front().metadata.language == "Japanese",
+          "ROM library keeps distinct games ordered by recent use");
+
+    const auto directory = std::filesystem::temp_directory_path() /
+                           "gbb-rom-library-test";
+    std::filesystem::remove_all(directory);
+    library.save(directory);
+    const auto restored = gameboy::RomLibrary::load(directory);
+    check(restored.entries().size() == 2 &&
+              restored.entries()[0].metadata.fingerprint ==
+                  other.fingerprint &&
+              restored.entries()[1].metadata.fingerprint ==
+                  metadata.fingerprint,
+          "ROM library metadata persists in recency order");
+    std::filesystem::remove_all(directory);
 }
 
 void test_cgb_memory_and_rendering() {
@@ -2852,6 +2909,7 @@ void test_save_state_round_trip_and_validation() {
 int main() {
     try {
         test_cartridge_header();
+        test_rom_library_metadata_and_deduplication();
         test_cartridge_file_loading();
         test_cgb_memory_and_rendering();
         test_mbc1_rom_banking();

@@ -1,6 +1,7 @@
 package com.danielseim.gbb;
 
 import android.app.AlertDialog;
+import android.app.ActivityOptions;
 import android.app.PendingIntent;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
@@ -33,16 +34,28 @@ import java.util.Locale;
 
 /** Android entry point; SDLActivity owns the native surface and lifecycle. */
 public final class GbbActivity extends SDLActivity {
+    public static final String EXTRA_ROM = "com.danielseim.gbb.ROM";
     private static final String TAG = "GBB updater";
     private static final String RELEASE_API =
             "https://api.github.com/repos/DanielSeim/go-bigger-boy/releases/latest";
     private static final String APK_ASSET = "go-bigger-boy-android.apk";
+    private static final String ACTION_INSTALL_RESULT =
+            "com.danielseim.gbb.INSTALL_UPDATE_RESULT";
     private static final long MAXIMUM_APK_SIZE = 256L * 1024L * 1024L;
 
     private File pendingUpdate;
     private boolean awaitingInstallPermission;
     private volatile int cameraOrientationDegrees;
     private OrientationEventListener cameraOrientationListener;
+
+    private static native void nativeOpenRom(String rom);
+
+    @Override
+    protected String[] getArguments() {
+        final String rom = getIntent().getStringExtra(EXTRA_ROM);
+        return rom == null || rom.isEmpty() ? new String[0]
+                                            : new String[]{rom};
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -59,7 +72,17 @@ public final class GbbActivity extends SDLActivity {
                 cameraOrientationDegrees = ((orientation + 45) / 90 % 4) * 90;
             }
         };
-        checkForUpdates();
+        if (!handleInstallResult(getIntent())) checkForUpdates();
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        if (!handleInstallResult(intent)) {
+            final String rom = intent.getStringExtra(EXTRA_ROM);
+            if (rom != null && !rom.isEmpty()) nativeOpenRom(rom);
+        }
     }
 
     @Override
@@ -96,6 +119,12 @@ public final class GbbActivity extends SDLActivity {
         final int physicalDisplayRotation =
                 (360 - cameraOrientationDegrees) % 360;
         return physicalDisplayRotation - SDLActivity.getCurrentRotation();
+    }
+
+    /** Opens the native library while preserving the running game underneath. */
+    public void openLibrary() {
+        startActivity(new Intent(this, LibraryActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT));
     }
 
     private void checkForUpdates() {
@@ -228,11 +257,23 @@ public final class GbbActivity extends SDLActivity {
                     session.fsync(output);
                 }
 
-                final Intent result = new Intent(this, UpdateInstallReceiver.class)
-                        .setAction(UpdateInstallReceiver.ACTION_INSTALL_RESULT);
-                final PendingIntent pendingResult = PendingIntent.getBroadcast(
+                final Intent result = new Intent(this, GbbActivity.class)
+                        .setAction(ACTION_INSTALL_RESULT)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK |
+                                  Intent.FLAG_ACTIVITY_CLEAR_TOP |
+                                  Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                Bundle launchOptions = null;
+                if (Build.VERSION.SDK_INT >= 34) {
+                    launchOptions = ActivityOptions.makeBasic()
+                            .setPendingIntentCreatorBackgroundActivityStartMode(
+                                    ActivityOptions
+                                            .MODE_BACKGROUND_ACTIVITY_START_ALLOWED)
+                            .toBundle();
+                }
+                final PendingIntent pendingResult = PendingIntent.getActivity(
                         this, sessionId, result,
-                        PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_MUTABLE);
+                        PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_MUTABLE,
+                        launchOptions);
                 session.commit(pendingResult.getIntentSender());
             }
         } catch (Exception error) {
@@ -254,6 +295,37 @@ public final class GbbActivity extends SDLActivity {
                             installPendingUpdate())
                     .show());
         }
+    }
+
+    private boolean handleInstallResult(Intent intent) {
+        if (intent == null || !ACTION_INSTALL_RESULT.equals(intent.getAction())) {
+            return false;
+        }
+        final int status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS,
+                PackageInstaller.STATUS_FAILURE);
+        if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
+            final Intent confirmation;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                confirmation = intent.getParcelableExtra(Intent.EXTRA_INTENT,
+                                                         Intent.class);
+            } else {
+                //noinspection deprecation
+                confirmation = intent.getParcelableExtra(Intent.EXTRA_INTENT);
+            }
+            if (confirmation != null) startActivity(confirmation);
+        } else if (status != PackageInstaller.STATUS_SUCCESS) {
+            final String message = intent.getStringExtra(
+                    PackageInstaller.EXTRA_STATUS_MESSAGE);
+            Log.e(TAG, "Package installation failed: " + message);
+            Toast.makeText(this, "Go Bigger Boy update failed.",
+                    Toast.LENGTH_LONG).show();
+        } else {
+            startActivity(new Intent(this, LibraryActivity.class)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK |
+                              Intent.FLAG_ACTIVITY_CLEAR_TASK));
+            finish();
+        }
+        return true;
     }
 
     private String installedVersion() throws Exception {

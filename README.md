@@ -42,8 +42,8 @@ for the suite-by-suite breakdown.
 - Headless command-line runner
 - Headless Mooneye/serial conformance test runner
 - Emscripten/WebAssembly browser frontend with IndexedDB cartridge saves
-- Initial Android SDL3 frontend with native ROM picker and multitouch controls
-- Shared desktop/Android game library with persistent recent-ROM launching
+- Android native library/settings dashboard with SDL3 gameplay and multitouch controls
+- Shared desktop/Android ROM catalog with fingerprint-deduplicated history and metadata
 - Game Boy Printer serial protocol with automatic desktop image export
 - Game Boy Camera cartridge support with live SDL3 webcam input on desktop
 - MBC5 rumble output through compatible SDL3 gamepads on desktop
@@ -178,7 +178,8 @@ installation is replaced after the emulator exits and the updated executable
 restarts. Windows uses the system HTTP service and PowerShell extraction;
 Linux and macOS use the system `curl` and archive tools. Android downloads the
 signed APK, then opens the system package installer; Android may require enabling
-“Allow from this source” and always controls the final confirmation. System-wide
+“Allow from this source” and always controls the final confirmation. After a
+successful installation, Android relaunches the updated emulator. System-wide
 read-only desktop installations must still be updated through their package
 manager or replaced manually.
 
@@ -226,10 +227,17 @@ gradle assembleDebug
 
 The debug APK is written to
 `android/app/build/outputs/apk/debug/app-debug.apk`.
-The app opens on the touch-friendly game library dashboard. Tapping the menu
-button in the upper-left returns to it while playing. The translucent controls
+The app opens on a native Android game library. Its recent cards are deduplicated
+by ROM fingerprint and show the cartridge title, Game Boy platform, inferred
+language, and cached cover artwork. The separate Settings screen controls the
+display palette and whether artwork may be downloaded from Libretro's public
+thumbnail service; ROM contents are never sent to that service. Tapping the menu
+button in the upper-left returns to the library while preserving the running
+game. The translucent controls
 provide a D-pad, A, B, Select, and Start; Bluetooth and USB gamepads continue
-to work through SDL. Game Boy Camera input follows the phone's physical
+to work through SDL. Android's Back button asks for confirmation before closing
+the emulator; Back from the library resumes a game underneath it.
+Game Boy Camera input follows the phone's physical
 orientation even though the emulator interface remains in landscape. The
 `Android build` GitHub Actions workflow runs
 pull requests as an automatically debug-signed APK. Pushes to the repository

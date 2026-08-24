@@ -1,5 +1,6 @@
 #include "gameboy/emulator.hpp"
 #include "gameboy/display_palette.hpp"
+#include "gameboy/rom_library.hpp"
 #ifndef __ANDROID__
 #include "update_checker.hpp"
 #endif
@@ -42,7 +43,19 @@
 namespace {
 
 #ifndef GBB_VERSION
-#define GBB_VERSION "0.12.4"
+#define GBB_VERSION "0.13.0"
+#endif
+
+#ifdef __ANDROID__
+std::mutex android_rom_request_mutex;
+std::optional<std::string> android_rom_request;
+
+std::optional<std::string> take_android_rom_request() {
+    std::lock_guard<std::mutex> lock(android_rom_request_mutex);
+    auto request = std::move(android_rom_request);
+    android_rom_request.reset();
+    return request;
+}
 #endif
 
 [[noreturn]] void sdl_error(const std::string& action) {
@@ -52,6 +65,11 @@ namespace {
 class SdlResources {
 public:
     SdlResources() {
+#ifdef __ANDROID__
+        if (!SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1")) {
+            sdl_error("Could not trap the Android back button");
+        }
+#endif
         if (!SDL_SetAppMetadata("Go Bigger Boy (GBB)", GBB_VERSION,
                                 "go-bigger-boy")) {
             sdl_error("Could not set application metadata");
@@ -198,7 +216,8 @@ std::filesystem::path preference_directory() {
     return path;
 }
 
-std::vector<std::string> load_recent_roms(const std::filesystem::path& directory) {
+std::vector<std::string> load_legacy_recent_roms(
+    const std::filesystem::path& directory) {
     std::vector<std::string> paths;
     if (directory.empty()) return paths;
     std::ifstream input(directory / "recent-roms.txt");
@@ -209,19 +228,33 @@ std::vector<std::string> load_recent_roms(const std::filesystem::path& directory
     return paths;
 }
 
-void save_recent_roms(const std::filesystem::path& directory,
-                      const std::vector<std::string>& paths) {
-    if (directory.empty()) return;
-    std::ofstream output(directory / "recent-roms.txt", std::ios::trunc);
-    for (const auto& path : paths) output << path << '\n';
+std::vector<std::string> recent_paths(const gameboy::RomLibrary& library) {
+    std::vector<std::string> paths;
+    paths.reserve(library.entries().size());
+    for (const auto& entry : library.entries()) {
+        paths.push_back(entry.path.u8string());
+    }
+    return paths;
 }
 
-void remember_rom(const std::string& path, std::vector<std::string>& recent,
-                  const std::filesystem::path& directory) {
-    recent.erase(std::remove(recent.begin(), recent.end(), path), recent.end());
-    recent.insert(recent.begin(), path);
-    if (recent.size() > 9) recent.resize(9);
-    save_recent_roms(directory, recent);
+gameboy::RomLibrary load_rom_library(
+    const std::filesystem::path& directory) {
+    auto library = gameboy::RomLibrary::load(directory);
+    if (!library.entries().empty()) return library;
+
+    // Migrate the path-only dashboard history from older GBB versions. Invalid
+    // or missing files are harmless and simply disappear from the new library.
+    auto timestamp = std::chrono::duration_cast<std::chrono::seconds>(
+                         std::chrono::system_clock::now().time_since_epoch())
+                         .count();
+    for (const auto& path : load_legacy_recent_roms(directory)) {
+        try {
+            library.remember(path, gameboy::inspect_rom_file(path), timestamp--);
+        } catch (const std::exception&) {
+        }
+    }
+    if (!library.entries().empty()) library.save(directory);
+    return library;
 }
 
 std::string dashboard_text(std::string text, const std::size_t maximum = 16) {
@@ -768,6 +801,21 @@ void choose_display_palette(gameboy::Emulator* emulator, SdlResources& sdl,
     save_display_palette(preference_path, display_palette);
 }
 
+bool confirm_exit(SDL_Window* window) {
+    constexpr std::array<SDL_MessageBoxButtonData, 2> buttons{{
+        {SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, "Cancel"},
+        {SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, 1, "Exit"},
+    }};
+    constexpr auto message =
+        "Are you sure you want to close Go Bigger Boy?";
+    const SDL_MessageBoxData box{
+        SDL_MESSAGEBOX_WARNING, window, "Exit Go Bigger Boy?", message,
+        static_cast<int>(buttons.size()), buttons.data(), nullptr,
+    };
+    auto selection = 0;
+    return SDL_ShowMessageBox(&box, &selection) && selection == 1;
+}
+
 void show_help(SDL_Window* window) {
     const auto message = std::string("Version ") + GBB_VERSION + "\n\n" +
         "Space: Pause/resume\n"
@@ -791,6 +839,9 @@ void show_help(SDL_Window* window) {
 }
 
 void show_error(SDL_Window* window, const std::string& message);
+#ifdef __ANDROID__
+void open_android_library() noexcept;
+#endif
 
 void activate_dashboard_selection(
     const std::size_t selection, const std::vector<std::string>& recent,
@@ -818,7 +869,7 @@ void activate_dashboard_selection(
         }
         break;
     case DashboardAction::quit:
-        running = false;
+        if (confirm_exit(sdl.window)) running = false;
         break;
     }
 }
@@ -861,6 +912,18 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
             break;
         case SDL_EVENT_KEY_DOWN:
         case SDL_EVENT_KEY_UP:
+#ifdef __ANDROID__
+            if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+                event.key.key == SDLK_AC_BACK) {
+                if (dashboard_visible && emulator != nullptr) {
+                    dashboard_visible = false;
+                } else {
+                    if (emulator) release_all_buttons(*emulator);
+                    if (confirm_exit(sdl.window)) running = false;
+                }
+                break;
+            }
+#endif
             if (dashboard_visible) {
                 if (event.type != SDL_EVENT_KEY_DOWN || event.key.repeat) break;
                 const auto item_count =
@@ -936,8 +999,12 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                        event.key.key == SDLK_L &&
                        (event.key.mod & SDL_KMOD_CTRL) != 0) {
                 if (emulator) release_all_buttons(*emulator);
+#ifdef __ANDROID__
+                open_android_library();
+#else
                 dashboard_visible = true;
                 dashboard_selection = 0;
+#endif
             } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
                        event.key.key == SDLK_K &&
                        (event.key.mod & SDL_KMOD_CTRL) != 0) {
@@ -1051,8 +1118,12 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                     }
                 } else if (x < 20.0F && y < 17.0F) {
                     if (emulator) release_all_buttons(*emulator);
+#ifdef __ANDROID__
+                    open_android_library();
+#else
                     dashboard_visible = true;
                     dashboard_selection = 0;
+#endif
                 }
             }
             break;
@@ -1096,8 +1167,7 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
             if (event.type == SDL_EVENT_FINGER_DOWN &&
                 touch_x < 0.13F && touch_y < 0.16F) {
                 clear_touch_buttons(emulator.get(), sdl);
-                dashboard_visible = true;
-                dashboard_selection = 0;
+                open_android_library();
             }
             refresh_touch_buttons(emulator.get(), sdl);
             break;
@@ -1108,6 +1178,12 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
             paused = true;
             break;
         case SDL_EVENT_DID_ENTER_FOREGROUND:
+            display_palette = load_display_palette(preference_path);
+            if (emulator != nullptr) {
+                emulator->set_dmg_compatibility_colors(
+                    gameboy::display_palettes[display_palette]
+                        .cgb_compatibility);
+            }
             paused = false;
             break;
 #endif
@@ -1279,6 +1355,21 @@ void close_camera(SdlResources& sdl) noexcept {
 }
 
 #ifdef __ANDROID__
+void open_android_library() noexcept {
+    auto* environment = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
+    auto activity = static_cast<jobject>(SDL_GetAndroidActivity());
+    if (environment == nullptr || activity == nullptr) return;
+    const auto activity_class = environment->GetObjectClass(activity);
+    if (activity_class != nullptr) {
+        const auto method = environment->GetMethodID(
+            activity_class, "openLibrary", "()V");
+        if (method != nullptr) environment->CallVoidMethod(activity, method);
+        environment->DeleteLocalRef(activity_class);
+    }
+    if (environment->ExceptionCheck()) environment->ExceptionClear();
+    environment->DeleteLocalRef(activity);
+}
+
 std::optional<int> android_camera_orientation_correction_degrees() noexcept {
     auto* environment = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
     auto activity = static_cast<jobject>(SDL_GetAndroidActivity());
@@ -1514,19 +1605,40 @@ std::string persist_android_rom(const std::string& source,
         query != std::string::npos) {
         display_name.resize(query);
     }
+    // Android document URIs percent-encode the user-facing filename. Retain
+    // that name so metadata and Libretro artwork matching survive the import.
+    std::string decoded_name;
+    decoded_name.reserve(display_name.size());
+    for (std::size_t index = 0; index < display_name.size(); ++index) {
+        if (display_name[index] == '%' && index + 2 < display_name.size() &&
+            std::isxdigit(static_cast<unsigned char>(display_name[index + 1])) &&
+            std::isxdigit(static_cast<unsigned char>(display_name[index + 2]))) {
+            const auto digit = [](const char value) {
+                if (value >= '0' && value <= '9') return value - '0';
+                return std::tolower(static_cast<unsigned char>(value)) - 'a' + 10;
+            };
+            decoded_name.push_back(static_cast<char>(
+                digit(display_name[index + 1]) * 16 +
+                digit(display_name[index + 2])));
+            index += 2;
+        } else {
+            decoded_name.push_back(display_name[index]);
+        }
+    }
+    display_name = std::move(decoded_name);
     if (const auto separator = display_name.find_last_of("/\\:");
         separator != std::string::npos) {
         display_name.erase(0, separator + 1);
     }
     for (auto& character : display_name) {
         const auto byte = static_cast<unsigned char>(character);
-        if (!std::isalnum(byte) && character != '.' && character != '-' &&
-            character != '_') {
+        if (byte < 32 || std::string_view{"/\\:*?\"<>|"}.find(character) !=
+                             std::string_view::npos) {
             character = '_';
         }
     }
     if (display_name.empty()) display_name = "game.gb";
-    if (display_name.size() > 48) display_name.resize(48);
+    if (display_name.size() > 160) display_name.resize(160);
 
     std::filesystem::create_directories(rom_directory);
     std::ostringstream filename;
@@ -1718,6 +1830,53 @@ void submit_audio(gameboy::Emulator* emulator, SdlResources& sdl) {
 
 } // namespace
 
+#ifdef __ANDROID__
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_com_danielseim_gbb_LibraryActivity_nativeLibraryEntries(
+    JNIEnv* environment, jclass, jstring directory) {
+    const auto* raw_directory = environment->GetStringUTFChars(directory, nullptr);
+    if (raw_directory == nullptr) return nullptr;
+    const auto library = gameboy::RomLibrary::load(
+        std::filesystem::u8path(raw_directory));
+    environment->ReleaseStringUTFChars(directory, raw_directory);
+
+    const auto string_class = environment->FindClass("java/lang/String");
+    const auto& entries = library.entries();
+    auto result = environment->NewObjectArray(
+        static_cast<jsize>(entries.size()), string_class, nullptr);
+    for (std::size_t index = 0; index < entries.size(); ++index) {
+        const auto& entry = entries[index];
+        std::ostringstream encoded;
+        encoded << std::hex << entry.metadata.fingerprint << '\x1f'
+                << entry.path.u8string() << '\x1f'
+                << entry.metadata.title << '\x1f'
+                << gameboy::platform_name(entry.metadata.platform) << '\x1f'
+                << entry.metadata.language << '\x1f'
+                << gameboy::cover_system_name(entry.metadata.platform) << '\x1f'
+                << entry.metadata.cover_name;
+        const auto text = encoded.str();
+        const auto value = environment->NewStringUTF(text.c_str());
+        environment->SetObjectArrayElement(
+            result, static_cast<jsize>(index), value);
+        environment->DeleteLocalRef(value);
+    }
+    environment->DeleteLocalRef(string_class);
+    return result;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_danielseim_gbb_GbbActivity_nativeOpenRom(
+    JNIEnv* environment, jclass, jstring rom) {
+    const auto* raw_rom = environment->GetStringUTFChars(rom, nullptr);
+    if (raw_rom == nullptr) return;
+    {
+        std::lock_guard<std::mutex> lock(android_rom_request_mutex);
+        android_rom_request = raw_rom;
+    }
+    environment->ReleaseStringUTFChars(rom, raw_rom);
+}
+#endif
+
 int main(int argc, char** argv) {
     try {
         if (argc == 2 && std::string_view(argv[1]) == "--version") {
@@ -1727,7 +1886,8 @@ int main(int argc, char** argv) {
         DialogState dialog;
         SdlResources sdl;
         const auto preference_path = preference_directory();
-        auto recent_roms = load_recent_roms(preference_path);
+        auto rom_library = load_rom_library(preference_path);
+        auto recent_roms = recent_paths(rom_library);
         auto bindings = load_bindings(preference_path);
         auto configuration_backup = bindings;
         auto display_palette = load_display_palette(preference_path);
@@ -1765,6 +1925,11 @@ int main(int argc, char** argv) {
         auto next_frame = Clock::now();
 
         while (running) {
+#ifdef __ANDROID__
+            if (auto requested = take_android_rom_request()) {
+                pending_rom = std::move(*requested);
+            }
+#endif
             process_events(emulator, sdl, dialog, preference_path, bindings,
                            configuration_backup, recent_roms, current_rom,
                            configuring, pending_rom, display_palette,
@@ -1811,7 +1976,10 @@ int main(int argc, char** argv) {
                     current_rom = requested_rom;
                     if (!reopening_current) paused = false;
                     dashboard_visible = false;
-                    remember_rom(current_rom, recent_roms, preference_path);
+                    rom_library.remember(
+                        current_rom, gameboy::inspect_rom_file(current_rom));
+                    rom_library.save(preference_path);
+                    recent_roms = recent_paths(rom_library);
                     update_window_title(sdl.window, current_rom, paused,
                                         configuring);
                 } catch (const std::exception& error) {
