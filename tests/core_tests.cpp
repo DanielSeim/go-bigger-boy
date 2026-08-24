@@ -2669,8 +2669,14 @@ void test_save_state_round_trip_and_validation() {
     constexpr std::size_t version_eight_ppu_size = 1;
     constexpr std::size_t version_ten_window_latch_size = 4;
     constexpr std::size_t version_eleven_fetcher_size = 2;
+    constexpr std::size_t version_twelve_sprite_size = 1;
+    constexpr std::size_t version_thirteen_sprite_fetch_size = 8;
+    constexpr std::size_t version_fourteen_sprite_deadline_size = 40;
+    constexpr std::size_t version_fifteen_sprite_render_size = 48;
     constexpr std::size_t version_nine_fetcher_size =
-        737 + version_ten_window_latch_size + version_eleven_fetcher_size;
+        737 + version_ten_window_latch_size + version_eleven_fetcher_size +
+        version_twelve_sprite_size + version_thirteen_sprite_fetch_size +
+        version_fourteen_sprite_deadline_size + version_fifteen_sprite_render_size;
     auto version_one = saved;
     version_one.resize(version_one.size() - version_two_dma_size -
                        version_three_ppu_size - version_four_cgb_size -
@@ -2837,7 +2843,11 @@ void test_save_state_round_trip_and_validation() {
 
     auto version_nine = saved;
     version_nine.resize(version_nine.size() - version_ten_window_latch_size -
-                        version_eleven_fetcher_size);
+                        version_eleven_fetcher_size -
+                        version_twelve_sprite_size -
+                        version_thirteen_sprite_fetch_size -
+                        version_fourteen_sprite_deadline_size -
+                        version_fifteen_sprite_render_size);
     version_nine[8] = 9;
     const auto version_nine_payload_size = static_cast<std::uint32_t>(
         version_nine.size() - state_header_size);
@@ -2856,7 +2866,11 @@ void test_save_state_round_trip_and_validation() {
           "version 9 save states remain loadable after adding window latches");
 
     auto version_ten = saved;
-    version_ten.resize(version_ten.size() - version_eleven_fetcher_size);
+    version_ten.resize(version_ten.size() - version_eleven_fetcher_size -
+                       version_twelve_sprite_size -
+                       version_thirteen_sprite_fetch_size -
+                       version_fourteen_sprite_deadline_size -
+                       version_fifteen_sprite_render_size);
     version_ten[8] = 10;
     const auto version_ten_payload_size = static_cast<std::uint32_t>(
         version_ten.size() - state_header_size);
@@ -2871,6 +2885,82 @@ void test_save_state_round_trip_and_validation() {
               version_ten_loader.cpu().total_cycles() == saved_cycles &&
               version_ten_loader.bus().read8(0xA123) == 0x5A,
           "version 10 save states remain loadable after refining fetch startup");
+
+    auto version_eleven = saved;
+    version_eleven.resize(version_eleven.size() - version_twelve_sprite_size -
+                          version_thirteen_sprite_fetch_size -
+                          version_fourteen_sprite_deadline_size -
+                          version_fifteen_sprite_render_size);
+    version_eleven[8] = 11;
+    const auto version_eleven_payload_size = static_cast<std::uint32_t>(
+        version_eleven.size() - state_header_size);
+    write_little_u32(version_eleven, 20, version_eleven_payload_size);
+    write_little_u32(
+        version_eleven, 24,
+        state_crc32(version_eleven.data() + state_header_size,
+                    version_eleven_payload_size));
+    gameboy::Emulator version_eleven_loader{gameboy::Cartridge{rom}};
+    version_eleven_loader.load_state(version_eleven);
+    check(version_eleven_loader.cpu().registers().pc == saved_pc &&
+              version_eleven_loader.cpu().total_cycles() == saved_cycles &&
+              version_eleven_loader.bus().read8(0xA123) == 0x5A,
+          "version 11 save states remain loadable after adding sprite fetch state");
+
+    auto version_twelve = saved;
+    version_twelve.resize(version_twelve.size() - version_thirteen_sprite_fetch_size -
+                          version_fourteen_sprite_deadline_size -
+                          version_fifteen_sprite_render_size);
+    version_twelve[8] = 12;
+    const auto version_twelve_payload_size = static_cast<std::uint32_t>(
+        version_twelve.size() - state_header_size);
+    write_little_u32(version_twelve, 20, version_twelve_payload_size);
+    write_little_u32(
+        version_twelve, 24,
+        state_crc32(version_twelve.data() + state_header_size,
+                    version_twelve_payload_size));
+    gameboy::Emulator version_twelve_loader{gameboy::Cartridge{rom}};
+    version_twelve_loader.load_state(version_twelve);
+    check(version_twelve_loader.cpu().registers().pc == saved_pc &&
+              version_twelve_loader.cpu().total_cycles() == saved_cycles &&
+              version_twelve_loader.bus().read8(0xA123) == 0x5A,
+          "version 12 save states remain loadable after adding pending sprite state");
+
+    auto version_thirteen = saved;
+    version_thirteen.resize(version_thirteen.size() -
+                            version_fourteen_sprite_deadline_size -
+                            version_fifteen_sprite_render_size);
+    version_thirteen[8] = 13;
+    const auto version_thirteen_payload_size = static_cast<std::uint32_t>(
+        version_thirteen.size() - state_header_size);
+    write_little_u32(version_thirteen, 20, version_thirteen_payload_size);
+    write_little_u32(
+        version_thirteen, 24,
+        state_crc32(version_thirteen.data() + state_header_size,
+                    version_thirteen_payload_size));
+    gameboy::Emulator version_thirteen_loader{gameboy::Cartridge{rom}};
+    version_thirteen_loader.load_state(version_thirteen);
+    check(version_thirteen_loader.cpu().registers().pc == saved_pc &&
+              version_thirteen_loader.cpu().total_cycles() == saved_cycles &&
+              version_thirteen_loader.bus().read8(0xA123) == 0x5A,
+          "version 13 save states remain loadable after adding per-sprite deadlines");
+
+    auto version_fourteen = saved;
+    version_fourteen.resize(version_fourteen.size() -
+                            version_fifteen_sprite_render_size);
+    version_fourteen[8] = 14;
+    const auto version_fourteen_payload_size = static_cast<std::uint32_t>(
+        version_fourteen.size() - state_header_size);
+    write_little_u32(version_fourteen, 20, version_fourteen_payload_size);
+    write_little_u32(
+        version_fourteen, 24,
+        state_crc32(version_fourteen.data() + state_header_size,
+                    version_fourteen_payload_size));
+    gameboy::Emulator version_fourteen_loader{gameboy::Cartridge{rom}};
+    version_fourteen_loader.load_state(version_fourteen);
+    check(version_fourteen_loader.cpu().registers().pc == saved_pc &&
+              version_fourteen_loader.cpu().total_cycles() == saved_cycles &&
+              version_fourteen_loader.bus().read8(0xA123) == 0x5A,
+          "version 14 save states remain loadable after adding rendered sprite state");
 
     emulator.bus().write8(0xA123, 0x99);
     emulator.bus().write8(0xC000, 0x11);
@@ -2919,7 +3009,7 @@ void test_save_state_round_trip_and_validation() {
           "truncated save states are rejected without changing emulator state");
 
     auto future_version = saved;
-    future_version[8] = 12;
+    future_version[8] = 16;
     auto rejected_version = false;
     try {
         emulator.load_state(future_version);

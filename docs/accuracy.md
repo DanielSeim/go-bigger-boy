@@ -37,8 +37,17 @@ sequence rather than reusing the visually identical speculative data. Tile-map
 and tile bitplane data are read at their individual fetcher bus phases, including
 the delayed high-bitplane read while the FIFO is blocked. Sprite pixels are
 latched into a scanline buffer and mixed with background pixels as the FIFO is
-popped. Save-state version 11 preserves this in-flight pipeline so a state taken
-during mode 3 resumes deterministically.
+popped. Sprite height is latched with the line's OAM selection, so mid-scanline
+`LCDC.OBJ_SIZE` writes no longer change sprites that have already been selected.
+Each queued object fetch tracks both pixel availability and its later hardware
+cancellation boundary. A mid-fetch OBJ disable therefore preserves sprites
+whose pixels are already available while cancelling only the unfinished tail;
+the aborted handoff also contributes its eight-dot PPU stall. The two-phase
+fetch queue and latched sprite height are preserved by save-state version 15,
+so a state taken during mode 3 resumes deterministically. Disabling OBJ also
+restores already-emitted pixels from a cancelled fetch to the background. The
+two partially off-screen DMG object positions (X=3 and X=4) use their shorter
+four-dot handoff tail rather than the general cancellation window.
 
 The visual gate covers native DMG and CGB Acid2, DMG software under the CGB
 compatibility palette, Scribbl rendering and STAT timing, six Mealybug window

@@ -13,7 +13,7 @@ namespace {
 constexpr std::array<std::uint8_t, 8> state_magic{
     'G', 'B', 'B', 'S', 'T', 'A', 'T', 'E',
 };
-constexpr std::uint32_t state_version = 11;
+constexpr std::uint32_t state_version = 15;
 constexpr std::uint32_t oldest_supported_state_version = 1;
 constexpr std::size_t maximum_state_size = 2 * 1024 * 1024;
 constexpr std::size_t maximum_serial_output = 1024 * 1024;
@@ -393,6 +393,11 @@ private:
         writer.u16(bus.ppu_.window_disable_source_x_);
         writer.boolean(bus.ppu_.discard_first_fetch_);
         writer.u8(bus.ppu_.fetched_source_y_);
+        writer.u8(bus.ppu_.line_sprite_height_);
+        writer.u64(bus.ppu_.pending_sprite_mask_);
+        writer.u64(bus.ppu_.rendered_sprite_mask_);
+        write_bytes(writer, bus.ppu_.pending_sprite_deadlines_);
+        write_bytes(writer, bus.ppu_.render_sprite_deadlines_);
     }
 
     static void read_bus(Reader& reader, MemoryBus& bus,
@@ -600,6 +605,40 @@ private:
                 version >= 11 ? reader.boolean() : false;
             bus.ppu_.fetched_source_y_ =
                 version >= 11 ? reader.u8() : bus.ppu_.fetched_row_;
+            bus.ppu_.line_sprite_height_ =
+                version >= 12 ? reader.u8()
+                              : ((bus.ppu_.lcdc_ & 0x04) != 0 ? 16 : 8);
+            bus.ppu_.pending_sprite_mask_ =
+                version >= 13 ? reader.u64() : 0;
+            bus.ppu_.rendered_sprite_mask_ =
+                version >= 15 ? reader.u64() : 0;
+            if (version >= 14) {
+                read_bytes(reader, bus.ppu_.pending_sprite_deadlines_);
+            } else {
+                bus.ppu_.pending_sprite_deadlines_.fill(0);
+                for (unsigned index = 0; index < 40; ++index) {
+                    if ((bus.ppu_.pending_sprite_mask_ &
+                         (std::uint64_t{1} << index)) != 0) {
+                        // Version 13 represented the queue as one aggregate
+                        // completion point. Preserve that behavior when
+                        // loading it into the per-sprite representation.
+                        bus.ppu_.pending_sprite_deadlines_[index] =
+                            bus.ppu_.sprite_delay_;
+                    }
+                }
+            }
+            if (version >= 15) {
+                read_bytes(reader, bus.ppu_.render_sprite_deadlines_);
+            } else {
+                bus.ppu_.render_sprite_deadlines_.fill(0);
+                for (unsigned index = 0; index < 40; ++index) {
+                    if ((bus.ppu_.pending_sprite_mask_ &
+                         (std::uint64_t{1} << index)) != 0) {
+                        bus.ppu_.render_sprite_deadlines_[index] =
+                            bus.ppu_.pending_sprite_deadlines_[index];
+                    }
+                }
+            }
             if (bus.ppu_.background_fifo_size_ >
                     bus.ppu_.background_fifo_.size() ||
                 bus.ppu_.fetcher_phase_ > 4 ||
@@ -613,6 +652,31 @@ private:
                 bus.ppu_.window_trigger_x_ >= Ppu::screen_width ||
                 bus.ppu_.window_disable_source_x_ > 256) {
                 throw SaveStateError("Save state contains invalid PPU fetcher state");
+            }
+            if (bus.ppu_.line_sprite_height_ != 8 &&
+                bus.ppu_.line_sprite_height_ != 16) {
+                throw SaveStateError("Save state contains invalid sprite height");
+            }
+            if ((bus.ppu_.pending_sprite_mask_ >> 40) != 0) {
+                throw SaveStateError("Save state contains invalid sprite fetch mask");
+            }
+            if ((bus.ppu_.rendered_sprite_mask_ >> 40) != 0) {
+                throw SaveStateError("Save state contains invalid rendered sprite mask");
+            }
+            for (unsigned index = 0; index < bus.ppu_.pending_sprite_deadlines_.size();
+                 ++index) {
+                const auto deadline = bus.ppu_.pending_sprite_deadlines_[index];
+                const auto pending =
+                    (bus.ppu_.pending_sprite_mask_ & (std::uint64_t{1} << index)) != 0;
+                const auto render_deadline = bus.ppu_.render_sprite_deadlines_[index];
+                const auto rendered =
+                    (bus.ppu_.rendered_sprite_mask_ &
+                     (std::uint64_t{1} << index)) != 0;
+                if ((pending && deadline == 0) || (!pending && deadline != 0) ||
+                    (rendered && render_deadline != 0) ||
+                    (!rendered && render_deadline == 0 && pending)) {
+                    throw SaveStateError("Save state contains invalid sprite fetch deadline");
+                }
             }
         } else {
             bus.ppu_.background_fifo_.fill(Ppu::BackgroundPixel{});
@@ -628,6 +692,11 @@ private:
             bus.ppu_.fetched_high_ = 0;
             bus.ppu_.fetched_row_ = 0;
             bus.ppu_.fetched_source_y_ = 0;
+            bus.ppu_.line_sprite_height_ = 8;
+            bus.ppu_.pending_sprite_mask_ = 0;
+            bus.ppu_.rendered_sprite_mask_ = 0;
+            bus.ppu_.pending_sprite_deadlines_.fill(0);
+            bus.ppu_.render_sprite_deadlines_.fill(0);
             bus.ppu_.line_sprite_count_ = 0;
             bus.ppu_.next_line_sprite_ = 0;
             bus.ppu_.output_x_ = 0;

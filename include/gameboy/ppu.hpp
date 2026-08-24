@@ -138,6 +138,7 @@ private:
     std::uint8_t fetched_high_{};
     std::uint8_t fetched_row_{};
     std::uint8_t fetched_source_y_{};
+    std::uint8_t line_sprite_height_{8};
     std::uint8_t line_sprite_count_{};
     std::uint8_t next_line_sprite_{};
     std::uint8_t output_x_{};
@@ -145,6 +146,16 @@ private:
     std::uint8_t scroll_discard_{};
     std::uint8_t window_delay_{};
     std::uint8_t sprite_delay_{};
+    std::uint64_t pending_sprite_mask_{};
+    // Object data that has reached the FIFO; pending_sprite_mask_ may still
+    // keep that data cancellable until the hardware's later fetch boundary.
+    std::uint64_t rendered_sprite_mask_{};
+    // Remaining dot offset for each sprite's individual fetch completion.
+    // Keeping these separate is important when several sprites are queued in
+    // one fetcher tick: a mid-fetch OBJ disable must preserve completed
+    // sprites while cancelling only the unfinished tail.
+    std::array<std::uint8_t, 40> pending_sprite_deadlines_{};
+    std::array<std::uint8_t, 40> render_sprite_deadlines_{};
     std::uint8_t window_glitch_x_{};
     std::uint8_t window_glitch_applied_x_{};
     std::uint8_t window_activation_count_{};

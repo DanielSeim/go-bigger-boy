@@ -10,6 +10,7 @@ namespace {
 constexpr std::array<std::uint32_t, 4> dmg_colors{
     0xFFFFFFFF, 0xFFAAAAAA, 0xFF555555, 0xFF000000,
 };
+constexpr unsigned object_cancellation_tail_dots = 10;
 } // namespace
 
 Ppu::Ppu()
@@ -164,6 +165,7 @@ bool Ppu::write_register(const std::uint16_t address,
     case 0xFF40: {
         const auto was_enabled = lcd_enabled();
         const auto window_was_enabled = (lcdc_ & 0x20) != 0;
+        const auto object_was_enabled = (lcdc_ & 0x02) != 0;
         if (window_was_enabled && (value & 0x20) == 0) {
             if (using_window_) {
                 if (window_source_x_ != 0 && window_source_x_ <= 2) {
@@ -212,6 +214,32 @@ bool Ppu::write_register(const std::uint16_t address,
             }
         }
         lcdc_ = value;
+        if (object_was_enabled && (value & 0x02) == 0) {
+            // A fetch can have populated the object FIFO before the PPU has
+            // reached its cancellation boundary. Remove only those sprites;
+            // already-emitted pixels are restored to the background.
+            const auto cancelled = pending_sprite_mask_;
+            for (unsigned x = 0; x < screen_width; ++x) {
+                const auto source = object_pixels_[x].oam_index;
+                if (!object_pixels_[x].valid || source >= 40 ||
+                    (cancelled & (std::uint64_t{1} << source)) == 0) {
+                    continue;
+                }
+                if (x < output_x_) {
+                    (*framebuffer_)[static_cast<std::size_t>(ly_) * screen_width +
+                                     x] = compose_pixel(
+                        x, background_pixel_at_screen(x));
+                }
+                object_pixels_[x].valid = false;
+            }
+            pending_sprite_mask_ = 0;
+            rendered_sprite_mask_ &= ~cancelled;
+            pending_sprite_deadlines_.fill(0);
+            render_sprite_deadlines_.fill(0);
+            // Disabling OBJ leaves the fetcher in its bus handoff phase for
+            // eight dots before background output can resume.
+            sprite_delay_ = static_cast<std::uint8_t>(sprite_delay_ + 8);
+        }
         if (was_enabled && !lcd_enabled()) {
             dot_ = 0;
             ly_ = 0;
@@ -490,6 +518,10 @@ void Ppu::begin_mode3() noexcept {
     scroll_discard_ = static_cast<std::uint8_t>(scx_ & 7);
     window_delay_ = 0;
     sprite_delay_ = 0;
+    pending_sprite_mask_ = 0;
+    rendered_sprite_mask_ = 0;
+    pending_sprite_deadlines_.fill(0);
+    render_sprite_deadlines_.fill(0);
     fetched_window_ = false;
     discard_first_fetch_ = true;
     using_window_ = false;
@@ -524,6 +556,29 @@ void Ppu::tick_mode3() noexcept {
     if (window_delay_ != 0) {
         --window_delay_;
         return;
+    }
+    for (unsigned index = 0; index < line_sprite_count_; ++index) {
+        const auto sprite = line_sprites_[index];
+        if ((pending_sprite_mask_ & (std::uint64_t{1} << sprite)) == 0 ||
+            pending_sprite_deadlines_[sprite] == 0) {
+            continue;
+        }
+        auto& cancellation_deadline = pending_sprite_deadlines_[sprite];
+        if (cancellation_deadline != 0) {
+            --cancellation_deadline;
+            if (cancellation_deadline == 0) {
+                pending_sprite_mask_ &= ~(std::uint64_t{1} << sprite);
+            }
+        }
+        auto& render_deadline = render_sprite_deadlines_[sprite];
+        if (render_deadline != 0) {
+            --render_deadline;
+            if (render_deadline == 0 &&
+                (rendered_sprite_mask_ & (std::uint64_t{1} << sprite)) == 0) {
+                if ((lcdc_ & 0x02) != 0) fetch_object(sprite);
+                rendered_sprite_mask_ |= std::uint64_t{1} << sprite;
+            }
+        }
     }
     if (sprite_delay_ != 0) {
         --sprite_delay_;
@@ -757,13 +812,13 @@ void Ppu::resume_background_fetch() noexcept {
 }
 
 void Ppu::select_line_sprites() noexcept {
-    const auto sprite_height = (lcdc_ & 0x04) != 0 ? 16 : 8;
+    line_sprite_height_ = (lcdc_ & 0x04) != 0 ? 16 : 8;
     line_sprite_count_ = 0;
     next_line_sprite_ = 0;
     for (unsigned index = 0; index < 40 && line_sprite_count_ < 10; ++index) {
         const auto sprite_y = static_cast<int>(oam_[index * 4]) - 16;
         if (static_cast<int>(ly_) >= sprite_y &&
-            static_cast<int>(ly_) < sprite_y + sprite_height) {
+            static_cast<int>(ly_) < sprite_y + line_sprite_height_) {
             line_sprites_[line_sprite_count_++] = static_cast<std::uint8_t>(index);
         }
     }
@@ -788,9 +843,11 @@ unsigned Ppu::trigger_sprites(const unsigned x) noexcept {
         const auto trigger_x = raw_x <= 8 ? 0U : raw_x - 8;
         if (trigger_x > x) break;
         ++next_line_sprite_;
+        // OBJ fetches are only scheduled while OBJ rendering is enabled. A
+        // sprite that reaches its trigger point during an OBJ-off interval is
+        // skipped; if OBJ is enabled again, later sprites can still trigger.
         if ((lcdc_ & 0x02) == 0) continue;
-
-        fetch_object(index);
+        pending_sprite_mask_ |= std::uint64_t{1} << index;
         const auto window_start = static_cast<int>(window_x_) - 7;
         const auto screen_x = static_cast<int>(raw_x) - 8;
         const auto in_window = using_window_ && screen_x >= window_start;
@@ -808,6 +865,18 @@ unsigned Ppu::trigger_sprites(const unsigned x) noexcept {
             if (phase < 5) penalty += 5 - phase;
         }
         penalty += 6;
+        // Pixel data becomes available at the normal fetch completion, but
+        // the DMG keeps the object bus transaction cancellable for a short
+        // tail. This later boundary is observable when OBJ is toggled.
+        // For the two partially off-screen X positions (3 and 4), the DMG
+        // hands the object bus back four dots earlier than the general tail.
+        pending_sprite_deadlines_[index] =
+            static_cast<std::uint8_t>(
+                static_cast<int>(penalty) +
+                static_cast<int>(object_cancellation_tail_dots) +
+                ((raw_x == 3U || raw_x == 4U) ? -4 : 0));
+        render_sprite_deadlines_[index] =
+            static_cast<std::uint8_t>(penalty - 1);
         previous_sprite_tile_ = static_cast<std::int16_t>(tile);
         previous_sprite_was_window_ = in_window;
         have_previous_sprite_tile_ = true;
@@ -816,7 +885,7 @@ unsigned Ppu::trigger_sprites(const unsigned x) noexcept {
 }
 
 void Ppu::fetch_object(const unsigned index) noexcept {
-    const auto sprite_height = (lcdc_ & 0x04) != 0 ? 16 : 8;
+    const auto sprite_height = line_sprite_height_;
     const auto sprite_y = static_cast<int>(oam_[index * 4]) - 16;
     const auto sprite_x = static_cast<int>(oam_[index * 4 + 1]) - 8;
     auto tile = oam_[index * 4 + 2];
