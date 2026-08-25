@@ -117,6 +117,7 @@
     let cameraVideo = null;
     let printerTimer = null;
     let printSequence = 0;
+    let pendingCameraRestore = null;
 
     function stopCamera() {
       if (cameraTimer !== null) clearInterval(cameraTimer);
@@ -386,6 +387,13 @@
     async function persistCurrentSave() {
       const rom = currentRom;
       if (!rom || !rom.battery) return;
+      if (pendingCameraRestore && pendingCameraRestore.rom === rom &&
+          performance.now() < pendingCameraRestore.deadline) {
+        // Camera ROMs can rewrite their SRAM while validating save slots at
+        // boot. Keep the browser copy intact until the post-boot restore has
+        // completed instead of persisting that transient initialization.
+        return;
+      }
       const asBytes = value => value instanceof Uint8Array
         ? value : new Uint8Array(value || 0);
       const ram = asBytes(Module.exportSaveRam());
@@ -501,6 +509,7 @@
       Module.gbbSetStatus(`Loading ${file.name}…`, false);
       let loaded = false;
       let deferredCameraSave = null;
+      pendingCameraRestore = null;
       try {
         const bytes = new Uint8Array(await file.arrayBuffer());
         try {
@@ -546,6 +555,13 @@
                   // their first few instructions. Keep a copy so the saved
                   // image can be reapplied after the ROM has started.
                   deferredCameraSave = new Uint8Array(stored.save);
+                  pendingCameraRestore = {
+                    rom: currentRom,
+                    save: deferredCameraSave,
+                    // Leave a margin for a busy tab so an autosave tick
+                    // cannot run just before the restore callback.
+                    deadline: performance.now() + 5000
+                  };
                 }
               } catch (error) {
                 // A payload written by a newer/partial build should not
@@ -600,7 +616,9 @@
           Module._gbb_start_rom();
           if (deferredCameraSave && startedRom && startedRom.camera) {
             setTimeout(() => {
-              if (currentRom !== startedRom || !Module.importSaveData) return;
+              if (currentRom !== startedRom || !Module.importSaveData ||
+                  !pendingCameraRestore ||
+                  pendingCameraRestore.rom !== startedRom) return;
               try {
                 // Camera ROMs initialize their sensor SRAM while booting. If
                 // the saved image is imported before that initialization,
@@ -613,9 +631,12 @@
               } catch (error) {
                 console.warn('Could not reapply the saved camera image:', error);
               } finally {
+                if (pendingCameraRestore?.rom === startedRom) {
+                  pendingCameraRestore = null;
+                }
                 if (Module._gbb_start_rom) Module._gbb_start_rom();
               }
-            }, 750);
+            }, 3500);
           }
         }
       }
@@ -628,6 +649,12 @@
     canvas.addEventListener('pointerdown', () => {
       Module._gbb_resume_audio();
       canvas.focus();
+    });
+    canvas.addEventListener('keydown', () => {
+      // Do not replace a new user action with the saved startup snapshot.
+      if (pendingCameraRestore?.rom === currentRom) {
+        pendingCameraRestore = null;
+      }
     });
     palettePicker.addEventListener('change', () => {
       Module._gbb_set_palette(Number(palettePicker.value));
