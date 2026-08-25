@@ -59,6 +59,22 @@ struct WebApp {
 };
 
 WebApp* active_app{};
+unsigned requested_video_mode{};
+
+void apply_video_mode(WebApp& app, const unsigned mode) noexcept {
+    if (mode >= gameboy::video_modes.size()) return;
+    app.video_mode = gameboy::video_modes[mode].mode;
+    const auto presentation = app.video_mode == gameboy::VideoMode::integer
+                                  ? SDL_LOGICAL_PRESENTATION_INTEGER_SCALE
+                                  : SDL_LOGICAL_PRESENTATION_LETTERBOX;
+    const auto filtering = app.video_mode == gameboy::VideoMode::bilinear
+                               ? SDL_SCALEMODE_LINEAR
+                               : SDL_SCALEMODE_NEAREST;
+    static_cast<void>(SDL_SetRenderLogicalPresentation(
+        app.renderer, static_cast<int>(gameboy::Ppu::screen_width),
+        static_cast<int>(gameboy::Ppu::screen_height), presentation));
+    static_cast<void>(SDL_SetTextureScaleMode(app.texture, filtering));
+}
 
 std::vector<std::uint8_t> copy_browser_bytes(const emscripten::val& bytes) {
     if (bytes.isUndefined() || bytes.isNull()) return {};
@@ -378,18 +394,9 @@ extern "C" EMSCRIPTEN_KEEPALIVE void gbb_set_palette(
 
 extern "C" EMSCRIPTEN_KEEPALIVE void gbb_set_video_mode(
     const unsigned mode) noexcept {
-    if (!active_app || mode >= gameboy::video_modes.size()) return;
-    active_app->video_mode = gameboy::video_modes[mode].mode;
-    const auto presentation = active_app->video_mode == gameboy::VideoMode::integer
-                                  ? SDL_LOGICAL_PRESENTATION_INTEGER_SCALE
-                                  : SDL_LOGICAL_PRESENTATION_LETTERBOX;
-    const auto filtering = active_app->video_mode == gameboy::VideoMode::bilinear
-                               ? SDL_SCALEMODE_LINEAR
-                               : SDL_SCALEMODE_NEAREST;
-    static_cast<void>(SDL_SetRenderLogicalPresentation(
-        active_app->renderer, static_cast<int>(gameboy::Ppu::screen_width),
-        static_cast<int>(gameboy::Ppu::screen_height), presentation));
-    static_cast<void>(SDL_SetTextureScaleMode(active_app->texture, filtering));
+    if (mode >= gameboy::video_modes.size()) return;
+    requested_video_mode = mode;
+    if (active_app) apply_video_mode(*active_app, requested_video_mode);
 }
 
 SDL_AppResult SDL_AppInit(void** appstate, int, char**) {
@@ -431,6 +438,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int, char**) {
     }
 
     active_app = app.get();
+    apply_video_mode(*active_app, requested_video_mode);
     *appstate = app.release();
     set_status("Ready. Choose a Game Boy ROM to begin.");
     return SDL_APP_CONTINUE;
