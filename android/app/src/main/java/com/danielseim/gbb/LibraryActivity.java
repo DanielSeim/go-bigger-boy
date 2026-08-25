@@ -86,8 +86,16 @@ public final class LibraryActivity extends Activity {
         super.onCreate(savedInstanceState);
         preferences = getSharedPreferences("dashboard", MODE_PRIVATE);
         updateManager = new AndroidUpdateManager(this);
-        showDashboard(false);
+        settingsVisible = savedInstanceState != null &&
+                savedInstanceState.getBoolean("settings_visible", false);
+        showDashboard(settingsVisible);
         updateManager.checkForUpdates();
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle state) {
+        state.putBoolean("settings_visible", settingsVisible);
+        super.onSaveInstanceState(state);
     }
 
     @Override

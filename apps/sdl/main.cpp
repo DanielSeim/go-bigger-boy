@@ -1645,7 +1645,7 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
     while (SDL_PollEvent(&event)) {
         switch (event.type) {
         case SDL_EVENT_QUIT:
-            running = false;
+            if (confirm_exit(sdl.window)) running = false;
             break;
         case SDL_EVENT_DROP_FILE:
             if (event.drop.data != nullptr) pending_rom = event.drop.data;
@@ -1688,7 +1688,7 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                 } else if (event.key.key == SDLK_ESCAPE) {
                     if (emulator) {
                         dashboard_visible = false;
-                    } else {
+                    } else if (confirm_exit(sdl.window)) {
                         running = false;
                     }
                 }
@@ -1871,7 +1871,7 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                 show_help(sdl.window);
             } else if (event.key.key == SDLK_ESCAPE &&
                        event.type == SDL_EVENT_KEY_DOWN) {
-                running = false;
+                if (confirm_exit(sdl.window)) running = false;
             } else if (emulator && !event.key.repeat) {
                 if (const auto button = keyboard_button(bindings, event.key.key)) {
                     emulator->set_button(*button,
@@ -2585,15 +2585,23 @@ void present_dashboard(SdlResources& sdl,
     const auto first = dashboard_first_visible(selection, items.size());
     const auto visible = std::min(dashboard_visible_rows, items.size() - first);
 
-    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 139, 172, 95, 255));
+    // Keep the SDL dashboard visually aligned with the native desktop
+    // dashboard: a deep navy canvas, bright cyan accents, and high-contrast
+    // cards.  The logical 160x144 layout is intentionally compact so it
+    // scales cleanly on small windows and on the Android renderer too.
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 8, 12, 20, 255));
+    const SDL_FRect canvas{0, 0, 160, 144};
+    static_cast<void>(SDL_RenderFillRect(sdl.renderer, &canvas));
     const SDL_FRect header{0, 0, 160, 34};
     static_cast<void>(SDL_RenderFillRect(sdl.renderer, &header));
-    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 20, 40, 28, 255));
-    static_cast<void>(SDL_RenderDebugText(sdl.renderer, 28, 5,
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 69, 207, 238, 255));
+    const SDL_FRect accent{9, 31, 142, 2};
+    static_cast<void>(SDL_RenderFillRect(sdl.renderer, &accent));
+    static_cast<void>(SDL_RenderDebugText(sdl.renderer, 13, 5,
                                           "GO BIGGER BOY"));
-    static_cast<void>(SDL_RenderDebugText(sdl.renderer, 12, 18,
-                                          "YOUR GAME LIBRARY"));
-    static_cast<void>(SDL_RenderLine(sdl.renderer, 9, 32, 151, 32));
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 177, 192, 208, 255));
+    static_cast<void>(SDL_RenderDebugText(sdl.renderer, 13, 18,
+                                          "GAME LIBRARY"));
 
     for (std::size_t row = 0; row < visible; ++row) {
         const auto index = first + row;
@@ -2602,27 +2610,28 @@ void present_dashboard(SdlResources& sdl,
                        static_cast<float>(row) * dashboard_row_height;
         const SDL_FRect card{9, y, 142, 15};
         static_cast<void>(SDL_SetRenderDrawColor(
-            sdl.renderer, selected ? 36 : 201, selected ? 67 : 220,
-            selected ? 46 : 174, 255));
+            sdl.renderer, selected ? 20 : 20, selected ? 77 : 29,
+            selected ? 101 : 42, 255));
         static_cast<void>(SDL_RenderFillRect(sdl.renderer, &card));
         static_cast<void>(SDL_SetRenderDrawColor(
-            sdl.renderer, selected ? 232 : 35, selected ? 242 : 58,
-            selected ? 205 : 40, 255));
+            sdl.renderer, selected ? 230 : 137, selected ? 249 : 160,
+            selected ? 255 : 183, 255));
+        static_cast<void>(SDL_RenderRect(sdl.renderer, &card));
         const auto label = std::string(selected ? "> " : "  ") +
                            dashboard_text(items[index].label, 14);
         static_cast<void>(SDL_RenderDebugText(sdl.renderer, 13, y + 3,
                                               label.c_str()));
     }
 
-    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 35, 58, 40, 255));
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 137, 160, 183, 255));
     if (first > 0) {
         static_cast<void>(SDL_RenderDebugText(sdl.renderer, 153, 39, "^"));
     }
     if (first + visible < items.size()) {
         static_cast<void>(SDL_RenderDebugText(sdl.renderer, 153, 111, "v"));
     }
-    static_cast<void>(SDL_RenderDebugText(sdl.renderer, 20, 134,
-                                          "UP/DOWN + ENTER"));
+    static_cast<void>(SDL_RenderDebugText(sdl.renderer, 13, 134,
+                                          "UP/DOWN  ENTER SELECT"));
 }
 #endif
 

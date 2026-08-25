@@ -18,6 +18,7 @@
         android:theme="@style/AppTheme">
         <activity
             android:name=".LibraryActivity"
+            android:configChanges="layoutDirection|locale|orientation|screenLayout|screenSize|smallestScreenSize|touchscreen|uiMode"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

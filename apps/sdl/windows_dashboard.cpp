@@ -18,10 +18,12 @@
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <unordered_map>
 #include <utility>
@@ -120,9 +122,14 @@ struct State {
     std::array<HWND, 4> action_labels{};
     std::array<HWND, 4> action_buttons{};
     HWND reset_controls{};
+    HWND library_tab{};
+    HWND settings_tab{};
     HWND logo{};
     HBITMAP logo_bitmap{};
     HIMAGELIST covers{};
+    HBRUSH background_brush{};
+    HFONT ui_font{};
+    bool settings_page{};
     std::filesystem::path preference_directory;
     std::thread artwork_worker;
     std::atomic_bool closing{};
@@ -336,10 +343,10 @@ void assign_captured_binding(State& state, const SDL_Keycode key) {
 }
 
 void draw_gameboy_background(const DRAWITEMSTRUCT& item) {
-    const auto device = CreateSolidBrush(RGB(214, 215, 204));
-    const auto screen = CreateSolidBrush(RGB(174, 190, 166));
-    const auto accent = CreateSolidBrush(RGB(74, 72, 82));
-    const auto red = CreateSolidBrush(RGB(145, 55, 91));
+    const auto device = CreateSolidBrush(RGB(31, 42, 57));
+    const auto screen = CreateSolidBrush(RGB(35, 104, 123));
+    const auto accent = CreateSolidBrush(RGB(10, 17, 27));
+    const auto red = CreateSolidBrush(RGB(237, 77, 132));
     RECT body{6, 2, item.rcItem.right - 6, item.rcItem.bottom - 2};
     FillRect(item.hDC, &item.rcItem,
              reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1));
@@ -367,6 +374,7 @@ void draw_gameboy_background(const DRAWITEMSTRUCT& item) {
 }
 
 void show_page(State& state, const bool settings) {
+    state.settings_page = settings;
     if (!settings && state.capturing_binding) {
         state.capturing_binding.reset();
         refresh_binding_buttons(state);
@@ -482,6 +490,21 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
     }
     if (state == nullptr) return DefWindowProcW(window, message, wparam, lparam);
 
+    if (message == WM_ERASEBKGND) {
+        RECT client{};
+        GetClientRect(window, &client);
+        FillRect(reinterpret_cast<HDC>(wparam), &client,
+                 state->background_brush);
+        return 1;
+    }
+    if (message == WM_CTLCOLORSTATIC || message == WM_CTLCOLORLISTBOX) {
+        const auto dc = reinterpret_cast<HDC>(wparam);
+        SetTextColor(dc, RGB(224, 235, 244));
+        SetBkColor(dc, RGB(13, 18, 27));
+        SetBkMode(dc, TRANSPARENT);
+        return reinterpret_cast<INT_PTR>(state->background_brush);
+    }
+
     if ((message == WM_KEYDOWN || message == WM_SYSKEYDOWN) &&
         state->capturing_binding) {
         if (wparam == VK_ESCAPE) {
@@ -526,6 +549,12 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
         return 0;
     }
 
+    if ((message == WM_KEYDOWN || message == WM_SYSKEYDOWN) &&
+        wparam == VK_ESCAPE) {
+        if (confirm_exit(window)) finish(*state, DashboardResultAction::quit);
+        return 0;
+    }
+
     if (message == WM_COMMAND) {
         const auto command = LOWORD(wparam);
         if (command >= id_binding_first &&
@@ -560,7 +589,11 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
         case id_open: open_rom(*state); return 0;
         case id_play: play_selection(*state); return 0;
         case id_resume: finish(*state, DashboardResultAction::resume); return 0;
-        case id_quit: finish(*state, DashboardResultAction::quit); return 0;
+        case id_quit:
+            if (confirm_exit(window)) {
+                finish(*state, DashboardResultAction::quit);
+            }
+            return 0;
         case id_remove: remove_selection(*state); return 0;
         case id_reset_controls:
             if (MessageBoxW(
@@ -590,13 +623,36 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
             return 0;
         default: break;
         }
-    } else if (message == WM_DRAWITEM &&
-               wparam == id_gameboy_background) {
-        draw_gameboy_background(
-            *reinterpret_cast<const DRAWITEMSTRUCT*>(lparam));
+    } else if (message == WM_DRAWITEM) {
+        const auto& item = *reinterpret_cast<const DRAWITEMSTRUCT*>(lparam);
+        if (wparam == id_gameboy_background) {
+            draw_gameboy_background(item);
+        } else {
+            draw_dashboard_button(item, *state);
+        }
         return TRUE;
     } else if (message == WM_NOTIFY) {
         const auto* notification = reinterpret_cast<NMHDR*>(lparam);
+        if (notification->code == NM_CUSTOMDRAW) {
+            const auto header = ListView_GetHeader(state->list);
+            if (notification->hwndFrom == header) {
+                // The header sends NMCUSTOMDRAW (without list-view color
+                // fields); leave it to the native theme rather than writing
+                // past that smaller notification structure.
+                return CDRF_DODEFAULT;
+            } else if (notification->idFrom == id_list) {
+                auto* custom = reinterpret_cast<NMLVCUSTOMDRAW*>(lparam);
+                if (custom->nmcd.dwDrawStage == CDDS_PREPAINT) return CDRF_NOTIFYITEMDRAW;
+                if (custom->nmcd.dwDrawStage == CDDS_ITEMPREPAINT) {
+                    const auto selected =
+                        (custom->nmcd.uItemState & CDIS_SELECTED) != 0;
+                    custom->clrText = RGB(238, 246, 252);
+                    custom->clrTextBk = selected ? RGB(0, 104, 141)
+                                                  : RGB(20, 27, 38);
+                    return CDRF_NEWFONT;
+                }
+            }
+        }
         if (notification->idFrom == id_list && notification->code == NM_DBLCLK) {
             play_selection(*state);
             return 0;
@@ -641,8 +697,9 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
         }
         return 0;
     } else if (message == WM_CLOSE) {
-        finish(*state, state->can_resume ? DashboardResultAction::resume
-                                         : DashboardResultAction::quit);
+        if (confirm_exit(window)) {
+            finish(*state, DashboardResultAction::quit);
+        }
         return 0;
     } else if (message == WM_DESTROY) {
         if (state->logo_bitmap != nullptr) {
@@ -652,6 +709,18 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
         if (state->covers != nullptr) {
             ImageList_Destroy(state->covers);
             state->covers = nullptr;
+        }
+        if (state->background_brush != nullptr) {
+            DeleteObject(state->background_brush);
+            state->background_brush = nullptr;
+        }
+        if (state->ui_font != nullptr) {
+            DeleteObject(state->ui_font);
+            state->ui_font = nullptr;
+        }
+        if (state->title_font != nullptr) {
+            DeleteObject(state->title_font);
+            state->title_font = nullptr;
         }
     }
     return DefWindowProcW(window, message, wparam, lparam);
@@ -960,13 +1029,61 @@ void resolve_artwork(State& state) {
 
 HWND control(State& state, const wchar_t* type, const wchar_t* text,
              DWORD style, int x, int y, int width, int height, int id) {
+    if (std::wstring_view(type) == L"BUTTON") style |= BS_OWNERDRAW;
     auto result = CreateWindowExW(0, type, text,
         WS_CHILD | style, x, y, width, height, state.window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
         GetModuleHandleW(nullptr), nullptr);
-    SendMessageW(result, WM_SETFONT,
-                 reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)), TRUE);
+    const auto font = state.ui_font != nullptr
+                          ? state.ui_font
+                          : reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+    SendMessageW(result, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
     return result;
+}
+
+bool confirm_exit(HWND window) {
+    return MessageBoxW(
+               window,
+               L"Are you sure you want to close Go Bigger Boy?\n\n"
+               L"Any game currently running will be stopped.",
+               L"Exit Go Bigger Boy?", MB_YESNO | MB_ICONQUESTION |
+                   MB_DEFBUTTON2) == IDYES;
+}
+
+void draw_dashboard_button(const DRAWITEMSTRUCT& item, const State& state) {
+    const auto id = GetDlgCtrlID(item.hwndItem);
+    const auto pressed = (item.itemState & ODS_SELECTED) != 0;
+    const auto disabled = (item.itemState & ODS_DISABLED) != 0;
+    const auto active_tab = (id == id_settings && state.settings_page) ||
+                            (id == id_library && !state.settings_page);
+    const auto fill = disabled
+                          ? RGB(28, 34, 45)
+                          : active_tab || pressed ? RGB(0, 145, 190)
+                                                   : RGB(29, 42, 59);
+    const auto outline = active_tab ? RGB(69, 207, 238) : RGB(59, 83, 108);
+    const auto text = disabled ? RGB(104, 117, 132) : RGB(238, 246, 252);
+    const auto brush = CreateSolidBrush(fill);
+    const auto pen = CreatePen(PS_SOLID, 1, outline);
+    const auto old_brush = SelectObject(item.hDC, brush);
+    const auto old_pen = SelectObject(item.hDC, pen);
+    RoundRect(item.hDC, item.rcItem.left + 1, item.rcItem.top + 1,
+              item.rcItem.right - 1, item.rcItem.bottom - 1, 10, 10);
+    SelectObject(item.hDC, old_brush);
+    SelectObject(item.hDC, old_pen);
+    DeleteObject(brush);
+    DeleteObject(pen);
+    SetBkMode(item.hDC, TRANSPARENT);
+    SetTextColor(item.hDC, text);
+    const auto font = reinterpret_cast<HFONT>(SendMessageW(
+        item.hwndItem, WM_GETFONT, 0, 0));
+    HGDIOBJ old_font = nullptr;
+    if (font != nullptr) old_font = SelectObject(item.hDC, font);
+    wchar_t label[256]{};
+    GetWindowTextW(item.hwndItem, label, static_cast<int>(std::size(label)));
+    auto text_rect = item.rcItem;
+    DrawTextW(item.hDC, label, -1, &text_rect,
+              DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    if (old_font != nullptr) SelectObject(item.hDC, old_font);
 }
 
 } // namespace
@@ -986,11 +1103,20 @@ DashboardResult show_windows_dashboard(
     type.hInstance = instance;
     type.hCursor = LoadCursorW(nullptr, MAKEINTRESOURCEW(32512));
     type.hIcon = LoadIconW(instance, MAKEINTRESOURCEW(IDI_GBB_ICON));
-    type.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+    type.hbrBackground = nullptr;
     type.lpszClassName = class_name;
     RegisterClassW(&type);
 
     State state;
+    state.background_brush = CreateSolidBrush(RGB(13, 18, 27));
+    state.ui_font = CreateFontW(
+        -15, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+        OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+        DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+    state.title_font = CreateFontW(
+        -20, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+        OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+        DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
     state.library = &library;
     state.can_resume = can_resume;
     state.result.palette = palette;
@@ -1005,6 +1131,18 @@ DashboardResult show_windows_dashboard(
         saved_position ? saved_position->y : CW_USEDEFAULT,
         820, 700, owner, nullptr, instance, &state);
     if (state.window == nullptr) {
+        if (state.background_brush != nullptr) {
+            DeleteObject(state.background_brush);
+            state.background_brush = nullptr;
+        }
+        if (state.ui_font != nullptr) {
+            DeleteObject(state.ui_font);
+            state.ui_font = nullptr;
+        }
+        if (state.title_font != nullptr) {
+            DeleteObject(state.title_font);
+            state.title_font = nullptr;
+        }
         state.result.action = can_resume ? DashboardResultAction::resume
                                          : DashboardResultAction::quit;
         return state.result;
@@ -1022,15 +1160,20 @@ DashboardResult show_windows_dashboard(
         SendMessageW(state.logo, STM_SETIMAGE, IMAGE_BITMAP,
                      reinterpret_cast<LPARAM>(state.logo_bitmap));
     }
-    control(state, L"BUTTON", L"Library", WS_VISIBLE | BS_PUSHBUTTON,
-            24, 112, 110, 34, id_library);
-    control(state, L"BUTTON", L"Settings", WS_VISIBLE | BS_PUSHBUTTON,
-            142, 112, 110, 34, id_settings);
+    state.library_tab = control(state, L"BUTTON", L"Library",
+                                WS_VISIBLE | BS_PUSHBUTTON,
+                                24, 112, 110, 34, id_library);
+    state.settings_tab = control(state, L"BUTTON", L"Settings",
+                                 WS_VISIBLE | BS_PUSHBUTTON,
+                                 142, 112, 110, 34, id_settings);
     state.list = control(state, WC_LISTVIEWW, L"",
         WS_VISIBLE | WS_BORDER | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS,
         24, 158, 750, 340, id_list);
     ListView_SetExtendedListViewStyle(state.list,
         LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
+    ListView_SetBkColor(state.list, RGB(20, 27, 38));
+    ListView_SetTextBkColor(state.list, RGB(20, 27, 38));
+    ListView_SetTextColor(state.list, RGB(234, 242, 248));
     state.covers = ImageList_Create(48, 66, ILC_COLOR32, 1,
                                     static_cast<int>(library.entries().size()));
     if (state.covers != nullptr) {
@@ -1114,6 +1257,8 @@ DashboardResult show_windows_dashboard(
 
     state.settings_heading = control(state, L"STATIC", L"Display and controls",
         0, 24, 174, 300, 28, 0);
+    SendMessageW(state.settings_heading, WM_SETFONT,
+                 reinterpret_cast<WPARAM>(state.title_font), TRUE);
     state.palette_label = control(state, L"STATIC", L"Color palette",
         0, 24, 204, 96, 24, 0);
     state.palette = control(state, L"COMBOBOX", L"",
@@ -1129,6 +1274,8 @@ DashboardResult show_windows_dashboard(
                  static_cast<WPARAM>(palette), 0);
     state.controls_label = control(state, L"STATIC", L"Keyboard controls",
         0, 374, 174, 180, 24, 0);
+    SendMessageW(state.controls_label, WM_SETFONT,
+                 reinterpret_cast<WPARAM>(state.title_font), TRUE);
     state.controls_instruction = control(
         state, L"STATIC",
         L"Click a binding, then press a key. Delete clears a binding.",
