@@ -70,11 +70,14 @@ std::optional<AndroidRomRequest> take_android_rom_request() {
 struct TouchControlSettings {
     float scale{1.35F};
     float opacity{0.78F};
-    // Logical Game Boy screen coordinates, normalized to 0..1. The order is
-    // Right, Left, Up, Down, A, B, Select, Start.
-    std::array<float, 16> positions{
-        0.25F, 0.73F, 0.15F, 0.73F, 0.20F, 0.66F, 0.20F, 0.80F,
-        0.80F, 0.70F, 0.66F, 0.80F, 0.43F, 0.91F, 0.56F, 0.91F};
+    // Window coordinates normalized to 0..1. Each orientation has one
+    // movable D-pad plus A, B, Select, and Start. The first ten values are
+    // portrait; the second ten are landscape. Each control stores x, y.
+    std::array<float, 20> positions{
+        0.27F, 0.82F, 0.74F, 0.79F, 0.74F, 0.90F, 0.43F, 0.96F,
+        0.57F, 0.96F,
+        0.12F, 0.50F, 0.88F, 0.42F, 0.88F, 0.62F, 0.42F, 0.92F,
+        0.58F, 0.92F};
 };
 
 [[noreturn]] void sdl_error(const std::string& action) {
@@ -244,6 +247,7 @@ constexpr float dashboard_row_height = 18.0F;
 
 constexpr std::uintmax_t maximum_quick_state_size = 2 * 1024 * 1024;
 constexpr std::size_t maximum_rewind_frames = 180;
+constexpr unsigned fast_forward_factor = 4;
 using RewindHistory = std::deque<std::vector<std::uint8_t>>;
 
 std::filesystem::path preference_directory() {
@@ -515,6 +519,13 @@ constexpr float minimum_touch_opacity = 0.20F;
 constexpr float maximum_touch_opacity = 1.00F;
 constexpr float minimum_touch_position = 0.02F;
 constexpr float maximum_touch_position = 0.98F;
+constexpr std::size_t touch_layout_count = 2;
+constexpr std::size_t touch_control_count = 5;
+constexpr std::size_t touch_layout_stride = touch_control_count * 2;
+constexpr std::array<const char*, touch_layout_count> touch_layout_names{
+    "Portrait", "Landscape"};
+constexpr std::array<const char*, touch_control_count> touch_control_names{
+    "DPad", "A", "B", "Select", "Start"};
 
 float parse_touch_value(const std::string& value, const float fallback,
                         const float minimum, const float maximum) {
@@ -598,7 +609,8 @@ void append_missing_portable_settings(
     const std::array<bool, 8>& has_gamepad,
     const std::array<bool, shortcut_names.size()>& has_shortcuts,
     const bool has_touch_scale, const bool has_touch_opacity,
-    const std::array<bool, 8>& has_touch_positions) {
+    const std::array<bool, touch_layout_count * touch_control_count>&
+        has_touch_positions) {
     const auto complete = has_palette &&
         std::all_of(has_keyboard.begin(), has_keyboard.end(),
                     [](const bool value) { return value; }) &&
@@ -650,11 +662,18 @@ void append_missing_portable_settings(
     if (!has_touch_opacity) {
         output << "touch.Opacity = " << settings.touch.opacity << '\n';
     }
-    for (std::size_t index = 0; index < button_names.size(); ++index) {
-        if (has_touch_positions[index]) continue;
-        output << "touch." << button_names[index] << " = "
-               << settings.touch.positions[index * 2] << ' '
-               << settings.touch.positions[index * 2 + 1] << '\n';
+    for (std::size_t orientation = 0; orientation < touch_layout_count;
+         ++orientation) {
+        for (std::size_t control = 0; control < touch_control_count;
+             ++control) {
+            const auto index = orientation * touch_layout_stride + control * 2;
+            const auto entry = orientation * touch_control_count + control;
+            if (has_touch_positions[entry]) continue;
+            output << "touch." << touch_layout_names[orientation] << '.'
+                   << touch_control_names[control] << " = "
+                   << settings.touch.positions[index] << ' '
+                   << settings.touch.positions[index + 1] << '\n';
+        }
     }
 }
 
@@ -674,7 +693,8 @@ void write_portable_settings(const std::filesystem::path& preference_directory,
               "# Add an optional second keyboard key after the first, for "
               "example: Z Y. Set emulator shortcuts to None to disable "
               "them. Android touch controls use a size multiplier and "
-              "opacity between 0 and 1 plus normalized positions.\n\n"
+              "opacity between 0 and 1 plus separate portrait and landscape "
+              "touch layouts.\n\n"
               "palette = "
            << gameboy::display_palettes[settings.palette].id << "\n\n";
     for (std::size_t index = 0; index < button_names.size(); ++index) {
@@ -695,10 +715,16 @@ void write_portable_settings(const std::filesystem::path& preference_directory,
     output << '\n';
     output << "touch.Size = " << settings.touch.scale << '\n';
     output << "touch.Opacity = " << settings.touch.opacity << "\n\n";
-    for (std::size_t index = 0; index < button_names.size(); ++index) {
-        output << "touch." << button_names[index] << " = "
-               << settings.touch.positions[index * 2] << ' '
-               << settings.touch.positions[index * 2 + 1] << '\n';
+    for (std::size_t orientation = 0; orientation < touch_layout_count;
+         ++orientation) {
+        for (std::size_t control = 0; control < touch_control_count;
+             ++control) {
+            const auto index = orientation * touch_layout_stride + control * 2;
+            output << "touch." << touch_layout_names[orientation] << '.'
+                   << touch_control_names[control] << " = "
+                   << settings.touch.positions[index] << ' '
+                   << settings.touch.positions[index + 1] << '\n';
+        }
     }
     output << '\n';
     for (std::size_t index = 0; index < button_names.size(); ++index) {
@@ -725,13 +751,16 @@ AppSettings load_portable_settings(
     auto loaded_buttons = settings.bindings.gamepad_buttons;
     auto loaded_shortcuts = settings.bindings.shortcuts;
     auto loaded_touch_positions = settings.touch.positions;
+    std::array<float, 16> legacy_touch_positions{};
+    std::array<bool, 8> has_legacy_touch_positions{};
     bool has_palette = false;
     std::array<bool, 8> has_keyboard{};
     std::array<bool, 8> has_gamepad{};
     std::array<bool, shortcut_names.size()> has_shortcuts{};
     bool has_touch_scale = false;
     bool has_touch_opacity = false;
-    std::array<bool, 8> has_touch_positions{};
+    std::array<bool, touch_layout_count * touch_control_count>
+        has_touch_positions{};
     constexpr std::array<const char*, 8> names{{
         "Right", "Left", "Up", "Down", "A", "B", "Select", "Start"}};
     std::string line;
@@ -770,17 +799,43 @@ AppSettings load_portable_settings(
                 maximum_touch_opacity);
             continue;
         }
+        bool touch_setting = false;
+        for (std::size_t orientation = 0; orientation < touch_layout_count;
+             ++orientation) {
+            for (std::size_t control = 0; control < touch_control_count;
+                 ++control) {
+                const auto setting_name =
+                    std::string("touch.") + touch_layout_names[orientation] +
+                    '.' + touch_control_names[control];
+                if (key != setting_name) continue;
+                touch_setting = true;
+                std::istringstream values(value);
+                float x = 0.0F;
+                float y = 0.0F;
+                if (values >> x >> y) {
+                    const auto index = orientation * touch_layout_stride +
+                                       control * 2;
+                    loaded_touch_positions[index] = std::clamp(
+                        x, minimum_touch_position, maximum_touch_position);
+                    loaded_touch_positions[index + 1] = std::clamp(
+                        y, minimum_touch_position, maximum_touch_position);
+                    has_touch_positions[orientation * touch_control_count +
+                                        control] = true;
+                }
+            }
+        }
+        if (touch_setting) continue;
         for (std::size_t index = 0; index < button_names.size(); ++index) {
             if (key != std::string("touch.") + button_names[index]) continue;
             std::istringstream values(value);
             float x = 0.0F;
             float y = 0.0F;
             if (values >> x >> y) {
-                loaded_touch_positions[index * 2] = std::clamp(
+                legacy_touch_positions[index * 2] = std::clamp(
                     x, minimum_touch_position, maximum_touch_position);
-                loaded_touch_positions[index * 2 + 1] = std::clamp(
+                legacy_touch_positions[index * 2 + 1] = std::clamp(
                     y, minimum_touch_position, maximum_touch_position);
-                has_touch_positions[index] = true;
+                has_legacy_touch_positions[index] = true;
             }
             break;
         }
@@ -865,6 +920,47 @@ AppSettings load_portable_settings(
         unique_buttons.end()) {
         settings.bindings.gamepad_buttons = loaded_buttons;
     }
+    const auto legacy_position = [&legacy_touch_positions](
+                                     const std::size_t index) {
+        return std::pair<float, float>{legacy_touch_positions[index * 2],
+                                       legacy_touch_positions[index * 2 + 1]};
+    };
+    const auto legacy_dpad = [&]() {
+        float x = 0.0F;
+        float y = 0.0F;
+        std::size_t count = 0;
+        for (std::size_t index = 0; index < 4; ++index) {
+            if (!has_legacy_touch_positions[index]) continue;
+            x += legacy_touch_positions[index * 2];
+            y += legacy_touch_positions[index * 2 + 1];
+            ++count;
+        }
+        return count == 0 ? std::pair<float, float>{0.27F, 0.82F}
+                          : std::pair<float, float>{x / count, y / count};
+    };
+    for (std::size_t orientation = 0; orientation < touch_layout_count;
+         ++orientation) {
+        const auto dpad = legacy_dpad();
+        const auto legacy_controls = std::array<std::pair<float, float>, 5>{
+            dpad, legacy_position(4), legacy_position(5),
+            legacy_position(6), legacy_position(7)};
+        for (std::size_t control = 0; control < touch_control_count;
+             ++control) {
+            const auto entry = orientation * touch_control_count + control;
+            if (has_touch_positions[entry]) continue;
+            const auto legacy_index = control == 0 ? 0 : control + 3;
+            if (!has_legacy_touch_positions[legacy_index] &&
+                (control != 0 ||
+                 !std::any_of(has_legacy_touch_positions.begin(),
+                              has_legacy_touch_positions.begin() + 4,
+                              [](const bool value) { return value; }))) {
+                continue;
+            }
+            const auto index = orientation * touch_layout_stride + control * 2;
+            loaded_touch_positions[index] = legacy_controls[control].first;
+            loaded_touch_positions[index + 1] = legacy_controls[control].second;
+        }
+    }
     settings.touch.positions = loaded_touch_positions;
     append_missing_portable_settings(path, settings, has_palette,
                                      has_keyboard, has_gamepad, has_shortcuts,
@@ -903,13 +999,17 @@ void save_touch_control_settings(const std::filesystem::path& directory,
     write_portable_settings(directory, settings);
 }
 
-std::array<float, 16> load_touch_control_layout(
+std::array<float, touch_layout_count * touch_layout_stride>
+load_touch_control_layout(
     const std::filesystem::path& directory) {
     return load_app_settings(directory).touch.positions;
 }
 
 void save_touch_control_layout(const std::filesystem::path& directory,
-                               const std::array<float, 16>& positions) {
+                               const std::array<float,
+                                                touch_layout_count *
+                                                    touch_layout_stride>&
+                                   positions) {
     auto settings = load_app_settings(directory);
     for (std::size_t index = 0; index < positions.size(); ++index) {
         settings.touch.positions[index] = std::clamp(
@@ -1136,37 +1236,76 @@ bool shortcut_pressed(const InputBindings& bindings, const std::size_t shortcut,
 }
 
 #ifdef __ANDROID__
+bool touch_is_landscape(const SdlResources& sdl) {
+    int width = 1;
+    int height = 1;
+    static_cast<void>(SDL_GetWindowSize(sdl.window, &width, &height));
+    return width >= height;
+}
+
+std::size_t touch_layout_offset(const SdlResources& sdl) {
+    return (touch_is_landscape(sdl) ? 1U : 0U) * touch_layout_stride;
+}
+
+float touch_game_scale(const SdlResources& sdl) {
+    int width = 1;
+    int height = 1;
+    static_cast<void>(SDL_GetWindowSize(sdl.window, &width, &height));
+    return std::min(static_cast<float>(width) /
+                        static_cast<float>(gameboy::Ppu::screen_width),
+                    static_cast<float>(height) /
+                        static_cast<float>(gameboy::Ppu::screen_height));
+}
+
+std::pair<float, float> touch_control_position(const SdlResources& sdl,
+                                               const std::size_t control) {
+    const auto index = touch_layout_offset(sdl) + control * 2;
+    return {sdl.touch_settings.positions[index],
+            sdl.touch_settings.positions[index + 1]};
+}
+
 std::optional<std::size_t> touch_button_index(const float x, const float y,
                                               const SdlResources& sdl) {
     const auto scale = std::clamp(sdl.touch_settings.scale,
                                   minimum_touch_scale, maximum_touch_scale);
-    constexpr std::array<float, 8> widths{{16.0F, 16.0F, 16.0F, 16.0F,
-                                            22.0F, 22.0F, 18.0F, 18.0F}};
-    constexpr std::array<float, 8> heights{{16.0F, 16.0F, 16.0F, 16.0F,
-                                             22.0F, 22.0F, 7.0F, 7.0F}};
-    const auto inside = [x, y, scale, &sdl, &widths, &heights](
-                            const std::size_t index) {
-        const auto center_x = sdl.touch_settings.positions[index * 2] *
-                              static_cast<float>(gameboy::Ppu::screen_width);
-        const auto center_y = sdl.touch_settings.positions[index * 2 + 1] *
-                              static_cast<float>(gameboy::Ppu::screen_height);
-        const auto dx = x * static_cast<float>(gameboy::Ppu::screen_width) -
-                        center_x;
-        const auto dy = y * static_cast<float>(gameboy::Ppu::screen_height) -
-                        center_y;
-        if (index == 4 || index == 5) {
-            const auto radius = widths[index] * scale * 0.5F;
+    int width = 1;
+    int height = 1;
+    static_cast<void>(SDL_GetWindowSize(sdl.window, &width, &height));
+    const auto pixel_x = x * static_cast<float>(width);
+    const auto pixel_y = y * static_cast<float>(height);
+    constexpr std::array<float, 4> widths{{42.0F, 24.0F, 24.0F, 22.0F}};
+    constexpr std::array<float, 4> heights{{42.0F, 24.0F, 24.0F, 10.0F}};
+    const auto inside = [&](const std::size_t control) {
+        const auto [normalized_x, normalized_y] =
+            touch_control_position(sdl, control);
+        const auto center_x = normalized_x * static_cast<float>(width);
+        const auto center_y = normalized_y * static_cast<float>(height);
+        const auto dx = pixel_x - center_x;
+        const auto dy = pixel_y - center_y;
+        const auto size = touch_game_scale(sdl) * scale;
+        if (control == 0) {
+            return std::abs(dx) <= widths[0] * size * 0.5F &&
+                   std::abs(dy) <= heights[0] * size * 0.5F;
+        }
+        if (control == 1 || control == 2) {
+            const auto radius = widths[control] * size * 0.5F;
             return dx * dx + dy * dy <= radius * radius;
         }
-        return std::abs(dx) <= widths[index] * scale * 0.5F &&
-               std::abs(dy) <= heights[index] * scale * 0.5F;
+        return std::abs(dx) <= widths[control] * size * 0.5F &&
+               std::abs(dy) <= heights[control] * size * 0.5F;
     };
     // Check the face and system buttons before the D-pad if a custom layout
     // intentionally places controls near one another.
-    for (const auto index : {std::size_t{4}, std::size_t{5}, std::size_t{6},
-                             std::size_t{7}, std::size_t{0}, std::size_t{1},
-                             std::size_t{2}, std::size_t{3}}) {
-        if (inside(index)) return index;
+    for (const auto control : {std::size_t{1}, std::size_t{2}, std::size_t{3},
+                               std::size_t{4}}) {
+        if (inside(control)) return control + 3;
+    }
+    if (inside(0)) {
+        const auto [normalized_x, normalized_y] = touch_control_position(sdl, 0);
+        const auto dx = pixel_x - normalized_x * static_cast<float>(width);
+        const auto dy = pixel_y - normalized_y * static_cast<float>(height);
+        return std::abs(dx) >= std::abs(dy) ? (dx >= 0.0F ? 0U : 1U)
+                                            : (dy >= 0.0F ? 3U : 2U);
     }
     return std::nullopt;
 }
@@ -1211,6 +1350,11 @@ std::pair<float, float> logical_touch_position(const SDL_TouchFingerEvent& event
         SDL_RenderCoordinatesFromWindow(sdl.renderer, x, y, &x, &y));
     return {x / static_cast<float>(gameboy::Ppu::screen_width),
             y / static_cast<float>(gameboy::Ppu::screen_height)};
+}
+
+std::pair<float, float> window_touch_position(
+    const SDL_TouchFingerEvent& event) {
+    return {event.x, event.y};
 }
 #endif
 
@@ -1771,15 +1915,16 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
         case SDL_EVENT_FINGER_MOTION:
         case SDL_EVENT_FINGER_UP: {
             const auto finger = event.tfinger.fingerID;
-            const auto [touch_x, touch_y] =
-                logical_touch_position(event.tfinger, sdl);
+            const auto [touch_x, touch_y] = window_touch_position(event.tfinger);
             if (dashboard_visible) {
                 if (event.type == SDL_EVENT_FINGER_UP) {
+                    const auto [logical_x, logical_y] =
+                        logical_touch_position(event.tfinger, sdl);
                     const auto item_count =
                         dashboard_items(emulator != nullptr, recent).size();
                     if (const auto selected = dashboard_row_at(
-                            touch_x * gameboy::Ppu::screen_width,
-                            touch_y * gameboy::Ppu::screen_height,
+                            logical_x * gameboy::Ppu::screen_width,
+                            logical_y * gameboy::Ppu::screen_height,
                             dashboard_selection, item_count)) {
                         dashboard_selection = *selected;
                         activate_dashboard_selection(
@@ -2367,6 +2512,16 @@ void present_touch_controls(SdlResources& sdl) {
                                     maximum_touch_opacity);
     static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
                                                  SDL_BLENDMODE_BLEND));
+    int window_width = 1;
+    int window_height = 1;
+    static_cast<void>(SDL_GetWindowSize(sdl.window, &window_width,
+                                        &window_height));
+    const auto game_scale = touch_game_scale(sdl);
+    const auto size = game_scale * scale;
+    if (!SDL_SetRenderLogicalPresentation(
+            sdl.renderer, 0, 0, SDL_LOGICAL_PRESENTATION_DISABLED)) {
+        sdl_error("Could not prepare touch controls");
+    }
     const auto draw = [&sdl, opacity](const SDL_FRect& rect,
                                       const bool pressed) {
         const auto alpha = static_cast<std::uint8_t>(std::clamp(
@@ -2382,22 +2537,39 @@ void present_touch_controls(SdlResources& sdl) {
         static_cast<void>(SDL_RenderRect(sdl.renderer, &rect));
     };
 
-    constexpr std::array<float, 8> widths{{16.0F, 16.0F, 16.0F, 16.0F,
-                                            22.0F, 22.0F, 18.0F, 18.0F}};
-    constexpr std::array<float, 8> heights{{16.0F, 16.0F, 16.0F, 16.0F,
-                                             22.0F, 22.0F, 7.0F, 7.0F}};
-    const auto rect_for = [&sdl, scale, &widths, &heights](
-                              const std::size_t index) {
-        const auto center_x = sdl.touch_settings.positions[index * 2] * 160.0F;
-        const auto center_y =
-            sdl.touch_settings.positions[index * 2 + 1] * 144.0F;
-        return SDL_FRect{
-            center_x - widths[index] * scale * 0.5F,
-            center_y - heights[index] * scale * 0.5F,
-            widths[index] * scale, heights[index] * scale};
+    const auto point_for = [&sdl, window_width, window_height](
+                               const std::size_t control) {
+        const auto [x, y] = touch_control_position(sdl, control);
+        return SDL_FPoint{x * static_cast<float>(window_width),
+                          y * static_cast<float>(window_height)};
     };
-    for (std::size_t index = 0; index < sdl.touch_buttons.size(); ++index) {
-        draw(rect_for(index), sdl.touch_buttons[index]);
+    const auto dpad = point_for(0);
+    const auto dpad_arm = 21.0F * size;
+    const auto dpad_thickness = 14.0F * size;
+    draw(SDL_FRect{dpad.x, dpad.y - dpad_thickness * 0.5F, dpad_arm,
+                   dpad_thickness}, sdl.touch_buttons[0]);
+    draw(SDL_FRect{dpad.x - dpad_arm, dpad.y - dpad_thickness * 0.5F,
+                   dpad_arm, dpad_thickness}, sdl.touch_buttons[1]);
+    draw(SDL_FRect{dpad.x - dpad_thickness * 0.5F, dpad.y - dpad_arm,
+                   dpad_thickness, dpad_arm}, sdl.touch_buttons[2]);
+    draw(SDL_FRect{dpad.x - dpad_thickness * 0.5F, dpad.y, dpad_thickness,
+                   dpad_arm}, sdl.touch_buttons[3]);
+    const std::array<float, 4> widths{{24.0F, 24.0F, 22.0F, 22.0F}};
+    const std::array<float, 4> heights{{24.0F, 24.0F, 10.0F, 10.0F}};
+    for (std::size_t control = 1; control < touch_control_count; ++control) {
+        const auto point = point_for(control);
+        const auto size_index = control - 1;
+        const auto rect_width = widths[size_index] * size;
+        const auto rect_height = heights[size_index] * size;
+        draw(SDL_FRect{point.x - rect_width * 0.5F,
+                       point.y - rect_height * 0.5F, rect_width, rect_height},
+             sdl.touch_buttons[control + 3]);
+    }
+    if (!SDL_SetRenderLogicalPresentation(
+            sdl.renderer, static_cast<int>(gameboy::Ppu::screen_width),
+            static_cast<int>(gameboy::Ppu::screen_height),
+            SDL_LOGICAL_PRESENTATION_LETTERBOX)) {
+        sdl_error("Could not restore game presentation");
     }
     static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
                                                  SDL_BLENDMODE_NONE));
@@ -2499,9 +2671,26 @@ void present(const gameboy::Emulator* emulator, SdlResources& sdl,
     }
 }
 
-void submit_audio(gameboy::Emulator* emulator, SdlResources& sdl) {
+void submit_audio(gameboy::Emulator* emulator, SdlResources& sdl,
+                  const bool fast_forward = false) {
     if (emulator == nullptr) return;
-    const auto samples = emulator->take_audio_samples();
+    auto samples = emulator->take_audio_samples();
+    if (fast_forward && !samples.empty()) {
+        // The emulator produces four times as many samples while fast-forward
+        // is held. Keep every fourth stereo frame so audio stays responsive
+        // and plays at the accelerated rate instead of building an ever
+        // growing queue or going silent.
+        std::vector<std::int16_t> accelerated;
+        accelerated.reserve((samples.size() + fast_forward_factor * 2 - 1) /
+                            (fast_forward_factor * 2) * 2);
+        const auto stride = static_cast<std::size_t>(fast_forward_factor) * 2;
+        for (std::size_t index = 0; index + 1 < samples.size();
+             index += stride) {
+            accelerated.push_back(samples[index]);
+            accelerated.push_back(samples[index + 1]);
+        }
+        samples = std::move(accelerated);
+    }
     if (sdl.audio_stream != nullptr && !samples.empty() &&
         !SDL_PutAudioStreamData(
             sdl.audio_stream, samples.data(),
@@ -2641,8 +2830,8 @@ Java_com_danielseim_gbb_LibraryActivity_nativeSetTouchControlLayout(
         return;
     }
     const auto length = environment->GetArrayLength(values);
-    if (length >= 16) {
-        std::array<float, 16> positions{};
+    if (length >= static_cast<jsize>(touch_layout_count * touch_layout_stride)) {
+        std::array<float, touch_layout_count * touch_layout_stride> positions{};
         environment->GetFloatArrayRegion(
             values, 0, static_cast<jsize>(positions.size()), positions.data());
         save_touch_control_layout(std::filesystem::u8path(raw_directory),
@@ -3005,7 +3194,7 @@ int main(int argc, char** argv) {
                         }
                     }
                 } else {
-                    const auto frames = fast_forward ? 4U : 1U;
+                    const auto frames = fast_forward ? fast_forward_factor : 1U;
                     for (auto frame = 0U; frame < frames && running; ++frame) {
                         rewind_history.push_back(emulator->save_state());
                         while (rewind_history.size() > maximum_rewind_frames) {
@@ -3024,14 +3213,7 @@ int main(int argc, char** argv) {
                           !paused && !rewind && !dashboard_visible &&
                               !configuring &&
                               !dialog_active(dialog));
-            if (fast_forward) {
-                if (emulator) static_cast<void>(emulator->take_audio_samples());
-                if (sdl.audio_stream != nullptr) {
-                    static_cast<void>(SDL_ClearAudioStream(sdl.audio_stream));
-                }
-            } else {
-                submit_audio(emulator.get(), sdl);
-            }
+            submit_audio(emulator.get(), sdl, fast_forward);
             try {
                 save_completed_prints(emulator.get(), sdl.window,
                                       preference_path, current_rom,
@@ -3049,9 +3231,8 @@ int main(int argc, char** argv) {
             }
 #endif
 
-            const auto frame_count = fast_forward ? 4U : 1U;
             next_frame += std::chrono::duration_cast<Clock::duration>(
-                frame_duration * frame_count);
+                frame_duration);
             const auto now = Clock::now();
             if (next_frame > now) {
                 std::this_thread::sleep_until(next_frame);

@@ -30,7 +30,7 @@
             android:configChanges="layoutDirection|locale|orientation|screenLayout|screenSize|smallestScreenSize|touchscreen|uiMode"
             android:exported="false"
             android:launchMode="singleTask"
-            android:screenOrientation="sensorLandscape" />
+            android:screenOrientation="sensor" />
         <activity
             android:name=".UpdateResultActivity"
             android:excludeFromRecents="true"

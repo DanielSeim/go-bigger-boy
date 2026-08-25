@@ -195,8 +195,10 @@ tap the top-left menu button and choose
 `Display palette` to select and persist the same five palette options. The
 Android Settings page also provides touch-control size and opacity sliders;
 these values are stored in `settings.ini` as `touch.Size` and `touch.Opacity`.
-Its layout editor lets you drag each on-screen control independently; positions
-are stored as normalized `touch.Right` through `touch.Start` coordinates.
+Its layout editor has separate portrait and landscape layouts. The D-pad is
+always moved as one control, while A, B, Select, and Start can be positioned
+individually beside or below the emulation screen. Positions are stored as
+normalized `touch.Portrait.*` and `touch.Landscape.*` coordinates.
 
 The default action bindings are `keyboard.FastForward = Tab` (hold for 4×
 speed), `keyboard.Rewind = Left Shift` (hold to step backward through the last three
@@ -246,7 +248,7 @@ to use.
 
 The Android project in `android/` uses SDL3's official Android AAR and the same
 C++ core/frontend as desktop. It currently supports the Android document
-picker, landscape multitouch controls, external gamepads, audio, rumble,
+picker, portrait and landscape multitouch controls, external gamepads, audio, rumble,
 battery saves, and optional camera permission. ROMs selected through Android's
 `content://` document interface are imported into private app storage so recent
 games remain launchable after a restart; they are never uploaded. Save data is

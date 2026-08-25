@@ -297,7 +297,8 @@ public final class LibraryActivity extends Activity {
         content.addView(touchHeading);
         content.addView(text(
                 "Adjust the on-screen button size and visibility for your phone " +
-                "or tablet.", 15, Color.DKGRAY));
+                "or tablet. Portrait and landscape layouts are independent; " +
+                "the D-pad is always moved as one control.", 15, Color.DKGRAY));
 
         final String settingsDirectory = getFilesDir().getAbsolutePath();
         final float[] touchValues = {
@@ -371,11 +372,31 @@ public final class LibraryActivity extends Activity {
                 initial == null ? defaultTouchLayout() : initial);
         final LinearLayout container = new LinearLayout(this);
         container.setOrientation(LinearLayout.VERTICAL);
+        final Spinner orientation = new Spinner(this);
+        orientation.setAdapter(new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_dropdown_item,
+                new String[]{"Portrait layout", "Landscape layout"}));
+        final boolean startsLandscape =
+                getResources().getConfiguration().orientation == 2;
+        editor.setLandscape(startsLandscape);
+        orientation.setSelection(startsLandscape ? 1 : 0);
+        orientation.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view,
+                                       int position, long id) {
+                editor.setLandscape(position == 1);
+            }
+            @Override public void onNothingSelected(AdapterView<?> parent) {}
+        });
+        container.addView(orientation, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
         container.addView(editor, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(360)));
         final TextView help = text(
-                "Drag each button to its preferred position. The preview uses " +
-                "the same layout as gameplay.", 13, Color.GRAY);
+                "Drag the D-pad, A, B, Select, and Start to their preferred " +
+                "positions. Controls may sit beside or below the game screen.",
+                13, Color.GRAY);
         help.setPadding(0, dp(8), 0, 0);
         container.addView(help);
         final Button reset = new Button(this);
@@ -399,26 +420,27 @@ public final class LibraryActivity extends Activity {
 
     private static float[] defaultTouchLayout() {
         return new float[]{
-                0.25f, 0.73f, 0.15f, 0.73f, 0.20f, 0.66f, 0.20f, 0.80f,
-                0.80f, 0.70f, 0.66f, 0.80f, 0.43f, 0.91f, 0.56f, 0.91f};
+                0.27f, 0.82f, 0.74f, 0.79f, 0.74f, 0.90f, 0.43f, 0.96f,
+                0.57f, 0.96f,
+                0.12f, 0.50f, 0.88f, 0.42f, 0.88f, 0.62f, 0.42f, 0.92f,
+                0.58f, 0.92f};
     }
 
     private final class TouchLayoutView extends View {
-        private final float[] WIDTHS = {
-                16, 16, 16, 16, 22, 22, 18, 18};
-        private final float[] HEIGHTS = {
-                16, 16, 16, 16, 22, 22, 7, 7};
+        private final float[] WIDTHS = {42, 24, 24, 22, 22};
+        private final float[] HEIGHTS = {42, 24, 24, 10, 10};
         private final String[] LABELS = {
-                "R", "L", "U", "D", "A", "B", "Sel", "Start"};
+                "D-pad", "A", "B", "Select", "Start"};
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private float[] layout;
         private int selected = -1;
         private float dragOffsetX;
         private float dragOffsetY;
+        private boolean landscape;
 
         TouchLayoutView(float[] initial) {
             super(LibraryActivity.this);
-            layout = new float[16];
+            layout = new float[20];
             if (initial == null || initial.length < layout.length) {
                 layout = defaultTouchLayout();
             } else {
@@ -437,22 +459,44 @@ public final class LibraryActivity extends Activity {
             invalidate();
         }
 
+        void setLandscape(boolean value) {
+            landscape = value;
+            selected = -1;
+            invalidate();
+        }
+
+        private float designWidth() {
+            return landscape ? 320f : 180f;
+        }
+
+        private float designHeight() {
+            return landscape ? 180f : 320f;
+        }
+
         private float logicalScale() {
-            return Math.min(getWidth() / 160f, getHeight() / 144f);
+            return Math.min(getWidth() / designWidth(),
+                    getHeight() / designHeight());
         }
 
         private float offsetX() {
-            return (getWidth() - 160f * logicalScale()) * 0.5f;
+            return (getWidth() - designWidth() * logicalScale()) * 0.5f;
         }
 
         private float offsetY() {
-            return (getHeight() - 144f * logicalScale()) * 0.5f;
+            return (getHeight() - designHeight() * logicalScale()) * 0.5f;
+        }
+
+        private int positionIndex(int control) {
+            return (landscape ? 10 : 0) + control * 2;
         }
 
         private RectF bounds(int index) {
             final float scale = logicalScale();
-            final float centerX = offsetX() + layout[index * 2] * 160f * scale;
-            final float centerY = offsetY() + layout[index * 2 + 1] * 144f * scale;
+            final int position = positionIndex(index);
+            final float centerX = offsetX() + layout[position] *
+                    designWidth() * scale;
+            final float centerY = offsetY() + layout[position + 1] *
+                    designHeight() * scale;
             final float width = WIDTHS[index] * scale;
             final float height = HEIGHTS[index] * scale;
             return new RectF(centerX - width * 0.5f, centerY - height * 0.5f,
@@ -463,14 +507,16 @@ public final class LibraryActivity extends Activity {
         protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
             final float scale = logicalScale();
-            final RectF screen = new RectF(offsetX(), offsetY(),
-                    offsetX() + 160f * scale, offsetY() + 144f * scale);
+            final float screenLeft = offsetX() + (landscape ? 80f : 10f) * scale;
+            final float screenTop = offsetY() + (landscape ? 18f : 10f) * scale;
+            final RectF screen = new RectF(screenLeft, screenTop,
+                    screenLeft + 160f * scale, screenTop + 144f * scale);
             paint.setStyle(Paint.Style.STROKE);
             paint.setStrokeWidth(Math.max(1f, scale));
             paint.setColor(Color.rgb(151, 170, 132));
             canvas.drawRect(screen, paint);
             paint.setStyle(Paint.Style.FILL);
-            for (int index = 0; index < 8; ++index) {
+            for (int index = 0; index < 5; ++index) {
                 final RectF bounds = bounds(index);
                 paint.setColor(index == selected
                         ? Color.rgb(255, 215, 92) : Color.rgb(124, 183, 140));
@@ -485,7 +531,7 @@ public final class LibraryActivity extends Activity {
         }
 
         private int hit(float x, float y) {
-            for (int index = 7; index >= 0; --index) {
+            for (int index = 4; index >= 0; --index) {
                 if (bounds(index).contains(x, y)) return index;
             }
             return -1;
@@ -506,10 +552,11 @@ public final class LibraryActivity extends Activity {
                 if (selected < 0 || scale <= 0) return true;
                 final float centerX = event.getX() - dragOffsetX;
                 final float centerY = event.getY() - dragOffsetY;
-                layout[selected * 2] = Math.max(0.02f, Math.min(0.98f,
-                        (centerX - offsetX()) / (160f * scale)));
-                layout[selected * 2 + 1] = Math.max(0.02f, Math.min(0.98f,
-                        (centerY - offsetY()) / (144f * scale)));
+                final int position = positionIndex(selected);
+                layout[position] = Math.max(0.02f, Math.min(0.98f,
+                        (centerX - offsetX()) / (designWidth() * scale)));
+                layout[position + 1] = Math.max(0.02f, Math.min(0.98f,
+                        (centerY - offsetY()) / (designHeight() * scale)));
                 invalidate();
                 return true;
             case MotionEvent.ACTION_UP:
