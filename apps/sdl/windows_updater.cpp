@@ -312,7 +312,7 @@ int update_main(const int argc, wchar_t** argv) {
     return 0;
 }
 
-int main() {
+int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     int argc = 0;
     auto* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
     if (argv == nullptr) return 1;
