@@ -1181,7 +1181,7 @@ DashboardResult show_windows_dashboard(
             id_action_first + static_cast<int>(index));
     }
     state.reset_controls = control(state, L"BUTTON", L"Reset all controls",
-        BS_PUSHBUTTON, 24, 642, 200, 38, id_reset_controls);
+        BS_PUSHBUTTON, 24, 628, 200, 34, id_reset_controls);
     refresh_binding_buttons(state);
     show_page(state, false);
 
