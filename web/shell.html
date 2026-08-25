@@ -602,11 +602,20 @@
             setTimeout(() => {
               if (currentRom !== startedRom || !Module.importSaveData) return;
               try {
+                // Camera ROMs initialize their sensor SRAM while booting. If
+                // the saved image is imported before that initialization,
+                // the ROM replaces it and the next autosave persists the
+                // freshly initialized image. Let boot finish, pause the
+                // emulator between frames, then restore and resume.
+                if (Module._gbb_pause_rom) Module._gbb_pause_rom();
                 Module.importSaveData(deferredCameraSave);
+                console.info('Restored the saved Game Boy Camera image after startup.');
               } catch (error) {
                 console.warn('Could not reapply the saved camera image:', error);
+              } finally {
+                if (Module._gbb_start_rom) Module._gbb_start_rom();
               }
-            }, 100);
+            }, 750);
           }
         }
       }

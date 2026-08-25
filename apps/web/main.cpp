@@ -343,6 +343,12 @@ extern "C" EMSCRIPTEN_KEEPALIVE void gbb_start_rom() noexcept {
     }
 }
 
+extern "C" EMSCRIPTEN_KEEPALIVE void gbb_pause_rom() noexcept {
+    if (!active_app || !active_app->emulator) return;
+    active_app->paused = true;
+    release_all_buttons(*active_app);
+}
+
 extern "C" EMSCRIPTEN_KEEPALIVE void gbb_set_palette(
     const unsigned palette) noexcept {
     if (active_app && palette < gameboy::display_palettes.size()) {
