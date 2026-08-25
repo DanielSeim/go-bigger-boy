@@ -66,6 +66,7 @@
             <option value="1">Bilinear</option>
             <option value="2">Integer scaling</option>
             <option value="3">LCD shader</option>
+            <option value="4">Sharp smoothing</option>
           </select>
         </label>
         <button id="open-rom" type="button" disabled>Choose ROM</button>
@@ -488,7 +489,8 @@
     }
 
     function applyVideoPresentation(value) {
-      canvas.style.imageRendering = Number(value) === 1 ? 'auto' : 'pixelated';
+      canvas.style.imageRendering = Number(value) === 1
+        ? 'auto' : 'pixelated';
     }
 
     function restorePalette() {

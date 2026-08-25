@@ -168,15 +168,28 @@ void present(WebApp& app) {
         const auto& palette = gameboy::display_palettes[app.display_palette];
         const auto native_colors = app.emulator->bus().cgb_mode() ||
                                    palette.cgb_compatibility;
+        const auto color_at = [&](const std::size_t source_index) {
+            return native_colors
+                       ? pixels[source_index]
+                       : gameboy::apply_display_palette(pixels[source_index],
+                                                        palette);
+        };
         for (std::size_t index = 0; index < pixels.size(); ++index) {
-            auto pixel = native_colors
-                             ? pixels[index]
-                             : gameboy::apply_display_palette(pixels[index],
-                                                              palette);
-            if (app.video_mode == gameboy::VideoMode::lcd_shader) {
-                pixel = gameboy::apply_lcd_shader(
-                    pixel, index % gameboy::Ppu::screen_width,
-                    index / gameboy::Ppu::screen_width);
+            auto pixel = color_at(index);
+            const auto x = index % gameboy::Ppu::screen_width;
+            const auto y = index / gameboy::Ppu::screen_width;
+            if (app.video_mode == gameboy::VideoMode::sharp_smoothing) {
+                const auto left = x == 0 ? index : index - 1;
+                const auto right = x + 1 == gameboy::Ppu::screen_width
+                                       ? index : index + 1;
+                const auto up = y == 0 ? index : index - gameboy::Ppu::screen_width;
+                const auto down = y + 1 == gameboy::Ppu::screen_height
+                                      ? index : index + gameboy::Ppu::screen_width;
+                pixel = gameboy::apply_sharp_smoothing(
+                    pixel, color_at(left), color_at(right), color_at(up),
+                    color_at(down));
+            } else if (app.video_mode == gameboy::VideoMode::lcd_shader) {
+                pixel = gameboy::apply_lcd_shader(pixel, x, y);
             }
             app.display_pixels[index] = pixel;
         }

@@ -223,6 +223,8 @@ void test_rom_library_metadata_and_deduplication() {
 void test_video_pipeline_modes() {
     check(gameboy::video_mode_from_id("nearest") == gameboy::VideoMode::nearest &&
               gameboy::video_mode_from_id("bilinear") == gameboy::VideoMode::bilinear &&
+              gameboy::video_mode_from_id("sharp") ==
+                  gameboy::VideoMode::sharp_smoothing &&
               gameboy::video_mode_from_id("integer") == gameboy::VideoMode::integer &&
               gameboy::video_mode_from_id("lcd") == gameboy::VideoMode::lcd_shader,
           "video pipeline settings map stable ids to presentation modes");
@@ -233,6 +235,11 @@ void test_video_pipeline_modes() {
               (gameboy::apply_lcd_shader(source, 1, 0) & UINT32_C(0xFF000000)) ==
                   UINT32_C(0xFF000000),
           "LCD shader changes RGB channels while preserving alpha");
+    constexpr auto left = UINT32_C(0xFF202020);
+    constexpr auto right = UINT32_C(0xFFE0E0E0);
+    check(gameboy::apply_sharp_smoothing(source, left, right, source, source) !=
+              source,
+          "sharp smoothing adjusts high-contrast edges");
 }
 
 void test_cgb_memory_and_rendering() {

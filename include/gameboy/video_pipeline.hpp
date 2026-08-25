@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -15,6 +16,7 @@ enum class VideoMode : std::uint8_t {
     bilinear,
     integer,
     lcd_shader,
+    sharp_smoothing,
 };
 
 struct VideoModeInfo {
@@ -23,14 +25,45 @@ struct VideoModeInfo {
     std::string_view name;
 };
 
-inline constexpr std::array<VideoModeInfo, 4> video_modes{{
+inline constexpr std::array<VideoModeInfo, 5> video_modes{{
     {VideoMode::nearest, "nearest", "Nearest neighbor"},
     {VideoMode::bilinear, "bilinear", "Bilinear"},
     {VideoMode::integer, "integer", "Integer scaling"},
     {VideoMode::lcd_shader, "lcd", "LCD shader"},
+    {VideoMode::sharp_smoothing, "sharp", "Sharp smoothing"},
 }};
 
 inline constexpr VideoMode default_video_mode = VideoMode::nearest;
+
+// Smooth only high-contrast edges in the source image. Flat regions and small
+// details are left untouched, while an edge pixel gets a restrained blend with
+// its four neighbors. The result is presented with nearest-neighbor scaling,
+// so the transition is softened without making the whole image blurry.
+inline constexpr std::uint32_t apply_sharp_smoothing(
+    const std::uint32_t pixel, const std::uint32_t left,
+    const std::uint32_t right, const std::uint32_t up,
+    const std::uint32_t down) noexcept {
+    const auto channel = [&](const unsigned shift) {
+        const auto center = static_cast<int>((pixel >> shift) & 0xFFU);
+        const auto left_value = static_cast<int>((left >> shift) & 0xFFU);
+        const auto right_value = static_cast<int>((right >> shift) & 0xFFU);
+        const auto up_value = static_cast<int>((up >> shift) & 0xFFU);
+        const auto down_value = static_cast<int>((down >> shift) & 0xFFU);
+        const auto low = std::min({left_value, right_value, up_value,
+                                   down_value});
+        const auto high = std::max({left_value, right_value, up_value,
+                                    down_value});
+        if (high - low < 48) return static_cast<std::uint32_t>(center);
+        const auto average = (left_value + right_value + up_value +
+                              down_value) /
+                             4;
+        const auto sharpened = (center * 3 + average) / 4;
+        return static_cast<std::uint32_t>(
+            sharpened < 0 ? 0 : sharpened > 255 ? 255 : sharpened);
+    };
+    return (pixel & UINT32_C(0xFF000000)) |
+           (channel(16) << 16) | (channel(8) << 8) | channel(0);
+}
 
 inline constexpr const VideoModeInfo& video_mode_info(const VideoMode mode) {
     for (const auto& info : video_modes) {

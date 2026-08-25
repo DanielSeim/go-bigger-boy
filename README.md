@@ -201,9 +201,10 @@ individually beside or below the emulation screen. Positions are stored as
 normalized `touch.Portrait.*` and `touch.Landscape.*` coordinates.
 
 The video pipeline is configurable across desktop, Android, and web builds:
-`nearest` keeps crisp pixel edges, `bilinear` smooths the presentation,
-`integer` uses only whole-number scale factors, and `lcd` applies a lightweight
-LCD mask with scanlines. The setting is stored as `video.Mode` in
+`nearest` keeps crisp pixel edges, `bilinear` smooths the presentation, `sharp`
+adds edge-aware smoothing without blanket blur, `integer` uses only whole-number
+scale factors, and `lcd` applies a lightweight LCD mask with scanlines. The
+setting is stored as `video.Mode` in
 `settings.ini`; the web selector remembers its choice in browser storage.
 
 The default action bindings are `keyboard.FastForward = Tab` (hold for 4×
