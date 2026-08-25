@@ -393,14 +393,24 @@ public final class LibraryActivity extends Activity {
             public void onItemSelected(AdapterView<?> parent, View view,
                                        int position, long id) {
                 editor.setLandscape(position == 1);
+                final ViewGroup.LayoutParams params = editor.getLayoutParams();
+                if (params != null) {
+                    params.height = dp(position == 1 ? 220 : 360);
+                    editor.setLayoutParams(params);
+                }
             }
             @Override public void onNothingSelected(AdapterView<?> parent) {}
         });
         container.addView(orientation, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
+        // Landscape dialogs have substantially less vertical space than the
+        // portrait dashboard. Keep the editor proportional to its landscape
+        // canvas, and put the complete editor contents in a scroll container
+        // so the help/reset controls and dialog actions remain reachable.
+        final int editorHeight = startsLandscape ? dp(220) : dp(360);
         container.addView(editor, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(360)));
+                ViewGroup.LayoutParams.MATCH_PARENT, editorHeight));
         final TextView help = text(
                 "Drag the D-pad, A, B, Select, and Start to their preferred " +
                 "positions. Controls may sit beside or below the game screen.",
@@ -411,9 +421,14 @@ public final class LibraryActivity extends Activity {
         reset.setText("Reset positions");
         reset.setOnClickListener(view -> editor.setLayout(defaultTouchLayout()));
         container.addView(reset);
+        final ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(false);
+        scroll.addView(container, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
         final AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("Customize touch controls")
-                .setView(container)
+                .setView(scroll)
                 .setNegativeButton("Cancel", null)
                 .setPositiveButton("Save", null)
                 .create();

@@ -45,6 +45,8 @@ constexpr int id_reset_controls = 111;
 constexpr int id_binding_first = 200;
 constexpr int id_action_first = 220;
 constexpr UINT artwork_ready = WM_APP + 1;
+constexpr int dashboard_width = 980;
+constexpr int dashboard_height = 850;
 
 struct MetadataRecord {
     std::string name;
@@ -153,8 +155,9 @@ std::optional<POINT> load_window_position(
     std::ifstream input(preference_directory / "dashboard-window.txt");
     POINT position{};
     if (!(input >> position.x >> position.y)) return std::nullopt;
-    const RECT rectangle{position.x, position.y, position.x + 820,
-                         position.y + 700};
+    const RECT rectangle{position.x, position.y,
+                         position.x + dashboard_width,
+                         position.y + dashboard_height};
     return MonitorFromRect(&rectangle, MONITOR_DEFAULTTONULL) == nullptr
                ? std::nullopt
                : std::optional<POINT>{position};
@@ -343,13 +346,13 @@ void assign_captured_binding(State& state, const SDL_Keycode key) {
 }
 
 void draw_gameboy_background(const DRAWITEMSTRUCT& item) {
+    const auto canvas = CreateSolidBrush(RGB(13, 18, 27));
     const auto device = CreateSolidBrush(RGB(31, 42, 57));
     const auto screen = CreateSolidBrush(RGB(35, 104, 123));
     const auto accent = CreateSolidBrush(RGB(10, 17, 27));
     const auto red = CreateSolidBrush(RGB(237, 77, 132));
     RECT body{6, 2, item.rcItem.right - 6, item.rcItem.bottom - 2};
-    FillRect(item.hDC, &item.rcItem,
-             reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1));
+    FillRect(item.hDC, &item.rcItem, canvas);
     const auto old_pen = SelectObject(item.hDC, GetStockObject(NULL_PEN));
     const auto old_brush = SelectObject(item.hDC, device);
     RoundRect(item.hDC, body.left, body.top, body.right, body.bottom, 24, 24);
@@ -371,6 +374,7 @@ void draw_gameboy_background(const DRAWITEMSTRUCT& item) {
     DeleteObject(screen);
     DeleteObject(accent);
     DeleteObject(red);
+    DeleteObject(canvas);
 }
 
 void show_page(State& state, const bool settings) {
@@ -639,16 +643,40 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
         if (notification->code == NM_CUSTOMDRAW) {
             const auto header = ListView_GetHeader(state->list);
             if (notification->hwndFrom == header) {
-                // The header sends NMCUSTOMDRAW (without list-view color
-                // fields); leave it to the native theme rather than writing
-                // past that smaller notification structure.
-                return CDRF_DODEFAULT;
+                const auto* custom = reinterpret_cast<const NMCUSTOMDRAW*>(lparam);
+                if (custom->dwDrawStage == CDDS_PREPAINT) {
+                    return CDRF_NOTIFYITEMDRAW;
+                }
+                if (custom->dwDrawStage == CDDS_ITEMPREPAINT) {
+                    RECT rectangle{};
+                    const auto column = static_cast<int>(custom->dwItemSpec);
+                    if (!Header_GetItemRect(header, column, &rectangle)) {
+                        return CDRF_DODEFAULT;
+                    }
+                    const auto background = CreateSolidBrush(RGB(20, 30, 44));
+                    FillRect(custom->hdc, &rectangle, background);
+                    DeleteObject(background);
+                    wchar_t label[128]{};
+                    HDITEMW item{};
+                    item.mask = HDI_TEXT;
+                    item.pszText = label;
+                    item.cchTextMax = static_cast<int>(std::size(label));
+                    Header_GetItem(header, column, &item);
+                    SetBkMode(custom->hdc, TRANSPARENT);
+                    SetTextColor(custom->hdc, RGB(185, 216, 232));
+                    rectangle.left += 12;
+                    DrawTextW(custom->hdc, label, -1, &rectangle,
+                              DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+                    return CDRF_SKIPDEFAULT;
+                }
             } else if (notification->idFrom == id_list) {
                 auto* custom = reinterpret_cast<NMLVCUSTOMDRAW*>(lparam);
                 if (custom->nmcd.dwDrawStage == CDDS_PREPAINT) return CDRF_NOTIFYITEMDRAW;
                 if (custom->nmcd.dwDrawStage == CDDS_ITEMPREPAINT) {
+                    const auto row = static_cast<int>(custom->nmcd.dwItemSpec);
                     const auto selected =
-                        (custom->nmcd.uItemState & CDIS_SELECTED) != 0;
+                        (ListView_GetItemState(state->list, row, LVIS_SELECTED) &
+                         LVIS_SELECTED) != 0;
                     custom->clrText = RGB(238, 246, 252);
                     custom->clrTextBk = selected ? RGB(0, 104, 141)
                                                   : RGB(20, 27, 38);
@@ -1063,10 +1091,9 @@ void draw_dashboard_button(const DRAWITEMSTRUCT& item, const State& state) {
                           ? RGB(28, 34, 45)
                           : active_tab || pressed ? RGB(0, 145, 190)
                                                    : RGB(29, 42, 59);
-    const auto outline = active_tab ? RGB(69, 207, 238) : RGB(59, 83, 108);
     const auto text = disabled ? RGB(104, 117, 132) : RGB(238, 246, 252);
     const auto brush = CreateSolidBrush(fill);
-    const auto pen = CreatePen(PS_SOLID, 1, outline);
+    const auto pen = GetStockObject(NULL_PEN);
     const auto old_brush = SelectObject(item.hDC, brush);
     const auto old_pen = SelectObject(item.hDC, pen);
     RoundRect(item.hDC, item.rcItem.left + 1, item.rcItem.top + 1,
@@ -1074,7 +1101,6 @@ void draw_dashboard_button(const DRAWITEMSTRUCT& item, const State& state) {
     SelectObject(item.hDC, old_brush);
     SelectObject(item.hDC, old_pen);
     DeleteObject(brush);
-    DeleteObject(pen);
     SetBkMode(item.hDC, TRANSPARENT);
     SetTextColor(item.hDC, text);
     const auto font = reinterpret_cast<HFONT>(SendMessageW(
@@ -1132,7 +1158,7 @@ DashboardResult show_windows_dashboard(
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
         saved_position ? saved_position->x : CW_USEDEFAULT,
         saved_position ? saved_position->y : CW_USEDEFAULT,
-        820, 700, owner, nullptr, instance, &state);
+        dashboard_width, dashboard_height, owner, nullptr, instance, &state);
     if (state.window == nullptr) {
         if (state.background_brush != nullptr) {
             DeleteObject(state.background_brush);
@@ -1155,23 +1181,23 @@ DashboardResult show_windows_dashboard(
                  reinterpret_cast<LPARAM>(type.hIcon));
     SendMessageW(state.window, WM_SETICON, ICON_SMALL,
                  reinterpret_cast<LPARAM>(type.hIcon));
-    state.logo_bitmap = load_logo_bitmap(instance, 270, 90);
+    state.logo_bitmap = load_logo_bitmap(instance, 300, 100);
     state.logo = control(state, L"STATIC", L"Go Bigger Boy",
         WS_VISIBLE | (state.logo_bitmap != nullptr ? SS_BITMAP : 0),
-        24, 12, 270, 90, 0);
+        32, 18, 300, 100, 0);
     if (state.logo_bitmap != nullptr) {
         SendMessageW(state.logo, STM_SETIMAGE, IMAGE_BITMAP,
                      reinterpret_cast<LPARAM>(state.logo_bitmap));
     }
     state.library_tab = control(state, L"BUTTON", L"Library",
                                 WS_VISIBLE | BS_PUSHBUTTON,
-                                24, 112, 110, 34, id_library);
+                                32, 140, 126, 40, id_library);
     state.settings_tab = control(state, L"BUTTON", L"Settings",
                                  WS_VISIBLE | BS_PUSHBUTTON,
-                                 142, 112, 110, 34, id_settings);
+                                 174, 140, 126, 40, id_settings);
     state.list = control(state, WC_LISTVIEWW, L"",
-        WS_VISIBLE | WS_BORDER | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS,
-        24, 158, 750, 340, id_list);
+        WS_VISIBLE | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS,
+        32, 200, 916, 350, id_list);
     ListView_SetExtendedListViewStyle(state.list,
         LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
     ListView_SetBkColor(state.list, RGB(20, 27, 38));
@@ -1199,8 +1225,8 @@ DashboardResult show_windows_dashboard(
         ListView_SetImageList(state.list, state.covers, LVSIL_SMALL);
     }
     constexpr std::array<std::pair<const wchar_t*, int>, 5> columns{{
-        {L"Cover", 56}, {L"Game", 224}, {L"Platform", 116},
-        {L"Language", 106}, {L"Last played", 210}}};
+        {L"Cover", 62}, {L"Game", 290}, {L"Platform", 150},
+        {L"Language", 150}, {L"Last played", 220}}};
     for (std::size_t index = 0; index < columns.size(); ++index) {
         LVCOLUMNW column{};
         column.mask = LVCF_TEXT | LVCF_WIDTH;
@@ -1247,25 +1273,25 @@ DashboardResult show_windows_dashboard(
                      reinterpret_cast<LPARAM>(&subitem));
     }
     state.open = control(state, L"BUTTON", L"Open ROM...",
-        WS_VISIBLE | BS_PUSHBUTTON, 24, 515, 130, 38, id_open);
+        WS_VISIBLE | BS_PUSHBUTTON, 32, 575, 150, 44, id_open);
     state.play = control(state, L"BUTTON", L"Play selected",
-        WS_VISIBLE | BS_DEFPUSHBUTTON, 164, 515, 140, 38, id_play);
+        WS_VISIBLE | BS_DEFPUSHBUTTON, 202, 575, 160, 44, id_play);
     state.remove = control(state, L"BUTTON", L"Remove from list",
-        WS_VISIBLE | BS_PUSHBUTTON, 314, 515, 140, 38, id_remove);
+        WS_VISIBLE | BS_PUSHBUTTON, 382, 575, 170, 44, id_remove);
     state.resume = control(state, L"BUTTON", L"Resume game",
         (can_resume ? WS_VISIBLE : 0) | BS_PUSHBUTTON,
-        464, 515, 130, 38, id_resume);
+        572, 575, 150, 44, id_resume);
     state.quit = control(state, L"BUTTON", L"Quit",
-        WS_VISIBLE | BS_PUSHBUTTON, 664, 515, 110, 38, id_quit);
+        WS_VISIBLE | BS_PUSHBUTTON, 838, 575, 110, 44, id_quit);
 
     state.settings_heading = control(state, L"STATIC", L"Display and controls",
-        0, 24, 174, 300, 28, 0);
+        0, 32, 200, 360, 30, 0);
     SendMessageW(state.settings_heading, WM_SETFONT,
                  reinterpret_cast<WPARAM>(state.title_font), TRUE);
     state.palette_label = control(state, L"STATIC", L"Color palette",
-        0, 24, 204, 96, 24, 0);
+        0, 32, 245, 110, 26, 0);
     state.palette = control(state, L"COMBOBOX", L"",
-        CBS_DROPDOWNLIST | WS_VSCROLL, 122, 198, 222, 180, id_palette);
+        CBS_DROPDOWNLIST | WS_VSCROLL, 154, 240, 290, 200, id_palette);
     constexpr std::array<const wchar_t*, 5> palettes{{
         L"Grayscale", L"Classic green", L"Game Boy Pocket", L"Amber",
         L"Game Boy Color (automatic)"}};
@@ -1276,25 +1302,25 @@ DashboardResult show_windows_dashboard(
     SendMessageW(state.palette, CB_SETCURSEL,
                  static_cast<WPARAM>(palette), 0);
     state.controls_label = control(state, L"STATIC", L"Keyboard controls",
-        0, 374, 174, 180, 24, 0);
+        0, 510, 200, 240, 30, 0);
     SendMessageW(state.controls_label, WM_SETFONT,
                  reinterpret_cast<WPARAM>(state.title_font), TRUE);
     state.controls_instruction = control(
         state, L"STATIC",
         L"Click a binding, then press a key. Delete clears a binding.",
-        0, 374, 198, 390, 24, 0);
+        0, 510, 238, 420, 26, 0);
     state.gameboy_background = control(
-        state, L"STATIC", L"", SS_OWNERDRAW, 24, 232, 750, 266,
+        state, L"STATIC", L"", SS_OWNERDRAW, 32, 278, 916, 300,
         id_gameboy_background);
 
     for (int column = 0; column < 2; ++column) {
-        const auto base_x = column == 0 ? 52 : 406;
+        const auto base_x = column == 0 ? 72 : 520;
         state.primary_headings[static_cast<std::size_t>(column)] = control(
             state, L"STATIC", L"Primary", 0,
-            base_x + 58, 260, 92, 22, 0);
+            base_x + 78, 316, 120, 24, 0);
         state.secondary_headings[static_cast<std::size_t>(column)] = control(
             state, L"STATIC", L"Secondary", 0,
-            base_x + 156, 260, 92, 22, 0);
+            base_x + 214, 316, 120, 24, 0);
     }
     constexpr std::array<std::size_t, 8> control_order{{
         2, 1, 0, 3, 4, 5, 6, 7}};
@@ -1302,36 +1328,36 @@ DashboardResult show_windows_dashboard(
         const auto index = control_order[position];
         const auto column = position < 4 ? 0 : 1;
         const auto row = static_cast<int>(position % 4);
-        const auto base_x = column == 0 ? 52 : 406;
-        const auto y = 286 + row * 42;
+        const auto base_x = column == 0 ? 72 : 520;
+        const auto y = 350 + row * 48;
         state.binding_labels[index] = control(
             state, L"STATIC", control_names[index], 0,
-            base_x, y + 7, 54, 24, 0);
+            base_x, y + 8, 64, 26, 0);
         for (std::size_t slot = 0; slot < 2; ++slot) {
             state.binding_buttons[index][slot] = control(
                 state, L"BUTTON", L"", BS_PUSHBUTTON,
-                base_x + 58 + static_cast<int>(slot) * 98, y,
-                92, 34,
+                base_x + 78 + static_cast<int>(slot) * 136, y,
+                120, 38,
                 id_binding_first + static_cast<int>(index * 2 + slot));
         }
     }
     state.actions_label = control(state, L"STATIC", L"Emulator shortcuts",
-                                  0, 24, 518, 220, 24, 0);
+                                  0, 32, 610, 260, 28, 0);
     for (std::size_t index = 0; index < action_names.size(); ++index) {
         const auto column = index % 2;
         const auto row = index / 2;
-        const auto base_x = column == 0 ? 52 : 406;
-        const auto y = 548 + static_cast<int>(row) * 42;
+        const auto base_x = column == 0 ? 72 : 520;
+        const auto y = 650 + static_cast<int>(row) * 50;
         state.action_labels[index] = control(
             state, L"STATIC", action_names[index], 0,
-            base_x, y + 7, 104, 24, 0);
+            base_x, y + 8, 130, 26, 0);
         state.action_buttons[index] = control(
             state, L"BUTTON", L"", BS_PUSHBUTTON,
-            base_x + 112, y, 130, 34,
+            base_x + 145, y, 150, 38,
             id_action_first + static_cast<int>(index));
     }
     state.reset_controls = control(state, L"BUTTON", L"Reset all controls",
-        BS_PUSHBUTTON, 24, 628, 200, 34, id_reset_controls);
+        BS_PUSHBUTTON, 32, 775, 230, 40, id_reset_controls);
     refresh_binding_buttons(state);
     show_page(state, false);
 
