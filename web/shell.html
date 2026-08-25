@@ -274,15 +274,29 @@
       if (indexed && local) {
         const indexedHasPayload = storedPayloadLength(indexed, 'save') > 0 ||
           storedPayloadLength(indexed, 'ram') > 0 ||
-          storedPayloadLength(indexed, 'rtc') > 0;
+          storedPayloadLength(indexed, 'rtc') > 0 ||
+          storedPayloadLength(indexed, 'state') > 0;
         const localHasPayload = storedPayloadLength(local, 'save') > 0 ||
           storedPayloadLength(local, 'ram') > 0 ||
-          storedPayloadLength(local, 'rtc') > 0;
+          storedPayloadLength(local, 'rtc') > 0 ||
+          storedPayloadLength(local, 'state') > 0;
         // A pagehide callback can run after the WebAssembly app has already
         // been torn down. Do not let the resulting empty snapshot replace a
         // valid save in IndexedDB.
         if (indexedHasPayload !== localHasPayload) {
           return localHasPayload ? local : indexed;
+        }
+        const indexedHasState = storedPayloadLength(indexed, 'state') > 0;
+        const localHasState = storedPayloadLength(local, 'state') > 0;
+        // A camera save-state contains the ROM's working photo directory in
+        // WRAM, which a battery save alone cannot restore.
+        if (indexedHasState !== localHasState) {
+          const stateRecord = indexedHasState ? indexed : local;
+          const otherRecord = indexedHasState ? local : indexed;
+          if ((stateRecord.updatedAt || 0) >= (otherRecord.updatedAt || 0)) {
+            return stateRecord;
+          }
+          return otherRecord;
         }
         // Prefer the extended payload when one side still contains a legacy
         // RAM-only record.  Camera cartridges keep their captured image in
@@ -352,6 +366,7 @@
           // builds and as a recovery path if an extended payload is rejected.
           ram: base64Encode(new Uint8Array(value.ram || new ArrayBuffer(0))),
           rtc: base64Encode(new Uint8Array(value.rtc || new ArrayBuffer(0))),
+          state: base64Encode(new Uint8Array(value.state || new ArrayBuffer(0))),
           updatedAt: value.updatedAt
         }));
       } catch (error) {
@@ -368,6 +383,7 @@
           save: base64Decode(value.save || '').buffer,
           ram: base64Decode(value.ram || '').buffer,
           rtc: base64Decode(value.rtc || '').buffer,
+          state: base64Decode(value.state || '').buffer,
           updatedAt: value.updatedAt || 0
         };
       } catch (error) {
@@ -408,16 +424,25 @@
         }
       }
       const rtc = rom.rtc ? asBytes(Module.exportRtcData()) : new Uint8Array();
+      let state = new Uint8Array();
+      if (rom.camera && Module.exportState) {
+        try {
+          state = asBytes(Module.exportState());
+        } catch (error) {
+          console.warn('Extended camera state export failed:', error);
+        }
+      }
       const value = {
         save: save.length ? save.slice().buffer : null,
         ram: ram.length ? ram.slice().buffer : null,
         rtc: rtc.length ? rtc.slice().buffer : null,
+        state: state.length ? state.slice().buffer : null,
         updatedAt: Date.now()
       };
       // During pagehide the C++ app can be destroyed before this callback
       // runs. Never replace a valid browser save with an empty snapshot (or
       // with RAM-only data for a camera cartridge, which would lose its image).
-      if (!save.length && !ram.length && !rtc.length) return;
+      if (!save.length && !ram.length && !rtc.length && !state.length) return;
       if (rom.camera && (!Module.exportSaveData || save.length <= ram.length)) {
         console.warn('Skipping incomplete Game Boy Camera save export.');
         return;
@@ -546,27 +571,37 @@
           }
           if (stored) {
             let restoreError = null;
-            if (stored.save && Module.importSaveData) {
+            if (storedPayloadLength(stored, 'state') > 0 &&
+                Module.importState) {
               try {
-                Module.importSaveData(new Uint8Array(stored.save));
+                Module.importState(new Uint8Array(stored.state));
                 restored = true;
-                if (currentRom.camera) {
-                  // Some camera ROMs initialize their sensor SRAM during
-                  // their first few instructions. Keep a copy so the saved
-                  // image can be reapplied after the ROM has started.
-                  deferredCameraSave = new Uint8Array(stored.save);
-                  pendingCameraRestore = {
-                    rom: currentRom,
-                    save: deferredCameraSave,
-                    // Leave a margin for a busy tab so an autosave tick
-                    // cannot run just before the restore callback.
-                    deadline: performance.now() + 5000
-                  };
-                }
               } catch (error) {
-                // A payload written by a newer/partial build should not
-                // prevent recovery of the compatible RAM portion.
                 restoreError = error;
+              }
+            }
+            if (stored.save && Module.importSaveData) {
+              if (!restored) {
+                try {
+                  Module.importSaveData(new Uint8Array(stored.save));
+                  restored = true;
+                  if (currentRom.camera) {
+                    // Older records do not have a save-state. Keep a copy so
+                    // the saved image can be reapplied after ROM startup.
+                    deferredCameraSave = new Uint8Array(stored.save);
+                    pendingCameraRestore = {
+                      rom: currentRom,
+                      save: deferredCameraSave,
+                      // Leave a margin for a busy tab so an autosave tick
+                      // cannot run just before the restore callback.
+                      deadline: performance.now() + 5000
+                    };
+                  }
+                } catch (error) {
+                  // A payload written by a newer/partial build should not
+                  // prevent recovery of the compatible RAM portion.
+                  restoreError = restoreError || error;
+                }
               }
             }
             if (!restored && stored.ram) {

@@ -269,6 +269,13 @@ emscripten::val export_browser_save_data() {
     return browser_bytes(active_app->emulator->export_battery_save());
 }
 
+emscripten::val export_browser_state() {
+    if (!active_app || !active_app->emulator) {
+        return emscripten::val::global("Uint8Array").new_(0);
+    }
+    return browser_bytes(active_app->emulator->save_state());
+}
+
 void import_browser_save_ram(const emscripten::val bytes) {
     if (!active_app || !active_app->emulator) {
         throw std::runtime_error("No ROM is loaded");
@@ -281,6 +288,13 @@ void import_browser_save_data(const emscripten::val bytes) {
         throw std::runtime_error("No ROM is loaded");
     }
     active_app->emulator->import_battery_save(copy_browser_bytes(bytes));
+}
+
+void import_browser_state(const emscripten::val bytes) {
+    if (!active_app || !active_app->emulator) {
+        throw std::runtime_error("No ROM is loaded");
+    }
+    active_app->emulator->load_state(copy_browser_bytes(bytes));
 }
 
 emscripten::val export_browser_rtc_data() {
@@ -320,6 +334,8 @@ EMSCRIPTEN_BINDINGS(gbb_web_bindings) {
     emscripten::function("importSaveRam", &import_browser_save_ram);
     emscripten::function("exportSaveData", &export_browser_save_data);
     emscripten::function("importSaveData", &import_browser_save_data);
+    emscripten::function("exportState", &export_browser_state);
+    emscripten::function("importState", &import_browser_state);
     emscripten::function("exportRtcData", &export_browser_rtc_data);
     emscripten::function("importRtcData", &import_browser_rtc_data);
     emscripten::function("takePrinterImages", &take_browser_printer_images);
