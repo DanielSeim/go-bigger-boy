@@ -97,6 +97,7 @@ if(GAMEBOY_BUILD_SDL)
             )
             add_executable(gbb_updater WIN32 apps/sdl/windows_updater.cpp)
             set_target_properties(gbb_updater PROPERTIES OUTPUT_NAME "gbb-updater")
+            target_compile_features(gbb_updater PRIVATE cxx_std_17)
             target_link_libraries(gbb_updater PRIVATE bcrypt shell32)
         elseif(APPLE)
             add_executable(gameboy_sdl MACOSX_BUNDLE
