@@ -271,12 +271,24 @@
       }
       const local = readLocalSaveSnapshot(key);
       if (indexed && local) {
+        const indexedHasPayload = storedPayloadLength(indexed, 'save') > 0 ||
+          storedPayloadLength(indexed, 'ram') > 0 ||
+          storedPayloadLength(indexed, 'rtc') > 0;
+        const localHasPayload = storedPayloadLength(local, 'save') > 0 ||
+          storedPayloadLength(local, 'ram') > 0 ||
+          storedPayloadLength(local, 'rtc') > 0;
+        // A pagehide callback can run after the WebAssembly app has already
+        // been torn down. Do not let the resulting empty snapshot replace a
+        // valid save in IndexedDB.
+        if (indexedHasPayload !== localHasPayload) {
+          return localHasPayload ? local : indexed;
+        }
         // Prefer the extended payload when one side still contains a legacy
         // RAM-only record.  Camera cartridges keep their captured image in
         // that extension, so choosing the newer legacy record would silently
         // discard the picture after a reload.
-        const indexedHasExtendedData = Boolean(indexed.save);
-        const localHasExtendedData = Boolean(local.save);
+        const indexedHasExtendedData = storedPayloadLength(indexed, 'save') > 0;
+        const localHasExtendedData = storedPayloadLength(local, 'save') > 0;
         if (indexedHasExtendedData !== localHasExtendedData) {
           return localHasExtendedData ? local : indexed;
         }
@@ -318,6 +330,14 @@
 
     function localSaveKey(key) {
       return `gbb-save-${key}`;
+    }
+
+    function storedPayloadLength(value, field) {
+      const payload = value && value[field];
+      if (!payload) return 0;
+      return typeof payload.byteLength === 'number'
+        ? payload.byteLength : (typeof payload.length === 'number'
+            ? payload.length : 0);
     }
 
     // localStorage is intentionally a synchronous last-moment fallback. A
@@ -386,6 +406,14 @@
         rtc: rtc.length ? rtc.slice().buffer : null,
         updatedAt: Date.now()
       };
+      // During pagehide the C++ app can be destroyed before this callback
+      // runs. Never replace a valid browser save with an empty snapshot (or
+      // with RAM-only data for a camera cartridge, which would lose its image).
+      if (!save.length && !ram.length && !rtc.length) return;
+      if (rom.camera && (!Module.exportSaveData || save.length <= ram.length)) {
+        console.warn('Skipping incomplete Game Boy Camera save export.');
+        return;
+      }
       writeLocalSaveSnapshot(rom.key, value);
       try {
         await writeStoredSave(rom.key, value);

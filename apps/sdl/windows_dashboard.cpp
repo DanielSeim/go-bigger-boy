@@ -32,7 +32,7 @@ namespace gbb_desktop {
 namespace {
 
 #ifndef GBB_VERSION
-#define GBB_VERSION "0.15.1"
+#define GBB_VERSION "0.15.2"
 #endif
 
 constexpr int id_library = 100;
@@ -1395,9 +1395,9 @@ DashboardResult show_windows_dashboard(
     SendMessageW(state.palette, CB_SETCURSEL,
                  static_cast<WPARAM>(palette), 0);
     state.video_label = control(state, L"STATIC", L"Video pipeline",
-        0, 510, 245, 130, 26, 0);
+        0, 32, 275, 110, 26, 0);
     state.video = control(state, L"COMBOBOX", L"",
-        CBS_DROPDOWNLIST | WS_VSCROLL, 650, 240, 240, 200, id_video);
+        CBS_DROPDOWNLIST | WS_VSCROLL, 154, 270, 290, 26, id_video);
     for (const auto& info : gameboy::video_modes) {
         const auto name = widen(std::string{info.name});
         SendMessageW(state.video, CB_ADDSTRING, 0,
@@ -1421,7 +1421,7 @@ DashboardResult show_windows_dashboard(
         0, 510, 238, 420, 26, 0);
     state.gameboy_background = control(
         state, L"STATIC", L"", SS_OWNERDRAW | WS_CLIPSIBLINGS,
-        32, 278, 916, 300,
+        32, 310, 916, 268,
         id_gameboy_background);
 
     for (int column = 0; column < 2; ++column) {
