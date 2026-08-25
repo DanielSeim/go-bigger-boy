@@ -1,6 +1,7 @@
 #pragma once
 
 #include "gameboy/rom_library.hpp"
+#include "gameboy/video_pipeline.hpp"
 
 #include <array>
 #include <cstddef>
@@ -23,6 +24,8 @@ struct DashboardResult {
     std::string rom_path;
     std::size_t palette{};
     bool palette_changed{};
+    gameboy::VideoMode video_mode{gameboy::default_video_mode};
+    bool video_mode_changed{};
     KeyboardBindings keyboard_bindings{};
     bool keyboard_bindings_changed{};
     ActionBindings action_bindings{};
@@ -32,7 +35,8 @@ struct DashboardResult {
 
 DashboardResult show_windows_dashboard(
     HWND owner, const gameboy::RomLibrary& library, bool can_resume,
-    std::size_t palette, const KeyboardBindings& keyboard_bindings,
+    std::size_t palette, gameboy::VideoMode video_mode,
+    const KeyboardBindings& keyboard_bindings,
     const ActionBindings& action_bindings,
     const std::filesystem::path& preference_directory);
 

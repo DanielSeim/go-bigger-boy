@@ -58,6 +58,15 @@
             <option value="4">Game Boy Color (automatic)</option>
           </select>
         </label>
+        <label class="palette" for="video-mode">
+          Video
+          <select id="video-mode" disabled>
+            <option value="0">Nearest neighbor</option>
+            <option value="1">Bilinear</option>
+            <option value="2">Integer scaling</option>
+            <option value="3">LCD shader</option>
+          </select>
+        </label>
         <button id="open-rom" type="button" disabled>Choose ROM</button>
       </div>
       <input id="rom-file" type="file" accept=".gb,.gbc,application/octet-stream">
@@ -90,6 +99,7 @@
     const statusLine = document.getElementById('status');
     const dropZone = document.getElementById('drop-zone');
     const palettePicker = document.getElementById('display-palette');
+    const videoPicker = document.getElementById('video-mode');
     const savePicker = document.getElementById('save-file');
     const saveActions = document.getElementById('save-actions');
     const importSaveButton = document.getElementById('import-save');
@@ -245,14 +255,25 @@
     }
 
     async function readStoredSave(key) {
-      const database = await saveDatabase();
-      return new Promise((resolve, reject) => {
-        const transaction = database.transaction('cartridge-saves', 'readonly');
-        const request = transaction.objectStore('cartridge-saves').get(key);
-        request.onsuccess = () => resolve(request.result || null);
-        request.onerror = () => reject(request.error ||
-          new Error('Could not read the browser save'));
-      });
+      let indexed = null;
+      try {
+        const database = await saveDatabase();
+        indexed = await new Promise((resolve, reject) => {
+          const transaction = database.transaction('cartridge-saves', 'readonly');
+          const request = transaction.objectStore('cartridge-saves').get(key);
+          request.onsuccess = () => resolve(request.result || null);
+          request.onerror = () => reject(request.error ||
+            new Error('Could not read the browser save'));
+        });
+      } catch (error) {
+        console.warn('Could not read the IndexedDB save:', error);
+      }
+      const local = readLocalSaveSnapshot(key);
+      if (indexed && local) {
+        return (local.updatedAt || 0) > (indexed.updatedAt || 0)
+          ? local : indexed;
+      }
+      return indexed || local;
     }
 
     async function writeStoredSave(key, value) {
@@ -268,6 +289,58 @@
       });
     }
 
+    function base64Encode(bytes) {
+      let binary = '';
+      for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+        binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+      }
+      return btoa(binary);
+    }
+
+    function base64Decode(value) {
+      const binary = atob(value);
+      const bytes = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; ++index) {
+        bytes[index] = binary.charCodeAt(index);
+      }
+      return bytes;
+    }
+
+    function localSaveKey(key) {
+      return `gbb-save-${key}`;
+    }
+
+    // localStorage is intentionally a synchronous last-moment fallback. A
+    // tab may be terminated before an asynchronous IndexedDB transaction
+    // created by pagehide gets a chance to commit.
+    function writeLocalSaveSnapshot(key, value) {
+      try {
+        localStorage.setItem(localSaveKey(key), JSON.stringify({
+          save: base64Encode(new Uint8Array(value.save || new ArrayBuffer(0))),
+          rtc: base64Encode(new Uint8Array(value.rtc || new ArrayBuffer(0))),
+          updatedAt: value.updatedAt
+        }));
+      } catch (error) {
+        console.warn('Could not write the local save fallback:', error);
+      }
+    }
+
+    function readLocalSaveSnapshot(key) {
+      try {
+        const raw = localStorage.getItem(localSaveKey(key));
+        if (!raw) return null;
+        const value = JSON.parse(raw);
+        return {
+          save: base64Decode(value.save || '').buffer,
+          rtc: base64Decode(value.rtc || '').buffer,
+          updatedAt: value.updatedAt || 0
+        };
+      } catch (error) {
+        console.warn('Could not read the local save fallback:', error);
+        return null;
+      }
+    }
+
     function noteStorageFailure(error) {
       if (storageAvailable) {
         console.warn('Automatic browser saves are unavailable:', error);
@@ -278,14 +351,21 @@
 
     async function persistCurrentSave() {
       const rom = currentRom;
-      if (!rom || !rom.battery || !storageAvailable) return;
-      const ram = Module.exportSaveRam();
+      if (!rom || !rom.battery) return;
+      const save = Module.exportSaveData
+        ? Module.exportSaveData() : Module.exportSaveRam();
       const rtc = rom.rtc ? Module.exportRtcData() : new Uint8Array();
-      await writeStoredSave(rom.key, {
-        ram: ram.length ? ram.slice().buffer : null,
+      const value = {
+        save: save.length ? save.slice().buffer : null,
         rtc: rtc.length ? rtc.slice().buffer : null,
         updatedAt: Date.now()
-      });
+      };
+      writeLocalSaveSnapshot(rom.key, value);
+      try {
+        await writeStoredSave(rom.key, value);
+      } catch (error) {
+        noteStorageFailure(error);
+      }
     }
 
     function queuePersistentSave() {
@@ -320,6 +400,10 @@
       return currentRom.name.replace(/\.(gb|gbc)$/i, '') || 'gameboy-save';
     }
 
+    function applyVideoPresentation(value) {
+      canvas.style.imageRendering = Number(value) === 1 ? 'auto' : 'pixelated';
+    }
+
     function restorePalette() {
       try {
         const stored = localStorage.getItem('gbb-display-palette');
@@ -330,6 +414,17 @@
         console.warn('Could not restore the display palette:', error);
       }
       palettePicker.disabled = false;
+      try {
+        const stored = localStorage.getItem('gbb-video-mode');
+        if ([...videoPicker.options].some(option => option.value === stored)) {
+          videoPicker.value = stored;
+        }
+      } catch (error) {
+        console.warn('Could not restore the video pipeline:', error);
+      }
+      Module._gbb_set_video_mode(Number(videoPicker.value));
+      applyVideoPresentation(videoPicker.value);
+      videoPicker.disabled = false;
     }
 
     var Module = {
@@ -378,7 +473,7 @@
         const cameraConnected = await configureCamera(currentRom);
 
         let restored = false;
-        if (currentRom.battery && storageAvailable) {
+        if (currentRom.battery) {
           let stored = null;
           try {
             stored = await readStoredSave(currentRom.key);
@@ -387,7 +482,10 @@
           }
           if (stored) {
             try {
-              if (stored.ram) {
+              if (stored.save && Module.importSaveData) {
+                Module.importSaveData(new Uint8Array(stored.save));
+                restored = true;
+              } else if (stored.ram) {
                 Module.importSaveRam(new Uint8Array(stored.ram));
                 restored = true;
               }
@@ -442,11 +540,22 @@
       }
       canvas.focus();
     });
+    videoPicker.addEventListener('change', () => {
+      Module._gbb_set_video_mode(Number(videoPicker.value));
+      applyVideoPresentation(videoPicker.value);
+      try {
+        localStorage.setItem('gbb-video-mode', videoPicker.value);
+      } catch (error) {
+        console.warn('Could not save the video pipeline:', error);
+      }
+      canvas.focus();
+    });
     importSaveButton.addEventListener('click', () => savePicker.click());
     exportSaveButton.addEventListener('click', () => {
       if (!currentRom) return;
       try {
-        const bytes = Module.exportSaveRam();
+        const bytes = Module.exportSaveData
+          ? Module.exportSaveData() : Module.exportSaveRam();
         if (!bytes.length) throw new Error('This cartridge has no save RAM');
         downloadBytes(bytes, `${saveBaseName()}.sav`);
         Module.gbbSetStatus('Battery save exported.', false);
@@ -475,7 +584,8 @@
           Module.importRtcData(bytes);
           Module.gbbSetStatus('Clock data imported.', false);
         } else {
-          Module.importSaveRam(bytes);
+          if (Module.importSaveData) Module.importSaveData(bytes);
+          else Module.importSaveRam(bytes);
           Module.gbbSetStatus('Battery save imported.', false);
         }
         await queuePersistentSave();
@@ -504,11 +614,16 @@
       Module._gbb_resume_audio();
       loadRom(event.dataTransfer.files[0]);
     });
-    setInterval(queuePersistentSave, 5000);
+    setInterval(queuePersistentSave, 1000);
+    const flushSaveForPageHide = () => {
+      // Calling the async function directly runs its export and synchronous
+      // localStorage fallback before the page is allowed to disappear.
+      persistCurrentSave().catch(noteStorageFailure);
+    };
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') queuePersistentSave();
+      if (document.visibilityState === 'hidden') flushSaveForPageHide();
     });
-    window.addEventListener('pagehide', queuePersistentSave);
+    window.addEventListener('pagehide', flushSaveForPageHide);
     window.addEventListener('pagehide', stopCamera);
     window.addEventListener('pagehide', stopPrinterPolling);
   </script>

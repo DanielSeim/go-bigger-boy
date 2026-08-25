@@ -3,6 +3,7 @@
 #include "gameboy/emulator.hpp"
 #include "gameboy/memory_bus.hpp"
 #include "gameboy/rom_library.hpp"
+#include "gameboy/video_pipeline.hpp"
 
 #include <algorithm>
 #include <array>
@@ -217,6 +218,21 @@ void test_rom_library_metadata_and_deduplication() {
               !removable.remove(other.fingerprint),
           "ROM library entries can be removed by stable fingerprint");
     std::filesystem::remove_all(directory);
+}
+
+void test_video_pipeline_modes() {
+    check(gameboy::video_mode_from_id("nearest") == gameboy::VideoMode::nearest &&
+              gameboy::video_mode_from_id("bilinear") == gameboy::VideoMode::bilinear &&
+              gameboy::video_mode_from_id("integer") == gameboy::VideoMode::integer &&
+              gameboy::video_mode_from_id("lcd") == gameboy::VideoMode::lcd_shader,
+          "video pipeline settings map stable ids to presentation modes");
+    check(gameboy::video_mode_from_id("unknown") == gameboy::default_video_mode,
+          "unknown video pipeline settings use the nearest default");
+    constexpr auto source = UINT32_C(0xFFCC8844);
+    check(gameboy::apply_lcd_shader(source, 1, 0) != source &&
+              (gameboy::apply_lcd_shader(source, 1, 0) & UINT32_C(0xFF000000)) ==
+                  UINT32_C(0xFF000000),
+          "LCD shader changes RGB channels while preserving alpha");
 }
 
 void test_cgb_memory_and_rendering() {
@@ -764,6 +780,15 @@ void test_gameboy_camera() {
     camera.write(0x4000, 0);
     check(camera.read(0xA100) == 0x00 && camera.read(0xA101) == 0xFF,
           "Game Boy Camera converts a webcam frame into 2bpp sensor tiles");
+    const auto exported_camera_save = camera.export_battery_save();
+    check(exported_camera_save.size() > camera.ram_size(),
+          "Camera save export includes the captured image payload");
+    gameboy::Cartridge imported_camera{banked_rom(64, 0xFC, 0x05, 0xFF)};
+    imported_camera.import_battery_save(exported_camera_save);
+    imported_camera.write(0x4000, 0);
+    check(imported_camera.read(0xA100) == camera.read(0xA100) &&
+              imported_camera.read(0xA101) == camera.read(0xA101),
+          "Camera save import restores the captured image payload");
 
     const auto unique = std::chrono::steady_clock::now().time_since_epoch().count();
     const auto camera_save_base = std::filesystem::temp_directory_path() /
@@ -3097,6 +3122,7 @@ int main() {
     try {
         test_cartridge_header();
         test_rom_library_metadata_and_deduplication();
+        test_video_pipeline_modes();
         test_cartridge_file_loading();
         test_cgb_memory_and_rendering();
         test_mbc1_rom_banking();

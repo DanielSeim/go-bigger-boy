@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(go_bigger_boy VERSION 0.14.0 LANGUAGES CXX)
+project(go_bigger_boy VERSION 0.15.0 LANGUAGES CXX)
 
 configure_file(settings.ini settings.ini COPYONLY)
 
@@ -67,7 +67,7 @@ if(GAMEBOY_BUILD_SDL)
                 "-sALLOW_MEMORY_GROWTH=1"
                 "-sMAXIMUM_MEMORY=536870912"
                 "-sENVIRONMENT=web"
-                "-sEXPORTED_FUNCTIONS=['_main','_gbb_resume_audio','_gbb_start_rom','_gbb_set_palette']"
+                "-sEXPORTED_FUNCTIONS=['_main','_gbb_resume_audio','_gbb_start_rom','_gbb_set_palette','_gbb_set_video_mode']"
             )
             set_target_properties(gameboy_web PROPERTIES
                 OUTPUT_NAME index

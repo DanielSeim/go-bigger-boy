@@ -48,6 +48,8 @@ public:
                           std::size_t size) noexcept;
     [[nodiscard]] std::vector<std::uint8_t> export_battery_ram() const;
     void import_battery_ram(const std::vector<std::uint8_t>& data);
+    [[nodiscard]] std::vector<std::uint8_t> export_battery_save() const;
+    void import_battery_save(const std::vector<std::uint8_t>& data);
     [[nodiscard]] std::vector<std::uint8_t> export_rtc_data() const;
     void import_rtc_data(const std::vector<std::uint8_t>& data);
     [[nodiscard]] std::uint64_t rom_fingerprint() const noexcept;

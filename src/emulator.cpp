@@ -90,6 +90,14 @@ void Emulator::import_battery_ram(const std::vector<std::uint8_t>& data) {
     bus_.cartridge().import_battery_ram(data);
 }
 
+std::vector<std::uint8_t> Emulator::export_battery_save() const {
+    return bus_.cartridge().export_battery_save();
+}
+
+void Emulator::import_battery_save(const std::vector<std::uint8_t>& data) {
+    bus_.cartridge().import_battery_save(data);
+}
+
 std::vector<std::uint8_t> Emulator::export_rtc_data() const {
     return bus_.cartridge().export_rtc_data();
 }

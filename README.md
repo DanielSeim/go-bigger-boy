@@ -200,6 +200,12 @@ always moved as one control, while A, B, Select, and Start can be positioned
 individually beside or below the emulation screen. Positions are stored as
 normalized `touch.Portrait.*` and `touch.Landscape.*` coordinates.
 
+The video pipeline is configurable across desktop, Android, and web builds:
+`nearest` keeps crisp pixel edges, `bilinear` smooths the presentation,
+`integer` uses only whole-number scale factors, and `lcd` applies a lightweight
+LCD mask with scanlines. The setting is stored as `video.Mode` in
+`settings.ini`; the web selector remembers its choice in browser storage.
+
 The default action bindings are `keyboard.FastForward = Tab` (hold for 4×
 speed), `keyboard.Rewind = Left Shift` (hold to step backward through the last three
 seconds), `keyboard.SaveState = F5`, and `keyboard.LoadState = F8`. Set any of
@@ -294,9 +300,12 @@ installed copies can discover and verify the APK through the in-app updater.
 The browser frontend uses SDL3 and Emscripten. It accepts local `.gb` and
 `.gbc` files from the picker or by drag and drop; ROM data stays in the browser
 and is never uploaded. Keyboard and standard gamepad controls match the desktop
-frontend. The display palette selector offers the same five palettes as the
-desktop frontend and remembers the selection in browser storage. Battery-backed
-RAM and MBC3 clock state are saved automatically in IndexedDB for each ROM.
+frontend. The display palette and video-pipeline selectors offer the same
+options as the desktop frontend and remember their selections in browser
+storage. Battery-backed RAM, Game Boy Camera captures, and MBC3 clock state
+are saved automatically in IndexedDB for each ROM. A synchronous local-storage
+fallback also protects the latest save when a tab is closed before IndexedDB
+finishes.
 Browser saves can also be imported from or exported to desktop-compatible
 `.sav` and `.rtc` files. Game Boy Camera cartridges request webcam permission
 and use a center-cropped 128×112 live image; when access is unavailable, they

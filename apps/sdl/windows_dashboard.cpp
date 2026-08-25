@@ -32,7 +32,7 @@ namespace gbb_desktop {
 namespace {
 
 #ifndef GBB_VERSION
-#define GBB_VERSION "0.14.0"
+#define GBB_VERSION "0.15.0"
 #endif
 
 constexpr int id_library = 100;
@@ -43,6 +43,7 @@ constexpr int id_play = 104;
 constexpr int id_resume = 105;
 constexpr int id_palette = 107;
 constexpr int id_remove = 108;
+constexpr int id_video = 109;
 constexpr int id_gameboy_background = 110;
 constexpr int id_reset_controls = 111;
 constexpr int id_binding_first = 200;
@@ -115,6 +116,8 @@ struct State {
     HWND palette{};
     HWND settings_heading{};
     HWND palette_label{};
+    HWND video_label{};
+    HWND video{};
     HWND controls_label{};
     HWND controls_instruction{};
     HWND actions_label{};
@@ -449,6 +452,8 @@ void show_page(State& state, const bool settings) {
     ShowWindow(state.settings_heading, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.palette_label, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.palette, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.video_label, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.video, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.controls_label, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.controls_instruction, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.actions_label, settings ? SW_SHOW : SW_HIDE);
@@ -698,6 +703,18 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                 if (selected >= 0) {
                     state->result.palette = static_cast<std::size_t>(selected);
                     state->result.palette_changed = true;
+                }
+            }
+            return 0;
+        case id_video:
+            if (HIWORD(wparam) == CBN_SELCHANGE) {
+                const auto selected = SendMessageW(state.video, CB_GETCURSEL,
+                                                   0, 0);
+                if (selected >= 0 &&
+                    selected < static_cast<LRESULT>(gameboy::video_modes.size())) {
+                    state->result.video_mode = gameboy::video_modes[
+                        static_cast<std::size_t>(selected)].mode;
+                    state->result.video_mode_changed = true;
                 }
             }
             return 0;
@@ -1193,7 +1210,7 @@ void draw_dashboard_button(const DRAWITEMSTRUCT& item, const State& state) {
 
 DashboardResult show_windows_dashboard(
     HWND owner, const gameboy::RomLibrary& library, const bool can_resume,
-    const std::size_t palette,
+    const std::size_t palette, const gameboy::VideoMode video_mode,
     const KeyboardBindings& keyboard_bindings,
     const ActionBindings& action_bindings,
     const std::filesystem::path& preference_directory) {
@@ -1223,6 +1240,7 @@ DashboardResult show_windows_dashboard(
     state.library = &library;
     state.can_resume = can_resume;
     state.result.palette = palette;
+    state.result.video_mode = video_mode;
     state.result.keyboard_bindings = keyboard_bindings;
     state.result.action_bindings = action_bindings;
     state.preference_directory = preference_directory;
@@ -1376,6 +1394,23 @@ DashboardResult show_windows_dashboard(
     }
     SendMessageW(state.palette, CB_SETCURSEL,
                  static_cast<WPARAM>(palette), 0);
+    state.video_label = control(state, L"STATIC", L"Video pipeline",
+        0, 510, 245, 130, 26, 0);
+    state.video = control(state, L"COMBOBOX", L"",
+        CBS_DROPDOWNLIST | WS_VSCROLL, 650, 240, 240, 200, id_video);
+    for (const auto& info : gameboy::video_modes) {
+        const auto name = widen(std::string{info.name});
+        SendMessageW(state.video, CB_ADDSTRING, 0,
+                     reinterpret_cast<LPARAM>(name.c_str()));
+    }
+    const auto selected_video = std::distance(
+        gameboy::video_modes.begin(),
+        std::find_if(gameboy::video_modes.begin(), gameboy::video_modes.end(),
+                     [video_mode](const auto& info) {
+                         return info.mode == video_mode;
+                     }));
+    SendMessageW(state.video, CB_SETCURSEL,
+                 static_cast<WPARAM>(selected_video), 0);
     state.controls_label = control(state, L"STATIC", L"Keyboard controls",
         0, 510, 200, 240, 30, 0);
     SendMessageW(state.controls_label, WM_SETFONT,

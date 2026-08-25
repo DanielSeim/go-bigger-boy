@@ -58,6 +58,12 @@ public final class LibraryActivity extends Activity {
     private static final String[] PALETTE_IDS = {
             "grayscale", "classic", "pocket", "amber", "cgb-auto"
     };
+    private static final String[] VIDEO_MODE_NAMES = {
+            "Nearest neighbor", "Bilinear", "Integer scaling", "LCD shader"
+    };
+    private static final String[] VIDEO_MODE_IDS = {
+            "nearest", "bilinear", "integer", "lcd"
+    };
     private static final char FIELD_SEPARATOR = 0x1f;
 
     static {
@@ -76,6 +82,8 @@ public final class LibraryActivity extends Activity {
     private static native void nativeSetTouchControlLayout(
             String directory, float[] positions);
     private static native void nativeResetTouchControlLayout(String directory);
+    private static native String nativeVideoMode(String directory);
+    private static native void nativeSetVideoMode(String directory, String mode);
 
     private final ExecutorService artworkExecutor =
             Executors.newFixedThreadPool(2);
@@ -313,6 +321,26 @@ public final class LibraryActivity extends Activity {
         });
         content.addView(palette, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        final TextView videoLabel = text("Video pipeline", 16, Color.DKGRAY);
+        videoLabel.setPadding(0, dp(18), 0, dp(5));
+        content.addView(videoLabel);
+        final Spinner video = new Spinner(this);
+        video.setAdapter(new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_dropdown_item,
+                VIDEO_MODE_NAMES));
+        video.setSelection(currentVideoMode());
+        video.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view,
+                                       int position, long id) {
+                saveVideoMode(position);
+            }
+            @Override public void onNothingSelected(AdapterView<?> parent) {}
+        });
+        content.addView(video, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
 
         final Switch artwork = new Switch(this);
         artwork.setText("Download game cover artwork");
@@ -699,6 +727,28 @@ public final class LibraryActivity extends Activity {
                     .getBytes(StandardCharsets.UTF_8));
         } catch (Exception error) {
             Toast.makeText(this, "Could not save display setting",
+                    Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private int currentVideoMode() {
+        try {
+            final String current = nativeVideoMode(getFilesDir().getAbsolutePath());
+            for (int index = 0; index < VIDEO_MODE_IDS.length; ++index) {
+                if (VIDEO_MODE_IDS[index].equals(current)) return index;
+            }
+        } catch (Exception ignored) {
+        }
+        return 0;
+    }
+
+    private void saveVideoMode(int position) {
+        if (position < 0 || position >= VIDEO_MODE_IDS.length) return;
+        try {
+            nativeSetVideoMode(getFilesDir().getAbsolutePath(),
+                    VIDEO_MODE_IDS[position]);
+        } catch (Exception error) {
+            Toast.makeText(this, "Could not save video setting",
                     Toast.LENGTH_SHORT).show();
         }
     }

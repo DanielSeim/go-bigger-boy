@@ -4,6 +4,7 @@
 
 #include "gameboy/emulator.hpp"
 #include "gameboy/display_palette.hpp"
+#include "gameboy/video_pipeline.hpp"
 
 #include <emscripten.h>
 #include <emscripten/bind.h>
@@ -53,6 +54,7 @@ struct WebApp {
         std::chrono::steady_clock::now()};
     double cycle_credit{};
     std::size_t display_palette{};
+    gameboy::VideoMode video_mode{gameboy::default_video_mode};
     bool paused{};
 };
 
@@ -150,13 +152,18 @@ void present(WebApp& app) {
         const auto& palette = gameboy::display_palettes[app.display_palette];
         const auto native_colors = app.emulator->bus().cgb_mode() ||
                                    palette.cgb_compatibility;
-        std::transform(pixels.begin(), pixels.end(), app.display_pixels.begin(),
-                       [&palette, native_colors](const std::uint32_t pixel) {
-                           return native_colors
-                                      ? pixel
-                                      : gameboy::apply_display_palette(pixel,
-                                                                       palette);
-                       });
+        for (std::size_t index = 0; index < pixels.size(); ++index) {
+            auto pixel = native_colors
+                             ? pixels[index]
+                             : gameboy::apply_display_palette(pixels[index],
+                                                              palette);
+            if (app.video_mode == gameboy::VideoMode::lcd_shader) {
+                pixel = gameboy::apply_lcd_shader(
+                    pixel, index % gameboy::Ppu::screen_width,
+                    index / gameboy::Ppu::screen_width);
+            }
+            app.display_pixels[index] = pixel;
+        }
         static_cast<void>(SDL_UpdateTexture(
             app.texture, nullptr, app.display_pixels.data(),
             static_cast<int>(gameboy::Ppu::screen_width * sizeof(std::uint32_t))));
@@ -255,11 +262,25 @@ emscripten::val export_browser_save_ram() {
     return browser_bytes(active_app->emulator->export_battery_ram());
 }
 
+emscripten::val export_browser_save_data() {
+    if (!active_app || !active_app->emulator) {
+        return emscripten::val::global("Uint8Array").new_(0);
+    }
+    return browser_bytes(active_app->emulator->export_battery_save());
+}
+
 void import_browser_save_ram(const emscripten::val bytes) {
     if (!active_app || !active_app->emulator) {
         throw std::runtime_error("No ROM is loaded");
     }
     active_app->emulator->import_battery_ram(copy_browser_bytes(bytes));
+}
+
+void import_browser_save_data(const emscripten::val bytes) {
+    if (!active_app || !active_app->emulator) {
+        throw std::runtime_error("No ROM is loaded");
+    }
+    active_app->emulator->import_battery_save(copy_browser_bytes(bytes));
 }
 
 emscripten::val export_browser_rtc_data() {
@@ -297,6 +318,8 @@ EMSCRIPTEN_BINDINGS(gbb_web_bindings) {
     emscripten::function("setCameraFrame", &set_browser_camera_frame);
     emscripten::function("exportSaveRam", &export_browser_save_ram);
     emscripten::function("importSaveRam", &import_browser_save_ram);
+    emscripten::function("exportSaveData", &export_browser_save_data);
+    emscripten::function("importSaveData", &import_browser_save_data);
     emscripten::function("exportRtcData", &export_browser_rtc_data);
     emscripten::function("importRtcData", &import_browser_rtc_data);
     emscripten::function("takePrinterImages", &take_browser_printer_images);
@@ -329,6 +352,22 @@ extern "C" EMSCRIPTEN_KEEPALIVE void gbb_set_palette(
                 gameboy::display_palettes[palette].cgb_compatibility);
         }
     }
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE void gbb_set_video_mode(
+    const unsigned mode) noexcept {
+    if (!active_app || mode >= gameboy::video_modes.size()) return;
+    active_app->video_mode = gameboy::video_modes[mode].mode;
+    const auto presentation = active_app->video_mode == gameboy::VideoMode::integer
+                                  ? SDL_LOGICAL_PRESENTATION_INTEGER_SCALE
+                                  : SDL_LOGICAL_PRESENTATION_LETTERBOX;
+    const auto filtering = active_app->video_mode == gameboy::VideoMode::bilinear
+                               ? SDL_SCALEMODE_LINEAR
+                               : SDL_SCALEMODE_NEAREST;
+    static_cast<void>(SDL_SetRenderLogicalPresentation(
+        active_app->renderer, static_cast<int>(gameboy::Ppu::screen_width),
+        static_cast<int>(gameboy::Ppu::screen_height), presentation));
+    static_cast<void>(SDL_SetTextureScaleMode(active_app->texture, filtering));
 }
 
 SDL_AppResult SDL_AppInit(void** appstate, int, char**) {

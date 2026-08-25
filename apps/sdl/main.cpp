@@ -1,6 +1,7 @@
 #include "gameboy/emulator.hpp"
 #include "gameboy/display_palette.hpp"
 #include "gameboy/rom_library.hpp"
+#include "gameboy/video_pipeline.hpp"
 #ifndef __ANDROID__
 #include "update_checker.hpp"
 #endif
@@ -48,7 +49,7 @@
 namespace {
 
 #ifndef GBB_VERSION
-#define GBB_VERSION "0.14.0"
+#define GBB_VERSION "0.15.0"
 #endif
 
 #ifdef __ANDROID__
@@ -176,6 +177,7 @@ public:
     SDL_Window* window{};
     SDL_Renderer* renderer{};
     SDL_Texture* texture{};
+    gameboy::VideoMode video_mode{gameboy::default_video_mode};
     SDL_Gamepad* gamepad{};
     SDL_AudioStream* audio_stream{};
     SDL_Camera* camera{};
@@ -198,6 +200,24 @@ public:
     TouchControlSettings touch_settings;
 #endif
 };
+
+bool configure_video_pipeline(SdlResources& sdl,
+                              const gameboy::VideoMode mode) {
+    const auto presentation = mode == gameboy::VideoMode::integer
+                                  ? SDL_LOGICAL_PRESENTATION_INTEGER_SCALE
+                                  : SDL_LOGICAL_PRESENTATION_LETTERBOX;
+    const auto filtering = mode == gameboy::VideoMode::bilinear
+                               ? SDL_SCALEMODE_LINEAR
+                               : SDL_SCALEMODE_NEAREST;
+    if (!SDL_SetRenderLogicalPresentation(
+            sdl.renderer, static_cast<int>(gameboy::Ppu::screen_width),
+            static_cast<int>(gameboy::Ppu::screen_height), presentation) ||
+        !SDL_SetTextureScaleMode(sdl.texture, filtering)) {
+        return false;
+    }
+    sdl.video_mode = mode;
+    return true;
+}
 
 struct DialogState {
     std::mutex mutex;
@@ -250,7 +270,9 @@ struct BindingConfiguration {
     std::size_t slot{};
 };
 
-enum class DashboardAction { resume, open_rom, palette, recent_rom, quit };
+enum class DashboardAction {
+    resume, open_rom, palette, video, recent_rom, quit
+};
 
 struct DashboardItem {
     DashboardAction action{};
@@ -426,6 +448,7 @@ std::vector<DashboardItem> dashboard_items(
     }
     items.push_back({DashboardAction::open_rom, 0, "+ Open a ROM"});
     items.push_back({DashboardAction::palette, 0, "Display palette"});
+    items.push_back({DashboardAction::video, 0, "Video pipeline"});
     for (std::size_t index = 0; index < recent.size(); ++index) {
         items.push_back({DashboardAction::recent_rom, index,
                          rom_display_name(recent[index])});
@@ -527,6 +550,7 @@ void save_legacy_display_palette(const std::filesystem::path& directory,
 struct AppSettings {
     InputBindings bindings;
     std::size_t palette{};
+    gameboy::VideoMode video_mode{gameboy::default_video_mode};
     TouchControlSettings touch;
 };
 
@@ -625,6 +649,7 @@ void append_missing_portable_settings(
     const bool has_palette, const std::array<bool, 8>& has_keyboard,
     const std::array<bool, 8>& has_gamepad,
     const std::array<bool, shortcut_names.size()>& has_shortcuts,
+    const bool has_video_mode,
     const bool has_touch_scale, const bool has_touch_opacity,
     const std::array<bool, touch_layout_count * touch_control_count>&
         has_touch_positions) {
@@ -635,7 +660,7 @@ void append_missing_portable_settings(
                     [](const bool value) { return value; }) &&
         std::all_of(has_shortcuts.begin(), has_shortcuts.end(),
                     [](const bool value) { return value; }) &&
-        has_touch_scale && has_touch_opacity &&
+        has_video_mode && has_touch_scale && has_touch_opacity &&
         std::all_of(has_touch_positions.begin(), has_touch_positions.end(),
                     [](const bool value) { return value; });
     if (complete) return;
@@ -649,6 +674,10 @@ void append_missing_portable_settings(
     if (!has_palette) {
         output << "palette = "
                << gameboy::display_palettes[settings.palette].id << '\n';
+    }
+    if (!has_video_mode) {
+        output << "video.Mode = "
+               << gameboy::video_mode_info(settings.video_mode).id << '\n';
     }
     for (std::size_t index = 0; index < button_names.size(); ++index) {
         if (has_keyboard[index]) continue;
@@ -711,9 +740,12 @@ void write_portable_settings(const std::filesystem::path& preference_directory,
               "example: Z Y. Set emulator shortcuts to None to disable "
               "them. Android touch controls use a size multiplier and "
               "opacity between 0 and 1 plus separate portrait and landscape "
-              "touch layouts.\n\n"
+              "touch layouts. Video.Mode accepts nearest, bilinear, integer, "
+              "or lcd.\n\n"
               "palette = "
-           << gameboy::display_palettes[settings.palette].id << "\n\n";
+           << gameboy::display_palettes[settings.palette].id << "\n"
+              "video.Mode = "
+           << gameboy::video_mode_info(settings.video_mode).id << "\n\n";
     for (std::size_t index = 0; index < button_names.size(); ++index) {
         output << "keyboard." << button_names[index] << " = "
                << keyboard_key_setting_name(settings.bindings.keys[index][0]);
@@ -771,6 +803,7 @@ AppSettings load_portable_settings(
     std::array<float, 16> legacy_touch_positions{};
     std::array<bool, 8> has_legacy_touch_positions{};
     bool has_palette = false;
+    bool has_video_mode = false;
     std::array<bool, 8> has_keyboard{};
     std::array<bool, 8> has_gamepad{};
     std::array<bool, shortcut_names.size()> has_shortcuts{};
@@ -800,6 +833,11 @@ AppSettings load_portable_settings(
                 settings.palette = static_cast<std::size_t>(
                     found - gameboy::display_palettes.begin());
             }
+            continue;
+        }
+        if (key == "video.Mode") {
+            has_video_mode = true;
+            settings.video_mode = gameboy::video_mode_from_id(value);
             continue;
         }
         if (key == "touch.Size") {
@@ -981,6 +1019,7 @@ AppSettings load_portable_settings(
     settings.touch.positions = loaded_touch_positions;
     append_missing_portable_settings(path, settings, has_palette,
                                      has_keyboard, has_gamepad, has_shortcuts,
+                                     has_video_mode,
                                      has_touch_scale, has_touch_opacity,
                                      has_touch_positions);
     return settings;
@@ -999,6 +1038,17 @@ void save_app_settings(const std::filesystem::path& preference_directory,
     settings.bindings = bindings;
     settings.palette = palette;
     write_portable_settings(preference_directory, settings);
+}
+
+gameboy::VideoMode load_video_mode(const std::filesystem::path& directory) {
+    return load_app_settings(directory).video_mode;
+}
+
+void save_video_mode(const std::filesystem::path& directory,
+                     const gameboy::VideoMode mode) {
+    auto settings = load_app_settings(directory);
+    settings.video_mode = mode;
+    write_portable_settings(directory, settings);
 }
 
 TouchControlSettings load_touch_control_settings(
@@ -1540,6 +1590,43 @@ std::optional<std::size_t> show_palette_dialog(SDL_Window* window,
     return static_cast<std::size_t>(selection);
 }
 
+std::optional<gameboy::VideoMode> show_video_dialog(
+    SDL_Window* window, const gameboy::VideoMode current) {
+    std::array<SDL_MessageBoxButtonData, gameboy::video_modes.size() + 1>
+        buttons{};
+    for (std::size_t index = 0; index < gameboy::video_modes.size(); ++index) {
+        buttons[index] = {0, static_cast<int>(index),
+                          gameboy::video_modes[index].name.data()};
+    }
+    buttons.back() = {SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, -1, "Cancel"};
+    const auto message = std::string("Current pipeline: ") +
+                         std::string{gameboy::video_mode_info(current).name} +
+                         "\n\nChoose a presentation mode:";
+    const SDL_MessageBoxData box{
+        SDL_MESSAGEBOX_INFORMATION, window, "Video pipeline", message.c_str(),
+        static_cast<int>(buttons.size()), buttons.data(), nullptr,
+    };
+    auto selection = -1;
+    if (!SDL_ShowMessageBox(&box, &selection) || selection < 0 ||
+        static_cast<std::size_t>(selection) >= gameboy::video_modes.size()) {
+        return std::nullopt;
+    }
+    return gameboy::video_modes[static_cast<std::size_t>(selection)].mode;
+}
+
+void show_error(SDL_Window* window, const std::string& message);
+
+void choose_video_mode(SdlResources& sdl,
+                       const std::filesystem::path& preference_path) {
+    const auto selected = show_video_dialog(sdl.window, sdl.video_mode);
+    if (!selected) return;
+    if (!configure_video_pipeline(sdl, *selected)) {
+        show_error(sdl.window, "Could not configure the selected video pipeline.");
+        return;
+    }
+    save_video_mode(preference_path, *selected);
+}
+
 void choose_display_palette(gameboy::Emulator* emulator, SdlResources& sdl,
                             const std::filesystem::path& preference_path,
                             std::size_t& display_palette) {
@@ -1577,6 +1664,7 @@ void show_help(SDL_Window* window) {
         "Ctrl+L: Open game library\n"
         "Ctrl+K: Configure controls\n"
         "Ctrl+P: Choose display palette\n"
+        "Game library: Choose the video pipeline\n"
         "Ctrl+1 through Ctrl+9: Open recent ROM\n"
         "Configured SaveState key: Save state\n"
         "Configured LoadState key: Load state\n"
@@ -1621,6 +1709,9 @@ void activate_dashboard_selection(
     case DashboardAction::palette:
         choose_display_palette(emulator, sdl, preference_path,
                                display_palette);
+        break;
+    case DashboardAction::video:
+        choose_video_mode(sdl, preference_path);
         break;
     case DashboardAction::recent_rom:
         if (item.recent_index < recent.size()) {
@@ -2630,10 +2721,7 @@ void present_touch_controls(SdlResources& sdl) {
                        point.y - rect_height * 0.5F, rect_width, rect_height},
              sdl.touch_buttons[control + 3]);
     }
-    if (!SDL_SetRenderLogicalPresentation(
-            sdl.renderer, static_cast<int>(gameboy::Ppu::screen_width),
-            static_cast<int>(gameboy::Ppu::screen_height),
-            SDL_LOGICAL_PRESENTATION_LETTERBOX)) {
+    if (!configure_video_pipeline(sdl, sdl.video_mode)) {
         sdl_error("Could not restore game presentation");
     }
     static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
@@ -2722,13 +2810,18 @@ void present(const gameboy::Emulator* emulator, SdlResources& sdl,
         const auto native_colors =
             emulator->bus().cgb_mode() || palette.cgb_compatibility;
         gameboy::Ppu::Framebuffer colored_pixels{};
-        std::transform(pixels.begin(), pixels.end(), colored_pixels.begin(),
-                       [&palette, native_colors](const std::uint32_t pixel) {
-                           return native_colors
-                                      ? pixel
-                                      : gameboy::apply_display_palette(pixel,
-                                                                       palette);
-                       });
+        for (std::size_t index = 0; index < pixels.size(); ++index) {
+            auto pixel = native_colors
+                             ? pixels[index]
+                             : gameboy::apply_display_palette(pixels[index],
+                                                              palette);
+            if (sdl.video_mode == gameboy::VideoMode::lcd_shader) {
+                const auto x = index % gameboy::Ppu::screen_width;
+                const auto y = index / gameboy::Ppu::screen_width;
+                pixel = gameboy::apply_lcd_shader(pixel, x, y);
+            }
+            colored_pixels[index] = pixel;
+        }
         if (!SDL_UpdateTexture(sdl.texture, nullptr, colored_pixels.data(),
                                static_cast<int>(gameboy::Ppu::screen_width *
                                                 sizeof(std::uint32_t))) ||
@@ -2928,6 +3021,36 @@ Java_com_danielseim_gbb_LibraryActivity_nativeResetTouchControlLayout(
     environment->ReleaseStringUTFChars(directory, raw_directory);
 }
 
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_danielseim_gbb_LibraryActivity_nativeVideoMode(
+    JNIEnv* environment, jclass, jstring directory) {
+    const auto* raw_directory =
+        environment->GetStringUTFChars(directory, nullptr);
+    if (raw_directory == nullptr) return nullptr;
+    const auto mode = load_video_mode(std::filesystem::u8path(raw_directory));
+    environment->ReleaseStringUTFChars(directory, raw_directory);
+    const auto id = gameboy::video_mode_info(mode).id;
+    return environment->NewStringUTF(std::string{id}.c_str());
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_danielseim_gbb_LibraryActivity_nativeSetVideoMode(
+    JNIEnv* environment, jclass, jstring directory, jstring mode) {
+    const auto* raw_directory =
+        environment->GetStringUTFChars(directory, nullptr);
+    const auto* raw_mode = mode == nullptr
+                               ? nullptr
+                               : environment->GetStringUTFChars(mode, nullptr);
+    if (raw_directory != nullptr && raw_mode != nullptr) {
+        save_video_mode(std::filesystem::u8path(raw_directory),
+                        gameboy::video_mode_from_id(raw_mode));
+    }
+    if (raw_mode != nullptr) environment->ReleaseStringUTFChars(mode, raw_mode);
+    if (raw_directory != nullptr) {
+        environment->ReleaseStringUTFChars(directory, raw_directory);
+    }
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_danielseim_gbb_GbbActivity_nativeAndroidBackPressed(
     JNIEnv*, jclass) {
@@ -2975,6 +3098,10 @@ int main(int argc, char** argv) {
         auto bindings = load_bindings(preference_path);
         auto configuration_backup = bindings;
         auto display_palette = load_display_palette(preference_path);
+        auto video_mode = load_video_mode(preference_path);
+        if (!configure_video_pipeline(sdl, video_mode)) {
+            sdl_error("Could not configure video pipeline");
+        }
 #ifdef __ANDROID__
         const auto touch_settings = load_touch_control_settings(preference_path);
         sdl.touch_settings = touch_settings;
@@ -3075,6 +3202,7 @@ int main(int argc, char** argv) {
                 }
                 const auto result = gbb_desktop::show_windows_dashboard(
                     nullptr, rom_library, emulator != nullptr, display_palette,
+                    sdl.video_mode,
                     dashboard_bindings, dashboard_actions,
                     preference_path);
                 if (!result.removed_fingerprints.empty()) {
@@ -3092,6 +3220,14 @@ int main(int argc, char** argv) {
                         emulator->set_dmg_compatibility_colors(
                             gameboy::display_palettes[display_palette]
                                 .cgb_compatibility);
+                    }
+                }
+                if (result.video_mode_changed) {
+                    sdl.video_mode = result.video_mode;
+                    save_video_mode(preference_path, sdl.video_mode);
+                    if (!configure_video_pipeline(sdl, sdl.video_mode)) {
+                        show_error(sdl.window,
+                                   "Could not configure the selected video pipeline.");
                     }
                 }
                 if (result.keyboard_bindings_changed) {

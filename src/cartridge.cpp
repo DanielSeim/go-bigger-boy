@@ -605,6 +605,40 @@ void Cartridge::import_battery_ram(const std::vector<std::uint8_t>& data) {
     ram_dirty_ = true;
 }
 
+std::vector<std::uint8_t> Cartridge::export_battery_save() const {
+    if (!battery_) return {};
+    auto data = ram_;
+    if (controller_ == Controller::camera && !camera_image_.empty()) {
+        data.insert(data.end(), camera_save_magic.begin(), camera_save_magic.end());
+        data.insert(data.end(), camera_image_.begin(), camera_image_.end());
+    }
+    return data;
+}
+
+void Cartridge::import_battery_save(const std::vector<std::uint8_t>& data) {
+    if (!battery_ || ram_.empty()) {
+        throw std::invalid_argument(
+            "Cartridge has no battery-backed save RAM");
+    }
+    const auto camera_payload = camera_save_magic.size() + camera_image_.size();
+    const auto has_camera_payload = controller_ == Controller::camera &&
+        data.size() == ram_.size() + camera_payload &&
+        std::equal(camera_save_magic.begin(), camera_save_magic.end(),
+                   data.begin() + static_cast<std::ptrdiff_t>(ram_.size()));
+    if (data.size() != ram_.size() && !has_camera_payload) {
+        throw std::invalid_argument(
+            "Save data size does not match the loaded cartridge");
+    }
+    std::copy_n(data.begin(), ram_.size(), ram_.begin());
+    if (has_camera_payload) {
+        std::copy_n(data.begin() + static_cast<std::ptrdiff_t>(ram_.size()) +
+                        static_cast<std::ptrdiff_t>(camera_save_magic.size()),
+                    camera_image_.size(), camera_image_.begin());
+    }
+    ram_dirty_ = true;
+    if (has_camera_payload) camera_image_dirty_ = true;
+}
+
 std::vector<std::uint8_t> Cartridge::export_rtc_data() const {
     if (!rtc_present_) return {};
     update_rtc();
