@@ -557,6 +557,15 @@
           rtc: Module.hasRtc(),
           camera: Module.hasCamera()
         };
+        if (currentRom.camera) {
+          // Webcam permission/setup is asynchronous. Prevent the periodic
+          // autosave from replacing the existing camera gallery before its
+          // IndexedDB record has been read and scheduled for restoration.
+          pendingCameraRestore = {
+            rom: currentRom,
+            deadline: Number.POSITIVE_INFINITY
+          };
+        }
 
         startPrinterPolling(currentRom);
 
@@ -627,7 +636,19 @@
             }
             if (!restored && stored.ram) {
               try {
-                Module.importSaveRam(new Uint8Array(stored.ram));
+                if (currentRom.camera && Module.importSaveData) {
+                  // Legacy browser records may contain only raw SRAM. Treat
+                  // it like the extended save and reapply it after camera
+                  // startup, which can otherwise reformat the directory.
+                  deferredCameraSave = new Uint8Array(stored.ram);
+                  pendingCameraRestore = {
+                    rom: currentRom,
+                    save: deferredCameraSave,
+                    deadline: performance.now() + 5000
+                  };
+                } else {
+                  Module.importSaveRam(new Uint8Array(stored.ram));
+                }
                 restored = true;
               } catch (error) {
                 restoreError = restoreError || error;
@@ -648,6 +669,10 @@
                 true);
             }
           }
+        }
+        if (currentRom.camera && !deferredCameraState &&
+            !deferredCameraSave) {
+          pendingCameraRestore = null;
         }
 
         updateSaveControls();
@@ -673,6 +698,11 @@
       } finally {
         if (loaded) {
           const startedRom = currentRom;
+          if (pendingCameraRestore?.rom === startedRom &&
+              pendingCameraRestore.deadline === Number.POSITIVE_INFINITY &&
+              !deferredCameraState && !deferredCameraSave) {
+            pendingCameraRestore = null;
+          }
           Module._gbb_start_rom();
           if ((deferredCameraState || deferredCameraSave) && startedRom &&
               startedRom.camera) {
@@ -695,10 +725,13 @@
                   } catch (stateError) {
                     if (!deferredCameraSave) throw stateError;
                     console.warn('Could not restore the saved Game Boy Camera state; falling back to its battery save:', stateError);
-                    Module.importSaveData(deferredCameraSave);
-                    console.info('Restored the saved Game Boy Camera image after startup.');
                   }
-                } else {
+                }
+                // The state contains the CPU and camera hardware context, but
+                // the cartridge save is the authoritative gallery payload.
+                // Reapply it even after a successful state import so ROM
+                // startup cannot leave the directory or photo slots erased.
+                if (deferredCameraSave && Module.importSaveData) {
                   Module.importSaveData(deferredCameraSave);
                   console.info('Restored the saved Game Boy Camera image after startup.');
                 }
