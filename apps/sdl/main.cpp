@@ -49,7 +49,7 @@
 namespace {
 
 #ifndef GBB_VERSION
-#define GBB_VERSION "0.15.0"
+#define GBB_VERSION "0.15.1"
 #endif
 
 #ifdef __ANDROID__

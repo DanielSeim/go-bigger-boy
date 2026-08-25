@@ -11,15 +11,16 @@
     * { box-sizing: border-box; }
     body { margin: 0; min-height: 100vh; background: #0b100d; color: #e7f0e9; }
     main { width: min(94vw, 880px); margin: 0 auto; padding: 24px 0 40px; }
-    header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 16px; border: 1px solid #202823; border-radius: 14px; background: #000; }
+    header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 20px; padding: 16px; border: 1px solid #202823; border-radius: 14px; background: #000; }
+    header > div:first-child { min-width: 0; flex: 1 1 500px; }
     h1 { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
     .brand { display: block; width: min(78vw, 500px); height: auto; }
     .subtitle { margin: 4px 0 0; color: #a7b9aa; }
     button { border: 0; border-radius: 8px; padding: 11px 16px; font: inherit; font-weight: 700; background: #8bcf69; color: #10200d; cursor: pointer; }
     button:disabled { cursor: wait; opacity: .55; }
-    .actions { display: flex; align-items: end; gap: 10px; }
+    .actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; flex: 1 1 100%; min-width: 0; gap: 10px; }
     .palette { display: grid; gap: 4px; color: #a7b9aa; font-size: .8rem; font-weight: 700; }
-    select { min-height: 41px; border: 1px solid #526b58; border-radius: 8px; padding: 7px 30px 7px 10px; background: #18231c; color: #e7f0e9; font: inherit; }
+    select { width: 100%; min-width: 0; min-height: 41px; border: 1px solid #526b58; border-radius: 8px; padding: 7px 30px 7px 10px; background: #18231c; color: #e7f0e9; font: inherit; }
     select:focus-visible { outline: 3px solid #8bcf69; outline-offset: 1px; }
     select:disabled { cursor: wait; opacity: .55; }
     .screen { margin-top: 22px; padding: 14px; border: 1px solid #34493a; border-radius: 14px; background: #111a15; box-shadow: 0 18px 60px #0008; }
@@ -36,7 +37,7 @@
     a { color: #aadc91; }
     input { display: none; }
     [hidden] { display: none !important; }
-    @media (max-width: 560px) { header { align-items: flex-start; flex-direction: column; } .actions, header button { width: 100%; } .actions { align-items: stretch; flex-direction: column; } main { padding-top: 16px; } }
+    @media (max-width: 560px) { header { align-items: flex-start; flex-direction: column; } .actions, header button { width: 100%; } .actions { display: flex; align-items: stretch; flex-direction: column; } .actions .palette, .actions button { width: 100%; } main { padding-top: 16px; } }
   </style>
 </head>
 <body>
@@ -270,6 +271,15 @@
       }
       const local = readLocalSaveSnapshot(key);
       if (indexed && local) {
+        // Prefer the extended payload when one side still contains a legacy
+        // RAM-only record.  Camera cartridges keep their captured image in
+        // that extension, so choosing the newer legacy record would silently
+        // discard the picture after a reload.
+        const indexedHasExtendedData = Boolean(indexed.save);
+        const localHasExtendedData = Boolean(local.save);
+        if (indexedHasExtendedData !== localHasExtendedData) {
+          return localHasExtendedData ? local : indexed;
+        }
         return (local.updatedAt || 0) > (indexed.updatedAt || 0)
           ? local : indexed;
       }
@@ -317,6 +327,9 @@
       try {
         localStorage.setItem(localSaveKey(key), JSON.stringify({
           save: base64Encode(new Uint8Array(value.save || new ArrayBuffer(0))),
+          // Keep a raw-RAM copy for compatibility with saves made by older
+          // builds and as a recovery path if an extended payload is rejected.
+          ram: base64Encode(new Uint8Array(value.ram || new ArrayBuffer(0))),
           rtc: base64Encode(new Uint8Array(value.rtc || new ArrayBuffer(0))),
           updatedAt: value.updatedAt
         }));
@@ -332,6 +345,7 @@
         const value = JSON.parse(raw);
         return {
           save: base64Decode(value.save || '').buffer,
+          ram: base64Decode(value.ram || '').buffer,
           rtc: base64Decode(value.rtc || '').buffer,
           updatedAt: value.updatedAt || 0
         };
@@ -352,11 +366,23 @@
     async function persistCurrentSave() {
       const rom = currentRom;
       if (!rom || !rom.battery) return;
-      const save = Module.exportSaveData
-        ? Module.exportSaveData() : Module.exportSaveRam();
-      const rtc = rom.rtc ? Module.exportRtcData() : new Uint8Array();
+      const asBytes = value => value instanceof Uint8Array
+        ? value : new Uint8Array(value || 0);
+      const ram = asBytes(Module.exportSaveRam());
+      let save = ram;
+      if (Module.exportSaveData) {
+        try {
+          save = asBytes(Module.exportSaveData());
+        } catch (error) {
+          // Keep ordinary SRAM persistence working if an older WebAssembly
+          // module is still cached without the extended export binding.
+          console.warn('Extended browser save export failed:', error);
+        }
+      }
+      const rtc = rom.rtc ? asBytes(Module.exportRtcData()) : new Uint8Array();
       const value = {
         save: save.length ? save.slice().buffer : null,
+        ram: ram.length ? ram.slice().buffer : null,
         rtc: rtc.length ? rtc.slice().buffer : null,
         updatedAt: Date.now()
       };
@@ -481,22 +507,37 @@
             noteStorageFailure(error);
           }
           if (stored) {
-            try {
-              if (stored.save && Module.importSaveData) {
+            let restoreError = null;
+            if (stored.save && Module.importSaveData) {
+              try {
                 Module.importSaveData(new Uint8Array(stored.save));
                 restored = true;
-              } else if (stored.ram) {
+              } catch (error) {
+                // A payload written by a newer/partial build should not
+                // prevent recovery of the compatible RAM portion.
+                restoreError = error;
+              }
+            }
+            if (!restored && stored.ram) {
+              try {
                 Module.importSaveRam(new Uint8Array(stored.ram));
                 restored = true;
+              } catch (error) {
+                restoreError = restoreError || error;
               }
-              if (stored.rtc && currentRom.rtc) {
+            }
+            if (stored.rtc && currentRom.rtc) {
+              try {
                 Module.importRtcData(new Uint8Array(stored.rtc));
                 restored = true;
+              } catch (error) {
+                restoreError = restoreError || error;
               }
-            } catch (error) {
-              console.error('Stored cartridge save is invalid:', error);
+            }
+            if (restoreError && !restored) {
+              console.error('Stored cartridge save is invalid:', restoreError);
               Module.gbbSetStatus(
-                `ROM loaded, but its stored save is invalid: ${error.message || error}`,
+                `ROM loaded, but its stored save is invalid: ${restoreError.message || restoreError}`,
                 true);
             }
           }
