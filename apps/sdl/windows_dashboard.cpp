@@ -708,7 +708,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
             return 0;
         case id_video:
             if (HIWORD(wparam) == CBN_SELCHANGE) {
-                const auto selected = SendMessageW(state.video, CB_GETCURSEL,
+                const auto selected = SendMessageW(state->video, CB_GETCURSEL,
                                                    0, 0);
                 if (selected >= 0 &&
                     selected < static_cast<LRESULT>(gameboy::video_modes.size())) {
