@@ -500,6 +500,7 @@
       Module._gbb_resume_audio();
       Module.gbbSetStatus(`Loading ${file.name}…`, false);
       let loaded = false;
+      let deferredCameraSave = null;
       try {
         const bytes = new Uint8Array(await file.arrayBuffer());
         try {
@@ -540,6 +541,12 @@
               try {
                 Module.importSaveData(new Uint8Array(stored.save));
                 restored = true;
+                if (currentRom.camera) {
+                  // Some camera ROMs initialize their sensor SRAM during
+                  // their first few instructions. Keep a copy so the saved
+                  // image can be reapplied after the ROM has started.
+                  deferredCameraSave = new Uint8Array(stored.save);
+                }
               } catch (error) {
                 // A payload written by a newer/partial build should not
                 // prevent recovery of the compatible RAM portion.
@@ -588,7 +595,20 @@
       } catch (error) {
         Module.gbbSetStatus(error.message || String(error), true);
       } finally {
-        if (loaded) Module._gbb_start_rom();
+        if (loaded) {
+          const startedRom = currentRom;
+          Module._gbb_start_rom();
+          if (deferredCameraSave && startedRom && startedRom.camera) {
+            setTimeout(() => {
+              if (currentRom !== startedRom || !Module.importSaveData) return;
+              try {
+                Module.importSaveData(deferredCameraSave);
+              } catch (error) {
+                console.warn('Could not reapply the saved camera image:', error);
+              }
+            }, 100);
+          }
+        }
       }
     }
 

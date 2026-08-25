@@ -1403,6 +1403,11 @@ DashboardResult show_windows_dashboard(
         SendMessageW(state.video, CB_ADDSTRING, 0,
                      reinterpret_cast<LPARAM>(name.c_str()));
     }
+    // The closed combo box only needs a single-row client height. Tell
+    // Windows how many rows to show in the popup instead of using a large
+    // control rectangle that would cover the controller artwork.
+    SendMessageW(state.video, CB_SETMINVISIBLE,
+                 static_cast<WPARAM>(gameboy::video_modes.size()), 0);
     const auto selected_video = std::distance(
         gameboy::video_modes.begin(),
         std::find_if(gameboy::video_modes.begin(), gameboy::video_modes.end(),
