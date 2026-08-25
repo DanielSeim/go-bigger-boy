@@ -562,6 +562,7 @@
         const cameraConnected = await configureCamera(currentRom);
 
         let restored = false;
+        let restoredFromState = false;
         if (currentRom.battery) {
           let stored = null;
           try {
@@ -576,8 +577,18 @@
               try {
                 Module.importState(new Uint8Array(stored.state));
                 restored = true;
+                restoredFromState = true;
+                if (currentRom.camera) {
+                  // Give a restored camera session time to settle before the
+                  // first autosave can capture transient startup writes.
+                  pendingCameraRestore = {
+                    rom: currentRom,
+                    deadline: performance.now() + 3500
+                  };
+                }
               } catch (error) {
                 restoreError = error;
+                console.warn('Stored emulator state could not be restored; using the battery save fallback:', error);
               }
             }
             if (stored.save && Module.importSaveData) {
@@ -635,8 +646,12 @@
           Module.gbbSetStatus(
             currentRom.camera
               ? (cameraConnected
-                  ? 'Camera ROM loaded. Webcam connected.'
-                  : 'Camera ROM loaded. Webcam unavailable; using fallback image.')
+                  ? (restoredFromState
+                      ? 'Camera ROM loaded. Save-state restored. Webcam connected.'
+                      : 'Camera ROM loaded. Webcam connected.')
+                  : (restoredFromState
+                      ? 'Camera ROM loaded. Save-state restored. Webcam unavailable; using fallback image.'
+                      : 'Camera ROM loaded. Webcam unavailable; using fallback image.'))
               : (restored
                   ? 'ROM loaded. Battery save restored from this browser.'
                   : 'ROM loaded. Click the screen if keyboard input is inactive.'),
