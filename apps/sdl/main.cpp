@@ -15,6 +15,7 @@
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
+#include <deque>
 #include <exception>
 #include <filesystem>
 #include <fstream>
@@ -66,13 +67,23 @@ std::optional<AndroidRomRequest> take_android_rom_request() {
 }
 #endif
 
+struct TouchControlSettings {
+    float scale{1.35F};
+    float opacity{0.78F};
+    // Logical Game Boy screen coordinates, normalized to 0..1. The order is
+    // Right, Left, Up, Down, A, B, Select, Start.
+    std::array<float, 16> positions{
+        0.25F, 0.73F, 0.15F, 0.73F, 0.20F, 0.66F, 0.20F, 0.80F,
+        0.80F, 0.70F, 0.66F, 0.80F, 0.43F, 0.91F, 0.56F, 0.91F};
+};
+
 [[noreturn]] void sdl_error(const std::string& action) {
     throw std::runtime_error(action + ": " + SDL_GetError());
 }
 
 class SdlResources {
 public:
-    SdlResources() {
+    explicit SdlResources(const bool initially_hidden = false) {
 #ifdef __ANDROID__
         if (!SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1")) {
             sdl_error("Could not trap the Android back button");
@@ -85,9 +96,11 @@ public:
         if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
             sdl_error("Could not initialize SDL");
         }
+        auto window_flags = static_cast<SDL_WindowFlags>(SDL_WINDOW_RESIZABLE);
+        if (initially_hidden) window_flags |= SDL_WINDOW_HIDDEN;
         window = SDL_CreateWindow(
             "Go Bigger Boy (GBB) - Drop a ROM here or press Ctrl+O", 640, 576,
-            SDL_WINDOW_RESIZABLE);
+            window_flags);
         if (window == nullptr) sdl_error("Could not create window");
         renderer = SDL_CreateRenderer(window, nullptr);
         if (renderer == nullptr) sdl_error("Could not create renderer");
@@ -162,6 +175,7 @@ public:
     };
     std::vector<TouchPoint> touches;
     std::array<bool, 8> touch_buttons{};
+    TouchControlSettings touch_settings;
 #endif
 };
 
@@ -182,6 +196,15 @@ constexpr std::array<const char*, 8> button_names{
     "Right", "Left", "Up", "Down", "A", "B", "Select", "Start",
 };
 
+constexpr std::array<const char*, 4> shortcut_names{
+    "FastForward", "Rewind", "SaveState", "LoadState",
+};
+
+constexpr std::size_t shortcut_fast_forward = 0;
+constexpr std::size_t shortcut_rewind = 1;
+constexpr std::size_t shortcut_save_state = 2;
+constexpr std::size_t shortcut_load_state = 3;
+
 struct InputBindings {
     std::array<std::array<SDL_Keycode, 2>, 8> keys{{
         {{SDLK_RIGHT, SDLK_UNKNOWN}}, {{SDLK_LEFT, SDLK_UNKNOWN}},
@@ -195,6 +218,8 @@ struct InputBindings {
         SDL_GAMEPAD_BUTTON_EAST, SDL_GAMEPAD_BUTTON_SOUTH,
         SDL_GAMEPAD_BUTTON_BACK, SDL_GAMEPAD_BUTTON_START,
     };
+    std::array<SDL_Keycode, shortcut_names.size()> shortcuts{
+        SDLK_TAB, SDLK_LSHIFT, SDLK_F5, SDLK_F8};
 };
 
 enum class BindingDevice { keyboard, gamepad };
@@ -218,6 +243,8 @@ constexpr float dashboard_first_row_y = 39.0F;
 constexpr float dashboard_row_height = 18.0F;
 
 constexpr std::uintmax_t maximum_quick_state_size = 2 * 1024 * 1024;
+constexpr std::size_t maximum_rewind_frames = 180;
+using RewindHistory = std::deque<std::vector<std::uint8_t>>;
 
 std::filesystem::path preference_directory() {
 #ifdef _WIN32
@@ -479,10 +506,33 @@ void save_legacy_display_palette(const std::filesystem::path& directory,
 struct AppSettings {
     InputBindings bindings;
     std::size_t palette{};
+    TouchControlSettings touch;
 };
 
-#ifndef __ANDROID__
-std::filesystem::path portable_settings_path() {
+constexpr float minimum_touch_scale = 0.80F;
+constexpr float maximum_touch_scale = 2.00F;
+constexpr float minimum_touch_opacity = 0.20F;
+constexpr float maximum_touch_opacity = 1.00F;
+constexpr float minimum_touch_position = 0.02F;
+constexpr float maximum_touch_position = 0.98F;
+
+float parse_touch_value(const std::string& value, const float fallback,
+                        const float minimum, const float maximum) {
+    try {
+        std::size_t consumed = 0;
+        const auto parsed = std::stof(value, &consumed);
+        if (consumed != value.size()) return fallback;
+        return std::clamp(parsed, minimum, maximum);
+    } catch (const std::exception&) {
+        return fallback;
+    }
+}
+
+std::filesystem::path portable_settings_path(
+    const std::filesystem::path& preference_directory) {
+#ifdef __ANDROID__
+    return preference_directory / "settings.ini";
+#else
     const auto* raw_base = SDL_GetBasePath();
     if (raw_base == nullptr) return {};
     auto directory = std::filesystem::u8path(raw_base).lexically_normal();
@@ -493,6 +543,7 @@ std::filesystem::path portable_settings_path() {
     if (directory.filename() == "bin") directory = directory.parent_path();
 #endif
     return directory / "settings.ini";
+#endif
 }
 
 std::string trimmed_setting(std::string value) {
@@ -505,7 +556,18 @@ std::string trimmed_setting(std::string value) {
 }
 
 const char* keyboard_key_setting_name(const SDL_Keycode key) {
-    return key == SDLK_UNKNOWN ? "None" : SDL_GetKeyName(key);
+    if (key == SDLK_UNKNOWN) return "None";
+    if (key == SDLK_LSHIFT) return "Left Shift";
+    if (key == SDLK_GRAVE) return "Grave";
+    return SDL_GetKeyName(key);
+}
+
+SDL_Keycode keyboard_key_from_setting(const std::string& value) {
+    // Keep human-readable names stable across SDL versions and preserve the
+    // legacy Grave shortcut for existing settings files.
+    if (value == "Left Shift" || value == "LShift") return SDLK_LSHIFT;
+    if (value == "Grave" || value == "Backquote") return SDLK_GRAVE;
+    return SDL_GetKeyFromName(value.c_str());
 }
 
 const char* gamepad_button_setting_name(const SDL_GamepadButton button) {
@@ -533,11 +595,19 @@ SDL_GamepadButton gamepad_button_from_setting(const std::string& value) {
 void append_missing_portable_settings(
     const std::filesystem::path& path, const AppSettings& settings,
     const bool has_palette, const std::array<bool, 8>& has_keyboard,
-    const std::array<bool, 8>& has_gamepad) {
+    const std::array<bool, 8>& has_gamepad,
+    const std::array<bool, shortcut_names.size()>& has_shortcuts,
+    const bool has_touch_scale, const bool has_touch_opacity,
+    const std::array<bool, 8>& has_touch_positions) {
     const auto complete = has_palette &&
         std::all_of(has_keyboard.begin(), has_keyboard.end(),
                     [](const bool value) { return value; }) &&
         std::all_of(has_gamepad.begin(), has_gamepad.end(),
+                    [](const bool value) { return value; }) &&
+        std::all_of(has_shortcuts.begin(), has_shortcuts.end(),
+                    [](const bool value) { return value; }) &&
+        has_touch_scale && has_touch_opacity &&
+        std::all_of(has_touch_positions.begin(), has_touch_positions.end(),
                     [](const bool value) { return value; });
     if (complete) return;
     std::ofstream output(path, std::ios::app);
@@ -568,10 +638,29 @@ void append_missing_portable_settings(
                       settings.bindings.gamepad_buttons[index])
                << '\n';
     }
+    for (std::size_t index = 0; index < shortcut_names.size(); ++index) {
+        if (has_shortcuts[index]) continue;
+        output << "keyboard." << shortcut_names[index] << " = "
+               << keyboard_key_setting_name(settings.bindings.shortcuts[index])
+               << '\n';
+    }
+    if (!has_touch_scale) {
+        output << "touch.Size = " << settings.touch.scale << '\n';
+    }
+    if (!has_touch_opacity) {
+        output << "touch.Opacity = " << settings.touch.opacity << '\n';
+    }
+    for (std::size_t index = 0; index < button_names.size(); ++index) {
+        if (has_touch_positions[index]) continue;
+        output << "touch." << button_names[index] << " = "
+               << settings.touch.positions[index * 2] << ' '
+               << settings.touch.positions[index * 2 + 1] << '\n';
+    }
 }
 
-void write_portable_settings(const AppSettings& settings) {
-    const auto path = portable_settings_path();
+void write_portable_settings(const std::filesystem::path& preference_directory,
+                             const AppSettings& settings) {
+    const auto path = portable_settings_path(preference_directory);
     if (path.empty()) return;
     std::ofstream output(path, std::ios::trunc);
     if (!output) {
@@ -583,7 +672,9 @@ void write_portable_settings(const AppSettings& settings) {
               "# Copy this file beside another GBB installation to share "
               "these settings.\n"
               "# Add an optional second keyboard key after the first, for "
-              "example: Z Y\n\n"
+              "example: Z Y. Set emulator shortcuts to None to disable "
+              "them. Android touch controls use a size multiplier and "
+              "opacity between 0 and 1 plus normalized positions.\n\n"
               "palette = "
            << gameboy::display_palettes[settings.palette].id << "\n\n";
     for (std::size_t index = 0; index < button_names.size(); ++index) {
@@ -594,6 +685,20 @@ void write_portable_settings(const AppSettings& settings) {
                    << keyboard_key_setting_name(settings.bindings.keys[index][1]);
         }
         output << '\n';
+    }
+    output << '\n';
+    for (std::size_t index = 0; index < shortcut_names.size(); ++index) {
+        output << "keyboard." << shortcut_names[index] << " = "
+               << keyboard_key_setting_name(settings.bindings.shortcuts[index])
+               << '\n';
+    }
+    output << '\n';
+    output << "touch.Size = " << settings.touch.scale << '\n';
+    output << "touch.Opacity = " << settings.touch.opacity << "\n\n";
+    for (std::size_t index = 0; index < button_names.size(); ++index) {
+        output << "touch." << button_names[index] << " = "
+               << settings.touch.positions[index * 2] << ' '
+               << settings.touch.positions[index * 2 + 1] << '\n';
     }
     output << '\n';
     for (std::size_t index = 0; index < button_names.size(); ++index) {
@@ -607,20 +712,26 @@ void write_portable_settings(const AppSettings& settings) {
 AppSettings load_portable_settings(
     const std::filesystem::path& preference_directory) {
     AppSettings settings;
-    const auto path = portable_settings_path();
+    const auto path = portable_settings_path(preference_directory);
     std::ifstream input(path);
     if (!input) {
         settings.bindings = load_legacy_bindings(preference_directory);
         settings.palette = load_legacy_display_palette(preference_directory);
-        write_portable_settings(settings);
+        write_portable_settings(preference_directory, settings);
         return settings;
     }
 
     auto loaded_keys = settings.bindings.keys;
     auto loaded_buttons = settings.bindings.gamepad_buttons;
+    auto loaded_shortcuts = settings.bindings.shortcuts;
+    auto loaded_touch_positions = settings.touch.positions;
     bool has_palette = false;
     std::array<bool, 8> has_keyboard{};
     std::array<bool, 8> has_gamepad{};
+    std::array<bool, shortcut_names.size()> has_shortcuts{};
+    bool has_touch_scale = false;
+    bool has_touch_opacity = false;
+    std::array<bool, 8> has_touch_positions{};
     constexpr std::array<const char*, 8> names{{
         "Right", "Left", "Up", "Down", "A", "B", "Select", "Start"}};
     std::string line;
@@ -645,6 +756,50 @@ AppSettings load_portable_settings(
             }
             continue;
         }
+        if (key == "touch.Size") {
+            has_touch_scale = true;
+            settings.touch.scale = parse_touch_value(
+                value, settings.touch.scale, minimum_touch_scale,
+                maximum_touch_scale);
+            continue;
+        }
+        if (key == "touch.Opacity") {
+            has_touch_opacity = true;
+            settings.touch.opacity = parse_touch_value(
+                value, settings.touch.opacity, minimum_touch_opacity,
+                maximum_touch_opacity);
+            continue;
+        }
+        for (std::size_t index = 0; index < button_names.size(); ++index) {
+            if (key != std::string("touch.") + button_names[index]) continue;
+            std::istringstream values(value);
+            float x = 0.0F;
+            float y = 0.0F;
+            if (values >> x >> y) {
+                loaded_touch_positions[index * 2] = std::clamp(
+                    x, minimum_touch_position, maximum_touch_position);
+                loaded_touch_positions[index * 2 + 1] = std::clamp(
+                    y, minimum_touch_position, maximum_touch_position);
+                has_touch_positions[index] = true;
+            }
+            break;
+        }
+        bool shortcut_setting = false;
+        for (std::size_t index = 0; index < shortcut_names.size(); ++index) {
+            if (key != std::string("keyboard.") + shortcut_names[index]) {
+                continue;
+            }
+            has_shortcuts[index] = true;
+            shortcut_setting = true;
+            if (value == "None") {
+                loaded_shortcuts[index] = SDLK_UNKNOWN;
+            } else {
+                const auto parsed = keyboard_key_from_setting(value);
+                if (parsed != SDLK_UNKNOWN) loaded_shortcuts[index] = parsed;
+            }
+            break;
+        }
+        if (shortcut_setting) continue;
         for (std::size_t index = 0; index < names.size(); ++index) {
             if (key == std::string("keyboard.") + names[index]) {
                 has_keyboard[index] = true;
@@ -653,7 +808,7 @@ AppSettings load_portable_settings(
                 bool parsed_mapping = value == "None";
                 const auto whole = parsed_mapping
                                        ? SDLK_UNKNOWN
-                                       : SDL_GetKeyFromName(value.c_str());
+                                       : keyboard_key_from_setting(value);
                 if (whole != SDLK_UNKNOWN) {
                     parsed_keys[0] = whole;
                     parsed_mapping = true;
@@ -667,7 +822,7 @@ AppSettings load_portable_settings(
                             parsed_mapping = true;
                             continue;
                         }
-                        const auto parsed = SDL_GetKeyFromName(name.c_str());
+                        const auto parsed = keyboard_key_from_setting(name);
                         if (parsed != SDLK_UNKNOWN) {
                             parsed_keys[slot++] = parsed;
                             parsed_mapping = true;
@@ -692,10 +847,17 @@ AppSettings load_portable_settings(
             if (key != SDLK_UNKNOWN) unique_keys.push_back(key);
         }
     }
+    for (const auto key : loaded_shortcuts) {
+        if (key != SDLK_UNKNOWN) unique_keys.push_back(key);
+    }
     std::sort(unique_keys.begin(), unique_keys.end());
     if (std::adjacent_find(unique_keys.begin(), unique_keys.end()) ==
         unique_keys.end()) {
         settings.bindings.keys = loaded_keys;
+    }
+    if (std::adjacent_find(unique_keys.begin(), unique_keys.end()) ==
+        unique_keys.end()) {
+        settings.bindings.shortcuts = loaded_shortcuts;
     }
     auto unique_buttons = loaded_buttons;
     std::sort(unique_buttons.begin(), unique_buttons.end());
@@ -703,33 +865,57 @@ AppSettings load_portable_settings(
         unique_buttons.end()) {
         settings.bindings.gamepad_buttons = loaded_buttons;
     }
+    settings.touch.positions = loaded_touch_positions;
     append_missing_portable_settings(path, settings, has_palette,
-                                     has_keyboard, has_gamepad);
+                                     has_keyboard, has_gamepad, has_shortcuts,
+                                     has_touch_scale, has_touch_opacity,
+                                     has_touch_positions);
     return settings;
 }
-#endif
 
 AppSettings load_app_settings(
     const std::filesystem::path& preference_directory) {
-#ifdef __ANDROID__
-    return {load_legacy_bindings(preference_directory),
-            load_legacy_display_palette(preference_directory)};
-#else
     return load_portable_settings(preference_directory);
-#endif
 }
 
 void save_app_settings(const std::filesystem::path& preference_directory,
                        const InputBindings& bindings,
                        const std::size_t palette) {
     if (palette >= gameboy::display_palettes.size()) return;
-#ifdef __ANDROID__
-    save_legacy_bindings(preference_directory, bindings);
-    save_legacy_display_palette(preference_directory, palette);
-#else
-    static_cast<void>(preference_directory);
-    write_portable_settings({bindings, palette});
-#endif
+    auto settings = load_app_settings(preference_directory);
+    settings.bindings = bindings;
+    settings.palette = palette;
+    write_portable_settings(preference_directory, settings);
+}
+
+TouchControlSettings load_touch_control_settings(
+    const std::filesystem::path& directory) {
+    return load_app_settings(directory).touch;
+}
+
+void save_touch_control_settings(const std::filesystem::path& directory,
+                                 const float scale, const float opacity) {
+    auto settings = load_app_settings(directory);
+    settings.touch.scale = std::clamp(scale, minimum_touch_scale,
+                                      maximum_touch_scale);
+    settings.touch.opacity = std::clamp(opacity, minimum_touch_opacity,
+                                        maximum_touch_opacity);
+    write_portable_settings(directory, settings);
+}
+
+std::array<float, 16> load_touch_control_layout(
+    const std::filesystem::path& directory) {
+    return load_app_settings(directory).touch.positions;
+}
+
+void save_touch_control_layout(const std::filesystem::path& directory,
+                               const std::array<float, 16>& positions) {
+    auto settings = load_app_settings(directory);
+    for (std::size_t index = 0; index < positions.size(); ++index) {
+        settings.touch.positions[index] = std::clamp(
+            positions[index], minimum_touch_position, maximum_touch_position);
+    }
+    write_portable_settings(directory, settings);
 }
 
 InputBindings load_bindings(const std::filesystem::path& directory) {
@@ -942,27 +1128,45 @@ std::optional<gameboy::Button> gamepad_button(const InputBindings& bindings,
     return std::nullopt;
 }
 
+bool shortcut_pressed(const InputBindings& bindings, const std::size_t shortcut,
+                      const SDL_Keycode key) {
+    return shortcut < bindings.shortcuts.size() &&
+           bindings.shortcuts[shortcut] != SDLK_UNKNOWN &&
+           bindings.shortcuts[shortcut] == key;
+}
+
 #ifdef __ANDROID__
-std::optional<std::size_t> touch_button_index(const float x, const float y) {
-    const auto inside = [x, y](const float center_x, const float center_y,
-                               const float radius) {
-        const auto dx = x - center_x;
-        const auto dy = y - center_y;
-        return dx * dx + dy * dy <= radius * radius;
-    };
-    if (inside(0.80F, 0.70F, 0.11F)) return 4; // A
-    if (inside(0.66F, 0.80F, 0.11F)) return 5; // B
-    if (inside(0.56F, 0.91F, 0.075F)) return 7; // Start
-    if (inside(0.43F, 0.91F, 0.075F)) return 6; // Select
-    if (x < 0.42F && y > 0.48F) {
-        const auto dx = x - 0.20F;
-        const auto dy = y - 0.73F;
-        if (dx * dx + dy * dy < 0.0025F ||
-            dx * dx + dy * dy > 0.050F) {
-            return std::nullopt;
+std::optional<std::size_t> touch_button_index(const float x, const float y,
+                                              const SdlResources& sdl) {
+    const auto scale = std::clamp(sdl.touch_settings.scale,
+                                  minimum_touch_scale, maximum_touch_scale);
+    constexpr std::array<float, 8> widths{{16.0F, 16.0F, 16.0F, 16.0F,
+                                            22.0F, 22.0F, 18.0F, 18.0F}};
+    constexpr std::array<float, 8> heights{{16.0F, 16.0F, 16.0F, 16.0F,
+                                             22.0F, 22.0F, 7.0F, 7.0F}};
+    const auto inside = [x, y, scale, &sdl, &widths, &heights](
+                            const std::size_t index) {
+        const auto center_x = sdl.touch_settings.positions[index * 2] *
+                              static_cast<float>(gameboy::Ppu::screen_width);
+        const auto center_y = sdl.touch_settings.positions[index * 2 + 1] *
+                              static_cast<float>(gameboy::Ppu::screen_height);
+        const auto dx = x * static_cast<float>(gameboy::Ppu::screen_width) -
+                        center_x;
+        const auto dy = y * static_cast<float>(gameboy::Ppu::screen_height) -
+                        center_y;
+        if (index == 4 || index == 5) {
+            const auto radius = widths[index] * scale * 0.5F;
+            return dx * dx + dy * dy <= radius * radius;
         }
-        if (std::abs(dx) > std::abs(dy)) return dx > 0 ? 0 : 1;
-        return dy < 0 ? 2 : 3;
+        return std::abs(dx) <= widths[index] * scale * 0.5F &&
+               std::abs(dy) <= heights[index] * scale * 0.5F;
+    };
+    // Check the face and system buttons before the D-pad if a custom layout
+    // intentionally places controls near one another.
+    for (const auto index : {std::size_t{4}, std::size_t{5}, std::size_t{6},
+                             std::size_t{7}, std::size_t{0}, std::size_t{1},
+                             std::size_t{2}, std::size_t{3}}) {
+        if (inside(index)) return index;
     }
     return std::nullopt;
 }
@@ -970,7 +1174,7 @@ std::optional<std::size_t> touch_button_index(const float x, const float y) {
 void refresh_touch_buttons(gameboy::Emulator* emulator, SdlResources& sdl) {
     std::array<bool, 8> pressed{};
     for (const auto& touch : sdl.touches) {
-        if (const auto index = touch_button_index(touch.x, touch.y)) {
+        if (const auto index = touch_button_index(touch.x, touch.y, sdl)) {
             pressed[*index] = true;
         }
     }
@@ -1010,17 +1214,17 @@ std::pair<float, float> logical_touch_position(const SDL_TouchFingerEvent& event
 }
 #endif
 
-bool reserved_gameplay_key(const SDL_Keycode key) {
+bool reserved_gameplay_key(const InputBindings& bindings,
+                           const SDL_Keycode key) {
     switch (key) {
     case SDLK_ESCAPE:
     case SDLK_SPACE:
     case SDLK_F1:
-    case SDLK_F5:
-    case SDLK_F8:
     case SDLK_F11:
         return true;
     default:
-        return false;
+        return std::find(bindings.shortcuts.begin(), bindings.shortcuts.end(),
+                         key) != bindings.shortcuts.end();
     }
 }
 
@@ -1213,8 +1417,10 @@ void show_help(SDL_Window* window) {
         "Ctrl+K: Configure controls\n"
         "Ctrl+P: Choose display palette\n"
         "Ctrl+1 through Ctrl+9: Open recent ROM\n"
-        "F5: Quick save\n"
-        "F8: Load quick save\n"
+        "Configured SaveState key: Save state\n"
+        "Configured LoadState key: Load state\n"
+        "Configured FastForward key: Hold for 4x speed\n"
+        "Configured Rewind key: Hold to rewind\n"
         "F11: Toggle fullscreen\n"
         "F1: Show this help\n"
         "Escape: Quit\n\n"
@@ -1288,7 +1494,9 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                     std::optional<std::string>& pending_rom,
                     std::size_t& display_palette, bool& dashboard_visible,
                     std::size_t& dashboard_selection, bool& paused,
-                    bool& fullscreen, bool& reset_requested, bool& running) {
+                    bool& fullscreen, bool& fast_forward, bool& rewind,
+                    RewindHistory& rewind_history, bool& reset_requested,
+                    bool& running) {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         switch (event.type) {
@@ -1367,7 +1575,7 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                                         configuring);
                     break;
                 }
-                if (reserved_gameplay_key(event.key.key)) {
+                if (reserved_gameplay_key(bindings, event.key.key)) {
                     show_error(sdl.window,
                                "That key is reserved for an emulator shortcut.");
                     break;
@@ -1407,8 +1615,43 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                 break;
             }
 
-            if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
-                event.key.key == SDLK_O && (event.key.mod & SDL_KMOD_CTRL) != 0) {
+            if (emulator && shortcut_pressed(bindings, shortcut_fast_forward,
+                                             event.key.key)) {
+                fast_forward = event.type == SDL_EVENT_KEY_DOWN;
+                break;
+            } else if (emulator && shortcut_pressed(bindings, shortcut_rewind,
+                                                    event.key.key)) {
+                rewind = event.type == SDL_EVENT_KEY_DOWN;
+                break;
+            } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+                       event.key.key == bindings.shortcuts[shortcut_save_state] &&
+                       emulator) {
+                try {
+                    save_quick_state(preference_path, *emulator);
+                    static_cast<void>(SDL_ShowSimpleMessageBox(
+                        SDL_MESSAGEBOX_INFORMATION, "Save state",
+                        "State saved.", sdl.window));
+                } catch (const std::exception& error) {
+                    show_error(sdl.window, error.what());
+                }
+            } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+                       event.key.key == bindings.shortcuts[shortcut_load_state] &&
+                       emulator) {
+                try {
+                    load_quick_state(preference_path, *emulator);
+                    rewind_history.clear();
+                    release_all_buttons(*emulator);
+                    if (sdl.audio_stream != nullptr) {
+                        static_cast<void>(SDL_ClearAudioStream(sdl.audio_stream));
+                    }
+                    static_cast<void>(SDL_ShowSimpleMessageBox(
+                        SDL_MESSAGEBOX_INFORMATION, "Load state",
+                        "State loaded.", sdl.window));
+                } catch (const std::exception& error) {
+                    show_error(sdl.window, error.what());
+                }
+            } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+                       event.key.key == SDLK_O && (event.key.mod & SDL_KMOD_CTRL) != 0) {
                 show_rom_dialog(dialog, sdl.window);
             } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
                        event.key.key == SDLK_L &&
@@ -1471,30 +1714,6 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                 release_all_buttons(*emulator);
                 update_window_title(sdl.window, current_rom, paused,
                                     configuring);
-            } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
-                       event.key.key == SDLK_F5 && emulator) {
-                try {
-                    save_quick_state(preference_path, *emulator);
-                    static_cast<void>(SDL_ShowSimpleMessageBox(
-                        SDL_MESSAGEBOX_INFORMATION, "Quick save",
-                        "State saved.", sdl.window));
-                } catch (const std::exception& error) {
-                    show_error(sdl.window, error.what());
-                }
-            } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
-                       event.key.key == SDLK_F8 && emulator) {
-                try {
-                    load_quick_state(preference_path, *emulator);
-                    release_all_buttons(*emulator);
-                    if (sdl.audio_stream != nullptr) {
-                        static_cast<void>(SDL_ClearAudioStream(sdl.audio_stream));
-                    }
-                    static_cast<void>(SDL_ShowSimpleMessageBox(
-                        SDL_MESSAGEBOX_INFORMATION, "Quick save",
-                        "State loaded.", sdl.window));
-                } catch (const std::exception& error) {
-                    show_error(sdl.window, error.what());
-                }
             } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
                        event.key.key == SDLK_F11) {
                 fullscreen = !fullscreen;
@@ -1599,6 +1818,13 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
             break;
         case SDL_EVENT_DID_ENTER_FOREGROUND:
             display_palette = load_display_palette(preference_path);
+#ifdef __ANDROID__
+            {
+                const auto touch_settings =
+                    load_touch_control_settings(preference_path);
+                sdl.touch_settings = touch_settings;
+            }
+#endif
             if (emulator != nullptr) {
                 emulator->set_dmg_compatibility_colors(
                     gameboy::display_palettes[display_palette]
@@ -1609,6 +1835,8 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
 #endif
         case SDL_EVENT_WINDOW_FOCUS_LOST:
             if (emulator) release_all_buttons(*emulator);
+            fast_forward = false;
+            rewind = false;
 #ifdef __ANDROID__
             clear_touch_buttons(emulator.get(), sdl);
 #endif
@@ -2132,21 +2360,45 @@ void present_menu_button(SdlResources& sdl) {
 
 #ifdef __ANDROID__
 void present_touch_controls(SdlResources& sdl) {
+    const auto scale = std::clamp(sdl.touch_settings.scale,
+                                  minimum_touch_scale, maximum_touch_scale);
+    const auto opacity = std::clamp(sdl.touch_settings.opacity,
+                                    minimum_touch_opacity,
+                                    maximum_touch_opacity);
     static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
                                                  SDL_BLENDMODE_BLEND));
-    const auto draw = [&sdl](const SDL_FRect& rect, const bool pressed) {
+    const auto draw = [&sdl, opacity](const SDL_FRect& rect,
+                                      const bool pressed) {
+        const auto alpha = static_cast<std::uint8_t>(std::clamp(
+            opacity * 255.0F + (pressed ? 35.0F : 0.0F), 0.0F,
+            255.0F));
         static_cast<void>(SDL_SetRenderDrawColor(
             sdl.renderer, pressed ? 139 : 220, pressed ? 207 : 235,
-            pressed ? 105 : 220, pressed ? 190 : 100));
+            pressed ? 105 : 220, alpha));
         static_cast<void>(SDL_RenderFillRect(sdl.renderer, &rect));
+        static_cast<void>(SDL_SetRenderDrawColor(
+            sdl.renderer, pressed ? 236 : 248, pressed ? 224 : 252,
+            pressed ? 148 : 242, alpha));
+        static_cast<void>(SDL_RenderRect(sdl.renderer, &rect));
     };
 
-    draw({24, 90, 16, 42}, sdl.touch_buttons[1] || sdl.touch_buttons[0]);
-    draw({11, 103, 42, 16}, sdl.touch_buttons[2] || sdl.touch_buttons[3]);
-    draw({126, 91, 22, 22}, sdl.touch_buttons[4]);
-    draw({103, 108, 22, 22}, sdl.touch_buttons[5]);
-    draw({83, 130, 18, 7}, sdl.touch_buttons[7]);
-    draw({61, 130, 18, 7}, sdl.touch_buttons[6]);
+    constexpr std::array<float, 8> widths{{16.0F, 16.0F, 16.0F, 16.0F,
+                                            22.0F, 22.0F, 18.0F, 18.0F}};
+    constexpr std::array<float, 8> heights{{16.0F, 16.0F, 16.0F, 16.0F,
+                                             22.0F, 22.0F, 7.0F, 7.0F}};
+    const auto rect_for = [&sdl, scale, &widths, &heights](
+                              const std::size_t index) {
+        const auto center_x = sdl.touch_settings.positions[index * 2] * 160.0F;
+        const auto center_y =
+            sdl.touch_settings.positions[index * 2 + 1] * 144.0F;
+        return SDL_FRect{
+            center_x - widths[index] * scale * 0.5F,
+            center_y - heights[index] * scale * 0.5F,
+            widths[index] * scale, heights[index] * scale};
+    };
+    for (std::size_t index = 0; index < sdl.touch_buttons.size(); ++index) {
+        draw(rect_for(index), sdl.touch_buttons[index]);
+    }
     static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
                                                  SDL_BLENDMODE_NONE));
 }
@@ -2323,6 +2575,94 @@ Java_com_danielseim_gbb_LibraryActivity_nativeRemoveLibraryEntry(
     return removed ? JNI_TRUE : JNI_FALSE;
 }
 
+extern "C" JNIEXPORT jfloat JNICALL
+Java_com_danielseim_gbb_LibraryActivity_nativeTouchControlScale(
+    JNIEnv* environment, jclass, jstring directory) {
+    const auto* raw_directory =
+        environment->GetStringUTFChars(directory, nullptr);
+    if (raw_directory == nullptr) return 1.35F;
+    const auto settings = load_touch_control_settings(
+        std::filesystem::u8path(raw_directory));
+    environment->ReleaseStringUTFChars(directory, raw_directory);
+    return settings.scale;
+}
+
+extern "C" JNIEXPORT jfloat JNICALL
+Java_com_danielseim_gbb_LibraryActivity_nativeTouchControlOpacity(
+    JNIEnv* environment, jclass, jstring directory) {
+    const auto* raw_directory =
+        environment->GetStringUTFChars(directory, nullptr);
+    if (raw_directory == nullptr) return 0.78F;
+    const auto settings = load_touch_control_settings(
+        std::filesystem::u8path(raw_directory));
+    environment->ReleaseStringUTFChars(directory, raw_directory);
+    return settings.opacity;
+}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_danielseim_gbb_LibraryActivity_nativeTouchControlLayout(
+    JNIEnv* environment, jclass, jstring directory) {
+    const auto* raw_directory =
+        environment->GetStringUTFChars(directory, nullptr);
+    if (raw_directory == nullptr) return nullptr;
+    const auto positions = load_touch_control_layout(
+        std::filesystem::u8path(raw_directory));
+    environment->ReleaseStringUTFChars(directory, raw_directory);
+    const auto result = environment->NewFloatArray(
+        static_cast<jsize>(positions.size()));
+    if (result != nullptr) {
+        environment->SetFloatArrayRegion(
+            result, 0, static_cast<jsize>(positions.size()), positions.data());
+    }
+    return result;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_danielseim_gbb_LibraryActivity_nativeSetTouchControlSettings(
+    JNIEnv* environment, jclass, jstring directory, const jfloat scale,
+    const jfloat opacity) {
+    const auto* raw_directory =
+        environment->GetStringUTFChars(directory, nullptr);
+    if (raw_directory == nullptr) return;
+    save_touch_control_settings(std::filesystem::u8path(raw_directory), scale,
+                                opacity);
+    environment->ReleaseStringUTFChars(directory, raw_directory);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_danielseim_gbb_LibraryActivity_nativeSetTouchControlLayout(
+    JNIEnv* environment, jclass, jstring directory, jfloatArray values) {
+    const auto* raw_directory =
+        environment->GetStringUTFChars(directory, nullptr);
+    if (raw_directory == nullptr || values == nullptr) {
+        if (raw_directory != nullptr) {
+            environment->ReleaseStringUTFChars(directory, raw_directory);
+        }
+        return;
+    }
+    const auto length = environment->GetArrayLength(values);
+    if (length >= 16) {
+        std::array<float, 16> positions{};
+        environment->GetFloatArrayRegion(
+            values, 0, static_cast<jsize>(positions.size()), positions.data());
+        save_touch_control_layout(std::filesystem::u8path(raw_directory),
+                                  positions);
+    }
+    environment->ReleaseStringUTFChars(directory, raw_directory);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_danielseim_gbb_LibraryActivity_nativeResetTouchControlLayout(
+    JNIEnv* environment, jclass, jstring directory) {
+    const auto* raw_directory =
+        environment->GetStringUTFChars(directory, nullptr);
+    if (raw_directory == nullptr) return;
+    const TouchControlSettings defaults;
+    save_touch_control_layout(std::filesystem::u8path(raw_directory),
+                              defaults.positions);
+    environment->ReleaseStringUTFChars(directory, raw_directory);
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_danielseim_gbb_GbbActivity_nativeOpenRom(
     JNIEnv* environment, jclass, jstring rom, jstring display_name) {
@@ -2351,7 +2691,12 @@ int main(int argc, char** argv) {
             return EXIT_SUCCESS;
         }
         DialogState dialog;
-        SdlResources sdl;
+#ifdef _WIN32
+        const auto start_with_library = argc != 2;
+#else
+        constexpr auto start_with_library = false;
+#endif
+        SdlResources sdl(start_with_library);
         const auto preference_path = preference_directory();
         restore_game_window_geometry(sdl.window, preference_path);
         auto rom_library = load_rom_library(preference_path);
@@ -2359,6 +2704,10 @@ int main(int argc, char** argv) {
         auto bindings = load_bindings(preference_path);
         auto configuration_backup = bindings;
         auto display_palette = load_display_palette(preference_path);
+#ifdef __ANDROID__
+        const auto touch_settings = load_touch_control_settings(preference_path);
+        sdl.touch_settings = touch_settings;
+#endif
         std::unique_ptr<gameboy::Emulator> emulator;
         std::string current_rom;
         std::optional<std::string> pending_rom;
@@ -2377,6 +2726,8 @@ int main(int argc, char** argv) {
 #endif
         auto paused = false;
         auto fullscreen = false;
+        auto fast_forward = false;
+        auto rewind = false;
         auto reset_requested = false;
         auto running = true;
 #ifdef __ANDROID__
@@ -2386,6 +2737,7 @@ int main(int argc, char** argv) {
 #endif
         std::size_t dashboard_selection = 0;
         std::uint64_t print_sequence = 0;
+        RewindHistory rewind_history;
 
 #ifdef __ANDROID__
         if (argc >= 2) {
@@ -2442,9 +2794,16 @@ int main(int argc, char** argv) {
                             static_cast<std::int64_t>(bindings.keys[index][slot]);
                     }
                 }
+                gbb_desktop::ActionBindings dashboard_actions{};
+                for (std::size_t index = 0; index < dashboard_actions.size();
+                     ++index) {
+                    dashboard_actions[index] = static_cast<std::int64_t>(
+                        bindings.shortcuts[index]);
+                }
                 const auto result = gbb_desktop::show_windows_dashboard(
                     nullptr, rom_library, emulator != nullptr, display_palette,
-                    dashboard_bindings, preference_path);
+                    dashboard_bindings, dashboard_actions,
+                    preference_path);
                 if (!result.removed_fingerprints.empty()) {
                     for (const auto fingerprint : result.removed_fingerprints) {
                         static_cast<void>(rom_library.remove(fingerprint));
@@ -2474,6 +2833,14 @@ int main(int argc, char** argv) {
                     }
                     save_bindings(preference_path, bindings);
                 }
+                if (result.action_bindings_changed) {
+                    for (std::size_t index = 0;
+                         index < bindings.shortcuts.size(); ++index) {
+                        bindings.shortcuts[index] = static_cast<SDL_Keycode>(
+                            result.action_bindings[index]);
+                    }
+                    save_bindings(preference_path, bindings);
+                }
                 switch (result.action) {
                 case gbb_desktop::DashboardResultAction::open_rom:
                     pending_rom = result.rom_path;
@@ -2500,7 +2867,7 @@ int main(int argc, char** argv) {
                            configuration_backup, recent_roms, current_rom,
                            configuring, pending_rom, display_palette,
                            dashboard_visible, dashboard_selection, paused,
-                           fullscreen,
+                           fullscreen, fast_forward, rewind, rewind_history,
                            reset_requested, running);
 
             std::optional<std::string> dialog_error;
@@ -2530,6 +2897,9 @@ int main(int argc, char** argv) {
                     }
                     current_rom = requested_rom;
                     if (!reopening_current) paused = false;
+                    fast_forward = false;
+                    rewind = false;
+                    rewind_history.clear();
                     dashboard_visible = false;
 #ifdef _WIN32
                     reveal_sdl_after_present = true;
@@ -2623,17 +2993,45 @@ int main(int argc, char** argv) {
 
             if (emulator && !paused && !dashboard_visible && !configuring &&
                 !dialog_active(dialog)) {
-                unsigned cycles = 0;
-                while (running && cycles < cycles_per_frame &&
-                       !emulator->frame_ready()) {
-                    cycles += emulator->step();
+                if (rewind) {
+                    if (!rewind_history.empty()) {
+                        auto state = std::move(rewind_history.back());
+                        rewind_history.pop_back();
+                        emulator->load_state(state);
+                        release_all_buttons(*emulator);
+                        if (sdl.audio_stream != nullptr) {
+                            static_cast<void>(SDL_ClearAudioStream(
+                                sdl.audio_stream));
+                        }
+                    }
+                } else {
+                    const auto frames = fast_forward ? 4U : 1U;
+                    for (auto frame = 0U; frame < frames && running; ++frame) {
+                        rewind_history.push_back(emulator->save_state());
+                        while (rewind_history.size() > maximum_rewind_frames) {
+                            rewind_history.pop_front();
+                        }
+                        unsigned cycles = 0;
+                        while (running && cycles < cycles_per_frame &&
+                               !emulator->frame_ready()) {
+                            cycles += emulator->step();
+                        }
+                        if (emulator->frame_ready()) emulator->consume_frame();
+                    }
                 }
-                if (emulator->frame_ready()) emulator->consume_frame();
             }
             update_rumble(emulator.get(), sdl,
-                          !paused && !dashboard_visible && !configuring &&
+                          !paused && !rewind && !dashboard_visible &&
+                              !configuring &&
                               !dialog_active(dialog));
-            submit_audio(emulator.get(), sdl);
+            if (fast_forward) {
+                if (emulator) static_cast<void>(emulator->take_audio_samples());
+                if (sdl.audio_stream != nullptr) {
+                    static_cast<void>(SDL_ClearAudioStream(sdl.audio_stream));
+                }
+            } else {
+                submit_audio(emulator.get(), sdl);
+            }
             try {
                 save_completed_prints(emulator.get(), sdl.window,
                                       preference_path, current_rom,
@@ -2651,7 +3049,9 @@ int main(int argc, char** argv) {
             }
 #endif
 
-            next_frame += std::chrono::duration_cast<Clock::duration>(frame_duration);
+            const auto frame_count = fast_forward ? 4U : 1U;
+            next_frame += std::chrono::duration_cast<Clock::duration>(
+                frame_duration * frame_count);
             const auto now = Clock::now();
             if (next_frame > now) {
                 std::this_thread::sleep_until(next_frame);

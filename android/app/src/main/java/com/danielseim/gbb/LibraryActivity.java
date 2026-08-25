@@ -7,11 +7,15 @@ import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.RectF;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.OpenableColumns;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.AdapterView;
@@ -20,6 +24,7 @@ import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.SeekBar;
 import android.widget.Spinner;
 import android.widget.Switch;
 import android.widget.TextView;
@@ -60,18 +65,29 @@ public final class LibraryActivity extends Activity {
     private static native String[] nativeLibraryEntries(String directory);
     private static native boolean nativeRemoveLibraryEntry(
             String directory, String fingerprint);
+    private static native float nativeTouchControlScale(String directory);
+    private static native float nativeTouchControlOpacity(String directory);
+    private static native float[] nativeTouchControlLayout(String directory);
+    private static native void nativeSetTouchControlSettings(
+            String directory, float scale, float opacity);
+    private static native void nativeSetTouchControlLayout(
+            String directory, float[] positions);
+    private static native void nativeResetTouchControlLayout(String directory);
 
     private final ExecutorService artworkExecutor =
             Executors.newFixedThreadPool(2);
     private LinearLayout content;
     private SharedPreferences preferences;
     private boolean settingsVisible;
+    private AndroidUpdateManager updateManager;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         preferences = getSharedPreferences("dashboard", MODE_PRIVATE);
+        updateManager = new AndroidUpdateManager(this);
         showDashboard(false);
+        updateManager.checkForUpdates();
     }
 
     @Override
@@ -84,6 +100,13 @@ public final class LibraryActivity extends Activity {
     protected void onResume() {
         super.onResume();
         if (content != null) showDashboard(settingsVisible);
+        if (updateManager != null) updateManager.onResume();
+    }
+
+    @Override
+    protected void onPause() {
+        if (updateManager != null) updateManager.onPause();
+        super.onPause();
     }
 
     private int dp(int value) {
@@ -268,6 +291,236 @@ public final class LibraryActivity extends Activity {
         content.addView(text(
                 "Touch controls are shown while playing. Connected controllers " +
                 "use the standard Game Boy layout.", 15, Color.DKGRAY));
+
+        final TextView touchHeading = text("Touch controls", 17, Color.DKGRAY);
+        touchHeading.setPadding(0, dp(22), 0, dp(4));
+        content.addView(touchHeading);
+        content.addView(text(
+                "Adjust the on-screen button size and visibility for your phone " +
+                "or tablet.", 15, Color.DKGRAY));
+
+        final String settingsDirectory = getFilesDir().getAbsolutePath();
+        final float[] touchValues = {
+                nativeTouchControlScale(settingsDirectory),
+                nativeTouchControlOpacity(settingsDirectory)};
+        final TextView sizeLabel = text("Button size: " +
+                Math.round(touchValues[0] * 100) + "%", 15, Color.DKGRAY);
+        sizeLabel.setPadding(0, dp(16), 0, 0);
+        content.addView(sizeLabel);
+        final SeekBar size = new SeekBar(this);
+        size.setMax(100);
+        size.setProgress(Math.round((touchValues[0] - 0.8f) / 1.2f * 100));
+        size.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar bar, int progress,
+                                           boolean fromUser) {
+                touchValues[0] = 0.8f + progress / 100f * 1.2f;
+                sizeLabel.setText("Button size: " +
+                        Math.round(touchValues[0] * 100) + "%");
+                nativeSetTouchControlSettings(settingsDirectory,
+                        touchValues[0], touchValues[1]);
+            }
+            @Override public void onStartTrackingTouch(SeekBar bar) {}
+            @Override public void onStopTrackingTouch(SeekBar bar) {}
+        });
+        content.addView(size, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        final TextView opacityLabel = text("Button opacity: " +
+                Math.round(touchValues[1] * 100) + "%", 15, Color.DKGRAY);
+        opacityLabel.setPadding(0, dp(12), 0, 0);
+        content.addView(opacityLabel);
+        final SeekBar opacity = new SeekBar(this);
+        opacity.setMax(100);
+        opacity.setProgress(Math.round((touchValues[1] - 0.2f) / 0.8f * 100));
+        opacity.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar bar, int progress,
+                                           boolean fromUser) {
+                touchValues[1] = 0.2f + progress / 100f * 0.8f;
+                opacityLabel.setText("Button opacity: " +
+                        Math.round(touchValues[1] * 100) + "%");
+                nativeSetTouchControlSettings(settingsDirectory,
+                        touchValues[0], touchValues[1]);
+            }
+            @Override public void onStartTrackingTouch(SeekBar bar) {}
+            @Override public void onStopTrackingTouch(SeekBar bar) {}
+        });
+        content.addView(opacity, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        final Button editLayout = new Button(this);
+        editLayout.setText("Customize button layout");
+        editLayout.setOnClickListener(view -> showTouchLayoutEditor());
+        content.addView(editLayout);
+
+        final Button resetTouch = new Button(this);
+        resetTouch.setText("Reset touch controls");
+        resetTouch.setOnClickListener(view -> {
+            size.setProgress(Math.round((1.35f - 0.8f) / 1.2f * 100));
+            opacity.setProgress(Math.round((0.78f - 0.2f) / 0.8f * 100));
+            nativeResetTouchControlLayout(settingsDirectory);
+        });
+        content.addView(resetTouch);
+    }
+
+    private void showTouchLayoutEditor() {
+        final String settingsDirectory = getFilesDir().getAbsolutePath();
+        final float[] initial = nativeTouchControlLayout(settingsDirectory);
+        final TouchLayoutView editor = new TouchLayoutView(
+                initial == null ? defaultTouchLayout() : initial);
+        final LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.VERTICAL);
+        container.addView(editor, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(360)));
+        final TextView help = text(
+                "Drag each button to its preferred position. The preview uses " +
+                "the same layout as gameplay.", 13, Color.GRAY);
+        help.setPadding(0, dp(8), 0, 0);
+        container.addView(help);
+        final Button reset = new Button(this);
+        reset.setText("Reset positions");
+        reset.setOnClickListener(view -> editor.setLayout(defaultTouchLayout()));
+        container.addView(reset);
+        final AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Customize touch controls")
+                .setView(container)
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Save", null)
+                .create();
+        dialog.setOnShowListener(ignored -> dialog.getButton(
+                AlertDialog.BUTTON_POSITIVE).setOnClickListener(view -> {
+                    nativeSetTouchControlLayout(settingsDirectory,
+                            editor.getLayout());
+                    dialog.dismiss();
+                }));
+        dialog.show();
+    }
+
+    private static float[] defaultTouchLayout() {
+        return new float[]{
+                0.25f, 0.73f, 0.15f, 0.73f, 0.20f, 0.66f, 0.20f, 0.80f,
+                0.80f, 0.70f, 0.66f, 0.80f, 0.43f, 0.91f, 0.56f, 0.91f};
+    }
+
+    private final class TouchLayoutView extends View {
+        private final float[] WIDTHS = {
+                16, 16, 16, 16, 22, 22, 18, 18};
+        private final float[] HEIGHTS = {
+                16, 16, 16, 16, 22, 22, 7, 7};
+        private final String[] LABELS = {
+                "R", "L", "U", "D", "A", "B", "Sel", "Start"};
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private float[] layout;
+        private int selected = -1;
+        private float dragOffsetX;
+        private float dragOffsetY;
+
+        TouchLayoutView(float[] initial) {
+            super(LibraryActivity.this);
+            layout = new float[16];
+            if (initial == null || initial.length < layout.length) {
+                layout = defaultTouchLayout();
+            } else {
+                System.arraycopy(initial, 0, layout, 0, layout.length);
+            }
+            setBackgroundColor(Color.rgb(26, 31, 42));
+        }
+
+        float[] getLayout() {
+            return layout.clone();
+        }
+
+        void setLayout(float[] values) {
+            if (values == null || values.length < layout.length) return;
+            System.arraycopy(values, 0, layout, 0, layout.length);
+            invalidate();
+        }
+
+        private float logicalScale() {
+            return Math.min(getWidth() / 160f, getHeight() / 144f);
+        }
+
+        private float offsetX() {
+            return (getWidth() - 160f * logicalScale()) * 0.5f;
+        }
+
+        private float offsetY() {
+            return (getHeight() - 144f * logicalScale()) * 0.5f;
+        }
+
+        private RectF bounds(int index) {
+            final float scale = logicalScale();
+            final float centerX = offsetX() + layout[index * 2] * 160f * scale;
+            final float centerY = offsetY() + layout[index * 2 + 1] * 144f * scale;
+            final float width = WIDTHS[index] * scale;
+            final float height = HEIGHTS[index] * scale;
+            return new RectF(centerX - width * 0.5f, centerY - height * 0.5f,
+                    centerX + width * 0.5f, centerY + height * 0.5f);
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            final float scale = logicalScale();
+            final RectF screen = new RectF(offsetX(), offsetY(),
+                    offsetX() + 160f * scale, offsetY() + 144f * scale);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(Math.max(1f, scale));
+            paint.setColor(Color.rgb(151, 170, 132));
+            canvas.drawRect(screen, paint);
+            paint.setStyle(Paint.Style.FILL);
+            for (int index = 0; index < 8; ++index) {
+                final RectF bounds = bounds(index);
+                paint.setColor(index == selected
+                        ? Color.rgb(255, 215, 92) : Color.rgb(124, 183, 140));
+                canvas.drawRoundRect(bounds, 5f * scale, 5f * scale, paint);
+                paint.setColor(Color.rgb(24, 35, 38));
+                paint.setTextAlign(Paint.Align.CENTER);
+                paint.setTextSize(Math.max(9f, 8f * scale));
+                canvas.drawText(LABELS[index], bounds.centerX(),
+                        bounds.centerY() - (paint.ascent() + paint.descent()) * 0.5f,
+                        paint);
+            }
+        }
+
+        private int hit(float x, float y) {
+            for (int index = 7; index >= 0; --index) {
+                if (bounds(index).contains(x, y)) return index;
+            }
+            return -1;
+        }
+
+        @Override
+        public boolean onTouchEvent(MotionEvent event) {
+            final float scale = logicalScale();
+            switch (event.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN:
+                selected = hit(event.getX(), event.getY());
+                if (selected < 0) return false;
+                dragOffsetX = event.getX() - bounds(selected).centerX();
+                dragOffsetY = event.getY() - bounds(selected).centerY();
+                invalidate();
+                return true;
+            case MotionEvent.ACTION_MOVE:
+                if (selected < 0 || scale <= 0) return true;
+                final float centerX = event.getX() - dragOffsetX;
+                final float centerY = event.getY() - dragOffsetY;
+                layout[selected * 2] = Math.max(0.02f, Math.min(0.98f,
+                        (centerX - offsetX()) / (160f * scale)));
+                layout[selected * 2 + 1] = Math.max(0.02f, Math.min(0.98f,
+                        (centerY - offsetY()) / (144f * scale)));
+                invalidate();
+                return true;
+            case MotionEvent.ACTION_UP:
+            case MotionEvent.ACTION_CANCEL:
+                selected = -1;
+                invalidate();
+                return true;
+            default:
+                return true;
+            }
+        }
     }
 
     private void openRomPicker() {

@@ -48,7 +48,8 @@ for the suite-by-suite breakdown.
 - Game Boy Printer serial protocol with automatic desktop image export
 - Game Boy Camera cartridge support with live SDL3 webcam input on desktop
 - MBC5 rumble output through compatible SDL3 gamepads on desktop
-- Versioned, ROM-validated save states with desktop quick-save controls
+- Versioned, ROM-validated save states with configurable save/load, fast-forward,
+  and rewind controls
 - Dependency-free unit tests
 
 This is an early emulator with incomplete game compatibility. Game Boy Color
@@ -167,7 +168,8 @@ fullscreen, Ctrl+L for the recent-ROM list, Ctrl+1 through Ctrl+9 for quick
 recent selection, Ctrl+K to configure and persist controls, Ctrl+P to choose
 between Grayscale, Classic green, Game Boy Pocket, Amber, and the automatic
 Game Boy Color compatibility palette,
-F5 to quick-save, F8 to load the quick save, and F1 for help. Recent ROMs,
+the configurable SaveState, LoadState, FastForward, and Rewind shortcuts, and
+F1 for help. Recent ROMs,
 window positions, and per-ROM quick saves are stored with the desktop data. On
 Windows, all desktop data (including saves, recent-ROM metadata, quick states,
 printer output, updater files, and settings) is kept beside `gbb.exe`, making
@@ -179,16 +181,28 @@ Game Boy button accepts up to two space-separated keyboard keys (for example,
 same setup. On Windows, the native Settings page presents primary and secondary
 buttons over a Game Boy control illustration: click a slot and press its new
 key, press Delete while capturing a secondary slot to clear it, or reset every
-keyboard control at once. Reusing a key automatically removes its earlier
-assignment. The Ctrl+K dialog can also rebind keyboard or gamepad input; Space
-skips an optional secondary key and Escape cancels an in-progress setup. GBB
+keyboard control and emulator shortcut at once. The same page also exposes
+Fast Forward, Rewind, Save State, and Load State shortcut buttons. Reusing a
+key automatically removes its earlier assignment. The Ctrl+K dialog can also
+rebind keyboard or gamepad input; Space skips an optional secondary key and
+Escape cancels an in-progress setup. GBB
 generates a complete default
 `settings.ini` at startup whenever it is missing and appends defaults for any
 recognized entries omitted from an existing file. Older `controls.txt` and
 `palette.txt` preferences migrate automatically when `settings.ini` is first
 created, and automatic updates preserve an existing portable file. On Android,
 tap the top-left menu button and choose
-`Display palette` to select and persist the same five palette options.
+`Display palette` to select and persist the same five palette options. The
+Android Settings page also provides touch-control size and opacity sliders;
+these values are stored in `settings.ini` as `touch.Size` and `touch.Opacity`.
+Its layout editor lets you drag each on-screen control independently; positions
+are stored as normalized `touch.Right` through `touch.Start` coordinates.
+
+The default action bindings are `keyboard.FastForward = Tab` (hold for 4×
+speed), `keyboard.Rewind = Left Shift` (hold to step backward through the last three
+seconds), `keyboard.SaveState = F5`, and `keyboard.LoadState = F8`. Set any of
+these to a different key, or to `None` to disable it. Rewind uses in-memory
+snapshots and is cleared when changing ROMs or loading a saved state.
 
 At startup, the desktop and Android apps check GitHub's latest stable release in a
 background thread. If its semantic version is newer than the running build,
