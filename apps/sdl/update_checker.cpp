@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <charconv>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
@@ -10,6 +11,7 @@
 #include <fstream>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #ifndef _WIN32
 #include <sys/types.h>
@@ -21,6 +23,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <bcrypt.h>
 #include <winhttp.h>
 #endif
 
@@ -125,70 +128,105 @@ std::wstring widen(const std::string& value) {
     return wide;
 }
 
-bool run_hidden(std::string command, const bool wait, std::string& error) {
-    auto wide = widen(command);
-    STARTUPINFOW startup{};
-    startup.cb = sizeof(startup);
-    PROCESS_INFORMATION process{};
-    if (!CreateProcessW(nullptr, wide.data(), nullptr, nullptr, FALSE,
-                        CREATE_NO_WINDOW, nullptr, nullptr, &startup,
-                        &process)) {
-        error = "could not start the Windows update helper";
-        return false;
+std::wstring quote_windows_argument(const std::wstring& value) {
+    std::wstring result{L"\""};
+    std::size_t backslashes = 0;
+    for (const auto character : value) {
+        if (character == L'\\') {
+            ++backslashes;
+        } else if (character == L'\"') {
+            result.append(backslashes * 2 + 1, L'\\');
+            result += L'\"';
+            backslashes = 0;
+        } else {
+            result.append(backslashes, L'\\');
+            result += character;
+            backslashes = 0;
+        }
     }
-    CloseHandle(process.hThread);
-    if (!wait) {
-        CloseHandle(process.hProcess);
-        return true;
-    }
-    WaitForSingleObject(process.hProcess, INFINITE);
-    DWORD status = 1;
-    GetExitCodeProcess(process.hProcess, &status);
-    CloseHandle(process.hProcess);
-    if (status != 0) error = "the update command failed";
-    return status == 0;
+    result.append(backslashes * 2, L'\\');
+    result += L'\"';
+    return result;
 }
 
-std::string powershell_quote(std::string value) {
-    std::size_t position = 0;
-    while ((position = value.find('\'', position)) != std::string::npos) {
-        value.insert(position, 1, '\'');
-        position += 2;
+std::optional<std::string> sha256_file(
+    const std::filesystem::path& path, std::string& error) {
+    BCRYPT_ALG_HANDLE algorithm{};
+    if (BCryptOpenAlgorithmProvider(&algorithm, BCRYPT_SHA256_ALGORITHM,
+                                    nullptr, 0) != 0) {
+        error = "could not initialize SHA-256 verification";
+        return std::nullopt;
     }
-    return '\'' + value + '\'';
+    DWORD object_size = 0;
+    DWORD hash_size = 0;
+    DWORD returned = 0;
+    const bool properties_ok =
+        BCryptGetProperty(algorithm, BCRYPT_OBJECT_LENGTH,
+                          reinterpret_cast<PUCHAR>(&object_size),
+                          sizeof(object_size), &returned, 0) == 0 &&
+        BCryptGetProperty(algorithm, BCRYPT_HASH_LENGTH,
+                          reinterpret_cast<PUCHAR>(&hash_size),
+                          sizeof(hash_size), &returned, 0) == 0;
+    if (!properties_ok) {
+        BCryptCloseAlgorithmProvider(algorithm, 0);
+        error = "could not initialize SHA-256 verification";
+        return std::nullopt;
+    }
+    std::vector<UCHAR> object(object_size);
+    std::vector<UCHAR> hash(hash_size);
+    BCRYPT_HASH_HANDLE state{};
+    if (BCryptCreateHash(algorithm, &state, object.data(), object_size,
+                         nullptr, 0, 0) != 0) {
+        BCryptCloseAlgorithmProvider(algorithm, 0);
+        error = "could not initialize SHA-256 verification";
+        return std::nullopt;
+    }
+    std::ifstream input(path, std::ios::binary);
+    std::array<char, 64 * 1024> buffer{};
+    bool success = static_cast<bool>(input);
+    while (success && input.read(buffer.data(), buffer.size())) {
+        success = BCryptHashData(
+                      state, reinterpret_cast<PUCHAR>(buffer.data()),
+                      static_cast<ULONG>(input.gcount()), 0) == 0;
+    }
+    if (success && input.gcount() > 0) {
+        success = BCryptHashData(
+                      state, reinterpret_cast<PUCHAR>(buffer.data()),
+                      static_cast<ULONG>(input.gcount()), 0) == 0;
+    }
+    if (success) {
+        success = BCryptFinishHash(state, hash.data(), hash_size, 0) == 0;
+    }
+    BCryptDestroyHash(state);
+    BCryptCloseAlgorithmProvider(algorithm, 0);
+    if (!success) {
+        error = "could not read or verify the downloaded release";
+        return std::nullopt;
+    }
+    constexpr char digits[] = "0123456789abcdef";
+    std::string digest;
+    digest.reserve(hash.size() * 2);
+    for (const auto byte : hash) {
+        digest += digits[byte >> 4];
+        digest += digits[byte & 0x0f];
+    }
+    return digest;
 }
 #endif
 
 bool download_asset(const UpdateInfo& release,
                     const std::filesystem::path& archive,
                     std::string& error) {
-    std::filesystem::create_directories(archive.parent_path());
-#ifdef _WIN32
-    const auto command = "curl.exe -fL --max-time 120 -o \"" +
-                         archive.u8string() + "\" \"" + release.asset_url +
-                         "\"";
-    return run_hidden(command, true, error);
-#else
-    const auto command = "curl -fL --max-time 120 -o " +
-                         shell_quote(archive.u8string()) + " " +
-                         shell_quote(release.asset_url) + " >/dev/null 2>&1";
-    if (std::system(command.c_str()) != 0) {
-        error = "release download failed";
-        return false;
-    }
-    return true;
-#endif
+    return download_public_file(release.asset_url, archive,
+                                512 * 1024 * 1024, error);
 }
 
 bool verify_asset(const UpdateInfo& release,
                   const std::filesystem::path& archive,
                   std::string& error) {
 #ifdef _WIN32
-    const auto script = "$h=(Get-FileHash -Algorithm SHA256 -LiteralPath " +
-        powershell_quote(archive.u8string()) +
-        ").Hash.ToLower();if($h -ne '" + release.sha256 + "'){exit 1}";
-    return run_hidden("powershell.exe -NoProfile -Command \"" + script + "\"",
-                      true, error);
+    const auto digest = sha256_file(archive, error);
+    return digest && *digest == release.sha256;
 #elif defined(__APPLE__)
     const auto command = "test \"$(shasum -a 256 " +
         shell_quote(archive.u8string()) + " | cut -d ' ' -f 1)\" = " +
@@ -294,6 +332,114 @@ std::string fetch_latest_release(std::string& error) {
     error = "GitHub update response was unexpectedly large";
     return {};
 }
+
+bool download_windows_file(const std::string& url,
+                           const std::filesystem::path& destination,
+                           const std::uintmax_t maximum_size,
+                           std::string& error) {
+    const auto wide_url = widen(url);
+    std::vector<wchar_t> host(256);
+    std::vector<wchar_t> path(4096);
+    std::vector<wchar_t> extra(4096);
+    URL_COMPONENTS components{};
+    components.dwStructSize = sizeof(components);
+    components.lpszHostName = host.data();
+    components.dwHostNameLength = static_cast<DWORD>(host.size());
+    components.lpszUrlPath = path.data();
+    components.dwUrlPathLength = static_cast<DWORD>(path.size());
+    components.lpszExtraInfo = extra.data();
+    components.dwExtraInfoLength = static_cast<DWORD>(extra.size());
+    if (!WinHttpCrackUrl(wide_url.c_str(), 0, 0, &components)) {
+        error = "could not parse the update download URL";
+        return false;
+    }
+    InternetHandle session{WinHttpOpen(
+        L"Go-Bigger-Boy/1.0", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+        WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0)};
+    if (!session) {
+        error = "could not initialize Windows HTTP";
+        return false;
+    }
+    static_cast<void>(WinHttpSetTimeouts(session.get(), 5000, 5000, 15000,
+                                         15000));
+    InternetHandle connection{WinHttpConnect(
+        session.get(), components.lpszHostName, components.nPort, 0)};
+    if (!connection) {
+        error = "could not connect to the update server";
+        return false;
+    }
+    std::wstring request_path{components.lpszUrlPath,
+                              components.dwUrlPathLength};
+    request_path.append(components.lpszExtraInfo,
+                        components.dwExtraInfoLength);
+    const auto flags = components.nScheme == INTERNET_SCHEME_HTTPS
+                           ? WINHTTP_FLAG_SECURE
+                           : 0;
+    InternetHandle request{WinHttpOpenRequest(
+        connection.get(), L"GET", request_path.c_str(), nullptr,
+        WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, flags)};
+    if (!request ||
+        !WinHttpSendRequest(request.get(), WINHTTP_NO_ADDITIONAL_HEADERS, 0,
+                            WINHTTP_NO_REQUEST_DATA, 0, 0, 0) ||
+        !WinHttpReceiveResponse(request.get(), nullptr)) {
+        error = "update download failed";
+        return false;
+    }
+    DWORD status = 0;
+    DWORD status_size = sizeof(status);
+    if (!WinHttpQueryHeaders(request.get(),
+                             WINHTTP_QUERY_STATUS_CODE |
+                                 WINHTTP_QUERY_FLAG_NUMBER,
+                             WINHTTP_HEADER_NAME_BY_INDEX, &status,
+                             &status_size, WINHTTP_NO_HEADER_INDEX) ||
+        status < 200 || status >= 300) {
+        error = "update server returned HTTP status " + std::to_string(status);
+        return false;
+    }
+
+    std::ofstream output(destination, std::ios::binary | std::ios::trunc);
+    if (!output) {
+        error = "could not create the update download file";
+        return false;
+    }
+    std::array<char, 64 * 1024> buffer{};
+    std::uintmax_t total = 0;
+    while (true) {
+        DWORD available = 0;
+        if (!WinHttpQueryDataAvailable(request.get(), &available)) {
+            error = "could not read the update download";
+            return false;
+        }
+        if (available == 0) break;
+        while (available > 0) {
+            const auto requested = static_cast<DWORD>(std::min<std::size_t>(
+                available, buffer.size()));
+            DWORD read = 0;
+            if (!WinHttpReadData(request.get(), buffer.data(), requested,
+                                 &read) || read == 0) {
+                error = "could not read the update download";
+                return false;
+            }
+            total += read;
+            if (total > maximum_size) {
+                error = "downloaded file is too large";
+                return false;
+            }
+            output.write(buffer.data(), read);
+            if (!output) {
+                error = "could not store the update download";
+                return false;
+            }
+            available -= read;
+        }
+    }
+    output.close();
+    if (total == 0) {
+        error = "the update download was empty";
+        return false;
+    }
+    return true;
+}
 #else
 std::string fetch_latest_release(std::string& error) {
     constexpr auto command =
@@ -336,10 +482,10 @@ bool download_public_file(const std::string& url,
     auto temporary = destination;
     temporary += ".download";
 #ifdef _WIN32
-    const auto command = "curl.exe -fL --max-time 20 -o \"" +
-                         temporary.u8string() +
-                         "\" \"" + url + "\"";
-    if (!run_hidden(command, true, error)) return false;
+    if (!download_windows_file(url, temporary, maximum_size, error)) {
+        std::filesystem::remove(temporary);
+        return false;
+    }
 #else
     const auto command = "curl -fL --max-time 20 -o " +
                          shell_quote(temporary.u8string()) + " " + shell_quote(url) +
@@ -497,43 +643,31 @@ bool launch_update_installer(const DownloadedUpdate& update,
     const auto settings = installation_root / "settings.ini";
     const auto settings_backup = directory / "settings.ini.user";
 #ifdef _WIN32
-    const auto script_path = directory / "install-update.ps1";
-    std::ofstream script(script_path, std::ios::trunc);
-    if (!script) {
-        error = "could not create the Windows update helper";
+    const auto helper = installation_root / "gbb-updater.exe";
+    if (!std::filesystem::exists(helper)) {
+        error = "the native Windows update helper is missing";
         return false;
     }
-    script << "$ErrorActionPreference='Stop'\n"
-           << "Wait-Process -Id " << GetCurrentProcessId()
-           << " -ErrorAction SilentlyContinue\n"
-           << "if((Get-FileHash -Algorithm SHA256 -LiteralPath "
-           << powershell_quote(update.archive.u8string())
-           << ").Hash.ToLower() -ne '" << update.release.sha256
-           << "'){exit 2}\n"
-           << "Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "
-           << powershell_quote(staging.u8string()) << "\n"
-           << "Expand-Archive -LiteralPath "
-           << powershell_quote(update.archive.u8string()) << " -DestinationPath "
-           << powershell_quote(staging.u8string()) << " -Force\n"
-           << "$hadSettings=Test-Path -LiteralPath "
-           << powershell_quote(settings.u8string()) << "\n"
-           << "if($hadSettings){Copy-Item -LiteralPath "
-           << powershell_quote(settings.u8string()) << " -Destination "
-           << powershell_quote(settings_backup.u8string()) << " -Force}\n"
-           << "Copy-Item -Path " << powershell_quote((staging / "*").u8string())
-           << " -Destination " << powershell_quote(installation_root.u8string())
-           << " -Recurse -Force\n"
-           << "if($hadSettings){Copy-Item -LiteralPath "
-           << powershell_quote(settings_backup.u8string()) << " -Destination "
-           << powershell_quote(settings.u8string())
-           << " -Force}else{Remove-Item -Force -ErrorAction SilentlyContinue "
-           << powershell_quote(settings.u8string()) << "}\n"
-           << "Start-Process -FilePath " << powershell_quote(executable.u8string())
-           << "\n";
-    script.close();
-    return run_hidden("powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"" +
-                          script_path.u8string() + "\"",
-                      false, error);
+    const auto helper_string = helper.wstring();
+    const auto command = quote_windows_argument(helper_string) +
+        L" --archive " + quote_windows_argument(widen(update.archive.u8string())) +
+        L" --root " + quote_windows_argument(widen(installation_root.u8string())) +
+        L" --executable " + quote_windows_argument(widen(executable.u8string())) +
+        L" --sha256 " + quote_windows_argument(widen(update.release.sha256)) +
+        L" --pid " + std::to_wstring(GetCurrentProcessId());
+    auto mutable_command = command;
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
+    PROCESS_INFORMATION process{};
+    if (!CreateProcessW(helper_string.c_str(), mutable_command.data(), nullptr,
+                        nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr,
+                        &startup, &process)) {
+        error = "could not start the native Windows update helper";
+        return false;
+    }
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
+    return true;
 #else
     const auto script_path = directory / "install-update.sh";
     std::ofstream script(script_path, std::ios::trunc);

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(go_bigger_boy VERSION 0.13.5 LANGUAGES CXX)
+project(go_bigger_boy VERSION 0.14.0 LANGUAGES CXX)
 
 configure_file(settings.ini settings.ini COPYONLY)
 
@@ -95,6 +95,9 @@ if(GAMEBOY_BUILD_SDL)
                 apps/sdl/update_checker.cpp
                 packaging/windows/go-bigger-boy.rc
             )
+            add_executable(gbb_updater WIN32 apps/sdl/windows_updater.cpp)
+            set_target_properties(gbb_updater PROPERTIES OUTPUT_NAME "gbb-updater")
+            target_link_libraries(gbb_updater PRIVATE bcrypt shell32)
         elseif(APPLE)
             add_executable(gameboy_sdl MACOSX_BUNDLE
                 apps/sdl/main.cpp
@@ -123,7 +126,7 @@ if(GAMEBOY_BUILD_SDL)
             )
             if(WIN32)
                 target_link_libraries(gameboy_sdl PRIVATE
-                    winhttp comctl32 comdlg32 ole32 windowscodecs)
+                    winhttp bcrypt comctl32 comdlg32 ole32 windowscodecs)
                 target_include_directories(gameboy_sdl PRIVATE
                     "${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows"
                 )
@@ -148,6 +151,7 @@ if(GAMEBOY_BUILD_SDL)
             if(NOT ANDROID)
                 if(WIN32)
                     install(TARGETS gameboy_sdl RUNTIME DESTINATION .)
+                    install(TARGETS gbb_updater RUNTIME DESTINATION .)
                 elseif(APPLE)
                     set_target_properties(gameboy_sdl PROPERTIES
                         INSTALL_RPATH "@executable_path/../Frameworks"

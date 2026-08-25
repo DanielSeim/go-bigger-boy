@@ -13,6 +13,7 @@ import android.graphics.Paint;
 import android.graphics.RectF;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Build;
 import android.provider.OpenableColumns;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -29,6 +30,8 @@ import android.widget.Spinner;
 import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.window.OnBackInvokedCallback;
+import android.window.OnBackInvokedDispatcher;
 
 import java.io.BufferedInputStream;
 import java.io.File;
@@ -80,6 +83,7 @@ public final class LibraryActivity extends Activity {
     private SharedPreferences preferences;
     private boolean settingsVisible;
     private AndroidUpdateManager updateManager;
+    private OnBackInvokedCallback backCallback;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -90,6 +94,11 @@ public final class LibraryActivity extends Activity {
                 savedInstanceState.getBoolean("settings_visible", false);
         showDashboard(settingsVisible);
         updateManager.checkForUpdates();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            backCallback = this::confirmExit;
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                    OnBackInvokedDispatcher.PRIORITY_DEFAULT, backCallback);
+        }
     }
 
     @Override
@@ -100,8 +109,35 @@ public final class LibraryActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                backCallback != null) {
+            getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(
+                    backCallback);
+            backCallback = null;
+        }
         artworkExecutor.shutdownNow();
         super.onDestroy();
+    }
+
+    /**
+     * The SDL activity remains underneath the native library so ROMs can be
+     * reopened without starting a second SDL loop. Finishing this activity
+     * alone would expose that blank SDL surface. Close the whole task from
+     * the library instead, after asking for confirmation once.
+     */
+    @Override
+    @SuppressWarnings("deprecation")
+    public void onBackPressed() {
+        confirmExit();
+    }
+
+    private void confirmExit() {
+        new AlertDialog.Builder(this)
+                .setTitle("Exit Go Bigger Boy?")
+                .setMessage("Are you sure you want to close Go Bigger Boy?")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Exit", (dialog, which) -> finishAffinity())
+                .show();
     }
 
     @Override

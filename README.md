@@ -212,7 +212,8 @@ GBB can download the matching release asset and verify GitHub's published
 SHA-256 digest. Nothing is downloaded without confirmation. Network failures
 remain non-blocking and do not display a dialog. On desktop, a user-writable
 installation is replaced after the emulator exits and the updated executable
-restarts. Windows uses the system HTTP service and PowerShell extraction;
+restarts. Windows uses the system HTTP service and a native update helper
+(signed when release signing is configured);
 Linux and macOS use the system `curl` and archive tools. Android downloads the
 signed APK, then opens the system package installer; Android may require enabling
 “Allow from this source” and always controls the final confirmation. After a
