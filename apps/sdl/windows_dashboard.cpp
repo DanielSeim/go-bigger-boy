@@ -1375,7 +1375,8 @@ DashboardResult show_windows_dashboard(
         L"Click a binding, then press a key. Delete clears a binding.",
         0, 510, 238, 420, 26, 0);
     state.gameboy_background = control(
-        state, L"STATIC", L"", SS_OWNERDRAW, 32, 278, 916, 300,
+        state, L"STATIC", L"", SS_OWNERDRAW | WS_CLIPSIBLINGS,
+        32, 278, 916, 300,
         id_gameboy_background);
 
     for (int column = 0; column < 2; ++column) {

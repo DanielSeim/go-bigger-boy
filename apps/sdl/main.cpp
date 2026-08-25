@@ -61,8 +61,7 @@ std::mutex android_rom_request_mutex;
 std::optional<AndroidRomRequest> android_rom_request;
 // Android's system back callback runs on the Java/UI thread.  Keep the
 // request as a flag and consume it on SDL's main thread so that all emulator
-// state (including camera RAM) is flushed before the activity is allowed to
-// finish.
+// state (including camera RAM) is flushed before the game is left.
 std::atomic_bool android_back_requested{false};
 
 std::optional<AndroidRomRequest> take_android_rom_request() {
@@ -1597,6 +1596,10 @@ void show_help(SDL_Window* window) {
 void show_error(SDL_Window* window, const std::string& message);
 #ifdef __ANDROID__
 void open_android_library() noexcept;
+void leave_android_game(
+    std::unique_ptr<gameboy::Emulator>& emulator, SdlResources& sdl,
+    bool& dashboard_visible, bool& paused, bool& fast_forward, bool& rewind,
+    RewindHistory& rewind_history, bool& running);
 #endif
 
 void activate_dashboard_selection(
@@ -1664,12 +1667,11 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
     // flag.  Handle it here, on SDL's thread, rather than allowing the
     // activity to finish while the emulator is still writing its save file.
     if (android_back_requested.exchange(false)) {
-        clear_touch_buttons(emulator.get(), sdl);
-        flush_battery_safely(emulator.get());
         if (dashboard_visible && emulator != nullptr) {
             dashboard_visible = false;
-        } else if (confirm_exit(sdl.window)) {
-            running = false;
+        } else {
+            leave_android_game(emulator, sdl, dashboard_visible, paused,
+                               fast_forward, rewind, rewind_history, running);
         }
     }
 #endif
@@ -1687,13 +1689,12 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
 #ifdef __ANDROID__
             if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
                 event.key.key == SDLK_AC_BACK) {
-                clear_touch_buttons(emulator.get(), sdl);
-                flush_battery_safely(emulator.get());
                 if (dashboard_visible && emulator != nullptr) {
                     dashboard_visible = false;
                 } else {
-                    if (emulator) release_all_buttons(*emulator);
-                    if (confirm_exit(sdl.window)) running = false;
+                    leave_android_game(emulator, sdl, dashboard_visible, paused,
+                                       fast_forward, rewind, rewind_history,
+                                       running);
                 }
                 break;
             }
@@ -2195,6 +2196,33 @@ void open_android_library() noexcept {
     }
     if (environment->ExceptionCheck()) environment->ExceptionClear();
     environment->DeleteLocalRef(activity);
+}
+
+void leave_android_game(
+    std::unique_ptr<gameboy::Emulator>& emulator, SdlResources& sdl,
+    bool& dashboard_visible, bool& paused, bool& fast_forward, bool& rewind,
+    RewindHistory& rewind_history, bool& running) {
+    if (emulator == nullptr) {
+        if (confirm_exit(sdl.window)) running = false;
+        return;
+    }
+    clear_touch_buttons(emulator.get(), sdl);
+    flush_battery_safely(emulator.get());
+    if (!confirm_exit(sdl.window)) return;
+
+    // Keep SDL's native thread alive while the Android library is shown.
+    // SDLActivity cannot start a second native main loop after the first one
+    // returns, so ending it here makes the next ROM launch freeze.
+    release_all_buttons(*emulator);
+    stop_rumble(sdl);
+    close_camera(sdl);
+    emulator.reset();
+    rewind_history.clear();
+    fast_forward = false;
+    rewind = false;
+    dashboard_visible = true;
+    paused = true;
+    open_android_library();
 }
 
 std::optional<int> android_camera_orientation_correction_degrees() noexcept {
