@@ -477,6 +477,9 @@ void open_rom(State& state) {
     }
 }
 
+bool confirm_exit(HWND window);
+void draw_dashboard_button(const DRAWITEMSTRUCT& item, const State& state);
+
 LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                              LPARAM lparam) {
     auto* state = reinterpret_cast<State*>(
