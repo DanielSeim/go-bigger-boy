@@ -8,6 +8,8 @@ import android.view.OrientationEventListener;
 import android.view.View;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
+import android.window.OnBackInvokedCallback;
+import android.window.OnBackInvokedDispatcher;
 
 import org.libsdl.app.SDLActivity;
 
@@ -21,8 +23,10 @@ public final class GbbActivity extends SDLActivity {
     private AndroidUpdateManager updateManager;
     private volatile int cameraOrientationDegrees;
     private OrientationEventListener cameraOrientationListener;
+    private OnBackInvokedCallback backCallback;
 
     private static native void nativeOpenRom(String rom, String displayName);
+    private static native void nativeAndroidBackPressed();
 
     @Override
     protected String[] getArguments() {
@@ -49,6 +53,11 @@ public final class GbbActivity extends SDLActivity {
         };
         updateManager = new AndroidUpdateManager(this);
         updateManager.checkForUpdates();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            backCallback = this::requestNativeBack;
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                    OnBackInvokedDispatcher.PRIORITY_DEFAULT, backCallback);
+        }
     }
 
     @Override
@@ -104,6 +113,32 @@ public final class GbbActivity extends SDLActivity {
         if (updateManager != null) updateManager.onPause();
         if (cameraOrientationListener != null) cameraOrientationListener.disable();
         super.onPause();
+    }
+
+    /**
+     * Keep Android's back action on the SDL main thread.  SDL's native loop
+     * flushes battery-backed RAM (including Game Boy Camera images) before it
+     * displays the exit confirmation or shuts down.
+     */
+    @Override
+    @SuppressWarnings("deprecation")
+    public void onBackPressed() {
+        requestNativeBack();
+    }
+
+    private void requestNativeBack() {
+        nativeAndroidBackPressed();
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                backCallback != null) {
+            getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(
+                    backCallback);
+            backCallback = null;
+        }
+        super.onDestroy();
     }
 
     /**

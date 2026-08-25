@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cctype>
 #include <cerrno>
@@ -58,6 +59,11 @@ struct AndroidRomRequest {
 
 std::mutex android_rom_request_mutex;
 std::optional<AndroidRomRequest> android_rom_request;
+// Android's system back callback runs on the Java/UI thread.  Keep the
+// request as a flag and consume it on SDL's main thread so that all emulator
+// state (including camera RAM) is flushed before the activity is allowed to
+// finish.
+std::atomic_bool android_back_requested{false};
 
 std::optional<AndroidRomRequest> take_android_rom_request() {
     std::lock_guard<std::mutex> lock(android_rom_request_mutex);
@@ -66,6 +72,18 @@ std::optional<AndroidRomRequest> take_android_rom_request() {
     return request;
 }
 #endif
+
+void flush_battery_safely(gameboy::Emulator* emulator) noexcept {
+    if (emulator == nullptr) return;
+    try {
+        emulator->flush_battery();
+    } catch (const std::exception& error) {
+        std::cerr << "Warning: could not flush battery save: "
+                  << error.what() << '\n';
+    } catch (...) {
+        std::cerr << "Warning: could not flush battery save.\n";
+    }
+}
 
 struct TouchControlSettings {
     float scale{1.35F};
@@ -1641,6 +1659,20 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                     bool& fullscreen, bool& fast_forward, bool& rewind,
                     RewindHistory& rewind_history, bool& reset_requested,
                     bool& running) {
+#ifdef __ANDROID__
+    // The Java activity intercepts Android's back callback and sets this
+    // flag.  Handle it here, on SDL's thread, rather than allowing the
+    // activity to finish while the emulator is still writing its save file.
+    if (android_back_requested.exchange(false)) {
+        clear_touch_buttons(emulator.get(), sdl);
+        flush_battery_safely(emulator.get());
+        if (dashboard_visible && emulator != nullptr) {
+            dashboard_visible = false;
+        } else if (confirm_exit(sdl.window)) {
+            running = false;
+        }
+    }
+#endif
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         switch (event.type) {
@@ -1655,6 +1687,8 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
 #ifdef __ANDROID__
             if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
                 event.key.key == SDLK_AC_BACK) {
+                clear_touch_buttons(emulator.get(), sdl);
+                flush_battery_safely(emulator.get());
                 if (dashboard_visible && emulator != nullptr) {
                     dashboard_visible = false;
                 } else {
@@ -1958,7 +1992,7 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
         }
         case SDL_EVENT_WILL_ENTER_BACKGROUND:
             clear_touch_buttons(emulator.get(), sdl);
-            if (emulator) emulator->flush_battery();
+            flush_battery_safely(emulator.get());
             paused = true;
             break;
         case SDL_EVENT_DID_ENTER_FOREGROUND:
@@ -2482,7 +2516,7 @@ void load_rom(const std::string& path,
     replacement->bus().connect_printer();
     replacement->set_dmg_compatibility_colors(palette.cgb_compatibility);
     stop_rumble(sdl);
-    if (emulator) emulator->flush_battery();
+    flush_battery_safely(emulator.get());
     emulator = std::move(replacement);
     configure_camera(sdl, *emulator);
 }
@@ -2859,6 +2893,12 @@ Java_com_danielseim_gbb_LibraryActivity_nativeResetTouchControlLayout(
     save_touch_control_layout(std::filesystem::u8path(raw_directory),
                               defaults.positions);
     environment->ReleaseStringUTFChars(directory, raw_directory);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_danielseim_gbb_GbbActivity_nativeAndroidBackPressed(
+    JNIEnv*, jclass) {
+    android_back_requested.store(true);
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -3250,7 +3290,7 @@ int main(int argc, char** argv) {
             }
         }
         save_game_window_geometry(sdl.window, preference_path);
-        if (emulator) emulator->flush_battery();
+        flush_battery_safely(emulator.get());
     } catch (const std::exception& error) {
         std::cerr << "Error: " << error.what() << '\n';
         return EXIT_FAILURE;

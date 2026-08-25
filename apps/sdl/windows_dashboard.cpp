@@ -349,7 +349,6 @@ void draw_gameboy_background(const DRAWITEMSTRUCT& item) {
     const auto canvas = CreateSolidBrush(RGB(13, 18, 27));
     const auto device = CreateSolidBrush(RGB(31, 42, 57));
     const auto screen = CreateSolidBrush(RGB(35, 104, 123));
-    const auto accent = CreateSolidBrush(RGB(10, 17, 27));
     const auto red = CreateSolidBrush(RGB(237, 77, 132));
     RECT body{6, 2, item.rcItem.right - 6, item.rcItem.bottom - 2};
     FillRect(item.hDC, &item.rcItem, canvas);
@@ -358,11 +357,14 @@ void draw_gameboy_background(const DRAWITEMSTRUCT& item) {
     RoundRect(item.hDC, body.left, body.top, body.right, body.bottom, 24, 24);
     RECT display{190, 14, item.rcItem.right - 190, 64};
     FillRect(item.hDC, &display, screen);
-    SelectObject(item.hDC, accent);
+    // Keep the D-pad distinct from the dark label backgrounds used by the
+    // native controls layered over this artwork.
+    const auto dpad = CreateSolidBrush(RGB(72, 105, 119));
+    SelectObject(item.hDC, dpad);
     RECT dpad_horizontal{40, 112, 122, 140};
     RECT dpad_vertical{67, 85, 95, 167};
-    FillRect(item.hDC, &dpad_horizontal, accent);
-    FillRect(item.hDC, &dpad_vertical, accent);
+    FillRect(item.hDC, &dpad_horizontal, dpad);
+    FillRect(item.hDC, &dpad_vertical, dpad);
     SelectObject(item.hDC, red);
     Ellipse(item.hDC, item.rcItem.right - 115, 92,
             item.rcItem.right - 75, 132);
@@ -370,9 +372,9 @@ void draw_gameboy_background(const DRAWITEMSTRUCT& item) {
             item.rcItem.right - 125, 165);
     SelectObject(item.hDC, old_brush);
     SelectObject(item.hDC, old_pen);
+    DeleteObject(dpad);
     DeleteObject(device);
     DeleteObject(screen);
-    DeleteObject(accent);
     DeleteObject(red);
     DeleteObject(canvas);
 }
@@ -408,7 +410,11 @@ LRESULT CALLBACK table_header_subclass(
             item.mask = HDI_TEXT;
             item.pszText = label;
             item.cchTextMax = static_cast<int>(std::size(label));
-            Header_GetItem(window, index, &item);
+            if (!SendMessageW(window, HDM_GETITEMW,
+                              static_cast<WPARAM>(index),
+                              reinterpret_cast<LPARAM>(&item))) {
+                continue;
+            }
             rectangle.left += 12;
             DrawTextW(dc, label, -1, &rectangle,
                       DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
@@ -717,7 +723,11 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                     item.mask = HDI_TEXT;
                     item.pszText = label;
                     item.cchTextMax = static_cast<int>(std::size(label));
-                    Header_GetItem(header, column, &item);
+                    if (!SendMessageW(header, HDM_GETITEMW,
+                                      static_cast<WPARAM>(column),
+                                      reinterpret_cast<LPARAM>(&item))) {
+                        return CDRF_DODEFAULT;
+                    }
                     SetBkMode(custom->hdc, TRANSPARENT);
                     SetTextColor(custom->hdc, RGB(185, 216, 232));
                     rectangle.left += 12;
@@ -1149,7 +1159,7 @@ void draw_dashboard_button(const DRAWITEMSTRUCT& item, const State& state) {
     const auto fill = disabled
                           ? RGB(28, 34, 45)
                           : active_tab || pressed ? RGB(0, 145, 190)
-                                                   : RGB(29, 42, 59);
+                                                   : RGB(44, 65, 88);
     const auto text = disabled ? RGB(104, 117, 132) : RGB(238, 246, 252);
     const auto brush = CreateSolidBrush(fill);
     FillRect(item.hDC, &item.rcItem, brush);
