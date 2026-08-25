@@ -377,6 +377,56 @@ void draw_gameboy_background(const DRAWITEMSTRUCT& item) {
     DeleteObject(canvas);
 }
 
+LRESULT CALLBACK table_header_subclass(
+    HWND window, UINT message, WPARAM wparam, LPARAM lparam,
+    UINT_PTR subclass_id, DWORD_PTR reference) {
+    auto* state = reinterpret_cast<State*>(reference);
+    if (message == WM_ERASEBKGND) return 1;
+    if (message == WM_PAINT && state != nullptr) {
+        PAINTSTRUCT paint{};
+        const auto dc = BeginPaint(window, &paint);
+        RECT client{};
+        GetClientRect(window, &client);
+        const auto background = CreateSolidBrush(RGB(20, 30, 44));
+        FillRect(dc, &client, background);
+        DeleteObject(background);
+        const auto font = state->ui_font != nullptr
+                              ? state->ui_font
+                              : reinterpret_cast<HFONT>(
+                                    GetStockObject(DEFAULT_GUI_FONT));
+        const auto old_font = SelectObject(dc, font);
+        SetBkMode(dc, TRANSPARENT);
+        SetTextColor(dc, RGB(185, 216, 232));
+        const auto divider = CreatePen(PS_SOLID, 1, RGB(43, 57, 75));
+        const auto old_pen = SelectObject(dc, divider);
+        const auto count = Header_GetItemCount(window);
+        for (int index = 0; index < count; ++index) {
+            RECT rectangle{};
+            if (!Header_GetItemRect(window, index, &rectangle)) continue;
+            wchar_t label[128]{};
+            HDITEMW item{};
+            item.mask = HDI_TEXT;
+            item.pszText = label;
+            item.cchTextMax = static_cast<int>(std::size(label));
+            Header_GetItem(window, index, &item);
+            rectangle.left += 12;
+            DrawTextW(dc, label, -1, &rectangle,
+                      DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+            MoveToEx(dc, rectangle.right - 12, rectangle.top + 4, nullptr);
+            LineTo(dc, rectangle.right - 12, rectangle.bottom - 4);
+        }
+        SelectObject(dc, old_pen);
+        DeleteObject(divider);
+        SelectObject(dc, old_font);
+        EndPaint(window, &paint);
+        return 0;
+    }
+    if (message == WM_NCDESTROY) {
+        RemoveWindowSubclass(window, table_header_subclass, subclass_id);
+    }
+    return DefSubclassProc(window, message, wparam, lparam);
+}
+
 void show_page(State& state, const bool settings) {
     state.settings_page = settings;
     if (!settings && state.capturing_binding) {
@@ -509,6 +559,12 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
         SetTextColor(dc, RGB(224, 235, 244));
         SetBkColor(dc, RGB(13, 18, 27));
         SetBkMode(dc, TRANSPARENT);
+        return reinterpret_cast<INT_PTR>(state->background_brush);
+    }
+    if (message == WM_CTLCOLORSCROLLBAR) {
+        const auto dc = reinterpret_cast<HDC>(wparam);
+        SetTextColor(dc, RGB(137, 160, 183));
+        SetBkColor(dc, RGB(20, 27, 38));
         return reinterpret_cast<INT_PTR>(state->background_brush);
     }
 
@@ -1061,7 +1117,10 @@ void resolve_artwork(State& state) {
 HWND control(State& state, const wchar_t* type, const wchar_t* text,
              DWORD style, int x, int y, int width, int height, int id) {
     if (std::wstring_view(type) == L"BUTTON") style |= BS_OWNERDRAW;
-    auto result = CreateWindowExW(0, type, text,
+    const auto extended_style = std::wstring_view(type) == L"STATIC"
+                                    ? WS_EX_TRANSPARENT
+                                    : 0;
+    auto result = CreateWindowExW(extended_style, type, text,
         WS_CHILD | style, x, y, width, height, state.window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
         GetModuleHandleW(nullptr), nullptr);
@@ -1093,13 +1152,7 @@ void draw_dashboard_button(const DRAWITEMSTRUCT& item, const State& state) {
                                                    : RGB(29, 42, 59);
     const auto text = disabled ? RGB(104, 117, 132) : RGB(238, 246, 252);
     const auto brush = CreateSolidBrush(fill);
-    const auto pen = GetStockObject(NULL_PEN);
-    const auto old_brush = SelectObject(item.hDC, brush);
-    const auto old_pen = SelectObject(item.hDC, pen);
-    RoundRect(item.hDC, item.rcItem.left + 1, item.rcItem.top + 1,
-              item.rcItem.right - 1, item.rcItem.bottom - 1, 10, 10);
-    SelectObject(item.hDC, old_brush);
-    SelectObject(item.hDC, old_pen);
+    FillRect(item.hDC, &item.rcItem, brush);
     DeleteObject(brush);
     SetBkMode(item.hDC, TRANSPARENT);
     SetTextColor(item.hDC, text);
@@ -1198,6 +1251,8 @@ DashboardResult show_windows_dashboard(
     state.list = control(state, WC_LISTVIEWW, L"",
         WS_VISIBLE | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS,
         32, 200, 916, 350, id_list);
+    SetWindowSubclass(ListView_GetHeader(state.list), table_header_subclass, 1,
+                      reinterpret_cast<DWORD_PTR>(&state));
     ListView_SetExtendedListViewStyle(state.list,
         LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
     ListView_SetBkColor(state.list, RGB(20, 27, 38));

@@ -106,6 +106,7 @@ private:
     std::array<std::uint8_t, 0x36> camera_registers_{};
     std::vector<std::uint8_t> camera_frame_;
     std::vector<std::uint8_t> camera_image_;
+    bool camera_image_dirty_{};
 };
 
 } // namespace gameboy

@@ -17,6 +17,7 @@ constexpr std::size_t camera_image_size = 16 * 14 * 16;
 constexpr std::uint64_t rtc_day_seconds = 24 * 60 * 60;
 constexpr std::uint64_t rtc_period_seconds = 512 * rtc_day_seconds;
 constexpr std::array<char, 8> rtc_magic{'G', 'B', 'B', 'R', 'T', 'C', '1', 0};
+constexpr std::array<char, 8> camera_save_magic{'G', 'B', 'B', 'C', 'A', 'M', '1', 0};
 constexpr std::array<std::uint8_t, 48> nintendo_logo{
     0xCE, 0xED, 0x66, 0x66, 0xCC, 0x0D, 0x00, 0x0B,
     0x03, 0x73, 0x00, 0x83, 0x00, 0x0C, 0x00, 0x0D,
@@ -306,9 +307,11 @@ Cartridge::Cartridge(Cartridge&& other) noexcept
       camera_registers_mapped_(other.camera_registers_mapped_),
       camera_registers_(other.camera_registers_),
       camera_frame_(std::move(other.camera_frame_)),
-      camera_image_(std::move(other.camera_image_)) {
+      camera_image_(std::move(other.camera_image_)),
+      camera_image_dirty_(other.camera_image_dirty_) {
     other.ram_dirty_ = false;
     other.rtc_dirty_ = false;
+    other.camera_image_dirty_ = false;
     other.save_path_.clear();
     other.rtc_path_.clear();
 }
@@ -650,7 +653,10 @@ void Cartridge::import_rtc_data(const std::vector<std::uint8_t>& data) {
 void Cartridge::flush_battery() {
     if (!battery_) return;
 
-    if (ram_dirty_ && !save_path_.empty() && !ram_.empty()) {
+    const auto camera_save = controller_ == Controller::camera &&
+                             !camera_image_.empty();
+    if ((ram_dirty_ || camera_image_dirty_) && !save_path_.empty() &&
+        !ram_.empty()) {
         std::ofstream output(save_path_, std::ios::binary | std::ios::trunc);
         if (!output) {
             throw std::runtime_error("Could not open save file: " +
@@ -658,12 +664,19 @@ void Cartridge::flush_battery() {
         }
         output.write(reinterpret_cast<const char*>(ram_.data()),
                      static_cast<std::streamsize>(ram_.size()));
+        if (camera_save) {
+            output.write(camera_save_magic.data(),
+                         static_cast<std::streamsize>(camera_save_magic.size()));
+            output.write(reinterpret_cast<const char*>(camera_image_.data()),
+                         static_cast<std::streamsize>(camera_image_.size()));
+        }
         output.flush();
         if (!output) {
             throw std::runtime_error("Could not write save file: " +
                                      save_path_.string());
         }
         ram_dirty_ = false;
+        camera_image_dirty_ = false;
     }
     if (rtc_present_) flush_rtc();
 }
@@ -778,6 +791,7 @@ void Cartridge::capture_camera_image() noexcept {
             if ((shade & 2) != 0) camera_image_[offset + 1] |= bit;
         }
     }
+    camera_image_dirty_ = true;
     camera_registers_[0] &= 0x06;
 }
 
@@ -794,7 +808,21 @@ void Cartridge::load_battery() {
     if (input.bad()) {
         throw std::runtime_error("Could not read save file: " + save_path_.string());
     }
+    if (controller_ == Controller::camera && !camera_image_.empty()) {
+        std::array<char, camera_save_magic.size()> magic{};
+        input.read(magic.data(), static_cast<std::streamsize>(magic.size()));
+        if (input && magic == camera_save_magic) {
+            input.read(reinterpret_cast<char*>(camera_image_.data()),
+                       static_cast<std::streamsize>(camera_image_.size()));
+            if (!input) {
+                throw std::runtime_error("Could not read camera image from save file: " +
+                                         save_path_.string());
+            }
+        }
+        input.clear();
+    }
     ram_dirty_ = false;
+    camera_image_dirty_ = false;
 }
 
 void Cartridge::update_rtc() const noexcept {

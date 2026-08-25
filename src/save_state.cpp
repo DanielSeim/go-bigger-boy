@@ -529,6 +529,7 @@ private:
                              bus.cartridge_.camera_frame_.size());
                 reader.bytes(bus.cartridge_.camera_image_.data(),
                              bus.cartridge_.camera_image_.size());
+                bus.cartridge_.camera_image_dirty_ = true;
             }
         } else if (bus.cartridge_.has_camera()) {
             bus.cartridge_.camera_registers_mapped_ = false;

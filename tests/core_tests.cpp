@@ -765,6 +765,48 @@ void test_gameboy_camera() {
     check(camera.read(0xA100) == 0x00 && camera.read(0xA101) == 0xFF,
           "Game Boy Camera converts a webcam frame into 2bpp sensor tiles");
 
+    const auto unique = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto camera_save_base = std::filesystem::temp_directory_path() /
+                                  ("gameboy-camera-persistence-" +
+                                   std::to_string(unique) + ".gb");
+    auto camera_save_path = camera_save_base;
+    camera_save_path.replace_extension(".sav");
+    const auto capture_persistent_image = [&](gameboy::Cartridge& cartridge) {
+        cartridge.set_camera_frame(frame.data(), frame.size());
+        cartridge.write(0x4000, 0x10);
+        for (std::uint16_t matrix = 0; matrix < 16; ++matrix) {
+            const auto address = static_cast<std::uint16_t>(0xA006 + matrix * 3);
+            cartridge.write(address, 50);
+            cartridge.write(static_cast<std::uint16_t>(address + 1), 100);
+            cartridge.write(static_cast<std::uint16_t>(address + 2), 150);
+        }
+        cartridge.write(0xA001, 4);
+        cartridge.write(0xA002, 0x10);
+        cartridge.write(0xA000, 1);
+        cartridge.write(0x4000, 0);
+    };
+    std::uint8_t saved_camera_tile[2]{};
+    {
+        gameboy::Cartridge persistent{banked_rom(64, 0xFC, 0x05, 0x04)};
+        persistent.set_persistence_path(camera_save_base);
+        capture_persistent_image(persistent);
+        saved_camera_tile[0] = persistent.read(0xA100);
+        saved_camera_tile[1] = persistent.read(0xA101);
+        persistent.flush_battery();
+    }
+    check(std::filesystem::exists(camera_save_path) &&
+              std::filesystem::file_size(camera_save_path) > 0x20000,
+          "Game Boy Camera flush stores the captured image alongside SRAM");
+    {
+        gameboy::Cartridge restored{banked_rom(64, 0xFC, 0x05, 0x04)};
+        restored.set_persistence_path(camera_save_base);
+        restored.write(0x4000, 0);
+        check(restored.read(0xA100) == saved_camera_tile[0] &&
+                  restored.read(0xA101) == saved_camera_tile[1],
+              "Game Boy Camera images reload from persistent storage");
+    }
+    std::filesystem::remove(camera_save_path);
+
     gameboy::Emulator emulator{
         gameboy::Cartridge{banked_rom(64, 0xFC, 0x05, 0x04)}};
     check(emulator.has_camera(),
