@@ -105,6 +105,39 @@ jobs:
       - name: Stage package
         run: cmake --install build --config Release --prefix package
 
+      - name: Sign Windows executable
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          WINDOWS_SIGNING_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
+          WINDOWS_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_CERTIFICATE_BASE64)) {
+            Write-Warning "No Windows signing certificate configured; the executable will be unsigned."
+            exit 0
+          }
+          $certificate = Join-Path $env:RUNNER_TEMP "gbb-signing.pfx"
+          [IO.File]::WriteAllBytes(
+            $certificate,
+            [Convert]::FromBase64String($env:WINDOWS_SIGNING_CERTIFICATE_BASE64))
+          $signtool = (Get-Command signtool.exe -ErrorAction SilentlyContinue).Source
+          if ([string]::IsNullOrWhiteSpace($signtool)) {
+            $signtool = Get-ChildItem `
+              "${env:ProgramFiles(x86)}\Windows Kits\10\bin" `
+              -Filter signtool.exe -Recurse -ErrorAction SilentlyContinue |
+              Sort-Object FullName -Descending |
+              Select-Object -First 1 -ExpandProperty FullName
+          }
+          if ([string]::IsNullOrWhiteSpace($signtool)) {
+            throw "signtool.exe was not found on the Windows runner"
+          }
+          & $signtool sign /fd SHA256 /f $certificate `
+            /p $env:WINDOWS_SIGNING_CERTIFICATE_PASSWORD `
+            /tr http://timestamp.digicert.com /td SHA256 package\gbb.exe
+          if ($LASTEXITCODE -ne 0) { throw "Authenticode signing failed" }
+          & $signtool verify /pa package\gbb.exe
+          if ($LASTEXITCODE -ne 0) { throw "Signed executable verification failed" }
+
       - name: Package Windows artifact
         if: runner.os == 'Windows'
         shell: pwsh

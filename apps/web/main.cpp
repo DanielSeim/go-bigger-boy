@@ -182,6 +182,11 @@ int load_rom_from_browser(emscripten::val bytes) noexcept {
         if (rom.empty()) return 0;
         active_app->emulator = std::make_unique<gameboy::Emulator>(
             gameboy::Cartridge(std::move(rom)));
+        // The browser has no physical printer, but it still needs to expose
+        // the Game Boy Printer protocol so camera and other printer-enabled
+        // games can complete their print jobs. Completed pages are drained
+        // through the JavaScript binding below.
+        active_app->emulator->bus().connect_printer();
         active_app->emulator->set_dmg_compatibility_colors(
             gameboy::display_palettes[active_app->display_palette]
                 .cgb_compatibility);
@@ -264,6 +269,16 @@ emscripten::val export_browser_rtc_data() {
     return browser_bytes(active_app->emulator->export_rtc_data());
 }
 
+emscripten::val take_browser_printer_images() {
+    auto result = emscripten::val::array();
+    if (!active_app || !active_app->emulator) return result;
+
+    for (const auto& image : active_app->emulator->bus().take_printer_images()) {
+        result.call<void>("push", browser_bytes(gameboy::encode_printer_bmp(image)));
+    }
+    return result;
+}
+
 void import_browser_rtc_data(const emscripten::val bytes) {
     if (!active_app || !active_app->emulator) {
         throw std::runtime_error("No ROM is loaded");
@@ -284,6 +299,7 @@ EMSCRIPTEN_BINDINGS(gbb_web_bindings) {
     emscripten::function("importSaveRam", &import_browser_save_ram);
     emscripten::function("exportRtcData", &export_browser_rtc_data);
     emscripten::function("importRtcData", &import_browser_rtc_data);
+    emscripten::function("takePrinterImages", &take_browser_printer_images);
 }
 
 extern "C" EMSCRIPTEN_KEEPALIVE void gbb_resume_audio() noexcept {

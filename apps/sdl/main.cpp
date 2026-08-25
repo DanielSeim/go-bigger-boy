@@ -220,11 +220,22 @@ constexpr float dashboard_row_height = 18.0F;
 constexpr std::uintmax_t maximum_quick_state_size = 2 * 1024 * 1024;
 
 std::filesystem::path preference_directory() {
+#ifdef _WIN32
+    // Keep the Windows build portable: settings, saves, recent-ROM metadata,
+    // printer output, quick states, and updater files all live beside gbb.exe.
+    // SDL_GetPrefPath() resolves to AppData on Windows, which makes a portable
+    // installation unexpectedly split across two locations.
+    const auto* raw_path = SDL_GetBasePath();
+    if (raw_path == nullptr) return {};
+    const auto path = std::filesystem::u8path(raw_path);
+    return path.lexically_normal();
+#else
     char* raw_path = SDL_GetPrefPath("Go Bigger Boy", "GBB");
     if (raw_path == nullptr) return {};
     const auto path = std::filesystem::u8path(raw_path);
     SDL_free(raw_path);
     return path;
+#endif
 }
 
 struct WindowGeometry {

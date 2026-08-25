@@ -168,9 +168,12 @@ recent selection, Ctrl+K to configure and persist controls, Ctrl+P to choose
 between Grayscale, Classic green, Game Boy Pocket, Amber, and the automatic
 Game Boy Color compatibility palette,
 F5 to quick-save, F8 to load the quick save, and F1 for help. Recent ROMs,
-window positions, and per-ROM quick saves are stored in SDL's per-user
+window positions, and per-ROM quick saves are stored with the desktop data. On
+Windows, all desktop data (including saves, recent-ROM metadata, quick states,
+printer output, updater files, and settings) is kept beside `gbb.exe`, making
+the extracted folder portable. Linux and macOS continue to use SDL's per-user
 preferences directory. Desktop keyboard/gamepad bindings and the display palette
-are stored in the human-readable `settings.ini` at the installation root. Each
+are stored in the human-readable `settings.ini` at the data root. Each
 Game Boy button accepts up to two space-separated keyboard keys (for example,
 `keyboard.B = Z Y`). Copy the file to another GBB installation to share the
 same setup. On Windows, the native Settings page presents primary and secondary
@@ -211,9 +214,10 @@ rejected explicitly instead of running with incorrect banking.
 Game Boy Printer-compatible games can print normally from their in-game menus.
 The desktop frontend emulates the printer protocol and saves each completed
 page as a lossless, nearest-neighbor 4× BMP image. Files are placed in the
-`prints` folder below SDL's per-user Go Bigger Boy preferences directory; the
-emulator displays that folder after a print completes. No physical printer is
-required.
+`prints` folder below the desktop data root; the emulator displays that folder
+after a print completes. No physical printer is required. The web frontend
+emulates the same protocol and automatically downloads completed pages as BMP
+images.
 
 Game Boy Camera ROMs use the first webcam reported by SDL on Windows and Linux.
 The operating system may request camera permission when the cartridge opens.
@@ -316,6 +320,14 @@ then automatically creates a GitHub Release with all four archives and
 generated release notes. Tagged builds derive their displayed version from the
 tag so the startup update comparison remains accurate. A failed platform build
 prevents the release.
+
+Windows SmartScreen may warn when an executable downloaded from GitHub has no
+trusted publisher signature. The release workflow supports Authenticode
+signing when the repository maintainer configures the encrypted
+`WINDOWS_SIGNING_CERTIFICATE_BASE64` (base64-encoded `.pfx`) and
+`WINDOWS_SIGNING_CERTIFICATE_PASSWORD` secrets. A publicly trusted code-signing
+certificate is required; self-signing the executable will not remove the
+warning for other users.
 
 ## Layout
 

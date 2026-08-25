@@ -30,6 +30,7 @@
     .save-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 12px 2px 0; }
     .save-actions button { padding: 8px 12px; background: #26382c; color: #dce9df; }
     .save-actions span { color: #8fa593; font-size: .9rem; }
+    .printer-status { margin: 8px 2px 0; color: #8fa593; font-size: .9rem; }
     .help { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin-top: 18px; color: #a7b9aa; }
     .help p { margin: 0; padding: 12px; border-radius: 9px; background: #111a15; }
     a { color: #aadc91; }
@@ -71,6 +72,9 @@
         <button id="export-rtc" type="button" hidden>Export .rtc</button>
         <span id="save-storage-status">Automatic browser saves enabled</span>
       </div>
+      <p class="printer-status" id="printer-status" hidden>
+        Game Boy Printer pages download automatically as BMP images.
+      </p>
     </section>
     <section class="help" aria-label="Controls">
       <p><strong>D-pad:</strong> Arrow keys<br><strong>A / B:</strong> X / Z</p>
@@ -92,6 +96,7 @@
     const exportSaveButton = document.getElementById('export-save');
     const exportRtcButton = document.getElementById('export-rtc');
     const saveStorageStatus = document.getElementById('save-storage-status');
+    const printerStatus = document.getElementById('printer-status');
     let currentRom = null;
     let saveDatabasePromise = null;
     let saveQueue = Promise.resolve();
@@ -99,6 +104,8 @@
     let cameraStream = null;
     let cameraTimer = null;
     let cameraVideo = null;
+    let printerTimer = null;
+    let printSequence = 0;
 
     function stopCamera() {
       if (cameraTimer !== null) clearInterval(cameraTimer);
@@ -108,6 +115,31 @@
       }
       cameraStream = null;
       cameraVideo = null;
+    }
+
+    function stopPrinterPolling() {
+      if (printerTimer !== null) clearInterval(printerTimer);
+      printerTimer = null;
+    }
+
+    function startPrinterPolling(rom) {
+      stopPrinterPolling();
+      printSequence = 0;
+      printerStatus.hidden = false;
+      printerTimer = setInterval(() => {
+        if (currentRom !== rom || !Module.takePrinterImages) return;
+        try {
+          const images = Module.takePrinterImages();
+          for (const bytes of images || []) {
+            if (!bytes || !bytes.length) continue;
+            const filename = `${saveBaseName()}-print-${++printSequence}.bmp`;
+            downloadBytes(bytes, filename, 'image/bmp');
+            Module.gbbSetStatus(`Printed image downloaded as ${filename}.`, false);
+          }
+        } catch (error) {
+          Module.gbbSetStatus(`Print error: ${error.message || error}`, true);
+        }
+      }, 250);
     }
 
     async function configureCamera(rom) {
@@ -273,9 +305,9 @@
         : 'Browser storage unavailable — export backups';
     }
 
-    function downloadBytes(bytes, filename) {
+    function downloadBytes(bytes, filename, type = 'application/octet-stream') {
       const url = URL.createObjectURL(new Blob([bytes], {
-        type: 'application/octet-stream'
+        type
       }));
       const link = document.createElement('a');
       link.href = url;
@@ -340,6 +372,8 @@
           rtc: Module.hasRtc(),
           camera: Module.hasCamera()
         };
+
+        startPrinterPolling(currentRom);
 
         const cameraConnected = await configureCamera(currentRom);
 
@@ -476,6 +510,7 @@
     });
     window.addEventListener('pagehide', queuePersistentSave);
     window.addEventListener('pagehide', stopCamera);
+    window.addEventListener('pagehide', stopPrinterPolling);
   </script>
   {{{ SCRIPT }}}
 </body>
