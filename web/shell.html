@@ -355,22 +355,6 @@
             ? payload.length : 0);
     }
 
-    function cameraSaveDirectoryIsStable(ram) {
-      // The camera uses 0xFF for an empty directory entry and 0x00-0x1D for
-      // committed photo slots. Values outside that range (notably 0x1E while
-      // a capture is being committed) are transient and must not be saved;
-      // the ROM will treat them as a corrupt directory and format the roll
-      // on the next boot.
-      const directoryStart = 0x11b2;
-      const directoryEnd = 0x11d0;
-      if (ram.length < directoryEnd) return false;
-      for (let offset = directoryStart; offset < directoryEnd; ++offset) {
-        const entry = ram[offset];
-        if (entry !== 0xff && entry >= 0x1e) return false;
-      }
-      return true;
-    }
-
     // localStorage is intentionally a synchronous last-moment fallback. A
     // tab may be terminated before an asynchronous IndexedDB transaction
     // created by pagehide gets a chance to commit.
@@ -429,10 +413,6 @@
       const asBytes = value => value instanceof Uint8Array
         ? value : new Uint8Array(value || 0);
       const ram = asBytes(Module.exportSaveRam());
-      if (rom.camera && !cameraSaveDirectoryIsStable(ram)) {
-        console.warn('Skipping an incomplete Game Boy Camera save directory.');
-        return;
-      }
       let save = ram;
       if (Module.exportSaveData) {
         try {
@@ -554,6 +534,7 @@
       Module.gbbSetStatus(`Loading ${file.name}…`, false);
       let loaded = false;
       let deferredCameraSave = null;
+      let deferredCameraState = null;
       pendingCameraRestore = null;
       try {
         const bytes = new Uint8Array(await file.arrayBuffer());
@@ -595,7 +576,16 @@
             if (storedPayloadLength(stored, 'state') > 0 &&
                 Module.importState) {
               try {
-                Module.importState(new Uint8Array(stored.state));
+                if (currentRom.camera) {
+                  // Camera ROMs validate SRAM and initialize the sensor while
+                  // starting. Apply a complete state after that work, while
+                  // paused, so startup cannot wipe the restored gallery.
+                  deferredCameraState = new Uint8Array(stored.state);
+                  deferredCameraSave = stored.save
+                    ? new Uint8Array(stored.save) : null;
+                } else {
+                  Module.importState(new Uint8Array(stored.state));
+                }
                 restored = true;
                 restoredFromState = true;
                 if (currentRom.camera) {
@@ -603,7 +593,7 @@
                   // first autosave can capture transient startup writes.
                   pendingCameraRestore = {
                     rom: currentRom,
-                    deadline: performance.now() + 3500
+                    deadline: performance.now() + 5000
                   };
                 }
               } catch (error) {
@@ -684,9 +674,11 @@
         if (loaded) {
           const startedRom = currentRom;
           Module._gbb_start_rom();
-          if (deferredCameraSave && startedRom && startedRom.camera) {
+          if ((deferredCameraState || deferredCameraSave) && startedRom &&
+              startedRom.camera) {
             setTimeout(() => {
-              if (currentRom !== startedRom || !Module.importSaveData ||
+              if (currentRom !== startedRom ||
+                  (!Module.importState && !Module.importSaveData) ||
                   !pendingCameraRestore ||
                   pendingCameraRestore.rom !== startedRom) return;
               try {
@@ -696,8 +688,20 @@
                 // freshly initialized image. Let boot finish, pause the
                 // emulator between frames, then restore and resume.
                 if (Module._gbb_pause_rom) Module._gbb_pause_rom();
-                Module.importSaveData(deferredCameraSave);
-                console.info('Restored the saved Game Boy Camera image after startup.');
+                if (deferredCameraState && Module.importState) {
+                  try {
+                    Module.importState(deferredCameraState);
+                    console.info('Restored the saved Game Boy Camera state after startup.');
+                  } catch (stateError) {
+                    if (!deferredCameraSave) throw stateError;
+                    console.warn('Could not restore the saved Game Boy Camera state; falling back to its battery save:', stateError);
+                    Module.importSaveData(deferredCameraSave);
+                    console.info('Restored the saved Game Boy Camera image after startup.');
+                  }
+                } else {
+                  Module.importSaveData(deferredCameraSave);
+                  console.info('Restored the saved Game Boy Camera image after startup.');
+                }
               } catch (error) {
                 console.warn('Could not reapply the saved camera image:', error);
               } finally {
