@@ -31,13 +31,16 @@
 namespace gbb_desktop {
 namespace {
 
+#ifndef GBB_VERSION
+#define GBB_VERSION "0.13.5"
+#endif
+
 constexpr int id_library = 100;
 constexpr int id_settings = 101;
 constexpr int id_list = 102;
 constexpr int id_open = 103;
 constexpr int id_play = 104;
 constexpr int id_resume = 105;
-constexpr int id_quit = 106;
 constexpr int id_palette = 107;
 constexpr int id_remove = 108;
 constexpr int id_gameboy_background = 110;
@@ -108,7 +111,6 @@ struct State {
     HWND play{};
     HWND open{};
     HWND resume{};
-    HWND quit{};
     HWND remove{};
     HWND palette{};
     HWND settings_heading{};
@@ -472,6 +474,20 @@ void show_page(State& state, const bool settings) {
         ShowWindow(button, settings ? SW_SHOW : SW_HIDE);
     }
     ShowWindow(state.reset_controls, settings ? SW_SHOW : SW_HIDE);
+    if (settings) {
+        // The owner-drawn Game Boy artwork overlaps these controls. Keep the
+        // bindings above it and repaint them immediately when opening Settings.
+        for (const auto& buttons : state.binding_buttons) {
+            for (const auto button : buttons) {
+                SetWindowPos(button, HWND_TOP, 0, 0, 0, 0,
+                             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+                InvalidateRect(button, nullptr, TRUE);
+                UpdateWindow(button);
+            }
+        }
+        RedrawWindow(state.window, nullptr, nullptr,
+                     RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_UPDATENOW);
+    }
 }
 
 std::optional<std::size_t> selected_entry_index(const State& state) {
@@ -658,11 +674,6 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
         case id_open: open_rom(*state); return 0;
         case id_play: play_selection(*state); return 0;
         case id_resume: finish(*state, DashboardResultAction::resume); return 0;
-        case id_quit:
-            if (confirm_exit(window)) {
-                finish(*state, DashboardResultAction::quit);
-            }
-            return 0;
         case id_remove: remove_selection(*state); return 0;
         case id_reset_controls:
             if (MessageBoxW(
@@ -1216,8 +1227,10 @@ DashboardResult show_windows_dashboard(
     state.result.action_bindings = action_bindings;
     state.preference_directory = preference_directory;
     const auto saved_position = load_window_position(preference_directory);
+    const auto window_title = std::wstring{L"Go Bigger Boy - Game Library v"} +
+                              widen(GBB_VERSION);
     state.window = CreateWindowExW(
-        WS_EX_APPWINDOW, class_name, L"Go Bigger Boy - Game Library",
+        WS_EX_APPWINDOW, class_name, window_title.c_str(),
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
         saved_position ? saved_position->x : CW_USEDEFAULT,
         saved_position ? saved_position->y : CW_USEDEFAULT,
@@ -1346,9 +1359,6 @@ DashboardResult show_windows_dashboard(
     state.resume = control(state, L"BUTTON", L"Resume game",
         (can_resume ? WS_VISIBLE : 0) | BS_PUSHBUTTON,
         572, 575, 150, 44, id_resume);
-    state.quit = control(state, L"BUTTON", L"Quit",
-        WS_VISIBLE | BS_PUSHBUTTON, 838, 575, 110, 44, id_quit);
-
     state.settings_heading = control(state, L"STATIC", L"Display and controls",
         0, 32, 200, 360, 30, 0);
     SendMessageW(state.settings_heading, WM_SETFONT,

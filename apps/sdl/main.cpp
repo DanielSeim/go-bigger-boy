@@ -2220,7 +2220,10 @@ void leave_android_game(
     rewind_history.clear();
     fast_forward = false;
     rewind = false;
-    dashboard_visible = true;
+    // Android uses LibraryActivity for its dashboard. Keep the SDL surface
+    // blank while it is in the background instead of showing the legacy
+    // pixel-art menu.
+    dashboard_visible = false;
     paused = true;
     open_android_library();
 }
@@ -2638,7 +2641,7 @@ void present_touch_controls(SdlResources& sdl) {
 }
 #endif
 
-#ifndef _WIN32
+#if !defined(_WIN32) && !defined(__ANDROID__)
 void present_dashboard(SdlResources& sdl,
                        const std::vector<std::string>& recent,
                        const bool can_resume, std::size_t& selection) {
@@ -2707,7 +2710,7 @@ void present(const gameboy::Emulator* emulator, SdlResources& sdl,
         sdl_error("Could not clear framebuffer");
     }
     if (dashboard_visible) {
-#ifndef _WIN32
+#if !defined(_WIN32) && !defined(__ANDROID__)
         present_dashboard(sdl, recent, emulator != nullptr,
                           dashboard_selection);
 #else
@@ -2734,9 +2737,11 @@ void present(const gameboy::Emulator* emulator, SdlResources& sdl,
         }
     }
 #ifdef __ANDROID__
-    if (!dashboard_visible) present_touch_controls(sdl);
+    if (!dashboard_visible && emulator != nullptr) {
+        present_touch_controls(sdl);
+    }
 #endif
-    if (!dashboard_visible) present_menu_button(sdl);
+    if (!dashboard_visible && emulator != nullptr) present_menu_button(sdl);
     if (!SDL_RenderPresent(sdl.renderer)) {
         sdl_error("Could not present framebuffer");
     }
@@ -2997,7 +3002,9 @@ int main(int argc, char** argv) {
         auto reset_requested = false;
         auto running = true;
 #ifdef __ANDROID__
-        auto dashboard_visible = argc < 2;
+        // The native Android LibraryActivity owns the dashboard. The SDL
+        // surface must never render the legacy pixel-art dashboard.
+        auto dashboard_visible = false;
 #else
         auto dashboard_visible = argc != 2;
 #endif
@@ -3182,8 +3189,11 @@ int main(int argc, char** argv) {
 #ifdef _WIN32
                         SDL_HideWindow(sdl.window);
 #endif
-                        dashboard_visible = true;
+                        dashboard_visible = false;
                         dashboard_selection = 0;
+#ifdef __ANDROID__
+                        open_android_library();
+#endif
                     }
                 }
                 pending_rom.reset();
