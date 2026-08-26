@@ -8,6 +8,7 @@
 #include "gbb/core_registry.hpp"
 #include "gbb/gameboy_core.hpp"
 #include "gbb/audio.hpp"
+#include "gbb/voxel_profile.hpp"
 
 #include <algorithm>
 #include <array>
@@ -385,6 +386,33 @@ void test_video_pipeline_modes() {
     check(gameboy::apply_sharp_smoothing(source, left, right, source, source) !=
               source,
           "sharp smoothing adjusts high-contrast edges");
+}
+
+void test_voxel_profiles() {
+    const auto path = std::filesystem::temp_directory_path() /
+                      "gbb-voxel-profile-test.ini";
+    std::filesystem::remove(path);
+    gbb::ensure_voxel_profile_file(path);
+    const auto fingerprint = UINT64_C(0x1234ABCD);
+    auto profile = gbb::load_voxel_profile(path, fingerprint);
+    check(profile.depth_scale == 1.0F && profile.camera_pitch == 28.0F,
+          "voxel profile defaults are loaded");
+    profile.depth_scale = 2.25F;
+    profile.camera_yaw = -12.0F;
+    check(gbb::save_voxel_profile(path, fingerprint, profile),
+          "voxel profile can be saved");
+    const auto loaded = gbb::load_voxel_profile(path, fingerprint);
+    check(loaded.depth_scale == 2.25F && loaded.camera_yaw == -12.0F,
+          "voxel profile round-trips per-ROM values");
+    auto second = gbb::VoxelProfile{};
+    second.depth_scale = 3.5F;
+    const auto second_fingerprint = UINT64_C(0xFEDCBA98);
+    check(gbb::save_voxel_profile(path, second_fingerprint, second),
+          "voxel profile saves a second ROM section");
+    check(gbb::load_voxel_profile(path, fingerprint).depth_scale == 2.25F &&
+              gbb::load_voxel_profile(path, second_fingerprint).depth_scale == 3.5F,
+          "saving one voxel profile preserves other ROM sections");
+    std::filesystem::remove(path);
 }
 
 void test_audio_frontend_helpers() {
@@ -3424,6 +3452,7 @@ int main() {
         test_scene_snapshot_contract();
         test_gameshark_cheats();
         test_video_pipeline_modes();
+        test_voxel_profiles();
         test_audio_frontend_helpers();
         test_apu_cycle_integrated_resampling();
         test_cartridge_file_loading();

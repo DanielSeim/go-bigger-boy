@@ -332,6 +332,9 @@ Per-ROM depth and camera tuning can be supplied in `voxel-profiles.ini` beside
 `depth_scale`, `camera_pitch`, `camera_yaw`, `zoom`, `perspective`,
 `sprite_depth`, and `lighting` keys. GBB creates this file with documented
 defaults on first startup, so it can be copied alongside a portable install.
+On Windows, the Settings page exposes these fields for the currently running
+ROM and shows its fingerprint; Save profile applies the values when you return
+to the game, while Reset profile restores the defaults.
 
 The default action bindings are `keyboard.FastForward = Tab` (hold for 4×
 speed), `keyboard.Rewind = Left Shift` (hold to step backward through the last three

@@ -14,6 +14,7 @@
 #include <atomic>
 #include <array>
 #include <cctype>
+#include <cmath>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
@@ -32,7 +33,7 @@ namespace gbb_desktop {
 namespace {
 
 #ifndef GBB_VERSION
-#define GBB_VERSION "0.20.0"
+#define GBB_VERSION "0.20.1"
 #endif
 
 constexpr int id_library = 100;
@@ -47,11 +48,14 @@ constexpr int id_video = 109;
 constexpr int id_gameboy_background = 110;
 constexpr int id_reset_controls = 111;
 constexpr int id_shortcuts = 112;
+constexpr int id_voxel_save = 113;
+constexpr int id_voxel_reset = 114;
+constexpr int id_voxel_first_edit = 120;
 constexpr int id_binding_first = 200;
 constexpr int id_action_first = 220;
 constexpr UINT artwork_ready = WM_APP + 1;
 constexpr int dashboard_width = 980;
-constexpr int dashboard_height = 850;
+constexpr int dashboard_height = 1120;
 
 struct MetadataRecord {
     std::string name;
@@ -130,6 +134,12 @@ struct State {
     std::array<HWND, 4> action_labels{};
     std::array<HWND, 4> action_buttons{};
     HWND reset_controls{};
+    HWND voxel_heading{};
+    HWND voxel_fingerprint_label{};
+    std::array<HWND, 7> voxel_labels{};
+    std::array<HWND, 7> voxel_edits{};
+    HWND voxel_save{};
+    HWND voxel_reset{};
     HWND library_tab{};
     HWND settings_tab{};
     HWND shortcuts_tab{};
@@ -142,6 +152,9 @@ struct State {
     HFONT ui_font{};
     enum class Page { library, settings, shortcuts } page{Page::library};
     std::filesystem::path preference_directory;
+    std::filesystem::path voxel_profile_path;
+    std::uint64_t voxel_fingerprint{};
+    gbb::VoxelProfile voxel_profile{};
     std::thread artwork_worker;
     std::atomic_bool closing{};
     HFONT title_font{};
@@ -302,6 +315,82 @@ void refresh_binding_buttons(State& state) {
         const auto text = shortcuts_text(state);
         SetWindowTextW(state.shortcuts_text, text.c_str());
     }
+}
+
+constexpr std::array<const wchar_t*, 7> voxel_profile_names{{
+    L"Depth scale", L"Camera pitch", L"Camera yaw", L"Zoom",
+    L"Perspective", L"Sprite depth", L"Lighting"}};
+
+std::wstring voxel_float_text(const float value) {
+    std::wostringstream text;
+    text.setf(std::ios::fixed);
+    text.precision(3);
+    text << value;
+    return text.str();
+}
+
+bool parse_voxel_edit(const HWND edit, float& target) {
+    std::array<wchar_t, 128> buffer{};
+    const auto length = GetWindowTextW(edit, buffer.data(),
+                                       static_cast<int>(buffer.size()));
+    if (length <= 0) return false;
+    try {
+        std::size_t consumed = 0;
+        const auto value = std::stof(narrow(std::wstring(buffer.data(),
+                                                         static_cast<std::size_t>(length))),
+                                     &consumed);
+        const auto text = narrow(std::wstring(buffer.data(),
+                                               static_cast<std::size_t>(length)));
+        if (consumed != text.size() || !std::isfinite(value)) return false;
+        target = value;
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+void refresh_voxel_profile_controls(State& state) {
+    if (state.voxel_fingerprint == 0) {
+        SetWindowTextW(state.voxel_fingerprint_label,
+                       L"No active ROM. Start a game to edit its profile.");
+        for (const auto edit : state.voxel_edits) EnableWindow(edit, FALSE);
+        EnableWindow(state.voxel_save, FALSE);
+        EnableWindow(state.voxel_reset, FALSE);
+        return;
+    }
+    std::wostringstream fingerprint;
+    fingerprint << L"ROM profile: 0x" << std::hex << state.voxel_fingerprint;
+    SetWindowTextW(state.voxel_fingerprint_label, fingerprint.str().c_str());
+    for (const auto edit : state.voxel_edits) EnableWindow(edit, TRUE);
+    EnableWindow(state.voxel_save, TRUE);
+    EnableWindow(state.voxel_reset, TRUE);
+    const std::array<float, 7> values{{
+        state.voxel_profile.depth_scale, state.voxel_profile.camera_pitch,
+        state.voxel_profile.camera_yaw, state.voxel_profile.zoom,
+        state.voxel_profile.perspective, state.voxel_profile.sprite_depth,
+        state.voxel_profile.lighting}};
+    for (std::size_t index = 0; index < values.size(); ++index) {
+        SetWindowTextW(state.voxel_edits[index], voxel_float_text(values[index]).c_str());
+    }
+}
+
+bool read_voxel_profile_controls(State& state) {
+    std::array<float, 7> values{{
+        state.voxel_profile.depth_scale, state.voxel_profile.camera_pitch,
+        state.voxel_profile.camera_yaw, state.voxel_profile.zoom,
+        state.voxel_profile.perspective, state.voxel_profile.sprite_depth,
+        state.voxel_profile.lighting}};
+    for (std::size_t index = 0; index < values.size(); ++index) {
+        if (!parse_voxel_edit(state.voxel_edits[index], values[index])) return false;
+    }
+    state.voxel_profile.depth_scale = values[0];
+    state.voxel_profile.camera_pitch = values[1];
+    state.voxel_profile.camera_yaw = values[2];
+    state.voxel_profile.zoom = values[3];
+    state.voxel_profile.perspective = values[4];
+    state.voxel_profile.sprite_depth = values[5];
+    state.voxel_profile.lighting = values[6];
+    return true;
 }
 
 bool reserved_binding_key(const State& state, const SDL_Keycode key) {
@@ -558,6 +647,16 @@ void show_page(State& state, const State::Page page) {
         ShowWindow(button, settings ? SW_SHOW : SW_HIDE);
     }
     ShowWindow(state.reset_controls, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.voxel_heading, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.voxel_fingerprint_label, settings ? SW_SHOW : SW_HIDE);
+    for (const auto label : state.voxel_labels) {
+        ShowWindow(label, settings ? SW_SHOW : SW_HIDE);
+    }
+    for (const auto edit : state.voxel_edits) {
+        ShowWindow(edit, settings ? SW_SHOW : SW_HIDE);
+    }
+    ShowWindow(state.voxel_save, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.voxel_reset, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.shortcuts_heading, shortcuts ? SW_SHOW : SW_HIDE);
     ShowWindow(state.shortcuts_text, shortcuts ? SW_SHOW : SW_HIDE);
     if (settings) {
@@ -810,6 +909,38 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                     state->result.video_mode_changed = true;
                 }
             }
+            return 0;
+        case id_voxel_save:
+            if (state->voxel_fingerprint == 0) return 0;
+            if (!read_voxel_profile_controls(*state)) {
+                MessageBoxW(window,
+                            L"Enter valid numeric values for every voxel profile field.",
+                            L"Voxel profile", MB_OK | MB_ICONWARNING);
+                return 0;
+            }
+            if (!gbb::save_voxel_profile(state->voxel_profile_path,
+                                         state->voxel_fingerprint,
+                                         state->voxel_profile)) {
+                MessageBoxW(window, L"Could not save voxel-profiles.ini.",
+                            L"Voxel profile", MB_OK | MB_ICONERROR);
+                return 0;
+            }
+            state->result.voxel_profile_changed = true;
+            SetWindowTextW(state->voxel_fingerprint_label,
+                           L"Voxel profile saved. Return to the game to preview it.");
+            return 0;
+        case id_voxel_reset:
+            if (state->voxel_fingerprint == 0) return 0;
+            state->voxel_profile = gbb::VoxelProfile{};
+            refresh_voxel_profile_controls(*state);
+            if (!gbb::save_voxel_profile(state->voxel_profile_path,
+                                         state->voxel_fingerprint,
+                                         state->voxel_profile)) {
+                MessageBoxW(window, L"Could not save voxel-profiles.ini.",
+                            L"Voxel profile", MB_OK | MB_ICONERROR);
+                return 0;
+            }
+            state->result.voxel_profile_changed = true;
             return 0;
         default: break;
         }
@@ -1305,6 +1436,7 @@ void draw_dashboard_button(const DRAWITEMSTRUCT& item, const State& state) {
 
 DashboardResult show_windows_dashboard(
     HWND owner, const gameboy::RomLibrary& library, const bool can_resume,
+    const std::uint64_t current_fingerprint,
     const std::size_t palette, const gameboy::VideoMode video_mode,
     const KeyboardBindings& keyboard_bindings,
     const ActionBindings& action_bindings,
@@ -1334,6 +1466,12 @@ DashboardResult show_windows_dashboard(
         DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
     state.library = &library;
     state.can_resume = can_resume;
+    state.voxel_fingerprint = current_fingerprint;
+    state.voxel_profile_path = preference_directory.empty()
+                                   ? std::filesystem::path{}
+                                   : preference_directory / "voxel-profiles.ini";
+    state.voxel_profile = gbb::load_voxel_profile(state.voxel_profile_path,
+                                                   current_fingerprint);
     state.result.palette = palette;
     state.result.video_mode = video_mode;
     state.result.keyboard_bindings = keyboard_bindings;
@@ -1572,6 +1710,32 @@ DashboardResult show_windows_dashboard(
     }
     state.reset_controls = control(state, L"BUTTON", L"Reset all controls",
         BS_PUSHBUTTON, 32, 775, 230, 40, id_reset_controls);
+    state.voxel_heading = control(state, L"STATIC", L"Voxel diorama profile",
+                                  0, 32, 825, 320, 28, 0);
+    SendMessageW(state.voxel_heading, WM_SETFONT,
+                 reinterpret_cast<WPARAM>(state.title_font), TRUE);
+    state.voxel_fingerprint_label = control(
+        state, L"STATIC", L"", 0, 360, 827, 580, 24, 0);
+    const auto profile_columns = std::array<int, 7>{{32, 32, 32, 510, 510, 510, 510}};
+    const auto profile_rows = std::array<int, 7>{{850, 890, 930, 850, 890, 930, 970}};
+    for (std::size_t index = 0; index < voxel_profile_names.size(); ++index) {
+        const auto x = profile_columns[index];
+        const auto y = profile_rows[index];
+        state.voxel_labels[index] = control(
+            state, L"STATIC", voxel_profile_names[index], 0,
+            x, y, 120, 24, 0);
+        state.voxel_edits[index] = control(
+            state, L"EDIT", L"", WS_BORDER | ES_AUTOHSCROLL,
+            x + 130, y - 2, 130, 28,
+            id_voxel_first_edit + static_cast<int>(index));
+    }
+    state.voxel_save = control(state, L"BUTTON", L"Save profile",
+                               BS_PUSHBUTTON, 680, 1020, 120, 38,
+                               id_voxel_save);
+    state.voxel_reset = control(state, L"BUTTON", L"Reset profile",
+                                BS_PUSHBUTTON, 810, 1020, 120, 38,
+                                id_voxel_reset);
+    refresh_voxel_profile_controls(state);
     state.shortcuts_heading = control(
         state, L"STATIC", L"Keyboard shortcuts", 0,
         32, 200, 360, 30, 0);

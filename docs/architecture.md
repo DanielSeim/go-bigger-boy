@@ -48,7 +48,9 @@ emulation state or save-state data. The SDL voxel renderer consumes this API
 to build a perspective mesh and submits it through `SDL_RenderGeometry`, which
 uses the active D3D/OpenGL/Metal/Vulkan backend where available. Per-ROM depth
 profiles are loaded by the frontend from `voxel-profiles.ini`, leaving the core
-independent of presentation tuning.
+independent of presentation tuning. The native Windows dashboard exposes the
+active ROM fingerprint and profile fields, and writes only that ROM's section
+while preserving profiles for other titles.
 
 The SDL frontend now includes an experimental `Voxel diorama (desktop
 prototype)` presentation mode. It uses the snapshot to generate deterministic

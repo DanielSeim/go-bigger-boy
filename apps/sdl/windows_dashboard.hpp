@@ -2,6 +2,7 @@
 
 #include "gameboy/rom_library.hpp"
 #include "gameboy/video_pipeline.hpp"
+#include "gbb/voxel_profile.hpp"
 
 #include <array>
 #include <cstddef>
@@ -30,11 +31,13 @@ struct DashboardResult {
     bool keyboard_bindings_changed{};
     ActionBindings action_bindings{};
     bool action_bindings_changed{};
+    bool voxel_profile_changed{};
     std::vector<std::uint64_t> removed_fingerprints;
 };
 
 DashboardResult show_windows_dashboard(
     HWND owner, const gameboy::RomLibrary& library, bool can_resume,
+    std::uint64_t current_fingerprint,
     std::size_t palette, gameboy::VideoMode video_mode,
     const KeyboardBindings& keyboard_bindings,
     const ActionBindings& action_bindings,

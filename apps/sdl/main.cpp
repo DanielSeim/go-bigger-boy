@@ -5,6 +5,7 @@
 #include "gameboy/video_pipeline.hpp"
 #include "gbb/audio.hpp"
 #include "gbb/gameboy_scene.hpp"
+#include "gbb/voxel_profile.hpp"
 #ifndef __ANDROID__
 #include "update_checker.hpp"
 #endif
@@ -55,7 +56,7 @@
 namespace {
 
 #ifndef GBB_VERSION
-#define GBB_VERSION "0.20.0"
+#define GBB_VERSION "0.20.1"
 #endif
 
 #ifdef __ANDROID__
@@ -102,19 +103,6 @@ struct TouchControlSettings {
         0.57F, 0.96F,
         0.12F, 0.50F, 0.88F, 0.42F, 0.88F, 0.62F, 0.42F, 0.92F,
         0.58F, 0.92F};
-};
-
-// The voxel renderer is deliberately configured outside the emulation core.
-// Profiles are keyed by ROM fingerprint so a title with a taller/shallower
-// visual style can be tuned without affecting other games.
-struct VoxelProfile {
-    float depth_scale{1.0F};
-    float camera_pitch{28.0F};
-    float camera_yaw{32.0F};
-    float zoom{1.0F};
-    float perspective{0.0025F};
-    float sprite_depth{10.0F};
-    float lighting{1.0F};
 };
 
 [[noreturn]] void sdl_error(const std::string& action) {
@@ -412,7 +400,7 @@ public:
     gameboy::VideoMode video_mode{gameboy::default_video_mode};
     gbb::SceneSnapshot scene_snapshot{};
     std::filesystem::path voxel_profile_path;
-    VoxelProfile voxel_profile{};
+    gbb::VoxelProfile voxel_profile{};
     std::uint64_t voxel_profile_fingerprint{};
     bool voxel_profile_loaded{};
     SDL_Gamepad* gamepad{};
@@ -5325,111 +5313,6 @@ SDL_FColor voxel_color(const std::uint32_t pixel, const float shade) {
     return {component(16), component(8), component(0), 1.0F};
 }
 
-std::string trim_voxel_profile(std::string value) {
-    const auto not_space = [](const unsigned char c) {
-        return !std::isspace(c);
-    };
-    value.erase(value.begin(), std::find_if(value.begin(), value.end(), not_space));
-    value.erase(std::find_if(value.rbegin(), value.rend(), not_space).base(),
-                value.end());
-    return value;
-}
-
-bool parse_voxel_float(const std::string& text, float& target) {
-    try {
-        std::size_t consumed = 0;
-        const auto value = std::stof(text, &consumed);
-        if (consumed != text.size() || !std::isfinite(value)) return false;
-        target = value;
-        return true;
-    } catch (...) {
-        return false;
-    }
-}
-
-VoxelProfile load_voxel_profile(const std::filesystem::path& path,
-                                const std::uint64_t fingerprint) {
-    VoxelProfile defaults;
-    VoxelProfile selected = defaults;
-    if (path.empty()) return selected;
-    std::ifstream input(path);
-    if (!input) return selected;
-    std::string section = "default";
-    std::optional<VoxelProfile> rom_profile;
-    bool active_rom_section = false;
-    std::string line;
-    while (std::getline(input, line)) {
-        line = trim_voxel_profile(line);
-        if (line.empty() || line[0] == '#' || line[0] == ';') continue;
-        if (line.front() == '[' && line.back() == ']') {
-            section = trim_voxel_profile(line.substr(1, line.size() - 2));
-            active_rom_section = false;
-            if (section != "default") {
-                try {
-                    std::size_t consumed = 0;
-                    auto parsed = std::stoull(section, &consumed, 0);
-                    if (consumed != section.size()) throw std::invalid_argument("hex");
-                    if (parsed == fingerprint) {
-                        rom_profile = defaults;
-                        active_rom_section = true;
-                    }
-                } catch (...) {
-                    try {
-                        const auto parsed = std::stoull(section, nullptr, 16);
-                        if (parsed == fingerprint) {
-                            rom_profile = defaults;
-                            active_rom_section = true;
-                        }
-                    } catch (...) {
-                        // Unknown sections are intentionally ignored.
-                    }
-                }
-            }
-            continue;
-        }
-        const auto separator = line.find('=');
-        if (separator == std::string::npos) continue;
-        const auto key = trim_voxel_profile(line.substr(0, separator));
-        const auto value = trim_voxel_profile(line.substr(separator + 1));
-        VoxelProfile* profile = section == "default" ? &defaults :
-            (active_rom_section && rom_profile ? &*rom_profile : nullptr);
-        if (profile == nullptr) continue;
-        if (key == "depth_scale") parse_voxel_float(value, profile->depth_scale);
-        else if (key == "camera_pitch") parse_voxel_float(value, profile->camera_pitch);
-        else if (key == "camera_yaw") parse_voxel_float(value, profile->camera_yaw);
-        else if (key == "zoom") parse_voxel_float(value, profile->zoom);
-        else if (key == "perspective") parse_voxel_float(value, profile->perspective);
-        else if (key == "sprite_depth") parse_voxel_float(value, profile->sprite_depth);
-        else if (key == "lighting") parse_voxel_float(value, profile->lighting);
-    }
-    selected = defaults;
-    if (rom_profile) selected = *rom_profile;
-    selected.depth_scale = std::clamp(selected.depth_scale, 0.0F, 8.0F);
-    selected.camera_pitch = std::clamp(selected.camera_pitch, -80.0F, 80.0F);
-    selected.camera_yaw = std::clamp(selected.camera_yaw, -180.0F, 180.0F);
-    selected.zoom = std::clamp(selected.zoom, 0.25F, 4.0F);
-    selected.perspective = std::clamp(selected.perspective, 0.0F, 0.02F);
-    selected.sprite_depth = std::clamp(selected.sprite_depth, 0.0F, 64.0F);
-    selected.lighting = std::clamp(selected.lighting, 0.1F, 2.0F);
-    return selected;
-}
-
-void ensure_voxel_profile_file(const std::filesystem::path& path) {
-    if (path.empty() || std::filesystem::exists(path)) return;
-    std::ofstream output(path);
-    if (!output) return;
-    output << "; Go Bigger Boy voxel diorama profiles\n"
-              "; Add a [0xROM_FINGERPRINT] section to override [default].\n"
-              "[default]\n"
-              "depth_scale=1.0\n"
-              "camera_pitch=28\n"
-              "camera_yaw=32\n"
-              "zoom=1.0\n"
-              "perspective=0.0025\n"
-              "sprite_depth=10\n"
-              "lighting=1.0\n";
-}
-
 void render_voxel_diorama(const gameboy::Emulator& emulator,
                           SdlResources& sdl,
                           const gameboy::DisplayPalette& palette) {
@@ -5442,7 +5325,7 @@ void render_voxel_diorama(const gameboy::Emulator& emulator,
     const auto& scene = sdl.scene_snapshot;
     const auto fingerprint = emulator.rom_fingerprint();
     if (!sdl.voxel_profile_loaded || sdl.voxel_profile_fingerprint != fingerprint) {
-        sdl.voxel_profile = load_voxel_profile(sdl.voxel_profile_path, fingerprint);
+        sdl.voxel_profile = gbb::load_voxel_profile(sdl.voxel_profile_path, fingerprint);
         sdl.voxel_profile_fingerprint = fingerprint;
         sdl.voxel_profile_loaded = true;
     }
@@ -5995,7 +5878,7 @@ int main(int argc, char** argv) {
         sdl.voxel_profile_path = preference_path.empty()
                                     ? std::filesystem::path{}
                                     : preference_path / "voxel-profiles.ini";
-        ensure_voxel_profile_file(sdl.voxel_profile_path);
+        gbb::ensure_voxel_profile_file(sdl.voxel_profile_path);
         restore_game_window_geometry(sdl.window, preference_path);
         auto rom_library = load_rom_library(preference_path);
         auto recent_roms = recent_paths(rom_library);
@@ -6118,7 +6001,9 @@ int main(int argc, char** argv) {
                         bindings.shortcuts[index]);
                 }
                 const auto result = gbb_desktop::show_windows_dashboard(
-                    nullptr, rom_library, emulator != nullptr, display_palette,
+                    nullptr, rom_library, emulator != nullptr,
+                    emulator ? emulator->rom_fingerprint() : 0,
+                    display_palette,
                     sdl.video_mode,
                     dashboard_bindings, dashboard_actions,
                     preference_path);
@@ -6146,6 +6031,9 @@ int main(int argc, char** argv) {
                         show_error(sdl.window,
                                    "Could not configure the selected video pipeline.");
                     }
+                }
+                if (result.voxel_profile_changed) {
+                    sdl.voxel_profile_loaded = false;
                 }
                 if (result.keyboard_bindings_changed) {
                     for (std::size_t index = 0; index < bindings.keys.size();

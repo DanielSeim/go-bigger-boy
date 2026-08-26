@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(go_bigger_boy VERSION 0.20.0 LANGUAGES CXX)
+project(go_bigger_boy VERSION 0.20.1 LANGUAGES CXX)
 
 configure_file(settings.ini settings.ini COPYONLY)
 
@@ -34,6 +34,7 @@ add_library(gbb_core_api
     src/core_registry.cpp
     src/gameboy_scene.cpp
     src/rom_library.cpp
+    src/voxel_profile.cpp
 )
 target_include_directories(gbb_core_api PUBLIC include)
 target_compile_features(gbb_core_api PUBLIC cxx_std_17)
