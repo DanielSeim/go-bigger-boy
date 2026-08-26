@@ -324,9 +324,12 @@ scale factors, and `lcd` applies a lightweight LCD mask with scanlines. The
 setting is stored as `video.Mode` in
 `settings.ini`; the web selector remembers its choice in browser storage.
 Desktop builds also expose the experimental `voxel` mode. It submits a
-perspective 3D mesh of tile columns and sprites through SDL's active GPU
-renderer, with the authoritative framebuffer retained as the front-facing
-facade. Unsupported frontends fall back to the regular 2D presentation.
+perspective 3D pixel-relief mesh through SDL's active GPU renderer. The
+visible framebuffer is sampled in small pixel-art cells so sprites, text, and
+silhouettes remain recognizable, while detected sprites receive additional
+depth. The authoritative framebuffer can still be retained as a front-facing
+facade for comparison. Unsupported frontends fall back to the regular 2D
+presentation.
 Per-ROM depth and camera tuning can be supplied in `voxel-profiles.ini` beside
 `settings.ini`; use `[default]` and a hexadecimal ROM fingerprint section with
 `depth_scale`, `camera_pitch`, `camera_yaw`, `zoom`, `perspective`,

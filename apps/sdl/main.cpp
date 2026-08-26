@@ -56,7 +56,7 @@
 namespace {
 
 #ifndef GBB_VERSION
-#define GBB_VERSION "0.20.4"
+#define GBB_VERSION "0.20.5"
 #endif
 
 #ifdef __ANDROID__
@@ -5317,10 +5317,10 @@ void render_voxel_diorama(const gameboy::Emulator& emulator,
                           SdlResources& sdl,
                           const gameboy::DisplayPalette& palette) {
     // SDL_RenderGeometry is backed by the active SDL GPU renderer (D3D,
-    // OpenGL, Metal or Vulkan).  We submit a real perspective mesh here and
-    // keep the native framebuffer as a textured facade on top of it.  This
-    // gives every platform the same deterministic voxel projection without
-    // requiring platform-specific shader binaries.
+    // OpenGL, Metal or Vulkan). We submit a deterministic pixel-relief mesh
+    // here and optionally keep the native framebuffer as a textured facade on
+    // top of it. This avoids platform-specific shader binaries while keeping
+    // the original Game Boy artwork recognizable in the diorama.
     gbb::populate_gameboy_scene_snapshot(emulator, sdl.scene_snapshot);
     const auto& scene = sdl.scene_snapshot;
     const auto fingerprint = emulator.rom_fingerprint();
@@ -5352,8 +5352,10 @@ void render_voxel_diorama(const gameboy::Emulator& emulator,
     auto& indices = sdl.voxel_indices;
     vertices.clear();
     indices.clear();
-    vertices.reserve(12000);
-    indices.reserve(18000);
+    // 40x36 relief cells, five faces each, fit comfortably in one geometry
+    // submission while avoiding per-frame vector growth.
+    vertices.reserve(40000);
+    indices.reserve(60000);
     const auto radians = [](const float degrees) {
         return degrees * 0.01745329251994329577F;
     };
@@ -5386,32 +5388,11 @@ void render_voxel_diorama(const gameboy::Emulator& emulator,
         indices.insert(indices.end(), {base, base + 1, base + 2,
                                        base, base + 2, base + 3});
     };
-    const auto bit_count = [](std::uint8_t value) {
-        unsigned count = 0;
-        while (value != 0) {
-            value = static_cast<std::uint8_t>(value &
-                                              static_cast<std::uint8_t>(value - 1));
-            ++count;
-        }
-        return count;
-    };
-    const auto average_tile_color = [&](const unsigned tile_x,
-                                        const unsigned tile_y) {
-        unsigned red = 0;
-        unsigned green = 0;
-        unsigned blue = 0;
-        for (unsigned y = 0; y < 8; ++y) {
-            for (unsigned x = 0; x < 8; ++x) {
-                const auto pixel = colored_pixels[(tile_y * 8 + y) * 160 +
-                                                  tile_x * 8 + x];
-                red += (pixel >> 16) & 0xFFU;
-                green += (pixel >> 8) & 0xFFU;
-                blue += pixel & 0xFFU;
-            }
-        }
-        return UINT32_C(0xFF000000) |
-               ((red / 64U) << 16) | ((green / 64U) << 8) | (blue / 64U);
-    };
+    // Build a relief from the *visible framebuffer* rather than averaging an
+    // entire 8x8 background tile into one block.  Tile averages are cheap, but
+    // they erase the silhouettes and text that make a Game Boy scene readable.
+    // Four-by-four pixel cells retain the characteristic pixel-art shapes while
+    // keeping the mesh small enough to rebuild every frame on integrated GPUs.
     struct VoxelColumn {
         float x{};
         float y{};
@@ -5423,61 +5404,88 @@ void render_voxel_diorama(const gameboy::Emulator& emulator,
         bool sprite{};
     };
     std::vector<VoxelColumn> columns;
-    columns.reserve(20 * 18);
-    for (unsigned tile_y = 0; tile_y < 18; ++tile_y) {
-        for (unsigned tile_x = 0; tile_x < 20; ++tile_x) {
-            const auto map_x = (static_cast<unsigned>(scene.scx) / 8U + tile_x) & 31U;
-            const auto map_y = (static_cast<unsigned>(scene.scy) / 8U + tile_y) & 31U;
-            const auto map_index = map_y * 32U + map_x;
-            const auto tile = scene.background.tile_ids[map_index];
-            const auto attributes = scene.background.attributes[map_index];
-            const auto bank = scene.cgb_mode && (attributes & 0x08U) != 0 ? 1U : 0U;
-            const auto tile_index = scene.background.tile_data_unsigned
-                                        ? static_cast<unsigned>(tile)
-                                        : tile < 0x80U
-                                              ? static_cast<unsigned>(tile) + 256U
-                                              : static_cast<unsigned>(tile);
-            if (tile_index >= scene.tile_count ||
-                bank >= scene.tile_banks) {
-                continue;
-            }
-            const auto tile_offset = bank * scene.tile_bank_stride +
-                                     tile_index * scene.tile_size_bytes;
-            unsigned occupancy = 0;
-            for (std::size_t row = 0; row < 8; ++row) {
-                const auto low = scene.tile_data[tile_offset + row * 2];
-                const auto high = scene.tile_data[tile_offset + row * 2 + 1];
-                occupancy += bit_count(low) + bit_count(high);
-            }
-            if (occupancy == 0) continue;
-            const auto depth = profile.depth_scale *
-                               (1.0F + std::min(5.0F,
-                                                static_cast<float>(occupancy) / 24.0F));
-            const auto x = static_cast<float>(tile_x * 8);
-            const auto y = static_cast<float>(tile_y * 8);
-            const auto centered_y = y + 4.0F - 72.0F;
-            const auto centered_x = x + 4.0F - 80.0F;
-            const auto rotated_y = centered_x * yaw_sin + centered_y * yaw_cos;
-            columns.push_back({x, y, 8.0F, 8.0F, depth,
-                               rotated_y * pitch_sin + depth * pitch_cos,
-                               average_tile_color(tile_x, tile_y), false});
-        }
-    }
-    const auto sprite_height = (scene.lcdc & 0x04U) != 0 ? 16.0F : 8.0F;
+    constexpr unsigned cell_size = 4;
+    constexpr unsigned cells_x = gameboy::Ppu::screen_width / cell_size;
+    constexpr unsigned cells_y = gameboy::Ppu::screen_height / cell_size;
+    columns.reserve(cells_x * cells_y);
+    std::array<bool, gameboy::Ppu::screen_width * gameboy::Ppu::screen_height>
+        sprite_mask{};
+    const auto sprite_height = (scene.lcdc & 0x04U) != 0 ? 16 : 8;
     for (const auto& sprite : scene.sprites) {
         if (!sprite.visible) continue;
-        const auto x = static_cast<float>(sprite.screen_x);
-        const auto y = static_cast<float>(sprite.screen_y);
-        const auto centered_y = y + sprite_height * 0.5F - 72.0F;
-        const auto centered_x = x + 4.0F - 80.0F;
-        const auto rotated_y = centered_x * yaw_sin + centered_y * yaw_cos;
-        const auto sample_x = std::clamp<int>(sprite.screen_x, 0, 159);
-        const auto sample_y = std::clamp<int>(sprite.screen_y, 0, 143);
-        const auto color = colored_pixels[static_cast<std::size_t>(sample_y) * 160 +
-                                          static_cast<std::size_t>(sample_x)];
-        columns.push_back({x, y, 8.0F, sprite_height, profile.sprite_depth,
-                           rotated_y * pitch_sin + profile.sprite_depth * pitch_cos,
-                           color, true});
+        for (int y = std::max(0, static_cast<int>(sprite.screen_y));
+             y < std::min(static_cast<int>(gameboy::Ppu::screen_height),
+                          static_cast<int>(sprite.screen_y) + sprite_height);
+             ++y) {
+            for (int x = std::max(0, static_cast<int>(sprite.screen_x));
+                 x < std::min(static_cast<int>(gameboy::Ppu::screen_width),
+                              static_cast<int>(sprite.screen_x) + 8);
+                 ++x) {
+                sprite_mask[static_cast<std::size_t>(y) *
+                                gameboy::Ppu::screen_width +
+                            static_cast<std::size_t>(x)] = true;
+            }
+        }
+    }
+    const auto luminance = [](const std::uint32_t pixel) {
+        const auto red = static_cast<float>((pixel >> 16) & 0xFFU);
+        const auto green = static_cast<float>((pixel >> 8) & 0xFFU);
+        const auto blue = static_cast<float>(pixel & 0xFFU);
+        return (0.2126F * red + 0.7152F * green + 0.0722F * blue) / 255.0F;
+    };
+    for (unsigned cell_y = 0; cell_y < cells_y; ++cell_y) {
+        for (unsigned cell_x = 0; cell_x < cells_x; ++cell_x) {
+            unsigned red = 0;
+            unsigned green = 0;
+            unsigned blue = 0;
+            float local_luminance = 0.0F;
+            float minimum_luminance = 1.0F;
+            float maximum_luminance = 0.0F;
+            bool has_sprite = false;
+            for (unsigned y = 0; y < cell_size; ++y) {
+                for (unsigned x = 0; x < cell_size; ++x) {
+                    const auto pixel_x = cell_x * cell_size + x;
+                    const auto pixel_y = cell_y * cell_size + y;
+                    const auto pixel = colored_pixels[pixel_y *
+                                                      gameboy::Ppu::screen_width +
+                                                      pixel_x];
+                    const auto pixel_luminance = luminance(pixel);
+                    red += (pixel >> 16) & 0xFFU;
+                    green += (pixel >> 8) & 0xFFU;
+                    blue += pixel & 0xFFU;
+                    local_luminance += pixel_luminance;
+                    minimum_luminance = std::min(minimum_luminance,
+                                                 pixel_luminance);
+                    maximum_luminance = std::max(maximum_luminance,
+                                                 pixel_luminance);
+                    has_sprite = has_sprite ||
+                                 sprite_mask[pixel_y * gameboy::Ppu::screen_width +
+                                             pixel_x];
+                }
+            }
+            const auto color = UINT32_C(0xFF000000) |
+                               ((red / (cell_size * cell_size)) << 16) |
+                               ((green / (cell_size * cell_size)) << 8) |
+                               (blue / (cell_size * cell_size));
+            local_luminance /= static_cast<float>(cell_size * cell_size);
+            // Dark pixels and edges stand proud of the base plane.  This keeps
+            // the image legible in 3D without turning every flat background
+            // pixel into a tall noisy pillar.
+            const auto x = static_cast<float>(cell_x * cell_size);
+            const auto y = static_cast<float>(cell_y * cell_size);
+            const auto local_contrast = maximum_luminance - minimum_luminance;
+            const auto depth = profile.depth_scale *
+                               (1.5F + (1.0F - local_luminance) * 8.0F +
+                                local_contrast * 4.0F +
+                                (has_sprite ? profile.sprite_depth * 0.35F : 0.0F));
+            const auto centered_y = y + cell_size * 0.5F - 72.0F;
+            const auto centered_x = x + cell_size * 0.5F - 80.0F;
+            const auto rotated_y = centered_x * yaw_sin + centered_y * yaw_cos;
+            columns.push_back({x, y, static_cast<float>(cell_size),
+                               static_cast<float>(cell_size), depth,
+                               rotated_y * pitch_sin + depth * pitch_cos,
+                               color, has_sprite});
+        }
     }
     // SDL geometry has no portable depth buffer. Painter ordering gives us
     // deterministic opaque occlusion on software, OpenGL, D3D, Metal and
@@ -5487,35 +5495,35 @@ void render_voxel_diorama(const gameboy::Emulator& emulator,
                          return left.sort_depth > right.sort_depth;
                      });
     for (const auto& column : columns) {
-            const auto x = column.x;
-            const auto y = column.y;
-            const auto depth = column.height;
-            const auto width = column.width;
-            const auto extent_y = column.extent_y;
-            const auto base_a = project(x, y, 0.0F);
-            const auto base_b = project(x + width, y, 0.0F);
-            const auto base_c = project(x + width, y + extent_y, 0.0F);
-            const auto base_d = project(x, y + extent_y, 0.0F);
-            const auto top_a = project(x, y, depth);
-            const auto top_b = project(x + width, y, depth);
-            const auto top_c = project(x + width, y + extent_y, depth);
-            const auto top_d = project(x, y + extent_y, depth);
-            const auto tile_color = column.color;
-            add_quad(base_a, base_b, top_b, top_a,
-                     voxel_color(tile_color,
-                                 (column.sprite ? 0.30F : 0.34F) * profile.lighting));
-            add_quad(base_b, base_c, top_c, top_b,
-                     voxel_color(tile_color,
-                                 (column.sprite ? 0.42F : 0.46F) * profile.lighting));
-            add_quad(base_c, base_d, top_d, top_c,
-                     voxel_color(tile_color,
-                                 (column.sprite ? 0.54F : 0.58F) * profile.lighting));
-            add_quad(base_d, base_a, top_a, top_d,
-                     voxel_color(tile_color,
-                                 (column.sprite ? 0.36F : 0.40F) * profile.lighting));
-            add_quad(top_a, top_b, top_c, top_d,
-                     voxel_color(tile_color,
-                                 (column.sprite ? 0.62F : 0.72F) * profile.lighting));
+        const auto x = column.x;
+        const auto y = column.y;
+        const auto depth = column.height;
+        const auto width = column.width;
+        const auto extent_y = column.extent_y;
+        const auto base_a = project(x, y, 0.0F);
+        const auto base_b = project(x + width, y, 0.0F);
+        const auto base_c = project(x + width, y + extent_y, 0.0F);
+        const auto base_d = project(x, y + extent_y, 0.0F);
+        const auto top_a = project(x, y, depth);
+        const auto top_b = project(x + width, y, depth);
+        const auto top_c = project(x + width, y + extent_y, depth);
+        const auto top_d = project(x, y + extent_y, depth);
+        const auto tile_color = column.color;
+        add_quad(base_a, base_b, top_b, top_a,
+                 voxel_color(tile_color,
+                             (column.sprite ? 0.30F : 0.34F) * profile.lighting));
+        add_quad(base_b, base_c, top_c, top_b,
+                 voxel_color(tile_color,
+                             (column.sprite ? 0.42F : 0.46F) * profile.lighting));
+        add_quad(base_c, base_d, top_d, top_c,
+                 voxel_color(tile_color,
+                             (column.sprite ? 0.54F : 0.58F) * profile.lighting));
+        add_quad(base_d, base_a, top_a, top_d,
+                 voxel_color(tile_color,
+                             (column.sprite ? 0.36F : 0.40F) * profile.lighting));
+        add_quad(top_a, top_b, top_c, top_d,
+                 voxel_color(tile_color,
+                             (column.sprite ? 0.88F : 0.92F) * profile.lighting));
     }
     if (!indices.empty() && !SDL_RenderGeometry(
                                  sdl.renderer, nullptr, vertices.data(),
