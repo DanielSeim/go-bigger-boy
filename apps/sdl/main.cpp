@@ -5889,8 +5889,10 @@ int main(int argc, char** argv) {
 #endif
                     rom_library.remember(
                         current_rom, gameboy::inspect_rom_file(current_rom));
+#ifndef __ANDROID__
                     cheat_manager.load(preference_path,
                                        gameboy::inspect_rom_file(current_rom));
+#endif
                     rom_library.save(preference_path);
                     recent_roms = recent_paths(rom_library);
                     update_window_title(sdl.window, current_rom, paused,
@@ -6170,7 +6172,9 @@ int main(int argc, char** argv) {
                 } else {
                     const auto frames = fast_forward ? fast_forward_factor : 1U;
                     for (auto frame = 0U; frame < frames && running; ++frame) {
+#ifndef __ANDROID__
                         cheat_manager.apply(*emulator);
+#endif
                         rewind_history.push_back(emulator->save_state());
                         while (rewind_history.size() > maximum_rewind_frames) {
                             rewind_history.pop_front();
