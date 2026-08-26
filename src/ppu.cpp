@@ -349,6 +349,15 @@ bool Ppu::write_register(const std::uint16_t address,
                 window_glitch_x_ = static_cast<std::uint8_t>(new_window_start);
                 window_glitch_pending_ = true;
             }
+        } else if (using_window_ && new_window_start <
+                   static_cast<int>(output_x_) &&
+                   output_x_ < 8 && window_x_ == 6 && value < 6) {
+            // A WX write that moves the comparator behind the first few
+            // visible pixels cancels the in-flight window handoff. The
+            // already-emitted prefix remains window data; subsequent pixels
+            // resume the background fetch pipeline.
+            window_disable_pending_ = true;
+            window_disable_source_x_ = 8;
         }
         const auto comparator_start = std::max(0, new_window_start);
         if (window_activation_count_ != 0 &&
@@ -809,6 +818,13 @@ void Ppu::tick_background_fetcher() noexcept {
 void Ppu::begin_window_fetch() noexcept {
     window_trigger_pending_ = false;
     using_window_ = true;
+    // A cancelled handoff has already consumed the first window tile. Keep a
+    // one-shot marker in the otherwise-idle disable-source register so the
+    // reactivation starts at that tile boundary instead of restarting at the
+    // comparator-derived source offset.
+    const auto resumed_window_handoff = window_disable_source_x_ == 0xFFFF &&
+                                        output_x_ < 8;
+    if (resumed_window_handoff) window_disable_source_x_ = 0;
     window_fetch_line_ = static_cast<std::uint8_t>(
         window_line_ + window_activation_count_);
     ++window_activation_count_;
@@ -819,14 +835,22 @@ void Ppu::begin_window_fetch() noexcept {
     fetcher_tile_index_ = 0;
     window_delay_ = static_cast<std::uint8_t>(
         5 + (!cgb_hardware_ && window_x_ == 0 && (scx_ & 7U) != 0));
-    window_source_x_ = static_cast<std::uint16_t>(
-        std::max(0, 7 - static_cast<int>(window_x_)));
+    window_source_x_ = resumed_window_handoff
+                           ? std::uint16_t{7}
+                           : static_cast<std::uint16_t>(
+                                 std::max(0, 7 - static_cast<int>(window_x_)));
     window_fetch_start_x_ = static_cast<std::uint8_t>(window_source_x_);
 }
 
 void Ppu::resume_background_fetch() noexcept {
+    // Preserve the special early-rewrite handoff across the background-fetch
+    // reset. The marker is consumed by the next window reactivation.
+    const auto resumed_window_handoff = window_disable_pending_ &&
+                                        window_disable_source_x_ == 8 &&
+                                        output_x_ < 8;
     using_window_ = false;
     window_disable_pending_ = false;
+    if (resumed_window_handoff) window_disable_source_x_ = 0xFFFF;
     window_glitch_pending_ = false;
     window_glitch_applied_ = false;
     background_fifo_size_ = 0;

@@ -73,7 +73,12 @@ DMG window-enable changes also latch a comparator already inside the queued
 tile, cancel fetches during their first two pixels, insert the color-zero pixel
 at the tile-name boundary, and delay off-screen-left disables through the next
 full visible tile. `WX=0` now also pays its extra DMG activation dot when fine
-`SCX` scrolling is active. Later monochrome post-boot profiles reproduce the
+`SCX` scrolling is active. An early rewrite from `WX=6` to a lower comparator
+now defers the active handoff through the queued window-tile boundary before
+resuming the background fetch path, preserving the queued tile boundary on
+reactivation, and reducing the exploratory `m3_wx_6_change` mismatch from
+13,810 to 12,932 pixels without changing the existing `WX=4/5` references.
+Later monochrome post-boot profiles reproduce the
 registered-trademark tile that the boot ROM leaves at `$8190`, so edge tests do
 not accidentally run against zero-filled startup VRAM.
 
@@ -85,8 +90,9 @@ the release gate until their framebuffer references match exactly.
 
 Window comparator positions are normalized at the visible left edge for
 `WX<7`, including writes made while the current window tile is still queued.
-The remaining `WX=6` sequence still needs the underlying fetch cancellation and
-pixel-output pipeline modeled cycle by cycle.
+The `WX=6` sequence still has a substantial mismatch after the handoff because
+the internal window row and queued tile pipeline are not yet fully modeled
+cycle by cycle; it remains exploratory and is not part of the release gate.
 
 Run the exact CI baseline locally with:
 
