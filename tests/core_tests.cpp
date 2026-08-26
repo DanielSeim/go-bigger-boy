@@ -1,6 +1,7 @@
 #include "gameboy/cpu.hpp"
 #include "gameboy/dmg_palette.hpp"
 #include "gameboy/emulator.hpp"
+#include "gameboy/gameshark.hpp"
 #include "gameboy/memory_bus.hpp"
 #include "gameboy/rom_library.hpp"
 #include "gameboy/video_pipeline.hpp"
@@ -220,6 +221,44 @@ void test_rom_library_metadata_and_deduplication() {
     std::filesystem::remove_all(directory);
 }
 
+void test_gameshark_cheats() {
+    const auto writes = gameboy::parse_gameshark_code("0199-00C0 + 010101C0");
+    check(writes.size() == 2 && writes[0].address == 0xC000 &&
+              writes[0].value == 0x99 && writes[1].address == 0xC001 &&
+              writes[1].value == 0x01,
+          "GameShark parser decodes type-01 values and little-endian addresses");
+
+    bool rejected = false;
+    try {
+        static_cast<void>(gameboy::parse_gameshark_code("009900C0"));
+    } catch (const std::invalid_argument&) {
+        rejected = true;
+    }
+    check(rejected, "GameShark parser rejects unsupported code types");
+
+    const std::string archive =
+        "cheats = 2\n"
+        "cheat0_desc = \"Infinite lives\"\n"
+        "cheat0_code = \"019900C0\"\n"
+        "cheat0_enable = true\n"
+        "cheat1_desc = \"Unsupported\"\n"
+        "cheat1_code = \"009900C0\"\n";
+    auto cheats = gameboy::parse_libretro_cheats(archive);
+    check(cheats.size() == 1 && cheats[0].description == "Infinite lives" &&
+              cheats[0].enabled && cheats[0].from_archive,
+          "Libretro cheat parser retains supported GameShark entries");
+
+    gameboy::Emulator emulator{gameboy::Cartridge{test_rom()}};
+    gameboy::apply_gameshark_cheats(cheats, emulator.bus());
+    check(emulator.bus().read8(0xC000) == 0x99,
+          "enabled GameShark cheats write emulator memory");
+    const auto round_trip = gameboy::parse_libretro_cheats(
+        gameboy::serialize_libretro_cheats(cheats), false);
+    check(round_trip.size() == 1 && round_trip[0].enabled &&
+              round_trip[0].from_archive && round_trip[0].code == "019900C0",
+          "GameShark cheat files preserve enabled and source metadata");
+}
+
 void test_video_pipeline_modes() {
     check(gameboy::video_mode_from_id("nearest") == gameboy::VideoMode::nearest &&
               gameboy::video_mode_from_id("bilinear") == gameboy::VideoMode::bilinear &&
@@ -270,6 +309,17 @@ void test_cgb_memory_and_rendering() {
               emulator.cpu().registers().e == 0x08 &&
               emulator.cpu().registers().l == 0x7C,
           "CGB cartridges start with CGB hardware detection state");
+    auto edited_registers = emulator.cpu().registers();
+    edited_registers.a = 0x42;
+    edited_registers.f = 0xAF;
+    edited_registers.sp = 0xC123;
+    edited_registers.pc = 0x4567;
+    emulator.set_cpu_registers(edited_registers);
+    check(emulator.cpu().registers().a == 0x42 &&
+              emulator.cpu().registers().f == 0xA0 &&
+              emulator.cpu().registers().sp == 0xC123 &&
+              emulator.cpu().registers().pc == 0x4567,
+          "debugger register edits update CPU state and sanitize F");
 
     bus.write8(0xFF40, 0);
     bus.write8(0x8000, 0x12);
@@ -280,6 +330,11 @@ void test_cgb_memory_and_rendering() {
     bus.write8(0xFF4F, 0);
     check(bus.read8(0x8000) == 0x12,
           "switching VBK restores the first CGB VRAM bank");
+    bus.debug_write_vram(0, 0x0020, 0x56);
+    bus.debug_write_vram(1, 0x0020, 0x78);
+    check(bus.debug_read_vram(0, 0x0020) == 0x56 &&
+              bus.debug_read_vram(1, 0x0020) == 0x78,
+          "debugger VRAM access reads and edits either CGB bank directly");
 
     bus.write8(0xD000, 0x11);
     bus.write8(0xFF70, 2);
@@ -3129,6 +3184,7 @@ int main() {
     try {
         test_cartridge_header();
         test_rom_library_metadata_and_deduplication();
+        test_gameshark_cheats();
         test_video_pipeline_modes();
         test_cartridge_file_loading();
         test_cgb_memory_and_rendering();

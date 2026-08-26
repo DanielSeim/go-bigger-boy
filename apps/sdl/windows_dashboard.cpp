@@ -32,7 +32,7 @@ namespace gbb_desktop {
 namespace {
 
 #ifndef GBB_VERSION
-#define GBB_VERSION "0.16.0"
+#define GBB_VERSION "0.17.0"
 #endif
 
 constexpr int id_library = 100;
@@ -46,6 +46,7 @@ constexpr int id_remove = 108;
 constexpr int id_video = 109;
 constexpr int id_gameboy_background = 110;
 constexpr int id_reset_controls = 111;
+constexpr int id_shortcuts = 112;
 constexpr int id_binding_first = 200;
 constexpr int id_action_first = 220;
 constexpr UINT artwork_ready = WM_APP + 1;
@@ -131,12 +132,15 @@ struct State {
     HWND reset_controls{};
     HWND library_tab{};
     HWND settings_tab{};
+    HWND shortcuts_tab{};
+    HWND shortcuts_heading{};
+    HWND shortcuts_text{};
     HWND logo{};
     HBITMAP logo_bitmap{};
     HIMAGELIST covers{};
     HBRUSH background_brush{};
     HFONT ui_font{};
-    bool settings_page{};
+    enum class Page { library, settings, shortcuts } page{Page::library};
     std::filesystem::path preference_directory;
     std::thread artwork_worker;
     std::atomic_bool closing{};
@@ -204,6 +208,74 @@ std::wstring binding_name(const std::int64_t value) {
     return widen(SDL_GetKeyName(static_cast<SDL_Keycode>(value)));
 }
 
+std::wstring shortcuts_text(const State& state) {
+    std::wostringstream text;
+    text << L"GAMEPLAY CONTROLS\r\n";
+    for (std::size_t index = 0; index < control_names.size(); ++index) {
+        text << control_names[index] << L": "
+             << binding_name(state.result.keyboard_bindings[index][0]);
+        const auto secondary = state.result.keyboard_bindings[index][1];
+        if (secondary != SDLK_UNKNOWN) {
+            text << L" / " << binding_name(secondary);
+        }
+        text << L"\r\n";
+    }
+    text << L"\r\nCONFIGURABLE EMULATOR SHORTCUTS\r\n";
+    for (std::size_t index = 0; index < action_names.size(); ++index) {
+        text << action_names[index] << L": "
+             << binding_name(state.result.action_bindings[index]) << L"\r\n";
+    }
+    text <<
+        L"\r\nGENERAL\r\n"
+        L"F1: Open this shortcuts reference\r\n"
+        L"Space: Pause or resume\r\n"
+        L"Ctrl+R: Reset the current game\r\n"
+        L"Ctrl+O: Open a ROM\r\n"
+        L"Ctrl+L: Open the game library\r\n"
+        L"Ctrl+K: Configure controls\r\n"
+        L"Ctrl+P: Choose the display palette\r\n"
+        L"Ctrl+G: Open the GameShark cheat manager\r\n"
+        L"Ctrl+1 through Ctrl+9: Open a recent ROM\r\n"
+        L"F11: Toggle fullscreen\r\n"
+        L"F12: Open or close the debugger\r\n"
+        L"Escape: Close with confirmation\r\n"
+        L"\r\nDEBUGGER\r\n"
+        L"F5: Run or pause\r\n"
+        L"F6: Start or stop input recording\r\n"
+        L"F7: Replay the latest input movie\r\n"
+        L"F8: Open the TAS frame editor\r\n"
+        L"F9: Open the live sprite editor\r\n"
+        L"F10: Step one CPU instruction\r\n"
+        L"F11: Step one frame\r\n"
+        L"F12 or Escape: Close the debugger\r\n"
+        L"Click a CPU register: Edit its hexadecimal value\r\n"
+        L"\r\nTAS FRAME EDITOR\r\n"
+        L"Up / Down: Select a frame\r\n"
+        L"Insert: Insert an empty frame\r\n"
+        L"Delete: Delete the selected frame\r\n"
+        L"End: Append an empty frame\r\n"
+        L"Ctrl+N: Start a timeline from the current state\r\n"
+        L"Ctrl+S: Save the timeline\r\n"
+        L"F7: Save and run the timeline\r\n"
+        L"\r\nLIVE SPRITE EDITOR\r\n"
+        L"1 through 4: Select a color index\r\n"
+        L"Left mouse: Paint; right mouse: erase to color 0\r\n"
+        L"Ctrl+Z: Undo the previous stroke\r\n"
+        L"Delete: Clear the selected tile\r\n"
+        L"B: Switch CGB VRAM bank\r\n"
+        L"Ctrl+S: Save a GBB tile patch\r\n"
+        L"Ctrl+O: Import the latest GBB tile patch\r\n"
+        L"Ctrl+E: Export a standard IPS patch\r\n"
+        L"F9 or Escape: Close the sprite editor\r\n";
+    text <<
+        L"\r\nGAMESHARK CHEAT MANAGER\r\n"
+        L"Ctrl+G: Open the current ROM's cheat manager\r\n"
+        L"Space: Toggle the selected cheat\r\n"
+        L"Delete: Remove the selected cheat\r\n"
+        L"Fetch for ROM: Import its Libretro archive entries\r\n";
+    return text.str();
+}
+
 void refresh_binding_buttons(State& state) {
     for (std::size_t index = 0; index < state.binding_buttons.size(); ++index) {
         for (std::size_t slot = 0;
@@ -225,6 +297,10 @@ void refresh_binding_buttons(State& state) {
             text = L"Press a key...";
         }
         SetWindowTextW(state.action_buttons[index], text.c_str());
+    }
+    if (state.shortcuts_text != nullptr) {
+        const auto text = shortcuts_text(state);
+        SetWindowTextW(state.shortcuts_text, text.c_str());
     }
 }
 
@@ -438,17 +514,20 @@ LRESULT CALLBACK table_header_subclass(
     return DefSubclassProc(window, message, wparam, lparam);
 }
 
-void show_page(State& state, const bool settings) {
-    state.settings_page = settings;
+void show_page(State& state, const State::Page page) {
+    state.page = page;
+    const auto library = page == State::Page::library;
+    const auto settings = page == State::Page::settings;
+    const auto shortcuts = page == State::Page::shortcuts;
     if (!settings && state.capturing_binding) {
         state.capturing_binding.reset();
         refresh_binding_buttons(state);
     }
-    ShowWindow(state.list, settings ? SW_HIDE : SW_SHOW);
-    ShowWindow(state.play, settings ? SW_HIDE : SW_SHOW);
-    ShowWindow(state.open, settings ? SW_HIDE : SW_SHOW);
-    ShowWindow(state.remove, settings ? SW_HIDE : SW_SHOW);
-    ShowWindow(state.resume, settings || !state.can_resume ? SW_HIDE : SW_SHOW);
+    ShowWindow(state.list, library ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.play, library ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.open, library ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.remove, library ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.resume, library && state.can_resume ? SW_SHOW : SW_HIDE);
     ShowWindow(state.settings_heading, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.palette_label, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.palette, settings ? SW_SHOW : SW_HIDE);
@@ -479,6 +558,8 @@ void show_page(State& state, const bool settings) {
         ShowWindow(button, settings ? SW_SHOW : SW_HIDE);
     }
     ShowWindow(state.reset_controls, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.shortcuts_heading, shortcuts ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.shortcuts_text, shortcuts ? SW_SHOW : SW_HIDE);
     if (settings) {
         // The owner-drawn Game Boy artwork overlaps these controls. Keep the
         // bindings above it and repaint them immediately when opening Settings.
@@ -581,7 +662,8 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                  state->background_brush);
         return 1;
     }
-    if (message == WM_CTLCOLORSTATIC || message == WM_CTLCOLORLISTBOX) {
+    if (message == WM_CTLCOLORSTATIC || message == WM_CTLCOLORLISTBOX ||
+        message == WM_CTLCOLOREDIT) {
         const auto dc = reinterpret_cast<HDC>(wparam);
         SetTextColor(dc, RGB(224, 235, 244));
         SetBkColor(dc, RGB(13, 18, 27));
@@ -640,6 +722,12 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
     }
 
     if ((message == WM_KEYDOWN || message == WM_SYSKEYDOWN) &&
+        wparam == VK_F1 && !state->capturing_binding) {
+        show_page(*state, State::Page::shortcuts);
+        return 0;
+    }
+
+    if ((message == WM_KEYDOWN || message == WM_SYSKEYDOWN) &&
         wparam == VK_ESCAPE) {
         if (confirm_exit(window)) finish(*state, DashboardResultAction::quit);
         return 0;
@@ -674,8 +762,9 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
             return 0;
         }
         switch (LOWORD(wparam)) {
-        case id_library: show_page(*state, false); return 0;
-        case id_settings: show_page(*state, true); return 0;
+        case id_library: show_page(*state, State::Page::library); return 0;
+        case id_settings: show_page(*state, State::Page::settings); return 0;
+        case id_shortcuts: show_page(*state, State::Page::shortcuts); return 0;
         case id_open: open_rom(*state); return 0;
         case id_play: play_selection(*state); return 0;
         case id_resume: finish(*state, DashboardResultAction::resume); return 0;
@@ -1182,8 +1271,10 @@ void draw_dashboard_button(const DRAWITEMSTRUCT& item, const State& state) {
     const auto id = GetDlgCtrlID(item.hwndItem);
     const auto pressed = (item.itemState & ODS_SELECTED) != 0;
     const auto disabled = (item.itemState & ODS_DISABLED) != 0;
-    const auto active_tab = (id == id_settings && state.settings_page) ||
-                            (id == id_library && !state.settings_page);
+    const auto active_tab =
+        (id == id_settings && state.page == State::Page::settings) ||
+        (id == id_library && state.page == State::Page::library) ||
+        (id == id_shortcuts && state.page == State::Page::shortcuts);
     const auto fill = disabled
                           ? RGB(28, 34, 45)
                           : active_tab || pressed ? RGB(0, 145, 190)
@@ -1289,6 +1380,9 @@ DashboardResult show_windows_dashboard(
     state.settings_tab = control(state, L"BUTTON", L"Settings",
                                  WS_VISIBLE | BS_PUSHBUTTON,
                                  174, 140, 126, 40, id_settings);
+    state.shortcuts_tab = control(state, L"BUTTON", L"Shortcuts",
+                                  WS_VISIBLE | BS_PUSHBUTTON,
+                                  316, 140, 126, 40, id_shortcuts);
     state.list = control(state, WC_LISTVIEWW, L"",
         WS_VISIBLE | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS,
         32, 200, 916, 350, id_list);
@@ -1474,8 +1568,18 @@ DashboardResult show_windows_dashboard(
     }
     state.reset_controls = control(state, L"BUTTON", L"Reset all controls",
         BS_PUSHBUTTON, 32, 775, 230, 40, id_reset_controls);
+    state.shortcuts_heading = control(
+        state, L"STATIC", L"Keyboard shortcuts", 0,
+        32, 200, 360, 30, 0);
+    SendMessageW(state.shortcuts_heading, WM_SETFONT,
+                 reinterpret_cast<WPARAM>(state.title_font), TRUE);
+    const auto shortcut_reference = shortcuts_text(state);
+    state.shortcuts_text = control(
+        state, L"EDIT", shortcut_reference.c_str(),
+        ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL,
+        32, 240, 916, 565, 0);
     refresh_binding_buttons(state);
-    show_page(state, false);
+    show_page(state, State::Page::library);
 
     if (owner != nullptr) EnableWindow(owner, FALSE);
     ShowWindow(state.window, SW_SHOW);
@@ -1483,6 +1587,12 @@ DashboardResult show_windows_dashboard(
     state.artwork_worker = std::thread([&state] { resolve_artwork(state); });
     MSG message{};
     while (!state.done && GetMessageW(&message, nullptr, 0, 0) > 0) {
+        if ((message.message == WM_KEYDOWN ||
+             message.message == WM_SYSKEYDOWN) &&
+            message.wParam == VK_F1 && !state.capturing_binding) {
+            show_page(state, State::Page::shortcuts);
+            continue;
+        }
         TranslateMessage(&message);
         DispatchMessageW(&message);
     }

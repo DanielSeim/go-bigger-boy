@@ -31,6 +31,7 @@ public:
     [[nodiscard]] unsigned step();
 
     [[nodiscard]] const Cpu& cpu() const noexcept;
+    void set_cpu_registers(CpuRegisters registers) noexcept;
     [[nodiscard]] const MemoryBus& bus() const noexcept;
     [[nodiscard]] MemoryBus& bus() noexcept;
     [[nodiscard]] const Ppu::Framebuffer& framebuffer() const noexcept;

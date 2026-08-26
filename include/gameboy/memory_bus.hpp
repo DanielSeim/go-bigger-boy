@@ -37,6 +37,10 @@ public:
     [[nodiscard]] bool cgb_mode() const noexcept;
     [[nodiscard]] bool double_speed() const noexcept;
     void set_dmg_palette(const DmgPalette& palette) noexcept;
+    [[nodiscard]] std::uint8_t debug_read_vram(std::uint8_t bank,
+                                               std::uint16_t offset) const noexcept;
+    void debug_write_vram(std::uint8_t bank, std::uint16_t offset,
+                          std::uint8_t value) noexcept;
     void flush_battery();
     [[nodiscard]] const Ppu::Framebuffer& framebuffer() const noexcept;
     [[nodiscard]] bool frame_ready() const noexcept;

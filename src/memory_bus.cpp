@@ -403,6 +403,17 @@ void MemoryBus::set_dmg_palette(const DmgPalette& palette) noexcept {
     ppu_.set_dmg_palette(palette);
 }
 
+std::uint8_t MemoryBus::debug_read_vram(const std::uint8_t bank,
+                                        const std::uint16_t offset) const noexcept {
+    return ppu_.debug_read_vram(bank, offset);
+}
+
+void MemoryBus::debug_write_vram(const std::uint8_t bank,
+                                 const std::uint16_t offset,
+                                 const std::uint8_t value) noexcept {
+    ppu_.debug_write_vram(bank, offset, value);
+}
+
 bool MemoryBus::try_speed_switch() noexcept {
     if (!cgb_mode_ || !speed_switch_requested_) return false;
     speed_switch_requested_ = false;

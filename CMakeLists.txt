@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(go_bigger_boy VERSION 0.16.0 LANGUAGES CXX)
+project(go_bigger_boy VERSION 0.17.0 LANGUAGES CXX)
 
 configure_file(settings.ini settings.ini COPYONLY)
 
@@ -17,6 +17,7 @@ add_library(gameboy_core
     src/cpu.cpp
     src/dmg_palette.cpp
     src/emulator.cpp
+    src/gameshark.cpp
     src/joypad.cpp
     src/memory_bus.cpp
     src/ppu.cpp

@@ -1,5 +1,6 @@
 #include "gameboy/emulator.hpp"
 #include "gameboy/display_palette.hpp"
+#include "gameboy/gameshark.hpp"
 #include "gameboy/rom_library.hpp"
 #include "gameboy/video_pipeline.hpp"
 #ifndef __ANDROID__
@@ -32,6 +33,7 @@
 #include <string>
 #include <system_error>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #ifdef _WIN32
@@ -49,7 +51,7 @@
 namespace {
 
 #ifndef GBB_VERSION
-#define GBB_VERSION "0.16.0"
+#define GBB_VERSION "0.17.0"
 #endif
 
 #ifdef __ANDROID__
@@ -101,6 +103,219 @@ struct TouchControlSettings {
 [[noreturn]] void sdl_error(const std::string& action) {
     throw std::runtime_error(action + ": " + SDL_GetError());
 }
+
+#ifdef _WIN32
+enum class DesktopMenuCommand : int {
+    none = 0,
+    open_rom = 0x8100,
+    library,
+    save_state,
+    load_state,
+    exit_app,
+    pause,
+    reset,
+    fullscreen,
+    controls,
+    gameshark,
+    debugger,
+    record_input,
+    replay_input,
+    tas_editor,
+    sprite_editor,
+    shortcuts,
+    about,
+    palette_first = 0x8200,
+    video_first = 0x8300,
+};
+
+class DesktopMenuBar {
+public:
+    ~DesktopMenuBar() { detach(); }
+
+    void attach(SDL_Window* window) {
+        detach();
+        hwnd_ = static_cast<HWND>(SDL_GetPointerProperty(
+            SDL_GetWindowProperties(window),
+            SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
+        if (hwnd_ == nullptr) return;
+        root_ = CreateMenu();
+        file_ = CreatePopupMenu();
+        emulation_ = CreatePopupMenu();
+        view_ = CreatePopupMenu();
+        palette_ = CreatePopupMenu();
+        video_ = CreatePopupMenu();
+        tools_ = CreatePopupMenu();
+        help_ = CreatePopupMenu();
+        if (root_ == nullptr || file_ == nullptr || emulation_ == nullptr ||
+            view_ == nullptr || palette_ == nullptr || video_ == nullptr ||
+            tools_ == nullptr || help_ == nullptr) {
+            detach();
+            return;
+        }
+        append(file_, DesktopMenuCommand::open_rom, L"&Open ROM...\tCtrl+O");
+        append(file_, DesktopMenuCommand::library, L"Game &Library\tCtrl+L");
+        AppendMenuW(file_, MF_SEPARATOR, 0, nullptr);
+        append(file_, DesktopMenuCommand::save_state, L"&Save State");
+        append(file_, DesktopMenuCommand::load_state, L"&Load State");
+        AppendMenuW(file_, MF_SEPARATOR, 0, nullptr);
+        append(file_, DesktopMenuCommand::exit_app, L"E&xit");
+
+        append(emulation_, DesktopMenuCommand::pause, L"&Pause / Resume\tSpace");
+        append(emulation_, DesktopMenuCommand::reset, L"&Reset\tCtrl+R");
+
+        append(view_, DesktopMenuCommand::fullscreen, L"&Fullscreen\tF11");
+        AppendMenuW(view_, MF_SEPARATOR, 0, nullptr);
+        for (std::size_t index = 0; index < gameboy::display_palettes.size();
+             ++index) {
+            AppendMenuA(palette_, MF_STRING,
+                        command_id(DesktopMenuCommand::palette_first) + index,
+                        gameboy::display_palettes[index].name);
+        }
+        for (std::size_t index = 0; index < gameboy::video_modes.size(); ++index) {
+            AppendMenuA(video_, MF_STRING,
+                        command_id(DesktopMenuCommand::video_first) + index,
+                        gameboy::video_modes[index].name.data());
+        }
+        AppendMenuW(view_, MF_POPUP, reinterpret_cast<UINT_PTR>(palette_),
+                    L"&Color Palette");
+        AppendMenuW(view_, MF_POPUP, reinterpret_cast<UINT_PTR>(video_),
+                    L"&Video Pipeline");
+
+        append(tools_, DesktopMenuCommand::controls,
+               L"&Controls and Settings...\tCtrl+K");
+        AppendMenuW(tools_, MF_SEPARATOR, 0, nullptr);
+        append(tools_, DesktopMenuCommand::gameshark,
+               L"&GameShark Cheats...\tCtrl+G");
+        append(tools_, DesktopMenuCommand::debugger, L"&Debugger...\tF12");
+        AppendMenuW(tools_, MF_SEPARATOR, 0, nullptr);
+        append(tools_, DesktopMenuCommand::record_input,
+               L"Record &Input...\tF6");
+        append(tools_, DesktopMenuCommand::replay_input,
+               L"&Replay Last Input\tF7");
+        append(tools_, DesktopMenuCommand::tas_editor,
+               L"&TAS Frame Editor...\tF8");
+        append(tools_, DesktopMenuCommand::sprite_editor,
+               L"&Sprite Editor...\tF9");
+
+        append(help_, DesktopMenuCommand::shortcuts, L"&Shortcuts\tF1");
+        append(help_, DesktopMenuCommand::about, L"&About Go Bigger Boy");
+
+        AppendMenuW(root_, MF_POPUP, reinterpret_cast<UINT_PTR>(file_), L"&File");
+        AppendMenuW(root_, MF_POPUP, reinterpret_cast<UINT_PTR>(emulation_),
+                    L"&Emulation");
+        AppendMenuW(root_, MF_POPUP, reinterpret_cast<UINT_PTR>(view_), L"&View");
+        AppendMenuW(root_, MF_POPUP, reinterpret_cast<UINT_PTR>(tools_), L"&Tools");
+        AppendMenuW(root_, MF_POPUP, reinterpret_cast<UINT_PTR>(help_), L"&Help");
+        SetMenu(hwnd_, root_);
+        DrawMenuBar(hwnd_);
+        active_ = this;
+        previous_ = reinterpret_cast<WNDPROC>(SetWindowLongPtrW(
+            hwnd_, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(&window_proc)));
+    }
+
+    void detach() noexcept {
+        if (hwnd_ != nullptr && previous_ != nullptr) {
+            SetWindowLongPtrW(hwnd_, GWLP_WNDPROC,
+                              reinterpret_cast<LONG_PTR>(previous_));
+        }
+        if (active_ == this) active_ = nullptr;
+        if (hwnd_ != nullptr && root_ != nullptr) {
+            SetMenu(hwnd_, nullptr);
+            DrawMenuBar(hwnd_);
+        }
+        if (root_ != nullptr) DestroyMenu(root_);
+        hwnd_ = nullptr;
+        previous_ = nullptr;
+        root_ = file_ = emulation_ = view_ = palette_ = video_ = tools_ = help_ =
+            nullptr;
+        pending_.store(0);
+    }
+
+    [[nodiscard]] DesktopMenuCommand take_command() noexcept {
+        return static_cast<DesktopMenuCommand>(pending_.exchange(0));
+    }
+
+    void update(const bool has_rom, const bool paused, const bool fullscreen,
+                const bool recording, const std::size_t palette,
+                const gameboy::VideoMode video) {
+        if (root_ == nullptr) return;
+        enable(DesktopMenuCommand::save_state, has_rom);
+        enable(DesktopMenuCommand::load_state, has_rom);
+        enable(DesktopMenuCommand::pause, has_rom);
+        enable(DesktopMenuCommand::reset, has_rom);
+        enable(DesktopMenuCommand::gameshark, has_rom);
+        enable(DesktopMenuCommand::debugger, has_rom);
+        enable(DesktopMenuCommand::record_input, has_rom);
+        enable(DesktopMenuCommand::replay_input, has_rom);
+        enable(DesktopMenuCommand::tas_editor, has_rom);
+        enable(DesktopMenuCommand::sprite_editor, has_rom);
+        check(DesktopMenuCommand::pause, paused);
+        check(DesktopMenuCommand::fullscreen, fullscreen);
+        check(DesktopMenuCommand::record_input, recording);
+        for (std::size_t index = 0; index < gameboy::display_palettes.size();
+             ++index) {
+            CheckMenuItem(root_, command_id(DesktopMenuCommand::palette_first) +
+                                     static_cast<UINT>(index),
+                          MF_BYCOMMAND | (index == palette ? MF_CHECKED
+                                                           : MF_UNCHECKED));
+        }
+        for (std::size_t index = 0; index < gameboy::video_modes.size(); ++index) {
+            CheckMenuItem(root_, command_id(DesktopMenuCommand::video_first) +
+                                     static_cast<UINT>(index),
+                          MF_BYCOMMAND |
+                              (gameboy::video_modes[index].mode == video
+                                   ? MF_CHECKED
+                                   : MF_UNCHECKED));
+        }
+    }
+
+private:
+    static UINT command_id(const DesktopMenuCommand command) noexcept {
+        return static_cast<UINT>(command);
+    }
+
+    static void append(HMENU menu, const DesktopMenuCommand command,
+                       const wchar_t* label) {
+        AppendMenuW(menu, MF_STRING, command_id(command), label);
+    }
+
+    void enable(const DesktopMenuCommand command, const bool enabled) {
+        EnableMenuItem(root_, command_id(command),
+                       MF_BYCOMMAND | (enabled ? MF_ENABLED : MF_GRAYED));
+    }
+
+    void check(const DesktopMenuCommand command, const bool checked) {
+        CheckMenuItem(root_, command_id(command),
+                      MF_BYCOMMAND | (checked ? MF_CHECKED : MF_UNCHECKED));
+    }
+
+    static LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM wparam,
+                                        LPARAM lparam) {
+        if (message == WM_COMMAND && active_ != nullptr &&
+            HIWORD(wparam) == 0) {
+            active_->pending_.store(static_cast<int>(LOWORD(wparam)));
+            return 0;
+        }
+        return active_ != nullptr && active_->previous_ != nullptr
+                   ? CallWindowProcW(active_->previous_, hwnd, message, wparam,
+                                     lparam)
+                   : DefWindowProcW(hwnd, message, wparam, lparam);
+    }
+
+    inline static DesktopMenuBar* active_{};
+    std::atomic_int pending_{};
+    HWND hwnd_{};
+    WNDPROC previous_{};
+    HMENU root_{};
+    HMENU file_{};
+    HMENU emulation_{};
+    HMENU view_{};
+    HMENU palette_{};
+    HMENU video_{};
+    HMENU tools_{};
+    HMENU help_{};
+};
+#endif
 
 class SdlResources {
 public:
@@ -201,6 +416,2068 @@ public:
 #endif
 };
 
+#ifndef __ANDROID__
+class InputMovie {
+public:
+    enum class Mode { idle, recording, replaying };
+    static constexpr std::array movie_buttons{
+        gameboy::Button::right, gameboy::Button::left, gameboy::Button::up,
+        gameboy::Button::down, gameboy::Button::a, gameboy::Button::b,
+        gameboy::Button::select, gameboy::Button::start};
+
+    [[nodiscard]] Mode mode() const noexcept { return mode_; }
+    [[nodiscard]] bool recording() const noexcept {
+        return mode_ == Mode::recording;
+    }
+    [[nodiscard]] bool replaying() const noexcept {
+        return mode_ == Mode::replaying;
+    }
+    [[nodiscard]] std::size_t event_count() const noexcept {
+        return events_.size();
+    }
+
+    void start_recording(gameboy::Emulator& emulator) {
+        for (const auto button : movie_buttons) emulator.set_button(button, false);
+        pressed_.fill(false);
+        start_state_ = emulator.save_state();
+        fingerprint_ = emulator.rom_fingerprint();
+        origin_cycles_ = emulator.cpu().total_cycles();
+        events_.clear();
+        next_event_ = 0;
+        mode_ = Mode::recording;
+    }
+
+    void stop_and_save(const std::filesystem::path& path,
+                       gameboy::Emulator& emulator) {
+        if (!recording()) return;
+        release_all(emulator);
+        mode_ = Mode::idle;
+        save_file(path);
+    }
+
+    void save_frame_inputs(gameboy::Emulator& emulator,
+                           const std::filesystem::path& path,
+                           const std::uint64_t fingerprint,
+                           const std::vector<std::uint8_t>& start_state,
+                           const std::vector<std::uint8_t>& frame_masks) {
+        if (start_state.empty() || frame_masks.empty()) {
+            throw std::runtime_error("The TAS timeline has no frames.");
+        }
+        fingerprint_ = fingerprint;
+        start_state_ = start_state;
+        events_.clear();
+        const auto restore_state = emulator.save_state();
+        try {
+            emulator.load_state(start_state_);
+            const auto origin = emulator.cpu().total_cycles();
+            std::uint8_t previous = 0;
+            for (const auto current : frame_masks) {
+                const auto changed = static_cast<std::uint8_t>(previous ^ current);
+                const auto elapsed = emulator.cpu().total_cycles() - origin;
+                for (std::size_t button = 0; button < movie_buttons.size();
+                     ++button) {
+                    const auto bit = static_cast<std::uint8_t>(1U << button);
+                    if ((changed & bit) == 0) continue;
+                    const auto pressed = (current & bit) != 0;
+                    events_.push_back({elapsed, static_cast<std::uint8_t>(button),
+                                       pressed});
+                    emulator.set_button(movie_buttons[button], pressed);
+                }
+                if (emulator.frame_ready()) emulator.consume_frame();
+                unsigned cycles = 0;
+                const auto lcd_enabled =
+                    (emulator.bus().read8(0xFF40) & 0x80U) != 0;
+                const auto disabled_lcd_budget =
+                    emulator.bus().double_speed() ? 140448U : 70224U;
+                const auto budget = lcd_enabled ? 280896U : disabled_lcd_budget;
+                while (cycles < budget && !emulator.frame_ready()) {
+                    cycles += emulator.step();
+                }
+                if (emulator.frame_ready()) emulator.consume_frame();
+                previous = current;
+            }
+            const auto elapsed = emulator.cpu().total_cycles() - origin;
+            for (std::size_t button = 0; button < movie_buttons.size(); ++button) {
+                const auto bit = static_cast<std::uint8_t>(1U << button);
+                if ((previous & bit) != 0) {
+                    events_.push_back({elapsed, static_cast<std::uint8_t>(button),
+                                       false});
+                }
+            }
+            emulator.load_state(restore_state);
+        } catch (...) {
+            emulator.load_state(restore_state);
+            throw;
+        }
+        mode_ = Mode::idle;
+        next_event_ = 0;
+        save_file(path);
+    }
+
+    void start_replay(gameboy::Emulator& emulator,
+                      const std::filesystem::path& path) {
+        std::ifstream input(path, std::ios::binary);
+        if (!input) throw std::runtime_error("No input recording is available yet.");
+        std::array<char, 8> magic{};
+        input.read(magic.data(), static_cast<std::streamsize>(magic.size()));
+        constexpr std::array<char, 8> expected{'G', 'B', 'B', 'M', 'O', 'V', '1', '\0'};
+        if (magic != expected) throw std::runtime_error("Invalid input recording file.");
+        const auto fingerprint = read<std::uint64_t>(input);
+        const auto state_size = read<std::uint32_t>(input);
+        const auto event_count = read<std::uint32_t>(input);
+        if (fingerprint != emulator.rom_fingerprint()) {
+            throw std::runtime_error("This recording belongs to a different ROM.");
+        }
+        if (state_size == 0 || state_size > 2U * 1024U * 1024U ||
+            event_count > 1000000U) {
+            throw std::runtime_error("Input recording is unreasonably large.");
+        }
+        start_state_.resize(state_size);
+        input.read(reinterpret_cast<char*>(start_state_.data()),
+                   static_cast<std::streamsize>(start_state_.size()));
+        events_.clear();
+        events_.reserve(event_count);
+        for (std::uint32_t index = 0; index < event_count; ++index) {
+            Event event;
+            event.cycle = read<std::uint64_t>(input);
+            event.button = read<std::uint8_t>(input);
+            event.pressed = read<std::uint8_t>(input) != 0;
+            if (event.button >= movie_buttons.size() ||
+                (!events_.empty() && event.cycle < events_.back().cycle)) {
+                throw std::runtime_error("Input recording contains invalid events.");
+            }
+            events_.push_back(event);
+        }
+        if (!input) throw std::runtime_error("Input recording is truncated.");
+        emulator.load_state(start_state_);
+        pressed_.fill(false);
+        fingerprint_ = fingerprint;
+        origin_cycles_ = emulator.cpu().total_cycles();
+        next_event_ = 0;
+        mode_ = Mode::replaying;
+    }
+
+    void stop(gameboy::Emulator* emulator = nullptr) noexcept {
+        if (emulator != nullptr) {
+            for (const auto button : movie_buttons) emulator->set_button(button, false);
+        }
+        pressed_.fill(false);
+        mode_ = Mode::idle;
+        next_event_ = 0;
+    }
+
+    void set_button(gameboy::Emulator& emulator, const gameboy::Button button,
+                    const bool pressed) {
+        if (replaying()) return;
+        const auto found = std::find(movie_buttons.begin(), movie_buttons.end(), button);
+        if (found == movie_buttons.end()) return;
+        const auto index = static_cast<std::size_t>(found - movie_buttons.begin());
+        if (pressed_[index] == pressed) return;
+        pressed_[index] = pressed;
+        emulator.set_button(button, pressed);
+        if (recording()) {
+            events_.push_back({emulator.cpu().total_cycles() - origin_cycles_,
+                               static_cast<std::uint8_t>(index), pressed});
+        }
+    }
+
+    void release_all(gameboy::Emulator& emulator) {
+        for (const auto button : movie_buttons) set_button(emulator, button, false);
+    }
+
+    [[nodiscard]] bool update_replay(gameboy::Emulator& emulator) {
+        if (!replaying()) return false;
+        const auto elapsed = emulator.cpu().total_cycles() - origin_cycles_;
+        while (next_event_ < events_.size() &&
+               events_[next_event_].cycle <= elapsed) {
+            const auto& event = events_[next_event_++];
+            pressed_[event.button] = event.pressed;
+            emulator.set_button(movie_buttons[event.button], event.pressed);
+        }
+        if (next_event_ == events_.size()) {
+            stop(&emulator);
+            return true;
+        }
+        return false;
+    }
+
+private:
+    struct Event {
+        std::uint64_t cycle{};
+        std::uint8_t button{};
+        bool pressed{};
+    };
+
+    template <typename Value>
+    static void write(std::ostream& output, const Value value) {
+        output.write(reinterpret_cast<const char*>(&value), sizeof(value));
+    }
+
+    template <typename Value>
+    static Value read(std::istream& input) {
+        Value value{};
+        input.read(reinterpret_cast<char*>(&value), sizeof(value));
+        return value;
+    }
+
+    void save_file(const std::filesystem::path& path) const {
+        if (path.empty()) return;
+        std::filesystem::create_directories(path.parent_path());
+        std::ofstream output(path, std::ios::binary | std::ios::trunc);
+        if (!output) throw std::runtime_error("Could not save input recording.");
+        constexpr std::array<char, 8> magic{'G', 'B', 'B', 'M', 'O', 'V', '1', '\0'};
+        output.write(magic.data(), static_cast<std::streamsize>(magic.size()));
+        write(output, fingerprint_);
+        write(output, static_cast<std::uint32_t>(start_state_.size()));
+        write(output, static_cast<std::uint32_t>(events_.size()));
+        output.write(reinterpret_cast<const char*>(start_state_.data()),
+                     static_cast<std::streamsize>(start_state_.size()));
+        for (const auto& event : events_) {
+            write(output, event.cycle);
+            write(output, event.button);
+            write(output, static_cast<std::uint8_t>(event.pressed ? 1 : 0));
+        }
+        if (!output) throw std::runtime_error("Could not finish input recording.");
+    }
+
+    Mode mode_{Mode::idle};
+    std::uint64_t fingerprint_{};
+    std::uint64_t origin_cycles_{};
+    std::vector<std::uint8_t> start_state_;
+    std::vector<Event> events_;
+    std::array<bool, movie_buttons.size()> pressed_{};
+    std::size_t next_event_{};
+};
+
+class TasEditor {
+public:
+    ~TasEditor() { close(); }
+    TasEditor() = default;
+    TasEditor(const TasEditor&) = delete;
+    TasEditor& operator=(const TasEditor&) = delete;
+
+    [[nodiscard]] bool visible() const noexcept { return window_ != nullptr; }
+    [[nodiscard]] bool take_save_request() noexcept {
+        return std::exchange(save_requested_, false);
+    }
+    [[nodiscard]] bool take_replay_request() noexcept {
+        return std::exchange(replay_requested_, false);
+    }
+    [[nodiscard]] bool take_new_request() noexcept {
+        return std::exchange(new_requested_, false);
+    }
+    [[nodiscard]] const std::vector<std::uint8_t>& frames() const noexcept {
+        return frames_;
+    }
+    [[nodiscard]] const std::vector<std::uint8_t>& start_state() const noexcept {
+        return start_state_;
+    }
+    [[nodiscard]] std::uint64_t fingerprint() const noexcept {
+        return fingerprint_;
+    }
+
+    void open(SDL_Window* parent, gameboy::Emulator& emulator) {
+        if (!visible()) {
+            window_ = SDL_CreateWindow("Go Bigger Boy - TAS Input Editor",
+                                       920, 700, SDL_WINDOW_RESIZABLE);
+            if (window_ == nullptr) sdl_error("Could not create TAS editor window");
+            static_cast<void>(SDL_SetWindowMinimumSize(window_, 900, 520));
+            renderer_ = SDL_CreateRenderer(window_, nullptr);
+            if (renderer_ == nullptr) {
+                close();
+                sdl_error("Could not create TAS editor renderer");
+            }
+            if (parent != nullptr) {
+                int x = 0;
+                int y = 0;
+                static_cast<void>(SDL_GetWindowPosition(parent, &x, &y));
+                static_cast<void>(SDL_SetWindowPosition(window_, x + 80, y + 80));
+            }
+        }
+        if (start_state_.empty() || fingerprint_ != emulator.rom_fingerprint()) {
+            reset_from(emulator);
+        }
+        SDL_RaiseWindow(window_);
+    }
+
+    void reset_from(gameboy::Emulator& emulator) {
+        for (const auto button : InputMovie::movie_buttons) {
+            emulator.set_button(button, false);
+        }
+        start_state_ = emulator.save_state();
+        fingerprint_ = emulator.rom_fingerprint();
+        frames_.assign(1, 0);
+        selection_ = 0;
+        first_visible_ = 0;
+    }
+
+    void close() noexcept {
+        if (renderer_ != nullptr) SDL_DestroyRenderer(renderer_);
+        if (window_ != nullptr) SDL_DestroyWindow(window_);
+        renderer_ = nullptr;
+        window_ = nullptr;
+        save_requested_ = false;
+        replay_requested_ = false;
+        new_requested_ = false;
+    }
+
+    bool handle_event(const SDL_Event& event) {
+        if (!visible()) return false;
+        const auto id = SDL_GetWindowID(window_);
+        SDL_WindowID event_window = 0;
+        if (event.type >= SDL_EVENT_WINDOW_FIRST &&
+            event.type <= SDL_EVENT_WINDOW_LAST) {
+            event_window = event.window.windowID;
+        } else if (event.type == SDL_EVENT_KEY_DOWN ||
+                   event.type == SDL_EVENT_KEY_UP) {
+            event_window = event.key.windowID;
+        } else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
+                   event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+            event_window = event.button.windowID;
+        } else if (event.type == SDL_EVENT_MOUSE_WHEEL) {
+            event_window = event.wheel.windowID;
+        }
+        if (event_window != id) return false;
+        if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
+            close();
+            return true;
+        }
+        if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
+            if (event.key.key == SDLK_ESCAPE) {
+                close();
+            } else if (event.key.key == SDLK_UP && selection_ > 0) {
+                --selection_;
+                keep_selection_visible();
+            } else if (event.key.key == SDLK_DOWN) {
+                if (selection_ + 1 < frames_.size()) ++selection_;
+                keep_selection_visible();
+            } else if (event.key.key == SDLK_INSERT) {
+                frames_.insert(frames_.begin() + static_cast<std::ptrdiff_t>(selection_),
+                               0);
+            } else if (event.key.key == SDLK_DELETE) {
+                delete_selected();
+            } else if (event.key.key == SDLK_END) {
+                frames_.push_back(0);
+                selection_ = frames_.size() - 1;
+                keep_selection_visible();
+            } else if (event.key.key == SDLK_N &&
+                       (event.key.mod & SDL_KMOD_CTRL) != 0) {
+                new_requested_ = true;
+            } else if (event.key.key == SDLK_S &&
+                       (event.key.mod & SDL_KMOD_CTRL) != 0) {
+                save_requested_ = true;
+            } else if (event.key.key == SDLK_F7) {
+                replay_requested_ = true;
+            }
+            return true;
+        }
+        if (event.type == SDL_EVENT_MOUSE_WHEEL) {
+            if (event.wheel.y > 0 && first_visible_ > 0) --first_visible_;
+            if (event.wheel.y < 0 && first_visible_ + 1 < frames_.size()) {
+                ++first_visible_;
+            }
+            return true;
+        }
+        if (event.type == SDL_EVENT_MOUSE_BUTTON_UP &&
+            event.button.button == SDL_BUTTON_LEFT) {
+            int width = 0;
+            int height = 0;
+            static_cast<void>(SDL_GetWindowSize(window_, &width, &height));
+            constexpr float first_row_y = 94.0F;
+            constexpr float row_height = 22.0F;
+            const auto bottom_y = static_cast<float>(height - 55);
+            if (event.button.y >= first_row_y && event.button.y < bottom_y - 18) {
+                const auto row = static_cast<std::size_t>(
+                    (event.button.y - first_row_y) / row_height);
+                const auto frame = first_visible_ + row;
+                if (frame < frames_.size()) {
+                    selection_ = frame;
+                    constexpr float first_button_x = 144.0F;
+                    constexpr float column_width = 82.0F;
+                    if (event.button.x >= first_button_x) {
+                        const auto button = static_cast<std::size_t>(
+                            (event.button.x - first_button_x) / column_width);
+                        if (button < InputMovie::movie_buttons.size()) {
+                            frames_[frame] ^= static_cast<std::uint8_t>(1U << button);
+                        }
+                    }
+                }
+            } else if (event.button.y >= bottom_y &&
+                       event.button.y <= bottom_y + 36.0F) {
+                const auto x = event.button.x;
+                if (x >= 24 && x <= 154) {
+                    frames_.insert(
+                        frames_.begin() + static_cast<std::ptrdiff_t>(selection_), 0);
+                } else if (x >= 166 && x <= 296) {
+                    delete_selected();
+                } else if (x >= 308 && x <= 438) {
+                    frames_.push_back(0);
+                    selection_ = frames_.size() - 1;
+                    keep_selection_visible();
+                } else if (x >= 450 && x <= 580) {
+                    save_requested_ = true;
+                } else if (x >= 592 && x <= 722) {
+                    replay_requested_ = true;
+                } else if (x >= 734 && x <= 864) {
+                    new_requested_ = true;
+                }
+            }
+            return true;
+        }
+        return true;
+    }
+
+    void present() {
+        if (!visible()) return;
+        int width = 0;
+        int height = 0;
+        static_cast<void>(SDL_GetWindowSize(window_, &width, &height));
+        static_cast<void>(SDL_SetRenderDrawColor(renderer_, 8, 12, 20, 255));
+        static_cast<void>(SDL_RenderClear(renderer_));
+        static_cast<void>(SDL_SetRenderDrawColor(renderer_, 69, 207, 238, 255));
+        static_cast<void>(SDL_RenderDebugText(renderer_, 24, 18,
+                                              "TAS FRAME INPUT EDITOR"));
+        static_cast<void>(SDL_SetRenderDrawColor(renderer_, 177, 192, 208, 255));
+        static_cast<void>(SDL_RenderDebugText(
+            renderer_, 24, 38,
+            "CLICK CELLS TO HOLD BUTTONS FOR A FRAME  |  UP/DOWN SELECT"));
+        static_cast<void>(SDL_RenderDebugText(
+            renderer_, 24, 54,
+            "INSERT ADD BEFORE  DELETE REMOVE  END APPEND  CTRL+S SAVE  F7 RUN"));
+
+        constexpr std::array<const char*, 8> names{
+            "RIGHT", "LEFT", "UP", "DOWN", "A", "B", "SELECT", "START"};
+        static_cast<void>(SDL_SetRenderDrawColor(renderer_, 230, 249, 255, 255));
+        static_cast<void>(SDL_RenderDebugText(renderer_, 28, 76, "FRAME"));
+        constexpr float first_button_x = 144.0F;
+        constexpr float column_width = 82.0F;
+        for (std::size_t button = 0; button < names.size(); ++button) {
+            static_cast<void>(SDL_RenderDebugText(
+                renderer_, first_button_x + button * column_width + 8, 76,
+                names[button]));
+        }
+        constexpr float first_row_y = 94.0F;
+        constexpr float row_height = 22.0F;
+        const auto visible_rows = std::max(
+            1, static_cast<int>((height - 185.0F) / row_height));
+        if (selection_ < first_visible_) first_visible_ = selection_;
+        if (selection_ >= first_visible_ + static_cast<std::size_t>(visible_rows)) {
+            first_visible_ = selection_ - static_cast<std::size_t>(visible_rows) + 1;
+        }
+        for (int row = 0; row < visible_rows; ++row) {
+            const auto frame = first_visible_ + static_cast<std::size_t>(row);
+            if (frame >= frames_.size()) break;
+            const auto y = first_row_y + row * row_height;
+            const SDL_FRect background{24, y - 3, 840, row_height - 2};
+            static_cast<void>(SDL_SetRenderDrawColor(
+                renderer_, frame == selection_ ? 20 : 16,
+                frame == selection_ ? 77 : 27,
+                frame == selection_ ? 101 : 39, 255));
+            static_cast<void>(SDL_RenderFillRect(renderer_, &background));
+            static_cast<void>(SDL_SetRenderDrawColor(renderer_, 230, 249, 255, 255));
+            const auto frame_text = std::to_string(frame);
+            static_cast<void>(SDL_RenderDebugText(renderer_, 30, y + 3,
+                                                  frame_text.c_str()));
+            for (std::size_t button = 0; button < names.size(); ++button) {
+                const auto active = (frames_[frame] & (1U << button)) != 0;
+                const SDL_FRect cell{first_button_x + button * column_width,
+                                     y - 2, column_width - 6, row_height - 4};
+                static_cast<void>(SDL_SetRenderDrawColor(
+                    renderer_, active ? 69 : 34, active ? 207 : 54,
+                    active ? 238 : 70, 255));
+                if (active) static_cast<void>(SDL_RenderFillRect(renderer_, &cell));
+                static_cast<void>(SDL_RenderRect(renderer_, &cell));
+                if (active) {
+                    static_cast<void>(SDL_SetRenderDrawColor(renderer_, 8, 12, 20, 255));
+                    static_cast<void>(SDL_RenderDebugText(renderer_, cell.x + 30,
+                                                          y + 3, "X"));
+                }
+            }
+        }
+        const auto button = [this](const SDL_FRect& rect, const char* label) {
+            static_cast<void>(SDL_SetRenderDrawColor(renderer_, 28, 47, 68, 255));
+            static_cast<void>(SDL_RenderFillRect(renderer_, &rect));
+            static_cast<void>(SDL_SetRenderDrawColor(renderer_, 69, 207, 238, 255));
+            static_cast<void>(SDL_RenderRect(renderer_, &rect));
+            static_cast<void>(SDL_RenderDebugText(renderer_, rect.x + 10,
+                                                  rect.y + 14, label));
+        };
+        const auto bottom_y = static_cast<float>(height - 55);
+        button({24, bottom_y, 130, 36}, "INSERT FRAME");
+        button({166, bottom_y, 130, 36}, "DELETE FRAME");
+        button({308, bottom_y, 130, 36}, "APPEND FRAME");
+        button({450, bottom_y, 130, 36}, "SAVE MOVIE");
+        button({592, bottom_y, 130, 36}, "RUN MOVIE");
+        button({734, bottom_y, 130, 36}, "NEW FROM NOW");
+        static_cast<void>(SDL_RenderPresent(renderer_));
+    }
+
+private:
+    void delete_selected() {
+        if (frames_.size() > 1) {
+            frames_.erase(frames_.begin() +
+                          static_cast<std::ptrdiff_t>(selection_));
+            if (selection_ >= frames_.size()) selection_ = frames_.size() - 1;
+            keep_selection_visible();
+        } else {
+            frames_[0] = 0;
+        }
+    }
+
+    void keep_selection_visible() noexcept {
+        if (selection_ < first_visible_) first_visible_ = selection_;
+    }
+
+    SDL_Window* window_{};
+    SDL_Renderer* renderer_{};
+    std::uint64_t fingerprint_{};
+    std::vector<std::uint8_t> start_state_;
+    std::vector<std::uint8_t> frames_{1, 0};
+    std::size_t selection_{};
+    std::size_t first_visible_{};
+    bool save_requested_{};
+    bool replay_requested_{};
+    bool new_requested_{};
+};
+
+class SpriteEditor {
+public:
+    struct IpsExportResult {
+        std::size_t exported{};
+        std::size_t unresolved{};
+    };
+
+    SpriteEditor() = default;
+    ~SpriteEditor() { close(); }
+    SpriteEditor(const SpriteEditor&) = delete;
+    SpriteEditor& operator=(const SpriteEditor&) = delete;
+
+    [[nodiscard]] bool visible() const noexcept { return window_ != nullptr; }
+    [[nodiscard]] bool take_save_patch_request() noexcept {
+        return std::exchange(save_patch_requested_, false);
+    }
+    [[nodiscard]] bool take_load_patch_request() noexcept {
+        return std::exchange(load_patch_requested_, false);
+    }
+    [[nodiscard]] bool take_export_ips_request() noexcept {
+        return std::exchange(export_ips_requested_, false);
+    }
+
+    void open(SDL_Window* parent, const gameboy::Emulator& emulator) {
+        if (visible()) {
+            if (baseline_.empty() || fingerprint_ != emulator.rom_fingerprint()) {
+                capture_baseline(emulator);
+            }
+            SDL_RaiseWindow(window_);
+            return;
+        }
+        window_ = SDL_CreateWindow("Go Bigger Boy - Live Sprite Editor",
+                                   1000, 780, SDL_WINDOW_RESIZABLE);
+        if (window_ == nullptr) sdl_error("Could not create sprite editor window");
+        static_cast<void>(SDL_SetWindowMinimumSize(window_, 960, 760));
+        renderer_ = SDL_CreateRenderer(window_, nullptr);
+        if (renderer_ == nullptr) {
+            close();
+            sdl_error("Could not create sprite editor renderer");
+        }
+        if (parent != nullptr) {
+            int x = 0;
+            int y = 0;
+            static_cast<void>(SDL_GetWindowPosition(parent, &x, &y));
+            static_cast<void>(SDL_SetWindowPosition(window_, x + 110, y + 110));
+        }
+        if (baseline_.empty() || fingerprint_ != emulator.rom_fingerprint()) {
+            capture_baseline(emulator);
+        }
+    }
+
+    void close() noexcept {
+        if (renderer_ != nullptr) SDL_DestroyRenderer(renderer_);
+        if (window_ != nullptr) SDL_DestroyWindow(window_);
+        renderer_ = nullptr;
+        window_ = nullptr;
+        painting_ = false;
+        have_undo_ = false;
+        save_patch_requested_ = false;
+        load_patch_requested_ = false;
+        export_ips_requested_ = false;
+    }
+
+    void reset_session() noexcept {
+        close();
+        baseline_.clear();
+        fingerprint_ = 0;
+    }
+
+    bool handle_event(const SDL_Event& event, gameboy::Emulator* emulator) {
+        if (!visible()) return false;
+        const auto id = SDL_GetWindowID(window_);
+        SDL_WindowID event_window = 0;
+        if (event.type >= SDL_EVENT_WINDOW_FIRST &&
+            event.type <= SDL_EVENT_WINDOW_LAST) {
+            event_window = event.window.windowID;
+        } else if (event.type == SDL_EVENT_KEY_DOWN ||
+                   event.type == SDL_EVENT_KEY_UP) {
+            event_window = event.key.windowID;
+        } else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
+                   event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+            event_window = event.button.windowID;
+        } else if (event.type == SDL_EVENT_MOUSE_MOTION) {
+            event_window = event.motion.windowID;
+        }
+        if (event_window != id) return false;
+        if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
+            close();
+            return true;
+        }
+        if (emulator == nullptr) return true;
+        if (!emulator->bus().cgb_mode()) bank_ = 0;
+        if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
+            if (event.key.key == SDLK_ESCAPE || event.key.key == SDLK_F9) {
+                close();
+            } else if (event.key.key >= SDLK_1 && event.key.key <= SDLK_4) {
+                color_ = static_cast<std::uint8_t>(event.key.key - SDLK_1);
+            } else if (event.key.key == SDLK_B && emulator->bus().cgb_mode()) {
+                bank_ ^= 1U;
+                have_undo_ = false;
+            } else if (event.key.key == SDLK_DELETE) {
+                snapshot(*emulator);
+                clear_tile(*emulator);
+            } else if (event.key.key == SDLK_Z &&
+                       (event.key.mod & SDL_KMOD_CTRL) != 0) {
+                undo(*emulator);
+            } else if (event.key.key == SDLK_S &&
+                       (event.key.mod & SDL_KMOD_CTRL) != 0) {
+                save_patch_requested_ = true;
+            } else if (event.key.key == SDLK_O &&
+                       (event.key.mod & SDL_KMOD_CTRL) != 0) {
+                load_patch_requested_ = true;
+            } else if (event.key.key == SDLK_E &&
+                       (event.key.mod & SDL_KMOD_CTRL) != 0) {
+                export_ips_requested_ = true;
+            }
+            return true;
+        }
+        if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+            if (select_tile_at(event.button.x, event.button.y)) {
+                have_undo_ = false;
+                return true;
+            }
+            if (select_color_at(event.button.x, event.button.y)) return true;
+            if (handle_button(event.button.x, event.button.y, *emulator)) {
+                return true;
+            }
+            if (paint_position(event.button.x, event.button.y)) {
+                snapshot(*emulator);
+                painting_ = true;
+                paint(*emulator, event.button.x, event.button.y,
+                      event.button.button == SDL_BUTTON_RIGHT ? 0 : color_);
+            }
+            return true;
+        }
+        if (event.type == SDL_EVENT_MOUSE_MOTION && painting_) {
+            const auto right = (event.motion.state & SDL_BUTTON_RMASK) != 0;
+            paint(*emulator, event.motion.x, event.motion.y,
+                  right ? 0 : color_);
+            return true;
+        }
+        if (event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+            painting_ = false;
+            return true;
+        }
+        return true;
+    }
+
+    void present(const gameboy::Emulator* emulator) {
+        if (!visible() || emulator == nullptr) return;
+        if (!emulator->bus().cgb_mode()) bank_ = 0;
+        static_cast<void>(SDL_SetRenderDrawColor(renderer_, 8, 12, 20, 255));
+        static_cast<void>(SDL_RenderClear(renderer_));
+        static_cast<void>(SDL_SetRenderDrawColor(renderer_, 69, 207, 238, 255));
+        static_cast<void>(SDL_RenderDebugText(renderer_, 24, 18,
+                                              "LIVE VRAM SPRITE / TILE EDITOR"));
+        static_cast<void>(SDL_SetRenderDrawColor(renderer_, 177, 192, 208, 255));
+        static_cast<void>(SDL_RenderDebugText(
+            renderer_, 24, 38,
+            "SELECT A TILE, THEN PAINT ITS 2-BIT COLOR INDICES"));
+        static_cast<void>(SDL_RenderDebugText(
+            renderer_, 24, 54,
+            "CHANGES ARE LIVE AND MAY BE OVERWRITTEN WHEN THE GAME RESUMES"));
+
+        constexpr float grid_x = 24.0F;
+        constexpr float grid_y = 82.0F;
+        constexpr float tile_size = 24.0F;
+        constexpr std::size_t columns = 16;
+        for (std::size_t tile = 0; tile < 384; ++tile) {
+            const auto tile_x = grid_x + (tile % columns) * tile_size;
+            const auto tile_y = grid_y + (tile / columns) * tile_size;
+            for (std::size_t y = 0; y < 8; ++y) {
+                const auto low = emulator->bus().debug_read_vram(
+                    bank_, static_cast<std::uint16_t>(tile * 16 + y * 2));
+                const auto high = emulator->bus().debug_read_vram(
+                    bank_, static_cast<std::uint16_t>(tile * 16 + y * 2 + 1));
+                for (std::size_t x = 0; x < 8; ++x) {
+                    const auto shift = 7U - x;
+                    const auto color = static_cast<std::uint8_t>(
+                        ((high >> shift) & 1U) << 1U | ((low >> shift) & 1U));
+                    set_color(color);
+                    const SDL_FRect pixel{tile_x + x * 3.0F, tile_y + y * 3.0F,
+                                          3, 3};
+                    static_cast<void>(SDL_RenderFillRect(renderer_, &pixel));
+                }
+            }
+            if (tile == selected_tile_) {
+                static_cast<void>(SDL_SetRenderDrawColor(renderer_, 69, 207, 238, 255));
+                const SDL_FRect selection{tile_x - 2, tile_y - 2,
+                                          tile_size + 4, tile_size + 4};
+                static_cast<void>(SDL_RenderRect(renderer_, &selection));
+            }
+        }
+
+        constexpr float editor_x = 500.0F;
+        constexpr float editor_y = 100.0F;
+        constexpr float pixel_size = 48.0F;
+        for (std::size_t y = 0; y < 8; ++y) {
+            const auto low = emulator->bus().debug_read_vram(
+                bank_, static_cast<std::uint16_t>(selected_tile_ * 16 + y * 2));
+            const auto high = emulator->bus().debug_read_vram(
+                bank_, static_cast<std::uint16_t>(selected_tile_ * 16 + y * 2 + 1));
+            for (std::size_t x = 0; x < 8; ++x) {
+                const auto shift = 7U - x;
+                const auto color = static_cast<std::uint8_t>(
+                    ((high >> shift) & 1U) << 1U | ((low >> shift) & 1U));
+                set_color(color);
+                const SDL_FRect pixel{editor_x + x * pixel_size,
+                                      editor_y + y * pixel_size,
+                                      pixel_size, pixel_size};
+                static_cast<void>(SDL_RenderFillRect(renderer_, &pixel));
+                static_cast<void>(SDL_SetRenderDrawColor(renderer_, 28, 47, 68, 255));
+                static_cast<void>(SDL_RenderRect(renderer_, &pixel));
+            }
+        }
+        static_cast<void>(SDL_SetRenderDrawColor(renderer_, 230, 249, 255, 255));
+        const auto tile_label = "TILE " + std::to_string(selected_tile_) +
+                                "  VRAM $" + hex_address() +
+                                "  BANK " + std::to_string(bank_);
+        static_cast<void>(SDL_RenderDebugText(renderer_, editor_x, 82,
+                                              tile_label.c_str()));
+        for (std::uint8_t color = 0; color < 4; ++color) {
+            const SDL_FRect swatch{editor_x + color * 80.0F, 520, 56, 56};
+            set_color(color);
+            static_cast<void>(SDL_RenderFillRect(renderer_, &swatch));
+            static_cast<void>(SDL_SetRenderDrawColor(
+                renderer_, color == color_ ? 69 : 52,
+                color == color_ ? 207 : 75,
+                color == color_ ? 238 : 91, 255));
+            static_cast<void>(SDL_RenderRect(renderer_, &swatch));
+            const auto label = std::to_string(color + 1);
+            static_cast<void>(SDL_RenderDebugText(renderer_, swatch.x + 24,
+                                                  swatch.y + 62, label.c_str()));
+        }
+        draw_button({500, 620, 120, 36}, "CTRL+Z UNDO");
+        draw_button({636, 620, 120, 36}, "DELETE CLEAR");
+        draw_button({772, 620, 120, 36},
+                    emulator->bus().cgb_mode()
+                        ? (bank_ == 0 ? "B  BANK 0" : "B  BANK 1")
+                        : "DMG BANK 0");
+        draw_button({500, 670, 120, 36}, "CTRL+S PATCH");
+        draw_button({636, 670, 120, 36}, "CTRL+O IMPORT");
+        draw_button({772, 670, 120, 36}, "CTRL+E IPS");
+        static_cast<void>(SDL_RenderPresent(renderer_));
+    }
+
+    void save_patch(const gameboy::Emulator& emulator,
+                    const std::filesystem::path& path) const {
+        const auto changed = changes(emulator);
+        if (changed.empty()) {
+            throw std::runtime_error("No sprite changes are available to save.");
+        }
+        std::filesystem::create_directories(path.parent_path());
+        std::ofstream output(path, std::ios::binary | std::ios::trunc);
+        if (!output) throw std::runtime_error("Could not create sprite patch.");
+        constexpr std::array<char, 8> magic{'G', 'B', 'B', 'T', 'I', 'L', 'E', '1'};
+        output.write(magic.data(), static_cast<std::streamsize>(magic.size()));
+        write_little(output, fingerprint_, 8);
+        write_little(output, changed.size(), 4);
+        for (const auto& tile : changed) {
+            output.put(static_cast<char>(tile.bank));
+            write_little(output, tile.index, 2);
+            output.write(reinterpret_cast<const char*>(tile.original.data()), 16);
+            output.write(reinterpret_cast<const char*>(tile.replacement.data()), 16);
+        }
+        if (!output) throw std::runtime_error("Could not finish sprite patch.");
+    }
+
+    void load_patch(gameboy::Emulator& emulator,
+                    const std::filesystem::path& path) {
+        std::ifstream input(path, std::ios::binary);
+        if (!input) throw std::runtime_error("No sprite patch is available yet.");
+        std::array<char, 8> magic{};
+        input.read(magic.data(), static_cast<std::streamsize>(magic.size()));
+        constexpr std::array<char, 8> expected{'G', 'B', 'B', 'T', 'I', 'L', 'E', '1'};
+        if (magic != expected) throw std::runtime_error("Invalid sprite patch file.");
+        const auto fingerprint = read_little(input, 8);
+        const auto count = read_little(input, 4);
+        if (fingerprint != emulator.rom_fingerprint()) {
+            throw std::runtime_error("This sprite patch belongs to a different ROM.");
+        }
+        if (count == 0 || count > 768) {
+            throw std::runtime_error("Sprite patch has an invalid tile count.");
+        }
+        for (std::uint64_t record = 0; record < count; ++record) {
+            const auto bank = static_cast<std::uint8_t>(input.get());
+            const auto tile = read_little(input, 2);
+            std::array<std::uint8_t, 16> original{};
+            std::array<std::uint8_t, 16> replacement{};
+            input.read(reinterpret_cast<char*>(original.data()), 16);
+            input.read(reinterpret_cast<char*>(replacement.data()), 16);
+            if (!input || bank > 1 || tile >= 384 ||
+                (bank != 0 && !emulator.bus().cgb_mode())) {
+                throw std::runtime_error("Sprite patch contains an invalid tile.");
+            }
+            for (std::size_t index = 0; index < replacement.size(); ++index) {
+                emulator.bus().debug_write_vram(
+                    bank, static_cast<std::uint16_t>(tile * 16 + index),
+                    replacement[index]);
+            }
+        }
+    }
+
+    [[nodiscard]] IpsExportResult export_ips(
+        const gameboy::Emulator& emulator, const std::filesystem::path& rom_path,
+        const std::filesystem::path& output_path) const {
+        std::ifstream rom_input(rom_path, std::ios::binary);
+        if (!rom_input) throw std::runtime_error("Could not read the current ROM.");
+        std::vector<std::uint8_t> rom{
+            std::istreambuf_iterator<char>(rom_input),
+            std::istreambuf_iterator<char>()};
+        struct MappedTile {
+            std::size_t offset{};
+            std::array<std::uint8_t, 16> replacement{};
+        };
+        std::vector<MappedTile> mapped;
+        IpsExportResult result;
+        for (const auto& tile : changes(emulator)) {
+            std::optional<std::size_t> match;
+            for (std::size_t offset = 0; offset + tile.original.size() <= rom.size();
+                 ++offset) {
+                if (!std::equal(tile.original.begin(), tile.original.end(),
+                                rom.begin() + static_cast<std::ptrdiff_t>(offset))) {
+                    continue;
+                }
+                if (match) {
+                    match.reset();
+                    break;
+                }
+                match = offset;
+            }
+            if (!match || *match > 0xFFFFFFU ||
+                (*match < 0x150U && *match + tile.original.size() > 0x14DU) ||
+                std::any_of(mapped.begin(), mapped.end(),
+                            [&](const MappedTile& existing) {
+                                return existing.offset == *match;
+                            })) {
+                ++result.unresolved;
+                continue;
+            }
+            mapped.push_back({*match, tile.replacement});
+            ++result.exported;
+        }
+        if (mapped.empty()) {
+            throw std::runtime_error(
+                "None of the edited tiles map uniquely to uncompressed ROM data.");
+        }
+        auto patched_rom = rom;
+        for (const auto& tile : mapped) {
+            std::copy(tile.replacement.begin(), tile.replacement.end(),
+                      patched_rom.begin() +
+                          static_cast<std::ptrdiff_t>(tile.offset));
+        }
+        std::array<std::uint8_t, 3> checksums{};
+        if (patched_rom.size() > 0x14FU) {
+            std::uint8_t header = 0;
+            for (std::size_t offset = 0x134; offset <= 0x14C; ++offset) {
+                header = static_cast<std::uint8_t>(
+                    header - patched_rom[offset] - 1U);
+            }
+            patched_rom[0x14D] = header;
+            std::uint16_t global = 0;
+            for (std::size_t offset = 0; offset < patched_rom.size(); ++offset) {
+                if (offset == 0x14E || offset == 0x14F) continue;
+                global = static_cast<std::uint16_t>(global + patched_rom[offset]);
+            }
+            checksums = {header, static_cast<std::uint8_t>(global >> 8U),
+                         static_cast<std::uint8_t>(global & 0xFFU)};
+        }
+        std::filesystem::create_directories(output_path.parent_path());
+        std::ofstream output(output_path, std::ios::binary | std::ios::trunc);
+        if (!output) throw std::runtime_error("Could not create IPS patch.");
+        output.write("PATCH", 5);
+        for (const auto& tile : mapped) {
+            write_big(output, tile.offset, 3);
+            write_big(output, tile.replacement.size(), 2);
+            output.write(reinterpret_cast<const char*>(tile.replacement.data()),
+                         static_cast<std::streamsize>(tile.replacement.size()));
+        }
+        if (patched_rom.size() > 0x14FU) {
+            write_big(output, 0x14DU, 3);
+            write_big(output, checksums.size(), 2);
+            output.write(reinterpret_cast<const char*>(checksums.data()),
+                         static_cast<std::streamsize>(checksums.size()));
+        }
+        output.write("EOF", 3);
+        if (!output) throw std::runtime_error("Could not finish IPS patch.");
+        return result;
+    }
+
+private:
+    struct TileChange {
+        std::uint8_t bank{};
+        std::uint16_t index{};
+        std::array<std::uint8_t, 16> original{};
+        std::array<std::uint8_t, 16> replacement{};
+    };
+
+    static constexpr float grid_x = 24.0F;
+    static constexpr float grid_y = 82.0F;
+    static constexpr float tile_size = 24.0F;
+    static constexpr float editor_x = 500.0F;
+    static constexpr float editor_y = 100.0F;
+    static constexpr float pixel_size = 48.0F;
+
+    [[nodiscard]] bool select_tile_at(const float x, const float y) {
+        if (x < grid_x || x >= grid_x + 16 * tile_size || y < grid_y ||
+            y >= grid_y + 24 * tile_size) {
+            return false;
+        }
+        const auto column = static_cast<std::size_t>((x - grid_x) / tile_size);
+        const auto row = static_cast<std::size_t>((y - grid_y) / tile_size);
+        selected_tile_ = row * 16 + column;
+        return true;
+    }
+
+    [[nodiscard]] bool select_color_at(const float x, const float y) {
+        if (y < 520 || y >= 576 || x < editor_x || x >= editor_x + 320) {
+            return false;
+        }
+        const auto color = static_cast<std::size_t>((x - editor_x) / 80);
+        if (color >= 4) return false;
+        color_ = static_cast<std::uint8_t>(color);
+        return true;
+    }
+
+    [[nodiscard]] static bool paint_position(const float x, const float y) {
+        return x >= editor_x && x < editor_x + 8 * pixel_size &&
+               y >= editor_y && y < editor_y + 8 * pixel_size;
+    }
+
+    void paint(gameboy::Emulator& emulator, const float mouse_x,
+               const float mouse_y, const std::uint8_t color) {
+        if (!paint_position(mouse_x, mouse_y)) return;
+        const auto x = static_cast<unsigned>((mouse_x - editor_x) / pixel_size);
+        const auto y = static_cast<unsigned>((mouse_y - editor_y) / pixel_size);
+        const auto offset = static_cast<std::uint16_t>(selected_tile_ * 16 + y * 2);
+        auto low = emulator.bus().debug_read_vram(bank_, offset);
+        auto high = emulator.bus().debug_read_vram(bank_, offset + 1);
+        const auto mask = static_cast<std::uint8_t>(1U << (7U - x));
+        low = static_cast<std::uint8_t>((low & ~mask) |
+                                       ((color & 1U) != 0 ? mask : 0));
+        high = static_cast<std::uint8_t>((high & ~mask) |
+                                        ((color & 2U) != 0 ? mask : 0));
+        emulator.bus().debug_write_vram(bank_, offset, low);
+        emulator.bus().debug_write_vram(bank_, offset + 1, high);
+    }
+
+    void snapshot(const gameboy::Emulator& emulator) {
+        for (std::size_t index = 0; index < undo_tile_.size(); ++index) {
+            undo_tile_[index] = emulator.bus().debug_read_vram(
+                bank_, static_cast<std::uint16_t>(selected_tile_ * 16 + index));
+        }
+        undo_index_ = selected_tile_;
+        undo_bank_ = bank_;
+        have_undo_ = true;
+    }
+
+    void undo(gameboy::Emulator& emulator) {
+        if (!have_undo_) return;
+        for (std::size_t index = 0; index < undo_tile_.size(); ++index) {
+            emulator.bus().debug_write_vram(
+                undo_bank_, static_cast<std::uint16_t>(undo_index_ * 16 + index),
+                undo_tile_[index]);
+        }
+        selected_tile_ = undo_index_;
+        bank_ = undo_bank_;
+        have_undo_ = false;
+    }
+
+    void clear_tile(gameboy::Emulator& emulator) {
+        for (std::size_t index = 0; index < 16; ++index) {
+            emulator.bus().debug_write_vram(
+                bank_, static_cast<std::uint16_t>(selected_tile_ * 16 + index), 0);
+        }
+    }
+
+    [[nodiscard]] bool handle_button(const float x, const float y,
+                                     gameboy::Emulator& emulator) {
+        if (y >= 670 && y <= 706) {
+            if (x >= 500 && x <= 620) save_patch_requested_ = true;
+            else if (x >= 636 && x <= 756) load_patch_requested_ = true;
+            else if (x >= 772 && x <= 892) export_ips_requested_ = true;
+            else return false;
+            return true;
+        }
+        if (y < 620 || y > 656) return false;
+        if (x >= 500 && x <= 620) {
+            undo(emulator);
+            return true;
+        }
+        if (x >= 636 && x <= 756) {
+            snapshot(emulator);
+            clear_tile(emulator);
+            return true;
+        }
+        if (x >= 772 && x <= 892 && emulator.bus().cgb_mode()) {
+            bank_ ^= 1U;
+            have_undo_ = false;
+            return true;
+        }
+        return false;
+    }
+
+    void capture_baseline(const gameboy::Emulator& emulator) {
+        const auto banks = emulator.bus().cgb_mode() ? 2U : 1U;
+        baseline_.resize(banks * 0x1800U);
+        for (std::size_t bank = 0; bank < banks; ++bank) {
+            for (std::size_t offset = 0; offset < 0x1800; ++offset) {
+                baseline_[bank * 0x1800U + offset] =
+                    emulator.bus().debug_read_vram(
+                        static_cast<std::uint8_t>(bank),
+                        static_cast<std::uint16_t>(offset));
+            }
+        }
+        fingerprint_ = emulator.rom_fingerprint();
+        have_undo_ = false;
+    }
+
+    [[nodiscard]] std::vector<TileChange> changes(
+        const gameboy::Emulator& emulator) const {
+        std::vector<TileChange> changed;
+        const auto banks = emulator.bus().cgb_mode() ? 2U : 1U;
+        if (baseline_.size() != banks * 0x1800U ||
+            fingerprint_ != emulator.rom_fingerprint()) {
+            return changed;
+        }
+        for (std::size_t bank = 0; bank < banks; ++bank) {
+            for (std::size_t tile = 0; tile < 384; ++tile) {
+                TileChange change;
+                change.bank = static_cast<std::uint8_t>(bank);
+                change.index = static_cast<std::uint16_t>(tile);
+                for (std::size_t byte = 0; byte < 16; ++byte) {
+                    change.original[byte] =
+                        baseline_[bank * 0x1800U + tile * 16 + byte];
+                    change.replacement[byte] = emulator.bus().debug_read_vram(
+                        static_cast<std::uint8_t>(bank),
+                        static_cast<std::uint16_t>(tile * 16 + byte));
+                }
+                if (change.original != change.replacement) {
+                    changed.push_back(change);
+                }
+            }
+        }
+        return changed;
+    }
+
+    static void write_little(std::ostream& output, std::uint64_t value,
+                             const unsigned bytes) {
+        for (unsigned index = 0; index < bytes; ++index) {
+            output.put(static_cast<char>((value >> (index * 8U)) & 0xFFU));
+        }
+    }
+
+    [[nodiscard]] static std::uint64_t read_little(std::istream& input,
+                                                   const unsigned bytes) {
+        std::uint64_t value = 0;
+        for (unsigned index = 0; index < bytes; ++index) {
+            const auto byte = input.get();
+            if (byte == std::char_traits<char>::eof()) return 0;
+            value |= static_cast<std::uint64_t>(
+                         static_cast<std::uint8_t>(byte))
+                     << (index * 8U);
+        }
+        return value;
+    }
+
+    static void write_big(std::ostream& output, const std::uint64_t value,
+                          const unsigned bytes) {
+        for (unsigned index = 0; index < bytes; ++index) {
+            const auto shift = (bytes - index - 1U) * 8U;
+            output.put(static_cast<char>((value >> shift) & 0xFFU));
+        }
+    }
+
+    void set_color(const std::uint8_t color) {
+        constexpr std::array<std::array<std::uint8_t, 3>, 4> colors{{
+            {{238, 249, 255}}, {{156, 192, 207}},
+            {{69, 112, 133}}, {{8, 12, 20}},
+        }};
+        const auto& rgb = colors[color & 3U];
+        static_cast<void>(SDL_SetRenderDrawColor(renderer_, rgb[0], rgb[1],
+                                                 rgb[2], 255));
+    }
+
+    void draw_button(const SDL_FRect& rect, const char* label) {
+        static_cast<void>(SDL_SetRenderDrawColor(renderer_, 28, 47, 68, 255));
+        static_cast<void>(SDL_RenderFillRect(renderer_, &rect));
+        static_cast<void>(SDL_SetRenderDrawColor(renderer_, 69, 207, 238, 255));
+        static_cast<void>(SDL_RenderRect(renderer_, &rect));
+        static_cast<void>(SDL_RenderDebugText(renderer_, rect.x + 9,
+                                              rect.y + 14, label));
+    }
+
+    [[nodiscard]] std::string hex_address() const {
+        std::ostringstream output;
+        output << std::uppercase << std::hex << std::setfill('0') << std::setw(4)
+               << (0x8000U + selected_tile_ * 16U);
+        return output.str();
+    }
+
+    SDL_Window* window_{};
+    SDL_Renderer* renderer_{};
+    std::size_t selected_tile_{};
+    std::uint8_t bank_{};
+    std::uint8_t color_{};
+    std::array<std::uint8_t, 16> undo_tile_{};
+    std::size_t undo_index_{};
+    std::uint8_t undo_bank_{};
+    bool have_undo_{};
+    bool painting_{};
+    std::uint64_t fingerprint_{};
+    std::vector<std::uint8_t> baseline_;
+    bool save_patch_requested_{};
+    bool load_patch_requested_{};
+    bool export_ips_requested_{};
+};
+
+class CheatManager {
+public:
+    ~CheatManager() { close(); }
+    CheatManager(const CheatManager&) = delete;
+    CheatManager& operator=(const CheatManager&) = delete;
+    CheatManager() = default;
+
+    void load(const std::filesystem::path& preference_directory,
+              const gameboy::RomMetadata& metadata) {
+        close();
+        metadata_ = metadata;
+        preference_directory_ = preference_directory;
+        directory_ = preference_directory / "cheats";
+        std::ostringstream name;
+        name << std::hex << std::setfill('0') << std::setw(16)
+             << metadata.fingerprint;
+        path_ = directory_ / (name.str() + ".cht");
+        cheats_.clear();
+        archive_attempted_ = false;
+        std::ifstream input(path_, std::ios::binary);
+        if (input) {
+            const std::string text{std::istreambuf_iterator<char>{input}, {}};
+            cheats_ = gameboy::parse_libretro_cheats(text, false);
+        }
+        selected_ = cheats_.empty() ? 0 : std::min(selected_, cheats_.size() - 1);
+        scroll_ = 0;
+        status_ = cheats_.empty() ? "No cheats loaded. Fetch or add one manually."
+                                  : std::to_string(cheats_.size()) +
+                                        " cheats loaded for this ROM.";
+    }
+
+    void apply(gameboy::Emulator& emulator) const {
+        gameboy::apply_gameshark_cheats(cheats_, emulator.bus());
+    }
+
+    [[nodiscard]] bool visible() const noexcept { return window_ != nullptr; }
+    [[nodiscard]] bool take_fetch_request() noexcept {
+        return std::exchange(fetch_requested_, false);
+    }
+
+    void open(SDL_Window* parent) {
+        if (visible()) {
+            static_cast<void>(SDL_RaiseWindow(window_));
+            return;
+        }
+        window_ = SDL_CreateWindow("Go Bigger Boy - GameShark Cheats", 760, 660,
+                                   SDL_WINDOW_RESIZABLE);
+        if (window_ == nullptr) sdl_error("Could not create cheat manager window");
+        static_cast<void>(SDL_SetWindowMinimumSize(window_, 680, 560));
+        renderer_ = SDL_CreateRenderer(window_, nullptr);
+        if (renderer_ == nullptr) {
+            close();
+            sdl_error("Could not create cheat manager renderer");
+        }
+        if (parent != nullptr) {
+            int x = 0;
+            int y = 0;
+            static_cast<void>(SDL_GetWindowPosition(parent, &x, &y));
+            static_cast<void>(SDL_SetWindowPosition(window_, x + 56, y + 56));
+        }
+        if (cheats_.empty() && !archive_attempted_) {
+            archive_attempted_ = true;
+            fetch_requested_ = true;
+            status_ = "Looking up this ROM in the Libretro cheat archive...";
+        }
+    }
+
+    void close() noexcept {
+        stop_editing();
+        if (renderer_ != nullptr) SDL_DestroyRenderer(renderer_);
+        if (window_ != nullptr) SDL_DestroyWindow(window_);
+        renderer_ = nullptr;
+        window_ = nullptr;
+    }
+
+    bool handle_event(const SDL_Event& event) {
+        if (!visible()) return false;
+        const auto id = SDL_GetWindowID(window_);
+        SDL_WindowID event_window = 0;
+        if (event.type >= SDL_EVENT_WINDOW_FIRST &&
+            event.type <= SDL_EVENT_WINDOW_LAST) {
+            event_window = event.window.windowID;
+        } else if (event.type == SDL_EVENT_KEY_DOWN ||
+                   event.type == SDL_EVENT_KEY_UP) {
+            event_window = event.key.windowID;
+        } else if (event.type == SDL_EVENT_TEXT_INPUT) {
+            event_window = event.text.windowID;
+        } else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
+                   event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+            event_window = event.button.windowID;
+        } else if (event.type == SDL_EVENT_MOUSE_WHEEL) {
+            event_window = event.wheel.windowID;
+        }
+        if (event_window != id) return false;
+
+        if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
+            close();
+        } else if (event.type == SDL_EVENT_TEXT_INPUT && editing_ != Field::none) {
+            auto& target = editing_ == Field::description ? description_ : code_;
+            target += event.text.text;
+            if (target.size() > 160) target.resize(160);
+        } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
+            if (editing_ != Field::none) {
+                auto& target = editing_ == Field::description ? description_ : code_;
+                if (event.key.key == SDLK_ESCAPE) stop_editing();
+                else if (event.key.key == SDLK_BACKSPACE && !target.empty()) {
+                    target.pop_back();
+                } else if (event.key.key == SDLK_TAB) {
+                    begin_edit(editing_ == Field::description ? Field::code
+                                                              : Field::description);
+                } else if (event.key.key == SDLK_RETURN ||
+                           event.key.key == SDLK_KP_ENTER) {
+                    add_manual();
+                }
+            } else if (event.key.key == SDLK_ESCAPE) {
+                close();
+            } else if (event.key.key == SDLK_UP && !cheats_.empty()) {
+                if (selected_ > 0) --selected_;
+                reveal_selected();
+            } else if (event.key.key == SDLK_DOWN && !cheats_.empty()) {
+                if (selected_ + 1 < cheats_.size()) ++selected_;
+                reveal_selected();
+            } else if (event.key.key == SDLK_SPACE && !cheats_.empty()) {
+                cheats_[selected_].enabled = !cheats_[selected_].enabled;
+                save();
+            } else if (event.key.key == SDLK_DELETE && !cheats_.empty()) {
+                erase_selected();
+            }
+        } else if (event.type == SDL_EVENT_MOUSE_WHEEL) {
+            if (event.wheel.y > 0 && scroll_ > 0) --scroll_;
+            if (event.wheel.y < 0 && scroll_ + visible_rows_ < cheats_.size()) {
+                ++scroll_;
+            }
+        } else if (event.type == SDL_EVENT_MOUSE_BUTTON_UP &&
+                   event.button.button == SDL_BUTTON_LEFT) {
+            int width = 0;
+            int height = 0;
+            static_cast<void>(SDL_GetWindowSize(window_, &width, &height));
+            const auto x = event.button.x;
+            const auto y = event.button.y;
+            const auto list_bottom = static_cast<float>(height - 182);
+            if (y >= 92 && y < list_bottom) {
+                const auto row = static_cast<std::size_t>((y - 92) / 30);
+                const auto index = scroll_ + row;
+                if (index < cheats_.size()) {
+                    selected_ = index;
+                    if (x < 60) {
+                        cheats_[index].enabled = !cheats_[index].enabled;
+                        save();
+                    }
+                }
+            } else if (y >= height - 150 && y <= height - 120) {
+                if (x >= 24 && x < width / 2 - 8) begin_edit(Field::description);
+                else if (x >= width / 2 + 8 && x <= width - 24) {
+                    begin_edit(Field::code);
+                }
+            } else if (y >= height - 100 && y <= height - 64) {
+                if (x >= 24 && x <= 178) fetch_requested_ = true;
+                else if (x >= 194 && x <= 334) add_manual();
+                else if (x >= 350 && x <= 490) erase_selected();
+                else if (x >= width - 144 && x <= width - 24) close();
+            }
+        }
+        return true;
+    }
+
+    void fetch_archive() {
+        if (directory_.empty()) throw std::runtime_error("No ROM is active");
+        archive_attempted_ = true;
+        std::filesystem::create_directories(directory_);
+        const auto remote = directory_ / "archive-download.cht";
+        const auto system = std::string{gameboy::cover_system_name(metadata_.platform)};
+        const auto canonical_name = resolve_canonical_name(system);
+        const auto url = "https://raw.githubusercontent.com/libretro/"
+                         "libretro-database/master/cht/" +
+                         url_component(system) + "/" +
+                         url_component(canonical_name + ".cht");
+        std::string error;
+        if (!gbb_desktop::download_public_file(url, remote, 4 * 1024 * 1024,
+                                                error)) {
+            status_ = "No exact archive match. Manual codes are still available.";
+            throw std::runtime_error(
+                "No exact Libretro cheat archive match was found for:\n" +
+                canonical_name +
+                "\n\nUse a No-Intro named ROM or add a code manually.\n" + error);
+        }
+        std::ifstream input(remote, std::ios::binary);
+        const std::string text{std::istreambuf_iterator<char>{input}, {}};
+        auto imported = gameboy::parse_libretro_cheats(text, true);
+        std::filesystem::remove(remote);
+        if (imported.empty()) {
+            status_ = "The archive has no supported type-01 codes.";
+            throw std::runtime_error(
+                "The archive file contains no supported Game Boy type-01 codes");
+        }
+        std::size_t added = 0;
+        for (auto& cheat : imported) {
+            const auto duplicate = std::any_of(
+                cheats_.begin(), cheats_.end(), [&](const auto& existing) {
+                    return existing.code == cheat.code;
+                });
+            if (!duplicate) {
+                cheats_.push_back(std::move(cheat));
+                ++added;
+            }
+        }
+        save();
+        status_ = std::to_string(added) + " archive cheats added (" +
+                  std::to_string(cheats_.size()) + " total).";
+    }
+
+    void present() {
+        if (!visible()) return;
+        int width = 0;
+        int height = 0;
+        static_cast<void>(SDL_GetWindowSize(window_, &width, &height));
+        visible_rows_ = std::max<std::size_t>(1, (height - 274) / 30);
+        if (scroll_ + visible_rows_ > cheats_.size() &&
+            cheats_.size() > visible_rows_) {
+            scroll_ = cheats_.size() - visible_rows_;
+        }
+        static_cast<void>(SDL_SetRenderDrawColor(renderer_, 8, 12, 20, 255));
+        static_cast<void>(SDL_RenderClear(renderer_));
+        text(24, 20, "GAMESHARK CHEATS / " + metadata_.title, 69, 207, 238);
+        text(24, 42, "ROM-aware source: Libretro Database (CC BY-SA 4.0)",
+             177, 192, 208);
+        text(24, 64, status_, 177, 192, 208);
+        text(26, 82, "ON", 238, 249, 255);
+        text(62, 82, "DESCRIPTION", 238, 249, 255);
+        text(static_cast<float>(width - 210), 82, "SOURCE", 238, 249, 255);
+        for (std::size_t row = 0; row < visible_rows_; ++row) {
+            const auto index = scroll_ + row;
+            if (index >= cheats_.size()) break;
+            const auto y = 92.0F + static_cast<float>(row) * 30.0F;
+            const SDL_FRect background{20, y, static_cast<float>(width - 40), 27};
+            const auto selected = index == selected_;
+            static_cast<void>(SDL_SetRenderDrawColor(
+                renderer_, selected ? 28 : 14, selected ? 47 : 26,
+                selected ? 68 : 38, 255));
+            static_cast<void>(SDL_RenderFillRect(renderer_, &background));
+            text(29, y + 9, cheats_[index].enabled ? "[X]" : "[ ]",
+                 cheats_[index].enabled ? 69 : 177,
+                 cheats_[index].enabled ? 207 : 192,
+                 cheats_[index].enabled ? 238 : 208);
+            text(62, y + 9, shortened(cheats_[index].description, 64),
+                 238, 249, 255);
+            text(static_cast<float>(width - 210), y + 9,
+                 cheats_[index].from_archive ? "LIBRETRO" : "MANUAL",
+                 177, 192, 208);
+        }
+        const auto field_y = static_cast<float>(height - 150);
+        field({24, field_y, static_cast<float>(width / 2 - 32), 30},
+              description_.empty() ? "Description" : description_,
+              editing_ == Field::description);
+        field({static_cast<float>(width / 2 + 8), field_y,
+               static_cast<float>(width / 2 - 32), 30},
+              code_.empty() ? "Code: 01VVLLHH[+...]" : code_,
+              editing_ == Field::code);
+        const auto button_y = static_cast<float>(height - 100);
+        button({24, button_y, 154, 36}, "FETCH FOR ROM");
+        button({194, button_y, 140, 36}, "ADD MANUAL");
+        button({350, button_y, 140, 36}, "DELETE");
+        button({static_cast<float>(width - 144), button_y, 120, 36}, "CLOSE");
+        text(24, static_cast<float>(height - 42),
+             "Click [ ] to toggle. Up/Down select, Space toggles, Delete removes.",
+             177, 192, 208);
+        static_cast<void>(SDL_RenderPresent(renderer_));
+    }
+
+private:
+    enum class Field { none, description, code };
+
+    static std::string url_component(const std::string& value) {
+        std::ostringstream output;
+        output << std::uppercase << std::hex;
+        for (const auto raw : value) {
+            const auto character = static_cast<unsigned char>(raw);
+            if (std::isalnum(character) || character == '-' || character == '_' ||
+                character == '.' || character == '~') {
+                output << static_cast<char>(character);
+            } else {
+                output << '%' << std::setw(2) << std::setfill('0')
+                       << static_cast<unsigned>(character);
+            }
+        }
+        return output.str();
+    }
+
+    static std::string shortened(const std::string& value,
+                                 const std::size_t maximum) {
+        if (value.size() <= maximum) return value;
+        return value.substr(0, maximum - 3) + "...";
+    }
+
+    static std::string quoted_value(const std::string& line) {
+        const auto first = line.find('"');
+        const auto last = line.rfind('"');
+        return first == std::string::npos || last <= first
+                   ? std::string{}
+                   : line.substr(first + 1, last - first - 1);
+    }
+
+    std::string resolve_canonical_name(const std::string& system) const {
+        auto filename = system;
+        for (auto& character : filename) {
+            if (!std::isalnum(static_cast<unsigned char>(character))) character = '-';
+        }
+        const auto database = preference_directory_ / "metadata" /
+                              (filename + ".dat");
+        if (!std::filesystem::is_regular_file(database)) {
+            std::string ignored_error;
+            const auto url =
+                "https://raw.githubusercontent.com/libretro/libretro-database/"
+                "master/metadat/no-intro/" + url_component(system + ".dat");
+            static_cast<void>(gbb_desktop::download_public_file(
+                url, database, 3 * 1024 * 1024, ignored_error));
+        }
+        std::ifstream input(database);
+        std::string line;
+        std::string name;
+        while (std::getline(input, line)) {
+            const auto first = line.find_first_not_of(" \t\r\n");
+            if (first == std::string::npos) continue;
+            line.erase(0, first);
+            if (line == "game (") {
+                name.clear();
+            } else if (line.rfind("name \"", 0) == 0 && name.empty()) {
+                name = quoted_value(line);
+            } else if (line.rfind("rom (", 0) == 0 && !name.empty()) {
+                const auto marker = line.find(" crc ");
+                if (marker == std::string::npos || marker + 13 > line.size()) {
+                    continue;
+                }
+                std::uint32_t crc{};
+                std::istringstream value(line.substr(marker + 5, 8));
+                if ((value >> std::hex >> crc) && crc == metadata_.crc32) {
+                    return name;
+                }
+            }
+        }
+        return metadata_.cover_name;
+    }
+
+    void text(const float x, const float y, const std::string& value,
+              const std::uint8_t r, const std::uint8_t g,
+              const std::uint8_t b) const {
+        static_cast<void>(SDL_SetRenderDrawColor(renderer_, r, g, b, 255));
+        static_cast<void>(SDL_RenderDebugText(renderer_, x, y, value.c_str()));
+    }
+
+    void button(const SDL_FRect& rect, const char* label) const {
+        static_cast<void>(SDL_SetRenderDrawColor(renderer_, 28, 47, 68, 255));
+        static_cast<void>(SDL_RenderFillRect(renderer_, &rect));
+        static_cast<void>(SDL_SetRenderDrawColor(renderer_, 69, 207, 238, 255));
+        static_cast<void>(SDL_RenderRect(renderer_, &rect));
+        text(rect.x + 10, rect.y + 14, label, 238, 249, 255);
+    }
+
+    void field(const SDL_FRect& rect, const std::string& value,
+               const bool active) const {
+        static_cast<void>(SDL_SetRenderDrawColor(renderer_, 14, 26, 38, 255));
+        static_cast<void>(SDL_RenderFillRect(renderer_, &rect));
+        static_cast<void>(SDL_SetRenderDrawColor(renderer_, active ? 69 : 69,
+                                                 active ? 207 : 112,
+                                                 active ? 238 : 133, 255));
+        static_cast<void>(SDL_RenderRect(renderer_, &rect));
+        text(rect.x + 8, rect.y + 11, shortened(value, 42), 238, 249, 255);
+    }
+
+    void begin_edit(const Field field) {
+        editing_ = field;
+        static_cast<void>(SDL_StartTextInput(window_));
+    }
+
+    void stop_editing() noexcept {
+        if (window_ != nullptr && editing_ != Field::none) SDL_StopTextInput(window_);
+        editing_ = Field::none;
+    }
+
+    void add_manual() {
+        try {
+            auto writes = gameboy::parse_gameshark_code(code_);
+            auto description = description_.empty() ? code_ : description_;
+            cheats_.push_back({std::move(description), code_, true, false,
+                               std::move(writes)});
+            selected_ = cheats_.size() - 1;
+            reveal_selected();
+            description_.clear();
+            code_.clear();
+            stop_editing();
+            save();
+            status_ = "Manual cheat added and enabled.";
+        } catch (const std::exception& error) {
+            status_ = std::string{"Invalid code: "} + error.what();
+        }
+    }
+
+    void erase_selected() {
+        if (cheats_.empty()) return;
+        cheats_.erase(cheats_.begin() + static_cast<std::ptrdiff_t>(selected_));
+        if (selected_ >= cheats_.size() && selected_ > 0) --selected_;
+        reveal_selected();
+        save();
+        status_ = "Cheat removed.";
+    }
+
+    void reveal_selected() {
+        if (selected_ < scroll_) scroll_ = selected_;
+        if (selected_ >= scroll_ + visible_rows_) {
+            scroll_ = selected_ - visible_rows_ + 1;
+        }
+    }
+
+    void save() const {
+        if (path_.empty()) return;
+        std::filesystem::create_directories(path_.parent_path());
+        std::ofstream output(path_, std::ios::binary | std::ios::trunc);
+        if (!output) throw std::runtime_error("Could not save the ROM cheat list");
+        output << gameboy::serialize_libretro_cheats(cheats_);
+    }
+
+    SDL_Window* window_{};
+    SDL_Renderer* renderer_{};
+    gameboy::RomMetadata metadata_{};
+    std::filesystem::path preference_directory_;
+    std::filesystem::path directory_;
+    std::filesystem::path path_;
+    std::vector<gameboy::GameSharkCheat> cheats_;
+    std::size_t selected_{};
+    std::size_t scroll_{};
+    std::size_t visible_rows_{10};
+    Field editing_{Field::none};
+    std::string description_;
+    std::string code_;
+    std::string status_;
+    bool fetch_requested_{};
+    bool archive_attempted_{};
+};
+
+class DesktopDebugger {
+public:
+    DesktopDebugger() = default;
+    ~DesktopDebugger() { close(); }
+    DesktopDebugger(const DesktopDebugger&) = delete;
+    DesktopDebugger& operator=(const DesktopDebugger&) = delete;
+
+    [[nodiscard]] bool visible() const noexcept { return window_ != nullptr; }
+    [[nodiscard]] bool execution_paused() const noexcept {
+        return visible() && execution_paused_;
+    }
+    [[nodiscard]] bool take_instruction_step() noexcept {
+        return std::exchange(step_instruction_, false);
+    }
+    [[nodiscard]] bool take_frame_step() noexcept {
+        return std::exchange(step_frame_, false);
+    }
+    [[nodiscard]] bool take_record_toggle() noexcept {
+        return std::exchange(toggle_recording_, false);
+    }
+    [[nodiscard]] bool take_replay_request() noexcept {
+        return std::exchange(replay_requested_, false);
+    }
+    [[nodiscard]] bool take_tas_request() noexcept {
+        return std::exchange(tas_requested_, false);
+    }
+    [[nodiscard]] bool take_sprite_request() noexcept {
+        return std::exchange(sprite_requested_, false);
+    }
+    void request_record_toggle() noexcept { toggle_recording_ = true; }
+    void request_replay() noexcept { replay_requested_ = true; }
+    void request_tas_editor() noexcept { tas_requested_ = true; }
+    void request_sprite_editor() noexcept { sprite_requested_ = true; }
+    void run() noexcept { execution_paused_ = false; }
+    void pause() noexcept { execution_paused_ = true; }
+
+    void toggle(SDL_Window* parent) {
+        if (visible()) {
+            close();
+            return;
+        }
+        window_ = SDL_CreateWindow("Go Bigger Boy - Debugger", 920, 760,
+                                   SDL_WINDOW_RESIZABLE);
+        if (window_ == nullptr) sdl_error("Could not create debugger window");
+        static_cast<void>(SDL_SetWindowMinimumSize(window_, 920, 720));
+        renderer_ = SDL_CreateRenderer(window_, nullptr);
+        if (renderer_ == nullptr) {
+            close();
+            sdl_error("Could not create debugger renderer");
+        }
+        texture_ = SDL_CreateTexture(
+            renderer_, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
+            static_cast<int>(gameboy::Ppu::screen_width),
+            static_cast<int>(gameboy::Ppu::screen_height));
+        if (texture_ == nullptr) {
+            close();
+            sdl_error("Could not create debugger framebuffer texture");
+        }
+        static_cast<void>(SDL_SetTextureScaleMode(texture_, SDL_SCALEMODE_NEAREST));
+        execution_paused_ = true;
+        if (parent != nullptr) {
+            int x = 0;
+            int y = 0;
+            static_cast<void>(SDL_GetWindowPosition(parent, &x, &y));
+            static_cast<void>(SDL_SetWindowPosition(window_, x + 48, y + 48));
+        }
+    }
+
+    void close() noexcept {
+        if (texture_ != nullptr) SDL_DestroyTexture(texture_);
+        if (renderer_ != nullptr) SDL_DestroyRenderer(renderer_);
+        if (window_ != nullptr) SDL_DestroyWindow(window_);
+        texture_ = nullptr;
+        renderer_ = nullptr;
+        window_ = nullptr;
+        execution_paused_ = true;
+        step_instruction_ = false;
+        step_frame_ = false;
+        toggle_recording_ = false;
+        replay_requested_ = false;
+        tas_requested_ = false;
+        sprite_requested_ = false;
+        cancel_edit();
+    }
+
+    bool handle_event(const SDL_Event& event, gameboy::Emulator* emulator) {
+        if (!visible()) return false;
+        const auto id = SDL_GetWindowID(window_);
+        SDL_WindowID event_window = 0;
+        if (event.type >= SDL_EVENT_WINDOW_FIRST &&
+            event.type <= SDL_EVENT_WINDOW_LAST) {
+            event_window = event.window.windowID;
+        } else if (event.type == SDL_EVENT_KEY_DOWN ||
+                   event.type == SDL_EVENT_KEY_UP) {
+            event_window = event.key.windowID;
+        } else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
+                   event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+            event_window = event.button.windowID;
+        }
+        if (event_window != id) return false;
+
+        if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
+            close();
+        } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
+            if (editing_) {
+                if (event.key.key == SDLK_ESCAPE) {
+                    cancel_edit();
+                } else if (event.key.key == SDLK_RETURN ||
+                           event.key.key == SDLK_KP_ENTER) {
+                    apply_edit(emulator);
+                } else if (event.key.key == SDLK_BACKSPACE) {
+                    if (replace_on_type_) {
+                        edit_value_.clear();
+                        replace_on_type_ = false;
+                    } else if (!edit_value_.empty()) {
+                        edit_value_.pop_back();
+                    }
+                } else if (const auto digit = hexadecimal_digit(event.key.key)) {
+                    if (replace_on_type_) {
+                        edit_value_.clear();
+                        replace_on_type_ = false;
+                    }
+                    const auto maximum = register_width(*editing_);
+                    if (edit_value_.size() < maximum) edit_value_ += *digit;
+                }
+            } else if (event.key.key == SDLK_F12 || event.key.key == SDLK_ESCAPE) {
+                close();
+            } else if (event.key.key == SDLK_F5 || event.key.key == SDLK_SPACE) {
+                execution_paused_ = !execution_paused_;
+            } else if (event.key.key == SDLK_F10) {
+                execution_paused_ = true;
+                step_instruction_ = true;
+            } else if (event.key.key == SDLK_F11) {
+                execution_paused_ = true;
+                step_frame_ = true;
+            } else if (event.key.key == SDLK_F6) {
+                toggle_recording_ = true;
+            } else if (event.key.key == SDLK_F7) {
+                replay_requested_ = true;
+            } else if (event.key.key == SDLK_F8) {
+                tas_requested_ = true;
+            } else if (event.key.key == SDLK_F9) {
+                sprite_requested_ = true;
+            }
+        } else if (event.type == SDL_EVENT_MOUSE_BUTTON_UP &&
+                   event.button.button == SDL_BUTTON_LEFT) {
+            int width = 0;
+            int height = 0;
+            static_cast<void>(SDL_GetWindowSize(window_, &width, &height));
+            const auto y = static_cast<float>(height - 58);
+            const auto movie_y = static_cast<float>(height - 106);
+            const auto x = event.button.x;
+            const auto register_x =
+                std::max(530.0F, static_cast<float>(width) - 350.0F);
+            if (emulator != nullptr && execution_paused_) {
+                if (const auto selected = register_at(
+                        event.button.x, event.button.y, register_x)) {
+                    begin_edit(*selected, emulator->cpu().registers());
+                    return true;
+                }
+            }
+            cancel_edit();
+            if (event.button.y >= movie_y &&
+                event.button.y <= movie_y + 36.0F) {
+                if (x >= 24.0F && x <= 194.0F) {
+                    toggle_recording_ = true;
+                } else if (x >= 208.0F && x <= 378.0F) {
+                    replay_requested_ = true;
+                } else if (x >= 734.0F && x <= 884.0F) {
+                    tas_requested_ = true;
+                }
+            } else if (event.button.y >= y && event.button.y <= y + 36.0F) {
+                if (x >= 24.0F && x <= 174.0F) {
+                    execution_paused_ = !execution_paused_;
+                } else if (x >= 188.0F && x <= 358.0F) {
+                    execution_paused_ = true;
+                    step_instruction_ = true;
+                } else if (x >= 372.0F && x <= 522.0F) {
+                    execution_paused_ = true;
+                    step_frame_ = true;
+                } else if (x >= 536.0F && x <= 686.0F) {
+                    sprite_requested_ = true;
+                }
+            }
+        }
+        return true;
+    }
+
+    void present(const gameboy::Emulator& emulator,
+                 const gameboy::DisplayPalette& palette,
+                 const InputMovie& movie) {
+        if (!visible()) return;
+        int width = 0;
+        int height = 0;
+        static_cast<void>(SDL_GetWindowSize(window_, &width, &height));
+        static_cast<void>(SDL_SetRenderDrawColor(renderer_, 8, 12, 20, 255));
+        static_cast<void>(SDL_RenderClear(renderer_));
+        static_cast<void>(SDL_SetRenderDrawColor(renderer_, 69, 207, 238, 255));
+        static_cast<void>(SDL_RenderDebugText(renderer_, 24, 20,
+                                              "GO BIGGER BOY / DEBUGGER"));
+        static_cast<void>(SDL_SetRenderDrawColor(renderer_, 177, 192, 208, 255));
+        static_cast<void>(SDL_RenderDebugText(
+            renderer_, 24, 38, execution_paused_ ? "PAUSED" : "RUNNING"));
+
+        constexpr float scale = 3.0F;
+        constexpr float preview_x = 24.0F;
+        constexpr float preview_y = 72.0F;
+        constexpr float preview_width = gameboy::Ppu::screen_width * scale;
+        constexpr float preview_height = gameboy::Ppu::screen_height * scale;
+        gameboy::Ppu::Framebuffer pixels{};
+        const auto& source = emulator.framebuffer();
+        const auto native = emulator.bus().cgb_mode() || palette.cgb_compatibility;
+        for (std::size_t index = 0; index < source.size(); ++index) {
+            pixels[index] = native ? source[index]
+                                   : gameboy::apply_display_palette(source[index],
+                                                                    palette);
+        }
+        static_cast<void>(SDL_UpdateTexture(
+            texture_, nullptr, pixels.data(),
+            static_cast<int>(gameboy::Ppu::screen_width * sizeof(std::uint32_t))));
+        const SDL_FRect preview{preview_x, preview_y, preview_width,
+                                preview_height};
+        static_cast<void>(SDL_RenderTexture(renderer_, texture_, nullptr, &preview));
+        static_cast<void>(SDL_SetRenderDrawColor(renderer_, 69, 207, 238, 255));
+        static_cast<void>(SDL_RenderRect(renderer_, &preview));
+        const SDL_FRect outer{preview_x - 3, preview_y - 3,
+                              preview_width + 6, preview_height + 6};
+        static_cast<void>(SDL_RenderRect(renderer_, &outer));
+        static_cast<void>(SDL_RenderDebugText(renderer_, preview_x,
+                                              preview_y + preview_height + 10,
+                                              "VISIBLE VIEWPORT 160 x 144"));
+
+        const auto& r = emulator.cpu().registers();
+        const auto pair = [](const std::uint8_t high, const std::uint8_t low) {
+            return static_cast<std::uint16_t>(
+                (static_cast<std::uint16_t>(high) << 8U) | low);
+        };
+        const auto hex8 = [](const std::uint8_t value) {
+            std::ostringstream out;
+            out << '$' << std::uppercase << std::hex << std::setfill('0')
+                << std::setw(2) << static_cast<unsigned>(value);
+            return out.str();
+        };
+        const auto hex16 = [](const std::uint16_t value) {
+            std::ostringstream out;
+            out << '$' << std::uppercase << std::hex << std::setfill('0')
+                << std::setw(4) << value;
+            return out.str();
+        };
+        const auto text = [this](const float x, const float y,
+                                 const std::string& value) {
+            static_cast<void>(SDL_SetRenderDrawColor(renderer_, 230, 249, 255, 255));
+            static_cast<void>(SDL_RenderDebugText(renderer_, x, y, value.c_str()));
+        };
+        const auto register_x = std::max(530.0F, static_cast<float>(width) - 350.0F);
+        text(register_x, 72, "CPU REGISTERS");
+        text(register_x, 86, execution_paused_
+                                 ? "CLICK A VALUE TO EDIT"
+                                 : "PAUSE TO EDIT REGISTERS");
+        text(register_x, 100, "A  " + hex8(r.a) + "    F  " + hex8(r.f));
+        text(register_x, 122, "B  " + hex8(r.b) + "    C  " + hex8(r.c));
+        text(register_x, 144, "D  " + hex8(r.d) + "    E  " + hex8(r.e));
+        text(register_x, 166, "H  " + hex8(r.h) + "    L  " + hex8(r.l));
+        text(register_x, 198, "AF " + hex16(pair(r.a, r.f)));
+        text(register_x, 220, "BC " + hex16(pair(r.b, r.c)));
+        text(register_x, 242, "DE " + hex16(pair(r.d, r.e)));
+        text(register_x, 264, "HL " + hex16(pair(r.h, r.l)));
+        text(register_x, 296, "SP " + hex16(r.sp));
+        text(register_x, 318, "PC " + hex16(r.pc));
+        constexpr std::array editable_registers{
+            RegisterTarget::a, RegisterTarget::f, RegisterTarget::b,
+            RegisterTarget::c, RegisterTarget::d, RegisterTarget::e,
+            RegisterTarget::h, RegisterTarget::l, RegisterTarget::sp,
+            RegisterTarget::pc};
+        static_cast<void>(SDL_SetRenderDrawColor(renderer_, 34, 91, 111, 255));
+        for (const auto target : editable_registers) {
+            const auto [x, y] = register_position(target, register_x);
+            const SDL_FRect box{x - 3.0F, y - 3.0F,
+                                register_width(target) == 2 ? 38.0F : 54.0F,
+                                14.0F};
+            static_cast<void>(SDL_RenderRect(renderer_, &box));
+        }
+        if (editing_) {
+            const auto [x, y] = register_position(*editing_, register_x);
+            const SDL_FRect edit_box{x - 3.0F, y - 3.0F,
+                                     register_width(*editing_) == 2 ? 38.0F
+                                                                    : 54.0F,
+                                     14.0F};
+            static_cast<void>(SDL_SetRenderDrawColor(renderer_, 20, 77, 101, 255));
+            static_cast<void>(SDL_RenderFillRect(renderer_, &edit_box));
+            static_cast<void>(SDL_SetRenderDrawColor(renderer_, 69, 207, 238, 255));
+            static_cast<void>(SDL_RenderRect(renderer_, &edit_box));
+            text(x, y, "$" + edit_value_ + "_");
+        }
+        text(register_x, 350,
+             std::string("FLAGS  Z:") + ((r.f & 0x80U) ? "1" : "0") +
+                 " N:" + ((r.f & 0x40U) ? "1" : "0") +
+                 " H:" + ((r.f & 0x20U) ? "1" : "0") +
+                 " C:" + ((r.f & 0x10U) ? "1" : "0"));
+        text(register_x, 372, std::string("IME ") +
+                                  (emulator.cpu().interrupts_enabled() ? "ON" : "OFF"));
+        text(register_x, 394,
+             std::string("CPU ") +
+                 (emulator.cpu().stopped()
+                      ? "STOPPED"
+                      : emulator.cpu().halted() ? "HALTED" : "ACTIVE"));
+        text(register_x, 426,
+             "CYCLES " + std::to_string(emulator.cpu().total_cycles()));
+        const auto& bus = emulator.bus();
+        text(register_x, 464, "HARDWARE REGISTERS");
+        text(register_x, 486,
+             "LCDC " + hex8(bus.read8(0xFF40)) +
+                 "  STAT " + hex8(bus.read8(0xFF41)));
+        text(register_x, 508,
+             "SCX  " + hex8(bus.read8(0xFF43)) +
+                 "  SCY  " + hex8(bus.read8(0xFF42)));
+        text(register_x, 530,
+             "LY   " + hex8(bus.read8(0xFF44)) +
+                 "  LYC  " + hex8(bus.read8(0xFF45)));
+        text(register_x, 552,
+             "WX   " + hex8(bus.read8(0xFF4B)) +
+                 "  WY   " + hex8(bus.read8(0xFF4A)));
+        text(register_x, 574,
+             "IF   " + hex8(bus.read8(0xFF0F)) +
+                 "  IE   " + hex8(bus.read8(0xFFFF)));
+
+        const auto button = [this](const SDL_FRect& rect,
+                                   const std::string& label) {
+            static_cast<void>(SDL_SetRenderDrawColor(renderer_, 28, 47, 68, 255));
+            static_cast<void>(SDL_RenderFillRect(renderer_, &rect));
+            static_cast<void>(SDL_SetRenderDrawColor(renderer_, 69, 207, 238, 255));
+            static_cast<void>(SDL_RenderRect(renderer_, &rect));
+            static_cast<void>(SDL_RenderDebugText(renderer_, rect.x + 12,
+                                                  rect.y + 14, label.c_str()));
+        };
+        const auto button_y = static_cast<float>(height - 58);
+        const auto movie_y = static_cast<float>(height - 106);
+        button({24, movie_y, 170, 36},
+               movie.recording() ? "F6 STOP + SAVE" : "F6 START RECORDING");
+        button({208, movie_y, 170, 36}, "F7 REPLAY LAST");
+        text(398, movie_y + 14,
+             movie.replaying()
+                 ? "REPLAYING"
+                 : movie.recording()
+                       ? "RECORDING  EVENTS " +
+                             std::to_string(movie.event_count())
+                       : "INPUT MOVIE IDLE");
+        button({734, movie_y, 150, 36}, "F8 TAS EDITOR");
+        button({24, button_y, 150, 36}, execution_paused_ ? "F5  RUN" : "F5  PAUSE");
+        button({188, button_y, 170, 36}, "F10 STEP INSTRUCTION");
+        button({372, button_y, 150, 36}, "F11 STEP FRAME");
+        button({536, button_y, 150, 36}, "F9 SPRITE EDITOR");
+        text(static_cast<float>(width) - 170.0F, button_y + 14, "F12 CLOSE");
+        static_cast<void>(SDL_RenderPresent(renderer_));
+    }
+
+private:
+    enum class RegisterTarget { a, f, b, c, d, e, h, l, sp, pc };
+
+    [[nodiscard]] static std::optional<char> hexadecimal_digit(
+        const SDL_Keycode key) noexcept {
+        if (key >= SDLK_0 && key <= SDLK_9) {
+            return static_cast<char>('0' + (key - SDLK_0));
+        }
+        if (key >= SDLK_A && key <= SDLK_F) {
+            return static_cast<char>('A' + (key - SDLK_A));
+        }
+        if (key >= SDLK_KP_0 && key <= SDLK_KP_9) {
+            return static_cast<char>('0' + (key - SDLK_KP_0));
+        }
+        return std::nullopt;
+    }
+
+    [[nodiscard]] static std::size_t register_width(
+        const RegisterTarget target) noexcept {
+        return target == RegisterTarget::sp || target == RegisterTarget::pc
+                   ? 4U
+                   : 2U;
+    }
+
+    [[nodiscard]] static std::pair<float, float> register_position(
+        const RegisterTarget target, const float x) noexcept {
+        switch (target) {
+        case RegisterTarget::a: return {x + 24, 100};
+        case RegisterTarget::f: return {x + 104, 100};
+        case RegisterTarget::b: return {x + 24, 122};
+        case RegisterTarget::c: return {x + 104, 122};
+        case RegisterTarget::d: return {x + 24, 144};
+        case RegisterTarget::e: return {x + 104, 144};
+        case RegisterTarget::h: return {x + 24, 166};
+        case RegisterTarget::l: return {x + 104, 166};
+        case RegisterTarget::sp: return {x + 24, 296};
+        case RegisterTarget::pc: return {x + 24, 318};
+        }
+        return {x, 0};
+    }
+
+    [[nodiscard]] static std::optional<RegisterTarget> register_at(
+        const float mouse_x, const float mouse_y, const float register_x) noexcept {
+        constexpr std::array targets{
+            RegisterTarget::a, RegisterTarget::f, RegisterTarget::b,
+            RegisterTarget::c, RegisterTarget::d, RegisterTarget::e,
+            RegisterTarget::h, RegisterTarget::l, RegisterTarget::sp,
+            RegisterTarget::pc};
+        for (const auto target : targets) {
+            const auto [x, y] = register_position(target, register_x);
+            const auto width = register_width(target) == 2 ? 38.0F : 54.0F;
+            if (mouse_x >= x - 4.0F && mouse_x <= x + width &&
+                mouse_y >= y - 5.0F && mouse_y <= y + 13.0F) {
+                return target;
+            }
+        }
+        return std::nullopt;
+    }
+
+    void begin_edit(const RegisterTarget target,
+                    const gameboy::CpuRegisters& registers) {
+        std::uint16_t value = 0;
+        switch (target) {
+        case RegisterTarget::a: value = registers.a; break;
+        case RegisterTarget::f: value = registers.f; break;
+        case RegisterTarget::b: value = registers.b; break;
+        case RegisterTarget::c: value = registers.c; break;
+        case RegisterTarget::d: value = registers.d; break;
+        case RegisterTarget::e: value = registers.e; break;
+        case RegisterTarget::h: value = registers.h; break;
+        case RegisterTarget::l: value = registers.l; break;
+        case RegisterTarget::sp: value = registers.sp; break;
+        case RegisterTarget::pc: value = registers.pc; break;
+        }
+        std::ostringstream out;
+        out << std::uppercase << std::hex << std::setfill('0')
+            << std::setw(static_cast<int>(register_width(target))) << value;
+        editing_ = target;
+        edit_value_ = out.str();
+        replace_on_type_ = true;
+    }
+
+    void apply_edit(gameboy::Emulator* emulator) {
+        if (!editing_ || emulator == nullptr || edit_value_.empty()) return;
+        const auto value = static_cast<std::uint16_t>(
+            std::stoul(edit_value_, nullptr, 16));
+        auto registers = emulator->cpu().registers();
+        switch (*editing_) {
+        case RegisterTarget::a: registers.a = static_cast<std::uint8_t>(value); break;
+        case RegisterTarget::f: registers.f = static_cast<std::uint8_t>(value); break;
+        case RegisterTarget::b: registers.b = static_cast<std::uint8_t>(value); break;
+        case RegisterTarget::c: registers.c = static_cast<std::uint8_t>(value); break;
+        case RegisterTarget::d: registers.d = static_cast<std::uint8_t>(value); break;
+        case RegisterTarget::e: registers.e = static_cast<std::uint8_t>(value); break;
+        case RegisterTarget::h: registers.h = static_cast<std::uint8_t>(value); break;
+        case RegisterTarget::l: registers.l = static_cast<std::uint8_t>(value); break;
+        case RegisterTarget::sp: registers.sp = value; break;
+        case RegisterTarget::pc: registers.pc = value; break;
+        }
+        emulator->set_cpu_registers(registers);
+        cancel_edit();
+    }
+
+    void cancel_edit() noexcept {
+        editing_.reset();
+        edit_value_.clear();
+        replace_on_type_ = true;
+    }
+
+    SDL_Window* window_{};
+    SDL_Renderer* renderer_{};
+    SDL_Texture* texture_{};
+    bool execution_paused_{true};
+    bool step_instruction_{};
+    bool step_frame_{};
+    bool toggle_recording_{};
+    bool replay_requested_{};
+    bool tas_requested_{};
+    bool sprite_requested_{};
+    std::optional<RegisterTarget> editing_;
+    std::string edit_value_;
+    bool replace_on_type_{true};
+};
+#endif
+
 bool configure_video_pipeline(SdlResources& sdl,
                               const gameboy::VideoMode mode) {
     const auto presentation = mode == gameboy::VideoMode::integer
@@ -271,7 +2548,7 @@ struct BindingConfiguration {
 };
 
 enum class DashboardAction {
-    resume, open_rom, palette, video, recent_rom, quit
+    resume, open_rom, palette, video, shortcuts, recent_rom, quit
 };
 
 struct DashboardItem {
@@ -449,6 +2726,7 @@ std::vector<DashboardItem> dashboard_items(
     items.push_back({DashboardAction::open_rom, 0, "+ Open a ROM"});
     items.push_back({DashboardAction::palette, 0, "Display palette"});
     items.push_back({DashboardAction::video, 0, "Video pipeline"});
+    items.push_back({DashboardAction::shortcuts, 0, "Keyboard shortcuts"});
     for (std::size_t index = 0; index < recent.size(); ++index) {
         items.push_back({DashboardAction::recent_rom, index,
                          rom_display_name(recent[index])});
@@ -1656,29 +3934,67 @@ bool confirm_exit(SDL_Window* window) {
     return SDL_ShowMessageBox(&box, &selection) && selection == 1;
 }
 
-void show_help(SDL_Window* window) {
-    const auto message = std::string("Version ") + GBB_VERSION + "\n\n" +
+void show_help(SDL_Window* window, const InputBindings& bindings) {
+    std::ostringstream message;
+    message << "Version " GBB_VERSION "\n\nGAMEPLAY CONTROLS\n";
+    for (std::size_t index = 0; index < button_names.size(); ++index) {
+        message << button_names[index] << ": "
+                << keyboard_key_setting_name(bindings.keys[index][0]);
+        if (bindings.keys[index][1] != SDLK_UNKNOWN) {
+            message << " / "
+                    << keyboard_key_setting_name(bindings.keys[index][1]);
+        }
+        message << '\n';
+    }
+    message << "\nCONFIGURABLE EMULATOR SHORTCUTS\n";
+    for (std::size_t index = 0; index < shortcut_names.size(); ++index) {
+        message << shortcut_names[index] << ": "
+                << keyboard_key_setting_name(bindings.shortcuts[index]) << '\n';
+    }
+    message <<
+        "\nGENERAL\n"
         "Space: Pause/resume\n"
         "Ctrl+R: Reset\n"
         "Ctrl+O: Open ROM\n"
         "Ctrl+L: Open game library\n"
         "Ctrl+K: Configure controls\n"
         "Ctrl+P: Choose display palette\n"
+        "Ctrl+G: Open GameShark cheat manager\n"
         "Game library: Choose the video pipeline\n"
         "Ctrl+1 through Ctrl+9: Open recent ROM\n"
         "Configured SaveState key: Save state\n"
         "Configured LoadState key: Load state\n"
         "Configured FastForward key: Hold for 4x speed\n"
         "Configured Rewind key: Hold to rewind\n"
+        "F12: Open/close debugger\n"
+        "Debugger F5: Run/pause\n"
+        "Debugger F6: Start/stop input recording\n"
+        "Debugger F7: Replay the latest recording\n"
+        "Debugger F8: Open the TAS frame editor\n"
+        "Debugger F9: Open the live sprite editor\n"
+        "Debugger F10: Step one instruction\n"
+        "Debugger F11: Step one frame\n"
+        "\nTAS EDITOR\n"
+        "Up/Down: Select frame; Insert/Delete/End: Edit timeline\n"
+        "Ctrl+N: New from current state; Ctrl+S: Save; F7: Run\n"
+        "\nSPRITE EDITOR\n"
+        "1-4: Color; Left/right mouse: Paint/erase\n"
+        "Ctrl+Z: Undo; Delete: Clear; B: Switch CGB bank\n"
+        "Ctrl+S: Save tile patch; Ctrl+O: Import; Ctrl+E: Export IPS\n"
+        "\nGAMESHARK CHEAT MANAGER\n"
+        "Ctrl+G: Open for the current ROM\n"
+        "Space: Toggle selected cheat; Delete: Remove selected cheat\n"
+        "Fetch for ROM: Import matching Libretro archive entries\n"
         "F11: Toggle fullscreen\n"
         "F1: Show this help\n"
         "Escape: Quit\n\n"
         "Game Boy Printer pages are saved automatically as BMP images.\n"
         "Game Boy Camera cartridges use the first available webcam.\n"
         "Rumble cartridges vibrate the connected gamepad when supported.";
+    const auto text = message.str();
     static_cast<void>(SDL_ShowSimpleMessageBox(
         SDL_MESSAGEBOX_INFORMATION, "Go Bigger Boy (GBB) controls",
-        message.c_str(), window));
+        text.c_str(), window));
 }
 
 void show_error(SDL_Window* window, const std::string& message);
@@ -1692,7 +4008,8 @@ void leave_android_game(
 
 void activate_dashboard_selection(
     const std::size_t selection, const std::vector<std::string>& recent,
-    gameboy::Emulator* emulator, DialogState& dialog, SdlResources& sdl,
+    const InputBindings& bindings, gameboy::Emulator* emulator,
+    DialogState& dialog, SdlResources& sdl,
     const std::filesystem::path& preference_path,
     std::optional<std::string>& pending_rom, bool& dashboard_visible,
     std::size_t& display_palette, bool& running) {
@@ -1712,6 +4029,9 @@ void activate_dashboard_selection(
         break;
     case DashboardAction::video:
         choose_video_mode(sdl, preference_path);
+        break;
+    case DashboardAction::shortcuts:
+        show_help(sdl.window, bindings);
         break;
     case DashboardAction::recent_rom:
         if (item.recent_index < recent.size()) {
@@ -1752,7 +4072,23 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                     std::size_t& dashboard_selection, bool& paused,
                     bool& fullscreen, bool& fast_forward, bool& rewind,
                     RewindHistory& rewind_history, bool& reset_requested,
-                    bool& running) {
+                    bool& running
+#ifndef __ANDROID__
+                    , DesktopDebugger& debugger, InputMovie& input_movie,
+                    TasEditor& tas_editor, SpriteEditor& sprite_editor,
+                    CheatManager& cheat_manager
+#ifdef _WIN32
+                    , DesktopMenuBar& desktop_menu
+#endif
+#endif
+                    ) {
+#ifndef __ANDROID__
+    const auto replaying_input = input_movie.replaying();
+    const auto input_movie_active = input_movie.mode() != InputMovie::Mode::idle;
+#else
+    constexpr auto replaying_input = false;
+    constexpr auto input_movie_active = false;
+#endif
 #ifdef __ANDROID__
     // The Java activity intercepts Android's back callback and sets this
     // flag.  Handle it here, on SDL's thread, rather than allowing the
@@ -1766,8 +4102,158 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
         }
     }
 #endif
+#ifdef _WIN32
+    desktop_menu.update(emulator != nullptr, paused, fullscreen,
+                        input_movie.recording(), display_palette, sdl.video_mode);
+    const auto menu_command = desktop_menu.take_command();
+    const auto menu_value = static_cast<int>(menu_command);
+    const auto palette_first =
+        static_cast<int>(DesktopMenuCommand::palette_first);
+    const auto video_first = static_cast<int>(DesktopMenuCommand::video_first);
+    if (menu_value >= palette_first &&
+        menu_value < palette_first +
+                         static_cast<int>(gameboy::display_palettes.size())) {
+        display_palette = static_cast<std::size_t>(menu_value - palette_first);
+        save_display_palette(preference_path, display_palette);
+        if (emulator != nullptr) {
+            emulator->set_dmg_compatibility_colors(
+                gameboy::display_palettes[display_palette].cgb_compatibility);
+        }
+    } else if (menu_value >= video_first &&
+               menu_value < video_first +
+                                static_cast<int>(gameboy::video_modes.size())) {
+        sdl.video_mode = gameboy::video_modes[
+            static_cast<std::size_t>(menu_value - video_first)].mode;
+        save_video_mode(preference_path, sdl.video_mode);
+        if (!configure_video_pipeline(sdl, sdl.video_mode)) {
+            show_error(sdl.window, "Could not configure the selected video pipeline.");
+        }
+    } else {
+        switch (menu_command) {
+        case DesktopMenuCommand::open_rom:
+            show_rom_dialog(dialog, sdl.window);
+            break;
+        case DesktopMenuCommand::library:
+            if (emulator) release_all_buttons(*emulator);
+            SDL_HideWindow(sdl.window);
+            dashboard_visible = true;
+            dashboard_selection = 0;
+            break;
+        case DesktopMenuCommand::save_state:
+            if (emulator) {
+                try {
+                    save_quick_state(preference_path, *emulator);
+                    static_cast<void>(SDL_ShowSimpleMessageBox(
+                        SDL_MESSAGEBOX_INFORMATION, "Save state", "State saved.",
+                        sdl.window));
+                } catch (const std::exception& error) {
+                    show_error(sdl.window, error.what());
+                }
+            }
+            break;
+        case DesktopMenuCommand::load_state:
+            if (emulator) {
+                try {
+                    load_quick_state(preference_path, *emulator);
+                    rewind_history.clear();
+                    release_all_buttons(*emulator);
+                    if (sdl.audio_stream != nullptr) {
+                        static_cast<void>(SDL_ClearAudioStream(sdl.audio_stream));
+                    }
+                } catch (const std::exception& error) {
+                    show_error(sdl.window, error.what());
+                }
+            }
+            break;
+        case DesktopMenuCommand::exit_app:
+            if (confirm_exit(sdl.window)) running = false;
+            break;
+        case DesktopMenuCommand::pause:
+            if (emulator) {
+                paused = !paused;
+                input_movie.release_all(*emulator);
+                update_window_title(sdl.window, current_rom, paused, configuring);
+            }
+            break;
+        case DesktopMenuCommand::reset:
+            if (emulator && !input_movie_active) reset_requested = true;
+            break;
+        case DesktopMenuCommand::fullscreen:
+            fullscreen = !fullscreen;
+            if (!SDL_SetWindowFullscreen(sdl.window, fullscreen)) {
+                fullscreen = !fullscreen;
+                show_error(sdl.window, SDL_GetError());
+            }
+            break;
+        case DesktopMenuCommand::controls: {
+            if (emulator) release_all_buttons(*emulator);
+            const auto action = show_controls_dialog(sdl.window, bindings);
+            if (action == ControlsAction::reset) {
+                bindings = InputBindings{};
+                save_bindings(preference_path, bindings);
+            } else if (action == ControlsAction::keyboard ||
+                       action == ControlsAction::gamepad) {
+                if (action == ControlsAction::gamepad && sdl.gamepad == nullptr) {
+                    show_error(sdl.window,
+                               "Connect a gamepad before configuring it.");
+                } else {
+                    begin_binding_configuration(
+                        bindings, configuration_backup, configuring,
+                        action == ControlsAction::keyboard
+                            ? BindingDevice::keyboard
+                            : BindingDevice::gamepad);
+                }
+            }
+            update_window_title(sdl.window, current_rom, paused, configuring);
+            break;
+        }
+        case DesktopMenuCommand::gameshark:
+            if (emulator) {
+                release_all_buttons(*emulator);
+                cheat_manager.open(sdl.window);
+            }
+            break;
+        case DesktopMenuCommand::debugger:
+            if (emulator) {
+                release_all_buttons(*emulator);
+                debugger.toggle(sdl.window);
+            }
+            break;
+        case DesktopMenuCommand::record_input:
+            if (emulator) debugger.request_record_toggle();
+            break;
+        case DesktopMenuCommand::replay_input:
+            if (emulator) debugger.request_replay();
+            break;
+        case DesktopMenuCommand::tas_editor:
+            if (emulator) debugger.request_tas_editor();
+            break;
+        case DesktopMenuCommand::sprite_editor:
+            if (emulator) debugger.request_sprite_editor();
+            break;
+        case DesktopMenuCommand::shortcuts:
+            if (emulator) release_all_buttons(*emulator);
+            show_help(sdl.window, bindings);
+            break;
+        case DesktopMenuCommand::about:
+            static_cast<void>(SDL_ShowSimpleMessageBox(
+                SDL_MESSAGEBOX_INFORMATION, "About Go Bigger Boy",
+                "Go Bigger Boy (GBB) v" GBB_VERSION
+                "\n\nA portable Game Boy and Game Boy Color emulator.",
+                sdl.window));
+            break;
+        default: break;
+        }
+    }
+#endif
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
+#ifndef __ANDROID__
+        if (cheat_manager.handle_event(event)) continue;
+        if (sprite_editor.handle_event(event, emulator.get())) continue;
+        if (tas_editor.handle_event(event)) continue;
+        if (debugger.handle_event(event, emulator.get())) continue;
+#endif
         switch (event.type) {
         case SDL_EVENT_QUIT:
             if (confirm_exit(sdl.window)) running = false;
@@ -1806,9 +4292,11 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                 } else if (event.key.key == SDLK_RETURN ||
                            event.key.key == SDLK_SPACE) {
                     activate_dashboard_selection(
-                        dashboard_selection, recent, emulator.get(), dialog,
+                        dashboard_selection, recent, bindings, emulator.get(), dialog,
                         sdl, preference_path, pending_rom, dashboard_visible,
                         display_palette, running);
+                } else if (event.key.key == SDLK_F1) {
+                    show_help(sdl.window, bindings);
                 } else if (event.key.key == SDLK_O) {
                     show_rom_dialog(dialog, sdl.window);
                 } else if (event.key.key == SDLK_ESCAPE) {
@@ -1885,17 +4373,19 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                 break;
             }
 
-            if (emulator && shortcut_pressed(bindings, shortcut_fast_forward,
+            if (!replaying_input && emulator &&
+                shortcut_pressed(bindings, shortcut_fast_forward,
                                              event.key.key)) {
                 fast_forward = event.type == SDL_EVENT_KEY_DOWN;
                 break;
-            } else if (emulator && shortcut_pressed(bindings, shortcut_rewind,
+            } else if (!input_movie_active && emulator &&
+                       shortcut_pressed(bindings, shortcut_rewind,
                                                     event.key.key)) {
                 rewind = event.type == SDL_EVENT_KEY_DOWN;
                 break;
             } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
                        event.key.key == bindings.shortcuts[shortcut_save_state] &&
-                       emulator) {
+                       emulator && !replaying_input) {
                 try {
                     save_quick_state(preference_path, *emulator);
                     static_cast<void>(SDL_ShowSimpleMessageBox(
@@ -1906,7 +4396,7 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                 }
             } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
                        event.key.key == bindings.shortcuts[shortcut_load_state] &&
-                       emulator) {
+                       emulator && !input_movie_active) {
                 try {
                     load_quick_state(preference_path, *emulator);
                     rewind_history.clear();
@@ -1965,6 +4455,13 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                 update_window_title(sdl.window, current_rom, paused,
                                     configuring);
             } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+                       event.key.key == SDLK_G &&
+                       (event.key.mod & SDL_KMOD_CTRL) != 0 && emulator) {
+#ifndef __ANDROID__
+                release_all_buttons(*emulator);
+                cheat_manager.open(sdl.window);
+#endif
+            } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
                        event.key.key == SDLK_P &&
                        (event.key.mod & SDL_KMOD_CTRL) != 0) {
                 choose_display_palette(emulator.get(), sdl, preference_path,
@@ -1976,14 +4473,25 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                 if (index < recent.size()) pending_rom = recent[index];
             } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
                        event.key.key == SDLK_R &&
-                       (event.key.mod & SDL_KMOD_CTRL) != 0 && emulator) {
+                       (event.key.mod & SDL_KMOD_CTRL) != 0 && emulator &&
+                       !input_movie_active) {
                 reset_requested = true;
             } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
                        event.key.key == SDLK_SPACE && emulator) {
                 paused = !paused;
+#ifndef __ANDROID__
+                input_movie.release_all(*emulator);
+#else
                 release_all_buttons(*emulator);
+#endif
                 update_window_title(sdl.window, current_rom, paused,
                                     configuring);
+            } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+                       event.key.key == SDLK_F12 && emulator) {
+#ifndef __ANDROID__
+                release_all_buttons(*emulator);
+                debugger.toggle(sdl.window);
+#endif
             } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
                        event.key.key == SDLK_F11) {
                 fullscreen = !fullscreen;
@@ -1994,14 +4502,19 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
             } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
                        event.key.key == SDLK_F1) {
                 if (emulator) release_all_buttons(*emulator);
-                show_help(sdl.window);
+                show_help(sdl.window, bindings);
             } else if (event.key.key == SDLK_ESCAPE &&
                        event.type == SDL_EVENT_KEY_DOWN) {
                 if (confirm_exit(sdl.window)) running = false;
             } else if (emulator && !event.key.repeat) {
                 if (const auto button = keyboard_button(bindings, event.key.key)) {
+#ifndef __ANDROID__
+                    input_movie.set_button(*emulator, *button,
+                                           event.type == SDL_EVENT_KEY_DOWN);
+#else
                     emulator->set_button(*button,
                                          event.type == SDL_EVENT_KEY_DOWN);
+#endif
                 }
             }
             break;
@@ -2018,11 +4531,13 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                             x, y, dashboard_selection, item_count)) {
                         dashboard_selection = *selected;
                         activate_dashboard_selection(
-                            dashboard_selection, recent, emulator.get(), dialog,
+                            dashboard_selection, recent, bindings, emulator.get(), dialog,
                             sdl, preference_path, pending_rom,
                             dashboard_visible, display_palette, running);
                     }
-                } else if (x < 20.0F && y < 17.0F) {
+                }
+#ifndef _WIN32
+                else if (x < 20.0F && y < 17.0F) {
                     if (emulator) release_all_buttons(*emulator);
 #ifdef __ANDROID__
                     open_android_library();
@@ -2034,6 +4549,7 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                     dashboard_selection = 0;
 #endif
                 }
+#endif
             }
             break;
 #ifdef __ANDROID__
@@ -2054,7 +4570,7 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                             dashboard_selection, item_count)) {
                         dashboard_selection = *selected;
                         activate_dashboard_selection(
-                            dashboard_selection, recent, emulator.get(), dialog,
+                            dashboard_selection, recent, bindings, emulator.get(), dialog,
                             sdl, preference_path, pending_rom,
                             dashboard_visible, display_palette, running);
                     }
@@ -2105,7 +4621,13 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
             break;
 #endif
         case SDL_EVENT_WINDOW_FOCUS_LOST:
-            if (emulator) release_all_buttons(*emulator);
+            if (emulator) {
+#ifndef __ANDROID__
+                input_movie.release_all(*emulator);
+#else
+                release_all_buttons(*emulator);
+#endif
+            }
             fast_forward = false;
             rewind = false;
 #ifdef __ANDROID__
@@ -2147,7 +4669,7 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                         (dashboard_selection + 1) % item_count;
                 } else if (button == SDL_GAMEPAD_BUTTON_SOUTH) {
                     activate_dashboard_selection(
-                        dashboard_selection, recent, emulator.get(), dialog,
+                        dashboard_selection, recent, bindings, emulator.get(), dialog,
                         sdl, preference_path, pending_rom, dashboard_visible,
                         display_palette, running);
                 } else if (button == SDL_GAMEPAD_BUTTON_EAST && emulator) {
@@ -2183,8 +4705,14 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
             } else if (emulator) {
                 if (const auto button = gamepad_button(bindings,
                                                        event.gbutton.button)) {
+#ifndef __ANDROID__
+                    input_movie.set_button(
+                        *emulator, *button,
+                        event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN);
+#else
                     emulator->set_button(
                         *button, event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN);
+#endif
                 }
             }
             break;
@@ -2847,7 +5375,9 @@ void present(const gameboy::Emulator* emulator, SdlResources& sdl,
         present_touch_controls(sdl);
     }
 #endif
+#ifndef _WIN32
     if (!dashboard_visible && emulator != nullptr) present_menu_button(sdl);
+#endif
     if (!SDL_RenderPresent(sdl.renderer)) {
         sdl_error("Could not present framebuffer");
     }
@@ -3104,6 +5634,10 @@ int main(int argc, char** argv) {
         constexpr auto start_with_library = false;
 #endif
         SdlResources sdl(start_with_library);
+#ifdef _WIN32
+        DesktopMenuBar desktop_menu;
+        desktop_menu.attach(sdl.window);
+#endif
         const auto preference_path = preference_directory();
         restore_game_window_geometry(sdl.window, preference_path);
         auto rom_library = load_rom_library(preference_path);
@@ -3151,6 +5685,19 @@ int main(int argc, char** argv) {
         std::size_t dashboard_selection = 0;
         std::uint64_t print_sequence = 0;
         RewindHistory rewind_history;
+#ifndef __ANDROID__
+        DesktopDebugger debugger;
+        InputMovie input_movie;
+        TasEditor tas_editor;
+        SpriteEditor sprite_editor;
+        CheatManager cheat_manager;
+        const auto movie_path = preference_path / "replays" /
+                                "last-input.gbbmovie";
+        const auto sprite_patch_path = preference_path / "sprite-patches" /
+                                       "last-sprite-edit.gbbtiles";
+        const auto sprite_ips_path = preference_path / "sprite-patches" /
+                                     "last-sprite-edit.ips";
+#endif
 
 #ifdef __ANDROID__
         if (argc >= 2) {
@@ -3290,7 +5837,15 @@ int main(int argc, char** argv) {
                            configuring, pending_rom, display_palette,
                            dashboard_visible, dashboard_selection, paused,
                            fullscreen, fast_forward, rewind, rewind_history,
-                           reset_requested, running);
+                           reset_requested, running
+#ifndef __ANDROID__
+                           , debugger, input_movie, tas_editor, sprite_editor,
+                           cheat_manager
+#ifdef _WIN32
+                           , desktop_menu
+#endif
+#endif
+                           );
 
             std::optional<std::string> dialog_error;
             collect_dialog_result(dialog, pending_rom, dialog_error);
@@ -3303,6 +5858,12 @@ int main(int argc, char** argv) {
 
             if (pending_rom) {
                 try {
+#ifndef __ANDROID__
+                    input_movie.stop(emulator.get());
+                    tas_editor.close();
+                    sprite_editor.reset_session();
+                    cheat_manager.close();
+#endif
                     auto requested_rom = *pending_rom;
 #ifdef __ANDROID__
                     requested_rom =
@@ -3328,6 +5889,8 @@ int main(int argc, char** argv) {
 #endif
                     rom_library.remember(
                         current_rom, gameboy::inspect_rom_file(current_rom));
+                    cheat_manager.load(preference_path,
+                                       gameboy::inspect_rom_file(current_rom));
                     rom_library.save(preference_path);
                     recent_roms = recent_paths(rom_library);
                     update_window_title(sdl.window, current_rom, paused,
@@ -3351,6 +5914,141 @@ int main(int argc, char** argv) {
 #endif
                 next_frame = Clock::now();
             }
+
+#ifndef __ANDROID__
+            if (emulator && debugger.take_record_toggle()) {
+                try {
+                    if (input_movie.recording()) {
+                        input_movie.stop_and_save(movie_path, *emulator);
+                    } else {
+                        input_movie.stop(emulator.get());
+                        input_movie.start_recording(*emulator);
+                        rewind_history.clear();
+                        paused = false;
+                        fast_forward = false;
+                        rewind = false;
+                        debugger.run();
+                    }
+                } catch (const std::exception& error) {
+                    input_movie.stop(emulator.get());
+                    show_error(sdl.window, error.what());
+                }
+            }
+            if (emulator && debugger.take_replay_request()) {
+                try {
+                    input_movie.stop(emulator.get());
+                    input_movie.start_replay(*emulator, movie_path);
+                    rewind_history.clear();
+                    paused = false;
+                    fast_forward = false;
+                    rewind = false;
+                    if (sdl.audio_stream != nullptr) {
+                        static_cast<void>(SDL_ClearAudioStream(sdl.audio_stream));
+                    }
+                    debugger.run();
+                } catch (const std::exception& error) {
+                    input_movie.stop(emulator.get());
+                    show_error(sdl.window, error.what());
+                }
+            }
+            if (emulator && debugger.take_tas_request()) {
+                input_movie.stop(emulator.get());
+                tas_editor.open(sdl.window, *emulator);
+                rewind_history.clear();
+                debugger.pause();
+            }
+            if (emulator && debugger.take_sprite_request()) {
+                input_movie.stop(emulator.get());
+                sprite_editor.open(sdl.window, *emulator);
+                rewind_history.clear();
+                debugger.pause();
+            }
+            if (emulator && sprite_editor.take_save_patch_request()) {
+                try {
+                    sprite_editor.save_patch(*emulator, sprite_patch_path);
+                    const auto message = "Sprite patch saved to:\n" +
+                                         sprite_patch_path.string();
+                    static_cast<void>(SDL_ShowSimpleMessageBox(
+                        SDL_MESSAGEBOX_INFORMATION, "Sprite patch saved",
+                        message.c_str(), sdl.window));
+                } catch (const std::exception& error) {
+                    show_error(sdl.window, error.what());
+                }
+            }
+            if (emulator && sprite_editor.take_load_patch_request()) {
+                try {
+                    sprite_editor.load_patch(*emulator, sprite_patch_path);
+                } catch (const std::exception& error) {
+                    show_error(sdl.window, error.what());
+                }
+            }
+            if (emulator && sprite_editor.take_export_ips_request()) {
+                try {
+                    const auto result = sprite_editor.export_ips(
+                        *emulator, current_rom, sprite_ips_path);
+                    const auto message =
+                        "IPS patch saved to:\n" + sprite_ips_path.string() +
+                        "\n\nTiles exported: " +
+                        std::to_string(result.exported) +
+                        "\nTiles skipped because their ROM source was "
+                        "missing or ambiguous: " +
+                        std::to_string(result.unresolved);
+                    static_cast<void>(SDL_ShowSimpleMessageBox(
+                        SDL_MESSAGEBOX_INFORMATION, "IPS patch exported",
+                        message.c_str(), sdl.window));
+                } catch (const std::exception& error) {
+                    show_error(sdl.window, error.what());
+                }
+            }
+            if (emulator && cheat_manager.take_fetch_request()) {
+                try {
+                    cheat_manager.fetch_archive();
+                } catch (const std::exception& error) {
+                    show_error(sdl.window, error.what());
+                }
+            }
+            if (emulator && tas_editor.take_new_request()) {
+                input_movie.stop(emulator.get());
+                tas_editor.reset_from(*emulator);
+                rewind_history.clear();
+                debugger.pause();
+            }
+            if (emulator && tas_editor.take_save_request()) {
+                try {
+                    input_movie.stop(emulator.get());
+                    input_movie.save_frame_inputs(
+                        *emulator, movie_path, tas_editor.fingerprint(),
+                        tas_editor.start_state(), tas_editor.frames());
+                    static_cast<void>(emulator->take_audio_samples());
+                    if (sdl.audio_stream != nullptr) {
+                        static_cast<void>(SDL_ClearAudioStream(sdl.audio_stream));
+                    }
+                } catch (const std::exception& error) {
+                    show_error(sdl.window, error.what());
+                }
+            }
+            if (emulator && tas_editor.take_replay_request()) {
+                try {
+                    input_movie.stop(emulator.get());
+                    input_movie.save_frame_inputs(
+                        *emulator, movie_path, tas_editor.fingerprint(),
+                        tas_editor.start_state(), tas_editor.frames());
+                    input_movie.start_replay(*emulator, movie_path);
+                    static_cast<void>(emulator->take_audio_samples());
+                    rewind_history.clear();
+                    paused = false;
+                    fast_forward = false;
+                    rewind = false;
+                    if (sdl.audio_stream != nullptr) {
+                        static_cast<void>(SDL_ClearAudioStream(sdl.audio_stream));
+                    }
+                    debugger.run();
+                } catch (const std::exception& error) {
+                    input_movie.stop(emulator.get());
+                    show_error(sdl.window, error.what());
+                }
+            }
+#endif
 
 #ifndef __ANDROID__
             if (available_update && !dialog_active(dialog) && !configuring &&
@@ -3415,8 +6113,48 @@ int main(int argc, char** argv) {
 #endif
 
             update_camera_frame(emulator.get(), sdl);
+#ifndef __ANDROID__
+            if (input_movie.replaying()) {
+                fast_forward = false;
+                rewind = false;
+            }
+#endif
 
-            if (emulator && !paused && !dashboard_visible && !configuring &&
+            bool debugger_stepped = false;
+            bool replay_ended = false;
+            const auto step_emulator = [&]() {
+#ifndef __ANDROID__
+                if (input_movie.update_replay(*emulator)) {
+                    replay_ended = true;
+                    return cycles_per_frame;
+                }
+#endif
+                return emulator->step();
+            };
+#ifndef __ANDROID__
+            if (emulator && debugger.take_instruction_step()) {
+                static_cast<void>(step_emulator());
+                if (emulator->frame_ready()) emulator->consume_frame();
+                rewind_history.clear();
+                debugger_stepped = true;
+            } else if (emulator && debugger.take_frame_step()) {
+                if (emulator->frame_ready()) emulator->consume_frame();
+                cheat_manager.apply(*emulator);
+                unsigned cycles = 0;
+                while (cycles < cycles_per_frame * 2U &&
+                       !emulator->frame_ready()) {
+                    cycles += step_emulator();
+                }
+                if (emulator->frame_ready()) emulator->consume_frame();
+                rewind_history.clear();
+                debugger_stepped = true;
+            }
+            const auto debugger_paused = debugger.execution_paused();
+#else
+            constexpr auto debugger_paused = false;
+#endif
+            if (emulator && !debugger_stepped && !paused && !debugger_paused &&
+                !dashboard_visible && !configuring &&
                 !dialog_active(dialog)) {
                 if (rewind) {
                     if (!rewind_history.empty()) {
@@ -3432,6 +6170,7 @@ int main(int argc, char** argv) {
                 } else {
                     const auto frames = fast_forward ? fast_forward_factor : 1U;
                     for (auto frame = 0U; frame < frames && running; ++frame) {
+                        cheat_manager.apply(*emulator);
                         rewind_history.push_back(emulator->save_state());
                         while (rewind_history.size() > maximum_rewind_frames) {
                             rewind_history.pop_front();
@@ -3439,14 +6178,18 @@ int main(int argc, char** argv) {
                         unsigned cycles = 0;
                         while (running && cycles < cycles_per_frame &&
                                !emulator->frame_ready()) {
-                            cycles += emulator->step();
+                            cycles += step_emulator();
                         }
                         if (emulator->frame_ready()) emulator->consume_frame();
                     }
                 }
             }
+#ifndef __ANDROID__
+            if (replay_ended) debugger.pause();
+#endif
             update_rumble(emulator.get(), sdl,
-                          !paused && !rewind && !dashboard_visible &&
+                          !paused && !debugger_paused && !rewind &&
+                              !dashboard_visible &&
                               !configuring &&
                               !dialog_active(dialog));
             submit_audio(emulator.get(), sdl, fast_forward);
@@ -3460,6 +6203,16 @@ int main(int argc, char** argv) {
             present(emulator.get(), sdl,
                     gameboy::display_palettes[display_palette], recent_roms,
                     dashboard_visible, dashboard_selection);
+#ifndef __ANDROID__
+            if (emulator) {
+                debugger.present(*emulator,
+                                 gameboy::display_palettes[display_palette],
+                                 input_movie);
+            }
+            tas_editor.present();
+            sprite_editor.present(emulator.get());
+            cheat_manager.present();
+#endif
 #ifdef _WIN32
             if (reveal_sdl_after_present && !dashboard_visible) {
                 SDL_ShowWindow(sdl.window);
@@ -3476,6 +6229,16 @@ int main(int argc, char** argv) {
                 next_frame = now;
             }
         }
+#ifndef __ANDROID__
+        if (emulator && input_movie.recording()) {
+            try {
+                input_movie.stop_and_save(movie_path, *emulator);
+            } catch (const std::exception& error) {
+                std::cerr << "Warning: could not save input recording: "
+                          << error.what() << '\n';
+            }
+        }
+#endif
         save_game_window_geometry(sdl.window, preference_path);
         flush_battery_safely(emulator.get());
     } catch (const std::exception& error) {

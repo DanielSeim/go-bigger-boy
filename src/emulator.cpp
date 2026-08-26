@@ -33,6 +33,10 @@ const Cpu& Emulator::cpu() const noexcept {
     return cpu_;
 }
 
+void Emulator::set_cpu_registers(CpuRegisters registers) noexcept {
+    cpu_.load_registers(registers);
+}
+
 const MemoryBus& Emulator::bus() const noexcept {
     return bus_;
 }

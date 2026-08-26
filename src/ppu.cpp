@@ -89,6 +89,20 @@ void Ppu::dma_write_vram(const std::uint16_t address,
     bank[address - 0x8000] = value;
 }
 
+std::uint8_t Ppu::debug_read_vram(const std::uint8_t bank,
+                                  const std::uint16_t offset) const noexcept {
+    if (offset >= 0x2000) return 0xFF;
+    return bank != 0 && cgb_mode_ ? (*cgb_vram_)[offset] : vram_[offset];
+}
+
+void Ppu::debug_write_vram(const std::uint8_t bank,
+                           const std::uint16_t offset,
+                           const std::uint8_t value) noexcept {
+    if (offset >= 0x2000) return;
+    auto& memory = bank != 0 && cgb_mode_ ? *cgb_vram_ : vram_;
+    memory[offset] = value;
+}
+
 std::uint8_t Ppu::read_oam(const std::uint16_t address) const noexcept {
     if (lcd_enabled() &&
         (stat_mode_ == 2 || mode_ == 2 || mode_ == 3)) {
