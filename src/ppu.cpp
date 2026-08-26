@@ -236,7 +236,8 @@ bool Ppu::write_register(const std::uint16_t address,
             for (unsigned x = 0; x < screen_width; ++x) {
                 const auto source = object_pixels_[x].oam_index;
                 if (!object_pixels_[x].valid || source >= 40 ||
-                    (cancelled & (std::uint64_t{1} << source)) == 0) {
+                    (cancelled & (std::uint64_t{1} << source)) == 0 ||
+                    object_pixel_deadlines_[x] == 0) {
                     continue;
                 }
                 // Invalidate the queued object before recomposing the pixel.
@@ -562,6 +563,7 @@ void Ppu::begin_mode3() noexcept {
     previous_sprite_was_window_ = false;
     have_previous_sprite_tile_ = false;
     object_pixels_.fill(ObjectPixel{});
+    object_pixel_deadlines_.fill(0);
     select_line_sprites();
 }
 
@@ -598,6 +600,9 @@ void Ppu::tick_mode3() noexcept {
                 rendered_sprite_mask_ |= std::uint64_t{1} << sprite;
             }
         }
+    }
+    for (auto& deadline : object_pixel_deadlines_) {
+        if (deadline != 0) --deadline;
     }
     if (sprite_delay_ != 0) {
         --sprite_delay_;
@@ -937,6 +942,10 @@ void Ppu::fetch_object(const unsigned index) noexcept {
         if (wins_priority) {
             destination = ObjectPixel{color, attributes,
                                       static_cast<std::uint8_t>(index), true};
+            const auto deadline =
+                static_cast<unsigned>(pending_sprite_deadlines_[index]) + pixel;
+            object_pixel_deadlines_[static_cast<unsigned>(screen_x)] =
+                static_cast<std::uint8_t>(std::min(deadline, 0xFFU));
         }
     }
 }

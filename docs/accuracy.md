@@ -45,15 +45,18 @@ latched into a scanline buffer and mixed with background pixels as the FIFO is
 popped. Sprite height is latched with the line's OAM selection, so mid-scanline
 `LCDC.OBJ_SIZE` writes no longer change sprites that have already been selected.
 Each queued object fetch tracks both pixel availability and its later hardware
-cancellation boundary. A mid-fetch OBJ disable therefore preserves sprites
-whose pixels are already available while cancelling only the unfinished tail;
+cancellation boundary. Pixel-level deadlines model the object FIFO draining
+over successive dots, so a mid-fetch OBJ disable can preserve the completed
+prefix while cancelling only the unfinished tail;
 the aborted handoff also contributes its eight-dot PPU stall. The two-phase
 fetch queue and latched sprite height are preserved by save-state version 15,
 so a state taken during mode 3 resumes deterministically. Disabling OBJ also
 restores already-emitted pixels from a cancelled fetch to the exact background
 sample that was present when the pixel left the FIFO. These per-pixel samples
 are preserved by save-state version 17, keeping mid-scanline restores
-deterministic when LCDC changes after a state is loaded. The
+deterministic when LCDC changes after a state is loaded. Object-pixel
+cancellation deadlines are serialized in save-state version 18, so a restore
+cannot change which suffix of a sprite remains visible. The
 two partially off-screen DMG object positions (X=3 and X=4) use their shorter
 four-dot handoff tail rather than the general cancellation window.
 

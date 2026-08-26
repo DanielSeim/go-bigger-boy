@@ -13,7 +13,7 @@ namespace {
 constexpr std::array<std::uint8_t, 8> state_magic{
     'G', 'B', 'B', 'S', 'T', 'A', 'T', 'E',
 };
-constexpr std::uint32_t state_version = 17;
+constexpr std::uint32_t state_version = 18;
 constexpr std::uint32_t oldest_supported_state_version = 1;
 constexpr std::size_t maximum_state_size = 2 * 1024 * 1024;
 constexpr std::size_t maximum_serial_output = 1024 * 1024;
@@ -405,6 +405,8 @@ private:
             writer.u8(pixel.palette);
             writer.boolean(pixel.priority);
         }
+        writer.bytes(bus.ppu_.object_pixel_deadlines_.data(),
+                     bus.ppu_.object_pixel_deadlines_.size());
     }
 
     static void read_bus(Reader& reader, MemoryBus& bus,
@@ -746,6 +748,12 @@ private:
             }
         } else {
             bus.ppu_.emitted_background_.fill(Ppu::BackgroundPixel{});
+        }
+        if (version >= 18) {
+            reader.bytes(bus.ppu_.object_pixel_deadlines_.data(),
+                         bus.ppu_.object_pixel_deadlines_.size());
+        } else {
+            bus.ppu_.object_pixel_deadlines_.fill(0);
         }
         // The printer represents an external device and is deliberately not
         // embedded in emulator save states. Loading a state starts a fresh

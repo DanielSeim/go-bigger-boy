@@ -2956,12 +2956,15 @@ void test_save_state_round_trip_and_validation() {
     constexpr std::size_t version_sixteen_audio_integrator_size = 8;
     constexpr std::size_t version_seventeen_background_history_size =
         gameboy::Ppu::screen_width * 3;
+    constexpr std::size_t version_eighteen_object_deadline_size =
+        gameboy::Ppu::screen_width;
     constexpr std::size_t version_nine_fetcher_size =
         737 + version_ten_window_latch_size + version_eleven_fetcher_size +
         version_twelve_sprite_size + version_thirteen_sprite_fetch_size +
         version_fourteen_sprite_deadline_size + version_fifteen_sprite_render_size;
     auto legacy_saved = saved;
     legacy_saved.resize(legacy_saved.size() -
+                        version_eighteen_object_deadline_size -
                         version_seventeen_background_history_size -
                         version_sixteen_audio_integrator_size);
     auto version_one = legacy_saved;
@@ -3297,6 +3300,7 @@ void test_save_state_round_trip_and_validation() {
 
     auto version_sixteen = saved;
     version_sixteen.resize(version_sixteen.size() -
+                           version_eighteen_object_deadline_size -
                            version_seventeen_background_history_size);
     version_sixteen[8] = 16;
     const auto version_sixteen_payload_size = static_cast<std::uint32_t>(
@@ -3313,8 +3317,26 @@ void test_save_state_round_trip_and_validation() {
               version_sixteen_loader.bus().read8(0xA123) == 0x5A,
           "version 16 save states remain loadable after adding PPU background history");
 
+    auto version_seventeen = saved;
+    version_seventeen.resize(version_seventeen.size() -
+                             version_eighteen_object_deadline_size);
+    version_seventeen[8] = 17;
+    const auto version_seventeen_payload_size = static_cast<std::uint32_t>(
+        version_seventeen.size() - state_header_size);
+    write_little_u32(version_seventeen, 20, version_seventeen_payload_size);
+    write_little_u32(
+        version_seventeen, 24,
+        state_crc32(version_seventeen.data() + state_header_size,
+                    version_seventeen_payload_size));
+    gameboy::Emulator version_seventeen_loader{gameboy::Cartridge{rom}};
+    version_seventeen_loader.load_state(version_seventeen);
+    check(version_seventeen_loader.cpu().registers().pc == saved_pc &&
+              version_seventeen_loader.cpu().total_cycles() == saved_cycles &&
+              version_seventeen_loader.bus().read8(0xA123) == 0x5A,
+          "version 17 save states remain loadable after adding object deadlines");
+
     auto future_version = saved;
-    future_version[8] = 18;
+    future_version[8] = 19;
     auto rejected_version = false;
     try {
         emulator.load_state(future_version);

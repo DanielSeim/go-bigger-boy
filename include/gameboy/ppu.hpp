@@ -136,6 +136,10 @@ private:
     // than re-reading VRAM with the current register values.
     std::array<BackgroundPixel, screen_width> emitted_background_{};
     std::array<ObjectPixel, screen_width> object_pixels_{};
+    // Remaining cancellation window for each object pixel. The hardware
+    // drains the object FIFO over several dots, so cancellation can affect a
+    // suffix of a sprite rather than all eight pixels equally.
+    std::array<std::uint8_t, screen_width> object_pixel_deadlines_{};
     std::array<std::uint8_t, 10> line_sprites_{};
     std::uint8_t background_fifo_size_{};
     std::uint8_t fetcher_phase_{};
