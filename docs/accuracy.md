@@ -50,7 +50,10 @@ whose pixels are already available while cancelling only the unfinished tail;
 the aborted handoff also contributes its eight-dot PPU stall. The two-phase
 fetch queue and latched sprite height are preserved by save-state version 15,
 so a state taken during mode 3 resumes deterministically. Disabling OBJ also
-restores already-emitted pixels from a cancelled fetch to the background. The
+restores already-emitted pixels from a cancelled fetch to the exact background
+sample that was present when the pixel left the FIFO. These per-pixel samples
+are preserved by save-state version 17, keeping mid-scanline restores
+deterministic when LCDC changes after a state is loaded. The
 two partially off-screen DMG object positions (X=3 and X=4) use their shorter
 four-dot handoff tail rather than the general cancellation window.
 

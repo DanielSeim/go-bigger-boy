@@ -18,7 +18,7 @@ shared everywhere.
 
 ## Current status
 
-The current automated baseline passes **144/144 tests**: 143 ROM and
+The current automated baseline passes **168/168 tests**: 167 ROM and
 framebuffer conformance cases, including **20/20 exact visual comparisons**,
 plus the core unit-test executable. See the [accuracy report](docs/accuracy.md)
 for the suite-by-suite breakdown.

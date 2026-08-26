@@ -130,6 +130,11 @@ private:
     bool frame_ready_{};
 
     std::array<BackgroundPixel, 16> background_fifo_{};
+    // Background samples that have already reached the output pipeline. A
+    // mid-scanline OBJ disable can invalidate an emitted object pixel, and
+    // must restore the exact background sample that was underneath it rather
+    // than re-reading VRAM with the current register values.
+    std::array<BackgroundPixel, screen_width> emitted_background_{};
     std::array<ObjectPixel, screen_width> object_pixels_{};
     std::array<std::uint8_t, 10> line_sprites_{};
     std::uint8_t background_fifo_size_{};

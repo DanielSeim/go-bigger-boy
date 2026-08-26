@@ -239,12 +239,16 @@ bool Ppu::write_register(const std::uint16_t address,
                     (cancelled & (std::uint64_t{1} << source)) == 0) {
                     continue;
                 }
+                // Invalidate the queued object before recomposing the pixel.
+                // compose_pixel() consults object_pixels_, so doing this in
+                // the opposite order would redraw the very OBJ pixel that
+                // the LCDC write is meant to cancel.
+                object_pixels_[x].valid = false;
                 if (x < output_x_) {
                     (*framebuffer_)[static_cast<std::size_t>(ly_) * screen_width +
                                      x] = compose_pixel(
-                        x, background_pixel_at_screen(x));
+                        x, emitted_background_[x]);
                 }
-                object_pixels_[x].valid = false;
             }
             pending_sprite_mask_ = 0;
             rendered_sprite_mask_ &= ~cancelled;
@@ -536,6 +540,7 @@ void Ppu::begin_mode3() noexcept {
     rendered_sprite_mask_ = 0;
     pending_sprite_deadlines_.fill(0);
     render_sprite_deadlines_.fill(0);
+    emitted_background_.fill(BackgroundPixel{});
     fetched_window_ = false;
     discard_first_fetch_ = true;
     using_window_ = false;
@@ -949,6 +954,7 @@ void Ppu::emit_pixel() noexcept {
     }
 
     auto result = compose_pixel(output_x_, background);
+    emitted_background_[output_x_] = background;
     if (insert_window_glitch) {
         window_glitch_restore_color_ =
             compose_pixel(output_x_, background_fifo_[0]);

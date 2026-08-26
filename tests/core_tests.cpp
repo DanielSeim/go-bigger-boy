@@ -2954,12 +2954,16 @@ void test_save_state_round_trip_and_validation() {
     constexpr std::size_t version_fourteen_sprite_deadline_size = 40;
     constexpr std::size_t version_fifteen_sprite_render_size = 48;
     constexpr std::size_t version_sixteen_audio_integrator_size = 8;
+    constexpr std::size_t version_seventeen_background_history_size =
+        gameboy::Ppu::screen_width * 3;
     constexpr std::size_t version_nine_fetcher_size =
         737 + version_ten_window_latch_size + version_eleven_fetcher_size +
         version_twelve_sprite_size + version_thirteen_sprite_fetch_size +
         version_fourteen_sprite_deadline_size + version_fifteen_sprite_render_size;
     auto legacy_saved = saved;
-    legacy_saved.resize(legacy_saved.size() - version_sixteen_audio_integrator_size);
+    legacy_saved.resize(legacy_saved.size() -
+                        version_seventeen_background_history_size -
+                        version_sixteen_audio_integrator_size);
     auto version_one = legacy_saved;
     version_one.resize(version_one.size() - version_two_dma_size -
                        version_three_ppu_size - version_four_cgb_size -
@@ -3291,8 +3295,26 @@ void test_save_state_round_trip_and_validation() {
     check(rejected_truncation && emulator.save_state() == unchanged,
           "truncated save states are rejected without changing emulator state");
 
+    auto version_sixteen = saved;
+    version_sixteen.resize(version_sixteen.size() -
+                           version_seventeen_background_history_size);
+    version_sixteen[8] = 16;
+    const auto version_sixteen_payload_size = static_cast<std::uint32_t>(
+        version_sixteen.size() - state_header_size);
+    write_little_u32(version_sixteen, 20, version_sixteen_payload_size);
+    write_little_u32(
+        version_sixteen, 24,
+        state_crc32(version_sixteen.data() + state_header_size,
+                    version_sixteen_payload_size));
+    gameboy::Emulator version_sixteen_loader{gameboy::Cartridge{rom}};
+    version_sixteen_loader.load_state(version_sixteen);
+    check(version_sixteen_loader.cpu().registers().pc == saved_pc &&
+              version_sixteen_loader.cpu().total_cycles() == saved_cycles &&
+              version_sixteen_loader.bus().read8(0xA123) == 0x5A,
+          "version 16 save states remain loadable after adding PPU background history");
+
     auto future_version = saved;
-    future_version[8] = 17;
+    future_version[8] = 18;
     auto rejected_version = false;
     try {
         emulator.load_state(future_version);
