@@ -33,7 +33,7 @@ namespace gbb_desktop {
 namespace {
 
 #ifndef GBB_VERSION
-#define GBB_VERSION "0.20.2"
+#define GBB_VERSION "0.20.3"
 #endif
 
 constexpr int id_library = 100;
@@ -588,10 +588,10 @@ PreviewPoint project_voxel_point(const float x, const float y, const float z,
     const auto yaw_x = std::cos(yaw) * x - std::sin(yaw) * y;
     const auto yaw_depth = std::sin(yaw) * x + std::cos(yaw) * y;
     const auto vertical = std::cos(pitch) * z - std::sin(pitch) * yaw_depth;
-    const auto denominator = std::max(
+    const auto denominator = (std::max)(
         0.2F, 1.0F + profile.perspective * yaw_depth * 28.0F);
     const auto scale = std::clamp(profile.zoom, 0.25F, 4.0F) *
-                       static_cast<float>(std::min(width, height)) * 0.34F;
+                       static_cast<float>((std::min)(width, height)) * 0.34F;
     return PreviewPoint{
         static_cast<int>(std::lround(static_cast<float>(width) * 0.5F +
                                      yaw_x * scale / denominator)),
@@ -629,14 +629,14 @@ void draw_voxel_preview(const DRAWITEMSTRUCT& item, const State& state) {
         LineTo(item.hDC, right.x, right.y);
     }
     for (int line = -3; line <= 3; ++line) {
-        const auto near = project_voxel_point(static_cast<float>(line) * 0.55F,
-                                              -1.35F, 0.0F, profile, width,
-                                              height);
-        const auto far = project_voxel_point(static_cast<float>(line) * 0.55F,
-                                             1.35F, 0.0F, profile, width,
-                                             height);
-        MoveToEx(item.hDC, near.x, near.y, nullptr);
-        LineTo(item.hDC, far.x, far.y);
+        const auto near_point = project_voxel_point(
+            static_cast<float>(line) * 0.55F, -1.35F, 0.0F, profile, width,
+            height);
+        const auto far_point = project_voxel_point(
+            static_cast<float>(line) * 0.55F, 1.35F, 0.0F, profile, width,
+            height);
+        MoveToEx(item.hDC, near_point.x, near_point.y, nullptr);
+        LineTo(item.hDC, far_point.x, far_point.y);
     }
 
     const std::array<std::array<float, 3>, 7> cubes{{
@@ -648,8 +648,8 @@ void draw_voxel_preview(const DRAWITEMSTRUCT& item, const State& state) {
                                           RGB(237, 77, 132), RGB(79, 176, 133),
                                           RGB(245, 179, 66), RGB(137, 113, 214),
                                           RGB(224, 94, 104)}};
-    const auto extrusion = std::max(0.05F, profile.depth_scale * 0.34F +
-                                               profile.sprite_depth * 0.004F);
+    const auto extrusion = (std::max)(
+        0.05F, profile.depth_scale * 0.34F + profile.sprite_depth * 0.004F);
     for (std::size_t index = 0; index < cubes.size(); ++index) {
         const auto& cube = cubes[index];
         const auto x = cube[0];
@@ -657,23 +657,33 @@ void draw_voxel_preview(const DRAWITEMSTRUCT& item, const State& state) {
         const auto z = cube[2];
         const auto w = 0.34F;
         const auto h = 0.30F + z;
-        const auto p0 = project_voxel_point(x - w, y - w, 0.0F, profile, width, height);
-        const auto p1 = project_voxel_point(x + w, y - w, 0.0F, profile, width, height);
-        const auto p2 = project_voxel_point(x + w, y + w, 0.0F, profile, width, height);
-        const auto t0 = project_voxel_point(x - w, y - w, h * extrusion, profile, width, height);
-        const auto t1 = project_voxel_point(x + w, y - w, h * extrusion, profile, width, height);
-        const auto t2 = project_voxel_point(x + w, y + w, h * extrusion, profile, width, height);
-        const auto t3 = project_voxel_point(x - w, y + w, h * extrusion, profile, width, height);
+        const auto p0 = project_voxel_point(x - w, y - w, 0.0F, profile,
+                                            width, height);
+        const auto p1 = project_voxel_point(x + w, y - w, 0.0F, profile,
+                                            width, height);
+        const auto p2 = project_voxel_point(x + w, y + w, 0.0F, profile,
+                                            width, height);
+        const auto t0 = project_voxel_point(x - w, y - w, h * extrusion,
+                                            profile, width, height);
+        const auto t1 = project_voxel_point(x + w, y - w, h * extrusion,
+                                            profile, width, height);
+        const auto t2 = project_voxel_point(x + w, y + w, h * extrusion,
+                                            profile, width, height);
+        const auto t3 = project_voxel_point(x - w, y + w, h * extrusion,
+                                            profile, width, height);
         const auto fill = CreateSolidBrush(colors[index]);
         SelectObject(item.hDC, fill);
-        const std::array<POINT, 4> side{{{{p0.x, p0.y}}, {{p1.x, p1.y}},
-                                          {{t1.x, t1.y}}, {{t0.x, t0.y}}}};
+        const std::array<POINT, 4> side{
+            POINT{p0.x, p0.y}, POINT{p1.x, p1.y}, POINT{t1.x, t1.y},
+            POINT{t0.x, t0.y}};
         Polygon(item.hDC, side.data(), static_cast<int>(side.size()));
-        const std::array<POINT, 4> front{{{{p1.x, p1.y}}, {{p2.x, p2.y}},
-                                           {{t2.x, t2.y}}, {{t1.x, t1.y}}}};
+        const std::array<POINT, 4> front{
+            POINT{p1.x, p1.y}, POINT{p2.x, p2.y}, POINT{t2.x, t2.y},
+            POINT{t1.x, t1.y}};
         Polygon(item.hDC, front.data(), static_cast<int>(front.size()));
-        const std::array<POINT, 4> top{{{{t0.x, t0.y}}, {{t1.x, t1.y}},
-                                         {{t2.x, t2.y}}, {{t3.x, t3.y}}}};
+        const std::array<POINT, 4> top{
+            POINT{t0.x, t0.y}, POINT{t1.x, t1.y}, POINT{t2.x, t2.y},
+            POINT{t3.x, t3.y}};
         Polygon(item.hDC, top.data(), static_cast<int>(top.size()));
         SelectObject(item.hDC, old_brush);
         DeleteObject(fill);
@@ -689,8 +699,9 @@ void draw_voxel_preview(const DRAWITEMSTRUCT& item, const State& state) {
                                              profile, width, height);
         const auto far_left = project_voxel_point(-1.45F, -0.85F, 0.82F,
                                                   profile, width, height);
-        const std::array<POINT, 4> panel{{{{left.x, left.y}}, {{right.x, right.y}},
-                                           {{top.x, top.y}}, {{far_left.x, far_left.y}}}};
+        const std::array<POINT, 4> panel{
+            POINT{left.x, left.y}, POINT{right.x, right.y}, POINT{top.x, top.y},
+            POINT{far_left.x, far_left.y}};
         Polygon(item.hDC, panel.data(), static_cast<int>(panel.size()));
         SelectObject(item.hDC, old_brush);
         DeleteObject(facade);

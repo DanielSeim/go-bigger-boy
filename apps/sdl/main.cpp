@@ -56,7 +56,7 @@
 namespace {
 
 #ifndef GBB_VERSION
-#define GBB_VERSION "0.20.2"
+#define GBB_VERSION "0.20.3"
 #endif
 
 #ifdef __ANDROID__
