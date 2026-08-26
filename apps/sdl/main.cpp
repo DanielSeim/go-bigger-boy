@@ -4,6 +4,7 @@
 #include "gameboy/rom_library.hpp"
 #include "gameboy/video_pipeline.hpp"
 #include "gbb/audio.hpp"
+#include "gbb/gameboy_scene.hpp"
 #ifndef __ANDROID__
 #include "update_checker.hpp"
 #endif
@@ -16,6 +17,7 @@
 #include <atomic>
 #include <chrono>
 #include <cctype>
+#include <cmath>
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
@@ -100,6 +102,19 @@ struct TouchControlSettings {
         0.57F, 0.96F,
         0.12F, 0.50F, 0.88F, 0.42F, 0.88F, 0.62F, 0.42F, 0.92F,
         0.58F, 0.92F};
+};
+
+// The voxel renderer is deliberately configured outside the emulation core.
+// Profiles are keyed by ROM fingerprint so a title with a taller/shallower
+// visual style can be tuned without affecting other games.
+struct VoxelProfile {
+    float depth_scale{1.0F};
+    float camera_pitch{28.0F};
+    float camera_yaw{32.0F};
+    float zoom{1.0F};
+    float perspective{0.0025F};
+    float sprite_depth{10.0F};
+    float lighting{1.0F};
 };
 
 [[noreturn]] void sdl_error(const std::string& action) {
@@ -395,6 +410,11 @@ public:
     SDL_Renderer* renderer{};
     SDL_Texture* texture{};
     gameboy::VideoMode video_mode{gameboy::default_video_mode};
+    gbb::SceneSnapshot scene_snapshot{};
+    std::filesystem::path voxel_profile_path;
+    VoxelProfile voxel_profile{};
+    std::uint64_t voxel_profile_fingerprint{};
+    bool voxel_profile_loaded{};
     SDL_Gamepad* gamepad{};
     SDL_AudioStream* audio_stream{};
     SDL_Camera* camera{};
@@ -406,6 +426,8 @@ public:
     bool rumble_output_active{};
     bool rumble_warning_shown{};
     std::chrono::steady_clock::time_point rumble_refresh{};
+    std::vector<SDL_Vertex> voxel_vertices;
+    std::vector<int> voxel_indices;
 #ifdef __ANDROID__
     struct TouchPoint {
         SDL_FingerID id{};
@@ -5295,6 +5317,299 @@ void present_touch_controls(SdlResources& sdl) {
 }
 #endif
 
+SDL_FColor voxel_color(const std::uint32_t pixel, const float shade) {
+    const auto component = [pixel, shade](const unsigned shift) {
+        const auto value = static_cast<float>((pixel >> shift) & 0xFFU) / 255.0F;
+        return std::clamp(value * shade, 0.0F, 1.0F);
+    };
+    return {component(16), component(8), component(0), 1.0F};
+}
+
+std::string trim_voxel_profile(std::string value) {
+    const auto not_space = [](const unsigned char c) {
+        return !std::isspace(c);
+    };
+    value.erase(value.begin(), std::find_if(value.begin(), value.end(), not_space));
+    value.erase(std::find_if(value.rbegin(), value.rend(), not_space).base(),
+                value.end());
+    return value;
+}
+
+bool parse_voxel_float(const std::string& text, float& target) {
+    try {
+        std::size_t consumed = 0;
+        const auto value = std::stof(text, &consumed);
+        if (consumed != text.size() || !std::isfinite(value)) return false;
+        target = value;
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+VoxelProfile load_voxel_profile(const std::filesystem::path& path,
+                                const std::uint64_t fingerprint) {
+    VoxelProfile defaults;
+    VoxelProfile selected = defaults;
+    if (path.empty()) return selected;
+    std::ifstream input(path);
+    if (!input) return selected;
+    std::string section = "default";
+    std::optional<VoxelProfile> rom_profile;
+    bool active_rom_section = false;
+    std::string line;
+    while (std::getline(input, line)) {
+        line = trim_voxel_profile(line);
+        if (line.empty() || line[0] == '#' || line[0] == ';') continue;
+        if (line.front() == '[' && line.back() == ']') {
+            section = trim_voxel_profile(line.substr(1, line.size() - 2));
+            active_rom_section = false;
+            if (section != "default") {
+                try {
+                    std::size_t consumed = 0;
+                    auto parsed = std::stoull(section, &consumed, 0);
+                    if (consumed != section.size()) throw std::invalid_argument("hex");
+                    if (parsed == fingerprint) {
+                        rom_profile = defaults;
+                        active_rom_section = true;
+                    }
+                } catch (...) {
+                    try {
+                        const auto parsed = std::stoull(section, nullptr, 16);
+                        if (parsed == fingerprint) {
+                            rom_profile = defaults;
+                            active_rom_section = true;
+                        }
+                    } catch (...) {
+                        // Unknown sections are intentionally ignored.
+                    }
+                }
+            }
+            continue;
+        }
+        const auto separator = line.find('=');
+        if (separator == std::string::npos) continue;
+        const auto key = trim_voxel_profile(line.substr(0, separator));
+        const auto value = trim_voxel_profile(line.substr(separator + 1));
+        VoxelProfile* profile = section == "default" ? &defaults :
+            (active_rom_section && rom_profile ? &*rom_profile : nullptr);
+        if (profile == nullptr) continue;
+        if (key == "depth_scale") parse_voxel_float(value, profile->depth_scale);
+        else if (key == "camera_pitch") parse_voxel_float(value, profile->camera_pitch);
+        else if (key == "camera_yaw") parse_voxel_float(value, profile->camera_yaw);
+        else if (key == "zoom") parse_voxel_float(value, profile->zoom);
+        else if (key == "perspective") parse_voxel_float(value, profile->perspective);
+        else if (key == "sprite_depth") parse_voxel_float(value, profile->sprite_depth);
+        else if (key == "lighting") parse_voxel_float(value, profile->lighting);
+    }
+    selected = defaults;
+    if (rom_profile) selected = *rom_profile;
+    selected.depth_scale = std::clamp(selected.depth_scale, 0.0F, 8.0F);
+    selected.camera_pitch = std::clamp(selected.camera_pitch, -80.0F, 80.0F);
+    selected.camera_yaw = std::clamp(selected.camera_yaw, -180.0F, 180.0F);
+    selected.zoom = std::clamp(selected.zoom, 0.25F, 4.0F);
+    selected.perspective = std::clamp(selected.perspective, 0.0F, 0.02F);
+    selected.sprite_depth = std::clamp(selected.sprite_depth, 0.0F, 64.0F);
+    selected.lighting = std::clamp(selected.lighting, 0.1F, 2.0F);
+    return selected;
+}
+
+void ensure_voxel_profile_file(const std::filesystem::path& path) {
+    if (path.empty() || std::filesystem::exists(path)) return;
+    std::ofstream output(path);
+    if (!output) return;
+    output << "; Go Bigger Boy voxel diorama profiles\n"
+              "; Add a [0xROM_FINGERPRINT] section to override [default].\n"
+              "[default]\n"
+              "depth_scale=1.0\n"
+              "camera_pitch=28\n"
+              "camera_yaw=32\n"
+              "zoom=1.0\n"
+              "perspective=0.0025\n"
+              "sprite_depth=10\n"
+              "lighting=1.0\n";
+}
+
+void render_voxel_diorama(const gameboy::Emulator& emulator,
+                          SdlResources& sdl,
+                          const gameboy::DisplayPalette& palette) {
+    // SDL_RenderGeometry is backed by the active SDL GPU renderer (D3D,
+    // OpenGL, Metal or Vulkan).  We submit a real perspective mesh here and
+    // keep the native framebuffer as a textured facade on top of it.  This
+    // gives every platform the same deterministic voxel projection without
+    // requiring platform-specific shader binaries.
+    gbb::populate_gameboy_scene_snapshot(emulator, sdl.scene_snapshot);
+    const auto& scene = sdl.scene_snapshot;
+    const auto fingerprint = emulator.rom_fingerprint();
+    if (!sdl.voxel_profile_loaded || sdl.voxel_profile_fingerprint != fingerprint) {
+        sdl.voxel_profile = load_voxel_profile(sdl.voxel_profile_path, fingerprint);
+        sdl.voxel_profile_fingerprint = fingerprint;
+        sdl.voxel_profile_loaded = true;
+    }
+    const auto profile = sdl.voxel_profile;
+    const auto& pixels = emulator.framebuffer();
+    const auto native_colors = emulator.bus().cgb_mode() || palette.cgb_compatibility;
+    gameboy::Ppu::Framebuffer colored_pixels{};
+    const auto color_at = [&](const std::size_t index) {
+        return native_colors
+                   ? pixels[index]
+                   : gameboy::apply_display_palette(pixels[index], palette);
+    };
+    for (std::size_t index = 0; index < pixels.size(); ++index) {
+        const auto x = index % gameboy::Ppu::screen_width;
+        const auto y = index / gameboy::Ppu::screen_width;
+        auto pixel = color_at(index);
+        if (sdl.video_mode == gameboy::VideoMode::lcd_shader) {
+            pixel = gameboy::apply_lcd_shader(pixel, x, y);
+        }
+        colored_pixels[index] = pixel;
+    }
+
+    auto& vertices = sdl.voxel_vertices;
+    auto& indices = sdl.voxel_indices;
+    vertices.clear();
+    indices.clear();
+    vertices.reserve(12000);
+    indices.reserve(18000);
+    const auto radians = [](const float degrees) {
+        return degrees * 0.01745329251994329577F;
+    };
+    const auto yaw = radians(profile.camera_yaw);
+    const auto pitch = radians(profile.camera_pitch);
+    const auto yaw_cos = std::cos(yaw);
+    const auto yaw_sin = std::sin(yaw);
+    const auto pitch_cos = std::cos(pitch);
+    const auto pitch_sin = std::sin(pitch);
+    const auto project = [&](const float x, const float y, const float z) {
+        const auto centered_x = x - 80.0F;
+        const auto centered_y = y - 72.0F;
+        const auto rotated_x = centered_x * yaw_cos - centered_y * yaw_sin;
+        const auto rotated_y = centered_x * yaw_sin + centered_y * yaw_cos;
+        const auto pitched_y = rotated_y * pitch_cos - z * pitch_sin;
+        const auto depth = rotated_y * pitch_sin + z * pitch_cos;
+        const auto perspective = 1.0F /
+            std::max(0.35F, 1.0F + depth * profile.perspective);
+        return SDL_FPoint{80.0F + rotated_x * profile.zoom * perspective,
+                          72.0F + pitched_y * profile.zoom * perspective};
+    };
+    const auto add_quad = [&](const SDL_FPoint a, const SDL_FPoint b,
+                              const SDL_FPoint c, const SDL_FPoint d,
+                              const SDL_FColor color) {
+        const auto base = static_cast<int>(vertices.size());
+        vertices.push_back({a, color, {0.0F, 0.0F}});
+        vertices.push_back({b, color, {0.0F, 0.0F}});
+        vertices.push_back({c, color, {0.0F, 0.0F}});
+        vertices.push_back({d, color, {0.0F, 0.0F}});
+        indices.insert(indices.end(), {base, base + 1, base + 2,
+                                       base, base + 2, base + 3});
+    };
+    const auto bit_count = [](std::uint8_t value) {
+        unsigned count = 0;
+        while (value != 0) {
+            value = static_cast<std::uint8_t>(value &
+                                              static_cast<std::uint8_t>(value - 1));
+            ++count;
+        }
+        return count;
+    };
+    const auto average_tile_color = [&](const unsigned tile_x,
+                                        const unsigned tile_y) {
+        unsigned red = 0;
+        unsigned green = 0;
+        unsigned blue = 0;
+        for (unsigned y = 0; y < 8; ++y) {
+            for (unsigned x = 0; x < 8; ++x) {
+                const auto pixel = colored_pixels[(tile_y * 8 + y) * 160 +
+                                                  tile_x * 8 + x];
+                red += (pixel >> 16) & 0xFFU;
+                green += (pixel >> 8) & 0xFFU;
+                blue += pixel & 0xFFU;
+            }
+        }
+        return UINT32_C(0xFF000000) |
+               ((red / 64U) << 16) | ((green / 64U) << 8) | (blue / 64U);
+    };
+    for (unsigned tile_y = 0; tile_y < 18; ++tile_y) {
+        for (unsigned tile_x = 0; tile_x < 20; ++tile_x) {
+            const auto map_x = (static_cast<unsigned>(scene.scx) / 8U + tile_x) & 31U;
+            const auto map_y = (static_cast<unsigned>(scene.scy) / 8U + tile_y) & 31U;
+            const auto map_index = map_y * 32U + map_x;
+            const auto tile = scene.background.tile_ids[map_index];
+            const auto attributes = scene.background.attributes[map_index];
+            const auto bank = scene.cgb_mode && (attributes & 0x08U) != 0 ? 1U : 0U;
+            const auto tile_index = scene.background.tile_data_unsigned
+                                        ? static_cast<unsigned>(tile)
+                                        : tile < 0x80U
+                                              ? static_cast<unsigned>(tile) + 256U
+                                              : static_cast<unsigned>(tile);
+            if (tile_index >= scene.tile_count ||
+                bank >= scene.tile_banks) {
+                continue;
+            }
+            const auto tile_offset = bank * scene.tile_bank_stride +
+                                     tile_index * scene.tile_size_bytes;
+            unsigned occupancy = 0;
+            for (std::size_t row = 0; row < 8; ++row) {
+                const auto low = scene.tile_data[tile_offset + row * 2];
+                const auto high = scene.tile_data[tile_offset + row * 2 + 1];
+                occupancy += bit_count(low) + bit_count(high);
+            }
+            if (occupancy == 0) continue;
+            const auto depth = profile.depth_scale *
+                               (1.0F + std::min(5.0F,
+                                                static_cast<float>(occupancy) / 24.0F));
+            const auto x = static_cast<float>(tile_x * 8);
+            const auto y = static_cast<float>(tile_y * 8);
+            const auto base_a = project(x, y, 0.0F);
+            const auto base_b = project(x + 8.0F, y, 0.0F);
+            const auto base_c = project(x + 8.0F, y + 8.0F, 0.0F);
+            const auto base_d = project(x, y + 8.0F, 0.0F);
+            const auto top_a = project(x, y, depth);
+            const auto top_b = project(x + 8.0F, y, depth);
+            const auto top_c = project(x + 8.0F, y + 8.0F, depth);
+            const auto top_d = project(x, y + 8.0F, depth);
+            const auto tile_color = average_tile_color(tile_x, tile_y);
+            add_quad(base_a, base_b, top_b, top_a,
+                     voxel_color(tile_color, 0.34F * profile.lighting));
+            add_quad(base_b, base_c, top_c, top_b,
+                     voxel_color(tile_color, 0.46F * profile.lighting));
+            add_quad(base_c, base_d, top_d, top_c,
+                     voxel_color(tile_color, 0.58F * profile.lighting));
+            add_quad(base_d, base_a, top_a, top_d,
+                     voxel_color(tile_color, 0.40F * profile.lighting));
+            add_quad(top_a, top_b, top_c, top_d,
+                     voxel_color(tile_color, 0.72F * profile.lighting));
+        }
+    }
+    for (const auto& sprite : scene.sprites) {
+        if (!sprite.visible) continue;
+        const auto x = static_cast<float>(sprite.screen_x);
+        const auto y = static_cast<float>(sprite.screen_y);
+        const auto color = voxel_color(
+            colored_pixels[static_cast<std::size_t>(std::clamp<int>(
+                sprite.screen_y, 0, 143)) * 160 +
+                            static_cast<std::size_t>(std::clamp<int>(
+                                sprite.screen_x, 0, 159))],
+            0.45F * profile.lighting);
+        const auto a = project(x, y, 0.0F);
+        const auto b = project(x + 8.0F, y, 0.0F);
+        const auto c = project(x + 8.0F, y + 8.0F, profile.sprite_depth);
+        const auto d = project(x, y + 8.0F, profile.sprite_depth);
+        add_quad(a, b, c, d, color);
+    }
+    if (!indices.empty() && !SDL_RenderGeometry(
+                                 sdl.renderer, nullptr, vertices.data(),
+                                 static_cast<int>(vertices.size()), indices.data(),
+                                 static_cast<int>(indices.size()))) {
+        sdl_error("Could not render voxel diorama geometry");
+    }
+    if (!SDL_UpdateTexture(sdl.texture, nullptr, colored_pixels.data(),
+                           static_cast<int>(160 * sizeof(std::uint32_t))) ||
+        !SDL_RenderTexture(sdl.renderer, sdl.texture, nullptr, nullptr)) {
+        sdl_error("Could not present voxel diorama");
+    }
+}
+
 #if !defined(_WIN32) && !defined(__ANDROID__)
 void present_dashboard(SdlResources& sdl,
                        const std::vector<std::string>& recent,
@@ -5372,6 +5687,9 @@ void present(const gameboy::Emulator* emulator, SdlResources& sdl,
         static_cast<void>(dashboard_selection);
 #endif
     } else if (emulator != nullptr) {
+        if (sdl.video_mode == gameboy::VideoMode::voxel_diorama) {
+            render_voxel_diorama(*emulator, sdl, palette);
+        } else {
         const auto& pixels = emulator->framebuffer();
         const auto native_colors =
             emulator->bus().cgb_mode() || palette.cgb_compatibility;
@@ -5406,6 +5724,7 @@ void present(const gameboy::Emulator* emulator, SdlResources& sdl,
                                                 sizeof(std::uint32_t))) ||
             !SDL_RenderTexture(sdl.renderer, sdl.texture, nullptr, nullptr)) {
             sdl_error("Could not present framebuffer");
+        }
         }
     }
 #ifdef __ANDROID__
@@ -5673,6 +5992,10 @@ int main(int argc, char** argv) {
         desktop_menu.attach(sdl.window);
 #endif
         const auto preference_path = preference_directory();
+        sdl.voxel_profile_path = preference_path.empty()
+                                    ? std::filesystem::path{}
+                                    : preference_path / "voxel-profiles.ini";
+        ensure_voxel_profile_file(sdl.voxel_profile_path);
         restore_game_window_geometry(sdl.window, preference_path);
         auto rom_library = load_rom_library(preference_path);
         auto recent_roms = recent_paths(rom_library);

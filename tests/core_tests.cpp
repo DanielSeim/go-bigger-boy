@@ -289,6 +289,43 @@ void test_multicore_frontend_contract() {
           "new systems can register a core without changing frontend code");
 }
 
+void test_scene_snapshot_contract() {
+    auto core = gbb::create_core(cgb_test_rom());
+    check(gbb::has_capability(core->descriptor().capabilities,
+                              gbb::CoreCapability::scene_layers),
+          "GB core advertises optional scene-layer data");
+
+    auto* emulator = gbb::gameboy_emulator(core.get());
+    check(emulator != nullptr, "scene test can access the GB development adapter");
+    if (emulator == nullptr) return;
+
+    auto& bus = emulator->bus();
+    bus.debug_write_vram(0, 0x1800, 0x2A);
+    bus.debug_write_vram(1, 0x1800, 0x60);
+    bus.debug_write_vram(0, static_cast<std::uint16_t>(0x2A * 16), 0xAB);
+    bus.write8(0xFF40, 0x93); // Enable LCD, background, and OBJ rendering.
+    bus.debug_write_oam(0, 48);
+    bus.debug_write_oam(1, 40);
+    bus.debug_write_oam(2, 0x2A);
+    bus.debug_write_oam(3, 0x20);
+
+    const auto& scene = core->scene_snapshot();
+    check(scene.width == 160 && scene.height == 144 && scene.cgb_mode,
+          "scene snapshot carries core dimensions and hardware mode");
+    check(scene.background.enabled && scene.background.map_address == 0x9800 &&
+              scene.background.tile_ids[0] == 0x2A &&
+              scene.background.attributes[0] == 0x60,
+          "scene snapshot exposes the selected background tile and CGB attributes");
+    check(scene.tile_data[0x2A * 16] == 0xAB,
+          "scene snapshot exposes banked tile graphics");
+    check(scene.sprites[0].visible && scene.sprites[0].screen_x == 32 &&
+              scene.sprites[0].screen_y == 32 && scene.sprites[0].tile == 0x2A &&
+              scene.sprites[0].attributes == 0x20,
+          "scene snapshot decodes visible OAM coordinates and attributes");
+    check(scene.window.map_address == 0x9800 && !scene.window.enabled,
+          "scene snapshot reports disabled window state without special casing the frontend");
+}
+
 void test_gameshark_cheats() {
     const auto writes = gameboy::parse_gameshark_code("0199-00C0 + 010101C0");
     check(writes.size() == 2 && writes[0].address == 0xC000 &&
@@ -333,7 +370,8 @@ void test_video_pipeline_modes() {
               gameboy::video_mode_from_id("sharp") ==
                   gameboy::VideoMode::sharp_smoothing &&
               gameboy::video_mode_from_id("integer") == gameboy::VideoMode::integer &&
-              gameboy::video_mode_from_id("lcd") == gameboy::VideoMode::lcd_shader,
+              gameboy::video_mode_from_id("lcd") == gameboy::VideoMode::lcd_shader &&
+              gameboy::video_mode_from_id("voxel") == gameboy::VideoMode::voxel_diorama,
           "video pipeline settings map stable ids to presentation modes");
     check(gameboy::video_mode_from_id("unknown") == gameboy::default_video_mode,
           "unknown video pipeline settings use the nearest default");
@@ -3383,6 +3421,7 @@ int main() {
         test_cartridge_header();
         test_rom_library_metadata_and_deduplication();
         test_multicore_frontend_contract();
+        test_scene_snapshot_contract();
         test_gameshark_cheats();
         test_video_pipeline_modes();
         test_audio_frontend_helpers();

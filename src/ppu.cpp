@@ -95,6 +95,25 @@ std::uint8_t Ppu::debug_read_vram(const std::uint8_t bank,
     return bank != 0 && cgb_mode_ ? (*cgb_vram_)[offset] : vram_[offset];
 }
 
+std::uint8_t Ppu::debug_read_oam(const std::uint8_t offset) const noexcept {
+    return offset < oam_.size() ? oam_[offset] : 0xFF;
+}
+
+void Ppu::debug_write_oam(const std::uint8_t offset,
+                          const std::uint8_t value) noexcept {
+    if (offset < oam_.size()) oam_[offset] = value;
+}
+
+std::uint8_t Ppu::debug_read_cgb_bg_palette(
+    const std::uint8_t index) const noexcept {
+    return index < cgb_bg_palette_.size() ? cgb_bg_palette_[index] : 0xFF;
+}
+
+std::uint8_t Ppu::debug_read_cgb_object_palette(
+    const std::uint8_t index) const noexcept {
+    return index < cgb_object_palette_.size() ? cgb_object_palette_[index] : 0xFF;
+}
+
 void Ppu::debug_write_vram(const std::uint8_t bank,
                            const std::uint16_t offset,
                            const std::uint8_t value) noexcept {

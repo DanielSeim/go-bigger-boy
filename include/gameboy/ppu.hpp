@@ -31,6 +31,12 @@ public:
     void dma_write_vram(std::uint16_t address, std::uint8_t value) noexcept;
     [[nodiscard]] std::uint8_t debug_read_vram(std::uint8_t bank,
                                                std::uint16_t offset) const noexcept;
+    [[nodiscard]] std::uint8_t debug_read_oam(std::uint8_t offset) const noexcept;
+    void debug_write_oam(std::uint8_t offset, std::uint8_t value) noexcept;
+    [[nodiscard]] std::uint8_t debug_read_cgb_bg_palette(
+        std::uint8_t index) const noexcept;
+    [[nodiscard]] std::uint8_t debug_read_cgb_object_palette(
+        std::uint8_t index) const noexcept;
     void debug_write_vram(std::uint8_t bank, std::uint16_t offset,
                           std::uint8_t value) noexcept;
     [[nodiscard]] std::uint8_t read_oam(std::uint16_t address) const noexcept;

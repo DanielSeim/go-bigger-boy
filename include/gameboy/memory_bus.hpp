@@ -39,6 +39,12 @@ public:
     void set_dmg_palette(const DmgPalette& palette) noexcept;
     [[nodiscard]] std::uint8_t debug_read_vram(std::uint8_t bank,
                                                std::uint16_t offset) const noexcept;
+    [[nodiscard]] std::uint8_t debug_read_oam(std::uint8_t offset) const noexcept;
+    void debug_write_oam(std::uint8_t offset, std::uint8_t value) noexcept;
+    [[nodiscard]] std::uint8_t debug_read_cgb_bg_palette(
+        std::uint8_t index) const noexcept;
+    [[nodiscard]] std::uint8_t debug_read_cgb_object_palette(
+        std::uint8_t index) const noexcept;
     void debug_write_vram(std::uint8_t bank, std::uint16_t offset,
                           std::uint8_t value) noexcept;
     void flush_battery();

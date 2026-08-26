@@ -408,6 +408,25 @@ std::uint8_t MemoryBus::debug_read_vram(const std::uint8_t bank,
     return ppu_.debug_read_vram(bank, offset);
 }
 
+std::uint8_t MemoryBus::debug_read_oam(const std::uint8_t offset) const noexcept {
+    return ppu_.debug_read_oam(offset);
+}
+
+void MemoryBus::debug_write_oam(const std::uint8_t offset,
+                                const std::uint8_t value) noexcept {
+    ppu_.debug_write_oam(offset, value);
+}
+
+std::uint8_t MemoryBus::debug_read_cgb_bg_palette(
+    const std::uint8_t index) const noexcept {
+    return ppu_.debug_read_cgb_bg_palette(index);
+}
+
+std::uint8_t MemoryBus::debug_read_cgb_object_palette(
+    const std::uint8_t index) const noexcept {
+    return ppu_.debug_read_cgb_object_palette(index);
+}
+
 void MemoryBus::debug_write_vram(const std::uint8_t bank,
                                  const std::uint16_t offset,
                                  const std::uint8_t value) noexcept {

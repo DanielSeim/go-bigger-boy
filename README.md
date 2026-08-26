@@ -323,6 +323,15 @@ adds edge-aware smoothing without blanket blur, `integer` uses only whole-number
 scale factors, and `lcd` applies a lightweight LCD mask with scanlines. The
 setting is stored as `video.Mode` in
 `settings.ini`; the web selector remembers its choice in browser storage.
+Desktop builds also expose the experimental `voxel` mode. It submits a
+perspective 3D mesh of tile columns and sprites through SDL's active GPU
+renderer, with the authoritative framebuffer retained as the front-facing
+facade. Unsupported frontends fall back to the regular 2D presentation.
+Per-ROM depth and camera tuning can be supplied in `voxel-profiles.ini` beside
+`settings.ini`; use `[default]` and a hexadecimal ROM fingerprint section with
+`depth_scale`, `camera_pitch`, `camera_yaw`, `zoom`, `perspective`,
+`sprite_depth`, and `lighting` keys. GBB creates this file with documented
+defaults on first startup, so it can be copied alongside a portable install.
 
 The default action bindings are `keyboard.FastForward = Tab` (hold for 4×
 speed), `keyboard.Rewind = Left Shift` (hold to step backward through the last three
@@ -495,7 +504,7 @@ consume this boundary; the SDL shell migration is tracked explicitly. See the
 steps.
 
 ```text
-include/gbb/      System-neutral frontend/core API and registry
+include/gbb/      System-neutral frontend/core, scene, and registry APIs
 include/gameboy/  GB/GBC core API
 src/              Core implementations and adapters
 apps/cli/         Headless development frontend

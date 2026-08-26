@@ -1,5 +1,7 @@
 #pragma once
 
+#include "gbb/scene.hpp"
+
 #include <cstddef>
 #include <cstdint>
 #include <string_view>
@@ -63,6 +65,7 @@ enum class CoreCapability : std::uint64_t {
     cheats = UINT64_C(1) << 6,
     debugger = UINT64_C(1) << 7,
     sprite_editor = UINT64_C(1) << 8,
+    scene_layers = UINT64_C(1) << 9,
 };
 
 [[nodiscard]] constexpr CoreCapability operator|(const CoreCapability left,
@@ -117,6 +120,12 @@ public:
     [[nodiscard]] virtual bool frame_ready() const noexcept = 0;
     virtual void consume_frame() noexcept = 0;
     [[nodiscard]] virtual VideoFrameView video_frame() const noexcept = 0;
+    // Optional read-only scene data for presentation renderers such as a
+    // voxel diorama. The ordinary framebuffer remains the universal fallback.
+    [[nodiscard]] virtual const SceneSnapshot& scene_snapshot() const noexcept {
+        static const SceneSnapshot empty{};
+        return empty;
+    }
     [[nodiscard]] virtual std::vector<std::int16_t> take_audio_samples() = 0;
     virtual void set_input(InputId input, bool pressed) noexcept = 0;
 

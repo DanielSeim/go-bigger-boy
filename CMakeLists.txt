@@ -32,6 +32,7 @@ add_library(gameboy_core
 add_library(gbb_core_api
     src/audio.cpp
     src/core_registry.cpp
+    src/gameboy_scene.cpp
     src/rom_library.cpp
 )
 target_include_directories(gbb_core_api PUBLIC include)

@@ -31,6 +31,31 @@ probes. Every built-in core contributes a `CoreFactory`; the highest-confidence
 factory creates the adapter. Stable string system IDs (`gb`, `gbc`, `gba`) are
 used in shared metadata instead of C++ enum ordinals.
 
+## Optional scene data
+
+`include/gbb/scene.hpp` defines a read-only `SceneSnapshot` for presentation
+renderers that need more than the final framebuffer, such as a voxel diorama.
+It contains generic tile layers, tile graphics, palettes, sprites, LCD state,
+and emulation timing. `EmulatorCore::video_frame()` remains the universal
+fallback, while cores that can provide scene data advertise
+`CoreCapability::scene_layers`. The Game Boy adapter currently exposes both
+32x32 background/window maps, both CGB VRAM banks, CGB palette RAM, and decoded
+OAM coordinates. No renderer-specific or Game Boy-specific types cross the
+frontend boundary.
+
+Scene snapshots are refreshed on request and are read-only; they do not alter
+emulation state or save-state data. The SDL voxel renderer consumes this API
+to build a perspective mesh and submits it through `SDL_RenderGeometry`, which
+uses the active D3D/OpenGL/Metal/Vulkan backend where available. Per-ROM depth
+profiles are loaded by the frontend from `voxel-profiles.ini`, leaving the core
+independent of presentation tuning.
+
+The SDL frontend now includes an experimental `Voxel diorama (desktop
+prototype)` presentation mode. It uses the snapshot to generate deterministic
+perspective tile-column and sprite meshes beneath the authoritative
+framebuffer. SDL geometry is intentionally used instead of shipping separate
+shader binaries, keeping the renderer portable across desktop backends.
+
 ## System-specific tools
 
 Capabilities such as debugger, cheats, printer, camera, and sprite editor are
