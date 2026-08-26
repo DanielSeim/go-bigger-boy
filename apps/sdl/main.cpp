@@ -56,7 +56,7 @@
 namespace {
 
 #ifndef GBB_VERSION
-#define GBB_VERSION "0.20.5"
+#define GBB_VERSION "0.20.6"
 #endif
 
 #ifdef __ANDROID__
@@ -5352,8 +5352,9 @@ void render_voxel_diorama(const gameboy::Emulator& emulator,
     auto& indices = sdl.voxel_indices;
     vertices.clear();
     indices.clear();
-    // 40x36 relief cells, five faces each, fit comfortably in one geometry
-    // submission while avoiding per-frame vector growth.
+    // 80x72 relief cells fit comfortably in one geometry submission while
+    // avoiding per-frame vector growth. Only the visible relief surface is
+    // submitted below; internal cube walls would show up as distracting bands.
     vertices.reserve(40000);
     indices.reserve(60000);
     const auto radians = [](const float degrees) {
@@ -5391,7 +5392,7 @@ void render_voxel_diorama(const gameboy::Emulator& emulator,
     // Build a relief from the *visible framebuffer* rather than averaging an
     // entire 8x8 background tile into one block.  Tile averages are cheap, but
     // they erase the silhouettes and text that make a Game Boy scene readable.
-    // Four-by-four pixel cells retain the characteristic pixel-art shapes while
+    // Two-by-two pixel cells retain the characteristic pixel-art shapes while
     // keeping the mesh small enough to rebuild every frame on integrated GPUs.
     struct VoxelColumn {
         float x{};
@@ -5404,7 +5405,7 @@ void render_voxel_diorama(const gameboy::Emulator& emulator,
         bool sprite{};
     };
     std::vector<VoxelColumn> columns;
-    constexpr unsigned cell_size = 4;
+    constexpr unsigned cell_size = 2;
     constexpr unsigned cells_x = gameboy::Ppu::screen_width / cell_size;
     constexpr unsigned cells_y = gameboy::Ppu::screen_height / cell_size;
     columns.reserve(cells_x * cells_y);
@@ -5500,27 +5501,15 @@ void render_voxel_diorama(const gameboy::Emulator& emulator,
         const auto depth = column.height;
         const auto width = column.width;
         const auto extent_y = column.extent_y;
-        const auto base_a = project(x, y, 0.0F);
-        const auto base_b = project(x + width, y, 0.0F);
-        const auto base_c = project(x + width, y + extent_y, 0.0F);
-        const auto base_d = project(x, y + extent_y, 0.0F);
         const auto top_a = project(x, y, depth);
         const auto top_b = project(x + width, y, depth);
         const auto top_c = project(x + width, y + extent_y, depth);
         const auto top_d = project(x, y + extent_y, depth);
         const auto tile_color = column.color;
-        add_quad(base_a, base_b, top_b, top_a,
-                 voxel_color(tile_color,
-                             (column.sprite ? 0.30F : 0.34F) * profile.lighting));
-        add_quad(base_b, base_c, top_c, top_b,
-                 voxel_color(tile_color,
-                             (column.sprite ? 0.42F : 0.46F) * profile.lighting));
-        add_quad(base_c, base_d, top_d, top_c,
-                 voxel_color(tile_color,
-                             (column.sprite ? 0.54F : 0.58F) * profile.lighting));
-        add_quad(base_d, base_a, top_a, top_d,
-                 voxel_color(tile_color,
-                             (column.sprite ? 0.36F : 0.40F) * profile.lighting));
+        // Adjacent cells share an edge. Drawing their four internal walls
+        // produces one dark stripe per row/column and obscures the source
+        // image, so keep the relief surface continuous and let elevation plus
+        // perspective provide the depth cue.
         add_quad(top_a, top_b, top_c, top_d,
                  voxel_color(tile_color,
                              (column.sprite ? 0.88F : 0.92F) * profile.lighting));
