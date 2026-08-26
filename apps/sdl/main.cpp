@@ -51,7 +51,7 @@
 namespace {
 
 #ifndef GBB_VERSION
-#define GBB_VERSION "0.17.0"
+#define GBB_VERSION "0.17.1"
 #endif
 
 #ifdef __ANDROID__
@@ -1744,10 +1744,22 @@ public:
                 canonical_name +
                 "\n\nUse a No-Intro named ROM or add a code manually.\n" + error);
         }
-        std::ifstream input(remote, std::ios::binary);
-        const std::string text{std::istreambuf_iterator<char>{input}, {}};
+        std::string text;
+        {
+            std::ifstream input(remote, std::ios::binary);
+            if (!input) {
+                throw std::runtime_error(
+                    "Could not open the downloaded cheat archive");
+            }
+            text.assign(std::istreambuf_iterator<char>{input}, {});
+            if (input.bad()) {
+                throw std::runtime_error(
+                    "Could not read the downloaded cheat archive");
+            }
+        } // Close the stream before deleting the file (required on Windows).
+        std::error_code cleanup_error;
+        std::filesystem::remove(remote, cleanup_error);
         auto imported = gameboy::parse_libretro_cheats(text, true);
-        std::filesystem::remove(remote);
         if (imported.empty()) {
             status_ = "The archive has no supported type-01 codes.";
             throw std::runtime_error(

@@ -32,7 +32,7 @@ namespace gbb_desktop {
 namespace {
 
 #ifndef GBB_VERSION
-#define GBB_VERSION "0.17.0"
+#define GBB_VERSION "0.17.1"
 #endif
 
 constexpr int id_library = 100;
