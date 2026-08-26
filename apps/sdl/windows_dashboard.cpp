@@ -32,7 +32,7 @@ namespace gbb_desktop {
 namespace {
 
 #ifndef GBB_VERSION
-#define GBB_VERSION "0.17.1"
+#define GBB_VERSION "0.17.2"
 #endif
 
 constexpr int id_library = 100;
@@ -667,7 +667,11 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
         const auto dc = reinterpret_cast<HDC>(wparam);
         SetTextColor(dc, RGB(224, 235, 244));
         SetBkColor(dc, RGB(13, 18, 27));
-        SetBkMode(dc, TRANSPARENT);
+        // A multiline EDIT scrolls its existing pixels. Transparent text
+        // backgrounds leave those old rows behind, causing shortcut lines to
+        // accumulate on top of each other after scrolling back upward.
+        const auto control = reinterpret_cast<HWND>(lparam);
+        SetBkMode(dc, control == state->shortcuts_text ? OPAQUE : TRANSPARENT);
         return reinterpret_cast<INT_PTR>(state->background_brush);
     }
     if (message == WM_CTLCOLORSCROLLBAR) {

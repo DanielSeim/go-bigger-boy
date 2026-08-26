@@ -5,7 +5,7 @@ plugins {
 def releaseKeystore = System.getenv("GBB_ANDROID_KEYSTORE_FILE")
 def releaseStorePassword = System.getenv("GBB_ANDROID_KEYSTORE_PASSWORD")
 def releaseKeyPassword = System.getenv("GBB_ANDROID_KEY_PASSWORD")
-def appVersionName = "0.17.1"
+def appVersionName = "0.17.2"
 def releaseRef = System.getenv("GITHUB_REF_NAME") ?: ""
 if (releaseRef ==~ /v\d+\.\d+\.\d+/) {
     appVersionName = releaseRef.substring(1)

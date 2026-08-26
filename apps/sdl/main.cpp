@@ -41,6 +41,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include "resource.h"
 #include "windows_dashboard.hpp"
 #endif
 
@@ -51,7 +52,7 @@
 namespace {
 
 #ifndef GBB_VERSION
-#define GBB_VERSION "0.17.1"
+#define GBB_VERSION "0.17.2"
 #endif
 
 #ifdef __ANDROID__
@@ -4009,6 +4010,34 @@ void show_help(SDL_Window* window, const InputBindings& bindings) {
         text.c_str(), window));
 }
 
+void show_about(SDL_Window* window) {
+#ifdef _WIN32
+    const auto owner = static_cast<HWND>(SDL_GetPointerProperty(
+        SDL_GetWindowProperties(window),
+        SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
+    std::wstring message = L"Go Bigger Boy (GBB) v";
+    for (const auto character : std::string_view{GBB_VERSION}) {
+        message.push_back(static_cast<wchar_t>(
+            static_cast<unsigned char>(character)));
+    }
+    message += L"\n\nA portable Game Boy and Game Boy Color emulator.";
+    MSGBOXPARAMSW parameters{};
+    parameters.cbSize = sizeof(parameters);
+    parameters.hwndOwner = owner;
+    parameters.hInstance = GetModuleHandleW(nullptr);
+    parameters.lpszText = message.c_str();
+    parameters.lpszCaption = L"About Go Bigger Boy";
+    parameters.dwStyle = MB_OK | MB_USERICON | MB_SETFOREGROUND;
+    parameters.lpszIcon = MAKEINTRESOURCEW(IDI_GBB_ICON);
+    static_cast<void>(MessageBoxIndirectW(&parameters));
+#else
+    static_cast<void>(SDL_ShowSimpleMessageBox(
+        SDL_MESSAGEBOX_INFORMATION, "About Go Bigger Boy",
+        "Go Bigger Boy (GBB) v" GBB_VERSION
+        "\n\nA portable Game Boy and Game Boy Color emulator.", window));
+#endif
+}
+
 void show_error(SDL_Window* window, const std::string& message);
 #ifdef __ANDROID__
 void open_android_library() noexcept;
@@ -4248,11 +4277,7 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
             show_help(sdl.window, bindings);
             break;
         case DesktopMenuCommand::about:
-            static_cast<void>(SDL_ShowSimpleMessageBox(
-                SDL_MESSAGEBOX_INFORMATION, "About Go Bigger Boy",
-                "Go Bigger Boy (GBB) v" GBB_VERSION
-                "\n\nA portable Game Boy and Game Boy Color emulator.",
-                sdl.window));
+            show_about(sdl.window);
             break;
         default: break;
         }
