@@ -20,6 +20,11 @@ mutually exclusive boot-ROM expectations run under explicit DMG0, DMG/MGB,
 SGB, SGB2, CGB0, or CGB post-boot hardware profiles. Mooneye's two AGB-only
 misc ROMs are excluded because GBB does not emulate Game Boy Advance hardware.
 
+The APU evaluates channel output and the hardware high-pass response on every
+master-clock cycle, then integrates those values over exact 48 kHz sample
+boundaries. This preserves short duty/noise transitions that a boundary sampler
+would discard while keeping the public frontend format at stereo 16-bit PCM.
+
 ## Next accuracy work
 
 The visual harness runs a ROM to a deterministic frame, writes a dependency-free

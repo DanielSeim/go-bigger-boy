@@ -81,7 +81,8 @@ private:
     void tick_pulse(PulseState& pulse, unsigned register_offset) noexcept;
     void tick_wave() noexcept;
     void tick_noise() noexcept;
-    void emit_sample();
+    void integrate_sample(float left, float right) noexcept;
+    void emit_sample(float left, float right);
     [[nodiscard]] bool next_step_skips_length() const noexcept;
     [[nodiscard]] bool any_dac_enabled() const noexcept;
     float high_pass(float input, bool dacs_enabled,
@@ -116,6 +117,8 @@ private:
     unsigned sample_accumulator_{};
     float left_capacitor_{};
     float right_capacitor_{};
+    float sample_integrator_left_{};
+    float sample_integrator_right_{};
 };
 
 } // namespace gameboy

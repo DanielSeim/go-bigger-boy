@@ -35,7 +35,8 @@ for the suite-by-suite breakdown.
   CGB sprite priority, VRAM DMA, fast serial, and double-speed CPU switching
 - Active-low joypad matrix with keyboard/gamepad input and interrupts
 - Cycle-timed OAM DMA with source-bus conflicts and an optional SDL3 desktop frontend
-- Four-channel DMG audio with 48 kHz stereo SDL3 playback
+- Four-channel DMG/CGB audio with a cycle-integrated high-pass mixer and 48 kHz
+  stereo SDL3 playback
 - ROM-only, MBC1/MBC1M, MBC2, MBC3 (including RTC), and MBC5 banking
 - Persistent battery-backed `.sav` RAM and MBC3 `.rtc` clock state
 - Table-driven CPU tests for opcode matrices, timing, flags, PC, stack, and memory effects

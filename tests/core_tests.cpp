@@ -359,6 +359,26 @@ void test_audio_frontend_helpers() {
           "audio queue limits convert milliseconds to interleaved PCM bytes");
 }
 
+void test_apu_cycle_integrated_resampling() {
+    gameboy::MemoryBus bus{gameboy::Cartridge{test_rom()}};
+    bus.initialize_post_boot();
+    bus.write8(0xFF24, 0x77); // Full left and right master volume.
+    bus.write8(0xFF25, 0x11); // Route channel 1 to both terminals.
+
+    // Let one active channel cycle contribute for a single master-clock tick,
+    // then remove its routing before the 48 kHz sample boundary. A sampler
+    // that only observes the final cycle would output silence; integration
+    // must preserve the short transition as a small non-zero sample.
+    bus.tick(1);
+    bus.write8(0xFF25, 0x00);
+    bus.tick(87);
+    const auto samples = bus.take_audio_samples();
+    check(samples.size() == 2 && samples[0] != 0 && samples[1] != 0,
+          "audio resampling preserves transitions shorter than one output sample");
+    check(samples[0] == samples[1],
+          "cycle-integrated mixer keeps both routed terminals phase-aligned");
+}
+
 void test_cgb_memory_and_rendering() {
     gameboy::Emulator speed{gameboy::Cartridge{cgb_test_rom({
         0x3E, 0x01, // LD A,1
@@ -2933,11 +2953,14 @@ void test_save_state_round_trip_and_validation() {
     constexpr std::size_t version_thirteen_sprite_fetch_size = 8;
     constexpr std::size_t version_fourteen_sprite_deadline_size = 40;
     constexpr std::size_t version_fifteen_sprite_render_size = 48;
+    constexpr std::size_t version_sixteen_audio_integrator_size = 8;
     constexpr std::size_t version_nine_fetcher_size =
         737 + version_ten_window_latch_size + version_eleven_fetcher_size +
         version_twelve_sprite_size + version_thirteen_sprite_fetch_size +
         version_fourteen_sprite_deadline_size + version_fifteen_sprite_render_size;
-    auto version_one = saved;
+    auto legacy_saved = saved;
+    legacy_saved.resize(legacy_saved.size() - version_sixteen_audio_integrator_size);
+    auto version_one = legacy_saved;
     version_one.resize(version_one.size() - version_two_dma_size -
                        version_three_ppu_size - version_four_cgb_size -
                        version_five_ppu_size - version_six_state_size -
@@ -2957,7 +2980,7 @@ void test_save_state_round_trip_and_validation() {
               old_state_loader.bus().read8(0xA123) == 0x5A,
           "version 1 save states remain loadable after adding DMA state");
 
-    auto version_two = saved;
+    auto version_two = legacy_saved;
     version_two.resize(version_two.size() - version_three_ppu_size -
                        version_four_cgb_size - version_five_ppu_size -
                        version_six_state_size - version_seven_camera_size -
@@ -2977,7 +3000,7 @@ void test_save_state_round_trip_and_validation() {
               version_two_loader.bus().read8(0xA123) == 0x5A,
           "version 2 save states remain loadable after adding PPU timing state");
 
-    auto version_three = saved;
+    auto version_three = legacy_saved;
     version_three.resize(version_three.size() - version_four_cgb_size -
                          version_five_ppu_size - version_six_state_size -
                          version_seven_camera_size - version_eight_ppu_size -
@@ -2997,7 +3020,7 @@ void test_save_state_round_trip_and_validation() {
               version_three_loader.bus().read8(0xA123) == 0x5A,
           "version 3 save states remain loadable after adding CGB state");
 
-    auto version_four = saved;
+    auto version_four = legacy_saved;
     version_four.erase(version_four.end() - version_four_cgb_size -
                            version_five_ppu_size - version_six_state_size -
                            version_seven_camera_size - version_eight_ppu_size -
@@ -3022,7 +3045,7 @@ void test_save_state_round_trip_and_validation() {
               version_four_loader.bus().read8(0xA123) == 0x5A,
           "version 4 save states remain loadable after adding PPU coincidence state");
 
-    auto version_five = saved;
+    auto version_five = legacy_saved;
     version_five.erase(version_five.end() - version_four_cgb_size -
                            version_six_state_size - version_seven_camera_size -
                            version_eight_ppu_size - version_nine_fetcher_size,
@@ -3048,7 +3071,7 @@ void test_save_state_round_trip_and_validation() {
               version_five_loader.bus().read8(0xA123) == 0x5A,
           "version 5 save states remain loadable after adding PPU startup state");
 
-    auto version_six = saved;
+    auto version_six = legacy_saved;
     version_six.resize(version_six.size() - version_seven_camera_size -
                        version_eight_ppu_size - version_nine_fetcher_size);
     version_six[8] = 6;
@@ -3066,7 +3089,7 @@ void test_save_state_round_trip_and_validation() {
               version_six_loader.bus().read8(0xA123) == 0x5A,
           "version 6 save states remain loadable after adding camera state");
 
-    auto version_seven = saved;
+    auto version_seven = legacy_saved;
     version_seven.resize(version_seven.size() - version_eight_ppu_size -
                          version_nine_fetcher_size);
     version_seven[8] = 7;
@@ -3084,7 +3107,7 @@ void test_save_state_round_trip_and_validation() {
               version_seven_loader.bus().read8(0xA123) == 0x5A,
           "version 7 save states remain loadable after adding PPU dot state");
 
-    auto version_eight = saved;
+    auto version_eight = legacy_saved;
     version_eight.resize(version_eight.size() - version_nine_fetcher_size);
     version_eight[8] = 8;
     const auto version_eight_payload_size = static_cast<std::uint32_t>(
@@ -3101,7 +3124,7 @@ void test_save_state_round_trip_and_validation() {
               version_eight_loader.bus().read8(0xA123) == 0x5A,
           "version 8 save states remain loadable after adding PPU fetcher state");
 
-    auto version_nine = saved;
+    auto version_nine = legacy_saved;
     version_nine.resize(version_nine.size() - version_ten_window_latch_size -
                         version_eleven_fetcher_size -
                         version_twelve_sprite_size -
@@ -3125,7 +3148,7 @@ void test_save_state_round_trip_and_validation() {
               version_nine_loader.bus().read8(0xA123) == 0x5A,
           "version 9 save states remain loadable after adding window latches");
 
-    auto version_ten = saved;
+    auto version_ten = legacy_saved;
     version_ten.resize(version_ten.size() - version_eleven_fetcher_size -
                        version_twelve_sprite_size -
                        version_thirteen_sprite_fetch_size -
@@ -3146,7 +3169,7 @@ void test_save_state_round_trip_and_validation() {
               version_ten_loader.bus().read8(0xA123) == 0x5A,
           "version 10 save states remain loadable after refining fetch startup");
 
-    auto version_eleven = saved;
+    auto version_eleven = legacy_saved;
     version_eleven.resize(version_eleven.size() - version_twelve_sprite_size -
                           version_thirteen_sprite_fetch_size -
                           version_fourteen_sprite_deadline_size -
@@ -3166,7 +3189,7 @@ void test_save_state_round_trip_and_validation() {
               version_eleven_loader.bus().read8(0xA123) == 0x5A,
           "version 11 save states remain loadable after adding sprite fetch state");
 
-    auto version_twelve = saved;
+    auto version_twelve = legacy_saved;
     version_twelve.resize(version_twelve.size() - version_thirteen_sprite_fetch_size -
                           version_fourteen_sprite_deadline_size -
                           version_fifteen_sprite_render_size);
@@ -3185,7 +3208,7 @@ void test_save_state_round_trip_and_validation() {
               version_twelve_loader.bus().read8(0xA123) == 0x5A,
           "version 12 save states remain loadable after adding pending sprite state");
 
-    auto version_thirteen = saved;
+    auto version_thirteen = legacy_saved;
     version_thirteen.resize(version_thirteen.size() -
                             version_fourteen_sprite_deadline_size -
                             version_fifteen_sprite_render_size);
@@ -3204,7 +3227,7 @@ void test_save_state_round_trip_and_validation() {
               version_thirteen_loader.bus().read8(0xA123) == 0x5A,
           "version 13 save states remain loadable after adding per-sprite deadlines");
 
-    auto version_fourteen = saved;
+    auto version_fourteen = legacy_saved;
     version_fourteen.resize(version_fourteen.size() -
                             version_fifteen_sprite_render_size);
     version_fourteen[8] = 14;
@@ -3269,7 +3292,7 @@ void test_save_state_round_trip_and_validation() {
           "truncated save states are rejected without changing emulator state");
 
     auto future_version = saved;
-    future_version[8] = 16;
+    future_version[8] = 17;
     auto rejected_version = false;
     try {
         emulator.load_state(future_version);
@@ -3319,6 +3342,7 @@ int main() {
         test_gameshark_cheats();
         test_video_pipeline_modes();
         test_audio_frontend_helpers();
+        test_apu_cycle_integrated_resampling();
         test_cartridge_file_loading();
         test_cgb_memory_and_rendering();
         test_mbc1_rom_banking();

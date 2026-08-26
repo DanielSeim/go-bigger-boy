@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(go_bigger_boy VERSION 0.17.2 LANGUAGES CXX)
+project(go_bigger_boy VERSION 0.18.0 LANGUAGES CXX)
 
 configure_file(settings.ini settings.ini COPYONLY)
 

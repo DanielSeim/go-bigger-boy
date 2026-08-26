@@ -3,7 +3,6 @@
 #include "gameboy/hardware_model.hpp"
 
 #include <algorithm>
-#include <cmath>
 
 namespace gameboy {
 namespace {
@@ -207,11 +206,31 @@ void Apu::tick(const unsigned cycles) noexcept {
         tick_pulse(pulse2_, 0x06);
         tick_wave();
         tick_noise();
-        sample_accumulator_ += sample_rate;
-        if (sample_accumulator_ >= master_clock) {
-            sample_accumulator_ -= master_clock;
-            emit_sample();
+
+        const std::array<float, 4> outputs{
+            powered_ ? pulse_output(pulse1_, 0x01) : 0.0F,
+            powered_ ? pulse_output(pulse2_, 0x06) : 0.0F,
+            powered_ ? wave_output() : 0.0F,
+            powered_ ? noise_output() : 0.0F,
+        };
+        const auto routing = registers_[0x15];
+        auto left = 0.0F;
+        auto right = 0.0F;
+        for (std::size_t channel = 0; channel < outputs.size(); ++channel) {
+            if ((routing & (1U << channel)) != 0) right += outputs[channel];
+            if ((routing & (1U << (channel + 4))) != 0) left += outputs[channel];
         }
+        const auto volumes = registers_[0x14];
+        left *= static_cast<float>(((volumes >> 4) & 7) + 1) / 8.0F;
+        right *= static_cast<float>((volumes & 7) + 1) / 8.0F;
+        const auto dacs_enabled = any_dac_enabled();
+        if (!dacs_enabled) {
+            // Disconnected DACs cannot contribute a pending partial sample.
+            sample_integrator_left_ = 0.0F;
+            sample_integrator_right_ = 0.0F;
+        }
+        integrate_sample(high_pass(left, dacs_enabled, left_capacitor_),
+                         high_pass(right, dacs_enabled, right_capacitor_));
     }
 }
 
@@ -270,6 +289,8 @@ void Apu::power_off() noexcept {
     sweep_enabled_ = false;
     sweep_negated_ = false;
     frame_sequencer_step_ = 0;
+    sample_integrator_left_ = 0.0F;
+    sample_integrator_right_ = 0.0F;
 }
 
 void Apu::trigger_pulse1() noexcept {
@@ -460,28 +481,32 @@ void Apu::tick_noise() noexcept {
     }
 }
 
-void Apu::emit_sample() {
-    if (samples_.size() >= maximum_buffered_samples) return;
-
-    const std::array<float, 4> outputs{
-        powered_ ? pulse_output(pulse1_, 0x01) : 0.0F,
-        powered_ ? pulse_output(pulse2_, 0x06) : 0.0F,
-        powered_ ? wave_output() : 0.0F,
-        powered_ ? noise_output() : 0.0F,
-    };
-    const auto routing = registers_[0x15];
-    auto left = 0.0F;
-    auto right = 0.0F;
-    for (std::size_t channel = 0; channel < outputs.size(); ++channel) {
-        if ((routing & (1U << channel)) != 0) right += outputs[channel];
-        if ((routing & (1U << (channel + 4))) != 0) left += outputs[channel];
+void Apu::integrate_sample(const float left, const float right) noexcept {
+    const auto next_accumulator = sample_accumulator_ + sample_rate;
+    if (next_accumulator < master_clock) {
+        sample_integrator_left_ += left * static_cast<float>(sample_rate);
+        sample_integrator_right_ += right * static_cast<float>(sample_rate);
+        sample_accumulator_ = next_accumulator;
+        return;
     }
-    const auto volumes = registers_[0x14];
-    left *= static_cast<float>(((volumes >> 4) & 7) + 1) / 8.0F;
-    right *= static_cast<float>((volumes & 7) + 1) / 8.0F;
-    const auto dacs_enabled = any_dac_enabled();
-    left = high_pass(left, dacs_enabled, left_capacitor_);
-    right = high_pass(right, dacs_enabled, right_capacitor_);
+
+    // A 48 kHz sample boundary usually falls between two 4.19 MHz master
+    // clock cycles. Split the boundary cycle so both sides are weighted by
+    // their exact duration rather than selecting one instantaneous value.
+    const auto before_boundary = master_clock - sample_accumulator_;
+    sample_integrator_left_ += left * static_cast<float>(before_boundary);
+    sample_integrator_right_ += right * static_cast<float>(before_boundary);
+    emit_sample(sample_integrator_left_ / static_cast<float>(master_clock),
+                sample_integrator_right_ / static_cast<float>(master_clock));
+
+    sample_accumulator_ = next_accumulator - master_clock;
+    const auto after_boundary = sample_rate - before_boundary;
+    sample_integrator_left_ = left * static_cast<float>(after_boundary);
+    sample_integrator_right_ = right * static_cast<float>(after_boundary);
+}
+
+void Apu::emit_sample(const float left, const float right) {
+    if (samples_.size() >= maximum_buffered_samples) return;
     constexpr auto gain = 0.25F * 32767.0F;
     samples_.push_back(static_cast<std::int16_t>(
         std::clamp(left * gain, -32767.0F, 32767.0F)));
@@ -501,10 +526,10 @@ bool Apu::any_dac_enabled() const noexcept {
 float Apu::high_pass(const float input, const bool dacs_enabled,
                      float& capacitor) const noexcept {
     if (!dacs_enabled) return 0.0F;
-    static const auto dmg_charge_factor = static_cast<float>(
-        std::pow(0.999958, static_cast<double>(master_clock) / sample_rate));
-    static const auto cgb_charge_factor = static_cast<float>(
-        std::pow(0.998943, static_cast<double>(master_clock) / sample_rate));
+    // Capacitor charge is continuous at the master-clock rate. Applying the
+    // hardware coefficient once per cycle avoids the old 48 kHz staircase.
+    constexpr auto dmg_charge_factor = 0.999958F;
+    constexpr auto cgb_charge_factor = 0.998943F;
     const auto charge_factor = cgb_hardware_ ? cgb_charge_factor
                                              : dmg_charge_factor;
     const auto output = input - capacitor;

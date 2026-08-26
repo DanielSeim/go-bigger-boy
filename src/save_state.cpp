@@ -13,7 +13,7 @@ namespace {
 constexpr std::array<std::uint8_t, 8> state_magic{
     'G', 'B', 'B', 'S', 'T', 'A', 'T', 'E',
 };
-constexpr std::uint32_t state_version = 15;
+constexpr std::uint32_t state_version = 16;
 constexpr std::uint32_t oldest_supported_state_version = 1;
 constexpr std::size_t maximum_state_size = 2 * 1024 * 1024;
 constexpr std::size_t maximum_serial_output = 1024 * 1024;
@@ -398,6 +398,8 @@ private:
         writer.u64(bus.ppu_.rendered_sprite_mask_);
         write_bytes(writer, bus.ppu_.pending_sprite_deadlines_);
         write_bytes(writer, bus.ppu_.render_sprite_deadlines_);
+        writer.f32(bus.apu_.sample_integrator_left_);
+        writer.f32(bus.apu_.sample_integrator_right_);
     }
 
     static void read_bus(Reader& reader, MemoryBus& bus,
@@ -408,7 +410,7 @@ private:
         read_bytes(reader, bus.hram_);
         bus.interrupt_enable_ = reader.u8();
         read_joypad(reader, bus.joypad_);
-        read_apu(reader, bus.apu_);
+        read_apu(reader, bus.apu_, version);
         read_ppu(reader, bus.ppu_);
         read_timer(reader, bus.timer_);
         bus.serial_output_ = reader.string();
@@ -727,6 +729,10 @@ private:
             bus.ppu_.window_disable_source_x_ = 0;
             bus.ppu_.discard_first_fetch_ = false;
         }
+        if (version >= 16) {
+            bus.apu_.sample_integrator_left_ = reader.f32();
+            bus.apu_.sample_integrator_right_ = reader.f32();
+        }
         // The printer represents an external device and is deliberately not
         // embedded in emulator save states. Loading a state starts a fresh
         // printer session while preserving whether it is connected.
@@ -910,7 +916,8 @@ private:
         writer.f32(apu.right_capacitor_);
     }
 
-    static void read_apu(Reader& reader, Apu& apu) {
+    static void read_apu(Reader& reader, Apu& apu,
+                         const std::uint32_t /*version*/) {
         read_bytes(reader, apu.registers_);
         read_bytes(reader, apu.wave_ram_);
         apu.samples_.clear();
@@ -941,6 +948,8 @@ private:
         apu.sample_accumulator_ = reader.u32();
         apu.left_capacitor_ = reader.f32();
         apu.right_capacitor_ = reader.f32();
+        apu.sample_integrator_left_ = 0.0F;
+        apu.sample_integrator_right_ = 0.0F;
     }
 };
 
