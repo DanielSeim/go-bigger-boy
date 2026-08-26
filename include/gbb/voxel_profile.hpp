@@ -16,6 +16,7 @@ struct VoxelProfile {
     float perspective{0.0025F};
     float sprite_depth{10.0F};
     float lighting{1.0F};
+    bool framebuffer_facade{true};
 };
 
 VoxelProfile load_voxel_profile(const std::filesystem::path& path,

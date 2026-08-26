@@ -330,11 +330,14 @@ facade. Unsupported frontends fall back to the regular 2D presentation.
 Per-ROM depth and camera tuning can be supplied in `voxel-profiles.ini` beside
 `settings.ini`; use `[default]` and a hexadecimal ROM fingerprint section with
 `depth_scale`, `camera_pitch`, `camera_yaw`, `zoom`, `perspective`,
-`sprite_depth`, and `lighting` keys. GBB creates this file with documented
+`sprite_depth`, `lighting`, and `framebuffer_facade` keys. Set
+`framebuffer_facade=0` to inspect the fully voxelized mesh. GBB creates this file with documented
 defaults on first startup, so it can be copied alongside a portable install.
 On Windows, the Settings page exposes these fields for the currently running
-ROM and shows its fingerprint; Save profile applies the values when you return
-to the game, while Reset profile restores the defaults.
+ROM and shows its fingerprint. A live preview updates as valid values change;
+the framebuffer-facade option is a clear toggle for comparing the 2D front
+panel with the voxel mesh. Save profile applies the values when you return to
+the game, while Reset profile restores the defaults.
 
 The default action bindings are `keyboard.FastForward = Tab` (hold for 4×
 speed), `keyboard.Rewind = Left Shift` (hold to step backward through the last three

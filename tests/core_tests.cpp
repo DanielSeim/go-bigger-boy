@@ -399,10 +399,12 @@ void test_voxel_profiles() {
           "voxel profile defaults are loaded");
     profile.depth_scale = 2.25F;
     profile.camera_yaw = -12.0F;
+    profile.framebuffer_facade = false;
     check(gbb::save_voxel_profile(path, fingerprint, profile),
           "voxel profile can be saved");
     const auto loaded = gbb::load_voxel_profile(path, fingerprint);
-    check(loaded.depth_scale == 2.25F && loaded.camera_yaw == -12.0F,
+    check(loaded.depth_scale == 2.25F && loaded.camera_yaw == -12.0F &&
+              !loaded.framebuffer_facade,
           "voxel profile round-trips per-ROM values");
     auto second = gbb::VoxelProfile{};
     second.depth_scale = 3.5F;

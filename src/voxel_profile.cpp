@@ -37,6 +37,18 @@ bool parse_float(const std::string& text, float& target) {
     }
 }
 
+bool parse_bool(const std::string& text, bool& target) {
+    if (text == "1" || text == "true" || text == "yes") {
+        target = true;
+        return true;
+    }
+    if (text == "0" || text == "false" || text == "no") {
+        target = false;
+        return true;
+    }
+    return false;
+}
+
 void parse_key(VoxelProfile& profile, const std::string& key,
                const std::string& value) {
     if (key == "depth_scale") parse_float(value, profile.depth_scale);
@@ -46,6 +58,7 @@ void parse_key(VoxelProfile& profile, const std::string& key,
     else if (key == "perspective") parse_float(value, profile.perspective);
     else if (key == "sprite_depth") parse_float(value, profile.sprite_depth);
     else if (key == "lighting") parse_float(value, profile.lighting);
+    else if (key == "framebuffer_facade") parse_bool(value, profile.framebuffer_facade);
 }
 
 void clamp_profile(VoxelProfile& profile) {
@@ -129,7 +142,8 @@ bool save_voxel_profile(const std::filesystem::path& path,
             << "zoom=" << clamped.zoom << '\n'
             << "perspective=" << clamped.perspective << '\n'
             << "sprite_depth=" << clamped.sprite_depth << '\n'
-            << "lighting=" << clamped.lighting;
+            << "lighting=" << clamped.lighting << '\n'
+            << "framebuffer_facade=" << (clamped.framebuffer_facade ? 1 : 0);
     std::vector<std::string> replacement;
     std::istringstream section_input(section.str());
     std::string replacement_line;
@@ -211,7 +225,8 @@ void ensure_voxel_profile_file(const std::filesystem::path& path) {
               "zoom=1.0\n"
               "perspective=0.0025\n"
               "sprite_depth=10\n"
-              "lighting=1.0\n";
+              "lighting=1.0\n"
+              "framebuffer_facade=1\n";
 }
 
 } // namespace gbb

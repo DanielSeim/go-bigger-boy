@@ -56,7 +56,7 @@
 namespace {
 
 #ifndef GBB_VERSION
-#define GBB_VERSION "0.20.1"
+#define GBB_VERSION "0.20.2"
 #endif
 
 #ifdef __ANDROID__
@@ -5412,6 +5412,18 @@ void render_voxel_diorama(const gameboy::Emulator& emulator,
         return UINT32_C(0xFF000000) |
                ((red / 64U) << 16) | ((green / 64U) << 8) | (blue / 64U);
     };
+    struct VoxelColumn {
+        float x{};
+        float y{};
+        float width{8.0F};
+        float extent_y{8.0F};
+        float height{};
+        float sort_depth{};
+        std::uint32_t color{};
+        bool sprite{};
+    };
+    std::vector<VoxelColumn> columns;
+    columns.reserve(20 * 18);
     for (unsigned tile_y = 0; tile_y < 18; ++tile_y) {
         for (unsigned tile_x = 0; tile_x < 20; ++tile_x) {
             const auto map_x = (static_cast<unsigned>(scene.scx) / 8U + tile_x) & 31U;
@@ -5443,42 +5455,67 @@ void render_voxel_diorama(const gameboy::Emulator& emulator,
                                                 static_cast<float>(occupancy) / 24.0F));
             const auto x = static_cast<float>(tile_x * 8);
             const auto y = static_cast<float>(tile_y * 8);
-            const auto base_a = project(x, y, 0.0F);
-            const auto base_b = project(x + 8.0F, y, 0.0F);
-            const auto base_c = project(x + 8.0F, y + 8.0F, 0.0F);
-            const auto base_d = project(x, y + 8.0F, 0.0F);
-            const auto top_a = project(x, y, depth);
-            const auto top_b = project(x + 8.0F, y, depth);
-            const auto top_c = project(x + 8.0F, y + 8.0F, depth);
-            const auto top_d = project(x, y + 8.0F, depth);
-            const auto tile_color = average_tile_color(tile_x, tile_y);
-            add_quad(base_a, base_b, top_b, top_a,
-                     voxel_color(tile_color, 0.34F * profile.lighting));
-            add_quad(base_b, base_c, top_c, top_b,
-                     voxel_color(tile_color, 0.46F * profile.lighting));
-            add_quad(base_c, base_d, top_d, top_c,
-                     voxel_color(tile_color, 0.58F * profile.lighting));
-            add_quad(base_d, base_a, top_a, top_d,
-                     voxel_color(tile_color, 0.40F * profile.lighting));
-            add_quad(top_a, top_b, top_c, top_d,
-                     voxel_color(tile_color, 0.72F * profile.lighting));
+            const auto centered_y = y + 4.0F - 72.0F;
+            const auto centered_x = x + 4.0F - 80.0F;
+            const auto rotated_y = centered_x * yaw_sin + centered_y * yaw_cos;
+            columns.push_back({x, y, 8.0F, 8.0F, depth,
+                               rotated_y * pitch_sin + depth * pitch_cos,
+                               average_tile_color(tile_x, tile_y), false});
         }
     }
+    const auto sprite_height = (scene.lcdc & 0x04U) != 0 ? 16.0F : 8.0F;
     for (const auto& sprite : scene.sprites) {
         if (!sprite.visible) continue;
         const auto x = static_cast<float>(sprite.screen_x);
         const auto y = static_cast<float>(sprite.screen_y);
-        const auto color = voxel_color(
-            colored_pixels[static_cast<std::size_t>(std::clamp<int>(
-                sprite.screen_y, 0, 143)) * 160 +
-                            static_cast<std::size_t>(std::clamp<int>(
-                                sprite.screen_x, 0, 159))],
-            0.45F * profile.lighting);
-        const auto a = project(x, y, 0.0F);
-        const auto b = project(x + 8.0F, y, 0.0F);
-        const auto c = project(x + 8.0F, y + 8.0F, profile.sprite_depth);
-        const auto d = project(x, y + 8.0F, profile.sprite_depth);
-        add_quad(a, b, c, d, color);
+        const auto centered_y = y + sprite_height * 0.5F - 72.0F;
+        const auto centered_x = x + 4.0F - 80.0F;
+        const auto rotated_y = centered_x * yaw_sin + centered_y * yaw_cos;
+        const auto sample_x = std::clamp<int>(sprite.screen_x, 0, 159);
+        const auto sample_y = std::clamp<int>(sprite.screen_y, 0, 143);
+        const auto color = colored_pixels[static_cast<std::size_t>(sample_y) * 160 +
+                                          static_cast<std::size_t>(sample_x)];
+        columns.push_back({x, y, 8.0F, sprite_height, profile.sprite_depth,
+                           rotated_y * pitch_sin + profile.sprite_depth * pitch_cos,
+                           color, true});
+    }
+    // SDL geometry has no portable depth buffer. Painter ordering gives us
+    // deterministic opaque occlusion on software, OpenGL, D3D, Metal and
+    // Vulkan renderers alike: farther columns are submitted first.
+    std::stable_sort(columns.begin(), columns.end(),
+                     [](const VoxelColumn& left, const VoxelColumn& right) {
+                         return left.sort_depth > right.sort_depth;
+                     });
+    for (const auto& column : columns) {
+            const auto x = column.x;
+            const auto y = column.y;
+            const auto depth = column.height;
+            const auto width = column.width;
+            const auto extent_y = column.extent_y;
+            const auto base_a = project(x, y, 0.0F);
+            const auto base_b = project(x + width, y, 0.0F);
+            const auto base_c = project(x + width, y + extent_y, 0.0F);
+            const auto base_d = project(x, y + extent_y, 0.0F);
+            const auto top_a = project(x, y, depth);
+            const auto top_b = project(x + width, y, depth);
+            const auto top_c = project(x + width, y + extent_y, depth);
+            const auto top_d = project(x, y + extent_y, depth);
+            const auto tile_color = column.color;
+            add_quad(base_a, base_b, top_b, top_a,
+                     voxel_color(tile_color,
+                                 (column.sprite ? 0.30F : 0.34F) * profile.lighting));
+            add_quad(base_b, base_c, top_c, top_b,
+                     voxel_color(tile_color,
+                                 (column.sprite ? 0.42F : 0.46F) * profile.lighting));
+            add_quad(base_c, base_d, top_d, top_c,
+                     voxel_color(tile_color,
+                                 (column.sprite ? 0.54F : 0.58F) * profile.lighting));
+            add_quad(base_d, base_a, top_a, top_d,
+                     voxel_color(tile_color,
+                                 (column.sprite ? 0.36F : 0.40F) * profile.lighting));
+            add_quad(top_a, top_b, top_c, top_d,
+                     voxel_color(tile_color,
+                                 (column.sprite ? 0.62F : 0.72F) * profile.lighting));
     }
     if (!indices.empty() && !SDL_RenderGeometry(
                                  sdl.renderer, nullptr, vertices.data(),
@@ -5486,10 +5523,12 @@ void render_voxel_diorama(const gameboy::Emulator& emulator,
                                  static_cast<int>(indices.size()))) {
         sdl_error("Could not render voxel diorama geometry");
     }
-    if (!SDL_UpdateTexture(sdl.texture, nullptr, colored_pixels.data(),
-                           static_cast<int>(160 * sizeof(std::uint32_t))) ||
-        !SDL_RenderTexture(sdl.renderer, sdl.texture, nullptr, nullptr)) {
-        sdl_error("Could not present voxel diorama");
+    if (profile.framebuffer_facade) {
+        if (!SDL_UpdateTexture(sdl.texture, nullptr, colored_pixels.data(),
+                               static_cast<int>(160 * sizeof(std::uint32_t))) ||
+            !SDL_RenderTexture(sdl.renderer, sdl.texture, nullptr, nullptr)) {
+            sdl_error("Could not present voxel diorama facade");
+        }
     }
 }
 

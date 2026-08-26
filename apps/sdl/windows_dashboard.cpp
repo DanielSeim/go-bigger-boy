@@ -33,7 +33,7 @@ namespace gbb_desktop {
 namespace {
 
 #ifndef GBB_VERSION
-#define GBB_VERSION "0.20.1"
+#define GBB_VERSION "0.20.2"
 #endif
 
 constexpr int id_library = 100;
@@ -50,6 +50,7 @@ constexpr int id_reset_controls = 111;
 constexpr int id_shortcuts = 112;
 constexpr int id_voxel_save = 113;
 constexpr int id_voxel_reset = 114;
+constexpr int id_voxel_preview = 115;
 constexpr int id_voxel_first_edit = 120;
 constexpr int id_binding_first = 200;
 constexpr int id_action_first = 220;
@@ -136,8 +137,9 @@ struct State {
     HWND reset_controls{};
     HWND voxel_heading{};
     HWND voxel_fingerprint_label{};
-    std::array<HWND, 7> voxel_labels{};
-    std::array<HWND, 7> voxel_edits{};
+    HWND voxel_preview{};
+    std::array<HWND, 8> voxel_labels{};
+    std::array<HWND, 8> voxel_edits{};
     HWND voxel_save{};
     HWND voxel_reset{};
     HWND library_tab{};
@@ -317,9 +319,10 @@ void refresh_binding_buttons(State& state) {
     }
 }
 
-constexpr std::array<const wchar_t*, 7> voxel_profile_names{{
+constexpr std::array<const wchar_t*, 8> voxel_profile_names{{
     L"Depth scale", L"Camera pitch", L"Camera yaw", L"Zoom",
-    L"Perspective", L"Sprite depth", L"Lighting"}};
+    L"Perspective", L"Sprite depth", L"Lighting",
+    L"Framebuffer facade"}};
 
 std::wstring voxel_float_text(const float value) {
     std::wostringstream text;
@@ -349,6 +352,12 @@ bool parse_voxel_edit(const HWND edit, float& target) {
     }
 }
 
+void invalidate_voxel_preview(State& state) {
+    if (state.voxel_preview == nullptr) return;
+    InvalidateRect(state.voxel_preview, nullptr, TRUE);
+    UpdateWindow(state.voxel_preview);
+}
+
 void refresh_voxel_profile_controls(State& state) {
     if (state.voxel_fingerprint == 0) {
         SetWindowTextW(state.voxel_fingerprint_label,
@@ -356,6 +365,7 @@ void refresh_voxel_profile_controls(State& state) {
         for (const auto edit : state.voxel_edits) EnableWindow(edit, FALSE);
         EnableWindow(state.voxel_save, FALSE);
         EnableWindow(state.voxel_reset, FALSE);
+        invalidate_voxel_preview(state);
         return;
     }
     std::wostringstream fingerprint;
@@ -364,24 +374,38 @@ void refresh_voxel_profile_controls(State& state) {
     for (const auto edit : state.voxel_edits) EnableWindow(edit, TRUE);
     EnableWindow(state.voxel_save, TRUE);
     EnableWindow(state.voxel_reset, TRUE);
-    const std::array<float, 7> values{{
+    const std::array<float, 8> values{{
         state.voxel_profile.depth_scale, state.voxel_profile.camera_pitch,
         state.voxel_profile.camera_yaw, state.voxel_profile.zoom,
         state.voxel_profile.perspective, state.voxel_profile.sprite_depth,
-        state.voxel_profile.lighting}};
+        state.voxel_profile.lighting,
+        state.voxel_profile.framebuffer_facade ? 1.0F : 0.0F}};
     for (std::size_t index = 0; index < values.size(); ++index) {
-        SetWindowTextW(state.voxel_edits[index], voxel_float_text(values[index]).c_str());
+        if (index == 7) {
+            SendMessageW(state.voxel_edits[index], BM_SETCHECK,
+                         values[index] >= 0.5F ? BST_CHECKED : BST_UNCHECKED, 0);
+        } else {
+            SetWindowTextW(state.voxel_edits[index],
+                           voxel_float_text(values[index]).c_str());
+        }
     }
+    invalidate_voxel_preview(state);
 }
 
 bool read_voxel_profile_controls(State& state) {
-    std::array<float, 7> values{{
+    std::array<float, 8> values{{
         state.voxel_profile.depth_scale, state.voxel_profile.camera_pitch,
         state.voxel_profile.camera_yaw, state.voxel_profile.zoom,
         state.voxel_profile.perspective, state.voxel_profile.sprite_depth,
-        state.voxel_profile.lighting}};
+        state.voxel_profile.lighting,
+        state.voxel_profile.framebuffer_facade ? 1.0F : 0.0F}};
     for (std::size_t index = 0; index < values.size(); ++index) {
-        if (!parse_voxel_edit(state.voxel_edits[index], values[index])) return false;
+        if (index == 7) {
+            values[index] = SendMessageW(state.voxel_edits[index], BM_GETCHECK,
+                                         0, 0) == BST_CHECKED ? 1.0F : 0.0F;
+        } else if (!parse_voxel_edit(state.voxel_edits[index], values[index])) {
+            return false;
+        }
     }
     state.voxel_profile.depth_scale = values[0];
     state.voxel_profile.camera_pitch = values[1];
@@ -390,6 +414,7 @@ bool read_voxel_profile_controls(State& state) {
     state.voxel_profile.perspective = values[4];
     state.voxel_profile.sprite_depth = values[5];
     state.voxel_profile.lighting = values[6];
+    state.voxel_profile.framebuffer_facade = values[7] >= 0.5F;
     return true;
 }
 
@@ -549,6 +574,138 @@ void draw_gameboy_background(const DRAWITEMSTRUCT& item) {
     DeleteObject(canvas);
 }
 
+struct PreviewPoint {
+    int x{};
+    int y{};
+};
+
+PreviewPoint project_voxel_point(const float x, const float y, const float z,
+                                 const gbb::VoxelProfile& profile,
+                                 const int width, const int height) {
+    constexpr float pi = 3.14159265358979323846F;
+    const auto yaw = profile.camera_yaw * pi / 180.0F;
+    const auto pitch = profile.camera_pitch * pi / 180.0F;
+    const auto yaw_x = std::cos(yaw) * x - std::sin(yaw) * y;
+    const auto yaw_depth = std::sin(yaw) * x + std::cos(yaw) * y;
+    const auto vertical = std::cos(pitch) * z - std::sin(pitch) * yaw_depth;
+    const auto denominator = std::max(
+        0.2F, 1.0F + profile.perspective * yaw_depth * 28.0F);
+    const auto scale = std::clamp(profile.zoom, 0.25F, 4.0F) *
+                       static_cast<float>(std::min(width, height)) * 0.34F;
+    return PreviewPoint{
+        static_cast<int>(std::lround(static_cast<float>(width) * 0.5F +
+                                     yaw_x * scale / denominator)),
+        static_cast<int>(std::lround(static_cast<float>(height) * 0.64F -
+                                     vertical * scale / denominator))};
+}
+
+void draw_voxel_preview(const DRAWITEMSTRUCT& item, const State& state) {
+    const auto background = CreateSolidBrush(RGB(11, 18, 29));
+    FillRect(item.hDC, &item.rcItem, background);
+    DeleteObject(background);
+
+    auto profile = state.voxel_profile;
+    profile.depth_scale = std::clamp(profile.depth_scale, 0.0F, 8.0F);
+    profile.camera_pitch = std::clamp(profile.camera_pitch, -80.0F, 80.0F);
+    profile.camera_yaw = std::clamp(profile.camera_yaw, -180.0F, 180.0F);
+    profile.zoom = std::clamp(profile.zoom, 0.25F, 4.0F);
+    profile.perspective = std::clamp(profile.perspective, 0.0F, 0.02F);
+    profile.sprite_depth = std::clamp(profile.sprite_depth, 0.0F, 64.0F);
+    profile.lighting = std::clamp(profile.lighting, 0.1F, 2.0F);
+
+    const auto width = item.rcItem.right - item.rcItem.left;
+    const auto height = item.rcItem.bottom - item.rcItem.top;
+    const auto grid_pen = CreatePen(PS_SOLID, 1, RGB(49, 94, 112));
+    const auto old_pen = SelectObject(item.hDC, grid_pen);
+    const auto old_brush = SelectObject(item.hDC, GetStockObject(NULL_BRUSH));
+    for (int line = -2; line <= 2; ++line) {
+        const auto left = project_voxel_point(-1.8F, static_cast<float>(line) *
+                                                       0.55F, 0.0F,
+                                               profile, width, height);
+        const auto right = project_voxel_point(1.8F, static_cast<float>(line) *
+                                                        0.55F, 0.0F,
+                                                profile, width, height);
+        MoveToEx(item.hDC, left.x, left.y, nullptr);
+        LineTo(item.hDC, right.x, right.y);
+    }
+    for (int line = -3; line <= 3; ++line) {
+        const auto near = project_voxel_point(static_cast<float>(line) * 0.55F,
+                                              -1.35F, 0.0F, profile, width,
+                                              height);
+        const auto far = project_voxel_point(static_cast<float>(line) * 0.55F,
+                                             1.35F, 0.0F, profile, width,
+                                             height);
+        MoveToEx(item.hDC, near.x, near.y, nullptr);
+        LineTo(item.hDC, far.x, far.y);
+    }
+
+    const std::array<std::array<float, 3>, 7> cubes{{
+        {{-1.15F, 0.35F, 0.22F}}, {{-0.55F, -0.28F, 0.32F}},
+        {{0.05F, 0.20F, 0.46F}}, {{0.68F, -0.35F, 0.28F}},
+        {{1.12F, 0.34F, 0.38F}}, {{-0.18F, 0.83F, 0.22F}},
+        {{0.56F, 0.76F, 0.30F}}}};
+    const std::array<COLORREF, 7> colors{{RGB(0, 164, 205), RGB(44, 107, 153),
+                                          RGB(237, 77, 132), RGB(79, 176, 133),
+                                          RGB(245, 179, 66), RGB(137, 113, 214),
+                                          RGB(224, 94, 104)}};
+    const auto extrusion = std::max(0.05F, profile.depth_scale * 0.34F +
+                                               profile.sprite_depth * 0.004F);
+    for (std::size_t index = 0; index < cubes.size(); ++index) {
+        const auto& cube = cubes[index];
+        const auto x = cube[0];
+        const auto y = cube[1];
+        const auto z = cube[2];
+        const auto w = 0.34F;
+        const auto h = 0.30F + z;
+        const auto p0 = project_voxel_point(x - w, y - w, 0.0F, profile, width, height);
+        const auto p1 = project_voxel_point(x + w, y - w, 0.0F, profile, width, height);
+        const auto p2 = project_voxel_point(x + w, y + w, 0.0F, profile, width, height);
+        const auto t0 = project_voxel_point(x - w, y - w, h * extrusion, profile, width, height);
+        const auto t1 = project_voxel_point(x + w, y - w, h * extrusion, profile, width, height);
+        const auto t2 = project_voxel_point(x + w, y + w, h * extrusion, profile, width, height);
+        const auto t3 = project_voxel_point(x - w, y + w, h * extrusion, profile, width, height);
+        const auto fill = CreateSolidBrush(colors[index]);
+        SelectObject(item.hDC, fill);
+        const std::array<POINT, 4> side{{{{p0.x, p0.y}}, {{p1.x, p1.y}},
+                                          {{t1.x, t1.y}}, {{t0.x, t0.y}}}};
+        Polygon(item.hDC, side.data(), static_cast<int>(side.size()));
+        const std::array<POINT, 4> front{{{{p1.x, p1.y}}, {{p2.x, p2.y}},
+                                           {{t2.x, t2.y}}, {{t1.x, t1.y}}}};
+        Polygon(item.hDC, front.data(), static_cast<int>(front.size()));
+        const std::array<POINT, 4> top{{{{t0.x, t0.y}}, {{t1.x, t1.y}},
+                                         {{t2.x, t2.y}}, {{t3.x, t3.y}}}};
+        Polygon(item.hDC, top.data(), static_cast<int>(top.size()));
+        SelectObject(item.hDC, old_brush);
+        DeleteObject(fill);
+    }
+    if (profile.framebuffer_facade) {
+        const auto facade = CreateSolidBrush(RGB(35, 104, 123));
+        SelectObject(item.hDC, facade);
+        const auto left = project_voxel_point(-1.45F, -0.85F, 0.05F,
+                                              profile, width, height);
+        const auto right = project_voxel_point(1.45F, -0.85F, 0.05F,
+                                               profile, width, height);
+        const auto top = project_voxel_point(1.45F, -0.85F, 0.82F,
+                                             profile, width, height);
+        const auto far_left = project_voxel_point(-1.45F, -0.85F, 0.82F,
+                                                  profile, width, height);
+        const std::array<POINT, 4> panel{{{{left.x, left.y}}, {{right.x, right.y}},
+                                           {{top.x, top.y}}, {{far_left.x, far_left.y}}}};
+        Polygon(item.hDC, panel.data(), static_cast<int>(panel.size()));
+        SelectObject(item.hDC, old_brush);
+        DeleteObject(facade);
+    }
+    SelectObject(item.hDC, old_brush);
+    SelectObject(item.hDC, old_pen);
+    DeleteObject(grid_pen);
+    SetBkMode(item.hDC, TRANSPARENT);
+    SetTextColor(item.hDC, RGB(185, 216, 232));
+    RECT label{8, 8, width - 8, 26};
+    DrawTextW(item.hDC, profile.framebuffer_facade ? L"LIVE PREVIEW - FACADE"
+                                                   : L"LIVE PREVIEW - MESH ONLY",
+              -1, &label, DT_LEFT | DT_SINGLELINE | DT_NOPREFIX);
+}
+
 LRESULT CALLBACK table_header_subclass(
     HWND window, UINT message, WPARAM wparam, LPARAM lparam,
     UINT_PTR subclass_id, DWORD_PTR reference) {
@@ -649,6 +806,7 @@ void show_page(State& state, const State::Page page) {
     ShowWindow(state.reset_controls, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.voxel_heading, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.voxel_fingerprint_label, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.voxel_preview, settings ? SW_SHOW : SW_HIDE);
     for (const auto label : state.voxel_labels) {
         ShowWindow(label, settings ? SW_SHOW : SW_HIDE);
     }
@@ -838,6 +996,18 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
 
     if (message == WM_COMMAND) {
         const auto command = LOWORD(wparam);
+        if (command >= id_voxel_first_edit &&
+            command < id_voxel_first_edit + 8) {
+            const auto index = static_cast<std::size_t>(
+                command - id_voxel_first_edit);
+            const auto notification = HIWORD(wparam);
+            const auto editing = index == 7 ? notification == BN_CLICKED
+                                            : notification == EN_CHANGE;
+            if (editing && read_voxel_profile_controls(*state)) {
+                invalidate_voxel_preview(*state);
+            }
+            return 0;
+        }
         if (command >= id_binding_first &&
             command < id_binding_first + 16) {
             const auto binding = static_cast<std::size_t>(
@@ -946,7 +1116,9 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
         }
     } else if (message == WM_DRAWITEM) {
         const auto& item = *reinterpret_cast<const DRAWITEMSTRUCT*>(lparam);
-        if (wparam == id_gameboy_background) {
+        if (wparam == id_voxel_preview) {
+            draw_voxel_preview(item, *state);
+        } else if (wparam == id_gameboy_background) {
             draw_gameboy_background(item);
         } else {
             draw_dashboard_button(item, *state);
@@ -1378,7 +1550,10 @@ void resolve_artwork(State& state) {
 
 HWND control(State& state, const wchar_t* type, const wchar_t* text,
              DWORD style, int x, int y, int width, int height, int id) {
-    if (std::wstring_view(type) == L"BUTTON") style |= BS_OWNERDRAW;
+    if (std::wstring_view(type) == L"BUTTON" &&
+        (style & BS_AUTOCHECKBOX) == 0) {
+        style |= BS_OWNERDRAW;
+    }
     const auto extended_style = std::wstring_view(type) == L"STATIC"
                                     ? WS_EX_TRANSPARENT
                                     : 0;
@@ -1716,18 +1891,26 @@ DashboardResult show_windows_dashboard(
                  reinterpret_cast<WPARAM>(state.title_font), TRUE);
     state.voxel_fingerprint_label = control(
         state, L"STATIC", L"", 0, 360, 827, 580, 24, 0);
-    const auto profile_columns = std::array<int, 7>{{32, 32, 32, 510, 510, 510, 510}};
-    const auto profile_rows = std::array<int, 7>{{850, 890, 930, 850, 890, 930, 970}};
+    state.voxel_preview = control(
+        state, L"STATIC", L"", SS_OWNERDRAW | WS_BORDER,
+        300, 850, 180, 150, id_voxel_preview);
+    const auto profile_columns = std::array<int, 8>{{32, 32, 32, 32,
+                                                       510, 510, 510, 510}};
+    const auto profile_rows = std::array<int, 8>{{850, 890, 930, 970,
+                                                   850, 890, 930, 970}};
     for (std::size_t index = 0; index < voxel_profile_names.size(); ++index) {
         const auto x = profile_columns[index];
         const auto y = profile_rows[index];
         state.voxel_labels[index] = control(
             state, L"STATIC", voxel_profile_names[index], 0,
             x, y, 120, 24, 0);
-        state.voxel_edits[index] = control(
-            state, L"EDIT", L"", WS_BORDER | ES_AUTOHSCROLL,
-            x + 130, y - 2, 130, 28,
-            id_voxel_first_edit + static_cast<int>(index));
+        state.voxel_edits[index] = index == 7
+            ? control(state, L"BUTTON", L"Enabled", BS_AUTOCHECKBOX,
+                      x + 130, y - 2, 130, 28,
+                      id_voxel_first_edit + static_cast<int>(index))
+            : control(state, L"EDIT", L"", WS_BORDER | ES_AUTOHSCROLL,
+                      x + 130, y - 2, 130, 28,
+                      id_voxel_first_edit + static_cast<int>(index));
     }
     state.voxel_save = control(state, L"BUTTON", L"Save profile",
                                BS_PUSHBUTTON, 680, 1020, 120, 38,
