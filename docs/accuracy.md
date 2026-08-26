@@ -11,9 +11,9 @@ bundle. GitHub Actions verifies the archive checksum before running any ROM.
 | Mooneye acceptance | 75/75 | Complete acceptance directory, with model-specific boot profiles |
 | Mooneye CGB misc | 6/6 | Every CGB/CGB0 ROM applicable to emulated Game Boy Color hardware |
 | Mooneye emulator-only | 28/28 | Complete MBC1, MBC2, and MBC5 mapper directories |
-| Blargg | 14 | All 11 individual CPU instruction ROMs plus instruction and memory timing |
+| Blargg | 38 | CPU/timing baseline plus all 12 DMG and all 12 CGB sound ROMs |
 | Visual PPU | 20/20 | Acid2, Scribbltests, Mealybug, and Gambatte framebuffer comparisons |
-| Total CI gate | **143** | Every listed ROM must pass before a release can be published |
+| Total CI gate | **167** | Every listed ROM must pass before a release can be published |
 
 The acceptance figure covers every acceptance ROM in the pinned bundle. Tests with
 mutually exclusive boot-ROM expectations run under explicit DMG0, DMG/MGB,

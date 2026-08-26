@@ -83,10 +83,11 @@ Use `--protocol mooneye`, `--protocol serial`, or `--protocol blargg` to disable
 automatic protocol detection. Model-specific post-boot tests can select
 `--model dmg0`, `dmg`, `mgb`, `sgb`, `sgb2`, `cgb0`, or `cgb`.
 
-The DMG APU passes all 12 upstream Blargg `dmg_sound` tests, including active
-wave-RAM reads/writes and the original hardware's channel 3 retrigger corruption.
+The APU passes all 12 upstream Blargg `dmg_sound` tests and all 12 `cgb_sound`
+tests, including model-specific power behavior, active wave-RAM access, and the
+original DMG hardware's channel 3 retrigger corruption.
 The current headless CI accuracy gate passes all 75 Mooneye acceptance ROMs,
-all 6 applicable CGB misc ROMs, all 28 emulator-only mapper ROMs, 14 curated
+all 6 applicable CGB misc ROMs, all 28 emulator-only mapper ROMs, 38 curated
 Blargg ROMs, and 20 exact Acid2/Scribbltests/Mealybug/Gambatte framebuffer
 comparisons; see the
 [accuracy report](docs/accuracy.md) for details.
@@ -377,14 +378,23 @@ battery saves, and optional camera permission. ROMs selected through Android's
 games remain launchable after a restart; they are never uploaded. Save data is
 stored privately by ROM fingerprint.
 
-Install JDK 17, Android SDK 36, NDK r28c, CMake 3.31.6, and Gradle 8.13, then
-fetch the pinned SDL3 AAR and build a debug APK:
+Install JDK 17 and the Android SDK command-line tools, then let the repository
+install the pinned SDK 36, NDK r28c, CMake 3.31.6, and SDL3 dependencies. The
+checked-in Gradle wrapper downloads and verifies Gradle 8.13 automatically:
 
 ```sh
-./android/fetch-sdl.sh
-cd android
-gradle assembleDebug
+scripts/bootstrap-android.sh
+scripts/build-android.sh debug
 ```
+
+Do not mix Windows Java or Gradle with a WSL build. The scripts detect that
+configuration and stop with an actionable error. A release build can be made
+with `scripts/build-android.sh release` after setting
+`GBB_ANDROID_KEYSTORE_FILE`, `GBB_ANDROID_KEYSTORE_PASSWORD`, and
+`GBB_ANDROID_KEY_PASSWORD`; the PKCS12 keystore must contain the `gbb` alias.
+The wrapper can also be invoked directly from the Android directory with
+`./gradlew assembleDebug` (`gradlew.bat assembleDebug` from a native Windows
+command prompt).
 
 The debug APK is written to
 `android/app/build/outputs/apk/debug/app-debug.apk`.
@@ -427,15 +437,19 @@ Browser saves can also be imported from or exported to desktop-compatible
 and use a center-cropped 128×112 live image; when access is unavailable, they
 remain playable with the built-in fallback image.
 
-With the Emscripten SDK active and an SDL3 installation built for Emscripten:
+The repository bootstrap installs the pinned Emscripten 4.0.15 and SDL 3.4.2
+toolchains below the ignored `.cache/toolchains/` directory. Build and optionally
+serve the site with:
 
 ```sh
-emcmake cmake -S . -B build-web -DCMAKE_BUILD_TYPE=Release \
-  -DGAMEBOY_BUILD_TESTS=OFF \
-  -DSDL3_DIR=/path/to/emscripten-sdl3/lib/cmake/SDL3
-cmake --build build-web --target gameboy_web --parallel
-emrun build-web/web/index.html
+scripts/bootstrap-web.sh
+scripts/build-web.sh
+scripts/build-web.sh --serve
 ```
+
+If Emscripten and SDL3 are already installed, activate Emscripten, set
+`SDL3_DIR` to the Emscripten SDL3 CMake package, and run
+`scripts/build-web.sh`; the bootstrap step may be skipped.
 
 The `Web build and Pages` workflow repeats this build on every push to `main`
 and deploys the result to GitHub Pages. Pull requests build the WebAssembly site
@@ -473,9 +487,16 @@ warning for other users.
 
 ## Layout
 
+The project provides a system-neutral core registry so future systems such as
+Game Boy Advance can be added as separate cores. The browser and CLI already
+consume this boundary; the SDL shell migration is tracked explicitly. See the
+[multi-core architecture](docs/architecture.md) for the boundary and extension
+steps.
+
 ```text
-include/gameboy/  Public core API
-src/              Emulator implementation
+include/gbb/      System-neutral frontend/core API and registry
+include/gameboy/  GB/GBC core API
+src/              Core implementations and adapters
 apps/cli/         Headless development frontend
 apps/test_runner/ Conformance ROM runner
 apps/web/         Emscripten browser frontend

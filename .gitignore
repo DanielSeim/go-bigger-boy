@@ -14,5 +14,6 @@ __pycache__/
 /android/app/build/
 /android/app/.cxx/
 /android/app/libs/*.aar
+/android/local.properties
 /.android-signing/
 /android/app/gbb-release.p12

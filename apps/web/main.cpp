@@ -5,6 +5,9 @@
 #include "gameboy/emulator.hpp"
 #include "gameboy/display_palette.hpp"
 #include "gameboy/video_pipeline.hpp"
+#include "gbb/core_registry.hpp"
+#include "gbb/gameboy_core.hpp"
+#include "gbb/audio.hpp"
 
 #include <emscripten.h>
 #include <emscripten/bind.h>
@@ -25,13 +28,10 @@
 
 namespace {
 
-constexpr auto cpu_frequency = 4194304.0;
-constexpr auto cycles_per_frame = 70224.0;
-
-constexpr std::array<gameboy::Button, 8> button_order{
-    gameboy::Button::right, gameboy::Button::left, gameboy::Button::up,
-    gameboy::Button::down, gameboy::Button::a, gameboy::Button::b,
-    gameboy::Button::select, gameboy::Button::start,
+constexpr std::array<gbb::InputId, 8> button_order{
+    gbb::InputId::right, gbb::InputId::left, gbb::InputId::up,
+    gbb::InputId::down, gbb::InputId::a, gbb::InputId::b,
+    gbb::InputId::select, gbb::InputId::start,
 };
 
 struct WebApp {
@@ -48,8 +48,8 @@ struct WebApp {
     SDL_Texture* texture{};
     SDL_Gamepad* gamepad{};
     SDL_AudioStream* audio_stream{};
-    std::unique_ptr<gameboy::Emulator> emulator;
-    gameboy::Ppu::Framebuffer display_pixels{};
+    std::unique_ptr<gbb::EmulatorCore> emulator;
+    std::vector<std::uint32_t> display_pixels;
     std::chrono::steady_clock::time_point previous_time{
         std::chrono::steady_clock::now()};
     double cycle_credit{};
@@ -61,9 +61,13 @@ struct WebApp {
 WebApp* active_app{};
 unsigned requested_video_mode{};
 
+void set_status(const std::string& message, bool error);
+
 void apply_video_mode(WebApp& app, const unsigned mode) noexcept {
     if (mode >= gameboy::video_modes.size()) return;
     app.video_mode = gameboy::video_modes[mode].mode;
+    if (!app.emulator || !app.texture) return;
+    const auto& core = app.emulator->descriptor();
     const auto presentation = app.video_mode == gameboy::VideoMode::integer
                                   ? SDL_LOGICAL_PRESENTATION_INTEGER_SCALE
                                   : SDL_LOGICAL_PRESENTATION_LETTERBOX;
@@ -71,9 +75,36 @@ void apply_video_mode(WebApp& app, const unsigned mode) noexcept {
                                ? SDL_SCALEMODE_LINEAR
                                : SDL_SCALEMODE_NEAREST;
     static_cast<void>(SDL_SetRenderLogicalPresentation(
-        app.renderer, static_cast<int>(gameboy::Ppu::screen_width),
-        static_cast<int>(gameboy::Ppu::screen_height), presentation));
+        app.renderer, static_cast<int>(core.video_width),
+        static_cast<int>(core.video_height), presentation));
     static_cast<void>(SDL_SetTextureScaleMode(app.texture, filtering));
+}
+
+bool configure_core_io(WebApp& app) {
+    if (!app.emulator) return false;
+    const auto& core = app.emulator->descriptor();
+    if (core.video_width == 0 || core.video_height == 0 ||
+        core.audio_sample_rate == 0 || core.audio_channels == 0) {
+        set_status("The selected core reported an invalid media format.", true);
+        return false;
+    }
+    if (app.texture) SDL_DestroyTexture(app.texture);
+    app.texture = SDL_CreateTexture(
+        app.renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
+        static_cast<int>(core.video_width), static_cast<int>(core.video_height));
+    if (!app.texture) return false;
+    if (app.audio_stream) SDL_DestroyAudioStream(app.audio_stream);
+    const SDL_AudioSpec audio_spec{
+        SDL_AUDIO_S16, static_cast<int>(core.audio_channels),
+        static_cast<int>(core.audio_sample_rate)};
+    app.audio_stream = SDL_OpenAudioDeviceStream(
+        SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &audio_spec, nullptr, nullptr);
+    if (!app.audio_stream) {
+        SDL_Log("Audio output is unavailable: %s", SDL_GetError());
+    }
+    app.display_pixels.assign(core.video_width * core.video_height, 0);
+    apply_video_mode(app, requested_video_mode);
+    return true;
 }
 
 std::vector<std::uint8_t> copy_browser_bytes(const emscripten::val& bytes) {
@@ -108,36 +139,36 @@ void set_status(const std::string& message, const bool error = false) {
 
 void release_all_buttons(WebApp& app) {
     if (!app.emulator) return;
-    for (const auto button : button_order) app.emulator->set_button(button, false);
+    for (const auto button : button_order) app.emulator->set_input(button, false);
 }
 
-gameboy::Button keyboard_button(const SDL_Keycode key, bool& matched) {
+gbb::InputId keyboard_button(const SDL_Keycode key, bool& matched) {
     matched = true;
     switch (key) {
-    case SDLK_RIGHT: return gameboy::Button::right;
-    case SDLK_LEFT: return gameboy::Button::left;
-    case SDLK_UP: return gameboy::Button::up;
-    case SDLK_DOWN: return gameboy::Button::down;
-    case SDLK_X: return gameboy::Button::a;
-    case SDLK_Z: return gameboy::Button::b;
-    case SDLK_BACKSPACE: return gameboy::Button::select;
-    case SDLK_RETURN: return gameboy::Button::start;
+    case SDLK_RIGHT: return gbb::InputId::right;
+    case SDLK_LEFT: return gbb::InputId::left;
+    case SDLK_UP: return gbb::InputId::up;
+    case SDLK_DOWN: return gbb::InputId::down;
+    case SDLK_X: return gbb::InputId::a;
+    case SDLK_Z: return gbb::InputId::b;
+    case SDLK_BACKSPACE: return gbb::InputId::select;
+    case SDLK_RETURN: return gbb::InputId::start;
     default:
         matched = false;
-        return gameboy::Button::a;
+        return gbb::InputId::a;
     }
 }
 
-bool gamepad_button(const Uint8 raw, gameboy::Button& button) {
+bool gamepad_button(const Uint8 raw, gbb::InputId& button) {
     switch (static_cast<SDL_GamepadButton>(raw)) {
-    case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: button = gameboy::Button::right; break;
-    case SDL_GAMEPAD_BUTTON_DPAD_LEFT: button = gameboy::Button::left; break;
-    case SDL_GAMEPAD_BUTTON_DPAD_UP: button = gameboy::Button::up; break;
-    case SDL_GAMEPAD_BUTTON_DPAD_DOWN: button = gameboy::Button::down; break;
-    case SDL_GAMEPAD_BUTTON_SOUTH: button = gameboy::Button::a; break;
-    case SDL_GAMEPAD_BUTTON_EAST: button = gameboy::Button::b; break;
-    case SDL_GAMEPAD_BUTTON_BACK: button = gameboy::Button::select; break;
-    case SDL_GAMEPAD_BUTTON_START: button = gameboy::Button::start; break;
+    case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: button = gbb::InputId::right; break;
+    case SDL_GAMEPAD_BUTTON_DPAD_LEFT: button = gbb::InputId::left; break;
+    case SDL_GAMEPAD_BUTTON_DPAD_UP: button = gbb::InputId::up; break;
+    case SDL_GAMEPAD_BUTTON_DPAD_DOWN: button = gbb::InputId::down; break;
+    case SDL_GAMEPAD_BUTTON_SOUTH: button = gbb::InputId::a; break;
+    case SDL_GAMEPAD_BUTTON_EAST: button = gbb::InputId::b; break;
+    case SDL_GAMEPAD_BUTTON_BACK: button = gbb::InputId::select; break;
+    case SDL_GAMEPAD_BUTTON_START: button = gbb::InputId::start; break;
     default: return false;
     }
     return true;
@@ -148,8 +179,9 @@ void submit_audio(WebApp& app) {
     const auto samples = app.emulator->take_audio_samples();
     if (!app.audio_stream || samples.empty()) return;
 
-    constexpr auto maximum_queued_bytes =
-        static_cast<int>(gameboy::Apu::sample_rate * sizeof(std::int16_t));
+    const auto maximum_queued_bytes = static_cast<int>(gbb::audio_queue_bytes(
+        app.emulator->descriptor().audio_sample_rate,
+        app.emulator->descriptor().audio_channels, 200));
     if (SDL_GetAudioStreamQueued(app.audio_stream) > maximum_queued_bytes) {
         static_cast<void>(SDL_ClearAudioStream(app.audio_stream));
     }
@@ -164,9 +196,12 @@ void present(WebApp& app) {
     static_cast<void>(SDL_SetRenderDrawColor(app.renderer, 16, 20, 16, 255));
     static_cast<void>(SDL_RenderClear(app.renderer));
     if (app.emulator) {
-        const auto& pixels = app.emulator->framebuffer();
+        const auto frame = app.emulator->video_frame();
+        const auto* pixels = frame.pixels;
         const auto& palette = gameboy::display_palettes[app.display_palette];
-        const auto native_colors = app.emulator->bus().cgb_mode() ||
+        const auto* game_boy = gbb::gameboy_emulator(app.emulator.get());
+        const auto native_colors = game_boy == nullptr ||
+                                   game_boy->bus().cgb_mode() ||
                                    palette.cgb_compatibility;
         const auto color_at = [&](const std::size_t source_index) {
             return native_colors
@@ -174,17 +209,18 @@ void present(WebApp& app) {
                        : gameboy::apply_display_palette(pixels[source_index],
                                                         palette);
         };
-        for (std::size_t index = 0; index < pixels.size(); ++index) {
+        app.display_pixels.resize(frame.pixel_count);
+        for (std::size_t index = 0; index < frame.pixel_count; ++index) {
             auto pixel = color_at(index);
-            const auto x = index % gameboy::Ppu::screen_width;
-            const auto y = index / gameboy::Ppu::screen_width;
+            const auto x = index % frame.width;
+            const auto y = index / frame.width;
             if (app.video_mode == gameboy::VideoMode::sharp_smoothing) {
                 const auto left = x == 0 ? index : index - 1;
-                const auto right = x + 1 == gameboy::Ppu::screen_width
+                const auto right = x + 1 == frame.width
                                        ? index : index + 1;
-                const auto up = y == 0 ? index : index - gameboy::Ppu::screen_width;
-                const auto down = y + 1 == gameboy::Ppu::screen_height
-                                      ? index : index + gameboy::Ppu::screen_width;
+                const auto up = y == 0 ? index : index - frame.width;
+                const auto down = y + 1 == frame.height
+                                      ? index : index + frame.width;
                 pixel = gameboy::apply_sharp_smoothing(
                     pixel, color_at(left), color_at(right), color_at(up),
                     color_at(down));
@@ -195,7 +231,7 @@ void present(WebApp& app) {
         }
         static_cast<void>(SDL_UpdateTexture(
             app.texture, nullptr, app.display_pixels.data(),
-            static_cast<int>(gameboy::Ppu::screen_width * sizeof(std::uint32_t))));
+            static_cast<int>(frame.width * sizeof(std::uint32_t))));
         static_cast<void>(
             SDL_RenderTexture(app.renderer, app.texture, nullptr, nullptr));
     }
@@ -216,14 +252,22 @@ int load_rom_from_browser(emscripten::val bytes) noexcept {
     try {
         auto rom = copy_browser_bytes(bytes);
         if (rom.empty()) return 0;
-        active_app->emulator = std::make_unique<gameboy::Emulator>(
-            gameboy::Cartridge(std::move(rom)));
+        active_app->emulator = gbb::create_core(std::move(rom));
+        if (!configure_core_io(*active_app)) {
+            active_app->emulator.reset();
+            throw std::runtime_error("Could not configure the selected core");
+        }
+        auto* game_boy = gbb::gameboy_emulator(active_app->emulator.get());
         // The browser has no physical printer, but it still needs to expose
         // the Game Boy Printer protocol so camera and other printer-enabled
         // games can complete their print jobs. Completed pages are drained
         // through the JavaScript binding below.
-        active_app->emulator->bus().connect_printer();
-        active_app->emulator->set_dmg_compatibility_colors(
+        if (game_boy != nullptr &&
+            gbb::has_capability(active_app->emulator->descriptor().capabilities,
+                                gbb::CoreCapability::printer)) {
+            game_boy->bus().connect_printer();
+        }
+        active_app->emulator->set_compatibility_colors(
             gameboy::display_palettes[active_app->display_palette]
                 .cgb_compatibility);
         // Browser storage is asynchronous. Remain paused until JavaScript has
@@ -258,21 +302,26 @@ std::string browser_rom_fingerprint() {
 
 bool browser_has_battery() noexcept {
     return active_app && active_app->emulator &&
-           active_app->emulator->has_battery();
+           active_app->emulator->has_persistent_data(
+               gbb::PersistentDataKind::battery_save);
 }
 
 bool browser_has_rtc() noexcept {
-    return active_app && active_app->emulator && active_app->emulator->has_rtc();
+    return active_app && active_app->emulator &&
+           active_app->emulator->has_persistent_data(
+               gbb::PersistentDataKind::rtc);
 }
 
 bool browser_has_camera() noexcept {
     return active_app && active_app->emulator &&
-           active_app->emulator->has_camera();
+           gbb::has_capability(active_app->emulator->descriptor().capabilities,
+                               gbb::CoreCapability::camera);
 }
 
 void set_browser_camera_frame(const emscripten::val bytes) {
     if (!active_app || !active_app->emulator ||
-        !active_app->emulator->has_camera()) {
+        !gbb::has_capability(active_app->emulator->descriptor().capabilities,
+                             gbb::CoreCapability::camera)) {
         throw std::runtime_error("No Game Boy Camera ROM is loaded");
     }
     auto frame = copy_browser_bytes(bytes);
@@ -288,14 +337,16 @@ emscripten::val export_browser_save_ram() {
     if (!active_app || !active_app->emulator) {
         return emscripten::val::global("Uint8Array").new_(0);
     }
-    return browser_bytes(active_app->emulator->export_battery_ram());
+    return browser_bytes(active_app->emulator->export_persistent_data(
+        gbb::PersistentDataKind::battery_ram));
 }
 
 emscripten::val export_browser_save_data() {
     if (!active_app || !active_app->emulator) {
         return emscripten::val::global("Uint8Array").new_(0);
     }
-    return browser_bytes(active_app->emulator->export_battery_save());
+    return browser_bytes(active_app->emulator->export_persistent_data(
+        gbb::PersistentDataKind::battery_save));
 }
 
 emscripten::val export_browser_state() {
@@ -309,14 +360,16 @@ void import_browser_save_ram(const emscripten::val bytes) {
     if (!active_app || !active_app->emulator) {
         throw std::runtime_error("No ROM is loaded");
     }
-    active_app->emulator->import_battery_ram(copy_browser_bytes(bytes));
+    active_app->emulator->import_persistent_data(
+        gbb::PersistentDataKind::battery_ram, copy_browser_bytes(bytes));
 }
 
 void import_browser_save_data(const emscripten::val bytes) {
     if (!active_app || !active_app->emulator) {
         throw std::runtime_error("No ROM is loaded");
     }
-    active_app->emulator->import_battery_save(copy_browser_bytes(bytes));
+    active_app->emulator->import_persistent_data(
+        gbb::PersistentDataKind::battery_save, copy_browser_bytes(bytes));
 }
 
 void import_browser_state(const emscripten::val bytes) {
@@ -330,14 +383,17 @@ emscripten::val export_browser_rtc_data() {
     if (!active_app || !active_app->emulator) {
         return emscripten::val::global("Uint8Array").new_(0);
     }
-    return browser_bytes(active_app->emulator->export_rtc_data());
+    return browser_bytes(active_app->emulator->export_persistent_data(
+        gbb::PersistentDataKind::rtc));
 }
 
 emscripten::val take_browser_printer_images() {
     auto result = emscripten::val::array();
     if (!active_app || !active_app->emulator) return result;
 
-    for (const auto& image : active_app->emulator->bus().take_printer_images()) {
+    auto* game_boy = gbb::gameboy_emulator(active_app->emulator.get());
+    if (game_boy == nullptr) return result;
+    for (const auto& image : game_boy->bus().take_printer_images()) {
         result.call<void>("push", browser_bytes(gameboy::encode_printer_bmp(image)));
     }
     return result;
@@ -347,7 +403,8 @@ void import_browser_rtc_data(const emscripten::val bytes) {
     if (!active_app || !active_app->emulator) {
         throw std::runtime_error("No ROM is loaded");
     }
-    active_app->emulator->import_rtc_data(copy_browser_bytes(bytes));
+    active_app->emulator->import_persistent_data(
+        gbb::PersistentDataKind::rtc, copy_browser_bytes(bytes));
 }
 
 EMSCRIPTEN_BINDINGS(gbb_web_bindings) {
@@ -399,7 +456,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE void gbb_set_palette(
     if (active_app && palette < gameboy::display_palettes.size()) {
         active_app->display_palette = palette;
         if (active_app->emulator) {
-            active_app->emulator->set_dmg_compatibility_colors(
+            active_app->emulator->set_compatibility_colors(
                 gameboy::display_palettes[palette].cgb_compatibility);
         }
     }
@@ -427,31 +484,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int, char**) {
     app->renderer = SDL_CreateRenderer(app->window, nullptr);
     if (!app->renderer) return SDL_APP_FAILURE;
     static_cast<void>(SDL_SetRenderVSync(app->renderer, 1));
-    if (!SDL_SetRenderLogicalPresentation(
-            app->renderer, static_cast<int>(gameboy::Ppu::screen_width),
-            static_cast<int>(gameboy::Ppu::screen_height),
-            SDL_LOGICAL_PRESENTATION_LETTERBOX)) {
-        return SDL_APP_FAILURE;
-    }
-    app->texture = SDL_CreateTexture(
-        app->renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
-        static_cast<int>(gameboy::Ppu::screen_width),
-        static_cast<int>(gameboy::Ppu::screen_height));
-    if (!app->texture ||
-        !SDL_SetTextureScaleMode(app->texture, SDL_SCALEMODE_NEAREST)) {
-        return SDL_APP_FAILURE;
-    }
-
-    const SDL_AudioSpec audio_spec{
-        SDL_AUDIO_S16, 2, static_cast<int>(gameboy::Apu::sample_rate)};
-    app->audio_stream = SDL_OpenAudioDeviceStream(
-        SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &audio_spec, nullptr, nullptr);
-    if (!app->audio_stream) {
-        SDL_Log("Audio output is unavailable: %s", SDL_GetError());
-    }
-
     active_app = app.get();
-    apply_video_mode(*active_app, requested_video_mode);
     *appstate = app.release();
     set_status("Ready. Choose a Game Boy ROM to begin.");
     return SDL_APP_CONTINUE;
@@ -475,8 +508,8 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
         bool matched{};
         const auto button = keyboard_button(event->key.key, matched);
         if (matched && app.emulator) {
-            app.emulator->set_button(button,
-                                     event->type == SDL_EVENT_KEY_DOWN);
+            app.emulator->set_input(button,
+                                    event->type == SDL_EVENT_KEY_DOWN);
         }
         break;
     }
@@ -494,9 +527,9 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
         break;
     case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
     case SDL_EVENT_GAMEPAD_BUTTON_UP: {
-        gameboy::Button button{};
+        gbb::InputId button{};
         if (app.emulator && gamepad_button(event->gbutton.button, button)) {
-            app.emulator->set_button(
+            app.emulator->set_input(
                 button, event->type == SDL_EVENT_GAMEPAD_BUTTON_DOWN);
         }
         break;
@@ -515,10 +548,12 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     app.previous_time = now;
 
     if (app.emulator && !app.paused) {
+        const auto& core = app.emulator->descriptor();
         app.cycle_credit = std::min(
-            app.cycle_credit + elapsed * cpu_frequency, cycles_per_frame * 2.0);
+            app.cycle_credit + elapsed * core.clock_rate,
+            static_cast<double>(core.nominal_cycles_per_frame) * 2.0);
         while (app.cycle_credit >= 4.0) {
-            const auto cycles = app.emulator->step();
+            const auto cycles = app.emulator->step_instruction();
             app.cycle_credit -= static_cast<double>(cycles);
             if (app.emulator->frame_ready()) app.emulator->consume_frame();
         }

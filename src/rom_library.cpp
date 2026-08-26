@@ -1,4 +1,4 @@
-#include "gameboy/rom_library.hpp"
+#include "gbb/rom_library.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -10,7 +10,7 @@
 #include <stdexcept>
 #include <string_view>
 
-namespace gameboy {
+namespace gbb {
 namespace {
 
 constexpr std::size_t minimum_header_size = 0x150;
@@ -158,14 +158,21 @@ RomMetadata inspect_rom_file(const std::filesystem::path& path) {
 }
 
 const char* platform_name(const RomPlatform platform) noexcept {
-    return platform == RomPlatform::game_boy_color ? "Game Boy Color"
-                                                    : "Game Boy";
+    switch (platform) {
+    case RomPlatform::game_boy_color: return "Game Boy Color";
+    case RomPlatform::game_boy_advance: return "Game Boy Advance";
+    case RomPlatform::game_boy: return "Game Boy";
+    default: return "Unknown";
+    }
 }
 
 const char* cover_system_name(const RomPlatform platform) noexcept {
-    return platform == RomPlatform::game_boy_color
-               ? "Nintendo - Game Boy Color"
-               : "Nintendo - Game Boy";
+    switch (platform) {
+    case RomPlatform::game_boy_color: return "Nintendo - Game Boy Color";
+    case RomPlatform::game_boy_advance: return "Nintendo - Game Boy Advance";
+    case RomPlatform::game_boy: return "Nintendo - Game Boy";
+    default: return "";
+    }
 }
 
 RomLibrary RomLibrary::load(const std::filesystem::path& preference_directory) {
@@ -178,25 +185,33 @@ RomLibrary RomLibrary::load(const std::filesystem::path& preference_directory) {
         std::uint64_t fingerprint = 0;
         std::uint32_t crc32 = 0;
         std::int64_t last_played = 0;
-        int platform = 0;
+        std::string platform_id;
         std::string path;
         std::string title;
         std::string language;
         std::string cover;
         if (!(record >> std::hex >> fingerprint >> std::dec >> last_played >>
-              platform >> std::quoted(path) >> std::quoted(title) >>
+              platform_id >> std::quoted(path) >> std::quoted(title) >>
               std::quoted(language) >> std::quoted(cover))) {
             continue;
         }
         // CRC-32 was appended in library format 2. Missing values keep old
         // installations readable and are refreshed the next time a ROM runs.
         static_cast<void>(record >> std::hex >> crc32);
-        if (path.empty() || fingerprint == 0 || platform < 0 || platform > 1) {
+        auto platform = system_id_from_string(platform_id);
+        // Library format 1 stored the GB/GBC enum as an integer. Accept it
+        // indefinitely while format 2 writes stable string identifiers.
+        if (platform == SystemId::unknown && platform_id == "0") {
+            platform = SystemId::game_boy;
+        } else if (platform == SystemId::unknown && platform_id == "1") {
+            platform = SystemId::game_boy_color;
+        }
+        if (path.empty() || fingerprint == 0 || platform == SystemId::unknown) {
             continue;
         }
         library.remember(
             std::filesystem::u8path(path),
-            {fingerprint, crc32, std::move(title), static_cast<RomPlatform>(platform),
+            {fingerprint, crc32, std::move(title), platform,
              std::move(language), std::move(cover)},
             last_played);
     }
@@ -245,7 +260,7 @@ void RomLibrary::save(
     for (const auto& entry : entries_) {
         output << std::hex << entry.metadata.fingerprint << std::dec << ' '
                << entry.last_played << ' '
-               << static_cast<int>(entry.metadata.platform) << ' '
+               << system_id_string(entry.metadata.platform) << ' '
                << std::quoted(entry.path.u8string()) << ' '
                << std::quoted(entry.metadata.title) << ' '
                << std::quoted(entry.metadata.language) << ' '
@@ -258,4 +273,4 @@ const std::vector<RomLibraryEntry>& RomLibrary::entries() const noexcept {
     return entries_;
 }
 
-} // namespace gameboy
+} // namespace gbb

@@ -5,6 +5,9 @@
 #include "gameboy/memory_bus.hpp"
 #include "gameboy/rom_library.hpp"
 #include "gameboy/video_pipeline.hpp"
+#include "gbb/core_registry.hpp"
+#include "gbb/gameboy_core.hpp"
+#include "gbb/audio.hpp"
 
 #include <algorithm>
 #include <array>
@@ -221,6 +224,71 @@ void test_rom_library_metadata_and_deduplication() {
     std::filesystem::remove_all(directory);
 }
 
+void test_multicore_frontend_contract() {
+    const auto& registry = gbb::built_in_core_registry();
+    check(registry.factories().size() == 1 &&
+              registry.factories().front().core_id == "gb",
+          "built-in core registry exposes the GB/GBC adapter");
+
+    auto dmg_rom = test_rom({0x00});
+    const auto dmg_probe = registry.probe(dmg_rom);
+    check(dmg_probe.confidence > 0 &&
+              dmg_probe.system == gbb::SystemId::game_boy,
+          "core registry identifies Game Boy ROMs without frontend knowledge");
+    auto cgb_rom = cgb_test_rom();
+    check(registry.probe(cgb_rom).system == gbb::SystemId::game_boy_color,
+          "core registry distinguishes Game Boy Color software");
+
+    auto core = registry.create(std::move(dmg_rom));
+    const auto& descriptor = core->descriptor();
+    check(descriptor.core_id == "gb" &&
+              descriptor.system == gbb::SystemId::game_boy &&
+              descriptor.video_width == 160 && descriptor.video_height == 144 &&
+              descriptor.nominal_cycles_per_frame == 70224 &&
+              descriptor.audio_channels == 2 && descriptor.input_count == 8,
+          "generic core descriptor carries media, timing, system, and input data");
+    check(gbb::has_capability(descriptor.capabilities,
+                              gbb::CoreCapability::debugger) &&
+              gbb::gameboy_emulator(core.get()) != nullptr,
+          "optional GB development tools are capability-gated behind the adapter");
+
+    const auto state = core->save_state();
+    core->set_input(gbb::InputId::start, true);
+    static_cast<void>(core->step_instruction());
+    core->load_state(state);
+    check(core->save_state() == state,
+          "generic core state operations round trip deterministically");
+    const auto frame = core->video_frame();
+    check(frame.pixels != nullptr && frame.pixel_count == 160 * 144 &&
+              frame.pitch == 160 * sizeof(std::uint32_t),
+          "generic video frames describe their own dimensions and pitch");
+
+    bool unsupported_rejected = false;
+    try {
+        static_cast<void>(registry.create(std::vector<std::uint8_t>(32)));
+    } catch (const std::runtime_error&) {
+        unsupported_rejected = true;
+    }
+    check(unsupported_rejected,
+          "registry rejects ROMs for which no installed core claims support");
+
+    gbb::CoreRegistry extensible;
+    extensible.register_factory({
+        "test-gba", "Test GBA",
+        [](const std::vector<std::uint8_t>& bytes,
+           const gbb::CoreLoadOptions&) noexcept {
+            return gbb::CoreProbeResult{
+                bytes.size() >= 4 ? 100 : 0,
+                bytes.size() >= 4 ? gbb::SystemId::game_boy_advance
+                                  : gbb::SystemId::unknown};
+        },
+        [](std::vector<std::uint8_t>, const gbb::CoreLoadOptions&)
+            -> std::unique_ptr<gbb::EmulatorCore> { return {}; }});
+    check(extensible.probe(std::vector<std::uint8_t>(4)).system ==
+              gbb::SystemId::game_boy_advance,
+          "new systems can register a core without changing frontend code");
+}
+
 void test_gameshark_cheats() {
     const auto writes = gameboy::parse_gameshark_code("0199-00C0 + 010101C0");
     check(writes.size() == 2 && writes[0].address == 0xC000 &&
@@ -279,6 +347,16 @@ void test_video_pipeline_modes() {
     check(gameboy::apply_sharp_smoothing(source, left, right, source, source) !=
               source,
           "sharp smoothing adjusts high-contrast edges");
+}
+
+void test_audio_frontend_helpers() {
+    const std::vector<std::int16_t> stereo{
+        100, -100, 300, -300, 500, -500, 700, -700};
+    check(gbb::downsample_audio_box(stereo, 2, 2) ==
+              std::vector<std::int16_t>({200, -200, 600, -600}),
+          "fast-forward audio uses a stereo-preserving box filter");
+    check(gbb::audio_queue_bytes(48000, 2, 200) == 38400,
+          "audio queue limits convert milliseconds to interleaved PCM bytes");
 }
 
 void test_cgb_memory_and_rendering() {
@@ -955,6 +1033,29 @@ void test_apu_power_registers_and_wave_ram() {
     bus.write8(0xFF04, 0);
     check((bus.read8(0xFF26) & 0x02) == 0,
           "DMG length-counter writes survive an APU power cycle");
+
+    gameboy::MemoryBus cgb{gameboy::Cartridge{cgb_test_rom()}};
+    cgb.initialize_post_boot(gameboy::HardwareModel::cgb);
+    cgb.write8(0xFF26, 0);
+    cgb.write8(0xFF16, 0xBF); // CGB ignores length writes while powered off.
+    cgb.write8(0xFF26, 0x80);
+    cgb.write8(0xFF17, 0xF0);
+    cgb.write8(0xFF19, 0xC0);
+    cgb.tick(4096);
+    cgb.write8(0xFF04, 0);
+    check((cgb.read8(0xFF26) & 0x02) != 0,
+          "CGB power-off clears lengths and ignores powered-down length writes");
+    cgb.write8(0xFF11, 0x80);
+    cgb.write8(0xFF12, 0xF0);
+    cgb.write8(0xFF13, 0xFC);
+    cgb.write8(0xFF14, 0x87);
+    auto saw_pcm_pulse = false;
+    for (unsigned cycle = 0; cycle < 128 && !saw_pcm_pulse; ++cycle) {
+        saw_pcm_pulse = (cgb.read8(0xFF76) & 0x0F) == 0x0F;
+        cgb.tick(1);
+    }
+    check(saw_pcm_pulse && bus.read8(0xFF76) == 0xFF,
+          "CGB PCM12 exposes live channel output and remains unmapped on DMG");
 }
 
 void test_active_wave_ram_timing() {
@@ -999,6 +1100,25 @@ void test_active_wave_ram_timing() {
               corruption.read8(0xFF32) == 6 &&
               corruption.read8(0xFF33) == 7,
           "retriggering channel 3 during a fetch reproduces DMG wave corruption");
+
+    gameboy::MemoryBus cgb{gameboy::Cartridge{cgb_test_rom()}};
+    cgb.initialize_post_boot(gameboy::HardwareModel::cgb);
+    for (unsigned index = 0; index < 16; ++index) {
+        cgb.write8(static_cast<std::uint16_t>(0xFF30 + index),
+                   static_cast<std::uint8_t>(index));
+    }
+    cgb.write8(0xFF1A, 0x80);
+    cgb.write8(0xFF1D, 0xFC);
+    cgb.write8(0xFF1E, 0x87);
+    check(cgb.read8(0xFF3F) == 0,
+          "active CGB wave RAM reads are redirected to the current byte");
+    cgb.write8(0xFF3F, 0xA5);
+    cgb.tick(68);
+    cgb.write8(0xFF1E, 0x87);
+    cgb.write8(0xFF1A, 0);
+    check(cgb.read8(0xFF30) == 0xA5 && cgb.read8(0xFF31) == 1 &&
+              cgb.read8(0xFF32) == 2 && cgb.read8(0xFF33) == 3,
+          "CGB wave writes redirect while active and retriggering does not corrupt RAM");
 }
 
 void test_apu_high_pass_filter() {
@@ -1022,6 +1142,17 @@ void test_apu_high_pass_filter() {
     check(std::all_of(disconnected.begin(), disconnected.end(),
                       [](const std::int16_t sample) { return sample == 0; }),
           "disconnecting every DAC forces the mixed output to silence");
+
+    gameboy::MemoryBus cgb{gameboy::Cartridge{cgb_test_rom()}};
+    cgb.initialize_post_boot(gameboy::HardwareModel::cgb);
+    cgb.write8(0xFF24, 0x77);
+    cgb.write8(0xFF25, 0x11);
+    cgb.tick(41943);
+    const auto cgb_filtered = cgb.take_audio_samples();
+    check(!cgb_filtered.empty() &&
+              magnitude(cgb_filtered[cgb_filtered.size() - 2]) <
+                  magnitude(filtered[filtered.size() - 2]),
+          "CGB output uses its faster hardware high-pass response");
 }
 
 void test_apu_pulse2_samples_and_length() {
@@ -3184,8 +3315,10 @@ int main() {
     try {
         test_cartridge_header();
         test_rom_library_metadata_and_deduplication();
+        test_multicore_frontend_contract();
         test_gameshark_cheats();
         test_video_pipeline_modes();
+        test_audio_frontend_helpers();
         test_cartridge_file_loading();
         test_cgb_memory_and_rendering();
         test_mbc1_rom_banking();

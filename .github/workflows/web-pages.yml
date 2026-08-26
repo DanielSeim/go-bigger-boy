@@ -37,16 +37,10 @@ jobs:
           cmake-arguments: -DSDL_SHARED=OFF -DSDL_STATIC=ON
           discriminator: emscripten-4.0.15
 
-      - name: Configure
-        run: >-
-          emcmake cmake -S . -B build-web
-          -DCMAKE_BUILD_TYPE=Release
-          -DGAMEBOY_BUILD_TESTS=OFF
-          -DGAMEBOY_BUILD_SDL=ON
-          "-DSDL3_DIR=${{ steps.sdl.outputs.prefix }}/lib/cmake/SDL3"
-
       - name: Build
-        run: cmake --build build-web --target gameboy_web --parallel
+        env:
+          SDL3_DIR: ${{ steps.sdl.outputs.prefix }}/lib/cmake/SDL3
+        run: scripts/build-web.sh
 
       - name: Stage site
         shell: bash

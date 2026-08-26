@@ -22,10 +22,28 @@ add_library(gameboy_core
     src/memory_bus.cpp
     src/ppu.cpp
     src/printer.cpp
-    src/rom_library.cpp
     src/save_state.cpp
     src/timer.cpp
 )
+
+# Stable, system-neutral boundary consumed by frontends. The current GB/GBC
+# implementation is adapted behind this target; future cores can register
+# without introducing their hardware types into SDL, Android, or Web code.
+add_library(gbb_core_api
+    src/audio.cpp
+    src/core_registry.cpp
+    src/rom_library.cpp
+)
+target_include_directories(gbb_core_api PUBLIC include)
+target_compile_features(gbb_core_api PUBLIC cxx_std_17)
+target_link_libraries(gbb_core_api PUBLIC gameboy_core)
+add_library(gb_core ALIAS gameboy_core)
+
+if(MSVC)
+    target_compile_options(gbb_core_api PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(gbb_core_api PRIVATE -Wall -Wextra -Wpedantic)
+endif()
 
 target_include_directories(gameboy_core PUBLIC include)
 target_compile_features(gameboy_core PUBLIC cxx_std_17)
@@ -42,11 +60,11 @@ endif()
 
 if(NOT ANDROID)
     add_executable(gameboy_cli apps/cli/main.cpp)
-    target_link_libraries(gameboy_cli PRIVATE gameboy_core)
+    target_link_libraries(gameboy_cli PRIVATE gbb_core_api)
     set_target_properties(gameboy_cli PROPERTIES OUTPUT_NAME gbb_cli)
 
     add_executable(gameboy_test_runner apps/test_runner/main.cpp)
-    target_link_libraries(gameboy_test_runner PRIVATE gameboy_core)
+    target_link_libraries(gameboy_test_runner PRIVATE gbb_core_api)
     set_target_properties(gameboy_test_runner PROPERTIES OUTPUT_NAME gbb_test_runner)
 endif()
 
@@ -59,7 +77,7 @@ if(GAMEBOY_BUILD_SDL)
     if(SDL3_FOUND)
         if(EMSCRIPTEN)
             add_executable(gameboy_web apps/web/main.cpp)
-            target_link_libraries(gameboy_web PRIVATE gameboy_core SDL3::SDL3)
+            target_link_libraries(gameboy_web PRIVATE gbb_core_api SDL3::SDL3)
             target_compile_options(gameboy_web PRIVATE -fexceptions)
             target_link_options(gameboy_web PRIVATE
                 -fexceptions
@@ -127,7 +145,7 @@ if(GAMEBOY_BUILD_SDL)
                "$ENV{GITHUB_REF_NAME}" MATCHES "^v([0-9]+\\.[0-9]+\\.[0-9]+)$")
                 set(GAMEBOY_DESKTOP_VERSION "${CMAKE_MATCH_1}")
             endif()
-            target_link_libraries(gameboy_sdl PRIVATE gameboy_core SDL3::SDL3)
+            target_link_libraries(gameboy_sdl PRIVATE gbb_core_api SDL3::SDL3)
             target_compile_definitions(gameboy_sdl PRIVATE
                 GBB_VERSION="${GAMEBOY_DESKTOP_VERSION}"
             )
@@ -208,7 +226,7 @@ endif()
 if(GAMEBOY_BUILD_TESTS)
     enable_testing()
     add_executable(gameboy_tests tests/core_tests.cpp)
-    target_link_libraries(gameboy_tests PRIVATE gameboy_core)
+    target_link_libraries(gameboy_tests PRIVATE gbb_core_api)
     add_test(NAME gameboy_core_tests COMMAND gameboy_tests)
 
     if(GAMEBOY_TEST_ROM_DIR)

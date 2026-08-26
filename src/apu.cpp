@@ -19,6 +19,8 @@ constexpr std::array<std::array<std::uint8_t, 8>, 4> duty_patterns{{
 } // namespace
 
 void Apu::initialize_post_boot(const HardwareModel model) noexcept {
+    cgb_hardware_ = model == HardwareModel::cgb0 ||
+                    model == HardwareModel::cgb;
     power_off();
     powered_ = true;
     registers_[0x00] = 0x80; // NR10
@@ -45,7 +47,7 @@ bool Apu::handles_register(const std::uint16_t address) noexcept {
 std::uint8_t Apu::read_register(const std::uint16_t address) const noexcept {
     if (address >= 0xFF30 && address <= 0xFF3F) {
         if (!wave_.enabled) return wave_ram_[address - 0xFF30];
-        if (!wave_.wave_ram_accessible) return 0xFF;
+        if (!cgb_hardware_ && !wave_.wave_ram_accessible) return 0xFF;
         return wave_ram_[wave_.position / 2];
     }
     if (address < 0xFF10 || address > 0xFF26) return 0xFF;
@@ -86,7 +88,7 @@ void Apu::write_register(const std::uint16_t address,
     if (address >= 0xFF30 && address <= 0xFF3F) {
         if (!wave_.enabled) {
             wave_ram_[address - 0xFF30] = value;
-        } else if (wave_.wave_ram_accessible) {
+        } else if (cgb_hardware_ || wave_.wave_ram_accessible) {
             wave_ram_[wave_.position / 2] = value;
         }
         return;
@@ -103,6 +105,7 @@ void Apu::write_register(const std::uint16_t address,
         return;
     }
     if (!powered_) {
+        if (cgb_hardware_) return;
         switch (address) {
         case 0xFF11:
             pulse1_.length = static_cast<std::uint8_t>(64 - (value & 0x3F));
@@ -231,6 +234,19 @@ std::vector<std::int16_t> Apu::take_samples() {
     return output;
 }
 
+std::uint8_t Apu::pcm12() const noexcept {
+    if (!cgb_hardware_) return 0xFF;
+    return static_cast<std::uint8_t>(
+        pulse_digital(pulse1_, 0x01) |
+        (pulse_digital(pulse2_, 0x06) << 4));
+}
+
+std::uint8_t Apu::pcm34() const noexcept {
+    if (!cgb_hardware_) return 0xFF;
+    return static_cast<std::uint8_t>(wave_digital() |
+                                     (noise_digital() << 4));
+}
+
 void Apu::power_off() noexcept {
     const auto pulse1_length = pulse1_.length;
     const auto pulse2_length = pulse2_.length;
@@ -243,10 +259,12 @@ void Apu::power_off() noexcept {
     wave_ = {};
     noise_ = {};
     noise_.lfsr = 0x7FFF;
-    pulse1_.length = pulse1_length;
-    pulse2_.length = pulse2_length;
-    wave_.length = wave_length;
-    noise_.length = noise_length;
+    if (!cgb_hardware_) {
+        pulse1_.length = pulse1_length;
+        pulse2_.length = pulse2_length;
+        wave_.length = wave_length;
+        noise_.length = noise_length;
+    }
     sweep_shadow_frequency_ = 0;
     sweep_timer_ = 0;
     sweep_enabled_ = false;
@@ -293,7 +311,7 @@ void Apu::trigger_pulse2() noexcept {
 }
 
 void Apu::trigger_wave() noexcept {
-    if (wave_.enabled && wave_.timer == 0) {
+    if (!cgb_hardware_ && wave_.enabled && wave_.timer == 0) {
         const auto current_byte = static_cast<std::size_t>(
             ((wave_.position + 1) & 31) / 2);
         if (current_byte < 4) {
@@ -314,7 +332,7 @@ void Apu::trigger_wave() noexcept {
     }
     wave_.timer = wave_period() + 3;
     wave_.position = 0;
-    wave_.wave_ram_accessible = false;
+    wave_.wave_ram_accessible = cgb_hardware_;
 }
 
 void Apu::trigger_noise() noexcept {
@@ -481,10 +499,14 @@ bool Apu::any_dac_enabled() const noexcept {
 }
 
 float Apu::high_pass(const float input, const bool dacs_enabled,
-                     float& capacitor) noexcept {
+                     float& capacitor) const noexcept {
     if (!dacs_enabled) return 0.0F;
-    static const auto charge_factor = static_cast<float>(
+    static const auto dmg_charge_factor = static_cast<float>(
         std::pow(0.999958, static_cast<double>(master_clock) / sample_rate));
+    static const auto cgb_charge_factor = static_cast<float>(
+        std::pow(0.998943, static_cast<double>(master_clock) / sample_rate));
+    const auto charge_factor = cgb_hardware_ ? cgb_charge_factor
+                                             : dmg_charge_factor;
     const auto output = input - capacitor;
     capacitor = input - output * charge_factor;
     return output;
@@ -523,27 +545,40 @@ unsigned Apu::calculate_sweep_frequency() noexcept {
 float Apu::pulse_output(const PulseState& pulse,
                         const unsigned register_offset) const noexcept {
     if (!pulse.dac_enabled) return 0.0F;
+    const auto digital = pulse_digital(pulse, register_offset);
+    return 1.0F - static_cast<float>(digital) * (2.0F / 15.0F);
+}
+
+unsigned Apu::pulse_digital(const PulseState& pulse,
+                            const unsigned register_offset) const noexcept {
     const auto duty = static_cast<std::size_t>(registers_[register_offset] >> 6);
     const auto high = duty_patterns[duty][pulse.duty_step] != 0;
-    const auto digital = pulse.enabled && high ? pulse.envelope.volume : 0;
-    return 1.0F - static_cast<float>(digital) * (2.0F / 15.0F);
+    return pulse.enabled && pulse.dac_enabled && high ? pulse.envelope.volume : 0;
 }
 
 float Apu::wave_output() const noexcept {
     if (!wave_.dac_enabled) return 0.0F;
-    const auto level = static_cast<unsigned>((registers_[0x0C] >> 5) & 3);
-    const auto digital = !wave_.enabled || level == 0
-                             ? 0U
-                             : static_cast<unsigned>(wave_.sample) >> (level - 1);
+    const auto digital = wave_digital();
     return 1.0F - static_cast<float>(digital) * (2.0F / 15.0F);
+}
+
+unsigned Apu::wave_digital() const noexcept {
+    const auto level = static_cast<unsigned>((registers_[0x0C] >> 5) & 3);
+    return !wave_.enabled || !wave_.dac_enabled || level == 0
+               ? 0U
+               : static_cast<unsigned>(wave_.sample) >> (level - 1);
 }
 
 float Apu::noise_output() const noexcept {
     if (!noise_.dac_enabled) return 0.0F;
-    const auto digital = noise_.enabled && (noise_.lfsr & 1) == 0
-                             ? noise_.envelope.volume
-                             : 0;
+    const auto digital = noise_digital();
     return 1.0F - static_cast<float>(digital) * (2.0F / 15.0F);
+}
+
+unsigned Apu::noise_digital() const noexcept {
+    return noise_.enabled && noise_.dac_enabled && (noise_.lfsr & 1) == 0
+               ? noise_.envelope.volume
+               : 0;
 }
 
 } // namespace gameboy

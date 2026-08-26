@@ -24,8 +24,6 @@ jobs:
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v5
-        with:
-          gradle-version: "8.13"
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
@@ -43,8 +41,7 @@ jobs:
 
       - name: Build debug APK
         if: github.event_name == 'pull_request'
-        working-directory: android
-        run: gradle --no-daemon assembleDebug
+        run: scripts/build-android.sh debug
 
       - name: Restore release signing key
         if: github.event_name != 'pull_request'
@@ -62,12 +59,11 @@ jobs:
 
       - name: Build signed release APK and bundle
         if: github.event_name != 'pull_request'
-        working-directory: android
         env:
           GBB_ANDROID_KEYSTORE_FILE: ${{ github.workspace }}/android/app/gbb-release.p12
           GBB_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.GBB_ANDROID_KEYSTORE_PASSWORD }}
           GBB_ANDROID_KEY_PASSWORD: ${{ secrets.GBB_ANDROID_KEY_PASSWORD }}
-        run: gradle --no-daemon assembleRelease bundleRelease
+        run: scripts/build-android.sh release
 
       - name: Stage signed release packages
         if: github.event_name != 'pull_request'

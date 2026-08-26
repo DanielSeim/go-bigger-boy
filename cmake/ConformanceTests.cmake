@@ -233,6 +233,49 @@ foreach(relative_path IN LISTS gbb_blargg_tests)
         blargg "blargg/${relative_path}" auto 100000000)
 endforeach()
 
+# CPU-visible APU behavior differs between DMG and CGB hardware. Keep every
+# individual sound ROM in the gate so a failure names the exact subsystem
+# instead of reporting only the aggregate suite result.
+set(gbb_dmg_sound_tests
+    "01-registers.gb"
+    "02-len ctr.gb"
+    "03-trigger.gb"
+    "04-sweep.gb"
+    "05-sweep details.gb"
+    "06-overflow on trigger.gb"
+    "07-len sweep period sync.gb"
+    "08-len ctr during power.gb"
+    "09-wave read while on.gb"
+    "10-wave trigger while on.gb"
+    "11-regs after power.gb"
+    "12-wave write while on.gb"
+)
+foreach(relative_path IN LISTS gbb_dmg_sound_tests)
+    gbb_add_conformance_test(
+        blargg-sound-dmg "blargg/dmg_sound/rom_singles/${relative_path}"
+        blargg 200000000 dmg)
+endforeach()
+
+set(gbb_cgb_sound_tests
+    "01-registers.gb"
+    "02-len ctr.gb"
+    "03-trigger.gb"
+    "04-sweep.gb"
+    "05-sweep details.gb"
+    "06-overflow on trigger.gb"
+    "07-len sweep period sync.gb"
+    "08-len ctr during power.gb"
+    "09-wave read while on.gb"
+    "10-wave trigger while on.gb"
+    "11-regs after power.gb"
+    "12-wave.gb"
+)
+foreach(relative_path IN LISTS gbb_cgb_sound_tests)
+    gbb_add_conformance_test(
+        blargg-sound-cgb "blargg/cgb_sound/rom_singles/${relative_path}"
+        blargg 200000000 cgb)
+endforeach()
+
 # Exact framebuffer comparisons against the reference images distributed with
 # the pinned ROM bundle. Captures and magenta difference images are retained in
 # the build tree when a comparison fails.

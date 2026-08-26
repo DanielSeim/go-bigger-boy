@@ -1,51 +1,16 @@
 #pragma once
 
-#include <cstddef>
-#include <cstdint>
-#include <filesystem>
-#include <string>
-#include <vector>
+#include "gbb/rom_library.hpp"
 
+// Source compatibility for the existing Game Boy core and third-party users.
+// New application code should use the system-neutral gbb namespace.
 namespace gameboy {
-
-enum class RomPlatform { game_boy, game_boy_color };
-
-struct RomMetadata {
-    std::uint64_t fingerprint{};
-    std::uint32_t crc32{};
-    std::string title;
-    RomPlatform platform{RomPlatform::game_boy};
-    std::string language;
-    std::string cover_name;
-};
-
-struct RomLibraryEntry {
-    std::filesystem::path path;
-    RomMetadata metadata;
-    std::int64_t last_played{};
-};
-
-[[nodiscard]] RomMetadata inspect_rom(
-    const std::vector<std::uint8_t>& bytes,
-    const std::filesystem::path& source_name = {});
-[[nodiscard]] RomMetadata inspect_rom_file(const std::filesystem::path& path);
-[[nodiscard]] const char* platform_name(RomPlatform platform) noexcept;
-[[nodiscard]] const char* cover_system_name(RomPlatform platform) noexcept;
-
-class RomLibrary {
-public:
-    static constexpr std::size_t maximum_entries = 12;
-
-    static RomLibrary load(const std::filesystem::path& preference_directory);
-    void remember(const std::filesystem::path& path, RomMetadata metadata,
-                  std::int64_t last_played = 0);
-    bool remove(std::uint64_t fingerprint);
-    void save(const std::filesystem::path& preference_directory) const;
-
-    [[nodiscard]] const std::vector<RomLibraryEntry>& entries() const noexcept;
-
-private:
-    std::vector<RomLibraryEntry> entries_;
-};
-
+using RomPlatform = gbb::RomPlatform;
+using RomMetadata = gbb::RomMetadata;
+using RomLibraryEntry = gbb::RomLibraryEntry;
+using RomLibrary = gbb::RomLibrary;
+using gbb::cover_system_name;
+using gbb::inspect_rom;
+using gbb::inspect_rom_file;
+using gbb::platform_name;
 } // namespace gameboy

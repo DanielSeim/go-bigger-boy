@@ -8,8 +8,10 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <iterator>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -192,8 +194,20 @@ std::string blargg_output(const gameboy::MemoryBus& bus) {
 int main(int argc, char** argv) {
     try {
         const auto options = parse_options(argc, argv);
-        auto emulator = gameboy::Emulator::from_file(options.rom_path,
-                                                      options.model);
+        std::ifstream input(options.rom_path, std::ios::binary);
+        if (!input) {
+            throw std::runtime_error("could not open ROM: " + options.rom_path);
+        }
+        std::vector<std::uint8_t> rom{
+            std::istreambuf_iterator<char>{input}, {}};
+        if (input.bad()) {
+            throw std::runtime_error("could not read ROM: " + options.rom_path);
+        }
+        // Conformance runs must never load or create battery files beside the
+        // fixtures: prior results would otherwise make a later run appear to
+        // pass without executing the test.
+        auto emulator = gameboy::Emulator{
+            gameboy::Cartridge{std::move(rom)}, options.model};
         emulator.set_dmg_compatibility_colors(options.dmg_compatibility_colors);
         std::string serial_output;
         std::string memory_output;

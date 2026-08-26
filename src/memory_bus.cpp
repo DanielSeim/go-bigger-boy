@@ -114,8 +114,8 @@ std::uint8_t MemoryBus::read8(const std::uint16_t address) const noexcept {
         return cgb_hardware_
                    ? static_cast<std::uint8_t>(0x8F | (io_[0x75] & 0x70))
                    : 0xFF;
-    case 0xFF76:
-    case 0xFF77: return cgb_hardware_ ? 0x00 : 0xFF;
+    case 0xFF76: return apu_.pcm12();
+    case 0xFF77: return apu_.pcm34();
     default: break;
     }
     if (Apu::handles_register(address)) {

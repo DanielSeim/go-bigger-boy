@@ -22,6 +22,8 @@ public:
     void tick(unsigned cycles) noexcept;
     void clock_frame_sequencer() noexcept;
     [[nodiscard]] std::vector<std::int16_t> take_samples();
+    [[nodiscard]] std::uint8_t pcm12() const noexcept;
+    [[nodiscard]] std::uint8_t pcm34() const noexcept;
 
 private:
     friend class SaveStateCodec;
@@ -82,8 +84,8 @@ private:
     void emit_sample();
     [[nodiscard]] bool next_step_skips_length() const noexcept;
     [[nodiscard]] bool any_dac_enabled() const noexcept;
-    static float high_pass(float input, bool dacs_enabled,
-                           float& capacitor) noexcept;
+    float high_pass(float input, bool dacs_enabled,
+                    float& capacitor) const noexcept;
     [[nodiscard]] unsigned pulse_period(unsigned register_offset) const noexcept;
     [[nodiscard]] unsigned wave_period() const noexcept;
     [[nodiscard]] unsigned noise_period() const noexcept;
@@ -92,10 +94,15 @@ private:
                                      unsigned register_offset) const noexcept;
     [[nodiscard]] float wave_output() const noexcept;
     [[nodiscard]] float noise_output() const noexcept;
+    [[nodiscard]] unsigned pulse_digital(const PulseState& pulse,
+                                         unsigned register_offset) const noexcept;
+    [[nodiscard]] unsigned wave_digital() const noexcept;
+    [[nodiscard]] unsigned noise_digital() const noexcept;
 
     std::array<std::uint8_t, 0x17> registers_{};
     std::array<std::uint8_t, 0x10> wave_ram_{};
     std::vector<std::int16_t> samples_{};
+    bool cgb_hardware_{};
     bool powered_{};
     PulseState pulse1_{};
     PulseState pulse2_{};

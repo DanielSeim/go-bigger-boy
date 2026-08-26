@@ -3,6 +3,7 @@
 #include "gameboy/gameshark.hpp"
 #include "gameboy/rom_library.hpp"
 #include "gameboy/video_pipeline.hpp"
+#include "gbb/audio.hpp"
 #ifndef __ANDROID__
 #include "update_checker.hpp"
 #endif
@@ -5425,23 +5426,19 @@ void submit_audio(gameboy::Emulator* emulator, SdlResources& sdl,
     if (emulator == nullptr) return;
     auto samples = emulator->take_audio_samples();
     if (fast_forward && !samples.empty()) {
-        // The emulator produces four times as many samples while fast-forward
-        // is held. Keep every fourth stereo frame so audio stays responsive
-        // and plays at the accelerated rate instead of building an ever
-        // growing queue or going silent.
-        std::vector<std::int16_t> accelerated;
-        accelerated.reserve((samples.size() + fast_forward_factor * 2 - 1) /
-                            (fast_forward_factor * 2) * 2);
-        const auto stride = static_cast<std::size_t>(fast_forward_factor) * 2;
-        for (std::size_t index = 0; index + 1 < samples.size();
-             index += stride) {
-            accelerated.push_back(samples[index]);
-            accelerated.push_back(samples[index + 1]);
-        }
-        samples = std::move(accelerated);
+        samples = gbb::downsample_audio_box(samples, 2, fast_forward_factor);
     }
-    if (sdl.audio_stream != nullptr && !samples.empty() &&
-        !SDL_PutAudioStreamData(
+    if (sdl.audio_stream == nullptr || samples.empty()) return;
+    constexpr auto maximum_queued_bytes =
+        gbb::audio_queue_bytes(gameboy::Apu::sample_rate, 2, 200);
+    if (SDL_GetAudioStreamQueued(sdl.audio_stream) >
+        static_cast<int>(maximum_queued_bytes)) {
+        // A debugger pause, window drag, or suspended mobile activity can leave
+        // stale audio behind. Recover latency rather than playing it seconds
+        // after the corresponding frame.
+        static_cast<void>(SDL_ClearAudioStream(sdl.audio_stream));
+    }
+    if (!SDL_PutAudioStreamData(
             sdl.audio_stream, samples.data(),
             static_cast<int>(samples.size() * sizeof(samples.front())))) {
         sdl_error("Could not queue audio samples");
