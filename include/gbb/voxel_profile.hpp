@@ -10,13 +10,15 @@ namespace gbb {
 // by a ROM fingerprint by the frontend.
 struct VoxelProfile {
     float depth_scale{1.0F};
-    float camera_pitch{28.0F};
-    float camera_yaw{32.0F};
-    float zoom{1.0F};
-    float perspective{0.0025F};
-    float sprite_depth{10.0F};
+    float camera_pitch{24.0F};
+    float camera_yaw{0.0F};
+    float zoom{0.72F};
+    float perspective{0.0015F};
+    float sprite_depth{8.0F};
     float lighting{1.0F};
-    bool framebuffer_facade{true};
+    // Keep the voxel mesh visible by default. The original framebuffer can
+    // be enabled explicitly when a front-facing reference image is desired.
+    bool framebuffer_facade{false};
 };
 
 VoxelProfile load_voxel_profile(const std::filesystem::path& path,

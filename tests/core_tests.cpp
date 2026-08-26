@@ -395,7 +395,10 @@ void test_voxel_profiles() {
     gbb::ensure_voxel_profile_file(path);
     const auto fingerprint = UINT64_C(0x1234ABCD);
     auto profile = gbb::load_voxel_profile(path, fingerprint);
-    check(profile.depth_scale == 1.0F && profile.camera_pitch == 28.0F,
+    check(profile.depth_scale == 1.0F && profile.camera_pitch == 24.0F &&
+              profile.camera_yaw == 0.0F && profile.zoom == 0.72F &&
+              profile.perspective == 0.0015F && profile.sprite_depth == 8.0F &&
+              !profile.framebuffer_facade,
           "voxel profile defaults are loaded");
     profile.depth_scale = 2.25F;
     profile.camera_yaw = -12.0F;

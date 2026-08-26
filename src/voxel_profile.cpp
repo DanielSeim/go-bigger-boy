@@ -220,13 +220,13 @@ void ensure_voxel_profile_file(const std::filesystem::path& path) {
               "; Add a [0xROM_FINGERPRINT] section to override [default].\n"
               "[default]\n"
               "depth_scale=1.0\n"
-              "camera_pitch=28\n"
-              "camera_yaw=32\n"
-              "zoom=1.0\n"
-              "perspective=0.0025\n"
-              "sprite_depth=10\n"
+              "camera_pitch=24\n"
+              "camera_yaw=0\n"
+              "zoom=0.72\n"
+              "perspective=0.0015\n"
+              "sprite_depth=8\n"
               "lighting=1.0\n"
-              "framebuffer_facade=1\n";
+              "framebuffer_facade=0\n";
 }
 
 } // namespace gbb

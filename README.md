@@ -331,7 +331,9 @@ Per-ROM depth and camera tuning can be supplied in `voxel-profiles.ini` beside
 `settings.ini`; use `[default]` and a hexadecimal ROM fingerprint section with
 `depth_scale`, `camera_pitch`, `camera_yaw`, `zoom`, `perspective`,
 `sprite_depth`, `lighting`, and `framebuffer_facade` keys. Set
-`framebuffer_facade=0` to inspect the fully voxelized mesh. GBB creates this file with documented
+`framebuffer_facade=0` to inspect the fully voxelized mesh (the default); set it to `1` to draw the
+normal framebuffer as a front-facing reference facade. The default mesh camera is centered and
+slightly zoomed out so the scene remains inside the viewport. GBB creates this file with documented
 defaults on first startup, so it can be copied alongside a portable install.
 On Windows, the Settings page exposes these fields for the currently running
 ROM and shows its fingerprint. A live preview updates as valid values change;
