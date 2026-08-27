@@ -32,7 +32,7 @@ inline constexpr std::array<VideoModeInfo, 6> video_modes{{
     {VideoMode::integer, "integer", "Integer scaling"},
     {VideoMode::lcd_shader, "lcd", "LCD shader"},
     {VideoMode::sharp_smoothing, "sharp", "Sharp smoothing"},
-    {VideoMode::voxel_diorama, "voxel", "Voxel diorama (desktop prototype)"},
+    {VideoMode::voxel_diorama, "voxel", "Voxel diorama"},
 }};
 
 inline constexpr VideoMode default_video_mode = VideoMode::nearest;

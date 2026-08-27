@@ -323,13 +323,16 @@ adds edge-aware smoothing without blanket blur, `integer` uses only whole-number
 scale factors, and `lcd` applies a lightweight LCD mask with scanlines. The
 setting is stored as `video.Mode` in
 `settings.ini`; the web selector remembers its choice in browser storage.
-Desktop builds also expose the experimental `voxel` mode. It submits a
+Desktop and web builds also expose the experimental `voxel` mode. It submits a
 perspective 3D pixel-relief mesh through SDL's active GPU renderer. The
 visible framebuffer is sampled in small pixel-art cells so sprites, text, and
 silhouettes remain recognizable, while detected sprites receive additional
 depth. The authoritative framebuffer can still be retained as a front-facing
 facade for comparison. Unsupported frontends fall back to the regular 2D
 presentation.
+In the web build, drag the voxel canvas horizontally to orbit around the
+center axis and vertically to adjust the pitch. Angles are clamped to keep the
+scene readable; double-click (or double-tap where supported) resets the camera.
 Per-ROM depth and camera tuning can be supplied in `voxel-profiles.ini` beside
 `settings.ini`; use `[default]` and a hexadecimal ROM fingerprint section with
 `depth_scale`, `camera_pitch`, `camera_yaw`, `zoom`, `perspective`,

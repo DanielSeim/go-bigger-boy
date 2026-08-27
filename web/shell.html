@@ -24,7 +24,7 @@
     select:focus-visible { outline: 3px solid #8bcf69; outline-offset: 1px; }
     select:disabled { cursor: wait; opacity: .55; }
     .screen { margin-top: 22px; padding: 14px; border: 1px solid #34493a; border-radius: 14px; background: #111a15; box-shadow: 0 18px 60px #0008; }
-    canvas { display: block; width: 100%; aspect-ratio: 10 / 9; background: #101410; image-rendering: pixelated; outline: none; }
+    canvas { display: block; width: 100%; aspect-ratio: 10 / 9; background: #101410; image-rendering: pixelated; outline: none; touch-action: none; }
     canvas:focus-visible { box-shadow: 0 0 0 3px #8bcf69; }
     #status { min-height: 1.5em; margin: 12px 2px 0; color: #b8c8bb; }
     #status.error { color: #ff9d96; }
@@ -67,7 +67,7 @@
             <option value="2">Integer scaling</option>
             <option value="3">LCD shader</option>
             <option value="4">Sharp smoothing</option>
-            <option value="5">Voxel diorama (desktop prototype)</option>
+            <option value="5">Voxel diorama (WebGL)</option>
           </select>
         </label>
         <button id="open-rom" type="button" disabled>Choose ROM</button>
@@ -120,6 +120,9 @@
     let printerTimer = null;
     let printSequence = 0;
     let pendingCameraRestore = null;
+    let voxelPointerId = null;
+    let voxelLastX = 0;
+    let voxelLastY = 0;
 
     function stopCamera() {
       if (cameraTimer !== null) clearInterval(cameraTimer);
@@ -756,9 +759,45 @@
       Module._gbb_resume_audio();
       picker.click();
     });
-    canvas.addEventListener('pointerdown', () => {
+    canvas.addEventListener('pointerdown', (event) => {
       Module._gbb_resume_audio();
       canvas.focus();
+      if (Number(videoPicker.value) !== 5 || !Module._gbb_set_voxel_camera) {
+        return;
+      }
+      voxelPointerId = event.pointerId;
+      voxelLastX = event.clientX;
+      voxelLastY = event.clientY;
+      canvas.setPointerCapture(event.pointerId);
+      event.preventDefault();
+    });
+    canvas.addEventListener('pointermove', (event) => {
+      if (voxelPointerId !== event.pointerId ||
+          !Module._gbb_set_voxel_camera) return;
+      // Horizontal drags orbit around the center Y axis; vertical drags tilt
+      // the viewport. The native function clamps both angles.
+      const deltaX = event.clientX - voxelLastX;
+      const deltaY = event.clientY - voxelLastY;
+      voxelLastX = event.clientX;
+      voxelLastY = event.clientY;
+      Module._gbb_set_voxel_camera(
+        deltaX * 0.35, -deltaY * 0.35);
+      event.preventDefault();
+    });
+    const finishVoxelDrag = (event) => {
+      if (voxelPointerId !== event.pointerId) return;
+      if (canvas.hasPointerCapture(event.pointerId)) {
+        canvas.releasePointerCapture(event.pointerId);
+      }
+      voxelPointerId = null;
+    };
+    canvas.addEventListener('pointerup', finishVoxelDrag);
+    canvas.addEventListener('pointercancel', finishVoxelDrag);
+    canvas.addEventListener('dblclick', (event) => {
+      if (Number(videoPicker.value) !== 5 ||
+          !Module._gbb_reset_voxel_camera) return;
+      Module._gbb_reset_voxel_camera();
+      event.preventDefault();
     });
     canvas.addEventListener('keydown', () => {
       // Do not replace a new user action with the saved startup snapshot.

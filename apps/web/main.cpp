@@ -18,6 +18,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <cmath>
 #include <exception>
 #include <iomanip>
 #include <memory>
@@ -50,6 +51,10 @@ struct WebApp {
     SDL_AudioStream* audio_stream{};
     std::unique_ptr<gbb::EmulatorCore> emulator;
     std::vector<std::uint32_t> display_pixels;
+    std::vector<SDL_Vertex> voxel_vertices;
+    std::vector<int> voxel_indices;
+    float voxel_camera_pitch_offset{};
+    float voxel_camera_yaw_offset{};
     std::chrono::steady_clock::time_point previous_time{
         std::chrono::steady_clock::now()};
     double cycle_credit{};
@@ -78,6 +83,145 @@ void apply_video_mode(WebApp& app, const unsigned mode) noexcept {
         app.renderer, static_cast<int>(core.video_width),
         static_cast<int>(core.video_height), presentation));
     static_cast<void>(SDL_SetTextureScaleMode(app.texture, filtering));
+}
+
+SDL_FColor voxel_color(const std::uint32_t pixel, const float shade) {
+    const auto component = [pixel, shade](const unsigned shift) {
+        const auto value = static_cast<float>((pixel >> shift) & 0xFFU) / 255.0F;
+        return std::clamp(value * shade + 0.02F, 0.0F, 1.0F);
+    };
+    return {component(16), component(8), component(0), 1.0F};
+}
+
+void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels) {
+    constexpr unsigned cell_size = 2;
+    constexpr unsigned cells_x = 160 / cell_size;
+    constexpr unsigned cells_y = 144 / cell_size;
+    constexpr float base_depth = -5.0F;
+    constexpr float zoom = 0.78F;
+    constexpr float perspective = 0.0012F;
+    const auto yaw = (-18.0F + app.voxel_camera_yaw_offset) *
+                     0.01745329251994329577F;
+    const auto pitch = (27.0F + app.voxel_camera_pitch_offset) *
+                       0.01745329251994329577F;
+    const auto yaw_cos = std::cos(yaw);
+    const auto yaw_sin = std::sin(yaw);
+    const auto pitch_cos = std::cos(pitch);
+    const auto pitch_sin = std::sin(pitch);
+    const auto luminance = [](const std::uint32_t pixel) {
+        return (0.2126F * static_cast<float>((pixel >> 16) & 0xFFU) +
+                0.7152F * static_cast<float>((pixel >> 8) & 0xFFU) +
+                0.0722F * static_cast<float>(pixel & 0xFFU)) / 255.0F;
+    };
+    const auto pixel_at = [&](const int x, const int y) {
+        const auto clamped_x = std::clamp(x, 0, 159);
+        const auto clamped_y = std::clamp(y, 0, 143);
+        return pixels[static_cast<std::size_t>(clamped_y) * 160U +
+                      static_cast<std::size_t>(clamped_x)];
+    };
+    const auto project = [&](const float x, const float y, const float z) {
+        const auto centered_x = x - 80.0F;
+        const auto centered_y = y - 72.0F;
+        // Rotate the framebuffer around its vertical center axis, then pitch
+        // it toward the viewer. This is the same camera convention as the
+        // desktop diorama, expressed in the browser's logical coordinates.
+        const auto yaw_x = centered_x * yaw_cos - z * yaw_sin;
+        const auto yaw_depth = centered_x * yaw_sin + z * yaw_cos;
+        const auto pitched_y = centered_y * pitch_cos - yaw_depth * pitch_sin;
+        const auto depth = centered_y * pitch_sin + yaw_depth * pitch_cos;
+        const auto scale = 1.0F / std::max(0.35F, 1.0F + depth * perspective);
+        return SDL_FPoint{80.0F + yaw_x * zoom * scale,
+                          72.0F + pitched_y * zoom * scale};
+    };
+    auto& vertices = app.voxel_vertices;
+    auto& indices = app.voxel_indices;
+    vertices.clear();
+    indices.clear();
+    vertices.reserve(cells_x * cells_y * 20U);
+    indices.reserve(cells_x * cells_y * 30U);
+    const auto add_quad = [&](const SDL_FPoint a, const SDL_FPoint b,
+                              const SDL_FPoint c, const SDL_FPoint d,
+                              const SDL_FColor color) {
+        const auto base = static_cast<int>(vertices.size());
+        vertices.push_back({a, color, {0.0F, 0.0F}});
+        vertices.push_back({b, color, {0.0F, 0.0F}});
+        vertices.push_back({c, color, {0.0F, 0.0F}});
+        vertices.push_back({d, color, {0.0F, 0.0F}});
+        indices.insert(indices.end(), {base, base + 1, base + 2,
+                                       base, base + 2, base + 3});
+    };
+    std::array<float, cells_x * cells_y> heights{};
+    for (unsigned row = 0; row < cells_y; ++row) {
+        for (unsigned column = 0; column < cells_x; ++column) {
+            const auto x = static_cast<int>(column * cell_size);
+            const auto y = static_cast<int>(row * cell_size);
+            const auto pixel = pixel_at(x, y);
+            const auto center_luma = luminance(pixel);
+            auto minimum = center_luma;
+            auto maximum = center_luma;
+            for (int oy = -2; oy <= 2; oy += 2) {
+                for (int ox = -2; ox <= 2; ox += 2) {
+                    const auto neighbor = luminance(pixel_at(x + ox, y + oy));
+                    minimum = std::min(minimum, neighbor);
+                    maximum = std::max(maximum, neighbor);
+                }
+            }
+            const auto edge = maximum - minimum;
+            // Flat fills stay close to the recessed screen; outlines and
+            // silhouettes receive a modest extrusion that reads as depth
+            // without turning the image into a wall of black voxels.
+            heights[row * cells_x + column] =
+                base_depth + std::min(7.0F, edge * 8.0F +
+                                               (1.0F - center_luma) * 0.55F);
+        }
+    }
+    for (unsigned row = 0; row < cells_y; ++row) {
+        for (unsigned column = 0; column < cells_x; ++column) {
+            const auto x = static_cast<float>(column * cell_size);
+            const auto y = static_cast<float>(row * cell_size);
+            const auto depth = heights[row * cells_x + column];
+            const auto color = voxel_color(pixel_at(static_cast<int>(x),
+                                                    static_cast<int>(y)), 0.94F);
+            // Continuous recessed plane: no source pixels disappear between
+            // raised columns, even when a browser renderer has no depth test.
+            add_quad(project(x, y, base_depth),
+                     project(x + cell_size, y, base_depth),
+                     project(x + cell_size, y + cell_size, base_depth),
+                     project(x, y + cell_size, base_depth), color);
+            if (depth <= base_depth + 0.05F) continue;
+            const auto top_a = project(x, y, depth);
+            const auto top_b = project(x + cell_size, y, depth);
+            const auto top_c = project(x + cell_size, y + cell_size, depth);
+            const auto top_d = project(x, y + cell_size, depth);
+            const auto base_a = project(x, y, base_depth);
+            const auto base_b = project(x + cell_size, y, base_depth);
+            const auto base_c = project(x + cell_size, y + cell_size, base_depth);
+            const auto base_d = project(x, y + cell_size, base_depth);
+            const auto neighbor = [&](const int dx, const int dy) {
+                const auto nx = static_cast<int>(column) + dx;
+                const auto ny = static_cast<int>(row) + dy;
+                if (nx < 0 || ny < 0 || nx >= static_cast<int>(cells_x) ||
+                    ny >= static_cast<int>(cells_y)) return base_depth;
+                return heights[static_cast<std::size_t>(ny) * cells_x +
+                               static_cast<std::size_t>(nx)];
+            };
+            if (depth > neighbor(0, -1) + 0.45F)
+                add_quad(base_a, base_b, top_b, top_a,
+                         voxel_color(pixel_at(static_cast<int>(x),
+                                              static_cast<int>(y)), 0.62F));
+            if (depth > neighbor(1, 0) + 0.45F)
+                add_quad(base_b, base_c, top_c, top_b,
+                         voxel_color(pixel_at(static_cast<int>(x),
+                                              static_cast<int>(y)), 0.72F));
+            add_quad(top_a, top_b, top_c, top_d, color);
+        }
+    }
+    if (!indices.empty() && !SDL_RenderGeometry(
+                                app.renderer, nullptr, vertices.data(),
+                                static_cast<int>(vertices.size()), indices.data(),
+                                static_cast<int>(indices.size()))) {
+        SDL_Log("Could not render browser voxel diorama: %s", SDL_GetError());
+    }
 }
 
 bool configure_core_io(WebApp& app) {
@@ -229,11 +373,16 @@ void present(WebApp& app) {
             }
             app.display_pixels[index] = pixel;
         }
-        static_cast<void>(SDL_UpdateTexture(
-            app.texture, nullptr, app.display_pixels.data(),
-            static_cast<int>(frame.width * sizeof(std::uint32_t))));
-        static_cast<void>(
-            SDL_RenderTexture(app.renderer, app.texture, nullptr, nullptr));
+        if (app.video_mode == gameboy::VideoMode::voxel_diorama &&
+            frame.width == 160 && frame.height == 144) {
+            render_web_voxel(app, app.display_pixels);
+        } else {
+            static_cast<void>(SDL_UpdateTexture(
+                app.texture, nullptr, app.display_pixels.data(),
+                static_cast<int>(frame.width * sizeof(std::uint32_t))));
+            static_cast<void>(SDL_RenderTexture(
+                app.renderer, app.texture, nullptr, nullptr));
+        }
     }
     static_cast<void>(SDL_RenderPresent(app.renderer));
 }
@@ -253,6 +402,8 @@ int load_rom_from_browser(emscripten::val bytes) noexcept {
         auto rom = copy_browser_bytes(bytes);
         if (rom.empty()) return 0;
         active_app->emulator = gbb::create_core(std::move(rom));
+        active_app->voxel_camera_pitch_offset = 0.0F;
+        active_app->voxel_camera_yaw_offset = 0.0F;
         if (!configure_core_io(*active_app)) {
             active_app->emulator.reset();
             throw std::runtime_error("Could not configure the selected core");
@@ -467,6 +618,21 @@ extern "C" EMSCRIPTEN_KEEPALIVE void gbb_set_video_mode(
     if (mode >= gameboy::video_modes.size()) return;
     requested_video_mode = mode;
     if (active_app) apply_video_mode(*active_app, requested_video_mode);
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE void gbb_set_voxel_camera(
+    const float yaw_delta, const float pitch_delta) noexcept {
+    if (!active_app) return;
+    active_app->voxel_camera_yaw_offset = std::clamp(
+        active_app->voxel_camera_yaw_offset + yaw_delta, -45.0F, 45.0F);
+    active_app->voxel_camera_pitch_offset = std::clamp(
+        active_app->voxel_camera_pitch_offset + pitch_delta, -55.0F, 48.0F);
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE void gbb_reset_voxel_camera() noexcept {
+    if (!active_app) return;
+    active_app->voxel_camera_pitch_offset = 0.0F;
+    active_app->voxel_camera_yaw_offset = 0.0F;
 }
 
 SDL_AppResult SDL_AppInit(void** appstate, int, char**) {
