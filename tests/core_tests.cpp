@@ -349,6 +349,10 @@ void test_scene_snapshot_json() {
     const std::string saved((std::istreambuf_iterator<char>(input)),
                             std::istreambuf_iterator<char>());
     check(saved == json, "exported scene JSON matches the in-memory document");
+    // Windows keeps an open input stream locked, so close it before removing
+    // the temporary export. POSIX systems permit the unlink while open, which
+    // previously masked this portability issue in local/Linux test runs.
+    input.close();
     std::filesystem::remove(path);
 }
 
