@@ -57,7 +57,7 @@
 namespace {
 
 #ifndef GBB_VERSION
-#define GBB_VERSION "0.22.0"
+#define GBB_VERSION "0.23.0"
 #endif
 
 #ifdef __ANDROID__
@@ -4322,7 +4322,9 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
         // yaw. This rotates the viewport around its vertical center line;
         // it does not translate the viewport laterally.
         if (emulator != nullptr && !dashboard_visible &&
-            sdl.video_mode == gameboy::VideoMode::voxel_diorama) {
+            (sdl.video_mode == gameboy::VideoMode::voxel_diorama ||
+             sdl.video_mode == gameboy::VideoMode::voxel_shape ||
+             sdl.video_mode == gameboy::VideoMode::voxel_popup)) {
             if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
                 event.button.button == SDL_BUTTON_LEFT) {
                 sdl.voxel_camera_dragging = true;
@@ -5364,7 +5366,9 @@ SDL_FColor voxel_color(const std::uint32_t pixel, const float shade,
 
 void render_voxel_diorama(const gameboy::Emulator& emulator,
                           SdlResources& sdl,
-                          const gameboy::DisplayPalette& palette) {
+                          const gameboy::DisplayPalette& palette,
+                          const bool shape_aware = false,
+                          const bool popup_book = false) {
     // SDL_RenderGeometry is backed by the active SDL GPU renderer (D3D,
     // OpenGL, Metal or Vulkan). We submit a deterministic pixel-relief mesh
     // here and optionally keep the native framebuffer as a textured facade on
@@ -5454,9 +5458,14 @@ void render_voxel_diorama(const gameboy::Emulator& emulator,
     auto& indices = sdl.voxel_indices;
     vertices.clear();
     indices.clear();
-    // Native-resolution relief cells preserve the original Game Boy pixel
-    // silhouettes. The base plane preserves the complete framebuffer; only
-    // detail cells get raised geometry below.
+    // Both modes keep the native one-pixel silhouette. The shape-aware path
+    // deliberately
+    // An earlier prototype grouped the framebuffer into 2x2 blocks; that made
+    // thin outlines, text and small sprites merge into large rectangular blobs.
+    // Shape-aware geometry now uses one source pixel per column and spends its
+    // extra detail budget on depth/layer separation instead of spatial
+    // downsampling. Both modes share the same layer/depth rules so they can be
+    // compared live from the video menu.
     vertices.reserve(120000);
     indices.reserve(180000);
     // Keep outline pixels charcoal rather than absolute black.  This is
@@ -5467,7 +5476,13 @@ void render_voxel_diorama(const gameboy::Emulator& emulator,
         return degrees * 0.01745329251994329577F;
     };
     const auto yaw = radians(profile.camera_yaw);
-    const auto pitch = radians(profile.camera_pitch);
+    // A pop-up book lays the framebuffer out as a page (X/Z) and raises
+    // windows/sprites vertically (Y). The lower edge is the near edge; invert
+    // the camera convention for this projection so the source image remains
+    // upright instead of appearing upside down.
+    const auto pitch = radians(std::clamp(
+        popup_book ? -(profile.camera_pitch + 20.0F) : profile.camera_pitch,
+        -80.0F, 80.0F));
     const auto yaw_cos = std::cos(yaw);
     const auto yaw_sin = std::sin(yaw);
     const auto pitch_cos = std::cos(pitch);
@@ -5475,6 +5490,25 @@ void render_voxel_diorama(const gameboy::Emulator& emulator,
     const auto project = [&](const float x, const float y, const float z) {
         const auto centered_x = x - 80.0F;
         const auto centered_y = y - 72.0F;
+        if (popup_book) {
+            // Source Y becomes page depth; the renderer's Z value is the
+            // vertical lift above that page.  This is the pop-up-book layout:
+            // distant background tiles lie flat, while windows and sprites
+            // stand up from the page as independent objects.
+            const auto page_depth = popup_book ? -centered_y * 0.82F
+                                               : centered_y * 0.82F;
+            const auto world_height = base_depth - z;
+            const auto yaw_x = centered_x * yaw_cos - page_depth * yaw_sin;
+            const auto yaw_depth = centered_x * yaw_sin + page_depth * yaw_cos;
+            const auto pitched_y = world_height * pitch_cos -
+                                   yaw_depth * pitch_sin;
+            const auto depth = world_height * pitch_sin +
+                               yaw_depth * pitch_cos;
+            const auto perspective = 1.0F /
+                std::max(0.35F, 1.0F + depth * profile.perspective);
+            return SDL_FPoint{80.0F + yaw_x * profile.zoom * perspective,
+                              72.0F - pitched_y * profile.zoom * perspective};
+        }
         // The framebuffer is an X/Y plane with voxel depth on Z. Yaw must
         // rotate X against Z around the vertical center-Y axis; rotating X/Y
         // here would only roll the image in its own plane.
@@ -5516,15 +5550,21 @@ void render_voxel_diorama(const gameboy::Emulator& emulator,
         bool object{};
     };
     std::vector<VoxelColumn> columns;
-    constexpr unsigned cell_size = 1;
-    constexpr unsigned cells_x = gameboy::Ppu::screen_width / cell_size;
-    constexpr unsigned cells_y = gameboy::Ppu::screen_height / cell_size;
+    const unsigned cell_size = 1U;
+    const unsigned cells_x = gameboy::Ppu::screen_width / cell_size;
+    const unsigned cells_y = gameboy::Ppu::screen_height / cell_size;
     columns.reserve(cells_x * cells_y);
     std::vector<float> column_heights(cells_x * cells_y, 0.0F);
-    std::array<bool, gameboy::Ppu::screen_width * gameboy::Ppu::screen_height>
-        sprite_mask{};
-    std::array<bool, gameboy::Ppu::screen_width * gameboy::Ppu::screen_height>
-        window_mask{};
+    std::vector<bool> sprite_mask(gameboy::Ppu::screen_width *
+                                      gameboy::Ppu::screen_height);
+    std::vector<int> sprite_anchor_y(gameboy::Ppu::screen_width *
+                                         gameboy::Ppu::screen_height, -1);
+    std::vector<bool> popup_object_mask(gameboy::Ppu::screen_width *
+                                         gameboy::Ppu::screen_height);
+    std::vector<int> popup_object_anchor_y(gameboy::Ppu::screen_width *
+                                               gameboy::Ppu::screen_height, -1);
+    std::vector<bool> window_mask(gameboy::Ppu::screen_width *
+                                      gameboy::Ppu::screen_height);
     const auto sprite_height = (scene.lcdc & 0x04U) != 0 ? 16 : 8;
     const auto sprite_pixel_opaque = [&](const gbb::SceneSprite& sprite,
                                          const int x, const int y) {
@@ -5566,6 +5606,13 @@ void render_voxel_diorama(const gameboy::Emulator& emulator,
                 sprite_mask[static_cast<std::size_t>(y) *
                                 gameboy::Ppu::screen_width +
                              static_cast<std::size_t>(x)] = true;
+                sprite_anchor_y[static_cast<std::size_t>(y) *
+                                    gameboy::Ppu::screen_width +
+                                static_cast<std::size_t>(x)] =
+                    std::max(sprite_anchor_y[static_cast<std::size_t>(y) *
+                                                  gameboy::Ppu::screen_width +
+                                              static_cast<std::size_t>(x)],
+                             static_cast<int>(sprite.screen_y) + sprite_height);
             }
         }
     }
@@ -5651,6 +5698,75 @@ void render_voxel_diorama(const gameboy::Emulator& emulator,
             }
         }
     }
+    if (popup_book) {
+        // Tile-layer artwork in overhead games (buildings, trees, signs and
+        // terrain edges) is not represented by OAM.  Split non-backdrop
+        // pixels into connected shapes so substantial shapes can become
+        // upright pop-up cut-outs while small dithering remains on the page.
+        const auto pixel_count = gameboy::Ppu::screen_width *
+                                 gameboy::Ppu::screen_height;
+        std::vector<bool> visited(pixel_count);
+        std::vector<std::size_t> pending;
+        pending.reserve(pixel_count);
+        for (int start_y = 0;
+             start_y < static_cast<int>(gameboy::Ppu::screen_height);
+             ++start_y) {
+            for (int start_x = 0;
+                 start_x < static_cast<int>(gameboy::Ppu::screen_width);
+                 ++start_x) {
+                const auto start = static_cast<std::size_t>(start_y) *
+                                       gameboy::Ppu::screen_width +
+                                   static_cast<std::size_t>(start_x);
+                if (visited[start] || sprite_mask[start] ||
+                    backdrop_key(colored_pixels[start]) == backdrop_color_key) {
+                    visited[start] = true;
+                    continue;
+                }
+                pending.clear();
+                pending.push_back(start);
+                visited[start] = true;
+                int max_y = start_y;
+                std::size_t cursor = 0;
+                while (cursor < pending.size()) {
+                    const auto index = pending[cursor++];
+                    const auto x = static_cast<int>(index %
+                                                    gameboy::Ppu::screen_width);
+                    const auto y = static_cast<int>(index /
+                                                    gameboy::Ppu::screen_width);
+                    max_y = std::max(max_y, y);
+                    for (const auto [dx, dy] :
+                         std::array<std::pair<int, int>, 4>{{
+                             {-1, 0}, {1, 0}, {0, -1}, {0, 1}}}) {
+                        const auto nx = x + dx;
+                        const auto ny = y + dy;
+                        if (nx < 0 || ny < 0 ||
+                            nx >= static_cast<int>(gameboy::Ppu::screen_width) ||
+                            ny >= static_cast<int>(gameboy::Ppu::screen_height)) {
+                            continue;
+                        }
+                        const auto neighbour = static_cast<std::size_t>(ny) *
+                                                   gameboy::Ppu::screen_width +
+                                               static_cast<std::size_t>(nx);
+                        if (visited[neighbour] || sprite_mask[neighbour] ||
+                            backdrop_key(colored_pixels[neighbour]) ==
+                                backdrop_color_key) {
+                            continue;
+                        }
+                        visited[neighbour] = true;
+                        pending.push_back(neighbour);
+                    }
+                }
+                // A minimum area filters isolated anti-aliasing/dither
+                // pixels. The shape's bottom is its page hinge.
+                if (pending.size() < 6U) continue;
+                const auto anchor_y = max_y + 1;
+                for (const auto index : pending) {
+                    popup_object_mask[index] = true;
+                    popup_object_anchor_y[index] = anchor_y;
+                }
+            }
+        }
+    }
     // Layer spans are derived from the configured far/near ranges. The
     // resulting planes are contiguous and ordered even when ROM-specific
     // profiles use different logical depth numbers.
@@ -5714,7 +5830,11 @@ void render_voxel_diorama(const gameboy::Emulator& emulator,
             // OAM ownership identifies the foreground object layer. Other
             // non-background-colored pixels remain part of the static tile
             // layer and use its configurable depth range.
-            const auto object_layer = has_sprite;
+            const auto object_index = static_cast<std::size_t>(cell_y * cell_size) *
+                                          gameboy::Ppu::screen_width +
+                                      static_cast<std::size_t>(cell_x * cell_size);
+            const auto object_layer = has_sprite ||
+                                      (popup_book && popup_object_mask[object_index]);
             const auto x = static_cast<float>(cell_x * cell_size);
             const auto y = static_cast<float>(cell_y * cell_size);
             // At native 1x1 resolution, contrast within a cell is necessarily
@@ -5742,7 +5862,12 @@ void render_voxel_diorama(const gameboy::Emulator& emulator,
             // Separate layer instances keep the static background flat while
             // giving the window and object/sprite layers independent offsets
             // and extrusion budgets.
-            const auto surface_relief = std::min(relief * 1.20F, 6.0F);
+            // Shape-aware mode keeps every source pixel, but gives genuine
+            // edges a little more volume.  This produces cube-like forms
+            // without the silhouette loss caused by 2x2 framebuffer cells.
+            const auto surface_relief = std::min(
+                relief * (shape_aware ? 1.55F : 1.20F),
+                shape_aware ? 7.5F : 6.0F);
             const auto normalized_band = [](const float value,
                                             const float far_depth,
                                             const float near_depth) {
@@ -5776,14 +5901,51 @@ void render_voxel_diorama(const gameboy::Emulator& emulator,
                                                       sprite_span * sprite_position
                                                 : background_span *
                                                       background_position;
-            const auto depth = base_depth - profile.depth_scale * layer_height;
+            // Shape-aware mode is intended to read as a relief rather than a
+            // nearly flush height map. Pull non-backdrop artwork toward the
+            // viewer while leaving the dominant backdrop plane untouched.
+            const auto shape_depth_boost = shape_aware && has_object
+                                               ? 0.45F
+                                               : 0.0F;
+            auto depth = base_depth - profile.depth_scale *
+                                             (layer_height + shape_depth_boost);
+            if (popup_book && object_layer) {
+                const auto source_index = static_cast<std::size_t>(cell_y * cell_size) *
+                                              gameboy::Ppu::screen_width +
+                                          static_cast<std::size_t>(cell_x * cell_size);
+                const auto anchor_y = has_sprite && sprite_anchor_y[source_index] >= 0
+                                          ? sprite_anchor_y[source_index]
+                                          : popup_object_anchor_y[source_index] >= 0
+                                                ? popup_object_anchor_y[source_index]
+                                                : static_cast<int>(y) + sprite_height;
+                // Sprite pixels are taller than static cut-outs so a player
+                // reads as a distinct foreground character.
+                const auto pixel_height = has_sprite ? 0.72F : 0.20F;
+                const auto pixel_bottom = std::max(
+                    0.0F, static_cast<float>(anchor_y) -
+                               static_cast<float>(cell_y * cell_size + 1U)) *
+                           pixel_height;
+                depth = base_depth - pixel_bottom - pixel_height;
+            }
             const auto centered_y = y + cell_size * 0.5F - 72.0F;
             const auto centered_x = x + cell_size * 0.5F - 80.0F;
-            const auto rotated_y = centered_x * yaw_sin + centered_y * yaw_cos;
+            const auto page_depth = popup_book ? -centered_y * 0.82F
+                                               : centered_y * 0.82F;
+            const auto world_height = base_depth - depth;
+            const auto rotated_y = popup_book
+                                       ? page_depth * yaw_cos + centered_x * yaw_sin
+                                       : centered_x * yaw_sin +
+                                             centered_y * yaw_cos;
+            const auto sort_depth = popup_book
+                                        ? world_height * pitch_sin +
+                                              (centered_x * yaw_sin +
+                                               page_depth * yaw_cos) * pitch_cos
+                                        : rotated_y * pitch_sin +
+                                              depth * pitch_cos;
             column_heights[cell_y * cells_x + cell_x] = depth;
             columns.push_back({x, y, static_cast<float>(cell_size),
                                static_cast<float>(cell_size), depth,
-                               rotated_y * pitch_sin + depth * pitch_cos,
+                               sort_depth,
                                color, has_sprite, window_layer, object_layer});
         }
     }
@@ -5811,7 +5973,8 @@ void render_voxel_diorama(const gameboy::Emulator& emulator,
     std::stable_sort(columns.begin(), columns.end(),
                      [](const VoxelColumn& left, const VoxelColumn& right) {
                          const auto layer_rank = [](const VoxelColumn& column) {
-                             return column.sprite ? 2 : column.window ? 1 : 0;
+                            return column.sprite ? 3 : column.object ? 2 :
+                                                     column.window ? 1 : 0;
                          };
                          const auto left_rank = layer_rank(left);
                          const auto right_rank = layer_rank(right);
@@ -5835,6 +5998,107 @@ void render_voxel_diorama(const gameboy::Emulator& emulator,
         const auto depth = column.height;
         const auto width = column.width;
         const auto extent_y = column.extent_y;
+        if (popup_book && column.object) {
+            const auto source_index = static_cast<std::size_t>(y) *
+                                          gameboy::Ppu::screen_width +
+                                      static_cast<std::size_t>(x);
+            const auto anchor_y = column.sprite && sprite_anchor_y[source_index] >= 0
+                                      ? sprite_anchor_y[source_index]
+                                      : popup_object_anchor_y[source_index] >= 0
+                                            ? popup_object_anchor_y[source_index]
+                                            : static_cast<int>(y) + sprite_height;
+            {
+                // Pop-up objects are upright cuboids. The page coordinate is
+                // anchored at each shape's feet, while source rows become
+                // vertical height. Static cut-outs use a shallower voxel
+                // height; OAM sprites retain a taller, readable silhouette.
+                const auto sprite_pixel_height = column.sprite ? 0.72F : 0.20F;
+                const auto pixel_bottom = std::max(
+                    0.0F, static_cast<float>(anchor_y) - (y + 1.0F)) *
+                           sprite_pixel_height;
+                const auto pixel_top = pixel_bottom + sprite_pixel_height;
+                const auto extrusion = column.sprite ? 1.35F : 4.0F;
+                const auto front_page = static_cast<float>(anchor_y) -
+                                        extrusion * 0.5F;
+                const auto back_page = static_cast<float>(anchor_y) +
+                                       extrusion * 0.5F;
+                const auto front_bottom_a =
+                    project(x, front_page, base_depth - pixel_bottom);
+                const auto front_bottom_b = project(
+                    x + width, front_page, base_depth - pixel_bottom);
+                const auto front_top_a =
+                    project(x, front_page, base_depth - pixel_top);
+                const auto front_top_b = project(
+                    x + width, front_page, base_depth - pixel_top);
+                const auto back_top_a =
+                    project(x, back_page, base_depth - pixel_top);
+                const auto back_top_b = project(
+                    x + width, back_page, base_depth - pixel_top);
+                const auto back_bottom_a =
+                    project(x, back_page, base_depth - pixel_bottom);
+                const auto back_bottom_b = project(
+                    x + width, back_page, base_depth - pixel_bottom);
+                const auto sprite_color = voxel_color(
+                    column.color, 0.98F * profile.lighting,
+                    luminance(column.color) < 0.20F
+                        ? 0.0F
+                        : voxel_ambient * profile.lighting);
+                add_quad(front_bottom_a, front_bottom_b, front_top_b,
+                         front_top_a, sprite_color);
+                // Keep a real back surface as well as the front surface. This
+                // makes tile-layer buildings solid when the camera is moved
+                // around the opposite side instead of looking like one-sided
+                // paper cut-outs.
+                add_quad(back_bottom_a, back_bottom_b, back_top_b,
+                         back_top_a,
+                         voxel_color(column.color, 0.78F * profile.lighting,
+                                     voxel_ambient * profile.lighting));
+                const auto same_shape_pixel = [&](const int neighbour_x,
+                                                  const int neighbour_y) {
+                    if (column.sprite || neighbour_x < 0 || neighbour_y < 0 ||
+                        neighbour_x >= static_cast<int>(gameboy::Ppu::screen_width) ||
+                        neighbour_y >= static_cast<int>(gameboy::Ppu::screen_height)) {
+                        return false;
+                    }
+                    const auto neighbour = static_cast<std::size_t>(neighbour_y) *
+                                               gameboy::Ppu::screen_width +
+                                           static_cast<std::size_t>(neighbour_x);
+                    return popup_object_mask[neighbour] &&
+                           popup_object_anchor_y[neighbour] == anchor_y;
+                };
+                const auto cap_color = voxel_color(
+                    column.color, 0.84F * profile.lighting,
+                    voxel_ambient * profile.lighting);
+                const auto side_color = voxel_color(
+                    column.color, 0.70F * profile.lighting,
+                    voxel_ambient * profile.lighting);
+                if (column.sprite || !same_shape_pixel(static_cast<int>(x),
+                                                        static_cast<int>(y) - 1)) {
+                    add_quad(front_top_a, front_top_b, back_top_b, back_top_a,
+                             cap_color);
+                }
+                if (column.sprite || !same_shape_pixel(static_cast<int>(x) + 1,
+                                                        static_cast<int>(y))) {
+                    add_quad(front_bottom_b, back_bottom_b, back_top_b,
+                             front_top_b, side_color);
+                }
+                if (column.sprite || !same_shape_pixel(static_cast<int>(x) - 1,
+                                                        static_cast<int>(y))) {
+                    add_quad(back_bottom_a, front_bottom_a, front_top_a,
+                             back_top_a,
+                             voxel_color(column.color, 0.58F * profile.lighting,
+                                         voxel_ambient * profile.lighting));
+                }
+                if (!column.sprite && !same_shape_pixel(static_cast<int>(x),
+                                                        static_cast<int>(y) + 1)) {
+                    add_quad(back_bottom_a, back_bottom_b, front_bottom_b,
+                             front_bottom_a,
+                             voxel_color(column.color, 0.62F * profile.lighting,
+                                         voxel_ambient * profile.lighting));
+                }
+                continue;
+            }
+        }
         const auto top_a = project(x, y, depth);
         const auto top_b = project(x + width, y, depth);
         const auto top_c = project(x + width, y + extent_y, depth);
@@ -5876,37 +6140,39 @@ void render_voxel_diorama(const gameboy::Emulator& emulator,
             return column.sprite ? tile_color
                                   : border_color(border_x, border_y);
         };
-        const auto cell_x = static_cast<int>(column.x) /
+        const auto grid_x = static_cast<int>(column.x) /
                             static_cast<int>(cell_size);
-        const auto cell_y = static_cast<int>(column.y) /
+        const auto grid_y = static_cast<int>(column.y) /
                             static_cast<int>(cell_size);
+        const auto source_x = static_cast<int>(column.x);
+        const auto source_y = static_cast<int>(column.y);
         // Draw only exposed sides.  Earlier versions emitted all four walls
         // for every foreground pixel; at native 1x1 resolution that creates
         // a dark cross-hatched shadow around sprites and solid objects.  A
         // small height threshold keeps genuine silhouette edges while
         // suppressing internal relief noise.
         constexpr float wall_threshold = 0.60F;
-        if (depth < height_at(cell_x, cell_y - 1) - wall_threshold) {
+        if (depth < height_at(grid_x, grid_y - 1) - wall_threshold) {
             add_quad(base_a, base_b, top_b, top_a,
-                     voxel_color(side_color(cell_x, cell_y - 1),
+                     voxel_color(side_color(source_x, source_y - 1),
                                  0.58F * profile.lighting,
                                  voxel_ambient * profile.lighting));
         }
-        if (depth < height_at(cell_x + 1, cell_y) - wall_threshold) {
+        if (depth < height_at(grid_x + 1, grid_y) - wall_threshold) {
             add_quad(base_b, base_c, top_c, top_b,
-                     voxel_color(side_color(cell_x + 1, cell_y),
+                     voxel_color(side_color(source_x + static_cast<int>(cell_size), source_y),
                                  0.68F * profile.lighting,
                                  voxel_ambient * profile.lighting));
         }
-        if (depth < height_at(cell_x, cell_y + 1) - wall_threshold) {
+        if (depth < height_at(grid_x, grid_y + 1) - wall_threshold) {
             add_quad(base_c, base_d, top_d, top_c,
-                     voxel_color(side_color(cell_x, cell_y + 1),
+                     voxel_color(side_color(source_x, source_y + static_cast<int>(cell_size)),
                                  0.76F * profile.lighting,
                                  voxel_ambient * profile.lighting));
         }
-        if (depth < height_at(cell_x - 1, cell_y) - wall_threshold) {
+        if (depth < height_at(grid_x - 1, grid_y) - wall_threshold) {
             add_quad(base_d, base_a, top_a, top_d,
-                     voxel_color(side_color(cell_x - 1, cell_y),
+                     voxel_color(side_color(source_x - 1, source_y),
                                  0.62F * profile.lighting,
                                  voxel_ambient * profile.lighting));
         }
@@ -6012,8 +6278,13 @@ void present(const gameboy::Emulator* emulator, SdlResources& sdl,
         static_cast<void>(dashboard_selection);
 #endif
     } else if (emulator != nullptr) {
-        if (sdl.video_mode == gameboy::VideoMode::voxel_diorama) {
-            render_voxel_diorama(*emulator, sdl, palette);
+        if (sdl.video_mode == gameboy::VideoMode::voxel_diorama ||
+            sdl.video_mode == gameboy::VideoMode::voxel_shape ||
+            sdl.video_mode == gameboy::VideoMode::voxel_popup) {
+            render_voxel_diorama(
+                *emulator, sdl, palette,
+                sdl.video_mode == gameboy::VideoMode::voxel_shape,
+                sdl.video_mode == gameboy::VideoMode::voxel_popup);
         } else {
         const auto& pixels = emulator->framebuffer();
         const auto native_colors =

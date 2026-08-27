@@ -401,7 +401,12 @@ void test_video_pipeline_modes() {
                   gameboy::VideoMode::sharp_smoothing &&
               gameboy::video_mode_from_id("integer") == gameboy::VideoMode::integer &&
               gameboy::video_mode_from_id("lcd") == gameboy::VideoMode::lcd_shader &&
-              gameboy::video_mode_from_id("voxel") == gameboy::VideoMode::voxel_diorama,
+              gameboy::video_mode_from_id("voxel") == gameboy::VideoMode::voxel_diorama &&
+              gameboy::video_mode_from_id("voxel_shape") ==
+                  gameboy::VideoMode::voxel_shape &&
+              gameboy::video_mode_from_id("voxel_popup") ==
+                  gameboy::VideoMode::voxel_popup &&
+              gameboy::video_modes.size() == 8,
           "video pipeline settings map stable ids to presentation modes");
     check(gameboy::video_mode_from_id("unknown") == gameboy::default_video_mode,
           "unknown video pipeline settings use the nearest default");

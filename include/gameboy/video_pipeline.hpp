@@ -18,6 +18,8 @@ enum class VideoMode : std::uint8_t {
     lcd_shader,
     sharp_smoothing,
     voxel_diorama,
+    voxel_shape,
+    voxel_popup,
 };
 
 struct VideoModeInfo {
@@ -26,13 +28,15 @@ struct VideoModeInfo {
     std::string_view name;
 };
 
-inline constexpr std::array<VideoModeInfo, 6> video_modes{{
+inline constexpr std::array<VideoModeInfo, 8> video_modes{{
     {VideoMode::nearest, "nearest", "Nearest neighbor"},
     {VideoMode::bilinear, "bilinear", "Bilinear"},
     {VideoMode::integer, "integer", "Integer scaling"},
     {VideoMode::lcd_shader, "lcd", "LCD shader"},
     {VideoMode::sharp_smoothing, "sharp", "Sharp smoothing"},
     {VideoMode::voxel_diorama, "voxel", "Voxel diorama"},
+    {VideoMode::voxel_shape, "voxel_shape", "Voxel diorama (shape-aware)"},
+    {VideoMode::voxel_popup, "voxel_popup", "Voxel pop-up book"},
 }};
 
 inline constexpr VideoMode default_video_mode = VideoMode::nearest;

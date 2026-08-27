@@ -337,13 +337,19 @@ adds edge-aware smoothing without blanket blur, `integer` uses only whole-number
 scale factors, and `lcd` applies a lightweight LCD mask with scanlines. The
 setting is stored as `video.Mode` in
 `settings.ini`; the web selector remembers its choice in browser storage.
-Desktop and web builds also expose the experimental `voxel` mode. It submits a
-perspective 3D pixel-relief mesh through SDL's active GPU renderer. The
-visible framebuffer is sampled in small pixel-art cells so sprites, text, and
-silhouettes remain recognizable, while detected sprites receive additional
-depth. The authoritative framebuffer can still be retained as a front-facing
-facade for comparison. Unsupported frontends fall back to the regular 2D
-presentation.
+Desktop and web builds also expose three experimental voxel modes. `voxel` is the
+original one-source-pixel relief renderer. `voxel_shape` (shown as “Voxel
+diorama (shape-aware)”) keeps the source-pixel silhouette intact, then applies
+edge-aware depth and stronger per-layer volume so sprites read as compact 3D
+forms without the chunky blobs caused by coarse 2×2 grouping. All voxel modes
+use the same camera controls, profiles, layer ordering, and optional framebuffer
+facade, and can be switched while a ROM is running. `voxel_popup` (shown as “Voxel
+pop-up book”) lays the framebuffer out as a horizontal page, raises the window
+layer above it, and renders OAM sprites plus substantial connected tile-layer
+shapes as upright, page-anchored cuboids. Small isolated texture/dither pixels
+remain on the page. This is useful for overhead games such as Pokémon, where
+buildings and terrain are normally drawn by the background tile layer.
+Unsupported frontends fall back to the regular 2D presentation.
 In the web build, drag the voxel canvas horizontally to orbit around the
 center axis and vertically to adjust the pitch. Angles are clamped to keep the
 scene readable; double-click (or double-tap where supported) resets the camera.

@@ -71,6 +71,8 @@
             <option value="3">LCD shader</option>
             <option value="4">Sharp smoothing</option>
             <option value="5">Voxel diorama (WebGL)</option>
+            <option value="6">Voxel diorama (shape-aware, WebGL)</option>
+            <option value="7">Voxel pop-up book (WebGL)</option>
           </select>
         </label>
         <button id="open-rom" type="button" disabled>Choose ROM</button>
@@ -772,7 +774,8 @@
     canvas.addEventListener('pointerdown', (event) => {
       Module._gbb_resume_audio();
       canvas.focus();
-      if (Number(videoPicker.value) !== 5 || !Module._gbb_set_voxel_camera) {
+      if (![5, 6, 7].includes(Number(videoPicker.value)) ||
+          !Module._gbb_set_voxel_camera) {
         return;
       }
       voxelPointerId = event.pointerId;
@@ -804,7 +807,7 @@
     canvas.addEventListener('pointerup', finishVoxelDrag);
     canvas.addEventListener('pointercancel', finishVoxelDrag);
     canvas.addEventListener('dblclick', (event) => {
-      if (Number(videoPicker.value) !== 5 ||
+      if (![5, 6, 7].includes(Number(videoPicker.value)) ||
           !Module._gbb_reset_voxel_camera) return;
       Module._gbb_reset_voxel_camera();
       event.preventDefault();

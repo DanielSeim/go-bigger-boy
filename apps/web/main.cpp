@@ -99,7 +99,9 @@ SDL_FColor voxel_color(const std::uint32_t pixel, const float shade,
     return {component(16), component(8), component(0), 1.0F};
 }
 
-void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels) {
+void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
+                     const bool shape_aware = false,
+                     const bool popup_book = false) {
     // Keep the browser presentation in lockstep with the desktop renderer.
     // Both use the same native-resolution relief, layer heights and painter
     // ordering; only the input framebuffer and SDL renderer differ.
@@ -120,7 +122,10 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels) {
     const auto& scene = app.emulator->scene_snapshot();
     const auto yaw = (camera_yaw + app.voxel_camera_yaw_offset) *
                      0.01745329251994329577F;
-    const auto pitch = (camera_pitch + app.voxel_camera_pitch_offset) *
+    const auto pitch = (popup_book
+                            ? -(camera_pitch + app.voxel_camera_pitch_offset +
+                                20.0F)
+                            : camera_pitch + app.voxel_camera_pitch_offset) *
                        0.01745329251994329577F;
     const auto yaw_cos = std::cos(yaw);
     const auto yaw_sin = std::sin(yaw);
@@ -129,6 +134,24 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels) {
     const auto project = [&](const float x, const float y, const float z) {
         const auto centered_x = x - 80.0F;
         const auto centered_y = y - 72.0F;
+        if (popup_book) {
+            // Source Y becomes page depth; the renderer's Z value is the
+            // vertical lift above that page. This keeps the background flat
+            // like a book page while windows and sprites stand above it.
+            const auto page_depth = popup_book ? -centered_y * 0.82F
+                                               : centered_y * 0.82F;
+            const auto world_height = base_depth - z;
+            const auto yaw_x = centered_x * yaw_cos - page_depth * yaw_sin;
+            const auto yaw_depth = centered_x * yaw_sin + page_depth * yaw_cos;
+            const auto pitched_y = world_height * pitch_cos -
+                                   yaw_depth * pitch_sin;
+            const auto depth = world_height * pitch_sin +
+                               yaw_depth * pitch_cos;
+            const auto scale = 1.0F /
+                std::max(0.35F, 1.0F + depth * perspective);
+            return SDL_FPoint{80.0F + yaw_x * zoom * scale,
+                              72.0F - pitched_y * zoom * scale};
+        }
         const auto yaw_x = centered_x * yaw_cos - z * yaw_sin;
         const auto yaw_depth = centered_x * yaw_sin + z * yaw_cos;
         const auto pitched_y = centered_y * pitch_cos - yaw_depth * pitch_sin;
@@ -190,9 +213,14 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels) {
         }
     }
 
-    constexpr unsigned cell_size = 1;
-    constexpr unsigned cells_x = 160;
-    constexpr unsigned cells_y = 144;
+    // Both modes keep native pixel silhouettes. The first shape-aware
+    // prototype grouped pixels into 2x2 cells, which made thin
+    // outlines, text and small sprites merge into chunky blobs.  The refined
+    // mode uses one source pixel per column and expresses its shape through
+    // layer-aware depth instead of framebuffer downsampling.
+    const unsigned cell_size = 1U;
+    const unsigned cells_x = 160U / cell_size;
+    const unsigned cells_y = 144U / cell_size;
     struct VoxelColumn {
         float x{};
         float y{};
@@ -208,8 +236,11 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels) {
     std::vector<VoxelColumn> columns;
     columns.reserve(cells_x * cells_y);
     std::vector<float> column_heights(cells_x * cells_y, 0.0F);
-    std::array<bool, cells_x * cells_y> sprite_mask{};
-    std::array<bool, cells_x * cells_y> window_mask{};
+    std::vector<bool> sprite_mask(160U * 144U);
+    std::vector<int> sprite_anchor_y(160U * 144U, -1);
+    std::vector<bool> popup_object_mask(160U * 144U);
+    std::vector<int> popup_object_anchor_y(160U * 144U, -1);
+    std::vector<bool> window_mask(160U * 144U);
     const auto sprite_height = (scene.lcdc & 0x04U) != 0 ? 16 : 8;
     const auto sprite_pixel_opaque = [&](const gbb::SceneSprite& sprite,
                                          const int x, const int y) {
@@ -246,6 +277,64 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels) {
                 if (x < 0 || y < 0 || x >= 160 || y >= 144) continue;
                 sprite_mask[static_cast<std::size_t>(y) * 160U +
                             static_cast<std::size_t>(x)] = true;
+                sprite_anchor_y[static_cast<std::size_t>(y) * 160U +
+                                static_cast<std::size_t>(x)] =
+                    std::max(sprite_anchor_y[static_cast<std::size_t>(y) * 160U +
+                                                 static_cast<std::size_t>(x)],
+                             static_cast<int>(sprite.screen_y) + sprite_height);
+            }
+        }
+    }
+    if (popup_book) {
+        // Tile-layer artwork in overhead games (buildings, trees, signs and
+        // terrain edges) is not represented by OAM. Split non-backdrop
+        // pixels into connected shapes so substantial shapes become upright
+        // pop-up cut-outs while small dithering remains on the page.
+        const auto pixel_count = 160U * 144U;
+        std::vector<bool> visited(pixel_count);
+        std::vector<std::size_t> pending;
+        pending.reserve(pixel_count);
+        for (int start_y = 0; start_y < 144; ++start_y) {
+            for (int start_x = 0; start_x < 160; ++start_x) {
+                const auto start = static_cast<std::size_t>(start_y) * 160U +
+                                   static_cast<std::size_t>(start_x);
+                if (visited[start] || sprite_mask[start] ||
+                    backdrop_key(pixels[start]) == backdrop_color_key) {
+                    visited[start] = true;
+                    continue;
+                }
+                pending.clear();
+                pending.push_back(start);
+                visited[start] = true;
+                int max_y = start_y;
+                std::size_t cursor = 0;
+                while (cursor < pending.size()) {
+                    const auto index = pending[cursor++];
+                    const auto x = static_cast<int>(index % 160U);
+                    const auto y = static_cast<int>(index / 160U);
+                    max_y = std::max(max_y, y);
+                    for (const auto [dx, dy] :
+                         std::array<std::pair<int, int>, 4>{{
+                             {-1, 0}, {1, 0}, {0, -1}, {0, 1}}}) {
+                        const auto nx = x + dx;
+                        const auto ny = y + dy;
+                        if (nx < 0 || ny < 0 || nx >= 160 || ny >= 144) continue;
+                        const auto neighbour = static_cast<std::size_t>(ny) * 160U +
+                                               static_cast<std::size_t>(nx);
+                        if (visited[neighbour] || sprite_mask[neighbour] ||
+                            backdrop_key(pixels[neighbour]) == backdrop_color_key) {
+                            continue;
+                        }
+                        visited[neighbour] = true;
+                        pending.push_back(neighbour);
+                    }
+                }
+                if (pending.size() < 6U) continue;
+                const auto anchor_y = max_y + 1;
+                for (const auto index : pending) {
+                    popup_object_mask[index] = true;
+                    popup_object_anchor_y[index] = anchor_y;
+                }
             }
         }
     }
@@ -334,21 +423,50 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels) {
         3.0F, std::max(0.0F, sprite_gap + sprite_span * 0.60F - 0.25F));
     for (unsigned cell_y = 0; cell_y < cells_y; ++cell_y) {
         for (unsigned cell_x = 0; cell_x < cells_x; ++cell_x) {
-            const auto pixel_index = cell_y * 160U + cell_x;
-            const auto color = pixels[pixel_index];
-            const auto local_luminance = luminance(color);
-            const auto has_sprite = sprite_mask[pixel_index];
-            const auto has_window = window_mask[pixel_index];
-            const auto has_object = backdrop_key(color) != backdrop_color_key;
+            const auto source_x = cell_x * cell_size;
+            const auto source_y = cell_y * cell_size;
+            const auto pixel_index = source_y * 160U + source_x;
+            unsigned red = 0;
+            unsigned green = 0;
+            unsigned blue = 0;
+            float local_luminance = 0.0F;
+            bool has_sprite = false;
+            bool has_window = false;
+            bool has_object = false;
+            for (unsigned y = 0; y < cell_size; ++y) {
+                for (unsigned x = 0; x < cell_size; ++x) {
+                    const auto sample_x = source_x + x;
+                    const auto sample_y = source_y + y;
+                    const auto sample_index = sample_y * 160U + sample_x;
+                    const auto sample = pixels[sample_index];
+                    red += (sample >> 16) & 0xFFU;
+                    green += (sample >> 8) & 0xFFU;
+                    blue += sample & 0xFFU;
+                    local_luminance += luminance(sample);
+                    has_sprite = has_sprite || sprite_mask[sample_index];
+                    has_window = has_window || window_mask[sample_index];
+                    has_object = has_object ||
+                                 backdrop_key(sample) != backdrop_color_key;
+                }
+            }
+            const auto sample_count = cell_size * cell_size;
+            const auto color = UINT32_C(0xFF000000) |
+                               ((red / sample_count) << 16) |
+                               ((green / sample_count) << 8) |
+                               (blue / sample_count);
+            local_luminance /= static_cast<float>(sample_count);
             const auto window_layer = has_window && has_object && !has_sprite;
-            const auto object_layer = has_sprite;
+            const auto object_index = static_cast<std::size_t>(source_y) * 160U +
+                                      static_cast<std::size_t>(source_x);
+            const auto object_layer = has_sprite ||
+                                      (popup_book && popup_object_mask[object_index]);
             float neighborhood_min = 1.0F;
             float neighborhood_max = 0.0F;
             for (int offset_y = -1; offset_y <= 1; ++offset_y) {
                 for (int offset_x = -1; offset_x <= 1; ++offset_x) {
                     const auto neighbor_luminance = pixel_luminance_at(
-                        static_cast<int>(cell_x) + offset_x,
-                        static_cast<int>(cell_y) + offset_y);
+                        static_cast<int>(source_x) + offset_x,
+                        static_cast<int>(source_y) + offset_y);
                     neighborhood_min = std::min(neighborhood_min,
                                                 neighbor_luminance);
                     neighborhood_max = std::max(neighborhood_max,
@@ -359,7 +477,12 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels) {
             const auto relief = std::max(
                 0.0F, local_contrast *
                            (4.0F + (1.0F - local_luminance) * 4.0F));
-            const auto surface_relief = std::min(relief * 1.20F, 6.0F);
+            // Shape-aware mode keeps every source pixel, but gives genuine
+            // edges a little more volume. This produces cube-like forms
+            // without the silhouette loss caused by 2x2 framebuffer cells.
+            const auto surface_relief = std::min(
+                relief * (shape_aware ? 1.55F : 1.20F),
+                shape_aware ? 7.5F : 6.0F);
             // Separate layer instances keep the static background flat while
             // giving the window and object/sprite layers independent offsets
             // and extrusion budgets.
@@ -393,15 +516,50 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels) {
                                                       sprite_span * sprite_position
                                                 : background_span *
                                                       background_position;
-            const auto depth = base_depth - depth_scale * layer_height;
-            const auto x = static_cast<float>(cell_x);
-            const auto y = static_cast<float>(cell_y);
-            const auto centered_x = x + 0.5F - 80.0F;
-            const auto centered_y = y + 0.5F - 72.0F;
-            const auto rotated_y = centered_x * yaw_sin + centered_y * yaw_cos;
-            column_heights[pixel_index] = depth;
-            columns.push_back({x, y, 1.0F, 1.0F, depth,
-                               rotated_y * pitch_sin + depth * pitch_cos,
+            // Pull non-backdrop artwork toward the viewer in shape-aware mode
+            // while keeping the dominant backdrop plane recessed.
+            const auto shape_depth_boost = shape_aware && has_object
+                                               ? 0.45F
+                                               : 0.0F;
+            auto depth = base_depth - depth_scale *
+                                             (layer_height + shape_depth_boost);
+            if (popup_book && object_layer) {
+                const auto source_index = static_cast<std::size_t>(cell_y) *
+                                              160U +
+                                          static_cast<std::size_t>(cell_x);
+                const auto anchor_y = has_sprite && sprite_anchor_y[source_index] >= 0
+                                          ? sprite_anchor_y[source_index]
+                                          : popup_object_anchor_y[source_index] >= 0
+                                                ? popup_object_anchor_y[source_index]
+                                                : static_cast<int>(cell_y) + sprite_height;
+                const auto pixel_height = has_sprite ? 0.72F : 0.20F;
+                const auto pixel_bottom = std::max(
+                    0.0F, static_cast<float>(anchor_y) -
+                               static_cast<float>(cell_y + 1U)) *
+                           pixel_height;
+                depth = base_depth - pixel_bottom - pixel_height;
+            }
+            const auto x = static_cast<float>(source_x);
+            const auto y = static_cast<float>(source_y);
+            const auto centered_x = x + cell_size * 0.5F - 80.0F;
+            const auto centered_y = y + cell_size * 0.5F - 72.0F;
+            const auto page_depth = popup_book ? -centered_y * 0.82F
+                                               : centered_y * 0.82F;
+            const auto world_height = base_depth - depth;
+            const auto rotated_y = popup_book
+                                       ? page_depth * yaw_cos + centered_x * yaw_sin
+                                       : centered_x * yaw_sin +
+                                             centered_y * yaw_cos;
+            const auto sort_depth = popup_book
+                                        ? world_height * pitch_sin +
+                                              (centered_x * yaw_sin +
+                                               page_depth * yaw_cos) * pitch_cos
+                                        : rotated_y * pitch_sin +
+                                              depth * pitch_cos;
+            column_heights[cell_y * cells_x + cell_x] = depth;
+            columns.push_back({x, y, static_cast<float>(cell_size),
+                               static_cast<float>(cell_size), depth,
+                               sort_depth,
                                color, has_sprite, window_layer, object_layer});
         }
     }
@@ -420,7 +578,8 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels) {
     std::stable_sort(columns.begin(), columns.end(),
                      [](const VoxelColumn& left, const VoxelColumn& right) {
                          const auto layer_rank = [](const VoxelColumn& column) {
-                             return column.sprite ? 2 : column.window ? 1 : 0;
+                            return column.sprite ? 3 : column.object ? 2 :
+                                                     column.window ? 1 : 0;
                          };
                          const auto left_rank = layer_rank(left);
                          const auto right_rank = layer_rank(right);
@@ -429,13 +588,112 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels) {
                          return left.sort_depth > right.sort_depth;
                      });
     const auto height_at = [&](const int cell_x, const int cell_y) {
-        if (cell_x < 0 || cell_y < 0 || cell_x >= 160 || cell_y >= 144)
+        if (cell_x < 0 || cell_y < 0 ||
+            cell_x >= static_cast<int>(cells_x) ||
+            cell_y >= static_cast<int>(cells_y))
             return base_depth;
-        return column_heights[static_cast<std::size_t>(cell_y) * 160U +
+        return column_heights[static_cast<std::size_t>(cell_y) * cells_x +
                               static_cast<std::size_t>(cell_x)];
     };
     for (const auto& column : columns) {
         if (column.height >= base_depth - 0.15F) continue;
+        if (popup_book && column.object) {
+            const auto source_index = static_cast<std::size_t>(column.y) *
+                                          160U +
+                                      static_cast<std::size_t>(column.x);
+                const auto anchor_y = column.sprite && sprite_anchor_y[source_index] >= 0
+                                          ? sprite_anchor_y[source_index]
+                                          : popup_object_anchor_y[source_index] >= 0
+                                                ? popup_object_anchor_y[source_index]
+                                                : static_cast<int>(column.y) +
+                                                      sprite_height;
+                {
+                    const auto sprite_pixel_height = column.sprite ? 0.72F : 0.20F;
+                const auto pixel_bottom = std::max(
+                    0.0F, static_cast<float>(anchor_y) -
+                               (column.y + 1.0F)) * sprite_pixel_height;
+                const auto pixel_top = pixel_bottom + sprite_pixel_height;
+                const auto extrusion = column.sprite ? 1.35F : 4.0F;
+                const auto front_page = static_cast<float>(anchor_y) -
+                                        extrusion * 0.5F;
+                const auto back_page = static_cast<float>(anchor_y) +
+                                       extrusion * 0.5F;
+                const auto front_bottom_a = project(
+                    column.x, front_page, base_depth - pixel_bottom);
+                const auto front_bottom_b = project(
+                    column.x + column.width, front_page,
+                    base_depth - pixel_bottom);
+                const auto front_top_a = project(
+                    column.x, front_page, base_depth - pixel_top);
+                const auto front_top_b = project(
+                    column.x + column.width, front_page,
+                    base_depth - pixel_top);
+                const auto back_top_a = project(
+                    column.x, back_page, base_depth - pixel_top);
+                const auto back_top_b = project(
+                    column.x + column.width, back_page,
+                    base_depth - pixel_top);
+                const auto back_bottom_a = project(
+                    column.x, back_page, base_depth - pixel_bottom);
+                const auto back_bottom_b = project(
+                    column.x + column.width, back_page,
+                    base_depth - pixel_bottom);
+                const auto sprite_color = voxel_color(
+                    column.color, 0.98F * lighting,
+                    luminance(column.color) < 0.20F
+                        ? 0.0F
+                        : voxel_ambient * lighting);
+                add_quad(front_bottom_a, front_bottom_b, front_top_b,
+                         front_top_a, sprite_color);
+                add_quad(back_bottom_a, back_bottom_b, back_top_b,
+                         back_top_a,
+                         voxel_color(column.color, 0.78F * lighting,
+                                     voxel_ambient * lighting));
+                const auto same_shape_pixel = [&](const int neighbour_x,
+                                                  const int neighbour_y) {
+                    if (column.sprite || neighbour_x < 0 || neighbour_y < 0 ||
+                        neighbour_x >= 160 || neighbour_y >= 144) {
+                        return false;
+                    }
+                    const auto neighbour = static_cast<std::size_t>(neighbour_y) *
+                                               160U +
+                                           static_cast<std::size_t>(neighbour_x);
+                    return popup_object_mask[neighbour] &&
+                           popup_object_anchor_y[neighbour] == anchor_y;
+                };
+                const auto cap_color = voxel_color(
+                    column.color, 0.84F * lighting,
+                    voxel_ambient * lighting);
+                const auto side_color = voxel_color(
+                    column.color, 0.70F * lighting,
+                    voxel_ambient * lighting);
+                if (column.sprite || !same_shape_pixel(static_cast<int>(column.x),
+                                                        static_cast<int>(column.y) - 1)) {
+                    add_quad(front_top_a, front_top_b, back_top_b, back_top_a,
+                             cap_color);
+                }
+                if (column.sprite || !same_shape_pixel(static_cast<int>(column.x) + 1,
+                                                        static_cast<int>(column.y))) {
+                    add_quad(front_bottom_b, back_bottom_b, back_top_b,
+                             front_top_b, side_color);
+                }
+                if (column.sprite || !same_shape_pixel(static_cast<int>(column.x) - 1,
+                                                        static_cast<int>(column.y))) {
+                    add_quad(back_bottom_a, front_bottom_a, front_top_a,
+                             back_top_a,
+                             voxel_color(column.color, 0.58F * lighting,
+                                         voxel_ambient * lighting));
+                }
+                if (!column.sprite && !same_shape_pixel(static_cast<int>(column.x),
+                                                        static_cast<int>(column.y) + 1)) {
+                    add_quad(back_bottom_a, back_bottom_b, front_bottom_b,
+                             front_bottom_a,
+                             voxel_color(column.color, 0.62F * lighting,
+                                         voxel_ambient * lighting));
+                }
+                    continue;
+                }
+        }
         const auto top_a = project(column.x, column.y, column.height);
         const auto top_b = project(column.x + column.width, column.y,
                                    column.height);
@@ -480,27 +738,31 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels) {
             return column.sprite ? column.color
                                   : border_color(border_x, border_y);
         };
-        const auto cell_x = static_cast<int>(column.x);
-        const auto cell_y = static_cast<int>(column.y);
+        const auto grid_x = static_cast<int>(column.x) /
+                            static_cast<int>(cell_size);
+        const auto grid_y = static_cast<int>(column.y) /
+                            static_cast<int>(cell_size);
+        const auto source_x = static_cast<int>(column.x);
+        const auto source_y = static_cast<int>(column.y);
         constexpr float wall_threshold = 0.60F;
-        if (column.height < height_at(cell_x, cell_y - 1) - wall_threshold)
+        if (column.height < height_at(grid_x, grid_y - 1) - wall_threshold)
             add_quad(base_a, base_b, top_b, top_a,
-                     voxel_color(side_color(cell_x, cell_y - 1),
+                     voxel_color(side_color(source_x, source_y - 1),
                                  0.58F * lighting,
                                  voxel_ambient * lighting));
-        if (column.height < height_at(cell_x + 1, cell_y) - wall_threshold)
+        if (column.height < height_at(grid_x + 1, grid_y) - wall_threshold)
             add_quad(base_b, base_c, top_c, top_b,
-                     voxel_color(side_color(cell_x + 1, cell_y),
+                     voxel_color(side_color(source_x + static_cast<int>(cell_size), source_y),
                                  0.68F * lighting,
                                  voxel_ambient * lighting));
-        if (column.height < height_at(cell_x, cell_y + 1) - wall_threshold)
+        if (column.height < height_at(grid_x, grid_y + 1) - wall_threshold)
             add_quad(base_c, base_d, top_d, top_c,
-                     voxel_color(side_color(cell_x, cell_y + 1),
+                     voxel_color(side_color(source_x, source_y + static_cast<int>(cell_size)),
                                  0.76F * lighting,
                                  voxel_ambient * lighting));
-        if (column.height < height_at(cell_x - 1, cell_y) - wall_threshold)
+        if (column.height < height_at(grid_x - 1, grid_y) - wall_threshold)
             add_quad(base_d, base_a, top_a, top_d,
-                     voxel_color(side_color(cell_x - 1, cell_y),
+                     voxel_color(side_color(source_x - 1, source_y),
                                  0.62F * lighting,
                                  voxel_ambient * lighting));
         // Preserve dark source pixels on their front faces. Ambient lighting
@@ -669,9 +931,14 @@ void present(WebApp& app) {
             }
             app.display_pixels[index] = pixel;
         }
-        if (app.video_mode == gameboy::VideoMode::voxel_diorama &&
+        if ((app.video_mode == gameboy::VideoMode::voxel_diorama ||
+             app.video_mode == gameboy::VideoMode::voxel_shape ||
+             app.video_mode == gameboy::VideoMode::voxel_popup) &&
             frame.width == 160 && frame.height == 144) {
-            render_web_voxel(app, app.display_pixels);
+            render_web_voxel(
+                app, app.display_pixels,
+                app.video_mode == gameboy::VideoMode::voxel_shape,
+                app.video_mode == gameboy::VideoMode::voxel_popup);
         } else {
             static_cast<void>(SDL_UpdateTexture(
                 app.texture, nullptr, app.display_pixels.data(),
