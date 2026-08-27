@@ -24,6 +24,7 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -85,51 +86,46 @@ void apply_video_mode(WebApp& app, const unsigned mode) noexcept {
     static_cast<void>(SDL_SetTextureScaleMode(app.texture, filtering));
 }
 
-SDL_FColor voxel_color(const std::uint32_t pixel, const float shade) {
-    const auto component = [pixel, shade](const unsigned shift) {
+SDL_FColor voxel_color(const std::uint32_t pixel, const float shade,
+                       const float ambient = 0.0F) {
+    const auto component = [pixel, shade, ambient](const unsigned shift) {
         const auto value = static_cast<float>((pixel >> shift) & 0xFFU) / 255.0F;
-        return std::clamp(value * shade + 0.02F, 0.0F, 1.0F);
+        return std::clamp(value * shade + ambient, 0.0F, 1.0F);
     };
     return {component(16), component(8), component(0), 1.0F};
 }
 
 void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels) {
-    constexpr unsigned cell_size = 2;
-    constexpr unsigned cells_x = 160 / cell_size;
-    constexpr unsigned cells_y = 144 / cell_size;
-    constexpr float base_depth = -5.0F;
-    constexpr float zoom = 0.78F;
-    constexpr float perspective = 0.0012F;
-    const auto yaw = (-18.0F + app.voxel_camera_yaw_offset) *
+    // Keep the browser presentation in lockstep with the desktop renderer.
+    // Both use the same native-resolution relief, layer heights and painter
+    // ordering; only the input framebuffer and SDL renderer differ.
+    constexpr float depth_scale = 1.0F;
+    constexpr float base_depth = -8.0F * depth_scale;
+    constexpr float zoom = 0.72F;
+    constexpr float perspective = 0.0015F;
+    constexpr float camera_pitch = 24.0F;
+    constexpr float camera_yaw = 0.0F;
+    constexpr float sprite_depth = 8.0F;
+    constexpr float lighting = 1.0F;
+    constexpr float voxel_ambient = 0.055F;
+    const auto& scene = app.emulator->scene_snapshot();
+    const auto yaw = (camera_yaw + app.voxel_camera_yaw_offset) *
                      0.01745329251994329577F;
-    const auto pitch = (27.0F + app.voxel_camera_pitch_offset) *
+    const auto pitch = (camera_pitch + app.voxel_camera_pitch_offset) *
                        0.01745329251994329577F;
     const auto yaw_cos = std::cos(yaw);
     const auto yaw_sin = std::sin(yaw);
     const auto pitch_cos = std::cos(pitch);
     const auto pitch_sin = std::sin(pitch);
-    const auto luminance = [](const std::uint32_t pixel) {
-        return (0.2126F * static_cast<float>((pixel >> 16) & 0xFFU) +
-                0.7152F * static_cast<float>((pixel >> 8) & 0xFFU) +
-                0.0722F * static_cast<float>(pixel & 0xFFU)) / 255.0F;
-    };
-    const auto pixel_at = [&](const int x, const int y) {
-        const auto clamped_x = std::clamp(x, 0, 159);
-        const auto clamped_y = std::clamp(y, 0, 143);
-        return pixels[static_cast<std::size_t>(clamped_y) * 160U +
-                      static_cast<std::size_t>(clamped_x)];
-    };
     const auto project = [&](const float x, const float y, const float z) {
         const auto centered_x = x - 80.0F;
         const auto centered_y = y - 72.0F;
-        // Rotate the framebuffer around its vertical center axis, then pitch
-        // it toward the viewer. This is the same camera convention as the
-        // desktop diorama, expressed in the browser's logical coordinates.
         const auto yaw_x = centered_x * yaw_cos - z * yaw_sin;
         const auto yaw_depth = centered_x * yaw_sin + z * yaw_cos;
         const auto pitched_y = centered_y * pitch_cos - yaw_depth * pitch_sin;
         const auto depth = centered_y * pitch_sin + yaw_depth * pitch_cos;
-        const auto scale = 1.0F / std::max(0.35F, 1.0F + depth * perspective);
+        const auto scale = 1.0F /
+            std::max(0.35F, 1.0F + depth * perspective);
         return SDL_FPoint{80.0F + yaw_x * zoom * scale,
                           72.0F + pitched_y * zoom * scale};
     };
@@ -137,8 +133,8 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels) {
     auto& indices = app.voxel_indices;
     vertices.clear();
     indices.clear();
-    vertices.reserve(cells_x * cells_y * 20U);
-    indices.reserve(cells_x * cells_y * 30U);
+    vertices.reserve(120000);
+    indices.reserve(180000);
     const auto add_quad = [&](const SDL_FPoint a, const SDL_FPoint b,
                               const SDL_FPoint c, const SDL_FPoint d,
                               const SDL_FColor color) {
@@ -150,71 +146,214 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels) {
         indices.insert(indices.end(), {base, base + 1, base + 2,
                                        base, base + 2, base + 3});
     };
-    std::array<float, cells_x * cells_y> heights{};
-    for (unsigned row = 0; row < cells_y; ++row) {
-        for (unsigned column = 0; column < cells_x; ++column) {
-            const auto x = static_cast<int>(column * cell_size);
-            const auto y = static_cast<int>(row * cell_size);
-            const auto pixel = pixel_at(x, y);
-            const auto center_luma = luminance(pixel);
-            auto minimum = center_luma;
-            auto maximum = center_luma;
-            for (int oy = -2; oy <= 2; oy += 2) {
-                for (int ox = -2; ox <= 2; ox += 2) {
-                    const auto neighbor = luminance(pixel_at(x + ox, y + oy));
-                    minimum = std::min(minimum, neighbor);
-                    maximum = std::max(maximum, neighbor);
-                }
-            }
-            const auto edge = maximum - minimum;
-            // Flat fills stay close to the recessed screen; outlines and
-            // silhouettes receive a modest extrusion that reads as depth
-            // without turning the image into a wall of black voxels.
-            heights[row * cells_x + column] =
-                base_depth + std::min(7.0F, edge * 8.0F +
-                                               (1.0F - center_luma) * 0.55F);
+    const auto backdrop_key = [](const std::uint32_t pixel) {
+        const auto quantize = [](const std::uint32_t component) {
+            return (component >> 4U) & 0x0FU;
+        };
+        return (quantize((pixel >> 16) & 0xFFU) << 8U) |
+               (quantize((pixel >> 8) & 0xFFU) << 4U) |
+               quantize(pixel & 0xFFU);
+    };
+    std::unordered_map<unsigned, std::size_t> backdrop_histogram;
+    for (unsigned y = 24; y < 124; ++y) {
+        for (unsigned x = 0; x < 160; ++x) {
+            ++backdrop_histogram[backdrop_key(
+                pixels[y * 160U + x])];
         }
     }
-    for (unsigned row = 0; row < cells_y; ++row) {
-        for (unsigned column = 0; column < cells_x; ++column) {
-            const auto x = static_cast<float>(column * cell_size);
-            const auto y = static_cast<float>(row * cell_size);
-            const auto depth = heights[row * cells_x + column];
-            const auto color = voxel_color(pixel_at(static_cast<int>(x),
-                                                    static_cast<int>(y)), 0.94F);
-            // Continuous recessed plane: no source pixels disappear between
-            // raised columns, even when a browser renderer has no depth test.
-            add_quad(project(x, y, base_depth),
-                     project(x + cell_size, y, base_depth),
-                     project(x + cell_size, y + cell_size, base_depth),
-                     project(x, y + cell_size, base_depth), color);
-            if (depth <= base_depth + 0.05F) continue;
-            const auto top_a = project(x, y, depth);
-            const auto top_b = project(x + cell_size, y, depth);
-            const auto top_c = project(x + cell_size, y + cell_size, depth);
-            const auto top_d = project(x, y + cell_size, depth);
-            const auto base_a = project(x, y, base_depth);
-            const auto base_b = project(x + cell_size, y, base_depth);
-            const auto base_c = project(x + cell_size, y + cell_size, base_depth);
-            const auto base_d = project(x, y + cell_size, base_depth);
-            const auto neighbor = [&](const int dx, const int dy) {
-                const auto nx = static_cast<int>(column) + dx;
-                const auto ny = static_cast<int>(row) + dy;
-                if (nx < 0 || ny < 0 || nx >= static_cast<int>(cells_x) ||
-                    ny >= static_cast<int>(cells_y)) return base_depth;
-                return heights[static_cast<std::size_t>(ny) * cells_x +
-                               static_cast<std::size_t>(nx)];
-            };
-            if (depth > neighbor(0, -1) + 0.45F)
-                add_quad(base_a, base_b, top_b, top_a,
-                         voxel_color(pixel_at(static_cast<int>(x),
-                                              static_cast<int>(y)), 0.62F));
-            if (depth > neighbor(1, 0) + 0.45F)
-                add_quad(base_b, base_c, top_c, top_b,
-                         voxel_color(pixel_at(static_cast<int>(x),
-                                              static_cast<int>(y)), 0.72F));
-            add_quad(top_a, top_b, top_c, top_d, color);
+    unsigned backdrop_color_key = 0;
+    std::size_t backdrop_pixels = 0;
+    for (const auto& [key, count] : backdrop_histogram) {
+        if (count > backdrop_pixels) {
+            backdrop_color_key = key;
+            backdrop_pixels = count;
         }
+    }
+
+    constexpr unsigned cell_size = 1;
+    constexpr unsigned cells_x = 160;
+    constexpr unsigned cells_y = 144;
+    struct VoxelColumn {
+        float x{};
+        float y{};
+        float width{1.0F};
+        float extent_y{1.0F};
+        float height{};
+        float sort_depth{};
+        std::uint32_t color{};
+        bool sprite{};
+        bool window{};
+        bool object{};
+    };
+    std::vector<VoxelColumn> columns;
+    columns.reserve(cells_x * cells_y);
+    std::vector<float> column_heights(cells_x * cells_y, 0.0F);
+    std::array<bool, cells_x * cells_y> sprite_mask{};
+    std::array<bool, cells_x * cells_y> window_mask{};
+    const auto sprite_height = (scene.lcdc & 0x04U) != 0 ? 16 : 8;
+    const auto sprite_pixel_opaque = [&](const gbb::SceneSprite& sprite,
+                                         const int x, const int y) {
+        if (scene.tile_size_bytes == 0 || scene.tile_data.empty()) return false;
+        const auto source_x = (sprite.attributes & 0x20U) != 0 ? 7 - x : x;
+        const auto source_y = (sprite.attributes & 0x40U) != 0
+                                  ? sprite_height - 1 - y
+                                  : y;
+        const auto tile = sprite_height == 16
+                              ? static_cast<unsigned>(sprite.tile & 0xFEU)
+                              : static_cast<unsigned>(sprite.tile);
+        const auto tile_index = tile + static_cast<unsigned>(source_y / 8);
+        const auto bank = scene.cgb_mode && (sprite.attributes & 0x08U) != 0
+                              ? 1U
+                              : 0U;
+        const auto offset = static_cast<std::size_t>(bank) *
+                                scene.tile_bank_stride +
+                            static_cast<std::size_t>(tile_index) *
+                                scene.tile_size_bytes +
+                            static_cast<std::size_t>(source_y % 8) * 2U;
+        if (offset + 1 >= scene.tile_data.size()) return false;
+        const auto bit = static_cast<unsigned>(7 - source_x);
+        const auto low = (scene.tile_data[offset] >> bit) & 0x01U;
+        const auto high = (scene.tile_data[offset + 1] >> bit) & 0x01U;
+        return (low | (high << 1U)) != 0;
+    };
+    for (const auto& sprite : scene.sprites) {
+        if (!sprite.visible) continue;
+        for (int local_y = 0; local_y < sprite_height; ++local_y) {
+            for (int local_x = 0; local_x < 8; ++local_x) {
+                if (!sprite_pixel_opaque(sprite, local_x, local_y)) continue;
+                const auto x = static_cast<int>(sprite.screen_x) + local_x;
+                const auto y = static_cast<int>(sprite.screen_y) + local_y;
+                if (x < 0 || y < 0 || x >= 160 || y >= 144) continue;
+                sprite_mask[static_cast<std::size_t>(y) * 160U +
+                            static_cast<std::size_t>(x)] = true;
+            }
+        }
+    }
+    if (scene.window.enabled) {
+        const auto window_left = std::clamp(static_cast<int>(scene.wx) - 7,
+                                            0, 160);
+        const auto window_top = std::clamp(static_cast<int>(scene.wy), 0, 144);
+        for (int y = window_top; y < 144; ++y) {
+            for (int x = window_left; x < 160; ++x) {
+                window_mask[static_cast<std::size_t>(y) * 160U +
+                            static_cast<std::size_t>(x)] = true;
+            }
+        }
+    }
+    const auto luminance = [](const std::uint32_t pixel) {
+        const auto red = static_cast<float>((pixel >> 16) & 0xFFU);
+        const auto green = static_cast<float>((pixel >> 8) & 0xFFU);
+        const auto blue = static_cast<float>(pixel & 0xFFU);
+        return (0.2126F * red + 0.7152F * green + 0.0722F * blue) / 255.0F;
+    };
+    const auto pixel_luminance_at = [&](const int x, const int y) {
+        const auto clamped_x = std::clamp(x, 0, 159);
+        const auto clamped_y = std::clamp(y, 0, 143);
+        return luminance(pixels[static_cast<std::size_t>(clamped_y) * 160U +
+                               static_cast<std::size_t>(clamped_x)]);
+    };
+    for (unsigned cell_y = 0; cell_y < cells_y; ++cell_y) {
+        for (unsigned cell_x = 0; cell_x < cells_x; ++cell_x) {
+            const auto pixel_index = cell_y * 160U + cell_x;
+            const auto color = pixels[pixel_index];
+            const auto local_luminance = luminance(color);
+            const auto has_sprite = sprite_mask[pixel_index];
+            const auto has_window = window_mask[pixel_index];
+            const auto has_object = backdrop_key(color) != backdrop_color_key;
+            float neighborhood_min = 1.0F;
+            float neighborhood_max = 0.0F;
+            for (int offset_y = -1; offset_y <= 1; ++offset_y) {
+                for (int offset_x = -1; offset_x <= 1; ++offset_x) {
+                    const auto neighbor_luminance = pixel_luminance_at(
+                        static_cast<int>(cell_x) + offset_x,
+                        static_cast<int>(cell_y) + offset_y);
+                    neighborhood_min = std::min(neighborhood_min,
+                                                neighbor_luminance);
+                    neighborhood_max = std::max(neighborhood_max,
+                                                neighbor_luminance);
+                }
+            }
+            const auto local_contrast = neighborhood_max - neighborhood_min;
+            const auto relief = std::max(
+                0.0F, local_contrast *
+                           (4.0F + (1.0F - local_luminance) * 4.0F) +
+                           (has_sprite ? sprite_depth * 0.35F : 0.0F));
+            const auto surface_relief = std::min(relief * 1.20F, 6.0F);
+            const auto layer_height = has_window ? 15.0F
+                                  : has_sprite ? 9.0F
+                                  : has_object ? 5.0F
+                                               : 0.0F;
+            const auto depth = base_depth + depth_scale *
+                               (layer_height + surface_relief);
+            const auto x = static_cast<float>(cell_x);
+            const auto y = static_cast<float>(cell_y);
+            const auto centered_x = x + 0.5F - 80.0F;
+            const auto centered_y = y + 0.5F - 72.0F;
+            const auto rotated_y = centered_x * yaw_sin + centered_y * yaw_cos;
+            column_heights[pixel_index] = depth;
+            columns.push_back({x, y, 1.0F, 1.0F, depth,
+                               rotated_y * pitch_sin + depth * pitch_cos,
+                               color, has_sprite, has_window, has_object});
+        }
+    }
+    for (const auto& column : columns) {
+        add_quad(project(column.x, column.y, base_depth),
+                 project(column.x + column.width, column.y, base_depth),
+                 project(column.x + column.width,
+                         column.y + column.extent_y, base_depth),
+                 project(column.x, column.y + column.extent_y, base_depth),
+                 voxel_color(column.color, 0.90F * lighting,
+                             voxel_ambient * lighting));
+    }
+    std::stable_sort(columns.begin(), columns.end(),
+                     [](const VoxelColumn& left, const VoxelColumn& right) {
+                         return left.sort_depth > right.sort_depth;
+                     });
+    const auto height_at = [&](const int cell_x, const int cell_y) {
+        if (cell_x < 0 || cell_y < 0 || cell_x >= 160 || cell_y >= 144)
+            return base_depth;
+        return column_heights[static_cast<std::size_t>(cell_y) * 160U +
+                              static_cast<std::size_t>(cell_x)];
+    };
+    for (const auto& column : columns) {
+        if (column.height <= base_depth + 0.15F) continue;
+        const auto top_a = project(column.x, column.y, column.height);
+        const auto top_b = project(column.x + column.width, column.y,
+                                   column.height);
+        const auto top_c = project(column.x + column.width,
+                                   column.y + column.extent_y, column.height);
+        const auto top_d = project(column.x, column.y + column.extent_y,
+                                   column.height);
+        const auto base_a = project(column.x, column.y, base_depth);
+        const auto base_b = project(column.x + column.width, column.y,
+                                    base_depth);
+        const auto base_c = project(column.x + column.width,
+                                    column.y + column.extent_y, base_depth);
+        const auto base_d = project(column.x, column.y + column.extent_y,
+                                    base_depth);
+        const auto cell_x = static_cast<int>(column.x);
+        const auto cell_y = static_cast<int>(column.y);
+        constexpr float wall_threshold = 0.60F;
+        if (column.height > height_at(cell_x, cell_y - 1) + wall_threshold)
+            add_quad(base_a, base_b, top_b, top_a,
+                     voxel_color(column.color, 0.58F * lighting,
+                                 voxel_ambient * lighting));
+        if (column.height > height_at(cell_x + 1, cell_y) + wall_threshold)
+            add_quad(base_b, base_c, top_c, top_b,
+                     voxel_color(column.color, 0.68F * lighting,
+                                 voxel_ambient * lighting));
+        if (column.height > height_at(cell_x, cell_y + 1) + wall_threshold)
+            add_quad(base_c, base_d, top_d, top_c,
+                     voxel_color(column.color, 0.76F * lighting,
+                                 voxel_ambient * lighting));
+        if (column.height > height_at(cell_x - 1, cell_y) + wall_threshold)
+            add_quad(base_d, base_a, top_a, top_d,
+                     voxel_color(column.color, 0.62F * lighting,
+                                 voxel_ambient * lighting));
+        add_quad(top_a, top_b, top_c, top_d,
+                 voxel_color(column.color,
+                             (column.sprite ? 0.98F : 0.96F) * lighting,
+                             voxel_ambient * lighting));
     }
     if (!indices.empty() && !SDL_RenderGeometry(
                                 app.renderer, nullptr, vertices.data(),
