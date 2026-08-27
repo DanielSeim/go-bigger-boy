@@ -52,8 +52,15 @@ independent of presentation tuning. The native Windows dashboard exposes the
 active ROM fingerprint and profile fields, and writes only that ROM's section
 while preserving profiles for other titles.
 
-The SDL frontend now includes an experimental `Voxel diorama (desktop
-prototype)` presentation mode. It uses the snapshot to generate deterministic
+`include/gbb/scene_json.hpp` provides the versioned `gbb.scene.v1` JSON
+serializer and file exporter. It deliberately contains only JSON primitives
+and arrays, so external renderers, debugging tools, and archival utilities can
+consume snapshots without linking to emulator internals. The CLI exposes this
+as `gbb_cli <rom> [instruction-count] --scene-json <output>`, and the browser
+offers the same export from its ROM screen.
+
+The SDL frontends include an experimental `Voxel diorama` presentation mode.
+It uses the snapshot to generate deterministic
 perspective tile-column and sprite meshes beneath the authoritative
 framebuffer. SDL geometry is intentionally used instead of shipping separate
 shader binaries, keeping the renderer portable across desktop backends.

@@ -7,6 +7,7 @@
 #include "gameboy/video_pipeline.hpp"
 #include "gbb/core_registry.hpp"
 #include "gbb/gameboy_core.hpp"
+#include "gbb/scene_json.hpp"
 #include "gbb/audio.hpp"
 #include "gbb/voxel_profile.hpp"
 
@@ -18,6 +19,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -325,6 +327,29 @@ void test_scene_snapshot_contract() {
           "scene snapshot decodes visible OAM coordinates and attributes");
     check(scene.window.map_address == 0x9800 && !scene.window.enabled,
           "scene snapshot reports disabled window state without special casing the frontend");
+}
+
+void test_scene_snapshot_json() {
+    auto core = gbb::create_core(cgb_test_rom());
+    const auto& scene = core->scene_snapshot();
+    const auto json = gbb::scene_snapshot_to_json(scene);
+    check(json.rfind("{\"schema\":\"gbb.scene.v1\"", 0) == 0 &&
+              json.back() == '\n' && json[json.size() - 2] == '}',
+          "scene snapshots serialize with a versioned JSON envelope");
+    check(json.find("\"background\":{") != std::string::npos &&
+              json.find("\"tile_data\":[") != std::string::npos &&
+              json.find("\"sprites\":[") != std::string::npos,
+          "scene JSON includes tile layers, graphics data, and sprites");
+
+    const auto path = std::filesystem::temp_directory_path() /
+                      "gbb-scene-snapshot-test.json";
+    check(gbb::write_scene_snapshot_json(scene, path),
+          "scene snapshots can be exported to a file");
+    std::ifstream input(path, std::ios::binary);
+    const std::string saved((std::istreambuf_iterator<char>(input)),
+                            std::istreambuf_iterator<char>());
+    check(saved == json, "exported scene JSON matches the in-memory document");
+    std::filesystem::remove(path);
 }
 
 void test_gameshark_cheats() {
@@ -3455,6 +3480,7 @@ int main() {
         test_rom_library_metadata_and_deduplication();
         test_multicore_frontend_contract();
         test_scene_snapshot_contract();
+        test_scene_snapshot_json();
         test_gameshark_cheats();
         test_video_pipeline_modes();
         test_voxel_profiles();

@@ -72,6 +72,20 @@ Inspect a ROM and execute a requested number of starter instructions:
 ./build/gbb_cli path/to/game.gb 10
 ```
 
+Export the current hardware scene as machine-readable JSON after optionally
+executing instructions:
+
+```sh
+./build/gbb_cli path/to/game.gb 10 --scene-json scene.json
+```
+
+The file uses the versioned `gbb.scene.v1` schema and includes display
+registers, background/window tile maps, decoded tile graphics and palettes,
+plus OAM sprite metadata. The same schema is available through
+`gbb::scene_snapshot_to_json` and the web frontend's **Export scene JSON**
+button, allowing external renderers and analysis tools to consume snapshots
+without linking against emulator internals.
+
 Run an individual acceptance-test ROM with a bounded cycle budget:
 
 ```sh

@@ -34,6 +34,7 @@ add_library(gbb_core_api
     src/core_registry.cpp
     src/gameboy_scene.cpp
     src/rom_library.cpp
+    src/scene_json.cpp
     src/voxel_profile.cpp
 )
 target_include_directories(gbb_core_api PUBLIC include)
@@ -88,7 +89,7 @@ if(GAMEBOY_BUILD_SDL)
                 "-sALLOW_MEMORY_GROWTH=1"
                 "-sMAXIMUM_MEMORY=536870912"
                 "-sENVIRONMENT=web"
-                "-sEXPORTED_FUNCTIONS=['_main','_gbb_resume_audio','_gbb_start_rom','_gbb_pause_rom','_gbb_set_palette','_gbb_set_video_mode','_gbb_set_voxel_camera','_gbb_reset_voxel_camera']"
+                "-sEXPORTED_FUNCTIONS=['_main','_gbb_resume_audio','_gbb_start_rom','_gbb_pause_rom','_gbb_set_palette','_gbb_set_video_mode','_gbb_set_voxel_camera','_gbb_reset_voxel_camera','_gbb_export_scene_snapshot']"
             )
             set_target_properties(gameboy_web PROPERTIES
                 OUTPUT_NAME index

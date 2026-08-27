@@ -1,20 +1,44 @@
 #include "gbb/core_registry.hpp"
 #include "gbb/gameboy_core.hpp"
+#include "gbb/scene_json.hpp"
 #include "gameboy/emulator.hpp"
 
 #include <cstdlib>
 #include <exception>
+#include <filesystem>
 #include <iomanip>
 #include <iostream>
+#include <optional>
 #include <string>
+#include <stdexcept>
 
 int main(int argc, char** argv) {
-    if (argc < 2 || argc > 3) {
-        std::cerr << "Usage: gbb_cli <rom> [instruction-count]\n";
+    if (argc < 2) {
+        std::cerr << "Usage: gbb_cli <rom> [instruction-count] "
+                     "[--scene-json <output>]\n";
         return EXIT_FAILURE;
     }
 
     try {
+        unsigned long instruction_count = 0;
+        bool instruction_count_set = false;
+        std::optional<std::filesystem::path> scene_json_path;
+        for (int index = 2; index < argc; ++index) {
+            const std::string argument = argv[index];
+            if (argument == "--scene-json") {
+                if (index + 1 >= argc) {
+                    throw std::invalid_argument(
+                        "--scene-json requires an output path");
+                }
+                scene_json_path = std::filesystem::path(argv[++index]);
+            } else if (!instruction_count_set) {
+                instruction_count = std::stoul(argument);
+                instruction_count_set = true;
+            } else {
+                throw std::invalid_argument("unknown command-line argument: " +
+                                            argument);
+            }
+        }
         auto core = gbb::create_core_from_file(argv[1]);
         const auto& descriptor = core->descriptor();
         std::cout << "Core: " << descriptor.core_name << '\n'
@@ -40,7 +64,6 @@ int main(int argc, char** argv) {
                       << static_cast<unsigned>(cartridge.type()) << '\n';
         }
 
-        const auto instruction_count = argc == 3 ? std::stoul(argv[2]) : 0UL;
         unsigned long total_cycles = 0;
         for (unsigned long i = 0; i < instruction_count; ++i) {
             total_cycles += core->step_instruction();
@@ -53,6 +76,16 @@ int main(int argc, char** argv) {
                       << std::setfill('0') << emulator->cpu().registers().pc;
         }
         std::cout << '\n';
+        if (scene_json_path) {
+            if (!gbb::write_scene_snapshot_json(core->scene_snapshot(),
+                                                *scene_json_path)) {
+                throw std::runtime_error(
+                    "Could not write scene snapshot: " +
+                    scene_json_path->string());
+            }
+            std::cout << "Scene snapshot: " << scene_json_path->string()
+                      << '\n';
+        }
     } catch (const std::exception& error) {
         std::cerr << "Error: " << error.what() << '\n';
         return EXIT_FAILURE;

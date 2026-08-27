@@ -7,6 +7,7 @@
 #include "gameboy/video_pipeline.hpp"
 #include "gbb/core_registry.hpp"
 #include "gbb/gameboy_core.hpp"
+#include "gbb/scene_json.hpp"
 #include "gbb/audio.hpp"
 
 #include <emscripten.h>
@@ -66,6 +67,7 @@ struct WebApp {
 
 WebApp* active_app{};
 unsigned requested_video_mode{};
+std::string scene_snapshot_export;
 
 void set_status(const std::string& message, bool error);
 
@@ -772,6 +774,16 @@ extern "C" EMSCRIPTEN_KEEPALIVE void gbb_reset_voxel_camera() noexcept {
     if (!active_app) return;
     active_app->voxel_camera_pitch_offset = 0.0F;
     active_app->voxel_camera_yaw_offset = 0.0F;
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char* gbb_export_scene_snapshot() noexcept {
+    scene_snapshot_export.clear();
+    if (active_app == nullptr || active_app->emulator == nullptr) {
+        return scene_snapshot_export.c_str();
+    }
+    scene_snapshot_export =
+        gbb::scene_snapshot_to_json(active_app->emulator->scene_snapshot());
+    return scene_snapshot_export.c_str();
 }
 
 SDL_AppResult SDL_AppInit(void** appstate, int, char**) {
