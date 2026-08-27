@@ -5,15 +5,36 @@
 #include <cmath>
 #include <cstddef>
 #include <fstream>
+#include <iterator>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
 namespace gbb {
 namespace {
+
+constexpr std::string_view super_mario_land_profile =
+    "[0x7eafc0023b31d850]\n"
+    "; SUPER MARIOLAND (W) (V1.0) [!] — layered platformer scene\n"
+    "depth_scale=1.25\n"
+    "camera_pitch=24\n"
+    "camera_yaw=0\n"
+    "zoom=0.74\n"
+    "perspective=0.0012\n"
+    "sprite_depth=10\n"
+    "lighting=1.08\n"
+    "background_depth_far=100\n"
+    "background_depth_near=20\n"
+    "background_transparent_depth=95\n"
+    "window_depth_far=90\n"
+    "window_depth_near=50\n"
+    "sprite_depth_far=45\n"
+    "sprite_depth_near=25\n"
+    "framebuffer_facade=0\n";
 
 std::string trim(std::string value) {
     const auto not_space = [](const unsigned char c) {
@@ -58,6 +79,13 @@ void parse_key(VoxelProfile& profile, const std::string& key,
     else if (key == "perspective") parse_float(value, profile.perspective);
     else if (key == "sprite_depth") parse_float(value, profile.sprite_depth);
     else if (key == "lighting") parse_float(value, profile.lighting);
+    else if (key == "background_depth_far") parse_float(value, profile.background_depth_far);
+    else if (key == "background_depth_near") parse_float(value, profile.background_depth_near);
+    else if (key == "background_transparent_depth") parse_float(value, profile.background_transparent_depth);
+    else if (key == "window_depth_far") parse_float(value, profile.window_depth_far);
+    else if (key == "window_depth_near") parse_float(value, profile.window_depth_near);
+    else if (key == "sprite_depth_far") parse_float(value, profile.sprite_depth_far);
+    else if (key == "sprite_depth_near") parse_float(value, profile.sprite_depth_near);
     else if (key == "framebuffer_facade") parse_bool(value, profile.framebuffer_facade);
 }
 
@@ -69,6 +97,15 @@ void clamp_profile(VoxelProfile& profile) {
     profile.perspective = std::clamp(profile.perspective, 0.0F, 0.02F);
     profile.sprite_depth = std::clamp(profile.sprite_depth, 0.0F, 64.0F);
     profile.lighting = std::clamp(profile.lighting, 0.1F, 2.0F);
+    profile.background_depth_far = std::clamp(profile.background_depth_far, 1.0F, 1000.0F);
+    profile.background_depth_near = std::clamp(profile.background_depth_near, 0.0F, profile.background_depth_far - 0.01F);
+    profile.background_transparent_depth = std::clamp(profile.background_transparent_depth,
+                                                       profile.background_depth_near,
+                                                       profile.background_depth_far);
+    profile.window_depth_far = std::clamp(profile.window_depth_far, 0.0F, 1000.0F);
+    profile.window_depth_near = std::clamp(profile.window_depth_near, 0.0F, profile.window_depth_far - 0.01F);
+    profile.sprite_depth_far = std::clamp(profile.sprite_depth_far, 0.0F, 1000.0F);
+    profile.sprite_depth_near = std::clamp(profile.sprite_depth_near, 0.0F, profile.sprite_depth_far - 0.01F);
 }
 
 bool section_matches(const std::string& section, const std::uint64_t fingerprint) {
@@ -89,9 +126,31 @@ bool section_matches(const std::string& section, const std::uint64_t fingerprint
 
 } // namespace
 
+VoxelProfile built_in_voxel_profile(const std::uint64_t fingerprint) {
+    VoxelProfile profile;
+    if (fingerprint == UINT64_C(0x7eafc0023b31d850)) {
+        profile.depth_scale = 1.25F;
+        profile.camera_pitch = 24.0F;
+        profile.camera_yaw = 0.0F;
+        profile.zoom = 0.74F;
+        profile.perspective = 0.0012F;
+    profile.sprite_depth = 10.0F;
+    profile.lighting = 1.08F;
+    profile.background_depth_far = 100.0F;
+    profile.background_depth_near = 20.0F;
+    profile.background_transparent_depth = 95.0F;
+    profile.window_depth_far = 90.0F;
+    profile.window_depth_near = 50.0F;
+    profile.sprite_depth_far = 45.0F;
+    profile.sprite_depth_near = 25.0F;
+    profile.framebuffer_facade = false;
+    }
+    return profile;
+}
+
 VoxelProfile load_voxel_profile(const std::filesystem::path& path,
                                 const std::uint64_t fingerprint) {
-    VoxelProfile defaults;
+    VoxelProfile defaults = built_in_voxel_profile(fingerprint);
     VoxelProfile selected = defaults;
     std::ifstream input(path);
     if (!input) return selected;
@@ -143,6 +202,13 @@ bool save_voxel_profile(const std::filesystem::path& path,
             << "perspective=" << clamped.perspective << '\n'
             << "sprite_depth=" << clamped.sprite_depth << '\n'
             << "lighting=" << clamped.lighting << '\n'
+            << "background_depth_far=" << clamped.background_depth_far << '\n'
+            << "background_depth_near=" << clamped.background_depth_near << '\n'
+            << "background_transparent_depth=" << clamped.background_transparent_depth << '\n'
+            << "window_depth_far=" << clamped.window_depth_far << '\n'
+            << "window_depth_near=" << clamped.window_depth_near << '\n'
+            << "sprite_depth_far=" << clamped.sprite_depth_far << '\n'
+            << "sprite_depth_near=" << clamped.sprite_depth_near << '\n'
             << "framebuffer_facade=" << (clamped.framebuffer_facade ? 1 : 0);
     std::vector<std::string> replacement;
     std::istringstream section_input(section.str());
@@ -213,7 +279,19 @@ bool save_voxel_profile(const std::filesystem::path& path,
 }
 
 void ensure_voxel_profile_file(const std::filesystem::path& path) {
-    if (path.empty() || std::filesystem::exists(path)) return;
+    if (path.empty()) return;
+    if (std::filesystem::exists(path)) {
+        // Existing installations receive new built-in profiles once, while
+        // preserving any values the user has already configured.
+        std::ifstream input(path);
+        const std::string contents((std::istreambuf_iterator<char>(input)),
+                                   std::istreambuf_iterator<char>());
+        if (contents.find("[0x7eafc0023b31d850]") != std::string::npos) return;
+        std::ofstream output(path, std::ios::app);
+        if (!output) return;
+        output << '\n' << super_mario_land_profile;
+        return;
+    }
     std::ofstream output(path);
     if (!output) return;
     output << "; Go Bigger Boy voxel diorama profiles\n"
@@ -226,7 +304,15 @@ void ensure_voxel_profile_file(const std::filesystem::path& path) {
               "perspective=0.0015\n"
               "sprite_depth=8\n"
               "lighting=1.0\n"
-              "framebuffer_facade=0\n";
+              "background_depth_far=100\n"
+              "background_depth_near=20\n"
+              "background_transparent_depth=95\n"
+              "window_depth_far=90\n"
+              "window_depth_near=50\n"
+              "sprite_depth_far=45\n"
+              "sprite_depth_near=25\n"
+              "framebuffer_facade=0\n\n"
+           << super_mario_land_profile;
 }
 
 } // namespace gbb

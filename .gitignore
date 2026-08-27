@@ -17,3 +17,4 @@ __pycache__/
 /android/local.properties
 /.android-signing/
 /android/app/gbb-release.p12
+/roms/

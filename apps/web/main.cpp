@@ -8,6 +8,7 @@
 #include "gbb/core_registry.hpp"
 #include "gbb/gameboy_core.hpp"
 #include "gbb/scene_json.hpp"
+#include "gbb/voxel_profile.hpp"
 #include "gbb/audio.hpp"
 
 #include <emscripten.h>
@@ -23,6 +24,7 @@
 #include <exception>
 #include <iomanip>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -101,14 +103,19 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels) {
     // Keep the browser presentation in lockstep with the desktop renderer.
     // Both use the same native-resolution relief, layer heights and painter
     // ordering; only the input framebuffer and SDL renderer differ.
-    constexpr float depth_scale = 1.0F;
-    constexpr float base_depth = -8.0F * depth_scale;
-    constexpr float zoom = 0.72F;
-    constexpr float perspective = 0.0015F;
-    constexpr float camera_pitch = 24.0F;
-    constexpr float camera_yaw = 0.0F;
-    constexpr float sprite_depth = 8.0F;
-    constexpr float lighting = 1.0F;
+    const auto profile =
+        gbb::built_in_voxel_profile(app.emulator->rom_fingerprint());
+    const auto depth_scale = profile.depth_scale;
+    // In the projection a larger Z value is farther from the viewer. Keep
+    // the recessed background at the far end, then subtract each layer's
+    // height so windows and sprites move toward the viewer in that order.
+    const auto base_depth = 8.0F * depth_scale;
+    const auto zoom = profile.zoom;
+    const auto perspective = profile.perspective;
+    const auto camera_pitch = profile.camera_pitch;
+    const auto camera_yaw = profile.camera_yaw;
+    const auto sprite_depth = profile.sprite_depth;
+    const auto lighting = profile.lighting;
     constexpr float voxel_ambient = 0.055F;
     const auto& scene = app.emulator->scene_snapshot();
     const auto yaw = (camera_yaw + app.voxel_camera_yaw_offset) *
@@ -157,10 +164,12 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels) {
                quantize(pixel & 0xFFU);
     };
     std::unordered_map<unsigned, std::size_t> backdrop_histogram;
+    std::unordered_map<std::uint32_t, std::size_t> backdrop_colors;
     for (unsigned y = 24; y < 124; ++y) {
         for (unsigned x = 0; x < 160; ++x) {
-            ++backdrop_histogram[backdrop_key(
-                pixels[y * 160U + x])];
+            const auto pixel = pixels[y * 160U + x];
+            ++backdrop_histogram[backdrop_key(pixel)];
+            ++backdrop_colors[pixel];
         }
     }
     unsigned backdrop_color_key = 0;
@@ -169,6 +178,15 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels) {
         if (count > backdrop_pixels) {
             backdrop_color_key = key;
             backdrop_pixels = count;
+        }
+    }
+    std::uint32_t backdrop_color = 0;
+    std::size_t backdrop_color_pixels = 0;
+    for (const auto& [pixel, count] : backdrop_colors) {
+        if (backdrop_key(pixel) == backdrop_color_key &&
+            count > backdrop_color_pixels) {
+            backdrop_color = pixel;
+            backdrop_color_pixels = count;
         }
     }
 
@@ -254,6 +272,66 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels) {
         return luminance(pixels[static_cast<std::size_t>(clamped_y) * 160U +
                                static_cast<std::size_t>(clamped_x)]);
     };
+    // Reconstruct the flat background under raised pixels. A nearby dominant
+    // background sample is used so window/object geometry does not leave a
+    // colored copy embedded in the recessed plane beneath it.
+    std::vector<std::uint32_t> background_pixels = pixels;
+    const auto nearest_background = [&](const int source_x,
+                                        const int source_y) {
+        const auto candidate = [&](const int x, const int y)
+            -> std::optional<std::uint32_t> {
+            if (x < 0 || y < 0 || x >= 160 || y >= 144) {
+                return std::nullopt;
+            }
+            const auto index = static_cast<std::size_t>(y) * 160U +
+                               static_cast<std::size_t>(x);
+            if (backdrop_key(pixels[index]) != backdrop_color_key ||
+                sprite_mask[index] || window_mask[index]) {
+                return std::nullopt;
+            }
+            return pixels[index];
+        };
+        for (int radius = 1; radius <= 16; ++radius) {
+            const std::array<std::pair<int, int>, 4> probes{{
+                {source_x - radius, source_y},
+                {source_x + radius, source_y},
+                {source_x, source_y - radius},
+                {source_x, source_y + radius}}};
+            for (const auto [x, y] : probes) {
+                if (const auto value = candidate(x, y)) return *value;
+            }
+        }
+        return backdrop_color;
+    };
+    for (int y = 0; y < 144; ++y) {
+        for (int x = 0; x < 160; ++x) {
+            const auto index = static_cast<std::size_t>(y) * 160U +
+                               static_cast<std::size_t>(x);
+            if (backdrop_key(pixels[index]) != backdrop_color_key ||
+                sprite_mask[index]) {
+                background_pixels[index] = nearest_background(x, y);
+            }
+        }
+    }
+    // Layer spans are derived from the configured far/near ranges. The
+    // resulting planes are contiguous and ordered even when ROM-specific
+    // profiles use different logical depth numbers.
+    const auto background_span = std::clamp(
+        profile.background_depth_far - profile.background_depth_near,
+        1.0F, 200.0F) * 0.10F;
+    const auto window_span = std::clamp(
+        profile.window_depth_far - profile.window_depth_near, 1.0F, 200.0F) *
+                             0.10F;
+    const auto sprite_span = std::clamp(
+        profile.sprite_depth_far - profile.sprite_depth_near, 1.0F, 200.0F) *
+                             0.20F;
+    constexpr float window_gap = 0.75F;
+    constexpr float sprite_gap = 0.75F;
+    // Pull the complete sprite band slightly toward the background. This
+    // keeps sprites in front of the window layer while avoiding the detached
+    // "floating in air" look caused by an overly large inter-layer offset.
+    const auto sprite_pullback = std::min(
+        3.0F, std::max(0.0F, sprite_gap + sprite_span * 0.60F - 0.25F));
     for (unsigned cell_y = 0; cell_y < cells_y; ++cell_y) {
         for (unsigned cell_x = 0; cell_x < cells_x; ++cell_x) {
             const auto pixel_index = cell_y * 160U + cell_x;
@@ -262,6 +340,8 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels) {
             const auto has_sprite = sprite_mask[pixel_index];
             const auto has_window = window_mask[pixel_index];
             const auto has_object = backdrop_key(color) != backdrop_color_key;
+            const auto window_layer = has_window && has_object && !has_sprite;
+            const auto object_layer = has_sprite;
             float neighborhood_min = 1.0F;
             float neighborhood_max = 0.0F;
             for (int offset_y = -1; offset_y <= 1; ++offset_y) {
@@ -278,15 +358,42 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels) {
             const auto local_contrast = neighborhood_max - neighborhood_min;
             const auto relief = std::max(
                 0.0F, local_contrast *
-                           (4.0F + (1.0F - local_luminance) * 4.0F) +
-                           (has_sprite ? sprite_depth * 0.35F : 0.0F));
+                           (4.0F + (1.0F - local_luminance) * 4.0F));
             const auto surface_relief = std::min(relief * 1.20F, 6.0F);
-            const auto layer_height = has_window ? 15.0F
-                                  : has_sprite ? 9.0F
-                                  : has_object ? 5.0F
-                                               : 0.0F;
-            const auto depth = base_depth + depth_scale *
-                               (layer_height + surface_relief);
+            // Separate layer instances keep the static background flat while
+            // giving the window and object/sprite layers independent offsets
+            // and extrusion budgets.
+            const auto normalized_band = [](const float value,
+                                            const float far_depth,
+                                            const float near_depth) {
+                return std::clamp((far_depth - value) /
+                                      std::max(0.01F,
+                                               far_depth - near_depth),
+                                  0.0F, 1.0F);
+            };
+            const auto background_position = has_object
+                                                 ? 1.0F
+                                                 : normalized_band(
+                                                       profile.background_transparent_depth,
+                                                       profile.background_depth_far,
+                                                       profile.background_depth_near);
+            const auto window_position = std::clamp(
+                0.35F + surface_relief / 10.0F, 0.0F, 1.0F);
+            const auto sprite_position = std::clamp(
+                0.60F + surface_relief / 10.0F +
+                    std::min(sprite_depth * 0.02F, 0.20F),
+                0.0F, 1.0F);
+            const auto layer_height = window_layer
+                                          ? background_span + window_gap +
+                                                window_span * window_position
+                                          : object_layer
+                                                ? background_span + window_gap +
+                                                      window_span + sprite_gap -
+                                                      sprite_pullback +
+                                                      sprite_span * sprite_position
+                                                : background_span *
+                                                      background_position;
+            const auto depth = base_depth - depth_scale * layer_height;
             const auto x = static_cast<float>(cell_x);
             const auto y = static_cast<float>(cell_y);
             const auto centered_x = x + 0.5F - 80.0F;
@@ -295,20 +402,30 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels) {
             column_heights[pixel_index] = depth;
             columns.push_back({x, y, 1.0F, 1.0F, depth,
                                rotated_y * pitch_sin + depth * pitch_cos,
-                               color, has_sprite, has_window, has_object});
+                               color, has_sprite, window_layer, object_layer});
         }
     }
     for (const auto& column : columns) {
+        const auto pixel_index = static_cast<std::size_t>(column.y) * 160U +
+                                 static_cast<std::size_t>(column.x);
         add_quad(project(column.x, column.y, base_depth),
                  project(column.x + column.width, column.y, base_depth),
                  project(column.x + column.width,
                          column.y + column.extent_y, base_depth),
                  project(column.x, column.y + column.extent_y, base_depth),
-                 voxel_color(column.color, 0.90F * lighting,
+                 voxel_color(background_pixels[pixel_index],
+                             0.90F * lighting,
                              voxel_ambient * lighting));
     }
     std::stable_sort(columns.begin(), columns.end(),
                      [](const VoxelColumn& left, const VoxelColumn& right) {
+                         const auto layer_rank = [](const VoxelColumn& column) {
+                             return column.sprite ? 2 : column.window ? 1 : 0;
+                         };
+                         const auto left_rank = layer_rank(left);
+                         const auto right_rank = layer_rank(right);
+                         if (left_rank != right_rank)
+                             return left_rank < right_rank;
                          return left.sort_depth > right.sort_depth;
                      });
     const auto height_at = [&](const int cell_x, const int cell_y) {
@@ -318,7 +435,7 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels) {
                               static_cast<std::size_t>(cell_x)];
     };
     for (const auto& column : columns) {
-        if (column.height <= base_depth + 0.15F) continue;
+        if (column.height >= base_depth - 0.15F) continue;
         const auto top_a = project(column.x, column.y, column.height);
         const auto top_b = project(column.x + column.width, column.y,
                                    column.height);
@@ -326,36 +443,74 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels) {
                                    column.y + column.extent_y, column.height);
         const auto top_d = project(column.x, column.y + column.extent_y,
                                    column.height);
-        const auto base_a = project(column.x, column.y, base_depth);
+        // Each raised layer has its own gap and extrusion budget. Window
+        // pixels hover just above the background; objects and sprites sit
+        // farther forward without connecting to the recessed plane.
+        const auto floating = column.sprite || column.window;
+        const auto layer_base = column.sprite
+                                    ? base_depth - depth_scale *
+                                          (background_span + window_gap +
+                                           window_span + sprite_gap -
+                                           sprite_pullback)
+                                    : column.window
+                                          ? base_depth - depth_scale *
+                                                (background_span + window_gap)
+                                          : base_depth;
+        const auto column_base = floating ? layer_base : base_depth;
+        const auto base_a = project(column.x, column.y, column_base);
         const auto base_b = project(column.x + column.width, column.y,
-                                    base_depth);
+                                    column_base);
         const auto base_c = project(column.x + column.width,
-                                    column.y + column.extent_y, base_depth);
+                                    column.y + column.extent_y, column_base);
         const auto base_d = project(column.x, column.y + column.extent_y,
-                                    base_depth);
+                                    column_base);
+        const auto border_color = [&](const int border_x,
+                                      const int border_y) {
+            if (border_x < 0 || border_y < 0 || border_x >= 160 ||
+                border_y >= 144) {
+                return backdrop_color;
+            }
+            return pixels[static_cast<std::size_t>(border_y) * 160U +
+                          static_cast<std::size_t>(border_x)];
+        };
+        // Sprite voxels are self-colored: their side faces continue the
+        // sprite pixel's material instead of borrowing the background behind
+        // the sprite. Window/object geometry keeps the bordering-pixel rule.
+        const auto side_color = [&](const int border_x, const int border_y) {
+            return column.sprite ? column.color
+                                  : border_color(border_x, border_y);
+        };
         const auto cell_x = static_cast<int>(column.x);
         const auto cell_y = static_cast<int>(column.y);
         constexpr float wall_threshold = 0.60F;
-        if (column.height > height_at(cell_x, cell_y - 1) + wall_threshold)
+        if (column.height < height_at(cell_x, cell_y - 1) - wall_threshold)
             add_quad(base_a, base_b, top_b, top_a,
-                     voxel_color(column.color, 0.58F * lighting,
+                     voxel_color(side_color(cell_x, cell_y - 1),
+                                 0.58F * lighting,
                                  voxel_ambient * lighting));
-        if (column.height > height_at(cell_x + 1, cell_y) + wall_threshold)
+        if (column.height < height_at(cell_x + 1, cell_y) - wall_threshold)
             add_quad(base_b, base_c, top_c, top_b,
-                     voxel_color(column.color, 0.68F * lighting,
+                     voxel_color(side_color(cell_x + 1, cell_y),
+                                 0.68F * lighting,
                                  voxel_ambient * lighting));
-        if (column.height > height_at(cell_x, cell_y + 1) + wall_threshold)
+        if (column.height < height_at(cell_x, cell_y + 1) - wall_threshold)
             add_quad(base_c, base_d, top_d, top_c,
-                     voxel_color(column.color, 0.76F * lighting,
+                     voxel_color(side_color(cell_x, cell_y + 1),
+                                 0.76F * lighting,
                                  voxel_ambient * lighting));
-        if (column.height > height_at(cell_x - 1, cell_y) + wall_threshold)
+        if (column.height < height_at(cell_x - 1, cell_y) - wall_threshold)
             add_quad(base_d, base_a, top_a, top_d,
-                     voxel_color(column.color, 0.62F * lighting,
+                     voxel_color(side_color(cell_x - 1, cell_y),
+                                 0.62F * lighting,
                                  voxel_ambient * lighting));
+        // Preserve dark source pixels on their front faces. Ambient lighting
+        // is reserved for voxel shading and must not turn black artwork gray.
+        const auto top_ambient = luminance(column.color) < 0.20F
+                                     ? 0.0F : voxel_ambient * lighting;
         add_quad(top_a, top_b, top_c, top_d,
                  voxel_color(column.color,
                              (column.sprite ? 0.98F : 0.96F) * lighting,
-                             voxel_ambient * lighting));
+                             top_ambient));
     }
     if (!indices.empty() && !SDL_RenderGeometry(
                                 app.renderer, nullptr, vertices.data(),

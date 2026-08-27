@@ -350,11 +350,21 @@ scene readable; double-click (or double-tap where supported) resets the camera.
 Per-ROM depth and camera tuning can be supplied in `voxel-profiles.ini` beside
 `settings.ini`; use `[default]` and a hexadecimal ROM fingerprint section with
 `depth_scale`, `camera_pitch`, `camera_yaw`, `zoom`, `perspective`,
-`sprite_depth`, `lighting`, and `framebuffer_facade` keys. Set
+`sprite_depth`, `lighting`, `background_depth_far`,
+`background_depth_near`, `background_transparent_depth`, `window_depth_far`,
+`window_depth_near`, `sprite_depth_far`, `sprite_depth_near`, and
+`framebuffer_facade` keys. The default layer ranges are background `100` → `20`
+with transparent pixels at `95`, window `90` → `50`, and sprites/objects
+`45` → `25`; each range is normalized into a guaranteed background → window →
+sprite ordering (larger depth values are farther from the viewer). Set
 `framebuffer_facade=0` to inspect the fully voxelized mesh (the default); set it to `1` to draw the
 normal framebuffer as a front-facing reference facade. The default mesh camera is centered and
 slightly zoomed out so the scene remains inside the viewport. GBB creates this file with documented
 defaults on first startup, so it can be copied alongside a portable install.
+The supplied Super Mario Land dump (`0x7eafc0023b31d850`) receives a built-in
+profile tuned for its flat sky, layered platforms, and sparse foreground
+sprites; the profile is added to existing installations without overwriting
+user settings.
 On Windows, the Settings page exposes these fields for the currently running
 ROM and shows its fingerprint. A live preview updates as valid values change;
 the framebuffer-facade option is a clear toggle for comparing the 2D front

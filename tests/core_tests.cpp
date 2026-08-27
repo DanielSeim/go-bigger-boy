@@ -423,15 +423,36 @@ void test_voxel_profiles() {
     check(profile.depth_scale == 1.0F && profile.camera_pitch == 24.0F &&
               profile.camera_yaw == 0.0F && profile.zoom == 0.72F &&
               profile.perspective == 0.0015F && profile.sprite_depth == 8.0F &&
+              profile.background_depth_far == 100.0F &&
+              profile.background_depth_near == 20.0F &&
+              profile.background_transparent_depth == 95.0F &&
+              profile.window_depth_far == 90.0F &&
+              profile.window_depth_near == 50.0F &&
+              profile.sprite_depth_far == 45.0F &&
+              profile.sprite_depth_near == 25.0F &&
               !profile.framebuffer_facade,
           "voxel profile defaults are loaded");
+    const auto super_mario_land =
+        gbb::load_voxel_profile(path, UINT64_C(0x7eafc0023b31d850));
+    check(super_mario_land.depth_scale == 1.25F &&
+              super_mario_land.zoom == 0.74F &&
+              super_mario_land.perspective == 0.0012F &&
+              super_mario_land.sprite_depth == 10.0F &&
+              super_mario_land.lighting == 1.08F,
+          "Super Mario Land receives its specialized voxel profile");
     profile.depth_scale = 2.25F;
     profile.camera_yaw = -12.0F;
+    profile.background_depth_near = 18.0F;
+    profile.window_depth_near = 48.0F;
+    profile.sprite_depth_near = 22.0F;
     profile.framebuffer_facade = false;
     check(gbb::save_voxel_profile(path, fingerprint, profile),
           "voxel profile can be saved");
     const auto loaded = gbb::load_voxel_profile(path, fingerprint);
     check(loaded.depth_scale == 2.25F && loaded.camera_yaw == -12.0F &&
+              loaded.background_depth_near == 18.0F &&
+              loaded.window_depth_near == 48.0F &&
+              loaded.sprite_depth_near == 22.0F &&
               !loaded.framebuffer_facade,
           "voxel profile round-trips per-ROM values");
     auto second = gbb::VoxelProfile{};
