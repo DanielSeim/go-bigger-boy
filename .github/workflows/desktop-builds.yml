@@ -179,9 +179,23 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          gh release create "${{ github.ref_name }}"
-          release-assets/*
-          --verify-tag
-          --generate-notes
-          --title "Go Bigger Boy ${{ github.ref_name }}"
+        run: |
+          tag="${{ github.ref_name }}"
+          repo="${{ github.repository }}"
+          if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
+            echo "Release $tag already exists; refreshing its assets."
+            gh release upload "$tag" release-assets/* --repo "$repo" --clobber
+          else
+            if gh release create "$tag" release-assets/* \
+                --repo "$repo" \
+                --verify-tag \
+                --generate-notes \
+                --title "Go Bigger Boy $tag"; then
+              echo "Created release $tag."
+            else
+              # A concurrent retry may have created the release after the
+              # existence check. Refreshing is safe and keeps reruns idempotent.
+              echo "Release creation failed; retrying as an asset refresh."
+              gh release upload "$tag" release-assets/* --repo "$repo" --clobber
+            fi
+          fi
