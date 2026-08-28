@@ -7342,21 +7342,30 @@ int main(int argc, char** argv) {
                                 rewind_history.pop_front();
                             }
                         }
-                        unsigned cycles = 0;
-                        while (running && cycles < cycles_per_frame &&
-                               (link_emulator == nullptr
-                                    ? !emulator->frame_ready()
-                                    : true)) {
-                            auto advanced = 0U;
-                            if (link_emulator != nullptr ||
-                                !emulator->frame_ready()) {
-                                advanced = std::max(advanced, step_emulator());
+                        if (link_emulator != nullptr) {
+                            // Each CPU has its own instruction lengths. Using
+                            // max(primary_cycles, secondary_cycles) as one
+                            // shared increment under-runs the shorter stream
+                            // and makes link play appear half-speed. Track the
+                            // two hardware clocks independently instead.
+                            unsigned primary_cycles = 0;
+                            unsigned secondary_cycles = 0;
+                            while (running &&
+                                   (primary_cycles < cycles_per_frame ||
+                                    secondary_cycles < cycles_per_frame)) {
+                                if (primary_cycles < cycles_per_frame) {
+                                    primary_cycles += step_emulator();
+                                }
+                                if (secondary_cycles < cycles_per_frame) {
+                                    secondary_cycles += step_link_emulator();
+                                }
                             }
-                            if (link_emulator != nullptr) {
-                                advanced = std::max(advanced,
-                                                    step_link_emulator());
+                        } else {
+                            unsigned cycles = 0;
+                            while (running && cycles < cycles_per_frame &&
+                                   !emulator->frame_ready()) {
+                                cycles += step_emulator();
                             }
-                            cycles += advanced;
                         }
                         if (emulator->frame_ready()) emulator->consume_frame();
                         if (link_emulator != nullptr &&
