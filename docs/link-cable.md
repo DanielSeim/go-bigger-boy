@@ -23,7 +23,10 @@ running, choose **Emulation → Start Local Link Session** (or press
 serial ports, and presents the two 160×144 screens side by side. Player one
 uses the configured controls; player two defaults to `W/A/S/D` for directions,
 `J/K` for A/B, and `Q/E` for Select/Start. The command toggles back to the
-single-console view and reconnects cleanly when a new ROM is loaded.
+single-console view and reconnects cleanly when a new ROM is loaded. Battery
+games receive an independent player-two save under `link-saves/`; it is seeded
+from the primary save the first time and then persists separately, so each
+console can keep its own trainer identity and party.
 
 Network, WebRTC, Bluetooth, and USB transports should be added only after this
 deterministic local path is validated with link-enabled games.

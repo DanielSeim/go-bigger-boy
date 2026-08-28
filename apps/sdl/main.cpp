@@ -368,6 +368,11 @@ public:
             static_cast<int>(gameboy::Ppu::screen_width),
             static_cast<int>(gameboy::Ppu::screen_height));
         if (texture == nullptr) sdl_error("Could not create framebuffer texture");
+        link_texture = SDL_CreateTexture(
+            renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
+            static_cast<int>(gameboy::Ppu::screen_width),
+            static_cast<int>(gameboy::Ppu::screen_height));
+        if (link_texture == nullptr) sdl_error("Could not create link framebuffer texture");
         if (!SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST)) {
             sdl_error("Could not configure nearest-neighbor scaling");
         }
@@ -398,6 +403,7 @@ public:
         }
         if (audio_stream != nullptr) SDL_DestroyAudioStream(audio_stream);
         if (texture != nullptr) SDL_DestroyTexture(texture);
+        if (link_texture != nullptr) SDL_DestroyTexture(link_texture);
         if (renderer != nullptr) SDL_DestroyRenderer(renderer);
         if (window != nullptr) SDL_DestroyWindow(window);
         SDL_Quit();
@@ -409,6 +415,7 @@ public:
     SDL_Window* window{};
     SDL_Renderer* renderer{};
     SDL_Texture* texture{};
+    SDL_Texture* link_texture{};
     gameboy::VideoMode video_mode{gameboy::default_video_mode};
     gbb::SceneSnapshot scene_snapshot{};
     std::filesystem::path voxel_profile_path;
@@ -2535,7 +2542,8 @@ bool configure_video_pipeline(SdlResources& sdl,
             sdl.renderer, static_cast<int>(gameboy::Ppu::screen_width *
                                             (sdl.split_screen ? 2U : 1U)),
             static_cast<int>(gameboy::Ppu::screen_height), presentation) ||
-        !SDL_SetTextureScaleMode(sdl.texture, filtering)) {
+        !SDL_SetTextureScaleMode(sdl.texture, filtering) ||
+        !SDL_SetTextureScaleMode(sdl.link_texture, filtering)) {
         return false;
     }
     sdl.video_mode = mode;
@@ -4513,7 +4521,8 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
             } else if (!input_movie_active && emulator &&
                        shortcut_pressed(bindings, shortcut_rewind,
                                                     event.key.key)) {
-                rewind = event.type == SDL_EVENT_KEY_DOWN;
+                rewind = link_emulator == nullptr &&
+                         event.type == SDL_EVENT_KEY_DOWN;
                 break;
             } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
                        event.key.key == bindings.shortcuts[shortcut_save_state] &&
@@ -5335,9 +5344,35 @@ void start_local_link_session(
     const std::string& path, gameboy::Emulator& first,
     std::unique_ptr<gameboy::Emulator>& second,
     std::unique_ptr<gameboy::SerialCable>& cable,
-    SdlResources& sdl, const gameboy::DisplayPalette& palette) {
+    SdlResources& sdl, const gameboy::DisplayPalette& palette,
+    const std::filesystem::path& preference_path) {
     if (path.empty()) throw std::runtime_error("No ROM is currently loaded.");
     auto replacement = load_link_player(path, palette);
+    // A second console must have its own battery image. Sharing the primary
+    // .sav path gives both Pokémon instances the same trainer identity and
+    // causes link trading/battles to reject the peer (and lets the last flush
+    // silently overwrite the other console). Keep a persistent player-two
+    // save beside the normal data, seeding it from player one's save only on
+    // the first session.
+    if (replacement->has_battery() && !preference_path.empty()) {
+        const auto directory = preference_path / "link-saves";
+        std::filesystem::create_directories(directory);
+        std::ostringstream name;
+        name << std::hex << std::setw(16) << std::setfill('0')
+             << first.rom_fingerprint() << "-player2.gb";
+        const auto player_two_base = directory / name.str();
+        const auto player_two_save = [&] {
+            auto save = player_two_base;
+            save.replace_extension(".sav");
+            return save;
+        }();
+        const auto already_exists = std::filesystem::exists(player_two_save);
+        const auto seed = first.export_battery_save();
+        replacement->bus().cartridge().set_persistence_path(player_two_base);
+        if (!already_exists && !seed.empty()) {
+            replacement->import_battery_save(seed);
+        }
+    }
     auto replacement_cable = std::make_unique<gameboy::SerialCable>();
     replacement_cable->connect(first.bus().serial_port(),
                                replacement->bus().serial_port());
@@ -6411,8 +6446,9 @@ void present_link_frames(const gameboy::Emulator& first,
                           static_cast<float>(gameboy::Ppu::screen_height)};
     if (!SDL_UpdateTexture(sdl.texture, nullptr, first_pixels.data(), pitch) ||
         !SDL_RenderTexture(sdl.renderer, sdl.texture, nullptr, &left) ||
-        !SDL_UpdateTexture(sdl.texture, nullptr, second_pixels.data(), pitch) ||
-        !SDL_RenderTexture(sdl.renderer, sdl.texture, nullptr, &right)) {
+        !SDL_UpdateTexture(sdl.link_texture, nullptr, second_pixels.data(),
+                           pitch) ||
+        !SDL_RenderTexture(sdl.renderer, sdl.link_texture, nullptr, &right)) {
         sdl_error("Could not present linked framebuffers");
     }
 }
@@ -6950,7 +6986,10 @@ int main(int argc, char** argv) {
                     } else if (emulator != nullptr) {
                         start_local_link_session(
                             current_rom, *emulator, link_emulator, link_cable,
-                            sdl, gameboy::display_palettes[display_palette]);
+                            sdl, gameboy::display_palettes[display_palette],
+                            preference_path);
+                        rewind = false;
+                        rewind_history.clear();
                     }
                 } catch (const std::exception& error) {
                     show_error(sdl.window, error.what());
@@ -7275,7 +7314,7 @@ int main(int argc, char** argv) {
             if (emulator && !debugger_stepped && !paused && !debugger_paused &&
                 !dashboard_visible && !configuring &&
                 !dialog_active(dialog)) {
-                if (rewind) {
+                if (rewind && link_emulator == nullptr) {
                     if (!rewind_history.empty()) {
                         auto state = std::move(rewind_history.back());
                         rewind_history.pop_back();
@@ -7287,26 +7326,33 @@ int main(int argc, char** argv) {
                         }
                     }
                 } else {
+                    // Rewind states describe one complete machine. During a
+                    // linked session there are two machines and the history
+                    // would be both incomplete and expensive to serialize;
+                    // keep normal-speed multiplayer responsive by disabling
+                    // rewind state capture for that session.
                     const auto frames = fast_forward ? fast_forward_factor : 1U;
                     for (auto frame = 0U; frame < frames && running; ++frame) {
 #ifndef __ANDROID__
                         cheat_manager.apply(*emulator);
 #endif
-                        rewind_history.push_back(emulator->save_state());
-                        while (rewind_history.size() > maximum_rewind_frames) {
-                            rewind_history.pop_front();
+                        if (link_emulator == nullptr) {
+                            rewind_history.push_back(emulator->save_state());
+                            while (rewind_history.size() > maximum_rewind_frames) {
+                                rewind_history.pop_front();
+                            }
                         }
                         unsigned cycles = 0;
                         while (running && cycles < cycles_per_frame &&
-                               (!emulator->frame_ready() ||
-                                (link_emulator != nullptr &&
-                                 !link_emulator->frame_ready()))) {
+                               (link_emulator == nullptr
+                                    ? !emulator->frame_ready()
+                                    : true)) {
                             auto advanced = 0U;
-                            if (!emulator->frame_ready()) {
+                            if (link_emulator != nullptr ||
+                                !emulator->frame_ready()) {
                                 advanced = std::max(advanced, step_emulator());
                             }
-                            if (link_emulator != nullptr &&
-                                !link_emulator->frame_ready()) {
+                            if (link_emulator != nullptr) {
                                 advanced = std::max(advanced,
                                                     step_link_emulator());
                             }
@@ -7329,6 +7375,12 @@ int main(int argc, char** argv) {
                               !configuring &&
                               !dialog_active(dialog));
             submit_audio(emulator.get(), sdl, fast_forward);
+            if (link_emulator != nullptr) {
+                // Player two currently shares the primary audio device. Drain
+                // its mixer buffer so it cannot grow stale and add latency or
+                // memory pressure during long link sessions.
+                static_cast<void>(link_emulator->take_audio_samples());
+            }
             try {
                 save_completed_prints(emulator.get(), sdl.window,
                                       preference_path, current_rom,
