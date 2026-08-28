@@ -122,6 +122,7 @@ enum class DesktopMenuCommand : int {
     exit_app,
     pause,
     reset,
+    link_session,
     fullscreen,
     controls,
     gameshark,
@@ -170,6 +171,8 @@ public:
 
         append(emulation_, DesktopMenuCommand::pause, L"&Pause / Resume\tSpace");
         append(emulation_, DesktopMenuCommand::reset, L"&Reset\tCtrl+R");
+        append(emulation_, DesktopMenuCommand::link_session,
+               L"Local &Link Session\tCtrl+Shift+L");
 
         append(view_, DesktopMenuCommand::fullscreen, L"&Fullscreen\tF11");
         AppendMenuW(view_, MF_SEPARATOR, 0, nullptr);
@@ -245,12 +248,18 @@ public:
 
     void update(const bool has_rom, const bool paused, const bool fullscreen,
                 const bool recording, const std::size_t palette,
-                const gameboy::VideoMode video) {
+                const gameboy::VideoMode video, const bool link_active) {
         if (root_ == nullptr) return;
         enable(DesktopMenuCommand::save_state, has_rom);
         enable(DesktopMenuCommand::load_state, has_rom);
         enable(DesktopMenuCommand::pause, has_rom);
         enable(DesktopMenuCommand::reset, has_rom);
+        enable(DesktopMenuCommand::link_session, has_rom);
+        ModifyMenuW(emulation_, command_id(DesktopMenuCommand::link_session),
+                    MF_BYCOMMAND | MF_STRING,
+                    command_id(DesktopMenuCommand::link_session),
+                    link_active ? L"Stop Local &Link Session\tCtrl+Shift+L"
+                                : L"Start Local &Link Session\tCtrl+Shift+L");
         enable(DesktopMenuCommand::gameshark, has_rom);
         enable(DesktopMenuCommand::debugger, has_rom);
         enable(DesktopMenuCommand::record_input, has_rom);
@@ -425,6 +434,9 @@ public:
     float voxel_camera_pitch_offset{};
     float voxel_camera_yaw_offset{};
     bool voxel_camera_dragging{};
+    // When two local consoles are linked, the renderer uses a 320x144
+    // logical canvas and presents both 160x144 framebuffers side by side.
+    bool split_screen{};
 #ifdef __ANDROID__
     struct TouchPoint {
         SDL_FingerID id{};
@@ -2520,7 +2532,8 @@ bool configure_video_pipeline(SdlResources& sdl,
                                ? SDL_SCALEMODE_LINEAR
                                : SDL_SCALEMODE_NEAREST;
     if (!SDL_SetRenderLogicalPresentation(
-            sdl.renderer, static_cast<int>(gameboy::Ppu::screen_width),
+            sdl.renderer, static_cast<int>(gameboy::Ppu::screen_width *
+                                            (sdl.split_screen ? 2U : 1U)),
             static_cast<int>(gameboy::Ppu::screen_height), presentation) ||
         !SDL_SetTextureScaleMode(sdl.texture, filtering)) {
         return false;
@@ -3595,6 +3608,23 @@ std::optional<gameboy::Button> keyboard_button(const InputBindings& bindings,
     return std::nullopt;
 }
 
+// Default player-two layout for local link sessions. The primary player's
+// configurable bindings remain untouched; this conventional WASD + J/K
+// layout keeps both consoles playable without forcing a settings migration.
+std::optional<gameboy::Button> local_link_keyboard_button(const SDL_Keycode key) {
+    switch (key) {
+    case SDLK_D: return gameboy::Button::right;
+    case SDLK_A: return gameboy::Button::left;
+    case SDLK_W: return gameboy::Button::up;
+    case SDLK_S: return gameboy::Button::down;
+    case SDLK_J: return gameboy::Button::a;
+    case SDLK_K: return gameboy::Button::b;
+    case SDLK_Q: return gameboy::Button::select;
+    case SDLK_E: return gameboy::Button::start;
+    default: return std::nullopt;
+    }
+}
+
 std::optional<gameboy::Button> gamepad_button(const InputBindings& bindings,
                                               const Uint8 button) {
     for (std::size_t index = 0; index < bindings.gamepad_buttons.size(); ++index) {
@@ -4127,6 +4157,7 @@ std::optional<std::size_t> dashboard_row_at(
 }
 
 void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
+                    gameboy::Emulator* link_emulator,
                     SdlResources& sdl, DialogState& dialog,
                     const std::filesystem::path& preference_path,
                     InputBindings& bindings,
@@ -4139,6 +4170,7 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                     std::size_t& dashboard_selection, bool& paused,
                     bool& fullscreen, bool& fast_forward, bool& rewind,
                     RewindHistory& rewind_history, bool& reset_requested,
+                    bool& link_toggle_requested,
                     bool& running
 #ifndef __ANDROID__
                     , DesktopDebugger& debugger, InputMovie& input_movie,
@@ -4171,7 +4203,8 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
 #endif
 #ifdef _WIN32
     desktop_menu.update(emulator != nullptr, paused, fullscreen,
-                        input_movie.recording(), display_palette, sdl.video_mode);
+                        input_movie.recording(), display_palette, sdl.video_mode,
+                        link_emulator != nullptr);
     const auto menu_command = desktop_menu.take_command();
     const auto menu_value = static_cast<int>(menu_command);
     const auto palette_first =
@@ -4184,6 +4217,10 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
         save_display_palette(preference_path, display_palette);
         if (emulator != nullptr) {
             emulator->set_dmg_compatibility_colors(
+                gameboy::display_palettes[display_palette].cgb_compatibility);
+        }
+        if (link_emulator != nullptr) {
+            link_emulator->set_dmg_compatibility_colors(
                 gameboy::display_palettes[display_palette].cgb_compatibility);
         }
     } else if (menu_value >= video_first &&
@@ -4202,6 +4239,7 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
             break;
         case DesktopMenuCommand::library:
             if (emulator) release_all_buttons(*emulator);
+            if (link_emulator != nullptr) link_toggle_requested = true;
             SDL_HideWindow(sdl.window);
             dashboard_visible = true;
             dashboard_selection = 0;
@@ -4244,6 +4282,9 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
             break;
         case DesktopMenuCommand::reset:
             if (emulator && !input_movie_active) reset_requested = true;
+            break;
+        case DesktopMenuCommand::link_session:
+            if (emulator) link_toggle_requested = true;
             break;
         case DesktopMenuCommand::fullscreen:
             fullscreen = !fullscreen;
@@ -4506,8 +4547,10 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                 show_rom_dialog(dialog, sdl.window);
             } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
                        event.key.key == SDLK_L &&
-                       (event.key.mod & SDL_KMOD_CTRL) != 0) {
+                       (event.key.mod & SDL_KMOD_CTRL) != 0 &&
+                       (event.key.mod & SDL_KMOD_SHIFT) == 0) {
                 if (emulator) release_all_buttons(*emulator);
+                if (link_emulator != nullptr) link_toggle_requested = true;
 #ifdef __ANDROID__
                 open_android_library();
 #else
@@ -4568,6 +4611,12 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                        !input_movie_active) {
                 reset_requested = true;
             } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+                       event.key.key == SDLK_L &&
+                       (event.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_SHIFT)) ==
+                           (SDL_KMOD_CTRL | SDL_KMOD_SHIFT) &&
+                       emulator) {
+                link_toggle_requested = true;
+            } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
                        event.key.key == SDLK_SPACE && emulator) {
                 paused = !paused;
 #ifndef __ANDROID__
@@ -4606,6 +4655,13 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                     emulator->set_button(*button,
                                          event.type == SDL_EVENT_KEY_DOWN);
 #endif
+                }
+                if (link_emulator != nullptr) {
+                    if (const auto button =
+                            local_link_keyboard_button(event.key.key)) {
+                        link_emulator->set_button(
+                            *button, event.type == SDL_EVENT_KEY_DOWN);
+                    }
                 }
             }
             break;
@@ -4719,6 +4775,7 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                 release_all_buttons(*emulator);
 #endif
             }
+            if (link_emulator != nullptr) release_all_buttons(*link_emulator);
             fast_forward = false;
             rewind = false;
             sdl.voxel_camera_dragging = false;
@@ -5263,6 +5320,48 @@ void load_rom(const std::string& path,
     emulator = std::move(replacement);
     configure_camera(sdl, *emulator);
 }
+
+#ifndef __ANDROID__
+std::unique_ptr<gameboy::Emulator> load_link_player(
+    const std::string& path, const gameboy::DisplayPalette& palette) {
+    auto player = std::make_unique<gameboy::Emulator>(
+        gameboy::Cartridge::from_file(std::filesystem::u8path(path)));
+    player->bus().connect_printer();
+    player->set_dmg_compatibility_colors(palette.cgb_compatibility);
+    return player;
+}
+
+void start_local_link_session(
+    const std::string& path, gameboy::Emulator& first,
+    std::unique_ptr<gameboy::Emulator>& second,
+    std::unique_ptr<gameboy::SerialCable>& cable,
+    SdlResources& sdl, const gameboy::DisplayPalette& palette) {
+    if (path.empty()) throw std::runtime_error("No ROM is currently loaded.");
+    auto replacement = load_link_player(path, palette);
+    auto replacement_cable = std::make_unique<gameboy::SerialCable>();
+    replacement_cable->connect(first.bus().serial_port(),
+                               replacement->bus().serial_port());
+    second = std::move(replacement);
+    cable = std::move(replacement_cable);
+    sdl.split_screen = true;
+    if (!configure_video_pipeline(sdl, sdl.video_mode)) {
+        sdl.split_screen = false;
+        cable.reset();
+        second.reset();
+        throw std::runtime_error("Could not configure split-screen presentation.");
+    }
+}
+
+void stop_local_link_session(std::unique_ptr<gameboy::Emulator>& second,
+                             std::unique_ptr<gameboy::SerialCable>& cable,
+                             SdlResources& sdl) noexcept {
+    cable.reset();
+    flush_battery_safely(second.get());
+    second.reset();
+    sdl.split_screen = false;
+    static_cast<void>(configure_video_pipeline(sdl, sdl.video_mode));
+}
+#endif
 
 void present_menu_button(SdlResources& sdl) {
     static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
@@ -6260,7 +6359,66 @@ void present_dashboard(SdlResources& sdl,
 }
 #endif
 
-void present(const gameboy::Emulator* emulator, SdlResources& sdl,
+gameboy::Ppu::Framebuffer colorize_frame(
+    const gameboy::Emulator& emulator, SdlResources& sdl,
+    const gameboy::DisplayPalette& palette) {
+    const auto& pixels = emulator.framebuffer();
+    const auto native_colors =
+        emulator.bus().cgb_mode() || palette.cgb_compatibility;
+    gameboy::Ppu::Framebuffer colored_pixels{};
+    const auto color_at = [&](const std::size_t source_index) {
+        return native_colors
+                   ? pixels[source_index]
+                   : gameboy::apply_display_palette(pixels[source_index],
+                                                    palette);
+    };
+    for (std::size_t index = 0; index < pixels.size(); ++index) {
+        auto pixel = color_at(index);
+        const auto x = index % gameboy::Ppu::screen_width;
+        const auto y = index / gameboy::Ppu::screen_width;
+        if (sdl.video_mode == gameboy::VideoMode::sharp_smoothing) {
+            const auto left = x == 0 ? index : index - 1;
+            const auto right = x + 1 == gameboy::Ppu::screen_width
+                                   ? index : index + 1;
+            const auto up = y == 0 ? index : index - gameboy::Ppu::screen_width;
+            const auto down = y + 1 == gameboy::Ppu::screen_height
+                                  ? index : index + gameboy::Ppu::screen_width;
+            pixel = gameboy::apply_sharp_smoothing(
+                pixel, color_at(left), color_at(right), color_at(up),
+                color_at(down));
+        } else if (sdl.video_mode == gameboy::VideoMode::lcd_shader) {
+            pixel = gameboy::apply_lcd_shader(pixel, x, y);
+        }
+        colored_pixels[index] = pixel;
+    }
+    return colored_pixels;
+}
+
+void present_link_frames(const gameboy::Emulator& first,
+                         const gameboy::Emulator& second, SdlResources& sdl,
+                         const gameboy::DisplayPalette& palette) {
+    // A local cable session deliberately uses two native 160x144 views. Voxel
+    // geometry is a single-camera presentation and is therefore bypassed for
+    // the split view; users can switch back to the diorama after disconnecting.
+    const auto first_pixels = colorize_frame(first, sdl, palette);
+    const auto second_pixels = colorize_frame(second, sdl, palette);
+    constexpr auto pitch = static_cast<int>(gameboy::Ppu::screen_width *
+                                             sizeof(std::uint32_t));
+    const SDL_FRect left{0, 0, static_cast<float>(gameboy::Ppu::screen_width),
+                         static_cast<float>(gameboy::Ppu::screen_height)};
+    const SDL_FRect right{static_cast<float>(gameboy::Ppu::screen_width), 0,
+                          static_cast<float>(gameboy::Ppu::screen_width),
+                          static_cast<float>(gameboy::Ppu::screen_height)};
+    if (!SDL_UpdateTexture(sdl.texture, nullptr, first_pixels.data(), pitch) ||
+        !SDL_RenderTexture(sdl.renderer, sdl.texture, nullptr, &left) ||
+        !SDL_UpdateTexture(sdl.texture, nullptr, second_pixels.data(), pitch) ||
+        !SDL_RenderTexture(sdl.renderer, sdl.texture, nullptr, &right)) {
+        sdl_error("Could not present linked framebuffers");
+    }
+}
+
+void present(const gameboy::Emulator* emulator,
+             const gameboy::Emulator* link_emulator, SdlResources& sdl,
              const gameboy::DisplayPalette& palette,
              const std::vector<std::string>& recent,
              const bool dashboard_visible,
@@ -6277,6 +6435,8 @@ void present(const gameboy::Emulator* emulator, SdlResources& sdl,
         static_cast<void>(recent);
         static_cast<void>(dashboard_selection);
 #endif
+    } else if (emulator != nullptr && link_emulator != nullptr) {
+        present_link_frames(*emulator, *link_emulator, sdl, palette);
     } else if (emulator != nullptr) {
         if (sdl.video_mode == gameboy::VideoMode::voxel_diorama ||
             sdl.video_mode == gameboy::VideoMode::voxel_shape ||
@@ -6286,35 +6446,7 @@ void present(const gameboy::Emulator* emulator, SdlResources& sdl,
                 sdl.video_mode == gameboy::VideoMode::voxel_shape,
                 sdl.video_mode == gameboy::VideoMode::voxel_popup);
         } else {
-        const auto& pixels = emulator->framebuffer();
-        const auto native_colors =
-            emulator->bus().cgb_mode() || palette.cgb_compatibility;
-        gameboy::Ppu::Framebuffer colored_pixels{};
-        const auto color_at = [&](const std::size_t source_index) {
-            return native_colors
-                       ? pixels[source_index]
-                       : gameboy::apply_display_palette(pixels[source_index],
-                                                        palette);
-        };
-        for (std::size_t index = 0; index < pixels.size(); ++index) {
-            auto pixel = color_at(index);
-            const auto x = index % gameboy::Ppu::screen_width;
-            const auto y = index / gameboy::Ppu::screen_width;
-            if (sdl.video_mode == gameboy::VideoMode::sharp_smoothing) {
-                const auto left = x == 0 ? index : index - 1;
-                const auto right = x + 1 == gameboy::Ppu::screen_width
-                                       ? index : index + 1;
-                const auto up = y == 0 ? index : index - gameboy::Ppu::screen_width;
-                const auto down = y + 1 == gameboy::Ppu::screen_height
-                                      ? index : index + gameboy::Ppu::screen_width;
-                pixel = gameboy::apply_sharp_smoothing(
-                    pixel, color_at(left), color_at(right), color_at(up),
-                    color_at(down));
-            } else if (sdl.video_mode == gameboy::VideoMode::lcd_shader) {
-                pixel = gameboy::apply_lcd_shader(pixel, x, y);
-            }
-            colored_pixels[index] = pixel;
-        }
+        const auto colored_pixels = colorize_frame(*emulator, sdl, palette);
         if (!SDL_UpdateTexture(sdl.texture, nullptr, colored_pixels.data(),
                                static_cast<int>(gameboy::Ppu::screen_width *
                                                 sizeof(std::uint32_t))) ||
@@ -6607,6 +6739,8 @@ int main(int argc, char** argv) {
         sdl.touch_settings = touch_settings;
 #endif
         std::unique_ptr<gameboy::Emulator> emulator;
+        std::unique_ptr<gameboy::Emulator> link_emulator;
+        std::unique_ptr<gameboy::SerialCable> link_cable;
         std::string current_rom;
         std::optional<std::string> pending_rom;
 #ifdef __ANDROID__
@@ -6627,6 +6761,7 @@ int main(int argc, char** argv) {
         auto fast_forward = false;
         auto rewind = false;
         auto reset_requested = false;
+        auto link_toggle_requested = false;
         auto running = true;
 #ifdef __ANDROID__
         // The native Android LibraryActivity owns the dashboard. The SDL
@@ -6790,12 +6925,13 @@ int main(int argc, char** argv) {
                 pending_rom_name = std::move(requested->display_name);
             }
 #endif
-            process_events(emulator, sdl, dialog, preference_path, bindings,
+            process_events(emulator, link_emulator.get(), sdl, dialog,
+                           preference_path, bindings,
                            configuration_backup, recent_roms, current_rom,
                            configuring, pending_rom, display_palette,
                            dashboard_visible, dashboard_selection, paused,
                            fullscreen, fast_forward, rewind, rewind_history,
-                           reset_requested, running
+                           reset_requested, link_toggle_requested, running
 #ifndef __ANDROID__
                            , debugger, input_movie, tas_editor, sprite_editor,
                            cheat_manager
@@ -6804,6 +6940,23 @@ int main(int argc, char** argv) {
 #endif
 #endif
                            );
+
+#ifndef __ANDROID__
+            if (link_toggle_requested) {
+                link_toggle_requested = false;
+                try {
+                    if (link_emulator != nullptr) {
+                        stop_local_link_session(link_emulator, link_cable, sdl);
+                    } else if (emulator != nullptr) {
+                        start_local_link_session(
+                            current_rom, *emulator, link_emulator, link_cable,
+                            sdl, gameboy::display_palettes[display_palette]);
+                    }
+                } catch (const std::exception& error) {
+                    show_error(sdl.window, error.what());
+                }
+            }
+#endif
 
             std::optional<std::string> dialog_error;
             collect_dialog_result(dialog, pending_rom, dialog_error);
@@ -6817,6 +6970,9 @@ int main(int argc, char** argv) {
             if (pending_rom) {
                 try {
 #ifndef __ANDROID__
+                    if (link_emulator != nullptr) {
+                        stop_local_link_session(link_emulator, link_cable, sdl);
+                    }
                     input_movie.stop(emulator.get());
                     tas_editor.close();
                     sprite_editor.reset_session();
@@ -7091,6 +7247,9 @@ int main(int argc, char** argv) {
 #endif
                 return emulator->step();
             };
+            const auto step_link_emulator = [&]() {
+                return link_emulator != nullptr ? link_emulator->step() : 0U;
+            };
 #ifndef __ANDROID__
             if (emulator && debugger.take_instruction_step()) {
                 static_cast<void>(step_emulator());
@@ -7139,10 +7298,25 @@ int main(int argc, char** argv) {
                         }
                         unsigned cycles = 0;
                         while (running && cycles < cycles_per_frame &&
-                               !emulator->frame_ready()) {
-                            cycles += step_emulator();
+                               (!emulator->frame_ready() ||
+                                (link_emulator != nullptr &&
+                                 !link_emulator->frame_ready()))) {
+                            auto advanced = 0U;
+                            if (!emulator->frame_ready()) {
+                                advanced = std::max(advanced, step_emulator());
+                            }
+                            if (link_emulator != nullptr &&
+                                !link_emulator->frame_ready()) {
+                                advanced = std::max(advanced,
+                                                    step_link_emulator());
+                            }
+                            cycles += advanced;
                         }
                         if (emulator->frame_ready()) emulator->consume_frame();
+                        if (link_emulator != nullptr &&
+                            link_emulator->frame_ready()) {
+                            link_emulator->consume_frame();
+                        }
                     }
                 }
             }
@@ -7162,7 +7336,7 @@ int main(int argc, char** argv) {
             } catch (const std::exception& error) {
                 show_error(sdl.window, error.what());
             }
-            present(emulator.get(), sdl,
+            present(emulator.get(), link_emulator.get(), sdl,
                     gameboy::display_palettes[display_palette], recent_roms,
                     dashboard_visible, dashboard_selection);
 #ifndef __ANDROID__
@@ -7202,6 +7376,9 @@ int main(int argc, char** argv) {
         }
 #endif
         save_game_window_geometry(sdl.window, preference_path);
+#ifndef __ANDROID__
+        stop_local_link_session(link_emulator, link_cable, sdl);
+#endif
         flush_battery_safely(emulator.get());
     } catch (const std::exception& error) {
         std::cerr << "Error: " << error.what() << '\n';

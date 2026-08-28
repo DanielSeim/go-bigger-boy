@@ -17,7 +17,13 @@ state because it belongs to the host session; hosts should reconnect a cable
 after loading. Older save states resume a pending transfer at the next clean
 serial edge.
 
-The next frontend milestone is a desktop local two-player session that owns
-two cores and one `SerialCable`. Network, WebRTC, Bluetooth, and USB transports
-should be added only after this deterministic local path is validated with
-link-enabled games.
+The SDL desktop frontend now exposes that deterministic local path. With a ROM
+running, choose **Emulation → Start Local Link Session** (or press
+`Ctrl+Shift+L`). GBB starts a second instance of the same ROM, connects both
+serial ports, and presents the two 160×144 screens side by side. Player one
+uses the configured controls; player two defaults to `W/A/S/D` for directions,
+`J/K` for A/B, and `Q/E` for Select/Start. The command toggles back to the
+single-console view and reconnects cleanly when a new ROM is loaded.
+
+Network, WebRTC, Bluetooth, and USB transports should be added only after this
+deterministic local path is validated with link-enabled games.

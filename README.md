@@ -42,6 +42,7 @@ for the suite-by-suite breakdown.
 - Table-driven CPU tests for opcode matrices, timing, flags, PC, stack, and memory effects
 - Headless command-line runner
 - Headless Mooneye/serial conformance test runner
+- SDL desktop local link sessions with two synchronized emulator cores
 - Emscripten/WebAssembly browser frontend with IndexedDB cartridge saves
 - Android native library/settings dashboard with SDL3 gameplay and multitouch controls
 - Shared desktop/Android ROM catalog with fingerprint-deduplicated history and metadata
