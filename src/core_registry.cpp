@@ -62,7 +62,7 @@ public:
             CoreCapability::compatibility_palette |
             CoreCapability::cheats | CoreCapability::debugger |
             CoreCapability::sprite_editor | CoreCapability::printer |
-            CoreCapability::scene_layers;
+            CoreCapability::scene_layers | CoreCapability::link_cable;
         if (emulator_.has_battery()) {
             descriptor_.capabilities = descriptor_.capabilities |
                                        CoreCapability::persistent_memory;

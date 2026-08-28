@@ -4,7 +4,6 @@
 
 namespace gameboy {
 namespace {
-constexpr unsigned serial_transfer_cycles = 4096;
 constexpr unsigned oam_dma_byte_cycles = 4;
 constexpr unsigned oam_dma_size = 0xA0;
 constexpr unsigned oam_dma_start_cycles = 8;
@@ -16,6 +15,8 @@ MemoryBus::MemoryBus(Cartridge cartridge)
       cgb_mode_(cartridge_.supports_cgb()),
       cgb_hardware_(cgb_mode_) {
     ppu_.set_cgb_mode(cgb_mode_);
+    serial_ = SerialPort{cgb_mode_};
+    serial_.set_completion_callback(this, &MemoryBus::serial_transfer_complete);
 }
 
 void MemoryBus::initialize_post_boot(const HardwareModel model) noexcept {
@@ -25,10 +26,7 @@ void MemoryBus::initialize_post_boot(const HardwareModel model) noexcept {
     timer_.initialize_post_boot(model);
     // The serial divider is reset-derived and is not synchronized when a
     // transfer starts. Preserve the phase at the boot-ROM handoff.
-    serial_clock_ = model == HardwareModel::dmg ||
-                            model == HardwareModel::mgb
-                        ? 460
-                        : 0;
+    serial_.initialize_post_boot(model);
     apu_.initialize_post_boot(model);
     static_cast<void>(joypad_.write(
         model == HardwareModel::sgb || model == HardwareModel::sgb2 ||
@@ -70,11 +68,8 @@ std::uint8_t MemoryBus::read8(const std::uint16_t address) const noexcept {
         return joypad_.read();
     }
     switch (address) {
-    case 0xFF01: return io_[0x01];
-    case 0xFF02:
-        return static_cast<std::uint8_t>((cgb_mode_ ? 0x7C : 0x7E) |
-                                         (io_[0x02] &
-                                          (cgb_mode_ ? 0x83 : 0x81)));
+    case 0xFF01: return serial_.read_data();
+    case 0xFF02: return serial_.read_control();
     case 0xFF04: return timer_.divider();
     case 0xFF05: return timer_.counter();
     case 0xFF06: return timer_.modulo();
@@ -186,16 +181,11 @@ void MemoryBus::write8(const std::uint16_t address, const std::uint8_t value) no
             request_interrupt(4);
         }
     } else if (address == 0xFF01) {
+        serial_.write_data(value);
         io_[0x01] = value;
     } else if (address == 0xFF02) {
-        io_[0x02] = static_cast<std::uint8_t>(
-            value & (cgb_mode_ ? 0x83 : 0x81));
-        serial_cycles_remaining_ = (io_[0x02] & 0x81) == 0x81
-                                       ? (cgb_mode_ && (io_[0x02] & 0x02) != 0
-                                              ? 128
-                                              : serial_transfer_cycles -
-                                                    (serial_clock_ & 0x01FF))
-                                       : 0;
+        serial_.write_control(value);
+        io_[0x02] = static_cast<std::uint8_t>(value & (cgb_mode_ ? 0x83 : 0x81));
     } else if (address == 0xFF04) {
         timer_.write_divider();
         for (auto ticks = timer_.take_apu_ticks(); ticks > 0; --ticks) {
@@ -247,30 +237,13 @@ void MemoryBus::write8(const std::uint16_t address, const std::uint8_t value) no
 }
 
 void MemoryBus::tick(const unsigned cycles) noexcept {
-    serial_clock_ = static_cast<std::uint16_t>(serial_clock_ + cycles);
     const auto peripheral_cycles = double_speed_ ? cycles / 2 : cycles;
     tick_oam_dma(peripheral_cycles);
     apu_.tick(peripheral_cycles);
-    if (serial_cycles_remaining_ != 0) {
-        if (cycles >= serial_cycles_remaining_) {
-            serial_cycles_remaining_ = 0;
-            if (printer_connected_) {
-                try {
-                    io_[0x01] = printer_.transfer(io_[0x01]);
-                } catch (...) {
-                    printer_.reset();
-                    io_[0x01] = 0xFF;
-                }
-            } else {
-                serial_output_.push_back(static_cast<char>(io_[0x01]));
-                io_[0x01] = 0xFF;
-            }
-            io_[0x02] = static_cast<std::uint8_t>(io_[0x02] & ~0x80U);
-            request_interrupt(3);
-        } else {
-            serial_cycles_remaining_ -= cycles;
-        }
-    }
+    serial_.tick(cycles);
+    io_[0x01] = serial_.read_data();
+    io_[0x02] = static_cast<std::uint8_t>(
+        serial_.read_control() & (cgb_mode_ ? 0x83 : 0x81));
     if (timer_.tick(cycles)) {
         request_interrupt(2);
     }
@@ -481,6 +454,36 @@ std::string MemoryBus::take_serial_output() {
     auto output = std::move(serial_output_);
     serial_output_.clear();
     return output;
+}
+
+SerialPort& MemoryBus::serial_port() noexcept { return serial_; }
+
+const SerialPort& MemoryBus::serial_port() const noexcept { return serial_; }
+
+void MemoryBus::serial_transfer_complete(void* context,
+                                         const std::uint8_t transmitted,
+                                         const std::uint8_t received) noexcept {
+    static_cast<MemoryBus*>(context)->handle_serial_transfer(transmitted,
+                                                             received);
+}
+
+void MemoryBus::handle_serial_transfer(const std::uint8_t transmitted,
+                                       const std::uint8_t received) noexcept {
+    auto value = received;
+    if (printer_connected_) {
+        try {
+            value = printer_.transfer(transmitted);
+        } catch (...) {
+            printer_.reset();
+            value = 0xFF;
+        }
+        serial_.write_data(value);
+    } else if (!serial_.has_endpoint()) {
+        serial_output_.push_back(static_cast<char>(transmitted));
+    }
+    io_[0x01] = value;
+    io_[0x02] = static_cast<std::uint8_t>(io_[0x02] & ~0x80U);
+    request_interrupt(3);
 }
 
 void MemoryBus::connect_printer(const bool connected) noexcept {

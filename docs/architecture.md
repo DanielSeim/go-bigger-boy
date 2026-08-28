@@ -73,6 +73,11 @@ in `include/gbb/gameboy_core.hpp` only after checking the corresponding
 `CoreCapability`. This keeps existing GB development tools while allowing a GBA
 core to provide a different debugger later.
 
+The optional `link_cable` capability identifies cores that expose a clocked
+serial endpoint. Link transports should coordinate two cores outside the
+generic frame/audio loop; the Game Boy adapter currently provides the
+deterministic in-process `gameboy::SerialCable` for local testing.
+
 ## Adding a GBA core
 
 1. Add an independent `gba_core` library with no SDL, Android, or browser code.

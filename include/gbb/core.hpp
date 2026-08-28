@@ -66,6 +66,7 @@ enum class CoreCapability : std::uint64_t {
     debugger = UINT64_C(1) << 7,
     sprite_editor = UINT64_C(1) << 8,
     scene_layers = UINT64_C(1) << 9,
+    link_cable = UINT64_C(1) << 10,
 };
 
 [[nodiscard]] constexpr CoreCapability operator|(const CoreCapability left,

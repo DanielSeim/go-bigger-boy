@@ -525,6 +525,13 @@ private:
             bus.speed_switch_requested_ = false;
             bus.timer_.set_double_speed(false);
         }
+        // Save states store the serial registers but not the bit-level phase.
+        // Resume an in-flight transfer at a clean edge; the cable endpoint is
+        // intentionally not serialized and can be attached again by the host.
+        bus.serial_.restore_state(
+            bus.io_[0x01], bus.io_[0x02], 0, 0,
+            (bus.io_[0x02] & 0x80) != 0,
+            (bus.io_[0x02] & 0x01) != 0, (bus.io_[0x02] & 0x02) != 0);
         if (version >= 7) {
             const auto contains_camera = reader.boolean();
             if (contains_camera != bus.cartridge_.has_camera()) {

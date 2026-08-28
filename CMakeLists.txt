@@ -23,6 +23,7 @@ add_library(gameboy_core
     src/ppu.cpp
     src/printer.cpp
     src/save_state.cpp
+    src/serial.cpp
     src/timer.cpp
 )
 

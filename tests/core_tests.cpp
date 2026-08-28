@@ -252,6 +252,8 @@ void test_multicore_frontend_contract() {
           "generic core descriptor carries media, timing, system, and input data");
     check(gbb::has_capability(descriptor.capabilities,
                               gbb::CoreCapability::debugger) &&
+              gbb::has_capability(descriptor.capabilities,
+                                  gbb::CoreCapability::link_cable) &&
               gbb::gameboy_emulator(core.get()) != nullptr,
           "optional GB development tools are capability-gated behind the adapter");
 
@@ -1433,12 +1435,12 @@ void test_serial_transfer() {
     bus.tick(4095);
     check(bus.take_serial_output().empty() &&
               (bus.read8(0xFF02) & 0x80) != 0,
-          "serial transfer remains active for its first 4095 cycles");
+          "serial transfer remains active before its eighth bit");
     bus.tick(1);
     check(bus.take_serial_output() == "A" &&
               (bus.read8(0xFF02) & 0x80) == 0 &&
               (bus.read8(0xFF0F) & 0x08) != 0,
-          "serial transfer publishes its byte and requests interrupt 3");
+          "serial transfer publishes its byte after eight clock edges");
     check(bus.take_serial_output().empty(),
           "taking serial output drains the observation buffer");
 
@@ -1450,6 +1452,50 @@ void test_serial_transfer() {
               (bus.read8(0xFF02) & 0x80) != 0 &&
               (bus.read8(0xFF0F) & 0x08) == 0,
           "external-clock serial transfer waits for an external peer");
+}
+
+void test_serial_link_cable() {
+    gameboy::MemoryBus first{gameboy::Cartridge{test_rom()}};
+    gameboy::MemoryBus second{gameboy::Cartridge{test_rom()}};
+    gameboy::SerialCable cable;
+    cable.connect(first.serial_port(), second.serial_port());
+
+    first.write8(0xFF01, 0xA5);
+    second.write8(0xFF01, 0x3C);
+    first.write8(0xFF02, 0x81);  // Player one supplies the clock.
+    second.write8(0xFF02, 0x80); // Player two uses the external clock.
+
+    first.tick(511);
+    check(first.read8(0xFF01) == 0xA5 && second.read8(0xFF01) == 0x3C,
+          "linked serial ports wait for the first clock edge");
+    first.tick(512);
+    check(first.read8(0xFF01) == 0x4A && second.read8(0xFF01) == 0x79,
+          "linked serial ports exchange one bit on each clock edge");
+    first.tick(7 * 512);
+    check(first.read8(0xFF01) == 0x3C && second.read8(0xFF01) == 0xA5 &&
+              (first.read8(0xFF02) & 0x80) == 0 &&
+              (second.read8(0xFF02) & 0x80) == 0 &&
+              (first.read8(0xFF0F) & 0x08) != 0 &&
+              (second.read8(0xFF0F) & 0x08) != 0,
+          "linked serial transfers complete on both consoles");
+
+    cable.disconnect();
+    first.write8(0xFF0F, 0);
+    first.write8(0xFF01, 0x00);
+    first.write8(0xFF02, 0x81);
+    first.tick(4096);
+    check(first.read8(0xFF01) == 0xFF,
+          "a disconnected link supplies pull-up one bits");
+
+    gameboy::MemoryBus cgb{gameboy::Cartridge{cgb_test_rom()}};
+    cgb.write8(0xFF01, 0x00);
+    cgb.write8(0xFF02, 0x83);
+    cgb.tick(127);
+    check((cgb.read8(0xFF02) & 0x80) != 0,
+          "CGB fast serial remains active before eight fast edges");
+    cgb.tick(1);
+    check((cgb.read8(0xFF02) & 0x80) == 0,
+          "CGB fast serial completes after 128 CPU cycles");
 }
 
 void test_gameboy_printer() {
@@ -3534,6 +3580,7 @@ int main() {
         test_apu_pulse2_samples_and_length();
         test_apu_pulse1_sweep_wave_and_noise();
         test_serial_transfer();
+        test_serial_link_cable();
         test_gameboy_printer();
         test_cpu_state_normalization();
         test_register_load_matrix();

@@ -6,6 +6,7 @@
 #include "gameboy/joypad.hpp"
 #include "gameboy/ppu.hpp"
 #include "gameboy/printer.hpp"
+#include "gameboy/serial.hpp"
 #include "gameboy/timer.hpp"
 
 #include <array>
@@ -53,6 +54,8 @@ public:
     void consume_frame() noexcept;
     [[nodiscard]] std::vector<std::int16_t> take_audio_samples();
     [[nodiscard]] std::string take_serial_output();
+    [[nodiscard]] SerialPort& serial_port() noexcept;
+    [[nodiscard]] const SerialPort& serial_port() const noexcept;
     void connect_printer(bool connected = true) noexcept;
     [[nodiscard]] std::vector<PrinterImage> take_printer_images();
 
@@ -69,6 +72,10 @@ private:
     void write_hdma_register(std::uint16_t address, std::uint8_t value) noexcept;
     void transfer_hdma_block() noexcept;
     [[nodiscard]] bool try_speed_switch() noexcept;
+    static void serial_transfer_complete(void*, std::uint8_t,
+                                         std::uint8_t) noexcept;
+    void handle_serial_transfer(std::uint8_t transmitted,
+                                std::uint8_t received) noexcept;
 
     Cartridge cartridge_;
     std::array<std::uint8_t, 0x2000> wram_{};
@@ -80,6 +87,7 @@ private:
     Apu apu_{};
     Ppu ppu_{};
     Timer timer_{};
+    SerialPort serial_{};
     std::string serial_output_{};
     GameBoyPrinter printer_{};
     bool printer_connected_{};
