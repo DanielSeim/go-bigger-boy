@@ -32,6 +32,9 @@ instances.
 
 - Added codec, transport, endpoint, session, retry, timeout, and asymmetric
   scheduling tests, including repeated stress runs.
+- Made loopback endpoint tests tolerate normal cross-platform socket scheduling
+  latency instead of assuming that a fixed number of tight polls completes the
+  transport handshake.
 - Documented the link architecture, TCP usage, retry workflow, diagnostics,
   and the release smoke-test checklist.
 - Updated desktop and Android version metadata to 0.25.0.
