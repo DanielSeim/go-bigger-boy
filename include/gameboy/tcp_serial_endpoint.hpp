@@ -79,6 +79,7 @@ private:
     static constexpr std::uint8_t response_flag = 0x02;
     static constexpr std::uint8_t denied_flag = 0x04;
     static constexpr std::uint8_t not_ready_flag = 0x08;
+    static constexpr std::uint8_t reset_flag = 0x80;
 
     SerialPort* port_{};
     TcpLinkChannel* channel_{};

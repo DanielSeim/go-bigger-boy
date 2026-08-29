@@ -98,6 +98,8 @@ restores the printer.
 In a TCP session the host wins the initial clock race. Clock ownership is then
 released explicitly after each completed byte, allowing Pokémon to alternate
 which side clocks subsequent exchanges without permitting simultaneous clocks.
+An explicit serial/link reset also sends an ordered reset marker, so a request
+already queued in the peer is discarded before a retry can arm a new byte.
 
 Each remote instance receives its normal primary keyboard bindings (arrows for
 movement, `X` for A/confirm, `Z` for B/cancel, and Enter for Start by default).
