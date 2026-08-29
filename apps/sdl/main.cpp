@@ -7544,9 +7544,11 @@ int main(int argc, char** argv) {
                             link_emulator->frame_ready()) {
                             link_emulator->consume_frame();
                         }
+#ifndef __ANDROID__
                         if (link_emulator != nullptr) {
                             trace_link_frame(*emulator, *link_emulator);
                         }
+#endif
                     }
                 }
             }

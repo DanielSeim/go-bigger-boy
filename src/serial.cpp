@@ -19,10 +19,15 @@ void SerialPort::write_control(const std::uint8_t value) noexcept {
         endpoint_->release_internal_clock(*this);
     }
     control_ = static_cast<std::uint8_t>(value & (cgb_mode_ ? 0x83 : 0x81));
+    if (endpoint_ != nullptr) {
+        // The cable owns startup edge pacing. Begin a linked probe from a
+        // clean bit boundary; peer_ready() will hold that first edge until
+        // the other port arms its receiver.
+        phase_ = 0;
+    }
     if ((control_ & 0x80) == 0) {
         active_ = false;
         bits_shifted_ = 0;
-        phase_ = 0;
         return;
     }
 
@@ -43,13 +48,19 @@ void SerialPort::write_control(const std::uint8_t value) noexcept {
     transfer_byte_ = data_;
     fast_clock_ = cgb_mode_ && (control_ & 0x02) != 0;
     bits_shifted_ = 0;
-    phase_ = 0;
 }
 
-void SerialPort::initialize_post_boot(const HardwareModel /*model*/) noexcept {
-    data_ = 0xFF;
+void SerialPort::initialize_post_boot(const HardwareModel model) noexcept {
+    // The boot ROM leaves SB cleared. Keep the serial divider phase from the
+    // handoff as well; the DMG/MGB boot ROMs reach the cartridge 460 clocks
+    // into a serial bit, which is observable when the first transfer starts.
+    data_ = 0x00;
+    external_data_ = data_;
+    transfer_byte_ = data_;
     control_ = 0;
-    phase_ = 0;
+    phase_ = (model == HardwareModel::dmg || model == HardwareModel::mgb)
+                 ? 460U
+                 : 0U;
     bits_shifted_ = 0;
     active_ = false;
     internal_clock_ = false;
@@ -69,7 +80,16 @@ unsigned SerialPort::cycles_per_bit() const noexcept {
 }
 
 void SerialPort::tick(const unsigned cycles) noexcept {
-    if (!active_ || !internal_clock_) return;
+    if (!active_ || !internal_clock_) {
+        // The serial clock is derived from the free-running system divider;
+        // it continues advancing while the port is idle or waiting for an
+        // external clock. This is observable when SC is written after boot.
+        // A connected cable intentionally keeps its phase at the next edge
+        // until a peer is armed, so startup probes cannot be skipped while
+        // the two emulated CPUs reach the handshake at different times.
+        if (endpoint_ == nullptr) phase_ = (phase_ + cycles) % 512U;
+        return;
+    }
 
     phase_ += cycles;
     const auto bit_cycles = cycles_per_bit();
