@@ -1902,6 +1902,14 @@ void test_tcp_serial_endpoint_loopback() {
     second.serial_port().reset_link();
     check(!first.serial_port().transfer_active(),
           "peer serial reset discards a partial external byte");
+    // Let both channels consume the abandoned response and ordered reset
+    // markers before the next guest arms SC. This is the same idle polling
+    // cadence used by the desktop frontend between retries.
+    for (unsigned attempt = 0; attempt < 20; ++attempt) {
+        first_endpoint.poll();
+        second_endpoint.poll();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
 
     first.write8(0xFF01, 0xA5);
     second.write8(0xFF01, 0x5A);
