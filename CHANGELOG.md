@@ -18,8 +18,8 @@ instances.
   and a remote serial endpoint that never blocks emulation.
 - Hardened Gen I handshake behavior when the two Cable Club attendants are
   approached at different times, including deferred first requests, clock
-  release, ordered reset markers, asymmetric scheduling, repeated SB/SC probe
-  writes, and retry recovery.
+  release, sequence-numbered reset markers, asymmetric scheduling, repeated
+  SB/SC probe writes, and retry recovery.
 - Enabled TCP low-latency mode and 1 ms link polling during desktop frame
   pacing, substantially reducing per-bit request/response delay without
   changing emulation timing.
