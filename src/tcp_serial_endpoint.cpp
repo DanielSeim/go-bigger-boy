@@ -124,7 +124,8 @@ void TcpSerialEndpoint::cancel_internal_clock(SerialPort& /*port*/) noexcept {
     // socket. Send an ordered reset marker so the peer drops any deferred
     // request from the abandoned transfer before the next guest arms SC.
     if (channel_ != nullptr && connected()) {
-        const LinkPacket reset{LinkPacketType::clock_release, 0, 0, reset_flag};
+        const LinkPacket reset{LinkPacketType::clock_release, next_sequence_, 0,
+                               reset_flag};
         static_cast<void>(channel_->send(reset));
     }
     pending_sequence_.reset();
@@ -192,6 +193,14 @@ void TcpSerialEndpoint::poll() noexcept {
         }
         if (packet->type == LinkPacketType::clock_release) {
             if ((packet->flags & reset_flag) != 0) {
+                // A peer can reset just after this side has started a fresh
+                // request. Do not let an older reset marker cancel that
+                // newer request; markers carry the sender's next sequence
+                // number for this ordering check.
+                if (pending_sequence_.has_value() &&
+                    packet->sequence < *pending_sequence_) {
+                    continue;
+                }
                 pending_sequence_.reset();
                 response_.reset();
                 deferred_request_.reset();
