@@ -1694,11 +1694,17 @@ void test_serial_link_asymmetric_scheduling() {
     cable.connect(first.bus().serial_port(), second.bus().serial_port());
 
     for (unsigned instruction = 0; instruction < 100000; ++instruction) {
-        // Alternate which side gets the larger share of host time. Both
-        // consoles continue to make progress, but neither has lockstep
-        // instruction timing to hide a peer-readiness bug.
-        if (instruction % 4 != 0) static_cast<void>(first.step());
-        if (instruction % 4 != 1) static_cast<void>(second.step());
+        // Alternate which side gets a 4:1 share of host time. Both consoles
+        // continue to make progress, but neither has lockstep instruction
+        // timing to hide a peer-readiness bug.
+        const auto first_ahead = (instruction / 32U) % 2U == 0;
+        if (first_ahead) {
+            static_cast<void>(first.step());
+            if (instruction % 4U == 0) static_cast<void>(second.step());
+        } else {
+            if (instruction % 4U == 0) static_cast<void>(first.step());
+            static_cast<void>(second.step());
+        }
     }
     check(first.bus().read8(0xFF01) == 0x60 &&
               second.bus().read8(0xFF01) == 0x60,
