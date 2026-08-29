@@ -15,11 +15,25 @@ std::uint8_t SerialPort::read_control() const noexcept {
 }
 
 void SerialPort::write_control(const std::uint8_t value) noexcept {
-    if (endpoint_ != nullptr && active_ && internal_clock_) {
+    const auto masked = static_cast<std::uint8_t>(
+        value & (cgb_mode_ ? 0x83 : 0x81));
+    const auto was_active = active_;
+    const auto was_internal = internal_clock_;
+    const auto preserve_transfer = was_active && (masked & 0x80U) != 0 &&
+                                   endpoint_ != nullptr &&
+                                   endpoint_->preserve_active_transfer();
+    const auto new_internal = (masked & 0x01U) != 0;
+
+    // Re-arming SC while a linked byte is still in flight is common in the
+    // Cable Club connection loop.  Changing from internal to external still
+    // releases clock ownership, but writing the same mode must not restart
+    // the pending TCP bit exchange.
+    if (endpoint_ != nullptr && was_active && was_internal &&
+        (!preserve_transfer || !new_internal || (masked & 0x80U) == 0)) {
         endpoint_->release_internal_clock(*this);
     }
-    control_ = static_cast<std::uint8_t>(value & (cgb_mode_ ? 0x83 : 0x81));
-    if (endpoint_ != nullptr) {
+    control_ = masked;
+    if (endpoint_ != nullptr && !preserve_transfer) {
         // The cable owns startup edge pacing. Begin a linked probe from a
         // clean bit boundary; peer_ready() will hold that first edge until
         // the other port arms its receiver.
@@ -28,12 +42,15 @@ void SerialPort::write_control(const std::uint8_t value) noexcept {
     if ((control_ & 0x80) == 0) {
         active_ = false;
         bits_shifted_ = 0;
+        phase_ = 0;
         return;
     }
 
-    internal_clock_ = (control_ & 0x01) != 0;
-    if (!internal_clock_) external_data_ = data_;
-    if (internal_clock_ && endpoint_ != nullptr &&
+    internal_clock_ = new_internal;
+    if (!internal_clock_ && !preserve_transfer) external_data_ = data_;
+    const auto retain_clock_owner = preserve_transfer && was_internal &&
+                                    new_internal;
+    if (internal_clock_ && endpoint_ != nullptr && !retain_clock_owner &&
         !endpoint_->request_internal_clock(*this)) {
         // If both consoles request the clock on the same emulated cycle, keep
         // one deterministic master. The losing side remains an external
@@ -42,12 +59,18 @@ void SerialPort::write_control(const std::uint8_t value) noexcept {
         // connection in the first place.
         internal_clock_ = false;
         control_ = static_cast<std::uint8_t>(control_ & ~0x01U);
-        data_ = external_data_;
+        // A simultaneous initial probe has not shifted anything yet, so the
+        // losing internal request must restore the byte it placed on SB.
+        // Once a linked edge has arrived, however, restoring would discard a
+        // partially shifted byte and make the TCP handshake oscillate.
+        if (!preserve_transfer || bits_shifted_ == 0) data_ = external_data_;
     }
     active_ = true;
-    transfer_byte_ = data_;
     fast_clock_ = cgb_mode_ && (control_ & 0x02) != 0;
-    bits_shifted_ = 0;
+    if (!preserve_transfer) {
+        transfer_byte_ = data_;
+        bits_shifted_ = 0;
+    }
 }
 
 void SerialPort::initialize_post_boot(const HardwareModel model) noexcept {
@@ -73,6 +96,21 @@ void SerialPort::reset_diagnostics() noexcept {
     last_received_ = 0xFF;
 }
 
+void SerialPort::reset_link() noexcept {
+    if (endpoint_ != nullptr) {
+        if (active_ && internal_clock_) endpoint_->release_internal_clock(*this);
+        endpoint_->cancel_internal_clock(*this);
+    }
+    control_ = 0;
+    phase_ = 0;
+    bits_shifted_ = 0;
+    active_ = false;
+    internal_clock_ = false;
+    fast_clock_ = false;
+    external_data_ = data_;
+    transfer_byte_ = data_;
+}
+
 unsigned SerialPort::cycles_per_bit() const noexcept {
     // DMG serial transfers run at 8192 Hz (512 CPU clocks per bit). CGB fast
     // mode runs at 262144 Hz (16 clocks per bit at normal CPU speed).
@@ -94,6 +132,9 @@ void SerialPort::tick(const unsigned cycles) noexcept {
     phase_ += cycles;
     const auto bit_cycles = cycles_per_bit();
     while (active_ && phase_ >= bit_cycles) {
+        if (endpoint_ != nullptr) {
+            endpoint_->prepare_bit((data_ & 0x80U) != 0);
+        }
         if (endpoint_ != nullptr && !endpoint_->peer_ready()) {
             // Do not accumulate elapsed CPU time while the cable has no
             // receiver. Once the peer arms its port, the master should emit
@@ -164,6 +205,8 @@ bool SerialCable::Endpoint::exchange_bit(const bool outgoing) noexcept {
 bool SerialCable::Endpoint::peer_ready() const noexcept {
     return peer_ != nullptr && peer_->transfer_active();
 }
+
+void SerialCable::Endpoint::prepare_bit(const bool /*outgoing*/) noexcept {}
 
 bool SerialCable::Endpoint::request_internal_clock(SerialPort& port) noexcept {
     if (cable_ == nullptr) return true;

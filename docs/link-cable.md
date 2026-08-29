@@ -15,6 +15,41 @@ that establishes one internal and one external role. A missing endpoint
 supplies pull-up `1` bits, matching the disconnected cable state. Transfer
 completion raises serial interrupt 3 on both consoles.
 
+Frontends should use `gameboy::LinkSession` when they own two emulator
+instances. The session owns the cable, exposes `disconnected`, `starting`,
+`connected`, `transferring`, and `timed_out` lifecycle states, and advances
+both CPUs with a cycle-balanced scheduler. This keeps link timing policy out
+of SDL and makes reconnect behavior testable without a window or network
+transport. The SDL split view shows the current state and completed-transfer
+count in a small status strip. A transfer that makes no bit or completion
+progress for the session watchdog budget enters `timed_out`; retrying the
+session resets only serial protocol state and cable arbitration, preserving
+both running machines and their saves. On desktop, **Emulation → Retry Link
+Handshake** (or `Ctrl+Shift+R`) performs that recovery.
+
+`gameboy::LinkTransport` is the seam for additional transports. The shipped
+`LocalLinkTransport` wraps `SerialCable`; transport implementations must queue
+network I/O outside the serial edge callback and present only ready edges to
+the emulation thread. `LinkPacketCodec` defines the fixed `GB`/versioned,
+checksummed frame used by the planned TCP backend.
+
+`gameboy::TcpLinkChannel` provides the first transport-layer implementation:
+loopback host/connect, non-blocking polling, partial-write handling, and frame
+validation. It enables TCP's low-latency mode for the small serial request and
+response frames, avoiding packet coalescing delays while leaving the socket
+non-blocking. It is intentionally not selectable from the SDL session yet; a
+remote serial-edge adapter must consume queued packets without ever waiting
+inside the CPU or serial callback.
+
+`gameboy::TcpSerialEndpoint` is the corresponding remote-edge adapter. It
+queues an outgoing bit during `prepare_bit`, holds the local internal clock at
+the next edge until a response arrives, and services incoming requests by
+clocking the local external port from `poll()`. This keeps socket latency out
+of CPU execution; a host UI can now compose one endpoint, one channel, and one
+emulator for a remote session. While a TCP bit is in flight, the endpoint also
+preserves the partial shift register across Pokémon's repeated SB/SC probe
+rewrites; an explicit link reset remains the cancellation boundary.
+
 The printer and test-ROM serial-output paths remain available through the
 `MemoryBus` adapter. A serial endpoint is deliberately not embedded in a save
 state because it belongs to the host session; hosts should reconnect a cable
@@ -47,6 +82,27 @@ hardware time, including simultaneous internal-clock probes. A connected
 internal clock holds its first edge until the peer has armed its serial
 receiver; this avoids losing a startup byte when the two emulated CPUs reach
 the handshake a few instructions apart, without slowing either CPU.
+
+On desktop, **Emulation → Host TCP Link** (`Ctrl+Shift+H`) listens on
+`127.0.0.1:8765`, while **Join TCP Link** (`Ctrl+Shift+J`) connects to that
+endpoint. Use one emulator instance in host mode and another in join mode,
+with the same ROM and prepared Cable Club saves. For Pokémon Gen I, have the
+host player talk to the Cable Club attendant and confirm the link first; the
+join player should then confirm on its side. This gives the game's serial
+handshake a clock owner before the peer starts its probe. The single-screen
+status strip shows the TCP role and state (`W` means the TCP socket is
+connected but the link handshake is still waiting for the host); **Retry Link
+Handshake** reopens the same endpoint after a disconnect, and **Stop TCP Link**
+restores the printer.
+
+In a TCP session the host wins the initial clock race. Clock ownership is then
+released explicitly after each completed byte, allowing Pokémon to alternate
+which side clocks subsequent exchanges without permitting simultaneous clocks.
+
+Each remote instance receives its normal primary keyboard bindings (arrows for
+movement, `X` for A/confirm, `Z` for B/cancel, and Enter for Start by default).
+The `W/A/S/D` and `J/K` player-two bindings apply only to the local split-screen
+session. Click a window to focus it before navigating its Cable Club menu.
 
 Link tracing is opt-in. Add `link.Diagnostics = true` to the portable
 `settings.ini` beside the executable before starting a session; normal users

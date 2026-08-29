@@ -1,7 +1,10 @@
 #include "gameboy/emulator.hpp"
 #include "gameboy/display_palette.hpp"
 #include "gameboy/gameshark.hpp"
+#include "gameboy/link_session.hpp"
 #include "gameboy/rom_library.hpp"
+#include "gameboy/tcp_link_channel.hpp"
+#include "gameboy/tcp_serial_endpoint.hpp"
 #include "gameboy/video_pipeline.hpp"
 #include "gbb/audio.hpp"
 #include "gbb/gameboy_scene.hpp"
@@ -57,7 +60,7 @@
 namespace {
 
 #ifndef GBB_VERSION
-#define GBB_VERSION "0.23.0"
+#define GBB_VERSION "0.25.0"
 #endif
 
 #ifdef __ANDROID__
@@ -123,6 +126,10 @@ enum class DesktopMenuCommand : int {
     pause,
     reset,
     link_session,
+    link_retry,
+    remote_host,
+    remote_join,
+    remote_stop,
     fullscreen,
     controls,
     gameshark,
@@ -173,6 +180,14 @@ public:
         append(emulation_, DesktopMenuCommand::reset, L"&Reset\tCtrl+R");
         append(emulation_, DesktopMenuCommand::link_session,
                L"Local &Link Session\tCtrl+Shift+L");
+        append(emulation_, DesktopMenuCommand::link_retry,
+               L"Retry Link Handshake\tCtrl+Shift+R");
+        append(emulation_, DesktopMenuCommand::remote_host,
+               L"Host TCP Link\tCtrl+Shift+H");
+        append(emulation_, DesktopMenuCommand::remote_join,
+               L"Join TCP Link\tCtrl+Shift+J");
+        append(emulation_, DesktopMenuCommand::remote_stop,
+               L"Stop TCP Link");
 
         append(view_, DesktopMenuCommand::fullscreen, L"&Fullscreen\tF11");
         AppendMenuW(view_, MF_SEPARATOR, 0, nullptr);
@@ -248,13 +263,22 @@ public:
 
     void update(const bool has_rom, const bool paused, const bool fullscreen,
                 const bool recording, const std::size_t palette,
-                const gameboy::VideoMode video, const bool link_active) {
+                const gameboy::VideoMode video, const bool link_active,
+                const bool remote_link_active) {
         if (root_ == nullptr) return;
         enable(DesktopMenuCommand::save_state, has_rom);
         enable(DesktopMenuCommand::load_state, has_rom);
         enable(DesktopMenuCommand::pause, has_rom);
         enable(DesktopMenuCommand::reset, has_rom);
-        enable(DesktopMenuCommand::link_session, has_rom);
+        enable(DesktopMenuCommand::link_session,
+               has_rom && !remote_link_active);
+        enable(DesktopMenuCommand::link_retry,
+               link_active || remote_link_active);
+        enable(DesktopMenuCommand::remote_host,
+               has_rom && !link_active && !remote_link_active);
+        enable(DesktopMenuCommand::remote_join,
+               has_rom && !link_active && !remote_link_active);
+        enable(DesktopMenuCommand::remote_stop, remote_link_active);
         ModifyMenuW(emulation_, command_id(DesktopMenuCommand::link_session),
                     MF_BYCOMMAND | MF_STRING,
                     command_id(DesktopMenuCommand::link_session),
@@ -2557,6 +2581,16 @@ struct DialogState {
     std::optional<std::string> error;
 };
 
+struct RemoteLinkSession {
+    gameboy::TcpLinkChannel channel;
+    gameboy::TcpSerialEndpoint endpoint;
+    bool enabled{};
+    bool hosting{};
+    bool diagnostics{};
+
+    [[nodiscard]] bool active() const noexcept { return enabled; }
+};
+
 constexpr std::array<gameboy::Button, 8> button_order{
     gameboy::Button::right, gameboy::Button::left, gameboy::Button::up,
     gameboy::Button::down, gameboy::Button::a, gameboy::Button::b,
@@ -3411,7 +3445,32 @@ gameboy::VideoMode load_video_mode(const std::filesystem::path& directory) {
 }
 
 bool load_link_diagnostics(const std::filesystem::path& directory) {
-    return load_app_settings(directory).link_diagnostics;
+    if (load_app_settings(directory).link_diagnostics) return true;
+
+    // Windows shortcuts and WSL UNC launches can use a working directory
+    // different from the executable directory. Accept an explicit diagnostic
+    // setting there as well, so a portable install cannot silently ignore the
+    // option merely because the shortcut's "Start in" folder differs.
+    std::error_code error;
+    const auto working_directory = std::filesystem::current_path(error);
+    if (error || working_directory.empty() || working_directory == directory) {
+        return false;
+    }
+    const auto path = working_directory / "settings.ini";
+    std::ifstream input(path);
+    if (!input) return false;
+    std::string line;
+    while (std::getline(input, line)) {
+        const auto comment = line.find_first_of("#;");
+        if (comment != std::string::npos) line.resize(comment);
+        const auto separator = line.find('=');
+        if (separator == std::string::npos) continue;
+        const auto key = trimmed_setting(line.substr(0, separator));
+        if (key != "link.Diagnostics") continue;
+        return parse_bool_setting(
+            trimmed_setting(line.substr(separator + 1)), false);
+    }
+    return false;
 }
 
 void save_video_mode(const std::filesystem::path& directory,
@@ -4217,6 +4276,11 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                     bool& fullscreen, bool& fast_forward, bool& rewind,
                     RewindHistory& rewind_history, bool& reset_requested,
                     bool& link_toggle_requested,
+                    bool& link_retry_requested,
+                    bool& remote_host_requested,
+                    bool& remote_join_requested,
+                    bool& remote_stop_requested,
+                    const bool remote_link_active,
                     bool& running
 #ifndef __ANDROID__
                     , DesktopDebugger& debugger, InputMovie& input_movie,
@@ -4250,7 +4314,7 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
 #ifdef _WIN32
     desktop_menu.update(emulator != nullptr, paused, fullscreen,
                         input_movie.recording(), display_palette, sdl.video_mode,
-                        link_emulator != nullptr);
+                        link_emulator != nullptr, remote_link_active);
     const auto menu_command = desktop_menu.take_command();
     const auto menu_value = static_cast<int>(menu_command);
     const auto palette_first =
@@ -4331,6 +4395,18 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
             break;
         case DesktopMenuCommand::link_session:
             if (emulator) link_toggle_requested = true;
+            break;
+        case DesktopMenuCommand::link_retry:
+            if (link_emulator != nullptr) link_retry_requested = true;
+            break;
+        case DesktopMenuCommand::remote_host:
+            if (emulator) remote_host_requested = true;
+            break;
+        case DesktopMenuCommand::remote_join:
+            if (emulator) remote_join_requested = true;
+            break;
+        case DesktopMenuCommand::remote_stop:
+            if (remote_link_active) remote_stop_requested = true;
             break;
         case DesktopMenuCommand::fullscreen:
             fullscreen = !fullscreen;
@@ -4654,7 +4730,8 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                 if (index < recent.size()) pending_rom = recent[index];
             } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
                        event.key.key == SDLK_R &&
-                       (event.key.mod & SDL_KMOD_CTRL) != 0 && emulator &&
+                       (event.key.mod & SDL_KMOD_CTRL) != 0 &&
+                       (event.key.mod & SDL_KMOD_SHIFT) == 0 && emulator &&
                        !input_movie_active) {
                 reset_requested = true;
             } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
@@ -4663,6 +4740,22 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                            (SDL_KMOD_CTRL | SDL_KMOD_SHIFT) &&
                        emulator) {
                 link_toggle_requested = true;
+            } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+                       event.key.key == SDLK_R &&
+                       (event.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_SHIFT)) ==
+                           (SDL_KMOD_CTRL | SDL_KMOD_SHIFT) &&
+                       (link_emulator != nullptr || remote_link_active)) {
+                link_retry_requested = true;
+            } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+                       event.key.key == SDLK_H &&
+                       (event.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_SHIFT)) ==
+                           (SDL_KMOD_CTRL | SDL_KMOD_SHIFT) && emulator) {
+                remote_host_requested = true;
+            } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+                       event.key.key == SDLK_J &&
+                       (event.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_SHIFT)) ==
+                           (SDL_KMOD_CTRL | SDL_KMOD_SHIFT) && emulator) {
+                remote_join_requested = true;
             } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
                        event.key.key == SDLK_SPACE && emulator) {
                 paused = !paused;
@@ -5393,20 +5486,27 @@ std::uint64_t link_trace_frame{};
 std::uint64_t link_trace_session{};
 std::filesystem::path link_trace_path;
 
-void start_link_trace(const std::filesystem::path& preference_path) {
-    // Portable Windows installs can live below a read-only directory. Try
-    // the OS temporary directory first, then the normal settings directory
-    // and working directory. The temporary directory is especially important
-    // when the executable itself is launched through a WSL UNC path.
+void start_link_trace(const std::filesystem::path& preference_path,
+                      const char* role_suffix = nullptr) {
+    // Prefer the OS temporary directory so traces remain writable even when
+    // the portable install is read-only or launched through a WSL UNC path.
+    // Fall back to the portable installation directory and working directory.
     std::error_code temp_error;
     const auto temporary_directory =
         std::filesystem::temp_directory_path(temp_error);
+    const auto suffix = role_suffix != nullptr && *role_suffix != '\0'
+                            ? std::string{"-"} + role_suffix
+                            : std::string{};
     const std::array<std::filesystem::path, 3> candidates{{
         temp_error ? std::filesystem::path{}
-                   : temporary_directory / "gbb-link-trace.log",
-        preference_path.empty() ? std::filesystem::path{}
-                                : preference_path / "link-trace.log",
-        std::filesystem::current_path() / "link-trace.log"}};
+                   : temporary_directory /
+                         (std::string{"gbb-link-trace"} + suffix + ".log"),
+        preference_path.empty()
+            ? std::filesystem::path{}
+            : preference_path /
+                  (std::string{"link-trace"} + suffix + ".log"),
+        std::filesystem::current_path() /
+            (std::string{"link-trace"} + suffix + ".log")}};
     link_trace_frame = 0;
     link_trace_path.clear();
     const auto session = ++link_trace_session;
@@ -5477,6 +5577,41 @@ void trace_link_frame(const gameboy::Emulator& first,
     link_trace.flush();
 }
 
+void trace_remote_frame(const gameboy::Emulator& emulator,
+                        const RemoteLinkSession& remote) {
+    if (!link_trace.is_open()) return;
+    const auto& serial = emulator.bus().serial_port();
+    ++link_trace_frame;
+    link_trace << std::dec << link_trace_frame << ' '
+               << (remote.hosting ? "role=host" : "role=join")
+               << " hr=" << std::hex
+               << static_cast<unsigned>(emulator.bus().read8(0xFFAA))
+               << " ab=" << static_cast<unsigned>(emulator.bus().read8(0xFFAB))
+               << " ac=" << static_cast<unsigned>(emulator.bus().read8(0xFFAC))
+               << " ad=" << static_cast<unsigned>(emulator.bus().read8(0xFFAD))
+               << " sb=" << static_cast<unsigned>(serial.read_data())
+               << " sc=" << static_cast<unsigned>(serial.read_control())
+               << " active=" << serial.transfer_active()
+               << " int=" << serial.internal_clock()
+               << " bits=" << static_cast<unsigned>(serial.bits_shifted())
+               << " done=" << std::dec << serial.transfers_completed()
+               << " tx=" << std::hex
+               << static_cast<unsigned>(serial.last_transmitted())
+               << " rx=" << static_cast<unsigned>(serial.last_received())
+               << " if=" << static_cast<unsigned>(emulator.bus().read8(0xFF0F))
+               << " ie=" << static_cast<unsigned>(emulator.bus().read8(0xFFFF))
+               << " q=" << std::dec << remote.endpoint.requests_sent()
+               << " r=" << remote.endpoint.responses_received()
+               << " x=" << remote.endpoint.transfers_completed()
+               << " i=" << remote.endpoint.requests_received()
+               << " s=" << remote.endpoint.responses_sent()
+               << " d=" << remote.endpoint.denials_received()
+               << " D=" << remote.endpoint.denials_sent()
+               << " u=" << remote.endpoint.responses_unmatched()
+               << " w=" << remote.endpoint.waiting_for_peer() << '\n';
+    link_trace.flush();
+}
+
 void reset_pokemon_link_handshake(gameboy::Emulator& emulator) {
     // The Gen I Cable Club keeps its negotiated role in HRAM in addition to
     // FF01/FF02. A linked player starts from a copy of the current game state,
@@ -5497,7 +5632,7 @@ void reset_pokemon_link_handshake(gameboy::Emulator& emulator) {
 void start_local_link_session(
     const std::string& path, gameboy::Emulator& first,
     std::unique_ptr<gameboy::Emulator>& second,
-    std::unique_ptr<gameboy::SerialCable>& cable,
+    std::unique_ptr<gameboy::LinkSession>& session,
     SdlResources& sdl, const gameboy::DisplayPalette& palette,
     const std::filesystem::path& preference_path,
     const bool link_diagnostics) {
@@ -5559,11 +5694,10 @@ void start_local_link_session(
     // before Pokémon's serial interrupt handler can read it.
     first.bus().connect_printer(false);
     replacement->bus().connect_printer(false);
-    auto replacement_cable = std::make_unique<gameboy::SerialCable>();
-    replacement_cable->connect(first.bus().serial_port(),
-                               replacement->bus().serial_port());
+    auto replacement_session = std::make_unique<gameboy::LinkSession>();
+    replacement_session->start(first, *replacement);
     second = std::move(replacement);
-    cable = std::move(replacement_cable);
+    session = std::move(replacement_session);
     if (link_diagnostics) start_link_trace(preference_path);
     if (link_trace.is_open()) {
         const auto message = "Link trace is being written to:\n" +
@@ -5577,7 +5711,7 @@ void start_local_link_session(
         stop_link_trace();
         first.bus().connect_printer(true);
         sdl.split_screen = false;
-        cable.reset();
+        session.reset();
         second.reset();
         throw std::runtime_error("Could not configure split-screen presentation.");
     }
@@ -5585,10 +5719,10 @@ void start_local_link_session(
 
 void stop_local_link_session(gameboy::Emulator& first,
                              std::unique_ptr<gameboy::Emulator>& second,
-                             std::unique_ptr<gameboy::SerialCable>& cable,
+                             std::unique_ptr<gameboy::LinkSession>& session,
                              SdlResources& sdl) noexcept {
     stop_link_trace();
-    cable.reset();
+    session.reset();
     flush_battery_safely(second.get());
     second.reset();
     // Restore the primary console's normal serial peripheral after the
@@ -5596,6 +5730,101 @@ void stop_local_link_session(gameboy::Emulator& first,
     first.bus().connect_printer(true);
     sdl.split_screen = false;
     static_cast<void>(configure_video_pipeline(sdl, sdl.video_mode));
+}
+
+void retry_local_link_session(gameboy::Emulator& first,
+                               gameboy::Emulator& second,
+                               gameboy::LinkSession& session) noexcept {
+    session.retry();
+    if (is_pokemon_gen1(first)) {
+        reset_pokemon_link_handshake(first);
+        reset_pokemon_link_handshake(second);
+    } else {
+        first.bus().serial_port().reset_link();
+        second.bus().serial_port().reset_link();
+    }
+    first.bus().serial_port().reset_diagnostics();
+    second.bus().serial_port().reset_diagnostics();
+    release_all_buttons(first);
+    release_all_buttons(second);
+}
+
+constexpr std::uint16_t remote_link_port = 8765;
+
+void start_remote_link_session(gameboy::Emulator& emulator,
+                               RemoteLinkSession& remote,
+                               const bool hosting,
+                               const std::filesystem::path& preference_path,
+                               const bool link_diagnostics,
+                               SDL_Window* window) {
+    if (remote.enabled) return;
+    emulator.bus().connect_printer(false);
+    emulator.bus().serial_port().reset_link();
+    emulator.bus().serial_port().reset_diagnostics();
+    if (is_pokemon_gen1(emulator)) reset_pokemon_link_handshake(emulator);
+    release_all_buttons(emulator);
+    const auto ready = hosting
+                           ? remote.channel.listen(remote_link_port)
+                           : remote.channel.connect("127.0.0.1",
+                                                    remote_link_port);
+    if (!ready) {
+        emulator.bus().connect_printer(true);
+        throw std::runtime_error(
+            hosting ? "Could not host TCP link on loopback port 8765."
+                    : "Could not connect to TCP link host on 127.0.0.1:8765.");
+    }
+    remote.hosting = hosting;
+    remote.diagnostics = link_diagnostics;
+    remote.endpoint.set_arbitration_priority(hosting);
+    remote.endpoint.attach(emulator.bus().serial_port(), remote.channel);
+    remote.enabled = true;
+    if (link_diagnostics) {
+        start_link_trace(preference_path, hosting ? "host" : "join");
+        if (link_trace.is_open()) {
+            const auto message = "TCP link trace is being written to:\n" +
+                                 link_trace_path.string();
+            static_cast<void>(SDL_ShowSimpleMessageBox(
+                SDL_MESSAGEBOX_INFORMATION, "GBB TCP link diagnostics",
+                message.c_str(), window));
+        } else {
+            const auto message =
+                "Diagnostics are enabled, but no trace file could be opened.\n"
+                "Check that the executable folder is writable.";
+            static_cast<void>(SDL_ShowSimpleMessageBox(
+                SDL_MESSAGEBOX_WARNING, "GBB TCP link diagnostics",
+                message, window));
+        }
+    }
+}
+
+void stop_remote_link_session(gameboy::Emulator& emulator,
+                              RemoteLinkSession& remote) noexcept {
+    stop_link_trace();
+    remote.endpoint.detach();
+    remote.channel.close();
+    remote.enabled = false;
+    remote.diagnostics = false;
+    emulator.bus().connect_printer(true);
+}
+
+void retry_remote_link_session(gameboy::Emulator& emulator,
+                               RemoteLinkSession& remote) {
+    if (!remote.enabled) return;
+    remote.endpoint.detach();
+    remote.channel.close();
+    emulator.bus().serial_port().reset_link();
+    emulator.bus().serial_port().reset_diagnostics();
+    if (is_pokemon_gen1(emulator)) reset_pokemon_link_handshake(emulator);
+    release_all_buttons(emulator);
+    const auto ready = remote.hosting
+                           ? remote.channel.listen(remote_link_port)
+                           : remote.channel.connect("127.0.0.1",
+                                                    remote_link_port);
+    if (!ready) {
+        remote.endpoint.attach(emulator.bus().serial_port(), remote.channel);
+        throw std::runtime_error("Could not retry the TCP link session.");
+    }
+    remote.endpoint.attach(emulator.bus().serial_port(), remote.channel);
 }
 #endif
 
@@ -6654,8 +6883,98 @@ void present_link_frames(const gameboy::Emulator& first,
     }
 }
 
+const char* link_state_label(const gameboy::LinkSession::State state) noexcept {
+    switch (state) {
+    case gameboy::LinkSession::State::disconnected: return "DISCONNECTED";
+    case gameboy::LinkSession::State::starting: return "STARTING";
+    case gameboy::LinkSession::State::connected: return "CONNECTED";
+    case gameboy::LinkSession::State::transferring: return "TRANSFERRING";
+    case gameboy::LinkSession::State::timed_out: return "TIMED OUT";
+    }
+    return "UNKNOWN";
+}
+
+void present_link_status(SdlResources& sdl,
+                         const gameboy::LinkSession& session) {
+    // The split presentation has a 320x144 logical canvas. Keep the
+    // indicator deliberately small and translucent so it confirms that both
+    // consoles are attached without obscuring the Cable Club UI.
+    static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
+                                                 SDL_BLENDMODE_BLEND));
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 0, 0, 0, 170));
+    const SDL_FRect bar{0, 0, 320, 11};
+    static_cast<void>(SDL_RenderFillRect(sdl.renderer, &bar));
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 235, 245, 235, 255));
+    std::ostringstream text;
+    text << "LINK " << link_state_label(session.state())
+         << "  XFER " << session.transfers_completed();
+    static_cast<void>(SDL_RenderDebugText(sdl.renderer, 3, 2,
+                                          text.str().c_str()));
+    static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
+                                                 SDL_BLENDMODE_NONE));
+}
+
+const char* remote_link_state_label(
+    const gameboy::TcpLinkChannel::State state) noexcept {
+    switch (state) {
+    case gameboy::TcpLinkChannel::State::disconnected: return "DISCONNECTED";
+    case gameboy::TcpLinkChannel::State::listening: return "LISTENING";
+    case gameboy::TcpLinkChannel::State::connecting: return "CONNECTING";
+    case gameboy::TcpLinkChannel::State::connected: return "CONNECTED";
+    case gameboy::TcpLinkChannel::State::failed: return "FAILED";
+    }
+    return "UNKNOWN";
+}
+
+void present_remote_link_status(SdlResources& sdl,
+                                const RemoteLinkSession& remote) {
+    static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
+                                                 SDL_BLENDMODE_BLEND));
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 0, 0, 0, 170));
+    const SDL_FRect bar{0, 0, 160, 11};
+    static_cast<void>(SDL_RenderFillRect(sdl.renderer, &bar));
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 235, 245, 235, 255));
+    const auto role = remote.hosting ? "H" : "J";
+    const auto state = [&]() {
+        switch (remote.channel.state()) {
+        case gameboy::TcpLinkChannel::State::disconnected: return "D";
+        case gameboy::TcpLinkChannel::State::listening: return "L";
+        case gameboy::TcpLinkChannel::State::connecting: return "N";
+        case gameboy::TcpLinkChannel::State::connected: return "C";
+        case gameboy::TcpLinkChannel::State::failed: return "F";
+        }
+        return "?";
+    }();
+    const auto link_state = state[0] == 'C' &&
+                                    !remote.endpoint.peer_ready_for_link()
+                                ? "W"
+                                : state;
+    // Q/R are request/response counts generated by this endpoint. Keep the
+    // labels abbreviated so both counters remain visible on the 160-pixel
+    // Game Boy canvas. A nonzero Q with zero R means the peer is not servicing
+    // its serial endpoint; zero Q means the game has not started its clock.
+    const auto compact_count = [](const std::uint64_t value) {
+        // Keep the diagnostic strip bounded even during battle payloads that
+        // exchange thousands of bytes. The counters are deliberately shown
+        // modulo 1000; Q/R equality and X progress are the useful signals.
+        return static_cast<unsigned>(value % 1000U);
+    };
+    std::ostringstream status;
+    status << "TCP " << role << ' ' << link_state
+           << (remote.diagnostics ? " D" : "") << " Q"
+           << compact_count(remote.endpoint.requests_sent()) << " R"
+           << compact_count(remote.endpoint.responses_received()) << " X"
+           << compact_count(remote.endpoint.transfers_completed());
+    const auto text = status.str();
+    static_cast<void>(SDL_RenderDebugText(sdl.renderer, 3, 2, text.c_str()));
+    static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
+                                                 SDL_BLENDMODE_NONE));
+}
+
 void present(const gameboy::Emulator* emulator,
              const gameboy::Emulator* link_emulator, SdlResources& sdl,
+             const gameboy::LinkSession* link_session,
+             const RemoteLinkSession* remote_link,
              const gameboy::DisplayPalette& palette,
              const std::vector<std::string>& recent,
              const bool dashboard_visible,
@@ -6674,6 +6993,7 @@ void present(const gameboy::Emulator* emulator,
 #endif
     } else if (emulator != nullptr && link_emulator != nullptr) {
         present_link_frames(*emulator, *link_emulator, sdl, palette);
+        if (link_session != nullptr) present_link_status(sdl, *link_session);
     } else if (emulator != nullptr) {
         if (sdl.video_mode == gameboy::VideoMode::voxel_diorama ||
             sdl.video_mode == gameboy::VideoMode::voxel_shape ||
@@ -6690,6 +7010,9 @@ void present(const gameboy::Emulator* emulator,
             !SDL_RenderTexture(sdl.renderer, sdl.texture, nullptr, nullptr)) {
             sdl_error("Could not present framebuffer");
         }
+        }
+        if (remote_link != nullptr && remote_link->active()) {
+            present_remote_link_status(sdl, *remote_link);
         }
     }
 #ifdef __ANDROID__
@@ -6978,7 +7301,8 @@ int main(int argc, char** argv) {
 #endif
         std::unique_ptr<gameboy::Emulator> emulator;
         std::unique_ptr<gameboy::Emulator> link_emulator;
-        std::unique_ptr<gameboy::SerialCable> link_cable;
+        std::unique_ptr<gameboy::LinkSession> link_session;
+        RemoteLinkSession remote_link;
         std::string current_rom;
         std::optional<std::string> pending_rom;
 #ifdef __ANDROID__
@@ -7000,6 +7324,10 @@ int main(int argc, char** argv) {
         auto rewind = false;
         auto reset_requested = false;
         auto link_toggle_requested = false;
+        auto link_retry_requested = false;
+        auto remote_host_requested = false;
+        auto remote_join_requested = false;
+        auto remote_stop_requested = false;
         auto running = true;
 #ifdef __ANDROID__
         // The native Android LibraryActivity owns the dashboard. The SDL
@@ -7169,7 +7497,10 @@ int main(int argc, char** argv) {
                            configuring, pending_rom, display_palette,
                            dashboard_visible, dashboard_selection, paused,
                            fullscreen, fast_forward, rewind, rewind_history,
-                           reset_requested, link_toggle_requested, running
+                           reset_requested, link_toggle_requested,
+                           link_retry_requested, remote_host_requested,
+                           remote_join_requested, remote_stop_requested,
+                           remote_link.active(), running
 #ifndef __ANDROID__
                            , debugger, input_movie, tas_editor, sprite_editor,
                            cheat_manager
@@ -7180,15 +7511,58 @@ int main(int argc, char** argv) {
                            );
 
 #ifndef __ANDROID__
-            if (link_toggle_requested) {
-                link_toggle_requested = false;
+            if (remote_stop_requested) {
+                remote_stop_requested = false;
+                if (emulator != nullptr && remote_link.active()) {
+                    stop_remote_link_session(*emulator, remote_link);
+                }
+            }
+            if (remote_host_requested || remote_join_requested) {
+                const auto hosting = remote_host_requested;
+                remote_host_requested = false;
+                remote_join_requested = false;
                 try {
                     if (link_emulator != nullptr) {
                         stop_local_link_session(*emulator, link_emulator,
-                                                link_cable, sdl);
+                                                link_session, sdl);
+                    }
+                    if (remote_link.active()) {
+                        stop_remote_link_session(*emulator, remote_link);
+                    }
+                    start_remote_link_session(*emulator, remote_link, hosting,
+                                              preference_path, link_diagnostics,
+                                              sdl.window);
+                    rewind = false;
+                    rewind_history.clear();
+                } catch (const std::exception& error) {
+                    show_error(sdl.window, error.what());
+                }
+            }
+            if (link_retry_requested) {
+                link_retry_requested = false;
+                try {
+                    if (emulator != nullptr && remote_link.active()) {
+                        retry_remote_link_session(*emulator, remote_link);
+                    } else if (emulator != nullptr && link_emulator != nullptr &&
+                               link_session != nullptr) {
+                        retry_local_link_session(*emulator, *link_emulator,
+                                                 *link_session);
+                    }
+                } catch (const std::exception& error) {
+                    show_error(sdl.window, error.what());
+                }
+            }
+            if (link_toggle_requested) {
+                link_toggle_requested = false;
+                try {
+                    if (remote_link.active()) {
+                        stop_remote_link_session(*emulator, remote_link);
+                    } else if (link_emulator != nullptr) {
+                        stop_local_link_session(*emulator, link_emulator,
+                                                link_session, sdl);
                     } else if (emulator != nullptr) {
                         start_local_link_session(
-                            current_rom, *emulator, link_emulator, link_cable,
+                            current_rom, *emulator, link_emulator, link_session,
                             sdl, gameboy::display_palettes[display_palette],
                             preference_path, link_diagnostics);
                         rewind = false;
@@ -7212,9 +7586,12 @@ int main(int argc, char** argv) {
             if (pending_rom) {
                 try {
 #ifndef __ANDROID__
+                    if (remote_link.active()) {
+                        stop_remote_link_session(*emulator, remote_link);
+                    }
                     if (link_emulator != nullptr) {
                         stop_local_link_session(*emulator, link_emulator,
-                                                link_cable, sdl);
+                                                link_session, sdl);
                     }
                     input_movie.stop(emulator.get());
                     tas_editor.close();
@@ -7473,6 +7850,9 @@ int main(int argc, char** argv) {
 
             update_camera_frame(emulator.get(), sdl);
 #ifndef __ANDROID__
+            if (remote_link.active()) remote_link.endpoint.poll();
+#endif
+#ifndef __ANDROID__
             if (input_movie.replaying()) {
                 fast_forward = false;
                 rewind = false;
@@ -7489,9 +7869,6 @@ int main(int argc, char** argv) {
                 }
 #endif
                 return emulator->step();
-            };
-            const auto step_link_emulator = [&]() {
-                return link_emulator != nullptr ? link_emulator->step() : 0U;
             };
 #ifndef __ANDROID__
             if (emulator && debugger.take_instruction_step()) {
@@ -7546,38 +7923,36 @@ int main(int argc, char** argv) {
                                 rewind_history.pop_front();
                             }
                         }
-                        if (link_emulator != nullptr) {
-                            // Balance exact CPU cycles rather than stopping a
-                            // console when its video frame flag is raised.
-                            // Serial interrupts may still need to run after
-                            // that flag, and pausing one side there can make
-                            // the other side's link transfer time out.
-                            unsigned primary_cycles = 0;
-                            unsigned secondary_cycles = 0;
-                            while (running &&
-                                   (primary_cycles < cycles_per_frame ||
-                                    secondary_cycles < cycles_per_frame)) {
-                                // Advance the console furthest behind. This
-                                // preserves instruction-level serial ordering
-                                // without the old primary-then-secondary
-                                // half-speed behavior.
-                                if (primary_cycles <= secondary_cycles &&
-                                    primary_cycles < cycles_per_frame) {
-                                    primary_cycles += step_emulator();
-                                } else if (secondary_cycles < cycles_per_frame) {
-                                    secondary_cycles += step_link_emulator();
-                                } else if (primary_cycles < cycles_per_frame) {
-                                    primary_cycles += step_emulator();
-                                } else {
-                                    break;
-                                }
-                            }
+                        if (link_emulator != nullptr && link_session != nullptr) {
+                            // The session owns the cable and keeps both CPU
+                            // timelines balanced so serial interrupts cannot
+                            // be starved by frontend scheduling.
+                            link_session->advance(cycles_per_frame);
                         } else {
                             unsigned cycles = 0;
+                            unsigned remote_poll_cycles = 0;
                             while (running && cycles < cycles_per_frame &&
                                    !emulator->frame_ready()) {
-                                cycles += step_emulator();
+                                const auto stepped = step_emulator();
+                                cycles += stepped;
+#ifndef __ANDROID__
+                                if (remote_link.active()) {
+                                    remote_poll_cycles += stepped;
+                                    // Keep network serial edges well below a
+                                    // video-frame of latency. Polling every
+                                    // 64 CPU cycles avoids the per-frame delay
+                                    // that can make Pokémon's Cable Club probe
+                                    // time out even on loopback.
+                                    if (remote_poll_cycles >= 64) {
+                                        remote_link.endpoint.poll();
+                                        remote_poll_cycles = 0;
+                                    }
+                                }
+#endif
                             }
+#ifndef __ANDROID__
+                            if (remote_link.active()) remote_link.endpoint.poll();
+#endif
                         }
                         if (emulator->frame_ready()) emulator->consume_frame();
                         if (link_emulator != nullptr &&
@@ -7587,6 +7962,8 @@ int main(int argc, char** argv) {
 #ifndef __ANDROID__
                         if (link_emulator != nullptr) {
                             trace_link_frame(*emulator, *link_emulator);
+                        } else if (remote_link.active()) {
+                            trace_remote_frame(*emulator, remote_link);
                         }
 #endif
                     }
@@ -7614,7 +7991,8 @@ int main(int argc, char** argv) {
             } catch (const std::exception& error) {
                 show_error(sdl.window, error.what());
             }
-            present(emulator.get(), link_emulator.get(), sdl,
+            present(emulator.get(), link_emulator.get(), sdl, link_session.get(),
+                    remote_link.active() ? &remote_link : nullptr,
                     gameboy::display_palettes[display_palette], recent_roms,
                     dashboard_visible, dashboard_selection);
 #ifndef __ANDROID__
@@ -7638,7 +8016,26 @@ int main(int argc, char** argv) {
                 frame_duration);
             const auto now = Clock::now();
             if (next_frame > now) {
-                std::this_thread::sleep_until(next_frame);
+                if (remote_link.active()) {
+                    // A remote serial bit may be waiting for the peer while
+                    // the frontend is pacing the video frame. Poll in short
+                    // slices during that sleep so the normal 60 Hz frame
+                    // limiter does not add one full frame of latency to each
+                    // TCP request/response round trip. This keeps emulation
+                    // timing unchanged while making the network service
+                    // responsive between frames.
+                    while (true) {
+                        const auto current = Clock::now();
+                        if (next_frame <= current) break;
+                        remote_link.endpoint.poll();
+                        const auto slice_end = std::min(
+                            next_frame,
+                            current + std::chrono::milliseconds(1));
+                        std::this_thread::sleep_until(slice_end);
+                    }
+                } else {
+                    std::this_thread::sleep_until(next_frame);
+                }
             } else if (now - next_frame > std::chrono::milliseconds(100)) {
                 next_frame = now;
             }
@@ -7656,7 +8053,10 @@ int main(int argc, char** argv) {
         save_game_window_geometry(sdl.window, preference_path);
 #ifndef __ANDROID__
         if (emulator != nullptr && link_emulator != nullptr) {
-            stop_local_link_session(*emulator, link_emulator, link_cable, sdl);
+            stop_local_link_session(*emulator, link_emulator, link_session, sdl);
+        }
+        if (emulator != nullptr && remote_link.active()) {
+            stop_remote_link_session(*emulator, remote_link);
         }
 #endif
         flush_battery_safely(emulator.get());

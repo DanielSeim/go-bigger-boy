@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(go_bigger_boy VERSION 0.24.0 LANGUAGES CXX)
+project(go_bigger_boy VERSION 0.25.0 LANGUAGES CXX)
 
 configure_file(settings.ini settings.ini COPYONLY)
 
@@ -19,12 +19,16 @@ add_library(gameboy_core
     src/emulator.cpp
     src/gameshark.cpp
     src/joypad.cpp
+    src/link_session.cpp
+    src/link_transport.cpp
     src/memory_bus.cpp
     src/ppu.cpp
     src/printer.cpp
     src/save_state.cpp
     src/serial.cpp
     src/timer.cpp
+    src/tcp_link_channel.cpp
+    src/tcp_serial_endpoint.cpp
 )
 
 # Stable, system-neutral boundary consumed by frontends. The current GB/GBC
@@ -51,6 +55,10 @@ endif()
 
 target_include_directories(gameboy_core PUBLIC include)
 target_compile_features(gameboy_core PUBLIC cxx_std_17)
+
+if(WIN32)
+    target_link_libraries(gameboy_core PUBLIC ws2_32)
+endif()
 
 if(EMSCRIPTEN)
     target_compile_options(gameboy_core PRIVATE -fexceptions)
