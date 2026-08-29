@@ -120,6 +120,13 @@ void TcpSerialEndpoint::release_internal_clock(SerialPort& port) noexcept {
 }
 
 void TcpSerialEndpoint::cancel_internal_clock(SerialPort& /*port*/) noexcept {
+    // A reset can follow a bit request that is already queued in the peer's
+    // socket. Send an ordered reset marker so the peer drops any deferred
+    // request from the abandoned transfer before the next guest arms SC.
+    if (channel_ != nullptr && connected()) {
+        const LinkPacket reset{LinkPacketType::clock_release, 0, 0, reset_flag};
+        static_cast<void>(channel_->send(reset));
+    }
     pending_sequence_.reset();
     response_.reset();
     deferred_request_.reset();
@@ -184,6 +191,16 @@ void TcpSerialEndpoint::poll() noexcept {
             continue;
         }
         if (packet->type == LinkPacketType::clock_release) {
+            if ((packet->flags & reset_flag) != 0) {
+                pending_sequence_.reset();
+                response_.reset();
+                deferred_request_.reset();
+                request_backoff_ = 0;
+                peer_clock_busy_ = false;
+                peer_byte_released_ = false;
+                peer_request_seen_ = false;
+                continue;
+            }
             peer_clock_busy_ = false;
             if (packet->value != 0) peer_byte_released_ = true;
             continue;
