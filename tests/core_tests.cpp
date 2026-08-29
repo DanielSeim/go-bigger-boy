@@ -27,6 +27,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -1825,6 +1826,7 @@ void test_tcp_link_channel_loopback() {
          ++attempt) {
         server.poll();
         client.poll();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     check(server.state() == gameboy::TcpLinkChannel::State::connected &&
               client.state() == gameboy::TcpLinkChannel::State::connected,
@@ -1835,6 +1837,7 @@ void test_tcp_link_channel_loopback() {
     for (unsigned attempt = 0; attempt < 20; ++attempt) {
         client.poll();
         server.poll();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     const auto received = server.receive();
     check(received && received->sequence == packet.sequence &&
@@ -1854,6 +1857,7 @@ void test_tcp_serial_endpoint_loopback() {
          ++attempt) {
         server.poll();
         client.poll();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     if (server.state() != gameboy::TcpLinkChannel::State::connected ||
         client.state() != gameboy::TcpLinkChannel::State::connected) {
@@ -1874,9 +1878,14 @@ void test_tcp_serial_endpoint_loopback() {
     // Exercise the reset path: leave one host bit pending, then have the
     // guest rewrite SC before the response arrives. A normal rewrite keeps
     // the request alive; an explicit link reset must cancel it cleanly.
-    for (unsigned attempt = 0; attempt < 4; ++attempt) {
+    for (unsigned attempt = 0;
+         attempt < 100 &&
+         (!first_endpoint.peer_ready_for_link() ||
+          !second_endpoint.peer_ready_for_link());
+         ++attempt) {
         first_endpoint.poll();
         second_endpoint.poll();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     first.write8(0xFF01, 0xA5);
     second.write8(0xFF01, 0x5A);
