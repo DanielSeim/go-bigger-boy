@@ -2883,6 +2883,7 @@ struct AppSettings {
     InputBindings bindings;
     std::size_t palette{};
     gameboy::VideoMode video_mode{gameboy::default_video_mode};
+    bool link_diagnostics{};
     TouchControlSettings touch;
 };
 
@@ -2910,6 +2911,23 @@ float parse_touch_value(const std::string& value, const float fallback,
     } catch (const std::exception&) {
         return fallback;
     }
+}
+
+bool parse_bool_setting(const std::string& value, const bool fallback) {
+    std::string normalized = value;
+    std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+                   [](const unsigned char character) {
+                       return static_cast<char>(std::tolower(character));
+                   });
+    if (normalized == "true" || normalized == "yes" || normalized == "on" ||
+        normalized == "1") {
+        return true;
+    }
+    if (normalized == "false" || normalized == "no" || normalized == "off" ||
+        normalized == "0") {
+        return false;
+    }
+    return fallback;
 }
 
 std::filesystem::path portable_settings_path(
@@ -2982,6 +3000,7 @@ void append_missing_portable_settings(
     const std::array<bool, 8>& has_gamepad,
     const std::array<bool, shortcut_names.size()>& has_shortcuts,
     const bool has_video_mode,
+    const bool has_link_diagnostics,
     const bool has_touch_scale, const bool has_touch_opacity,
     const std::array<bool, touch_layout_count * touch_control_count>&
         has_touch_positions) {
@@ -2992,7 +3011,8 @@ void append_missing_portable_settings(
                     [](const bool value) { return value; }) &&
         std::all_of(has_shortcuts.begin(), has_shortcuts.end(),
                     [](const bool value) { return value; }) &&
-        has_video_mode && has_touch_scale && has_touch_opacity &&
+        has_video_mode && has_link_diagnostics && has_touch_scale &&
+        has_touch_opacity &&
         std::all_of(has_touch_positions.begin(), has_touch_positions.end(),
                     [](const bool value) { return value; });
     if (complete) return;
@@ -3010,6 +3030,10 @@ void append_missing_portable_settings(
     if (!has_video_mode) {
         output << "video.Mode = "
                << gameboy::video_mode_info(settings.video_mode).id << '\n';
+    }
+    if (!has_link_diagnostics) {
+        output << "link.Diagnostics = "
+               << (settings.link_diagnostics ? "true" : "false") << '\n';
     }
     for (std::size_t index = 0; index < button_names.size(); ++index) {
         if (has_keyboard[index]) continue;
@@ -3073,11 +3097,14 @@ void write_portable_settings(const std::filesystem::path& preference_directory,
               "them. Android touch controls use a size multiplier and "
               "opacity between 0 and 1 plus separate portrait and landscape "
               "touch layouts. Video.Mode accepts nearest, bilinear, sharp, "
-              "integer, or lcd.\n\n"
+              "integer, or lcd. Link.Diagnostics enables the opt-in local "
+              "link trace.\n\n"
               "palette = "
            << gameboy::display_palettes[settings.palette].id << "\n"
               "video.Mode = "
-           << gameboy::video_mode_info(settings.video_mode).id << "\n\n";
+           << gameboy::video_mode_info(settings.video_mode).id << "\n"
+              "link.Diagnostics = "
+           << (settings.link_diagnostics ? "true" : "false") << "\n\n";
     for (std::size_t index = 0; index < button_names.size(); ++index) {
         output << "keyboard." << button_names[index] << " = "
                << keyboard_key_setting_name(settings.bindings.keys[index][0]);
@@ -3136,6 +3163,7 @@ AppSettings load_portable_settings(
     std::array<bool, 8> has_legacy_touch_positions{};
     bool has_palette = false;
     bool has_video_mode = false;
+    bool has_link_diagnostics = false;
     std::array<bool, 8> has_keyboard{};
     std::array<bool, 8> has_gamepad{};
     std::array<bool, shortcut_names.size()> has_shortcuts{};
@@ -3170,6 +3198,12 @@ AppSettings load_portable_settings(
         if (key == "video.Mode") {
             has_video_mode = true;
             settings.video_mode = gameboy::video_mode_from_id(value);
+            continue;
+        }
+        if (key == "link.Diagnostics") {
+            has_link_diagnostics = true;
+            settings.link_diagnostics = parse_bool_setting(
+                value, settings.link_diagnostics);
             continue;
         }
         if (key == "touch.Size") {
@@ -3351,7 +3385,7 @@ AppSettings load_portable_settings(
     settings.touch.positions = loaded_touch_positions;
     append_missing_portable_settings(path, settings, has_palette,
                                      has_keyboard, has_gamepad, has_shortcuts,
-                                     has_video_mode,
+                                     has_video_mode, has_link_diagnostics,
                                      has_touch_scale, has_touch_opacity,
                                      has_touch_positions);
     return settings;
@@ -3374,6 +3408,10 @@ void save_app_settings(const std::filesystem::path& preference_directory,
 
 gameboy::VideoMode load_video_mode(const std::filesystem::path& directory) {
     return load_app_settings(directory).video_mode;
+}
+
+bool load_link_diagnostics(const std::filesystem::path& directory) {
+    return load_app_settings(directory).link_diagnostics;
 }
 
 void save_video_mode(const std::filesystem::path& directory,
@@ -5461,7 +5499,8 @@ void start_local_link_session(
     std::unique_ptr<gameboy::Emulator>& second,
     std::unique_ptr<gameboy::SerialCable>& cable,
     SdlResources& sdl, const gameboy::DisplayPalette& palette,
-    const std::filesystem::path& preference_path) {
+    const std::filesystem::path& preference_path,
+    const bool link_diagnostics) {
     if (path.empty()) throw std::runtime_error("No ROM is currently loaded.");
     auto replacement = load_link_player(path, palette);
     // A second console must have its own battery image. Sharing the primary
@@ -5525,7 +5564,7 @@ void start_local_link_session(
                                replacement->bus().serial_port());
     second = std::move(replacement);
     cable = std::move(replacement_cable);
-    start_link_trace(preference_path);
+    if (link_diagnostics) start_link_trace(preference_path);
     if (link_trace.is_open()) {
         const auto message = "Link trace is being written to:\n" +
                              link_trace_path.string();
@@ -6928,6 +6967,7 @@ int main(int argc, char** argv) {
         auto bindings = load_bindings(preference_path);
         auto configuration_backup = bindings;
         auto display_palette = load_display_palette(preference_path);
+        const auto link_diagnostics = load_link_diagnostics(preference_path);
         auto video_mode = load_video_mode(preference_path);
         if (!configure_video_pipeline(sdl, video_mode)) {
             sdl_error("Could not configure video pipeline");
@@ -7150,7 +7190,7 @@ int main(int argc, char** argv) {
                         start_local_link_session(
                             current_rom, *emulator, link_emulator, link_cable,
                             sdl, gameboy::display_palettes[display_palette],
-                            preference_path);
+                            preference_path, link_diagnostics);
                         rewind = false;
                         rewind_history.clear();
                     }

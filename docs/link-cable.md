@@ -48,10 +48,12 @@ internal clock holds its first edge until the peer has armed its serial
 receiver; this avoids losing a startup byte when the two emulated CPUs reach
 the handshake a few instructions apart, without slowing either CPU.
 
-When link diagnostics are enabled, the trace is reset for each local session.
-It begins with a `session_start` marker and ends with `session_end`; transfer
-counters therefore describe only that session, and frame numbers are written
-in decimal for easier correlation with a reproduction.
+Link tracing is opt-in. Add `link.Diagnostics = true` to the portable
+`settings.ini` beside the executable before starting a session; normal users
+therefore get no diagnostic popup and no trace file. When enabled, the trace is
+reset for each local session. It begins with a `session_start` marker and ends
+with `session_end`; transfer counters therefore describe only that session, and
+frame numbers are written in decimal for easier correlation with a reproduction.
 
 Network, WebRTC, Bluetooth, and USB transports should be added only after this
 deterministic local path is validated with link-enabled games.
