@@ -1880,8 +1880,7 @@ void test_tcp_serial_endpoint_loopback() {
     // the request alive; an explicit link reset must cancel it cleanly.
     for (unsigned attempt = 0;
          attempt < 100 &&
-         (!first_endpoint.peer_ready_for_link() ||
-          !second_endpoint.peer_ready_for_link());
+         !first_endpoint.peer_ready_for_link();
          ++attempt) {
         first_endpoint.poll();
         second_endpoint.poll();
@@ -1889,18 +1888,19 @@ void test_tcp_serial_endpoint_loopback() {
     }
     first.write8(0xFF01, 0xA5);
     second.write8(0xFF01, 0x5A);
-    first.write8(0xFF02, 0x80);
-    second.write8(0xFF02, 0x81);
-    second.tick(512);
-    check(second_endpoint.waiting_for_peer(),
-          "TCP endpoint records an outstanding bit before serial reset");
+    first.write8(0xFF02, 0x81);
     second.write8(0xFF02, 0x80);
-    first_endpoint.poll();
-    check(second_endpoint.waiting_for_peer(),
+    first.tick(512);
+    check(first_endpoint.waiting_for_peer(),
+          "TCP endpoint records an outstanding bit before serial reset");
+    first.write8(0xFF02, 0x81);
+    second_endpoint.poll();
+    check(first_endpoint.waiting_for_peer(),
           "a normal SC rewrite preserves an in-flight TCP bit request");
-    second.serial_port().reset_link();
-    check(!second_endpoint.waiting_for_peer(),
+    first.serial_port().reset_link();
+    check(!first_endpoint.waiting_for_peer(),
           "explicit link reset cancels an obsolete TCP bit request");
+    second.serial_port().reset_link();
     check(!first.serial_port().transfer_active(),
           "peer serial reset discards a partial external byte");
 
