@@ -1664,6 +1664,47 @@ void test_serial_link_interrupt_rearm() {
           "external serial ISR re-arms repeated linked transfers");
 }
 
+void test_serial_link_asymmetric_scheduling() {
+    // The desktop frontend advances both machines in cycle-sized slices, but
+    // host scheduling can still let one CPU run several instructions ahead.
+    // Keep the same repeated-transfer probe as above while deliberately
+    // starving each side in alternating bursts. The cable must hold an edge
+    // until the peer arms its receiver and must not lose the next transfer.
+    const std::vector<std::uint8_t> program{
+        0x31, 0xFE, 0xFF, 0x3E, 0x08, 0xEA, 0xFF, 0xFF, 0xFB,
+        0x3E, 0xFF, 0xEA, 0xAA, 0xFF, // pending marker
+        0x3E, 0x02, 0xEA, 0x01, 0xFF, 0x3E, 0x80, 0xEA, 0x02, 0xFF,
+        0x3E, 0x01, 0xEA, 0x01, 0xFF, 0x3E, 0x81, 0xEA, 0x02, 0xFF,
+        0xF0, 0xAA, 0xFE, 0x02, 0x20, 0xFA, // wait for internal role
+        0x3E, 0x60, 0xEA, 0x01, 0xFF, 0x3E, 0x81, 0xEA, 0x02, 0xFF,
+        0x18, 0xEB};
+    auto first_rom = test_rom(program);
+    auto second_rom = first_rom;
+    const std::array<std::uint8_t, 0x1C> isr{{
+        0xF0, 0xAA, 0xFE, 0xFF, 0x20, 0x06,
+        0xF0, 0x01, 0xEA, 0xAA, 0xFF,
+        0xF0, 0xAA, 0xFE, 0x01, 0x20, 0x0A,
+        0x3E, 0x60, 0xEA, 0x01, 0xFF, 0x3E, 0x80, 0xEA, 0x02, 0xFF,
+        0xD9}};
+    std::copy(isr.begin(), isr.end(), first_rom.begin() + 0x58);
+    std::copy(isr.begin(), isr.end(), second_rom.begin() + 0x58);
+    gameboy::Emulator first{gameboy::Cartridge{std::move(first_rom)}};
+    gameboy::Emulator second{gameboy::Cartridge{std::move(second_rom)}};
+    gameboy::SerialCable cable;
+    cable.connect(first.bus().serial_port(), second.bus().serial_port());
+
+    for (unsigned instruction = 0; instruction < 100000; ++instruction) {
+        // Alternate which side gets the larger share of host time. Both
+        // consoles continue to make progress, but neither has lockstep
+        // instruction timing to hide a peer-readiness bug.
+        if (instruction % 4 != 0) static_cast<void>(first.step());
+        if (instruction % 4 != 1) static_cast<void>(second.step());
+    }
+    check(first.bus().read8(0xFF01) == 0x60 &&
+              second.bus().read8(0xFF01) == 0x60,
+          "linked transfers survive asymmetric emulator scheduling");
+}
+
 void test_gameboy_printer() {
     gameboy::GameBoyPrinter printer;
     const auto send_packet = [&printer](const std::uint8_t command,
@@ -3749,6 +3790,7 @@ int main() {
         test_serial_link_cable();
         test_serial_link_interrupt_handshake();
         test_serial_link_interrupt_rearm();
+        test_serial_link_asymmetric_scheduling();
         test_gameboy_printer();
         test_cpu_state_normalization();
         test_register_load_matrix();
