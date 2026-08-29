@@ -1993,6 +1993,16 @@ void test_tcp_serial_endpoint_loopback() {
     // owner changes every byte and the network is still polled only once per
     // 64 CPU cycles.
     for (unsigned byte = 0; byte < 12; ++byte) {
+        // The previous owner's completion callback queues clock_release on
+        // its TCP channel. Give both endpoints a normal idle polling window
+        // before arming the next byte; otherwise a fast runner can have both
+        // guests observe the old peer_clock_busy state and become external
+        // receivers, leaving the alternating transfer stalled.
+        for (unsigned attempt = 0; attempt < 4; ++attempt) {
+            first_endpoint.poll();
+            second_endpoint.poll();
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
         const auto host_owns_clock = (byte & 1U) == 0;
         const auto first_value = static_cast<std::uint8_t>(0x30U + byte);
         const auto second_value = static_cast<std::uint8_t>(0xC0U + byte);
