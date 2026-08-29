@@ -1479,6 +1479,19 @@ void test_serial_link_cable() {
               (second.read8(0xFF0F) & 0x08) != 0,
           "linked serial transfers complete on both consoles");
 
+    check(first.serial_port().transfers_completed() == 1 &&
+              second.serial_port().transfers_completed() == 1,
+          "linked serial diagnostics count completed transfers");
+    first.serial_port().reset_diagnostics();
+    second.serial_port().reset_diagnostics();
+    check(first.serial_port().transfers_completed() == 0 &&
+              second.serial_port().transfers_completed() == 0 &&
+              first.serial_port().last_transmitted() == 0xFF &&
+              first.serial_port().last_received() == 0xFF &&
+              second.serial_port().last_transmitted() == 0xFF &&
+              second.serial_port().last_received() == 0xFF,
+          "serial diagnostics reset without changing link state");
+
     // Pokémon's Cable Club can have both consoles request the internal clock
     // during the same handshake window. A real cable has one clock source; the
     // first deterministic request wins, while the loser keeps its preceding

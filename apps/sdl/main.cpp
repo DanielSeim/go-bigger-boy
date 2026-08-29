@@ -5352,6 +5352,7 @@ bool is_pokemon_gen1(const gameboy::Emulator& emulator) {
 // the emulated cable. The file is deliberately outside the ROM/save data.
 std::ofstream link_trace;
 std::uint64_t link_trace_frame{};
+std::uint64_t link_trace_session{};
 std::filesystem::path link_trace_path;
 
 void start_link_trace(const std::filesystem::path& preference_path) {
@@ -5370,6 +5371,7 @@ void start_link_trace(const std::filesystem::path& preference_path) {
         std::filesystem::current_path() / "link-trace.log"}};
     link_trace_frame = 0;
     link_trace_path.clear();
+    const auto session = ++link_trace_session;
     for (const auto& candidate : candidates) {
         if (candidate.empty()) continue;
         std::error_code error;
@@ -5378,6 +5380,8 @@ void start_link_trace(const std::filesystem::path& preference_path) {
         link_trace.open(candidate, std::ios::trunc);
         if (!link_trace.is_open()) continue;
         link_trace << "GBB link trace\n";
+        link_trace << "session_start id=" << std::dec << session
+                   << " counters_reset=1\n";
         link_trace.flush();
         if (!link_trace.good()) {
             link_trace.close();
@@ -5390,7 +5394,12 @@ void start_link_trace(const std::filesystem::path& preference_path) {
 }
 
 void stop_link_trace() noexcept {
-    if (link_trace.is_open()) link_trace.close();
+    if (link_trace.is_open()) {
+        link_trace << "session_end id=" << std::dec << link_trace_session
+                   << " frames=" << link_trace_frame << '\n';
+        link_trace.flush();
+        link_trace.close();
+    }
     link_trace_frame = 0;
     link_trace_path.clear();
 }
@@ -5403,7 +5412,7 @@ void trace_link_frame(const gameboy::Emulator& first,
     ++link_trace_frame;
     // One line per emulated frame is enough to identify the negotiation while
     // keeping the log small enough to attach from Windows.
-    link_trace << link_trace_frame << ' '
+    link_trace << std::dec << link_trace_frame << ' '
                << "p1(hr=" << std::hex << static_cast<unsigned>(first.bus().read8(0xFFAA))
                << ",sb=" << static_cast<unsigned>(first_serial.read_data())
                << ",sc=" << static_cast<unsigned>(first_serial.read_control())
@@ -5497,6 +5506,10 @@ void start_local_link_session(
         reset_pokemon_link_handshake(first);
         reset_pokemon_link_handshake(*replacement);
     }
+    // Keep the trace counters scoped to this local session. This does not
+    // touch guest-visible serial registers or an in-progress transfer.
+    first.bus().serial_port().reset_diagnostics();
+    replacement->bus().serial_port().reset_diagnostics();
     // Do not carry a held confirmation button into one side of the Cable Club
     // prompt when the session is attached.
     release_all_buttons(first);
@@ -5522,6 +5535,7 @@ void start_local_link_session(
     }
     sdl.split_screen = true;
     if (!configure_video_pipeline(sdl, sdl.video_mode)) {
+        stop_link_trace();
         first.bus().connect_printer(true);
         sdl.split_screen = false;
         cable.reset();

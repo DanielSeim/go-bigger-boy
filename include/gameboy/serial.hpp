@@ -62,6 +62,11 @@ public:
         return last_received_;
     }
 
+    // Diagnostics are intentionally separate from the emulated serial state.
+    // A frontend can clear them when beginning a new link session without
+    // disturbing an in-progress transfer or any guest-visible registers.
+    void reset_diagnostics() noexcept;
+
     void restore_state(std::uint8_t data, std::uint8_t control,
                        std::uint32_t phase, std::uint8_t bits_shifted,
                        bool active, bool internal_clock,
