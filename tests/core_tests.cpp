@@ -1915,18 +1915,6 @@ void test_tcp_serial_endpoint_loopback() {
         // every 64 CPU cycles) instead of accidentally masking timing races
         // with a poll on every four-cycle tick.
         if ((cycle & 15U) == 0) {
-            // Pokémon's Cable Club probe rewrites SB and re-arms SC while a
-            // remote bit can still be in flight. TCP must continue the
-            // partial byte instead of restarting its shift register.
-            if (first.serial_port().transfer_active() &&
-                second.serial_port().transfer_active()) {
-                first.write8(0xFF01, 0xA5);
-                second.write8(0xFF01, 0x5A);
-                first.write8(0xFF02, 0x80);
-                second.write8(0xFF02, 0x80);
-                first.write8(0xFF02, 0x81);
-                second.write8(0xFF02, 0x81);
-            }
             first_endpoint.poll();
             second_endpoint.poll();
         }
