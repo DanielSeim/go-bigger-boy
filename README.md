@@ -532,6 +532,9 @@ generated release notes. Tagged builds derive their displayed version from the
 tag so the startup update comparison remains accurate. A failed platform build
 prevents the release.
 
+The [release checklist](docs/release-checklist.md) covers the manual link
+session smoke test and platform packaging checks to repeat before publishing.
+
 Windows SmartScreen may warn when an executable downloaded from GitHub has no
 trusted publisher signature. The release workflow supports Authenticode
 signing when the repository maintainer configures the encrypted
