@@ -14,6 +14,10 @@ class SerialPort;
 class SerialEndpoint {
 public:
     virtual ~SerialEndpoint() = default;
+    // Called immediately before peer_ready()/exchange_bit() for an internal
+    // clock edge. Remote endpoints use this to queue the outgoing bit without
+    // blocking the serial callback.
+    virtual void prepare_bit(bool /*outgoing*/) noexcept {}
     [[nodiscard]] virtual bool exchange_bit(bool outgoing) noexcept = 0;
     [[nodiscard]] virtual bool peer_ready() const noexcept { return true; }
     [[nodiscard]] virtual bool request_internal_clock(
@@ -21,6 +25,16 @@ public:
         return true;
     }
     virtual void release_internal_clock(SerialPort& /*port*/) noexcept {}
+    // Remote transports may need to span several guest frames while a byte
+    // is in flight. The deterministic local cable keeps the hardware-style
+    // restart behavior unless an endpoint opts into this mode.
+    [[nodiscard]] virtual bool preserve_active_transfer() const noexcept {
+        return false;
+    }
+    // Explicit cancellation used by reset_link(). A normal SC rewrite is
+    // deliberately not treated as cancellation: a TCP response can still be
+    // in flight and must remain consumable by the re-armed transfer.
+    virtual void cancel_internal_clock(SerialPort& /*port*/) noexcept {}
 };
 
 class SerialPort {
@@ -33,6 +47,15 @@ public:
     [[nodiscard]] std::uint8_t read_data() const noexcept { return data_; }
     [[nodiscard]] std::uint8_t read_control() const noexcept;
     void write_data(std::uint8_t value) noexcept {
+        // Pokémon rewrites SB while it is polling for a peer.  A linked
+        // transfer may still have a byte in flight while that polling loop
+        // runs, so do not replace the shift register until that transfer has
+        // completed (or reset_link() explicitly cancels it).
+        // Before the first edge the guest may still be replacing its probe
+        // byte (the Cable Club writes SB=02, then SB=01). Once at least one
+        // linked edge has shifted, keep the in-flight byte intact.
+        if (endpoint_ != nullptr && active_ && bits_shifted_ != 0 &&
+            endpoint_->preserve_active_transfer()) return;
         data_ = value;
     }
     void write_control(std::uint8_t value) noexcept;
@@ -66,6 +89,11 @@ public:
     // A frontend can clear them when beginning a new link session without
     // disturbing an in-progress transfer or any guest-visible registers.
     void reset_diagnostics() noexcept;
+
+    // Abort any in-flight transfer and return the port to an idle protocol
+    // boundary. This does not reset CPU, memory, or cartridge state and is
+    // used when a host retries a link session after a timeout.
+    void reset_link() noexcept;
 
     void restore_state(std::uint8_t data, std::uint8_t control,
                        std::uint32_t phase, std::uint8_t bits_shifted,
@@ -122,6 +150,7 @@ private:
         void set_cable(SerialCable* cable) noexcept { cable_ = cable; }
         [[nodiscard]] bool exchange_bit(bool outgoing) noexcept override;
         [[nodiscard]] bool peer_ready() const noexcept override;
+        void prepare_bit(bool outgoing) noexcept override;
         [[nodiscard]] bool request_internal_clock(
             SerialPort& port) noexcept override;
         void release_internal_clock(SerialPort& port) noexcept override;

@@ -2,6 +2,10 @@
 #include "gameboy/dmg_palette.hpp"
 #include "gameboy/emulator.hpp"
 #include "gameboy/gameshark.hpp"
+#include "gameboy/link_session.hpp"
+#include "gameboy/link_transport.hpp"
+#include "gameboy/tcp_link_channel.hpp"
+#include "gameboy/tcp_serial_endpoint.hpp"
 #include "gameboy/memory_bus.hpp"
 #include "gameboy/rom_library.hpp"
 #include "gameboy/video_pipeline.hpp"
@@ -1711,6 +1715,314 @@ void test_serial_link_asymmetric_scheduling() {
           "linked transfers survive asymmetric emulator scheduling");
 }
 
+void test_link_session_lifecycle() {
+    gameboy::Emulator first{gameboy::Cartridge{test_rom()}};
+    gameboy::Emulator second{gameboy::Cartridge{test_rom()}};
+    gameboy::LocalLinkTransport transport;
+    gameboy::LinkSession session{transport};
+
+    check(session.state() == gameboy::LinkSession::State::disconnected &&
+              !session.active(),
+          "link session starts disconnected");
+
+    session.start(first, second);
+    check(session.state() == gameboy::LinkSession::State::connected &&
+              session.active() && first.bus().serial_port().has_endpoint() &&
+              second.bus().serial_port().has_endpoint() &&
+              transport.connected(),
+          "link session attaches both serial endpoints");
+
+    first.bus().write8(0xFF01, 0xA5);
+    second.bus().write8(0xFF01, 0x5A);
+    first.bus().write8(0xFF02, 0x81);
+    second.bus().write8(0xFF02, 0x80);
+    check(session.state() == gameboy::LinkSession::State::transferring,
+          "link session reports an active serial transfer");
+    session.advance(4096);
+    check(first.bus().read8(0xFF01) == 0x5A &&
+              second.bus().read8(0xFF01) == 0xA5 &&
+              session.state() == gameboy::LinkSession::State::connected &&
+              session.transfers_completed() == 2,
+          "link session scheduler completes a transfer on both consoles");
+
+    session.mark_timeout();
+    check(session.state() == gameboy::LinkSession::State::timed_out &&
+              !session.active() && first.bus().serial_port().has_endpoint() &&
+              second.bus().serial_port().has_endpoint(),
+          "link session exposes an explicit timeout state");
+    session.stop();
+    check(session.state() == gameboy::LinkSession::State::disconnected &&
+              !first.bus().serial_port().has_endpoint() &&
+              !second.bus().serial_port().has_endpoint() &&
+              !transport.connected(),
+          "link session detaches both endpoints on stop");
+
+    session.start(first, second);
+    check(session.active() && session.state() ==
+              gameboy::LinkSession::State::connected,
+          "link session can reconnect after stopping");
+    session.stop();
+}
+
+void test_link_session_timeout_and_retry() {
+    gameboy::Emulator first{gameboy::Cartridge{test_rom()}};
+    gameboy::Emulator second{gameboy::Cartridge{test_rom()}};
+    // Use a short watchdog budget so a stalled external receiver is covered
+    // without spending seconds emulating an entire production timeout.
+    gameboy::LinkSession session{1024};
+    session.start(first, second);
+    first.bus().write8(0xFF01, 0xA5);
+    first.bus().write8(0xFF02, 0x81);
+    session.advance(1024);
+    check(session.state() == gameboy::LinkSession::State::timed_out &&
+              !session.active(),
+          "link session watchdog detects a stalled transfer");
+
+    session.retry();
+    check(session.state() == gameboy::LinkSession::State::connected &&
+              session.active() && first.bus().serial_port().has_endpoint() &&
+              second.bus().serial_port().has_endpoint() &&
+              !first.bus().serial_port().transfer_active(),
+          "link retry clears protocol state without replacing emulators");
+    session.stop();
+}
+
+void test_link_transport_framing() {
+    const gameboy::LinkPacket packet{gameboy::LinkPacketType::bit,
+                                     UINT32_C(0xA1B2C3D4), 0x5A, 0x03};
+    const auto wire = gameboy::LinkPacketCodec::encode(packet);
+    const auto decoded = gameboy::LinkPacketCodec::decode(wire.data(),
+                                                            wire.size());
+    check(decoded && decoded->type == packet.type &&
+              decoded->sequence == packet.sequence &&
+              decoded->value == packet.value && decoded->flags == packet.flags,
+          "link transport framing round-trips packet fields");
+
+    auto corrupted = wire;
+    corrupted[8] ^= 0x01;
+    check(!gameboy::LinkPacketCodec::decode(corrupted.data(), corrupted.size()),
+          "link transport framing rejects a corrupted packet");
+    check(!gameboy::LinkPacketCodec::decode(wire.data(), wire.size() - 1),
+          "link transport framing rejects a truncated packet");
+}
+
+void test_tcp_link_channel_loopback() {
+    gameboy::TcpLinkChannel server;
+    gameboy::TcpLinkChannel client;
+    const auto listening = server.listen(0) && server.local_port() != 0;
+    // Some hermetic runners disable AF_INET sockets entirely. Keep the core
+    // suite useful there; codec coverage still runs and desktop CI exercises
+    // the channel with real sockets.
+    if (!listening) return;
+    check(server.state() == gameboy::TcpLinkChannel::State::listening,
+          "TCP link channel listens on an ephemeral loopback port");
+    check(client.connect("127.0.0.1", server.local_port()),
+          "TCP link channel starts a non-blocking loopback connect");
+    for (unsigned attempt = 0;
+         attempt < 100 &&
+         (server.state() != gameboy::TcpLinkChannel::State::connected ||
+          client.state() != gameboy::TcpLinkChannel::State::connected);
+         ++attempt) {
+        server.poll();
+        client.poll();
+    }
+    check(server.state() == gameboy::TcpLinkChannel::State::connected &&
+              client.state() == gameboy::TcpLinkChannel::State::connected,
+          "TCP link channel establishes a loopback peer without blocking");
+    const gameboy::LinkPacket packet{gameboy::LinkPacketType::bit, 7, 0xA5,
+                                     1};
+    check(client.send(packet), "TCP link channel queues a framed packet");
+    for (unsigned attempt = 0; attempt < 20; ++attempt) {
+        client.poll();
+        server.poll();
+    }
+    const auto received = server.receive();
+    check(received && received->sequence == packet.sequence &&
+              received->value == packet.value && received->flags == packet.flags,
+          "TCP link channel delivers framed packets over loopback");
+}
+
+void test_tcp_serial_endpoint_loopback() {
+    gameboy::TcpLinkChannel server;
+    gameboy::TcpLinkChannel client;
+    if (!server.listen(0) || server.local_port() == 0) return;
+    if (!client.connect("127.0.0.1", server.local_port())) return;
+    for (unsigned attempt = 0;
+         attempt < 100 &&
+         (server.state() != gameboy::TcpLinkChannel::State::connected ||
+          client.state() != gameboy::TcpLinkChannel::State::connected);
+         ++attempt) {
+        server.poll();
+        client.poll();
+    }
+    if (server.state() != gameboy::TcpLinkChannel::State::connected ||
+        client.state() != gameboy::TcpLinkChannel::State::connected) {
+        return;
+    }
+
+    gameboy::MemoryBus first{gameboy::Cartridge{test_rom()}};
+    gameboy::MemoryBus second{gameboy::Cartridge{test_rom()}};
+    gameboy::TcpSerialEndpoint first_endpoint;
+    gameboy::TcpSerialEndpoint second_endpoint;
+    // Match the desktop TCP roles: the host (first endpoint) owns the
+    // initial clock and the join side starts as the external receiver.
+    first_endpoint.set_arbitration_priority(true);
+    second_endpoint.set_arbitration_priority(false);
+    first_endpoint.attach(first.serial_port(), client);
+    second_endpoint.attach(second.serial_port(), server);
+
+    // Exercise the reset path: leave one host bit pending, then have the
+    // guest rewrite SC before the response arrives. A normal rewrite keeps
+    // the request alive; an explicit link reset must cancel it cleanly.
+    for (unsigned attempt = 0; attempt < 4; ++attempt) {
+        first_endpoint.poll();
+        second_endpoint.poll();
+    }
+    first.write8(0xFF01, 0xA5);
+    second.write8(0xFF01, 0x5A);
+    first.write8(0xFF02, 0x80);
+    second.write8(0xFF02, 0x81);
+    second.tick(512);
+    check(second_endpoint.waiting_for_peer(),
+          "TCP endpoint records an outstanding bit before serial reset");
+    second.write8(0xFF02, 0x80);
+    first_endpoint.poll();
+    check(second_endpoint.waiting_for_peer(),
+          "a normal SC rewrite preserves an in-flight TCP bit request");
+    second.serial_port().reset_link();
+    check(!second_endpoint.waiting_for_peer(),
+          "explicit link reset cancels an obsolete TCP bit request");
+    check(!first.serial_port().transfer_active(),
+          "peer serial reset discards a partial external byte");
+
+    first.write8(0xFF01, 0xA5);
+    second.write8(0xFF01, 0x5A);
+    first.write8(0xFF02, 0x81);
+    second.write8(0xFF02, 0x81);
+    for (unsigned cycle = 0; cycle < 20000; ++cycle) {
+        first.tick(4);
+        second.tick(4);
+        // Match the desktop remote-link cadence (one network poll roughly
+        // every 64 CPU cycles) instead of accidentally masking timing races
+        // with a poll on every four-cycle tick.
+        if ((cycle & 15U) == 0) {
+            // Pokémon's Cable Club probe rewrites SB and re-arms SC while a
+            // remote bit can still be in flight. TCP must continue the
+            // partial byte instead of restarting its shift register.
+            if (first.serial_port().transfer_active() &&
+                second.serial_port().transfer_active()) {
+                first.write8(0xFF01, 0xA5);
+                second.write8(0xFF01, 0x5A);
+                first.write8(0xFF02, 0x80);
+                second.write8(0xFF02, 0x80);
+                first.write8(0xFF02, 0x81);
+                second.write8(0xFF02, 0x81);
+            }
+            first_endpoint.poll();
+            second_endpoint.poll();
+        }
+        if (!first.serial_port().transfer_active() &&
+            !second.serial_port().transfer_active()) {
+            break;
+        }
+    }
+    check(first.read8(0xFF01) == 0x5A && second.read8(0xFF01) == 0xA5 &&
+              !first.serial_port().transfer_active() &&
+              !second.serial_port().transfer_active(),
+          "TCP serial endpoint bridges a non-blocking loopback transfer");
+
+    // A completed byte releases clock ownership. The join side must be able
+    // to clock the following byte after receiving that release, which is the
+    // sequence used by Pokémon when it re-enters the Cable Club after a
+    // reset. Keep the host external for this transfer so the direction is
+    // unambiguous.
+    first.write8(0xFF01, 0x3C);
+    second.write8(0xFF01, 0xC3);
+    second.write8(0xFF02, 0x80);
+    first.write8(0xFF02, 0x81);
+    for (unsigned cycle = 0; cycle < 20000; ++cycle) {
+        first.tick(4);
+        second.tick(4);
+        if ((cycle & 15U) == 0) {
+            first_endpoint.poll();
+            second_endpoint.poll();
+        }
+        if (!first.serial_port().transfer_active() &&
+            !second.serial_port().transfer_active()) {
+            break;
+        }
+    }
+    check(first.read8(0xFF01) == 0xC3 && second.read8(0xFF01) == 0x3C &&
+              !first.serial_port().transfer_active() &&
+              !second.serial_port().transfer_active(),
+          "TCP serial endpoint alternates clock ownership after release");
+
+    // A Pokémon probe can rewrite SC while the first TCP response is still
+    // in flight. Keep the transport cadence deliberately coarse here; the
+    // re-armed transfer must consume that response instead of spinning on an
+    // unmatched packet.
+    first.write8(0xFF01, 0x96);
+    second.write8(0xFF01, 0x69);
+    second.write8(0xFF02, 0x80);
+    first.write8(0xFF02, 0x81);
+    first.tick(512);
+    first.write8(0xFF02, 0x81);
+    for (unsigned cycle = 0; cycle < 20000; ++cycle) {
+        first.tick(4);
+        second.tick(4);
+        if ((cycle & 15U) == 0) {
+            first_endpoint.poll();
+            second_endpoint.poll();
+        }
+        if (!first.serial_port().transfer_active() &&
+            !second.serial_port().transfer_active()) {
+            break;
+        }
+    }
+    check(first.read8(0xFF01) == 0x69 && second.read8(0xFF01) == 0x96 &&
+              !first.serial_port().transfer_active() &&
+              !second.serial_port().transfer_active(),
+          "TCP endpoint recovers when SC is rewritten before a response");
+
+    // Exercise a short alternating payload, which is the pattern used by
+    // Pokémon's trade/battle data exchange after the initial probe. The
+    // owner changes every byte and the network is still polled only once per
+    // 64 CPU cycles.
+    for (unsigned byte = 0; byte < 12; ++byte) {
+        const auto host_owns_clock = (byte & 1U) == 0;
+        const auto first_value = static_cast<std::uint8_t>(0x30U + byte);
+        const auto second_value = static_cast<std::uint8_t>(0xC0U + byte);
+        first.write8(0xFF01, first_value);
+        second.write8(0xFF01, second_value);
+        if (host_owns_clock) {
+            second.write8(0xFF02, 0x80);
+            first.write8(0xFF02, 0x81);
+        } else {
+            first.write8(0xFF02, 0x80);
+            second.write8(0xFF02, 0x81);
+        }
+        for (unsigned cycle = 0; cycle < 20000; ++cycle) {
+            first.tick(4);
+            second.tick(4);
+            if ((cycle & 15U) == 0) {
+                first_endpoint.poll();
+                second_endpoint.poll();
+            }
+            if (!first.serial_port().transfer_active() &&
+                !second.serial_port().transfer_active()) {
+                break;
+            }
+        }
+        check(first.read8(0xFF01) == second_value &&
+                  second.read8(0xFF01) == first_value &&
+                  !first.serial_port().transfer_active() &&
+                  !second.serial_port().transfer_active(),
+              "TCP endpoint preserves alternating link payload bytes");
+    }
+    first_endpoint.detach();
+    second_endpoint.detach();
+}
+
 void test_gameboy_printer() {
     gameboy::GameBoyPrinter printer;
     const auto send_packet = [&printer](const std::uint8_t command,
@@ -2191,8 +2503,9 @@ void test_stack_load_table() {
 
         check(cpu.step(bus) == 16, "PUSH qq takes sixteen cycles");
         check(cpu.registers().sp == 0xCFFE, "PUSH qq decrements SP by two");
-        check(bus.read16(0xCFFE) == (test.value & 0xFFF0U |
-                                    (index == 3 ? 0U : test.value & 0x000FU)),
+        check(bus.read16(0xCFFE) ==
+                  ((test.value & 0xFFF0U) |
+                   (index == 3 ? 0U : (test.value & 0x000FU))),
               "PUSH qq writes the selected pair in little-endian order");
 
         bus.write16(0xCFFE, test.value);
@@ -3797,6 +4110,11 @@ int main() {
         test_serial_link_interrupt_handshake();
         test_serial_link_interrupt_rearm();
         test_serial_link_asymmetric_scheduling();
+        test_link_session_lifecycle();
+        test_link_session_timeout_and_retry();
+        test_link_transport_framing();
+        test_tcp_link_channel_loopback();
+        test_tcp_serial_endpoint_loopback();
         test_gameboy_printer();
         test_cpu_state_normalization();
         test_register_load_matrix();

@@ -77,6 +77,16 @@ The optional `link_cable` capability identifies cores that expose a clocked
 serial endpoint. Link transports should coordinate two cores outside the
 generic frame/audio loop; the Game Boy adapter currently provides the
 deterministic in-process `gameboy::SerialCable` for local testing.
+The reusable `gameboy::LinkSession` owns that cable and coordinates the two
+emulators' cycle-balanced scheduler; frontends can observe its lifecycle
+without depending on serial implementation details. Network transports can
+implement `gameboy::LinkTransport` and use the versioned
+`gameboy::LinkPacketCodec` framing without changing the core loop. Socket I/O
+must remain asynchronous so a network stall cannot pause CPU emulation. The
+non-blocking `gameboy::TcpLinkChannel` supplies loopback host/connect and
+framing. `gameboy::TcpSerialEndpoint` binds those queued packets to serial
+edges without blocking; a frontend can compose it with one emulator for a
+remote session.
 
 ## Adding a GBA core
 

@@ -11,6 +11,9 @@ Use this short smoke test for releases that include local link-cable changes.
 - [ ] Start a link battle and confirm both players enter and complete a battle.
 - [ ] Cancel or let a connection attempt time out, retry from both sides, and
       confirm a later attempt can connect.
+- [ ] During a stalled connection, confirm the split-screen status changes to
+      **TIMED OUT**, then use **Retry Link Handshake** (`Ctrl+Shift+R`) and
+      confirm the games reconnect without losing either save.
 - [ ] Stop the session, change player two's party or position, start another
       session, and confirm the change persists independently of player one.
 - [ ] Confirm a normal session creates no link trace or diagnostic popup. Set
