@@ -1894,7 +1894,6 @@ void test_tcp_serial_endpoint_loopback() {
     check(first_endpoint.waiting_for_peer(),
           "TCP endpoint records an outstanding bit before serial reset");
     first.write8(0xFF02, 0x81);
-    second_endpoint.poll();
     check(first_endpoint.waiting_for_peer(),
           "a normal SC rewrite preserves an in-flight TCP bit request");
     first.serial_port().reset_link();
