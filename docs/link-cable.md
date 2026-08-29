@@ -2,17 +2,18 @@
 
 The core now models the Game Boy serial port at bit granularity. `SB` (`FF01`)
 is shifted one bit per clock edge and `SC` (`FF02`) controls transfer start,
-clock ownership, and CGB fast mode. DMG transfers use 512 CPU clocks per bit
+clock selection, and CGB fast mode. DMG transfers use 512 CPU clocks per bit
 (8192 Hz); CGB fast mode uses 16 clocks per bit.
 
 `gameboy::SerialCable` connects two `gameboy::SerialPort` instances without
 threads or I/O. The console selecting the internal clock drives both ports,
-while the other port receives the same edges as an external-clock device. A
-simultaneous internal-clock request is deterministically arbitrated so exactly
-one console owns the cable clock; this is important for Pokémon's connection
-handshake, where both sides briefly probe the link at the same time. A
-missing endpoint supplies pull-up `1` bits, matching the disconnected cable
-state. Transfer completion raises serial interrupt 3 on both consoles.
+while the other port receives the same edges as an external-clock device. If
+both consoles briefly request an internal clock during Pokémon's connection
+handshake, the first request deterministically owns the cable and the losing
+side retains its preceding external probe byte, matching the hardware race
+that establishes one internal and one external role. A missing endpoint
+supplies pull-up `1` bits, matching the disconnected cable state. Transfer
+completion raises serial interrupt 3 on both consoles.
 
 The printer and test-ROM serial-output paths remain available through the
 `MemoryBus` adapter. A serial endpoint is deliberately not embedded in a save
@@ -30,10 +31,22 @@ single-console view and reconnects cleanly when a new ROM is loaded. Battery
 games receive an independent player-two save under `link-saves/`; it is seeded
 from the primary save the first time and then persists separately, so each
 console can keep its own trainer identity and party. When the session starts,
-player two is initialized from the primary console's current running state, so
-both screens begin at the same map/menu instead of one console remaining at the
-boot screen. Move the two players independently before speaking to a Cable
-Club receptionist, then continue with the in-game trade or battle flow.
+player two has its own persistent player-two save, but its running machine is
+initialized from the primary console's current state so both screens begin at
+the same map or Cable Club prompt. The two consoles then run independently and
+their battery images remain separate. For Pokémon Red/Blue/Yellow, the
+transient HRAM link marker and all serial scratch registers are cleared on
+attach, and the ROM performs its normal internal/external role probe. The
+cable deterministically resolves any simultaneous clock request while
+preserving the earlier probe byte. The Game Boy Printer is detached from both
+serial ports for the duration of the link session and restored afterward. In
+the default player-two layout, press `J` to advance player two's prompt. The
+cable exchanges
+individual bits at emulated
+hardware time, including simultaneous internal-clock probes. A connected
+internal clock holds its first edge until the peer has armed its serial
+receiver; this avoids losing a startup byte when the two emulated CPUs reach
+the handshake a few instructions apart, without slowing either CPU.
 
 Network, WebRTC, Bluetooth, and USB transports should be added only after this
 deterministic local path is validated with link-enabled games.

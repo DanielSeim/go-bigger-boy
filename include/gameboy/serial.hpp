@@ -15,10 +15,7 @@ class SerialEndpoint {
 public:
     virtual ~SerialEndpoint() = default;
     [[nodiscard]] virtual bool exchange_bit(bool outgoing) noexcept = 0;
-
-    // A real cable can only have one clock source at a time. Endpoints that
-    // model a shared cable may reject a second console's internal-clock
-    // request; simple peripherals (and disconnected ports) accept it.
+    [[nodiscard]] virtual bool peer_ready() const noexcept { return true; }
     [[nodiscard]] virtual bool request_internal_clock(
         SerialPort& /*port*/) noexcept {
         return true;
@@ -35,7 +32,9 @@ public:
 
     [[nodiscard]] std::uint8_t read_data() const noexcept { return data_; }
     [[nodiscard]] std::uint8_t read_control() const noexcept;
-    void write_data(std::uint8_t value) noexcept { data_ = value; }
+    void write_data(std::uint8_t value) noexcept {
+        data_ = value;
+    }
     void write_control(std::uint8_t value) noexcept;
 
     void initialize_post_boot(HardwareModel model) noexcept;
@@ -53,6 +52,15 @@ public:
     }
     [[nodiscard]] bool internal_clock() const noexcept { return internal_clock_; }
     [[nodiscard]] bool fast_clock() const noexcept { return fast_clock_; }
+    [[nodiscard]] std::uint64_t transfers_completed() const noexcept {
+        return transfers_completed_;
+    }
+    [[nodiscard]] std::uint8_t last_transmitted() const noexcept {
+        return last_transmitted_;
+    }
+    [[nodiscard]] std::uint8_t last_received() const noexcept {
+        return last_received_;
+    }
 
     void restore_state(std::uint8_t data, std::uint8_t control,
                        std::uint32_t phase, std::uint8_t bits_shifted,
@@ -73,6 +81,7 @@ private:
 
     bool cgb_mode_{};
     std::uint8_t data_{0xFF};
+    std::uint8_t external_data_{0xFF};
     std::uint8_t transfer_byte_{0xFF};
     std::uint8_t control_{};
     std::uint32_t phase_{};
@@ -80,14 +89,17 @@ private:
     bool active_{};
     bool internal_clock_{};
     bool fast_clock_{};
+    std::uint64_t transfers_completed_{};
+    std::uint8_t last_transmitted_{0xFF};
+    std::uint8_t last_received_{0xFF};
     SerialEndpoint* endpoint_{};
     void* callback_context_{};
     CompletionCallback completion_callback_{};
 };
 
 // A deterministic two-console cable. It does not create threads or perform
-// I/O: the console supplying the internal clock clocks the other port
-// directly, making local multiplayer reproducible and testable.
+// I/O: each console's serial edge is delivered directly to the other port,
+// making local multiplayer reproducible and testable.
 class SerialCable {
 public:
     SerialCable() noexcept = default;
@@ -104,6 +116,7 @@ private:
         void set_peer(SerialPort* peer) noexcept { peer_ = peer; }
         void set_cable(SerialCable* cable) noexcept { cable_ = cable; }
         [[nodiscard]] bool exchange_bit(bool outgoing) noexcept override;
+        [[nodiscard]] bool peer_ready() const noexcept override;
         [[nodiscard]] bool request_internal_clock(
             SerialPort& port) noexcept override;
         void release_internal_clock(SerialPort& port) noexcept override;

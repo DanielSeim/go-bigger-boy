@@ -5346,16 +5346,103 @@ bool is_pokemon_gen1(const gameboy::Emulator& emulator) {
            title == "POKEMON YELLOW";
 }
 
+// A failed Pokémon Cable Club negotiation is otherwise indistinguishable
+// from a game-side timeout. Keep a compact trace of the two serial ports so a
+// user can reproduce one attempt and we can tell whether any bytes crossed
+// the emulated cable. The file is deliberately outside the ROM/save data.
+std::ofstream link_trace;
+std::uint64_t link_trace_frame{};
+std::filesystem::path link_trace_path;
+
+void start_link_trace(const std::filesystem::path& preference_path) {
+    // Portable Windows installs can live below a read-only directory. Try
+    // the OS temporary directory first, then the normal settings directory
+    // and working directory. The temporary directory is especially important
+    // when the executable itself is launched through a WSL UNC path.
+    std::error_code temp_error;
+    const auto temporary_directory =
+        std::filesystem::temp_directory_path(temp_error);
+    const std::array<std::filesystem::path, 3> candidates{{
+        temp_error ? std::filesystem::path{}
+                   : temporary_directory / "gbb-link-trace.log",
+        preference_path.empty() ? std::filesystem::path{}
+                                : preference_path / "link-trace.log",
+        std::filesystem::current_path() / "link-trace.log"}};
+    link_trace_frame = 0;
+    link_trace_path.clear();
+    for (const auto& candidate : candidates) {
+        if (candidate.empty()) continue;
+        std::error_code error;
+        std::filesystem::create_directories(candidate.parent_path(), error);
+        link_trace.clear();
+        link_trace.open(candidate, std::ios::trunc);
+        if (!link_trace.is_open()) continue;
+        link_trace << "GBB link trace\n";
+        link_trace.flush();
+        if (!link_trace.good()) {
+            link_trace.close();
+            continue;
+        }
+        link_trace_path = candidate;
+        std::cerr << "Link trace: " << candidate.string() << '\n';
+        break;
+    }
+}
+
+void stop_link_trace() noexcept {
+    if (link_trace.is_open()) link_trace.close();
+    link_trace_frame = 0;
+    link_trace_path.clear();
+}
+
+void trace_link_frame(const gameboy::Emulator& first,
+                      const gameboy::Emulator& second) {
+    if (!link_trace.is_open()) return;
+    const auto& first_serial = first.bus().serial_port();
+    const auto& second_serial = second.bus().serial_port();
+    ++link_trace_frame;
+    // One line per emulated frame is enough to identify the negotiation while
+    // keeping the log small enough to attach from Windows.
+    link_trace << link_trace_frame << ' '
+               << "p1(hr=" << std::hex << static_cast<unsigned>(first.bus().read8(0xFFAA))
+               << ",sb=" << static_cast<unsigned>(first_serial.read_data())
+               << ",sc=" << static_cast<unsigned>(first_serial.read_control())
+               << ",active=" << first_serial.transfer_active()
+               << ",int=" << first_serial.internal_clock()
+               << ",bits=" << static_cast<unsigned>(first_serial.bits_shifted())
+               << ",done=" << std::dec << first_serial.transfers_completed()
+               << ",tx=" << std::hex << static_cast<unsigned>(first_serial.last_transmitted())
+               << ",rx=" << static_cast<unsigned>(first_serial.last_received())
+               << ") p2(hr=" << static_cast<unsigned>(second.bus().read8(0xFFAA))
+               << ",sb=" << static_cast<unsigned>(second_serial.read_data())
+               << ",sc=" << static_cast<unsigned>(second_serial.read_control())
+               << ",active=" << second_serial.transfer_active()
+               << ",int=" << second_serial.internal_clock()
+               << ",bits=" << static_cast<unsigned>(second_serial.bits_shifted())
+               << ",done=" << std::dec << second_serial.transfers_completed()
+               << ",tx=" << std::hex << static_cast<unsigned>(second_serial.last_transmitted())
+               << ",rx=" << static_cast<unsigned>(second_serial.last_received())
+               << ") if=" << static_cast<unsigned>(first.bus().read8(0xFF0F))
+               << '/' << static_cast<unsigned>(second.bus().read8(0xFF0F))
+               << " ie=" << static_cast<unsigned>(first.bus().read8(0xFFFF))
+               << '/' << static_cast<unsigned>(second.bus().read8(0xFFFF))
+               << '\n';
+    link_trace.flush();
+}
+
 void reset_pokemon_link_handshake(gameboy::Emulator& emulator) {
-    // Pokémon Red/Blue/Yellow keep their link role in HRAM, separate from
-    // FF01/FF02. Cloning a running state would otherwise clone an already
-    // established external-clock role onto both consoles. Returning both
-    // peers to the ROM's documented probe value lets the Cable Club perform a
-    // fresh master/slave negotiation over the newly attached cable.
+    // The Gen I Cable Club keeps its negotiated role in HRAM in addition to
+    // FF01/FF02. A linked player starts from a copy of the current game state,
+    // so clear that transient protocol state before attaching the cable.
     constexpr std::uint16_t serial_status = 0xFFAA;
     emulator.bus().write8(serial_status, 0xFF);
+    emulator.bus().write8(0xFFAB, 0x00); // hSerialReceivedNewData
+    emulator.bus().write8(0xFFAC, 0x00); // hSerialSendData
+    emulator.bus().write8(0xFFAD, 0x00); // hSerialReceiveData
     emulator.bus().write8(0xFF01, 0x02);
     emulator.bus().write8(0xFF02, 0x80);
+    emulator.bus().write8(0xFFFF, static_cast<std::uint8_t>(
+                                      emulator.bus().read8(0xFFFF) | 0x08U));
     emulator.bus().write8(0xFF0F, static_cast<std::uint8_t>(
                                       emulator.bus().read8(0xFF0F) & ~0x08U));
 }
@@ -5373,9 +5460,10 @@ void start_local_link_session(
     // causes link trading/battles to reject the peer (and lets the last flush
     // silently overwrite the other console). Keep a persistent player-two
     // save beside the normal data, seeding it from player one's save only on
-    // the first session. The running machine state is copied below so player
-    // two starts at the same in-game point instead of requiring a second
-    // boot-and-load sequence before the Cable Club can be tested.
+    // the first session. Copy the running game state below so both screens
+    // begin at the same Cable Club prompt, but preserve player two's own RAM
+    // image. The transient CPU/interrupt/timer/serial state is sanitized for
+    // Pokémon immediately before the cable is attached.
     std::vector<std::uint8_t> preserved_player_two_save;
     auto player_two_save_exists = false;
     if (replacement->has_battery() && !preference_path.empty()) {
@@ -5409,14 +5497,32 @@ void start_local_link_session(
         reset_pokemon_link_handshake(first);
         reset_pokemon_link_handshake(*replacement);
     }
+    // Do not carry a held confirmation button into one side of the Cable Club
+    // prompt when the session is attached.
+    release_all_buttons(first);
     release_all_buttons(*replacement);
+    // The normal single-console setup attaches the Game Boy Printer to the
+    // serial port. During a link session that peripheral must be removed:
+    // otherwise its response overwrites the byte received from the peer
+    // before Pokémon's serial interrupt handler can read it.
+    first.bus().connect_printer(false);
+    replacement->bus().connect_printer(false);
     auto replacement_cable = std::make_unique<gameboy::SerialCable>();
     replacement_cable->connect(first.bus().serial_port(),
                                replacement->bus().serial_port());
     second = std::move(replacement);
     cable = std::move(replacement_cable);
+    start_link_trace(preference_path);
+    if (link_trace.is_open()) {
+        const auto message = "Link trace is being written to:\n" +
+                             link_trace_path.string();
+        static_cast<void>(SDL_ShowSimpleMessageBox(
+            SDL_MESSAGEBOX_INFORMATION, "GBB link diagnostics",
+            message.c_str(), sdl.window));
+    }
     sdl.split_screen = true;
     if (!configure_video_pipeline(sdl, sdl.video_mode)) {
+        first.bus().connect_printer(true);
         sdl.split_screen = false;
         cable.reset();
         second.reset();
@@ -5424,12 +5530,17 @@ void start_local_link_session(
     }
 }
 
-void stop_local_link_session(std::unique_ptr<gameboy::Emulator>& second,
+void stop_local_link_session(gameboy::Emulator& first,
+                             std::unique_ptr<gameboy::Emulator>& second,
                              std::unique_ptr<gameboy::SerialCable>& cable,
                              SdlResources& sdl) noexcept {
+    stop_link_trace();
     cable.reset();
     flush_battery_safely(second.get());
     second.reset();
+    // Restore the primary console's normal serial peripheral after the
+    // linked session has detached.
+    first.bus().connect_printer(true);
     sdl.split_screen = false;
     static_cast<void>(configure_video_pipeline(sdl, sdl.video_mode));
 }
@@ -7019,7 +7130,8 @@ int main(int argc, char** argv) {
                 link_toggle_requested = false;
                 try {
                     if (link_emulator != nullptr) {
-                        stop_local_link_session(link_emulator, link_cable, sdl);
+                        stop_local_link_session(*emulator, link_emulator,
+                                                link_cable, sdl);
                     } else if (emulator != nullptr) {
                         start_local_link_session(
                             current_rom, *emulator, link_emulator, link_cable,
@@ -7047,7 +7159,8 @@ int main(int argc, char** argv) {
                 try {
 #ifndef __ANDROID__
                     if (link_emulator != nullptr) {
-                        stop_local_link_session(link_emulator, link_cable, sdl);
+                        stop_local_link_session(*emulator, link_emulator,
+                                                link_cable, sdl);
                     }
                     input_movie.stop(emulator.get());
                     tas_editor.close();
@@ -7380,33 +7493,29 @@ int main(int argc, char** argv) {
                             }
                         }
                         if (link_emulator != nullptr) {
-                            // Each CPU has its own instruction lengths. Using
-                            // max(primary_cycles, secondary_cycles) as one
-                            // shared increment under-runs the shorter stream
-                            // and makes link play appear half-speed. Track the
-                            // two hardware clocks independently instead.
+                            // Balance exact CPU cycles rather than stopping a
+                            // console when its video frame flag is raised.
+                            // Serial interrupts may still need to run after
+                            // that flag, and pausing one side there can make
+                            // the other side's link transfer time out.
                             unsigned primary_cycles = 0;
                             unsigned secondary_cycles = 0;
                             while (running &&
                                    (primary_cycles < cycles_per_frame ||
                                     secondary_cycles < cycles_per_frame)) {
-                                // Advance the console that is furthest behind
-                                // in emulated time.  A fixed primary-then-
-                                // secondary order can put one CPU several
-                                // instructions ahead of the other because
-                                // Game Boy instructions have different
-                                // lengths.  That ordering matters for link
-                                // handshakes: Pokémon first arms one port as
-                                // an external-clock slave and expects the
-                                // other port to observe it before producing
-                                // the next serial edge.
+                                // Advance the console furthest behind. This
+                                // preserves instruction-level serial ordering
+                                // without the old primary-then-secondary
+                                // half-speed behavior.
                                 if (primary_cycles <= secondary_cycles &&
                                     primary_cycles < cycles_per_frame) {
                                     primary_cycles += step_emulator();
                                 } else if (secondary_cycles < cycles_per_frame) {
                                     secondary_cycles += step_link_emulator();
-                                } else {
+                                } else if (primary_cycles < cycles_per_frame) {
                                     primary_cycles += step_emulator();
+                                } else {
+                                    break;
                                 }
                             }
                         } else {
@@ -7420,6 +7529,9 @@ int main(int argc, char** argv) {
                         if (link_emulator != nullptr &&
                             link_emulator->frame_ready()) {
                             link_emulator->consume_frame();
+                        }
+                        if (link_emulator != nullptr) {
+                            trace_link_frame(*emulator, *link_emulator);
                         }
                     }
                 }
@@ -7487,7 +7599,9 @@ int main(int argc, char** argv) {
 #endif
         save_game_window_geometry(sdl.window, preference_path);
 #ifndef __ANDROID__
-        stop_local_link_session(link_emulator, link_cable, sdl);
+        if (emulator != nullptr && link_emulator != nullptr) {
+            stop_local_link_session(*emulator, link_emulator, link_cable, sdl);
+        }
 #endif
         flush_battery_safely(emulator.get());
     } catch (const std::exception& error) {

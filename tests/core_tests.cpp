@@ -1480,20 +1480,72 @@ void test_serial_link_cable() {
           "linked serial transfers complete on both consoles");
 
     // Pokémon's Cable Club can have both consoles request the internal clock
-    // during the same handshake window. A physical cable settles on one
-    // clock source; the deterministic local cable must do the same.
-    first.write8(0xFF01, 0x96);
-    second.write8(0xFF01, 0x69);
+    // during the same handshake window. A real cable has one clock source; the
+    // first deterministic request wins, while the loser keeps its preceding
+    // external probe byte available for the winning edge.
+    first.write8(0xFF01, 0x02);
+    second.write8(0xFF01, 0x02);
+    first.write8(0xFF02, 0x80);
+    second.write8(0xFF02, 0x80);
+    first.write8(0xFF01, 0x01);
+    second.write8(0xFF01, 0x01);
     first.write8(0xFF02, 0x81);
     second.write8(0xFF02, 0x81);
-    check(first.serial_port().internal_clock() !=
-              second.serial_port().internal_clock(),
+    check(first.serial_port().internal_clock() &&
+              !second.serial_port().internal_clock(),
           "a linked cable arbitrates simultaneous internal-clock requests");
     first.tick(4096);
+    check(first.read8(0xFF01) == 0x02 && second.read8(0xFF01) == 0x01 &&
+              (first.read8(0xFF0F) & 0x08) != 0 &&
+              (second.read8(0xFF0F) & 0x08) != 0,
+          "arbitrated probe exchanges the preceding external byte");
+
+    // Mirror the Gen I probe sequence: both sides arm external first, then
+    // switch to internal to discover a peer that is already waiting.
+    first.write8(0xFF01, 0x02);
+    second.write8(0xFF01, 0x02);
+    first.write8(0xFF02, 0x80);
+    second.write8(0xFF02, 0x80);
+    first.write8(0xFF02, 0x81);
+    second.write8(0xFF02, 0x81);
+    first.tick(4096);
     second.tick(4096);
-    check((first.read8(0xFF02) & 0x80) == 0 &&
-              (second.read8(0xFF02) & 0x80) == 0,
-          "arbitrated linked transfers complete without a dual clock");
+    check(first.read8(0xFF01) == 0x02 && second.read8(0xFF01) == 0x02 &&
+              (first.read8(0xFF0F) & 0x08) != 0 &&
+              (second.read8(0xFF0F) & 0x08) != 0,
+          "Gen I external-then-internal probe exchanges both role bytes");
+
+    // A connected cable holds the first edge until its peer arms the receiver;
+    // this prevents a startup probe from being consumed as pull-up bits.
+    first.write8(0xFF0F, 0);
+    second.write8(0xFF0F, 0);
+    first.write8(0xFF01, 0x12);
+    second.write8(0xFF01, 0x34);
+    first.write8(0xFF02, 0x81);
+    first.tick(4096);
+    check(first.serial_port().transfer_active() &&
+              first.serial_port().bits_shifted() == 0 &&
+              (first.read8(0xFF0F) & 0x08) == 0,
+          "connected internal clock waits for an unarmed external peer");
+    second.write8(0xFF02, 0x80);
+    // Arming the receiver releases only the next edge. Advance one bit at a
+    // time so the test also guards against replaying the time spent waiting.
+    for (unsigned bit = 0; bit < 8; ++bit) first.tick(512);
+    check(!first.serial_port().transfer_active() &&
+              !second.serial_port().transfer_active() &&
+              first.read8(0xFF01) == 0x34 &&
+              second.read8(0xFF01) == 0x12 &&
+              (first.read8(0xFF0F) & 0x08) != 0 &&
+              (second.read8(0xFF0F) & 0x08) != 0,
+          "armed external peer receives the held transfer");
+
+    // A peer edge is ignored while a port is the internal clock source; only
+    // the cable owner's edge shifts both ports.
+    second.write8(0xFF01, 0x80);
+    second.write8(0xFF02, 0x81);
+    static_cast<void>(second.serial_port().clock_external_bit(false));
+    check(second.read8(0xFF01) == 0x80,
+          "a cable edge does not shift an internal clock source");
 
     cable.disconnect();
     first.write8(0xFF0F, 0);
@@ -1512,6 +1564,91 @@ void test_serial_link_cable() {
     cgb.tick(1);
     check((cgb.read8(0xFF02) & 0x80) == 0,
           "CGB fast serial completes after 128 CPU cycles");
+}
+
+void test_serial_link_interrupt_handshake() {
+    // A tiny ROM-level probe matching Pokémon's external-then-internal
+    // connection routine. The ISR copies the received SB byte into the HRAM
+    // connection marker, exactly as the game does.
+    const std::vector<std::uint8_t> program{
+        0x31, 0xFE, 0xFF,       // LD SP,$FFFE
+        0x3E, 0x08, 0xEA, 0xFF, 0xFF, // LD A,$08; LD ($FFFF),A
+        0xFB,                   // EI
+        0x3E, 0xFF, 0xEA, 0xAA, 0xFF, // marker = connection pending
+        0x3E, 0x02, 0xEA, 0x01, 0xFF, // SB = external probe
+        0x3E, 0x80, 0xEA, 0x02, 0xFF, // SC = external start
+        0x3E, 0x01, 0xEA, 0x01, 0xFF, // SB = internal probe
+        0x3E, 0x81, 0xEA, 0x02, 0xFF, // SC = internal start
+        0x18, 0xFE};            // spin
+    auto first_rom = test_rom(program);
+    auto second_rom = first_rom;
+    first_rom[0x58] = 0xF0;     // LDH A,($01)
+    first_rom[0x59] = 0x01;
+    first_rom[0x5A] = 0xEA;     // LD ($FFAA),A
+    first_rom[0x5B] = 0xAA;
+    first_rom[0x5C] = 0xFF;
+    first_rom[0x5D] = 0xD9;     // RETI
+    second_rom[0x58] = 0xF0;
+    second_rom[0x59] = 0x01;
+    second_rom[0x5A] = 0xEA;
+    second_rom[0x5B] = 0xAA;
+    second_rom[0x5C] = 0xFF;
+    second_rom[0x5D] = 0xD9;
+    gameboy::Emulator first{gameboy::Cartridge{std::move(first_rom)}};
+    gameboy::Emulator second{gameboy::Cartridge{std::move(second_rom)}};
+    gameboy::SerialCable cable;
+    cable.connect(first.bus().serial_port(), second.bus().serial_port());
+    for (unsigned instruction = 0; instruction < 20000; ++instruction) {
+        static_cast<void>(first.step());
+        static_cast<void>(second.step());
+    }
+    const auto first_status = first.bus().read8(0xFFAA);
+    const auto second_status = second.bus().read8(0xFFAA);
+    if (first_status != 0x02 || second_status != 0x01) {
+        std::cerr << "probe status first=" << unsigned(first_status)
+                  << " second=" << unsigned(second_status)
+                  << " sb=" << unsigned(first.bus().read8(0xFF01)) << "/"
+                  << unsigned(second.bus().read8(0xFF01)) << " sc="
+                  << unsigned(first.bus().read8(0xFF02)) << "/"
+                  << unsigned(second.bus().read8(0xFF02)) << '\n';
+    }
+    check(first_status == 0x02 && second_status == 0x01,
+          "serial cable delivers probe bytes through ROM interrupt handlers");
+}
+
+void test_serial_link_interrupt_rearm() {
+    // Continue the probe with repeated master/slave transfers. This models
+    // the Cable Club's byte exchange where the external side must re-arm SC
+    // from its serial ISR before the next internal edge.
+    const std::vector<std::uint8_t> program{
+        0x31, 0xFE, 0xFF, 0x3E, 0x08, 0xEA, 0xFF, 0xFF, 0xFB,
+        0x3E, 0xFF, 0xEA, 0xAA, 0xFF, // pending marker
+        0x3E, 0x02, 0xEA, 0x01, 0xFF, 0x3E, 0x80, 0xEA, 0x02, 0xFF,
+        0x3E, 0x01, 0xEA, 0x01, 0xFF, 0x3E, 0x81, 0xEA, 0x02, 0xFF,
+        0xF0, 0xAA, 0xFE, 0x02, 0x20, 0xFA, // wait for internal role
+        0x3E, 0x60, 0xEA, 0x01, 0xFF, 0x3E, 0x81, 0xEA, 0x02, 0xFF,
+        0x18, 0xEB}; // repeat internal transfers
+    auto first_rom = test_rom(program);
+    auto second_rom = first_rom;
+    const std::array<std::uint8_t, 0x1C> isr{{
+        0xF0, 0xAA, 0xFE, 0xFF, 0x20, 0x06, // if pending, capture SB
+        0xF0, 0x01, 0xEA, 0xAA, 0xFF,       // hstatus = received probe
+        0xF0, 0xAA, 0xFE, 0x01, 0x20, 0x0A, // if external, re-arm below
+        0x3E, 0x60, 0xEA, 0x01, 0xFF, 0x3E, 0x80, 0xEA, 0x02, 0xFF,
+        0xD9}};
+    std::copy(isr.begin(), isr.end(), first_rom.begin() + 0x58);
+    std::copy(isr.begin(), isr.end(), second_rom.begin() + 0x58);
+    gameboy::Emulator first{gameboy::Cartridge{std::move(first_rom)}};
+    gameboy::Emulator second{gameboy::Cartridge{std::move(second_rom)}};
+    gameboy::SerialCable cable;
+    cable.connect(first.bus().serial_port(), second.bus().serial_port());
+    for (unsigned instruction = 0; instruction < 50000; ++instruction) {
+        static_cast<void>(first.step());
+        static_cast<void>(second.step());
+    }
+    check(first.bus().read8(0xFF01) == 0x60 &&
+              second.bus().read8(0xFF01) == 0x60,
+          "external serial ISR re-arms repeated linked transfers");
 }
 
 void test_gameboy_printer() {
@@ -3597,6 +3734,8 @@ int main() {
         test_apu_pulse1_sweep_wave_and_noise();
         test_serial_transfer();
         test_serial_link_cable();
+        test_serial_link_interrupt_handshake();
+        test_serial_link_interrupt_rearm();
         test_gameboy_printer();
         test_cpu_state_normalization();
         test_register_load_matrix();

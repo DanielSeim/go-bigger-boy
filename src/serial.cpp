@@ -27,13 +27,17 @@ void SerialPort::write_control(const std::uint8_t value) noexcept {
     }
 
     internal_clock_ = (control_ & 0x01) != 0;
+    if (!internal_clock_) external_data_ = data_;
     if (internal_clock_ && endpoint_ != nullptr &&
         !endpoint_->request_internal_clock(*this)) {
-        // Another endpoint already owns the cable clock. Keep this request
-        // armed as an externally-clocked transfer, matching the electrical
-        // behavior of two Game Boys connected at the same time.
+        // If both consoles request the clock on the same emulated cycle, keep
+        // one deterministic master. The losing side remains an external
+        // receiver and restores the byte it placed on SB for the preceding
+        // external probe, matching the hardware race that established the
+        // connection in the first place.
         internal_clock_ = false;
         control_ = static_cast<std::uint8_t>(control_ & ~0x01U);
+        data_ = external_data_;
     }
     active_ = true;
     transfer_byte_ = data_;
@@ -64,6 +68,14 @@ void SerialPort::tick(const unsigned cycles) noexcept {
     phase_ += cycles;
     const auto bit_cycles = cycles_per_bit();
     while (active_ && phase_ >= bit_cycles) {
+        if (endpoint_ != nullptr && !endpoint_->peer_ready()) {
+            // Do not accumulate elapsed CPU time while the cable has no
+            // receiver. Once the peer arms its port, the master should emit
+            // one next edge at normal spacing, not replay a burst of missed
+            // edges that can outrun the peer's serial interrupt handler.
+            phase_ = bit_cycles - 1;
+            break;
+        }
         phase_ -= bit_cycles;
         clock_internal_bit();
     }
@@ -91,6 +103,9 @@ void SerialPort::shift_bit(const bool incoming) noexcept {
 
     active_ = false;
     control_ = static_cast<std::uint8_t>(control_ & ~0x80U);
+    last_transmitted_ = transfer_byte_;
+    last_received_ = data_;
+    ++transfers_completed_;
     if (internal_clock_ && endpoint_ != nullptr) {
         endpoint_->release_internal_clock(*this);
     }
@@ -118,6 +133,10 @@ void SerialPort::restore_state(const std::uint8_t data,
 
 bool SerialCable::Endpoint::exchange_bit(const bool outgoing) noexcept {
     return peer_ == nullptr ? true : peer_->clock_external_bit(outgoing);
+}
+
+bool SerialCable::Endpoint::peer_ready() const noexcept {
+    return peer_ != nullptr && peer_->transfer_active();
 }
 
 bool SerialCable::Endpoint::request_internal_clock(SerialPort& port) noexcept {
