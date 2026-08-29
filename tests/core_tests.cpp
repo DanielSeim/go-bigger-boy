@@ -1479,6 +1479,22 @@ void test_serial_link_cable() {
               (second.read8(0xFF0F) & 0x08) != 0,
           "linked serial transfers complete on both consoles");
 
+    // Pokémon's Cable Club can have both consoles request the internal clock
+    // during the same handshake window. A physical cable settles on one
+    // clock source; the deterministic local cable must do the same.
+    first.write8(0xFF01, 0x96);
+    second.write8(0xFF01, 0x69);
+    first.write8(0xFF02, 0x81);
+    second.write8(0xFF02, 0x81);
+    check(first.serial_port().internal_clock() !=
+              second.serial_port().internal_clock(),
+          "a linked cable arbitrates simultaneous internal-clock requests");
+    first.tick(4096);
+    second.tick(4096);
+    check((first.read8(0xFF02) & 0x80) == 0 &&
+              (second.read8(0xFF02) & 0x80) == 0,
+          "arbitrated linked transfers complete without a dual clock");
+
     cable.disconnect();
     first.write8(0xFF0F, 0);
     first.write8(0xFF01, 0x00);

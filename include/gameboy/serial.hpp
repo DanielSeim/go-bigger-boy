@@ -15,6 +15,15 @@ class SerialEndpoint {
 public:
     virtual ~SerialEndpoint() = default;
     [[nodiscard]] virtual bool exchange_bit(bool outgoing) noexcept = 0;
+
+    // A real cable can only have one clock source at a time. Endpoints that
+    // model a shared cable may reject a second console's internal-clock
+    // request; simple peripherals (and disconnected ports) accept it.
+    [[nodiscard]] virtual bool request_internal_clock(
+        SerialPort& /*port*/) noexcept {
+        return true;
+    }
+    virtual void release_internal_clock(SerialPort& /*port*/) noexcept {}
 };
 
 class SerialPort {
@@ -50,7 +59,7 @@ public:
                        bool active, bool internal_clock,
                        bool fast_clock) noexcept;
 
-    void set_endpoint(SerialEndpoint* endpoint) noexcept { endpoint_ = endpoint; }
+    void set_endpoint(SerialEndpoint* endpoint) noexcept;
     void set_completion_callback(void* context,
                                  CompletionCallback callback) noexcept {
         callback_context_ = context;
@@ -93,13 +102,19 @@ private:
     class Endpoint final : public SerialEndpoint {
     public:
         void set_peer(SerialPort* peer) noexcept { peer_ = peer; }
+        void set_cable(SerialCable* cable) noexcept { cable_ = cable; }
         [[nodiscard]] bool exchange_bit(bool outgoing) noexcept override;
+        [[nodiscard]] bool request_internal_clock(
+            SerialPort& port) noexcept override;
+        void release_internal_clock(SerialPort& port) noexcept override;
 
     private:
         SerialPort* peer_{};
+        SerialCable* cable_{};
     } first_endpoint_, second_endpoint_;
     SerialPort* first_{};
     SerialPort* second_{};
+    SerialPort* internal_owner_{};
 };
 
 } // namespace gameboy

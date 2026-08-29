@@ -2,12 +2,22 @@
 
 namespace gameboy {
 
+void SerialPort::set_endpoint(SerialEndpoint* endpoint) noexcept {
+    if (endpoint_ != nullptr && active_ && internal_clock_) {
+        endpoint_->release_internal_clock(*this);
+    }
+    endpoint_ = endpoint;
+}
+
 std::uint8_t SerialPort::read_control() const noexcept {
     return static_cast<std::uint8_t>((cgb_mode_ ? 0x7C : 0x7E) |
                                      (control_ & (cgb_mode_ ? 0x83 : 0x81)));
 }
 
 void SerialPort::write_control(const std::uint8_t value) noexcept {
+    if (endpoint_ != nullptr && active_ && internal_clock_) {
+        endpoint_->release_internal_clock(*this);
+    }
     control_ = static_cast<std::uint8_t>(value & (cgb_mode_ ? 0x83 : 0x81));
     if ((control_ & 0x80) == 0) {
         active_ = false;
@@ -16,9 +26,17 @@ void SerialPort::write_control(const std::uint8_t value) noexcept {
         return;
     }
 
+    internal_clock_ = (control_ & 0x01) != 0;
+    if (internal_clock_ && endpoint_ != nullptr &&
+        !endpoint_->request_internal_clock(*this)) {
+        // Another endpoint already owns the cable clock. Keep this request
+        // armed as an externally-clocked transfer, matching the electrical
+        // behavior of two Game Boys connected at the same time.
+        internal_clock_ = false;
+        control_ = static_cast<std::uint8_t>(control_ & ~0x01U);
+    }
     active_ = true;
     transfer_byte_ = data_;
-    internal_clock_ = (control_ & 0x01) != 0;
     fast_clock_ = cgb_mode_ && (control_ & 0x02) != 0;
     bits_shifted_ = 0;
     phase_ = 0;
@@ -73,6 +91,9 @@ void SerialPort::shift_bit(const bool incoming) noexcept {
 
     active_ = false;
     control_ = static_cast<std::uint8_t>(control_ & ~0x80U);
+    if (internal_clock_ && endpoint_ != nullptr) {
+        endpoint_->release_internal_clock(*this);
+    }
     if (completion_callback_ != nullptr) {
         completion_callback_(callback_context_, transfer_byte_, data_);
     }
@@ -99,10 +120,29 @@ bool SerialCable::Endpoint::exchange_bit(const bool outgoing) noexcept {
     return peer_ == nullptr ? true : peer_->clock_external_bit(outgoing);
 }
 
+bool SerialCable::Endpoint::request_internal_clock(SerialPort& port) noexcept {
+    if (cable_ == nullptr) return true;
+    if (cable_->internal_owner_ != nullptr &&
+        cable_->internal_owner_ != &port) {
+        return false;
+    }
+    cable_->internal_owner_ = &port;
+    return true;
+}
+
+void SerialCable::Endpoint::release_internal_clock(SerialPort& port) noexcept {
+    if (cable_ != nullptr && cable_->internal_owner_ == &port) {
+        cable_->internal_owner_ = nullptr;
+    }
+}
+
 void SerialCable::connect(SerialPort& first, SerialPort& second) noexcept {
     disconnect();
     first_ = &first;
     second_ = &second;
+    internal_owner_ = nullptr;
+    first_endpoint_.set_cable(this);
+    second_endpoint_.set_cable(this);
     first_endpoint_.set_peer(second_);
     second_endpoint_.set_peer(first_);
     first_->set_endpoint(&first_endpoint_);
@@ -114,6 +154,9 @@ void SerialCable::disconnect() noexcept {
     if (second_ != nullptr) second_->set_endpoint(nullptr);
     first_endpoint_.set_peer(nullptr);
     second_endpoint_.set_peer(nullptr);
+    first_endpoint_.set_cable(nullptr);
+    second_endpoint_.set_cable(nullptr);
+    internal_owner_ = nullptr;
     first_ = nullptr;
     second_ = nullptr;
 }

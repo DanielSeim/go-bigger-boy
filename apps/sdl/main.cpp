@@ -5340,6 +5340,26 @@ std::unique_ptr<gameboy::Emulator> load_link_player(
     return player;
 }
 
+bool is_pokemon_gen1(const gameboy::Emulator& emulator) {
+    const auto title = emulator.bus().cartridge().title();
+    return title == "POKEMON RED" || title == "POKEMON BLUE" ||
+           title == "POKEMON YELLOW";
+}
+
+void reset_pokemon_link_handshake(gameboy::Emulator& emulator) {
+    // Pokémon Red/Blue/Yellow keep their link role in HRAM, separate from
+    // FF01/FF02. Cloning a running state would otherwise clone an already
+    // established external-clock role onto both consoles. Returning both
+    // peers to the ROM's documented probe value lets the Cable Club perform a
+    // fresh master/slave negotiation over the newly attached cable.
+    constexpr std::uint16_t serial_status = 0xFFAA;
+    emulator.bus().write8(serial_status, 0xFF);
+    emulator.bus().write8(0xFF01, 0x02);
+    emulator.bus().write8(0xFF02, 0x80);
+    emulator.bus().write8(0xFF0F, static_cast<std::uint8_t>(
+                                      emulator.bus().read8(0xFF0F) & ~0x08U));
+}
+
 void start_local_link_session(
     const std::string& path, gameboy::Emulator& first,
     std::unique_ptr<gameboy::Emulator>& second,
@@ -5353,7 +5373,11 @@ void start_local_link_session(
     // causes link trading/battles to reject the peer (and lets the last flush
     // silently overwrite the other console). Keep a persistent player-two
     // save beside the normal data, seeding it from player one's save only on
-    // the first session.
+    // the first session. The running machine state is copied below so player
+    // two starts at the same in-game point instead of requiring a second
+    // boot-and-load sequence before the Cable Club can be tested.
+    std::vector<std::uint8_t> preserved_player_two_save;
+    auto player_two_save_exists = false;
     if (replacement->has_battery() && !preference_path.empty()) {
         const auto directory = preference_path / "link-saves";
         std::filesystem::create_directories(directory);
@@ -5367,12 +5391,25 @@ void start_local_link_session(
             return save;
         }();
         const auto already_exists = std::filesystem::exists(player_two_save);
+        player_two_save_exists = already_exists;
         const auto seed = first.export_battery_save();
         replacement->bus().cartridge().set_persistence_path(player_two_base);
+        if (already_exists) {
+            preserved_player_two_save = replacement->export_battery_save();
+        }
         if (!already_exists && !seed.empty()) {
             replacement->import_battery_save(seed);
         }
     }
+    replacement->load_state(first.save_state());
+    if (player_two_save_exists && !preserved_player_two_save.empty()) {
+        replacement->import_battery_save(preserved_player_two_save);
+    }
+    if (is_pokemon_gen1(first)) {
+        reset_pokemon_link_handshake(first);
+        reset_pokemon_link_handshake(*replacement);
+    }
+    release_all_buttons(*replacement);
     auto replacement_cable = std::make_unique<gameboy::SerialCable>();
     replacement_cable->connect(first.bus().serial_port(),
                                replacement->bus().serial_port());
@@ -7353,11 +7390,23 @@ int main(int argc, char** argv) {
                             while (running &&
                                    (primary_cycles < cycles_per_frame ||
                                     secondary_cycles < cycles_per_frame)) {
-                                if (primary_cycles < cycles_per_frame) {
+                                // Advance the console that is furthest behind
+                                // in emulated time.  A fixed primary-then-
+                                // secondary order can put one CPU several
+                                // instructions ahead of the other because
+                                // Game Boy instructions have different
+                                // lengths.  That ordering matters for link
+                                // handshakes: Pokémon first arms one port as
+                                // an external-clock slave and expects the
+                                // other port to observe it before producing
+                                // the next serial edge.
+                                if (primary_cycles <= secondary_cycles &&
+                                    primary_cycles < cycles_per_frame) {
                                     primary_cycles += step_emulator();
-                                }
-                                if (secondary_cycles < cycles_per_frame) {
+                                } else if (secondary_cycles < cycles_per_frame) {
                                     secondary_cycles += step_link_emulator();
+                                } else {
+                                    primary_cycles += step_emulator();
                                 }
                             }
                         } else {

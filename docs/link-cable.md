@@ -8,6 +8,9 @@ clock ownership, and CGB fast mode. DMG transfers use 512 CPU clocks per bit
 `gameboy::SerialCable` connects two `gameboy::SerialPort` instances without
 threads or I/O. The console selecting the internal clock drives both ports,
 while the other port receives the same edges as an external-clock device. A
+simultaneous internal-clock request is deterministically arbitrated so exactly
+one console owns the cable clock; this is important for Pokémon's connection
+handshake, where both sides briefly probe the link at the same time. A
 missing endpoint supplies pull-up `1` bits, matching the disconnected cable
 state. Transfer completion raises serial interrupt 3 on both consoles.
 
@@ -26,7 +29,11 @@ uses the configured controls; player two defaults to `W/A/S/D` for directions,
 single-console view and reconnects cleanly when a new ROM is loaded. Battery
 games receive an independent player-two save under `link-saves/`; it is seeded
 from the primary save the first time and then persists separately, so each
-console can keep its own trainer identity and party.
+console can keep its own trainer identity and party. When the session starts,
+player two is initialized from the primary console's current running state, so
+both screens begin at the same map/menu instead of one console remaining at the
+boot screen. Move the two players independently before speaking to a Cable
+Club receptionist, then continue with the in-game trade or battle flow.
 
 Network, WebRTC, Bluetooth, and USB transports should be added only after this
 deterministic local path is validated with link-enabled games.
