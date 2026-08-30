@@ -50,6 +50,7 @@ struct Options {
     std::filesystem::path state1;
     std::filesystem::path state2;
     std::filesystem::path report;
+    std::filesystem::path trace;
     std::filesystem::path capture_dir;
     std::uint64_t frames = 1'200;
     std::uint16_t port = 0;
@@ -65,7 +66,7 @@ void usage() {
            "[--state1 STATE --state2 STATE] "
            "[--transport tcp|local] [--frames N] [--port N] "
            "[--auto-confirm] [--scenario trade|battle] "
-           "[--expect trade|battle] [--report PATH]\n";
+           "[--expect trade|battle] [--report PATH] [--trace PATH]\n";
 }
 
 std::uint64_t parse_positive(const std::string& text, const char* name) {
@@ -143,6 +144,8 @@ Options parse_options(const int argc, char** argv) {
             }
         } else if (argument == "--report") {
             options.report = require_value("--report");
+        } else if (argument == "--trace") {
+            options.trace = require_value("--trace");
         } else if (argument == "--capture-dir") {
             options.capture_dir = require_value("--capture-dir");
         } else if (argument == "--help" || argument == "-h") {
@@ -630,6 +633,161 @@ struct AutoInputState {
     std::uint64_t second_table_a_frame{};
 };
 
+const char* scenario_name(const Scenario scenario) {
+    switch (scenario) {
+    case Scenario::trade: return "trade";
+    case Scenario::battle: return "battle";
+    case Scenario::none: return "none";
+    }
+    return "none";
+}
+
+const char* link_session_state_name(const gameboy::LinkSession::State state) {
+    switch (state) {
+    case gameboy::LinkSession::State::disconnected: return "disconnected";
+    case gameboy::LinkSession::State::starting: return "starting";
+    case gameboy::LinkSession::State::connected: return "connected";
+    case gameboy::LinkSession::State::transferring: return "transferring";
+    case gameboy::LinkSession::State::timed_out: return "timed_out";
+    }
+    return "unknown";
+}
+
+void append_trace_player(std::ostream& output,
+                         gameboy::Emulator& emulator,
+                         const unsigned player,
+                         const gameboy::TcpSerialEndpoint* endpoint) {
+    WramBank1Guard bank(emulator);
+    const auto& bus = emulator.bus();
+    const auto& serial = bus.serial_port();
+    const auto& registers = emulator.cpu().registers();
+    const auto prefix = std::string{"p"} + std::to_string(player) + '_';
+    const auto field = [&](const char* name, const std::uint64_t value,
+                           const bool hexadecimal = false) {
+        output << ' ' << prefix << name << '=';
+        if (hexadecimal) output << "0x" << std::hex;
+        output << value;
+        if (hexadecimal) output << std::dec;
+    };
+    field("cycles", emulator.cpu().total_cycles());
+    field("pc", registers.pc, true);
+    field("sp", registers.sp, true);
+    field("halted", emulator.cpu().halted());
+    field("stopped", emulator.cpu().stopped());
+    field("ime", emulator.cpu().interrupts_enabled());
+    field("hr", bus.read8(0xFFAA), true);
+    field("ab", bus.read8(0xFFAB), true);
+    field("ac", bus.read8(0xFFAC), true);
+    field("ad", bus.read8(0xFFAD), true);
+    field("joyp", bus.read8(0xFF00), true);
+    field("sb", serial.read_data(), true);
+    field("sc", serial.read_control(), true);
+    field("active", serial.transfer_active());
+    field("internal", serial.internal_clock());
+    field("fast", serial.fast_clock());
+    field("bits", serial.bits_shifted());
+    field("phase", serial.phase());
+    field("done", serial.transfers_completed());
+    field("tx", serial.last_transmitted(), true);
+    field("rx", serial.last_received(), true);
+    field("if", bus.read8(0xFF0F), true);
+    field("ie", bus.read8(0xFFFF), true);
+    field("link", bus.read8(w_link_state), true);
+    field("link_alt", bus.read8(w_link_state_localized), true);
+    field("battle", bus.read8(w_is_in_battle), true);
+    field("battle_alt", bus.read8(w_is_in_battle_localized), true);
+    field("map", bus.read8(w_cur_map), true);
+    field("map_alt", bus.read8(static_cast<std::uint16_t>(w_cur_map + 5)), true);
+    field("party", bus.read8(w_party_count));
+    field("party_alt", bus.read8(static_cast<std::uint16_t>(w_party_count + 5)));
+    field("menu", at_battle_trade_menu(emulator));
+    field("menu_y", bus.read8(w_top_menu_item_y), true);
+    field("menu_x", bus.read8(w_top_menu_item_x), true);
+    field("menu_current", bus.read8(static_cast<std::uint16_t>(w_top_menu_item_y + 2)));
+    field("menu_max", bus.read8(static_cast<std::uint16_t>(w_top_menu_item_y + 4)));
+    field("menu_keys", bus.read8(static_cast<std::uint16_t>(w_top_menu_item_y + 5)), true);
+    field("menu_ptr", read16be(emulator,
+                                static_cast<std::uint16_t>(w_top_menu_item_y + 12)),
+          true);
+    if (endpoint != nullptr) {
+        field("q_sent", endpoint->requests_sent());
+        field("q_recv", endpoint->requests_received());
+        field("r_sent", endpoint->responses_sent());
+        field("r_recv", endpoint->responses_received());
+        field("deny_sent", endpoint->denials_sent());
+        field("deny_recv", endpoint->denials_received());
+        field("unmatched", endpoint->responses_unmatched());
+        field("waiting", endpoint->waiting_for_peer());
+        field("connected", endpoint->connected());
+    }
+}
+
+class ScenarioTrace {
+  public:
+    ScenarioTrace(const std::filesystem::path& path,
+                  const std::string& transport,
+                  const Scenario scenario) {
+        if (path.empty()) return;
+        if (path.has_parent_path()) {
+            std::filesystem::create_directories(path.parent_path());
+        }
+        output_.open(path, std::ios::trunc);
+        if (!output_) {
+            throw std::runtime_error("could not open trace " + path.string());
+        }
+        output_ << "GBB link scenario trace\n"
+                << "transport=" << transport << " scenario="
+                << scenario_name(scenario) << "\n"
+                << "# one key=value record per emulated frame; p1_/p2_ prefix the player\n";
+        output_.flush();
+        if (!output_) {
+            throw std::runtime_error("could not write trace " + path.string());
+        }
+        path_ = path;
+    }
+
+    ~ScenarioTrace() {
+        if (output_.is_open()) {
+            output_ << "trace_end frames=" << frame_ << '\n';
+            output_.flush();
+        }
+    }
+
+    void write_frame(const std::uint64_t frame,
+                     gameboy::Emulator& first,
+                     gameboy::Emulator& second,
+                     const AutoInputState& input_state,
+                     const gameboy::TcpSerialEndpoint* first_endpoint = nullptr,
+                     const gameboy::TcpSerialEndpoint* second_endpoint = nullptr,
+                     const char* session_state = nullptr,
+                     const std::uint64_t session_transfers = 0) {
+        if (!output_.is_open()) return;
+        frame_ = frame;
+        output_ << "frame=" << frame;
+        append_trace_player(output_, first, 1, first_endpoint);
+        append_trace_player(output_, second, 2, second_endpoint);
+        output_ << " auto_p1_table_started=" << input_state.first_table_started
+                 << " auto_p2_table_started=" << input_state.second_table_started
+                 << " auto_p1_table_confirmed=" << input_state.first_table_confirmed
+                 << " auto_p2_table_confirmed=" << input_state.second_table_confirmed
+                 << " auto_p1_battle_moved=" << input_state.first_battle_menu_moved
+                 << " auto_p2_battle_moved=" << input_state.second_battle_menu_moved
+                 << " auto_p1_battle_confirmed=" << input_state.first_battle_confirmed
+                 << " auto_p2_battle_confirmed=" << input_state.second_battle_confirmed
+                 << " link_session=" << (session_state == nullptr ? "tcp" : session_state)
+                 << " session_transfers=" << session_transfers
+                 << '\n';
+        output_.flush();
+    }
+
+    [[nodiscard]] const std::filesystem::path& path() const noexcept { return path_; }
+
+  private:
+    std::ofstream output_;
+    std::filesystem::path path_;
+    std::uint64_t frame_{};
+};
+
 void apply_auto_inputs(const Options& options, const std::uint64_t frame,
                        gameboy::Emulator& first, gameboy::Emulator& second,
                        AutoInputState& input_state) {
@@ -912,11 +1070,16 @@ int main(int argc, char** argv) {
             gameboy::LinkSession session;
             session.start(first, second);
             AutoInputState input_state;
+            ScenarioTrace trace(options.trace, "local", options.scenario);
             std::uint64_t frames_run = 0;
             for (std::uint64_t frame = 0; frame < options.frames; ++frame) {
                 apply_auto_inputs(options, frame, first, second, input_state);
                 session.advance(static_cast<unsigned>(cycles_per_frame));
                 tracker.sample(first, second);
+                trace.write_frame(frame + 1, first, second, input_state,
+                                  nullptr, nullptr,
+                                  link_session_state_name(session.state()),
+                                  session.transfers_completed());
                 frames_run = frame + 1;
                 if (options.scenario != Scenario::none &&
                     expectation_satisfied(tracker, options.expectation)) {
@@ -942,6 +1105,8 @@ int main(int argc, char** argv) {
                    << "frames=" << frames_run << '\n'
                    << "cycles=" << frames_run * cycles_per_frame << '\n'
                    << "transfers_completed=" << session.transfers_completed() << '\n'
+                   << "trace=" << (options.trace.empty() ? "none" : options.trace.string())
+                   << '\n'
                    << "save1_before=" << hex(fingerprint(initial_save1)) << '\n'
                    << "save1_after=" << hex(fingerprint(final_save1)) << '\n'
                    << "save2_before=" << hex(fingerprint(initial_save2)) << '\n'
@@ -996,6 +1161,7 @@ int main(int argc, char** argv) {
         }
 
         AutoInputState input_state;
+        ScenarioTrace trace(options.trace, "tcp", options.scenario);
         if (options.scenario != Scenario::none) {
             release_auto_buttons(first);
             release_auto_buttons(second);
@@ -1006,6 +1172,8 @@ int main(int argc, char** argv) {
             advance_pair(first, second, first_endpoint, second_endpoint,
                          cycles_per_frame);
             tracker.sample(first, second);
+            trace.write_frame(frame + 1, first, second, input_state,
+                              &first_endpoint, &second_endpoint);
             frames_run = frame + 1;
             if (options.scenario != Scenario::none &&
                 expectation_satisfied(tracker, options.expectation)) {
@@ -1031,6 +1199,8 @@ int main(int argc, char** argv) {
                << "frames=" << frames_run << '\n'
                << "cycles=" << frames_run * cycles_per_frame << '\n'
                << "tcp_port=" << server.local_port() << '\n'
+               << "trace=" << (options.trace.empty() ? "none" : options.trace.string())
+               << '\n'
                << "host_requests_sent=" << first_endpoint.requests_sent() << '\n'
                << "host_requests_received=" << first_endpoint.requests_received() << '\n'
                << "host_responses_sent=" << first_endpoint.responses_sent() << '\n'

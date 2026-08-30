@@ -189,6 +189,15 @@ the interaction; the battle scenario then moves both menu cursors to the second
 the frame budget expires, the report includes `semantic_failure`, menu-seen
 flags, and the final localized map markers to identify which phase stalled.
 
+For deeper scripted-run debugging, add `--trace PATH`. The harness writes one
+flushed key/value record per emulated frame, including both CPUs' PC/SP and
+halt state, serial registers and progress counters, Pokémon link/battle/map
+markers, Cable Club menu fields, joypad selection, and (for TCP) request,
+response, denial, and waiting counters. The `auto_*` fields show which phase
+of the scenario input driver has been reached. A `trace_end` record makes
+partial files from a crashed or forcibly stopped run easy to identify. The
+trace is opt-in and is never written unless this option is supplied.
+
 For example, a local battle assertion is:
 
 ```sh
@@ -196,6 +205,15 @@ For example, a local battle assertion is:
   --rom roms/pokemon-blue.gb --save1 roms/player1.sav --save2 roms/player2.sav \
   --state1 roms/player1.gbbs --state2 roms/player2.gbbs \
   --scenario battle --frames 1800 --report /tmp/gbb-battle-report.txt
+```
+
+To capture the same run for frame-by-frame analysis:
+
+```sh
+./build-sdl/gbb_link_harness --transport local \
+  --rom roms/pokemon-blue.gb --save1 roms/player1.sav --save2 roms/player2.sav \
+  --state1 roms/player1.gbbs --state2 roms/player2.gbbs \
+  --scenario battle --frames 1800 --trace /tmp/gbb-battle-trace.log
 ```
 
 The harness constructs cartridges from memory and imports each save, so the
