@@ -113,6 +113,12 @@ therefore get no diagnostic popup and no trace file. When enabled, the trace is
 reset for each local session. It begins with a `session_start` marker and ends
 with `session_end`; transfer counters therefore describe only that session, and
 frame numbers are written in decimal for easier correlation with a reproduction.
+Each frame also records CPU cycle totals, PC/SP, halt/stop status, serial phase,
+interrupt registers, and (for Pokémon Gen I) the game link/battle markers and
+party count. Additional `event=serial_complete` and `event=serial_active` lines
+make byte completions and clock ownership changes easy to locate without
+manually diffing every frame. The session header identifies the transport and
+role, so host and join logs can be compared directly.
 
 Network, WebRTC, Bluetooth, and USB transports should be added only after this
 deterministic local path is validated with link-enabled games.
