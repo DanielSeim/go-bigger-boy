@@ -1468,13 +1468,11 @@ int main(int argc, char** argv) {
                 release_auto_buttons(first);
                 release_auto_buttons(second);
             }
-            // Full save states can capture one side of an in-flight serial
-            // byte. A new cable session must begin at a clean protocol
-            // boundary; otherwise the peer may wait forever for the other
-            // side's missing edge after the first menu exchange.
+            // Pokémon's Cable Club code initializes the serial handshake from
+            // these save states. Preserve that setup and only reset the game
+            // handshake registers below; resetting the serial phase here can
+            // strand the CPU in its initial transfer wait.
             if (!starts_at_link_choice) {
-                first.bus().serial_port().reset_link();
-                second.bus().serial_port().reset_link();
                 if (is_pokemon) {
                     reset_pokemon_link_handshake(first);
                     reset_pokemon_link_handshake(second);
@@ -1559,8 +1557,6 @@ int main(int argc, char** argv) {
         second_endpoint.set_arbitration_priority(false);
         if (!starts_at_link_choice) {
             if (is_pokemon) {
-                first.bus().serial_port().reset_link();
-                second.bus().serial_port().reset_link();
                 reset_pokemon_link_handshake(first);
                 reset_pokemon_link_handshake(second);
             } else {
