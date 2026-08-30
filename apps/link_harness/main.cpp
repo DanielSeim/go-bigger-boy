@@ -34,9 +34,14 @@ constexpr std::uint16_t w_is_in_battle = 0xD057;
 constexpr std::uint16_t w_is_in_battle_localized = w_is_in_battle + 5;
 constexpr std::uint16_t w_top_menu_item_y = 0xCC24;
 constexpr std::uint16_t w_top_menu_item_x = 0xCC25;
+constexpr std::uint16_t w_current_menu_item = 0xCC26;
 constexpr std::uint16_t w_cur_map = 0xD35E;
 constexpr std::uint16_t w_player_direction = 0xD52A;
 constexpr std::uint16_t w_player_sprite_direction = 0xC109;
+constexpr std::uint16_t w_trade_pointer_index = 0xCC38;
+constexpr std::uint16_t w_trade_menu = 0xCC49;
+constexpr std::uint16_t w_text_box_id = 0xD125;
+constexpr std::uint16_t w_two_option_menu_id = 0xD12C;
 constexpr std::uint16_t party_mon_size = 0x2C;
 constexpr std::uint8_t link_state_battling = 0x04;
 
@@ -328,6 +333,63 @@ bool at_battle_trade_menu(const gameboy::Emulator& emulator) {
            matches_layout(static_cast<std::uint16_t>(w_top_menu_item_y + 5));
 }
 
+bool at_trade_selection_menu(const gameboy::Emulator& emulator) {
+    const auto matches_layout = [&](const std::uint16_t offset) {
+        const auto top_y = emulator.bus().read8(offset);
+        const auto top_x = emulator.bus().read8(
+            static_cast<std::uint16_t>(offset + 1));
+        const auto maximum = emulator.bus().read8(
+            static_cast<std::uint16_t>(offset + 4));
+        const auto watched_keys = emulator.bus().read8(
+            static_cast<std::uint16_t>(offset + 5));
+        const auto cursor_low = emulator.bus().read8(
+            static_cast<std::uint16_t>(offset + 12));
+        const auto cursor_high = emulator.bus().read8(
+            static_cast<std::uint16_t>(offset + 13));
+        const auto pointer_index = emulator.bus().read8(
+            static_cast<std::uint16_t>(w_trade_pointer_index + offset -
+                                       w_top_menu_item_y));
+        const auto menu = emulator.bus().read8(
+            static_cast<std::uint16_t>(w_trade_menu + offset - w_top_menu_item_y));
+        return top_y == 0x01 && top_x == 0x01 && maximum >= 1 && maximum <= 6 &&
+               watched_keys == 0x91 && pointer_index == 0 && menu == 0 &&
+               (cursor_high & 0x80U) != 0 && cursor_low != 0;
+    };
+    return matches_layout(w_top_menu_item_y) ||
+           matches_layout(static_cast<std::uint16_t>(w_top_menu_item_y + 5));
+}
+
+bool at_trade_stats_menu(const gameboy::Emulator& emulator) {
+    const auto matches_layout = [&](const std::uint16_t offset) {
+        return emulator.bus().read8(offset) == 0x10 &&
+               emulator.bus().read8(static_cast<std::uint16_t>(offset + 1)) == 0x01 &&
+               emulator.bus().read8(static_cast<std::uint16_t>(offset + 4)) == 0 &&
+               emulator.bus().read8(static_cast<std::uint16_t>(offset + 5)) == 0x13;
+    };
+    return matches_layout(w_top_menu_item_y) ||
+           matches_layout(static_cast<std::uint16_t>(w_top_menu_item_y + 5));
+}
+
+bool at_trade_cancel_menu(const gameboy::Emulator& emulator) {
+    const auto matches_layout = [&](const std::uint16_t offset) {
+        return emulator.bus().read8(static_cast<std::uint16_t>(w_text_box_id + offset)) ==
+                   0x14 &&
+               emulator.bus().read8(static_cast<std::uint16_t>(w_two_option_menu_id + offset)) ==
+                   0x05 &&
+               emulator.bus().read8(static_cast<std::uint16_t>(w_top_menu_item_y + offset)) ==
+                   0x07 &&
+               emulator.bus().read8(static_cast<std::uint16_t>(w_top_menu_item_x + offset)) ==
+                   0x0A &&
+               emulator.bus().read8(static_cast<std::uint16_t>(w_current_menu_item + offset)) <=
+                   0x01 &&
+               emulator.bus().read8(static_cast<std::uint16_t>(w_top_menu_item_y + 4 + offset)) ==
+                   0x01 &&
+               emulator.bus().read8(static_cast<std::uint16_t>(w_top_menu_item_y + 5 + offset)) ==
+                   0x03;
+    };
+    return matches_layout(0) || matches_layout(5);
+}
+
 bool at_cable_club_map(const gameboy::Emulator& emulator) {
     const auto primary = emulator.bus().read8(w_cur_map);
     const auto localized = emulator.bus().read8(static_cast<std::uint16_t>(w_cur_map + 5));
@@ -358,11 +420,14 @@ void set_facing_direction(gameboy::Emulator& emulator, const std::uint8_t direct
                                 is_club_map_id(localized_map)
                             ? 5
                             : 0;
-    emulator.bus().write8(
-        static_cast<std::uint16_t>(w_player_direction + offset), direction);
-    emulator.bus().write8(static_cast<std::uint16_t>(
-                              w_player_sprite_direction + offset),
+    emulator.bus().write8(static_cast<std::uint16_t>(w_player_direction + offset),
                           direction);
+    emulator.bus().write8(w_player_direction, direction);
+    emulator.bus().write8(static_cast<std::uint16_t>(w_player_sprite_direction + offset),
+                          direction);
+    // Sprite state lives in WRAM0 in the English and European builds, while
+    // the gameplay variables above move with the translated WRAM1 layout.
+    emulator.bus().write8(w_player_sprite_direction, direction);
 }
 
 std::string party_text(const PartySnapshot& party) {
@@ -387,6 +452,12 @@ struct SemanticTracker {
     bool second_battle_seen{};
     bool first_battle_trade_menu_seen{};
     bool second_battle_trade_menu_seen{};
+    bool first_trade_selection_menu_seen{};
+    bool second_trade_selection_menu_seen{};
+    bool first_trade_stats_menu_seen{};
+    bool second_trade_stats_menu_seen{};
+    bool first_trade_cancel_menu_seen{};
+    bool second_trade_cancel_menu_seen{};
     std::uint8_t first_link_state{};
     std::uint8_t second_link_state{};
     std::uint8_t first_link_state_localized{};
@@ -426,6 +497,18 @@ struct SemanticTracker {
             first_battle_trade_menu_seen || at_battle_trade_menu(first);
         second_battle_trade_menu_seen =
             second_battle_trade_menu_seen || at_battle_trade_menu(second);
+        first_trade_selection_menu_seen =
+            first_trade_selection_menu_seen || at_trade_selection_menu(first);
+        second_trade_selection_menu_seen =
+            second_trade_selection_menu_seen || at_trade_selection_menu(second);
+        first_trade_stats_menu_seen =
+            first_trade_stats_menu_seen || at_trade_stats_menu(first);
+        second_trade_stats_menu_seen =
+            second_trade_stats_menu_seen || at_trade_stats_menu(second);
+        first_trade_cancel_menu_seen =
+            first_trade_cancel_menu_seen || at_trade_cancel_menu(first);
+        second_trade_cancel_menu_seen =
+            second_trade_cancel_menu_seen || at_trade_cancel_menu(second);
         const auto first_effective_link_state =
             effective_link_state(first_link_state, first_link_state_localized);
         const auto second_effective_link_state =
@@ -490,7 +573,13 @@ const char* semantic_failure(const SemanticTracker& tracker,
         }
         if (!tracker.first_party_changed() || !tracker.second_party_changed()) {
             if (tracker.first_battle_trade_menu_seen ||
-                tracker.second_battle_trade_menu_seen) {
+                tracker.second_battle_trade_menu_seen ||
+                tracker.first_trade_selection_menu_seen ||
+                tracker.second_trade_selection_menu_seen ||
+                tracker.first_trade_stats_menu_seen ||
+                tracker.second_trade_stats_menu_seen ||
+                tracker.first_trade_cancel_menu_seen ||
+                tracker.second_trade_cancel_menu_seen) {
                 return "trade_not_completed_after_menu";
             }
             return "party_snapshots_unchanged";
@@ -529,6 +618,18 @@ void append_semantic_report(std::ostream& report,
            << (tracker.first_battle_trade_menu_seen ? "yes" : "no") << '\n'
            << "player2_battle_trade_menu_seen="
            << (tracker.second_battle_trade_menu_seen ? "yes" : "no") << '\n'
+           << "player1_trade_selection_menu_seen="
+           << (tracker.first_trade_selection_menu_seen ? "yes" : "no") << '\n'
+           << "player2_trade_selection_menu_seen="
+           << (tracker.second_trade_selection_menu_seen ? "yes" : "no") << '\n'
+           << "player1_trade_stats_menu_seen="
+           << (tracker.first_trade_stats_menu_seen ? "yes" : "no") << '\n'
+           << "player2_trade_stats_menu_seen="
+           << (tracker.second_trade_stats_menu_seen ? "yes" : "no") << '\n'
+           << "player1_trade_cancel_menu_seen="
+           << (tracker.first_trade_cancel_menu_seen ? "yes" : "no") << '\n'
+           << "player2_trade_cancel_menu_seen="
+           << (tracker.second_trade_cancel_menu_seen ? "yes" : "no") << '\n'
            << "player1_link_state_final=" << hex(tracker.first_link_state) << '\n'
            << "player2_link_state_final=" << hex(tracker.second_link_state) << '\n'
            << "player1_link_state_localized_final=" << hex(tracker.first_link_state_localized) << '\n'
@@ -625,12 +726,28 @@ struct AutoInputState {
     std::uint64_t second_battle_a_frame{};
     bool first_table_started{};
     bool second_table_started{};
+    bool first_table_positioned{};
+    bool second_table_positioned{};
     bool first_table_confirmed{};
     bool second_table_confirmed{};
     std::uint64_t first_table_frame{};
     std::uint64_t second_table_frame{};
     std::uint64_t first_table_a_frame{};
     std::uint64_t second_table_a_frame{};
+    bool first_trade_selected{};
+    bool second_trade_selected{};
+    bool first_trade_right_sent{};
+    bool second_trade_right_sent{};
+    bool first_trade_confirmed{};
+    bool second_trade_confirmed{};
+    std::uint64_t first_trade_selection_frame{};
+    std::uint64_t second_trade_selection_frame{};
+    std::uint64_t first_trade_right_frame{};
+    std::uint64_t second_trade_right_frame{};
+    std::uint64_t first_trade_stats_a_frame{};
+    std::uint64_t second_trade_stats_a_frame{};
+    std::uint64_t first_trade_confirm_frame{};
+    std::uint64_t second_trade_confirm_frame{};
 };
 
 const char* scenario_name(const Scenario scenario) {
@@ -698,9 +815,22 @@ void append_trace_player(std::ostream& output,
     field("battle_alt", bus.read8(w_is_in_battle_localized), true);
     field("map", bus.read8(w_cur_map), true);
     field("map_alt", bus.read8(static_cast<std::uint16_t>(w_cur_map + 5)), true);
+    field("y", bus.read8(static_cast<std::uint16_t>(0xD361)), true);
+    field("x", bus.read8(static_cast<std::uint16_t>(0xD362)), true);
+    field("sprite_y", bus.read8(static_cast<std::uint16_t>(0xC10A)), true);
+    field("sprite_x", bus.read8(static_cast<std::uint16_t>(0xC10B)), true);
+    field("facing", bus.read8(static_cast<std::uint16_t>(w_player_direction)), true);
+    field("facing_sprite", bus.read8(static_cast<std::uint16_t>(w_player_sprite_direction)), true);
+    field("facing_sprite_alt", bus.read8(static_cast<std::uint16_t>(w_player_sprite_direction + 5)), true);
+    field("y_alt", bus.read8(static_cast<std::uint16_t>(0xD361 + 5)), true);
+    field("x_alt", bus.read8(static_cast<std::uint16_t>(0xD362 + 5)), true);
+    field("facing_alt", bus.read8(static_cast<std::uint16_t>(w_player_direction + 5)), true);
     field("party", bus.read8(w_party_count));
     field("party_alt", bus.read8(static_cast<std::uint16_t>(w_party_count + 5)));
     field("menu", at_battle_trade_menu(emulator));
+    field("trade_selection", at_trade_selection_menu(emulator));
+    field("trade_stats", at_trade_stats_menu(emulator));
+    field("trade_cancel", at_trade_cancel_menu(emulator));
     field("menu_y", bus.read8(w_top_menu_item_y), true);
     field("menu_x", bus.read8(w_top_menu_item_x), true);
     field("menu_current", bus.read8(static_cast<std::uint16_t>(w_top_menu_item_y + 2)));
@@ -720,6 +850,21 @@ void append_trace_player(std::ostream& output,
         field("waiting", endpoint->waiting_for_peer());
         field("connected", endpoint->connected());
     }
+}
+
+std::uint16_t pokemon_wram_offset(const gameboy::Emulator& emulator) {
+    const auto primary_map = emulator.bus().read8(w_cur_map);
+    const auto localized_map = emulator.bus().read8(
+        static_cast<std::uint16_t>(w_cur_map + 5));
+    const auto is_club_map_id = [](const std::uint8_t map) {
+        return map == 0xEF || map == 0xF0;
+    };
+    return !is_club_map_id(primary_map) && is_club_map_id(localized_map) ? 5 : 0;
+}
+
+std::uint8_t player_map_x(const gameboy::Emulator& emulator) {
+    const auto offset = pokemon_wram_offset(emulator);
+    return emulator.bus().read8(static_cast<std::uint16_t>(0xD362 + offset));
 }
 
 class ScenarioTrace {
@@ -768,8 +913,16 @@ class ScenarioTrace {
         append_trace_player(output_, second, 2, second_endpoint);
         output_ << " auto_p1_table_started=" << input_state.first_table_started
                  << " auto_p2_table_started=" << input_state.second_table_started
+                 << " auto_p1_table_positioned=" << input_state.first_table_positioned
+                 << " auto_p2_table_positioned=" << input_state.second_table_positioned
                  << " auto_p1_table_confirmed=" << input_state.first_table_confirmed
                  << " auto_p2_table_confirmed=" << input_state.second_table_confirmed
+                 << " auto_p1_trade_selected=" << input_state.first_trade_selected
+                 << " auto_p2_trade_selected=" << input_state.second_trade_selected
+                 << " auto_p1_trade_right=" << input_state.first_trade_right_sent
+                 << " auto_p2_trade_right=" << input_state.second_trade_right_sent
+                 << " auto_p1_trade_confirmed=" << input_state.first_trade_confirmed
+                 << " auto_p2_trade_confirmed=" << input_state.second_trade_confirmed
                  << " auto_p1_battle_moved=" << input_state.first_battle_menu_moved
                  << " auto_p2_battle_moved=" << input_state.second_battle_menu_moved
                  << " auto_p1_battle_confirmed=" << input_state.first_battle_confirmed
@@ -792,6 +945,8 @@ void apply_auto_inputs(const Options& options, const std::uint64_t frame,
                        gameboy::Emulator& first, gameboy::Emulator& second,
                        AutoInputState& input_state) {
     if (!options.auto_confirm && options.scenario == Scenario::none) return;
+    WramBank1Guard first_bank(first);
+    WramBank1Guard second_bank(second);
     constexpr std::uint64_t confirm_interval = 24;
     if (!options.state1.empty()) {
         const auto scenario_start_delay = options.scenario == Scenario::none ? 24 : 120;
@@ -813,24 +968,48 @@ void apply_auto_inputs(const Options& options, const std::uint64_t frame,
                 return;
             }
             if (input_state.first_table_started &&
-                !input_state.first_table_confirmed &&
-                frame < input_state.first_table_frame + 4) {
-                select_joypad_lines(first, false);
-                first.set_button(gameboy::Button::right, true);
-                return;
+                !input_state.first_table_positioned) {
+                const auto x = player_map_x(first);
+                if (x == 0x03) {
+                    input_state.first_table_positioned = true;
+                } else {
+                    first.set_button(gameboy::Button::right, false);
+                    first.set_button(gameboy::Button::left, false);
+                    select_joypad_lines(first, false);
+                    first.set_button(x < 0x03 ? gameboy::Button::right
+                                              : gameboy::Button::left,
+                                     true);
+                    return;
+                }
             }
             if (input_state.second_table_started &&
-                !input_state.second_table_confirmed &&
-                frame < input_state.second_table_frame + 4) {
-                select_joypad_lines(second, false);
-                second.set_button(gameboy::Button::left, true);
-                return;
+                !input_state.second_table_positioned) {
+                const auto x = player_map_x(second);
+                if (x == 0x06) {
+                    input_state.second_table_positioned = true;
+                } else {
+                    second.set_button(gameboy::Button::right, false);
+                    second.set_button(gameboy::Button::left, false);
+                    select_joypad_lines(second, false);
+                    second.set_button(x < 0x06 ? gameboy::Button::right
+                                               : gameboy::Button::left,
+                                      true);
+                    return;
+                }
             }
             first.set_button(gameboy::Button::right, false);
             second.set_button(gameboy::Button::left, false);
+            const auto link_ready =
+                effective_link_state(first.bus().read8(w_link_state),
+                                     first.bus().read8(w_link_state_localized)) == 1 &&
+                effective_link_state(second.bus().read8(w_link_state),
+                                     second.bus().read8(w_link_state_localized)) == 1;
             if (input_state.first_table_started && input_state.second_table_started &&
+                input_state.first_table_positioned &&
+                input_state.second_table_positioned &&
                 !input_state.first_table_confirmed &&
                 !input_state.second_table_confirmed &&
+                link_ready &&
                 frame >= std::max(input_state.first_table_frame,
                                   input_state.second_table_frame) + 4) {
                 set_facing_direction(first, 0x0C);
@@ -860,6 +1039,149 @@ void apply_auto_inputs(const Options& options, const std::uint64_t frame,
                     second.set_button(gameboy::Button::a, true);
                 }
                 return;
+            }
+            if (options.scenario == Scenario::trade) {
+                // TradeCenter first presents each player's party list. Select
+                // the first monster, switch from STATS to TRADE, then accept
+                // the trade confirmation once the game's 100-frame exchange
+                // delay has elapsed. Drive each side independently: the game
+                // can reach a menu several frames before its peer.
+                first.set_button(gameboy::Button::right, false);
+                second.set_button(gameboy::Button::right, false);
+                first.set_button(gameboy::Button::a, false);
+                second.set_button(gameboy::Button::a, false);
+
+                const auto first_selection = at_trade_selection_menu(first);
+                const auto second_selection = at_trade_selection_menu(second);
+                if (first_selection && !input_state.first_trade_selected) {
+                    select_joypad_lines(first, true);
+                    first.set_button(gameboy::Button::a, true);
+                    input_state.first_trade_selected = true;
+                    input_state.first_trade_selection_frame = frame;
+                }
+                if (second_selection && !input_state.second_trade_selected) {
+                    select_joypad_lines(second, true);
+                    second.set_button(gameboy::Button::a, true);
+                    input_state.second_trade_selected = true;
+                    input_state.second_trade_selection_frame = frame;
+                }
+                if ((input_state.first_trade_selected &&
+                     frame < input_state.first_trade_selection_frame + 6) ||
+                    (input_state.second_trade_selected &&
+                     frame < input_state.second_trade_selection_frame + 6)) {
+                    if (input_state.first_trade_selected &&
+                        frame < input_state.first_trade_selection_frame + 6) {
+                        select_joypad_lines(first, true);
+                        first.set_button(gameboy::Button::a, true);
+                    }
+                    if (input_state.second_trade_selected &&
+                        frame < input_state.second_trade_selection_frame + 6) {
+                        select_joypad_lines(second, true);
+                        second.set_button(gameboy::Button::a, true);
+                    }
+                    return;
+                }
+
+                if (input_state.first_trade_selected &&
+                    !input_state.first_trade_right_sent &&
+                    at_trade_stats_menu(first)) {
+                    select_joypad_lines(first, true);
+                    first.set_button(gameboy::Button::right, true);
+                    input_state.first_trade_right_sent = true;
+                    input_state.first_trade_right_frame = frame;
+                }
+                if (input_state.second_trade_selected &&
+                    !input_state.second_trade_right_sent &&
+                    at_trade_stats_menu(second)) {
+                    select_joypad_lines(second, true);
+                    second.set_button(gameboy::Button::right, true);
+                    input_state.second_trade_right_sent = true;
+                    input_state.second_trade_right_frame = frame;
+                }
+                if ((input_state.first_trade_right_sent &&
+                     frame < input_state.first_trade_right_frame + 6) ||
+                    (input_state.second_trade_right_sent &&
+                     frame < input_state.second_trade_right_frame + 6)) {
+                    if (input_state.first_trade_right_sent &&
+                        frame < input_state.first_trade_right_frame + 6) {
+                        select_joypad_lines(first, true);
+                        first.set_button(gameboy::Button::right, true);
+                    }
+                    if (input_state.second_trade_right_sent &&
+                        frame < input_state.second_trade_right_frame + 6) {
+                        select_joypad_lines(second, true);
+                        second.set_button(gameboy::Button::right, true);
+                    }
+                    return;
+                }
+
+                if (input_state.first_trade_right_sent &&
+                    !input_state.first_trade_stats_a_frame &&
+                    frame >= input_state.first_trade_right_frame + 6) {
+                    select_joypad_lines(first, true);
+                    first.set_button(gameboy::Button::a, true);
+                    input_state.first_trade_stats_a_frame = frame;
+                }
+                if (input_state.second_trade_right_sent &&
+                    !input_state.second_trade_stats_a_frame &&
+                    frame >= input_state.second_trade_right_frame + 6) {
+                    select_joypad_lines(second, true);
+                    second.set_button(gameboy::Button::a, true);
+                    input_state.second_trade_stats_a_frame = frame;
+                }
+                if ((input_state.first_trade_stats_a_frame &&
+                     frame < input_state.first_trade_stats_a_frame + 6) ||
+                    (input_state.second_trade_stats_a_frame &&
+                     frame < input_state.second_trade_stats_a_frame + 6)) {
+                    if (input_state.first_trade_stats_a_frame &&
+                        frame < input_state.first_trade_stats_a_frame + 6) {
+                        select_joypad_lines(first, true);
+                        first.set_button(gameboy::Button::a, true);
+                    }
+                    if (input_state.second_trade_stats_a_frame &&
+                        frame < input_state.second_trade_stats_a_frame + 6) {
+                        select_joypad_lines(second, true);
+                        second.set_button(gameboy::Button::a, true);
+                    }
+                    return;
+                }
+
+                const auto first_cancel = at_trade_cancel_menu(first);
+                const auto second_cancel = at_trade_cancel_menu(second);
+                if (input_state.first_trade_stats_a_frame &&
+                    !input_state.first_trade_confirmed &&
+                    (first_cancel ||
+                     frame >= input_state.first_trade_stats_a_frame + 130)) {
+                    select_joypad_lines(first, true);
+                    first.set_button(gameboy::Button::a, true);
+                    input_state.first_trade_confirmed = true;
+                    input_state.first_trade_confirm_frame = frame;
+                }
+                if (input_state.second_trade_stats_a_frame &&
+                    !input_state.second_trade_confirmed &&
+                    (second_cancel ||
+                     frame >= input_state.second_trade_stats_a_frame + 130)) {
+                    select_joypad_lines(second, true);
+                    second.set_button(gameboy::Button::a, true);
+                    input_state.second_trade_confirmed = true;
+                    input_state.second_trade_confirm_frame = frame;
+                }
+                if ((input_state.first_trade_confirmed &&
+                     frame < input_state.first_trade_confirm_frame + 6) ||
+                    (input_state.second_trade_confirmed &&
+                     frame < input_state.second_trade_confirm_frame + 6)) {
+                    if (input_state.first_trade_confirmed &&
+                        frame < input_state.first_trade_confirm_frame + 6) {
+                        select_joypad_lines(first, true);
+                        first.set_button(gameboy::Button::a, true);
+                    }
+                    if (input_state.second_trade_confirmed &&
+                        frame < input_state.second_trade_confirm_frame + 6) {
+                        select_joypad_lines(second, true);
+                        second.set_button(gameboy::Button::a, true);
+                    }
+                    return;
+                }
             }
             if (options.scenario == Scenario::battle) {
                 const auto menu_ready = frame >= scenario_start_delay;
@@ -932,9 +1254,7 @@ void apply_auto_inputs(const Options& options, const std::uint64_t frame,
                 }
             }
         }
-        if (frame % confirm_interval == 0 &&
-            (options.scenario != Scenario::battle ||
-             !input_state.battle_menu_started)) {
+        if (options.scenario == Scenario::none && frame % confirm_interval == 0) {
             select_joypad_lines(first, true);
             first.set_button(gameboy::Button::a, true);
             if (frame >= scenario_start_delay) {
@@ -990,8 +1310,28 @@ void append_auto_input_report(std::ostream& report,
            << "auto_player2_a_frame=" << input_state.second_battle_a_frame << '\n'
            << "auto_player1_table_frame=" << input_state.first_table_frame << '\n'
            << "auto_player2_table_frame=" << input_state.second_table_frame << '\n'
+           << "auto_player1_table_positioned="
+           << (input_state.first_table_positioned ? "yes" : "no") << '\n'
+           << "auto_player2_table_positioned="
+           << (input_state.second_table_positioned ? "yes" : "no") << '\n'
            << "auto_player1_table_a_frame=" << input_state.first_table_a_frame << '\n'
-           << "auto_player2_table_a_frame=" << input_state.second_table_a_frame << '\n';
+           << "auto_player2_table_a_frame=" << input_state.second_table_a_frame << '\n'
+           << "auto_player1_trade_selection_frame="
+           << input_state.first_trade_selection_frame << '\n'
+           << "auto_player2_trade_selection_frame="
+           << input_state.second_trade_selection_frame << '\n'
+           << "auto_player1_trade_right_frame="
+           << input_state.first_trade_right_frame << '\n'
+           << "auto_player2_trade_right_frame="
+           << input_state.second_trade_right_frame << '\n'
+           << "auto_player1_trade_stats_a_frame="
+           << input_state.first_trade_stats_a_frame << '\n'
+           << "auto_player2_trade_stats_a_frame="
+           << input_state.second_trade_stats_a_frame << '\n'
+           << "auto_player1_trade_confirm_frame="
+           << input_state.first_trade_confirm_frame << '\n'
+           << "auto_player2_trade_confirm_frame="
+           << input_state.second_trade_confirm_frame << '\n';
 }
 
 void release_auto_buttons(gameboy::Emulator& emulator) {
@@ -1063,6 +1403,12 @@ int main(int argc, char** argv) {
                 release_auto_buttons(first);
                 release_auto_buttons(second);
             }
+            // Full save states can capture one side of an in-flight serial
+            // byte. A new cable session must begin at a clean protocol
+            // boundary; otherwise the peer may wait forever for the other
+            // side's missing edge after the first menu exchange.
+            first.bus().serial_port().reset_link();
+            second.bus().serial_port().reset_link();
             if (is_pokemon) {
                 reset_pokemon_link_handshake(first);
                 reset_pokemon_link_handshake(second);
@@ -1145,8 +1491,13 @@ int main(int argc, char** argv) {
         first_endpoint.set_arbitration_priority(true);
         second_endpoint.set_arbitration_priority(false);
         if (is_pokemon) {
+            first.bus().serial_port().reset_link();
+            second.bus().serial_port().reset_link();
             reset_pokemon_link_handshake(first);
             reset_pokemon_link_handshake(second);
+        } else {
+            first.bus().serial_port().reset_link();
+            second.bus().serial_port().reset_link();
         }
         first_endpoint.attach(first.bus().serial_port(), client);
         second_endpoint.attach(second.bus().serial_port(), server);

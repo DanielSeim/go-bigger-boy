@@ -184,8 +184,11 @@ starts player one first, delays player two long enough for the host to establish
 the link, and stops as soon as the expected outcome is observed. Once both
 players reach the Cable Club map, the harness faces them toward the table and confirms
 the interaction; the battle scenario then moves both menu cursors to the second
-(Colosseum) option before confirming. Scenarios require `--state1` and
-`--state2`; this avoids guessing the players' positions from battery saves. If
+(Colosseum) option before confirming. The trade scenario selects the first
+party member on both sides, chooses `TRADE` in the stats menu, and accepts the
+trade confirmation after the game's synchronization delay. Scenarios require
+`--state1` and `--state2`; this avoids guessing the players' positions from
+battery saves. If
 the frame budget expires, the report includes `semantic_failure`, menu-seen
 flags, and the final localized map markers to identify which phase stalled.
 
