@@ -1299,7 +1299,17 @@ void apply_auto_inputs(const Options& options, const std::uint64_t frame,
                 }
             }
         }
-        if (options.scenario == Scenario::none && frame % confirm_interval == 0) {
+        const auto bootstrap_scenario =
+            options.scenario != Scenario::none &&
+            !input_state.first_table_started &&
+            !input_state.second_table_started &&
+            !input_state.battle_menu_started &&
+            !input_state.first_trade_choice_confirmed &&
+            !input_state.second_trade_choice_confirmed &&
+            !input_state.first_trade_selected &&
+            !input_state.second_trade_selected;
+        if ((options.scenario == Scenario::none || bootstrap_scenario) &&
+            frame % confirm_interval == 0) {
             select_joypad_lines(first, true);
             first.set_button(gameboy::Button::a, true);
             if (frame >= scenario_start_delay) {
