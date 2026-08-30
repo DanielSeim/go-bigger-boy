@@ -78,6 +78,10 @@ if(NOT ANDROID)
     add_executable(gameboy_test_runner apps/test_runner/main.cpp)
     target_link_libraries(gameboy_test_runner PRIVATE gbb_core_api)
     set_target_properties(gameboy_test_runner PROPERTIES OUTPUT_NAME gbb_test_runner)
+
+    add_executable(gameboy_link_harness apps/link_harness/main.cpp)
+    target_link_libraries(gameboy_link_harness PRIVATE gameboy_core)
+    set_target_properties(gameboy_link_harness PROPERTIES OUTPUT_NAME gbb_link_harness)
 endif()
 
 if(GAMEBOY_BUILD_SDL)
