@@ -236,16 +236,21 @@ void apply_auto_inputs(const Options& options, const std::uint64_t frame,
 void advance_pair(gameboy::Emulator& first, gameboy::Emulator& second,
                   gameboy::TcpSerialEndpoint& first_endpoint,
                   gameboy::TcpSerialEndpoint& second_endpoint,
-                  const std::uint64_t target_cycles) {
+                  const std::uint64_t cycles) {
+    const auto first_target = first.cpu().total_cycles() + cycles;
+    const auto second_target = second.cpu().total_cycles() + cycles;
     std::uint64_t next_poll = std::min(first.cpu().total_cycles(),
                                        second.cpu().total_cycles()) +
                               poll_interval_cycles;
-    while (first.cpu().total_cycles() < target_cycles ||
-           second.cpu().total_cycles() < target_cycles) {
-        if (first.cpu().total_cycles() <= second.cpu().total_cycles()) {
+    while (first.cpu().total_cycles() < first_target ||
+           second.cpu().total_cycles() < second_target) {
+        if (first.cpu().total_cycles() <= second.cpu().total_cycles() &&
+            first.cpu().total_cycles() < first_target) {
             static_cast<void>(first.step());
-        } else {
+        } else if (second.cpu().total_cycles() < second_target) {
             static_cast<void>(second.step());
+        } else {
+            static_cast<void>(first.step());
         }
         const auto now = std::min(first.cpu().total_cycles(),
                                   second.cpu().total_cycles());
@@ -354,7 +359,7 @@ int main(int argc, char** argv) {
         for (std::uint64_t frame = 0; frame < options.frames; ++frame) {
             apply_auto_inputs(options, frame, first, second);
             advance_pair(first, second, first_endpoint, second_endpoint,
-                         (frame + 1) * cycles_per_frame);
+                         cycles_per_frame);
         }
         if (options.auto_confirm) {
             first.set_button(gameboy::Button::a, false);
@@ -369,6 +374,7 @@ int main(int argc, char** argv) {
                << "title=" << first.bus().cartridge().title() << '\n'
                << "rom_fingerprint=" << hex(first.bus().cartridge().rom_fingerprint())
                << '\n'
+               << "state_inputs=" << (!options.state1.empty() ? "yes" : "no") << '\n'
                << "frames=" << options.frames << '\n'
                << "cycles=" << options.frames * cycles_per_frame << '\n'
                << "tcp_port=" << server.local_port() << '\n'
