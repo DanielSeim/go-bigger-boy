@@ -116,3 +116,44 @@ frame numbers are written in decimal for easier correlation with a reproduction.
 
 Network, WebRTC, Bluetooth, and USB transports should be added only after this
 deterministic local path is validated with link-enabled games.
+
+## Headless integration harness
+
+`gbb_link_harness` runs two real emulator cores over the TCP serial endpoint
+without writing back to the supplied ROM or save files. It reports handshake
+and transfer counters, unmatched responses, emulated time, and before/after
+battery-save fingerprints. The optional `--auto-confirm` mode sends periodic
+`A` pulses for Cable Club prompts; it is intended as a first-pass smoke test,
+not as a replacement for the manual trade/battle checklist.
+
+Keep private ROMs and saves under the ignored `roms/` directory and run:
+
+```sh
+./build-sdl/gbb_link_harness \
+  --rom roms/pokemon-blue.gb \
+  --save1 roms/player1.sav \
+  --save2 roms/player2.sav \
+  --frames 1200 --auto-confirm \
+  --report /tmp/gbb-link-report.txt
+```
+
+Battery saves contain cartridge RAM but not the CPU/WRAM position. For a run
+that starts directly at the Cable Club, first create one GBB full save state
+per player while each game is positioned at the same prompt, then add:
+
+```sh
+  --state1 /path/to/player1.gbbs \
+  --state2 /path/to/player2.gbbs
+```
+
+The two state files must be made from the same ROM and should be captured
+before attaching the link. The harness still imports the supplied battery
+saves, so save-state loading does not overwrite the originals.
+
+Use `--transport local` to run the same ROM/save pair through the deterministic
+in-process cable when the host operating system blocks loopback sockets. Use
+`--transport tcp` (the default) on a native desktop to exercise host/join TCP.
+
+The harness constructs cartridges from memory and imports each save, so the
+original `.sav` files remain unchanged. A nonzero exit status means that the
+TCP handshake could not be established or a supplied file was invalid.
