@@ -3131,8 +3131,8 @@ void write_portable_settings(const std::filesystem::path& preference_directory,
               "them. Android touch controls use a size multiplier and "
               "opacity between 0 and 1 plus separate portrait and landscape "
               "touch layouts. Video.Mode accepts nearest, bilinear, sharp, "
-              "integer, or lcd. Link.Diagnostics enables the opt-in local "
-              "link trace.\n\n"
+              "integer, or lcd. Link.Diagnostics enables the opt-in link "
+              "serial, CPU, and game-state trace.\n\n"
               "palette = "
            << gameboy::display_palettes[settings.palette].id << "\n"
               "video.Mode = "
@@ -5486,6 +5486,76 @@ std::uint64_t link_trace_frame{};
 std::uint64_t link_trace_session{};
 std::filesystem::path link_trace_path;
 
+struct LinkTracePrevious {
+    bool initialized{};
+    std::uint64_t first_completed{};
+    std::uint64_t second_completed{};
+    bool first_active{};
+    bool second_active{};
+};
+
+LinkTracePrevious link_trace_previous;
+
+void append_trace_cpu(std::ostream& output,
+                      const gameboy::Emulator& emulator) {
+    const auto& registers = emulator.cpu().registers();
+    output << " cpu_cycles=" << std::dec << emulator.cpu().total_cycles()
+           << " pc=" << std::hex << registers.pc
+           << " sp=" << registers.sp
+           << " halted=" << emulator.cpu().halted()
+           << " stopped=" << emulator.cpu().stopped();
+}
+
+void append_trace_pokemon(std::ostream& output,
+                          const gameboy::Emulator& emulator) {
+    if (!is_pokemon_gen1(emulator)) return;
+    const auto& bus = emulator.bus();
+    output << " game_link=" << std::hex << static_cast<unsigned>(bus.read8(0xD12B))
+           << " game_link_alt=" << static_cast<unsigned>(bus.read8(0xD130))
+           << " game_battle=" << static_cast<unsigned>(bus.read8(0xD057))
+           << " game_battle_type=" << static_cast<unsigned>(bus.read8(0xD05A))
+           << " party_count=" << static_cast<unsigned>(bus.read8(0xD163));
+}
+
+void append_trace_transfer_events(std::ostream& output,
+                                  const std::uint64_t first_completed,
+                                  const std::uint64_t second_completed,
+                                  const bool first_active,
+                                  const bool second_active,
+                                  const gameboy::SerialPort& first_serial,
+                                  const gameboy::SerialPort& second_serial) {
+    if (link_trace_previous.initialized) {
+        if (first_completed > link_trace_previous.first_completed) {
+            output << "event=serial_complete player=1 count=" << std::dec
+                   << first_completed << " tx=" << std::hex
+                   << static_cast<unsigned>(first_serial.last_transmitted())
+                   << " rx=" << static_cast<unsigned>(first_serial.last_received())
+                   << '\n';
+        }
+        if (second_completed > link_trace_previous.second_completed) {
+            output << "event=serial_complete player=2 count=" << std::dec
+                   << second_completed << " tx=" << std::hex
+                   << static_cast<unsigned>(second_serial.last_transmitted())
+                   << " rx=" << static_cast<unsigned>(second_serial.last_received())
+                   << '\n';
+        }
+        if (first_active != link_trace_previous.first_active) {
+            output << "event=serial_active player=1 value=" << first_active
+                   << " internal=" << first_serial.internal_clock()
+                   << " bits=" << std::dec
+                   << static_cast<unsigned>(first_serial.bits_shifted()) << '\n';
+        }
+        if (second_active != link_trace_previous.second_active) {
+            output << "event=serial_active player=2 value=" << second_active
+                   << " internal=" << second_serial.internal_clock()
+                   << " bits=" << std::dec
+                   << static_cast<unsigned>(second_serial.bits_shifted()) << '\n';
+        }
+    }
+    link_trace_previous = {true, first_completed, second_completed,
+                           first_active, second_active};
+}
+
 void start_link_trace(const std::filesystem::path& preference_path,
                       const char* role_suffix = nullptr) {
     // Prefer the OS temporary directory so traces remain writable even when
@@ -5509,6 +5579,7 @@ void start_link_trace(const std::filesystem::path& preference_path,
             (std::string{"link-trace"} + suffix + ".log")}};
     link_trace_frame = 0;
     link_trace_path.clear();
+    link_trace_previous = {};
     const auto session = ++link_trace_session;
     for (const auto& candidate : candidates) {
         if (candidate.empty()) continue;
@@ -5519,7 +5590,10 @@ void start_link_trace(const std::filesystem::path& preference_path,
         if (!link_trace.is_open()) continue;
         link_trace << "GBB link trace\n";
         link_trace << "session_start id=" << std::dec << session
-                   << " counters_reset=1\n";
+                   << " counters_reset=1"
+                   << " transport=" << (role_suffix == nullptr ? "local" : "tcp")
+                   << " role=" << (role_suffix == nullptr ? "local" : role_suffix);
+        link_trace << '\n';
         link_trace.flush();
         if (!link_trace.good()) {
             link_trace.close();
@@ -5540,6 +5614,7 @@ void stop_link_trace() noexcept {
     }
     link_trace_frame = 0;
     link_trace_path.clear();
+    link_trace_previous = {};
 }
 
 void trace_link_frame(const gameboy::Emulator& first,
@@ -5573,7 +5648,19 @@ void trace_link_frame(const gameboy::Emulator& first,
                << '/' << static_cast<unsigned>(second.bus().read8(0xFF0F))
                << " ie=" << static_cast<unsigned>(first.bus().read8(0xFFFF))
                << '/' << static_cast<unsigned>(second.bus().read8(0xFFFF))
-               << '\n';
+               << " phase=" << std::dec << first_serial.phase()
+               << '/' << second_serial.phase();
+    append_trace_cpu(link_trace, first);
+    append_trace_cpu(link_trace, second);
+    append_trace_pokemon(link_trace, first);
+    append_trace_pokemon(link_trace, second);
+    link_trace << '\n';
+    append_trace_transfer_events(link_trace,
+                                 first_serial.transfers_completed(),
+                                 second_serial.transfers_completed(),
+                                 first_serial.transfer_active(),
+                                 second_serial.transfer_active(),
+                                 first_serial, second_serial);
     link_trace.flush();
 }
 
@@ -5608,7 +5695,17 @@ void trace_remote_frame(const gameboy::Emulator& emulator,
                << " d=" << remote.endpoint.denials_received()
                << " D=" << remote.endpoint.denials_sent()
                << " u=" << remote.endpoint.responses_unmatched()
-               << " w=" << remote.endpoint.waiting_for_peer() << '\n';
+               << " w=" << remote.endpoint.waiting_for_peer()
+               << " phase=" << std::dec << serial.phase();
+    append_trace_cpu(link_trace, emulator);
+    append_trace_pokemon(link_trace, emulator);
+    link_trace << '\n';
+    append_trace_transfer_events(link_trace,
+                                 serial.transfers_completed(),
+                                 0,
+                                 serial.transfer_active(),
+                                 false,
+                                 serial, serial);
     link_trace.flush();
 }
 
