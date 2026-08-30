@@ -7422,6 +7422,7 @@ int main(int argc, char** argv) {
         auto reset_requested = false;
         auto link_toggle_requested = false;
         auto link_retry_requested = false;
+        auto automatic_local_retry_used = false;
         auto remote_host_requested = false;
         auto remote_join_requested = false;
         auto remote_stop_requested = false;
@@ -7644,9 +7645,28 @@ int main(int argc, char** argv) {
                                link_session != nullptr) {
                         retry_local_link_session(*emulator, *link_emulator,
                                                  *link_session);
+                        automatic_local_retry_used = false;
                     }
                 } catch (const std::exception& error) {
                     show_error(sdl.window, error.what());
+                }
+            }
+            // A stalled local session used to leave both consoles permanently
+            // frozen once LinkSession's transport watchdog expired. Recover
+            // the transient serial/guest handshake once, matching the manual
+            // Retry Link Handshake command, but do not loop forever if the
+            // peer or ROM is genuinely unavailable.
+            if (emulator != nullptr && link_emulator != nullptr &&
+                link_session != nullptr &&
+                link_session->state() == gameboy::LinkSession::State::timed_out &&
+                !automatic_local_retry_used) {
+                try {
+                    retry_local_link_session(*emulator, *link_emulator,
+                                             *link_session);
+                    automatic_local_retry_used = true;
+                } catch (const std::exception& error) {
+                    show_error(sdl.window, error.what());
+                    automatic_local_retry_used = true;
                 }
             }
             if (link_toggle_requested) {
@@ -7662,6 +7682,7 @@ int main(int argc, char** argv) {
                             current_rom, *emulator, link_emulator, link_session,
                             sdl, gameboy::display_palettes[display_palette],
                             preference_path, link_diagnostics);
+                        automatic_local_retry_used = false;
                         rewind = false;
                         rewind_history.clear();
                     }
@@ -7669,6 +7690,7 @@ int main(int argc, char** argv) {
                     show_error(sdl.window, error.what());
                 }
             }
+            if (link_emulator == nullptr) automatic_local_retry_used = false;
 #endif
 
             std::optional<std::string> dialog_error;

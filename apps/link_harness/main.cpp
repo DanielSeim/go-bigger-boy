@@ -40,10 +40,16 @@ constexpr std::uint16_t w_player_direction = 0xD52A;
 constexpr std::uint16_t w_player_sprite_direction = 0xC109;
 constexpr std::uint16_t w_trade_pointer_index = 0xCC38;
 constexpr std::uint16_t w_trade_menu = 0xCC49;
+constexpr std::uint16_t w_serial_sync_receive = 0xCC3D;
+constexpr std::uint16_t w_serial_nybble_receive = 0xCC3E;
+constexpr std::uint16_t w_serial_nybble_temp = 0xCC3F;
+constexpr std::uint16_t w_serial_nybble_send = 0xCC42;
+constexpr std::uint16_t w_unknown_serial_counter = 0xCC47;
 constexpr std::uint16_t w_text_box_id = 0xD125;
 constexpr std::uint16_t w_two_option_menu_id = 0xD12C;
 constexpr std::uint16_t party_mon_size = 0x2C;
 constexpr std::uint8_t link_state_battling = 0x04;
+constexpr std::uint8_t link_state_trading = 0x32;
 
 enum class Expectation { none, trade, battle };
 enum class Scenario { none, trade, battle };
@@ -302,7 +308,7 @@ bool contains_party_member_from(const PartySnapshot& destination,
 }
 
 bool plausible_link_state(const std::uint8_t state) {
-    return state <= 0x05 || state == 0x32;
+    return state <= 0x05 || state == link_state_trading;
 }
 
 std::uint8_t effective_link_state(const std::uint8_t primary,
@@ -406,6 +412,8 @@ bool at_cable_club_map(const gameboy::Emulator& emulator) {
     return is_club(primary) || is_club(localized);
 }
 
+std::uint16_t pokemon_wram_offset(const gameboy::Emulator& emulator);
+
 void select_joypad_lines(gameboy::Emulator& emulator, const bool actions) {
     // Save states taken while a menu is waiting often leave JOYP deselected
     // (0x30).  Select the relevant matrix before synthesising a button edge so
@@ -414,19 +422,11 @@ void select_joypad_lines(gameboy::Emulator& emulator, const bool actions) {
 }
 
 void set_facing_direction(gameboy::Emulator& emulator, const std::uint8_t direction) {
-    // The European Gen I build shifts these WRAM bytes by five. Select the
-    // layout from the current-map probe so an English run never overwrites
-    // the adjacent variable while applying the table-facing assist.
-    const auto primary_map = emulator.bus().read8(w_cur_map);
-    const auto localized_map = emulator.bus().read8(
-        static_cast<std::uint16_t>(w_cur_map + 5));
-    const auto is_club_map_id = [](const std::uint8_t map) {
-        return map == 0xEF || map == 0xF0;
-    };
-    const auto offset = !is_club_map_id(primary_map) &&
-                                is_club_map_id(localized_map)
-                            ? 5
-                            : 0;
+    // The European Gen I build shifts these WRAM bytes by five. Use the
+    // link-state probe rather than the map ID: before entering the Cable Club
+    // the primary map byte is also displaced, so a map-only check misses the
+    // receptionist interaction entirely.
+    const auto offset = pokemon_wram_offset(emulator);
     emulator.bus().write8(static_cast<std::uint16_t>(w_player_direction + offset),
                           direction);
     emulator.bus().write8(w_player_direction, direction);
@@ -737,8 +737,12 @@ struct AutoInputState {
     bool second_table_positioned{};
     bool first_table_confirmed{};
     bool second_table_confirmed{};
+    bool host_table_retry_sent{};
+    bool table_facing_assisted{};
+    bool peer_table_facing_assisted{};
     std::uint64_t first_table_frame{};
     std::uint64_t second_table_frame{};
+    std::uint64_t table_facing_frame{};
     std::uint64_t first_table_a_frame{};
     std::uint64_t second_table_a_frame{};
     bool first_trade_selected{};
@@ -803,11 +807,19 @@ void append_trace_player(std::ostream& output,
     field("halted", emulator.cpu().halted());
     field("stopped", emulator.cpu().stopped());
     field("ime", emulator.cpu().interrupts_enabled());
+    field("serial_new_data", bus.read8(0xFFA9), true);
     field("hr", bus.read8(0xFFAA), true);
+    field("rom_bank", bus.read8(0xFFB8), true);
     field("ab", bus.read8(0xFFAB), true);
     field("ac", bus.read8(0xFFAC), true);
     field("ad", bus.read8(0xFFAD), true);
     field("joyp", bus.read8(0xFF00), true);
+    field("joy_pressed", bus.read8(0xFFB3), true);
+    field("joy_held", bus.read8(0xFFB4), true);
+    field("joy5", bus.read8(0xFFB5), true);
+    field("lcdc", bus.read8(0xFF40), true);
+    field("ly", bus.read8(0xFF44), true);
+    field("vblank", bus.read8(0xFFD6), true);
     field("sb", serial.read_data(), true);
     field("sc", serial.read_control(), true);
     field("active", serial.transfer_active());
@@ -842,6 +854,11 @@ void append_trace_player(std::ostream& output,
     field("trade_selection", at_trade_selection_menu(emulator));
     field("trade_stats", at_trade_stats_menu(emulator));
     field("trade_cancel", at_trade_cancel_menu(emulator));
+    field("serial_nybble_send", bus.read8(w_serial_nybble_send), true);
+    field("serial_nybble_receive", bus.read8(w_serial_nybble_receive), true);
+    field("serial_nybble_temp", bus.read8(w_serial_nybble_temp), true);
+    field("serial_sync_receive", bus.read8(w_serial_sync_receive), true);
+    field("serial_unknown_counter", read16be(emulator, w_unknown_serial_counter), true);
     field("menu_y", bus.read8(w_top_menu_item_y), true);
     field("menu_x", bus.read8(w_top_menu_item_x), true);
     field("menu_current", bus.read8(static_cast<std::uint16_t>(w_top_menu_item_y + 2)));
@@ -864,19 +881,53 @@ void append_trace_player(std::ostream& output,
 }
 
 std::uint16_t pokemon_wram_offset(const gameboy::Emulator& emulator) {
-    const auto primary_map = emulator.bus().read8(w_cur_map);
-    const auto localized_map = emulator.bus().read8(
-        static_cast<std::uint16_t>(w_cur_map + 5));
-    const auto is_club_map_id = [](const std::uint8_t map) {
-        return map == 0xEF || map == 0xF0;
-    };
-    return !is_club_map_id(primary_map) && is_club_map_id(localized_map) ? 5 : 0;
+    const auto primary = emulator.bus().read8(w_link_state);
+    const auto localized = emulator.bus().read8(w_link_state_localized);
+    return !plausible_link_state(primary) && plausible_link_state(localized) ? 5 : 0;
 }
 
 std::uint8_t player_map_x(const gameboy::Emulator& emulator) {
     const auto offset = pokemon_wram_offset(emulator);
     return emulator.bus().read8(static_cast<std::uint16_t>(0xD362 + offset));
 }
+
+std::uint8_t player_map_y(const gameboy::Emulator& emulator) {
+    const auto offset = pokemon_wram_offset(emulator);
+    return emulator.bus().read8(static_cast<std::uint16_t>(0xD361 + offset));
+}
+
+struct SerialOwnershipSnapshot {
+    bool active{};
+    bool internal{};
+    std::uint8_t bits{};
+    std::uint8_t control{};
+
+    bool operator==(const SerialOwnershipSnapshot& other) const noexcept {
+        return active == other.active && internal == other.internal &&
+               bits == other.bits && control == other.control;
+    }
+
+    bool operator!=(const SerialOwnershipSnapshot& other) const noexcept {
+        return !(*this == other);
+    }
+};
+
+SerialOwnershipSnapshot serial_ownership(const gameboy::Emulator& emulator) {
+    const auto& serial = emulator.bus().serial_port();
+    return {serial.transfer_active(), serial.internal_clock(),
+            serial.bits_shifted(), serial.read_control()};
+}
+
+struct SerialProgressWatchdog {
+    std::uint64_t last_marker{};
+    std::uint64_t stalled_frames{};
+    std::uint64_t stall_frame{};
+    std::uint64_t ownership_transitions{};
+    SerialOwnershipSnapshot first_previous{};
+    SerialOwnershipSnapshot second_previous{};
+    bool initialized{};
+    bool stall_reported{};
+};
 
 class ScenarioTrace {
   public:
@@ -928,6 +979,10 @@ class ScenarioTrace {
                  << " auto_p2_table_positioned=" << input_state.second_table_positioned
                  << " auto_p1_table_confirmed=" << input_state.first_table_confirmed
                  << " auto_p2_table_confirmed=" << input_state.second_table_confirmed
+                 << " auto_host_table_retry_sent=" << input_state.host_table_retry_sent
+                 << " auto_table_facing_assisted=" << input_state.table_facing_assisted
+                 << " auto_peer_table_facing_assisted="
+                 << input_state.peer_table_facing_assisted
                  << " auto_p1_trade_selected=" << input_state.first_trade_selected
                  << " auto_p2_trade_selected=" << input_state.second_trade_selected
                  << " auto_p1_trade_choice=" << input_state.first_trade_choice_confirmed
@@ -946,6 +1001,44 @@ class ScenarioTrace {
         output_.flush();
     }
 
+    void write_serial_event(const std::uint64_t frame, const char* event,
+                            gameboy::Emulator& first,
+                            gameboy::Emulator& second,
+                            const char* session_state,
+                            const std::uint64_t session_transfers,
+                            const std::uint64_t stalled_frames = 0) {
+        if (!output_.is_open()) return;
+        WramBank1Guard first_bank(first);
+        WramBank1Guard second_bank(second);
+        const auto first_serial = serial_ownership(first);
+        const auto second_serial = serial_ownership(second);
+        output_ << "event=" << event << " frame=" << frame
+                << " link_session="
+                << (session_state == nullptr ? "tcp" : session_state)
+                << " session_transfers=" << session_transfers
+                << " stalled_frames=" << stalled_frames
+                << " p1_active=" << first_serial.active
+                << " p1_internal=" << first_serial.internal
+                << " p1_bits=" << static_cast<unsigned>(first_serial.bits)
+                << " p1_sc=0x" << std::hex
+                << static_cast<unsigned>(first_serial.control)
+                << " p2_active=" << std::dec << second_serial.active
+                << " p2_internal=" << second_serial.internal
+                << " p2_bits=" << static_cast<unsigned>(second_serial.bits)
+                << " p2_sc=0x" << std::hex
+                << static_cast<unsigned>(second_serial.control) << std::dec
+                << " p1_link=0x" << std::hex
+                << static_cast<unsigned>(first.bus().read8(w_link_state))
+                << " p1_link_alt=0x"
+                << static_cast<unsigned>(first.bus().read8(w_link_state_localized))
+                << " p2_link=0x"
+                << static_cast<unsigned>(second.bus().read8(w_link_state))
+                << " p2_link_alt=0x"
+                << static_cast<unsigned>(second.bus().read8(w_link_state_localized))
+                << std::dec << '\n';
+        output_.flush();
+    }
+
     [[nodiscard]] const std::filesystem::path& path() const noexcept { return path_; }
 
   private:
@@ -954,14 +1047,66 @@ class ScenarioTrace {
     std::uint64_t frame_{};
 };
 
+void update_serial_progress_watchdog(
+    ScenarioTrace& trace, const std::uint64_t frame,
+    gameboy::Emulator& first, gameboy::Emulator& second,
+    SerialProgressWatchdog& watchdog, const char* session_state,
+    const std::uint64_t session_transfers, const bool watch_trade_stall) {
+    WramBank1Guard first_bank(first);
+    WramBank1Guard second_bank(second);
+    const auto first_serial = serial_ownership(first);
+    const auto second_serial = serial_ownership(second);
+    const auto marker = session_transfers + first_serial.bits + second_serial.bits;
+    const auto first_link = effective_link_state(
+        first.bus().read8(w_link_state), first.bus().read8(w_link_state_localized));
+    const auto second_link = effective_link_state(
+        second.bus().read8(w_link_state), second.bus().read8(w_link_state_localized));
+    const auto post_menu_transfer =
+        watch_trade_stall && first_link == link_state_trading &&
+        second_link == link_state_trading &&
+        (first_serial.active || second_serial.active);
+    const auto ownership_changed =
+        watchdog.initialized &&
+        (first_serial != watchdog.first_previous ||
+         second_serial != watchdog.second_previous);
+    if (ownership_changed) {
+        ++watchdog.ownership_transitions;
+        trace.write_serial_event(frame, "serial_ownership_transition", first,
+                                 second, session_state, session_transfers);
+    }
+    if (!post_menu_transfer || !watchdog.initialized ||
+        marker != watchdog.last_marker) {
+        watchdog.stalled_frames = 0;
+    } else {
+        ++watchdog.stalled_frames;
+    }
+    watchdog.last_marker = marker;
+    watchdog.first_previous = first_serial;
+    watchdog.second_previous = second_serial;
+    watchdog.initialized = true;
+
+    constexpr std::uint64_t stall_threshold_frames = 120;
+    if (!watchdog.stall_reported && watchdog.stalled_frames >= stall_threshold_frames &&
+        post_menu_transfer) {
+        watchdog.stall_reported = true;
+        watchdog.stall_frame = frame;
+        trace.write_serial_event(frame, "post_menu_serial_stall", first, second,
+                                 session_state, session_transfers,
+                                 watchdog.stalled_frames);
+    }
+}
+
 void apply_auto_inputs(const Options& options, const std::uint64_t frame,
                        gameboy::Emulator& first, gameboy::Emulator& second,
                        AutoInputState& input_state) {
     if (!options.auto_confirm && options.scenario == Scenario::none) return;
+    WramBank1Guard first_bank(first);
+    WramBank1Guard second_bank(second);
     constexpr std::uint64_t confirm_interval = 24;
     if (!options.state1.empty()) {
         const auto scenario_start_delay = options.scenario == Scenario::none ? 24 : 120;
         if (options.scenario != Scenario::none) {
+            constexpr std::uint64_t peer_table_delay = 120;
             const auto first_club = at_cable_club_map(first);
             const auto second_club = at_cable_club_map(second);
             if (first_club && !input_state.first_table_started) {
@@ -971,7 +1116,9 @@ void apply_auto_inputs(const Options& options, const std::uint64_t frame,
                 input_state.first_table_frame = frame;
                 return;
             }
-            if (second_club && !input_state.second_table_started) {
+            if (second_club && !input_state.second_table_started &&
+                input_state.first_table_started &&
+                frame >= input_state.first_table_frame + peer_table_delay) {
                 select_joypad_lines(second, false);
                 second.set_button(gameboy::Button::left, true);
                 input_state.second_table_started = true;
@@ -1010,45 +1157,65 @@ void apply_auto_inputs(const Options& options, const std::uint64_t frame,
             }
             first.set_button(gameboy::Button::right, false);
             second.set_button(gameboy::Button::left, false);
+            first.set_button(gameboy::Button::a, false);
+            second.set_button(gameboy::Button::a, false);
             const auto link_ready =
                 effective_link_state(first.bus().read8(w_link_state),
                                      first.bus().read8(w_link_state_localized)) == 1 &&
                 effective_link_state(second.bus().read8(w_link_state),
                                      second.bus().read8(w_link_state_localized)) == 1;
-            if (input_state.first_table_started && input_state.second_table_started &&
+            if (input_state.first_table_started &&
                 input_state.first_table_positioned &&
-                input_state.second_table_positioned &&
                 !input_state.first_table_confirmed &&
-                !input_state.second_table_confirmed &&
                 link_ready &&
-                frame >= std::max(input_state.first_table_frame,
-                                  input_state.second_table_frame) + 4) {
+                frame >= input_state.first_table_frame + 4) {
                 set_facing_direction(first, 0x0C);
-                set_facing_direction(second, 0x08);
+                if (input_state.second_table_positioned) {
+                    set_facing_direction(second, 0x08);
+                }
+                if (!input_state.table_facing_assisted) {
+                    input_state.table_facing_assisted = true;
+                    input_state.table_facing_frame = frame;
+                    return;
+                }
+                if (frame < input_state.table_facing_frame + 2) return;
                 select_joypad_lines(first, true);
-                select_joypad_lines(second, true);
                 first.set_button(gameboy::Button::a, true);
-                second.set_button(gameboy::Button::a, true);
                 input_state.first_table_confirmed = true;
-                input_state.second_table_confirmed = true;
                 input_state.first_table_a_frame = frame;
-                input_state.second_table_a_frame = frame;
                 return;
             }
-            if ((input_state.first_table_confirmed &&
-                 frame < input_state.first_table_a_frame + 6) ||
-                (input_state.second_table_confirmed &&
-                 frame < input_state.second_table_a_frame + 6)) {
-                if (input_state.first_table_confirmed &&
-                    frame < input_state.first_table_a_frame + 6) {
+            if (input_state.first_table_confirmed &&
+                !input_state.second_table_confirmed) {
+                if (frame < input_state.first_table_a_frame + 6) {
                     select_joypad_lines(first, true);
                     first.set_button(gameboy::Button::a, true);
+                    return;
                 }
-                if (input_state.second_table_confirmed &&
-                    frame < input_state.second_table_a_frame + 6) {
+                if (input_state.second_table_positioned &&
+                    frame >= input_state.first_table_a_frame + 8) {
+                    set_facing_direction(second, 0x08);
+                    if (!input_state.peer_table_facing_assisted) {
+                        input_state.peer_table_facing_assisted = true;
+                        return;
+                    }
+                    if (!input_state.host_table_retry_sent) {
+                        select_joypad_lines(first, true);
+                        first.set_button(gameboy::Button::a, true);
+                        input_state.host_table_retry_sent = true;
+                        return;
+                    }
                     select_joypad_lines(second, true);
                     second.set_button(gameboy::Button::a, true);
+                    input_state.second_table_confirmed = true;
+                    input_state.second_table_a_frame = frame;
                 }
+                return;
+            }
+            if (input_state.second_table_confirmed &&
+                frame < input_state.second_table_a_frame + 6) {
+                select_joypad_lines(second, true);
+                second.set_button(gameboy::Button::a, true);
                 return;
             }
             if (options.scenario == Scenario::trade) {
@@ -1056,8 +1223,10 @@ void apply_auto_inputs(const Options& options, const std::uint64_t frame,
                 // entered the Cable Club and are looking at the trade/battle
                 // choice. This is the most reliable starting point for a
                 // manual repro and avoids requiring a second table prompt.
-                const auto first_choice = at_ready_link_choice(first);
-                const auto second_choice = at_ready_link_choice(second);
+                const auto first_choice = !input_state.first_table_started &&
+                                          at_ready_link_choice(first);
+                const auto second_choice = !input_state.second_table_started &&
+                                           at_ready_link_choice(second);
                 if (first_choice && !input_state.first_trade_choice_confirmed) {
                     select_joypad_lines(first, true);
                     first.set_button(gameboy::Button::a, true);
@@ -1310,9 +1479,19 @@ void apply_auto_inputs(const Options& options, const std::uint64_t frame,
             !input_state.second_trade_selected;
         if ((options.scenario == Scenario::none || bootstrap_scenario) &&
             frame % confirm_interval == 0) {
+            if (options.scenario != Scenario::none &&
+                !at_cable_club_map(first) && player_map_x(first) == 0x0B &&
+                player_map_y(first) == 0x03) {
+                set_facing_direction(first, 0x04);
+            }
             select_joypad_lines(first, true);
             first.set_button(gameboy::Button::a, true);
             if (frame >= scenario_start_delay) {
+                if (options.scenario != Scenario::none &&
+                    !at_cable_club_map(second) && player_map_x(second) == 0x0B &&
+                    player_map_y(second) == 0x03) {
+                    set_facing_direction(second, 0x04);
+                }
                 select_joypad_lines(second, true);
                 second.set_button(gameboy::Button::a, true);
             }
@@ -1371,6 +1550,9 @@ void append_auto_input_report(std::ostream& report,
            << (input_state.second_table_positioned ? "yes" : "no") << '\n'
            << "auto_player1_table_a_frame=" << input_state.first_table_a_frame << '\n'
            << "auto_player2_table_a_frame=" << input_state.second_table_a_frame << '\n'
+           << "auto_table_facing_assisted="
+           << (input_state.table_facing_assisted ? "yes" : "no") << '\n'
+           << "auto_table_facing_frame=" << input_state.table_facing_frame << '\n'
            << "auto_player1_trade_selection_frame="
            << input_state.first_trade_selection_frame << '\n'
            << "auto_player2_trade_selection_frame="
@@ -1415,8 +1597,9 @@ void advance_pair(gameboy::Emulator& first, gameboy::Emulator& second,
                               poll_interval_cycles;
     while (first.cpu().total_cycles() < first_target ||
            second.cpu().total_cycles() < second_target) {
-        if (first.cpu().total_cycles() <= second.cpu().total_cycles() &&
-            first.cpu().total_cycles() < first_target) {
+        const auto first_cycles = first.cpu().total_cycles();
+        const auto second_cycles = second.cpu().total_cycles();
+        if (first_cycles <= second_cycles && first_cycles < first_target) {
             static_cast<void>(first.step());
         } else if (second.cpu().total_cycles() < second_target) {
             static_cast<void>(second.step());
@@ -1449,6 +1632,11 @@ int main(int argc, char** argv) {
         if (!options.state1.empty()) {
             first.load_state(read_bytes(options.state1));
             second.load_state(read_bytes(options.state2));
+            // A save state captures the renderer's pending-frame flag. The
+            // harness owns one complete video frame per iteration, so clear
+            // that stale presentation marker before driving the link.
+            first.consume_frame();
+            second.consume_frame();
         }
         SemanticTracker tracker(first, second);
         const auto initial_save1 = first.export_battery_save();
@@ -1482,6 +1670,7 @@ int main(int argc, char** argv) {
             session.start(first, second);
             AutoInputState input_state;
             ScenarioTrace trace(options.trace, "local", options.scenario);
+            SerialProgressWatchdog serial_watchdog;
             std::uint64_t frames_run = 0;
             for (std::uint64_t frame = 0; frame < options.frames; ++frame) {
                 apply_auto_inputs(options, frame, first, second, input_state);
@@ -1491,6 +1680,13 @@ int main(int argc, char** argv) {
                                   nullptr, nullptr,
                                   link_session_state_name(session.state()),
                                   session.transfers_completed());
+                first.consume_frame();
+                second.consume_frame();
+                update_serial_progress_watchdog(
+                    trace, frame + 1, first, second, serial_watchdog,
+                    link_session_state_name(session.state()),
+                    session.transfers_completed(),
+                    options.scenario == Scenario::trade);
                 frames_run = frame + 1;
                 if (options.scenario != Scenario::none &&
                     expectation_satisfied(tracker, options.expectation)) {
@@ -1516,6 +1712,12 @@ int main(int argc, char** argv) {
                    << "frames=" << frames_run << '\n'
                    << "cycles=" << frames_run * cycles_per_frame << '\n'
                    << "transfers_completed=" << session.transfers_completed() << '\n'
+                   << "serial_stall_detected="
+                   << (serial_watchdog.stall_reported ? "yes" : "no") << '\n'
+                   << "serial_stall_frame=" << serial_watchdog.stall_frame << '\n'
+                   << "serial_stall_frames=" << serial_watchdog.stalled_frames << '\n'
+                   << "serial_ownership_transitions="
+                   << serial_watchdog.ownership_transitions << '\n'
                    << "trace=" << (options.trace.empty() ? "none" : options.trace.string())
                    << '\n'
                    << "save1_before=" << hex(fingerprint(initial_save1)) << '\n'
@@ -1578,6 +1780,7 @@ int main(int argc, char** argv) {
 
         AutoInputState input_state;
         ScenarioTrace trace(options.trace, "tcp", options.scenario);
+        SerialProgressWatchdog serial_watchdog;
         if (options.scenario != Scenario::none) {
             release_auto_buttons(first);
             release_auto_buttons(second);
@@ -1590,6 +1793,11 @@ int main(int argc, char** argv) {
             tracker.sample(first, second);
             trace.write_frame(frame + 1, first, second, input_state,
                               &first_endpoint, &second_endpoint);
+            update_serial_progress_watchdog(
+                trace, frame + 1, first, second, serial_watchdog, nullptr,
+                first_endpoint.transfers_completed() +
+                    second_endpoint.transfers_completed(),
+                options.scenario == Scenario::trade);
             frames_run = frame + 1;
             if (options.scenario != Scenario::none &&
                 expectation_satisfied(tracker, options.expectation)) {
@@ -1629,6 +1837,12 @@ int main(int argc, char** argv) {
                << "join_unmatched_responses=" << second_endpoint.responses_unmatched() << '\n'
                << "host_transfers_completed=" << first_endpoint.transfers_completed() << '\n'
                << "join_transfers_completed=" << second_endpoint.transfers_completed() << '\n'
+               << "serial_stall_detected="
+               << (serial_watchdog.stall_reported ? "yes" : "no") << '\n'
+               << "serial_stall_frame=" << serial_watchdog.stall_frame << '\n'
+               << "serial_stall_frames=" << serial_watchdog.stalled_frames << '\n'
+               << "serial_ownership_transitions="
+               << serial_watchdog.ownership_transitions << '\n'
                << "save1_before=" << hex(fingerprint(initial_save1)) << '\n'
                << "save1_after=" << hex(fingerprint(final_save1)) << '\n'
                << "save2_before=" << hex(fingerprint(initial_save2)) << '\n'

@@ -83,6 +83,23 @@ internal clock holds its first edge until the peer has armed its serial
 receiver; this avoids losing a startup byte when the two emulated CPUs reach
 the handshake a few instructions apart, without slowing either CPU.
 
+### Follow-up: trade transition latency and audio continuity
+
+Manual two-instance validation has confirmed that two trades (with a reset
+between them) and a battle complete successfully. The remaining user-visible
+issue is that Pokémon can remain on `BITTE WARTEN` before a trade and
+`TAUSCH VOLLZOGEN` afterward for a comparatively long interval. During those
+intervals the currently playing sound can repeat, which makes the emulator
+appear stuck even though the transfer eventually completes.
+
+This is tracked as a performance/UX follow-up, not as a currently failing link
+protocol. The next investigation should record timestamps for the trade state
+transitions and serial byte progress, then determine whether the delay is in
+the guest's synchronization loop or in cable scheduling. The audio path should
+also remain fed while a link wait is in progress so an audio underflow cannot
+replay the last buffer. Any timing optimization must preserve the now-working
+trade and battle handshake and the bounded timeout-retry recovery.
+
 On desktop, **Emulation → Host TCP Link** (`Ctrl+Shift+H`) listens on
 `127.0.0.1:8765`, while **Join TCP Link** (`Ctrl+Shift+J`) connects to that
 endpoint. Use one emulator instance in host mode and another in join mode,
@@ -200,6 +217,22 @@ response, denial, and waiting counters. The `auto_*` fields show which phase
 of the scenario input driver has been reached. A `trace_end` record makes
 partial files from a crashed or forcibly stopped run easy to identify. The
 trace is opt-in and is never written unless this option is supplied.
+
+During a scripted trade run, the harness also watches for a narrow post-menu
+serial deadlock: both games
+must be in `LINK_STATE_TRADING`, at least one serial port must still be active,
+and no serial bit or byte may complete for 120 consecutive emulated frames.
+When that condition is met, the report sets `serial_stall_detected=yes` and
+records the frame and duration. The trace contains a `post_menu_serial_stall`
+event with both ports' active/internal-clock ownership, bit counts, SC values,
+and link-state probes. `serial_ownership_transition` events record every
+change to those serial fields, making it possible to distinguish a guest-level
+wait from a cable arbitration problem. This watchdog is diagnostic-only in
+the harness. In the desktop local-link frontend, an expired transport
+watchdog triggers one guarded automatic retry of the existing link-handshake
+recovery path. A second timeout remains visible as `TIMED OUT` so a persistent
+failure cannot cause an endless reset loop; the manual Retry Link Handshake
+command remains available.
 
 For example, a local battle assertion is:
 
