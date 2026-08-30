@@ -154,6 +154,24 @@ Use `--transport local` to run the same ROM/save pair through the deterministic
 in-process cable when the host operating system blocks loopback sockets. Use
 `--transport tcp` (the default) on a native desktop to exercise host/join TCP.
 
+The harness can also assert the game-level result, rather than treating serial
+traffic alone as success. Add `--expect trade` for a trade run or
+`--expect battle` for a battle run. A trade is accepted only when both parties'
+snapshots changed and each final party contains a complete Pokémon record that
+came from the other party's initial snapshot. A battle is accepted only after
+both emulators have entered the link-battle state during the run. The report
+always includes the before/after party summaries, change flags, and the
+`trade_observed`/`battle_observed` results. With `--expect`, a missing semantic
+result is reported and the process exits nonzero even when all TCP transfers
+completed; this prevents a reserved-area, timeout, or partial battle from
+being mistaken for a successful test.
+
+The party and link-state probes understand the five-byte WRAM displacement used
+by the European Gen I translations, so the same assertions work with the
+German Pokémon Blue ROM. The two `*_link_state_localized_final` fields are the
+alternate probe values and are retained in the report for diagnosing a ROM
+layout mismatch.
+
 The harness constructs cartridges from memory and imports each save, so the
 original `.sav` files remain unchanged. A nonzero exit status means that the
 TCP handshake could not be established or a supplied file was invalid.
