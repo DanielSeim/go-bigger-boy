@@ -178,6 +178,29 @@ German Pokémon Blue ROM. The two `*_link_state_localized_final` fields are the
 alternate probe values and are retained in the report for diagnosing a ROM
 layout mismatch.
 
+For a reproducible scripted run, use `--scenario trade` or `--scenario battle`
+with the two Cable Club save states. The scenario enables confirmation input,
+starts player one first, delays player two long enough for the host to establish
+the link, and stops as soon as the expected outcome is observed. Once both
+players reach the Cable Club map, the harness faces them toward the table and confirms
+the interaction; the battle scenario then moves both menu cursors to the second
+(Colosseum) option before confirming. Scenarios require `--state1` and
+`--state2`; this avoids guessing the players' positions from battery saves. If
+the frame budget expires, the report includes `semantic_failure`, menu-seen
+flags, and the final localized map markers to identify which phase stalled.
+
+For example, a local battle assertion is:
+
+```sh
+./build-sdl/gbb_link_harness --transport local \
+  --rom roms/pokemon-blue.gb --save1 roms/player1.sav --save2 roms/player2.sav \
+  --state1 roms/player1.gbbs --state2 roms/player2.gbbs \
+  --scenario battle --frames 1800 --report /tmp/gbb-battle-report.txt
+```
+
 The harness constructs cartridges from memory and imports each save, so the
 original `.sav` files remain unchanged. A nonzero exit status means that the
 TCP handshake could not be established or a supplied file was invalid.
+The semantic failure code distinguishes unchanged party snapshots, an
+incomplete trade after the shared menu, and a battle that never started after
+both players reached that menu.

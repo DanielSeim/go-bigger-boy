@@ -31,10 +31,17 @@ constexpr std::uint16_t w_link_state_localized = w_link_state + 5;
 constexpr std::uint16_t w_party_count = 0xD163;
 constexpr std::uint16_t w_party_mon1 = 0xD16B;
 constexpr std::uint16_t w_is_in_battle = 0xD057;
+constexpr std::uint16_t w_is_in_battle_localized = w_is_in_battle + 5;
+constexpr std::uint16_t w_top_menu_item_y = 0xCC24;
+constexpr std::uint16_t w_top_menu_item_x = 0xCC25;
+constexpr std::uint16_t w_cur_map = 0xD35E;
+constexpr std::uint16_t w_player_direction = 0xD52A;
+constexpr std::uint16_t w_player_sprite_direction = 0xC109;
 constexpr std::uint16_t party_mon_size = 0x2C;
 constexpr std::uint8_t link_state_battling = 0x04;
 
 enum class Expectation { none, trade, battle };
+enum class Scenario { none, trade, battle };
 
 struct Options {
     std::filesystem::path rom;
@@ -49,6 +56,7 @@ struct Options {
     bool local{};
     bool auto_confirm{};
     Expectation expectation = Expectation::none;
+    Scenario scenario = Scenario::none;
 };
 
 void usage() {
@@ -56,7 +64,8 @@ void usage() {
         << "Usage: gbb_link_harness --rom ROM --save1 SAVE --save2 SAVE "
            "[--state1 STATE --state2 STATE] "
            "[--transport tcp|local] [--frames N] [--port N] "
-           "[--auto-confirm] [--expect trade|battle] [--report PATH]\n";
+           "[--auto-confirm] [--scenario trade|battle] "
+           "[--expect trade|battle] [--report PATH]\n";
 }
 
 std::uint64_t parse_positive(const std::string& text, const char* name) {
@@ -111,6 +120,18 @@ Options parse_options(const int argc, char** argv) {
             }
         } else if (argument == "--auto-confirm") {
             options.auto_confirm = true;
+        } else if (argument == "--scenario") {
+            const auto value = require_value("--scenario");
+            if (value == "trade") {
+                options.scenario = Scenario::trade;
+                options.expectation = Expectation::trade;
+            } else if (value == "battle") {
+                options.scenario = Scenario::battle;
+                options.expectation = Expectation::battle;
+            } else {
+                throw std::invalid_argument("unknown scenario: " + value);
+            }
+            options.auto_confirm = true;
         } else if (argument == "--expect") {
             const auto value = require_value("--expect");
             if (value == "trade") {
@@ -136,6 +157,17 @@ Options parse_options(const int argc, char** argv) {
     }
     if (options.state1.empty() != options.state2.empty()) {
         throw std::invalid_argument("--state1 and --state2 must be provided together");
+    }
+    if ((options.scenario == Scenario::trade &&
+         options.expectation != Expectation::trade) ||
+        (options.scenario == Scenario::battle &&
+         options.expectation != Expectation::battle)) {
+        throw std::invalid_argument(
+            "--scenario and --expect must refer to the same outcome");
+    }
+    if (options.scenario != Scenario::none && options.state1.empty()) {
+        throw std::invalid_argument(
+            "--scenario requires --state1 and --state2 for reproducible input");
     }
     return options;
 }
@@ -270,6 +302,66 @@ std::uint8_t effective_link_state(const std::uint8_t primary,
     return plausible_link_state(primary) ? primary : alternate;
 }
 
+bool at_battle_trade_menu(const gameboy::Emulator& emulator) {
+    const auto matches_layout = [&](const std::uint16_t offset) {
+        const auto top_y = emulator.bus().read8(offset);
+        const auto top_x = emulator.bus().read8(
+            static_cast<std::uint16_t>(offset + 1));
+        const auto current = emulator.bus().read8(
+            static_cast<std::uint16_t>(offset + 2));
+        const auto maximum = emulator.bus().read8(
+            static_cast<std::uint16_t>(offset + 4));
+        const auto watched_keys = emulator.bus().read8(
+            static_cast<std::uint16_t>(offset + 5));
+        const auto cursor_low = emulator.bus().read8(
+            static_cast<std::uint16_t>(offset + 12));
+        const auto cursor_high = emulator.bus().read8(
+            static_cast<std::uint16_t>(offset + 13));
+        return top_y == 0x07 && (top_x == 0x05 || top_x == 0x06) && current <= 0x02 &&
+               maximum == 0x02 && watched_keys == 0x03 &&
+               (cursor_high & 0x80U) != 0 && cursor_low != 0;
+    };
+    return matches_layout(w_top_menu_item_y) ||
+           matches_layout(static_cast<std::uint16_t>(w_top_menu_item_y + 5));
+}
+
+bool at_cable_club_map(const gameboy::Emulator& emulator) {
+    const auto primary = emulator.bus().read8(w_cur_map);
+    const auto localized = emulator.bus().read8(static_cast<std::uint16_t>(w_cur_map + 5));
+    const auto is_club = [](const std::uint8_t map) {
+        return map == 0xEF || map == 0xF0;
+    };
+    return is_club(primary) || is_club(localized);
+}
+
+void select_joypad_lines(gameboy::Emulator& emulator, const bool actions) {
+    // Save states taken while a menu is waiting often leave JOYP deselected
+    // (0x30).  Select the relevant matrix before synthesising a button edge so
+    // the edge raises the normal joypad interrupt and wakes a halted CPU.
+    emulator.bus().write8(0xFF00, actions ? 0x10 : 0x20);
+}
+
+void set_facing_direction(gameboy::Emulator& emulator, const std::uint8_t direction) {
+    // The European Gen I build shifts these WRAM bytes by five. Select the
+    // layout from the current-map probe so an English run never overwrites
+    // the adjacent variable while applying the table-facing assist.
+    const auto primary_map = emulator.bus().read8(w_cur_map);
+    const auto localized_map = emulator.bus().read8(
+        static_cast<std::uint16_t>(w_cur_map + 5));
+    const auto is_club_map_id = [](const std::uint8_t map) {
+        return map == 0xEF || map == 0xF0;
+    };
+    const auto offset = !is_club_map_id(primary_map) &&
+                                is_club_map_id(localized_map)
+                            ? 5
+                            : 0;
+    emulator.bus().write8(
+        static_cast<std::uint16_t>(w_player_direction + offset), direction);
+    emulator.bus().write8(static_cast<std::uint16_t>(
+                              w_player_sprite_direction + offset),
+                          direction);
+}
+
 std::string party_text(const PartySnapshot& party) {
     if (!party.valid) return "unavailable";
     std::ostringstream output;
@@ -290,12 +382,18 @@ struct SemanticTracker {
     PartySnapshot final_second;
     bool first_battle_seen{};
     bool second_battle_seen{};
+    bool first_battle_trade_menu_seen{};
+    bool second_battle_trade_menu_seen{};
     std::uint8_t first_link_state{};
     std::uint8_t second_link_state{};
     std::uint8_t first_link_state_localized{};
     std::uint8_t second_link_state_localized{};
     std::uint8_t first_battle_state{};
     std::uint8_t second_battle_state{};
+    std::uint8_t first_battle_state_localized{};
+    std::uint8_t second_battle_state_localized{};
+    std::uint8_t first_map_localized{};
+    std::uint8_t second_map_localized{};
 
     SemanticTracker(gameboy::Emulator& first, gameboy::Emulator& second) {
         WramBank1Guard first_bank(first);
@@ -317,16 +415,28 @@ struct SemanticTracker {
         second_link_state_localized = second.bus().read8(w_link_state_localized);
         first_battle_state = first.bus().read8(w_is_in_battle);
         second_battle_state = second.bus().read8(w_is_in_battle);
+        first_battle_state_localized = first.bus().read8(w_is_in_battle_localized);
+        second_battle_state_localized = second.bus().read8(w_is_in_battle_localized);
+        first_map_localized = first.bus().read8(static_cast<std::uint16_t>(w_cur_map + 5));
+        second_map_localized = second.bus().read8(static_cast<std::uint16_t>(w_cur_map + 5));
+        first_battle_trade_menu_seen =
+            first_battle_trade_menu_seen || at_battle_trade_menu(first);
+        second_battle_trade_menu_seen =
+            second_battle_trade_menu_seen || at_battle_trade_menu(second);
         const auto first_effective_link_state =
             effective_link_state(first_link_state, first_link_state_localized);
         const auto second_effective_link_state =
             effective_link_state(second_link_state, second_link_state_localized);
         first_battle_seen = first_battle_seen ||
                             first_effective_link_state == link_state_battling ||
-                            (first_battle_state != 0 && first_battle_state != 0xFF);
+                            (first_battle_state != 0 && first_battle_state != 0xFF) ||
+                            (first_battle_state_localized != 0 &&
+                             first_battle_state_localized != 0xFF);
         second_battle_seen = second_battle_seen ||
                              second_effective_link_state == link_state_battling ||
-                             (second_battle_state != 0 && second_battle_state != 0xFF);
+                             (second_battle_state != 0 && second_battle_state != 0xFF) ||
+                             (second_battle_state_localized != 0 &&
+                              second_battle_state_localized != 0xFF);
     }
 
     bool trade_observed() const {
@@ -365,6 +475,36 @@ bool expectation_satisfied(const SemanticTracker& tracker,
     return false;
 }
 
+const char* semantic_failure(const SemanticTracker& tracker,
+                             const Expectation expectation) {
+    if (expectation_satisfied(tracker, expectation)) return "none";
+    if (expectation == Expectation::trade) {
+        if (!tracker.initial_first.valid || !tracker.initial_second.valid) {
+            return "initial_party_snapshot_unavailable";
+        }
+        if (!tracker.final_first.valid || !tracker.final_second.valid) {
+            return "final_party_snapshot_unavailable";
+        }
+        if (!tracker.first_party_changed() || !tracker.second_party_changed()) {
+            if (tracker.first_battle_trade_menu_seen ||
+                tracker.second_battle_trade_menu_seen) {
+                return "trade_not_completed_after_menu";
+            }
+            return "party_snapshots_unchanged";
+        }
+        return "no_cross_party_record_observed";
+    }
+    if (!tracker.first_battle_seen && !tracker.second_battle_seen) {
+        if (tracker.first_battle_trade_menu_seen &&
+            tracker.second_battle_trade_menu_seen) {
+            return "battle_not_started_after_menu";
+        }
+        return "neither_player_entered_battle";
+    }
+    if (!tracker.first_battle_seen) return "player1_did_not_enter_battle";
+    return "player2_did_not_enter_battle";
+}
+
 void append_semantic_report(std::ostream& report,
                             const SemanticTracker& tracker,
                             const Expectation expectation) {
@@ -379,14 +519,23 @@ void append_semantic_report(std::ostream& report,
            << "battle_observed=" << (tracker.battle_observed() ? "yes" : "no") << '\n'
            << "expectation_satisfied="
            << (expectation_satisfied(tracker, expectation) ? "yes" : "no") << '\n'
+           << "semantic_failure=" << semantic_failure(tracker, expectation) << '\n'
            << "player1_battle_seen=" << (tracker.first_battle_seen ? "yes" : "no") << '\n'
            << "player2_battle_seen=" << (tracker.second_battle_seen ? "yes" : "no") << '\n'
+           << "player1_battle_trade_menu_seen="
+           << (tracker.first_battle_trade_menu_seen ? "yes" : "no") << '\n'
+           << "player2_battle_trade_menu_seen="
+           << (tracker.second_battle_trade_menu_seen ? "yes" : "no") << '\n'
            << "player1_link_state_final=" << hex(tracker.first_link_state) << '\n'
            << "player2_link_state_final=" << hex(tracker.second_link_state) << '\n'
            << "player1_link_state_localized_final=" << hex(tracker.first_link_state_localized) << '\n'
            << "player2_link_state_localized_final=" << hex(tracker.second_link_state_localized) << '\n'
            << "player1_battle_state_final=" << hex(tracker.first_battle_state) << '\n'
            << "player2_battle_state_final=" << hex(tracker.second_battle_state) << '\n';
+    report << "player1_battle_state_localized_final=" << hex(tracker.first_battle_state_localized) << '\n'
+           << "player2_battle_state_localized_final=" << hex(tracker.second_battle_state_localized) << '\n';
+    report << "player1_map_localized_final=" << hex(tracker.first_map_localized) << '\n'
+           << "player2_map_localized_final=" << hex(tracker.second_map_localized) << '\n';
 }
 
 std::vector<std::uint8_t> read_bytes(const std::filesystem::path& path) {
@@ -459,17 +608,184 @@ void reset_pokemon_link_handshake(gameboy::Emulator& emulator) {
         0xFF0F, static_cast<std::uint8_t>(emulator.bus().read8(0xFF0F) & ~0x08U));
 }
 
+struct AutoInputState {
+    bool first_battle_menu_moved{};
+    bool second_battle_menu_moved{};
+    bool first_battle_confirmed{};
+    bool second_battle_confirmed{};
+    bool battle_menu_started{};
+    std::uint64_t first_battle_menu_frame{};
+    std::uint64_t second_battle_menu_frame{};
+    std::uint64_t first_battle_down_frame{};
+    std::uint64_t second_battle_down_frame{};
+    std::uint64_t first_battle_a_frame{};
+    std::uint64_t second_battle_a_frame{};
+    bool first_table_started{};
+    bool second_table_started{};
+    bool first_table_confirmed{};
+    bool second_table_confirmed{};
+    std::uint64_t first_table_frame{};
+    std::uint64_t second_table_frame{};
+    std::uint64_t first_table_a_frame{};
+    std::uint64_t second_table_a_frame{};
+};
+
 void apply_auto_inputs(const Options& options, const std::uint64_t frame,
-                       gameboy::Emulator& first, gameboy::Emulator& second) {
-    if (!options.auto_confirm) return;
+                       gameboy::Emulator& first, gameboy::Emulator& second,
+                       AutoInputState& input_state) {
+    if (!options.auto_confirm && options.scenario == Scenario::none) return;
     constexpr std::uint64_t confirm_interval = 24;
     if (!options.state1.empty()) {
-        if (frame % confirm_interval == 0) {
+        const auto scenario_start_delay = options.scenario == Scenario::none ? 24 : 120;
+        if (options.scenario != Scenario::none) {
+            const auto first_club = at_cable_club_map(first);
+            const auto second_club = at_cable_club_map(second);
+            if (first_club && !input_state.first_table_started) {
+                select_joypad_lines(first, false);
+                first.set_button(gameboy::Button::right, true);
+                input_state.first_table_started = true;
+                input_state.first_table_frame = frame;
+                return;
+            }
+            if (second_club && !input_state.second_table_started) {
+                select_joypad_lines(second, false);
+                second.set_button(gameboy::Button::left, true);
+                input_state.second_table_started = true;
+                input_state.second_table_frame = frame;
+                return;
+            }
+            if (input_state.first_table_started &&
+                !input_state.first_table_confirmed &&
+                frame < input_state.first_table_frame + 4) {
+                select_joypad_lines(first, false);
+                first.set_button(gameboy::Button::right, true);
+                return;
+            }
+            if (input_state.second_table_started &&
+                !input_state.second_table_confirmed &&
+                frame < input_state.second_table_frame + 4) {
+                select_joypad_lines(second, false);
+                second.set_button(gameboy::Button::left, true);
+                return;
+            }
+            first.set_button(gameboy::Button::right, false);
+            second.set_button(gameboy::Button::left, false);
+            if (input_state.first_table_started && input_state.second_table_started &&
+                !input_state.first_table_confirmed &&
+                !input_state.second_table_confirmed &&
+                frame >= std::max(input_state.first_table_frame,
+                                  input_state.second_table_frame) + 4) {
+                set_facing_direction(first, 0x0C);
+                set_facing_direction(second, 0x08);
+                select_joypad_lines(first, true);
+                select_joypad_lines(second, true);
+                first.set_button(gameboy::Button::a, true);
+                second.set_button(gameboy::Button::a, true);
+                input_state.first_table_confirmed = true;
+                input_state.second_table_confirmed = true;
+                input_state.first_table_a_frame = frame;
+                input_state.second_table_a_frame = frame;
+                return;
+            }
+            if ((input_state.first_table_confirmed &&
+                 frame < input_state.first_table_a_frame + 6) ||
+                (input_state.second_table_confirmed &&
+                 frame < input_state.second_table_a_frame + 6)) {
+                if (input_state.first_table_confirmed &&
+                    frame < input_state.first_table_a_frame + 6) {
+                    select_joypad_lines(first, true);
+                    first.set_button(gameboy::Button::a, true);
+                }
+                if (input_state.second_table_confirmed &&
+                    frame < input_state.second_table_a_frame + 6) {
+                    select_joypad_lines(second, true);
+                    second.set_button(gameboy::Button::a, true);
+                }
+                return;
+            }
+            if (options.scenario == Scenario::battle) {
+                const auto menu_ready = frame >= scenario_start_delay;
+                const auto first_menu = menu_ready && at_cable_club_map(first) &&
+                                        at_battle_trade_menu(first);
+                const auto second_menu = menu_ready && at_cable_club_map(second) &&
+                                         at_battle_trade_menu(second);
+                first.set_button(gameboy::Button::a, false);
+                second.set_button(gameboy::Button::a, false);
+                input_state.battle_menu_started =
+                    input_state.battle_menu_started || first_menu || second_menu;
+                if (first_menu && !input_state.first_battle_menu_moved) {
+                    select_joypad_lines(first, false);
+                    first.set_button(gameboy::Button::down, true);
+                    input_state.first_battle_menu_moved = true;
+                    input_state.first_battle_menu_frame = frame;
+                    input_state.first_battle_down_frame = frame;
+                    return;
+                }
+                if (second_menu && !input_state.second_battle_menu_moved) {
+                    select_joypad_lines(second, false);
+                    second.set_button(gameboy::Button::down, true);
+                    input_state.second_battle_menu_moved = true;
+                    input_state.second_battle_menu_frame = frame;
+                    input_state.second_battle_down_frame = frame;
+                    return;
+                }
+                if (input_state.first_battle_menu_moved &&
+                    !input_state.first_battle_confirmed &&
+                    frame < input_state.first_battle_down_frame + 6) {
+                    select_joypad_lines(first, false);
+                    first.set_button(gameboy::Button::down, true);
+                    return;
+                }
+                if (input_state.second_battle_menu_moved &&
+                    !input_state.second_battle_confirmed &&
+                    frame < input_state.second_battle_down_frame + 6) {
+                    select_joypad_lines(second, false);
+                    second.set_button(gameboy::Button::down, true);
+                    return;
+                }
+                first.set_button(gameboy::Button::down, false);
+                second.set_button(gameboy::Button::down, false);
+                if (input_state.first_battle_confirmed &&
+                    frame < input_state.first_battle_a_frame + 6) {
+                    select_joypad_lines(first, true);
+                    first.set_button(gameboy::Button::a, true);
+                }
+                if (input_state.second_battle_confirmed &&
+                    frame < input_state.second_battle_a_frame + 6) {
+                    select_joypad_lines(second, true);
+                    second.set_button(gameboy::Button::a, true);
+                }
+                if (first_menu && second_menu &&
+                    input_state.first_battle_menu_moved &&
+                    input_state.second_battle_menu_moved &&
+                    !input_state.first_battle_confirmed &&
+                    !input_state.second_battle_confirmed &&
+                    frame >= std::max(input_state.first_battle_down_frame,
+                                      input_state.second_battle_down_frame) + 8) {
+                    select_joypad_lines(first, true);
+                    select_joypad_lines(second, true);
+                    first.set_button(gameboy::Button::a, true);
+                    second.set_button(gameboy::Button::a, true);
+                    input_state.first_battle_confirmed = true;
+                    input_state.second_battle_confirmed = true;
+                    input_state.first_battle_a_frame = frame;
+                    input_state.second_battle_a_frame = frame;
+                    return;
+                }
+            }
+        }
+        if (frame % confirm_interval == 0 &&
+            (options.scenario != Scenario::battle ||
+             !input_state.battle_menu_started)) {
+            select_joypad_lines(first, true);
             first.set_button(gameboy::Button::a, true);
-            if (frame >= 24) second.set_button(gameboy::Button::a, true);
+            if (frame >= scenario_start_delay) {
+                select_joypad_lines(second, true);
+                second.set_button(gameboy::Button::a, true);
+            }
         } else if (frame % confirm_interval == 1) {
             first.set_button(gameboy::Button::a, false);
-            if (frame >= 24) second.set_button(gameboy::Button::a, false);
+            if (frame >= scenario_start_delay) second.set_button(gameboy::Button::a, false);
         }
         return;
     }
@@ -504,6 +820,31 @@ void apply_auto_inputs(const Options& options, const std::uint64_t frame,
         first.set_button(gameboy::Button::a, false);
         if ((frame - 300) >= 24) second.set_button(gameboy::Button::a, false);
     }
+}
+
+void append_auto_input_report(std::ostream& report,
+                              const AutoInputState& input_state) {
+    report << "auto_player1_menu_frame=" << input_state.first_battle_menu_frame << '\n'
+           << "auto_player2_menu_frame=" << input_state.second_battle_menu_frame << '\n'
+           << "auto_player1_down_frame=" << input_state.first_battle_down_frame << '\n'
+           << "auto_player2_down_frame=" << input_state.second_battle_down_frame << '\n'
+           << "auto_player1_a_frame=" << input_state.first_battle_a_frame << '\n'
+           << "auto_player2_a_frame=" << input_state.second_battle_a_frame << '\n'
+           << "auto_player1_table_frame=" << input_state.first_table_frame << '\n'
+           << "auto_player2_table_frame=" << input_state.second_table_frame << '\n'
+           << "auto_player1_table_a_frame=" << input_state.first_table_a_frame << '\n'
+           << "auto_player2_table_a_frame=" << input_state.second_table_a_frame << '\n';
+}
+
+void release_auto_buttons(gameboy::Emulator& emulator) {
+    emulator.set_button(gameboy::Button::right, false);
+    emulator.set_button(gameboy::Button::left, false);
+    emulator.set_button(gameboy::Button::up, false);
+    emulator.set_button(gameboy::Button::down, false);
+    emulator.set_button(gameboy::Button::a, false);
+    emulator.set_button(gameboy::Button::b, false);
+    emulator.set_button(gameboy::Button::select, false);
+    emulator.set_button(gameboy::Button::start, false);
 }
 
 void advance_pair(gameboy::Emulator& first, gameboy::Emulator& second,
@@ -560,20 +901,33 @@ int main(int argc, char** argv) {
                                 first.bus().cartridge().title() == "POKEMON YELLOW";
 
         if (options.local) {
+            if (options.scenario != Scenario::none) {
+                release_auto_buttons(first);
+                release_auto_buttons(second);
+            }
             if (is_pokemon) {
                 reset_pokemon_link_handshake(first);
                 reset_pokemon_link_handshake(second);
             }
             gameboy::LinkSession session;
             session.start(first, second);
+            AutoInputState input_state;
+            std::uint64_t frames_run = 0;
             for (std::uint64_t frame = 0; frame < options.frames; ++frame) {
-                apply_auto_inputs(options, frame, first, second);
+                apply_auto_inputs(options, frame, first, second, input_state);
                 session.advance(static_cast<unsigned>(cycles_per_frame));
                 tracker.sample(first, second);
+                frames_run = frame + 1;
+                if (options.scenario != Scenario::none &&
+                    expectation_satisfied(tracker, options.expectation)) {
+                    break;
+                }
             }
             if (options.auto_confirm) {
                 first.set_button(gameboy::Button::a, false);
                 second.set_button(gameboy::Button::a, false);
+                first.set_button(gameboy::Button::down, false);
+                second.set_button(gameboy::Button::down, false);
             }
             const auto final_save1 = first.export_battery_save();
             const auto final_save2 = second.export_battery_save();
@@ -585,14 +939,15 @@ int main(int argc, char** argv) {
                << "rom_fingerprint="
                << hex(first.bus().cartridge().rom_fingerprint()) << '\n'
                << "state_inputs=" << (!options.state1.empty() ? "yes" : "no") << '\n'
-                   << "frames=" << options.frames << '\n'
-                   << "cycles=" << options.frames * cycles_per_frame << '\n'
+                   << "frames=" << frames_run << '\n'
+                   << "cycles=" << frames_run * cycles_per_frame << '\n'
                    << "transfers_completed=" << session.transfers_completed() << '\n'
                    << "save1_before=" << hex(fingerprint(initial_save1)) << '\n'
                    << "save1_after=" << hex(fingerprint(final_save1)) << '\n'
                    << "save2_before=" << hex(fingerprint(initial_save2)) << '\n'
                    << "save2_after=" << hex(fingerprint(final_save2)) << '\n';
             append_semantic_report(report, tracker, options.expectation);
+            append_auto_input_report(report, input_state);
             const auto semantic_ok =
                 expectation_satisfied(tracker, options.expectation);
             session.stop();
@@ -604,7 +959,8 @@ int main(int argc, char** argv) {
             write_report(options.report, report.str());
             if (!semantic_ok) {
                 std::cerr << "Expected " << expectation_name(options.expectation)
-                          << " outcome was not observed\n";
+                          << " outcome was not observed ("
+                          << semantic_failure(tracker, options.expectation) << ")\n";
                 return EXIT_FAILURE;
             }
             return EXIT_SUCCESS;
@@ -639,15 +995,28 @@ int main(int argc, char** argv) {
             throw std::runtime_error("TCP link handshake did not become ready");
         }
 
+        AutoInputState input_state;
+        if (options.scenario != Scenario::none) {
+            release_auto_buttons(first);
+            release_auto_buttons(second);
+        }
+        std::uint64_t frames_run = 0;
         for (std::uint64_t frame = 0; frame < options.frames; ++frame) {
-            apply_auto_inputs(options, frame, first, second);
+            apply_auto_inputs(options, frame, first, second, input_state);
             advance_pair(first, second, first_endpoint, second_endpoint,
                          cycles_per_frame);
             tracker.sample(first, second);
+            frames_run = frame + 1;
+            if (options.scenario != Scenario::none &&
+                expectation_satisfied(tracker, options.expectation)) {
+                break;
+            }
         }
         if (options.auto_confirm) {
             first.set_button(gameboy::Button::a, false);
             second.set_button(gameboy::Button::a, false);
+            first.set_button(gameboy::Button::down, false);
+            second.set_button(gameboy::Button::down, false);
         }
 
         const auto final_save1 = first.export_battery_save();
@@ -659,8 +1028,8 @@ int main(int argc, char** argv) {
                << "rom_fingerprint=" << hex(first.bus().cartridge().rom_fingerprint())
                << '\n'
                << "state_inputs=" << (!options.state1.empty() ? "yes" : "no") << '\n'
-               << "frames=" << options.frames << '\n'
-               << "cycles=" << options.frames * cycles_per_frame << '\n'
+               << "frames=" << frames_run << '\n'
+               << "cycles=" << frames_run * cycles_per_frame << '\n'
                << "tcp_port=" << server.local_port() << '\n'
                << "host_requests_sent=" << first_endpoint.requests_sent() << '\n'
                << "host_requests_received=" << first_endpoint.requests_received() << '\n'
@@ -679,6 +1048,7 @@ int main(int argc, char** argv) {
                << "save2_before=" << hex(fingerprint(initial_save2)) << '\n'
                << "save2_after=" << hex(fingerprint(final_save2)) << '\n';
         append_semantic_report(report, tracker, options.expectation);
+        append_auto_input_report(report, input_state);
         const auto semantic_ok = expectation_satisfied(tracker, options.expectation);
         std::cout << report.str();
         if (!options.capture_dir.empty()) {
@@ -691,7 +1061,8 @@ int main(int argc, char** argv) {
         second_endpoint.detach();
         if (!semantic_ok) {
             std::cerr << "Expected " << expectation_name(options.expectation)
-                      << " outcome was not observed\n";
+                      << " outcome was not observed ("
+                      << semantic_failure(tracker, options.expectation) << ")\n";
             return EXIT_FAILURE;
         }
         return EXIT_SUCCESS;
