@@ -173,6 +173,11 @@ The two state files must be made from the same ROM and should be captured
 before attaching the link. The harness still imports the supplied battery
 saves, so save-state loading does not overwrite the originals.
 
+For scripted Gen I scenarios, both state files must also be inside the Cable
+Club (map `0xEF`/`0xF0`). The harness validates this before attaching the cable
+and exits with a clear capture-state error if either file is from another map;
+that prevents an invalid or stale state from looking like a serial timeout.
+
 Use `--transport local` to run the same ROM/save pair through the deterministic
 in-process cable when the host operating system blocks loopback sockets. Use
 `--transport tcp` (the default) on a native desktop to exercise host/join TCP.

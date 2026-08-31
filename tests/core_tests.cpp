@@ -1785,6 +1785,20 @@ void test_link_session_timeout_and_retry() {
               second.bus().serial_port().has_endpoint() &&
               !first.bus().serial_port().transfer_active(),
           "link retry clears protocol state without replacing emulators");
+
+    // A recovered session must be usable for the next byte, not merely report
+    // a connected lifecycle state. This protects the trade/battle retry path
+    // from regressing into a second deadlock after the watchdog fires.
+    first.bus().write8(0xFF01, 0xA5);
+    second.bus().write8(0xFF01, 0x5A);
+    first.bus().write8(0xFF02, 0x81);
+    second.bus().write8(0xFF02, 0x80);
+    session.advance(4096);
+    check(first.bus().read8(0xFF01) == 0x5A &&
+              second.bus().read8(0xFF01) == 0xA5 &&
+              session.state() == gameboy::LinkSession::State::connected &&
+              session.transfers_completed() == 2,
+          "link retry permits a fresh transfer after a timeout");
     session.stop();
 }
 

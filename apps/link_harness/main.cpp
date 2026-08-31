@@ -774,6 +774,34 @@ const char* scenario_name(const Scenario scenario) {
     return "none";
 }
 
+void validate_scenario_states(const Options& options,
+                              gameboy::Emulator& first,
+                              gameboy::Emulator& second,
+                              const bool is_pokemon) {
+    // The scripted Gen I driver can navigate within the Cable Club, but it
+    // cannot recover from a state captured somewhere else in the game. Fail
+    // before attaching a cable so a bad or stale state is not misreported as
+    // a transport timeout or a trade deadlock.
+    if (options.scenario == Scenario::none || options.state1.empty() ||
+        !is_pokemon) {
+        return;
+    }
+    WramBank1Guard first_bank(first);
+    WramBank1Guard second_bank(second);
+    const auto first_in_club = at_cable_club_map(first);
+    const auto second_in_club = at_cable_club_map(second);
+    if (first_in_club && second_in_club) return;
+
+    std::ostringstream message;
+    message << "--scenario " << scenario_name(options.scenario)
+            << " requires both save states to be in the Pokémon Cable Club "
+               "(map 0xEF/0xF0); got player1="
+            << (first_in_club ? "yes" : "no") << " player2="
+            << (second_in_club ? "yes" : "no")
+            << ". Capture new .gbbs states at the Cable Club prompt.";
+    throw std::invalid_argument(message.str());
+}
+
 const char* link_session_state_name(const gameboy::LinkSession::State state) {
     switch (state) {
     case gameboy::LinkSession::State::disconnected: return "disconnected";
@@ -1644,6 +1672,7 @@ int main(int argc, char** argv) {
         const auto is_pokemon = first.bus().cartridge().title() == "POKEMON BLUE" ||
                                 first.bus().cartridge().title() == "POKEMON RED" ||
                                 first.bus().cartridge().title() == "POKEMON YELLOW";
+        validate_scenario_states(options, first, second, is_pokemon);
         const auto starts_at_link_choice = [&]() {
             if (options.scenario == Scenario::none || options.state1.empty()) return false;
             WramBank1Guard first_bank(first);
