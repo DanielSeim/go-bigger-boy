@@ -2571,7 +2571,7 @@ bool configure_video_pipeline(SdlResources& sdl,
         return false;
     }
     sdl.video_mode = mode;
-    return true;
+    return false;
 }
 
 struct DialogState {
@@ -5508,10 +5508,81 @@ struct LinkTracePrevious {
         std::uint8_t link_alt{};
         std::uint8_t battle{};
         std::uint8_t battle_type{};
+        std::uint8_t ui_state{};
     } first_pokemon, second_pokemon;
 };
 
 LinkTracePrevious link_trace_previous;
+
+enum class PokemonUiState : std::uint8_t {
+    other,
+    waiting,
+    trade_completed,
+};
+
+template <std::size_t Size>
+bool pokemon_vram_sequence(const gameboy::MemoryBus& bus,
+                           const std::uint16_t map_offset,
+                           const std::array<std::uint8_t, Size>& sequence) {
+    // Localized builds can place the same text in a slightly different box
+    // coordinate. Search visible tilemap rows rather than assuming the
+    // English source layout, while keeping the probe limited to 18x32 tiles.
+    for (unsigned row = 0; row < 18; ++row) {
+        for (unsigned column = 0; column + sequence.size() <= 32; ++column) {
+            const auto start = static_cast<std::uint16_t>(
+                map_offset + row * 32U + column);
+            auto matches = true;
+            for (std::size_t index = 0; index < sequence.size(); ++index) {
+                if (bus.debug_read_vram(
+                        0, static_cast<std::uint16_t>(start + index)) != sequence[index]) {
+                    matches = false;
+                    break;
+                }
+            }
+            if (matches) return true;
+        }
+    }
+    return false;
+}
+
+PokemonUiState pokemon_ui_state(const gameboy::MemoryBus& bus) {
+    // Pokémon's font tile IDs are stable across the Red/Blue localizations.
+    // Check both BG map banks because LCDC selects either one for the active
+    // window, and localized builds can place the text at different columns.
+    constexpr std::array<std::uint8_t, 13> waiting_german{
+        0x81, 0x88, 0x93, 0x93, 0x84, 0x7f, 0x96,
+        0x80, 0x91, 0x93, 0x84, 0x8d, 0xe7};
+    constexpr std::array<std::uint8_t, 11> waiting_english{
+        0x96, 0x80, 0x88, 0x93, 0x88, 0x8d, 0x86,
+        0xae, 0xae, 0xae, 0xe7};
+    constexpr std::array<std::uint8_t, 17> completed_german{
+        0x93, 0x80, 0x94, 0x92, 0x82, 0x87, 0x7f, 0x95, 0x8e,
+        0x8b, 0x8b, 0x99, 0x8e, 0x86, 0x84, 0x8d, 0xe7};
+    constexpr std::array<std::uint8_t, 16> completed_english{
+        0x93, 0x91, 0x80, 0x83, 0x84, 0x7f, 0x82, 0x8e,
+        0x8c, 0x8f, 0x8b, 0x84, 0x93, 0x84, 0x83, 0xe7};
+    constexpr std::array<std::uint16_t, 2> maps{0x1800, 0x1c00};
+    for (const auto map : maps) {
+        if (pokemon_vram_sequence(bus, map, waiting_german) ||
+            pokemon_vram_sequence(bus, map, waiting_english)) {
+            return PokemonUiState::waiting;
+        }
+        if (pokemon_vram_sequence(bus, map, completed_german) ||
+            pokemon_vram_sequence(bus, map, completed_english)) {
+            return PokemonUiState::trade_completed;
+        }
+    }
+    return PokemonUiState::other;
+}
+
+const char* pokemon_ui_state_name(const PokemonUiState state) noexcept {
+    switch (state) {
+    case PokemonUiState::waiting: return "waiting";
+    case PokemonUiState::trade_completed: return "trade_completed";
+    case PokemonUiState::other: return "other";
+    }
+    return "other";
+}
 
 void append_trace_cpu(std::ostream& output,
                       const gameboy::Emulator& emulator) {
@@ -5527,10 +5598,23 @@ void append_trace_pokemon(std::ostream& output,
                           const gameboy::Emulator& emulator) {
     if (!is_pokemon_gen1(emulator)) return;
     const auto& bus = emulator.bus();
+    // These WRAM locations are Pokémon Red/Blue's serial exchange scratch
+    // bytes and timeout counters. They are guest diagnostics only; reading
+    // them does not affect the link handshake.
+    const auto serial_wait_counter = static_cast<unsigned>(
+        bus.read8(0xCC47) | (static_cast<unsigned>(bus.read8(0xCC48)) << 8));
+    const auto serial_wait_counter2 = static_cast<unsigned>(
+        bus.read8(0xD074) | (static_cast<unsigned>(bus.read8(0xD075)) << 8));
+    const auto ui_state = pokemon_ui_state(bus);
     output << " game_link=" << std::hex << static_cast<unsigned>(bus.read8(0xD12B))
            << " game_link_alt=" << static_cast<unsigned>(bus.read8(0xD130))
            << " game_battle=" << static_cast<unsigned>(bus.read8(0xD057))
            << " game_battle_type=" << static_cast<unsigned>(bus.read8(0xD05A))
+           << " game_serial_send=" << static_cast<unsigned>(bus.read8(0xCC42))
+           << " game_serial_recv=" << static_cast<unsigned>(bus.read8(0xCC3E))
+           << " game_serial_wait=" << serial_wait_counter
+           << " game_serial_wait2=" << serial_wait_counter2
+           << " game_ui=" << pokemon_ui_state_name(ui_state)
            << " party_count=" << static_cast<unsigned>(bus.read8(0xD163));
 }
 
@@ -5591,9 +5675,10 @@ void append_trace_pokemon_transition(
     LinkTracePrevious::PokemonState& previous) {
     if (!is_pokemon_gen1(emulator)) return;
     const auto& bus = emulator.bus();
+    const auto ui_state = pokemon_ui_state(bus);
     const LinkTracePrevious::PokemonState current{
         true, bus.read8(0xD12B), bus.read8(0xD130), bus.read8(0xD057),
-        bus.read8(0xD05A)};
+        bus.read8(0xD05A), static_cast<std::uint8_t>(ui_state)};
     if (!previous.initialized || current.link != previous.link ||
         current.link_alt != previous.link_alt ||
         current.battle != previous.battle ||
@@ -5605,6 +5690,8 @@ void append_trace_pokemon_transition(
                << " battle=" << static_cast<unsigned>(current.battle)
                << " battle_type="
                << static_cast<unsigned>(current.battle_type)
+               << " ui="
+               << pokemon_ui_state_name(static_cast<PokemonUiState>(current.ui_state))
                << " transfers=" << std::dec << transfers_completed << '\n';
     }
     previous = current;
@@ -5676,7 +5763,8 @@ void stop_link_trace() noexcept {
 }
 
 void trace_link_frame(const gameboy::Emulator& first,
-                      const gameboy::Emulator& second) {
+                      const gameboy::Emulator& second,
+                      const int audio_queued_bytes) {
     if (!link_trace.is_open()) return;
     const auto& first_serial = first.bus().serial_port();
     const auto& second_serial = second.bus().serial_port();
@@ -5685,7 +5773,8 @@ void trace_link_frame(const gameboy::Emulator& first,
     // One line per emulated frame is enough to identify the negotiation while
     // keeping the log small enough to attach from Windows.
     link_trace << std::dec << link_trace_frame
-               << " elapsed_ms=" << elapsed_ms << ' '
+               << " elapsed_ms=" << elapsed_ms
+               << " audio_queued_bytes=" << audio_queued_bytes << ' '
                << "p1(hr=" << std::hex << static_cast<unsigned>(first.bus().read8(0xFFAA))
                << ",sb=" << static_cast<unsigned>(first_serial.read_data())
                << ",sc=" << static_cast<unsigned>(first_serial.read_control())
@@ -5732,13 +5821,15 @@ void trace_link_frame(const gameboy::Emulator& first,
 }
 
 void trace_remote_frame(const gameboy::Emulator& emulator,
-                        const RemoteLinkSession& remote) {
+                        const RemoteLinkSession& remote,
+                        const int audio_queued_bytes) {
     if (!link_trace.is_open()) return;
     const auto& serial = emulator.bus().serial_port();
     ++link_trace_frame;
     const auto elapsed_ms = link_trace_elapsed_ms();
     link_trace << std::dec << link_trace_frame
-               << " elapsed_ms=" << elapsed_ms << ' '
+               << " elapsed_ms=" << elapsed_ms
+               << " audio_queued_bytes=" << audio_queued_bytes << ' '
                << (remote.hosting ? "role=host" : "role=join")
                << " hr=" << std::hex
                << static_cast<unsigned>(emulator.bus().read8(0xFFAA))
@@ -8153,9 +8244,19 @@ int main(int argc, char** argv) {
                         }
 #ifndef __ANDROID__
                         if (link_emulator != nullptr) {
-                            trace_link_frame(*emulator, *link_emulator);
+                            const auto audio_queued_bytes =
+                                sdl.audio_stream == nullptr
+                                    ? -1
+                                    : SDL_GetAudioStreamQueued(sdl.audio_stream);
+                            trace_link_frame(*emulator, *link_emulator,
+                                             audio_queued_bytes);
                         } else if (remote_link.active()) {
-                            trace_remote_frame(*emulator, remote_link);
+                            const auto audio_queued_bytes =
+                                sdl.audio_stream == nullptr
+                                    ? -1
+                                    : SDL_GetAudioStreamQueued(sdl.audio_stream);
+                            trace_remote_frame(*emulator, remote_link,
+                                               audio_queued_bytes);
                         }
 #endif
                     }

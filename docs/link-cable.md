@@ -106,7 +106,15 @@ wall-clock time from `session_start`, so long gaps can be distinguished from
 normal emulated-frame progress. Pokémon traces also emit
 `event=pokemon_state` when the link or battle state probes change; the event
 includes the frame, elapsed time, state values, and completed serial-transfer
-count. These markers are diagnostic only and do not alter emulation timing.
+count. Each Pokémon frame also records the game's serial send/receive scratch
+bytes and both serial wait counters (`game_serial_wait` and
+`game_serial_wait2`). Desktop frames record `audio_queued_bytes` as well
+(`-1` means that audio output is unavailable). These markers are diagnostic
+only and do not alter emulation timing. For Red/Blue text layouts, the probe
+also reports `game_ui=waiting` or `game_ui=trade_completed` when it recognizes
+the corresponding localized message in VRAM; `game_ui=other` covers all other
+screens. Matching transitions are emitted as `event=pokemon_state` with the
+same UI label.
 
 On desktop, **Emulation → Host TCP Link** (`Ctrl+Shift+H`) listens on
 `127.0.0.1:8765`, while **Join TCP Link** (`Ctrl+Shift+J`) connects to that
