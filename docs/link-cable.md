@@ -173,6 +173,14 @@ The two state files must be made from the same ROM and should be captured
 before attaching the link. The harness still imports the supplied battery
 saves, so save-state loading does not overwrite the originals.
 
+A disconnected pre-link lobby state (localized map `0x29`, such as
+`player1_cable_club_disconnected.gbbs`) is valid for manually exercising the
+host-first Cable Club flow, but it is not yet a scripted-scenario starting
+point. The scripted harness requires the connected trade center or colosseum
+maps (`0xEF`/`0xF0`); it reports both localized map IDs when a pre-link state is
+supplied. Capture the `.gbbs` files after both players reach the in-game link
+choice or table prompt.
+
 For scripted Gen I scenarios, both state files must also be inside the Cable
 Club (map `0xEF`/`0xF0`). The harness validates this before attaching the cable
 and exits with a clear capture-state error if either file is from another map;
@@ -238,6 +246,13 @@ watchdog triggers one guarded automatic retry of the existing link-handshake
 recovery path. A second timeout remains visible as `TIMED OUT` so a persistent
 failure cannot cause an endless reset loop; the manual Retry Link Handshake
 command remains available.
+
+Trade traces also contain a compact `trade_input_phase` event whenever the
+automated driver advances a player through party selection, the `TRADE` choice,
+stats confirmation, or final confirmation. These events include both CPUs'
+PC/SP values, joypad edge/held masks, serial control values, and link-state
+probes. Together with the CPU context on serial-stall events, this isolates a
+guest menu race from a missing serial clock without scanning every frame.
 
 For example, a local battle assertion is:
 
