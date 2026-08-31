@@ -5485,6 +5485,16 @@ std::ofstream link_trace;
 std::uint64_t link_trace_frame{};
 std::uint64_t link_trace_session{};
 std::filesystem::path link_trace_path;
+std::chrono::steady_clock::time_point link_trace_started_at{};
+
+std::uint64_t link_trace_elapsed_ms() {
+    if (link_trace_started_at == std::chrono::steady_clock::time_point{}) {
+        return 0;
+    }
+    return static_cast<std::uint64_t>(std::chrono::duration_cast<
+        std::chrono::milliseconds>(std::chrono::steady_clock::now() -
+                                   link_trace_started_at).count());
+}
 
 struct LinkTracePrevious {
     bool initialized{};
@@ -5492,6 +5502,13 @@ struct LinkTracePrevious {
     std::uint64_t second_completed{};
     bool first_active{};
     bool second_active{};
+    struct PokemonState {
+        bool initialized{};
+        std::uint8_t link{};
+        std::uint8_t link_alt{};
+        std::uint8_t battle{};
+        std::uint8_t battle_type{};
+    } first_pokemon, second_pokemon;
 };
 
 LinkTracePrevious link_trace_previous;
@@ -5518,6 +5535,8 @@ void append_trace_pokemon(std::ostream& output,
 }
 
 void append_trace_transfer_events(std::ostream& output,
+                                  const std::uint64_t frame,
+                                  const std::uint64_t elapsed_ms,
                                   const std::uint64_t first_completed,
                                   const std::uint64_t second_completed,
                                   const bool first_active,
@@ -5526,34 +5545,69 @@ void append_trace_transfer_events(std::ostream& output,
                                   const gameboy::SerialPort& second_serial) {
     if (link_trace_previous.initialized) {
         if (first_completed > link_trace_previous.first_completed) {
-            output << "event=serial_complete player=1 count=" << std::dec
-                   << first_completed << " tx=" << std::hex
+            output << "event=serial_complete frame=" << std::dec << frame
+                   << " elapsed_ms=" << elapsed_ms
+                   << " player=1 count=" << first_completed << " tx=" << std::hex
                    << static_cast<unsigned>(first_serial.last_transmitted())
                    << " rx=" << static_cast<unsigned>(first_serial.last_received())
                    << '\n';
         }
         if (second_completed > link_trace_previous.second_completed) {
-            output << "event=serial_complete player=2 count=" << std::dec
-                   << second_completed << " tx=" << std::hex
+            output << "event=serial_complete frame=" << std::dec << frame
+                   << " elapsed_ms=" << elapsed_ms
+                   << " player=2 count=" << second_completed << " tx=" << std::hex
                    << static_cast<unsigned>(second_serial.last_transmitted())
                    << " rx=" << static_cast<unsigned>(second_serial.last_received())
                    << '\n';
         }
         if (first_active != link_trace_previous.first_active) {
-            output << "event=serial_active player=1 value=" << first_active
+            output << "event=serial_active frame=" << std::dec << frame
+                   << " elapsed_ms=" << elapsed_ms
+                   << " player=1 value=" << first_active
                    << " internal=" << first_serial.internal_clock()
                    << " bits=" << std::dec
                    << static_cast<unsigned>(first_serial.bits_shifted()) << '\n';
         }
         if (second_active != link_trace_previous.second_active) {
-            output << "event=serial_active player=2 value=" << second_active
+            output << "event=serial_active frame=" << std::dec << frame
+                   << " elapsed_ms=" << elapsed_ms
+                   << " player=2 value=" << second_active
                    << " internal=" << second_serial.internal_clock()
                    << " bits=" << std::dec
                    << static_cast<unsigned>(second_serial.bits_shifted()) << '\n';
         }
     }
-    link_trace_previous = {true, first_completed, second_completed,
-                           first_active, second_active};
+    link_trace_previous.initialized = true;
+    link_trace_previous.first_completed = first_completed;
+    link_trace_previous.second_completed = second_completed;
+    link_trace_previous.first_active = first_active;
+    link_trace_previous.second_active = second_active;
+}
+
+void append_trace_pokemon_transition(
+    std::ostream& output, const gameboy::Emulator& emulator,
+    const unsigned player, const std::uint64_t frame,
+    const std::uint64_t elapsed_ms, const std::uint64_t transfers_completed,
+    LinkTracePrevious::PokemonState& previous) {
+    if (!is_pokemon_gen1(emulator)) return;
+    const auto& bus = emulator.bus();
+    const LinkTracePrevious::PokemonState current{
+        true, bus.read8(0xD12B), bus.read8(0xD130), bus.read8(0xD057),
+        bus.read8(0xD05A)};
+    if (!previous.initialized || current.link != previous.link ||
+        current.link_alt != previous.link_alt ||
+        current.battle != previous.battle ||
+        current.battle_type != previous.battle_type) {
+        output << "event=pokemon_state frame=" << std::dec << frame
+               << " elapsed_ms=" << elapsed_ms << " player=" << player
+               << " link=" << std::hex << static_cast<unsigned>(current.link)
+               << " link_alt=" << static_cast<unsigned>(current.link_alt)
+               << " battle=" << static_cast<unsigned>(current.battle)
+               << " battle_type="
+               << static_cast<unsigned>(current.battle_type)
+               << " transfers=" << std::dec << transfers_completed << '\n';
+    }
+    previous = current;
 }
 
 void start_link_trace(const std::filesystem::path& preference_path,
@@ -5580,6 +5634,7 @@ void start_link_trace(const std::filesystem::path& preference_path,
     link_trace_frame = 0;
     link_trace_path.clear();
     link_trace_previous = {};
+    link_trace_started_at = std::chrono::steady_clock::now();
     const auto session = ++link_trace_session;
     for (const auto& candidate : candidates) {
         if (candidate.empty()) continue;
@@ -5592,7 +5647,8 @@ void start_link_trace(const std::filesystem::path& preference_path,
         link_trace << "session_start id=" << std::dec << session
                    << " counters_reset=1"
                    << " transport=" << (role_suffix == nullptr ? "local" : "tcp")
-                   << " role=" << (role_suffix == nullptr ? "local" : role_suffix);
+                   << " role=" << (role_suffix == nullptr ? "local" : role_suffix)
+                   << " clock=monotonic elapsed_ms=0";
         link_trace << '\n';
         link_trace.flush();
         if (!link_trace.good()) {
@@ -5608,13 +5664,15 @@ void start_link_trace(const std::filesystem::path& preference_path,
 void stop_link_trace() noexcept {
     if (link_trace.is_open()) {
         link_trace << "session_end id=" << std::dec << link_trace_session
-                   << " frames=" << link_trace_frame << '\n';
+                   << " frames=" << link_trace_frame
+                   << " elapsed_ms=" << link_trace_elapsed_ms() << '\n';
         link_trace.flush();
         link_trace.close();
     }
     link_trace_frame = 0;
     link_trace_path.clear();
     link_trace_previous = {};
+    link_trace_started_at = {};
 }
 
 void trace_link_frame(const gameboy::Emulator& first,
@@ -5623,9 +5681,11 @@ void trace_link_frame(const gameboy::Emulator& first,
     const auto& first_serial = first.bus().serial_port();
     const auto& second_serial = second.bus().serial_port();
     ++link_trace_frame;
+    const auto elapsed_ms = link_trace_elapsed_ms();
     // One line per emulated frame is enough to identify the negotiation while
     // keeping the log small enough to attach from Windows.
-    link_trace << std::dec << link_trace_frame << ' '
+    link_trace << std::dec << link_trace_frame
+               << " elapsed_ms=" << elapsed_ms << ' '
                << "p1(hr=" << std::hex << static_cast<unsigned>(first.bus().read8(0xFFAA))
                << ",sb=" << static_cast<unsigned>(first_serial.read_data())
                << ",sc=" << static_cast<unsigned>(first_serial.read_control())
@@ -5655,7 +5715,14 @@ void trace_link_frame(const gameboy::Emulator& first,
     append_trace_pokemon(link_trace, first);
     append_trace_pokemon(link_trace, second);
     link_trace << '\n';
+    append_trace_pokemon_transition(
+        link_trace, first, 1, link_trace_frame, elapsed_ms,
+        first_serial.transfers_completed(), link_trace_previous.first_pokemon);
+    append_trace_pokemon_transition(
+        link_trace, second, 2, link_trace_frame, elapsed_ms,
+        second_serial.transfers_completed(), link_trace_previous.second_pokemon);
     append_trace_transfer_events(link_trace,
+                                 link_trace_frame, elapsed_ms,
                                  first_serial.transfers_completed(),
                                  second_serial.transfers_completed(),
                                  first_serial.transfer_active(),
@@ -5669,7 +5736,9 @@ void trace_remote_frame(const gameboy::Emulator& emulator,
     if (!link_trace.is_open()) return;
     const auto& serial = emulator.bus().serial_port();
     ++link_trace_frame;
-    link_trace << std::dec << link_trace_frame << ' '
+    const auto elapsed_ms = link_trace_elapsed_ms();
+    link_trace << std::dec << link_trace_frame
+               << " elapsed_ms=" << elapsed_ms << ' '
                << (remote.hosting ? "role=host" : "role=join")
                << " hr=" << std::hex
                << static_cast<unsigned>(emulator.bus().read8(0xFFAA))
@@ -5700,7 +5769,11 @@ void trace_remote_frame(const gameboy::Emulator& emulator,
     append_trace_cpu(link_trace, emulator);
     append_trace_pokemon(link_trace, emulator);
     link_trace << '\n';
+    append_trace_pokemon_transition(
+        link_trace, emulator, 1, link_trace_frame, elapsed_ms,
+        serial.transfers_completed(), link_trace_previous.first_pokemon);
     append_trace_transfer_events(link_trace,
+                                 link_trace_frame, elapsed_ms,
                                  serial.transfers_completed(),
                                  0,
                                  serial.transfer_active(),

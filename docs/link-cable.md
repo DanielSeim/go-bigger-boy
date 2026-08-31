@@ -100,6 +100,14 @@ also remain fed while a link wait is in progress so an audio underflow cannot
 replay the last buffer. Any timing optimization must preserve the now-working
 trade and battle handshake and the bounded timeout-retry recovery.
 
+When `Link.Diagnostics` is enabled, desktop traces now include an
+`elapsed_ms` field on every frame and serial event. This is monotonic elapsed
+wall-clock time from `session_start`, so long gaps can be distinguished from
+normal emulated-frame progress. Pokémon traces also emit
+`event=pokemon_state` when the link or battle state probes change; the event
+includes the frame, elapsed time, state values, and completed serial-transfer
+count. These markers are diagnostic only and do not alter emulation timing.
+
 On desktop, **Emulation → Host TCP Link** (`Ctrl+Shift+H`) listens on
 `127.0.0.1:8765`, while **Join TCP Link** (`Ctrl+Shift+J`) connects to that
 endpoint. Use one emulator instance in host mode and another in join mode,
