@@ -18,13 +18,18 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <limits>
 #include <memory>
+#include <optional>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -38,6 +43,7 @@ static_assert(sizeof(gameboy::Ppu) < 16 * 1024,
 
 constexpr std::uint16_t program_address = 0x0100;
 int failures = 0;
+std::filesystem::path executable_directory;
 
 void check(const bool condition, const std::string& message) {
     if (!condition) {
@@ -510,6 +516,152 @@ std::uint64_t audio_waveform_signature(
     return hash;
 }
 
+struct AudioWaveformReference {
+    bool format_valid{};
+    std::string name;
+    unsigned sample_rate{};
+    unsigned channels{};
+    unsigned quantization{};
+    std::size_t sample_count{};
+    std::int16_t max_abs_error{};
+    std::int16_t rms_error{};
+    std::vector<std::int16_t> samples;
+};
+
+std::optional<AudioWaveformReference> load_audio_waveform_reference(
+    const std::filesystem::path& path) {
+    std::ifstream input(path);
+    if (!input) return std::nullopt;
+
+    AudioWaveformReference reference;
+    std::string line;
+    bool data_started = false;
+    while (std::getline(input, line)) {
+        if (line.empty() || line.front() == '#') continue;
+        if (line == "data=") {
+            data_started = true;
+            continue;
+        }
+        if (data_started) {
+            std::istringstream values(line);
+            int sample = 0;
+            while (values >> sample) {
+                if (sample < std::numeric_limits<std::int16_t>::min() ||
+                    sample > std::numeric_limits<std::int16_t>::max()) {
+                    return std::nullopt;
+                }
+                reference.samples.push_back(static_cast<std::int16_t>(sample));
+            }
+            continue;
+        }
+
+        const auto separator = line.find('=');
+        if (separator == std::string::npos) return std::nullopt;
+        const auto key = line.substr(0, separator);
+        const auto value = line.substr(separator + 1);
+        try {
+            if (key == "name") reference.name = value;
+            else if (key == "format") reference.format_valid =
+                value == "gbb-audio-waveform-v1";
+            else if (key == "sample_rate") reference.sample_rate =
+                static_cast<unsigned>(std::stoul(value));
+            else if (key == "channels") reference.channels =
+                static_cast<unsigned>(std::stoul(value));
+            else if (key == "quantization") reference.quantization =
+                static_cast<unsigned>(std::stoul(value));
+            else if (key == "samples") reference.sample_count =
+                static_cast<std::size_t>(std::stoull(value));
+            else if (key == "max_abs_error") reference.max_abs_error =
+                static_cast<std::int16_t>(std::stoi(value));
+            else if (key == "rms_error") reference.rms_error =
+                static_cast<std::int16_t>(std::stoi(value));
+        } catch (const std::exception&) {
+            return std::nullopt;
+        }
+    }
+    if (!reference.format_valid || reference.sample_rate == 0 ||
+        reference.channels == 0 ||
+        reference.quantization == 0 || reference.sample_count == 0 ||
+        reference.samples.size() != reference.sample_count) {
+        return std::nullopt;
+    }
+    return reference;
+}
+
+bool write_audio_waveform_reference(const std::filesystem::path& path,
+                                    const std::string_view name,
+                                    const std::vector<std::int16_t>& samples) {
+    std::ofstream output(path);
+    if (!output) return false;
+    output << "# GBB audio waveform reference v1\n"
+           << "format=gbb-audio-waveform-v1\n"
+           << "name=" << name << '\n'
+           << "sample_rate=48000\n"
+           << "channels=2\n"
+           << "quantization=64\n"
+           << "samples=" << samples.size() << '\n'
+           << "max_abs_error=0\n"
+           << "rms_error=0\n"
+           << "data=\n";
+    for (std::size_t index = 0; index < samples.size(); ++index) {
+        output << samples[index] / 64;
+        if (index + 1 == samples.size() || (index + 1) % 16 == 0) {
+            output << '\n';
+        } else {
+            output << ' ';
+        }
+    }
+    return static_cast<bool>(output);
+}
+
+void compare_audio_waveform_reference(
+    const std::filesystem::path& path, const std::string_view name,
+    const std::vector<std::int16_t>& rendered) {
+    const auto reference = load_audio_waveform_reference(path);
+    check(reference.has_value(),
+          "audio reference " + std::string{name} + " has a valid format");
+    if (!reference) return;
+
+    const auto quantized = [](const std::int16_t sample) {
+        return static_cast<std::int16_t>(sample / 64);
+    };
+    check(reference->name == name && reference->sample_rate == 48000 &&
+              reference->channels == 2 &&
+              reference->quantization == 64 &&
+              rendered.size() == reference->samples.size(),
+          "audio reference " + std::string{name} +
+              " matches the 48 kHz stereo render shape");
+    if (rendered.size() != reference->samples.size()) return;
+
+    std::int32_t max_error = 0;
+    long double squared_error = 0;
+    std::size_t first_mismatch = rendered.size();
+    for (std::size_t index = 0; index < rendered.size(); ++index) {
+        const auto error = static_cast<std::int32_t>(quantized(rendered[index])) -
+                           static_cast<std::int32_t>(reference->samples[index]);
+        max_error = std::max(max_error, std::abs(error));
+        squared_error += static_cast<long double>(error) * error;
+        if (first_mismatch == rendered.size() && error != 0) {
+            first_mismatch = index;
+        }
+    }
+    const auto rms = static_cast<std::int32_t>(std::sqrt(
+        squared_error / static_cast<long double>(rendered.size())));
+    const auto within_tolerance = max_error <= reference->max_abs_error &&
+                                  rms <= reference->rms_error;
+    std::string detail = "audio reference " + std::string{name} +
+                         " stays within waveform tolerance";
+    if (!within_tolerance) {
+        detail += " (max=" + std::to_string(max_error) +
+                  ", rms=" + std::to_string(rms);
+        if (first_mismatch != rendered.size()) {
+            detail += ", first sample=" + std::to_string(first_mismatch);
+        }
+        detail += ')';
+    }
+    check(within_tolerance, detail);
+}
+
 void test_apu_waveform_regressions() {
     const auto render = [](const auto configure) {
         gameboy::MemoryBus bus{gameboy::Cartridge{test_rom()}};
@@ -554,6 +706,44 @@ void test_apu_waveform_regressions() {
           "wave waveform regression signature");
     check(audio_waveform_signature(noise) == UINT64_C(0x224d45db0d6b5c33),
           "noise waveform regression signature");
+
+    const std::array<std::pair<std::string_view, const std::vector<std::int16_t>*>, 3>
+        fixtures{{{"pulse", &pulse}, {"wave", &wave}, {"noise", &noise}}};
+    const auto reference_directory = [] {
+        if (const auto* value = std::getenv("GBB_AUDIO_REFERENCE_DIR");
+            value != nullptr && *value != '\0') {
+            return std::filesystem::path{value};
+        }
+        const auto executable_fixtures = executable_directory / "audio-fixtures";
+        if (std::filesystem::exists(executable_fixtures)) {
+            return executable_fixtures;
+        }
+        return std::filesystem::path{"tests"} / "fixtures" / "audio";
+    }();
+    const auto capture_directory = [] {
+        if (const auto* value = std::getenv("GBB_AUDIO_REFERENCE_CAPTURE_DIR");
+            value != nullptr && *value != '\0') {
+            return std::filesystem::path{value};
+        }
+        return std::filesystem::path{};
+    }();
+    if (!capture_directory.empty()) {
+        std::error_code error;
+        std::filesystem::create_directories(capture_directory, error);
+        check(!error, "audio reference capture directory is writable");
+        if (!error) {
+            for (const auto& [name, samples] : fixtures) {
+                check(write_audio_waveform_reference(
+                          capture_directory / (std::string{name} + ".txt"),
+                          name, *samples),
+                      "audio reference capture writes " + std::string{name});
+            }
+        }
+    }
+    for (const auto& [name, samples] : fixtures) {
+        compare_audio_waveform_reference(
+            reference_directory / (std::string{name} + ".txt"), name, *samples);
+    }
 }
 
 void test_apu_cycle_integrated_resampling() {
@@ -4168,8 +4358,14 @@ void test_save_state_round_trip_and_validation() {
 
 } // namespace
 
-int main() {
+int main(const int argc, char** argv) {
     try {
+        if (argc > 0 && argv != nullptr && argv[0] != nullptr) {
+            std::error_code error;
+            executable_directory =
+                std::filesystem::absolute(argv[0], error).parent_path();
+            if (error) executable_directory.clear();
+        }
         test_cartridge_header();
         test_rom_library_metadata_and_deduplication();
         test_multicore_frontend_contract();

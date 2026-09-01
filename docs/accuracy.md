@@ -87,10 +87,40 @@ Later monochrome post-boot profiles reproduce the
 registered-trademark tile that the boot ROM leaves at `$8190`, so edge tests do
 not accidentally run against zero-filled startup VRAM.
 
-The next audio refinement is a reference-waveform suite covering hardware
-revision and analog high-pass differences; the existing Blargg sound ROMs
-validate CPU-visible APU behavior, while the PCM signatures protect the current
-software mixer output.
+The audio tests include explicit 48 kHz stereo waveform vectors for pulse, wave,
+and noise fixtures under [`tests/fixtures/audio`](../tests/fixtures/audio). The
+vectors are quantized to one unit per 64 PCM levels so harmless low-bit
+floating-point rounding does not make Linux and Windows disagree. They are the
+reviewable software baseline; the existing Blargg sound ROMs still validate
+CPU-visible APU behavior rather than analog PCM output. CMake copies the
+baseline files beside `gameboy_tests`, so the same check works from a Windows
+build or an arbitrary working directory.
+
+For comparison against a recording from hardware or a trusted emulator, place
+matching `pulse.txt`, `wave.txt`, and `noise.txt` files in a separate directory
+and point the unit test at it:
+
+```sh
+GBB_AUDIO_REFERENCE_DIR=/path/to/reference build-sdl/gameboy_tests
+```
+
+Each file uses the `GBB audio waveform reference v1` text format. Its metadata
+declares the sample rate, channel count, quantization, sample count, and allowed
+`max_abs_error`/`rms_error`; the test reports the first differing sample when a
+fixture exceeds either limit. To capture the emulator's current output for
+inspection (not to replace a trusted reference), use:
+
+```sh
+GBB_AUDIO_REFERENCE_CAPTURE_DIR=/tmp/gbb-audio-reference \
+GBB_AUDIO_REFERENCE_DIR=/tmp/gbb-audio-reference \
+  build-sdl/gameboy_tests
+```
+
+The next accuracy pass is to collect those same fixtures from DMG and CGB
+hardware (or a validated hardware-level emulator), set tolerances from the
+measurement noise, and then keep those external references in the release
+verification job. That will cover revision-specific DAC levels and analog
+high-pass response without weakening the deterministic software regression.
 
 The next PPU refinement is the hardware-revision-specific edge behavior around
 object-fetch cancellation, window triggers changed before the first visible

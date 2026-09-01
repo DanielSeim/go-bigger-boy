@@ -243,6 +243,19 @@ if(GAMEBOY_BUILD_TESTS)
     enable_testing()
     add_executable(gameboy_tests tests/core_tests.cpp)
     target_link_libraries(gameboy_tests PRIVATE gbb_core_api)
+    add_custom_command(TARGET gameboy_tests POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+                "$<TARGET_FILE_DIR:gameboy_tests>/audio-fixtures"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/audio/pulse.txt"
+                "$<TARGET_FILE_DIR:gameboy_tests>/audio-fixtures/pulse.txt"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/audio/wave.txt"
+                "$<TARGET_FILE_DIR:gameboy_tests>/audio-fixtures/wave.txt"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/audio/noise.txt"
+                "$<TARGET_FILE_DIR:gameboy_tests>/audio-fixtures/noise.txt"
+        VERBATIM)
     add_test(NAME gameboy_core_tests COMMAND gameboy_tests)
 
     if(GAMEBOY_TEST_ROM_DIR)
