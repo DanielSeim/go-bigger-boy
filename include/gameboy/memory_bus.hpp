@@ -102,6 +102,7 @@ private:
     std::uint8_t wram_bank_{1};
     bool cgb_mode_{};
     bool cgb_hardware_{};
+    bool apu_cycle_phase_{};
     std::uint16_t hdma_source_{};
     std::uint16_t hdma_destination_{0x8000};
     std::uint8_t hdma_blocks_remaining_{};

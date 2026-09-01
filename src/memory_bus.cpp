@@ -22,6 +22,7 @@ MemoryBus::MemoryBus(Cartridge cartridge)
 void MemoryBus::initialize_post_boot(const HardwareModel model) noexcept {
     cgb_hardware_ = model == HardwareModel::cgb0 ||
                     model == HardwareModel::cgb;
+    apu_cycle_phase_ = false;
     ppu_.set_cgb_hardware(cgb_hardware_);
     timer_.initialize_post_boot(model);
     // The serial divider is reset-derived and is not synchronized when a
@@ -254,7 +255,8 @@ void MemoryBus::tick(const unsigned cycles) noexcept {
     // peripheral-cycle conversion.
     auto timer_interrupt = false;
     for (unsigned cycle = 0; cycle < cycles; ++cycle) {
-        if (!double_speed_ || (cycle & 1U) != 0) apu_.tick(1);
+        if (!double_speed_ || apu_cycle_phase_) apu_.tick(1);
+        apu_cycle_phase_ = !apu_cycle_phase_;
         timer_interrupt = timer_.tick(1) || timer_interrupt;
         for (auto ticks = timer_.take_apu_ticks(); ticks > 0; --ticks) {
             apu_.clock_frame_sequencer();

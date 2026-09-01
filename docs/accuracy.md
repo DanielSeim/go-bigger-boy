@@ -144,7 +144,25 @@ DIV/APU edges are dispatched at their timer-cycle boundary rather than being
 queued until the end of a bus batch. The APU also models the hardware rule that
 enabling it while the DIV/APU input is high skips the first falling-edge event;
 the pending phase is retained in save states. This is covered by the core timer
-tests and the corresponding SameSuite DIV-trigger ROMs.
+tests and the corresponding SameSuite DIV-trigger ROMs. On modern CGB starts,
+inactive square channels also retain the additional long-period alignment
+interval observed by SameSuite's `channel_[12]_volume_div` cases, while active
+restarts keep the established startup timing.
+
+Square duty writes now use a latched duty value: writes made while a channel is
+active take effect at the next waveform boundary, while writes made while it is
+inactive are applied for the next trigger. The latched and pending values are
+stored in save-state version 21 so restoring during a duty transition or period
+reload remains deterministic. The CGB APU phase used by double-speed timing is
+saved alongside that state.
+
+Frequency writes that land on a waveform reload now update the active period at
+that boundary; otherwise the current countdown is preserved. The remaining
+hardware-sensitive cases are tracked separately: exact CGB 1 MHz phase
+alignment and revision-specific restart timing still need further dedicated
+conformance work. The current implementation preserves the existing audio
+regressions while covering the stable startup, divider, and reload-boundary
+timing cases.
 
 The next PPU refinement is the hardware-revision-specific edge behavior around
 object-fetch cancellation, window triggers changed before the first visible

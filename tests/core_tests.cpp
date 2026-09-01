@@ -3997,12 +3997,18 @@ void test_save_state_round_trip_and_validation() {
         gameboy::Ppu::screen_width * 3;
     constexpr std::size_t version_eighteen_object_deadline_size =
         gameboy::Ppu::screen_width;
+    constexpr std::size_t version_nineteen_apu_size = 6;
+    constexpr std::size_t version_twenty_timing_size = 3;
+    constexpr std::size_t version_twenty_one_pulse_timing_size = 10;
     constexpr std::size_t version_nine_fetcher_size =
         737 + version_ten_window_latch_size + version_eleven_fetcher_size +
         version_twelve_sprite_size + version_thirteen_sprite_fetch_size +
         version_fourteen_sprite_deadline_size + version_fifteen_sprite_render_size;
     auto legacy_saved = saved;
     legacy_saved.resize(legacy_saved.size() -
+                        version_twenty_one_pulse_timing_size -
+                        version_twenty_timing_size -
+                        version_nineteen_apu_size -
                         version_eighteen_object_deadline_size -
                         version_seventeen_background_history_size -
                         version_sixteen_audio_integrator_size);
@@ -4339,6 +4345,9 @@ void test_save_state_round_trip_and_validation() {
 
     auto version_sixteen = saved;
     version_sixteen.resize(version_sixteen.size() -
+                           version_twenty_one_pulse_timing_size -
+                           version_twenty_timing_size -
+                           version_nineteen_apu_size -
                            version_eighteen_object_deadline_size -
                            version_seventeen_background_history_size);
     version_sixteen[8] = 16;
@@ -4358,6 +4367,9 @@ void test_save_state_round_trip_and_validation() {
 
     auto version_seventeen = saved;
     version_seventeen.resize(version_seventeen.size() -
+                             version_twenty_one_pulse_timing_size -
+                             version_twenty_timing_size -
+                             version_nineteen_apu_size -
                              version_eighteen_object_deadline_size);
     version_seventeen[8] = 17;
     const auto version_seventeen_payload_size = static_cast<std::uint32_t>(
@@ -4375,7 +4387,7 @@ void test_save_state_round_trip_and_validation() {
           "version 17 save states remain loadable after adding object deadlines");
 
     auto future_version = saved;
-    future_version[8] = 19;
+    future_version[8] = 22;
     auto rejected_version = false;
     try {
         emulator.load_state(future_version);

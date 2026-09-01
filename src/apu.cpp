@@ -11,6 +11,10 @@ constexpr std::size_t maximum_buffered_samples = Apu::sample_rate * 2;
 // A trigger does not expose the newly started waveform until the five-clock
 // startup delay has elapsed. This is observable through CGB PCM12/PCM34 reads.
 constexpr unsigned channel_trigger_delay = 5;
+// Later CGB revisions add an alignment interval when an inactive square
+// channel is started. The interval is two clocks at short periods and four
+// clocks at long periods in this core.
+constexpr unsigned modern_cgb_inactive_square_alignment = 4;
 
 constexpr std::array<std::array<std::uint8_t, 8>, 4> duty_patterns{{
     {{0, 0, 0, 0, 0, 0, 0, 1}},
@@ -24,6 +28,7 @@ void Apu::initialize_post_boot(const HardwareModel model,
                                const bool divider_apu_signal) noexcept {
     cgb_hardware_ = model == HardwareModel::cgb0 ||
                     model == HardwareModel::cgb;
+    modern_cgb_ = model == HardwareModel::cgb;
     power_off();
     powered_ = true;
     // If the APU is enabled while the DIV/APU input is high, hardware skips
@@ -41,6 +46,8 @@ void Apu::initialize_post_boot(const HardwareModel model,
     registers_[0x13] = 0xBF; // NR44
     registers_[0x14] = 0x77; // NR50
     registers_[0x15] = 0xF3; // NR51
+    pulse1_.duty = static_cast<std::uint8_t>(registers_[0x01] >> 6);
+    pulse2_.duty = static_cast<std::uint8_t>(registers_[0x06] >> 6);
     pulse1_.dac_enabled = true;
     pulse1_.enabled = model != HardwareModel::sgb &&
                       model != HardwareModel::sgb2;
@@ -143,12 +150,25 @@ void Apu::write_register(const std::uint16_t address,
         break;
     case 0xFF11:
         pulse1_.length = static_cast<std::uint8_t>(64 - (value & 0x3F));
+        if (!pulse1_.enabled) {
+            pulse1_.duty = static_cast<std::uint8_t>(value >> 6);
+            pulse1_.duty_update_pending = false;
+        } else {
+            pulse1_.pending_duty = static_cast<std::uint8_t>(value >> 6);
+            pulse1_.duty_update_pending = true;
+        }
         break;
     case 0xFF12:
         pulse1_.dac_enabled = (value & 0xF8) != 0;
         if (!pulse1_.dac_enabled) pulse1_.enabled = false;
         else if (cgb_hardware_ && pulse1_.enabled)
             apply_envelope_write_glitch(pulse1_.envelope, value, old_value);
+        break;
+    case 0xFF13:
+        if (pulse1_.just_reloaded) {
+            pulse1_.period = pulse_period(0x01);
+            pulse1_.timer = pulse1_.period;
+        }
         break;
     case 0xFF14:
         if (!pulse1_.length_enabled && (value & 0x40) != 0 &&
@@ -157,16 +177,34 @@ void Apu::write_register(const std::uint16_t address,
             pulse1_.enabled = false;
         }
         pulse1_.length_enabled = (value & 0x40) != 0;
-        if ((value & 0x80) != 0) trigger_pulse1();
+        if ((value & 0x80) != 0) {
+            trigger_pulse1();
+        } else if (pulse1_.just_reloaded) {
+            pulse1_.period = pulse_period(0x01);
+            pulse1_.timer = pulse1_.period;
+        }
         break;
     case 0xFF16:
         pulse2_.length = static_cast<std::uint8_t>(64 - (value & 0x3F));
+        if (!pulse2_.enabled) {
+            pulse2_.duty = static_cast<std::uint8_t>(value >> 6);
+            pulse2_.duty_update_pending = false;
+        } else {
+            pulse2_.pending_duty = static_cast<std::uint8_t>(value >> 6);
+            pulse2_.duty_update_pending = true;
+        }
         break;
     case 0xFF17:
         pulse2_.dac_enabled = (value & 0xF8) != 0;
         if (!pulse2_.dac_enabled) pulse2_.enabled = false;
         else if (cgb_hardware_ && pulse2_.enabled)
             apply_envelope_write_glitch(pulse2_.envelope, value, old_value);
+        break;
+    case 0xFF18:
+        if (pulse2_.just_reloaded) {
+            pulse2_.period = pulse_period(0x06);
+            pulse2_.timer = pulse2_.period;
+        }
         break;
     case 0xFF19:
         if (!pulse2_.length_enabled && (value & 0x40) != 0 &&
@@ -175,7 +213,12 @@ void Apu::write_register(const std::uint16_t address,
             pulse2_.enabled = false;
         }
         pulse2_.length_enabled = (value & 0x40) != 0;
-        if ((value & 0x80) != 0) trigger_pulse2();
+        if ((value & 0x80) != 0) {
+            trigger_pulse2();
+        } else if (pulse2_.just_reloaded) {
+            pulse2_.period = pulse_period(0x06);
+            pulse2_.timer = pulse2_.period;
+        }
         break;
     case 0xFF1A:
         wave_.dac_enabled = (value & 0x80) != 0;
@@ -314,13 +357,27 @@ void Apu::power_off() noexcept {
 }
 
 void Apu::trigger_pulse1() noexcept {
+    const auto was_enabled = pulse1_.enabled;
+    const auto period = pulse_period(0x01);
     pulse1_.enabled = pulse1_.dac_enabled;
+    pulse1_.sample_suppressed = !was_enabled;
+    if (!was_enabled) {
+        pulse1_.duty = static_cast<std::uint8_t>(registers_[0x01] >> 6);
+        pulse1_.duty_update_pending = false;
+    }
     if (pulse1_.length == 0) {
         pulse1_.length = static_cast<std::uint8_t>(
             64 - (pulse1_.length_enabled && next_step_skips_length() ? 1 : 0));
     }
-    pulse1_.timer = (pulse1_.timer & 3U) | (pulse_period(0x01) & ~3U);
-    pulse1_.timer += channel_trigger_delay;
+    pulse1_.period = period;
+    pulse1_.timer = (pulse1_.timer & 3U) | (period & ~3U);
+    pulse1_.just_reloaded = false;
+    pulse1_.timer += channel_trigger_delay +
+                     (modern_cgb_ && !was_enabled
+                          ? (period >= 16
+                                 ? modern_cgb_inactive_square_alignment
+                                 : modern_cgb_inactive_square_alignment / 2)
+                          : 0U);
     trigger_envelope(pulse1_.envelope, registers_[0x02]);
     if (frame_sequencer_step_ == 7 && pulse1_.envelope.running) {
         ++pulse1_.envelope.timer;
@@ -340,13 +397,27 @@ void Apu::trigger_pulse1() noexcept {
 }
 
 void Apu::trigger_pulse2() noexcept {
+    const auto was_enabled = pulse2_.enabled;
+    const auto period = pulse_period(0x06);
     pulse2_.enabled = pulse2_.dac_enabled;
+    pulse2_.sample_suppressed = !was_enabled;
+    if (!was_enabled) {
+        pulse2_.duty = static_cast<std::uint8_t>(registers_[0x06] >> 6);
+        pulse2_.duty_update_pending = false;
+    }
     if (pulse2_.length == 0) {
         pulse2_.length = static_cast<std::uint8_t>(
             64 - (pulse2_.length_enabled && next_step_skips_length() ? 1 : 0));
     }
-    pulse2_.timer = (pulse2_.timer & 3U) | (pulse_period(0x06) & ~3U);
-    pulse2_.timer += channel_trigger_delay;
+    pulse2_.period = period;
+    pulse2_.timer = (pulse2_.timer & 3U) | (period & ~3U);
+    pulse2_.just_reloaded = false;
+    pulse2_.timer += channel_trigger_delay +
+                     (modern_cgb_ && !was_enabled
+                          ? (period >= 16
+                                 ? modern_cgb_inactive_square_alignment
+                                 : modern_cgb_inactive_square_alignment / 2)
+                          : 0U);
     trigger_envelope(pulse2_.envelope, registers_[0x07]);
     if (frame_sequencer_step_ == 7 && pulse2_.envelope.running) {
         ++pulse2_.envelope.timer;
@@ -508,10 +579,18 @@ void Apu::clock_envelope(EnvelopeState& envelope,
 void Apu::tick_pulse(PulseState& pulse,
                      const unsigned register_offset) noexcept {
     if (!pulse.enabled) return;
+    pulse.just_reloaded = false;
+    if (pulse.timer == 1 && pulse.duty_update_pending) {
+        pulse.duty = pulse.pending_duty;
+        pulse.duty_update_pending = false;
+    }
     if (pulse.timer > 0) --pulse.timer;
     if (pulse.timer == 0) {
-        pulse.timer = pulse_period(register_offset);
+        pulse.period = pulse_period(register_offset);
+        pulse.timer = pulse.period;
         pulse.duty_step = static_cast<std::uint8_t>((pulse.duty_step + 1) & 7);
+        pulse.sample_suppressed = false;
+        pulse.just_reloaded = true;
     }
 }
 
@@ -639,13 +718,15 @@ unsigned Apu::calculate_sweep_frequency() noexcept {
 float Apu::pulse_output(const PulseState& pulse,
                         const unsigned register_offset) const noexcept {
     if (!pulse.dac_enabled) return 0.0F;
-    const auto digital = pulse_digital(pulse, register_offset);
+    const auto digital = pulse_digital(pulse, register_offset, false);
     return 1.0F - static_cast<float>(digital) * (2.0F / 15.0F);
 }
 
 unsigned Apu::pulse_digital(const PulseState& pulse,
-                            const unsigned register_offset) const noexcept {
-    const auto duty = static_cast<std::size_t>(registers_[register_offset] >> 6);
+                            const unsigned /*register_offset*/,
+                            const bool suppress_startup) const noexcept {
+    const auto duty = static_cast<std::size_t>(pulse.duty);
+    if (suppress_startup && pulse.sample_suppressed) return 0;
     const auto high = duty_patterns[duty][pulse.duty_step] != 0;
     return pulse.enabled && pulse.dac_enabled && high ? pulse.envelope.volume : 0;
 }

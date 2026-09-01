@@ -43,7 +43,16 @@ private:
         bool length_enabled{};
         std::uint8_t length{};
         std::uint8_t duty_step{};
+        std::uint8_t duty{};
+        std::uint8_t pending_duty{};
+        bool duty_update_pending{};
+        bool sample_suppressed{};
+        // Countdown in APU clocks; period is latched at each waveform edge.
         unsigned timer{};
+        unsigned period{};
+        // True only for the clock that performed the period reload. Frequency
+        // writes on that boundary have a distinct hardware path.
+        bool just_reloaded{};
         EnvelopeState envelope{};
     };
 
@@ -102,7 +111,8 @@ private:
     [[nodiscard]] float wave_output() const noexcept;
     [[nodiscard]] float noise_output() const noexcept;
     [[nodiscard]] unsigned pulse_digital(const PulseState& pulse,
-                                         unsigned register_offset) const noexcept;
+                                         unsigned register_offset,
+                                         bool suppress_startup = true) const noexcept;
     [[nodiscard]] unsigned wave_digital() const noexcept;
     [[nodiscard]] unsigned noise_digital() const noexcept;
 
@@ -110,6 +120,7 @@ private:
     std::array<std::uint8_t, 0x10> wave_ram_{};
     std::vector<std::int16_t> samples_{};
     bool cgb_hardware_{};
+    bool modern_cgb_{};
     bool powered_{};
     PulseState pulse1_{};
     PulseState pulse2_{};

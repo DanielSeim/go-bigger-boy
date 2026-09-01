@@ -13,7 +13,7 @@ namespace {
 constexpr std::array<std::uint8_t, 8> state_magic{
     'G', 'B', 'B', 'S', 'T', 'A', 'T', 'E',
 };
-constexpr std::uint32_t state_version = 18;
+constexpr std::uint32_t state_version = 21;
 constexpr std::uint32_t oldest_supported_state_version = 1;
 constexpr std::size_t maximum_state_size = 2 * 1024 * 1024;
 constexpr std::size_t maximum_serial_output = 1024 * 1024;
@@ -407,6 +407,19 @@ private:
         }
         writer.bytes(bus.ppu_.object_pixel_deadlines_.data(),
                      bus.ppu_.object_pixel_deadlines_.size());
+        writer.u8(bus.apu_.pulse1_.duty);
+        writer.u8(bus.apu_.pulse1_.pending_duty);
+        writer.boolean(bus.apu_.pulse1_.duty_update_pending);
+        writer.u8(bus.apu_.pulse2_.duty);
+        writer.u8(bus.apu_.pulse2_.pending_duty);
+        writer.boolean(bus.apu_.pulse2_.duty_update_pending);
+        writer.boolean(bus.apu_.pulse1_.sample_suppressed);
+        writer.boolean(bus.apu_.pulse2_.sample_suppressed);
+        writer.boolean(bus.apu_cycle_phase_);
+        writer.u32(bus.apu_.pulse1_.period);
+        writer.boolean(bus.apu_.pulse1_.just_reloaded);
+        writer.u32(bus.apu_.pulse2_.period);
+        writer.boolean(bus.apu_.pulse2_.just_reloaded);
     }
 
     static void read_bus(Reader& reader, MemoryBus& bus,
@@ -762,6 +775,34 @@ private:
         } else {
             bus.ppu_.object_pixel_deadlines_.fill(0);
         }
+        if (version >= 19) {
+            bus.apu_.pulse1_.duty = reader.u8();
+            bus.apu_.pulse1_.pending_duty = reader.u8();
+            bus.apu_.pulse1_.duty_update_pending = reader.boolean();
+            bus.apu_.pulse2_.duty = reader.u8();
+            bus.apu_.pulse2_.pending_duty = reader.u8();
+            bus.apu_.pulse2_.duty_update_pending = reader.boolean();
+        }
+        if (version >= 20) {
+            bus.apu_.pulse1_.sample_suppressed = reader.boolean();
+            bus.apu_.pulse2_.sample_suppressed = reader.boolean();
+            bus.apu_cycle_phase_ = reader.boolean();
+        } else {
+            bus.apu_.pulse1_.sample_suppressed = false;
+            bus.apu_.pulse2_.sample_suppressed = false;
+            bus.apu_cycle_phase_ = false;
+        }
+        if (version >= 21) {
+            bus.apu_.pulse1_.period = reader.u32();
+            bus.apu_.pulse1_.just_reloaded = reader.boolean();
+            bus.apu_.pulse2_.period = reader.u32();
+            bus.apu_.pulse2_.just_reloaded = reader.boolean();
+        } else {
+            bus.apu_.pulse1_.period = 0;
+            bus.apu_.pulse1_.just_reloaded = false;
+            bus.apu_.pulse2_.period = 0;
+            bus.apu_.pulse2_.just_reloaded = false;
+        }
         // The printer represents an external device and is deliberately not
         // embedded in emulator save states. Loading a state starts a fresh
         // printer session while preserving whether it is connected.
@@ -985,6 +1026,16 @@ private:
         apu.sample_accumulator_ = reader.u32();
         apu.left_capacitor_ = reader.f32();
         apu.right_capacitor_ = reader.f32();
+        apu.pulse1_.duty = static_cast<std::uint8_t>(apu.registers_[0x01] >> 6);
+        apu.pulse1_.pending_duty = apu.pulse1_.duty;
+        apu.pulse1_.duty_update_pending = false;
+        apu.pulse2_.duty = static_cast<std::uint8_t>(apu.registers_[0x06] >> 6);
+        apu.pulse2_.pending_duty = apu.pulse2_.duty;
+        apu.pulse2_.duty_update_pending = false;
+        apu.pulse1_.period = apu.pulse_period(0x01);
+        apu.pulse1_.just_reloaded = false;
+        apu.pulse2_.period = apu.pulse_period(0x06);
+        apu.pulse2_.just_reloaded = false;
         apu.sample_integrator_left_ = 0.0F;
         apu.sample_integrator_right_ = 0.0F;
     }
