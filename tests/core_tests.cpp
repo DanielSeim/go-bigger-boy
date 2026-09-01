@@ -712,7 +712,7 @@ void test_apu_waveform_regressions() {
     check(pulse.size() == 186 && wave.size() == 186 &&
               noise.size() == 186,
           "waveform regression fixtures produce a deterministic PCM window");
-    check(audio_waveform_signature(pulse) == UINT64_C(0x56201b7fcc810cb3),
+    check(audio_waveform_signature(pulse) == UINT64_C(0x55e406d59a987d8b),
           "pulse waveform regression signature");
     check(audio_waveform_signature(wave) == UINT64_C(0x5b853b4bcc531d67),
           "wave waveform regression signature");
@@ -1492,6 +1492,20 @@ void test_apu_power_registers_and_wave_ram() {
     }
     check(saw_pcm_pulse && bus.read8(0xFF76) == 0xFF,
           "CGB PCM12 exposes live channel output and remains unmapped on DMG");
+
+    const auto pcm_after_trigger = [](const unsigned idle_cycles) {
+        gameboy::MemoryBus probe{gameboy::Cartridge{cgb_test_rom()}};
+        probe.initialize_post_boot(gameboy::HardwareModel::cgb);
+        probe.write8(0xFF11, 0x40); // 25% duty, initially high.
+        probe.write8(0xFF12, 0x80); // DAC enabled, volume 8.
+        probe.write8(0xFF13, 0xFF);
+        probe.write8(0xFF14, 0x07); // Leave channel disabled.
+        probe.tick(idle_cycles);
+        probe.write8(0xFF14, 0x87); // Trigger after the idle interval.
+        return probe.read8(0xFF76) & 0x0F;
+    };
+    check(pcm_after_trigger(0) == pcm_after_trigger(256),
+          "disabled pulse timers do not advance the duty phase");
 }
 
 void test_active_wave_ram_timing() {

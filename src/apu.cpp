@@ -8,6 +8,9 @@ namespace gameboy {
 namespace {
 constexpr unsigned master_clock = 4194304;
 constexpr std::size_t maximum_buffered_samples = Apu::sample_rate * 2;
+// A trigger does not expose the newly started waveform until the five-clock
+// startup delay has elapsed. This is observable through CGB PCM12/PCM34 reads.
+constexpr unsigned channel_trigger_delay = 5;
 
 constexpr std::array<std::array<std::uint8_t, 8>, 4> duty_patterns{{
     {{0, 0, 0, 0, 0, 0, 0, 1}},
@@ -300,6 +303,7 @@ void Apu::trigger_pulse1() noexcept {
             64 - (pulse1_.length_enabled && next_step_skips_length() ? 1 : 0));
     }
     pulse1_.timer = (pulse1_.timer & 3U) | (pulse_period(0x01) & ~3U);
+    pulse1_.timer += channel_trigger_delay;
     trigger_envelope(pulse1_.envelope, registers_[0x02]);
     if (frame_sequencer_step_ == 7 && pulse1_.envelope.running) {
         ++pulse1_.envelope.timer;
@@ -325,6 +329,7 @@ void Apu::trigger_pulse2() noexcept {
             64 - (pulse2_.length_enabled && next_step_skips_length() ? 1 : 0));
     }
     pulse2_.timer = (pulse2_.timer & 3U) | (pulse_period(0x06) & ~3U);
+    pulse2_.timer += channel_trigger_delay;
     trigger_envelope(pulse2_.envelope, registers_[0x07]);
     if (frame_sequencer_step_ == 7 && pulse2_.envelope.running) {
         ++pulse2_.envelope.timer;
@@ -441,6 +446,7 @@ void Apu::clock_envelope(EnvelopeState& envelope,
 
 void Apu::tick_pulse(PulseState& pulse,
                      const unsigned register_offset) noexcept {
+    if (!pulse.enabled) return;
     if (pulse.timer > 0) --pulse.timer;
     if (pulse.timer == 0) {
         pulse.timer = pulse_period(register_offset);
@@ -449,6 +455,7 @@ void Apu::tick_pulse(PulseState& pulse,
 }
 
 void Apu::tick_wave() noexcept {
+    if (!wave_.enabled) return;
     wave_.clock_phase = !wave_.clock_phase;
     if (wave_.clock_phase) return;
 
@@ -466,6 +473,7 @@ void Apu::tick_wave() noexcept {
 }
 
 void Apu::tick_noise() noexcept {
+    if (!noise_.enabled) return;
     if ((registers_[0x12] >> 4) >= 14) return;
     if (noise_.timer > 0) --noise_.timer;
     if (noise_.timer != 0) return;
