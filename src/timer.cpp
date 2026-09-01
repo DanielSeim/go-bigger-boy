@@ -108,6 +108,11 @@ unsigned Timer::take_apu_ticks() noexcept {
     return ticks;
 }
 
+bool Timer::apu_signal() const noexcept {
+    const auto bit = double_speed_ ? 13U : 12U;
+    return (divider_counter_ & (1U << bit)) != 0;
+}
+
 bool Timer::input_signal() const noexcept {
     if ((control_ & 0x04) == 0) {
         return false;

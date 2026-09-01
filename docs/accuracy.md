@@ -140,6 +140,12 @@ and CGB for the remaining CGB tests. This suite is diagnostic until its
 revision-specific failures are resolved; it is not included in the release
 gate by default.
 
+DIV/APU edges are dispatched at their timer-cycle boundary rather than being
+queued until the end of a bus batch. The APU also models the hardware rule that
+enabling it while the DIV/APU input is high skips the first falling-edge event;
+the pending phase is retained in save states. This is covered by the core timer
+tests and the corresponding SameSuite DIV-trigger ROMs.
+
 The next PPU refinement is the hardware-revision-specific edge behavior around
 object-fetch cancellation, window triggers changed before the first visible
 pixel (including the remaining `WX=1..6` comparator cases), and the output-pipeline

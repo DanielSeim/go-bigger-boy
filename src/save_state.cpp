@@ -942,7 +942,9 @@ private:
         writer.u8(apu.sweep_timer_);
         writer.boolean(apu.sweep_enabled_);
         writer.boolean(apu.sweep_negated_);
-        writer.u8(apu.frame_sequencer_step_);
+        writer.u8(static_cast<std::uint8_t>(
+            apu.frame_sequencer_step_ |
+            (apu.skip_frame_sequencer_event_ ? 0x80 : 0)));
         writer.u32(apu.sample_accumulator_);
         writer.f32(apu.left_capacitor_);
         writer.f32(apu.right_capacitor_);
@@ -976,7 +978,10 @@ private:
         apu.sweep_timer_ = reader.u8();
         apu.sweep_enabled_ = reader.boolean();
         apu.sweep_negated_ = reader.boolean();
-        apu.frame_sequencer_step_ = reader.u8();
+        const auto frame_sequencer_state = reader.u8();
+        apu.frame_sequencer_step_ =
+            static_cast<std::uint8_t>(frame_sequencer_state & 0x07);
+        apu.skip_frame_sequencer_event_ = (frame_sequencer_state & 0x80) != 0;
         apu.sample_accumulator_ = reader.u32();
         apu.left_capacitor_ = reader.f32();
         apu.right_capacitor_ = reader.f32();

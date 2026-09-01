@@ -25,6 +25,7 @@ public:
     // Returns true when TIMA reload requests the timer interrupt.
     [[nodiscard]] bool tick(unsigned cycles) noexcept;
     [[nodiscard]] unsigned take_apu_ticks() noexcept;
+    [[nodiscard]] bool apu_signal() const noexcept;
 
 private:
     friend class SaveStateCodec;

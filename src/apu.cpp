@@ -20,11 +20,15 @@ constexpr std::array<std::array<std::uint8_t, 8>, 4> duty_patterns{{
 }};
 } // namespace
 
-void Apu::initialize_post_boot(const HardwareModel model) noexcept {
+void Apu::initialize_post_boot(const HardwareModel model,
+                               const bool divider_apu_signal) noexcept {
     cgb_hardware_ = model == HardwareModel::cgb0 ||
                     model == HardwareModel::cgb;
     power_off();
     powered_ = true;
+    // If the APU is enabled while the DIV/APU input is high, hardware skips
+    // the first falling-edge event.  The timer supplies the phase at boot.
+    skip_frame_sequencer_event_ = divider_apu_signal;
     registers_[0x00] = 0x80; // NR10
     registers_[0x01] = 0xBF; // NR11
     registers_[0x02] = 0xF3; // NR12
@@ -86,7 +90,8 @@ std::uint8_t Apu::read_register(const std::uint16_t address) const noexcept {
 }
 
 void Apu::write_register(const std::uint16_t address,
-                         const std::uint8_t value) noexcept {
+                         const std::uint8_t value,
+                         const bool divider_apu_signal) noexcept {
     if (address >= 0xFF30 && address <= 0xFF3F) {
         if (!wave_.enabled) {
             wave_ram_[address - 0xFF30] = value;
@@ -103,6 +108,7 @@ void Apu::write_register(const std::uint16_t address,
         } else if (!powered_) {
             powered_ = true;
             frame_sequencer_step_ = 0;
+            skip_frame_sequencer_event_ = divider_apu_signal;
         }
         return;
     }
@@ -244,6 +250,10 @@ void Apu::tick(const unsigned cycles) noexcept {
 }
 
 void Apu::clock_frame_sequencer() noexcept {
+    if (skip_frame_sequencer_event_) {
+        skip_frame_sequencer_event_ = false;
+        return;
+    }
     if (powered_) {
         if ((frame_sequencer_step_ & 1) == 0) clock_length();
         if (frame_sequencer_step_ == 2 || frame_sequencer_step_ == 6) {
@@ -298,6 +308,7 @@ void Apu::power_off() noexcept {
     sweep_enabled_ = false;
     sweep_negated_ = false;
     frame_sequencer_step_ = 0;
+    skip_frame_sequencer_event_ = false;
     sample_integrator_left_ = 0.0F;
     sample_integrator_right_ = 0.0F;
 }

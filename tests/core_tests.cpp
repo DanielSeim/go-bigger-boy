@@ -1651,6 +1651,22 @@ void test_apu_pulse2_samples_and_length() {
     extra_clock_bus.write8(0xFF19, 0x40); // Enabling length adds a clock.
     check((extra_clock_bus.read8(0xFF26) & 0x02) == 0,
           "enabling length before a non-length step performs the DMG extra clock");
+
+    gameboy::MemoryBus apu_start_phase{gameboy::Cartridge{cgb_test_rom()}};
+    apu_start_phase.initialize_post_boot(gameboy::HardwareModel::cgb);
+    apu_start_phase.write8(0xFF26, 0x00); // Power the APU off.
+    apu_start_phase.write8(0xFF04, 0x00);
+    apu_start_phase.tick(4096); // Leave DIV/APU high before re-enabling.
+    apu_start_phase.write8(0xFF26, 0x80);
+    apu_start_phase.write8(0xFF16, 0xBF); // One-tick channel-2 length.
+    apu_start_phase.write8(0xFF17, 0xF0);
+    apu_start_phase.write8(0xFF19, 0xC0);
+    apu_start_phase.tick(4096); // The first falling edge is skipped.
+    check((apu_start_phase.read8(0xFF26) & 0x02) != 0,
+          "enabling the APU on a high DIV/APU phase skips its first edge");
+    apu_start_phase.tick(8192); // The next falling edge clocks the length.
+    check((apu_start_phase.read8(0xFF26) & 0x02) == 0,
+          "the skipped APU edge does not shift later frame-sequencer clocks");
 }
 
 void test_apu_pulse1_sweep_wave_and_noise() {

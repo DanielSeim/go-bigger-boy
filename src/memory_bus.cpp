@@ -27,7 +27,7 @@ void MemoryBus::initialize_post_boot(const HardwareModel model) noexcept {
     // The serial divider is reset-derived and is not synchronized when a
     // transfer starts. Preserve the phase at the boot-ROM handoff.
     serial_.initialize_post_boot(model);
-    apu_.initialize_post_boot(model);
+    apu_.initialize_post_boot(model, timer_.apu_signal());
     static_cast<void>(joypad_.write(
         model == HardwareModel::sgb || model == HardwareModel::sgb2 ||
                 cgb_hardware_
@@ -222,7 +222,8 @@ void MemoryBus::write8(const std::uint16_t address, const std::uint8_t value) no
     } else if (cgb_hardware_ && address == 0xFF75) {
         io_[0x75] = static_cast<std::uint8_t>(value & 0x70);
     } else if (Apu::handles_register(address)) {
-        apu_.write_register(address, value);
+        apu_.write_register(address, value,
+                            address == 0xFF26 ? timer_.apu_signal() : false);
     } else if (Ppu::handles_register(address)) {
         if (ppu_.write_register(address, value)) {
             request_interrupt(1);
@@ -239,16 +240,28 @@ void MemoryBus::write8(const std::uint16_t address, const std::uint8_t value) no
 void MemoryBus::tick(const unsigned cycles) noexcept {
     const auto peripheral_cycles = double_speed_ ? cycles / 2 : cycles;
     tick_oam_dma(peripheral_cycles);
-    apu_.tick(peripheral_cycles);
     serial_.tick(cycles);
     io_[0x01] = serial_.read_data();
     io_[0x02] = static_cast<std::uint8_t>(
         serial_.read_control() & (cgb_mode_ ? 0x83 : 0x81));
-    if (timer_.tick(cycles)) {
-        request_interrupt(2);
+
+    // DIV/APU edges are synchronous with the timer divider.  Processing the
+    // timer in one batch and draining its edge count afterwards can postpone
+    // a frame-sequencer clock until the end of an instruction, which is
+    // observable when a register or PCM port is read on that boundary.  Keep
+    // the timer and APU clocks paired one CPU cycle at a time.  In CGB double
+    // speed, the APU advances once per two CPU cycles, matching the existing
+    // peripheral-cycle conversion.
+    auto timer_interrupt = false;
+    for (unsigned cycle = 0; cycle < cycles; ++cycle) {
+        if (!double_speed_ || (cycle & 1U) != 0) apu_.tick(1);
+        timer_interrupt = timer_.tick(1) || timer_interrupt;
+        for (auto ticks = timer_.take_apu_ticks(); ticks > 0; --ticks) {
+            apu_.clock_frame_sequencer();
+        }
     }
-    for (auto ticks = timer_.take_apu_ticks(); ticks > 0; --ticks) {
-        apu_.clock_frame_sequencer();
+    if (timer_interrupt) {
+        request_interrupt(2);
     }
     const auto ppu_requests = ppu_.tick(peripheral_cycles);
     if ((ppu_requests & 0x01) != 0) {

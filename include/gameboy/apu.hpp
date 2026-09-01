@@ -13,11 +13,13 @@ class Apu {
 public:
     static constexpr unsigned sample_rate = 48000;
 
-    void initialize_post_boot(HardwareModel model) noexcept;
+    void initialize_post_boot(HardwareModel model,
+                              bool divider_apu_signal = false) noexcept;
 
     [[nodiscard]] static bool handles_register(std::uint16_t address) noexcept;
     [[nodiscard]] std::uint8_t read_register(std::uint16_t address) const noexcept;
-    void write_register(std::uint16_t address, std::uint8_t value) noexcept;
+    void write_register(std::uint16_t address, std::uint8_t value,
+                        bool divider_apu_signal = false) noexcept;
 
     void tick(unsigned cycles) noexcept;
     void clock_frame_sequencer() noexcept;
@@ -118,6 +120,7 @@ private:
     bool sweep_enabled_{};
     bool sweep_negated_{};
     std::uint8_t frame_sequencer_step_{};
+    bool skip_frame_sequencer_event_{};
     unsigned sample_accumulator_{};
     float left_capacitor_{};
     float right_capacitor_{};
