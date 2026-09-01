@@ -30,6 +30,7 @@ private:
 
     struct EnvelopeState {
         bool running{};
+        bool locked{};
         std::uint8_t volume{};
         std::uint8_t timer{};
     };
@@ -73,6 +74,9 @@ private:
     void trigger_noise() noexcept;
     static void trigger_envelope(EnvelopeState& envelope,
                                  std::uint8_t register_value) noexcept;
+    static void apply_envelope_write_glitch(EnvelopeState& envelope,
+                                            std::uint8_t value,
+                                            std::uint8_t old_value) noexcept;
     void clock_length() noexcept;
     void clock_sweep() noexcept;
     void clock_envelopes() noexcept;

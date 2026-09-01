@@ -889,6 +889,9 @@ private:
 
     static void read_envelope(Reader& reader, Apu::EnvelopeState& envelope) {
         envelope.running = reader.boolean();
+        // The zombie-mode lock is a short-lived combinational state and is
+        // deliberately not part of the save-state wire format.
+        envelope.locked = false;
         envelope.volume = reader.u8();
         envelope.timer = reader.u8();
     }

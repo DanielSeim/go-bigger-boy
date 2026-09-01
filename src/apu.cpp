@@ -141,6 +141,8 @@ void Apu::write_register(const std::uint16_t address,
     case 0xFF12:
         pulse1_.dac_enabled = (value & 0xF8) != 0;
         if (!pulse1_.dac_enabled) pulse1_.enabled = false;
+        else if (cgb_hardware_ && pulse1_.enabled)
+            apply_envelope_write_glitch(pulse1_.envelope, value, old_value);
         break;
     case 0xFF14:
         if (!pulse1_.length_enabled && (value & 0x40) != 0 &&
@@ -157,6 +159,8 @@ void Apu::write_register(const std::uint16_t address,
     case 0xFF17:
         pulse2_.dac_enabled = (value & 0xF8) != 0;
         if (!pulse2_.dac_enabled) pulse2_.enabled = false;
+        else if (cgb_hardware_ && pulse2_.enabled)
+            apply_envelope_write_glitch(pulse2_.envelope, value, old_value);
         break;
     case 0xFF19:
         if (!pulse2_.length_enabled && (value & 0x40) != 0 &&
@@ -189,6 +193,8 @@ void Apu::write_register(const std::uint16_t address,
     case 0xFF21:
         noise_.dac_enabled = (value & 0xF8) != 0;
         if (!noise_.dac_enabled) noise_.enabled = false;
+        else if (cgb_hardware_ && noise_.enabled)
+            apply_envelope_write_glitch(noise_.envelope, value, old_value);
         break;
     case 0xFF23:
         if (!noise_.length_enabled && (value & 0x40) != 0 &&
@@ -377,10 +383,53 @@ void Apu::trigger_noise() noexcept {
 
 void Apu::trigger_envelope(EnvelopeState& envelope,
                            const std::uint8_t register_value) noexcept {
+    envelope.locked = false;
     envelope.volume = static_cast<std::uint8_t>(register_value >> 4);
     const auto period = static_cast<std::uint8_t>(register_value & 7);
     envelope.timer = period == 0 ? 8 : period;
     envelope.running = period != 0;
+}
+
+void Apu::apply_envelope_write_glitch(EnvelopeState& envelope,
+                                      const std::uint8_t value,
+                                      const std::uint8_t old_value) noexcept {
+    // CGB-D/E implement NRx2 writes as a write to the envelope counter's
+    // combinational input ("zombie mode"), rather than loading the volume
+    // nibble.  This is the behavior exercised by SameSuite's CGB volume
+    // tests.  The pre-CGB variants have different, partly nondeterministic
+    // behavior and are intentionally left on the simpler model.
+    if (envelope.running) envelope.timer = static_cast<std::uint8_t>(value & 7);
+
+    auto should_tick = (value & 7) != 0 && (old_value & 7) == 0 &&
+                       !envelope.locked;
+    const auto should_invert = ((value ^ old_value) & 8) != 0;
+    if ((value & 0x0F) == 8 && (old_value & 0x0F) == 8 && !envelope.locked)
+        should_tick = true;
+
+    if (should_invert) {
+        if ((value & 8) != 0) {
+            if ((old_value & 7) == 0 && !envelope.locked) {
+                envelope.volume ^= 0x0F;
+            } else {
+                envelope.volume = static_cast<std::uint8_t>(
+                    (0x0E - envelope.volume) & 0x0F);
+            }
+            should_tick = false;
+        } else {
+            envelope.volume = static_cast<std::uint8_t>(
+                (0x10 - envelope.volume) & 0x0F);
+        }
+    }
+    if (should_tick) {
+        if ((value & 8) != 0)
+            envelope.volume = static_cast<std::uint8_t>(
+                (envelope.volume + 1) & 0x0F);
+        else
+            envelope.volume = static_cast<std::uint8_t>(
+                (envelope.volume - 1) & 0x0F);
+    } else if ((value & 7) == 0 && envelope.running) {
+        envelope.running = false;
+    }
 }
 
 void Apu::clock_length() noexcept {
@@ -429,7 +478,7 @@ void Apu::clock_envelopes() noexcept {
 
 void Apu::clock_envelope(EnvelopeState& envelope,
                          const std::uint8_t register_value) noexcept {
-    if (!envelope.running || envelope.timer == 0) return;
+    if (!envelope.running || envelope.locked || envelope.timer == 0) return;
     if (--envelope.timer != 0) return;
 
     const auto period = static_cast<std::uint8_t>(register_value & 7);
@@ -441,6 +490,7 @@ void Apu::clock_envelope(EnvelopeState& envelope,
         --envelope.volume;
     } else {
         envelope.running = false;
+        envelope.locked = true;
     }
 }
 
