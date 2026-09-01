@@ -10,6 +10,8 @@ option(GAMEBOY_BUILD_TESTS "Build the unit tests" ON)
 option(GAMEBOY_BUILD_SDL "Build the SDL3 desktop frontend when SDL3 is available" ON)
 set(GAMEBOY_TEST_ROM_DIR "" CACHE PATH
     "Optional root of the c-sp Game Boy test ROM bundle")
+set(GAMEBOY_SAMESUITE_DIR "" CACHE PATH
+    "Optional checkout of LIJI32/SameSuite for experimental APU tests")
 
 add_library(gameboy_core
     src/apu.cpp
@@ -267,7 +269,7 @@ if(GAMEBOY_BUILD_TESTS)
         VERBATIM)
     add_test(NAME gameboy_core_tests COMMAND gameboy_tests)
 
-    if(GAMEBOY_TEST_ROM_DIR)
+    if(GAMEBOY_TEST_ROM_DIR OR GAMEBOY_SAMESUITE_DIR)
         include(cmake/ConformanceTests.cmake)
     endif()
 endif()

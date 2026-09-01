@@ -124,6 +124,22 @@ measurement noise, and then keep those external references in the release
 verification job. That will cover revision-specific DAC levels and analog
 high-pass response without weakening the deterministic software regression.
 
+SameSuite provides the complementary digital-APU research tests. It is an
+opt-in CTest suite because its APU ROMs intentionally expose revision-specific
+edge cases that are still exploratory even in established emulators. Build a
+checkout with RGBDS, then configure GBB with
+`-DGAMEBOY_SAMESUITE_DIR=/path/to/SameSuite`; run the suite with:
+
+```sh
+ctest --test-dir build-conformance -L samesuite-apu --output-on-failure
+```
+
+The runner uses SameSuite's Mooneye-compatible result registers and selects DMG
+for its two pre-CGB DIV-trigger ROMs, CGB0 for explicitly tagged CGB0 cases,
+and CGB for the remaining CGB tests. This suite is diagnostic until its
+revision-specific failures are resolved; it is not included in the release
+gate by default.
+
 The next PPU refinement is the hardware-revision-specific edge behavior around
 object-fetch cancellation, window triggers changed before the first visible
 pixel (including the remaining `WX=1..6` comparator cases), and the output-pipeline

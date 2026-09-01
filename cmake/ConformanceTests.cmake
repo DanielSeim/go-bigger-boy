@@ -18,7 +18,29 @@ function(gbb_add_conformance_test suite relative_path protocol cycle_limit)
                          TIMEOUT 30)
 endfunction()
 
-find_package(Python3 3.8 REQUIRED COMPONENTS Interpreter)
+function(gbb_add_direct_conformance_test suite rom protocol cycle_limit)
+    if(NOT EXISTS "${rom}")
+        message(FATAL_ERROR "Missing conformance ROM: ${rom}")
+    endif()
+
+    get_filename_component(rom_name "${rom}" NAME)
+    string(MAKE_C_IDENTIFIER "${suite}_${rom_name}" test_id)
+    set(test_name "conformance_${test_id}")
+    set(test_command gameboy_test_runner "${rom}"
+                     --max-cycles "${cycle_limit}"
+                     --protocol "${protocol}")
+    if(ARGC GREATER 4)
+        list(APPEND test_command --model "${ARGV4}")
+    endif()
+    add_test(NAME "${test_name}" COMMAND ${test_command})
+    set_tests_properties("${test_name}" PROPERTIES
+                         LABELS "conformance;${suite}"
+                         TIMEOUT 30)
+endfunction()
+
+if(GAMEBOY_TEST_ROM_DIR)
+    find_package(Python3 3.8 REQUIRED COMPONENTS Interpreter)
+endif()
 
 function(gbb_add_visual_test name rom_path reference_path model frames
          dmg_compatibility_colors)
@@ -54,6 +76,7 @@ function(gbb_add_visual_test name rom_path reference_path model frames
 endfunction()
 
 # Complete acceptance baseline from Mooneye Test Suite 8d742b9d55.
+if(GAMEBOY_TEST_ROM_DIR)
 set(gbb_mooneye_tests
     acceptance/add_sp_e_timing.gb
     acceptance/bits/unused_hwio-GS.gb
@@ -276,9 +299,38 @@ foreach(relative_path IN LISTS gbb_cgb_sound_tests)
         blargg 200000000 cgb)
 endforeach()
 
+endif()
+
+# SameSuite is an opt-in research suite. Its APU ROMs are designed for
+# hardware investigation and currently expose revision-specific failures even
+# in established emulators, so they must not silently become a release gate.
+# Build the ROMs with RGBDS (`make` in a SameSuite checkout), then configure
+# with -DGAMEBOY_SAMESUITE_DIR=/path/to/SameSuite and run -L samesuite-apu.
+if(GAMEBOY_SAMESUITE_DIR)
+    file(GLOB_RECURSE gbb_samesuite_apu_roms CONFIGURE_DEPENDS
+         "${GAMEBOY_SAMESUITE_DIR}/apu/*.gb")
+    if(NOT gbb_samesuite_apu_roms)
+        message(FATAL_ERROR
+                "GAMEBOY_SAMESUITE_DIR has no built APU ROMs; run make first")
+    endif()
+    foreach(rom IN LISTS gbb_samesuite_apu_roms)
+        get_filename_component(rom_name "${rom}" NAME)
+        set(model cgb)
+        if(rom_name STREQUAL "div_write_trigger.gb" OR
+           rom_name STREQUAL "div_write_trigger_10.gb")
+            set(model dmg)
+        elseif(rom_name MATCHES "cgb0")
+            set(model cgb0)
+        endif()
+        gbb_add_direct_conformance_test(
+            samesuite-apu "${rom}" mooneye 15000000 "${model}")
+    endforeach()
+endif()
+
 # Exact framebuffer comparisons against the reference images distributed with
 # the pinned ROM bundle. Captures and magenta difference images are retained in
 # the build tree when a comparison fails.
+if(GAMEBOY_TEST_ROM_DIR)
 gbb_add_visual_test(dmg_acid2
     "dmg-acid2/dmg-acid2.gb" "dmg-acid2/dmg-acid2-dmg.png" dmg 60 OFF)
 gbb_add_visual_test(cgb_acid2
@@ -344,3 +396,5 @@ gbb_add_visual_test(gambatte_dmgpalette_m3_scx1_1
     "gambatte/dmgpalette_during_m3/dmgpalette_during_m3_scx1_1.gb"
     "gambatte/dmgpalette_during_m3/dmgpalette_during_m3_scx1_1_dmg08.png"
     dmg 60 OFF)
+
+endif()
