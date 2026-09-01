@@ -24,6 +24,11 @@ The APU evaluates channel output and the hardware high-pass response on every
 master-clock cycle, then integrates those values over exact 48 kHz sample
 boundaries. This preserves short duty/noise transitions that a boundary sampler
 would discard while keeping the public frontend format at stereo 16-bit PCM.
+Core tests also retain deterministic, quantized PCM signatures for representative
+pulse, wave, and noise fixtures, so changes to channel timing or mixer output
+cannot silently alter the generated waveform. Desktop audio cleanup clears an
+overdue queue even when a frame produces no new samples, preventing stale audio
+from repeating after a pause or link wait.
 
 ## Next accuracy work
 
@@ -81,6 +86,11 @@ reactivation, and reducing the exploratory `m3_wx_6_change` mismatch from
 Later monochrome post-boot profiles reproduce the
 registered-trademark tile that the boot ROM leaves at `$8190`, so edge tests do
 not accidentally run against zero-filled startup VRAM.
+
+The next audio refinement is a reference-waveform suite covering hardware
+revision and analog high-pass differences; the existing Blargg sound ROMs
+validate CPU-visible APU behavior, while the PCM signatures protect the current
+software mixer output.
 
 The next PPU refinement is the hardware-revision-specific edge behavior around
 object-fetch cancellation, window triggers changed before the first visible

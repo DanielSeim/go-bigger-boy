@@ -492,6 +492,70 @@ void test_audio_frontend_helpers() {
           "audio queue limits convert milliseconds to interleaved PCM bytes");
 }
 
+std::uint64_t audio_waveform_signature(
+    const std::vector<std::int16_t>& samples) noexcept {
+    // Quantize away six low bits before hashing. This keeps the regression
+    // stable across platforms whose floating-point mixers round a boundary
+    // sample one unit differently, while still catching waveform/timing
+    // changes across the complete stereo buffer.
+    auto hash = UINT64_C(1469598103934665603);
+    for (const auto sample : samples) {
+        const auto quantized = static_cast<std::int16_t>(sample / 64);
+        const auto bits = static_cast<std::uint16_t>(quantized);
+        hash ^= static_cast<std::uint8_t>(bits);
+        hash *= UINT64_C(1099511628211);
+        hash ^= static_cast<std::uint8_t>(bits >> 8);
+        hash *= UINT64_C(1099511628211);
+    }
+    return hash;
+}
+
+void test_apu_waveform_regressions() {
+    const auto render = [](const auto configure) {
+        gameboy::MemoryBus bus{gameboy::Cartridge{test_rom()}};
+        bus.initialize_post_boot();
+        bus.write8(0xFF24, 0x77);
+        configure(bus);
+        bus.tick(8192);
+        return bus.take_audio_samples();
+    };
+
+    const auto pulse = render([](gameboy::MemoryBus& bus) {
+        bus.write8(0xFF25, 0x11); // Channel 1 to both terminals.
+        bus.write8(0xFF11, 0x80); // 50% duty.
+        bus.write8(0xFF12, 0xF0); // Volume 15, envelope disabled.
+        bus.write8(0xFF13, 0xE8);
+        bus.write8(0xFF14, 0x87); // Trigger at frequency 1000.
+    });
+    const auto wave = render([](gameboy::MemoryBus& bus) {
+        bus.write8(0xFF25, 0x44); // Channel 3 to both terminals.
+        for (unsigned index = 0; index < 16; ++index) {
+            bus.write8(static_cast<std::uint16_t>(0xFF30 + index),
+                       static_cast<std::uint8_t>(0xF0 - index * 7));
+        }
+        bus.write8(0xFF1A, 0x80);
+        bus.write8(0xFF1C, 0x20); // Full output level.
+        bus.write8(0xFF1D, 0x00);
+        bus.write8(0xFF1E, 0x87);
+    });
+    const auto noise = render([](gameboy::MemoryBus& bus) {
+        bus.write8(0xFF25, 0x88); // Channel 4 to both terminals.
+        bus.write8(0xFF21, 0xF0);
+        bus.write8(0xFF22, 0x08); // Fast 7-bit LFSR mode.
+        bus.write8(0xFF23, 0x80);
+    });
+
+    check(pulse.size() == 186 && wave.size() == 186 &&
+              noise.size() == 186,
+          "waveform regression fixtures produce a deterministic PCM window");
+    check(audio_waveform_signature(pulse) == UINT64_C(0x56201b7fcc810cb3),
+          "pulse waveform regression signature");
+    check(audio_waveform_signature(wave) == UINT64_C(0x5b853b4bcc531d67),
+          "wave waveform regression signature");
+    check(audio_waveform_signature(noise) == UINT64_C(0x224d45db0d6b5c33),
+          "noise waveform regression signature");
+}
+
 void test_apu_cycle_integrated_resampling() {
     gameboy::MemoryBus bus{gameboy::Cartridge{test_rom()}};
     bus.initialize_post_boot();
@@ -4115,6 +4179,7 @@ int main() {
         test_video_pipeline_modes();
         test_voxel_profiles();
         test_audio_frontend_helpers();
+        test_apu_waveform_regressions();
         test_apu_cycle_integrated_resampling();
         test_cartridge_file_loading();
         test_cgb_memory_and_rendering();

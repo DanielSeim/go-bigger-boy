@@ -35,6 +35,28 @@ public:
         return pending_sequence_.has_value() && !response_.has_value();
     }
 
+    // Read-only arbitration state used by opt-in link diagnostics. These
+    // values explain a slow but otherwise healthy exchange without exposing
+    // transport internals to the emulated serial port.
+    [[nodiscard]] bool response_ready() const noexcept {
+        return response_.has_value();
+    }
+    [[nodiscard]] bool peer_hello_seen() const noexcept {
+        return peer_hello_seen_;
+    }
+    [[nodiscard]] bool peer_request_seen() const noexcept {
+        return peer_request_seen_;
+    }
+    [[nodiscard]] bool peer_byte_released() const noexcept {
+        return peer_byte_released_;
+    }
+    [[nodiscard]] bool peer_clock_busy() const noexcept {
+        return peer_clock_busy_;
+    }
+    [[nodiscard]] unsigned request_backoff() const noexcept {
+        return request_backoff_;
+    }
+
     // Transport diagnostics are intentionally read-only and do not expose or
     // alter guest-visible serial state. They make it possible to distinguish
     // a game that never starts its serial clock from a TCP exchange that is

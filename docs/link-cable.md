@@ -100,6 +100,16 @@ also remain fed while a link wait is in progress so an audio underflow cannot
 replay the last buffer. Any timing optimization must preserve the now-working
 trade and battle handshake and the bounded timeout-retry recovery.
 
+#### Pending manual comparison
+
+Further testing is paused until the two-player emulator setup is available
+again. When it is available, run two otherwise identical trades: first with
+the host entering the table before the joiner, then with the joiner entering
+first. Keep `Link.Diagnostics = true` and retain both host and join traces.
+Compare the TCP arbitration fields (`z`, `pr`, `pb`, `pc`, and `bo`) during
+the `BITTE WARTEN` interval to determine whether entry order causes the slow
+serial cadence. Do not change the ROMs or save states for this comparison.
+
 When `Link.Diagnostics` is enabled, desktop traces now include an
 `elapsed_ms` field on every frame and serial event. This is monotonic elapsed
 wall-clock time from `session_start`, so long gaps can be distinguished from
@@ -152,6 +162,13 @@ party count. Additional `event=serial_complete` and `event=serial_active` lines
 make byte completions and clock ownership changes easy to locate without
 manually diffing every frame. The session header identifies the transport and
 role, so host and join logs can be compared directly.
+
+TCP frame records also include endpoint arbitration fields: `z` indicates a
+response ready to consume, `hh` that the peer hello was seen, `pr` that the
+peer has requested a byte, `pb` that the peer released a completed byte, `pc`
+that the peer currently owns the clock, and `bo` for the remaining request
+backoff. These fields are diagnostic-only and help distinguish a slow TCP
+exchange from a guest-side synchronization delay.
 
 Network, WebRTC, Bluetooth, and USB transports should be added only after this
 deterministic local path is validated with link-enabled games.

@@ -2571,7 +2571,7 @@ bool configure_video_pipeline(SdlResources& sdl,
         return false;
     }
     sdl.video_mode = mode;
-    return false;
+    return true;
 }
 
 struct DialogState {
@@ -5856,6 +5856,12 @@ void trace_remote_frame(const gameboy::Emulator& emulator,
                << " D=" << remote.endpoint.denials_sent()
                << " u=" << remote.endpoint.responses_unmatched()
                << " w=" << remote.endpoint.waiting_for_peer()
+               << " z=" << remote.endpoint.response_ready()
+               << " hh=" << remote.endpoint.peer_hello_seen()
+               << " pr=" << remote.endpoint.peer_request_seen()
+               << " pb=" << remote.endpoint.peer_byte_released()
+               << " pc=" << remote.endpoint.peer_clock_busy()
+               << " bo=" << remote.endpoint.request_backoff()
                << " phase=" << std::dec << serial.phase();
     append_trace_cpu(link_trace, emulator);
     append_trace_pokemon(link_trace, emulator);
@@ -7296,16 +7302,18 @@ void submit_audio(gameboy::Emulator* emulator, SdlResources& sdl,
     if (fast_forward && !samples.empty()) {
         samples = gbb::downsample_audio_box(samples, 2, fast_forward_factor);
     }
-    if (sdl.audio_stream == nullptr || samples.empty()) return;
+    if (sdl.audio_stream == nullptr) return;
     constexpr auto maximum_queued_bytes =
         gbb::audio_queue_bytes(gameboy::Apu::sample_rate, 2, 200);
     if (SDL_GetAudioStreamQueued(sdl.audio_stream) >
         static_cast<int>(maximum_queued_bytes)) {
-        // A debugger pause, window drag, or suspended mobile activity can leave
-        // stale audio behind. Recover latency rather than playing it seconds
-        // after the corresponding frame.
+        // A debugger pause, window drag, suspended mobile activity, or a link
+        // wait with no newly generated samples can leave stale audio behind.
+        // Recover latency rather than playing an old buffer seconds after its
+        // corresponding frame.
         static_cast<void>(SDL_ClearAudioStream(sdl.audio_stream));
     }
+    if (samples.empty()) return;
     if (!SDL_PutAudioStreamData(
             sdl.audio_stream, samples.data(),
             static_cast<int>(samples.size() * sizeof(samples.front())))) {
