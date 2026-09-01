@@ -247,14 +247,23 @@ if(GAMEBOY_BUILD_TESTS)
         COMMAND ${CMAKE_COMMAND} -E make_directory
                 "$<TARGET_FILE_DIR:gameboy_tests>/audio-fixtures"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/audio/pulse.txt"
-                "$<TARGET_FILE_DIR:gameboy_tests>/audio-fixtures/pulse.txt"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/audio/dmg-pulse.txt"
+                "$<TARGET_FILE_DIR:gameboy_tests>/audio-fixtures/dmg-pulse.txt"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/audio/wave.txt"
-                "$<TARGET_FILE_DIR:gameboy_tests>/audio-fixtures/wave.txt"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/audio/dmg-wave.txt"
+                "$<TARGET_FILE_DIR:gameboy_tests>/audio-fixtures/dmg-wave.txt"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/audio/noise.txt"
-                "$<TARGET_FILE_DIR:gameboy_tests>/audio-fixtures/noise.txt"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/audio/dmg-noise.txt"
+                "$<TARGET_FILE_DIR:gameboy_tests>/audio-fixtures/dmg-noise.txt"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/audio/cgb-pulse.txt"
+                "$<TARGET_FILE_DIR:gameboy_tests>/audio-fixtures/cgb-pulse.txt"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/audio/cgb-wave.txt"
+                "$<TARGET_FILE_DIR:gameboy_tests>/audio-fixtures/cgb-wave.txt"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/audio/cgb-noise.txt"
+                "$<TARGET_FILE_DIR:gameboy_tests>/audio-fixtures/cgb-noise.txt"
         VERBATIM)
     add_test(NAME gameboy_core_tests COMMAND gameboy_tests)
 

@@ -88,7 +88,8 @@ registered-trademark tile that the boot ROM leaves at `$8190`, so edge tests do
 not accidentally run against zero-filled startup VRAM.
 
 The audio tests include explicit 48 kHz stereo waveform vectors for pulse, wave,
-and noise fixtures under [`tests/fixtures/audio`](../tests/fixtures/audio). The
+and noise fixtures on both DMG and CGB models under
+[`tests/fixtures/audio`](../tests/fixtures/audio). The
 vectors are quantized to one unit per 64 PCM levels so harmless low-bit
 floating-point rounding does not make Linux and Windows disagree. They are the
 reviewable software baseline; the existing Blargg sound ROMs still validate
@@ -97,8 +98,9 @@ baseline files beside `gameboy_tests`, so the same check works from a Windows
 build or an arbitrary working directory.
 
 For comparison against a recording from hardware or a trusted emulator, place
-matching `pulse.txt`, `wave.txt`, and `noise.txt` files in a separate directory
-and point the unit test at it:
+matching `dmg-pulse.txt`, `dmg-wave.txt`, `dmg-noise.txt`, `cgb-pulse.txt`,
+`cgb-wave.txt`, and `cgb-noise.txt` files in a separate directory and point the
+unit test at it:
 
 ```sh
 GBB_AUDIO_REFERENCE_DIR=/path/to/reference build-sdl/gameboy_tests

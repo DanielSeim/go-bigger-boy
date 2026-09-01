@@ -1,6 +1,7 @@
 # GBB audio waveform reference v1
 format=gbb-audio-waveform-v1
 name=pulse
+model=dmg
 sample_rate=48000
 channels=2
 quantization=64

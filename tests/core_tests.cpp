@@ -519,6 +519,7 @@ std::uint64_t audio_waveform_signature(
 struct AudioWaveformReference {
     bool format_valid{};
     std::string name;
+    std::string model;
     unsigned sample_rate{};
     unsigned channels{};
     unsigned quantization{};
@@ -561,6 +562,7 @@ std::optional<AudioWaveformReference> load_audio_waveform_reference(
         const auto value = line.substr(separator + 1);
         try {
             if (key == "name") reference.name = value;
+            else if (key == "model") reference.model = value;
             else if (key == "format") reference.format_valid =
                 value == "gbb-audio-waveform-v1";
             else if (key == "sample_rate") reference.sample_rate =
@@ -590,12 +592,14 @@ std::optional<AudioWaveformReference> load_audio_waveform_reference(
 
 bool write_audio_waveform_reference(const std::filesystem::path& path,
                                     const std::string_view name,
+                                    const std::string_view model,
                                     const std::vector<std::int16_t>& samples) {
     std::ofstream output(path);
     if (!output) return false;
     output << "# GBB audio waveform reference v1\n"
            << "format=gbb-audio-waveform-v1\n"
            << "name=" << name << '\n'
+           << "model=" << model << '\n'
            << "sample_rate=48000\n"
            << "channels=2\n"
            << "quantization=64\n"
@@ -616,6 +620,7 @@ bool write_audio_waveform_reference(const std::filesystem::path& path,
 
 void compare_audio_waveform_reference(
     const std::filesystem::path& path, const std::string_view name,
+    const std::string_view model,
     const std::vector<std::int16_t>& rendered) {
     const auto reference = load_audio_waveform_reference(path);
     check(reference.has_value(),
@@ -625,7 +630,8 @@ void compare_audio_waveform_reference(
     const auto quantized = [](const std::int16_t sample) {
         return static_cast<std::int16_t>(sample / 64);
     };
-    check(reference->name == name && reference->sample_rate == 48000 &&
+    check(reference->name == name && reference->model == model &&
+              reference->sample_rate == 48000 &&
               reference->channels == 2 &&
               reference->quantization == 64 &&
               rendered.size() == reference->samples.size(),
@@ -663,23 +669,23 @@ void compare_audio_waveform_reference(
 }
 
 void test_apu_waveform_regressions() {
-    const auto render = [](const auto configure) {
+    const auto render = [](const gameboy::HardwareModel model, const auto configure) {
         gameboy::MemoryBus bus{gameboy::Cartridge{test_rom()}};
-        bus.initialize_post_boot();
+        bus.initialize_post_boot(model);
         bus.write8(0xFF24, 0x77);
         configure(bus);
         bus.tick(8192);
         return bus.take_audio_samples();
     };
 
-    const auto pulse = render([](gameboy::MemoryBus& bus) {
+    const auto pulse_setup = [](gameboy::MemoryBus& bus) {
         bus.write8(0xFF25, 0x11); // Channel 1 to both terminals.
         bus.write8(0xFF11, 0x80); // 50% duty.
         bus.write8(0xFF12, 0xF0); // Volume 15, envelope disabled.
         bus.write8(0xFF13, 0xE8);
         bus.write8(0xFF14, 0x87); // Trigger at frequency 1000.
-    });
-    const auto wave = render([](gameboy::MemoryBus& bus) {
+    };
+    const auto wave_setup = [](gameboy::MemoryBus& bus) {
         bus.write8(0xFF25, 0x44); // Channel 3 to both terminals.
         for (unsigned index = 0; index < 16; ++index) {
             bus.write8(static_cast<std::uint16_t>(0xFF30 + index),
@@ -689,13 +695,19 @@ void test_apu_waveform_regressions() {
         bus.write8(0xFF1C, 0x20); // Full output level.
         bus.write8(0xFF1D, 0x00);
         bus.write8(0xFF1E, 0x87);
-    });
-    const auto noise = render([](gameboy::MemoryBus& bus) {
+    };
+    const auto noise_setup = [](gameboy::MemoryBus& bus) {
         bus.write8(0xFF25, 0x88); // Channel 4 to both terminals.
         bus.write8(0xFF21, 0xF0);
         bus.write8(0xFF22, 0x08); // Fast 7-bit LFSR mode.
         bus.write8(0xFF23, 0x80);
-    });
+    };
+    const auto pulse = render(gameboy::HardwareModel::dmg, pulse_setup);
+    const auto wave = render(gameboy::HardwareModel::dmg, wave_setup);
+    const auto noise = render(gameboy::HardwareModel::dmg, noise_setup);
+    const auto cgb_pulse = render(gameboy::HardwareModel::cgb, pulse_setup);
+    const auto cgb_wave = render(gameboy::HardwareModel::cgb, wave_setup);
+    const auto cgb_noise = render(gameboy::HardwareModel::cgb, noise_setup);
 
     check(pulse.size() == 186 && wave.size() == 186 &&
               noise.size() == 186,
@@ -707,8 +719,15 @@ void test_apu_waveform_regressions() {
     check(audio_waveform_signature(noise) == UINT64_C(0x224d45db0d6b5c33),
           "noise waveform regression signature");
 
-    const std::array<std::pair<std::string_view, const std::vector<std::int16_t>*>, 3>
-        fixtures{{{"pulse", &pulse}, {"wave", &wave}, {"noise", &noise}}};
+    struct Fixture {
+        std::string_view name;
+        std::string_view model;
+        const std::vector<std::int16_t>* samples;
+    };
+    const std::array<Fixture, 6> fixtures{{
+        {"pulse", "dmg", &pulse}, {"wave", "dmg", &wave},
+        {"noise", "dmg", &noise}, {"pulse", "cgb", &cgb_pulse},
+        {"wave", "cgb", &cgb_wave}, {"noise", "cgb", &cgb_noise}}};
     const auto reference_directory = [] {
         if (const auto* value = std::getenv("GBB_AUDIO_REFERENCE_DIR");
             value != nullptr && *value != '\0') {
@@ -732,17 +751,27 @@ void test_apu_waveform_regressions() {
         std::filesystem::create_directories(capture_directory, error);
         check(!error, "audio reference capture directory is writable");
         if (!error) {
-            for (const auto& [name, samples] : fixtures) {
+            for (const auto& fixture : fixtures) {
+                const auto name = fixture.name;
+                const auto model = fixture.model;
+                const auto samples = fixture.samples;
                 check(write_audio_waveform_reference(
-                          capture_directory / (std::string{name} + ".txt"),
-                          name, *samples),
-                      "audio reference capture writes " + std::string{name});
+                          capture_directory /
+                              (std::string{model} + "-" + std::string{name} + ".txt"),
+                          name, model, *samples),
+                      "audio reference capture writes " + std::string{model} +
+                          " " + std::string{name});
             }
         }
     }
-    for (const auto& [name, samples] : fixtures) {
+    for (const auto& fixture : fixtures) {
+        const auto name = fixture.name;
+        const auto model = fixture.model;
+        const auto samples = fixture.samples;
         compare_audio_waveform_reference(
-            reference_directory / (std::string{name} + ".txt"), name, *samples);
+            reference_directory /
+                (std::string{model} + "-" + std::string{name} + ".txt"),
+            name, model, *samples);
     }
 }
 
