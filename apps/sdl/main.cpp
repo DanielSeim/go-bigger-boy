@@ -9,6 +9,7 @@
 #include "gbb/audio.hpp"
 #include "gbb/dashboard_navigation.hpp"
 #include "gbb/gameboy_scene.hpp"
+#include "gbb/touch_control.hpp"
 #include "gbb/voxel_profile.hpp"
 #ifndef __ANDROID__
 #include "update_checker.hpp"
@@ -3139,15 +3140,6 @@ std::size_t load_legacy_display_palette(
                                           gameboy::display_palettes.begin());
 }
 
-#ifdef __ANDROID__
-void save_legacy_display_palette(const std::filesystem::path& directory,
-                                 const std::size_t palette) {
-    if (directory.empty() || palette >= gameboy::display_palettes.size()) return;
-    std::ofstream output(directory / "palette.txt", std::ios::trunc);
-    output << gameboy::display_palettes[palette].id << '\n';
-}
-#endif
-
 struct AppSettings {
     InputBindings bindings;
     std::size_t palette{};
@@ -5394,10 +5386,9 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                     // Keep a held button active while the finger travels
                     // through neutral space. Entering another control
                     // transfers ownership; only finger-up/cancel releases it.
-                    if (const auto control =
-                            touch_button_index(touch_x, touch_y, sdl)) {
-                        existing->control = *control;
-                    }
+                    existing->control = gbb::retain_touch_control(
+                        existing->control,
+                        touch_button_index(touch_x, touch_y, sdl));
                 }
                 existing->x = touch_x;
                 existing->y = touch_y;
@@ -8163,32 +8154,6 @@ Java_com_danielseim_gbb_LibraryActivity_nativeVideoMode(
     environment->ReleaseStringUTFChars(directory, raw_directory);
     const auto id = gameboy::video_mode_info(mode).id;
     return environment->NewStringUTF(std::string{id}.c_str());
-}
-
-extern "C" JNIEXPORT jint JNICALL
-Java_com_danielseim_gbb_LibraryActivity_nativeDisplayPalette(
-    JNIEnv* environment, jclass, jstring directory) {
-    const auto* raw_directory =
-        environment->GetStringUTFChars(directory, nullptr);
-    if (raw_directory == nullptr) return 0;
-    const auto palette = load_display_palette(
-        std::filesystem::u8path(raw_directory));
-    environment->ReleaseStringUTFChars(directory, raw_directory);
-    return static_cast<jint>(palette);
-}
-
-extern "C" JNIEXPORT void JNICALL
-Java_com_danielseim_gbb_LibraryActivity_nativeSetDisplayPalette(
-    JNIEnv* environment, jclass, jstring directory, const jint palette) {
-    const auto* raw_directory =
-        environment->GetStringUTFChars(directory, nullptr);
-    if (raw_directory == nullptr) return;
-    if (palette >= 0 &&
-        static_cast<std::size_t>(palette) < gameboy::display_palettes.size()) {
-        save_display_palette(std::filesystem::u8path(raw_directory),
-                             static_cast<std::size_t>(palette));
-    }
-    environment->ReleaseStringUTFChars(directory, raw_directory);
 }
 
 extern "C" JNIEXPORT void JNICALL

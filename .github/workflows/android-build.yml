@@ -39,6 +39,10 @@ jobs:
       - name: Fetch pinned SDL3 Android archive
         run: android/fetch-sdl.sh
 
+      - name: Run Android settings regression tests
+        working-directory: android
+        run: ./gradlew --no-daemon test
+
       - name: Build debug APK
         if: github.event_name == 'pull_request'
         run: scripts/build-android.sh debug

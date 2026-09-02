@@ -14,6 +14,7 @@
 #include "gbb/scene_json.hpp"
 #include "gbb/audio.hpp"
 #include "gbb/dashboard_navigation.hpp"
+#include "gbb/touch_control.hpp"
 #include "gbb/voxel_profile.hpp"
 
 #include <algorithm>
@@ -51,6 +52,17 @@ void check(const bool condition, const std::string& message) {
         std::cerr << "FAIL: " << message << '\n';
         ++failures;
     }
+}
+
+void test_touch_control_ownership() {
+    const std::optional<std::size_t> dpad_right{0};
+    const std::optional<std::size_t> button_a{4};
+    check(gbb::retain_touch_control(dpad_right, std::nullopt) == dpad_right,
+          "touch ownership survives motion through neutral space");
+    check(gbb::retain_touch_control(dpad_right, button_a) == button_a,
+          "touch ownership transfers when another control is entered");
+    check(!gbb::retain_touch_control(std::nullopt, std::nullopt).has_value(),
+          "neutral touch remains unassigned until it enters a control");
 }
 
 void test_desktop_dashboard_navigation() {
@@ -4535,6 +4547,7 @@ int main(const int argc, char** argv) {
         }
         test_cartridge_header();
         test_sgb_command_path();
+        test_touch_control_ownership();
         test_rom_library_metadata_and_deduplication();
         test_multicore_frontend_contract();
         test_scene_snapshot_contract();

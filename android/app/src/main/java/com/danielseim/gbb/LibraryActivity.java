@@ -100,9 +100,6 @@ public final class LibraryActivity extends Activity {
     private static native void nativeSetTouchControlLayout(
             String directory, float[] positions);
     private static native void nativeResetTouchControlLayout(String directory);
-    private static native int nativeDisplayPalette(String directory);
-    private static native void nativeSetDisplayPalette(
-            String directory, int palette);
     private static native String nativeVideoMode(String directory);
     private static native void nativeSetVideoMode(String directory, String mode);
 
@@ -871,13 +868,15 @@ public final class LibraryActivity extends Activity {
     }
 
     private int currentPalette() {
-        final int palette = nativeDisplayPalette(getFilesDir().getAbsolutePath());
-        return palette >= 0 && palette < PALETTE_IDS.length ? palette : 0;
+        return PaletteSettings.read(getFilesDir(), PALETTE_IDS);
     }
 
     private void savePalette(int position) {
         if (position < 0 || position >= PALETTE_IDS.length) return;
-        nativeSetDisplayPalette(getFilesDir().getAbsolutePath(), position);
+        if (!PaletteSettings.write(getFilesDir(), PALETTE_IDS[position])) {
+            Toast.makeText(this, "Could not save display setting",
+                    Toast.LENGTH_SHORT).show();
+        }
     }
 
     private int currentVideoMode() {
