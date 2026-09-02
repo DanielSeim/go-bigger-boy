@@ -85,9 +85,12 @@ public final class LibraryActivity extends Activity {
             String directory, String fingerprint);
     private static native float nativeTouchControlScale(String directory);
     private static native float nativeTouchControlOpacity(String directory);
+    private static native boolean nativeTouchVoxelOrbitEnabled(String directory);
     private static native float[] nativeTouchControlLayout(String directory);
     private static native void nativeSetTouchControlSettings(
             String directory, float scale, float opacity);
+    private static native void nativeSetTouchVoxelOrbitEnabled(
+            String directory, boolean enabled);
     private static native void nativeSetTouchControlLayout(
             String directory, float[] positions);
     private static native void nativeResetTouchControlLayout(String directory);
@@ -473,9 +476,20 @@ public final class LibraryActivity extends Activity {
         touchCard.addView(text(
                 "Adjust size and visibility independently for your phone " +
                 "or tablet. Portrait and landscape layouts are independent; " +
-                "the D-pad is always moved as one control.", 15, Color.DKGRAY));
+                "the D-pad is always moved as one control. When a voxel mode " +
+                "is active, a touch that starts outside a button can orbit the " +
+                "camera.", 15, Color.DKGRAY));
 
         final String settingsDirectory = getFilesDir().getAbsolutePath();
+        final Switch voxelOrbit = new Switch(this);
+        voxelOrbit.setText("Enable voxel touch orbit");
+        voxelOrbit.setTextSize(16);
+        voxelOrbit.setPadding(0, dp(10), 0, dp(8));
+        voxelOrbit.setChecked(nativeTouchVoxelOrbitEnabled(settingsDirectory));
+        voxelOrbit.setOnCheckedChangeListener((button, enabled) ->
+                nativeSetTouchVoxelOrbitEnabled(settingsDirectory, enabled));
+        touchCard.addView(voxelOrbit);
+
         final float[] touchValues = {
                 nativeTouchControlScale(settingsDirectory),
                 nativeTouchControlOpacity(settingsDirectory)};

@@ -327,6 +327,8 @@ tap the top-left menu button and choose
 `Display palette` to select and persist the same five palette options. The
 Android Settings page also provides touch-control size and opacity sliders;
 these values are stored in `settings.ini` as `touch.Size` and `touch.Opacity`.
+Voxel modes also support touch-drag orbiting when `touch.VoxelOrbit` is enabled;
+the Android Settings page provides a toggle for this gesture.
 Its layout editor has separate portrait and landscape layouts. The D-pad is
 always moved as one control, while A, B, Select, and Start can be positioned
 individually beside or below the emulation screen. Positions are stored as

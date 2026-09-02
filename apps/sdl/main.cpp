@@ -99,6 +99,10 @@ void flush_battery_safely(gameboy::Emulator* emulator) noexcept {
 struct TouchControlSettings {
     float scale{1.35F};
     float opacity{0.78F};
+    // Allow a touch that starts outside a virtual button to orbit voxel
+    // presentations.  This is independent from the Game Boy controls so it
+    // can be disabled for users who prefer a fixed camera.
+    bool voxel_orbit{true};
     // Window coordinates normalized to 0..1. Each orientation has one
     // movable D-pad plus A, B, Select, and Start. The first ten values are
     // portrait; the second ten are landscape. Each control stores x, y.
@@ -473,6 +477,7 @@ public:
         SDL_FingerID id{};
         float x{};
         float y{};
+        bool orbit{};
     };
     std::vector<TouchPoint> touches;
     std::array<bool, 8> touch_buttons{};
@@ -3036,6 +3041,7 @@ void append_missing_portable_settings(
     const bool has_video_mode,
     const bool has_link_diagnostics,
     const bool has_touch_scale, const bool has_touch_opacity,
+    const bool has_touch_voxel_orbit,
     const std::array<bool, touch_layout_count * touch_control_count>&
         has_touch_positions) {
     const auto complete = has_palette &&
@@ -3046,7 +3052,7 @@ void append_missing_portable_settings(
         std::all_of(has_shortcuts.begin(), has_shortcuts.end(),
                     [](const bool value) { return value; }) &&
         has_video_mode && has_link_diagnostics && has_touch_scale &&
-        has_touch_opacity &&
+        has_touch_opacity && has_touch_voxel_orbit &&
         std::all_of(has_touch_positions.begin(), has_touch_positions.end(),
                     [](const bool value) { return value; });
     if (complete) return;
@@ -3098,6 +3104,10 @@ void append_missing_portable_settings(
     if (!has_touch_opacity) {
         output << "touch.Opacity = " << settings.touch.opacity << '\n';
     }
+    if (!has_touch_voxel_orbit) {
+        output << "touch.VoxelOrbit = "
+               << (settings.touch.voxel_orbit ? "true" : "false") << '\n';
+    }
     for (std::size_t orientation = 0; orientation < touch_layout_count;
          ++orientation) {
         for (std::size_t control = 0; control < touch_control_count;
@@ -3130,8 +3140,10 @@ void write_portable_settings(const std::filesystem::path& preference_directory,
               "example: Z Y. Set emulator shortcuts to None to disable "
               "them. Android touch controls use a size multiplier and "
               "opacity between 0 and 1 plus separate portrait and landscape "
-              "touch layouts. Video.Mode accepts nearest, bilinear, sharp, "
-              "integer, or lcd. Link.Diagnostics enables the opt-in link "
+              "touch layouts. Touch.VoxelOrbit controls touch camera gestures "
+              "in voxel modes. Video.Mode accepts nearest, bilinear, sharp, "
+              "integer, lcd, voxel, voxel_shape, or voxel_popup. "
+              "Link.Diagnostics enables the opt-in link "
               "serial, CPU, and game-state trace.\n\n"
               "palette = "
            << gameboy::display_palettes[settings.palette].id << "\n"
@@ -3156,7 +3168,9 @@ void write_portable_settings(const std::filesystem::path& preference_directory,
     }
     output << '\n';
     output << "touch.Size = " << settings.touch.scale << '\n';
-    output << "touch.Opacity = " << settings.touch.opacity << "\n\n";
+    output << "touch.Opacity = " << settings.touch.opacity << '\n';
+    output << "touch.VoxelOrbit = "
+           << (settings.touch.voxel_orbit ? "true" : "false") << "\n\n";
     for (std::size_t orientation = 0; orientation < touch_layout_count;
          ++orientation) {
         for (std::size_t control = 0; control < touch_control_count;
@@ -3203,6 +3217,7 @@ AppSettings load_portable_settings(
     std::array<bool, shortcut_names.size()> has_shortcuts{};
     bool has_touch_scale = false;
     bool has_touch_opacity = false;
+    bool has_touch_voxel_orbit = false;
     std::array<bool, touch_layout_count * touch_control_count>
         has_touch_positions{};
     constexpr std::array<const char*, 8> names{{
@@ -3252,6 +3267,12 @@ AppSettings load_portable_settings(
             settings.touch.opacity = parse_touch_value(
                 value, settings.touch.opacity, minimum_touch_opacity,
                 maximum_touch_opacity);
+            continue;
+        }
+        if (key == "touch.VoxelOrbit") {
+            has_touch_voxel_orbit = true;
+            settings.touch.voxel_orbit = parse_bool_setting(
+                value, settings.touch.voxel_orbit);
             continue;
         }
         bool touch_setting = false;
@@ -3421,6 +3442,7 @@ AppSettings load_portable_settings(
                                      has_keyboard, has_gamepad, has_shortcuts,
                                      has_video_mode, has_link_diagnostics,
                                      has_touch_scale, has_touch_opacity,
+                                     has_touch_voxel_orbit,
                                      has_touch_positions);
     return settings;
 }
@@ -3492,6 +3514,13 @@ void save_touch_control_settings(const std::filesystem::path& directory,
                                       maximum_touch_scale);
     settings.touch.opacity = std::clamp(opacity, minimum_touch_opacity,
                                         maximum_touch_opacity);
+    write_portable_settings(directory, settings);
+}
+
+void save_touch_voxel_orbit(const std::filesystem::path& directory,
+                            const bool enabled) {
+    auto settings = load_app_settings(directory);
+    settings.touch.voxel_orbit = enabled;
     write_portable_settings(directory, settings);
 }
 
@@ -3770,6 +3799,12 @@ float touch_game_scale(const SdlResources& sdl) {
                         static_cast<float>(gameboy::Ppu::screen_height));
 }
 
+bool voxel_mode_enabled(const SdlResources& sdl) {
+    return sdl.video_mode == gameboy::VideoMode::voxel_diorama ||
+           sdl.video_mode == gameboy::VideoMode::voxel_shape ||
+           sdl.video_mode == gameboy::VideoMode::voxel_popup;
+}
+
 std::pair<float, float> touch_control_position(const SdlResources& sdl,
                                                const std::size_t control) {
     const auto index = touch_layout_offset(sdl) + control * 2;
@@ -3831,6 +3866,7 @@ std::optional<std::size_t> touch_button_index(const float x, const float y,
 void refresh_touch_buttons(gameboy::Emulator* emulator, SdlResources& sdl) {
     std::array<bool, 8> pressed{};
     for (const auto& touch : sdl.touches) {
+        if (touch.orbit) continue;
         if (const auto index = touch_button_index(touch.x, touch.y, sdl)) {
             pressed[*index] = true;
         }
@@ -4872,8 +4908,31 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
             if (event.type == SDL_EVENT_FINGER_UP) {
                 if (existing != sdl.touches.end()) sdl.touches.erase(existing);
             } else if (existing == sdl.touches.end()) {
-                sdl.touches.push_back({finger, touch_x, touch_y});
+                const auto menu_tap = touch_x < 0.18F && touch_y < 0.20F;
+                const auto orbit = emulator != nullptr && !menu_tap &&
+                                   voxel_mode_enabled(sdl) &&
+                                   sdl.touch_settings.voxel_orbit &&
+                                   !touch_button_index(touch_x, touch_y, sdl);
+                sdl.touches.push_back({finger, touch_x, touch_y, orbit});
             } else {
+                if (event.type == SDL_EVENT_FINGER_MOTION && existing->orbit &&
+                    emulator != nullptr && voxel_mode_enabled(sdl)) {
+                    int width = 1;
+                    int height = 1;
+                    static_cast<void>(SDL_GetWindowSize(sdl.window, &width,
+                                                        &height));
+                    const auto delta_x = (touch_x - existing->x) *
+                                         static_cast<float>(width);
+                    const auto delta_y = (touch_y - existing->y) *
+                                         static_cast<float>(height);
+                    sdl.voxel_camera_pitch_offset = std::clamp(
+                        sdl.voxel_camera_pitch_offset - delta_y * 0.25F,
+                        -75.0F, 75.0F);
+                    sdl.voxel_camera_yaw_offset = std::clamp(
+                        sdl.voxel_camera_yaw_offset + delta_x * 0.25F,
+                        -voxel_camera_yaw_drag_limit,
+                        voxel_camera_yaw_drag_limit);
+                }
                 existing->x = touch_x;
                 existing->y = touch_y;
             }
@@ -7412,6 +7471,29 @@ Java_com_danielseim_gbb_LibraryActivity_nativeTouchControlOpacity(
         std::filesystem::u8path(raw_directory));
     environment->ReleaseStringUTFChars(directory, raw_directory);
     return settings.opacity;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_danielseim_gbb_LibraryActivity_nativeTouchVoxelOrbitEnabled(
+    JNIEnv* environment, jclass, jstring directory) {
+    const auto* raw_directory =
+        environment->GetStringUTFChars(directory, nullptr);
+    if (raw_directory == nullptr) return JNI_TRUE;
+    const auto settings = load_touch_control_settings(
+        std::filesystem::u8path(raw_directory));
+    environment->ReleaseStringUTFChars(directory, raw_directory);
+    return settings.voxel_orbit ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_danielseim_gbb_LibraryActivity_nativeSetTouchVoxelOrbitEnabled(
+    JNIEnv* environment, jclass, jstring directory, const jboolean enabled) {
+    const auto* raw_directory =
+        environment->GetStringUTFChars(directory, nullptr);
+    if (raw_directory == nullptr) return;
+    save_touch_voxel_orbit(std::filesystem::u8path(raw_directory),
+                           enabled == JNI_TRUE);
+    environment->ReleaseStringUTFChars(directory, raw_directory);
 }
 
 extern "C" JNIEXPORT jfloatArray JNICALL
