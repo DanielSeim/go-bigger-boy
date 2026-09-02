@@ -191,6 +191,9 @@ both blocks are copied while the transfer remains active for the requested count
 
 Window comparator positions are normalized at the visible left edge for
 `WX<7`, including writes made while the current window tile is still queued.
+The core suite now exercises every `WX=1..6` value with a distinct first-tile
+column pattern, guarding the visible-edge comparator and source-column mapping
+independently of the external framebuffer fixtures.
 The `WX=6` sequence still has a substantial mismatch after the handoff because
 the internal window row and queued tile pipeline are not yet fully modeled
 cycle by cycle; it remains exploratory and is not part of the release gate.

@@ -3774,6 +3774,29 @@ void test_ppu_background_window_and_sprites() {
     check(window.framebuffer()[0] == 0xFFAAAAAA,
           "enabled window uses WX/WY and its selected tile map");
 
+    // WX values below seven all trigger at the visible left edge, but they
+    // select a different column from the first queued window tile. Keep the
+    // edge comparator explicit for every value covered by the exploratory
+    // Mealybug WX cases instead of only testing the WX=0 and WX=7 endpoints.
+    constexpr std::array<std::uint32_t, 4> window_shades{
+        0xFFFFFFFF, 0xFFAAAAAA, 0xFF555555, 0xFF000000};
+    for (std::uint8_t wx = 1; wx <= 6; ++wx) {
+        gameboy::MemoryBus edge{gameboy::Cartridge{test_rom()}};
+        edge.write8(0xFF47, 0xE4);
+        edge.write8(0x8010, 0x55); // Columns 1,3,5,7 are color bit 0.
+        edge.write8(0x8011, 0x33); // Columns 2,3,6,7 are color bit 1.
+        edge.write8(0x9C00, 0x01);
+        edge.write8(0xFF4A, 0);
+        edge.write8(0xFF4B, wx);
+        edge.write8(0xFF40, 0xF1);
+        edge.tick(280);
+        const auto source_column = static_cast<unsigned>(7 - wx);
+        const auto color = ((source_column & 1U) != 0 ? 1U : 0U) |
+                           ((source_column & 2U) != 0 ? 2U : 0U);
+        check(edge.framebuffer()[0] == window_shades[color],
+              "WX=1..6 starts at the visible edge with the correct tile column");
+    }
+
     gameboy::MemoryBus window_lines{gameboy::Cartridge{test_rom()}};
     window_lines.write8(0xFF47, 0xE4);
     window_lines.write8(0x8010, 0xFF); // Tile 1 row 0: color 1.
