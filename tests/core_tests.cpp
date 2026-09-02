@@ -13,6 +13,7 @@
 #include "gbb/gameboy_core.hpp"
 #include "gbb/scene_json.hpp"
 #include "gbb/audio.hpp"
+#include "gbb/dashboard_navigation.hpp"
 #include "gbb/voxel_profile.hpp"
 
 #include <algorithm>
@@ -50,6 +51,43 @@ void check(const bool condition, const std::string& message) {
         std::cerr << "FAIL: " << message << '\n';
         ++failures;
     }
+}
+
+void test_desktop_dashboard_navigation() {
+    using gbb::desktop::DashboardAction;
+    const auto without_resume =
+        gbb::desktop::dashboard_navigation_items(false, 2);
+    check(without_resume.size() == 7,
+          "dashboard includes fixed actions, recents, and exit");
+    check(without_resume.front().action == DashboardAction::open_rom,
+          "dashboard opens with Open ROM when no game can resume");
+    check(without_resume[4].action == DashboardAction::recent_rom &&
+              without_resume[4].recent_index == 0 &&
+              without_resume[5].recent_index == 1,
+          "dashboard recents preserve their source order");
+    check(without_resume.back().action == DashboardAction::quit,
+          "dashboard always ends with Exit GBB");
+
+    const auto with_resume = gbb::desktop::dashboard_navigation_items(true, 0);
+    check(with_resume.size() == 6 &&
+              with_resume.front().action == DashboardAction::resume,
+          "dashboard puts Resume first when a game is active");
+    check(gbb::desktop::dashboard_move_selection(0, 6, -1) == 5 &&
+              gbb::desktop::dashboard_move_selection(5, 6, 1) == 0,
+          "keyboard navigation wraps at both dashboard ends");
+    check(gbb::desktop::dashboard_move_selection(99, 6, -1) == 4,
+          "keyboard navigation clamps an out-of-range selection");
+    check(gbb::desktop::dashboard_scroll_selection(0, 6, -1) == 0 &&
+              gbb::desktop::dashboard_scroll_selection(5, 6, 1) == 5,
+          "wheel navigation clamps at dashboard ends");
+    check(gbb::desktop::dashboard_first_visible(0, 10, 5) == 0 &&
+              gbb::desktop::dashboard_first_visible(4, 10, 5) == 0 &&
+              gbb::desktop::dashboard_first_visible(5, 10, 5) == 1 &&
+              gbb::desktop::dashboard_first_visible(99, 10, 5) == 5,
+          "dashboard scroll window keeps the selected row visible");
+    check(gbb::desktop::dashboard_move_selection(3, 0, 1) == 0 &&
+              gbb::desktop::dashboard_first_visible(0, 0, 5) == 0,
+          "dashboard navigation is safe before items are populated");
 }
 
 std::uint32_t state_crc32(const std::uint8_t* data,
@@ -4442,6 +4480,7 @@ int main(const int argc, char** argv) {
         test_multicore_frontend_contract();
         test_scene_snapshot_contract();
         test_scene_snapshot_json();
+        test_desktop_dashboard_navigation();
         test_gameshark_cheats();
         test_video_pipeline_modes();
         test_voxel_profiles();

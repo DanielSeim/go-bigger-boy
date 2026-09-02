@@ -7,6 +7,7 @@
 #include "gameboy/tcp_serial_endpoint.hpp"
 #include "gameboy/video_pipeline.hpp"
 #include "gbb/audio.hpp"
+#include "gbb/dashboard_navigation.hpp"
 #include "gbb/gameboy_scene.hpp"
 #include "gbb/voxel_profile.hpp"
 #ifndef __ANDROID__
@@ -2830,15 +2831,13 @@ struct BindingConfiguration {
     std::size_t slot{};
 };
 
-enum class DashboardAction {
-    resume, open_rom, palette, video, shortcuts, recent_rom, quit
-};
-
 struct DashboardItem {
-    DashboardAction action{};
+    gbb::desktop::DashboardAction action{};
     std::size_t recent_index{};
     std::string label;
 };
+
+using DashboardAction = gbb::desktop::DashboardAction;
 
 constexpr std::size_t dashboard_visible_rows = 5;
 constexpr float dashboard_first_row_y = 39.0F;
@@ -3002,30 +3001,43 @@ std::string rom_display_name(const std::string& path) {
 std::vector<DashboardItem> dashboard_items(
     const bool can_resume, const std::vector<std::string>& recent) {
     std::vector<DashboardItem> items;
-    items.reserve(recent.size() + 4);
-    if (can_resume) {
-        items.push_back({DashboardAction::resume, 0, "Resume game"});
+    const auto navigation = gbb::desktop::dashboard_navigation_items(
+        can_resume, recent.size());
+    items.reserve(navigation.size());
+    for (const auto& item : navigation) {
+        std::string label;
+        switch (item.action) {
+        case gbb::desktop::DashboardAction::resume:
+            label = "Resume game";
+            break;
+        case gbb::desktop::DashboardAction::open_rom:
+            label = "+ Open a ROM";
+            break;
+        case gbb::desktop::DashboardAction::palette:
+            label = "Display palette";
+            break;
+        case gbb::desktop::DashboardAction::video:
+            label = "Video pipeline";
+            break;
+        case gbb::desktop::DashboardAction::shortcuts:
+            label = "Keyboard shortcuts";
+            break;
+        case gbb::desktop::DashboardAction::recent_rom:
+            label = rom_display_name(recent[item.recent_index]);
+            break;
+        case gbb::desktop::DashboardAction::quit:
+            label = "Exit GBB";
+            break;
+        }
+        items.push_back({item.action, item.recent_index, std::move(label)});
     }
-    items.push_back({DashboardAction::open_rom, 0, "+ Open a ROM"});
-    items.push_back({DashboardAction::palette, 0, "Display palette"});
-    items.push_back({DashboardAction::video, 0, "Video pipeline"});
-    items.push_back({DashboardAction::shortcuts, 0, "Keyboard shortcuts"});
-    for (std::size_t index = 0; index < recent.size(); ++index) {
-        items.push_back({DashboardAction::recent_rom, index,
-                         rom_display_name(recent[index])});
-    }
-    items.push_back({DashboardAction::quit, 0, "Exit GBB"});
     return items;
 }
 
 std::size_t dashboard_first_visible(const std::size_t selection,
                                     const std::size_t item_count) {
-    if (item_count <= dashboard_visible_rows ||
-        selection < dashboard_visible_rows) {
-        return 0;
-    }
-    return std::min(selection - dashboard_visible_rows + 1,
-                    item_count - dashboard_visible_rows);
+    return gbb::desktop::dashboard_first_visible(
+        selection, item_count, dashboard_visible_rows);
 }
 
 InputBindings load_legacy_bindings(const std::filesystem::path& directory) {
@@ -4834,15 +4846,12 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                 if (event.type != SDL_EVENT_KEY_DOWN || event.key.repeat) break;
                 const auto item_count =
                     dashboard_items(emulator != nullptr, recent).size();
-                dashboard_selection =
-                    std::min(dashboard_selection, item_count - 1);
                 if (event.key.key == SDLK_UP) {
-                    dashboard_selection = dashboard_selection == 0
-                                              ? item_count - 1
-                                              : dashboard_selection - 1;
+                    dashboard_selection = gbb::desktop::dashboard_move_selection(
+                        dashboard_selection, item_count, -1);
                 } else if (event.key.key == SDLK_DOWN) {
-                    dashboard_selection =
-                        (dashboard_selection + 1) % item_count;
+                    dashboard_selection = gbb::desktop::dashboard_move_selection(
+                        dashboard_selection, item_count, 1);
                 } else if (event.key.key == SDLK_RETURN ||
                            event.key.key == SDLK_SPACE) {
                     activate_dashboard_selection(
@@ -5161,12 +5170,9 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
             if (dashboard_visible) {
                 const auto item_count =
                     dashboard_items(emulator != nullptr, recent).size();
-                if (event.wheel.y > 0 && dashboard_selection > 0) {
-                    --dashboard_selection;
-                } else if (event.wheel.y < 0 &&
-                           dashboard_selection + 1 < item_count) {
-                    ++dashboard_selection;
-                }
+                dashboard_selection = gbb::desktop::dashboard_scroll_selection(
+                    dashboard_selection, item_count,
+                    event.wheel.y > 0 ? -1 : event.wheel.y < 0 ? 1 : 0);
             }
             break;
         case SDL_EVENT_MOUSE_MOTION:
@@ -5321,17 +5327,14 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                 if (event.type != SDL_EVENT_GAMEPAD_BUTTON_DOWN) break;
                 const auto item_count =
                     dashboard_items(emulator != nullptr, recent).size();
-                dashboard_selection =
-                    std::min(dashboard_selection, item_count - 1);
                 const auto button = static_cast<SDL_GamepadButton>(
                     event.gbutton.button);
                 if (button == SDL_GAMEPAD_BUTTON_DPAD_UP) {
-                    dashboard_selection = dashboard_selection == 0
-                                              ? item_count - 1
-                                              : dashboard_selection - 1;
+                    dashboard_selection = gbb::desktop::dashboard_move_selection(
+                        dashboard_selection, item_count, -1);
                 } else if (button == SDL_GAMEPAD_BUTTON_DPAD_DOWN) {
-                    dashboard_selection =
-                        (dashboard_selection + 1) % item_count;
+                    dashboard_selection = gbb::desktop::dashboard_move_selection(
+                        dashboard_selection, item_count, 1);
                 } else if (button == SDL_GAMEPAD_BUTTON_SOUTH) {
                     activate_dashboard_selection(
                         dashboard_selection, recent, bindings, emulator.get(), dialog,

@@ -265,6 +265,11 @@ columns plus a dedicated Settings page for palettes and control remapping.
 Its Shortcuts page provides a complete in-app reference using the currently
 configured bindings. Press `F1` from the dashboard or while playing to open the
 same reference; Linux also exposes it as a dashboard entry.
+The SDL desktop dashboard uses arrow keys and gamepad D-pad navigation that
+wraps through its actions, while mouse-wheel and touch scrolling stop at the
+ends. Enter, Space, or the primary gamepad button activates the highlighted
+action. The native Windows library follows the same Enter-to-open and
+Escape-to-close flow (and also supports double-click activation).
 Entries can be removed without deleting ROM or save files. It resolves canonical
 metadata and caches box artwork from
 Libretro without uploading ROM contents. Press Ctrl+L or choose
