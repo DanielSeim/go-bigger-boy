@@ -490,6 +490,11 @@ public:
     std::vector<TouchPoint> touches;
     std::array<bool, 8> touch_buttons{};
     TouchControlSettings touch_settings;
+    // Android's native settings screen edits settings.ini while the SDL
+    // activity remains alive. Track the file timestamp so the renderer and
+    // gesture recognizer can pick up changes without waiting for input.
+    std::filesystem::file_time_type touch_settings_write_time{};
+    bool touch_settings_write_time_valid{};
 #endif
 };
 
@@ -4167,6 +4172,27 @@ void refresh_touch_settings(SdlResources& sdl,
         // If settings changed while a gesture was in progress, do not let an
         // old per-touch orbit flag bypass the newly disabled preference.
         for (auto& touch : sdl.touches) touch.orbit = false;
+    }
+    std::error_code error;
+    const auto settings_path = portable_settings_path(preference_path);
+    const auto write_time = std::filesystem::last_write_time(settings_path,
+                                                               error);
+    if (!error) {
+        sdl.touch_settings_write_time = write_time;
+        sdl.touch_settings_write_time_valid = true;
+    }
+}
+
+void refresh_touch_settings_if_changed(
+    SdlResources& sdl, const std::filesystem::path& preference_path) {
+    std::error_code error;
+    const auto settings_path = portable_settings_path(preference_path);
+    const auto write_time = std::filesystem::last_write_time(settings_path,
+                                                               error);
+    if (error) return;
+    if (!sdl.touch_settings_write_time_valid ||
+        write_time != sdl.touch_settings_write_time) {
+        refresh_touch_settings(sdl, preference_path);
     }
 }
 
@@ -8160,6 +8186,13 @@ int main(int argc, char** argv) {
         auto next_frame = Clock::now();
 
         while (running) {
+#ifdef __ANDROID__
+            // Settings are edited by the native Android activity while this
+            // SDL activity may stay alive underneath it. Poll before event
+            // handling and rendering so menu placement and voxel orbit
+            // preferences take effect immediately, even without a touch.
+            refresh_touch_settings_if_changed(sdl, preference_path);
+#endif
 #ifndef __ANDROID__
             if (!update_check_complete) {
                 std::string update_error;
