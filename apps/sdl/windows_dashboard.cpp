@@ -4,6 +4,10 @@
 
 #ifdef _WIN32
 
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+
 #include <SDL3/SDL.h>
 
 #include <commctrl.h>
