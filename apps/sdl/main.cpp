@@ -29,6 +29,7 @@
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <iomanip>
 #include <iostream>
 #include <iterator>
@@ -103,6 +104,9 @@ struct TouchControlSettings {
     // presentations.  This is independent from the Game Boy controls so it
     // can be disabled for users who prefer a fixed camera.
     bool voxel_orbit{true};
+    // Android-only in-game menu placement.  Desktop keeps its existing
+    // top-left placement regardless of this setting.
+    bool menu_top_right{};
     // Window coordinates normalized to 0..1. Each orientation has one
     // movable D-pad plus A, B, Select, and Start. The first ten values are
     // portrait; the second ten are landscape. Each control stores x, y.
@@ -1629,7 +1633,10 @@ private:
 
 class CheatManager {
 public:
-    ~CheatManager() { close(); }
+    ~CheatManager() {
+        if (fetch_future_.valid()) fetch_future_.wait();
+        close();
+    }
     CheatManager(const CheatManager&) = delete;
     CheatManager& operator=(const CheatManager&) = delete;
     CheatManager() = default;
@@ -1646,6 +1653,7 @@ public:
         path_ = directory_ / (name.str() + ".cht");
         cheats_.clear();
         archive_attempted_ = false;
+        fetch_error_.reset();
         std::ifstream input(path_, std::ios::binary);
         if (input) {
             const std::string text{std::istreambuf_iterator<char>{input}, {}};
@@ -1663,8 +1671,39 @@ public:
     }
 
     [[nodiscard]] bool visible() const noexcept { return window_ != nullptr; }
+    [[nodiscard]] bool fetching() const noexcept { return fetch_in_progress_; }
     [[nodiscard]] bool take_fetch_request() noexcept {
         return std::exchange(fetch_requested_, false);
+    }
+
+    void start_fetch() {
+        if (fetch_in_progress_) return;
+        fetch_in_progress_ = true;
+        status_ = "Fetching the matching Libretro archive in the background...";
+        fetch_future_ = std::async(std::launch::async, [this] {
+            return download_archive_text();
+        });
+    }
+
+    [[nodiscard]] bool poll_fetch() {
+        if (!fetch_in_progress_ || !fetch_future_.valid()) return false;
+        if (fetch_future_.wait_for(std::chrono::seconds(0)) !=
+            std::future_status::ready) {
+            return false;
+        }
+        try {
+            auto text = fetch_future_.get();
+            import_archive(text);
+        } catch (const std::exception& error) {
+            status_ = "No exact archive match. Manual codes are still available.";
+            fetch_error_ = error.what();
+        }
+        fetch_in_progress_ = false;
+        return true;
+    }
+
+    [[nodiscard]] std::optional<std::string> take_fetch_error() {
+        return std::exchange(fetch_error_, std::nullopt);
     }
 
     void open(SDL_Window* parent) {
@@ -1695,6 +1734,8 @@ public:
     }
 
     void close() noexcept {
+        if (fetch_future_.valid()) fetch_future_.wait();
+        fetch_in_progress_ = false;
         stop_editing();
         if (renderer_ != nullptr) SDL_DestroyRenderer(renderer_);
         if (window_ != nullptr) SDL_DestroyWindow(window_);
@@ -1784,7 +1825,9 @@ public:
                     begin_edit(Field::code);
                 }
             } else if (y >= height - 100 && y <= height - 64) {
-                if (x >= 24 && x <= 178) fetch_requested_ = true;
+                if (x >= 24 && x <= 178 && !fetch_in_progress_) {
+                    fetch_requested_ = true;
+                }
                 else if (x >= 194 && x <= 334) add_manual();
                 else if (x >= 350 && x <= 490) erase_selected();
                 else if (x >= width - 144 && x <= width - 24) close();
@@ -1794,6 +1837,12 @@ public:
     }
 
     void fetch_archive() {
+        auto text = download_archive_text();
+        import_archive(text);
+    }
+
+private:
+    std::string download_archive_text() {
         if (directory_.empty()) throw std::runtime_error("No ROM is active");
         archive_attempted_ = true;
         std::filesystem::create_directories(directory_);
@@ -1807,7 +1856,6 @@ public:
         std::string error;
         if (!gbb_desktop::download_public_file(url, remote, 4 * 1024 * 1024,
                                                 error)) {
-            status_ = "No exact archive match. Manual codes are still available.";
             throw std::runtime_error(
                 "No exact Libretro cheat archive match was found for:\n" +
                 canonical_name +
@@ -1825,9 +1873,13 @@ public:
                 throw std::runtime_error(
                     "Could not read the downloaded cheat archive");
             }
-        } // Close the stream before deleting the file (required on Windows).
+        }
         std::error_code cleanup_error;
         std::filesystem::remove(remote, cleanup_error);
+        return text;
+    }
+
+    void import_archive(const std::string& text) {
         auto imported = gameboy::parse_libretro_cheats(text, true);
         if (imported.empty()) {
             status_ = "The archive has no supported type-01 codes.";
@@ -1850,6 +1902,7 @@ public:
                   std::to_string(cheats_.size()) + " total).";
     }
 
+public:
     void present() {
         if (!visible()) return;
         int width = 0;
@@ -1898,7 +1951,8 @@ public:
               code_.empty() ? "Code: 01VVLLHH[+...]" : code_,
               editing_ == Field::code);
         const auto button_y = static_cast<float>(height - 100);
-        button({24, button_y, 154, 36}, "FETCH FOR ROM");
+        button({24, button_y, 154, 36},
+               fetch_in_progress_ ? "FETCHING..." : "FETCH FOR ROM");
         button({194, button_y, 140, 36}, "ADD MANUAL");
         button({350, button_y, 140, 36}, "DELETE");
         button({static_cast<float>(width - 144), button_y, 120, 36}, "CLOSE");
@@ -2076,6 +2130,9 @@ private:
     std::string status_;
     bool fetch_requested_{};
     bool archive_attempted_{};
+    std::future<std::string> fetch_future_;
+    bool fetch_in_progress_{};
+    std::optional<std::string> fetch_error_;
 };
 
 class DesktopDebugger {
@@ -3042,6 +3099,7 @@ void append_missing_portable_settings(
     const bool has_link_diagnostics,
     const bool has_touch_scale, const bool has_touch_opacity,
     const bool has_touch_voxel_orbit,
+    const bool has_touch_menu_position,
     const std::array<bool, touch_layout_count * touch_control_count>&
         has_touch_positions) {
     const auto complete = has_palette &&
@@ -3052,7 +3110,7 @@ void append_missing_portable_settings(
         std::all_of(has_shortcuts.begin(), has_shortcuts.end(),
                     [](const bool value) { return value; }) &&
         has_video_mode && has_link_diagnostics && has_touch_scale &&
-        has_touch_opacity && has_touch_voxel_orbit &&
+        has_touch_opacity && has_touch_voxel_orbit && has_touch_menu_position &&
         std::all_of(has_touch_positions.begin(), has_touch_positions.end(),
                     [](const bool value) { return value; });
     if (complete) return;
@@ -3108,6 +3166,11 @@ void append_missing_portable_settings(
         output << "touch.VoxelOrbit = "
                << (settings.touch.voxel_orbit ? "true" : "false") << '\n';
     }
+    if (!has_touch_menu_position) {
+        output << "touch.MenuPosition = "
+               << (settings.touch.menu_top_right ? "top-right" : "top-left")
+               << '\n';
+    }
     for (std::size_t orientation = 0; orientation < touch_layout_count;
          ++orientation) {
         for (std::size_t control = 0; control < touch_control_count;
@@ -3141,7 +3204,8 @@ void write_portable_settings(const std::filesystem::path& preference_directory,
               "them. Android touch controls use a size multiplier and "
               "opacity between 0 and 1 plus separate portrait and landscape "
               "touch layouts. Touch.VoxelOrbit controls touch camera gestures "
-              "in voxel modes. Video.Mode accepts nearest, bilinear, sharp, "
+              "in voxel modes and Touch.MenuPosition accepts top-left or "
+              "top-right. Video.Mode accepts nearest, bilinear, sharp, "
               "integer, lcd, voxel, voxel_shape, or voxel_popup. "
               "Link.Diagnostics enables the opt-in link "
               "serial, CPU, and game-state trace.\n\n"
@@ -3170,7 +3234,10 @@ void write_portable_settings(const std::filesystem::path& preference_directory,
     output << "touch.Size = " << settings.touch.scale << '\n';
     output << "touch.Opacity = " << settings.touch.opacity << '\n';
     output << "touch.VoxelOrbit = "
-           << (settings.touch.voxel_orbit ? "true" : "false") << "\n\n";
+           << (settings.touch.voxel_orbit ? "true" : "false") << '\n';
+    output << "touch.MenuPosition = "
+           << (settings.touch.menu_top_right ? "top-right" : "top-left")
+           << "\n\n";
     for (std::size_t orientation = 0; orientation < touch_layout_count;
          ++orientation) {
         for (std::size_t control = 0; control < touch_control_count;
@@ -3218,6 +3285,7 @@ AppSettings load_portable_settings(
     bool has_touch_scale = false;
     bool has_touch_opacity = false;
     bool has_touch_voxel_orbit = false;
+    bool has_touch_menu_position = false;
     std::array<bool, touch_layout_count * touch_control_count>
         has_touch_positions{};
     constexpr std::array<const char*, 8> names{{
@@ -3273,6 +3341,11 @@ AppSettings load_portable_settings(
             has_touch_voxel_orbit = true;
             settings.touch.voxel_orbit = parse_bool_setting(
                 value, settings.touch.voxel_orbit);
+            continue;
+        }
+        if (key == "touch.MenuPosition") {
+            has_touch_menu_position = true;
+            settings.touch.menu_top_right = value == "top-right";
             continue;
         }
         bool touch_setting = false;
@@ -3443,6 +3516,7 @@ AppSettings load_portable_settings(
                                      has_video_mode, has_link_diagnostics,
                                      has_touch_scale, has_touch_opacity,
                                      has_touch_voxel_orbit,
+                                     has_touch_menu_position,
                                      has_touch_positions);
     return settings;
 }
@@ -3521,6 +3595,13 @@ void save_touch_voxel_orbit(const std::filesystem::path& directory,
                             const bool enabled) {
     auto settings = load_app_settings(directory);
     settings.touch.voxel_orbit = enabled;
+    write_portable_settings(directory, settings);
+}
+
+void save_touch_menu_position(const std::filesystem::path& directory,
+                              const bool top_right) {
+    auto settings = load_app_settings(directory);
+    settings.touch.menu_top_right = top_right;
     write_portable_settings(directory, settings);
 }
 
@@ -3803,6 +3884,23 @@ bool voxel_mode_enabled(const SdlResources& sdl) {
     return sdl.video_mode == gameboy::VideoMode::voxel_diorama ||
            sdl.video_mode == gameboy::VideoMode::voxel_shape ||
            sdl.video_mode == gameboy::VideoMode::voxel_popup;
+}
+
+bool android_menu_touch_hit(const SdlResources& sdl, const float x,
+                            const float y) {
+    if (y >= 0.20F) return false;
+    return sdl.touch_settings.menu_top_right ? x >= 0.82F : x < 0.18F;
+}
+
+bool android_menu_button_hit(const SdlResources& sdl, const float x,
+                             const float y) {
+    int width = 1;
+    static_cast<void>(SDL_GetWindowSize(sdl.window, &width, nullptr));
+    const auto button_x = sdl.touch_settings.menu_top_right
+                              ? static_cast<float>(width) - 23.0F
+                              : 3.0F;
+    return x >= button_x && x <= button_x + 20.0F && y >= 3.0F &&
+           y <= 18.0F;
 }
 
 std::pair<float, float> touch_control_position(const SdlResources& sdl,
@@ -4169,6 +4267,12 @@ void show_help(SDL_Window* window, const InputBindings& bindings) {
         "Ctrl+K: Configure controls\n"
         "Ctrl+P: Choose display palette\n"
         "Ctrl+G: Open GameShark cheat manager\n"
+        "Ctrl+Shift+L: Start/stop a local two-player link\n"
+        "Ctrl+Shift+R: Retry a stalled link handshake\n"
+        "Ctrl+Shift+H: Host a TCP link on 127.0.0.1:8765\n"
+        "Ctrl+Shift+J: Join a TCP link on 127.0.0.1:8765\n"
+        "Ctrl+Shift+X: Stop the active TCP link\n"
+        "Player 2 (local link): W/A/S/D = directions, J/K = A/B, Q/E = Select/Start\n"
         "Game library: Choose the video pipeline\n"
         "Voxel mode: Drag vertically for pitch; horizontally for center-axis yaw\n"
         "Ctrl+1 through Ctrl+9: Open recent ROM\n"
@@ -4548,6 +4652,12 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
         case SDL_EVENT_QUIT:
             if (confirm_exit(sdl.window)) running = false;
             break;
+        case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
+            if (event.window.windowID == SDL_GetWindowID(sdl.window) &&
+                confirm_exit(sdl.window)) {
+                running = false;
+            }
+            break;
         case SDL_EVENT_DROP_FILE:
             if (event.drop.data != nullptr) pending_rom = event.drop.data;
             break;
@@ -4860,7 +4970,13 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                     }
                 }
 #ifndef _WIN32
-                else if (x < 20.0F && y < 17.0F) {
+                else if (
+#ifdef __ANDROID__
+                    android_menu_button_hit(sdl, x, y)
+#else
+                    x < 20.0F && y < 17.0F
+#endif
+                ) {
                     if (emulator) release_all_buttons(*emulator);
 #ifdef __ANDROID__
                     open_android_library();
@@ -4875,10 +4991,43 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
 #endif
             }
             break;
+        case SDL_EVENT_MOUSE_WHEEL:
+            if (dashboard_visible) {
+                const auto item_count =
+                    dashboard_items(emulator != nullptr, recent).size();
+                if (event.wheel.y > 0 && dashboard_selection > 0) {
+                    --dashboard_selection;
+                } else if (event.wheel.y < 0 &&
+                           dashboard_selection + 1 < item_count) {
+                    ++dashboard_selection;
+                }
+            }
+            break;
+        case SDL_EVENT_MOUSE_MOTION:
+            if (dashboard_visible) {
+                auto x = event.motion.x;
+                auto y = event.motion.y;
+                static_cast<void>(SDL_RenderCoordinatesFromWindow(
+                    sdl.renderer, x, y, &x, &y));
+                const auto item_count =
+                    dashboard_items(emulator != nullptr, recent).size();
+                if (const auto selected = dashboard_row_at(
+                        x, y, dashboard_selection, item_count)) {
+                    dashboard_selection = *selected;
+                }
+            }
+            break;
 #ifdef __ANDROID__
         case SDL_EVENT_FINGER_DOWN:
         case SDL_EVENT_FINGER_MOTION:
         case SDL_EVENT_FINGER_UP: {
+            // The Android settings activity can update settings.ini while
+            // the SDL activity remains alive underneath it.  Refresh the
+            // cached touch options before classifying a new gesture so the
+            // voxel-orbit toggle takes effect without restarting the game.
+            if (event.type == SDL_EVENT_FINGER_DOWN && emulator != nullptr) {
+                sdl.touch_settings = load_touch_control_settings(preference_path);
+            }
             const auto finger = event.tfinger.fingerID;
             const auto [touch_x, touch_y] = window_touch_position(event.tfinger);
             if (dashboard_visible) {
@@ -4908,7 +5057,8 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
             if (event.type == SDL_EVENT_FINGER_UP) {
                 if (existing != sdl.touches.end()) sdl.touches.erase(existing);
             } else if (existing == sdl.touches.end()) {
-                const auto menu_tap = touch_x < 0.18F && touch_y < 0.20F;
+                const auto menu_tap = android_menu_touch_hit(sdl, touch_x,
+                                                             touch_y);
                 const auto orbit = emulator != nullptr && !menu_tap &&
                                    voxel_mode_enabled(sdl) &&
                                    sdl.touch_settings.voxel_orbit &&
@@ -4937,7 +5087,7 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                 existing->y = touch_y;
             }
             if (event.type == SDL_EVENT_FINGER_DOWN &&
-                touch_x < 0.18F && touch_y < 0.20F) {
+                android_menu_touch_hit(sdl, touch_x, touch_y)) {
                 clear_touch_buttons(emulator.get(), sdl);
                 open_android_library();
             }
@@ -5073,8 +5223,19 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
 
 void show_error(SDL_Window* window, const std::string& message) {
     std::cerr << "Error: " << message << '\n';
+#ifdef _WIN32
+    HWND owner = nullptr;
+    if (window != nullptr) {
+        owner = static_cast<HWND>(SDL_GetPointerProperty(
+            SDL_GetWindowProperties(window),
+            SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
+    }
+    MessageBoxA(owner, message.c_str(), "Go Bigger Boy (GBB)",
+                MB_OK | MB_ICONERROR | MB_SETFOREGROUND);
+#else
     static_cast<void>(SDL_ShowSimpleMessageBox(
         SDL_MESSAGEBOX_ERROR, "Go Bigger Boy (GBB)", message.c_str(), window));
+#endif
 }
 
 #ifndef __ANDROID__
@@ -6161,12 +6322,22 @@ void present_menu_button(SdlResources& sdl) {
     static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
                                                  SDL_BLENDMODE_BLEND));
     static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 220, 235, 220, 190));
-    const SDL_FRect button{3, 3, 20, 15};
+    float button_x = 3.0F;
+#ifdef __ANDROID__
+    if (sdl.touch_settings.menu_top_right) {
+        int width = 1;
+        static_cast<void>(SDL_GetWindowSize(sdl.window, &width, nullptr));
+        button_x = std::max(3.0F, static_cast<float>(width) - 23.0F);
+    }
+#endif
+    const SDL_FRect button{button_x, 3, 20, 15};
     static_cast<void>(SDL_RenderFillRect(sdl.renderer, &button));
     static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 16, 20, 16, 220));
     static_cast<void>(SDL_RenderRect(sdl.renderer, &button));
     const std::array<SDL_FRect, 3> menu_lines{{
-        {7, 6, 12, 1.5F}, {7, 10, 12, 1.5F}, {7, 14, 12, 1.5F}}};
+        {button_x + 4.0F, 6, 12, 1.5F},
+        {button_x + 4.0F, 10, 12, 1.5F},
+        {button_x + 4.0F, 14, 12, 1.5F}}};
     for (const auto& line : menu_lines) {
         static_cast<void>(SDL_RenderFillRect(sdl.renderer, &line));
     }
@@ -7496,6 +7667,29 @@ Java_com_danielseim_gbb_LibraryActivity_nativeSetTouchVoxelOrbitEnabled(
     environment->ReleaseStringUTFChars(directory, raw_directory);
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_danielseim_gbb_LibraryActivity_nativeTouchMenuTopRight(
+    JNIEnv* environment, jclass, jstring directory) {
+    const auto* raw_directory =
+        environment->GetStringUTFChars(directory, nullptr);
+    if (raw_directory == nullptr) return JNI_FALSE;
+    const auto settings = load_touch_control_settings(
+        std::filesystem::u8path(raw_directory));
+    environment->ReleaseStringUTFChars(directory, raw_directory);
+    return settings.menu_top_right ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_danielseim_gbb_LibraryActivity_nativeSetTouchMenuTopRight(
+    JNIEnv* environment, jclass, jstring directory, const jboolean top_right) {
+    const auto* raw_directory =
+        environment->GetStringUTFChars(directory, nullptr);
+    if (raw_directory == nullptr) return;
+    save_touch_menu_position(std::filesystem::u8path(raw_directory),
+                             top_right == JNI_TRUE);
+    environment->ReleaseStringUTFChars(directory, raw_directory);
+}
+
 extern "C" JNIEXPORT jfloatArray JNICALL
 Java_com_danielseim_gbb_LibraryActivity_nativeTouchControlLayout(
     JNIEnv* environment, jclass, jstring directory) {
@@ -7725,10 +7919,6 @@ int main(int argc, char** argv) {
             static_cast<void>(SDL_SetWindowTitle(
                 sdl.window, "Go Bigger Boy (GBB) - Game Library"));
         }
-#ifdef _WIN32
-        if (dashboard_visible) SDL_HideWindow(sdl.window);
-#endif
-
         using Clock = std::chrono::steady_clock;
         constexpr auto cycles_per_frame = 70224U;
         const auto frame_duration = std::chrono::duration<double>(
@@ -7751,8 +7941,7 @@ int main(int argc, char** argv) {
             }
 #endif
 #ifdef _WIN32
-            if (dashboard_visible && update_check_complete &&
-                !available_update && !update_download) {
+            if (dashboard_visible && !update_download) {
                 save_game_window_geometry(sdl.window, preference_path);
                 SDL_HideWindow(sdl.window);
                 gbb_desktop::KeyboardBindings dashboard_bindings{};
@@ -8114,10 +8303,11 @@ int main(int argc, char** argv) {
                 }
             }
             if (emulator && cheat_manager.take_fetch_request()) {
-                try {
-                    cheat_manager.fetch_archive();
-                } catch (const std::exception& error) {
-                    show_error(sdl.window, error.what());
+                cheat_manager.start_fetch();
+            }
+            if (cheat_manager.poll_fetch()) {
+                if (const auto error = cheat_manager.take_fetch_error()) {
+                    show_error(sdl.window, *error);
                 }
             }
             if (emulator && tas_editor.take_new_request()) {
@@ -8270,7 +8460,8 @@ int main(int argc, char** argv) {
             constexpr auto debugger_paused = false;
 #endif
             if (emulator && !debugger_stepped && !paused && !debugger_paused &&
-                !dashboard_visible && !configuring &&
+                !dashboard_visible && !configuring && !cheat_manager.visible() &&
+                !cheat_manager.fetching() &&
                 !dialog_active(dialog)) {
                 if (rewind && link_emulator == nullptr) {
                     if (!rewind_history.empty()) {
@@ -8449,6 +8640,10 @@ int main(int argc, char** argv) {
         flush_battery_safely(emulator.get());
     } catch (const std::exception& error) {
         std::cerr << "Error: " << error.what() << '\n';
+#ifdef _WIN32
+        MessageBoxA(nullptr, error.what(), "Go Bigger Boy (GBB)",
+                    MB_OK | MB_ICONERROR | MB_SETFOREGROUND);
+#endif
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;

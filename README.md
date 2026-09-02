@@ -59,6 +59,17 @@ support covers the primary execution and rendering paths, but hardware-edge
 accuracy is still being refined. DMG games can use the automatic Game Boy Color
 compatibility palettes selected from their cartridge headers.
 
+## License
+
+Unless otherwise noted, Go Bigger Boy source code is licensed under the GNU
+General Public License, version 3 or later (`GPL-3.0-or-later`); see
+[LICENSE](LICENSE) for the complete terms.
+
+ROMs, save files, and other user-provided game data are not covered by this
+project license. Third-party libraries, tools, artwork, and metadata retain
+their own licenses; the relevant notices and upstream projects are linked
+where they are used.
+
 ## Build
 
 ```sh
@@ -328,7 +339,8 @@ tap the top-left menu button and choose
 Android Settings page also provides touch-control size and opacity sliders;
 these values are stored in `settings.ini` as `touch.Size` and `touch.Opacity`.
 Voxel modes also support touch-drag orbiting when `touch.VoxelOrbit` is enabled;
-the Android Settings page provides a toggle for this gesture.
+the Android Settings page provides a toggle for this gesture. The in-game menu
+button can be placed at the top left or top right with `touch.MenuPosition`.
 Its layout editor has separate portrait and landscape layouts. The D-pad is
 always moved as one control, while A, B, Select, and Start can be positioned
 individually beside or below the emulation screen. Positions are stored as

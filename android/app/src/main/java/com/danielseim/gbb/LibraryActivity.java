@@ -73,6 +73,9 @@ public final class LibraryActivity extends Activity {
             "nearest", "bilinear", "integer", "lcd", "voxel", "voxel_shape",
             "voxel_popup"
     };
+    private static final String[] MENU_POSITION_NAMES = {
+            "Top left", "Top right"
+    };
     private static final char FIELD_SEPARATOR = 0x1f;
 
     static {
@@ -86,11 +89,14 @@ public final class LibraryActivity extends Activity {
     private static native float nativeTouchControlScale(String directory);
     private static native float nativeTouchControlOpacity(String directory);
     private static native boolean nativeTouchVoxelOrbitEnabled(String directory);
+    private static native boolean nativeTouchMenuTopRight(String directory);
     private static native float[] nativeTouchControlLayout(String directory);
     private static native void nativeSetTouchControlSettings(
             String directory, float scale, float opacity);
     private static native void nativeSetTouchVoxelOrbitEnabled(
             String directory, boolean enabled);
+    private static native void nativeSetTouchMenuTopRight(
+            String directory, boolean topRight);
     private static native void nativeSetTouchControlLayout(
             String directory, float[] positions);
     private static native void nativeResetTouchControlLayout(String directory);
@@ -481,6 +487,24 @@ public final class LibraryActivity extends Activity {
                 "camera.", 15, Color.DKGRAY));
 
         final String settingsDirectory = getFilesDir().getAbsolutePath();
+        final Spinner menuPosition = new Spinner(this);
+        menuPosition.setAdapter(new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_dropdown_item,
+                MENU_POSITION_NAMES));
+        menuPosition.setSelection(nativeTouchMenuTopRight(settingsDirectory) ? 1 : 0);
+        menuPosition.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view,
+                                       int position, long id) {
+                nativeSetTouchMenuTopRight(settingsDirectory, position == 1);
+            }
+            @Override public void onNothingSelected(AdapterView<?> parent) {}
+        });
+        touchCard.addView(settingLabel("In-game menu button"));
+        touchCard.addView(menuPosition, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
+
         final Switch voxelOrbit = new Switch(this);
         voxelOrbit.setText("Enable voxel touch orbit");
         voxelOrbit.setTextSize(16);

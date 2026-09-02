@@ -3,3 +3,4 @@
 
 IDI_GBB_ICON ICON "go-bigger-boy.ico"
 IDR_GBB_LOGO RCDATA "../../go_bigger_boy_logo.png"
+1 RT_MANIFEST "go-bigger-boy.manifest"

@@ -115,6 +115,7 @@ struct State {
     bool done{};
     HWND window{};
     HWND list{};
+    HWND library_empty{};
     HWND play{};
     HWND open{};
     HWND resume{};
@@ -179,12 +180,22 @@ std::optional<POINT> load_window_position(
     std::ifstream input(preference_directory / "dashboard-window.txt");
     POINT position{};
     if (!(input >> position.x >> position.y)) return std::nullopt;
-    const RECT rectangle{position.x, position.y,
-                         position.x + dashboard_width,
-                         position.y + dashboard_height};
-    return MonitorFromRect(&rectangle, MONITOR_DEFAULTTONULL) == nullptr
-               ? std::nullopt
-               : std::optional<POINT>{position};
+    RECT rectangle{position.x, position.y,
+                   position.x + dashboard_width,
+                   position.y + dashboard_height};
+    const auto monitor = MonitorFromRect(&rectangle, MONITOR_DEFAULTTONULL);
+    if (monitor == nullptr) return std::nullopt;
+    MONITORINFO info{sizeof(info)};
+    if (!GetMonitorInfoW(monitor, &info)) return std::nullopt;
+    // Keep the complete dashboard on the saved monitor. Older versions only
+    // checked for a tiny intersection, which could strand settings controls
+    // off-screen after a monitor or DPI change.
+    const auto& work = info.rcWork;
+    position.x = std::clamp(position.x, work.left,
+                            std::max(work.left, work.right - dashboard_width));
+    position.y = std::clamp(position.y, work.top,
+                            std::max(work.top, work.bottom - dashboard_height));
+    return position;
 }
 
 void save_window_position(const State& state) {
@@ -771,6 +782,8 @@ LRESULT CALLBACK table_header_subclass(
     return DefSubclassProc(window, message, wparam, lparam);
 }
 
+void refresh_library_actions(State& state);
+
 void show_page(State& state, const State::Page page) {
     state.page = page;
     const auto library = page == State::Page::library;
@@ -781,6 +794,10 @@ void show_page(State& state, const State::Page page) {
         refresh_binding_buttons(state);
     }
     ShowWindow(state.list, library ? SW_SHOW : SW_HIDE);
+    if (state.library_empty != nullptr) {
+        const auto empty = library && ListView_GetItemCount(state.list) == 0;
+        ShowWindow(state.library_empty, empty ? SW_SHOW : SW_HIDE);
+    }
     ShowWindow(state.play, library ? SW_SHOW : SW_HIDE);
     ShowWindow(state.open, library ? SW_SHOW : SW_HIDE);
     ShowWindow(state.remove, library ? SW_SHOW : SW_HIDE);
@@ -828,6 +845,7 @@ void show_page(State& state, const State::Page page) {
     ShowWindow(state.voxel_reset, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.shortcuts_heading, shortcuts ? SW_SHOW : SW_HIDE);
     ShowWindow(state.shortcuts_text, shortcuts ? SW_SHOW : SW_HIDE);
+    if (library) refresh_library_actions(state);
     if (settings) {
         // The owner-drawn Game Boy artwork overlaps these controls. Keep the
         // bindings above it and repaint them immediately when opening Settings.
@@ -858,6 +876,12 @@ std::optional<std::size_t> selected_entry_index(const State& state) {
     return index < state.library->entries().size()
                ? std::optional<std::size_t>{index}
                : std::nullopt;
+}
+
+void refresh_library_actions(State& state) {
+    const auto has_selection = selected_entry_index(state).has_value();
+    if (state.play != nullptr) EnableWindow(state.play, has_selection);
+    if (state.remove != nullptr) EnableWindow(state.remove, has_selection);
 }
 
 void finish(State& state, const DashboardResultAction action,
@@ -1183,6 +1207,18 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                                                   : RGB(20, 27, 38);
                     return CDRF_NEWFONT;
                 }
+            }
+        }
+        if (notification->idFrom == id_list &&
+            notification->code == LVN_ITEMCHANGED) {
+            refresh_library_actions(*state);
+        }
+        if (notification->idFrom == id_list &&
+            notification->code == LVN_KEYDOWN) {
+            const auto* key = reinterpret_cast<const NMLVKEYDOWN*>(lparam);
+            if (key->wVKey == VK_RETURN) {
+                play_selection(*state);
+                return 0;
             }
         }
         if (notification->idFrom == id_list && notification->code == NM_DBLCLK) {
@@ -1565,9 +1601,14 @@ HWND control(State& state, const wchar_t* type, const wchar_t* text,
         (style & BS_AUTOCHECKBOX) == 0) {
         style |= BS_OWNERDRAW;
     }
-    const auto extended_style = std::wstring_view(type) == L"STATIC"
-                                    ? WS_EX_TRANSPARENT
-                                    : 0;
+    const auto control_type = std::wstring_view(type);
+    const auto extended_style = control_type == L"STATIC" ? WS_EX_TRANSPARENT : 0;
+    // Win32 does not add tab stops to owner-drawn buttons automatically.
+    // Keep the complete dashboard keyboard-accessible.
+    if (control_type == L"BUTTON" || control_type == L"COMBOBOX" ||
+        control_type == L"EDIT" || control_type == WC_LISTVIEWW) {
+        style |= WS_TABSTOP;
+    }
     auto result = CreateWindowExW(extended_style, type, text,
         WS_CHILD | style, x, y, width, height, state.window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
@@ -1615,6 +1656,18 @@ void draw_dashboard_button(const DRAWITEMSTRUCT& item, const State& state) {
     auto text_rect = item.rcItem;
     DrawTextW(item.hDC, label, -1, &text_rect,
               DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    if ((item.itemState & ODS_FOCUS) != 0) {
+        auto focus_rect = item.rcItem;
+        InflateRect(&focus_rect, -3, -3);
+        const auto focus_pen = CreatePen(PS_DOT, 1, RGB(238, 246, 252));
+        const auto old_pen = SelectObject(item.hDC, focus_pen);
+        const auto old_brush = SelectObject(item.hDC, GetStockObject(HOLLOW_BRUSH));
+        Rectangle(item.hDC, focus_rect.left, focus_rect.top,
+                  focus_rect.right, focus_rect.bottom);
+        SelectObject(item.hDC, old_brush);
+        SelectObject(item.hDC, old_pen);
+        DeleteObject(focus_pen);
+    }
     if (old_font != nullptr) SelectObject(item.hDC, old_font);
 }
 
@@ -1714,6 +1767,11 @@ DashboardResult show_windows_dashboard(
     state.list = control(state, WC_LISTVIEWW, L"",
         WS_VISIBLE | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS,
         32, 200, 916, 350, id_list);
+    state.library_empty = control(
+        state, L"STATIC",
+        L"No games yet.\n\nChoose Open ROM... to add a game to your library.",
+        WS_VISIBLE | SS_CENTER,
+        32, 300, 916, 100, 0);
     SetWindowSubclass(ListView_GetHeader(state.list), table_header_subclass, 1,
                       reinterpret_cast<DWORD_PTR>(&state));
     ListView_SetExtendedListViewStyle(state.list,
@@ -1942,6 +2000,14 @@ DashboardResult show_windows_dashboard(
         32, 240, 916, 565, 0);
     refresh_binding_buttons(state);
     show_page(state, State::Page::library);
+    if (ListView_GetItemCount(state.list) > 0) {
+        ListView_SetItemState(state.list, 0, LVIS_SELECTED | LVIS_FOCUSED,
+                              LVIS_SELECTED | LVIS_FOCUSED);
+        SetFocus(state.list);
+    } else {
+        SetFocus(state.open);
+    }
+    refresh_library_actions(state);
 
     if (owner != nullptr) EnableWindow(owner, FALSE);
     ShowWindow(state.window, SW_SHOW);
