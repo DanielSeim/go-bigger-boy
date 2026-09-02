@@ -146,6 +146,7 @@ struct State {
     HWND library_tab{};
     HWND settings_tab{};
     HWND shortcuts_tab{};
+    HWND artwork_status{};
     HWND shortcuts_heading{};
     HWND shortcuts_text{};
     HWND logo{};
@@ -160,6 +161,8 @@ struct State {
     gbb::VoxelProfile voxel_profile{};
     std::thread artwork_worker;
     std::atomic_bool closing{};
+    std::atomic_size_t artwork_completed{};
+    std::size_t artwork_total{};
     int settings_scroll{};
     HFONT title_font{};
     struct CapturingBinding {
@@ -796,6 +799,7 @@ void show_page(State& state, const State::Page page) {
         refresh_binding_buttons(state);
     }
     ShowWindow(state.list, library ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.artwork_status, library ? SW_SHOW : SW_HIDE);
     if (state.library_empty != nullptr) {
         const auto empty = library && ListView_GetItemCount(state.list) == 0;
         ShowWindow(state.library_empty, empty ? SW_SHOW : SW_HIDE);
@@ -907,6 +911,8 @@ void layout_dashboard(State& state) {
                 static_cast<int>(list_height), 0);
     place_child(state.library_empty, 32, 300, static_cast<int>(content_width),
                 100, 0);
+    place_child(state.artwork_status, 32, 180, static_cast<int>(content_width),
+                20, 0);
     const auto actions_y = 200L + list_height + 25L;
     place_child(state.open, 32, static_cast<int>(actions_y), 150, 44, 0);
     place_child(state.play, 202, static_cast<int>(actions_y), 160, 44, 0);
@@ -1049,6 +1055,20 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
     }
     if (message == WM_SIZE) {
         layout_dashboard(*state);
+        return 0;
+    }
+    if (message == WM_TIMER && wparam == 1) {
+        const auto completed = state->artwork_completed.load(
+            std::memory_order_relaxed);
+        if (completed >= state->artwork_total) {
+            SetWindowTextW(state->artwork_status, L"Artwork: ready");
+            KillTimer(window, 1);
+        } else {
+            const auto text = L"Artwork: loading " +
+                              std::to_wstring(completed) + L" of " +
+                              std::to_wstring(state->artwork_total) + L"...";
+            SetWindowTextW(state->artwork_status, text.c_str());
+        }
         return 0;
     }
     if (message == WM_GETMINMAXINFO) {
@@ -1401,6 +1421,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
         }
         return 0;
     } else if (message == WM_DESTROY) {
+        KillTimer(window, 1);
         if (state->logo_bitmap != nullptr) {
             DeleteObject(state->logo_bitmap);
             state->logo_bitmap = nullptr;
@@ -1718,6 +1739,7 @@ void resolve_artwork(State& state) {
             std::filesystem::is_regular_file(cover)
                 ? cover
                 : std::filesystem::path{}});
+        state.artwork_completed.fetch_add(1, std::memory_order_relaxed);
         if (!PostMessageW(state.window, artwork_ready, 0,
                           reinterpret_cast<LPARAM>(update.get()))) {
             return;
@@ -1896,6 +1918,9 @@ DashboardResult show_windows_dashboard(
     state.shortcuts_tab = control(state, L"BUTTON", L"Shortcuts",
                                   WS_VISIBLE | BS_PUSHBUTTON,
                                   316, 140, 126, 40, id_shortcuts);
+    state.artwork_status = control(
+        state, L"STATIC", L"Artwork: loading...", WS_VISIBLE,
+        32, 180, 916, 20, 0);
     state.list = control(state, WC_LISTVIEWW, L"",
         WS_VISIBLE | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS,
         32, 200, 916, 350, id_list);
@@ -2145,6 +2170,13 @@ DashboardResult show_windows_dashboard(
     if (owner != nullptr) EnableWindow(owner, FALSE);
     ShowWindow(state.window, SW_SHOW);
     UpdateWindow(state.window);
+    state.artwork_total = library.entries().size();
+    state.artwork_completed = 0;
+    if (state.artwork_total == 0) {
+        SetWindowTextW(state.artwork_status, L"Artwork: ready");
+    } else {
+        SetTimer(state.window, 1, 100, nullptr);
+    }
     state.artwork_worker = std::thread([&state] { resolve_artwork(state); });
     MSG message{};
     while (!state.done && GetMessageW(&message, nullptr, 0, 0) > 0) {
