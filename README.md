@@ -342,7 +342,7 @@ generates a complete default
 recognized entries omitted from an existing file. Older `controls.txt` and
 `palette.txt` preferences migrate automatically when `settings.ini` is first
 created, and automatic updates preserve an existing portable file. On Android,
-tap the top-left menu button and choose
+tap the in-game menu button in its configured corner and choose
 `Display palette` to select and persist the same five palette options. The
 Android Settings page also provides touch-control size and opacity sliders;
 these values are stored in `settings.ini` as `touch.Size` and `touch.Opacity`.

@@ -4031,21 +4031,45 @@ bool voxel_mode_enabled(const SdlResources& sdl) {
            sdl.video_mode == gameboy::VideoMode::voxel_popup;
 }
 
+SDL_FRect android_menu_button_rect(const SdlResources& sdl) {
+    int width = 1;
+    int height = 1;
+    static_cast<void>(SDL_GetWindowSize(sdl.window, &width, &height));
+    // The game framebuffer is normally rendered through a 160x144 logical
+    // viewport. The menu is an Android overlay, however, so size and position
+    // it in full-window pixels after disabling logical presentation.
+    const auto size = touch_game_scale(sdl) * 20.0F;
+    const auto button_height = size * 0.75F;
+    const auto margin = std::max(8.0F, size * 0.15F);
+    const auto x = sdl.touch_settings.menu_top_right
+                       ? std::max(margin, static_cast<float>(width) - size - margin)
+                       : margin;
+    return {x, margin, size, button_height};
+}
+
 bool android_menu_touch_hit(const SdlResources& sdl, const float x,
                             const float y) {
-    if (y >= 0.20F) return false;
-    return sdl.touch_settings.menu_top_right ? x >= 0.82F : x < 0.18F;
+    int width = 1;
+    int height = 1;
+    static_cast<void>(SDL_GetWindowSize(sdl.window, &width, &height));
+    const auto button = android_menu_button_rect(sdl);
+    const auto pixel_x = x * static_cast<float>(width);
+    const auto pixel_y = y * static_cast<float>(height);
+    constexpr float hit_slop = 8.0F;
+    return pixel_x >= button.x - hit_slop &&
+           pixel_x <= button.x + button.w + hit_slop &&
+           pixel_y >= button.y - hit_slop &&
+           pixel_y <= button.y + button.h + hit_slop;
 }
 
 bool android_menu_button_hit(const SdlResources& sdl, const float x,
                              const float y) {
-    int width = 1;
-    static_cast<void>(SDL_GetWindowSize(sdl.window, &width, nullptr));
-    const auto button_x = sdl.touch_settings.menu_top_right
-                              ? static_cast<float>(width) - 23.0F
-                              : 3.0F;
-    return x >= button_x && x <= button_x + 20.0F && y >= 3.0F &&
-           y <= 18.0F;
+    const auto button = android_menu_button_rect(sdl);
+    constexpr float hit_slop = 8.0F;
+    return x >= button.x - hit_slop &&
+           x <= button.x + button.w + hit_slop &&
+           y >= button.y - hit_slop &&
+           y <= button.y + button.h + hit_slop;
 }
 
 std::pair<float, float> touch_control_position(const SdlResources& sdl,
@@ -4134,6 +4158,16 @@ void clear_touch_buttons(gameboy::Emulator* emulator, SdlResources& sdl) {
         }
     }
     sdl.touch_buttons.fill(false);
+}
+
+void refresh_touch_settings(SdlResources& sdl,
+                            const std::filesystem::path& preference_path) {
+    sdl.touch_settings = load_touch_control_settings(preference_path);
+    if (!sdl.touch_settings.voxel_orbit) {
+        // If settings changed while a gesture was in progress, do not let an
+        // old per-touch orbit flag bypass the newly disabled preference.
+        for (auto& touch : sdl.touches) touch.orbit = false;
+    }
 }
 
 std::pair<float, float> logical_touch_position(const SDL_TouchFingerEvent& event,
@@ -5128,8 +5162,10 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
             break;
         case SDL_EVENT_MOUSE_BUTTON_UP:
             if (event.button.button == SDL_BUTTON_LEFT) {
-                auto x = event.button.x;
-                auto y = event.button.y;
+                const auto window_x = event.button.x;
+                const auto window_y = event.button.y;
+                auto x = window_x;
+                auto y = window_y;
                 static_cast<void>(SDL_RenderCoordinatesFromWindow(
                     sdl.renderer, x, y, &x, &y));
                 if (dashboard_visible) {
@@ -5147,7 +5183,7 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
 #ifndef _WIN32
                 else if (
 #ifdef __ANDROID__
-                    android_menu_button_hit(sdl, x, y)
+                    android_menu_button_hit(sdl, window_x, window_y)
 #else
                     x < 20.0F && y < 17.0F
 #endif
@@ -5198,7 +5234,7 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
             // cached touch options before classifying a new gesture so the
             // voxel-orbit toggle takes effect without restarting the game.
             if (event.type == SDL_EVENT_FINGER_DOWN && emulator != nullptr) {
-                sdl.touch_settings = load_touch_control_settings(preference_path);
+                refresh_touch_settings(sdl, preference_path);
             }
             const auto finger = event.tfinger.fingerID;
             const auto [touch_x, touch_y] = window_touch_position(event.tfinger);
@@ -5238,7 +5274,8 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                 sdl.touches.push_back({finger, touch_x, touch_y, orbit});
             } else {
                 if (event.type == SDL_EVENT_FINGER_MOTION && existing->orbit &&
-                    emulator != nullptr && voxel_mode_enabled(sdl)) {
+                    emulator != nullptr && voxel_mode_enabled(sdl) &&
+                    sdl.touch_settings.voxel_orbit) {
                     int width = 1;
                     int height = 1;
                     static_cast<void>(SDL_GetWindowSize(sdl.window, &width,
@@ -5275,9 +5312,7 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
             display_palette = load_display_palette(preference_path);
 #ifdef __ANDROID__
             {
-                const auto touch_settings =
-                    load_touch_control_settings(preference_path);
-                sdl.touch_settings = touch_settings;
+                refresh_touch_settings(sdl, preference_path);
             }
 #endif
             if (emulator != nullptr) {
@@ -6488,30 +6523,52 @@ void retry_remote_link_session(gameboy::Emulator& emulator,
 #endif
 
 void present_menu_button(SdlResources& sdl) {
+#ifdef __ANDROID__
+    // Unlike the Game Boy framebuffer and touch controls, this overlay belongs
+    // to the full Android window. Draw it after temporarily disabling SDL's
+    // logical 160x144 presentation so either corner remains reachable.
+    if (!SDL_SetRenderLogicalPresentation(
+            sdl.renderer, 0, 0, SDL_LOGICAL_PRESENTATION_DISABLED)) {
+        sdl_error("Could not prepare Android menu button");
+    }
+    const auto button = android_menu_button_rect(sdl);
+    const auto button_x = button.x;
+    const auto button_y = button.y;
+    const auto button_width = button.w;
+    const auto button_height = button.h;
+#else
+    const auto button_x = 3.0F;
+    const auto button_y = 3.0F;
+    const auto button_width = 20.0F;
+    const auto button_height = 15.0F;
+#endif
     static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
                                                  SDL_BLENDMODE_BLEND));
     static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 220, 235, 220, 190));
-    float button_x = 3.0F;
-#ifdef __ANDROID__
-    if (sdl.touch_settings.menu_top_right) {
-        int width = 1;
-        static_cast<void>(SDL_GetWindowSize(sdl.window, &width, nullptr));
-        button_x = std::max(3.0F, static_cast<float>(width) - 23.0F);
-    }
-#endif
-    const SDL_FRect button{button_x, 3, 20, 15};
+    const SDL_FRect button{button_x, button_y, button_width, button_height};
     static_cast<void>(SDL_RenderFillRect(sdl.renderer, &button));
     static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 16, 20, 16, 220));
     static_cast<void>(SDL_RenderRect(sdl.renderer, &button));
     const std::array<SDL_FRect, 3> menu_lines{{
-        {button_x + 4.0F, 6, 12, 1.5F},
-        {button_x + 4.0F, 10, 12, 1.5F},
-        {button_x + 4.0F, 14, 12, 1.5F}}};
+        {button_x + button_width * 0.2F,
+         button_y + button_height * 0.2F,
+         button_width * 0.6F, button_height * 0.10F},
+        {button_x + button_width * 0.2F,
+         button_y + button_height * 0.47F,
+         button_width * 0.6F, button_height * 0.10F},
+        {button_x + button_width * 0.2F,
+         button_y + button_height * 0.74F,
+         button_width * 0.6F, button_height * 0.10F}}};
     for (const auto& line : menu_lines) {
         static_cast<void>(SDL_RenderFillRect(sdl.renderer, &line));
     }
     static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
                                                  SDL_BLENDMODE_NONE));
+#ifdef __ANDROID__
+    if (!configure_video_pipeline(sdl, sdl.video_mode)) {
+        sdl_error("Could not restore game presentation after menu button");
+    }
+#endif
 }
 
 #ifdef __ANDROID__
