@@ -4676,8 +4676,14 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
         }
     }
 #endif
+    bool close_prompt_shown = false;
+    const auto request_close = [&]() {
+        if (close_prompt_shown || !running) return;
+        close_prompt_shown = true;
+        if (confirm_exit(sdl.window)) running = false;
+    };
     SDL_Event event;
-    while (SDL_PollEvent(&event)) {
+    while (running && SDL_PollEvent(&event)) {
 #ifndef __ANDROID__
         if (cheat_manager.handle_event(event)) continue;
         if (sprite_editor.handle_event(event, emulator.get())) continue;
@@ -4714,12 +4720,11 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
         }
         switch (event.type) {
         case SDL_EVENT_QUIT:
-            if (confirm_exit(sdl.window)) running = false;
+            request_close();
             break;
         case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
-            if (event.window.windowID == SDL_GetWindowID(sdl.window) &&
-                confirm_exit(sdl.window)) {
-                running = false;
+            if (event.window.windowID == SDL_GetWindowID(sdl.window)) {
+                request_close();
             }
             break;
         case SDL_EVENT_DROP_FILE:
@@ -7950,6 +7955,9 @@ int main(int argc, char** argv) {
 #else
         auto dashboard_visible = argc != 2;
 #endif
+#ifdef _WIN32
+        if (dashboard_visible) SDL_HideWindow(sdl.window);
+#endif
         std::size_t dashboard_selection = 0;
         std::uint64_t print_sequence = 0;
         RewindHistory rewind_history;
@@ -8005,7 +8013,8 @@ int main(int argc, char** argv) {
             }
 #endif
 #ifdef _WIN32
-            if (dashboard_visible && !update_download) {
+            if (dashboard_visible && update_check_complete &&
+                !available_update && !update_download) {
                 save_game_window_geometry(sdl.window, preference_path);
                 SDL_HideWindow(sdl.window);
                 gbb_desktop::KeyboardBindings dashboard_bindings{};
