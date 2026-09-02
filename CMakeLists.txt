@@ -178,6 +178,11 @@ if(GAMEBOY_BUILD_SDL)
                 target_include_directories(gameboy_sdl PRIVATE
                     "${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows"
                 )
+                if(MSVC)
+                    # The resource script embeds our DPI/common-controls
+                    # manifest; prevent MSVC from adding a second copy.
+                    target_link_options(gameboy_sdl PRIVATE "/MANIFEST:NO")
+                endif()
             endif()
             if(ANDROID)
                 set_target_properties(gameboy_sdl PROPERTIES OUTPUT_NAME main)
