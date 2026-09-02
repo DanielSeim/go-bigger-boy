@@ -1,6 +1,7 @@
 package com.danielseim.gbb;
 
 import android.annotation.SuppressLint;
+import android.app.ActionBar;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
@@ -105,6 +106,8 @@ public final class LibraryActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        final ActionBar actionBar = getActionBar();
+        if (actionBar != null) actionBar.hide();
         preferences = getSharedPreferences("dashboard", MODE_PRIVATE);
         returnToGame = getIntent().getBooleanExtra(EXTRA_RETURN_TO_GAME, false);
         updateManager = new AndroidUpdateManager(this);
