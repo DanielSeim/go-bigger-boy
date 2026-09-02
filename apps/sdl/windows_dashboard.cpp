@@ -160,6 +160,7 @@ struct State {
     gbb::VoxelProfile voxel_profile{};
     std::thread artwork_worker;
     std::atomic_bool closing{};
+    int settings_scroll{};
     HFONT title_font{};
     struct CapturingBinding {
         bool action{};
@@ -783,6 +784,7 @@ LRESULT CALLBACK table_header_subclass(
 }
 
 void refresh_library_actions(State& state);
+void layout_dashboard(State& state);
 
 void show_page(State& state, const State::Page page) {
     state.page = page;
@@ -845,6 +847,8 @@ void show_page(State& state, const State::Page page) {
     ShowWindow(state.voxel_reset, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.shortcuts_heading, shortcuts ? SW_SHOW : SW_HIDE);
     ShowWindow(state.shortcuts_text, shortcuts ? SW_SHOW : SW_HIDE);
+    ShowScrollBar(state.window, SB_VERT, settings ? TRUE : FALSE);
+    layout_dashboard(state);
     if (library) refresh_library_actions(state);
     if (settings) {
         // The owner-drawn Game Boy artwork overlaps these controls. Keep the
@@ -882,6 +886,95 @@ void refresh_library_actions(State& state) {
     const auto has_selection = selected_entry_index(state).has_value();
     if (state.play != nullptr) EnableWindow(state.play, has_selection);
     if (state.remove != nullptr) EnableWindow(state.remove, has_selection);
+}
+
+void place_child(HWND child, int x, int y, int width, int height,
+                 const int scroll) {
+    if (child == nullptr) return;
+    SetWindowPos(child, nullptr, x, y - scroll, width, height,
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+void layout_dashboard(State& state) {
+    if (state.window == nullptr) return;
+    RECT client{};
+    GetClientRect(state.window, &client);
+    const auto width = std::max(720L, client.right - client.left);
+    const auto height = std::max(520L, client.bottom - client.top);
+    const auto content_width = std::max(400L, width - 64L);
+    const auto list_height = std::max(220L, height - 300L);
+    place_child(state.list, 32, 200, static_cast<int>(content_width),
+                static_cast<int>(list_height), 0);
+    place_child(state.library_empty, 32, 300, static_cast<int>(content_width),
+                100, 0);
+    const auto actions_y = 200L + list_height + 25L;
+    place_child(state.open, 32, static_cast<int>(actions_y), 150, 44, 0);
+    place_child(state.play, 202, static_cast<int>(actions_y), 160, 44, 0);
+    place_child(state.remove, 382, static_cast<int>(actions_y), 170, 44, 0);
+    place_child(state.resume, 572, static_cast<int>(actions_y), 150, 44, 0);
+
+    const auto content_bottom = 1058L;
+    const auto max_scroll = std::max(0L, content_bottom - height + 24L);
+    state.settings_scroll = std::clamp(state.settings_scroll, 0,
+                                       static_cast<int>(max_scroll));
+    SCROLLINFO scroll{sizeof(scroll), SIF_RANGE | SIF_PAGE | SIF_POS,
+                      0, static_cast<int>(content_bottom),
+                      static_cast<UINT>(height), state.settings_scroll, 0};
+    SetScrollInfo(state.window, SB_VERT, &scroll, TRUE);
+    const auto offset = state.settings_scroll;
+    place_child(state.settings_heading, 32, 200, 360, 30, offset);
+    place_child(state.palette_label, 32, 245, 110, 26, offset);
+    place_child(state.palette, 154, 240, 290, 26, offset);
+    place_child(state.video_label, 32, 275, 110, 26, offset);
+    place_child(state.video, 154, 270, 290, 26, offset);
+    place_child(state.controls_label, 510, 200, 240, 30, offset);
+    place_child(state.controls_instruction, 510, 238, 420, 26, offset);
+    place_child(state.gameboy_background, 32, 310, 916, 268, offset);
+    for (int column = 0; column < 2; ++column) {
+        const auto base_x = column == 0 ? 72 : 520;
+        place_child(state.primary_headings[static_cast<std::size_t>(column)],
+                    base_x + 78, 316, 120, 24, offset);
+        place_child(state.secondary_headings[static_cast<std::size_t>(column)],
+                    base_x + 214, 316, 120, 24, offset);
+    }
+    constexpr std::array<std::size_t, 8> order{{2, 1, 0, 3, 4, 5, 6, 7}};
+    for (std::size_t position = 0; position < order.size(); ++position) {
+        const auto index = order[position];
+        const auto column = position < 4 ? 0 : 1;
+        const auto row = static_cast<int>(position % 4);
+        const auto base_x = column == 0 ? 72 : 520;
+        const auto y = 350 + row * 48;
+        place_child(state.binding_labels[index], base_x, y + 8, 64, 26, offset);
+        for (std::size_t slot = 0; slot < 2; ++slot) {
+            place_child(state.binding_buttons[index][slot],
+                        base_x + 78 + static_cast<int>(slot) * 136, y, 120, 38,
+                        offset);
+        }
+    }
+    place_child(state.actions_label, 32, 610, 260, 28, offset);
+    for (std::size_t index = 0; index < state.action_labels.size(); ++index) {
+        const auto column = index % 2;
+        const auto row = index / 2;
+        const auto base_x = column == 0 ? 72 : 520;
+        const auto y = 650 + static_cast<int>(row) * 50;
+        place_child(state.action_labels[index], base_x, y + 8, 130, 26, offset);
+        place_child(state.action_buttons[index], base_x + 145, y, 150, 38,
+                    offset);
+    }
+    place_child(state.reset_controls, 32, 775, 230, 40, offset);
+    place_child(state.voxel_heading, 32, 825, 320, 28, offset);
+    place_child(state.voxel_fingerprint_label, 360, 827, 580, 24, offset);
+    place_child(state.voxel_preview, 300, 850, 180, 150, offset);
+    constexpr std::array<int, 8> profile_x{{32, 32, 32, 32, 510, 510, 510, 510}};
+    constexpr std::array<int, 8> profile_y{{850, 890, 930, 970, 850, 890, 930, 970}};
+    for (std::size_t index = 0; index < state.voxel_labels.size(); ++index) {
+        place_child(state.voxel_labels[index], profile_x[index], profile_y[index],
+                    120, 24, offset);
+        place_child(state.voxel_edits[index], profile_x[index] + 130,
+                    profile_y[index] - 2, 130, 28, offset);
+    }
+    place_child(state.voxel_save, 680, 1020, 120, 38, offset);
+    place_child(state.voxel_reset, 810, 1020, 120, 38, offset);
 }
 
 void finish(State& state, const DashboardResultAction action,
@@ -953,6 +1046,44 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
         FillRect(reinterpret_cast<HDC>(wparam), &client,
                  state->background_brush);
         return 1;
+    }
+    if (message == WM_SIZE) {
+        layout_dashboard(*state);
+        return 0;
+    }
+    if (message == WM_GETMINMAXINFO) {
+        auto* limits = reinterpret_cast<MINMAXINFO*>(lparam);
+        limits->ptMinTrackSize.x = 720;
+        limits->ptMinTrackSize.y = 520;
+        return 0;
+    }
+    if (message == WM_VSCROLL) {
+        RECT client{};
+        GetClientRect(window, &client);
+        const auto max_scroll = std::max(
+            0L, 1058L - static_cast<long>(client.bottom - client.top) + 24L);
+        auto next = state->settings_scroll;
+        switch (LOWORD(wparam)) {
+        case SB_LINEUP: next -= 32; break;
+        case SB_LINEDOWN: next += 32; break;
+        case SB_PAGEUP: next -= std::max(64L, (client.bottom - client.top) / 2); break;
+        case SB_PAGEDOWN: next += std::max(64L, (client.bottom - client.top) / 2); break;
+        case SB_THUMBTRACK:
+        case SB_THUMBPOSITION: next = HIWORD(wparam); break;
+        case SB_TOP: next = 0; break;
+        case SB_BOTTOM: next = static_cast<int>(max_scroll); break;
+        default: break;
+        }
+        state->settings_scroll = std::clamp(next, 0, static_cast<int>(max_scroll));
+        layout_dashboard(*state);
+        return 0;
+    }
+    if (message == WM_MOUSEWHEEL && state->page == State::Page::settings) {
+        const auto delta = GET_WHEEL_DELTA_WPARAM(wparam);
+        state->settings_scroll = std::max(
+            0, state->settings_scroll - (delta > 0 ? 64 : -64));
+        layout_dashboard(*state);
+        return 0;
     }
     if (message == WM_CTLCOLORSTATIC || message == WM_CTLCOLORLISTBOX ||
         message == WM_CTLCOLOREDIT) {
@@ -1721,7 +1852,8 @@ DashboardResult show_windows_dashboard(
                               widen(GBB_VERSION);
     state.window = CreateWindowExW(
         WS_EX_APPWINDOW, class_name, window_title.c_str(),
-        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
+        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX |
+            WS_MAXIMIZEBOX | WS_THICKFRAME | WS_VSCROLL,
         saved_position ? saved_position->x : CW_USEDEFAULT,
         saved_position ? saved_position->y : CW_USEDEFAULT,
         dashboard_width, dashboard_height, owner, nullptr, instance, &state);
@@ -1999,6 +2131,7 @@ DashboardResult show_windows_dashboard(
         ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL,
         32, 240, 916, 565, 0);
     refresh_binding_buttons(state);
+    layout_dashboard(state);
     show_page(state, State::Page::library);
     if (ListView_GetItemCount(state.list) > 0) {
         ListView_SetItemState(state.list, 0, LVIS_SELECTED | LVIS_FOCUSED,
