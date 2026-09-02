@@ -1054,7 +1054,8 @@ void Ppu::trace_window_state(const char* event) const noexcept {
         "window event=%s ppu=%p ly=%u dot=%u mode=%u stat=%u wx=%u wy=%u "
         "scx=%u out=%u using=%u triggered=%u pending=%u retrigger=%u "
         "activation=%u source=%u fetch_line=%u fetch_start=%u "
-        "fetched_window=%u fifo=%u phase=%u phase_ticks=%u delay=%u "
+        "fetched_window=%u fetched_x=%d fetched_y=%u fetched_row=%u "
+        "tile=%u low=%u high=%u fifo=%u phase=%u phase_ticks=%u delay=%u "
         "disable=%u disable_source=%u glitch=%u glitch_x=%u\n",
         event == nullptr ? "unknown" : event, static_cast<const void*>(this),
         static_cast<unsigned>(ly_), dot_, static_cast<unsigned>(mode_),
@@ -1067,6 +1068,10 @@ void Ppu::trace_window_state(const char* event) const noexcept {
         static_cast<unsigned>(window_source_x_),
         static_cast<unsigned>(window_fetch_line_),
         static_cast<unsigned>(window_fetch_start_x_), fetched_window_ ? 1U : 0U,
+        static_cast<int>(fetched_source_x_),
+        static_cast<unsigned>(fetched_source_y_),
+        static_cast<unsigned>(fetched_row_), static_cast<unsigned>(fetched_tile_),
+        static_cast<unsigned>(fetched_low_), static_cast<unsigned>(fetched_high_),
         static_cast<unsigned>(background_fifo_size_),
         static_cast<unsigned>(fetcher_phase_),
         static_cast<unsigned>(fetcher_phase_ticks_),
