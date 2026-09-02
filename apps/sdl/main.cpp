@@ -722,6 +722,28 @@ private:
     std::size_t next_event_{};
 };
 
+bool tool_button_hovered(SDL_Window* window, const SDL_FRect& rect) {
+    if (window == nullptr) return false;
+    float x = 0.0F;
+    float y = 0.0F;
+    if (!SDL_GetMouseState(&x, &y)) return false;
+    return x >= rect.x && x <= rect.x + rect.w && y >= rect.y &&
+           y <= rect.y + rect.h;
+}
+
+void draw_tool_button_background(SDL_Renderer* renderer, SDL_Window* window,
+                                 const SDL_FRect& rect) {
+    const auto hovered = tool_button_hovered(window, rect);
+    static_cast<void>(SDL_SetRenderDrawColor(
+        renderer, hovered ? 40 : 28, hovered ? 74 : 47,
+        hovered ? 98 : 68, 255));
+    static_cast<void>(SDL_RenderFillRect(renderer, &rect));
+    static_cast<void>(SDL_SetRenderDrawColor(
+        renderer, hovered ? 120 : 69, hovered ? 232 : 207,
+        hovered ? 250 : 238, 255));
+    static_cast<void>(SDL_RenderRect(renderer, &rect));
+}
+
 class TasEditor {
 public:
     ~TasEditor() { close(); }
@@ -968,10 +990,7 @@ public:
             }
         }
         const auto button = [this](const SDL_FRect& rect, const char* label) {
-            static_cast<void>(SDL_SetRenderDrawColor(renderer_, 28, 47, 68, 255));
-            static_cast<void>(SDL_RenderFillRect(renderer_, &rect));
-            static_cast<void>(SDL_SetRenderDrawColor(renderer_, 69, 207, 238, 255));
-            static_cast<void>(SDL_RenderRect(renderer_, &rect));
+            draw_tool_button_background(renderer_, window_, rect);
             static_cast<void>(SDL_RenderDebugText(renderer_, rect.x + 10,
                                                   rect.y + 14, label));
         };
@@ -1599,10 +1618,7 @@ private:
     }
 
     void draw_button(const SDL_FRect& rect, const char* label) {
-        static_cast<void>(SDL_SetRenderDrawColor(renderer_, 28, 47, 68, 255));
-        static_cast<void>(SDL_RenderFillRect(renderer_, &rect));
-        static_cast<void>(SDL_SetRenderDrawColor(renderer_, 69, 207, 238, 255));
-        static_cast<void>(SDL_RenderRect(renderer_, &rect));
+        draw_tool_button_background(renderer_, window_, rect);
         static_cast<void>(SDL_RenderDebugText(renderer_, rect.x + 9,
                                               rect.y + 14, label));
     }
@@ -2044,10 +2060,7 @@ private:
     }
 
     void button(const SDL_FRect& rect, const char* label) const {
-        static_cast<void>(SDL_SetRenderDrawColor(renderer_, 28, 47, 68, 255));
-        static_cast<void>(SDL_RenderFillRect(renderer_, &rect));
-        static_cast<void>(SDL_SetRenderDrawColor(renderer_, 69, 207, 238, 255));
-        static_cast<void>(SDL_RenderRect(renderer_, &rect));
+        draw_tool_button_background(renderer_, window_, rect);
         text(rect.x + 10, rect.y + 14, label, 238, 249, 255);
     }
 
@@ -2463,10 +2476,7 @@ public:
 
         const auto button = [this](const SDL_FRect& rect,
                                    const std::string& label) {
-            static_cast<void>(SDL_SetRenderDrawColor(renderer_, 28, 47, 68, 255));
-            static_cast<void>(SDL_RenderFillRect(renderer_, &rect));
-            static_cast<void>(SDL_SetRenderDrawColor(renderer_, 69, 207, 238, 255));
-            static_cast<void>(SDL_RenderRect(renderer_, &rect));
+            draw_tool_button_background(renderer_, window_, rect);
             static_cast<void>(SDL_RenderDebugText(renderer_, rect.x + 12,
                                                   rect.y + 14, label.c_str()));
         };
