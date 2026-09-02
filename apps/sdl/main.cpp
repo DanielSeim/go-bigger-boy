@@ -4201,7 +4201,7 @@ void show_about(SDL_Window* window) {
 
 void show_error(SDL_Window* window, const std::string& message);
 #ifdef __ANDROID__
-void open_android_library() noexcept;
+void open_android_library(bool return_to_game = true) noexcept;
 void leave_android_game(
     std::unique_ptr<gameboy::Emulator>& emulator, SdlResources& sdl,
     bool& dashboard_visible, bool& paused, bool& fast_forward, bool& rewind,
@@ -4878,7 +4878,7 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                 existing->y = touch_y;
             }
             if (event.type == SDL_EVENT_FINGER_DOWN &&
-                touch_x < 0.13F && touch_y < 0.16F) {
+                touch_x < 0.18F && touch_y < 0.20F) {
                 clear_touch_buttons(emulator.get(), sdl);
                 open_android_library();
             }
@@ -5092,15 +5092,18 @@ void close_camera(SdlResources& sdl) noexcept {
 }
 
 #ifdef __ANDROID__
-void open_android_library() noexcept {
+void open_android_library(const bool return_to_game) noexcept {
     auto* environment = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
     auto activity = static_cast<jobject>(SDL_GetAndroidActivity());
     if (environment == nullptr || activity == nullptr) return;
     const auto activity_class = environment->GetObjectClass(activity);
     if (activity_class != nullptr) {
         const auto method = environment->GetMethodID(
-            activity_class, "openLibrary", "()V");
-        if (method != nullptr) environment->CallVoidMethod(activity, method);
+            activity_class, "openLibrary", "(Z)V");
+        if (method != nullptr) {
+            environment->CallVoidMethod(activity, method,
+                                         static_cast<jboolean>(return_to_game));
+        }
         environment->DeleteLocalRef(activity_class);
     }
     if (environment->ExceptionCheck()) environment->ExceptionClear();
@@ -5134,7 +5137,7 @@ void leave_android_game(
     // pixel-art menu.
     dashboard_visible = false;
     paused = true;
-    open_android_library();
+    open_android_library(false);
 }
 
 std::optional<int> android_camera_orientation_correction_degrees() noexcept {
@@ -6098,12 +6101,13 @@ void retry_remote_link_session(gameboy::Emulator& emulator,
 void present_menu_button(SdlResources& sdl) {
     static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
                                                  SDL_BLENDMODE_BLEND));
-    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 220, 235, 220, 100));
-    const SDL_FRect button{3, 3, 15, 11};
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 220, 235, 220, 190));
+    const SDL_FRect button{3, 3, 20, 15};
     static_cast<void>(SDL_RenderFillRect(sdl.renderer, &button));
-    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 16, 20, 16, 150));
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 16, 20, 16, 220));
+    static_cast<void>(SDL_RenderRect(sdl.renderer, &button));
     const std::array<SDL_FRect, 3> menu_lines{{
-        {6, 5, 9, 1.5F}, {6, 8, 9, 1.5F}, {6, 11, 9, 1.5F}}};
+        {7, 6, 12, 1.5F}, {7, 10, 12, 1.5F}, {7, 14, 12, 1.5F}}};
     for (const auto& line : menu_lines) {
         static_cast<void>(SDL_RenderFillRect(sdl.renderer, &line));
     }

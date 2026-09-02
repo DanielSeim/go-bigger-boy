@@ -1,5 +1,6 @@
 package com.danielseim.gbb;
 
+import android.annotation.SuppressLint;
 import android.content.Intent;
 import android.hardware.SensorManager;
 import android.os.Build;
@@ -121,6 +122,7 @@ public final class GbbActivity extends SDLActivity {
      * displays the exit confirmation or shuts down.
      */
     @Override
+    @SuppressLint("GestureBackNavigation")
     @SuppressWarnings("deprecation")
     public void onBackPressed() {
         requestNativeBack();
@@ -152,9 +154,10 @@ public final class GbbActivity extends SDLActivity {
         return physicalDisplayRotation - SDLActivity.getCurrentRotation();
     }
 
-    /** Opens the native library while preserving the running game underneath. */
-    public void openLibrary() {
+    /** Opens the native library, optionally keeping the running game underneath. */
+    public void openLibrary(boolean returnToGame) {
         startActivity(new Intent(this, LibraryActivity.class)
+                .putExtra(LibraryActivity.EXTRA_RETURN_TO_GAME, returnToGame)
                 .addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT));
     }
 }

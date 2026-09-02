@@ -462,7 +462,10 @@ exact canonical artwork name. The separate Settings screen controls the
 display palette and whether artwork may be downloaded from Libretro's public
 thumbnail service; ROM contents are never sent to that service. Tapping the menu
 button in the upper-left returns to the library while preserving the running
-game. The translucent controls
+game. The library and settings screens use a native toolbar with explicit Back
+navigation; Back from Settings returns to the library, Back from a library
+opened over a running game resumes that game, and only the root library asks
+for exit confirmation. The translucent controls
 provide a D-pad, A, B, Select, and Start; Bluetooth and USB gamepads continue
 to work through SDL. Android's Back button asks for confirmation before closing
 the emulator; Back from the library resumes a game underneath it.

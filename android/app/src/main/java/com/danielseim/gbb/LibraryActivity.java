@@ -1,5 +1,6 @@
 package com.danielseim.gbb;
 
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
@@ -11,6 +12,7 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
+import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Build;
@@ -19,6 +21,7 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Window;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
@@ -50,6 +53,8 @@ import java.util.zip.CRC32;
 
 /** Native Android library and settings dashboard. */
 public final class LibraryActivity extends Activity {
+    static final String EXTRA_RETURN_TO_GAME =
+            "com.danielseim.gbb.RETURN_TO_GAME";
     private static final int OPEN_ROM = 1;
     private static final String[] PALETTE_NAMES = {
             "Grayscale", "Classic green", "Game Boy Pocket", "Amber",
@@ -88,8 +93,12 @@ public final class LibraryActivity extends Activity {
     private final ExecutorService artworkExecutor =
             Executors.newFixedThreadPool(2);
     private LinearLayout content;
+    private ScrollView scrollView;
     private SharedPreferences preferences;
     private boolean settingsVisible;
+    private boolean returnToGame;
+    private int libraryScrollY;
+    private int settingsScrollY;
     private AndroidUpdateManager updateManager;
     private OnBackInvokedCallback backCallback;
 
@@ -97,21 +106,38 @@ public final class LibraryActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         preferences = getSharedPreferences("dashboard", MODE_PRIVATE);
+        returnToGame = getIntent().getBooleanExtra(EXTRA_RETURN_TO_GAME, false);
         updateManager = new AndroidUpdateManager(this);
         settingsVisible = savedInstanceState != null &&
                 savedInstanceState.getBoolean("settings_visible", false);
+        if (savedInstanceState != null) {
+            returnToGame = savedInstanceState.getBoolean("return_to_game", returnToGame);
+            libraryScrollY = savedInstanceState.getInt("library_scroll_y", 0);
+            settingsScrollY = savedInstanceState.getInt("settings_scroll_y", 0);
+        }
         showDashboard(settingsVisible);
         updateManager.checkForUpdates();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            backCallback = this::confirmExit;
+            backCallback = this::handleBack;
             getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
                     OnBackInvokedDispatcher.PRIORITY_DEFAULT, backCallback);
         }
     }
 
     @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        returnToGame = intent.getBooleanExtra(EXTRA_RETURN_TO_GAME, false);
+        showDashboard(settingsVisible);
+    }
+
+    @Override
     protected void onSaveInstanceState(Bundle state) {
         state.putBoolean("settings_visible", settingsVisible);
+        state.putBoolean("return_to_game", returnToGame);
+        state.putInt("library_scroll_y", libraryScrollY);
+        state.putInt("settings_scroll_y", settingsScrollY);
         super.onSaveInstanceState(state);
     }
 
@@ -127,16 +153,22 @@ public final class LibraryActivity extends Activity {
         super.onDestroy();
     }
 
-    /**
-     * The SDL activity remains underneath the native library so ROMs can be
-     * reopened without starting a second SDL loop. Finishing this activity
-     * alone would expose that blank SDL surface. Close the whole task from
-     * the library instead, after asking for confirmation once.
-     */
+    /** Handle Back as navigation first, and only offer exit at the app root. */
     @Override
+    @SuppressLint("GestureBackNavigation")
     @SuppressWarnings("deprecation")
     public void onBackPressed() {
-        confirmExit();
+        handleBack();
+    }
+
+    private void handleBack() {
+        if (settingsVisible) {
+            showDashboard(false);
+        } else if (returnToGame) {
+            finish();
+        } else {
+            confirmExit();
+        }
     }
 
     private void confirmExit() {
@@ -151,7 +183,6 @@ public final class LibraryActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        if (content != null) showDashboard(settingsVisible);
         if (updateManager != null) updateManager.onResume();
     }
 
@@ -175,30 +206,55 @@ public final class LibraryActivity extends Activity {
 
     private void showDashboard(boolean settings) {
         settingsVisible = settings;
+        if (scrollView != null) {
+            if (settingsVisible) settingsScrollY = scrollView.getScrollY();
+            else libraryScrollY = scrollView.getScrollY();
+        }
         final LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Color.rgb(246, 247, 251));
 
         final LinearLayout header = new LinearLayout(this);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(dp(20), dp(18), dp(12), dp(12));
-        final TextView brand = text("Go Bigger Boy", 24, Color.rgb(24, 29, 39));
+        header.setOrientation(LinearLayout.VERTICAL);
+        header.setBackgroundColor(Color.WHITE);
+        header.setPadding(dp(8), dp(8), dp(8), 0);
+
+        final LinearLayout toolbar = new LinearLayout(this);
+        toolbar.setGravity(Gravity.CENTER_VERTICAL);
+        final Button back = new Button(this);
+        back.setText("‹");
+        back.setTextSize(30);
+        back.setAllCaps(false);
+        back.setMinWidth(dp(48));
+        back.setMinHeight(dp(48));
+        back.setContentDescription(settings ? "Back to library"
+                : returnToGame ? "Back to game" : "Exit");
+        back.setOnClickListener(view -> handleBack());
+        toolbar.addView(back, new LinearLayout.LayoutParams(
+                dp(48), dp(48)));
+        final TextView brand = text(settings ? "Settings" : "Library",
+                22, Color.rgb(24, 29, 39));
         brand.setTypeface(null, android.graphics.Typeface.BOLD);
-        header.addView(brand, new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        final Button libraryTab = new Button(this);
-        libraryTab.setText("Library");
-        libraryTab.setEnabled(settings);
+        brand.setGravity(Gravity.CENTER_VERTICAL);
+        toolbar.addView(brand, new LinearLayout.LayoutParams(
+                0, dp(48), 1));
+        header.addView(toolbar);
+
+        final LinearLayout tabs = new LinearLayout(this);
+        tabs.setGravity(Gravity.CENTER);
+        final Button libraryTab = tabButton("Library", !settings);
         libraryTab.setOnClickListener(view -> showDashboard(false));
-        header.addView(libraryTab);
-        final Button settingsTab = new Button(this);
-        settingsTab.setText("Settings");
-        settingsTab.setEnabled(!settings);
+        final Button settingsTab = tabButton("Settings", settings);
         settingsTab.setOnClickListener(view -> showDashboard(true));
-        header.addView(settingsTab);
+        tabs.addView(libraryTab, new LinearLayout.LayoutParams(
+                0, dp(44), 1));
+        tabs.addView(settingsTab, new LinearLayout.LayoutParams(
+                0, dp(44), 1));
+        header.addView(tabs);
         root.addView(header);
 
         final ScrollView scroll = new ScrollView(this);
+        scrollView = scroll;
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(20), dp(8), dp(20), dp(28));
@@ -206,8 +262,25 @@ public final class LibraryActivity extends Activity {
         root.addView(scroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
         setContentView(root);
+        scroll.post(() -> scroll.scrollTo(0,
+                settings ? settingsScrollY : libraryScrollY));
 
         if (settings) populateSettings(); else populateLibrary();
+    }
+
+    private Button tabButton(String label, boolean selected) {
+        final Button button = new Button(this);
+        button.setText(label);
+        button.setAllCaps(false);
+        button.setTextSize(15);
+        button.setTextColor(selected ? Color.rgb(32, 74, 135)
+                : Color.rgb(80, 88, 102));
+        button.setTypeface(null, selected ? android.graphics.Typeface.BOLD
+                : android.graphics.Typeface.NORMAL);
+        button.setBackgroundColor(selected ? Color.rgb(224, 235, 252)
+                : Color.TRANSPARENT);
+        button.setContentDescription(label + (selected ? ", selected" : ""));
+        return button;
     }
 
     private void populateLibrary() {
@@ -215,7 +288,7 @@ public final class LibraryActivity extends Activity {
         heading.setTypeface(null, android.graphics.Typeface.BOLD);
         content.addView(heading);
         final TextView help = text(
-                "Choose a game to continue, or add a ROM from your device.",
+                "Tap a game to play, or add a ROM from your device.",
                 15, Color.DKGRAY);
         help.setPadding(0, dp(4), 0, dp(14));
         content.addView(help);
@@ -253,6 +326,7 @@ public final class LibraryActivity extends Activity {
         card.setElevation(dp(2));
         card.setClickable(true);
         card.setFocusable(true);
+        card.setContentDescription("Play " + fields[3]);
         card.setOnClickListener(view -> launchRom(fields[2], ""));
         final LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -261,6 +335,7 @@ public final class LibraryActivity extends Activity {
         final ImageView cover = new ImageView(this);
         cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
         cover.setBackgroundColor(Color.rgb(225, 228, 235));
+        cover.setContentDescription(fields[3] + " cover artwork");
         card.addView(cover, new LinearLayout.LayoutParams(dp(82), dp(108)));
 
         final LinearLayout details = new LinearLayout(this);
@@ -276,9 +351,14 @@ public final class LibraryActivity extends Activity {
         details.addView(language);
         details.addView(text("Last played: " + formattedLastPlayed(fields[8]),
                 13, Color.GRAY));
-        final Button remove = new Button(this);
-        remove.setText("Remove from list");
-        remove.setOnClickListener(view -> new AlertDialog.Builder(this)
+        final Button more = new Button(this);
+        more.setText("⋮");
+        more.setTextSize(24);
+        more.setAllCaps(false);
+        more.setMinWidth(dp(48));
+        more.setMinHeight(dp(48));
+        more.setContentDescription("More options for " + fields[3]);
+        more.setOnClickListener(view -> new AlertDialog.Builder(this)
                 .setTitle("Remove recent game?")
                 .setMessage("The ROM file and saved game will not be deleted.")
                 .setNegativeButton("Cancel", null)
@@ -291,22 +371,44 @@ public final class LibraryActivity extends Activity {
                                 Toast.LENGTH_SHORT).show();
                     }
                 }).show());
-        details.addView(remove);
         card.addView(details, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        final LinearLayout.LayoutParams moreParams = new LinearLayout.LayoutParams(
+                dp(48), dp(48));
+        card.addView(more, moreParams);
         content.addView(card, cardParams);
 
         resolveMetadata(cover, title, language, fields);
     }
 
-    private void populateSettings() {
-        final TextView heading = text("Settings", 22, Color.rgb(24, 29, 39));
+    private LinearLayout sectionCard(String title) {
+        final LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(16), dp(14), dp(16), dp(16));
+        final GradientDrawable background = new GradientDrawable();
+        background.setColor(Color.WHITE);
+        background.setCornerRadius(dp(12));
+        card.setBackground(background);
+        card.setElevation(dp(2));
+        final LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.bottomMargin = dp(14);
+        content.addView(card, params);
+        final TextView heading = text(title, 18, Color.rgb(24, 29, 39));
         heading.setTypeface(null, android.graphics.Typeface.BOLD);
-        content.addView(heading);
-        final TextView display = text("Display", 17, Color.DKGRAY);
-        display.setPadding(0, dp(22), 0, dp(8));
-        content.addView(display);
+        card.addView(heading);
+        return card;
+    }
 
+    private TextView settingLabel(String value) {
+        final TextView label = text(value, 14, Color.DKGRAY);
+        label.setPadding(0, dp(16), 0, dp(4));
+        return label;
+    }
+
+    private void populateSettings() {
+        final LinearLayout display = sectionCard("Display");
         final Spinner palette = new Spinner(this);
         palette.setAdapter(new ArrayAdapter<>(this,
                 android.R.layout.simple_spinner_dropdown_item, PALETTE_NAMES));
@@ -319,12 +421,11 @@ public final class LibraryActivity extends Activity {
             }
             @Override public void onNothingSelected(AdapterView<?> parent) {}
         });
-        content.addView(palette, new LinearLayout.LayoutParams(
+        display.addView(settingLabel("Color palette"));
+        display.addView(palette, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        final TextView videoLabel = text("Video pipeline", 16, Color.DKGRAY);
-        videoLabel.setPadding(0, dp(18), 0, dp(5));
-        content.addView(videoLabel);
+        display.addView(settingLabel("Video pipeline"));
         final Spinner video = new Spinner(this);
         video.setAdapter(new ArrayAdapter<>(this,
                 android.R.layout.simple_spinner_dropdown_item,
@@ -338,37 +439,33 @@ public final class LibraryActivity extends Activity {
             }
             @Override public void onNothingSelected(AdapterView<?> parent) {}
         });
-        content.addView(video, new LinearLayout.LayoutParams(
+        display.addView(video, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
 
+        final LinearLayout artworkCard = sectionCard("Artwork");
         final Switch artwork = new Switch(this);
         artwork.setText("Download game cover artwork");
         artwork.setTextSize(16);
-        artwork.setPadding(0, dp(24), 0, dp(8));
+        artwork.setPadding(0, dp(8), 0, dp(8));
         artwork.setChecked(preferences.getBoolean("cover_artwork", true));
         artwork.setOnCheckedChangeListener((button, enabled) ->
                 preferences.edit().putBoolean("cover_artwork", enabled).apply());
-        content.addView(artwork);
+        artworkCard.addView(artwork);
         final TextView privacy = text(
                 "Artwork is fetched from Libretro's public thumbnail service " +
                 "and cached on this device. ROM contents are never uploaded.",
                 13, Color.GRAY);
         privacy.setPadding(0, 0, 0, dp(20));
-        content.addView(privacy);
+        artworkCard.addView(privacy);
 
-        final TextView input = text("Input", 17, Color.DKGRAY);
-        input.setPadding(0, dp(10), 0, dp(8));
-        content.addView(input);
-        content.addView(text(
+        final LinearLayout touchCard = sectionCard("Touch controls");
+        final TextView input = text(
                 "Touch controls are shown while playing. Connected controllers " +
-                "use the standard Game Boy layout.", 15, Color.DKGRAY));
-
-        final TextView touchHeading = text("Touch controls", 17, Color.DKGRAY);
-        touchHeading.setPadding(0, dp(22), 0, dp(4));
-        content.addView(touchHeading);
-        content.addView(text(
-                "Adjust the on-screen button size and visibility for your phone " +
+                "use the standard Game Boy layout.", 15, Color.DKGRAY);
+        touchCard.addView(input);
+        touchCard.addView(text(
+                "Adjust size and visibility independently for your phone " +
                 "or tablet. Portrait and landscape layouts are independent; " +
                 "the D-pad is always moved as one control.", 15, Color.DKGRAY));
 
@@ -379,7 +476,7 @@ public final class LibraryActivity extends Activity {
         final TextView sizeLabel = text("Button size: " +
                 Math.round(touchValues[0] * 100) + "%", 15, Color.DKGRAY);
         sizeLabel.setPadding(0, dp(16), 0, 0);
-        content.addView(sizeLabel);
+        touchCard.addView(sizeLabel);
         final SeekBar size = new SeekBar(this);
         size.setMax(100);
         size.setProgress(Math.round((touchValues[0] - 0.8f) / 1.2f * 100));
@@ -396,13 +493,13 @@ public final class LibraryActivity extends Activity {
             @Override public void onStartTrackingTouch(SeekBar bar) {}
             @Override public void onStopTrackingTouch(SeekBar bar) {}
         });
-        content.addView(size, new LinearLayout.LayoutParams(
+        touchCard.addView(size, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         final TextView opacityLabel = text("Button opacity: " +
                 Math.round(touchValues[1] * 100) + "%", 15, Color.DKGRAY);
         opacityLabel.setPadding(0, dp(12), 0, 0);
-        content.addView(opacityLabel);
+        touchCard.addView(opacityLabel);
         final SeekBar opacity = new SeekBar(this);
         opacity.setMax(100);
         opacity.setProgress(Math.round((touchValues[1] - 0.2f) / 0.8f * 100));
@@ -419,13 +516,17 @@ public final class LibraryActivity extends Activity {
             @Override public void onStartTrackingTouch(SeekBar bar) {}
             @Override public void onStopTrackingTouch(SeekBar bar) {}
         });
-        content.addView(opacity, new LinearLayout.LayoutParams(
+        touchCard.addView(opacity, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         final Button editLayout = new Button(this);
         editLayout.setText("Customize button layout");
         editLayout.setOnClickListener(view -> showTouchLayoutEditor());
-        content.addView(editLayout);
+        final LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        actionParams.topMargin = dp(10);
+        touchCard.addView(editLayout, actionParams);
 
         final Button resetTouch = new Button(this);
         resetTouch.setText("Reset touch controls");
@@ -434,7 +535,7 @@ public final class LibraryActivity extends Activity {
             opacity.setProgress(Math.round((0.78f - 0.2f) / 0.8f * 100));
             nativeResetTouchControlLayout(settingsDirectory);
         });
-        content.addView(resetTouch);
+        touchCard.addView(resetTouch);
     }
 
     private void showTouchLayoutEditor() {
@@ -459,7 +560,7 @@ public final class LibraryActivity extends Activity {
                 editor.setLandscape(position == 1);
                 final ViewGroup.LayoutParams params = editor.getLayoutParams();
                 if (params != null) {
-                    params.height = dp(position == 1 ? 220 : 360);
+                    params.height = dp(position == 1 ? 280 : 420);
                     editor.setLayoutParams(params);
                 }
             }
@@ -472,12 +573,12 @@ public final class LibraryActivity extends Activity {
         // portrait dashboard. Keep the editor proportional to its landscape
         // canvas, and put the complete editor contents in a scroll container
         // so the help/reset controls and dialog actions remain reachable.
-        final int editorHeight = startsLandscape ? dp(220) : dp(360);
+        final int editorHeight = startsLandscape ? dp(280) : dp(420);
         container.addView(editor, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, editorHeight));
         final TextView help = text(
-                "Drag the D-pad, A, B, Select, and Start to their preferred " +
-                "positions. Controls may sit beside or below the game screen.",
+                "Tap a control, then drag it. The highlighted area is larger " +
+                "than the visible button so it is easy to position precisely.",
                 13, Color.GRAY);
         help.setPadding(0, dp(8), 0, 0);
         container.addView(help);
@@ -503,6 +604,11 @@ public final class LibraryActivity extends Activity {
                     dialog.dismiss();
                 }));
         dialog.show();
+        final Window window = dialog.getWindow();
+        if (window != null) {
+            window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT,
+                    Math.round(getResources().getDisplayMetrics().heightPixels * 0.9f));
+        }
     }
 
     private static float[] defaultTouchLayout() {
@@ -619,7 +725,10 @@ public final class LibraryActivity extends Activity {
 
         private int hit(float x, float y) {
             for (int index = 4; index >= 0; --index) {
-                if (bounds(index).contains(x, y)) return index;
+                final RectF hitBounds = bounds(index);
+                final float expansion = Math.max(dp(10), logicalScale() * 7f);
+                hitBounds.inset(-expansion, -expansion);
+                if (hitBounds.contains(x, y)) return index;
             }
             return -1;
         }
@@ -647,6 +756,10 @@ public final class LibraryActivity extends Activity {
                 invalidate();
                 return true;
             case MotionEvent.ACTION_UP:
+                performClick();
+                selected = -1;
+                invalidate();
+                return true;
             case MotionEvent.ACTION_CANCEL:
                 selected = -1;
                 invalidate();
@@ -654,6 +767,12 @@ public final class LibraryActivity extends Activity {
             default:
                 return true;
             }
+        }
+
+        @Override
+        public boolean performClick() {
+            super.performClick();
+            return true;
         }
     }
 
@@ -669,6 +788,7 @@ public final class LibraryActivity extends Activity {
     }
 
     @Override
+    @SuppressLint("WrongConstant")
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode != OPEN_ROM || resultCode != RESULT_OK ||

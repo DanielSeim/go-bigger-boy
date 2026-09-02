@@ -32,7 +32,8 @@
             android:configChanges="layoutDirection|locale|orientation|screenLayout|screenSize|smallestScreenSize|touchscreen|uiMode"
             android:exported="false"
             android:launchMode="singleTask"
-            android:screenOrientation="sensor" />
+            android:screenOrientation="sensor"
+            android:theme="@style/GameTheme" />
         <activity
             android:name=".UpdateResultActivity"
             android:excludeFromRecents="true"
