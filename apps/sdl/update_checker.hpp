@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+#include <cstdint>
 #include <mutex>
 #include <optional>
 #include <filesystem>
@@ -7,6 +9,14 @@
 #include <thread>
 
 namespace gbb_desktop {
+
+// Shared progress/cancellation state for background HTTP downloads. The
+// worker updates these atomics while the UI polls them from the main thread.
+struct DownloadProgress {
+    std::atomic<std::uintmax_t> completed_bytes{};
+    std::atomic<std::uintmax_t> total_bytes{};
+    std::atomic_bool cancel_requested{};
+};
 
 struct UpdateInfo {
     std::string version;
@@ -47,6 +57,16 @@ public:
     ~UpdateDownload();
     UpdateDownload(const UpdateDownload&) = delete;
     UpdateDownload& operator=(const UpdateDownload&) = delete;
+    void cancel() noexcept { progress_.cancel_requested.store(true); }
+    [[nodiscard]] bool cancelled() const noexcept {
+        return progress_.cancel_requested.load();
+    }
+    [[nodiscard]] std::uintmax_t downloaded_bytes() const noexcept {
+        return progress_.completed_bytes.load();
+    }
+    [[nodiscard]] std::uintmax_t total_bytes() const noexcept {
+        return progress_.total_bytes.load();
+    }
     [[nodiscard]] bool take_result(std::optional<DownloadedUpdate>& update,
                                    std::string& error);
 private:
@@ -56,6 +76,7 @@ private:
     std::string error_;
     bool complete_{};
     bool consumed_{};
+    DownloadProgress progress_;
 };
 
 [[nodiscard]] bool launch_update_installer(
@@ -66,6 +87,7 @@ private:
 
 [[nodiscard]] bool download_public_file(
     const std::string& url, const std::filesystem::path& destination,
-    std::uintmax_t maximum_size, std::string& error);
+    std::uintmax_t maximum_size, std::string& error,
+    DownloadProgress* progress = nullptr);
 
 } // namespace gbb_desktop

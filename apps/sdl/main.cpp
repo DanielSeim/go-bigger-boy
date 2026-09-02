@@ -783,6 +783,8 @@ void render_tool_text(SDL_Renderer* renderer, const float x, const float y,
 
 #define SDL_RenderDebugText render_tool_text
 
+bool confirm_discard_changes(SDL_Window* window, const char* message);
+
 void draw_tool_button_background(SDL_Renderer* renderer, SDL_Window* window,
                                  const SDL_FRect& rect) {
     const auto hovered = tool_button_hovered(window, rect);
@@ -819,6 +821,10 @@ public:
     [[nodiscard]] const std::vector<std::uint8_t>& start_state() const noexcept {
         return start_state_;
     }
+    [[nodiscard]] bool has_unsaved_changes() const noexcept {
+        return frames_ != saved_frames_;
+    }
+    void mark_saved() { saved_frames_ = frames_; }
     [[nodiscard]] std::uint64_t fingerprint() const noexcept {
         return fingerprint_;
     }
@@ -854,6 +860,7 @@ public:
         start_state_ = emulator.save_state();
         fingerprint_ = emulator.rom_fingerprint();
         frames_.assign(1, 0);
+        saved_frames_ = frames_;
         selection_ = 0;
         first_visible_ = 0;
     }
@@ -886,12 +893,20 @@ public:
         }
         if (event_window != id) return false;
         if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
-            close();
+            if (!has_unsaved_changes() ||
+                confirm_discard_changes(window_,
+                                        "Discard unsaved TAS changes?")) {
+                close();
+            }
             return true;
         }
         if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
             if (event.key.key == SDLK_ESCAPE) {
-                close();
+                if (!has_unsaved_changes() ||
+                    confirm_discard_changes(window_,
+                                            "Discard unsaved TAS changes?")) {
+                    close();
+                }
             } else if (event.key.key == SDLK_UP && selection_ > 0) {
                 --selection_;
                 keep_selection_visible();
@@ -909,7 +924,11 @@ public:
                 keep_selection_visible();
             } else if (event.key.key == SDLK_N &&
                        (event.key.mod & SDL_KMOD_CTRL) != 0) {
-                new_requested_ = true;
+                if (!has_unsaved_changes() ||
+                    confirm_discard_changes(window_,
+                                            "Discard unsaved TAS changes?")) {
+                    new_requested_ = true;
+                }
             } else if (event.key.key == SDLK_S &&
                        (event.key.mod & SDL_KMOD_CTRL) != 0) {
                 save_requested_ = true;
@@ -1077,6 +1096,7 @@ private:
     std::uint64_t fingerprint_{};
     std::vector<std::uint8_t> start_state_;
     std::vector<std::uint8_t> frames_{1, 0};
+    std::vector<std::uint8_t> saved_frames_{1, 0};
     std::size_t selection_{};
     std::size_t first_visible_{};
     bool save_requested_{};
@@ -1105,6 +1125,13 @@ public:
     }
     [[nodiscard]] bool take_export_ips_request() noexcept {
         return std::exchange(export_ips_requested_, false);
+    }
+    [[nodiscard]] bool has_unsaved_changes(
+        const gameboy::Emulator& emulator) const {
+        return current_vram(emulator) != saved_snapshot_;
+    }
+    void mark_saved(const gameboy::Emulator& emulator) {
+        saved_snapshot_ = current_vram(emulator);
     }
 
     void open(SDL_Window* parent, const gameboy::Emulator& emulator) {
@@ -1150,6 +1177,7 @@ public:
     void reset_session() noexcept {
         close();
         baseline_.clear();
+        saved_snapshot_.clear();
         fingerprint_ = 0;
     }
 
@@ -1171,14 +1199,22 @@ public:
         }
         if (event_window != id) return false;
         if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
-            close();
+            if (emulator == nullptr || !has_unsaved_changes(*emulator) ||
+                confirm_discard_changes(window_,
+                                        "Discard unsaved sprite changes?")) {
+                close();
+            }
             return true;
         }
         if (emulator == nullptr) return true;
         if (!emulator->bus().cgb_mode()) bank_ = 0;
         if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
             if (event.key.key == SDLK_ESCAPE || event.key.key == SDLK_F9) {
-                close();
+                if (!has_unsaved_changes(*emulator) ||
+                    confirm_discard_changes(window_,
+                                            "Discard unsaved sprite changes?")) {
+                    close();
+                }
             } else if (event.key.key >= SDLK_1 && event.key.key <= SDLK_4) {
                 color_ = static_cast<std::uint8_t>(event.key.key - SDLK_1);
             } else if (event.key.key == SDLK_B && emulator->bus().cgb_mode()) {
@@ -1588,6 +1624,21 @@ private:
         return false;
     }
 
+    [[nodiscard]] static std::vector<std::uint8_t> current_vram(
+        const gameboy::Emulator& emulator) {
+        const auto banks = emulator.bus().cgb_mode() ? 2U : 1U;
+        std::vector<std::uint8_t> snapshot(banks * 0x1800U);
+        for (std::size_t bank = 0; bank < banks; ++bank) {
+            for (std::size_t offset = 0; offset < 0x1800; ++offset) {
+                snapshot[bank * 0x1800U + offset] =
+                    emulator.bus().debug_read_vram(
+                        static_cast<std::uint8_t>(bank),
+                        static_cast<std::uint16_t>(offset));
+            }
+        }
+        return snapshot;
+    }
+
     void capture_baseline(const gameboy::Emulator& emulator) {
         const auto banks = emulator.bus().cgb_mode() ? 2U : 1U;
         baseline_.resize(banks * 0x1800U);
@@ -1600,6 +1651,7 @@ private:
             }
         }
         fingerprint_ = emulator.rom_fingerprint();
+        saved_snapshot_ = baseline_;
         have_undo_ = false;
     }
 
@@ -1694,6 +1746,7 @@ private:
     bool painting_{};
     std::uint64_t fingerprint_{};
     std::vector<std::uint8_t> baseline_;
+    std::vector<std::uint8_t> saved_snapshot_;
     bool save_patch_requested_{};
     bool load_patch_requested_{};
     bool export_ips_requested_{};
@@ -1746,8 +1799,12 @@ public:
 
     void start_fetch() {
         if (fetch_in_progress_) return;
+        fetch_progress_.completed_bytes.store(0);
+        fetch_progress_.total_bytes.store(0);
+        fetch_progress_.cancel_requested.store(false);
         fetch_in_progress_ = true;
-        status_ = "Fetching the matching Libretro archive in the background...";
+        status_ = "Fetching the matching Libretro archive in the background "
+                  "(close to cancel)...";
         fetch_future_ = std::async(std::launch::async, [this] {
             return download_archive_text();
         });
@@ -1802,6 +1859,7 @@ public:
     }
 
     void close() noexcept {
+        fetch_progress_.cancel_requested.store(true);
         if (fetch_future_.valid()) fetch_future_.wait();
         fetch_in_progress_ = false;
         stop_editing();
@@ -1922,8 +1980,8 @@ private:
                          url_component(system) + "/" +
                          url_component(canonical_name + ".cht");
         std::string error;
-        if (!gbb_desktop::download_public_file(url, remote, 4 * 1024 * 1024,
-                                                error)) {
+        if (!gbb_desktop::download_public_file(
+                url, remote, 4 * 1024 * 1024, error, &fetch_progress_)) {
             throw std::runtime_error(
                 "No exact Libretro cheat archive match was found for:\n" +
                 canonical_name +
@@ -1986,7 +2044,17 @@ public:
         text(24, 20, "GAMESHARK CHEATS / " + metadata_.title, 69, 207, 238);
         text(24, 42, "ROM-aware source: Libretro Database (CC BY-SA 4.0)",
              177, 192, 208);
-        text(24, 64, status_, 177, 192, 208);
+        auto status = status_;
+        if (fetch_in_progress_) {
+            const auto total = fetch_progress_.total_bytes.load();
+            const auto completed = fetch_progress_.completed_bytes.load();
+            if (total > 0) {
+                const auto percent = std::min<std::uintmax_t>(
+                    100, completed * 100 / total);
+                status += " " + std::to_string(percent) + "%";
+            }
+        }
+        text(24, 64, status, 177, 192, 208);
         text(26, 82, "ON", 238, 249, 255);
         text(62, 82, "DESCRIPTION", 238, 249, 255);
         text(static_cast<float>(width - 210), 82, "SOURCE", 238, 249, 255);
@@ -2198,6 +2266,7 @@ private:
     std::future<std::string> fetch_future_;
     bool fetch_in_progress_{};
     std::optional<std::string> fetch_error_;
+    gbb_desktop::DownloadProgress fetch_progress_;
 };
 
 class DesktopDebugger {
@@ -4305,6 +4374,19 @@ bool confirm_exit(SDL_Window* window) {
     return SDL_ShowMessageBox(&box, &selection) && selection == 1;
 }
 
+bool confirm_discard_changes(SDL_Window* window, const char* message) {
+    constexpr std::array<SDL_MessageBoxButtonData, 2> buttons{{
+        {SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, "Keep editing"},
+        {SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, 1, "Discard"},
+    }};
+    const SDL_MessageBoxData box{
+        SDL_MESSAGEBOX_WARNING, window, "Unsaved changes", message,
+        static_cast<int>(buttons.size()), buttons.data(), nullptr,
+    };
+    auto selection = 0;
+    return SDL_ShowMessageBox(&box, &selection) && selection == 1;
+}
+
 void show_help(SDL_Window* window, const InputBindings& bindings) {
     std::ostringstream message;
     message << "Version " GBB_VERSION "\n\nGAMEPLAY CONTROLS\n";
@@ -4487,7 +4569,10 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                     const bool remote_link_active,
                     bool& running
 #ifndef __ANDROID__
-                    , DesktopDebugger& debugger, InputMovie& input_movie,
+                    , const bool update_download_active,
+                    bool& update_cancel_requested,
+                    std::optional<bool>& cheat_pause_restore,
+                    DesktopDebugger& debugger, InputMovie& input_movie,
                     TasEditor& tas_editor, SpriteEditor& sprite_editor,
                     CheatManager& cheat_manager
 #ifdef _WIN32
@@ -4931,6 +5016,12 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                        (event.key.mod & SDL_KMOD_CTRL) != 0 && emulator) {
 #ifndef __ANDROID__
                 release_all_buttons(*emulator);
+                if (!cheat_manager.visible()) {
+                    cheat_pause_restore = paused;
+                    paused = true;
+                    update_window_title(sdl.window, current_rom, paused,
+                                        configuring);
+                }
                 cheat_manager.open(sdl.window);
 #endif
             } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
@@ -5000,6 +5091,12 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                 show_help(sdl.window, bindings);
             } else if (event.key.key == SDLK_ESCAPE &&
                        event.type == SDL_EVENT_KEY_DOWN) {
+#ifndef __ANDROID__
+                if (update_download_active) {
+                    update_cancel_requested = true;
+                    break;
+                }
+#endif
                 if (confirm_exit(sdl.window)) running = false;
             } else if (emulator && !event.key.repeat) {
                 if (const auto button = keyboard_button(bindings, event.key.key)) {
@@ -7931,7 +8028,9 @@ int main(int argc, char** argv) {
         gbb_desktop::UpdateChecker update_checker{GBB_VERSION};
         std::optional<gbb_desktop::UpdateInfo> available_update;
         std::unique_ptr<gbb_desktop::UpdateDownload> update_download;
+        bool update_cancel_requested = false;
         bool update_check_complete = false;
+        std::optional<bool> cheat_pause_restore;
 #endif
 #ifdef _WIN32
         bool reveal_sdl_after_present = false;
@@ -8123,7 +8222,10 @@ int main(int argc, char** argv) {
                            remote_join_requested, remote_stop_requested,
                            remote_link.active(), running
 #ifndef __ANDROID__
-                           , debugger, input_movie, tas_editor, sprite_editor,
+                           , update_download != nullptr,
+                           update_cancel_requested, cheat_pause_restore,
+                           debugger, input_movie,
+                           tas_editor, sprite_editor,
                            cheat_manager
 #ifdef _WIN32
                            , desktop_menu
@@ -8132,6 +8234,16 @@ int main(int argc, char** argv) {
                            );
 
 #ifndef __ANDROID__
+            if (update_cancel_requested) {
+                update_cancel_requested = false;
+                if (update_download) update_download->cancel();
+            }
+            if (cheat_pause_restore && !cheat_manager.visible()) {
+                paused = *cheat_pause_restore;
+                cheat_pause_restore.reset();
+                update_window_title(sdl.window, current_rom, paused,
+                                    configuring);
+            }
             if (remote_stop_requested) {
                 remote_stop_requested = false;
                 if (emulator != nullptr && remote_link.active()) {
@@ -8230,6 +8342,10 @@ int main(int argc, char** argv) {
             // dashboard.  The dashboard itself is a modal native window, so
             // this runs as soon as it returns with the user's selection.
             if (available_update && !dialog_active(dialog) && !configuring) {
+                if (pending_rom_from_dashboard) {
+                    SDL_ShowWindow(sdl.window);
+                    SDL_RaiseWindow(sdl.window);
+                }
                 if (offer_update(*available_update, emulator.get(), sdl)) {
                     try {
                         const auto [root, executable] = installation_paths();
@@ -8248,6 +8364,8 @@ int main(int argc, char** argv) {
                         update_download =
                             std::make_unique<gbb_desktop::UpdateDownload>(
                                 *available_update, directory);
+                        SDL_ShowWindow(sdl.window);
+                        SDL_RaiseWindow(sdl.window);
                         static_cast<void>(SDL_SetWindowTitle(
                             sdl.window,
                             "Go Bigger Boy (GBB) - Downloading update..."));
@@ -8260,15 +8378,30 @@ int main(int argc, char** argv) {
             }
 
             if (update_download) {
+                const auto downloaded_bytes = update_download->downloaded_bytes();
+                const auto total_bytes = update_download->total_bytes();
+                std::string title = "Go Bigger Boy (GBB) - Downloading update";
+                if (total_bytes > 0) {
+                    const auto percent = std::min<std::uintmax_t>(
+                        100, downloaded_bytes * 100 / total_bytes);
+                    title += " (" + std::to_string(percent) + "%)";
+                } else {
+                    title += "...";
+                }
+                title += " - press Escape to cancel";
+                static_cast<void>(SDL_SetWindowTitle(sdl.window, title.c_str()));
                 std::optional<gbb_desktop::DownloadedUpdate> downloaded;
                 std::string download_error;
                 if (update_download->take_result(downloaded, download_error)) {
+                    const auto was_cancelled = update_download->cancelled();
                     update_download.reset();
                     if (!download_error.empty() || !downloaded) {
-                        show_error(sdl.window,
-                                   download_error.empty()
-                                       ? "The update download failed."
-                                       : download_error);
+                        if (!was_cancelled) {
+                            show_error(sdl.window,
+                                       download_error.empty()
+                                           ? "The update download failed."
+                                           : download_error);
+                        }
                         update_window_title(sdl.window, current_rom, paused,
                                             configuring);
                     } else {
@@ -8307,6 +8440,10 @@ int main(int argc, char** argv) {
                     input_movie.stop(emulator.get());
                     tas_editor.close();
                     sprite_editor.reset_session();
+                    if (cheat_pause_restore) {
+                        paused = *cheat_pause_restore;
+                        cheat_pause_restore.reset();
+                    }
                     cheat_manager.close();
 #endif
                     auto requested_rom = *pending_rom;
@@ -8414,6 +8551,7 @@ int main(int argc, char** argv) {
             if (emulator && sprite_editor.take_save_patch_request()) {
                 try {
                     sprite_editor.save_patch(*emulator, sprite_patch_path);
+                    sprite_editor.mark_saved(*emulator);
                     const auto message = "Sprite patch saved to:\n" +
                                          sprite_patch_path.string();
                     static_cast<void>(SDL_ShowSimpleMessageBox(
@@ -8472,6 +8610,7 @@ int main(int argc, char** argv) {
                     if (sdl.audio_stream != nullptr) {
                         static_cast<void>(SDL_ClearAudioStream(sdl.audio_stream));
                     }
+                    tas_editor.mark_saved();
                 } catch (const std::exception& error) {
                     show_error(sdl.window, error.what());
                 }

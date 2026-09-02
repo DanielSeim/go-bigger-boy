@@ -255,6 +255,9 @@ disable it. Delete removes the selected entry. Multiple writes can be joined
 with `+`, for example `019973D5+019974D5`. GBB currently accepts conventional
 Game Boy/Game Boy Color GameShark type-01 writes (`01VVLLHH`); unsupported
 engines and code types are rejected rather than interpreted ambiguously.
+Opening the manager pauses gameplay and restores the previous pause state when
+the window closes. Downloads show progress and can be cancelled by closing the
+manager.
 
 The dashboard lists up to twelve fingerprint-deduplicated recent ROMs. Windows
 uses a native library window with game, platform, language, and last-played
@@ -413,6 +416,12 @@ signed APK, then opens the system package installer; Android may require enablin
 successful installation, Android relaunches the updated emulator. System-wide
 read-only desktop installations must still be updated through their package
 manager or replaced manually.
+
+Desktop update downloads run asynchronously and show progress in the window
+title; press Escape to cancel. Library artwork and metadata are resolved in
+the background, with the dashboard showing item progress and cancelling
+outstanding requests when it closes. The GameShark archive fetch uses the same
+background behavior and can be cancelled by closing its window.
 
 Battery-backed MBC1, MBC2, MBC3, MBC5, and Game Boy Camera games use a sibling
 file with the ROM's base name and a `.sav` extension. MBC3 real-time clocks use

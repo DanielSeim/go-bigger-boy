@@ -14,8 +14,13 @@
 #include <vector>
 
 #ifndef _WIN32
+#include <fcntl.h>
+#include <signal.h>
+#include <sys/wait.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <chrono>
+#include <thread>
 #endif
 
 #ifdef _WIN32
@@ -216,9 +221,9 @@ std::optional<std::string> sha256_file(
 
 bool download_asset(const UpdateInfo& release,
                     const std::filesystem::path& archive,
-                    std::string& error) {
+                    std::string& error, DownloadProgress* progress) {
     return download_public_file(release.asset_url, archive,
-                                512 * 1024 * 1024, error);
+                                512 * 1024 * 1024, error, progress);
 }
 
 bool verify_asset(const UpdateInfo& release,
@@ -336,7 +341,7 @@ std::string fetch_latest_release(std::string& error) {
 bool download_windows_file(const std::string& url,
                            const std::filesystem::path& destination,
                            const std::uintmax_t maximum_size,
-                           std::string& error) {
+                           std::string& error, DownloadProgress* progress) {
     const auto wide_url = widen(url);
     std::vector<wchar_t> host(256);
     std::vector<wchar_t> path(4096);
@@ -385,6 +390,18 @@ bool download_windows_file(const std::string& url,
         error = "update download failed";
         return false;
     }
+
+    if (progress != nullptr) {
+        DWORD content_length = 0;
+        DWORD content_length_size = sizeof(content_length);
+        if (WinHttpQueryHeaders(
+                request.get(),
+                WINHTTP_QUERY_CONTENT_LENGTH | WINHTTP_QUERY_FLAG_NUMBER,
+                WINHTTP_HEADER_NAME_BY_INDEX, &content_length,
+                &content_length_size, WINHTTP_NO_HEADER_INDEX)) {
+            progress->total_bytes.store(content_length);
+        }
+    }
     DWORD status = 0;
     DWORD status_size = sizeof(status);
     if (!WinHttpQueryHeaders(request.get(),
@@ -405,6 +422,11 @@ bool download_windows_file(const std::string& url,
     std::array<char, 64 * 1024> buffer{};
     std::uintmax_t total = 0;
     while (true) {
+        if (progress != nullptr &&
+            progress->cancel_requested.load(std::memory_order_relaxed)) {
+            error = "download cancelled";
+            return false;
+        }
         DWORD available = 0;
         if (!WinHttpQueryDataAvailable(request.get(), &available)) {
             error = "could not read the update download";
@@ -421,6 +443,10 @@ bool download_windows_file(const std::string& url,
                 return false;
             }
             total += read;
+            if (progress != nullptr) {
+                progress->completed_bytes.store(total,
+                                                std::memory_order_relaxed);
+            }
             if (total > maximum_size) {
                 error = "downloaded file is too large";
                 return false;
@@ -477,24 +503,71 @@ std::string fetch_latest_release(std::string& error) {
 bool download_public_file(const std::string& url,
                           const std::filesystem::path& destination,
                           const std::uintmax_t maximum_size,
-    std::string& error) {
+                          std::string& error, DownloadProgress* progress) {
+    if (progress != nullptr) {
+        progress->completed_bytes.store(0, std::memory_order_relaxed);
+        progress->total_bytes.store(0, std::memory_order_relaxed);
+        if (progress->cancel_requested.load(std::memory_order_relaxed)) {
+            error = "download cancelled";
+            return false;
+        }
+    }
     std::filesystem::create_directories(destination.parent_path());
     auto temporary = destination;
     temporary += ".download";
 #ifdef _WIN32
-    if (!download_windows_file(url, temporary, maximum_size, error)) {
+    if (!download_windows_file(url, temporary, maximum_size, error,
+                               progress)) {
         std::filesystem::remove(temporary);
         return false;
     }
 #else
-    const auto command = "curl -fL --max-time 20 -o " +
-                         shell_quote(temporary.u8string()) + " " + shell_quote(url) +
-                         " >/dev/null 2>&1";
-    if (std::system(command.c_str()) != 0) {
+    const auto child = fork();
+    if (child < 0) {
+        error = "could not start the system HTTP client";
+        return false;
+    }
+    if (child == 0) {
+        const auto null = open("/dev/null", O_WRONLY);
+        if (null >= 0) {
+            static_cast<void>(dup2(null, STDOUT_FILENO));
+            static_cast<void>(dup2(null, STDERR_FILENO));
+            close(null);
+        }
+        execlp("curl", "curl", "-fL", "--max-time", "20", "-sS", "-o",
+               temporary.c_str(), url.c_str(), static_cast<char*>(nullptr));
+        _exit(127);
+    }
+    int status = 0;
+    while (true) {
+        const auto result = waitpid(child, &status, WNOHANG);
+        if (result == child) break;
+        if (result < 0) {
+            static_cast<void>(kill(child, SIGTERM));
+            static_cast<void>(waitpid(child, &status, 0));
+            error = "could not read the system HTTP client status";
+            return false;
+        }
+        if (progress != nullptr &&
+            progress->cancel_requested.load(std::memory_order_relaxed)) {
+            static_cast<void>(kill(child, SIGTERM));
+            static_cast<void>(waitpid(child, &status, 0));
+            error = "download cancelled";
+            return false;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
         error = "download failed";
         return false;
     }
 #endif
+    if (progress != nullptr &&
+        progress->cancel_requested.load(std::memory_order_relaxed)) {
+        std::filesystem::remove(temporary);
+        error = "download cancelled";
+        return false;
+    }
     std::error_code size_error;
     const auto size = std::filesystem::file_size(temporary, size_error);
     if (size_error || size == 0 || size > maximum_size) {
@@ -597,7 +670,9 @@ UpdateDownload::UpdateDownload(UpdateInfo release,
                 std::optional<DownloadedUpdate> update;
                 try {
                     const auto archive = directory / release.asset_name;
-                    if (download_asset(release, archive, error) &&
+                    if (download_asset(release, archive, error, &progress_) &&
+                        !progress_.cancel_requested.load(
+                            std::memory_order_relaxed) &&
                         verify_asset(release, archive, error)) {
                         update = DownloadedUpdate{std::move(release), archive};
                     } else {

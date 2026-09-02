@@ -167,6 +167,7 @@ struct State {
     gbb::VoxelProfile voxel_profile{};
     std::thread artwork_worker;
     std::atomic_bool closing{};
+    DownloadProgress artwork_download;
     std::atomic_size_t artwork_completed{};
     std::size_t artwork_total{};
     int settings_scroll{};
@@ -995,6 +996,8 @@ void finish(State& state, const DashboardResultAction action,
     state.result.action = action;
     state.result.rom_path = path;
     state.closing = true;
+    state.artwork_download.cancel_requested.store(true,
+                                                  std::memory_order_relaxed);
     state.done = true;
     DestroyWindow(state.window);
 }
@@ -1072,7 +1075,8 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
         } else {
             const auto text = L"Artwork: loading " +
                               std::to_wstring(completed) + L" of " +
-                              std::to_wstring(state->artwork_total) + L"...";
+                              std::to_wstring(state->artwork_total) +
+                              L"... (close to cancel)";
             SetWindowTextW(state->artwork_status, text.c_str());
         }
         return 0;
@@ -1683,7 +1687,8 @@ std::string display_title(const std::string& canonical_name) {
 }
 
 std::unordered_map<std::uint32_t, MetadataRecord> load_database(
-    const std::filesystem::path& directory, const std::string& system) {
+    const std::filesystem::path& directory, const std::string& system,
+    DownloadProgress* progress) {
     auto filename = system;
     for (auto& character : filename) {
         if (!std::isalnum(static_cast<unsigned char>(character))) character = '-';
@@ -1695,7 +1700,7 @@ std::unordered_map<std::uint32_t, MetadataRecord> load_database(
             "https://raw.githubusercontent.com/libretro/libretro-database/"
             "master/metadat/no-intro/" + url_component(system + ".dat");
         static_cast<void>(download_public_file(url, path, 3 * 1024 * 1024,
-                                               error));
+                                               error, progress));
     }
     return parse_database(path);
 }
@@ -1715,7 +1720,8 @@ void resolve_artwork(State& state) {
         auto found_database = databases.find(system);
         if (found_database == databases.end()) {
             found_database = databases.emplace(
-                system, load_database(state.preference_directory, system)).first;
+                system, load_database(state.preference_directory, system,
+                                      &state.artwork_download)).first;
         }
         auto title = metadata.title;
         auto language = metadata.language;
@@ -1737,8 +1743,8 @@ void resolve_artwork(State& state) {
             const auto url = "https://thumbnails.libretro.com/" +
                 url_component(system) + "/Named_Boxarts/" +
                 url_component(thumbnail_name(canonical)) + ".png";
-            static_cast<void>(download_public_file(url, cover, 5 * 1024 * 1024,
-                                                   error));
+            static_cast<void>(download_public_file(
+                url, cover, 5 * 1024 * 1024, error, &state.artwork_download));
         }
         auto update = std::make_unique<ArtworkUpdate>(ArtworkUpdate{
             index, std::move(title), std::move(language),
