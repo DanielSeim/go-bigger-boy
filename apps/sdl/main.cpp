@@ -6531,11 +6531,11 @@ void present_menu_button(SdlResources& sdl) {
             sdl.renderer, 0, 0, SDL_LOGICAL_PRESENTATION_DISABLED)) {
         sdl_error("Could not prepare Android menu button");
     }
-    const auto button = android_menu_button_rect(sdl);
-    const auto button_x = button.x;
-    const auto button_y = button.y;
-    const auto button_width = button.w;
-    const auto button_height = button.h;
+    const auto button_rect = android_menu_button_rect(sdl);
+    const auto button_x = button_rect.x;
+    const auto button_y = button_rect.y;
+    const auto button_width = button_rect.w;
+    const auto button_height = button_rect.h;
 #else
     const auto button_x = 3.0F;
     const auto button_y = 3.0F;
