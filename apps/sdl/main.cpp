@@ -15,6 +15,9 @@
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
+#ifdef GBB_HAS_SDL_TTF
+#include <SDL3_ttf/SDL_ttf.h>
+#endif
 
 #include <algorithm>
 #include <array>
@@ -730,6 +733,55 @@ bool tool_button_hovered(SDL_Window* window, const SDL_FRect& rect) {
     return x >= rect.x && x <= rect.x + rect.w && y >= rect.y &&
            y <= rect.y + rect.h;
 }
+
+// SDL_RenderDebugText is useful for the Game Boy overlay, but its fixed
+// 8-pixel debug glyphs make the desktop tools hard to read. Use SDL_ttf for
+// tool windows when available and retain the debug renderer as a fallback for
+// minimal builds that do not ship the optional font library.
+void render_tool_text(SDL_Renderer* renderer, const float x, const float y,
+                      const char* value) {
+#ifdef GBB_HAS_SDL_TTF
+    static std::once_flag initialized;
+    static TTF_Font* font = nullptr;
+    std::call_once(initialized, [] {
+        if (!TTF_Init()) return;
+        constexpr std::array<const char*, 5> candidates{
+            "fonts/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "C:/Windows/Fonts/segoeui.ttf",
+            "/System/Library/Fonts/Supplemental/Arial.ttf",
+            "/System/Library/Fonts/SFNS.ttf"};
+        for (const auto* candidate : candidates) {
+            font = TTF_OpenFont(candidate, 14.0F);
+            if (font != nullptr) break;
+        }
+    });
+    if (font != nullptr && value != nullptr && *value != '\0') {
+        SDL_Color color{255, 255, 255, 255};
+        static_cast<void>(SDL_GetRenderDrawColor(renderer, &color.r, &color.g,
+                                                  &color.b, &color.a));
+        auto* surface = TTF_RenderText_Blended(font, value, 0, color);
+        if (surface != nullptr) {
+            auto* texture = SDL_CreateTextureFromSurface(renderer, surface);
+            if (texture != nullptr) {
+                static_cast<void>(SDL_SetTextureBlendMode(
+                    texture, SDL_BLENDMODE_BLEND));
+                const SDL_FRect destination{x, y,
+                                            static_cast<float>(surface->w),
+                                            static_cast<float>(surface->h)};
+                static_cast<void>(SDL_RenderTexture(renderer, texture, nullptr,
+                                                     &destination));
+                SDL_DestroyTexture(texture);
+            }
+            SDL_DestroySurface(surface);
+            return;
+        }
+    }
+#endif
+    static_cast<void>(SDL_RenderDebugText(renderer, x, y, value));
+}
+
+#define SDL_RenderDebugText render_tool_text
 
 void draw_tool_button_background(SDL_Renderer* renderer, SDL_Window* window,
                                  const SDL_FRect& rect) {
@@ -2645,6 +2697,8 @@ bool configure_video_pipeline(SdlResources& sdl,
     sdl.video_mode = mode;
     return true;
 }
+
+#undef SDL_RenderDebugText
 
 struct DialogState {
     std::mutex mutex;
