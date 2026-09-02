@@ -4847,10 +4847,11 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
         if (tas_editor.handle_event(event)) continue;
         if (debugger.handle_event(event, emulator.get())) continue;
 #endif
-        // In voxel mode the mouse controls pitch and center-axis yaw: hold
-        // the left button and drag vertically for pitch or horizontally for
-        // yaw. This rotates the viewport around its vertical center line;
-        // it does not translate the viewport laterally.
+        // On desktop, voxel mode uses the mouse to control pitch and
+        // center-axis yaw. Android touch input has its own gesture path below;
+        // SDL can synthesize mouse events for touches, so handling those here
+        // would bypass the voxel-orbit preference entirely.
+#ifndef __ANDROID__
         if (emulator != nullptr && !dashboard_visible &&
             (sdl.video_mode == gameboy::VideoMode::voxel_diorama ||
              sdl.video_mode == gameboy::VideoMode::voxel_shape ||
@@ -4875,6 +4876,7 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                 static_cast<void>(SDL_CaptureMouse(false));
             }
         }
+#endif
         switch (event.type) {
         case SDL_EVENT_QUIT:
             request_close();
