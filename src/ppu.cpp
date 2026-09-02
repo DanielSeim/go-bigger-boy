@@ -36,7 +36,9 @@ std::FILE* ppu_window_trace_stream() noexcept {
 
 Ppu::Ppu()
     : cgb_vram_(std::make_unique<std::array<std::uint8_t, 0x2000>>()),
-      framebuffer_(std::make_unique<Framebuffer>()) {
+      framebuffer_(std::make_unique<Framebuffer>()),
+      sgb_border_tiles_(std::make_unique<std::array<std::uint8_t, 0x2000>>()),
+      sgb_border_pct_(std::make_unique<std::array<std::uint8_t, 0x1000>>()) {
     framebuffer_->fill(dmg_colors[0]);
     cgb_bg_palette_.fill(0xFF);
     cgb_object_palette_.fill(0xFF);
@@ -62,6 +64,9 @@ void Ppu::set_sgb_mode(const bool enabled) noexcept {
                      0x7FFF, 0x5294, 0x294A, 0x0000,
                      0x7FFF, 0x5294, 0x294A, 0x0000};
     sgb_attributes_.fill(0);
+    sgb_border_tiles_->fill(0);
+    sgb_border_pct_->fill(0);
+    sgb_mask_mode_ = 0;
 }
 
 bool Ppu::cgb_mode() const noexcept { return cgb_mode_; }
@@ -223,10 +228,36 @@ void Ppu::apply_sgb_command(
         }
         break;
     }
+    case 0x13: { // CHR_TRN: latch one 4 KiB border tile-data bank from VRAM.
+        const auto bank = static_cast<std::size_t>(packet[1] & 1U);
+        std::copy_n(vram_.begin(), 0x1000,
+                    sgb_border_tiles_->begin() + bank * 0x1000);
+        break;
+    }
+    case 0x14: // PCT_TRN: latch the complete 4 KiB border map transfer.
+        std::copy_n(vram_.begin(), 0x1000, sgb_border_pct_->begin());
+        break;
     case 0x16: // ATTR_SET has no transfer backing yet; retain current map.
+        break;
+    case 0x17: // MASK_EN: disabled, freeze, black, or color-zero fill.
+        sgb_mask_mode_ = static_cast<std::uint8_t>(packet[1] & 3U);
+        break;
     default: break;
     }
 }
+
+std::uint8_t Ppu::debug_read_sgb_border_tile(
+    const std::uint16_t offset) const noexcept {
+    return offset < sgb_border_tiles_->size() ? (*sgb_border_tiles_)[offset]
+                                              : 0xFF;
+}
+
+std::uint8_t Ppu::debug_read_sgb_border_pct(
+    const std::uint16_t offset) const noexcept {
+    return offset < sgb_border_pct_->size() ? (*sgb_border_pct_)[offset] : 0xFF;
+}
+
+std::uint8_t Ppu::sgb_mask_mode() const noexcept { return sgb_mask_mode_; }
 
 std::uint8_t Ppu::read_vram(const std::uint16_t address) const noexcept {
     if (lcd_enabled() && (stat_mode_ == 3 || mode_ == 3)) {
@@ -1210,6 +1241,16 @@ void Ppu::emit_pixel() noexcept {
     }
 
     auto result = compose_pixel(output_x_, background);
+    if (sgb_mode_) {
+        if (sgb_mask_mode_ == 1) {
+            // Freeze leaves the existing SNES framebuffer untouched while
+            // the Game Boy continues to advance its link/PPU state.
+            ++output_x_;
+            return;
+        }
+        if (sgb_mask_mode_ == 2) result = UINT32_C(0xFF000000);
+        if (sgb_mask_mode_ == 3) result = sgb_palette_color(0, 0);
+    }
     emitted_background_[output_x_] = background;
     if (insert_window_glitch) {
         window_glitch_restore_color_ =

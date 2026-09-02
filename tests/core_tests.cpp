@@ -270,6 +270,43 @@ void test_sgb_command_path() {
     emulator.bus().tick(70224);
     check(emulator.framebuffer()[0] == 0xFFFF0000,
           "SGB PAL01 packet updates the rendered RGB555 palette");
+
+    // Transfer commands snapshot the Game Boy VRAM source into SNES-side
+    // latches. Keep the raw PCT payload intact; its map/attribute/palette
+    // packing is consumed by a future 256x224 border compositor.
+    gameboy::Ppu ppu;
+    ppu.set_sgb_mode(true);
+    ppu.debug_write_vram(0, 0x0000, 0xA5);
+    ppu.debug_write_vram(0, 0x0FFF, 0x5A);
+    std::array<std::uint8_t, 16 * 7> transfer{};
+    transfer[0] = static_cast<std::uint8_t>(0x13U << 3);
+    transfer[1] = 0;
+    ppu.apply_sgb_command(transfer, 16);
+    check(ppu.debug_read_sgb_border_tile(0x0000) == 0xA5 &&
+              ppu.debug_read_sgb_border_tile(0x0FFF) == 0x5A,
+          "SGB CHR_TRN snapshots the first border tile-data bank");
+
+    ppu.debug_write_vram(0, 0x0000, 0x3C);
+    ppu.debug_write_vram(0, 0x0FFF, 0xC3);
+    transfer[1] = 1;
+    ppu.apply_sgb_command(transfer, 16);
+    check(ppu.debug_read_sgb_border_tile(0x1000) == 0x3C &&
+              ppu.debug_read_sgb_border_tile(0x1FFF) == 0xC3,
+          "SGB CHR_TRN selects the second border tile-data bank");
+
+    ppu.debug_write_vram(0, 0x0000, 0x11);
+    ppu.debug_write_vram(0, 0x0FFF, 0xEE);
+    transfer[0] = static_cast<std::uint8_t>(0x14U << 3);
+    ppu.apply_sgb_command(transfer, 16);
+    check(ppu.debug_read_sgb_border_pct(0x0000) == 0x11 &&
+              ppu.debug_read_sgb_border_pct(0x0FFF) == 0xEE,
+          "SGB PCT_TRN snapshots the complete border transfer payload");
+
+    transfer[0] = static_cast<std::uint8_t>(0x17U << 3);
+    transfer[1] = 2; // black mask
+    ppu.apply_sgb_command(transfer, 16);
+    check(ppu.sgb_mask_mode() == 2,
+          "SGB MASK_EN latches the black mask mode");
 }
 
 void test_rom_library_metadata_and_deduplication() {
@@ -4141,16 +4178,20 @@ void test_save_state_round_trip_and_validation() {
     constexpr std::size_t version_nineteen_apu_size = 6;
     constexpr std::size_t version_twenty_timing_size = 3;
     constexpr std::size_t version_twenty_one_pulse_timing_size = 10;
-    // Version 22 adds SGB joypad packet parser state and PPU palettes/
-    // attribute memory.  Strip it when constructing the legacy v1-v21
+    // Version 23 adds SGB border transfer latches and mask state after the
+    // version 22 joypad/parser, palette, and attribute block. Strip both
+    // when constructing the legacy v1-v21
     // fixtures below, just like the earlier version deltas.
     constexpr std::size_t version_twenty_two_sgb_size = 237 + 393;
+    constexpr std::size_t version_twenty_three_sgb_border_size =
+        1 + 0x2000 + 0x1000;
     constexpr std::size_t version_nine_fetcher_size =
         737 + version_ten_window_latch_size + version_eleven_fetcher_size +
         version_twelve_sprite_size + version_thirteen_sprite_fetch_size +
         version_fourteen_sprite_deadline_size + version_fifteen_sprite_render_size;
     auto legacy_saved = saved;
     legacy_saved.resize(legacy_saved.size() -
+                        version_twenty_three_sgb_border_size -
                         version_twenty_two_sgb_size -
                         version_twenty_one_pulse_timing_size -
                         version_twenty_timing_size -
@@ -4491,6 +4532,7 @@ void test_save_state_round_trip_and_validation() {
 
     auto version_sixteen = saved;
     version_sixteen.resize(version_sixteen.size() -
+                           version_twenty_three_sgb_border_size -
                            version_twenty_two_sgb_size -
                            version_twenty_one_pulse_timing_size -
                            version_twenty_timing_size -
@@ -4514,6 +4556,7 @@ void test_save_state_round_trip_and_validation() {
 
     auto version_seventeen = saved;
     version_seventeen.resize(version_seventeen.size() -
+                             version_twenty_three_sgb_border_size -
                              version_twenty_two_sgb_size -
                              version_twenty_one_pulse_timing_size -
                              version_twenty_timing_size -
@@ -4535,7 +4578,7 @@ void test_save_state_round_trip_and_validation() {
           "version 17 save states remain loadable after adding object deadlines");
 
     auto future_version = saved;
-    future_version[8] = 23;
+    future_version[8] = 24;
     auto rejected_version = false;
     try {
         emulator.load_state(future_version);

@@ -13,7 +13,7 @@ namespace {
 constexpr std::array<std::uint8_t, 8> state_magic{
     'G', 'B', 'B', 'S', 'T', 'A', 'T', 'E',
 };
-constexpr std::uint32_t state_version = 22;
+constexpr std::uint32_t state_version = 23;
 constexpr std::uint32_t oldest_supported_state_version = 1;
 constexpr std::size_t maximum_state_size = 2 * 1024 * 1024;
 constexpr std::size_t maximum_serial_output = 1024 * 1024;
@@ -420,8 +420,9 @@ private:
         writer.boolean(bus.apu_.pulse1_.just_reloaded);
         writer.u32(bus.apu_.pulse2_.period);
         writer.boolean(bus.apu_.pulse2_.just_reloaded);
-        // Version 22 SGB state is appended as a single trailing block so all
-        // previous save-state versions retain their original field offsets.
+        // SGB state is appended as trailing blocks so previous save-state
+        // versions retain their original field offsets. Version 23 extends
+        // the version 22 parser/palette block with transfer latches.
         writer.boolean(bus.joypad_.sgb_mode_);
         writer.boolean(bus.joypad_.sgb_ready_for_pulse_);
         writer.boolean(bus.joypad_.sgb_ready_for_write_);
@@ -434,6 +435,9 @@ private:
         writer.boolean(bus.ppu_.sgb_mode_);
         for (const auto color : bus.ppu_.sgb_palettes_) writer.u16(color);
         write_bytes(writer, bus.ppu_.sgb_attributes_);
+        writer.u8(bus.ppu_.sgb_mask_mode_);
+        write_bytes(writer, *bus.ppu_.sgb_border_tiles_);
+        write_bytes(writer, *bus.ppu_.sgb_border_pct_);
     }
 
     static void read_bus(Reader& reader, MemoryBus& bus,
@@ -834,6 +838,15 @@ private:
             bus.ppu_.sgb_mode_ = reader.boolean();
             for (auto& color : bus.ppu_.sgb_palettes_) color = reader.u16();
             read_bytes(reader, bus.ppu_.sgb_attributes_);
+            if (version >= 23) {
+                bus.ppu_.sgb_mask_mode_ = reader.u8() & 3U;
+                read_bytes(reader, *bus.ppu_.sgb_border_tiles_);
+                read_bytes(reader, *bus.ppu_.sgb_border_pct_);
+            } else {
+                bus.ppu_.sgb_mask_mode_ = 0;
+                bus.ppu_.sgb_border_tiles_->fill(0);
+                bus.ppu_.sgb_border_pct_->fill(0);
+            }
         } else {
             bus.joypad_.sgb_mode_ = false;
             bus.joypad_.reset_sgb_packet();
@@ -843,6 +856,9 @@ private:
             bus.ppu_.sgb_mode_ = false;
             bus.ppu_.sgb_palettes_.fill(0);
             bus.ppu_.sgb_attributes_.fill(0);
+            bus.ppu_.sgb_mask_mode_ = 0;
+            bus.ppu_.sgb_border_tiles_->fill(0);
+            bus.ppu_.sgb_border_pct_->fill(0);
         }
         // The printer represents an external device and is deliberately not
         // embedded in emulator save states. Loading a state starts a fresh

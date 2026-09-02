@@ -24,14 +24,17 @@ misc ROMs are excluded because GBB does not emulate Game Boy Advance hardware.
 
 Cartridges with the SGB header capability flag (`0x0146 = 0x03`) are selected
 automatically for the SGB hardware profile unless they require CGB hardware.
-The first SGB milestone is implemented as a deterministic HLE path: JOYP
-command packets are decoded at the bit level, `PAL01`/`PAL23`/`PAL03`/`PAL12`
-set RGB555 palettes, and `ATTR_BLK`/`ATTR_LIN`/`ATTR_DIV`/`ATTR_CHR` update the
-20×18 tile attribute map used by the Game Boy viewport. The packet parser and
-palette path are covered by core tests and save states (version 22). SNES
-border graphics, VRAM transfer commands, multiplayer polling, masking/fade,
-and the full SGB boot/header handshake are intentionally deferred to a later
-phase; these limitations do not affect ordinary DMG or CGB emulation.
+The SGB path is a deterministic HLE implementation: JOYP command packets are
+decoded at the bit level, `PAL01`/`PAL23`/`PAL03`/`PAL12` set RGB555 palettes,
+and `ATTR_BLK`/`ATTR_LIN`/`ATTR_DIV`/`ATTR_CHR` update the 20×18 tile attribute
+map used by the Game Boy viewport. `CHR_TRN` and `PCT_TRN` now snapshot their
+4 KiB VRAM payloads into SNES-side transfer latches, and `MASK_EN` implements
+disabled, freeze, black, and color-zero viewport modes. These latches and the
+packet parser are covered by core tests and save states (version 23). A future
+frontend phase can consume the retained transfer data to compose the full
+256×224 SNES border; multiplayer polling, fade timing, and the complete SGB
+boot/header handshake remain deferred. These limitations do not affect
+ordinary DMG or CGB emulation.
 
 The APU evaluates channel output and the hardware high-pass response on every
 master-clock cycle, then integrates those values over exact 48 kHz sample

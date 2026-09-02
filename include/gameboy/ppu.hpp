@@ -30,6 +30,15 @@ public:
         const std::array<std::uint8_t, 16 * 7>& packet,
         std::size_t size) noexcept;
 
+    // Read-only hooks for diagnostics/tests. Border compositing remains a
+    // separate 256x224 frontend concern; these expose the raw SNES-side
+    // transfer latches deterministically.
+    [[nodiscard]] std::uint8_t debug_read_sgb_border_tile(
+        std::uint16_t offset) const noexcept;
+    [[nodiscard]] std::uint8_t debug_read_sgb_border_pct(
+        std::uint16_t offset) const noexcept;
+    [[nodiscard]] std::uint8_t sgb_mask_mode() const noexcept;
+
     [[nodiscard]] std::uint8_t read_vram(std::uint16_t address) const noexcept;
     void write_vram(std::uint16_t address, std::uint8_t value) noexcept;
     void dma_write_vram(std::uint16_t address, std::uint8_t value) noexcept;
@@ -149,6 +158,12 @@ private:
     // palettes so monochrome rendering remains unchanged on ordinary models.
     std::array<std::uint16_t, 16> sgb_palettes_{};
     std::array<std::uint8_t, 20 * 18> sgb_attributes_{};
+    // CHR_TRN latches two 4 KiB tile-data banks. PCT_TRN is retained
+    // byte-for-byte because its map/attribute/palette packing is SNES-side.
+    std::unique_ptr<std::array<std::uint8_t, 0x2000>> sgb_border_tiles_;
+    std::unique_ptr<std::array<std::uint8_t, 0x1000>> sgb_border_pct_;
+    // MASK_EN: 0=disabled, 1=freeze, 2=black, 3=color-zero fill.
+    std::uint8_t sgb_mask_mode_{};
 
     std::array<BackgroundPixel, 16> background_fifo_{};
     // Background samples that have already reached the output pipeline. A
