@@ -198,6 +198,13 @@ The `WX=6` sequence still has a substantial mismatch after the handoff because
 the internal window row and queued tile pipeline are not yet fully modeled
 cycle by cycle; it remains exploratory and is not part of the release gate.
 
+For timing investigations, set `GBB_TRACE_WX` to a file path before running an
+emulator or test runner (or set it to `1`/`stderr` to write to standard error).
+The opt-in trace records each visible mode-3 dot together with `LY`, `WX`,
+output position, window source position, fetch state, activation/retrigger
+state, and window cancellation/resume events. It is disabled by default and
+has no output or file side effects unless the variable is set.
+
 Run the exact CI baseline locally with:
 
 ```sh

@@ -4,6 +4,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 namespace gameboy {
 namespace {
@@ -11,6 +14,24 @@ constexpr std::array<std::uint32_t, 4> dmg_colors{
     0xFFFFFFFF, 0xFFAAAAAA, 0xFF555555, 0xFF000000,
 };
 constexpr unsigned object_cancellation_tail_dots = 10;
+
+std::FILE* ppu_window_trace_stream() noexcept {
+    // Opt-in diagnostic for investigating DMG window timing. A path appends
+    // to that file; "1" and "stderr" write to stderr.
+    static auto* stream = []() noexcept -> std::FILE* {
+        const auto* destination = std::getenv("GBB_TRACE_WX");
+        if (destination == nullptr || *destination == '\0' ||
+            std::strcmp(destination, "0") == 0) {
+            return nullptr;
+        }
+        if (std::strcmp(destination, "1") == 0 ||
+            std::strcmp(destination, "stderr") == 0) {
+            return stderr;
+        }
+        return std::fopen(destination, "a");
+    }();
+    return stream;
+}
 } // namespace
 
 Ppu::Ppu()
@@ -19,6 +40,7 @@ Ppu::Ppu()
     framebuffer_->fill(dmg_colors[0]);
     cgb_bg_palette_.fill(0xFF);
     cgb_object_palette_.fill(0xFF);
+    trace_window_state("construct");
 }
 
 void Ppu::set_cgb_mode(const bool enabled) noexcept {
@@ -386,6 +408,7 @@ bool Ppu::write_register(const std::uint16_t address,
             }
         }
         lcdc_ = value;
+        trace_window_state("lcdc_write");
         if (object_was_enabled && (value & 0x02) == 0) {
             // A fetch can have populated the object FIFO before the PPU has
             // reached its cancellation boundary. Remove only those sprites;
@@ -524,6 +547,7 @@ bool Ppu::write_register(const std::uint16_t address,
             window_retrigger_armed_ = true;
         }
         window_x_ = value;
+        trace_window_state("wx_write");
         break;
     }
     case 0xFF4F:
@@ -595,6 +619,8 @@ std::uint8_t Ppu::tick(const unsigned cycles) noexcept {
             }
 
             if (stat_mode_ == 3 && dot_ < mode3_end_dot_) tick_mode3();
+
+            if (stat_mode_ == 3) trace_window_state("dot");
 
             if (dot_ == mode3_end_dot_) {
                 stat_mode_ = 0;
@@ -732,6 +758,7 @@ void Ppu::begin_mode3() noexcept {
     object_pixels_.fill(ObjectPixel{});
     object_pixel_deadlines_.fill(0);
     select_line_sprites();
+    trace_window_state("mode3_start");
 }
 
 void Ppu::tick_mode3() noexcept {
@@ -998,6 +1025,7 @@ void Ppu::begin_window_fetch() noexcept {
                            : static_cast<std::uint16_t>(
                                  std::max(0, 7 - static_cast<int>(window_x_)));
     window_fetch_start_x_ = static_cast<std::uint8_t>(window_source_x_);
+    trace_window_state("window_fetch_start");
 }
 
 void Ppu::resume_background_fetch() noexcept {
@@ -1015,6 +1043,38 @@ void Ppu::resume_background_fetch() noexcept {
     fetcher_phase_ = 0;
     fetcher_phase_ticks_ = 2;
     fetcher_tile_index_ = static_cast<std::uint8_t>(output_x_ / 8);
+    trace_window_state("window_fetch_resume");
+}
+
+void Ppu::trace_window_state(const char* event) const noexcept {
+    auto* stream = ppu_window_trace_stream();
+    if (stream == nullptr) return;
+    std::fprintf(
+        stream,
+        "window event=%s ppu=%p ly=%u dot=%u mode=%u stat=%u wx=%u wy=%u "
+        "scx=%u out=%u using=%u triggered=%u pending=%u retrigger=%u "
+        "activation=%u source=%u fetch_line=%u fetch_start=%u "
+        "fetched_window=%u fifo=%u phase=%u phase_ticks=%u delay=%u "
+        "disable=%u disable_source=%u glitch=%u glitch_x=%u\n",
+        event == nullptr ? "unknown" : event, static_cast<const void*>(this),
+        static_cast<unsigned>(ly_), dot_, static_cast<unsigned>(mode_),
+        static_cast<unsigned>(stat_mode_), static_cast<unsigned>(window_x_),
+        static_cast<unsigned>(window_y_), static_cast<unsigned>(scx_),
+        static_cast<unsigned>(output_x_), using_window_ ? 1U : 0U,
+        window_active_on_line() ? 1U : 0U, window_trigger_pending_ ? 1U : 0U,
+        window_retrigger_armed_ ? 1U : 0U,
+        static_cast<unsigned>(window_activation_count_),
+        static_cast<unsigned>(window_source_x_),
+        static_cast<unsigned>(window_fetch_line_),
+        static_cast<unsigned>(window_fetch_start_x_), fetched_window_ ? 1U : 0U,
+        static_cast<unsigned>(background_fifo_size_),
+        static_cast<unsigned>(fetcher_phase_),
+        static_cast<unsigned>(fetcher_phase_ticks_),
+        static_cast<unsigned>(window_delay_), window_disable_pending_ ? 1U : 0U,
+        static_cast<unsigned>(window_disable_source_x_),
+        window_glitch_pending_ || window_glitch_applied_ ? 1U : 0U,
+        static_cast<unsigned>(window_glitch_x_));
+    std::fflush(stream);
 }
 
 void Ppu::select_line_sprites() noexcept {

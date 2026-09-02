@@ -86,6 +86,7 @@ private:
     void tick_background_fetcher() noexcept;
     void begin_window_fetch() noexcept;
     void resume_background_fetch() noexcept;
+    void trace_window_state(const char* event) const noexcept;
     void select_line_sprites() noexcept;
     [[nodiscard]] unsigned trigger_sprites(unsigned x) noexcept;
     void fetch_object(unsigned index) noexcept;
