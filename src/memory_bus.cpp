@@ -273,15 +273,23 @@ void MemoryBus::tick(const unsigned cycles) noexcept {
     if (timer_interrupt) {
         request_interrupt(2);
     }
-    const auto ppu_requests = ppu_.tick(peripheral_cycles);
+    // Keep HBlank notifications at dot granularity. PPU::tick() returns a
+    // bitmask, so ticking a whole batch at once would collapse multiple
+    // HBlanks into one notification and make an HDMA transfer miss blocks
+    // whenever a caller advances across more than one scanline.
+    std::uint8_t ppu_requests = 0;
+    for (unsigned cycle = 0; cycle < peripheral_cycles; ++cycle) {
+        const auto requests = ppu_.tick(1);
+        ppu_requests = static_cast<std::uint8_t>(ppu_requests | requests);
+        if ((requests & 0x04) != 0 && hdma_active_) {
+            transfer_hdma_block();
+        }
+    }
     if ((ppu_requests & 0x01) != 0) {
         request_interrupt(0);
     }
     if ((ppu_requests & 0x02) != 0) {
         request_interrupt(1);
-    }
-    if ((ppu_requests & 0x04) != 0 && hdma_active_) {
-        transfer_hdma_block();
     }
 }
 

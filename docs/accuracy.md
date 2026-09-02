@@ -183,6 +183,12 @@ pixel (including the remaining `WX=1..6` comparator cases), and the output-pipel
 collisions caused by precisely timed SCY/LCDC writes. Those cases remain outside
 the release gate until their framebuffer references match exactly.
 
+CGB HBlank DMA now consumes each HBlank edge at dot granularity. Previously a
+large peripheral tick could collapse multiple PPU HBlank notifications into one
+bitmask, causing one or more requested 16-byte blocks to be skipped. The core
+regression suite covers a batched tick that crosses two HBlanks and verifies that
+both blocks are copied while the transfer remains active for the requested count.
+
 Window comparator positions are normalized at the visible left edge for
 `WX<7`, including writes made while the current window tile is still queued.
 The `WX=6` sequence still has a substantial mismatch after the handoff because

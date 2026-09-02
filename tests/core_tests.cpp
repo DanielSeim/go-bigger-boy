@@ -1005,6 +1005,23 @@ void test_cgb_memory_and_rendering() {
     check(bus.read8(0xFF55) == 0xFF && bus.read8(0x8130) == 0x60,
           "CGB HBlank DMA completes after its requested block count");
 
+    gameboy::MemoryBus batched_hdma{gameboy::Cartridge{cgb_test_rom()}};
+    for (unsigned byte = 0; byte < 0x30; ++byte) {
+        batched_hdma.write8(static_cast<std::uint16_t>(0xC000 + byte),
+                            static_cast<std::uint8_t>(0x70 + byte));
+    }
+    batched_hdma.write8(0xFF51, 0xC0);
+    batched_hdma.write8(0xFF52, 0x00);
+    batched_hdma.write8(0xFF53, 0x01);
+    batched_hdma.write8(0xFF54, 0x40);
+    batched_hdma.write8(0xFF40, 0x91);
+    batched_hdma.write8(0xFF55, 0x82); // Three HBlank blocks.
+    batched_hdma.tick(720); // Crosses two HBlanks in one bus batch.
+    check(batched_hdma.read8(0x8140) == 0x70 &&
+              batched_hdma.read8(0x8150) == 0x80 &&
+              batched_hdma.read8(0xFF55) == 0x00,
+          "CGB HBlank DMA services every HBlank crossed by a batched tick");
+
     const auto cgb_state = emulator.save_state();
     bus.write8(0xFF40, 0);
     bus.write8(0xFF4F, 1);
