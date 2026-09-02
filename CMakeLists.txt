@@ -269,6 +269,12 @@ if(GAMEBOY_BUILD_TESTS)
         VERBATIM)
     add_test(NAME gameboy_core_tests COMMAND gameboy_tests)
 
+    # The version path intentionally runs before SDL video initialization, so
+    # it is safe in headless CI and catches broken desktop entry-point builds.
+    if(TARGET gameboy_sdl)
+        add_test(NAME gameboy_sdl_version COMMAND gameboy_sdl --version)
+    endif()
+
     if(GAMEBOY_TEST_ROM_DIR OR GAMEBOY_SAMESUITE_DIR)
         include(cmake/ConformanceTests.cmake)
     endif()
