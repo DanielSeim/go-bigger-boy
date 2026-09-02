@@ -338,13 +338,14 @@ adds edge-aware smoothing without blanket blur, `integer` uses only whole-number
 scale factors, and `lcd` applies a lightweight LCD mask with scanlines. The
 setting is stored as `video.Mode` in
 `settings.ini`; the web selector remembers its choice in browser storage.
-Desktop and web builds also expose three experimental voxel modes. `voxel` is the
+Desktop, Android, and web builds also expose three experimental voxel modes. `voxel` is the
 original one-source-pixel relief renderer. `voxel_shape` (shown as “Voxel
 diorama (shape-aware)”) keeps the source-pixel silhouette intact, then applies
 edge-aware depth and stronger per-layer volume so sprites read as compact 3D
-forms without the chunky blobs caused by coarse 2×2 grouping. All voxel modes
-use the same camera controls, profiles, layer ordering, and optional framebuffer
-facade, and can be switched while a ROM is running. `voxel_popup` (shown as “Voxel
+forms without the chunky blobs caused by coarse 2×2 grouping. Desktop and web
+provide camera controls; all voxel modes share profiles, layer ordering, and the
+optional framebuffer facade, and can be switched while a ROM is running.
+Android currently uses the configured profile defaults. `voxel_popup` (shown as “Voxel
 pop-up book”) lays the framebuffer out as a horizontal page, raises the window
 layer above it, and renders OAM sprites plus substantial connected tile-layer
 shapes as upright, page-anchored cuboids. Small isolated texture/dither pixels

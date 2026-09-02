@@ -65,10 +65,13 @@ public final class LibraryActivity extends Activity {
             "grayscale", "classic", "pocket", "amber", "cgb-auto"
     };
     private static final String[] VIDEO_MODE_NAMES = {
-            "Nearest neighbor", "Bilinear", "Integer scaling", "LCD shader"
+            "Nearest neighbor", "Bilinear", "Integer scaling", "LCD shader",
+            "Voxel diorama", "Voxel diorama (shape-aware)",
+            "Voxel pop-up book"
     };
     private static final String[] VIDEO_MODE_IDS = {
-            "nearest", "bilinear", "integer", "lcd"
+            "nearest", "bilinear", "integer", "lcd", "voxel", "voxel_shape",
+            "voxel_popup"
     };
     private static final char FIELD_SEPARATOR = 0x1f;
 
