@@ -486,6 +486,7 @@ public:
         float x{};
         float y{};
         bool orbit{};
+        std::optional<std::size_t> control;
     };
     std::vector<TouchPoint> touches;
     std::array<bool, 8> touch_buttons{};
@@ -497,6 +498,8 @@ public:
     bool touch_settings_write_time_valid{};
     std::filesystem::file_time_type video_settings_write_time{};
     bool video_settings_write_time_valid{};
+    std::filesystem::file_time_type palette_settings_write_time{};
+    bool palette_settings_write_time_valid{};
 #endif
 };
 
@@ -4159,8 +4162,8 @@ void refresh_touch_buttons(gameboy::Emulator* emulator, SdlResources& sdl) {
     std::array<bool, 8> pressed{};
     for (const auto& touch : sdl.touches) {
         if (touch.orbit) continue;
-        if (const auto index = touch_button_index(touch.x, touch.y, sdl)) {
-            pressed[*index] = true;
+        if (touch.control && *touch.control < pressed.size()) {
+            pressed[*touch.control] = true;
         }
     }
     if (emulator != nullptr) {
@@ -4235,6 +4238,35 @@ void refresh_video_mode_if_changed(
     }
     sdl.video_settings_write_time = write_time;
     sdl.video_settings_write_time_valid = true;
+}
+
+void refresh_display_palette_if_changed(
+    gameboy::Emulator* emulator, gameboy::Emulator* link_emulator,
+    SdlResources& sdl, const std::filesystem::path& preference_path,
+    std::size_t& display_palette) {
+    std::error_code error;
+    const auto settings_path = portable_settings_path(preference_path);
+    const auto write_time = std::filesystem::last_write_time(settings_path,
+                                                               error);
+    if (error) return;
+    if (sdl.palette_settings_write_time_valid &&
+        write_time == sdl.palette_settings_write_time) {
+        return;
+    }
+
+    const auto palette = load_display_palette(preference_path);
+    if (palette < gameboy::display_palettes.size() &&
+        palette != display_palette) {
+        display_palette = palette;
+        const auto& compatibility =
+            gameboy::display_palettes[display_palette].cgb_compatibility;
+        if (emulator) emulator->set_dmg_compatibility_colors(compatibility);
+        if (link_emulator) {
+            link_emulator->set_dmg_compatibility_colors(compatibility);
+        }
+    }
+    sdl.palette_settings_write_time = write_time;
+    sdl.palette_settings_write_time_valid = true;
 }
 
 std::pair<float, float> logical_touch_position(const SDL_TouchFingerEvent& event,
@@ -5331,11 +5363,13 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
             } else if (existing == sdl.touches.end()) {
                 const auto menu_tap = android_menu_touch_hit(sdl, touch_x,
                                                              touch_y);
+                const auto control = touch_button_index(touch_x, touch_y, sdl);
                 const auto orbit = emulator != nullptr && !menu_tap &&
                                    voxel_mode_enabled(sdl) &&
                                    sdl.touch_settings.voxel_orbit &&
-                                   !touch_button_index(touch_x, touch_y, sdl);
-                sdl.touches.push_back({finger, touch_x, touch_y, orbit});
+                                   !control;
+                sdl.touches.push_back(
+                    {finger, touch_x, touch_y, orbit, orbit ? std::nullopt : control});
             } else {
                 if (event.type == SDL_EVENT_FINGER_MOTION && existing->orbit &&
                     emulator != nullptr && voxel_mode_enabled(sdl) &&
@@ -5355,6 +5389,15 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                         sdl.voxel_camera_yaw_offset + delta_x * 0.25F,
                         -voxel_camera_yaw_drag_limit,
                         voxel_camera_yaw_drag_limit);
+                } else if (event.type == SDL_EVENT_FINGER_MOTION &&
+                           !existing->orbit) {
+                    // Keep a held button active while the finger travels
+                    // through neutral space. Entering another control
+                    // transfers ownership; only finger-up/cancel releases it.
+                    if (const auto control =
+                            touch_button_index(touch_x, touch_y, sdl)) {
+                        existing->control = *control;
+                    }
                 }
                 existing->x = touch_x;
                 existing->y = touch_y;
@@ -8122,6 +8165,32 @@ Java_com_danielseim_gbb_LibraryActivity_nativeVideoMode(
     return environment->NewStringUTF(std::string{id}.c_str());
 }
 
+extern "C" JNIEXPORT jint JNICALL
+Java_com_danielseim_gbb_LibraryActivity_nativeDisplayPalette(
+    JNIEnv* environment, jclass, jstring directory) {
+    const auto* raw_directory =
+        environment->GetStringUTFChars(directory, nullptr);
+    if (raw_directory == nullptr) return 0;
+    const auto palette = load_display_palette(
+        std::filesystem::u8path(raw_directory));
+    environment->ReleaseStringUTFChars(directory, raw_directory);
+    return static_cast<jint>(palette);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_danielseim_gbb_LibraryActivity_nativeSetDisplayPalette(
+    JNIEnv* environment, jclass, jstring directory, const jint palette) {
+    const auto* raw_directory =
+        environment->GetStringUTFChars(directory, nullptr);
+    if (raw_directory == nullptr) return;
+    if (palette >= 0 &&
+        static_cast<std::size_t>(palette) < gameboy::display_palettes.size()) {
+        save_display_palette(std::filesystem::u8path(raw_directory),
+                             static_cast<std::size_t>(palette));
+    }
+    environment->ReleaseStringUTFChars(directory, raw_directory);
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_danielseim_gbb_LibraryActivity_nativeSetVideoMode(
     JNIEnv* environment, jclass, jstring directory, jstring mode) {
@@ -8297,6 +8366,9 @@ int main(int argc, char** argv) {
             // and voxel orbit preferences take effect immediately, even
             // without a touch.
             refresh_video_mode_if_changed(sdl, preference_path);
+            refresh_display_palette_if_changed(
+                emulator.get(), link_emulator.get(), sdl, preference_path,
+                display_palette);
             refresh_touch_settings_if_changed(sdl, preference_path);
 #endif
 #ifndef __ANDROID__

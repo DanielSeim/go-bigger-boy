@@ -100,6 +100,9 @@ public final class LibraryActivity extends Activity {
     private static native void nativeSetTouchControlLayout(
             String directory, float[] positions);
     private static native void nativeResetTouchControlLayout(String directory);
+    private static native int nativeDisplayPalette(String directory);
+    private static native void nativeSetDisplayPalette(
+            String directory, int palette);
     private static native String nativeVideoMode(String directory);
     private static native void nativeSetVideoMode(String directory, String mode);
 
@@ -868,31 +871,13 @@ public final class LibraryActivity extends Activity {
     }
 
     private int currentPalette() {
-        final File file = new File(getFilesDir(), "palette.txt");
-        try (InputStream input = new FileInputStream(file)) {
-            final byte[] bytes = new byte[32];
-            final int count = input.read(bytes);
-            final String current = count > 0
-                    ? new String(bytes, 0, count, StandardCharsets.UTF_8).trim()
-                    : "";
-            for (int index = 0; index < PALETTE_IDS.length; ++index) {
-                if (PALETTE_IDS[index].equals(current)) return index;
-            }
-        } catch (Exception ignored) {
-        }
-        return 0;
+        final int palette = nativeDisplayPalette(getFilesDir().getAbsolutePath());
+        return palette >= 0 && palette < PALETTE_IDS.length ? palette : 0;
     }
 
     private void savePalette(int position) {
         if (position < 0 || position >= PALETTE_IDS.length) return;
-        try (FileOutputStream output = new FileOutputStream(
-                new File(getFilesDir(), "palette.txt"), false)) {
-            output.write((PALETTE_IDS[position] + "\n")
-                    .getBytes(StandardCharsets.UTF_8));
-        } catch (Exception error) {
-            Toast.makeText(this, "Could not save display setting",
-                    Toast.LENGTH_SHORT).show();
-        }
+        nativeSetDisplayPalette(getFilesDir().getAbsolutePath(), position);
     }
 
     private int currentVideoMode() {
