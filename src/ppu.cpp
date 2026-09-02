@@ -30,6 +30,18 @@ void Ppu::set_cgb_hardware(const bool enabled) noexcept {
     cgb_hardware_ = enabled;
 }
 
+void Ppu::set_sgb_mode(const bool enabled) noexcept {
+    sgb_mode_ = enabled;
+    if (!enabled) return;
+    // SGB starts with the same four neutral colors as a DMG until the game
+    // sends its first PAL command.
+    sgb_palettes_ = {0x7FFF, 0x5294, 0x294A, 0x0000,
+                     0x7FFF, 0x5294, 0x294A, 0x0000,
+                     0x7FFF, 0x5294, 0x294A, 0x0000,
+                     0x7FFF, 0x5294, 0x294A, 0x0000};
+    sgb_attributes_.fill(0);
+}
+
 bool Ppu::cgb_mode() const noexcept { return cgb_mode_; }
 
 void Ppu::set_dmg_palette(const DmgPalette& palette) noexcept {
@@ -37,6 +49,7 @@ void Ppu::set_dmg_palette(const DmgPalette& palette) noexcept {
 }
 
 void Ppu::initialize_post_boot_phase(const HardwareModel model) noexcept {
+    set_sgb_mode(model == HardwareModel::sgb || model == HardwareModel::sgb2);
     if (model == HardwareModel::dmg || model == HardwareModel::mgb ||
         model == HardwareModel::sgb || model == HardwareModel::sgb2) {
         // Later monochrome boot ROMs leave the registered-trademark tile at
@@ -65,6 +78,132 @@ void Ppu::initialize_post_boot_phase(const HardwareModel model) noexcept {
     coincidence_ = ly_ == lyc_;
     lcd_startup_ = false;
     static_cast<void>(update_stat_line());
+}
+
+void Ppu::apply_sgb_command(
+    const std::array<std::uint8_t, 16 * 7>& packet,
+    const std::size_t size) noexcept {
+    if (!sgb_mode_ || size < 2) return;
+    const auto command = static_cast<unsigned>(packet[0] >> 3);
+    const auto rgb555 = [&](const std::size_t offset) {
+        return static_cast<std::uint16_t>(
+            packet[offset] | (static_cast<std::uint16_t>(packet[offset + 1]) << 8));
+    };
+    const auto set_palette_pair = [&](const unsigned first,
+                                      const unsigned second) {
+        if (size < 15) return;
+        const auto color_zero = rgb555(1);
+        // SGB PAL commands replace the shared color 0 in all four effective
+        // palettes, while the remaining three entries belong to the selected
+        // pair (matching the SNES-side command handler).
+        for (unsigned palette = 0; palette < 4; ++palette) {
+            sgb_palettes_[palette * 4] = color_zero;
+        }
+        for (unsigned color = 1; color < 4; ++color) {
+            sgb_palettes_[first * 4 + color] = rgb555(1 + color * 2);
+            sgb_palettes_[second * 4 + color] = rgb555(7 + color * 2);
+        }
+    };
+    switch (command) {
+    case 0x00: set_palette_pair(0, 1); break; // PAL01
+    case 0x01: set_palette_pair(2, 3); break; // PAL23
+    case 0x02: set_palette_pair(0, 3); break; // PAL03
+    case 0x03: set_palette_pair(1, 2); break; // PAL12
+    case 0x04: { // ATTR_BLK
+        if (size < 2) return;
+        const auto count = std::min<std::size_t>(packet[1], 18);
+        for (std::size_t index = 0; index < count; ++index) {
+            const auto offset = 2 + index * 6;
+            if (offset + 5 >= size) break;
+            const auto control = packet[offset];
+            const auto palettes = packet[offset + 1];
+            const auto inside = (control & 1U) != 0;
+            const auto middle = (control & 2U) != 0;
+            const auto outside = (control & 4U) != 0;
+            auto inside_palette = static_cast<std::uint8_t>(palettes & 3U);
+            auto middle_palette = static_cast<std::uint8_t>((palettes >> 2) & 3U);
+            auto outside_palette = static_cast<std::uint8_t>((palettes >> 4) & 3U);
+            if (inside && !middle && !outside) {
+                middle_palette = inside_palette;
+            } else if (outside && !middle && !inside) {
+                middle_palette = outside_palette;
+            }
+            const auto left = std::min<unsigned>(packet[offset + 2] & 0x1F, 19);
+            const auto top = std::min<unsigned>(packet[offset + 3] & 0x1F, 17);
+            const auto right = std::min<unsigned>(packet[offset + 4] & 0x1F, 19);
+            const auto bottom = std::min<unsigned>(packet[offset + 5] & 0x1F, 17);
+            for (unsigned y = 0; y < 18; ++y) {
+                for (unsigned x = 0; x < 20; ++x) {
+                    auto& attribute = sgb_attributes_[x + y * 20];
+                    if (x < left || x > right || y < top || y > bottom) {
+                        if (outside) attribute = outside_palette;
+                    } else if (x > left && x < right && y > top && y < bottom) {
+                        if (inside) attribute = inside_palette;
+                    } else if (middle) {
+                        attribute = middle_palette;
+                    }
+                }
+            }
+        }
+        break;
+    }
+    case 0x05: { // ATTR_LIN
+        const auto count = std::min<std::size_t>(packet[1], size - 2);
+        for (std::size_t index = 0; index < count; ++index) {
+            const auto value = packet[2 + index];
+            const auto palette = static_cast<std::uint8_t>((value >> 5) & 3U);
+            const auto line = static_cast<unsigned>(value & 0x1F);
+            if ((value & 0x80) != 0) {
+                if (line >= 18) continue;
+                for (unsigned x = 0; x < 20; ++x) sgb_attributes_[x + line * 20] = palette;
+            } else {
+                if (line >= 20) continue;
+                for (unsigned y = 0; y < 18; ++y) sgb_attributes_[line + y * 20] = palette;
+            }
+        }
+        break;
+    }
+    case 0x06: { // ATTR_DIV
+        if (size < 3) return;
+        const auto value = packet[1];
+        const auto high = static_cast<std::uint8_t>(value & 3U);
+        const auto low = static_cast<std::uint8_t>((value >> 2) & 3U);
+        const auto middle = static_cast<std::uint8_t>((value >> 4) & 3U);
+        const auto horizontal = (value & 0x40U) != 0;
+        const auto line = static_cast<unsigned>(packet[2] & 0x1F);
+        for (unsigned y = 0; y < 18; ++y) {
+            for (unsigned x = 0; x < 20; ++x) {
+                const auto coordinate = horizontal ? y : x;
+                sgb_attributes_[x + y * 20] = coordinate < line
+                                                   ? low
+                                                   : coordinate == line ? middle : high;
+            }
+        }
+        break;
+    }
+    case 0x07: { // ATTR_CHR
+        if (size < 6) return;
+        const auto count = std::min<std::size_t>(
+            static_cast<std::size_t>(packet[3] | (packet[4] << 8)),
+            (size - 6) * 4);
+        auto x = static_cast<unsigned>(packet[1]);
+        auto y = static_cast<unsigned>(packet[2]);
+        const auto vertical = packet[5] != 0;
+        for (std::size_t index = 0; index < count && x < 20 && y < 18; ++index) {
+            const auto palette = static_cast<std::uint8_t>(
+                (packet[6 + index / 4] >> (((~index) & 3U) * 2U)) & 3U);
+            sgb_attributes_[x + y * 20] = palette;
+            if (vertical) {
+                if (++y == 18) { y = 0; if (++x == 20) break; }
+            } else {
+                if (++x == 20) { x = 0; if (++y == 18) break; }
+            }
+        }
+        break;
+    }
+    case 0x16: // ATTR_SET has no transfer backing yet; retain current map.
+    default: break;
+    }
 }
 
 std::uint8_t Ppu::read_vram(const std::uint16_t address) const noexcept {
@@ -1069,6 +1208,9 @@ std::uint32_t Ppu::compose_pixel(
     auto result = cgb_mode_
                       ? cgb_palette_color(cgb_bg_palette_, background.palette,
                                           background.color)
+                      : sgb_mode_
+                          ? sgb_palette_color(sgb_attribute_for_pixel(x),
+                                              background.color)
                       : palette_color(bg_palette_, background.color,
                                       dmg_palette_.background);
     const auto& object = object_pixels_[x];
@@ -1085,7 +1227,10 @@ std::uint32_t Ppu::compose_pixel(
                      cgb_object_palette_,
                      static_cast<std::uint8_t>(object.attributes & 0x07),
                      object.color)
-               : palette_color(
+               : sgb_mode_
+                   ? sgb_palette_color(sgb_attribute_for_pixel(x),
+                                       object.color)
+                   : palette_color(
                      (object.attributes & 0x10) != 0 ? object_palette_1_
                                                      : object_palette_0_,
                      object.color,
@@ -1112,6 +1257,24 @@ std::uint32_t Ppu::palette_color(
     const std::uint8_t palette, const std::uint8_t color,
     const std::array<std::uint32_t, 4>& colors) const noexcept {
     return colors[(palette >> (color * 2)) & 0x03];
+}
+
+std::uint8_t Ppu::sgb_attribute_for_pixel(const unsigned x) const noexcept {
+    if (!sgb_mode_) return 0;
+    const auto tile_x = std::min<unsigned>(x / 8, 19);
+    const auto tile_y = std::min<unsigned>(ly_ / 8, 17);
+    return sgb_attributes_[tile_x + tile_y * 20] & 3U;
+}
+
+std::uint32_t Ppu::sgb_palette_color(const std::uint8_t palette,
+                                     const std::uint8_t color) const noexcept {
+    const auto rgb555 = sgb_palettes_[static_cast<std::size_t>(palette & 3U) * 4 +
+                                      (color & 3U)];
+    const auto expand = [](const unsigned component) {
+        return (component << 3) | (component >> 2);
+    };
+    return UINT32_C(0xFF000000) | (expand(rgb555 & 0x1F) << 16) |
+           (expand((rgb555 >> 5) & 0x1F) << 8) | expand((rgb555 >> 10) & 0x1F);
 }
 
 } // namespace gameboy

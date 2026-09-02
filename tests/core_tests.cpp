@@ -207,6 +207,57 @@ void test_cartridge_header() {
               blue_palette.background[3] == 0xFF000000 &&
               blue_palette.object_0 != blue_palette.background,
           "CGB compatibility palettes expand RGB555 and preserve layer colors");
+
+    auto sgb_rom = test_rom();
+    sgb_rom[0x146] = 0x03;
+    gameboy::Cartridge sgb_cartridge{sgb_rom};
+    check(sgb_cartridge.supports_sgb(),
+          "the cartridge header advertises Super Game Boy software");
+}
+
+void test_sgb_command_path() {
+    auto rom = test_rom();
+    rom[0x146] = 0x03;
+    gameboy::Emulator emulator{gameboy::Cartridge{std::move(rom)}};
+
+    // PAL01 is a one-packet command.  The packet carries a shared color 0
+    // followed by three colors for each of palettes 0 and 1.
+    std::array<std::uint8_t, 16> command{};
+    command[0] = 0x01;
+    command[1] = 0x1F; // RGB555 red
+    command[2] = 0x00;
+    command[3] = 0x00;
+    command[4] = 0x7C; // RGB555 blue
+    command[5] = 0xE0; // RGB555 green
+    command[6] = 0x03;
+    command[7] = 0xFF;
+    command[8] = 0x7F;
+    command[9] = 0x1F;
+    command[10] = 0x00;
+    command[11] = 0x00;
+    command[12] = 0x7C;
+    command[13] = 0xE0;
+    command[14] = 0x03;
+
+    auto write = [&](const std::uint8_t value) {
+        emulator.bus().write8(0xFF00, value);
+    };
+    write(0x30); // Arm and delimit the command.
+    write(0x00);
+    for (std::size_t bit = 0; bit < command.size() * 8; ++bit) {
+        write(0x30);
+        write((command[bit / 8] & (1U << (bit & 7U))) != 0 ? 0x10 : 0x20);
+    }
+    write(0x30);
+    write(0x20); // Zero delimiter commits the complete packet.
+
+    // The command path is end-to-end: JOYP decoding queues the packet and
+    // MemoryBus immediately applies it to the SGB PPU state.
+    emulator.bus().write8(0xFF40, 0x00);
+    emulator.bus().write8(0xFF40, 0x91);
+    emulator.bus().tick(70224);
+    check(emulator.framebuffer()[0] == 0xFFFF0000,
+          "SGB PAL01 packet updates the rendered RGB555 palette");
 }
 
 void test_rom_library_metadata_and_deduplication() {
@@ -4038,12 +4089,17 @@ void test_save_state_round_trip_and_validation() {
     constexpr std::size_t version_nineteen_apu_size = 6;
     constexpr std::size_t version_twenty_timing_size = 3;
     constexpr std::size_t version_twenty_one_pulse_timing_size = 10;
+    // Version 22 adds SGB joypad packet parser state and PPU palettes/
+    // attribute memory.  Strip it when constructing the legacy v1-v21
+    // fixtures below, just like the earlier version deltas.
+    constexpr std::size_t version_twenty_two_sgb_size = 237 + 393;
     constexpr std::size_t version_nine_fetcher_size =
         737 + version_ten_window_latch_size + version_eleven_fetcher_size +
         version_twelve_sprite_size + version_thirteen_sprite_fetch_size +
         version_fourteen_sprite_deadline_size + version_fifteen_sprite_render_size;
     auto legacy_saved = saved;
     legacy_saved.resize(legacy_saved.size() -
+                        version_twenty_two_sgb_size -
                         version_twenty_one_pulse_timing_size -
                         version_twenty_timing_size -
                         version_nineteen_apu_size -
@@ -4383,6 +4439,7 @@ void test_save_state_round_trip_and_validation() {
 
     auto version_sixteen = saved;
     version_sixteen.resize(version_sixteen.size() -
+                           version_twenty_two_sgb_size -
                            version_twenty_one_pulse_timing_size -
                            version_twenty_timing_size -
                            version_nineteen_apu_size -
@@ -4405,6 +4462,7 @@ void test_save_state_round_trip_and_validation() {
 
     auto version_seventeen = saved;
     version_seventeen.resize(version_seventeen.size() -
+                             version_twenty_two_sgb_size -
                              version_twenty_one_pulse_timing_size -
                              version_twenty_timing_size -
                              version_nineteen_apu_size -
@@ -4425,7 +4483,7 @@ void test_save_state_round_trip_and_validation() {
           "version 17 save states remain loadable after adding object deadlines");
 
     auto future_version = saved;
-    future_version[8] = 22;
+    future_version[8] = 23;
     auto rejected_version = false;
     try {
         emulator.load_state(future_version);
@@ -4476,6 +4534,7 @@ int main(const int argc, char** argv) {
             if (error) executable_directory.clear();
         }
         test_cartridge_header();
+        test_sgb_command_path();
         test_rom_library_metadata_and_deduplication();
         test_multicore_frontend_contract();
         test_scene_snapshot_contract();

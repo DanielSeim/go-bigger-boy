@@ -109,6 +109,8 @@ private:
     bool hdma_active_{};
     bool double_speed_{};
     bool speed_switch_requested_{};
+    std::array<std::uint8_t, Joypad::sgb_packet_size * Joypad::sgb_max_packets>
+        sgb_packet_{};
 };
 
 } // namespace gameboy

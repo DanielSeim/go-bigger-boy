@@ -7,8 +7,11 @@ namespace gameboy {
 Emulator::Emulator(Cartridge cartridge, const HardwareModel model)
     : bus_(std::move(cartridge)) {
     hardware_model_ = model == HardwareModel::automatic
-                          ? (bus_.cgb_mode() ? HardwareModel::cgb
-                                             : HardwareModel::dmg)
+                          ? (bus_.cgb_mode()
+                                 ? HardwareModel::cgb
+                                 : (bus_.cartridge().supports_sgb()
+                                        ? HardwareModel::sgb
+                                        : HardwareModel::dmg))
                           : model;
     automatic_dmg_palette_ = cgb_compatibility_palette(
         bus_.cartridge().cgb_compatibility_palette_id());

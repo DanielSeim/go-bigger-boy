@@ -495,6 +495,8 @@ public:
     // gesture recognizer can pick up changes without waiting for input.
     std::filesystem::file_time_type touch_settings_write_time{};
     bool touch_settings_write_time_valid{};
+    std::filesystem::file_time_type video_settings_write_time{};
+    bool video_settings_write_time_valid{};
 #endif
 };
 
@@ -2758,19 +2760,37 @@ bool configure_video_pipeline(SdlResources& sdl,
     const auto presentation = mode == gameboy::VideoMode::integer
                                   ? SDL_LOGICAL_PRESENTATION_INTEGER_SCALE
                                   : SDL_LOGICAL_PRESENTATION_LETTERBOX;
+    const auto logical_width = static_cast<int>(
+        gameboy::Ppu::screen_width * (sdl.split_screen ? 2U : 1U));
+    if (!SDL_SetRenderLogicalPresentation(sdl.renderer, logical_width,
+                                          static_cast<int>(gameboy::Ppu::screen_height),
+                                          presentation)) {
+        return false;
+    }
     const auto filtering = mode == gameboy::VideoMode::bilinear
                                ? SDL_SCALEMODE_LINEAR
                                : SDL_SCALEMODE_NEAREST;
-    if (!SDL_SetRenderLogicalPresentation(
-            sdl.renderer, static_cast<int>(gameboy::Ppu::screen_width *
-                                            (sdl.split_screen ? 2U : 1U)),
-            static_cast<int>(gameboy::Ppu::screen_height), presentation) ||
-        !SDL_SetTextureScaleMode(sdl.texture, filtering) ||
+    if (!SDL_SetTextureScaleMode(sdl.texture, filtering) ||
         !SDL_SetTextureScaleMode(sdl.link_texture, filtering)) {
         return false;
     }
     sdl.video_mode = mode;
     return true;
+}
+
+// Overlay rendering temporarily disables logical coordinates so controls and
+// the menu can use the full Android window. Restore only the presentation
+// transform afterwards; resetting texture filtering every frame is needlessly
+// expensive on mobile GPUs and made touch feedback feel delayed.
+bool restore_video_presentation(const SdlResources& sdl) {
+    const auto presentation = sdl.video_mode == gameboy::VideoMode::integer
+                                  ? SDL_LOGICAL_PRESENTATION_INTEGER_SCALE
+                                  : SDL_LOGICAL_PRESENTATION_LETTERBOX;
+    return SDL_SetRenderLogicalPresentation(
+        sdl.renderer,
+        static_cast<int>(gameboy::Ppu::screen_width *
+                         (sdl.split_screen ? 2U : 1U)),
+        static_cast<int>(gameboy::Ppu::screen_height), presentation);
 }
 
 #undef SDL_RenderDebugText
@@ -4093,6 +4113,7 @@ std::optional<std::size_t> touch_button_index(const float x, const float y,
     static_cast<void>(SDL_GetWindowSize(sdl.window, &width, &height));
     const auto pixel_x = x * static_cast<float>(width);
     const auto pixel_y = y * static_cast<float>(height);
+    const auto size = touch_game_scale(sdl) * scale;
     constexpr std::array<float, 4> widths{{42.0F, 24.0F, 24.0F, 22.0F}};
     constexpr std::array<float, 4> heights{{42.0F, 24.0F, 24.0F, 10.0F}};
     const auto inside = [&](const std::size_t control) {
@@ -4102,7 +4123,6 @@ std::optional<std::size_t> touch_button_index(const float x, const float y,
         const auto center_y = normalized_y * static_cast<float>(height);
         const auto dx = pixel_x - center_x;
         const auto dy = pixel_y - center_y;
-        const auto size = touch_game_scale(sdl) * scale;
         if (control == 0) {
             return std::abs(dx) <= widths[0] * size * 0.5F &&
                    std::abs(dy) <= heights[0] * size * 0.5F;
@@ -4194,6 +4214,27 @@ void refresh_touch_settings_if_changed(
         write_time != sdl.touch_settings_write_time) {
         refresh_touch_settings(sdl, preference_path);
     }
+}
+
+void refresh_video_mode_if_changed(
+    SdlResources& sdl, const std::filesystem::path& preference_path) {
+    std::error_code error;
+    const auto settings_path = portable_settings_path(preference_path);
+    const auto write_time = std::filesystem::last_write_time(settings_path,
+                                                               error);
+    if (error) return;
+    if (sdl.video_settings_write_time_valid &&
+        write_time == sdl.video_settings_write_time) {
+        return;
+    }
+
+    const auto mode = load_video_mode(preference_path);
+    if (mode != sdl.video_mode && !configure_video_pipeline(sdl, mode)) {
+        sdl_error("Could not apply the selected video pipeline");
+        return;
+    }
+    sdl.video_settings_write_time = write_time;
+    sdl.video_settings_write_time_valid = true;
 }
 
 std::pair<float, float> logical_touch_position(const SDL_TouchFingerEvent& event,
@@ -5256,14 +5297,8 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
 #ifdef __ANDROID__
         case SDL_EVENT_FINGER_DOWN:
         case SDL_EVENT_FINGER_MOTION:
-        case SDL_EVENT_FINGER_UP: {
-            // The Android settings activity can update settings.ini while
-            // the SDL activity remains alive underneath it.  Refresh the
-            // cached touch options before classifying a new gesture so the
-            // voxel-orbit toggle takes effect without restarting the game.
-            if (event.type == SDL_EVENT_FINGER_DOWN && emulator != nullptr) {
-                refresh_touch_settings(sdl, preference_path);
-            }
+        case SDL_EVENT_FINGER_UP:
+        case SDL_EVENT_FINGER_CANCELED: {
             const auto finger = event.tfinger.fingerID;
             const auto [touch_x, touch_y] = window_touch_position(event.tfinger);
             if (dashboard_visible) {
@@ -5290,7 +5325,8 @@ void process_events(std::unique_ptr<gameboy::Emulator>& emulator,
                 [finger](const SdlResources::TouchPoint& point) {
                     return point.id == finger;
                 });
-            if (event.type == SDL_EVENT_FINGER_UP) {
+            if (event.type == SDL_EVENT_FINGER_UP ||
+                event.type == SDL_EVENT_FINGER_CANCELED) {
                 if (existing != sdl.touches.end()) sdl.touches.erase(existing);
             } else if (existing == sdl.touches.end()) {
                 const auto menu_tap = android_menu_touch_hit(sdl, touch_x,
@@ -6593,13 +6629,38 @@ void present_menu_button(SdlResources& sdl) {
     static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
                                                  SDL_BLENDMODE_NONE));
 #ifdef __ANDROID__
-    if (!configure_video_pipeline(sdl, sdl.video_mode)) {
+    if (!restore_video_presentation(sdl)) {
         sdl_error("Could not restore game presentation after menu button");
     }
 #endif
 }
 
 #ifdef __ANDROID__
+void draw_touch_circle(SDL_Renderer* renderer, const float center_x,
+                       const float center_y, const float radius,
+                       const SDL_Color color) {
+    static_cast<void>(SDL_SetRenderDrawColor(renderer, color.r, color.g,
+                                             color.b, color.a));
+    const auto top = static_cast<int>(std::ceil(center_y - radius));
+    const auto bottom = static_cast<int>(std::floor(center_y + radius));
+    for (auto y = top; y <= bottom; ++y) {
+        const auto dy = static_cast<float>(y) - center_y;
+        const auto span = std::sqrt(std::max(0.0F, radius * radius - dy * dy));
+        const SDL_FRect row{center_x - span, static_cast<float>(y), span * 2.0F,
+                            1.0F};
+        static_cast<void>(SDL_RenderFillRect(renderer, &row));
+    }
+}
+
+void draw_touch_label(SDL_Renderer* renderer, const float center_x,
+                      const float center_y, const char* label) {
+    if (label == nullptr) return;
+    const auto length = static_cast<float>(std::char_traits<char>::length(label));
+    static_cast<void>(SDL_SetRenderDrawColor(renderer, 248, 252, 255, 235));
+    static_cast<void>(SDL_RenderDebugText(renderer, center_x - length * 4.0F,
+                                          center_y - 4.0F, label));
+}
+
 void present_touch_controls(SdlResources& sdl) {
     const auto scale = std::clamp(sdl.touch_settings.scale,
                                   minimum_touch_scale, maximum_touch_scale);
@@ -6618,19 +6679,24 @@ void present_touch_controls(SdlResources& sdl) {
             sdl.renderer, 0, 0, SDL_LOGICAL_PRESENTATION_DISABLED)) {
         sdl_error("Could not prepare touch controls");
     }
-    const auto draw = [&sdl, opacity](const SDL_FRect& rect,
-                                      const bool pressed) {
-        const auto alpha = static_cast<std::uint8_t>(std::clamp(
-            opacity * 255.0F + (pressed ? 35.0F : 0.0F), 0.0F,
-            255.0F));
-        static_cast<void>(SDL_SetRenderDrawColor(
-            sdl.renderer, pressed ? 139 : 220, pressed ? 207 : 235,
-            pressed ? 105 : 220, alpha));
-        static_cast<void>(SDL_RenderFillRect(sdl.renderer, &rect));
-        static_cast<void>(SDL_SetRenderDrawColor(
-            sdl.renderer, pressed ? 236 : 248, pressed ? 224 : 252,
-            pressed ? 148 : 242, alpha));
-        static_cast<void>(SDL_RenderRect(sdl.renderer, &rect));
+    const auto alpha = static_cast<std::uint8_t>(std::clamp(
+        opacity * 255.0F, 0.0F, 255.0F));
+    const auto draw_circle_button = [&](const SDL_FPoint point, const float radius,
+                                        const bool pressed, const char* label) {
+        // A small offset shadow separates controls from bright game scenes;
+        // the pressed state uses a warm accent and a slightly smaller face,
+        // giving immediate visual feedback without waiting for animation.
+        draw_touch_circle(sdl.renderer, point.x + 2.0F, point.y + 3.0F,
+                          radius + 2.0F, SDL_Color{0, 0, 0, 95});
+        const auto face = pressed ? SDL_Color{244, 173, 67, alpha}
+                                  : SDL_Color{44, 93, 143, alpha};
+        draw_touch_circle(sdl.renderer, point.x, point.y,
+                          radius - (pressed ? 1.5F : 0.0F), face);
+        draw_touch_circle(sdl.renderer, point.x, point.y - radius * 0.18F,
+                          radius * 0.72F, pressed
+                              ? SDL_Color{255, 211, 124, 75}
+                              : SDL_Color{126, 181, 224, 72});
+        draw_touch_label(sdl.renderer, point.x, point.y, label);
     };
 
     const auto point_for = [&sdl, window_width, window_height](
@@ -6642,26 +6708,62 @@ void present_touch_controls(SdlResources& sdl) {
     const auto dpad = point_for(0);
     const auto dpad_arm = 21.0F * size;
     const auto dpad_thickness = 14.0F * size;
-    draw(SDL_FRect{dpad.x, dpad.y - dpad_thickness * 0.5F, dpad_arm,
-                   dpad_thickness}, sdl.touch_buttons[0]);
-    draw(SDL_FRect{dpad.x - dpad_arm, dpad.y - dpad_thickness * 0.5F,
-                   dpad_arm, dpad_thickness}, sdl.touch_buttons[1]);
-    draw(SDL_FRect{dpad.x - dpad_thickness * 0.5F, dpad.y - dpad_arm,
-                   dpad_thickness, dpad_arm}, sdl.touch_buttons[2]);
-    draw(SDL_FRect{dpad.x - dpad_thickness * 0.5F, dpad.y, dpad_thickness,
-                   dpad_arm}, sdl.touch_buttons[3]);
-    const std::array<float, 4> widths{{24.0F, 24.0F, 22.0F, 22.0F}};
-    const std::array<float, 4> heights{{24.0F, 24.0F, 10.0F, 10.0F}};
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 0, 0, 0, 95));
+    const SDL_FRect dpad_shadow{dpad.x - dpad_arm + 2.0F,
+                                dpad.y - dpad_thickness * 0.5F + 3.0F,
+                                dpad_arm * 2.0F, dpad_thickness};
+    static_cast<void>(SDL_RenderFillRect(sdl.renderer, &dpad_shadow));
+    const SDL_FRect dpad_vertical_shadow{dpad.x - dpad_thickness * 0.5F + 2.0F,
+                                         dpad.y - dpad_arm + 3.0F,
+                                         dpad_thickness, dpad_arm * 2.0F};
+    static_cast<void>(SDL_RenderFillRect(sdl.renderer, &dpad_vertical_shadow));
+    const auto draw_dpad_arm = [&](const SDL_FRect& rect, const bool pressed) {
+        static_cast<void>(SDL_SetRenderDrawColor(
+            sdl.renderer, pressed ? 244 : 44, pressed ? 173 : 93,
+            pressed ? 67 : 143, alpha));
+        static_cast<void>(SDL_RenderFillRect(sdl.renderer, &rect));
+        static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 126, 181, 224,
+                                                 pressed ? 210 : 130));
+        static_cast<void>(SDL_RenderRect(sdl.renderer, &rect));
+    };
+    draw_dpad_arm(SDL_FRect{dpad.x, dpad.y - dpad_thickness * 0.5F, dpad_arm,
+                            dpad_thickness}, sdl.touch_buttons[0]);
+    draw_dpad_arm(SDL_FRect{dpad.x - dpad_arm, dpad.y - dpad_thickness * 0.5F,
+                            dpad_arm, dpad_thickness}, sdl.touch_buttons[1]);
+    draw_dpad_arm(SDL_FRect{dpad.x - dpad_thickness * 0.5F, dpad.y - dpad_arm,
+                            dpad_thickness, dpad_arm}, sdl.touch_buttons[2]);
+    draw_dpad_arm(SDL_FRect{dpad.x - dpad_thickness * 0.5F, dpad.y,
+                            dpad_thickness, dpad_arm}, sdl.touch_buttons[3]);
+    draw_touch_circle(sdl.renderer, dpad.x, dpad.y, dpad_thickness * 0.56F,
+                      SDL_Color{28, 63, 98, alpha});
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 210, 235, 250, 210));
+    const auto chevron = [&](const float x1, const float y1, const float x2,
+                             const float y2, const float x3, const float y3) {
+        static_cast<void>(SDL_RenderLine(sdl.renderer, x1, y1, x2, y2));
+        static_cast<void>(SDL_RenderLine(sdl.renderer, x2, y2, x3, y3));
+    };
+    const auto arrow = dpad_thickness * 0.28F;
+    chevron(dpad.x - arrow, dpad.y - dpad_arm * 0.62F + arrow,
+            dpad.x, dpad.y - dpad_arm * 0.62F,
+            dpad.x + arrow, dpad.y - dpad_arm * 0.62F + arrow);
+    chevron(dpad.x - arrow, dpad.y + dpad_arm * 0.62F - arrow,
+            dpad.x, dpad.y + dpad_arm * 0.62F,
+            dpad.x + arrow, dpad.y + dpad_arm * 0.62F - arrow);
+    chevron(dpad.x - dpad_arm * 0.62F + arrow, dpad.y - arrow,
+            dpad.x - dpad_arm * 0.62F, dpad.y,
+            dpad.x - dpad_arm * 0.62F + arrow, dpad.y + arrow);
+    chevron(dpad.x + dpad_arm * 0.62F - arrow, dpad.y - arrow,
+            dpad.x + dpad_arm * 0.62F, dpad.y,
+            dpad.x + dpad_arm * 0.62F - arrow, dpad.y + arrow);
+    const std::array<float, 4> radii{{12.0F, 12.0F, 11.0F, 11.0F}};
+    const std::array<const char*, 4> labels{{"A", "B", "SEL", "START"}};
     for (std::size_t control = 1; control < touch_control_count; ++control) {
         const auto point = point_for(control);
-        const auto size_index = control - 1;
-        const auto rect_width = widths[size_index] * size;
-        const auto rect_height = heights[size_index] * size;
-        draw(SDL_FRect{point.x - rect_width * 0.5F,
-                       point.y - rect_height * 0.5F, rect_width, rect_height},
-             sdl.touch_buttons[control + 3]);
+        const auto radius = radii[control - 1] * size;
+        draw_circle_button(point, radius, sdl.touch_buttons[control + 3],
+                           labels[control - 1]);
     }
-    if (!configure_video_pipeline(sdl, sdl.video_mode)) {
+    if (!restore_video_presentation(sdl)) {
         sdl_error("Could not restore game presentation");
     }
     static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
@@ -8191,8 +8293,10 @@ int main(int argc, char** argv) {
 #ifdef __ANDROID__
             // Settings are edited by the native Android activity while this
             // SDL activity may stay alive underneath it. Poll before event
-            // handling and rendering so menu placement and voxel orbit
-            // preferences take effect immediately, even without a touch.
+            // handling and rendering so the video pipeline, menu placement,
+            // and voxel orbit preferences take effect immediately, even
+            // without a touch.
+            refresh_video_mode_if_changed(sdl, preference_path);
             refresh_touch_settings_if_changed(sdl, preference_path);
 #endif
 #ifndef __ANDROID__

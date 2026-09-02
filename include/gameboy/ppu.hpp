@@ -22,9 +22,13 @@ public:
 
     void set_cgb_mode(bool enabled) noexcept;
     void set_cgb_hardware(bool enabled) noexcept;
+    void set_sgb_mode(bool enabled) noexcept;
     [[nodiscard]] bool cgb_mode() const noexcept;
     void set_dmg_palette(const DmgPalette& palette) noexcept;
     void initialize_post_boot_phase(HardwareModel model) noexcept;
+    void apply_sgb_command(
+        const std::array<std::uint8_t, 16 * 7>& packet,
+        std::size_t size) noexcept;
 
     [[nodiscard]] std::uint8_t read_vram(std::uint16_t address) const noexcept;
     void write_vram(std::uint16_t address, std::uint8_t value) noexcept;
@@ -97,6 +101,9 @@ private:
     [[nodiscard]] std::uint32_t cgb_palette_color(
         const std::array<std::uint8_t, 0x40>& palette, std::uint8_t number,
         std::uint8_t color) const noexcept;
+    [[nodiscard]] std::uint32_t sgb_palette_color(std::uint8_t palette,
+                                                  std::uint8_t color) const noexcept;
+    [[nodiscard]] std::uint8_t sgb_attribute_for_pixel(unsigned x) const noexcept;
 
     std::array<std::uint8_t, 0x2000> vram_{};
     std::unique_ptr<std::array<std::uint8_t, 0x2000>> cgb_vram_;
@@ -130,10 +137,17 @@ private:
     bool window_rendered_this_line_{};
     bool cgb_mode_{};
     bool cgb_hardware_{};
+    bool sgb_mode_{};
     bool coincidence_{};
     bool lcd_startup_{};
     bool stat_line_{};
     bool frame_ready_{};
+
+    // SGB supplies four 4-color RGB555 palettes and a 20x18 tile attribute
+    // map through commands sent over JOYP. Keep this state separate from CGB
+    // palettes so monochrome rendering remains unchanged on ordinary models.
+    std::array<std::uint16_t, 16> sgb_palettes_{};
+    std::array<std::uint8_t, 20 * 18> sgb_attributes_{};
 
     std::array<BackgroundPixel, 16> background_fifo_{};
     // Background samples that have already reached the output pipeline. A

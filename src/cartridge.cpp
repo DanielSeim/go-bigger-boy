@@ -527,6 +527,10 @@ bool Cartridge::supports_cgb() const noexcept {
     return (rom_[0x143] & 0x80) != 0;
 }
 
+bool Cartridge::supports_sgb() const noexcept {
+    return rom_.size() > 0x146 && rom_[0x146] == 0x03;
+}
+
 bool Cartridge::requires_cgb() const noexcept {
     return (rom_[0x143] & 0xC0) == 0xC0;
 }

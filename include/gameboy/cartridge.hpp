@@ -30,6 +30,10 @@ public:
     [[nodiscard]] std::string title() const;
     [[nodiscard]] std::uint8_t type() const noexcept;
     [[nodiscard]] bool supports_cgb() const noexcept;
+    // Header 0x146 advertises software that can use Super Game Boy
+    // enhancements.  This is a capability flag, not a requirement: the
+    // cartridge remains playable on ordinary monochrome hardware.
+    [[nodiscard]] bool supports_sgb() const noexcept;
     [[nodiscard]] bool requires_cgb() const noexcept;
     [[nodiscard]] std::uint8_t cgb_compatibility_palette_id() const noexcept;
     [[nodiscard]] std::size_t rom_size() const noexcept;

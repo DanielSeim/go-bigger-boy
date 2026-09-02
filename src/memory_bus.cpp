@@ -34,6 +34,10 @@ void MemoryBus::initialize_post_boot(const HardwareModel model) noexcept {
                 cgb_hardware_
             ? 0x30
             : 0x00));
+    // Do not interpret the post-boot JOYP initialization write as the start
+    // of an SGB command packet. Enable the parser only after that write.
+    joypad_.set_sgb_mode(model == HardwareModel::sgb ||
+                         model == HardwareModel::sgb2);
     io_[0x0F] = 0xE1;
     static_cast<void>(ppu_.write_register(0xFF42, 0x00));
     static_cast<void>(ppu_.write_register(0xFF43, 0x00));
@@ -180,6 +184,10 @@ void MemoryBus::write8(const std::uint16_t address, const std::uint8_t value) no
     } else if (address == 0xFF00) {
         if (joypad_.write(value)) {
             request_interrupt(4);
+        }
+        std::size_t packet_size = 0;
+        if (joypad_.take_sgb_packet(sgb_packet_, packet_size)) {
+            ppu_.apply_sgb_command(sgb_packet_, packet_size);
         }
     } else if (address == 0xFF01) {
         serial_.write_data(value);

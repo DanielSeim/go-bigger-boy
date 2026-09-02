@@ -13,7 +13,7 @@ namespace {
 constexpr std::array<std::uint8_t, 8> state_magic{
     'G', 'B', 'B', 'S', 'T', 'A', 'T', 'E',
 };
-constexpr std::uint32_t state_version = 21;
+constexpr std::uint32_t state_version = 22;
 constexpr std::uint32_t oldest_supported_state_version = 1;
 constexpr std::size_t maximum_state_size = 2 * 1024 * 1024;
 constexpr std::size_t maximum_serial_output = 1024 * 1024;
@@ -420,6 +420,20 @@ private:
         writer.boolean(bus.apu_.pulse1_.just_reloaded);
         writer.u32(bus.apu_.pulse2_.period);
         writer.boolean(bus.apu_.pulse2_.just_reloaded);
+        // Version 22 SGB state is appended as a single trailing block so all
+        // previous save-state versions retain their original field offsets.
+        writer.boolean(bus.joypad_.sgb_mode_);
+        writer.boolean(bus.joypad_.sgb_ready_for_pulse_);
+        writer.boolean(bus.joypad_.sgb_ready_for_write_);
+        writer.boolean(bus.joypad_.sgb_ready_for_stop_);
+        writer.u32(static_cast<std::uint32_t>(bus.joypad_.sgb_bit_count_));
+        write_bytes(writer, bus.joypad_.sgb_command_);
+        write_bytes(writer, bus.joypad_.sgb_packet_);
+        writer.boolean(bus.joypad_.sgb_packet_ready_);
+        writer.u32(static_cast<std::uint32_t>(bus.joypad_.sgb_packet_bytes_));
+        writer.boolean(bus.ppu_.sgb_mode_);
+        for (const auto color : bus.ppu_.sgb_palettes_) writer.u16(color);
+        write_bytes(writer, bus.ppu_.sgb_attributes_);
     }
 
     static void read_bus(Reader& reader, MemoryBus& bus,
@@ -802,6 +816,33 @@ private:
             bus.apu_.pulse1_.just_reloaded = false;
             bus.apu_.pulse2_.period = 0;
             bus.apu_.pulse2_.just_reloaded = false;
+        }
+        if (version >= 22) {
+            bus.joypad_.sgb_mode_ = reader.boolean();
+            bus.joypad_.sgb_ready_for_pulse_ = reader.boolean();
+            bus.joypad_.sgb_ready_for_write_ = reader.boolean();
+            bus.joypad_.sgb_ready_for_stop_ = reader.boolean();
+            bus.joypad_.sgb_bit_count_ = reader.u32();
+            read_bytes(reader, bus.joypad_.sgb_command_);
+            read_bytes(reader, bus.joypad_.sgb_packet_);
+            bus.joypad_.sgb_packet_ready_ = reader.boolean();
+            bus.joypad_.sgb_packet_bytes_ = reader.u32();
+            if (bus.joypad_.sgb_bit_count_ > bus.joypad_.sgb_command_.size() * 8 ||
+                bus.joypad_.sgb_packet_bytes_ > bus.joypad_.sgb_packet_.size()) {
+                throw SaveStateError("Save state contains invalid SGB joypad state");
+            }
+            bus.ppu_.sgb_mode_ = reader.boolean();
+            for (auto& color : bus.ppu_.sgb_palettes_) color = reader.u16();
+            read_bytes(reader, bus.ppu_.sgb_attributes_);
+        } else {
+            bus.joypad_.sgb_mode_ = false;
+            bus.joypad_.reset_sgb_packet();
+            bus.joypad_.sgb_packet_.fill(0);
+            bus.joypad_.sgb_packet_ready_ = false;
+            bus.joypad_.sgb_packet_bytes_ = 0;
+            bus.ppu_.sgb_mode_ = false;
+            bus.ppu_.sgb_palettes_.fill(0);
+            bus.ppu_.sgb_attributes_.fill(0);
         }
         // The printer represents an external device and is deliberately not
         // embedded in emulator save states. Loading a state starts a fresh
