@@ -7959,6 +7959,9 @@ int main(int argc, char** argv) {
         if (dashboard_visible) SDL_HideWindow(sdl.window);
 #endif
         std::size_t dashboard_selection = 0;
+        // ROMs selected in the native dashboard wait for the update check to
+        // finish so an available update can be offered before the ROM boots.
+        bool pending_rom_from_dashboard = false;
         std::uint64_t print_sequence = 0;
         RewindHistory rewind_history;
 #ifndef __ANDROID__
@@ -8013,8 +8016,7 @@ int main(int argc, char** argv) {
             }
 #endif
 #ifdef _WIN32
-            if (dashboard_visible && update_check_complete &&
-                !available_update && !update_download) {
+            if (dashboard_visible && !update_download) {
                 save_game_window_geometry(sdl.window, preference_path);
                 SDL_HideWindow(sdl.window);
                 gbb_desktop::KeyboardBindings dashboard_bindings{};
@@ -8090,6 +8092,7 @@ int main(int argc, char** argv) {
                 switch (result.action) {
                 case gbb_desktop::DashboardResultAction::open_rom:
                     pending_rom = result.rom_path;
+                    pending_rom_from_dashboard = true;
                     dashboard_visible = false;
                     break;
                 case gbb_desktop::DashboardResultAction::resume:
@@ -8222,7 +8225,76 @@ int main(int argc, char** argv) {
                 reset_requested = false;
             }
 
-            if (pending_rom) {
+#ifndef __ANDROID__
+            // Handle the update offer before loading a ROM selected from the
+            // dashboard.  The dashboard itself is a modal native window, so
+            // this runs as soon as it returns with the user's selection.
+            if (available_update && !dialog_active(dialog) && !configuring) {
+                if (offer_update(*available_update, emulator.get(), sdl)) {
+                    try {
+                        const auto [root, executable] = installation_paths();
+                        if (!installation_is_writable(root)) {
+                            throw std::runtime_error(
+                                "The installation directory is not writable. "
+                                "Install GBB in a user-writable folder to use "
+                                "automatic updates.");
+                        }
+                        const auto directory =
+                            (preference_path.empty()
+                                 ? std::filesystem::temp_directory_path() /
+                                       "go-bigger-boy"
+                                 : preference_path) /
+                            "updates" / available_update->version;
+                        update_download =
+                            std::make_unique<gbb_desktop::UpdateDownload>(
+                                *available_update, directory);
+                        static_cast<void>(SDL_SetWindowTitle(
+                            sdl.window,
+                            "Go Bigger Boy (GBB) - Downloading update..."));
+                    } catch (const std::exception& error) {
+                        show_error(sdl.window, error.what());
+                    }
+                }
+                available_update.reset();
+                next_frame = Clock::now();
+            }
+
+            if (update_download) {
+                std::optional<gbb_desktop::DownloadedUpdate> downloaded;
+                std::string download_error;
+                if (update_download->take_result(downloaded, download_error)) {
+                    update_download.reset();
+                    if (!download_error.empty() || !downloaded) {
+                        show_error(sdl.window,
+                                   download_error.empty()
+                                       ? "The update download failed."
+                                       : download_error);
+                        update_window_title(sdl.window, current_rom, paused,
+                                            configuring);
+                    } else {
+                        try {
+                            const auto [root, executable] = installation_paths();
+                            std::string installer_error;
+                            if (!gbb_desktop::launch_update_installer(
+                                    *downloaded, root, executable,
+                                    installer_error)) {
+                                throw std::runtime_error(installer_error);
+                            }
+                            running = false;
+                        } catch (const std::exception& error) {
+                            show_error(sdl.window, error.what());
+                        }
+                    }
+                }
+            }
+#endif
+
+            if (pending_rom &&
+#ifndef __ANDROID__
+                (!pending_rom_from_dashboard || update_check_complete) &&
+                !update_download &&
+#endif
+                running) {
                 try {
 #ifndef __ANDROID__
                     if (remote_link.active()) {
@@ -8284,6 +8356,7 @@ int main(int argc, char** argv) {
                     }
                 }
                 pending_rom.reset();
+                pending_rom_from_dashboard = false;
 #ifdef __ANDROID__
                 pending_rom_name.clear();
 #endif
@@ -8422,68 +8495,6 @@ int main(int argc, char** argv) {
                 } catch (const std::exception& error) {
                     input_movie.stop(emulator.get());
                     show_error(sdl.window, error.what());
-                }
-            }
-#endif
-
-#ifndef __ANDROID__
-            if (available_update && !dialog_active(dialog) && !configuring &&
-                !pending_rom) {
-                if (offer_update(*available_update, emulator.get(), sdl)) {
-                    try {
-                        const auto [root, executable] = installation_paths();
-                        if (!installation_is_writable(root)) {
-                            throw std::runtime_error(
-                                "The installation directory is not writable. "
-                                "Install GBB in a user-writable folder to use "
-                                "automatic updates.");
-                        }
-                        const auto directory =
-                            (preference_path.empty()
-                                 ? std::filesystem::temp_directory_path() /
-                                       "go-bigger-boy"
-                                 : preference_path) /
-                            "updates" / available_update->version;
-                        update_download =
-                            std::make_unique<gbb_desktop::UpdateDownload>(
-                                *available_update, directory);
-                        static_cast<void>(SDL_SetWindowTitle(
-                            sdl.window,
-                            "Go Bigger Boy (GBB) - Downloading update..."));
-                    } catch (const std::exception& error) {
-                        show_error(sdl.window, error.what());
-                    }
-                }
-                available_update.reset();
-                next_frame = Clock::now();
-            }
-
-            if (update_download) {
-                std::optional<gbb_desktop::DownloadedUpdate> downloaded;
-                std::string download_error;
-                if (update_download->take_result(downloaded, download_error)) {
-                    update_download.reset();
-                    if (!download_error.empty() || !downloaded) {
-                        show_error(sdl.window,
-                                   download_error.empty()
-                                       ? "The update download failed."
-                                       : download_error);
-                        update_window_title(sdl.window, current_rom, paused,
-                                            configuring);
-                    } else {
-                        try {
-                            const auto [root, executable] = installation_paths();
-                            std::string installer_error;
-                            if (!gbb_desktop::launch_update_installer(
-                                    *downloaded, root, executable,
-                                    installer_error)) {
-                                throw std::runtime_error(installer_error);
-                            }
-                            running = false;
-                        } catch (const std::exception& error) {
-                            show_error(sdl.window, error.what());
-                        }
-                    }
                 }
             }
 #endif
