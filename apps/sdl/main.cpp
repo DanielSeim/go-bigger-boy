@@ -8533,9 +8533,11 @@ int main(int argc, char** argv) {
             constexpr auto debugger_paused = false;
 #endif
             if (emulator && !debugger_stepped && !paused && !debugger_paused &&
-                !dashboard_visible && !configuring && !cheat_manager.visible() &&
-                !cheat_manager.fetching() &&
-                !dialog_active(dialog)) {
+                !dashboard_visible && !configuring
+#ifndef __ANDROID__
+                && !cheat_manager.visible() && !cheat_manager.fetching()
+#endif
+                && !dialog_active(dialog)) {
                 if (rewind && link_emulator == nullptr) {
                     if (!rewind_history.empty()) {
                         auto state = std::move(rewind_history.back());
