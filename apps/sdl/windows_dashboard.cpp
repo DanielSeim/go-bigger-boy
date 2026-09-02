@@ -1,12 +1,14 @@
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#endif
+
 #include "windows_dashboard.hpp"
 #include "resource.h"
 #include "update_checker.hpp"
 
 #ifdef _WIN32
-
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
 
 #include <SDL3/SDL.h>
 
