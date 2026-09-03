@@ -4241,8 +4241,20 @@ void refresh_display_palette_if_changed(
     const auto write_time = std::filesystem::last_write_time(settings_path,
                                                                error);
     if (error) return;
+    const auto apply_palette = [&]() {
+        const auto compatibility =
+            gameboy::display_palettes[display_palette].cgb_compatibility;
+        if (emulator) emulator->set_dmg_compatibility_colors(compatibility);
+        if (link_emulator) {
+            link_emulator->set_dmg_compatibility_colors(compatibility);
+        }
+    };
     if (sdl.palette_settings_write_time_valid &&
         write_time == sdl.palette_settings_write_time) {
+        // Save-state loads restore PPU timing and registers but intentionally
+        // do not serialize the presentation palette. Reapply the selected
+        // palette even when settings.ini itself has not changed.
+        apply_palette();
         return;
     }
 
@@ -4250,13 +4262,8 @@ void refresh_display_palette_if_changed(
     if (palette < gameboy::display_palettes.size() &&
         palette != display_palette) {
         display_palette = palette;
-        const auto& compatibility =
-            gameboy::display_palettes[display_palette].cgb_compatibility;
-        if (emulator) emulator->set_dmg_compatibility_colors(compatibility);
-        if (link_emulator) {
-            link_emulator->set_dmg_compatibility_colors(compatibility);
-        }
     }
+    apply_palette();
     sdl.palette_settings_write_time = write_time;
     sdl.palette_settings_write_time_valid = true;
 }
