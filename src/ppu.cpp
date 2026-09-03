@@ -13,7 +13,18 @@ namespace {
 constexpr std::array<std::uint32_t, 4> dmg_colors{
     0xFFFFFFFF, 0xFFAAAAAA, 0xFF555555, 0xFF000000,
 };
+constexpr std::array<std::uint16_t, 16> default_sgb_palettes{
+    0x7FFF, 0x5294, 0x294A, 0x0000,
+    0x7FFF, 0x5294, 0x294A, 0x0000,
+    0x7FFF, 0x5294, 0x294A, 0x0000,
+    0x7FFF, 0x5294, 0x294A, 0x0000,
+};
 constexpr unsigned object_cancellation_tail_dots = 10;
+
+bool sgb_palette_is_default(
+    const std::array<std::uint16_t, 16>& palettes) noexcept {
+    return palettes == default_sgb_palettes;
+}
 
 std::FILE* ppu_window_trace_stream() noexcept {
     // Opt-in diagnostic for investigating DMG window timing. A path appends
@@ -59,10 +70,7 @@ void Ppu::set_sgb_mode(const bool enabled) noexcept {
     if (!enabled) return;
     // SGB starts with the same four neutral colors as a DMG until the game
     // sends its first PAL command.
-    sgb_palettes_ = {0x7FFF, 0x5294, 0x294A, 0x0000,
-                     0x7FFF, 0x5294, 0x294A, 0x0000,
-                     0x7FFF, 0x5294, 0x294A, 0x0000,
-                     0x7FFF, 0x5294, 0x294A, 0x0000};
+    sgb_palettes_ = default_sgb_palettes;
     sgb_attributes_.fill(0);
     sgb_border_tiles_->fill(0);
     sgb_border_pct_->fill(0);
@@ -1311,14 +1319,24 @@ Ppu::BackgroundPixel Ppu::background_pixel_at_screen(
 
 std::uint32_t Ppu::compose_pixel(
     const unsigned x, const BackgroundPixel background) const noexcept {
-    auto result = cgb_mode_
-                      ? cgb_palette_color(cgb_bg_palette_, background.palette,
-                                          background.color)
-                      : sgb_mode_
-                          ? sgb_palette_color(sgb_attribute_for_pixel(x),
-                                              background.color)
-                      : palette_color(bg_palette_, background.color,
-                                      dmg_palette_.background);
+    // SGB-capable DMG cartridges start with a neutral SGB palette and may
+    // never issue a PAL command (for example while a state is captured in a
+    // transition). In that case use the configured DMG palette so the
+    // automatic cartridge compatibility colors still work. A real SGB PAL
+    // command changes the latched values and immediately restores native SGB
+    // rendering.
+    const auto use_sgb_palette = sgb_mode_ && !sgb_palette_is_default(sgb_palettes_);
+    std::uint32_t result{};
+    if (cgb_mode_) {
+        result = cgb_palette_color(cgb_bg_palette_, background.palette,
+                                   background.color);
+    } else if (use_sgb_palette) {
+        result = sgb_palette_color(sgb_attribute_for_pixel(x),
+                                   background.color);
+    } else {
+        result = palette_color(bg_palette_, background.color,
+                               dmg_palette_.background);
+    }
     const auto& object = object_pixels_[x];
     if ((lcdc_ & 0x02) == 0 || !object.valid) return result;
     const auto background_blocks_object =
@@ -1328,20 +1346,20 @@ std::uint32_t Ppu::compose_pixel(
                    (background.priority || (object.attributes & 0x80) != 0)
              : (object.attributes & 0x80) != 0);
     if (background_blocks_object) return result;
-    return cgb_mode_
-               ? cgb_palette_color(
-                     cgb_object_palette_,
-                     static_cast<std::uint8_t>(object.attributes & 0x07),
-                     object.color)
-               : sgb_mode_
-                   ? sgb_palette_color(sgb_attribute_for_pixel(x),
-                                       object.color)
-                   : palette_color(
-                     (object.attributes & 0x10) != 0 ? object_palette_1_
-                                                     : object_palette_0_,
-                     object.color,
-                     (object.attributes & 0x10) != 0 ? dmg_palette_.object_1
-                                                     : dmg_palette_.object_0);
+    if (cgb_mode_) {
+        return cgb_palette_color(
+            cgb_object_palette_,
+            static_cast<std::uint8_t>(object.attributes & 0x07),
+            object.color);
+    }
+    if (use_sgb_palette) {
+        return sgb_palette_color(sgb_attribute_for_pixel(x), object.color);
+    }
+    return palette_color(
+        (object.attributes & 0x10) != 0 ? object_palette_1_ : object_palette_0_,
+        object.color,
+        (object.attributes & 0x10) != 0 ? dmg_palette_.object_1
+                                        : dmg_palette_.object_0);
 }
 
 std::uint32_t Ppu::cgb_palette_color(

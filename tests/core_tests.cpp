@@ -309,6 +309,24 @@ void test_sgb_command_path() {
           "SGB MASK_EN latches the black mask mode");
 }
 
+void test_sgb_default_palette_uses_display_setting() {
+    auto rom = test_rom();
+    rom[0x146] = 0x03;
+    gameboy::Emulator emulator{gameboy::Cartridge{std::move(rom)}};
+    gameboy::DmgPalette layer_colors{
+        {0xFFFF0000, 0xFFFF0000, 0xFFFF0000, 0xFFFF0000},
+        {0xFF00FF00, 0xFF00FF00, 0xFF00FF00, 0xFF00FF00},
+        {0xFF0000FF, 0xFF0000FF, 0xFF0000FF, 0xFF0000FF}};
+    emulator.bus().set_dmg_palette(layer_colors);
+    emulator.bus().write8(0xFF47, 0xE4);
+    emulator.bus().write8(0x8000, 0x80);
+    emulator.bus().write8(0x8001, 0x80); // Tile 0, first pixel color 3.
+    emulator.bus().write8(0xFF40, 0x91);
+    emulator.bus().tick(254);
+    check(emulator.framebuffer()[0] == 0xFFFF0000,
+          "SGB default palette honors the configured display colors");
+}
+
 void test_rom_library_metadata_and_deduplication() {
     auto rom = cgb_test_rom();
     std::fill(rom.begin() + 0x134, rom.begin() + 0x143, 0);
@@ -4630,6 +4648,7 @@ int main(const int argc, char** argv) {
         }
         test_cartridge_header();
         test_sgb_command_path();
+        test_sgb_default_palette_uses_display_setting();
         test_touch_control_ownership();
         test_rom_library_metadata_and_deduplication();
         test_multicore_frontend_contract();

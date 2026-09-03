@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.27.7] - 2026-09-03
+
+This patch release fixes automatic display colors for SGB-capable DMG games.
+
+### Fixes and accuracy
+
+- Apply the selected automatic cartridge compatibility palette while an SGB
+  game is still using its neutral startup palette.
+- Preserve native SGB colors as soon as the game sends a `PAL` command.
+- Add regression coverage for display settings on the SGB startup path.
+
 ## [0.27.6] - 2026-09-03
 
 This patch release fixes Android display-palette restoration and extends the
