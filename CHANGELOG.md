@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.27.6] - 2026-09-03
+
+This patch release fixes Android display-palette restoration and extends the
+diagnostic SGB command path.
+
+### Fixes and accuracy
+
+- Reapply the selected Android display palette after save-state and lifecycle
+  restores, including the Game Boy Color automatic compatibility palette.
+- Add deterministic SGB `CHR_TRN`/`PCT_TRN` transfer latches and `MASK_EN`
+  viewport modes, with save-state persistence and focused core coverage.
+- Extend opt-in PPU diagnostics with fetched tile, row, and bitplane data.
+
 ## [0.25.0] - 2026-08-29
 
 This release adds the first complete desktop link-cable session stack and
