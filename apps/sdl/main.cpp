@@ -33,14 +33,12 @@
 #include "input_configuration.hpp"
 #include "input_lifecycle.hpp"
 #include "core_capability.hpp"
-#include "tas_editor.hpp"
-#include "sprite_editor.hpp"
-#include "cheat_manager.hpp"
-#include "desktop_debugger.hpp"
+#ifndef __ANDROID__
+#include "advanced_tools.hpp"
+#endif
 #ifdef __ANDROID__
 #include "android_bridge.hpp"
 #endif
-#include "input_movie.hpp"
 #include "remote_link_session.hpp"
 #include "settings_model.hpp"
 #include "settings_persistence.hpp"
@@ -191,6 +189,7 @@ using gbb::sdl::handle_dashboard_key_event;
 using gbb::sdl::handle_keyboard_binding_event;
 using gbb::sdl::handle_gameplay_key_event;
 #ifndef __ANDROID__
+using gbb::sdl::process_advanced_tool_requests;
 using gbb::sdl::handle_desktop_tool_event;
 using gbb::sdl::handle_desktop_voxel_mouse_event;
 #endif
@@ -1529,140 +1528,11 @@ int main(int argc, char** argv) {
             }
 
 #ifndef __ANDROID__
-            if (services.debugger() != nullptr && debugger.take_record_toggle()) {
-                try {
-                    if (input_movie.recording()) {
-                        input_movie.stop_and_save(movie_path, *emulator);
-                    } else {
-                        input_movie.stop(emulator);
-                        input_movie.start_recording(*emulator);
-                        rewind_history.clear();
-                        paused = false;
-                        fast_forward = false;
-                        rewind = false;
-                        debugger.run();
-                    }
-                } catch (const std::exception& error) {
-                    input_movie.stop(emulator);
-                    show_error(sdl.window, error.what());
-                }
-            }
-            if (services.debugger() != nullptr && debugger.take_replay_request()) {
-                try {
-                    input_movie.stop(emulator);
-                    input_movie.start_replay(*emulator, movie_path);
-                    rewind_history.clear();
-                    paused = false;
-                    fast_forward = false;
-                    rewind = false;
-                    sdl.audio.clear();
-                    debugger.run();
-                } catch (const std::exception& error) {
-                    input_movie.stop(emulator);
-                    show_error(sdl.window, error.what());
-                }
-            }
-            if (services.debugger() != nullptr && debugger.take_tas_request()) {
-                input_movie.stop(emulator);
-                tas_editor.open(sdl.window, *emulator);
-                rewind_history.clear();
-                debugger.pause();
-            }
-            if (services.sprite_editor() != nullptr &&
-                debugger.take_sprite_request()) {
-                input_movie.stop(emulator);
-                sprite_editor.open(sdl.window, *emulator);
-                rewind_history.clear();
-                debugger.pause();
-            }
-            if (services.sprite_editor() != nullptr &&
-                sprite_editor.take_save_patch_request()) {
-                try {
-                    sprite_editor.save_patch(*emulator, sprite_patch_path);
-                    sprite_editor.mark_saved(*emulator);
-                    const auto message = "Sprite patch saved to:\n" +
-                                         sprite_patch_path.string();
-                    static_cast<void>(SDL_ShowSimpleMessageBox(
-                        SDL_MESSAGEBOX_INFORMATION, "Sprite patch saved",
-                        message.c_str(), sdl.window));
-                } catch (const std::exception& error) {
-                    show_error(sdl.window, error.what());
-                }
-            }
-            if (services.sprite_editor() != nullptr &&
-                sprite_editor.take_load_patch_request()) {
-                try {
-                    sprite_editor.load_patch(*emulator, sprite_patch_path);
-                } catch (const std::exception& error) {
-                    show_error(sdl.window, error.what());
-                }
-            }
-            if (services.sprite_editor() != nullptr &&
-                sprite_editor.take_export_ips_request()) {
-                try {
-                    const auto result = sprite_editor.export_ips(
-                        *emulator, current_rom, sprite_ips_path);
-                    const auto message =
-                        "IPS patch saved to:\n" + sprite_ips_path.string() +
-                        "\n\nTiles exported: " +
-                        std::to_string(result.exported) +
-                        "\nTiles skipped because their ROM source was "
-                        "missing or ambiguous: " +
-                        std::to_string(result.unresolved);
-                    static_cast<void>(SDL_ShowSimpleMessageBox(
-                        SDL_MESSAGEBOX_INFORMATION, "IPS patch exported",
-                        message.c_str(), sdl.window));
-                } catch (const std::exception& error) {
-                    show_error(sdl.window, error.what());
-                }
-            }
-            if (services.cheats() != nullptr && cheat_manager.take_fetch_request()) {
-                cheat_manager.start_fetch();
-            }
-            if (cheat_manager.poll_fetch()) {
-                if (const auto error = cheat_manager.take_fetch_error()) {
-                    show_error(sdl.window, *error);
-                }
-            }
-            if (services.debugger() != nullptr && tas_editor.take_new_request()) {
-                input_movie.stop(emulator);
-                tas_editor.reset_from(*emulator);
-                rewind_history.clear();
-                debugger.pause();
-            }
-            if (services.debugger() != nullptr && tas_editor.take_save_request()) {
-                try {
-                    input_movie.stop(emulator);
-                    input_movie.save_frame_inputs(
-                        *emulator, movie_path, tas_editor.fingerprint(),
-                        tas_editor.start_state(), tas_editor.frames());
-                    static_cast<void>(emulator->take_audio_samples());
-                    sdl.audio.clear();
-                    tas_editor.mark_saved();
-                } catch (const std::exception& error) {
-                    show_error(sdl.window, error.what());
-                }
-            }
-            if (services.debugger() != nullptr &&
-                tas_editor.take_replay_request()) {
-                try {
-                    input_movie.stop(emulator);
-                    input_movie.save_frame_inputs(
-                        *emulator, movie_path, tas_editor.fingerprint(),
-                        tas_editor.start_state(), tas_editor.frames());
-                    input_movie.start_replay(*emulator, movie_path);
-                    static_cast<void>(emulator->take_audio_samples());
-                    rewind_history.clear();
-                    paused = false;
-                    fast_forward = false;
-                    rewind = false;
-                    sdl.audio.clear();
-                    debugger.run();
-                } catch (const std::exception& error) {
-                    input_movie.stop(emulator);
-                    show_error(sdl.window, error.what());
-                }
-            }
+            process_advanced_tool_requests({
+                services, sdl, debugger, input_movie, tas_editor,
+                sprite_editor, cheat_manager, movie_path, sprite_patch_path,
+                sprite_ips_path, current_rom, rewind_history, paused,
+                fast_forward, rewind});
 #endif
 
             sdl.camera.update(

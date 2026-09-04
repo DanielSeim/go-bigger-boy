@@ -731,6 +731,12 @@ The first guardrail pass is implemented:
   sprite editing, GameShark requests, and local/remote link startup all use the
   same capability-gated view, preventing stale adapter pointers and duplicated
   capability checks during transitions.
+- Desktop advanced-tool request processing now lives in
+  `apps/sdl/advanced_tools.*`. The main loop supplies an explicit orchestration
+  context, while the module owns debugger/replay/TAS, sprite patch, and
+  GameShark request sequencing. This removes another large platform-specific
+  block from `main.cpp` without making the tool implementations part of the
+  generic core API.
 
 The headless core suite, SDL desktop target, and Android Java frontend all
 build successfully after this pass.
