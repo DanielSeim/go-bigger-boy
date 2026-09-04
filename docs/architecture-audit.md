@@ -750,6 +750,10 @@ The first guardrail pass is implemented:
   and automatic timeout recovery. These records are emitted only on state
   transitions, so diagnostics remain useful without adding per-frame timing
   noise to link sessions.
+- SDL framebuffer and overlay sequencing now lives in
+  `apps/sdl/presentation.*`. The module owns clear, generic framebuffer,
+  split-link, voxel, link-status, and final-present ordering; dashboard, touch,
+  and menu drawing are explicit callbacks supplied by the platform layer.
 
 The headless core suite, SDL desktop target, and Android Java frontend all
 build successfully after this pass.

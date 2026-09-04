@@ -37,6 +37,7 @@
 #include "advanced_tools.hpp"
 #include "link_controller.hpp"
 #endif
+#include "presentation.hpp"
 #ifdef __ANDROID__
 #include "android_bridge.hpp"
 #endif
@@ -64,6 +65,7 @@
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <future>
 #include <iomanip>
 #include <iostream>
@@ -189,6 +191,7 @@ using gbb::sdl::handle_mouse_event;
 using gbb::sdl::handle_dashboard_key_event;
 using gbb::sdl::handle_keyboard_binding_event;
 using gbb::sdl::handle_gameplay_key_event;
+using gbb::sdl::present_frame;
 #ifndef __ANDROID__
 using gbb::sdl::process_advanced_tool_requests;
 using gbb::sdl::process_link_requests;
@@ -785,98 +788,6 @@ void present_dashboard(SdlResources& sdl,
                                           "UP/DOWN  ENTER SELECT"));
 }
 #endif
-
-void present(const gbb::EmulatorCore* core,
-             const gameboy::Emulator* emulator,
-             const gameboy::Emulator* link_emulator, SdlResources& sdl,
-             const gameboy::LinkSession* link_session,
-             const RemoteLinkSession* remote_link,
-             const gameboy::DisplayPalette& palette,
-             const std::vector<std::string>& recent,
-             const bool dashboard_visible,
-             std::size_t& dashboard_selection) {
-    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 16, 20, 16, 255));
-    if (!SDL_RenderClear(sdl.renderer)) {
-        sdl_error("Could not clear framebuffer");
-    }
-    if (dashboard_visible) {
-#if !defined(_WIN32) && !defined(__ANDROID__)
-        present_dashboard(sdl, recent, core != nullptr,
-                          dashboard_selection);
-#else
-        static_cast<void>(recent);
-        static_cast<void>(dashboard_selection);
-#endif
-    } else if (core != nullptr && emulator != nullptr &&
-               gbb::sdl::supports(core, gbb::CoreCapability::link_cable) &&
-               link_emulator != nullptr) {
-        FrameRenderContext frame_context{
-            sdl.renderer, sdl.texture, sdl.link_texture, sdl.video_mode};
-        if (!present_link_frames(*emulator, *link_emulator, frame_context,
-                                 palette)) {
-            sdl_error("Could not present linked framebuffers");
-        }
-        if (link_session != nullptr &&
-            !present_link_status(frame_context, *link_session)) {
-            sdl_error("Could not present link status");
-        }
-    } else if (core != nullptr) {
-        if (emulator != nullptr &&
-            gbb::sdl::supports(core, gbb::CoreCapability::scene_layers) &&
-            (sdl.video_mode == gameboy::VideoMode::voxel_diorama ||
-            sdl.video_mode == gameboy::VideoMode::voxel_shape ||
-            sdl.video_mode == gameboy::VideoMode::voxel_popup)) {
-            VoxelRenderContext voxel_context{
-                sdl.renderer,
-                sdl.texture,
-                sdl.video_mode,
-                sdl.scene_snapshot,
-                sdl.voxel_profile_path,
-                sdl.voxel_profile,
-                sdl.voxel_profile_fingerprint,
-                sdl.voxel_profile_loaded,
-                sdl.voxel_vertices,
-                sdl.voxel_indices,
-                sdl.voxel_camera_pitch_offset,
-                sdl.voxel_camera_yaw_offset};
-            if (!render_voxel_diorama(
-                    *emulator, voxel_context, palette,
-                    sdl.video_mode == gameboy::VideoMode::voxel_shape,
-                    sdl.video_mode == gameboy::VideoMode::voxel_popup)) {
-                sdl_error("Could not render voxel diorama");
-            }
-        } else {
-        FrameRenderContext frame_context{
-            sdl.renderer, sdl.texture, sdl.link_texture, sdl.video_mode};
-        const auto colored_pixels = colorize_frame(*core, frame_context, palette);
-        const auto frame = core->video_frame();
-        if (!SDL_UpdateTexture(sdl.texture, nullptr, colored_pixels.data(),
-                               static_cast<int>(frame.width *
-                                                sizeof(std::uint32_t))) ||
-            !SDL_RenderTexture(sdl.renderer, sdl.texture, nullptr, nullptr)) {
-            sdl_error("Could not present framebuffer");
-        }
-        }
-        if (remote_link != nullptr && remote_link->active()) {
-            FrameRenderContext frame_context{
-                sdl.renderer, sdl.texture, sdl.link_texture, sdl.video_mode};
-            if (!present_remote_link_status(frame_context, *remote_link)) {
-                sdl_error("Could not present remote link status");
-            }
-        }
-    }
-#ifdef __ANDROID__
-    if (!dashboard_visible && core != nullptr) {
-        present_touch_controls(sdl);
-    }
-#endif
-#ifndef _WIN32
-    if (!dashboard_visible && core != nullptr) present_menu_button(sdl);
-#endif
-    if (!SDL_RenderPresent(sdl.renderer)) {
-        sdl_error("Could not present framebuffer");
-    }
-}
 
 } // namespace
 int main(int argc, char** argv) {
@@ -1617,10 +1528,28 @@ int main(int argc, char** argv) {
             } catch (const std::exception& error) {
                 show_error(sdl.window, error.what());
             }
-            present(core.get(), emulator, link_emulator.get(), sdl, link_session.get(),
-                    remote_link.active() ? &remote_link : nullptr,
-                    gameboy::display_palettes[display_palette], recent_roms,
-                    dashboard_visible, dashboard_selection);
+            std::function<void()> dashboard_overlay;
+            std::function<void()> touch_overlay;
+            std::function<void()> menu_overlay;
+#if !defined(_WIN32) && !defined(__ANDROID__)
+            dashboard_overlay = [&]() {
+                present_dashboard(sdl, recent_roms, core != nullptr,
+                                  dashboard_selection);
+            };
+#endif
+#ifdef __ANDROID__
+            touch_overlay = [&]() { present_touch_controls(sdl); };
+#endif
+#ifndef _WIN32
+            menu_overlay = [&]() { present_menu_button(sdl); };
+#endif
+            present_frame({
+                core.get(), emulator, link_emulator.get(), sdl,
+                link_session.get(),
+                remote_link.active() ? &remote_link : nullptr,
+                gameboy::display_palettes[display_palette], dashboard_visible,
+                std::move(dashboard_overlay), std::move(touch_overlay),
+                std::move(menu_overlay)});
 #ifndef __ANDROID__
             if (emulator) {
                 debugger.present(*emulator,

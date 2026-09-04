@@ -236,6 +236,7 @@ if(GAMEBOY_BUILD_SDL)
         elseif(ANDROID)
             add_library(gameboy_sdl SHARED
                 apps/sdl/main.cpp
+                apps/sdl/presentation.cpp
                 apps/sdl/frame_pacer.cpp
                 apps/sdl/emulation_session.cpp
                 apps/sdl/event_dispatch.cpp
@@ -269,6 +270,7 @@ if(GAMEBOY_BUILD_SDL)
                 apps/sdl/main.cpp
                 apps/sdl/advanced_tools.cpp
                 apps/sdl/link_controller.cpp
+                apps/sdl/presentation.cpp
                 apps/sdl/frame_pacer.cpp
                 apps/sdl/emulation_session.cpp
                 apps/sdl/event_dispatch.cpp
@@ -311,6 +313,7 @@ if(GAMEBOY_BUILD_SDL)
                 apps/sdl/main.cpp
                 apps/sdl/advanced_tools.cpp
                 apps/sdl/link_controller.cpp
+                apps/sdl/presentation.cpp
                 apps/sdl/frame_pacer.cpp
                 apps/sdl/emulation_session.cpp
                 apps/sdl/event_dispatch.cpp
@@ -346,6 +349,7 @@ if(GAMEBOY_BUILD_SDL)
                 apps/sdl/main.cpp
                 apps/sdl/advanced_tools.cpp
                 apps/sdl/link_controller.cpp
+                apps/sdl/presentation.cpp
                 apps/sdl/frame_pacer.cpp
                 apps/sdl/emulation_session.cpp
                 apps/sdl/event_dispatch.cpp
