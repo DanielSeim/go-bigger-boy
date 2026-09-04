@@ -9,7 +9,6 @@
 #include <jni.h>
 
 #include <array>
-#include <atomic>
 #include <cstdint>
 #include <filesystem>
 #include <iomanip>
@@ -22,7 +21,16 @@ namespace {
 
 std::mutex android_rom_request_mutex;
 std::optional<AndroidRomRequest> android_rom_request;
-std::atomic_bool android_back_requested{false};
+std::mutex android_back_request_mutex;
+bool android_back_requested{};
+gbb::LogContext android_back_context{};
+std::mutex android_runtime_context_mutex;
+gbb::LogContext android_runtime_context{};
+
+bool context_is_empty(const gbb::LogContext context) noexcept {
+    return context.session == 0 && context.frame == 0 &&
+           context.cycles == 0 && context.rom == 0;
+}
 
 } // namespace
 
@@ -33,15 +41,34 @@ std::optional<AndroidRomRequest> take_android_rom_request() noexcept {
     return request;
 }
 
-bool take_android_back_request() noexcept {
-    return android_back_requested.exchange(false);
+std::optional<gbb::LogContext> take_android_back_request() noexcept {
+    std::lock_guard<std::mutex> lock(android_back_request_mutex);
+    if (!android_back_requested) return std::nullopt;
+    android_back_requested = false;
+    return android_back_context;
+}
+
+void publish_android_log_context(const gbb::LogContext context) noexcept {
+    std::lock_guard<std::mutex> lock(android_runtime_context_mutex);
+    android_runtime_context = context;
+}
+
+gbb::LogContext latest_android_log_context() noexcept {
+    std::lock_guard<std::mutex> lock(android_runtime_context_mutex);
+    return android_runtime_context;
 }
 
 void request_android_back() noexcept {
-    android_back_requested.store(true);
+    std::lock_guard<std::mutex> lock(android_back_request_mutex);
+    if (android_back_requested) return;
+    android_back_context = latest_android_log_context();
+    android_back_requested = true;
 }
 
 void request_android_rom(AndroidRomRequest request) {
+    if (context_is_empty(request.log_context)) {
+        request.log_context = latest_android_log_context();
+    }
     std::lock_guard<std::mutex> lock(android_rom_request_mutex);
     android_rom_request = std::move(request);
 }
@@ -290,7 +317,8 @@ Java_com_danielseim_gbb_GbbActivity_nativeOpenRom(
                                : environment->GetStringUTFChars(display_name,
                                                                  nullptr);
     gbb::sdl::request_android_rom(gbb::sdl::AndroidRomRequest{
-        raw_rom, raw_name == nullptr ? std::string{} : std::string{raw_name}});
+        raw_rom, raw_name == nullptr ? std::string{} : std::string{raw_name},
+        gbb::current_log_context()});
     if (raw_name != nullptr) {
         environment->ReleaseStringUTFChars(display_name, raw_name);
     }

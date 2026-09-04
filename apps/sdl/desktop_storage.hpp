@@ -3,6 +3,7 @@
 #include "gameboy/emulator.hpp"
 #include "gameboy/rom_library.hpp"
 #include "gbb/core.hpp"
+#include "gbb/log.hpp"
 
 #include <SDL3/SDL.h>
 
@@ -20,6 +21,11 @@ struct DialogState {
     bool active{};
     std::optional<std::string> selected_path;
     std::optional<std::string> error;
+    // SDL invokes the file-dialog callback asynchronously (and potentially
+    // from a different thread). Keep the initiating frame/ROM metadata with
+    // the request so callback diagnostics can be correlated with the UI
+    // action that opened it.
+    gbb::LogContext log_context{};
 };
 
 void show_rom_dialog(DialogState& state, SDL_Window* window);

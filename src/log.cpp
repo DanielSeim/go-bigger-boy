@@ -44,13 +44,26 @@ LogLevel parse_level(const char* value) noexcept {
 } // namespace
 
 LogContextScope::LogContextScope(const LogContext context) noexcept
+    : LogContextScope(context, true) {}
+
+LogContextScope LogContextScope::exact(const LogContext context) noexcept {
+    return LogContextScope(context, false);
+}
+
+LogContextScope::LogContextScope(const LogContext context,
+                                 const bool inherit) noexcept
     : previous_(active_context) {
-    active_context = {
-        context.session != 0 ? context.session : previous_.session,
-        context.frame != 0 ? context.frame : previous_.frame,
-        context.cycles != 0 ? context.cycles : previous_.cycles,
-        context.rom != 0 ? context.rom : previous_.rom,
-    };
+    active_context = inherit
+                          ? LogContext{
+                                context.session != 0 ? context.session
+                                                      : previous_.session,
+                                context.frame != 0 ? context.frame
+                                                   : previous_.frame,
+                                context.cycles != 0 ? context.cycles
+                                                    : previous_.cycles,
+                                context.rom != 0 ? context.rom : previous_.rom,
+                            }
+                          : context;
 }
 
 LogContextScope::~LogContextScope() noexcept { active_context = previous_; }

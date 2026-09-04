@@ -73,6 +73,36 @@ void test_logging_contract() {
               scoped_recent[1].find("rom=0x1234") != std::string::npos,
           "scoped logger context is inherited and supports partial overrides");
 
+    // Asynchronous frontend work captures the initiating context and restores
+    // it when the callback runs. Verify that a callback's captured metadata
+    // wins over any unrelated context already active on its worker thread.
+    gbb::LogContext captured_context{};
+    {
+        gbb::LogContextScope initiating_scope({11, 44, 16384, 0xCAFE});
+        captured_context = gbb::current_log_context();
+    }
+    {
+        gbb::LogContextScope unrelated_scope({99, 88, 777, 0xBEEF});
+        auto callback_scope = gbb::LogContextScope::exact(captured_context);
+        logger.write(gbb::LogLevel::info, gbb::LogCategory::frontend,
+                     "asynchronous callback context");
+    }
+    const auto callback_recent = logger.recent_records();
+    check(callback_recent.size() == 2 &&
+              callback_recent.back().find(
+                  "session=11 frame=44 cycles=16384 rom=0xcafe") !=
+                  std::string::npos,
+          "asynchronous callback scopes preserve the initiating diagnostic context");
+
+    {
+        gbb::LogContextScope unrelated_scope({99, 88, 777, 0xBEEF});
+        auto empty_callback_scope = gbb::LogContextScope::exact({});
+        const auto empty_context = gbb::current_log_context();
+        check(empty_context.session == 0 && empty_context.frame == 0 &&
+                  empty_context.cycles == 0 && empty_context.rom == 0,
+              "an empty asynchronous snapshot clears stale worker context");
+    }
+
     logger.set_memory_capacity(0);
     logger.set_memory_capacity(4);
     logger.set_level(gbb::LogLevel::trace);

@@ -1008,6 +1008,8 @@ int main(int argc, char** argv) {
                 {0, frontend_frame, 0,
                  core ? core->rom_fingerprint() : 0});
 #ifdef __ANDROID__
+            gbb::sdl::publish_android_log_context(
+                gbb::current_log_context());
             // Settings are edited by the native Android activity while this
             // SDL activity may stay alive underneath it. Poll before event
             // handling and rendering so the video pipeline, menu placement,
@@ -1023,7 +1025,11 @@ int main(int argc, char** argv) {
             if (!update_check_complete) {
                 std::string update_error;
                 std::optional<gbb_desktop::UpdateInfo> update_result;
-                if (update_checker.take_result(update_result, update_error)) {
+                gbb::LogContext update_context{};
+                if (update_checker.take_result(update_result, update_error,
+                                               &update_context)) {
+                    auto callback_context =
+                        gbb::LogContextScope::exact(update_context);
                     update_check_complete = true;
                     if (!update_error.empty()) {
                         gbb::log_frontend_warning(
@@ -1131,8 +1137,11 @@ int main(int argc, char** argv) {
 #endif
 #ifdef __ANDROID__
             if (auto requested = gbb::sdl::take_android_rom_request()) {
+                auto callback_context =
+                    gbb::LogContextScope::exact(requested->log_context);
                 pending_rom = std::move(requested->path);
                 pending_rom_name = std::move(requested->display_name);
+                gbb::log_frontend_info("Android ROM open request accepted");
             }
 #endif
             SdlEventContext event_context{
@@ -1397,7 +1406,11 @@ int main(int argc, char** argv) {
                 static_cast<void>(SDL_SetWindowTitle(sdl.window, title.c_str()));
                 std::optional<gbb_desktop::DownloadedUpdate> downloaded;
                 std::string download_error;
-                if (update_download->take_result(downloaded, download_error)) {
+                gbb::LogContext update_context{};
+                if (update_download->take_result(downloaded, download_error,
+                                                 &update_context)) {
+                    auto callback_context =
+                        gbb::LogContextScope::exact(update_context);
                     const auto was_cancelled = update_download->cancelled();
                     update_download.reset();
                     if (!download_error.empty() || !downloaded) {

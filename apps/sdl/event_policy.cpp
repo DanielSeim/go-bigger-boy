@@ -2,6 +2,8 @@
 
 #include "event_dispatch.hpp"
 
+#include "gbb/log.hpp"
+
 #ifdef __ANDROID__
 #include "android_bridge.hpp"
 #endif
@@ -30,7 +32,9 @@ void process_events(SdlEventContext& context) {
     // The Java activity intercepts Android's back callback and sets this flag.
     // Handle it here, on SDL's thread, rather than allowing the activity to
     // finish while the emulator is still writing its save file.
-    if (take_android_back_request()) {
+    if (const auto back_context = take_android_back_request()) {
+        auto callback_context = gbb::LogContextScope::exact(*back_context);
+        gbb::log_frontend_info("Android back request accepted");
         if (dashboard_visible && core != nullptr) {
             dashboard_visible = false;
         } else if (context.leave_game) {

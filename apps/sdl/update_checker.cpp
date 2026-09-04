@@ -587,7 +587,8 @@ bool download_public_file(const std::string& url,
     return true;
 }
 
-UpdateChecker::UpdateChecker(std::string current_version) {
+UpdateChecker::UpdateChecker(std::string current_version)
+    : diagnostic_context_(gbb::current_log_context()) {
     try {
         worker_ = std::thread(
             [this, current_version = std::move(current_version)] {
@@ -651,17 +652,22 @@ UpdateChecker::~UpdateChecker() {
 }
 
 bool UpdateChecker::take_result(std::optional<UpdateInfo>& update,
-                                std::string& error) {
+                                std::string& error,
+                                gbb::LogContext* diagnostic_context) {
     const std::lock_guard lock(mutex_);
     if (!complete_ || consumed_) return false;
     update = std::move(update_);
     error = std::move(error_);
+    if (diagnostic_context != nullptr) {
+        *diagnostic_context = diagnostic_context_;
+    }
     consumed_ = true;
     return true;
 }
 
 UpdateDownload::UpdateDownload(UpdateInfo release,
-                               std::filesystem::path directory) {
+                               std::filesystem::path directory)
+    : diagnostic_context_(gbb::current_log_context()) {
     try {
         worker_ = std::thread(
             [this, release = std::move(release),
@@ -700,11 +706,15 @@ UpdateDownload::~UpdateDownload() {
 }
 
 bool UpdateDownload::take_result(std::optional<DownloadedUpdate>& update,
-                                 std::string& error) {
+                                 std::string& error,
+                                 gbb::LogContext* diagnostic_context) {
     const std::lock_guard lock(mutex_);
     if (!complete_ || consumed_) return false;
     update = std::move(update_);
     error = std::move(error_);
+    if (diagnostic_context != nullptr) {
+        *diagnostic_context = diagnostic_context_;
+    }
     consumed_ = true;
     return true;
 }

@@ -40,12 +40,18 @@ struct LogContext {
 class LogContextScope final {
 public:
     explicit LogContextScope(LogContext context) noexcept;
+    // Restore a captured asynchronous snapshot exactly. Unlike the normal
+    // scope constructor, zero-valued fields clear the worker thread's prior
+    // context instead of inheriting it.
+    [[nodiscard]] static LogContextScope exact(LogContext context) noexcept;
     ~LogContextScope() noexcept;
 
     LogContextScope(const LogContextScope&) = delete;
     LogContextScope& operator=(const LogContextScope&) = delete;
 
 private:
+    LogContextScope(LogContext context, bool inherit) noexcept;
+
     LogContext previous_{};
 };
 

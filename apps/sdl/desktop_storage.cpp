@@ -92,12 +92,33 @@ void save_printer_bitmap(const std::filesystem::path& path,
 void SDLCALL file_dialog_callback(void* userdata,
                                   const char* const* filelist, int) {
     auto& state = *static_cast<DialogState*>(userdata);
-    std::lock_guard<std::mutex> lock(state.mutex);
-    state.active = false;
+    gbb::LogContext context{};
+    std::string diagnostic;
+    {
+        std::lock_guard<std::mutex> lock(state.mutex);
+        context = state.log_context;
+        state.active = false;
+        state.selected_path.reset();
+        state.error.reset();
+        if (filelist == nullptr) {
+            diagnostic = SDL_GetError();
+            state.error = diagnostic;
+        } else if (filelist[0] != nullptr) {
+            state.selected_path = filelist[0];
+            diagnostic = "ROM file dialog selected a file";
+        } else {
+            diagnostic = "ROM file dialog was cancelled";
+        }
+    }
+    auto callback_context = gbb::LogContextScope::exact(context);
     if (filelist == nullptr) {
-        state.error = SDL_GetError();
+        gbb::log_frontend_warning(
+            diagnostic.empty() ? "ROM file dialog failed" :
+                                 "ROM file dialog failed: " + diagnostic);
     } else if (filelist[0] != nullptr) {
-        state.selected_path = filelist[0];
+        gbb::log_frontend_info(diagnostic);
+    } else {
+        gbb::log_frontend_info(diagnostic);
     }
 }
 
@@ -181,6 +202,9 @@ void show_rom_dialog(DialogState& state, SDL_Window* window) {
         std::lock_guard<std::mutex> lock(state.mutex);
         if (state.active) return;
         state.active = true;
+        state.selected_path.reset();
+        state.error.reset();
+        state.log_context = gbb::current_log_context();
     }
     static constexpr SDL_DialogFileFilter filters[] = {
         {"Game Boy ROMs", "gb;gbc"},

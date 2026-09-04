@@ -136,20 +136,20 @@ bool is_voxel_video_mode(const gameboy::VideoMode mode) noexcept {
 #ifndef GBB_EVENT_DISPATCH_CORE_ONLY
 bool handle_desktop_tool_event(const SDL_Event& event,
                                SdlEventContext& context) {
-    if (context.emulator == nullptr || context.core == nullptr) return false;
-    if (supports(context.core.get(), CoreCapability::cheats) &&
+    const GameBoyToolAdapter tools{context.core.get(), context.emulator};
+    if (tools.get(CoreCapability::cheats) != nullptr &&
         context.cheat_manager.handle_event(event)) {
         return true;
     }
-    if (supports(context.core.get(), CoreCapability::sprite_editor) &&
+    if (tools.get(CoreCapability::sprite_editor) != nullptr &&
         context.sprite_editor.handle_event(event, context.emulator)) {
         return true;
     }
-    if (supports(context.core.get(), CoreCapability::debugger) &&
+    if (tools.get(CoreCapability::debugger) != nullptr &&
         context.tas_editor.handle_event(event)) {
         return true;
     }
-    if (supports(context.core.get(), CoreCapability::debugger) &&
+    if (tools.get(CoreCapability::debugger) != nullptr &&
         context.debugger.handle_event(event, context.emulator)) {
         return true;
     }
@@ -158,8 +158,8 @@ bool handle_desktop_tool_event(const SDL_Event& event,
 
 void handle_desktop_voxel_mouse_event(const SDL_Event& event,
                                       SdlEventContext& context) {
-    if (context.emulator == nullptr || context.core == nullptr ||
-        !supports(context.core.get(), CoreCapability::scene_layers) ||
+    const GameBoyToolAdapter tools{context.core.get(), context.emulator};
+    if (tools.get(CoreCapability::scene_layers) == nullptr ||
         context.dashboard_visible ||
         !is_voxel_video_mode(context.sdl.video_mode)) {
         return;

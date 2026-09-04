@@ -1,5 +1,7 @@
 #pragma once
 
+#include "gbb/log.hpp"
+
 #include <atomic>
 #include <cstdint>
 #include <mutex>
@@ -40,7 +42,8 @@ public:
     UpdateChecker& operator=(const UpdateChecker&) = delete;
 
     [[nodiscard]] bool take_result(std::optional<UpdateInfo>& update,
-                                   std::string& error);
+                                   std::string& error,
+                                   gbb::LogContext* diagnostic_context = nullptr);
 
 private:
     std::mutex mutex_;
@@ -49,6 +52,7 @@ private:
     std::string error_;
     bool complete_{};
     bool consumed_{};
+    gbb::LogContext diagnostic_context_{};
 };
 
 class UpdateDownload {
@@ -68,7 +72,8 @@ public:
         return progress_.total_bytes.load();
     }
     [[nodiscard]] bool take_result(std::optional<DownloadedUpdate>& update,
-                                   std::string& error);
+                                   std::string& error,
+                                   gbb::LogContext* diagnostic_context = nullptr);
 private:
     std::mutex mutex_;
     std::thread worker_;
@@ -76,6 +81,7 @@ private:
     std::string error_;
     bool complete_{};
     bool consumed_{};
+    gbb::LogContext diagnostic_context_{};
     DownloadProgress progress_;
 };
 
