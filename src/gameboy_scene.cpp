@@ -11,6 +11,11 @@ namespace gbb {
 
 void populate_gameboy_scene_snapshot(const gameboy::Emulator& emulator,
                                      SceneSnapshot& scene) {
+    // The adapter refreshes the whole snapshot on demand. Clear optional
+    // contributions so a future extension cannot accidentally retain stale
+    // layers after a core state transition.
+    scene.layers.clear();
+    scene.producer_id = "gameboy";
     const auto& bus = emulator.bus();
     scene.emulation_cycles = emulator.cpu().total_cycles();
     scene.width = gameboy::Ppu::screen_width;

@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string_view>
 #include <vector>
 
@@ -101,6 +102,14 @@ struct CoreDescriptor {
     const InputDescriptor* inputs{};
     std::size_t input_count{};
     CoreCapability capabilities{CoreCapability::none};
+    // Optional cartridge/software metadata. These fields let frontends show
+    // useful library information without depending on a concrete core.
+    std::string_view software_title{};
+    std::size_t rom_size{};
+    std::size_t save_ram_size{};
+    bool has_battery{};
+    bool supports_color{};
+    bool requires_color{};
 };
 
 struct VideoFrameView {
@@ -109,6 +118,15 @@ struct VideoFrameView {
     std::size_t width{};
     std::size_t height{};
     std::size_t pitch{};
+};
+
+// A completed thermal-printer page in device-independent 2-bit shades. The
+// fixed width reflects the common Game Boy Printer paper format while keeping
+// the frontend contract free of Game Boy hardware types.
+struct PrinterPage {
+    static constexpr std::size_t width = 160;
+    std::size_t height{};
+    std::vector<std::uint8_t> pixels;
 };
 
 class EmulatorCore {
@@ -128,7 +146,21 @@ public:
         return empty;
     }
     [[nodiscard]] virtual std::vector<std::int16_t> take_audio_samples() = 0;
+    [[nodiscard]] virtual std::vector<PrinterPage> take_printer_pages() {
+        return {};
+    }
+    // Enable or disable the optional printer endpoint. Frontends can request
+    // printer emulation without down-casting to a concrete hardware core.
+    virtual void set_printer_enabled(bool) noexcept {}
     virtual void set_input(InputId input, bool pressed) noexcept = 0;
+
+    // Optional debugger metadata. Cores that do not expose a CPU program
+    // counter return an empty value rather than leaking a hardware register
+    // type through the common API.
+    [[nodiscard]] virtual std::optional<std::uint16_t> program_counter()
+        const noexcept {
+        return {};
+    }
 
     [[nodiscard]] virtual std::vector<std::uint8_t> save_state() const = 0;
     virtual void load_state(const std::vector<std::uint8_t>& state) = 0;

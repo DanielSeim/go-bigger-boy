@@ -106,12 +106,29 @@ void write_sprite(JsonWriter& json, const SceneSprite& sprite) {
     json.comma();
 }
 
+void write_scene_layer(JsonWriter& json, const SceneLayer& layer) {
+    json.begin_object();
+    json.key("id"); json.string(layer.id);
+    json.key("format"); json.string(layer.format);
+    json.key("width"); json.number(layer.width);
+    json.key("height"); json.number(layer.height);
+    json.key("payload");
+    write_array(json, layer.payload,
+                [](JsonWriter& output, const std::uint8_t value) {
+                    output.number(value);
+                });
+    json.end_object();
+    json.comma();
+}
+
 } // namespace
 
 std::string scene_snapshot_to_json(const SceneSnapshot& scene) {
     JsonWriter json;
     json.begin_object();
     json.key("schema"); json.string("gbb.scene.v1");
+    json.key("schema_version"); json.number(scene.schema_version);
+    json.key("producer"); json.string(scene.producer_id);
     json.key("emulation_cycles"); json.number(scene.emulation_cycles);
     json.key("width"); json.number(scene.width);
     json.key("height"); json.number(scene.height);
@@ -151,6 +168,11 @@ std::string scene_snapshot_to_json(const SceneSnapshot& scene) {
     write_array(json, scene.sprites,
                 [](JsonWriter& output, const SceneSprite& value) {
                     write_sprite(output, value);
+                });
+    json.key("layers");
+    write_array(json, scene.layers,
+                [](JsonWriter& output, const SceneLayer& value) {
+                    write_scene_layer(output, value);
                 });
     json.end_object();
     json.raw("\n");

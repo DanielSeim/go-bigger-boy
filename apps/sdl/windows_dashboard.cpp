@@ -39,7 +39,7 @@ namespace gbb_desktop {
 namespace {
 
 #ifndef GBB_VERSION
-#define GBB_VERSION "0.25.0"
+#define GBB_VERSION "0.0.0-dev"
 #endif
 
 constexpr int id_library = 100;
@@ -118,6 +118,7 @@ struct State {
     const gameboy::RomLibrary* library{};
     DashboardResult result;
     bool can_resume{};
+    bool voxel_available{};
     bool done{};
     HWND window{};
     HWND list{};
@@ -845,17 +846,18 @@ void show_page(State& state, const State::Page page) {
         ShowWindow(button, settings ? SW_SHOW : SW_HIDE);
     }
     ShowWindow(state.reset_controls, settings ? SW_SHOW : SW_HIDE);
-    ShowWindow(state.voxel_heading, settings ? SW_SHOW : SW_HIDE);
-    ShowWindow(state.voxel_fingerprint_label, settings ? SW_SHOW : SW_HIDE);
-    ShowWindow(state.voxel_preview, settings ? SW_SHOW : SW_HIDE);
+    const auto show_voxel = settings && state.voxel_available;
+    ShowWindow(state.voxel_heading, show_voxel ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.voxel_fingerprint_label, show_voxel ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.voxel_preview, show_voxel ? SW_SHOW : SW_HIDE);
     for (const auto label : state.voxel_labels) {
-        ShowWindow(label, settings ? SW_SHOW : SW_HIDE);
+        ShowWindow(label, show_voxel ? SW_SHOW : SW_HIDE);
     }
     for (const auto edit : state.voxel_edits) {
-        ShowWindow(edit, settings ? SW_SHOW : SW_HIDE);
+        ShowWindow(edit, show_voxel ? SW_SHOW : SW_HIDE);
     }
-    ShowWindow(state.voxel_save, settings ? SW_SHOW : SW_HIDE);
-    ShowWindow(state.voxel_reset, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.voxel_save, show_voxel ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.voxel_reset, show_voxel ? SW_SHOW : SW_HIDE);
     ShowWindow(state.shortcuts_heading, shortcuts ? SW_SHOW : SW_HIDE);
     ShowWindow(state.shortcuts_text, shortcuts ? SW_SHOW : SW_HIDE);
     ShowScrollBar(state.window, SB_VERT, settings ? TRUE : FALSE);
@@ -1193,7 +1195,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
     if (message == WM_COMMAND) {
         const auto command = LOWORD(wparam);
         if (command >= id_voxel_first_edit &&
-            command < id_voxel_first_edit + 8) {
+            command < id_voxel_first_edit + 8 && state->voxel_available) {
             const auto index = static_cast<std::size_t>(
                 command - id_voxel_first_edit);
             const auto notification = HIWORD(wparam);
@@ -1277,7 +1279,9 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
             }
             return 0;
         case id_voxel_save:
-            if (state->voxel_fingerprint == 0) return 0;
+            if (!state->voxel_available || state->voxel_fingerprint == 0) {
+                return 0;
+            }
             if (!read_voxel_profile_controls(*state)) {
                 MessageBoxW(window,
                             L"Enter valid numeric values for every voxel profile field.",
@@ -1296,7 +1300,9 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                            L"Voxel profile saved. Return to the game to preview it.");
             return 0;
         case id_voxel_reset:
-            if (state->voxel_fingerprint == 0) return 0;
+            if (!state->voxel_available || state->voxel_fingerprint == 0) {
+                return 0;
+            }
             state->voxel_profile = gbb::VoxelProfile{};
             refresh_voxel_profile_controls(*state);
             if (!gbb::save_voxel_profile(state->voxel_profile_path,
@@ -1841,6 +1847,7 @@ void draw_dashboard_button(const DRAWITEMSTRUCT& item, const State& state) {
 DashboardResult show_windows_dashboard(
     HWND owner, const gameboy::RomLibrary& library, const bool can_resume,
     const std::uint64_t current_fingerprint,
+    const gbb::CoreCapability capabilities,
     const std::size_t palette, const gameboy::VideoMode video_mode,
     const KeyboardBindings& keyboard_bindings,
     const ActionBindings& action_bindings,
@@ -1870,6 +1877,8 @@ DashboardResult show_windows_dashboard(
         DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
     state.library = &library;
     state.can_resume = can_resume;
+    state.voxel_available =
+        gbb::has_capability(capabilities, gbb::CoreCapability::scene_layers);
     state.voxel_fingerprint = current_fingerprint;
     state.voxel_profile_path = preference_directory.empty()
                                    ? std::filesystem::path{}

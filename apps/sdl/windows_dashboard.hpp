@@ -3,6 +3,7 @@
 #include "gameboy/rom_library.hpp"
 #include "gameboy/video_pipeline.hpp"
 #include "gbb/voxel_profile.hpp"
+#include "gbb/core.hpp"
 
 #include <array>
 #include <cstddef>
@@ -38,6 +39,7 @@ struct DashboardResult {
 DashboardResult show_windows_dashboard(
     HWND owner, const gameboy::RomLibrary& library, bool can_resume,
     std::uint64_t current_fingerprint,
+    gbb::CoreCapability capabilities,
     std::size_t palette, gameboy::VideoMode video_mode,
     const KeyboardBindings& keyboard_bindings,
     const ActionBindings& action_bindings,

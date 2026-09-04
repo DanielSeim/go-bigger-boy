@@ -1,39 +1,67 @@
 #include "gameboy/link_session.hpp"
 
-#include "gameboy/emulator.hpp"
+#include "gbb/link_scheduler.hpp"
+#include "gbb/log.hpp"
+
+#include <algorithm>
+#include <atomic>
 
 namespace gameboy {
+namespace {
 
-void LinkSession::start(Emulator& first, Emulator& second) noexcept {
+std::atomic<std::uint64_t> next_diagnostic_session{1};
+
+unsigned step_endpoint(void* context) {
+    return static_cast<LinkEndpoint*>(context)->step();
+}
+
+} // namespace
+
+void LinkSession::start(LinkEndpoint& first, LinkEndpoint& second) noexcept {
     stop();
     state_ = State::starting;
     first_ = &first;
     second_ = &second;
-    transport_->attach(first.bus().serial_port(), second.bus().serial_port());
-    stalled_cycles_ = 0;
-    progress_marker_ = transfers_completed();
+    transport_->attach(first.serial_port(), second.serial_port());
+    watchdog_.reset(transfers_completed());
+    diagnostic_session_ =
+        next_diagnostic_session.fetch_add(1, std::memory_order_relaxed);
     state_ = State::connected;
+    gbb::Logger::instance().write(gbb::LogLevel::info,
+                                  gbb::LogCategory::link,
+                                  "local link session started",
+                                  {diagnostic_session_, 0, 0});
 }
 
 void LinkSession::stop() noexcept {
+    const auto was_attached = first_ != nullptr || second_ != nullptr;
+    const auto diagnostic_session = diagnostic_session_;
     transport_->detach();
     first_ = nullptr;
     second_ = nullptr;
     state_ = State::disconnected;
-    stalled_cycles_ = 0;
-    progress_marker_ = 0;
+    watchdog_.reset();
+    diagnostic_session_ = 0;
+    if (was_attached) {
+        gbb::Logger::instance().write(gbb::LogLevel::info,
+                                      gbb::LogCategory::link,
+                                      "local link session stopped",
+                                      {diagnostic_session, 0, 0});
+    }
 }
 
 void LinkSession::retry() noexcept {
     if (first_ == nullptr || second_ == nullptr) return;
     transport_->detach();
-    first_->bus().serial_port().reset_link();
-    second_->bus().serial_port().reset_link();
-    transport_->attach(first_->bus().serial_port(),
-                       second_->bus().serial_port());
-    stalled_cycles_ = 0;
-    progress_marker_ = transfers_completed();
+    first_->serial_port().reset_link();
+    second_->serial_port().reset_link();
+    transport_->attach(first_->serial_port(), second_->serial_port());
+    watchdog_.reset(transfers_completed());
     state_ = State::connected;
+    gbb::Logger::instance().write(gbb::LogLevel::info,
+                                  gbb::LogCategory::link,
+                                  "local link session retried",
+                                  {diagnostic_session_, 0, 0});
 }
 
 LinkSession::State LinkSession::state() const noexcept {
@@ -41,9 +69,9 @@ LinkSession::State LinkSession::state() const noexcept {
         return state_;
     }
     if ((first_ != nullptr &&
-         first_->bus().serial_port().transfer_active()) ||
+         first_->serial_port().transfer_active()) ||
         (second_ != nullptr &&
-         second_->bus().serial_port().transfer_active())) {
+         second_->serial_port().transfer_active())) {
         return State::transferring;
     }
     return State::connected;
@@ -56,47 +84,47 @@ bool LinkSession::active() const noexcept {
 
 std::uint64_t LinkSession::transfers_completed() const noexcept {
     if (first_ == nullptr || second_ == nullptr) return 0;
-    return first_->bus().serial_port().transfers_completed() +
-           second_->bus().serial_port().transfers_completed();
+    return first_->serial_port().transfers_completed() +
+           second_->serial_port().transfers_completed();
 }
 
 void LinkSession::advance(const unsigned target_cycles) {
     if (!active() || target_cycles == 0) return;
 
-    unsigned first_cycles = 0;
-    unsigned second_cycles = 0;
-    while (first_cycles < target_cycles || second_cycles < target_cycles) {
-        if (first_cycles <= second_cycles && first_cycles < target_cycles) {
-            first_cycles += first_->step();
-        } else if (second_cycles < target_cycles) {
-            second_cycles += second_->step();
-        } else if (first_cycles < target_cycles) {
-            first_cycles += first_->step();
-        } else {
-            break;
-        }
-    }
+    const auto diagnostic_cycles = std::max(first_->emulated_cycles(),
+                                            second_->emulated_cycles());
+    gbb::LogContextScope diagnostic_context{
+        {diagnostic_session_, 0, diagnostic_cycles}};
+    static_cast<void>(gbb::advance_balanced(
+        first_, step_endpoint, second_, step_endpoint, target_cycles));
 
     const auto progress =
         transfers_completed() +
-        static_cast<std::uint64_t>(first_->bus().serial_port().bits_shifted()) +
-        static_cast<std::uint64_t>(second_->bus().serial_port().bits_shifted());
+        static_cast<std::uint64_t>(first_->serial_port().bits_shifted()) +
+        static_cast<std::uint64_t>(second_->serial_port().bits_shifted());
     const auto transferring =
-        first_->bus().serial_port().transfer_active() ||
-        second_->bus().serial_port().transfer_active();
-    if (!transferring) {
-        stalled_cycles_ = 0;
-    } else if (progress == progress_marker_) {
-        stalled_cycles_ += target_cycles;
-    } else {
-        stalled_cycles_ = 0;
+        first_->serial_port().transfer_active() ||
+        second_->serial_port().transfer_active();
+    watchdog_.observe(target_cycles, transferring, progress);
+    if (watchdog_.timed_out() && state_ != State::timed_out) {
+        state_ = State::timed_out;
+        gbb::Logger::instance().write(
+            gbb::LogLevel::warning, gbb::LogCategory::link,
+            "local link session timed out",
+            {diagnostic_session_, 0, watchdog_.stalled_cycles()});
     }
-    progress_marker_ = progress;
-    if (stalled_cycles_ >= timeout_cycles_) state_ = State::timed_out;
 }
 
 void LinkSession::mark_timeout() noexcept {
-    if (first_ != nullptr && second_ != nullptr) state_ = State::timed_out;
+    if (first_ != nullptr && second_ != nullptr &&
+        state_ != State::timed_out) {
+        watchdog_.mark_timeout();
+        state_ = State::timed_out;
+        gbb::Logger::instance().write(gbb::LogLevel::warning,
+                                      gbb::LogCategory::link,
+                                      "local link session marked timed out",
+                                      {diagnostic_session_, 0, 0});
+    }
 }
 
 } // namespace gameboy

@@ -5,7 +5,10 @@ plugins {
 def releaseKeystore = System.getenv("GBB_ANDROID_KEYSTORE_FILE")
 def releaseStorePassword = System.getenv("GBB_ANDROID_KEYSTORE_PASSWORD")
 def releaseKeyPassword = System.getenv("GBB_ANDROID_KEY_PASSWORD")
-def appVersionName = "0.26.0"
+def appVersionName = file("../../VERSION").text.trim()
+if (!(appVersionName ==~ /\d+\.\d+\.\d+/)) {
+    throw new GradleException("VERSION must contain a semantic version (x.y.z)")
+}
 def releaseRef = System.getenv("GITHUB_REF_NAME") ?: ""
 if (releaseRef ==~ /v\d+\.\d+\.\d+/) {
     appVersionName = releaseRef.substring(1)

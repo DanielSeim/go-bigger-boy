@@ -188,6 +188,7 @@ void TcpLinkChannel::close() noexcept {
     send_offset_ = 0;
     receive_buffer_.clear();
     packets_.clear();
+    malformed_packets_ = 0;
     state_ = State::disconnected;
 }
 
@@ -266,7 +267,11 @@ void TcpLinkChannel::receive_available() noexcept {
                     receive_buffer_.begin(),
                     receive_buffer_.begin() +
                         static_cast<std::ptrdiff_t>(LinkPacketCodec::wire_size));
-                if (packet) packets_.push_back(*packet);
+                if (packet) {
+                    packets_.push_back(*packet);
+                } else {
+                    ++malformed_packets_;
+                }
             }
             continue;
         }

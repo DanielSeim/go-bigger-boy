@@ -3,20 +3,15 @@
 #include "gameboy/cpu.hpp"
 #include "gameboy/hardware_model.hpp"
 #include "gameboy/memory_bus.hpp"
+#include "gameboy/save_state_error.hpp"
 
 #include <cstdint>
 #include <filesystem>
-#include <stdexcept>
 #include <vector>
 
 namespace gameboy {
 
 class SaveStateCodec;
-
-class SaveStateError final : public std::runtime_error {
-public:
-    using std::runtime_error::runtime_error;
-};
 
 class Emulator {
 public:

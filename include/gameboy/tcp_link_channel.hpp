@@ -33,6 +33,11 @@ public:
     [[nodiscard]] std::optional<LinkPacket> receive() noexcept;
     [[nodiscard]] State state() const noexcept { return state_; }
     [[nodiscard]] std::uint16_t local_port() const noexcept;
+    // Number of complete frames rejected by LinkPacketCodec since the last
+    // connection reset. Kept separate from socket failures for diagnostics.
+    [[nodiscard]] std::uint64_t malformed_packets() const noexcept {
+        return malformed_packets_;
+    }
 
 private:
     void flush_send_queue() noexcept;
@@ -46,6 +51,7 @@ private:
     std::size_t send_offset_{};
     std::vector<std::uint8_t> receive_buffer_;
     std::deque<LinkPacket> packets_;
+    std::uint64_t malformed_packets_{};
 };
 
 } // namespace gameboy

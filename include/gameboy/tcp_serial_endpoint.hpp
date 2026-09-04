@@ -123,6 +123,7 @@ private:
     std::uint64_t denials_sent_{};
     std::uint64_t denials_received_{};
     std::uint64_t responses_unmatched_{};
+    std::uint64_t diagnostic_session_{};
 };
 
 } // namespace gameboy

@@ -1,6 +1,15 @@
 #include "gameboy/tcp_serial_endpoint.hpp"
 
+#include "gbb/log.hpp"
+
+#include <atomic>
+
 namespace gameboy {
+namespace {
+
+std::atomic<std::uint64_t> next_diagnostic_session{1};
+
+} // namespace
 
 void TcpSerialEndpoint::attach(SerialPort& port,
                                 TcpLinkChannel& channel) noexcept {
@@ -24,10 +33,18 @@ void TcpSerialEndpoint::attach(SerialPort& port,
     denials_sent_ = 0;
     denials_received_ = 0;
     responses_unmatched_ = 0;
+    diagnostic_session_ =
+        next_diagnostic_session.fetch_add(1, std::memory_order_relaxed);
     port_->set_endpoint(this);
+    gbb::Logger::instance().write(gbb::LogLevel::info,
+                                  gbb::LogCategory::link,
+                                  "TCP serial endpoint attached",
+                                  {diagnostic_session_, 0, 0});
 }
 
 void TcpSerialEndpoint::detach() noexcept {
+    const auto was_attached = port_ != nullptr || channel_ != nullptr;
+    const auto diagnostic_session = diagnostic_session_;
     if (port_ != nullptr) port_->set_endpoint(nullptr);
     port_ = nullptr;
     channel_ = nullptr;
@@ -40,6 +57,13 @@ void TcpSerialEndpoint::detach() noexcept {
     peer_request_seen_ = false;
     peer_byte_released_ = false;
     peer_clock_busy_ = false;
+    diagnostic_session_ = 0;
+    if (was_attached) {
+        gbb::Logger::instance().write(gbb::LogLevel::info,
+                                      gbb::LogCategory::link,
+                                      "TCP serial endpoint detached",
+                                      {diagnostic_session, 0, 0});
+    }
 }
 
 bool TcpSerialEndpoint::connected() const noexcept {
@@ -144,7 +168,13 @@ void TcpSerialEndpoint::poll() noexcept {
                                static_cast<std::uint8_t>(
                                    arbitration_priority_ ? 1U : 0U),
                                0};
-        if (channel_->send(hello)) hello_sent_ = true;
+        if (channel_->send(hello)) {
+            hello_sent_ = true;
+            gbb::Logger::instance().write(gbb::LogLevel::debug,
+                                          gbb::LogCategory::link,
+                                          "TCP link hello sent",
+                                          {diagnostic_session_, 0, 0});
+        }
     }
 
     const auto service_request = [this](const LinkPacket& packet) {
@@ -188,6 +218,12 @@ void TcpSerialEndpoint::poll() noexcept {
 
     while (const auto packet = channel_->receive()) {
         if (packet->type == LinkPacketType::hello) {
+            if (!peer_hello_seen_) {
+                gbb::Logger::instance().write(
+                    gbb::LogLevel::debug, gbb::LogCategory::link,
+                    "TCP link peer hello received",
+                    {diagnostic_session_, 0, 0});
+            }
             peer_hello_seen_ = true;
             continue;
         }
@@ -228,10 +264,18 @@ void TcpSerialEndpoint::poll() noexcept {
                 // cross-session frames, but never let an unmatched response
                 // alter the emulated serial state.
                 ++responses_unmatched_;
+                gbb::Logger::instance().write(
+                    gbb::LogLevel::warning, gbb::LogCategory::link,
+                    "TCP link response did not match a pending request",
+                    {diagnostic_session_, 0, 0});
                 continue;
             }
             if ((packet->flags & denied_flag) != 0) {
                 ++denials_received_;
+                gbb::Logger::instance().write(
+                    gbb::LogLevel::debug, gbb::LogCategory::link,
+                    "TCP link request denied; backing off before retry",
+                    {diagnostic_session_, 0, 0});
                 if (port_ != nullptr && port_->transfer_active() &&
                     port_->internal_clock()) {
                     port_->write_control(static_cast<std::uint8_t>(
@@ -247,6 +291,10 @@ void TcpSerialEndpoint::poll() noexcept {
             } else if ((packet->flags & not_ready_flag) != 0) {
                 // Keep the serial phase at the next edge, but avoid hammering
                 // the socket while the guest ISR re-arms its receiver.
+                gbb::Logger::instance().write(
+                    gbb::LogLevel::debug, gbb::LogCategory::link,
+                    "TCP link peer is not ready; backing off before retry",
+                    {diagnostic_session_, 0, 0});
                 pending_sequence_.reset();
                 response_.reset();
                 request_backoff_ = 64;

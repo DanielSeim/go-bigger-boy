@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace gbb {
@@ -32,7 +33,27 @@ struct SceneSprite {
     bool visible{};
 };
 
+// An optional, core-defined scene layer. The format identifier is deliberately
+// opaque to frontends (for example, "vendor.core.tile-map.v1"). Consumers
+// should render only formats they understand and safely ignore the rest. This
+// prevents the common scene contract from accumulating another core's hardware
+// registers while still allowing richer visualizers and diagnostics.
+struct SceneLayer {
+    std::string id;
+    std::string format;
+    std::size_t width{};
+    std::size_t height{};
+    std::vector<std::uint8_t> payload;
+};
+
 struct SceneSnapshot {
+    // The producer identifies the adapter that populated legacy fields and
+    // opaque layers. Generic renderers may use it for capability routing;
+    // unknown producers remain safe to display through the framebuffer.
+    std::string producer_id;
+    // The legacy fields below remain populated for the current Game Boy
+    // renderer. New cores should prefer `layers` and advertise scene_layers.
+    std::uint32_t schema_version{1};
     std::uint64_t emulation_cycles{};
     std::size_t width{};
     std::size_t height{};
@@ -59,6 +80,7 @@ struct SceneSnapshot {
     std::vector<std::uint8_t> cgb_bg_palette;
     std::vector<std::uint8_t> cgb_object_palette;
     std::vector<SceneSprite> sprites;
+    std::vector<SceneLayer> layers;
 };
 
 } // namespace gbb

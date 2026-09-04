@@ -4,12 +4,18 @@
 
 #include "gameboy/emulator.hpp"
 #include "gameboy/display_palette.hpp"
+#include "gameboy/printer.hpp"
 #include "gameboy/video_pipeline.hpp"
 #include "gbb/core_registry.hpp"
+#include "gbb/core_contract.hpp"
+#include "gbb/core_runtime.hpp"
+#include "gbb/frontend_logging.hpp"
+#include "gbb/log.hpp"
 #include "gbb/gameboy_core.hpp"
 #include "gbb/scene_json.hpp"
 #include "gbb/voxel_profile.hpp"
 #include "gbb/audio.hpp"
+#include "gbb/video.hpp"
 
 #include <emscripten.h>
 #include <emscripten/bind.h>
@@ -30,6 +36,10 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+
+#ifndef GBB_VERSION
+#define GBB_VERSION "0.0.0-dev"
+#endif
 
 namespace {
 
@@ -62,6 +72,7 @@ struct WebApp {
     std::chrono::steady_clock::time_point previous_time{
         std::chrono::steady_clock::now()};
     double cycle_credit{};
+    std::uint64_t presentation_frame{};
     std::size_t display_palette{};
     gameboy::VideoMode video_mode{gameboy::default_video_mode};
     bool paused{};
@@ -778,12 +789,21 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
                                 app.renderer, nullptr, vertices.data(),
                                 static_cast<int>(vertices.size()), indices.data(),
                                 static_cast<int>(indices.size()))) {
-        SDL_Log("Could not render browser voxel diorama: %s", SDL_GetError());
+        gbb::log_frontend_error(
+            std::string("Could not render browser voxel diorama: ") +
+            SDL_GetError());
     }
 }
 
 bool configure_core_io(WebApp& app) {
     if (!app.emulator) return false;
+    std::string contract_error;
+    if (!gbb::validate_core_contract(*app.emulator, contract_error)) {
+        set_status("The selected core reported an invalid frontend contract: " +
+                       contract_error,
+                   true);
+        return false;
+    }
     const auto& core = app.emulator->descriptor();
     if (core.video_width == 0 || core.video_height == 0 ||
         core.audio_sample_rate == 0 || core.audio_channels == 0) {
@@ -802,7 +822,8 @@ bool configure_core_io(WebApp& app) {
     app.audio_stream = SDL_OpenAudioDeviceStream(
         SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &audio_spec, nullptr, nullptr);
     if (!app.audio_stream) {
-        SDL_Log("Audio output is unavailable: %s", SDL_GetError());
+        gbb::log_frontend_warning(
+            std::string("Audio output is unavailable: ") + SDL_GetError());
     }
     app.display_pixels.assign(core.video_width * core.video_height, 0);
     apply_video_mode(app, requested_video_mode);
@@ -899,38 +920,14 @@ void present(WebApp& app) {
     static_cast<void>(SDL_RenderClear(app.renderer));
     if (app.emulator) {
         const auto frame = app.emulator->video_frame();
-        const auto* pixels = frame.pixels;
         const auto& palette = gameboy::display_palettes[app.display_palette];
-        const auto* game_boy = gbb::gameboy_emulator(app.emulator.get());
-        const auto native_colors = game_boy == nullptr ||
-                                   game_boy->bus().cgb_mode() ||
-                                   palette.cgb_compatibility;
-        const auto color_at = [&](const std::size_t source_index) {
-            return native_colors
-                       ? pixels[source_index]
-                       : gameboy::apply_display_palette(pixels[source_index],
-                                                        palette);
-        };
-        app.display_pixels.resize(frame.pixel_count);
-        for (std::size_t index = 0; index < frame.pixel_count; ++index) {
-            auto pixel = color_at(index);
-            const auto x = index % frame.width;
-            const auto y = index / frame.width;
-            if (app.video_mode == gameboy::VideoMode::sharp_smoothing) {
-                const auto left = x == 0 ? index : index - 1;
-                const auto right = x + 1 == frame.width
-                                       ? index : index + 1;
-                const auto up = y == 0 ? index : index - frame.width;
-                const auto down = y + 1 == frame.height
-                                      ? index : index + frame.width;
-                pixel = gameboy::apply_sharp_smoothing(
-                    pixel, color_at(left), color_at(right), color_at(up),
-                    color_at(down));
-            } else if (app.video_mode == gameboy::VideoMode::lcd_shader) {
-                pixel = gameboy::apply_lcd_shader(pixel, x, y);
-            }
-            app.display_pixels[index] = pixel;
-        }
+        const auto native_colors =
+            app.emulator->descriptor().system ==
+                gbb::SystemId::game_boy_color ||
+            palette.cgb_compatibility;
+        gbb::transform_video_frame(
+            frame.pixels, frame.pixel_count, frame.width, frame.height, palette,
+            native_colors, app.video_mode, app.display_pixels);
         if ((app.video_mode == gameboy::VideoMode::voxel_diorama ||
              app.video_mode == gameboy::VideoMode::voxel_shape ||
              app.video_mode == gameboy::VideoMode::voxel_popup) &&
@@ -971,15 +968,13 @@ int load_rom_from_browser(emscripten::val bytes) noexcept {
             active_app->emulator.reset();
             throw std::runtime_error("Could not configure the selected core");
         }
-        auto* game_boy = gbb::gameboy_emulator(active_app->emulator.get());
         // The browser has no physical printer, but it still needs to expose
         // the Game Boy Printer protocol so camera and other printer-enabled
         // games can complete their print jobs. Completed pages are drained
         // through the JavaScript binding below.
-        if (game_boy != nullptr &&
-            gbb::has_capability(active_app->emulator->descriptor().capabilities,
+        if (gbb::has_capability(active_app->emulator->descriptor().capabilities,
                                 gbb::CoreCapability::printer)) {
-            game_boy->bus().connect_printer();
+            active_app->emulator->set_printer_enabled(true);
         }
         active_app->emulator->set_compatibility_colors(
             gameboy::display_palettes[active_app->display_palette]
@@ -988,6 +983,7 @@ int load_rom_from_browser(emscripten::val bytes) noexcept {
         // restored battery RAM and RTC data for this ROM.
         active_app->paused = true;
         active_app->cycle_credit = 0.0;
+        active_app->presentation_frame = 0;
         active_app->previous_time = std::chrono::steady_clock::now();
         if (active_app->audio_stream) {
             static_cast<void>(SDL_ClearAudioStream(active_app->audio_stream));
@@ -1105,9 +1101,8 @@ emscripten::val take_browser_printer_images() {
     auto result = emscripten::val::array();
     if (!active_app || !active_app->emulator) return result;
 
-    auto* game_boy = gbb::gameboy_emulator(active_app->emulator.get());
-    if (game_boy == nullptr) return result;
-    for (const auto& image : game_boy->bus().take_printer_images()) {
+    for (const auto& page : active_app->emulator->take_printer_pages()) {
+        gameboy::PrinterImage image{page.height, page.pixels};
         result.call<void>("push", browser_bytes(gameboy::encode_printer_bmp(image)));
     }
     return result;
@@ -1210,10 +1205,11 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char* gbb_export_scene_snapshot() noexcept
 
 SDL_AppResult SDL_AppInit(void** appstate, int, char**) {
     auto app = std::make_unique<WebApp>();
-    if (!SDL_SetAppMetadata("Go Bigger Boy (GBB)", "0.2.0",
+    if (!SDL_SetAppMetadata("Go Bigger Boy (GBB)", GBB_VERSION,
                             "go-bigger-boy") ||
         !SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD)) {
-        SDL_Log("Could not initialize SDL: %s", SDL_GetError());
+        gbb::log_frontend_error(
+            std::string("Could not initialize SDL: ") + SDL_GetError());
         return SDL_APP_FAILURE;
     }
 
@@ -1281,6 +1277,9 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
 
 SDL_AppResult SDL_AppIterate(void* appstate) {
     auto& app = *static_cast<WebApp*>(appstate);
+    gbb::LogContextScope log_context{
+        {0, app.presentation_frame, 0,
+         app.emulator ? app.emulator->rom_fingerprint() : 0}};
     const auto now = std::chrono::steady_clock::now();
     const auto elapsed = std::min(
         std::chrono::duration<double>(now - app.previous_time).count(), 0.1);
@@ -1291,14 +1290,19 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
         app.cycle_credit = std::min(
             app.cycle_credit + elapsed * core.clock_rate,
             static_cast<double>(core.nominal_cycles_per_frame) * 2.0);
+        if (app.emulator->frame_ready()) app.emulator->consume_frame();
         while (app.cycle_credit >= 4.0) {
-            const auto cycles = app.emulator->step_instruction();
-            app.cycle_credit -= static_cast<double>(cycles);
-            if (app.emulator->frame_ready()) app.emulator->consume_frame();
+            const auto budget = static_cast<unsigned>(app.cycle_credit);
+            const auto result =
+                gbb::advance_to_frame(*app.emulator, budget);
+            app.cycle_credit -= static_cast<double>(result.cycles);
+            if (result.frame_ready) app.emulator->consume_frame();
+            if (result.cycles == 0) break;
         }
         submit_audio(app);
     }
     present(app);
+    ++app.presentation_frame;
     return SDL_APP_CONTINUE;
 }
 

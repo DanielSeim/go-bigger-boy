@@ -1,15 +1,15 @@
 #pragma once
 
+#include "gameboy/link_endpoint.hpp"
 #include "gameboy/link_transport.hpp"
+#include "gbb/link_scheduler.hpp"
 
 #include <cstdint>
 
 namespace gameboy {
 
-class Emulator;
-
-// Coordinates two emulators attached to one deterministic local cable.  The
-// frontend owns the emulator objects (and their save-state policy), while the
+// Coordinates two endpoints attached to one deterministic local cable.  The
+// frontend owns the core objects (and their save-state policy), while the
 // session owns the cable and the cycle-balanced scheduler used to run them.
 class LinkSession {
 public:
@@ -23,16 +23,16 @@ public:
 
     LinkSession() noexcept = default;
     explicit LinkSession(std::uint64_t timeout_cycles) noexcept
-        : timeout_cycles_(timeout_cycles) {}
+        : watchdog_(timeout_cycles) {}
     explicit LinkSession(LinkTransport& transport,
                          std::uint64_t timeout_cycles =
                              default_timeout_cycles) noexcept
-        : transport_(&transport), timeout_cycles_(timeout_cycles) {}
+        : transport_(&transport), watchdog_(timeout_cycles) {}
     LinkSession(const LinkSession&) = delete;
     LinkSession& operator=(const LinkSession&) = delete;
     ~LinkSession() { stop(); }
 
-    void start(Emulator& first, Emulator& second) noexcept;
+    void start(LinkEndpoint& first, LinkEndpoint& second) noexcept;
     void stop() noexcept;
     void retry() noexcept;
 
@@ -54,14 +54,13 @@ public:
         UINT64_C(4194304) * 8U;
 
 private:
-    Emulator* first_{};
-    Emulator* second_{};
+    LinkEndpoint* first_{};
+    LinkEndpoint* second_{};
     LocalLinkTransport local_transport_{};
     LinkTransport* transport_{&local_transport_};
     State state_{State::disconnected};
-    std::uint64_t timeout_cycles_{default_timeout_cycles};
-    std::uint64_t stalled_cycles_{};
-    std::uint64_t progress_marker_{};
+    gbb::LinkWatchdog watchdog_{default_timeout_cycles};
+    std::uint64_t diagnostic_session_{};
 };
 
 } // namespace gameboy

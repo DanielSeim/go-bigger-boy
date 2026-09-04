@@ -1,7 +1,8 @@
 #include "gbb/core_registry.hpp"
-#include "gbb/gameboy_core.hpp"
+#include "gbb/core_contract.hpp"
+#include "gbb/frontend_logging.hpp"
+#include "gbb/log.hpp"
 #include "gbb/scene_json.hpp"
-#include "gameboy/emulator.hpp"
 
 #include <cstdlib>
 #include <exception>
@@ -40,40 +41,44 @@ int main(int argc, char** argv) {
             }
         }
         auto core = gbb::create_core_from_file(argv[1]);
+        std::string contract_error;
+        if (!gbb::validate_core_contract(*core, contract_error)) {
+            throw std::runtime_error("Core contract violation: " +
+                                     contract_error);
+        }
         const auto& descriptor = core->descriptor();
+        gbb::LogContextScope log_context{
+            {0, 0, 0, core->rom_fingerprint()}};
         std::cout << "Core: " << descriptor.core_name << '\n'
                   << "System: " << gbb::system_id_string(descriptor.system) << '\n'
                   << "Video: " << descriptor.video_width << 'x'
                   << descriptor.video_height << '\n';
-        const auto* emulator = gbb::gameboy_emulator(core.get());
-        if (emulator != nullptr) {
-            const auto& cartridge = emulator->bus().cartridge();
-            std::cout << "Title: " << cartridge.title() << '\n'
-                      << "ROM bytes: " << cartridge.rom_size() << '\n'
-                      << "RAM bytes: " << cartridge.ram_size() << '\n'
-                      << "Battery: "
-                      << (cartridge.has_battery() ? "yes" : "no") << '\n'
-                      << "Color mode: "
-                      << (cartridge.supports_cgb()
-                              ? (cartridge.requires_cgb() ? "CGB only"
-                                                          : "CGB enhanced")
-                              : "DMG")
-                      << '\n'
-                      << "Cartridge type: 0x" << std::hex << std::setw(2)
-                      << std::setfill('0')
-                      << static_cast<unsigned>(cartridge.type()) << '\n';
-        }
+        std::cout << "Title: " << descriptor.software_title << '\n'
+                  << "ROM bytes: " << descriptor.rom_size << '\n'
+                  << "RAM bytes: " << descriptor.save_ram_size << '\n'
+                  << "Battery: " << (descriptor.has_battery ? "yes" : "no")
+                  << '\n'
+                  << "Color mode: "
+                  << (descriptor.supports_color
+                          ? (descriptor.requires_color ? "CGB only"
+                                                        : "CGB enhanced")
+                          : "DMG")
+                  << '\n';
 
         unsigned long total_cycles = 0;
         for (unsigned long i = 0; i < instruction_count; ++i) {
+            gbb::LogContextScope instruction_context{
+                {0, static_cast<std::uint64_t>(i),
+                 static_cast<std::uint64_t>(total_cycles),
+                 core->rom_fingerprint()}};
             total_cycles += core->step_instruction();
         }
 
         std::cout << "Executed " << std::dec << instruction_count
                   << " instructions (" << total_cycles << " cycles)";
-        if (emulator != nullptr) {
+        if (const auto program_counter = core->program_counter()) {
             std::cout << ", PC=0x" << std::hex << std::setw(4)
-                      << std::setfill('0') << emulator->cpu().registers().pc;
+                      << std::setfill('0') << *program_counter;
         }
         std::cout << '\n';
         if (scene_json_path) {
@@ -87,7 +92,7 @@ int main(int argc, char** argv) {
                       << '\n';
         }
     } catch (const std::exception& error) {
-        std::cerr << "Error: " << error.what() << '\n';
+        gbb::log_frontend_error(std::string("CLI error: ") + error.what());
         return EXIT_FAILURE;
     }
 }
