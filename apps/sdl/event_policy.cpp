@@ -20,6 +20,7 @@ void process_events(SdlEventContext& context) {
     auto& dashboard_visible = context.dashboard_visible;
     auto& running = context.running;
 #ifndef __ANDROID__
+    auto& display_palette = context.display_palette;
     auto& paused = context.paused;
     auto& fullscreen = context.fullscreen;
     const auto remote_link_active = context.remote_link_active;
