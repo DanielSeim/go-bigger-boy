@@ -737,6 +737,10 @@ The first guardrail pass is implemented:
   GameShark request sequencing. This removes another large platform-specific
   block from `main.cpp` without making the tool implementations part of the
   generic core API.
+- `tests/sdl_core_capability_tests.cpp` now exercises supported and unsupported
+  service masks, missing adapter pointers, and refreshing the service view
+  after a core closes. This keeps lifecycle gating regression-tested without
+  requiring an interactive SDL window.
 
 The headless core suite, SDL desktop target, and Android Java frontend all
 build successfully after this pass.
