@@ -719,6 +719,13 @@ The first guardrail pass is implemented:
   and action dispatch now live in `apps/sdl/dashboard_controller.*`. The
   renderer and event dispatcher share one dashboard contract, while ROM and
   settings actions remain independently reviewable.
+- SDL optional-tool access now goes through the capability-checked
+  `CoreServices` view in `apps/sdl/core_capability.hpp`. Debugger, sprite
+  editor, GameShark, and link-cable paths cannot obtain a concrete Game Boy
+  adapter unless the owning `EmulatorCore` advertises the corresponding
+  capability; voxel input likewise relies on the generic scene-layer
+  capability. This is the first migration slice toward fully generic
+  advanced services without introducing a dynamic plugin ABI.
 
 The headless core suite, SDL desktop target, and Android Java frontend all
 build successfully after this pass.

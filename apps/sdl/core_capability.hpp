@@ -20,11 +20,12 @@ namespace gbb::sdl {
                                        capability);
 }
 
-// A concrete Game Boy adapter is non-owning and only valid for tools whose
-// capability is advertised by the owning generic core. Keeping both checks in
-// this view prevents a future core from routing events to an incompatible or
-// stale adapter pointer.
-struct GameBoyToolAdapter final {
+// Optional SDL services are deliberately a view, not an ownership layer. The
+// generic core remains the source of truth for capabilities; the concrete
+// adapter is only returned when both the capability and pointer are present.
+// Keeping this policy in one place prevents a future core from routing events
+// to an incompatible or stale Game Boy tool pointer.
+struct CoreServices final {
     EmulatorCore* core{};
     gameboy::Emulator* emulator{};
 
@@ -32,6 +33,23 @@ struct GameBoyToolAdapter final {
         const CoreCapability capability) const noexcept {
         return supports(core, capability) ? emulator : nullptr;
     }
+
+    [[nodiscard]] gameboy::Emulator* debugger() const noexcept {
+        return get(CoreCapability::debugger);
+    }
+    [[nodiscard]] gameboy::Emulator* sprite_editor() const noexcept {
+        return get(CoreCapability::sprite_editor);
+    }
+    [[nodiscard]] gameboy::Emulator* cheats() const noexcept {
+        return get(CoreCapability::cheats);
+    }
+    [[nodiscard]] gameboy::Emulator* link_cable() const noexcept {
+        return get(CoreCapability::link_cable);
+    }
 };
+
+// Compatibility name for the existing SDL call sites. New code should use
+// CoreServices so optional feature access reads as a service boundary.
+using GameBoyToolAdapter = CoreServices;
 
 } // namespace gbb::sdl

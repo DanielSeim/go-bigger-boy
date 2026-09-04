@@ -106,10 +106,10 @@ void handle_gamepad_event(const SDL_Event& event, SdlEventContext& context) {
         if (const auto button = gamepad_button(
                 context.bindings, event.gbutton.button)) {
 #ifndef __ANDROID__
-            if (context.emulator &&
-                supports(context.core.get(), CoreCapability::debugger)) {
+            const CoreServices tools{context.core.get(), context.emulator};
+            if (tools.debugger() != nullptr) {
                 context.input_movie.set_button(
-                    *context.emulator, *button,
+                    *tools.debugger(), *button,
                     event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN);
             } else {
                 context.core->set_input(
@@ -136,21 +136,21 @@ bool is_voxel_video_mode(const gameboy::VideoMode mode) noexcept {
 #ifndef GBB_EVENT_DISPATCH_CORE_ONLY
 bool handle_desktop_tool_event(const SDL_Event& event,
                                SdlEventContext& context) {
-    const GameBoyToolAdapter tools{context.core.get(), context.emulator};
-    if (tools.get(CoreCapability::cheats) != nullptr &&
+    const CoreServices tools{context.core.get(), context.emulator};
+    if (tools.cheats() != nullptr &&
         context.cheat_manager.handle_event(event)) {
         return true;
     }
-    if (tools.get(CoreCapability::sprite_editor) != nullptr &&
-        context.sprite_editor.handle_event(event, context.emulator)) {
+    if (tools.sprite_editor() != nullptr &&
+        context.sprite_editor.handle_event(event, tools.sprite_editor())) {
         return true;
     }
-    if (tools.get(CoreCapability::debugger) != nullptr &&
+    if (tools.debugger() != nullptr &&
         context.tas_editor.handle_event(event)) {
         return true;
     }
-    if (tools.get(CoreCapability::debugger) != nullptr &&
-        context.debugger.handle_event(event, context.emulator)) {
+    if (tools.debugger() != nullptr &&
+        context.debugger.handle_event(event, tools.debugger())) {
         return true;
     }
     return false;
@@ -158,7 +158,7 @@ bool handle_desktop_tool_event(const SDL_Event& event,
 
 void handle_desktop_voxel_mouse_event(const SDL_Event& event,
                                       SdlEventContext& context) {
-    const GameBoyToolAdapter tools{context.core.get(), context.emulator};
+    const CoreServices tools{context.core.get(), context.emulator};
     if (tools.get(CoreCapability::scene_layers) == nullptr ||
         context.dashboard_visible ||
         !is_voxel_video_mode(context.sdl.video_mode)) {
@@ -192,6 +192,7 @@ void handle_desktop_menu_event(SdlEventContext& context) {
     auto& sdl = context.sdl;
     auto* const emulator = context.emulator;
     auto& core = context.core;
+    const CoreServices tools{core.get(), emulator};
     auto* const link_emulator = context.link_emulator;
     const auto& preference_path = context.preference_path;
     auto& bindings = context.bindings;
@@ -205,7 +206,7 @@ void handle_desktop_menu_event(SdlEventContext& context) {
     const auto video_first = static_cast<int>(DesktopMenuCommand::video_first);
     if (menu_command == DesktopMenuCommand::none) return;
     const auto has_capability = [&](const CoreCapability capability) {
-        return supports(core.get(), capability) && emulator != nullptr;
+        return tools.get(capability) != nullptr;
     };
 
     if (menu_value >= palette_first &&
@@ -335,13 +336,13 @@ void handle_desktop_menu_event(SdlEventContext& context) {
     }
     case DesktopMenuCommand::gameshark:
         if (has_capability(CoreCapability::cheats)) {
-            release_all_buttons(*emulator);
+            release_all_buttons(*tools.cheats());
             context.cheat_manager.open(sdl.window);
         }
         break;
     case DesktopMenuCommand::debugger:
         if (has_capability(CoreCapability::debugger)) {
-            release_all_buttons(*emulator);
+            release_all_buttons(*tools.debugger());
             context.debugger.toggle(sdl.window);
         }
         break;
@@ -531,6 +532,7 @@ void handle_gameplay_key_event(const SDL_Event& event,
                                SdlEventContext& context) {
     auto* const emulator = context.emulator;
     auto& core = context.core;
+    const CoreServices tools{core.get(), emulator};
     auto* const link_emulator = context.link_emulator;
     auto& sdl = context.sdl;
     const auto& preference_path = context.preference_path;
@@ -547,8 +549,7 @@ void handle_gameplay_key_event(const SDL_Event& event,
     auto& remote_host_requested = context.remote_host_requested;
     auto& remote_join_requested = context.remote_join_requested;
     const auto remote_link_active = context.remote_link_active;
-    const auto supports_link =
-        supports(core.get(), CoreCapability::link_cable) && emulator != nullptr;
+    const auto supports_link = tools.link_cable() != nullptr;
 #ifndef __ANDROID__
     const auto replaying_input = context.input_movie.replaying();
     const auto input_movie_active =
@@ -638,9 +639,9 @@ void handle_gameplay_key_event(const SDL_Event& event,
     } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
                event.key.key == SDLK_G &&
                (event.key.mod & SDL_KMOD_CTRL) != 0 &&
-               supports(core.get(), CoreCapability::cheats) && emulator) {
+               tools.cheats() != nullptr) {
 #ifndef __ANDROID__
-        release_all_buttons(*emulator);
+        release_all_buttons(*tools.cheats());
         if (!cheat_manager.visible()) {
             cheat_pause_restore = paused;
             paused = true;
@@ -695,9 +696,9 @@ void handle_gameplay_key_event(const SDL_Event& event,
 #endif
         if (context.update_title) context.update_title();
     } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
-               event.key.key == SDLK_F12 && emulator) {
+               event.key.key == SDLK_F12 && tools.debugger() != nullptr) {
 #ifndef __ANDROID__
-        release_all_buttons(*emulator);
+        release_all_buttons(*tools.debugger());
         debugger.toggle(sdl.window);
 #endif
     } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
@@ -723,9 +724,8 @@ void handle_gameplay_key_event(const SDL_Event& event,
     } else if (core && !event.key.repeat) {
         if (const auto button = keyboard_button(bindings, event.key.key)) {
 #ifndef __ANDROID__
-            if (emulator &&
-                supports(core.get(), CoreCapability::debugger)) {
-                input_movie.set_button(*emulator, *button,
+            if (tools.debugger() != nullptr) {
+                input_movie.set_button(*tools.debugger(), *button,
                                        event.type == SDL_EVENT_KEY_DOWN);
             } else {
                 core->set_input(core_input_id(*button),
@@ -779,8 +779,7 @@ void handle_touch_event(const SDL_Event& event, SdlEventContext& context) {
     } else if (existing == sdl.touches.end()) {
         const auto menu_tap = android_menu_touch_hit(sdl, touch_x, touch_y);
         const auto control = touch_button_index(touch_x, touch_y, sdl);
-        const auto orbit = context.emulator != nullptr &&
-                           supports(context.core.get(),
+        const auto orbit = supports(context.core.get(),
                                     CoreCapability::scene_layers) &&
                            !menu_tap &&
                            voxel_mode_enabled(sdl) &&
@@ -789,7 +788,6 @@ void handle_touch_event(const SDL_Event& event, SdlEventContext& context) {
             {finger, touch_x, touch_y, orbit, orbit ? std::nullopt : control});
     } else {
         if (event.type == SDL_EVENT_FINGER_MOTION && existing->orbit &&
-            context.emulator != nullptr &&
             supports(context.core.get(), CoreCapability::scene_layers) &&
             voxel_mode_enabled(sdl) &&
             sdl.touch_settings.voxel_orbit) {

@@ -12,8 +12,10 @@ int main() {
         std::cerr << "core capability gating regression\n";
         return 1;
     }
-    const gbb::sdl::GameBoyToolAdapter adapter{nullptr, nullptr};
-    if (adapter.get(gbb::CoreCapability::debugger) != nullptr) {
+    const gbb::sdl::CoreServices adapter{nullptr, nullptr};
+    if (adapter.get(gbb::CoreCapability::debugger) != nullptr ||
+        adapter.debugger() != nullptr || adapter.sprite_editor() != nullptr ||
+        adapter.cheats() != nullptr || adapter.link_cable() != nullptr) {
         std::cerr << "null core must not expose Game Boy tools\n";
         return 1;
     }
