@@ -1235,6 +1235,10 @@ int main(int argc, char** argv) {
                 }
             };
             process_events(event_context);
+            // Event callbacks may close the current core (for example when
+            // Android returns to the native library). Refresh the non-owning
+            // service view before any lifecycle or presentation work below.
+            services = {core.get(), emulator};
 
 #ifndef __ANDROID__
             if (update_cancel_requested) {
