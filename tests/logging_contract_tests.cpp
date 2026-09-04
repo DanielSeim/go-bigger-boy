@@ -24,7 +24,8 @@ void test_logging_contract() {
     const auto directory = std::filesystem::temp_directory_path() /
                            "gbb-logger-contract-test";
     const auto path = directory / "nested" / "trace.log";
-    std::filesystem::remove_all(directory);
+    std::error_code cleanup_error;
+    std::filesystem::remove_all(directory, cleanup_error);
     logger.set_level(gbb::LogLevel::trace);
     logger.set_memory_capacity(2);
     check(logger.set_file(path), "logger accepts a writable file sink");
@@ -115,7 +116,8 @@ void test_logging_contract() {
           "PPU window tracing follows runtime logger level changes");
     logger.set_level(gbb::LogLevel::warning);
     logger.set_memory_capacity(0);
-    std::filesystem::remove_all(directory);
+    cleanup_error.clear();
+    std::filesystem::remove_all(directory, cleanup_error);
 }
 
 } // namespace

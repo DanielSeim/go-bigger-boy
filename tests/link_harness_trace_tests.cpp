@@ -63,6 +63,7 @@ int main() {
     check(trace_contents.find("trace_end frames=30") ==
               trace_contents.rfind("trace_end frames=30"),
           "trace writer terminates the trace exactly once");
-    std::filesystem::remove(trace_path);
+    std::error_code cleanup_error;
+    std::filesystem::remove(trace_path, cleanup_error);
     return failures == 0 ? 0 : 1;
 }

@@ -58,8 +58,10 @@ int main() {
         check(contents.find("session_end id=1 frames=30 elapsed_ms=") !=
                   std::string::npos,
               "SDL trace records a flushed session end");
-        std::filesystem::remove(path);
+        std::error_code cleanup_error;
+        std::filesystem::remove(path, cleanup_error);
     }
-    std::filesystem::remove_all(preference_path);
+    std::error_code cleanup_error;
+    std::filesystem::remove_all(preference_path, cleanup_error);
     return failures == 0 ? 0 : 1;
 }

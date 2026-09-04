@@ -99,6 +99,7 @@ int main() {
               header[2] == '\n',
           "harness frame capture writes a PPM header");
 
-    std::filesystem::remove_all(root);
+    std::error_code cleanup_error;
+    std::filesystem::remove_all(root, cleanup_error);
     return failures == 0 ? 0 : 1;
 }
