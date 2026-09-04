@@ -7,6 +7,8 @@
 namespace gameboy {
 
 class SaveStateCodec;
+class SaveStateApuCodec;
+class SaveStateBusCodec;
 enum class HardwareModel;
 
 class Apu {
@@ -29,6 +31,8 @@ public:
 
 private:
     friend class SaveStateCodec;
+    friend class SaveStateApuCodec;
+    friend class SaveStateBusCodec;
 
     struct EnvelopeState {
         bool running{};

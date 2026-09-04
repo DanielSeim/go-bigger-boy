@@ -10,6 +10,8 @@
 namespace gameboy {
 
 class SaveStateCodec;
+class SaveStatePpuCodec;
+class SaveStateBusCodec;
 enum class HardwareModel;
 
 class Ppu {
@@ -71,6 +73,8 @@ public:
 
 private:
     friend class SaveStateCodec;
+    friend class SaveStatePpuCodec;
+    friend class SaveStateBusCodec;
 
     struct BackgroundPixel {
         std::uint8_t color{};

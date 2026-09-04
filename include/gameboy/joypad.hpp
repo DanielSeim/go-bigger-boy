@@ -7,6 +7,8 @@
 namespace gameboy {
 
 class SaveStateCodec;
+class SaveStateJoypadCodec;
+class SaveStateBusCodec;
 
 enum class Button {
     right,
@@ -36,6 +38,8 @@ public:
 
 private:
     friend class SaveStateCodec;
+    friend class SaveStateJoypadCodec;
+    friend class SaveStateBusCodec;
 
     [[nodiscard]] std::uint8_t input_lines() const noexcept;
     void process_sgb_write(std::uint8_t value) noexcept;

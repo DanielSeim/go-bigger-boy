@@ -5,6 +5,8 @@
 namespace gameboy {
 
 class SaveStateCodec;
+class SaveStateTimerCodec;
+class SaveStateBusCodec;
 enum class HardwareModel;
 
 class Timer {
@@ -29,6 +31,8 @@ public:
 
 private:
     friend class SaveStateCodec;
+    friend class SaveStateTimerCodec;
+    friend class SaveStateBusCodec;
 
     [[nodiscard]] bool input_signal() const noexcept;
     void increment_counter() noexcept;

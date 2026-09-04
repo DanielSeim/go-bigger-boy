@@ -9,6 +9,7 @@ namespace gameboy {
 
 class MemoryBus;
 class SaveStateCodec;
+class SaveStateCpuCodec;
 
 struct CpuRegisters {
     std::uint8_t a{};
@@ -44,6 +45,7 @@ public:
 
 private:
     friend class SaveStateCodec;
+    friend class SaveStateCpuCodec;
 
     static constexpr std::uint8_t zero_flag = 0x80;
     static constexpr std::uint8_t subtract_flag = 0x40;

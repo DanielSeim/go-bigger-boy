@@ -10,6 +10,8 @@
 namespace gameboy {
 
 class SaveStateCodec;
+class SaveStateCartridgeCodec;
+class SaveStateBusCodec;
 
 class Cartridge {
 public:
@@ -58,6 +60,8 @@ public:
 
 private:
     friend class SaveStateCodec;
+    friend class SaveStateCartridgeCodec;
+    friend class SaveStateBusCodec;
 
     enum class Controller {
         rom_only,

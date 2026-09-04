@@ -108,6 +108,14 @@ add_library(gameboy_core
     src/ppu_sgb.cpp
     src/printer.cpp
     src/save_state.cpp
+    src/save_state_apu.cpp
+    src/save_state_bus.cpp
+    src/save_state_bus_read.cpp
+    src/save_state_cartridge.cpp
+    src/save_state_cpu.cpp
+    src/save_state_joypad.cpp
+    src/save_state_ppu.cpp
+    src/save_state_timer.cpp
     src/serial.cpp
     src/save_state_container.cpp
     src/timer.cpp
