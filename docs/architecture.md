@@ -37,9 +37,12 @@ used in shared metadata instead of C++ enum ordinals.
 renderers that need more than the final framebuffer, such as a voxel diorama.
 It contains legacy compatibility fields for the current Game Boy renderer,
 plus optional opaque core-defined `SceneLayer` payloads identified by a
-namespaced format string. `EmulatorCore::video_frame()` remains the universal
-fallback, while cores that can provide scene data advertise
-`CoreCapability::scene_layers`. The Game Boy adapter currently exposes both
+namespaced format string. `CoreDescriptor` carries the implementation-owned
+list of formats a core may emit; contract validation rejects missing, duplicate,
+or unadvertised formats before a frontend consumes the snapshot.
+`EmulatorCore::video_frame()` remains the universal fallback, while cores that
+can provide scene data advertise `CoreCapability::scene_layers`. The Game Boy
+adapter currently exposes both
 32x32 background/window maps, both CGB VRAM banks, CGB palette RAM, and decoded
 OAM coordinates. No renderer-specific or Game Boy-specific types cross the
 frontend boundary.
@@ -105,6 +108,22 @@ remote session.
 
 The GB implementation remains independently testable as `gameboy_core`; the
 frontend-facing target is `gbb_core_api`.
+
+## Dynamic plug-ins
+
+The static C++ API is the supported extension seam today. A future dynamic
+loader must use a separate fixed-width C ABI with explicit ownership, result
+codes, version negotiation, and size-prefixed tables; exporting
+`EmulatorCore` directly would make STL and compiler-runtime details part of the
+binary contract. The design and required fixture tests are documented in
+[`plugin-abi.md`](plugin-abi.md). No loader or stable plug-in ABI is promised
+until that fixture compatibility matrix passes.
+
+Save-state framing and checksum validation are isolated from hardware field
+serialization. CPU, cartridge, joypad, timer, PPU, and APU fields are delegated
+through private codec boundaries, so changes to those state groups do not
+require editing the public emulator entry points. The complete bus payload,
+including version-gated migrations, is delegated to `SaveStateBusCodec`.
 
 ## Migration status
 

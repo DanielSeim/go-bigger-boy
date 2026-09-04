@@ -21,7 +21,7 @@ The recommended approach is incremental extraction, not a rewrite.
 | Android frontend | `LibraryActivity.java` was 1,006 lines and combined library, settings, artwork, touch-layout editing, and update UI; library and settings screens, touch-layout editing, artwork, and updates are now isolated and the activity is about 300 lines | UI changes can affect unrelated flows |
 | Link harness | `apps/link_harness/main.cpp` was 2,008 lines at audit time and is now about 440 lines; scenario state, Pokémon probes/automation, trace formatting, trace-file lifecycle, and semantic detection are isolated | Difficult to isolate trade/battle failures |
 | Tests | `tests/core_tests.cpp` is now about 314 lines with manually invoked smoke tests in `main()`; 38 subsystem and integration contracts are registered as separate CTest executables | Deeper malformed-input and replay coverage remains |
-| Save states | `src/save_state.cpp` remains the hardware-field codec for CPU, bus, PPU, APU, cartridge, camera, and SGB state (now about 926 lines); container framing, ROM identity, size limits, and CRC validation are isolated in `src/save_state_container.cpp` | Every new field increases compatibility risk |
+| Save states | `src/save_state.cpp` is now a small compatibility orchestrator (about 120 lines); CPU and the complete bus payload are delegated to focused codecs, while container framing, ROM identity, size limits, and CRC validation are isolated in `src/save_state_container.cpp` | Every new field increases compatibility risk |
 | PPU/cartridge | `src/ppu.cpp` now owns register/memory behavior while `src/ppu_timing.cpp` owns scanline timing, fetcher, sprite, and pixel composition; cartridge mapping is separated from persistence/peripheral storage in `src/cartridge_persistence.cpp` | Hardware bugs are hard to localize |
 
 ## Core and frontend architecture
@@ -61,9 +61,10 @@ candidates and deterministic winner.
 `SceneSnapshot` retains Game Boy-shaped compatibility fields such as LCDC,
 SCX/SCY, WX/WY, CGB palettes, and OAM coordinates. Scene population is now
 centralized in `src/gameboy_scene.cpp`, and the schema has an explicit version
-plus optional opaque, core-defined layers. Future work should use those layers
-and add renderer capability contracts instead of adding more hardware-shaped
-members.
+plus optional opaque, core-defined layers. Core descriptors now advertise the
+opaque formats they produce; contract validation rejects unadvertised or
+ambiguous layers before a frontend sees them. Frontends can still fall back to
+the framebuffer when they do not implement a known format.
 
 `gbb_core_api` is described as system-neutral, but it links directly to
 `gameboy_core`. This is acceptable for the current static build, but it is not
@@ -115,17 +116,16 @@ Still open:
 
 There are no mandatory implementation items for the current static
 architecture. The reviewed corpus has a checksum manifest, both fuzz
-workflows enforce deterministic hygiene, and the TSan job covers the complete
-SDL-enabled contract suite plus a bounded Xvfb dashboard launch.
+workflows enforce deterministic hygiene, and semantic review tooling now makes
+parser-boundary outcomes explicit before promotion. The TSan job covers the
+complete SDL-enabled contract suite plus an input-driven Xvfb dashboard smoke;
+the smoke retains stdout/stderr and TSan reports as CI artifacts.
 
 Deferred follow-up:
 
-- future generated fuzz inputs still require human semantic review before
-  promotion;
-- longer user-driven GUI TSan sessions require a real display and input
-  device, beyond the automated dashboard smoke;
 - a dynamically loaded core-plugin ABI should wait until the static API has
-  stabilized.
+  stabilized; the design constraints and migration gates are documented in
+  `docs/plugin-abi.md`, but no binary ABI is promised yet.
 
 ## Concrete issue found during the audit
 
@@ -179,10 +179,22 @@ The first guardrail pass is implemented:
 - Core contract validation now checks scene capability invariants as well as
   framebuffer/audio/input metadata: advertised scene snapshots must have a
   version, match the core's video dimensions, and use named, bounded opaque
-  layers. Invalid adapters fail at creation with an actionable error.
+  layers. Legacy tile-map dimensions, vector lengths, and tile-buffer metadata
+  are checked when present, and input descriptors are checked against the known
+  input-ID set. Invalid adapters fail at creation with an actionable error.
 - Scene snapshots now identify their producer adapter, reject duplicate opaque
   layer IDs, and require payloads for sized layers. This keeps future core
   extensions namespaced and prevents ambiguous or silently empty render data.
+- Core descriptors now carry an optional, implementation-owned list of
+  advertised scene-layer formats. The core contract validates that the list is
+  present, non-empty, and unique when used, and that every opaque layer selects one of
+  those formats. This makes scene routing explicit without coupling the public
+  API to a particular renderer; unsupported formats remain safe framebuffer
+  fallbacks in frontends.
+- The static `EmulatorCore` contract now carries an explicit `core_api_version`.
+  Boundary validation rejects unsupported versions, unknown capability bits,
+  invalid system identifiers, non-finite timing metadata, contradictory color
+  flags, and duplicate input display names before an adapter reaches a frontend.
 - The common `settings.ini` key/value reader now lives in `gbb::read_settings_file`;
   SDL's schema-specific settings code consumes it, and the native Android/SDL
   entry points no longer need independent comment/whitespace parsing.
@@ -455,10 +467,18 @@ The first guardrail pass is implemented:
   runs a thirty-minute campaign and uploads the evolved corpus for review.
   `tests/fuzz/run_campaign.sh` is the same bounded runner for local campaigns;
   it stages reviewed seeds into a separate directory and treats only the
-  expected timeout as successful, so crashes remain actionable failures.
-  `tests/fuzz/promote_corpus.sh` minimizes a reviewed campaign in a temporary
-  directory and requires `--approve` before copying any new inputs into the
+  expected timeout as successful, so crashes remain actionable failures. It
+  validates numeric limits and the reviewed manifest itself, and rejects a
+  generated-output path that aliases the reviewed seed directory.
+  `tests/fuzz/review_corpus.sh` produces a deterministic report of hashes,
+  sizes, and parser outcomes for campaign inputs. `tests/fuzz/promote_corpus.sh`
+  minimizes a reviewed campaign in a temporary directory, verifies that report
+  is current, and requires `--approve` before copying any new inputs into the
   checked-in seed corpus.
+- ThreadSanitizer CI now drives the SDL dashboard through a bounded X11 input
+  session in `tests/sdl_tsan_smoke.sh`; it exercises dashboard navigation and
+  modal help handling while preserving instrumented process output and race
+  reports as artifacts, without requiring a physical display or input device.
 - Core frame stepping and balanced link scheduling now have a dedicated
   `tests/core_runtime_link_scheduler_tests.cpp` executable; those contracts no
   longer contribute to the monolithic core test binary.
@@ -582,6 +602,24 @@ The first guardrail pass is implemented:
 - Save-state framing is isolated from hardware serialization in
   `src/save_state_container.cpp`; its fixed-header, ROM-identity, size, and
   checksum contract is covered by the same format test executable.
+- CPU save-state fields now have a private `SaveStateCpuCodec` boundary in
+  `src/save_state_cpu.cpp`. The public emulator codec still owns the exact
+  wire ordering and version framing, while CPU migrations can be reviewed and
+  tested independently from bus, PPU, and APU fields.
+- Cartridge, joypad/SGB input, and timer save-state fields now use dedicated
+  private codec boundaries in `src/save_state_cartridge.cpp`,
+  `src/save_state_joypad.cpp`, and `src/save_state_timer.cpp`. Their RTC,
+  input-mask, and timer normalization rules remain unchanged while the main
+  codec's bus orchestration is smaller and easier to audit.
+- PPU and APU save-state fields now use dedicated private codecs in
+  `src/save_state_ppu.cpp` and `src/save_state_apu.cpp`. Version-gated bus
+  migration is coordinated by `SaveStateBusCodec`, while framebuffer, channel,
+  envelope, and resampling state changes can be reviewed in focused files.
+- Save-state bus payloads now have a private `SaveStateBusCodec` boundary in
+  `src/save_state_bus.cpp` and `src/save_state_bus_read.cpp`. Layout writing
+  and versioned migration reads are separate translation units, preserving the
+  established field order while keeping cross-component details out of the
+  emulator entry point.
 - Touch ownership, desktop dashboard navigation, voxel profile persistence,
   and audio queue helpers now have a dedicated
   `tests/frontend_contract_tests.cpp` executable, further shrinking the
@@ -606,6 +644,12 @@ The first guardrail pass is implemented:
 - Equal-confidence core probe selections now emit a warning identifying both
   candidates and the deterministic winner, so registration-order decisions
   are visible in diagnostics instead of being silent.
+- Core factory registration now requires stable display metadata in addition
+  to an id, probe, and creator. This prevents a future core from entering the
+  registry without enough information for frontend library and diagnostics UI.
+- Core creation also verifies that the returned descriptor repeats the
+  selected factory's ID and display name, preventing mislabelled adapters from
+  reaching frontend code or producing misleading diagnostics.
 - Scene snapshot construction and JSON export now run in that same focused
   frontend target, keeping presentation-schema regressions separate from the
   hardware-core test executable.
