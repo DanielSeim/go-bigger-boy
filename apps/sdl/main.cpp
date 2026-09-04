@@ -35,6 +35,7 @@
 #include "core_capability.hpp"
 #ifndef __ANDROID__
 #include "advanced_tools.hpp"
+#include "link_controller.hpp"
 #endif
 #ifdef __ANDROID__
 #include "android_bridge.hpp"
@@ -190,6 +191,7 @@ using gbb::sdl::handle_keyboard_binding_event;
 using gbb::sdl::handle_gameplay_key_event;
 #ifndef __ANDROID__
 using gbb::sdl::process_advanced_tool_requests;
+using gbb::sdl::process_link_requests;
 using gbb::sdl::handle_desktop_tool_event;
 using gbb::sdl::handle_desktop_voxel_mouse_event;
 #endif
@@ -1250,96 +1252,14 @@ int main(int argc, char** argv) {
                 update_window_title(sdl.window, current_rom, paused,
                                     configuring);
             }
-            if (remote_stop_requested) {
-                remote_stop_requested = false;
-                if (emulator != nullptr && remote_link.active()) {
-                    stop_remote_link_session(*emulator, remote_link);
-                }
-            }
-            if (remote_host_requested || remote_join_requested) {
-                const auto hosting = remote_host_requested;
-                remote_host_requested = false;
-                remote_join_requested = false;
-                try {
-                    if (link_emulator != nullptr) {
-                        stop_local_link_session(*emulator, link_emulator,
-                                                link_session, link_first_endpoint,
-                                                link_second_endpoint, sdl);
-                    }
-                    if (remote_link.active()) {
-                        stop_remote_link_session(*emulator, remote_link);
-                    }
-                    if (services.link_cable() == nullptr) {
-                        gbb::log_frontend_warning(
-                            "Ignoring link request for a core without link support.");
-                    } else {
-                        start_remote_link_session(*emulator, remote_link, hosting,
-                                                  preference_path, link_diagnostics,
-                                                  sdl.window);
-                        rewind = false;
-                        rewind_history.clear();
-                    }
-                } catch (const std::exception& error) {
-                    show_error(sdl.window, error.what());
-                }
-            }
-            if (link_retry_requested) {
-                link_retry_requested = false;
-                try {
-                    if (emulator != nullptr && remote_link.active()) {
-                        retry_remote_link_session(*emulator, remote_link);
-                    } else if (emulator != nullptr && link_emulator != nullptr &&
-                               link_session != nullptr) {
-                        retry_local_link_session(*emulator, *link_emulator,
-                                                 *link_session);
-                        automatic_local_retry_used = false;
-                    }
-                } catch (const std::exception& error) {
-                    show_error(sdl.window, error.what());
-                }
-            }
-            // A stalled local session used to leave both consoles permanently
-            // frozen once LinkSession's transport watchdog expired. Recover
-            // the transient serial/guest handshake once, matching the manual
-            // Retry Link Handshake command, but do not loop forever if the
-            // peer or ROM is genuinely unavailable.
-            if (emulator != nullptr && link_emulator != nullptr &&
-                link_session != nullptr &&
-                link_session->state() == gameboy::LinkSession::State::timed_out &&
-                !automatic_local_retry_used) {
-                try {
-                    retry_local_link_session(*emulator, *link_emulator,
-                                             *link_session);
-                    automatic_local_retry_used = true;
-                } catch (const std::exception& error) {
-                    show_error(sdl.window, error.what());
-                    automatic_local_retry_used = true;
-                }
-            }
-            if (link_toggle_requested) {
-                link_toggle_requested = false;
-                try {
-                    if (remote_link.active()) {
-                        stop_remote_link_session(*emulator, remote_link);
-                    } else if (link_emulator != nullptr) {
-                        stop_local_link_session(*emulator, link_emulator,
-                                                link_session, link_first_endpoint,
-                                                link_second_endpoint, sdl);
-                    } else if (services.link_cable() != nullptr) {
-                        start_local_link_session(
-                            current_rom, *emulator, link_emulator, link_session,
-                            link_first_endpoint, link_second_endpoint,
-                            sdl, gameboy::display_palettes[display_palette],
-                            preference_path, link_diagnostics);
-                        automatic_local_retry_used = false;
-                        rewind = false;
-                        rewind_history.clear();
-                    }
-                } catch (const std::exception& error) {
-                    show_error(sdl.window, error.what());
-                }
-            }
-            if (link_emulator == nullptr) automatic_local_retry_used = false;
+            process_link_requests({
+                services, emulator, link_emulator, link_session,
+                link_first_endpoint, link_second_endpoint, remote_link, sdl,
+                current_rom, gameboy::display_palettes[display_palette],
+                preference_path, link_diagnostics, rewind_history,
+                remote_stop_requested, remote_host_requested,
+                remote_join_requested, link_retry_requested,
+                link_toggle_requested, automatic_local_retry_used, rewind});
 #endif
 
             std::optional<std::string> dialog_error;

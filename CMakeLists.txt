@@ -268,6 +268,7 @@ if(GAMEBOY_BUILD_SDL)
             add_executable(gameboy_sdl WIN32
                 apps/sdl/main.cpp
                 apps/sdl/advanced_tools.cpp
+                apps/sdl/link_controller.cpp
                 apps/sdl/frame_pacer.cpp
                 apps/sdl/emulation_session.cpp
                 apps/sdl/event_dispatch.cpp
@@ -309,6 +310,7 @@ if(GAMEBOY_BUILD_SDL)
             add_executable(gameboy_sdl MACOSX_BUNDLE
                 apps/sdl/main.cpp
                 apps/sdl/advanced_tools.cpp
+                apps/sdl/link_controller.cpp
                 apps/sdl/frame_pacer.cpp
                 apps/sdl/emulation_session.cpp
                 apps/sdl/event_dispatch.cpp
@@ -343,6 +345,7 @@ if(GAMEBOY_BUILD_SDL)
             add_executable(gameboy_sdl
                 apps/sdl/main.cpp
                 apps/sdl/advanced_tools.cpp
+                apps/sdl/link_controller.cpp
                 apps/sdl/frame_pacer.cpp
                 apps/sdl/emulation_session.cpp
                 apps/sdl/event_dispatch.cpp

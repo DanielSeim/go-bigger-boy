@@ -741,6 +741,10 @@ The first guardrail pass is implemented:
   service masks, missing adapter pointers, and refreshing the service view
   after a core closes. This keeps lifecycle gating regression-tested without
   requiring an interactive SDL window.
+- Desktop link request policy now lives in `apps/sdl/link_controller.*`.
+  Startup, shutdown, retry, timeout recovery, and local/remote toggle handling
+  receive an explicit core-service context, leaving `main.cpp` responsible for
+  scheduling and ownership rather than protocol policy.
 
 The headless core suite, SDL desktop target, and Android Java frontend all
 build successfully after this pass.
