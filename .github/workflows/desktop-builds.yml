@@ -55,6 +55,95 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  sanitizers:
+    name: ASan and UBSan contracts
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Configure sanitizer build
+        run: >-
+          cmake -S . -B build-sanitize
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DGAMEBOY_BUILD_TESTS=ON
+          -DGAMEBOY_BUILD_SDL=OFF
+          -DGAMEBOY_ENABLE_SANITIZERS=ON
+
+      - name: Build sanitizer contracts
+        run: cmake --build build-sanitize --parallel
+
+      - name: Run sanitizer contracts
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:strict_string_checks=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: ctest --test-dir build-sanitize --output-on-failure --parallel 2
+
+  thread-sanitizer:
+    name: ThreadSanitizer contracts
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Configure ThreadSanitizer build
+        run: >-
+          cmake -S . -B build-tsan
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DGAMEBOY_BUILD_TESTS=ON
+          -DGAMEBOY_BUILD_SDL=OFF
+          -DGAMEBOY_ENABLE_THREAD_SANITIZER=ON
+
+      - name: Build ThreadSanitizer contracts
+        run: cmake --build build-tsan --parallel
+
+      - name: Run ThreadSanitizer contracts
+        env:
+          TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
+        run: ctest --test-dir build-tsan --output-on-failure --parallel 2
+
+  fuzzers:
+    name: libFuzzer parser smoke
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Configure libFuzzer target
+        run: >-
+          CC=clang CXX=clang++ cmake -S . -B build-fuzz
+          -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DGAMEBOY_BUILD_TESTS=OFF
+          -DGAMEBOY_BUILD_SDL=OFF
+          -DGAMEBOY_BUILD_FUZZERS=ON
+
+      - name: Build libFuzzer target
+        run: cmake --build build-fuzz --target gameboy_parser_fuzzers --parallel
+
+      - name: Prepare fuzz artifact directory
+        run: mkdir -p fuzz-artifacts
+
+      - name: Run bounded fuzz smoke
+        run: >-
+          timeout --preserve-status 90s
+          ./build-fuzz/gameboy_parser_fuzzers
+          tests/fuzz/corpus
+          -max_total_time=45
+          -max_len=2097152
+          -rss_limit_mb=2048
+          -artifact_prefix=fuzz-artifacts/
+          -print_final_stats=1
+
+      - name: Upload fuzz artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: parser-fuzz-artifacts
+          path: fuzz-artifacts
+          if-no-files-found: ignore
+          retention-days: 14
+
   build:
     name: ${{ matrix.artifact }}
     runs-on: ${{ matrix.runner }}

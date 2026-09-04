@@ -1,0 +1,56 @@
+name: Parser fuzz campaign
+
+on:
+  schedule:
+    - cron: '17 3 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  libfuzzer:
+    name: Scheduled libFuzzer campaign
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Configure libFuzzer target
+        run: >-
+          CC=clang CXX=clang++ cmake -S . -B build-fuzz
+          -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DGAMEBOY_BUILD_TESTS=OFF
+          -DGAMEBOY_BUILD_SDL=OFF
+          -DGAMEBOY_BUILD_FUZZERS=ON
+
+      - name: Build libFuzzer target
+        run: cmake --build build-fuzz --target gameboy_parser_fuzzers --parallel
+
+      - name: Stage seed corpus
+        run: |
+          mkdir -p fuzz-corpus-run fuzz-artifacts
+          cp tests/fuzz/corpus/*.seed fuzz-corpus-run/
+
+      - name: Run ten-minute campaign
+        run: >-
+          timeout --preserve-status 12m
+          ./build-fuzz/gameboy_parser_fuzzers fuzz-corpus-run
+          -max_total_time=600
+          -max_len=2097152
+          -rss_limit_mb=2048
+          -artifact_prefix=fuzz-artifacts/
+          -print_final_stats=1
+
+      - name: Upload campaign corpus and crashes
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: parser-fuzz-campaign-${{ github.run_id }}
+          path: |
+            fuzz-corpus-run
+            fuzz-artifacts
+          if-no-files-found: ignore
+          retention-days: 30
