@@ -7,6 +7,14 @@ if(NOT GBB_PROJECT_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
 endif()
 project(go_bigger_boy VERSION ${GBB_PROJECT_VERSION} LANGUAGES CXX)
 
+# Every target, including focused SDL tests and optional fuzzers that do not
+# link a library carrying usage requirements, must use the same language
+# standard on all supported toolchains. GCC's default currently happens to be
+# newer than C++17; AppleClang's is not.
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
 configure_file(settings.ini settings.ini COPYONLY)
 
 include(GNUInstallDirs)
@@ -783,6 +791,8 @@ if(GAMEBOY_BUILD_FUZZERS)
     endif()
 
     add_executable(gameboy_parser_fuzzers tests/fuzz/parsers_fuzz.cpp)
+    target_include_directories(gameboy_parser_fuzzers PRIVATE
+                               ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_link_libraries(gameboy_parser_fuzzers PRIVATE gbb_core_api)
     target_compile_options(gameboy_parser_fuzzers PRIVATE
         -fsanitize=fuzzer)
