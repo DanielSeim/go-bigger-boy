@@ -15,8 +15,10 @@ that establishes one internal and one external role. A missing endpoint
 supplies pull-up `1` bits, matching the disconnected cable state. Transfer
 completion raises serial interrupt 3 on both consoles.
 
-Frontends should use `gameboy::LinkSession` when they own two emulator
-instances. The session owns the cable, exposes `disconnected`, `starting`,
+Frontends should use `gameboy::LinkSession` with two `gameboy::LinkEndpoint`
+instances. The built-in core uses `gameboy::GameBoyLinkEndpoint`; another core
+can provide its own adapter exposing a serial port and one emulation step. The
+session owns the cable, exposes `disconnected`, `starting`,
 `connected`, `transferring`, and `timed_out` lifecycle states, and advances
 both CPUs with a cycle-balanced scheduler. This keeps link timing policy out
 of SDL and makes reconnect behavior testable without a window or network
@@ -156,6 +158,16 @@ therefore get no diagnostic popup and no trace file. When enabled, the trace is
 reset for each local session. It begins with a `session_start` marker and ends
 with `session_end`; transfer counters therefore describe only that session, and
 frame numbers are written in decimal for easier correlation with a reproduction.
+All event records begin with the same versioned fields: `event`,
+`trace_version`, `session_id`, `frame`, `elapsed_ms`, `transport`, and `role`.
+The remaining fields are domain-specific payloads, so SDL and harness traces
+can be consumed by one parser without losing frontend-specific detail.
+The core-neutral `gbb::parse_trace` utility validates this envelope and
+summarizes frame ordering and link-event classes; it also accepts older
+`frame=` records so existing captures remain useful for regression tests.
+For a quick human-readable summary of a captured file, run
+`gbb_trace_report PATH`; a nonzero exit status indicates malformed canonical
+records and the output lists the offending lines.
 Each frame also records CPU cycle totals, PC/SP, halt/stop status, serial phase,
 interrupt registers, and (for Pokémon Gen I) the game link/battle markers and
 party count. Additional `event=serial_complete` and `event=serial_active` lines

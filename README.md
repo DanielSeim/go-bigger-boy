@@ -81,6 +81,25 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
+Parser/protocol fuzzing is opt-in and requires a Clang toolchain with
+libFuzzer. Build it alongside the native sanitizers, then provide a corpus
+directory (libFuzzer will create and extend it):
+
+```sh
+cmake -S . -B build-fuzz -G Ninja \
+  -DCMAKE_CXX_COMPILER=clang++ \
+  -DGAMEBOY_BUILD_SDL=OFF \
+  -DGAMEBOY_BUILD_FUZZERS=ON
+cmake --build build-fuzz --target gameboy_parser_fuzzers
+mkdir -p fuzz-corpus
+./build-fuzz/gameboy_parser_fuzzers fuzz-corpus -max_total_time=60
+```
+
+The target feeds bounded inputs through settings, trace, save-state,
+link-packet, and SGB parsing boundaries. Fuzzing is deliberately separate from
+the normal CTest suite so release and cross-platform builds remain dependency
+free.
+
 Inspect a ROM and execute a requested number of starter instructions:
 
 ```sh

@@ -35,8 +35,9 @@ used in shared metadata instead of C++ enum ordinals.
 
 `include/gbb/scene.hpp` defines a read-only `SceneSnapshot` for presentation
 renderers that need more than the final framebuffer, such as a voxel diorama.
-It contains generic tile layers, tile graphics, palettes, sprites, LCD state,
-and emulation timing. `EmulatorCore::video_frame()` remains the universal
+It contains legacy compatibility fields for the current Game Boy renderer,
+plus optional opaque core-defined `SceneLayer` payloads identified by a
+namespaced format string. `EmulatorCore::video_frame()` remains the universal
 fallback, while cores that can provide scene data advertise
 `CoreCapability::scene_layers`. The Game Boy adapter currently exposes both
 32x32 background/window maps, both CGB VRAM banks, CGB palette RAM, and decoded
@@ -54,10 +55,11 @@ while preserving profiles for other titles.
 
 `include/gbb/scene_json.hpp` provides the versioned `gbb.scene.v1` JSON
 serializer and file exporter. It deliberately contains only JSON primitives
-and arrays, so external renderers, debugging tools, and archival utilities can
-consume snapshots without linking to emulator internals. The CLI exposes this
-as `gbb_cli <rom> [instruction-count] --scene-json <output>`, and the browser
-offers the same export from its ROM screen.
+and arrays, including opaque optional layer payloads, so external renderers,
+debugging tools, and archival utilities can consume snapshots without linking
+to emulator internals. The CLI exposes this as `gbb_cli <rom>
+[instruction-count] --scene-json <output>`, and the browser offers the same
+export from its ROM screen.
 
 The SDL frontends include an experimental `Voxel diorama` presentation mode.
 It uses the snapshot to generate deterministic
@@ -78,8 +80,11 @@ serial endpoint. Link transports should coordinate two cores outside the
 generic frame/audio loop; the Game Boy adapter currently provides the
 deterministic in-process `gameboy::SerialCable` for local testing.
 The reusable `gameboy::LinkSession` owns that cable and coordinates the two
-emulators' cycle-balanced scheduler; frontends can observe its lifecycle
-without depending on serial implementation details. Network transports can
+endpoints' cycle-balanced scheduler; it consumes the core-neutral
+`gameboy::LinkEndpoint` (serial port plus one emulation step), while
+`GameBoyLinkEndpoint` adapts the built-in Game Boy emulator. Frontends can
+observe its lifecycle without depending on serial implementation details.
+Network transports can
 implement `gameboy::LinkTransport` and use the versioned
 `gameboy::LinkPacketCodec` framing without changing the core loop. Socket I/O
 must remain asynchronous so a network stall cannot pause CPU emulation. The
@@ -103,11 +108,11 @@ frontend-facing target is `gbb_core_api`.
 
 ## Migration status
 
-The browser runtime and CLI create cores through this boundary. The desktop and
-Android SDL shell still contains mature GB-only debugger, movie, TAS, sprite,
-printer, camera, and cheat code. Those tools are intentionally not part of the
-neutral API; before exposing a second core in that shell, its normal execution,
-input, media, state, and persistence paths must move to `EmulatorCore`, with
-each existing tool enabled only when its capability and GB adapter are present.
-Keeping this limitation explicit prevents a future GBA implementation from
-copying GB constants into another frontend.
+The browser runtime, CLI, and SDL's ordinary single-player path now create and
+run cores through this boundary. SDL owns `EmulatorCore`; its concrete Game Boy
+pointer is non-owning and is used only by mature GB-only debugger, movie, TAS,
+sprite, camera, link, and cheat tools. Those tools remain intentionally outside
+the neutral API and are enabled only when the corresponding adapter exists.
+The SDL shell still has a few Game Boy-specific UI assumptions in linked and
+development-tool paths, so exposing a second core there remains a follow-up
+task rather than a claim that every optional tool is portable.
