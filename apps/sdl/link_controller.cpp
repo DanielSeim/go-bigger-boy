@@ -12,6 +12,7 @@ namespace gbb::sdl {
 void process_link_requests(LinkControlContext context) {
     if (context.remote_stop_requested) {
         context.remote_stop_requested = false;
+        gbb::log_frontend_info("Link request: stop remote session");
         if (context.emulator != nullptr && context.remote_link.active()) {
             stop_remote_link_session(*context.emulator, context.remote_link);
         }
@@ -21,6 +22,9 @@ void process_link_requests(LinkControlContext context) {
         const auto hosting = context.remote_host_requested;
         context.remote_host_requested = false;
         context.remote_join_requested = false;
+        gbb::log_frontend_info(hosting
+                                   ? "Link request: host remote session"
+                                   : "Link request: join remote session");
         try {
             if (context.link_emulator != nullptr) {
                 stop_local_link_session(
@@ -36,7 +40,7 @@ void process_link_requests(LinkControlContext context) {
                 context.services.link_cable();
             if (link_emulator == nullptr) {
                 gbb::log_frontend_warning(
-                    "Ignoring link request for a core without link support.");
+                    "Link request ignored: core has no link service");
             } else {
                 start_remote_link_session(
                     *link_emulator, context.remote_link, hosting,
@@ -52,13 +56,16 @@ void process_link_requests(LinkControlContext context) {
 
     if (context.link_retry_requested) {
         context.link_retry_requested = false;
+        gbb::log_frontend_info("Link request: retry handshake");
         try {
             if (context.emulator != nullptr && context.remote_link.active()) {
+                gbb::log_frontend_info("Link retry: remote transport");
                 retry_remote_link_session(*context.emulator,
                                           context.remote_link);
             } else if (context.emulator != nullptr &&
                        context.link_emulator != nullptr &&
                        context.link_session != nullptr) {
+                gbb::log_frontend_info("Link retry: local cable");
                 retry_local_link_session(*context.emulator,
                                          *context.link_emulator,
                                          *context.link_session);
@@ -75,6 +82,8 @@ void process_link_requests(LinkControlContext context) {
         context.link_session != nullptr &&
         context.link_session->state() == gameboy::LinkSession::State::timed_out &&
         !context.automatic_local_retry_used) {
+        gbb::log_frontend_warning(
+            "Link session timed out; attempting one automatic retry");
         try {
             retry_local_link_session(*context.emulator,
                                      *context.link_emulator,
@@ -88,6 +97,7 @@ void process_link_requests(LinkControlContext context) {
 
     if (context.link_toggle_requested) {
         context.link_toggle_requested = false;
+        gbb::log_frontend_info("Link request: toggle local/remote session");
         try {
             if (context.remote_link.active()) {
                 stop_remote_link_session(*context.emulator,

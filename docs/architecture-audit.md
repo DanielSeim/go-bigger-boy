@@ -745,6 +745,11 @@ The first guardrail pass is implemented:
   Startup, shutdown, retry, timeout recovery, and local/remote toggle handling
   receive an explicit core-service context, leaving `main.cpp` responsible for
   scheduling and ownership rather than protocol policy.
+- Link request policy now emits structured lifecycle records for explicit
+  stop/start/retry/toggle actions, capability-denied requests, transport choice,
+  and automatic timeout recovery. These records are emitted only on state
+  transitions, so diagnostics remain useful without adding per-frame timing
+  noise to link sessions.
 
 The headless core suite, SDL desktop target, and Android Java frontend all
 build successfully after this pass.
