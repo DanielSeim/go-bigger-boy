@@ -112,6 +112,9 @@ jobs:
           TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1:history_size=7
         run: ctest --test-dir build-tsan --output-on-failure --parallel 2
 
+      - name: Install X11 input driver for GUI smoke
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y xdotool
+
       - name: Run bounded SDL dashboard smoke under Xvfb
         env:
           SDL_AUDIODRIVER: dummy
@@ -119,16 +122,16 @@ jobs:
           SDL_RENDER_DRIVER: software
           WAYLAND_DISPLAY: ""
           TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1:history_size=7
-        run: |
-          set +e
-          timeout --signal=INT --kill-after=5s --preserve-status 12s \
-            xvfb-run -a ./build-tsan/gbb
-          status=$?
-          set -e
-          case "$status" in
-            0|124|130|143) ;;
-            *) exit "$status" ;;
-          esac
+        run: bash tests/sdl_tsan_smoke.sh ./build-tsan/gbb
+
+      - name: Upload interactive SDL TSan artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: tsan-gui-artifacts
+          path: tsan-gui-artifacts
+          if-no-files-found: ignore
+          retention-days: 14
 
   fuzzers:
     name: libFuzzer parser smoke
@@ -147,7 +150,7 @@ jobs:
           -DGAMEBOY_BUILD_FUZZERS=ON
 
       - name: Build libFuzzer target
-        run: cmake --build build-fuzz --target gameboy_parser_fuzzers --parallel
+        run: cmake --build build-fuzz --target gameboy_parser_fuzzers gameboy_parser_review --parallel
 
       - name: Prepare fuzz artifact directory
         run: mkdir -p fuzz-artifacts
@@ -165,6 +168,16 @@ jobs:
           -rss_limit_mb=2048
           -artifact_prefix=fuzz-artifacts/
           -print_final_stats=1
+
+      - name: Record semantic review report
+        if: always()
+        run: >-
+          export REVIEWER=./build-fuzz/gameboy_parser_review;
+          if [[ -d fuzz-corpus-run ]]; then
+            bash tests/fuzz/review_corpus.sh fuzz-corpus-run fuzz-artifacts/semantic-review.tsv;
+          else
+            bash tests/fuzz/review_corpus.sh tests/fuzz/corpus fuzz-artifacts/semantic-review.tsv;
+          fi
 
       - name: Upload fuzz artifacts
         if: always()

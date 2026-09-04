@@ -27,7 +27,7 @@ jobs:
           -DGAMEBOY_BUILD_FUZZERS=ON
 
       - name: Build libFuzzer target
-        run: cmake --build build-fuzz --target gameboy_parser_fuzzers --parallel
+        run: cmake --build build-fuzz --target gameboy_parser_fuzzers gameboy_parser_review --parallel
 
       - name: Validate reviewed fuzz corpus
         run: bash tests/fuzz/check_corpus.sh
@@ -37,6 +37,14 @@ jobs:
           FUZZER: ./build-fuzz/gameboy_parser_fuzzers
           FUZZ_CAMPAIGN_SECONDS: 1800
         run: bash tests/fuzz/run_campaign.sh
+
+      - name: Record semantic review report
+        if: always()
+        run: >-
+          if [[ -d fuzz-corpus-run ]]; then
+            export REVIEWER=./build-fuzz/gameboy_parser_review
+            bash tests/fuzz/review_corpus.sh fuzz-corpus-run fuzz-artifacts/semantic-review.tsv
+          fi
 
       - name: Upload campaign corpus and crashes
         if: always()

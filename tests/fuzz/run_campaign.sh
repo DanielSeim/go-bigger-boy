@@ -24,6 +24,24 @@ if ! [[ "$DURATION_SECONDS" =~ ^[0-9]+$ ]] || ((DURATION_SECONDS < 1)); then
     echo "FUZZ_CAMPAIGN_SECONDS must be a positive integer" >&2
     exit 2
 fi
+if ! [[ "$MAX_LENGTH" =~ ^[0-9]+$ ]] || ((MAX_LENGTH < 1)); then
+    echo "FUZZ_MAX_LEN must be a positive integer" >&2
+    exit 2
+fi
+if ! [[ "$RSS_LIMIT_MB" =~ ^[0-9]+$ ]] || ((RSS_LIMIT_MB < 1)); then
+    echo "FUZZ_RSS_LIMIT_MB must be a positive integer" >&2
+    exit 2
+fi
+
+# Keep generated libFuzzer output away from the reviewed seed directory. The
+# canonical-path check also catches a not-yet-existing RUN_CORPUS path that
+# would otherwise resolve to the seed directory after mkdir.
+if [[ "$(realpath -m "$SEED_CORPUS")" == "$(realpath -m "$RUN_CORPUS")" ]]; then
+    echo "run corpus must be separate from the reviewed seed corpus" >&2
+    exit 2
+fi
+
+bash "$(dirname "$0")/check_corpus.sh" "$SEED_CORPUS"
 
 mkdir -p "$RUN_CORPUS" "$ARTIFACT_DIR"
 find "$SEED_CORPUS" -maxdepth 1 -type f -name '*.seed' \

@@ -14,6 +14,7 @@ if [[ $# -lt 2 || $# -gt 3 ]]; then
 fi
 CANDIDATE_CORPUS=$1
 REVIEWED_CORPUS=$2
+REVIEW_REPORT="${REVIEW_REPORT:-${CANDIDATE_CORPUS}.semantic-review.tsv}"
 if [[ $# -eq 3 ]]; then
     [[ $3 == "--approve" ]] || {
         echo "the optional third argument must be --approve" >&2
@@ -32,9 +33,10 @@ if ! [[ "$MAX_LENGTH" =~ ^[0-9]+$ ]] || ((MAX_LENGTH < 1)); then
 fi
 
 if [[ $APPROVE != true ]]; then
-    echo "dry run: review $CANDIDATE_CORPUS, then rerun with --approve"
+    echo "dry run: run review_corpus.sh on $CANDIDATE_CORPUS, then rerun with --approve"
     exit 0
 fi
+"$(dirname "$0")/verify_corpus_review.sh" "$CANDIDATE_CORPUS" "$REVIEW_REPORT"
 if [[ ! -x "$FUZZER" ]]; then
     echo "fuzzer executable not found or not executable: $FUZZER" >&2
     exit 2
@@ -50,7 +52,14 @@ trap cleanup EXIT
 
 promoted=0
 while IFS= read -r -d '' input; do
-    cp "$input" "$REVIEWED_CORPUS/"
+    name=$(basename "$input")
+    destination="$REVIEWED_CORPUS/${name}.seed"
+    suffix=1
+    while [[ -e "$destination" ]]; do
+        destination="$REVIEWED_CORPUS/${name}-${suffix}.seed"
+        suffix=$((suffix + 1))
+    done
+    cp "$input" "$destination"
     promoted=$((promoted + 1))
 done < <(find "$merge_dir" -maxdepth 1 -type f -print0)
 (cd "$REVIEWED_CORPUS" && sha256sum -- *.seed > MANIFEST.sha256)

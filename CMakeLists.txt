@@ -816,3 +816,13 @@ if(GAMEBOY_BUILD_FUZZERS)
         -fsanitize=fuzzer)
     target_link_options(gameboy_parser_fuzzers PRIVATE -fsanitize=fuzzer)
 endif()
+
+# The semantic corpus reviewer is a normal native command-line tool so it
+# remains available even on systems without Clang/libFuzzer. It exercises the
+# same parser entry points as the optional fuzz target.
+if(NOT EMSCRIPTEN AND NOT ANDROID)
+    add_executable(gameboy_parser_review tests/fuzz/review_corpus.cpp)
+    target_include_directories(gameboy_parser_review PRIVATE
+                               ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(gameboy_parser_review PRIVATE gbb_core_api)
+endif()
