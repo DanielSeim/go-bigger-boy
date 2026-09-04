@@ -86,12 +86,22 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v6
 
+      - name: Set up SDL3
+        id: sdl
+        uses: libsdl-org/setup-sdl@afd98199e97f9c2aa739474be7e0886d149a5e47
+        with:
+          version: 3.4.2
+          build-type: Release
+          install-linux-dependencies: true
+          add-to-environment: true
+
       - name: Configure ThreadSanitizer build
         run: >-
           cmake -S . -B build-tsan
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
           -DGAMEBOY_BUILD_TESTS=ON
-          -DGAMEBOY_BUILD_SDL=OFF
+          -DGAMEBOY_BUILD_SDL=ON
+          "-DCMAKE_PREFIX_PATH=${{ steps.sdl.outputs.prefix }}"
           -DGAMEBOY_ENABLE_THREAD_SANITIZER=ON
 
       - name: Build ThreadSanitizer contracts
@@ -99,8 +109,26 @@ jobs:
 
       - name: Run ThreadSanitizer contracts
         env:
-          TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
+          TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1:history_size=7
         run: ctest --test-dir build-tsan --output-on-failure --parallel 2
+
+      - name: Run bounded SDL dashboard smoke under Xvfb
+        env:
+          SDL_AUDIODRIVER: dummy
+          SDL_VIDEODRIVER: x11
+          SDL_RENDER_DRIVER: software
+          WAYLAND_DISPLAY: ""
+          TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1:history_size=7
+        run: |
+          set +e
+          timeout --signal=INT --kill-after=5s --preserve-status 12s \
+            xvfb-run -a ./build-tsan/gbb
+          status=$?
+          set -e
+          case "$status" in
+            0|124|130|143) ;;
+            *) exit "$status" ;;
+          esac
 
   fuzzers:
     name: libFuzzer parser smoke
@@ -123,6 +151,9 @@ jobs:
 
       - name: Prepare fuzz artifact directory
         run: mkdir -p fuzz-artifacts
+
+      - name: Validate reviewed fuzz corpus
+        run: bash tests/fuzz/check_corpus.sh
 
       - name: Run bounded fuzz smoke
         run: >-
