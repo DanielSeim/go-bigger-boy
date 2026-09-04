@@ -2,6 +2,7 @@
 
 #include "event_dispatch.hpp"
 
+#include "gbb/frontend_logging.hpp"
 #include "gbb/log.hpp"
 
 #ifdef __ANDROID__
