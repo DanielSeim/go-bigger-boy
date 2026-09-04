@@ -1,0 +1,6 @@
+session_start trace_version=0xffffffffffffffff session_id=bad frame=not-a-number
+event trace_version=1 session_id=1 frame=8 elapsed_ms=4 transport=local
+event trace_version=2 session_id=2 frame=3 elapsed_ms=0 transport=tcp role=join field_without_equals
+this-is-not-a-settings-record
+ = empty-key
+unterminated=value # comment

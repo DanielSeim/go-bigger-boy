@@ -1,0 +1,6 @@
+# Shared settings/trace seed
+palette = grayscale
+video.Mode = nearest ; inline comment
+session_start trace_version=1 session_id=7 frame=0 elapsed_ms=0 transport=local role=host scenario=trade
+event trace_version=1 session_id=7 frame=1 elapsed_ms=16 transport=local role=host event=serial_progress bytes=1
+session_end trace_version=1 session_id=7 frame=2 elapsed_ms=32 transport=local role=host
