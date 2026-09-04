@@ -95,10 +95,70 @@ mkdir -p fuzz-corpus
 ./build-fuzz/gameboy_parser_fuzzers fuzz-corpus -max_total_time=60
 ```
 
+For the reproducible campaign runner used by CI, keep generated inputs out of
+the reviewed seed corpus and run:
+
+```sh
+FUZZ_CAMPAIGN_SECONDS=1800 bash tests/fuzz/run_campaign.sh \
+  tests/fuzz/corpus fuzz-corpus-run fuzz-artifacts
+```
+
+Inspect new corpus files and crash artifacts before promoting any input to
+`tests/fuzz/corpus`. The runner treats its timeout as a successful campaign;
+libFuzzer crashes and other non-zero exits remain failures.
+
+The checked-in corpus can be validated independently before a campaign. The
+check rejects empty, oversized, or duplicate seeds and verifies the reviewed
+checksum manifest:
+
+```sh
+bash tests/fuzz/check_corpus.sh
+```
+
+After reviewing a downloaded campaign corpus, minimize it against the checked
+in seeds with a dry run first, then explicitly approve the promotion:
+
+```sh
+bash tests/fuzz/promote_corpus.sh fuzz-corpus-run tests/fuzz/corpus
+bash tests/fuzz/promote_corpus.sh fuzz-corpus-run tests/fuzz/corpus --approve
+```
+
+The promotion command uses libFuzzer's merge mode in a temporary directory and
+never changes the reviewed corpus during the dry run.
+
 The target feeds bounded inputs through settings, trace, save-state,
 link-packet, and SGB parsing boundaries. Fuzzing is deliberately separate from
 the normal CTest suite so release and cross-platform builds remain dependency
 free.
+
+The CI ThreadSanitizer job also builds the SDL frontend with SDL enabled,
+runs the display-independent contract tests, and performs a bounded dashboard
+window smoke under Xvfb. Longer interactive sessions remain part of the normal
+desktop build because they require a display server and user input.
+
+To reproduce that check locally on a native Linux host with SDL3 installed:
+
+```sh
+cmake -S . -B build-tsan-sdl \
+  -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DGAMEBOY_BUILD_TESTS=ON \
+  -DGAMEBOY_BUILD_SDL=ON \
+  -DGAMEBOY_ENABLE_THREAD_SANITIZER=ON
+cmake --build build-tsan-sdl --parallel
+TSAN_OPTIONS=halt_on_error=1:second_deadlock_stack=1 \
+  ctest --test-dir build-tsan-sdl --output-on-failure --parallel 2
+```
+
+For a local dashboard smoke, use an Xvfb display and stop after a short bounded
+run:
+
+```sh
+SDL_AUDIODRIVER=dummy SDL_VIDEODRIVER=x11 WAYLAND_DISPLAY= \
+  SDL_RENDER_DRIVER=software \
+  TSAN_OPTIONS=halt_on_error=1 \
+  timeout --signal=INT --kill-after=5s 12s \
+  xvfb-run -a ./build-tsan-sdl/gbb
+```
 
 Inspect a ROM and execute a requested number of starter instructions:
 

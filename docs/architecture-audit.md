@@ -89,13 +89,20 @@ Diagnostics are useful but fragmented:
 - Synchronous event flushing is bounded, but some frontend paths can still
   perturb timing during link debugging.
 
-The remaining diagnostic work is to route the last frontend-specific records
-through the platform-neutral logger and preserve context across asynchronous
-callbacks. SDL, CLI, Web, and the link harness now establish presentation
-frame, ROM identity, and (where available) emulated-cycle context through
+SDL, CLI, Web, and the link harness now establish presentation frame, ROM
+identity, and (where available) emulated-cycle context through
 `gbb::LogContextScope`; link sessions provide their session and endpoint-cycle
-context. Writes should remain buffered, with an explicit flush at session end
-and a bounded ring buffer for failure context.
+context. User-facing CLI reports and usage errors intentionally remain direct
+output, while runtime diagnostics use the platform-neutral logger. Writes
+should remain buffered, with an explicit flush at session end and a bounded
+ring buffer for failure context.
+
+SDL file-dialog callbacks and Android JNI back/ROM requests now capture the
+initiating context and restore it at the asynchronous handoff boundary. Their
+completion, cancellation, and failure records therefore retain the frame and
+ROM identity that caused the request, even when the callback runs on another
+thread. Desktop update-check and download workers use the same handoff
+contract when their results return to the SDL loop.
 
 ## Test architecture
 
@@ -106,16 +113,19 @@ executable.
 
 Still open:
 
-- sustained fuzzing campaigns and curated corpus management (the repository
-  now provides an opt-in libFuzzer target, reviewed seeds, and a bounded CI
-  smoke campaign for settings, save states, link packets, trace records, and
-  SGB packets; longer campaigns and corpus promotion remain);
-- broader TSan coverage for GUI/platform paths (the headless transport,
-  logging, and core contract suite now runs under TSan in CI; ASan/UBSan CI is
-  **complete**);
-- a contract test that instantiates every registered core through
-  `EmulatorCore`. **Complete.**
-- deterministic trace replay tests for failed link sessions. **Complete.**
+There are no mandatory implementation items for the current static
+architecture. The reviewed corpus has a checksum manifest, both fuzz
+workflows enforce deterministic hygiene, and the TSan job covers the complete
+SDL-enabled contract suite plus a bounded Xvfb dashboard launch.
+
+Deferred follow-up:
+
+- future generated fuzz inputs still require human semantic review before
+  promotion;
+- longer user-driven GUI TSan sessions require a real display and input
+  device, beyond the automated dashboard smoke;
+- a dynamically loaded core-plugin ABI should wait until the static API has
+  stabilized.
 
 ## Concrete issue found during the audit
 
@@ -131,7 +141,7 @@ fallbacks for standalone source builds).
 1. Establish guardrails: unify versioning, add dependency checks, and add
    architecture contract tests. **Complete.**
 2. Introduce shared logging and trace infrastructure. **Complete for the
-   current static frontends; only asynchronous callback propagation remains.**
+   current static frontends, including asynchronous callback propagation.**
 3. Remove duplicated scene extraction and centralize settings parsing.
    **Complete.**
 4. Extract shared presentation/video transforms. **Complete.**
@@ -139,14 +149,14 @@ fallbacks for standalone source builds).
    **Complete for ordinary execution; advanced tools remain adapter-specific.**
 6. Generalize link sessions around a core-independent endpoint. **Complete.**
 7. Split the SDL frontend, link harness, Android activity, save-state codec,
-   PPU, and cartridge implementation. **Largely complete; remaining work is
-   optional-tool lifecycle and capability isolation.**
+   PPU, and cartridge implementation. **Largely complete; optional-tool
+   lifecycle and capability isolation is now centralized at the SDL dispatch
+   boundary.**
 8. Consider dynamically loaded core plugins only after the static API is stable.
 
-The next safe implementation targets are uniform diagnostic context across the
-remaining non-SDL frontends, lifecycle/capability adapters for optional SDL
-tools, and longer-running fuzz campaigns. A dynamic plugin ABI should wait
-until those static contracts have stabilized.
+The static audit implementation is complete. Future work should follow the
+deferred items above rather than introducing a dynamic plugin ABI before the
+core contract has settled.
 
 ## Progress
 
@@ -260,6 +270,10 @@ The first guardrail pass is implemented:
 - The capability policy is centralized in `apps/sdl/core_capability.hpp` and
   covered by a standalone SDL capability contract test, keeping this rule
   testable without opening a window or depending on a specific Game Boy ROM.
+- `GameBoyToolAdapter` now combines the non-owning Game Boy adapter pointer
+  with the owning core's capability mask. Desktop tool-event and voxel-camera
+  dispatch use this view, so optional tool lifetimes and capability checks are
+  enforced at one boundary instead of being independently repeated.
 - Core selection is now separated from built-in contributions: the registry
   consumes `built_in_core_factories()`, while the Game Boy adapter owns its
   factory and implementation in `src/gameboy_core_factory.cpp`. Adding another
@@ -438,7 +452,13 @@ The first guardrail pass is implemented:
   inputs as a future corpus. A small reviewed seed corpus lives under
   `tests/fuzz/corpus`, and CI runs a bounded 45-second smoke campaign while
   uploading crash artifacts for follow-up. A separate weekly/manual workflow
-  runs a ten-minute campaign and uploads the evolved corpus for review.
+  runs a thirty-minute campaign and uploads the evolved corpus for review.
+  `tests/fuzz/run_campaign.sh` is the same bounded runner for local campaigns;
+  it stages reviewed seeds into a separate directory and treats only the
+  expected timeout as successful, so crashes remain actionable failures.
+  `tests/fuzz/promote_corpus.sh` minimizes a reviewed campaign in a temporary
+  directory and requires `--approve` before copying any new inputs into the
+  checked-in seed corpus.
 - Core frame stepping and balanced link scheduling now have a dedicated
   `tests/core_runtime_link_scheduler_tests.cpp` executable; those contracts no
   longer contribute to the monolithic core test binary.
