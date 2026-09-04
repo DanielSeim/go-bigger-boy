@@ -1007,6 +1007,7 @@ int main(int argc, char** argv) {
             gbb::LogContextScope frame_log_context(
                 {0, frontend_frame, 0,
                  core ? core->rom_fingerprint() : 0});
+            gbb::sdl::CoreServices services{core.get(), emulator};
 #ifdef __ANDROID__
             gbb::sdl::publish_android_log_context(
                 gbb::current_log_context());
@@ -1265,9 +1266,7 @@ int main(int argc, char** argv) {
                     if (remote_link.active()) {
                         stop_remote_link_session(*emulator, remote_link);
                     }
-                    if (!gbb::sdl::supports(
-                            core.get(), gbb::CoreCapability::link_cable) ||
-                        emulator == nullptr) {
+                    if (services.link_cable() == nullptr) {
                         gbb::log_frontend_warning(
                             "Ignoring link request for a core without link support.");
                     } else {
@@ -1323,9 +1322,7 @@ int main(int argc, char** argv) {
                         stop_local_link_session(*emulator, link_emulator,
                                                 link_session, link_first_endpoint,
                                                 link_second_endpoint, sdl);
-                    } else if (emulator != nullptr &&
-                               gbb::sdl::supports(
-                                   core.get(), gbb::CoreCapability::link_cable)) {
+                    } else if (services.link_cable() != nullptr) {
                         start_local_link_session(
                             current_rom, *emulator, link_emulator, link_session,
                             link_first_endpoint, link_second_endpoint,
@@ -1477,11 +1474,11 @@ int main(int argc, char** argv) {
                              gameboy::display_palettes[display_palette], sdl,
                              preference_path);
                     emulator = gbb::gameboy_emulator(core.get());
+                    services = {core.get(), emulator};
                     sdl.camera.close();
-                    if (emulator != nullptr &&
-                        gbb::sdl::supports(core.get(),
-                                           gbb::CoreCapability::camera)) {
-                        sdl.camera.configure(*emulator);
+                    if (const auto* camera_emulator =
+                            services.get(gbb::CoreCapability::camera)) {
+                        sdl.camera.configure(*camera_emulator);
                     }
                     cycles_per_frame = core->descriptor().nominal_cycles_per_frame;
                     frame_pacer.set_timing(cycles_per_frame,
@@ -1528,9 +1525,7 @@ int main(int argc, char** argv) {
             }
 
 #ifndef __ANDROID__
-            if (emulator &&
-                gbb::sdl::supports(core.get(), gbb::CoreCapability::debugger) &&
-                debugger.take_record_toggle()) {
+            if (services.debugger() != nullptr && debugger.take_record_toggle()) {
                 try {
                     if (input_movie.recording()) {
                         input_movie.stop_and_save(movie_path, *emulator);
@@ -1548,9 +1543,7 @@ int main(int argc, char** argv) {
                     show_error(sdl.window, error.what());
                 }
             }
-            if (emulator &&
-                gbb::sdl::supports(core.get(), gbb::CoreCapability::debugger) &&
-                debugger.take_replay_request()) {
+            if (services.debugger() != nullptr && debugger.take_replay_request()) {
                 try {
                     input_movie.stop(emulator);
                     input_movie.start_replay(*emulator, movie_path);
@@ -1565,24 +1558,20 @@ int main(int argc, char** argv) {
                     show_error(sdl.window, error.what());
                 }
             }
-            if (emulator &&
-                gbb::sdl::supports(core.get(), gbb::CoreCapability::debugger) &&
-                debugger.take_tas_request()) {
+            if (services.debugger() != nullptr && debugger.take_tas_request()) {
                 input_movie.stop(emulator);
                 tas_editor.open(sdl.window, *emulator);
                 rewind_history.clear();
                 debugger.pause();
             }
-            if (emulator &&
-                gbb::sdl::supports(core.get(), gbb::CoreCapability::sprite_editor) &&
+            if (services.sprite_editor() != nullptr &&
                 debugger.take_sprite_request()) {
                 input_movie.stop(emulator);
                 sprite_editor.open(sdl.window, *emulator);
                 rewind_history.clear();
                 debugger.pause();
             }
-            if (emulator &&
-                gbb::sdl::supports(core.get(), gbb::CoreCapability::sprite_editor) &&
+            if (services.sprite_editor() != nullptr &&
                 sprite_editor.take_save_patch_request()) {
                 try {
                     sprite_editor.save_patch(*emulator, sprite_patch_path);
@@ -1596,8 +1585,7 @@ int main(int argc, char** argv) {
                     show_error(sdl.window, error.what());
                 }
             }
-            if (emulator &&
-                gbb::sdl::supports(core.get(), gbb::CoreCapability::sprite_editor) &&
+            if (services.sprite_editor() != nullptr &&
                 sprite_editor.take_load_patch_request()) {
                 try {
                     sprite_editor.load_patch(*emulator, sprite_patch_path);
@@ -1605,8 +1593,7 @@ int main(int argc, char** argv) {
                     show_error(sdl.window, error.what());
                 }
             }
-            if (emulator &&
-                gbb::sdl::supports(core.get(), gbb::CoreCapability::sprite_editor) &&
+            if (services.sprite_editor() != nullptr &&
                 sprite_editor.take_export_ips_request()) {
                 try {
                     const auto result = sprite_editor.export_ips(
@@ -1625,9 +1612,7 @@ int main(int argc, char** argv) {
                     show_error(sdl.window, error.what());
                 }
             }
-            if (emulator &&
-                gbb::sdl::supports(core.get(), gbb::CoreCapability::cheats) &&
-                cheat_manager.take_fetch_request()) {
+            if (services.cheats() != nullptr && cheat_manager.take_fetch_request()) {
                 cheat_manager.start_fetch();
             }
             if (cheat_manager.poll_fetch()) {
@@ -1635,17 +1620,13 @@ int main(int argc, char** argv) {
                     show_error(sdl.window, *error);
                 }
             }
-            if (emulator &&
-                gbb::sdl::supports(core.get(), gbb::CoreCapability::debugger) &&
-                tas_editor.take_new_request()) {
-                    input_movie.stop(emulator);
+            if (services.debugger() != nullptr && tas_editor.take_new_request()) {
+                input_movie.stop(emulator);
                 tas_editor.reset_from(*emulator);
                 rewind_history.clear();
                 debugger.pause();
             }
-            if (emulator &&
-                gbb::sdl::supports(core.get(), gbb::CoreCapability::debugger) &&
-                tas_editor.take_save_request()) {
+            if (services.debugger() != nullptr && tas_editor.take_save_request()) {
                 try {
                     input_movie.stop(emulator);
                     input_movie.save_frame_inputs(
@@ -1658,8 +1639,7 @@ int main(int argc, char** argv) {
                     show_error(sdl.window, error.what());
                 }
             }
-            if (emulator &&
-                gbb::sdl::supports(core.get(), gbb::CoreCapability::debugger) &&
+            if (services.debugger() != nullptr &&
                 tas_editor.take_replay_request()) {
                 try {
                     input_movie.stop(emulator);
@@ -1682,9 +1662,7 @@ int main(int argc, char** argv) {
 #endif
 
             sdl.camera.update(
-                gbb::sdl::supports(core.get(), gbb::CoreCapability::camera)
-                    ? emulator
-                    : nullptr);
+                services.get(gbb::CoreCapability::camera));
 #ifndef __ANDROID__
             if (remote_link.active()) remote_link.endpoint.poll();
 #endif
@@ -1707,15 +1685,13 @@ int main(int argc, char** argv) {
                 return emulator->step();
             };
 #ifndef __ANDROID__
-            if (emulator &&
-                gbb::sdl::supports(core.get(), gbb::CoreCapability::debugger) &&
+            if (services.debugger() != nullptr &&
                 debugger.take_instruction_step()) {
                 static_cast<void>(step_emulator());
                 if (emulator->frame_ready()) emulator->consume_frame();
                 rewind_history.clear();
                 debugger_stepped = true;
-            } else if (emulator &&
-                       gbb::sdl::supports(core.get(), gbb::CoreCapability::debugger) &&
+            } else if (services.debugger() != nullptr &&
                        debugger.take_frame_step()) {
                 if (emulator->frame_ready()) emulator->consume_frame();
                 cheat_manager.apply(*emulator);
@@ -1755,9 +1731,7 @@ int main(int argc, char** argv) {
                     const auto frames = fast_forward ? fast_forward_factor : 1U;
                     for (auto frame = 0U; frame < frames && running; ++frame) {
 #ifndef __ANDROID__
-                        if (emulator &&
-                            gbb::sdl::supports(core.get(),
-                                               gbb::CoreCapability::cheats)) {
+                        if (services.cheats() != nullptr) {
                             cheat_manager.apply(*emulator);
                         }
 #endif

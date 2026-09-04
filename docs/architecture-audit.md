@@ -726,6 +726,11 @@ The first guardrail pass is implemented:
   capability; voxel input likewise relies on the generic scene-layer
   capability. This is the first migration slice toward fully generic
   advanced services without introducing a dynamic plugin ABI.
+- SDL's main-loop lifecycle now keeps one `CoreServices` view per iteration and
+  refreshes it whenever a ROM is replaced. Camera setup, debugger/TAS stepping,
+  sprite editing, GameShark requests, and local/remote link startup all use the
+  same capability-gated view, preventing stale adapter pointers and duplicated
+  capability checks during transitions.
 
 The headless core suite, SDL desktop target, and Android Java frontend all
 build successfully after this pass.
