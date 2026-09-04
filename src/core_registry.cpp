@@ -18,9 +18,11 @@ CoreRegistry::CoreRegistry(std::vector<CoreFactory> factories)
 }
 
 void CoreRegistry::register_factory(CoreFactory factory) {
-    if (factory.core_id.empty() || factory.probe == nullptr ||
+    if (factory.core_id.empty() || factory.core_name.empty() ||
+        factory.probe == nullptr ||
         factory.create == nullptr) {
-        throw std::invalid_argument("A core factory requires an id, probe, and creator");
+        throw std::invalid_argument(
+            "A core factory requires an id, name, probe, and creator");
     }
     const auto duplicate = std::find_if(
         factories_.begin(), factories_.end(), [&](const CoreFactory& existing) {
@@ -109,6 +111,18 @@ std::unique_ptr<EmulatorCore> CoreRegistry::create(
         const auto message = std::string("core contract violation core=") +
                              std::string(best->core_id) + ": " +
                              contract_error;
+        logger.write(LogLevel::error, LogCategory::core, message);
+        throw std::runtime_error(message);
+    }
+    const auto& descriptor = core->descriptor();
+    if (descriptor.core_id != best->core_id ||
+        descriptor.core_name != best->core_name) {
+        const auto message =
+            std::string("core descriptor does not match factory: factory_id=") +
+            std::string(best->core_id) + " descriptor_id=" +
+            std::string(descriptor.core_id) + " factory_name=" +
+            std::string(best->core_name) + " descriptor_name=" +
+            std::string(descriptor.core_name);
         logger.write(LogLevel::error, LogCategory::core, message);
         throw std::runtime_error(message);
     }

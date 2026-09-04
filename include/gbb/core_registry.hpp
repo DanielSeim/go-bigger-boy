@@ -33,6 +33,8 @@ using CoreCreate = std::unique_ptr<EmulatorCore> (*)(
     std::vector<std::uint8_t>, const CoreLoadOptions&);
 
 struct CoreFactory {
+    // The id and name are mirrored in the created CoreDescriptor. Registry
+    // validation rejects factories that cannot provide stable UI metadata.
     std::string_view core_id;
     std::string_view core_name;
     CoreProbe probe{};

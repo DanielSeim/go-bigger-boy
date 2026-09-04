@@ -88,6 +88,12 @@ enum class PersistentDataKind : std::uint8_t {
     rtc,
 };
 
+// This is the compile-time contract version shared by statically linked core
+// adapters and frontends. It is intentionally separate from save-state and
+// scene schema versions: changing the required EmulatorCore semantics should
+// be an explicit compatibility decision.
+inline constexpr std::uint32_t core_api_version = 1;
+
 struct CoreDescriptor {
     std::string_view core_id;
     std::string_view core_name;
@@ -110,7 +116,31 @@ struct CoreDescriptor {
     bool has_battery{};
     bool supports_color{};
     bool requires_color{};
+    // Optional opaque scene-layer formats produced by this core. The array is
+    // implementation-owned (normally static storage) and remains valid for
+    // the lifetime of the core. A non-empty SceneSnapshot::layers collection
+    // must use one of these advertised formats so frontends can route it
+    // safely.
+    const std::string_view* scene_layer_formats{};
+    std::size_t scene_layer_format_count{};
+    // Appended so existing aggregate initializers remain source-compatible;
+    // omitted values use the current contract version.
+    std::uint32_t api_version{core_api_version};
 };
+
+[[nodiscard]] inline bool scene_layer_format_advertised(
+    const CoreDescriptor& descriptor,
+    const std::string_view format) noexcept {
+    if (descriptor.scene_layer_format_count != 0 &&
+        descriptor.scene_layer_formats == nullptr) {
+        return false;
+    }
+    for (std::size_t index = 0; index < descriptor.scene_layer_format_count;
+         ++index) {
+        if (descriptor.scene_layer_formats[index] == format) return true;
+    }
+    return false;
+}
 
 struct VideoFrameView {
     const std::uint32_t* pixels{};

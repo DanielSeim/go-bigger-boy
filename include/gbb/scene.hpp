@@ -34,10 +34,12 @@ struct SceneSprite {
 };
 
 // An optional, core-defined scene layer. The format identifier is deliberately
-// opaque to frontends (for example, "vendor.core.tile-map.v1"). Consumers
-// should render only formats they understand and safely ignore the rest. This
-// prevents the common scene contract from accumulating another core's hardware
-// registers while still allowing richer visualizers and diagnostics.
+// opaque to frontends (for example, "vendor.core.tile-map.v1"). Cores
+// advertise the formats they emit through CoreDescriptor. Consumers should
+// render only formats they understand and safely fall back to the framebuffer
+// for the rest. This prevents the common scene contract from accumulating
+// another core's hardware registers while still allowing richer visualizers
+// and diagnostics.
 struct SceneLayer {
     std::string id;
     std::string format;

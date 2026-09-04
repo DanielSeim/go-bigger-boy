@@ -140,6 +140,29 @@ void test_core_registry_contract() {
     check(null_factory_rejected,
           "registry rejects factories that fail to construct a core");
 
+    gbb::CoreRegistry mismatched;
+    mismatched.register_factory({
+        "mislabelled", "Mislabelled core",
+        [](const std::vector<std::uint8_t>& bytes,
+           const gbb::CoreLoadOptions&) noexcept {
+            return gbb::CoreProbeResult{bytes.size() >= 0x150 ? 100 : 0,
+                                        gbb::SystemId::game_boy};
+        },
+        [](std::vector<std::uint8_t> rom, const gbb::CoreLoadOptions& options)
+            -> std::unique_ptr<gbb::EmulatorCore> {
+            return gbb::create_core(std::move(rom), options);
+        }});
+    bool descriptor_mismatch_rejected = false;
+    try {
+        static_cast<void>(mismatched.create(test_rom()));
+    } catch (const std::runtime_error& error) {
+        descriptor_mismatch_rejected =
+            std::string_view(error.what()).find("does not match factory") !=
+            std::string_view::npos;
+    }
+    check(descriptor_mismatch_rejected,
+          "registry rejects cores whose descriptor identity disagrees with the factory");
+
     bool invalid_factory_rejected = false;
     try {
         extensible.register_factory({"", "", nullptr, nullptr});
@@ -147,7 +170,19 @@ void test_core_registry_contract() {
         invalid_factory_rejected = true;
     }
     check(invalid_factory_rejected,
-          "registry rejects factories without an id, probe, or creator");
+          "registry rejects factories without an id, name, probe, or creator");
+
+    bool unnamed_factory_rejected = false;
+    try {
+        extensible.register_factory({
+            "unnamed", "", nullptr,
+            [](std::vector<std::uint8_t>, const gbb::CoreLoadOptions&)
+                -> std::unique_ptr<gbb::EmulatorCore> { return {}; }});
+    } catch (const std::invalid_argument&) {
+        unnamed_factory_rejected = true;
+    }
+    check(unnamed_factory_rejected,
+          "registry rejects factories without display metadata");
 
     bool duplicate_factory_rejected = false;
     try {
