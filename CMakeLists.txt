@@ -133,6 +133,7 @@ add_library(gbb_core_api
     src/core_registry.cpp
     src/gameboy_core_factory.cpp
     src/core_runtime.cpp
+    src/plugin_loader.cpp
     src/gameboy_scene.cpp
     src/video.cpp
     src/rom_library.cpp
@@ -144,7 +145,14 @@ add_library(gbb_core_api
 target_include_directories(gbb_core_api PUBLIC include)
 target_compile_features(gbb_core_api PUBLIC cxx_std_17)
 target_link_libraries(gbb_core_api PUBLIC gameboy_core)
+target_link_libraries(gbb_core_api PUBLIC ${CMAKE_DL_LIBS})
 add_library(gb_core ALIAS gameboy_core)
+
+# The dynamic-core boundary is intentionally independent of the C++ library;
+# install its one public header so external fixture plug-ins can compile
+# against the same declarations as the in-tree loader tests.
+install(FILES include/gbb/plugin_abi.h
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/gbb)
 
 if(MSVC)
     target_compile_options(gbb_core_api PRIVATE /W4 /permissive-)
@@ -516,6 +524,91 @@ if(GAMEBOY_BUILD_TESTS)
     target_link_libraries(gameboy_core_contract_tests PRIVATE gbb_core_api)
     add_test(NAME gameboy_core_contract
              COMMAND gameboy_core_contract_tests)
+
+    if(NOT EMSCRIPTEN AND NOT ANDROID)
+        enable_language(C)
+
+        add_executable(gameboy_plugin_abi_header_c_tests
+            tests/plugin_abi_header_c_tests.c)
+        set_target_properties(gameboy_plugin_abi_header_c_tests PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF)
+        target_include_directories(gameboy_plugin_abi_header_c_tests
+            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+        add_test(NAME gameboy_plugin_abi_header_c
+                 COMMAND gameboy_plugin_abi_header_c_tests)
+
+        function(add_plugin_fixture target mode)
+            add_library(${target} SHARED
+                tests/plugin_fixture/plugin.cpp)
+            target_compile_definitions(${target}
+                PRIVATE GBB_PLUGIN_FIXTURE_MODE=${mode})
+            target_include_directories(${target}
+                PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+        endfunction()
+
+        add_plugin_fixture(gbb_plugin_fixture 0)
+        add_plugin_fixture(gbb_plugin_fixture_bad_capability 1)
+        add_plugin_fixture(gbb_plugin_fixture_missing_callback 2)
+        add_plugin_fixture(gbb_plugin_fixture_truncated_table 3)
+        add_plugin_fixture(gbb_plugin_fixture_bad_frame 4)
+        add_plugin_fixture(gbb_plugin_fixture_bad_blob 5)
+        add_plugin_fixture(gbb_plugin_fixture_create_failure 6)
+        add_plugin_fixture(gbb_plugin_fixture_concurrent 7)
+        add_plugin_fixture(gbb_plugin_fixture_bad_utf8 9)
+        add_plugin_fixture(gbb_plugin_fixture_unterminated_string 10)
+        add_plugin_fixture(gbb_plugin_fixture_exception 11)
+        add_plugin_fixture(gbb_plugin_fixture_allocator_alignment 12)
+        add_plugin_fixture(gbb_plugin_fixture_throwing_query 14)
+        add_plugin_fixture(gbb_plugin_fixture_oversized_tables 8)
+        add_library(gbb_plugin_fixture_no_query SHARED
+            tests/plugin_fixture/no_query.cpp)
+
+        add_executable(gameboy_plugin_abi_tests
+            tests/plugin_abi_tests.cpp)
+        target_include_directories(gameboy_plugin_abi_tests
+            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+        target_link_libraries(gameboy_plugin_abi_tests PRIVATE ${CMAKE_DL_LIBS})
+        add_test(NAME gameboy_plugin_abi
+                 COMMAND gameboy_plugin_abi_tests
+                         $<TARGET_FILE:gbb_plugin_fixture>)
+
+        add_executable(gameboy_plugin_loader_tests
+            tests/plugin_loader_tests.cpp)
+        target_link_libraries(gameboy_plugin_loader_tests PRIVATE gbb_core_api)
+        add_test(NAME gameboy_plugin_loader
+                 COMMAND gameboy_plugin_loader_tests
+                         $<TARGET_FILE:gbb_plugin_fixture>
+                         $<TARGET_FILE:gbb_plugin_fixture_oversized_tables>)
+
+        add_executable(gameboy_plugin_loader_rejection_tests
+            tests/plugin_loader_rejection_tests.cpp)
+        target_link_libraries(gameboy_plugin_loader_rejection_tests
+            PRIVATE gbb_core_api)
+        add_test(NAME gameboy_plugin_loader_rejections
+                 COMMAND gameboy_plugin_loader_rejection_tests
+                         $<TARGET_FILE:gbb_plugin_fixture_bad_capability>
+                         $<TARGET_FILE:gbb_plugin_fixture_missing_callback>
+                         $<TARGET_FILE:gbb_plugin_fixture_truncated_table>
+                         $<TARGET_FILE:gbb_plugin_fixture_no_query>
+                         $<TARGET_FILE:gbb_plugin_fixture_bad_utf8>
+                         $<TARGET_FILE:gbb_plugin_fixture_unterminated_string>
+                         $<TARGET_FILE:gbb_plugin_fixture_throwing_query>)
+
+        add_executable(gameboy_plugin_loader_runtime_tests
+            tests/plugin_loader_runtime_tests.cpp)
+        target_link_libraries(gameboy_plugin_loader_runtime_tests
+            PRIVATE gbb_core_api)
+        add_test(NAME gameboy_plugin_loader_runtime_validation
+                 COMMAND gameboy_plugin_loader_runtime_tests
+                         $<TARGET_FILE:gbb_plugin_fixture_bad_frame>
+                         $<TARGET_FILE:gbb_plugin_fixture_bad_blob>
+                         $<TARGET_FILE:gbb_plugin_fixture_create_failure>
+                         $<TARGET_FILE:gbb_plugin_fixture_concurrent>
+                         $<TARGET_FILE:gbb_plugin_fixture_exception>
+                         $<TARGET_FILE:gbb_plugin_fixture_allocator_alignment>)
+    endif()
 
     add_executable(gameboy_sdl_core_capability_tests
         tests/sdl_core_capability_tests.cpp)

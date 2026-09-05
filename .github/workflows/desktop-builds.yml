@@ -55,6 +55,73 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  plugin-abi:
+    name: Plugin ABI (${{ matrix.name }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: gcc
+            cc: gcc
+            cxx: g++
+          - name: clang
+            cc: clang
+            cxx: clang++
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Configure plugin ABI contracts
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: >-
+          cmake -S . -B build-plugin-abi
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DGAMEBOY_BUILD_TESTS=ON
+          -DGAMEBOY_BUILD_SDL=OFF
+
+      - name: Build plugin ABI contracts
+        run: >-
+          cmake --build build-plugin-abi
+          --target gameboy_plugin_abi_header_c_tests
+          gameboy_plugin_abi_tests gameboy_plugin_loader_tests
+          gameboy_plugin_loader_rejection_tests
+          gameboy_plugin_loader_runtime_tests
+          gbb_plugin_fixture gbb_plugin_fixture_bad_capability
+          gbb_plugin_fixture_missing_callback gbb_plugin_fixture_truncated_table
+          gbb_plugin_fixture_bad_frame gbb_plugin_fixture_bad_blob
+          gbb_plugin_fixture_create_failure gbb_plugin_fixture_concurrent
+          gbb_plugin_fixture_exception gbb_plugin_fixture_allocator_alignment
+          gbb_plugin_fixture_throwing_query
+          gbb_plugin_fixture_no_query gbb_plugin_fixture_bad_utf8
+          gbb_plugin_fixture_unterminated_string
+          gbb_plugin_fixture_oversized_tables
+          --parallel
+
+      - name: Run plugin ABI contracts
+        run: >-
+          ctest --test-dir build-plugin-abi
+          --output-on-failure
+          --tests-regex 'gameboy_plugin_(abi|loader)'
+
+      - name: Build Clang fixture against GCC host
+        if: matrix.name == 'gcc'
+        run: >-
+          clang++ -std=c++17 -fPIC -shared -Iinclude
+          -DGBB_PLUGIN_BUILD -DGBB_PLUGIN_FIXTURE_MODE=0
+          tests/plugin_fixture/plugin.cpp
+          -o build-plugin-abi/libgbb_plugin_fixture_clang.so
+
+      - name: Run mixed-compiler fixture
+        if: matrix.name == 'gcc'
+        run: |
+          ./build-plugin-abi/gameboy_plugin_abi_tests \
+            ./build-plugin-abi/libgbb_plugin_fixture_clang.so
+          ./build-plugin-abi/gameboy_plugin_loader_tests \
+            ./build-plugin-abi/libgbb_plugin_fixture_clang.so
+
   sanitizers:
     name: ASan and UBSan contracts
     runs-on: ubuntu-24.04

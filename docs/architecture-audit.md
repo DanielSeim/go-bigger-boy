@@ -123,9 +123,10 @@ the smoke retains stdout/stderr and TSan reports as CI artifacts.
 
 Deferred follow-up:
 
-- a dynamically loaded core-plugin ABI should wait until the static API has
-  stabilized; the design constraints and migration gates are documented in
-  `docs/plugin-abi.md`, but no binary ABI is promised yet.
+- a stable dynamically loaded core-plugin ABI remains deferred. The draft C
+  header, fixture matrix, native loader, and `EmulatorCore` adapter now exist;
+  production discovery, cross-toolchain compatibility, and security review are
+  still required before the ABI can be promised.
 
 ## Concrete issue found during the audit
 
@@ -153,10 +154,11 @@ fallbacks for standalone source builds).
    lifecycle and capability isolation is now centralized at the SDL dispatch
    boundary.**
 8. Consider dynamically loaded core plugins only after the static API is stable.
+   **Draft implementation started; stable-plugin release remains deferred.**
 
-The static audit implementation is complete. Future work should follow the
-deferred items above rather than introducing a dynamic plugin ABI before the
-core contract has settled.
+The static audit implementation is complete. The dynamic-plugin draft is now
+being validated against the settled core contract; future work should complete
+the compatibility and security gates before enabling discovery in a frontend.
 
 ## Progress
 
@@ -768,8 +770,9 @@ The first guardrail pass is implemented:
   editor, GameShark, and link-cable paths cannot obtain a concrete Game Boy
   adapter unless the owning `EmulatorCore` advertises the corresponding
   capability; voxel input likewise relies on the generic scene-layer
-  capability. This is the first migration slice toward fully generic
-  advanced services without introducing a dynamic plugin ABI.
+  capability. This remains the first migration slice toward fully generic
+  advanced services; the draft dynamic ABI is kept separate from these
+  capability adapters.
 - SDL's main-loop lifecycle now keeps one `CoreServices` view per iteration and
   refreshes it whenever a ROM is replaced. Camera setup, debugger/TAS stepping,
   sprite editing, GameShark requests, and local/remote link startup all use the

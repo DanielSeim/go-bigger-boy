@@ -111,13 +111,14 @@ frontend-facing target is `gbb_core_api`.
 
 ## Dynamic plug-ins
 
-The static C++ API is the supported extension seam today. A future dynamic
-loader must use a separate fixed-width C ABI with explicit ownership, result
-codes, version negotiation, and size-prefixed tables; exporting
-`EmulatorCore` directly would make STL and compiler-runtime details part of the
-binary contract. The design and required fixture tests are documented in
-[`plugin-abi.md`](plugin-abi.md). No loader or stable plug-in ABI is promised
-until that fixture compatibility matrix passes.
+The static C++ API remains the supported extension seam today. A draft native
+loader and `EmulatorCore` adapter now use a separate fixed-width C ABI with
+explicit ownership, result codes, version negotiation, and size-prefixed
+tables; exporting `EmulatorCore` directly would make STL and compiler-runtime
+details part of the binary contract. The design, fixture, and current loader
+limits are documented in [`plugin-abi.md`](plugin-abi.md). Production discovery
+and a stable plug-in ABI are still deferred until the compatibility matrix and
+security review are complete.
 
 Save-state framing and checksum validation are isolated from hardware field
 serialization. CPU, cartridge, joypad, timer, PPU, and APU fields are delegated
