@@ -5,10 +5,8 @@
 #include <cstdint>
 #include <cstring>
 #include <atomic>
-#include <mutex>
 #include <new>
 #include <stdexcept>
-#include <thread>
 
 #ifndef GBB_PLUGIN_FIXTURE_MODE
 #define GBB_PLUGIN_FIXTURE_MODE 0
@@ -17,8 +15,7 @@
 namespace {
 
 #if GBB_PLUGIN_FIXTURE_MODE == 7
-std::mutex step_mutex;
-std::atomic<int> step_attempts{0};
+std::atomic<bool> step_claimed{false};
 #endif
 
 constexpr std::uint32_t frame_width = 2;
@@ -108,22 +105,17 @@ gbb_plugin_result GBB_PLUGIN_CALL step(const gbb_plugin_core_handle handle,
     }
 #endif
 #if GBB_PLUGIN_FIXTURE_MODE == 7
-    // Make the concurrency rejection deterministic even on runners that
-    // schedule the two test threads sequentially. The first caller holds the
-    // mutex until the second caller has attempted to enter it.
-    const auto attempt = step_attempts.fetch_add(1, std::memory_order_acq_rel) + 1;
-    if (!step_mutex.try_lock()) return GBB_PLUGIN_INVALID_STATE;
-    if (attempt == 1) {
-        while (step_attempts.load(std::memory_order_acquire) < 2) {
-            std::this_thread::yield();
-        }
+    // Exactly one caller may claim this fixture core. An atomic claim keeps
+    // the rejection deterministic even when the runner schedules the second
+    // test thread first (as MSVC can do).
+    bool expected = false;
+    if (!step_claimed.compare_exchange_strong(expected, true,
+                                              std::memory_order_acq_rel)) {
+        return GBB_PLUGIN_INVALID_STATE;
     }
 #endif
     ++core->steps;
     *out_cycles = 4;
-#if GBB_PLUGIN_FIXTURE_MODE == 7
-    step_mutex.unlock();
-#endif
     return GBB_PLUGIN_OK;
 }
 
