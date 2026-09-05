@@ -53,6 +53,8 @@ struct DesktopMenuBar::Impl {
                L"Host TCP Link\tCtrl+Shift+H");
         append(emulation_, DesktopMenuCommand::remote_join,
                L"Join TCP Link\tCtrl+Shift+J");
+        append(emulation_, DesktopMenuCommand::remote_discover,
+               L"Discover LAN Link Hosts\tCtrl+Shift+D");
         append(emulation_, DesktopMenuCommand::remote_stop,
                L"Stop TCP Link");
 
@@ -151,6 +153,8 @@ struct DesktopMenuBar::Impl {
         enable(DesktopMenuCommand::remote_join,
                has(gbb::CoreCapability::link_cable) && !link_active &&
                    !remote_link_active);
+        enable(DesktopMenuCommand::remote_discover,
+               has(gbb::CoreCapability::link_cable) && !remote_link_active);
         enable(DesktopMenuCommand::remote_stop, remote_link_active);
         ModifyMenuW(emulation_, command_id(DesktopMenuCommand::link_session),
                     MF_BYCOMMAND | MF_STRING,

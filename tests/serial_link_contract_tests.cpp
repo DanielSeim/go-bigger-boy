@@ -538,8 +538,9 @@ void test_tcp_serial_endpoint_loopback() {
     // initial clock and the join side starts as the external receiver.
     first_endpoint.set_arbitration_priority(true);
     second_endpoint.set_arbitration_priority(false);
-    first_endpoint.attach(first.serial_port(), client);
-    second_endpoint.attach(second.serial_port(), server);
+    constexpr std::uint64_t rom_fingerprint = 0x0123456789abcdefULL;
+    first_endpoint.attach(first.serial_port(), client, rom_fingerprint);
+    second_endpoint.attach(second.serial_port(), server, rom_fingerprint);
 
     // Exercise the reset path: leave one host bit pending, then have the
     // guest rewrite SC before the response arrives. A normal rewrite keeps
@@ -552,6 +553,10 @@ void test_tcp_serial_endpoint_loopback() {
         second_endpoint.poll();
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
+    check(first_endpoint.peer_compatible() && second_endpoint.peer_compatible() &&
+              first_endpoint.peer_rom_fingerprint() == rom_fingerprint &&
+              second_endpoint.peer_rom_fingerprint() == rom_fingerprint,
+          "TCP endpoint exchanges and validates the ROM fingerprint handshake");
     first.write8(0xFF01, 0xA5);
     second.write8(0xFF01, 0x5A);
     first.write8(0xFF02, 0x81);
@@ -703,6 +708,46 @@ void test_tcp_serial_endpoint_loopback() {
     second_endpoint.detach();
 }
 
+void test_tcp_serial_endpoint_rejects_mismatched_rom() {
+    gameboy::TcpLinkChannel server;
+    gameboy::TcpLinkChannel client;
+    if (!server.listen(0) || server.local_port() == 0) return;
+    if (!client.connect("127.0.0.1", server.local_port())) return;
+    for (unsigned attempt = 0;
+         attempt < 100 &&
+         (server.state() != gameboy::TcpLinkChannel::State::connected ||
+          client.state() != gameboy::TcpLinkChannel::State::connected);
+         ++attempt) {
+        server.poll();
+        client.poll();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    if (server.state() != gameboy::TcpLinkChannel::State::connected ||
+        client.state() != gameboy::TcpLinkChannel::State::connected) {
+        return;
+    }
+    gameboy::MemoryBus first{gameboy::Cartridge{test_rom()}};
+    gameboy::MemoryBus second{gameboy::Cartridge{test_rom()}};
+    gameboy::TcpSerialEndpoint first_endpoint;
+    gameboy::TcpSerialEndpoint second_endpoint;
+    first_endpoint.set_arbitration_priority(true);
+    second_endpoint.set_arbitration_priority(false);
+    first_endpoint.attach(first.serial_port(), client, 0x1111111111111111ULL);
+    second_endpoint.attach(second.serial_port(), server, 0x2222222222222222ULL);
+    for (unsigned attempt = 0; attempt < 100; ++attempt) {
+        first_endpoint.poll();
+        second_endpoint.poll();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    check(first_endpoint.peer_hello_seen() &&
+              second_endpoint.peer_hello_seen() &&
+              !first_endpoint.peer_compatible() &&
+              !second_endpoint.peer_compatible() &&
+              !first_endpoint.peer_ready_for_link() &&
+              !second_endpoint.peer_ready_for_link(),
+          "TCP endpoint rejects a mismatched ROM fingerprint");
+}
+
 
 } // namespace
 
@@ -718,5 +763,6 @@ int main() {
     test_link_transport_framing();
     test_tcp_link_channel_loopback();
     test_tcp_serial_endpoint_loopback();
+    test_tcp_serial_endpoint_rejects_mismatched_rom();
     return failures == 0 ? 0 : 1;
 }

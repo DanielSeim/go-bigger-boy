@@ -63,6 +63,7 @@ void retry_local_link_session(gameboy::Emulator& first,
 
 void start_remote_link_session(gameboy::Emulator& emulator,
                                RemoteLinkSession& remote,
+                               const RemoteLinkOptions& options,
                                bool hosting,
                                const std::filesystem::path& preference_path,
                                bool link_diagnostics,
@@ -70,7 +71,8 @@ void start_remote_link_session(gameboy::Emulator& emulator,
 void stop_remote_link_session(gameboy::Emulator& emulator,
                               RemoteLinkSession& remote) noexcept;
 void retry_remote_link_session(gameboy::Emulator& emulator,
-                               RemoteLinkSession& remote);
+                               RemoteLinkSession& remote,
+                               const RemoteLinkOptions& options);
 #endif
 
 } // namespace gbb::sdl

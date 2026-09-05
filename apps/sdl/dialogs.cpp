@@ -195,8 +195,9 @@ void show_help(SDL_Window* window, const InputBindings& bindings) {
         "Ctrl+G: Open GameShark cheat manager\n"
         "Ctrl+Shift+L: Start/stop a local two-player link\n"
         "Ctrl+Shift+R: Retry a stalled link handshake\n"
-        "Ctrl+Shift+H: Host a TCP link on 127.0.0.1:8765\n"
-        "Ctrl+Shift+J: Join a TCP link on 127.0.0.1:8765\n"
+        "Ctrl+Shift+H: Host a TCP link using link.RemoteBind/Port\n"
+        "Ctrl+Shift+J: Join a TCP link using link.RemoteHost/Port\n"
+        "Ctrl+Shift+D: Search the LAN for matching link hosts\n"
         "Ctrl+Shift+X: Stop the active TCP link\n"
         "Player 2 (local link): W/A/S/D = directions, J/K = A/B, Q/E = Select/Start\n"
         "Game library: Choose the video pipeline\n"
@@ -280,6 +281,24 @@ void show_error(SDL_Window* window, const std::string& message) {
     static_cast<void>(SDL_ShowSimpleMessageBox(
         SDL_MESSAGEBOX_ERROR, "Go Bigger Boy (GBB)", message.c_str(), window));
 #endif
+}
+
+void show_lan_hosts(SDL_Window* window,
+                    const std::vector<gameboy::LanPeer>& peers) {
+    std::ostringstream message;
+    if (peers.empty()) {
+        message << "No matching Go Bigger Boy hosts were found on the LAN.";
+    } else {
+        message << "Matching Go Bigger Boy hosts:\n\n";
+        for (const auto& peer : peers) {
+            message << peer.name << " — " << peer.address << ':' << peer.port
+                    << '\n';
+        }
+        message << "\nSet link.RemoteHost to one of these addresses before joining.";
+    }
+    static_cast<void>(SDL_ShowSimpleMessageBox(
+        SDL_MESSAGEBOX_INFORMATION, "LAN link discovery", message.str().c_str(),
+        window));
 }
 
 } // namespace gbb::sdl

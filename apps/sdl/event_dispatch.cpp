@@ -301,6 +301,11 @@ void handle_desktop_menu_event(SdlEventContext& context) {
             context.remote_join_requested = true;
         }
         break;
+    case DesktopMenuCommand::remote_discover:
+        if (has_capability(CoreCapability::link_cable)) {
+            context.remote_discover_requested = true;
+        }
+        break;
     case DesktopMenuCommand::remote_stop:
         if (context.remote_link_active) context.remote_stop_requested = true;
         break;
@@ -685,6 +690,11 @@ void handle_gameplay_key_event(const SDL_Event& event,
                (event.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_SHIFT)) ==
                (SDL_KMOD_CTRL | SDL_KMOD_SHIFT) && supports_link) {
         remote_join_requested = true;
+    } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+               event.key.key == SDLK_D &&
+               (event.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_SHIFT)) ==
+                   (SDL_KMOD_CTRL | SDL_KMOD_SHIFT) && supports_link) {
+        context.remote_discover_requested = true;
     } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
                event.key.key == SDLK_SPACE && core) {
         paused = !paused;

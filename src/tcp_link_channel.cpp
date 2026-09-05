@@ -66,15 +66,6 @@ std::intptr_t as_handle(const Socket value) noexcept {
     return static_cast<std::intptr_t>(value);
 }
 
-bool bind_loopback(const Socket socket, const std::uint16_t port) noexcept {
-    sockaddr_in address{};
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    address.sin_port = htons(port);
-    return bind(socket, reinterpret_cast<const sockaddr*>(&address),
-                sizeof(address)) == 0;
-}
-
 // Serial bit requests are latency-sensitive: the emulated clock waits for
 // the peer's response before producing its next edge. Disable Nagle's
 // algorithm so tiny request/response frames are sent immediately. This is a
@@ -92,11 +83,40 @@ void set_low_latency(const Socket socket) noexcept {
 TcpLinkChannel::~TcpLinkChannel() { close(); }
 
 bool TcpLinkChannel::listen(const std::uint16_t port) noexcept {
+    return listen(port, "127.0.0.1");
+}
+
+bool TcpLinkChannel::listen(const std::uint16_t port,
+                            const std::string& bind_address) noexcept {
     close();
     if (!sockets_ready()) return false;
-    const auto socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (socket == invalid_socket || !set_nonblocking(socket) ||
-        !bind_loopback(socket, port) || ::listen(socket, 1) != 0) {
+    addrinfo hints{};
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = IPPROTO_TCP;
+    hints.ai_flags = AI_PASSIVE;
+    addrinfo* result = nullptr;
+    const auto service = std::to_string(port);
+    const char* host = bind_address.empty() ? nullptr : bind_address.c_str();
+    if (getaddrinfo(host, service.c_str(), &hints, &result) != 0 ||
+        result == nullptr) {
+        state_ = State::failed;
+        return false;
+    }
+    const auto socket = ::socket(result->ai_family, result->ai_socktype,
+                                 result->ai_protocol);
+    int reuse = 1;
+    if (socket != invalid_socket) {
+        static_cast<void>(setsockopt(socket, SOL_SOCKET, SO_REUSEADDR,
+                                     reinterpret_cast<const char*>(&reuse),
+                                     sizeof(reuse)));
+    }
+    const auto valid = socket != invalid_socket && set_nonblocking(socket) &&
+                       ::bind(socket, result->ai_addr,
+                              static_cast<int>(result->ai_addrlen)) == 0 &&
+                       ::listen(socket, 1) == 0;
+    freeaddrinfo(result);
+    if (!valid) {
         if (socket != invalid_socket) close_socket(socket);
         state_ = State::failed;
         return false;

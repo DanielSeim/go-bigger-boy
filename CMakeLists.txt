@@ -136,6 +136,7 @@ add_library(gbb_core_api
     src/plugin_loader.cpp
     src/plugin_discovery.cpp
     src/plugin_trust.cpp
+    src/lan_discovery.cpp
     src/gameboy_scene.cpp
     src/video.cpp
     src/rom_library.cpp
@@ -575,6 +576,14 @@ if(GAMEBOY_BUILD_TESTS)
         add_test(NAME gameboy_plugin_abi
                  COMMAND gameboy_plugin_abi_tests
                          $<TARGET_FILE:gbb_plugin_fixture>)
+
+        add_executable(gameboy_lan_discovery_tests
+            tests/lan_discovery_tests.cpp)
+        target_link_libraries(gameboy_lan_discovery_tests PRIVATE gbb_core_api)
+        add_test(NAME gameboy_lan_discovery
+                 COMMAND gameboy_lan_discovery_tests)
+        set_tests_properties(gameboy_lan_discovery PROPERTIES
+                             SKIP_RETURN_CODE 77)
 
         add_executable(gameboy_plugin_loader_tests
             tests/plugin_loader_tests.cpp)

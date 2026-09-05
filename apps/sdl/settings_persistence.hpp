@@ -6,6 +6,7 @@
 #include "gbb/plugin_discovery.hpp"
 
 #include <filesystem>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -20,6 +21,10 @@ struct AppSettings {
     bool plugin_require_allowlist{};
     std::vector<std::string> plugin_allowed_capability_ids;
     bool plugin_require_capability_allowlist{};
+    std::string link_remote_host{"127.0.0.1"};
+    std::string link_remote_bind{"127.0.0.1"};
+    std::uint16_t link_remote_port{8765};
+    bool link_lan_discovery{};
     TouchControlSettings touch;
 };
 

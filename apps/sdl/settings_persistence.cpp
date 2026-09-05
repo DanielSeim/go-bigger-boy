@@ -12,6 +12,20 @@
 #include <string>
 #include <utility>
 
+namespace {
+std::uint16_t parse_link_port(const std::string& value,
+                              const std::uint16_t fallback) {
+    try {
+        const auto parsed = std::stoul(value);
+        return parsed == 0 || parsed > 65535
+                   ? fallback
+                   : static_cast<std::uint16_t>(parsed);
+    } catch (...) {
+        return fallback;
+    }
+}
+} // namespace
+
 const char* keyboard_key_setting_name(const SDL_Keycode key) {
     if (key == SDLK_UNKNOWN) return "None";
     if (key == SDLK_LSHIFT) return "Left Shift";
@@ -220,6 +234,11 @@ void write_portable_settings(const std::filesystem::path& preference_directory,
     output << "plugin.RequireCapabilityAllowlist = "
            << (settings.plugin_require_capability_allowlist ? "true" : "false")
            << '\n';
+    output << "link.RemoteHost = " << settings.link_remote_host << '\n';
+    output << "link.RemoteBind = " << settings.link_remote_bind << '\n';
+    output << "link.RemotePort = " << settings.link_remote_port << '\n';
+    output << "link.LanDiscovery = "
+           << (settings.link_lan_discovery ? "true" : "false") << '\n';
     for (const auto& plugin_path : settings.plugin_paths) {
         output << "plugin.Path = " << plugin_path.string() << '\n';
     }
@@ -492,6 +511,24 @@ AppSettings load_portable_settings(
             if (!value.empty()) {
                 settings.plugin_allowed_capability_ids.push_back(value);
             }
+            continue;
+        }
+        if (key == "link.RemoteHost") {
+            if (!value.empty()) settings.link_remote_host = value;
+            continue;
+        }
+        if (key == "link.RemoteBind") {
+            if (!value.empty()) settings.link_remote_bind = value;
+            continue;
+        }
+        if (key == "link.RemotePort") {
+            settings.link_remote_port =
+                parse_link_port(value, settings.link_remote_port);
+            continue;
+        }
+        if (key == "link.LanDiscovery") {
+            settings.link_lan_discovery =
+                parse_bool_setting(value, settings.link_lan_discovery);
             continue;
         }
         if (key == "touch.Size") {

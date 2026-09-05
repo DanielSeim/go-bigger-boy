@@ -17,7 +17,8 @@ public:
     TcpSerialEndpoint(const TcpSerialEndpoint&) = delete;
     TcpSerialEndpoint& operator=(const TcpSerialEndpoint&) = delete;
 
-    void attach(SerialPort& port, TcpLinkChannel& channel) noexcept;
+    void attach(SerialPort& port, TcpLinkChannel& channel,
+                std::uint64_t rom_fingerprint = 0) noexcept;
     void detach() noexcept;
     void poll() noexcept;
     void set_arbitration_priority(bool priority) noexcept {
@@ -28,7 +29,7 @@ public:
         return true;
     }
     [[nodiscard]] bool peer_ready_for_link() const noexcept {
-        return connected() && peer_hello_seen_ &&
+        return connected() && peer_hello_seen_ && peer_compatible_ &&
                (arbitration_priority_ || peer_request_seen_);
     }
     [[nodiscard]] bool waiting_for_peer() const noexcept {
@@ -43,6 +44,12 @@ public:
     }
     [[nodiscard]] bool peer_hello_seen() const noexcept {
         return peer_hello_seen_;
+    }
+    [[nodiscard]] bool peer_compatible() const noexcept {
+        return peer_compatible_;
+    }
+    [[nodiscard]] std::uint64_t peer_rom_fingerprint() const noexcept {
+        return peer_rom_fingerprint_;
     }
     [[nodiscard]] bool peer_request_seen() const noexcept {
         return peer_request_seen_;
@@ -113,6 +120,11 @@ private:
     bool arbitration_priority_{};
     bool hello_sent_{};
     bool peer_hello_seen_{};
+    bool peer_compatible_{true};
+    std::uint8_t hello_parts_sent_{};
+    std::uint8_t hello_parts_received_{};
+    std::uint64_t rom_fingerprint_{};
+    std::uint64_t peer_rom_fingerprint_{};
     bool peer_request_seen_{};
     bool peer_byte_released_{};
     bool peer_clock_busy_{};

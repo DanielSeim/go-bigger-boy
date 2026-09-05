@@ -23,7 +23,12 @@ public:
     TcpLinkChannel& operator=(const TcpLinkChannel&) = delete;
     ~TcpLinkChannel();
 
+    // The one-argument form remains loopback-only for backwards
+    // compatibility. Pass an explicit bind address (for example 0.0.0.0)
+    // when the user has opted into LAN hosting.
     [[nodiscard]] bool listen(std::uint16_t port) noexcept;
+    [[nodiscard]] bool listen(std::uint16_t port,
+                              const std::string& bind_address) noexcept;
     [[nodiscard]] bool connect(const std::string& host,
                                std::uint16_t port) noexcept;
     void poll() noexcept;

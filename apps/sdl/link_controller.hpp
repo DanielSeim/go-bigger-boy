@@ -23,6 +23,7 @@ struct LinkControlContext final {
     std::unique_ptr<gameboy::GameBoyLinkEndpoint>& link_first_endpoint;
     std::unique_ptr<gameboy::GameBoyLinkEndpoint>& link_second_endpoint;
     RemoteLinkSession& remote_link;
+    const RemoteLinkOptions& remote_options;
     SdlResources& sdl;
     const std::string& current_rom;
     const gameboy::DisplayPalette& palette;
@@ -32,6 +33,7 @@ struct LinkControlContext final {
     bool& remote_stop_requested;
     bool& remote_host_requested;
     bool& remote_join_requested;
+    bool& remote_discover_requested;
     bool& link_retry_requested;
     bool& link_toggle_requested;
     bool& automatic_local_retry_used;

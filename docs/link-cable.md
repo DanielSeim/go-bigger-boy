@@ -33,15 +33,13 @@ Handshake** (or `Ctrl+Shift+R`) performs that recovery.
 `LocalLinkTransport` wraps `SerialCable`; transport implementations must queue
 network I/O outside the serial edge callback and present only ready edges to
 the emulation thread. `LinkPacketCodec` defines the fixed `GB`/versioned,
-checksummed frame used by the planned TCP backend.
+checksummed frame used by the TCP endpoint and future transports.
 
 `gameboy::TcpLinkChannel` provides the first transport-layer implementation:
-loopback host/connect, non-blocking polling, partial-write handling, and frame
-validation. It enables TCP's low-latency mode for the small serial request and
-response frames, avoiding packet coalescing delays while leaving the socket
-non-blocking. It is intentionally not selectable from the SDL session yet; a
-remote serial-edge adapter must consume queued packets without ever waiting
-inside the CPU or serial callback.
+loopback or explicitly bound host/connect, non-blocking polling, partial-write
+handling, and frame validation. It enables TCP's low-latency mode for the
+small serial request and response frames, avoiding packet coalescing delays
+while leaving the socket non-blocking.
 
 `gameboy::TcpSerialEndpoint` is the corresponding remote-edge adapter. It
 queues an outgoing bit during `prepare_bit`, holds the local internal clock at
@@ -51,6 +49,12 @@ of CPU execution; a host UI can now compose one endpoint, one channel, and one
 emulator for a remote session. While a TCP bit is in flight, the endpoint also
 preserves the partial shift register across Pokémon's repeated SB/SC probe
 rewrites; an explicit link reset remains the cancellation boundary.
+
+Before serial traffic, endpoints send a five-part hello containing the local
+ROM fingerprint (two bytes per part) and the host/join role. A link becomes
+ready only after all parts arrive and the fingerprints match. Endpoints created
+without a fingerprint retain the one-packet legacy hello for core-level tests;
+the SDL frontend always supplies the loaded ROM fingerprint.
 
 The printer and test-ROM serial-output paths remain available through the
 `MemoryBus` adapter. A serial endpoint is deliberately not embedded in a save
@@ -128,9 +132,16 @@ the corresponding localized message in VRAM; `game_ui=other` covers all other
 screens. Matching transitions are emitted as `event=pokemon_state` with the
 same UI label.
 
-On desktop, **Emulation → Host TCP Link** (`Ctrl+Shift+H`) listens on
-`127.0.0.1:8765`, while **Join TCP Link** (`Ctrl+Shift+J`) connects to that
-endpoint. Use one emulator instance in host mode and another in join mode,
+On desktop, **Emulation → Host TCP Link** (`Ctrl+Shift+H`) listens on the
+`link.RemoteBind` address and `link.RemotePort`, while **Join TCP Link**
+(`Ctrl+Shift+J`) connects to `link.RemoteHost` and that port. The defaults are
+`127.0.0.1:8765`, preserving loopback-only behavior. Set `link.RemoteBind =
+0.0.0.0` (or a specific local address) on the host to opt into LAN hosting,
+and set the joiner's `link.RemoteHost` to the host's LAN address. Use one
+emulator instance in host mode and another in join mode,
+`link.LanDiscovery = true` enables the host beacon and the
+**Discover LAN Link Hosts** (`Ctrl+Shift+D`) command performs a bounded scan. The
+scan reports matching addresses but never joins automatically.
 with the same ROM and prepared Cable Club saves. For Pokémon Gen I, have the
 host player talk to the Cable Club attendant and confirm the link first; the
 join player should then confirm on its side. This gives the game's serial
@@ -151,6 +162,14 @@ Each remote instance receives its normal primary keyboard bindings (arrows for
 movement, `X` for A/confirm, `Z` for B/cancel, and Enter for Start by default).
 The `W/A/S/D` and `J/K` player-two bindings apply only to the local split-screen
 session. Click a window to focus it before navigating its Cable Club menu.
+
+`gameboy::LanDiscovery` provides the opt-in UDP discovery layer used by the
+desktop frontend. A host answers versioned queries on UDP port 8764 with its
+TCP port, ROM fingerprint, and display name; a scanner broadcasts a query and
+returns matching peers without opening a TCP connection. TCP endpoints also
+exchange the ROM fingerprint during their hello handshake and refuse to
+advance a link when the fingerprints differ. Discovery is not authentication,
+and should only be enabled on a trusted LAN.
 
 Link tracing is opt-in. Add `link.Diagnostics = true` to the portable
 `settings.ini` beside the executable before starting a session; normal users
@@ -176,14 +195,17 @@ manually diffing every frame. The session header identifies the transport and
 role, so host and join logs can be compared directly.
 
 TCP frame records also include endpoint arbitration fields: `z` indicates a
-response ready to consume, `hh` that the peer hello was seen, `pr` that the
-peer has requested a byte, `pb` that the peer released a completed byte, `pc`
-that the peer currently owns the clock, and `bo` for the remaining request
-backoff. These fields are diagnostic-only and help distinguish a slow TCP
-exchange from a guest-side synchronization delay.
+response ready to consume, `hh` that the peer hello was seen, `compat` that
+the ROM fingerprints matched, and `peer_fp` records the peer fingerprint.
+`pr` indicates that the peer has requested a byte, `pb` that the peer released
+a completed byte, `pc` that the peer currently owns the clock, and `bo` gives
+the remaining request backoff. These fields are diagnostic-only and help
+distinguish a slow TCP exchange from a guest-side synchronization delay or an
+incompatible ROM pair.
 
-Network, WebRTC, Bluetooth, and USB transports should be added only after this
-deterministic local path is validated with link-enabled games.
+WebRTC, Bluetooth, and USB transports can reuse the same packet and serial-edge
+seams; each should preserve the non-blocking poll boundary and add its own
+capability and security review before being exposed by a frontend.
 
 ## Headless integration harness
 

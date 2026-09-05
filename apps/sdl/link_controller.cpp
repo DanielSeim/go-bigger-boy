@@ -10,6 +10,41 @@
 namespace gbb::sdl {
 
 void process_link_requests(LinkControlContext context) {
+    if (context.emulator != nullptr && context.remote_link.active() &&
+        context.remote_link.endpoint.peer_hello_seen() &&
+        !context.remote_link.endpoint.peer_compatible()) {
+        gbb::log_frontend_warning(
+            "TCP link rejected: peer ROM fingerprint does not match");
+        stop_remote_link_session(*context.emulator, context.remote_link);
+        show_error(context.sdl.window,
+                   "The remote link was rejected because the ROMs differ.");
+    }
+
+    if (context.remote_discover_requested) {
+        context.remote_discover_requested = false;
+        if (context.emulator == nullptr) {
+            show_error(context.sdl.window,
+                       "Load a ROM before searching for LAN link hosts.");
+        } else {
+            gameboy::LanDiscovery scanner;
+            if (!scanner.start_scan(context.emulator->rom_fingerprint())) {
+                show_error(context.sdl.window,
+                           "Could not start LAN link discovery.");
+            } else {
+                // Discovery is a user-invoked, bounded scan. It never blocks
+                // the emulation thread or opens a TCP session by itself.
+                for (unsigned attempt = 0; attempt < 100; ++attempt) {
+                    scanner.poll();
+                    SDL_Delay(5);
+                }
+                scanner.poll();
+                const auto peers = scanner.take_peers();
+                scanner.stop();
+                show_lan_hosts(context.sdl.window, peers);
+            }
+        }
+    }
+
     if (context.remote_stop_requested) {
         context.remote_stop_requested = false;
         gbb::log_frontend_info("Link request: stop remote session");
@@ -43,7 +78,8 @@ void process_link_requests(LinkControlContext context) {
                     "Link request ignored: core has no link service");
             } else {
                 start_remote_link_session(
-                    *link_emulator, context.remote_link, hosting,
+                    *link_emulator, context.remote_link, context.remote_options,
+                    hosting,
                     context.preference_path, context.link_diagnostics,
                     context.sdl.window);
                 context.rewind = false;
@@ -61,7 +97,8 @@ void process_link_requests(LinkControlContext context) {
             if (context.emulator != nullptr && context.remote_link.active()) {
                 gbb::log_frontend_info("Link retry: remote transport");
                 retry_remote_link_session(*context.emulator,
-                                          context.remote_link);
+                                          context.remote_link,
+                                          context.remote_options);
             } else if (context.emulator != nullptr &&
                        context.link_emulator != nullptr &&
                        context.link_session != nullptr) {

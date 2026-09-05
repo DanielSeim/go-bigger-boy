@@ -4,6 +4,7 @@
 #include "input_configuration.hpp"
 #include "input_mapping.hpp"
 #include "sdl_resources.hpp"
+#include "gameboy/lan_discovery.hpp"
 
 #include <SDL3/SDL.h>
 
@@ -11,6 +12,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace gbb::sdl {
 
@@ -29,5 +31,6 @@ bool confirm_exit(SDL_Window* window);
 void show_help(SDL_Window* window, const InputBindings& bindings);
 void show_about(SDL_Window* window);
 void show_error(SDL_Window* window, const std::string& message);
+void show_lan_hosts(SDL_Window* window, const std::vector<gameboy::LanPeer>& peers);
 
 } // namespace gbb::sdl

@@ -63,6 +63,7 @@ struct SdlEventContext {
     bool& link_retry_requested;
     bool& remote_host_requested;
     bool& remote_join_requested;
+    bool& remote_discover_requested;
     bool& remote_stop_requested;
     bool remote_link_active;
     bool& running;

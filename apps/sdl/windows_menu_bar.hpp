@@ -23,6 +23,7 @@ enum class DesktopMenuCommand : int {
     link_retry,
     remote_host,
     remote_join,
+    remote_discover,
     remote_stop,
     fullscreen,
     controls,

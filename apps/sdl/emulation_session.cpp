@@ -385,6 +385,8 @@ void trace_remote_frame(const gameboy::Emulator& emulator,
                << " w=" << remote.endpoint.waiting_for_peer()
                << " z=" << remote.endpoint.response_ready()
                << " hh=" << remote.endpoint.peer_hello_seen()
+               << " compat=" << remote.endpoint.peer_compatible()
+               << " peer_fp=" << remote.endpoint.peer_rom_fingerprint()
                << " pr=" << remote.endpoint.peer_request_seen()
                << " pb=" << remote.endpoint.peer_byte_released()
                << " pc=" << remote.endpoint.peer_clock_busy()
@@ -561,10 +563,9 @@ void retry_local_link_session(gameboy::Emulator& first,
     release_all_buttons(second);
 }
 
-constexpr std::uint16_t remote_link_port = 8765;
-
 void start_remote_link_session(gameboy::Emulator& emulator,
                                RemoteLinkSession& remote,
+                               const RemoteLinkOptions& options,
                                const bool hosting,
                                const std::filesystem::path& preference_path,
                                const bool link_diagnostics,
@@ -576,19 +577,32 @@ void start_remote_link_session(gameboy::Emulator& emulator,
     if (is_pokemon_gen1(emulator)) reset_pokemon_link_handshake(emulator);
     release_all_buttons(emulator);
     const auto ready = hosting
-                           ? remote.channel.listen(remote_link_port)
-                           : remote.channel.connect("127.0.0.1",
-                                                    remote_link_port);
+                           ? remote.channel.listen(options.port,
+                                                   options.bind_address)
+                           : remote.channel.connect(options.host, options.port);
     if (!ready) {
         emulator.bus().connect_printer(true);
         throw std::runtime_error(
-            hosting ? "Could not host TCP link on loopback port 8765."
-                    : "Could not connect to TCP link host on 127.0.0.1:8765.");
+            hosting ? "Could not host TCP link on the configured address."
+                    : "Could not connect to the configured TCP link host.");
     }
     remote.hosting = hosting;
     remote.diagnostics = link_diagnostics;
     remote.endpoint.set_arbitration_priority(hosting);
-    remote.endpoint.attach(emulator.bus().serial_port(), remote.channel);
+    remote.endpoint.attach(emulator.bus().serial_port(), remote.channel,
+                           emulator.rom_fingerprint());
+    if (options.lan_discovery) {
+        const auto discovered = hosting
+            ? remote.discovery.start_host(options.port, emulator.rom_fingerprint(),
+                                          "Go Bigger Boy")
+            : true;
+        if (!discovered) {
+            remote.endpoint.detach();
+            remote.channel.close();
+            emulator.bus().connect_printer(true);
+            throw std::runtime_error("Could not start LAN discovery.");
+        }
+    }
     remote.enabled = true;
     if (link_diagnostics) {
         start_link_trace(preference_path, hosting ? "host" : "join");
@@ -613,6 +627,7 @@ void stop_remote_link_session(gameboy::Emulator& emulator,
                               RemoteLinkSession& remote) noexcept {
     stop_link_trace();
     remote.endpoint.detach();
+    remote.discovery.stop();
     remote.channel.close();
     remote.enabled = false;
     remote.diagnostics = false;
@@ -620,23 +635,32 @@ void stop_remote_link_session(gameboy::Emulator& emulator,
 }
 
 void retry_remote_link_session(gameboy::Emulator& emulator,
-                               RemoteLinkSession& remote) {
+                               RemoteLinkSession& remote,
+                               const RemoteLinkOptions& options) {
     if (!remote.enabled) return;
     remote.endpoint.detach();
+    remote.discovery.stop();
     remote.channel.close();
     emulator.bus().serial_port().reset_link();
     emulator.bus().serial_port().reset_diagnostics();
     if (is_pokemon_gen1(emulator)) reset_pokemon_link_handshake(emulator);
     release_all_buttons(emulator);
     const auto ready = remote.hosting
-                           ? remote.channel.listen(remote_link_port)
-                           : remote.channel.connect("127.0.0.1",
-                                                    remote_link_port);
+                           ? remote.channel.listen(options.port,
+                                                   options.bind_address)
+                           : remote.channel.connect(options.host, options.port);
     if (!ready) {
-        remote.endpoint.attach(emulator.bus().serial_port(), remote.channel);
+        remote.endpoint.attach(emulator.bus().serial_port(), remote.channel,
+                               emulator.rom_fingerprint());
         throw std::runtime_error("Could not retry the TCP link session.");
     }
-    remote.endpoint.attach(emulator.bus().serial_port(), remote.channel);
+    if (remote.hosting && options.lan_discovery &&
+        !remote.discovery.start_host(options.port, emulator.rom_fingerprint(),
+                                     "Go Bigger Boy")) {
+        throw std::runtime_error("Could not restart LAN discovery.");
+    }
+    remote.endpoint.attach(emulator.bus().serial_port(), remote.channel,
+                           emulator.rom_fingerprint());
 }
 #endif
 

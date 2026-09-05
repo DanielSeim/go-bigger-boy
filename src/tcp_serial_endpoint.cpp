@@ -12,7 +12,8 @@ std::atomic<std::uint64_t> next_diagnostic_session{1};
 } // namespace
 
 void TcpSerialEndpoint::attach(SerialPort& port,
-                                TcpLinkChannel& channel) noexcept {
+                                TcpLinkChannel& channel,
+                                const std::uint64_t rom_fingerprint) noexcept {
     detach();
     port_ = &port;
     channel_ = &channel;
@@ -23,6 +24,11 @@ void TcpSerialEndpoint::attach(SerialPort& port,
     request_backoff_ = 0;
     hello_sent_ = false;
     peer_hello_seen_ = false;
+    peer_compatible_ = true;
+    hello_parts_sent_ = 0;
+    hello_parts_received_ = 0;
+    rom_fingerprint_ = rom_fingerprint;
+    peer_rom_fingerprint_ = 0;
     peer_request_seen_ = false;
     peer_byte_released_ = false;
     peer_clock_busy_ = false;
@@ -54,6 +60,11 @@ void TcpSerialEndpoint::detach() noexcept {
     request_backoff_ = 0;
     hello_sent_ = false;
     peer_hello_seen_ = false;
+    peer_compatible_ = true;
+    hello_parts_sent_ = 0;
+    hello_parts_received_ = 0;
+    rom_fingerprint_ = 0;
+    peer_rom_fingerprint_ = 0;
     peer_request_seen_ = false;
     peer_byte_released_ = false;
     peer_clock_busy_ = false;
@@ -164,16 +175,26 @@ void TcpSerialEndpoint::poll() noexcept {
     channel_->poll();
     if (!connected()) return;
     if (!hello_sent_) {
-        const LinkPacket hello{LinkPacketType::hello, 0,
-                               static_cast<std::uint8_t>(
-                                   arbitration_priority_ ? 1U : 0U),
-                               0};
+        const auto part = hello_parts_sent_;
+        LinkPacket hello{LinkPacketType::hello, part,
+                         static_cast<std::uint8_t>(
+                             arbitration_priority_ ? 1U : 0U),
+                         0};
+        if (rom_fingerprint_ != 0 && part != 0) {
+            const auto shift = static_cast<unsigned>((part - 1U) * 16U);
+            hello.value = static_cast<std::uint8_t>(rom_fingerprint_ >> shift);
+            hello.flags = static_cast<std::uint8_t>(rom_fingerprint_ >> (shift + 8U));
+        }
         if (channel_->send(hello)) {
-            hello_sent_ = true;
-            gbb::Logger::instance().write(gbb::LogLevel::debug,
-                                          gbb::LogCategory::link,
-                                          "TCP link hello sent",
-                                          {diagnostic_session_, 0, 0});
+            ++hello_parts_sent_;
+            hello_sent_ = rom_fingerprint_ == 0
+                              ? hello_parts_sent_ >= 1
+                              : hello_parts_sent_ >= 5;
+            gbb::Logger::instance().write(
+                gbb::LogLevel::debug, gbb::LogCategory::link,
+                hello_sent_ ? "TCP link hello sent"
+                            : "TCP link hello part sent",
+                {diagnostic_session_, part, rom_fingerprint_});
         }
     }
 
@@ -218,13 +239,42 @@ void TcpSerialEndpoint::poll() noexcept {
 
     while (const auto packet = channel_->receive()) {
         if (packet->type == LinkPacketType::hello) {
-            if (!peer_hello_seen_) {
-                gbb::Logger::instance().write(
-                    gbb::LogLevel::debug, gbb::LogCategory::link,
-                    "TCP link peer hello received",
-                    {diagnostic_session_, 0, 0});
+            if (rom_fingerprint_ == 0) {
+                if (!peer_hello_seen_) {
+                    gbb::Logger::instance().write(
+                        gbb::LogLevel::debug, gbb::LogCategory::link,
+                        "TCP link peer hello received",
+                        {diagnostic_session_, packet->sequence, 0});
+                }
+                peer_hello_seen_ = true;
+                continue;
             }
-            peer_hello_seen_ = true;
+            if (packet->sequence >= 5) continue;
+            if (packet->sequence == 0) {
+                hello_parts_received_ = static_cast<std::uint8_t>(
+                    hello_parts_received_ | 1U);
+            } else {
+                const auto shift =
+                    static_cast<unsigned>((packet->sequence - 1U) * 16U);
+                const auto word = static_cast<std::uint64_t>(packet->value) |
+                                  (static_cast<std::uint64_t>(packet->flags)
+                                   << 8U);
+                peer_rom_fingerprint_ |= word << shift;
+                hello_parts_received_ = static_cast<std::uint8_t>(
+                    hello_parts_received_ | (1U << packet->sequence));
+            }
+            if (hello_parts_received_ == 0x1f) {
+                peer_hello_seen_ = true;
+                peer_compatible_ = peer_rom_fingerprint_ == rom_fingerprint_;
+                gbb::Logger::instance().write(
+                    peer_compatible_ ? gbb::LogLevel::debug
+                                     : gbb::LogLevel::warning,
+                    gbb::LogCategory::link,
+                    peer_compatible_ ? "TCP link peer hello received"
+                                     : "TCP link peer ROM fingerprint mismatch",
+                    {diagnostic_session_, peer_rom_fingerprint_,
+                     rom_fingerprint_});
+            }
             continue;
         }
         if (packet->type == LinkPacketType::clock_release) {

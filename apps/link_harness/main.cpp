@@ -332,8 +332,10 @@ int main(int argc, char** argv) {
             first.bus().serial_port().reset_link();
             second.bus().serial_port().reset_link();
         }
-        first_endpoint.attach(first.bus().serial_port(), client);
-        second_endpoint.attach(second.bus().serial_port(), server);
+        first_endpoint.attach(first.bus().serial_port(), client,
+                              first.rom_fingerprint());
+        second_endpoint.attach(second.bus().serial_port(), server,
+                               second.rom_fingerprint());
 
         for (unsigned attempt = 0;
              attempt < 500 && !first_endpoint.peer_ready_for_link(); ++attempt) {

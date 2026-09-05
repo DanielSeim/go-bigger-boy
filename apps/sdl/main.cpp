@@ -98,6 +98,7 @@
 namespace {
 
 using RemoteLinkSession = gbb::sdl::RemoteLinkSession;
+using RemoteLinkOptions = gbb::sdl::RemoteLinkOptions;
 using gbb::sdl::process_events;
 using gbb::sdl::configure_video_pipeline;
 using gbb::sdl::restore_video_presentation;
@@ -808,6 +809,10 @@ int main(int argc, char** argv) {
         desktop_menu.attach(sdl.window);
 #endif
         const auto preference_path = preference_directory();
+        const auto app_settings = load_app_settings(preference_path);
+        const RemoteLinkOptions remote_link_options{
+            app_settings.link_remote_host, app_settings.link_remote_bind,
+            app_settings.link_remote_port, app_settings.link_lan_discovery};
         const auto plugin_options =
             load_plugin_discovery_options(preference_path);
         auto plugin_catalog = gbb::PluginCatalog::discover(plugin_options);
@@ -881,6 +886,7 @@ int main(int argc, char** argv) {
         auto automatic_local_retry_used = false;
         auto remote_host_requested = false;
         auto remote_join_requested = false;
+        auto remote_discover_requested = false;
         auto remote_stop_requested = false;
         auto running = true;
 #ifdef __ANDROID__
@@ -1116,6 +1122,7 @@ int main(int argc, char** argv) {
                 link_retry_requested,
                 remote_host_requested,
                 remote_join_requested,
+                remote_discover_requested,
                 remote_stop_requested,
                 remote_link.active(),
                 running
@@ -1198,11 +1205,13 @@ int main(int argc, char** argv) {
             }
             process_link_requests({
                 services, emulator, link_emulator, link_session,
-                link_first_endpoint, link_second_endpoint, remote_link, sdl,
+                link_first_endpoint, link_second_endpoint, remote_link,
+                remote_link_options, sdl,
                 current_rom, gameboy::display_palettes[display_palette],
                 preference_path, link_diagnostics, rewind_history,
                 remote_stop_requested, remote_host_requested,
-                remote_join_requested, link_retry_requested,
+                remote_join_requested, remote_discover_requested,
+                link_retry_requested,
                 link_toggle_requested, automatic_local_retry_used, rewind});
 #endif
 
