@@ -53,19 +53,25 @@ TSAN_OPTIONS="$tsan_options" timeout --signal=INT --kill-after=5s \
             exit 10
         fi
 
+        send_input() {
+            if ! xdotool "$@" 2>>"$output/xdotool.log"; then
+                echo "xdotool input failed: $*" >>"$output/xdotool.log"
+            fi
+        }
+
         # Xvfb does not provide a window manager on every runner. Targeted
         # xdotool events work without activation, so treat activation as a
         # best-effort convenience rather than a smoke-test prerequisite.
-        xdotool windowactivate --sync "$window" 2>/dev/null || true
+        send_input windowactivate --sync "$window"
         # Navigate the dashboard and open/close the help modal. These are real
         # X11 input events, so event dispatch, focus, rendering, and modal
         # cleanup all run on the instrumented SDL thread.
-        xdotool key --window "$window" Down Up
-        xdotool key --window "$window" F1
+        send_input key --window "$window" Down Up
+        send_input key --window "$window" F1
         sleep 0.3
-        xdotool key Escape
+        send_input key --window "$window" Escape
         sleep 0.3
-        xdotool mousemove --window "$window" 320 240
+        send_input mousemove --window "$window" 320 240
         sleep 1
         kill -INT "$pid" 2>/dev/null || true
         child_status=0
