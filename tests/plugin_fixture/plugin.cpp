@@ -4,7 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <chrono>
+#include <atomic>
 #include <mutex>
 #include <new>
 #include <stdexcept>
@@ -18,6 +18,7 @@ namespace {
 
 #if GBB_PLUGIN_FIXTURE_MODE == 7
 std::mutex step_mutex;
+std::atomic<int> step_attempts{0};
 #endif
 
 constexpr std::uint32_t frame_width = 2;
@@ -107,8 +108,16 @@ gbb_plugin_result GBB_PLUGIN_CALL step(const gbb_plugin_core_handle handle,
     }
 #endif
 #if GBB_PLUGIN_FIXTURE_MODE == 7
+    // Make the concurrency rejection deterministic even on runners that
+    // schedule the two test threads sequentially. The first caller holds the
+    // mutex until the second caller has attempted to enter it.
+    const auto attempt = step_attempts.fetch_add(1, std::memory_order_acq_rel) + 1;
     if (!step_mutex.try_lock()) return GBB_PLUGIN_INVALID_STATE;
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    if (attempt == 1) {
+        while (step_attempts.load(std::memory_order_acquire) < 2) {
+            std::this_thread::yield();
+        }
+    }
 #endif
     ++core->steps;
     *out_cycles = 4;
