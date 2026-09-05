@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [0.30.6] - 2026-09-05
+
+### Android LAN link
+
+- Keep Android link-popup hit targets aligned with the rendered menu rows so
+  Discover cannot trigger the library action.
+- Retry LAN discovery broadcasts during a two-second scan window to tolerate
+  dropped Wi-Fi broadcasts and delayed firewall delivery.
+- Automatically use a reachable wildcard bind when LAN discovery is enabled
+  but the legacy loopback default is still configured.
+- Explain the required host advertisement and UDP firewall configuration when
+  no compatible LAN host is found.
+
 ## [0.30.5] - 2026-09-05
 
 ### SDL frontend
