@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+## [0.30.4] - 2026-09-05
+
+### Android link controls
+
+- Add an in-game link button and popup for TCP host, join, LAN discovery,
+  retry, stop, and link settings actions.
+- Add an Android link-settings dialog so connection values can be adjusted
+  without leaving the running game.
+
+### Frontend performance
+
+- Adapt fast-forward batching and audio reduction to the measured core cost,
+  keeping slower Windows systems responsive while retaining up to 4× speed.
+- Skip rewind captures during fast-forward and reduce pending TCP polling and
+  status rendering overhead while a host is waiting for its peer.
+- Use the concrete built-in emulator frame-step path to avoid unnecessary
+  dispatch overhead.
+
+### Windows updater
+
+- Prevent the hidden native dashboard window from flashing before the update
+  prompt appears.
+
 ## [0.30.3] - 2026-09-05
 
 ### Frontend performance
