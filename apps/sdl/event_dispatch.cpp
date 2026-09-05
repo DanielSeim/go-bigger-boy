@@ -883,12 +883,15 @@ void handle_touch_event(const SDL_Event& event, SdlEventContext& context) {
         existing->x = touch_x;
         existing->y = touch_y;
     }
-    if (event.type == SDL_EVENT_FINGER_DOWN &&
+    // Open on release rather than press. Opening on FINGER_DOWN made the
+    // following FINGER_UP enter the popup handler and close the menu again,
+    // so users had to hold the button to keep it visible.
+    if (event.type == SDL_EVENT_FINGER_UP &&
         android_menu_touch_hit(sdl, touch_x, touch_y)) {
         clear_touch_buttons(context.core.get(), sdl);
         sdl.android_menu_visible = true;
         sdl.android_link_menu_visible = false;
-    } else if (event.type == SDL_EVENT_FINGER_DOWN &&
+    } else if (event.type == SDL_EVENT_FINGER_UP &&
                android_link_touch_hit(sdl, touch_x, touch_y)) {
         clear_touch_buttons(context.core.get(), sdl);
         sdl.android_link_menu_visible = true;

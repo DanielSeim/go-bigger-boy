@@ -60,6 +60,10 @@ struct RemoteLinkSession {
             next_pending_poll = now + pending_poll_interval;
         }
         endpoint.poll();
+        // Hosts answer LAN discovery queries on the same frontend thread as
+        // the serial endpoint. Without polling this socket after start_host,
+        // scanners can broadcast successfully but never receive a response.
+        if (discovery.active()) discovery.poll();
     }
 };
 

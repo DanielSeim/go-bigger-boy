@@ -356,7 +356,11 @@ constexpr unsigned remote_poll_cycle_interval = 256;
     const std::uint64_t step_total_us) noexcept {
     if (step_count == 0) return fast_forward_default_factor;
     const auto average_us = step_total_us / step_count;
-    if (average_us >= 13'000) return 1;
+    // Fast-forward must remain observably faster than normal pacing even on a
+    // slower machine. A one-frame batch is indistinguishable from ordinary
+    // emulation and was the reason the Windows shortcut appeared to do
+    // nothing after the adaptive scheduler was introduced.
+    if (average_us >= 13'000) return 2;
     if (average_us >= 7'000) return 2;
     if (average_us >= 4'000) return 3;
     return fast_forward_max_factor;
@@ -662,11 +666,23 @@ void present_menu_button(SdlResources& sdl) {
         int height = 1;
         static_cast<void>(SDL_GetWindowSize(sdl.window, &width, &height));
         const auto panel_width = std::min(static_cast<float>(width) * 0.86F,
-                                          360.0F);
+                                          500.0F);
         const auto panel_x = (static_cast<float>(width) - panel_width) * 0.5F;
-        const auto row_height = std::max(36.0F, touch_game_scale(sdl) * 15.0F);
+        const auto row_height = std::max(44.0F, touch_game_scale(sdl) * 18.0F);
         const auto panel_y = std::max(24.0F, static_cast<float>(height) * 0.12F);
-        const SDL_FRect panel{panel_x, panel_y, panel_width, row_height * 7.0F};
+        // SDL_RenderDebugText is an intentionally tiny built-in bitmap font.
+        // Scale the renderer while drawing this full-window Android overlay so
+        // labels remain readable on high-density phones without adding a font
+        // dependency to the native library.
+        const auto text_scale = panel_width >= 420.0F ? 2.0F : 1.5F;
+        static_cast<void>(SDL_SetRenderScale(sdl.renderer, text_scale,
+                                             text_scale));
+        const auto render_x = panel_x / text_scale;
+        const auto render_y = panel_y / text_scale;
+        const auto render_width = panel_width / text_scale;
+        const auto render_row_height = row_height / text_scale;
+        const SDL_FRect panel{render_x, render_y, render_width,
+                              render_row_height * 7.0F};
         static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
                                                      SDL_BLENDMODE_BLEND));
         static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 16, 20, 16, 235));
@@ -682,19 +698,24 @@ void present_menu_button(SdlResources& sdl) {
         const auto& labels = sdl.android_link_menu_visible ? link_labels
                                                             : general_labels;
         for (std::size_t index = 0; index < labels.size(); ++index) {
-            const auto y = panel_y + row_height * static_cast<float>(index);
+            const auto y = render_y +
+                           render_row_height * static_cast<float>(index);
             if (index != 0) {
                 static_cast<void>(SDL_SetRenderDrawColor(
                     sdl.renderer, 80, 100, 80, 220));
-                const SDL_FRect divider{panel_x, y, panel_width, 1.0F};
+                const SDL_FRect divider{render_x, y, render_width,
+                                        1.0F / text_scale};
                 static_cast<void>(SDL_RenderFillRect(sdl.renderer, &divider));
             }
             static_cast<void>(SDL_SetRenderDrawColor(
                 sdl.renderer, 248, 252, 255, 255));
             static_cast<void>(SDL_RenderDebugText(
-                sdl.renderer, panel_x + 14.0F,
-                y + std::max(10.0F, (row_height - 8.0F) * 0.5F), labels[index]));
+                sdl.renderer, render_x + 14.0F / text_scale,
+                y + std::max(10.0F / text_scale,
+                             (render_row_height - 8.0F / text_scale) * 0.5F),
+                labels[index]));
         }
+        static_cast<void>(SDL_SetRenderScale(sdl.renderer, 1.0F, 1.0F));
         static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
                                                      SDL_BLENDMODE_NONE));
     }
@@ -1936,7 +1957,13 @@ int main(int argc, char** argv) {
             frame_pacer.advance();
             const auto pacing_started = std::chrono::steady_clock::now();
             ++frontend_frame;
-            if (remote_transport_connected) {
+            if (fast_forward) {
+                // Fast-forward is intentionally uncapped by the normal video
+                // deadline. The adaptive batch still limits work per tick,
+                // while resetting the deadline prevents a large pacing debt
+                // from delaying the first frame after the key is released.
+                frame_pacer.reset();
+            } else if (remote_transport_connected) {
                 frame_pacer.wait([&] { remote_link.endpoint.poll(); });
             } else {
                 frame_pacer.wait();
