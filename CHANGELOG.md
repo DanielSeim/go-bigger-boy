@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [0.30.1] - 2026-09-05
+
+### Windows performance
+
+- Prefer the Direct3D11 renderer on Windows, with a safe software fallback.
+- Improve Windows frame pacing and request high-resolution timer support.
+- Cache native menu state so unchanged menus do not trigger repeated Win32
+  updates.
+- Enable release link-time optimization for the emulator core and frontend.
+- Reduce rewind snapshot overhead with preallocated state buffers, a faster
+  CRC32 pass, and amortized snapshot capture.
+- Add opt-in frame timing diagnostics for separating event, emulation, audio,
+  presentation, pacing, core-step, and rewind costs.
+
 ## [0.30.0] - 2026-09-05
 
 ### Android LAN link cable
