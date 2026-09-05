@@ -124,6 +124,7 @@ struct DesktopMenuBar::Impl {
         root_ = file_ = emulation_ = view_ = palette_ = video_ = tools_ = help_ =
             nullptr;
         pending_.store(0);
+        state_valid_ = false;
     }
 
     [[nodiscard]] DesktopMenuCommand take_command() noexcept {
@@ -136,6 +137,30 @@ struct DesktopMenuBar::Impl {
                 const gameboy::VideoMode video, const bool link_active,
                 const bool remote_link_active) {
         if (root_ == nullptr) return;
+        // Updating a native Win32 menu is not a cheap draw-only operation:
+        // each enable/check/modify call can invalidate the window and wake
+        // the desktop compositor. This method runs from the emulation loop,
+        // so repeating the same 20+ operations every frame caused severe
+        // Windows-only stutter. Cache the complete menu state and touch the
+        // native menu only when something observable has changed.
+        if (state_valid_ && has_rom == last_has_rom_ &&
+            capabilities == last_capabilities_ && paused == last_paused_ &&
+            fullscreen == last_fullscreen_ && recording == last_recording_ &&
+            palette == last_palette_ && video == last_video_ &&
+            link_active == last_link_active_ &&
+            remote_link_active == last_remote_link_active_) {
+            return;
+        }
+        state_valid_ = true;
+        last_has_rom_ = has_rom;
+        last_capabilities_ = capabilities;
+        last_paused_ = paused;
+        last_fullscreen_ = fullscreen;
+        last_recording_ = recording;
+        last_palette_ = palette;
+        last_video_ = video;
+        last_link_active_ = link_active;
+        last_remote_link_active_ = remote_link_active;
         enable(DesktopMenuCommand::save_state, has_rom);
         enable(DesktopMenuCommand::load_state, has_rom);
         enable(DesktopMenuCommand::pause, has_rom);
@@ -238,6 +263,16 @@ private:
     HMENU video_{};
     HMENU tools_{};
     HMENU help_{};
+    bool state_valid_{};
+    bool last_has_rom_{};
+    gbb::CoreCapability last_capabilities_{};
+    bool last_paused_{};
+    bool last_fullscreen_{};
+    bool last_recording_{};
+    std::size_t last_palette_{};
+    gameboy::VideoMode last_video_{gameboy::default_video_mode};
+    bool last_link_active_{};
+    bool last_remote_link_active_{};
 };
 
 DesktopMenuBar::DesktopMenuBar() : impl_(std::make_unique<Impl>()) {}

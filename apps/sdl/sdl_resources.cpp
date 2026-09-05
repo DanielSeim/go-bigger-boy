@@ -32,7 +32,17 @@ SdlResources::SdlResources(const std::string_view version,
             "Go Bigger Boy (GBB) - Drop a ROM here or press Ctrl+O", 640, 576,
             window_flags);
         if (window == nullptr) sdl_error("Could not create window");
+        // SDL normally selects the first available renderer, but the order
+        // can vary with the DLL/runtime location on Windows. Prefer the
+        // hardware Direct3D11 backend explicitly so a local copy cannot
+        // silently fall back to the much slower software renderer. Keep the
+        // generic path as a compatibility fallback for systems without D3D11.
+#ifdef _WIN32
+        renderer = SDL_CreateRenderer(window, "direct3d11");
+        if (renderer == nullptr) renderer = SDL_CreateRenderer(window, nullptr);
+#else
         renderer = SDL_CreateRenderer(window, nullptr);
+#endif
         if (renderer == nullptr) sdl_error("Could not create renderer");
         if (!SDL_SetRenderLogicalPresentation(
                 renderer, static_cast<int>(gameboy::Ppu::screen_width),

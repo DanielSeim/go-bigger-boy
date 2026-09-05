@@ -176,6 +176,11 @@ endif()
 
 if(MSVC)
     target_compile_options(gameboy_core PRIVATE /W4 /permissive-)
+    # The emulator executes through many small cross-translation-unit helpers.
+    # Release LTO lets MSVC inline and specialize that hot path instead of
+    # paying the frontend call overhead on every Game Boy instruction.
+    set_property(TARGET gameboy_core
+                 PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
 else()
     target_compile_options(gameboy_core PRIVATE -Wall -Wextra -Wpedantic)
 endif()
@@ -412,7 +417,7 @@ if(GAMEBOY_BUILD_SDL)
             )
             if(WIN32)
                 target_link_libraries(gameboy_sdl PRIVATE
-                    winhttp bcrypt comctl32 comdlg32 ole32 windowscodecs)
+                    winhttp bcrypt comctl32 comdlg32 ole32 windowscodecs winmm)
                 target_include_directories(gameboy_sdl PRIVATE
                     "${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows"
                 )
@@ -420,6 +425,8 @@ if(GAMEBOY_BUILD_SDL)
                     # The resource script embeds our DPI/common-controls
                     # manifest; prevent MSVC from adding a second copy.
                     target_link_options(gameboy_sdl PRIVATE "/MANIFEST:NO")
+                    set_property(TARGET gameboy_sdl
+                                 PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
                 endif()
             endif()
             if(ANDROID)
@@ -887,6 +894,9 @@ if(GAMEBOY_BUILD_TESTS)
             apps/sdl/frame_pacer.cpp)
         target_include_directories(gameboy_sdl_frame_pacer_tests
             PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/apps/sdl)
+        if(WIN32)
+            target_link_libraries(gameboy_sdl_frame_pacer_tests PRIVATE winmm)
+        endif()
         add_test(NAME gameboy_sdl_frame_pacer
                  COMMAND gameboy_sdl_frame_pacer_tests)
 
