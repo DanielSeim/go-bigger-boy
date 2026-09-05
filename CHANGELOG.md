@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [0.30.5] - 2026-09-05
+
+### SDL frontend
+
+- Keep the Android in-game menu open after a tap and improve its touch
+  readability.
+- Show the remote transport status and counters while a Windows host is
+  listening, before a peer connects.
+- Answer LAN discovery queries from the active link session so Android peers
+  can discover Windows hosts.
+- Make slow-core fast-forward provide a visible speed increase and avoid
+  normal frame pacing while fast-forwarding.
+
 ## [0.30.4] - 2026-09-05
 
 ### Android link controls
