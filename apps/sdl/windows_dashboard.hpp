@@ -36,6 +36,7 @@ struct DashboardResult {
     bool voxel_profile_changed{};
     bool plugin_discovery{};
     bool plugin_require_allowlist{};
+    bool plugin_require_capability_allowlist{};
     bool plugin_settings_changed{};
     std::vector<std::uint64_t> removed_fingerprints;
 };

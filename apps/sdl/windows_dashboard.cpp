@@ -59,6 +59,7 @@ constexpr int id_voxel_reset = 114;
 constexpr int id_voxel_preview = 115;
 constexpr int id_plugin_discovery = 116;
 constexpr int id_plugin_require_allowlist = 117;
+constexpr int id_plugin_require_capability_allowlist = 118;
 constexpr int id_voxel_first_edit = 120;
 constexpr int id_binding_first = 200;
 constexpr int id_action_first = 220;
@@ -116,7 +117,10 @@ std::wstring plugin_status_text(const gbb::PluginDiscoveryOptions& options,
          << (options.enabled ? L"Discovery enabled" : L"Discovery disabled")
          << (options.require_allowlist ? L"; identity allowlist required"
                                        : L"; identity allowlist optional")
-         << L"\r\nPaths and allowed core IDs are configured in settings.ini.";
+         << (options.require_capability_allowlist
+                 ? L"; capability allowlist required"
+                 : L"; capability allowlist optional")
+         << L"\r\nPaths, allowed core IDs, and capability IDs are configured in settings.ini.";
     if (rejected != 0) {
         text << L"\r\n\r\nFirst rejection:";
         for (const auto& diagnostic : catalog.diagnostics()) {
@@ -180,6 +184,7 @@ struct State {
     HWND plugin_status{};
     HWND plugin_discovery{};
     HWND plugin_require_allowlist{};
+    HWND plugin_require_capability_allowlist{};
     HWND library_tab{};
     HWND settings_tab{};
     HWND shortcuts_tab{};
@@ -894,6 +899,7 @@ void show_page(State& state, const State::Page page) {
     ShowWindow(state.plugin_status, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.plugin_discovery, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.plugin_require_allowlist, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.plugin_require_capability_allowlist, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.shortcuts_heading, shortcuts ? SW_SHOW : SW_HIDE);
     ShowWindow(state.shortcuts_text, shortcuts ? SW_SHOW : SW_HIDE);
     ShowScrollBar(state.window, SB_VERT, settings ? TRUE : FALSE);
@@ -1030,6 +1036,8 @@ void layout_dashboard(State& state) {
     place_child(state.plugin_status, 32, 1115, 916, 72, offset);
     place_child(state.plugin_discovery, 32, 1195, 260, 28, offset);
     place_child(state.plugin_require_allowlist, 320, 1195, 320, 28, offset);
+    place_child(state.plugin_require_capability_allowlist, 660, 1195, 290, 28,
+                offset);
 }
 
 void finish(State& state, const DashboardResultAction action,
@@ -1338,6 +1346,17 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                 SetWindowTextW(
                     state->plugin_status,
                     L"Plugin trust policy changed. Restart the emulator to reload plugins.");
+            }
+            return 0;
+        case id_plugin_require_capability_allowlist:
+            if (HIWORD(wparam) == BN_CLICKED) {
+                state->result.plugin_require_capability_allowlist =
+                    SendMessageW(state->plugin_require_capability_allowlist,
+                                 BM_GETCHECK, 0, 0) == BST_CHECKED;
+                state->result.plugin_settings_changed = true;
+                SetWindowTextW(
+                    state->plugin_status,
+                    L"Plugin capability policy changed. Restart the emulator to reload plugins.");
             }
             return 0;
         case id_voxel_save:
@@ -1955,6 +1974,8 @@ DashboardResult show_windows_dashboard(
     state.result.action_bindings = action_bindings;
     state.result.plugin_discovery = plugin_options.enabled;
     state.result.plugin_require_allowlist = plugin_options.require_allowlist;
+    state.result.plugin_require_capability_allowlist =
+        plugin_options.require_capability_allowlist;
     state.plugin_options = plugin_options;
     state.plugin_status_text = plugin_status_text(plugin_options, plugin_catalog);
     state.preference_directory = preference_directory;
@@ -2248,11 +2269,18 @@ DashboardResult show_windows_dashboard(
         state, L"BUTTON", L"Require core identity allowlist",
         BS_AUTOCHECKBOX, 320, 1195, 320, 28,
         id_plugin_require_allowlist);
+    state.plugin_require_capability_allowlist = control(
+        state, L"BUTTON", L"Require capability allowlist", BS_AUTOCHECKBOX,
+        660, 1195, 290, 28, id_plugin_require_capability_allowlist);
     SendMessageW(state.plugin_discovery, BM_SETCHECK,
                  plugin_options.enabled ? BST_CHECKED : BST_UNCHECKED, 0);
     SendMessageW(state.plugin_require_allowlist, BM_SETCHECK,
                  plugin_options.require_allowlist ? BST_CHECKED
                                                    : BST_UNCHECKED,
+                 0);
+    SendMessageW(state.plugin_require_capability_allowlist, BM_SETCHECK,
+                 plugin_options.require_capability_allowlist ? BST_CHECKED
+                                                              : BST_UNCHECKED,
                  0);
     refresh_voxel_profile_controls(state);
     state.shortcuts_heading = control(

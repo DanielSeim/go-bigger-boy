@@ -135,6 +135,7 @@ add_library(gbb_core_api
     src/core_runtime.cpp
     src/plugin_loader.cpp
     src/plugin_discovery.cpp
+    src/plugin_trust.cpp
     src/gameboy_scene.cpp
     src/video.cpp
     src/rom_library.cpp
@@ -561,6 +562,7 @@ if(GAMEBOY_BUILD_TESTS)
         add_plugin_fixture(gbb_plugin_fixture_unterminated_string 10)
         add_plugin_fixture(gbb_plugin_fixture_exception 11)
         add_plugin_fixture(gbb_plugin_fixture_allocator_alignment 12)
+        add_plugin_fixture(gbb_plugin_fixture_capability 13)
         add_plugin_fixture(gbb_plugin_fixture_oversized_tables 8)
         add_library(gbb_plugin_fixture_no_query SHARED
             tests/plugin_fixture/no_query.cpp)
@@ -587,7 +589,8 @@ if(GAMEBOY_BUILD_TESTS)
         target_link_libraries(gameboy_plugin_discovery_tests PRIVATE gbb_core_api)
         add_test(NAME gameboy_plugin_discovery
                  COMMAND gameboy_plugin_discovery_tests
-                         $<TARGET_FILE:gbb_plugin_fixture>)
+                         $<TARGET_FILE:gbb_plugin_fixture>
+                         $<TARGET_FILE:gbb_plugin_fixture_capability>)
 
         add_executable(gameboy_plugin_loader_rejection_tests
             tests/plugin_loader_rejection_tests.cpp)

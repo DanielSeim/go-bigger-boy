@@ -60,6 +60,8 @@ void append_missing_portable_settings(
     const bool has_plugin_discovery,
     const bool has_plugin_require_allowlist,
     const bool has_plugin_path, const bool has_plugin_allow_core,
+    const bool has_plugin_require_capability_allowlist,
+    const bool has_plugin_allow_capability,
     const std::array<bool, touch_layout_count * touch_control_count>&
         has_touch_positions) {
     const auto complete = has_palette &&
@@ -72,6 +74,7 @@ void append_missing_portable_settings(
         has_video_mode && has_link_diagnostics && has_touch_scale &&
         has_touch_opacity && has_touch_voxel_orbit && has_touch_menu_position &&
         has_plugin_discovery && has_plugin_require_allowlist &&
+        has_plugin_require_capability_allowlist &&
         std::all_of(has_touch_positions.begin(), has_touch_positions.end(),
                     [](const bool value) { return value; });
     if (complete) return;
@@ -104,6 +107,12 @@ void append_missing_portable_settings(
                << (settings.plugin_require_allowlist ? "true" : "false")
                << '\n';
     }
+    if (!has_plugin_require_capability_allowlist) {
+        output << "plugin.RequireCapabilityAllowlist = "
+               << (settings.plugin_require_capability_allowlist ? "true"
+                                                                  : "false")
+               << '\n';
+    }
     if (!has_plugin_path) {
         for (const auto& plugin_path : settings.plugin_paths) {
             output << "plugin.Path = " << plugin_path.string() << '\n';
@@ -112,6 +121,11 @@ void append_missing_portable_settings(
     if (!has_plugin_allow_core) {
         for (const auto& core_id : settings.plugin_allowed_core_ids) {
             output << "plugin.AllowCore = " << core_id << '\n';
+        }
+    }
+    if (!has_plugin_allow_capability) {
+        for (const auto& capability : settings.plugin_allowed_capability_ids) {
+            output << "plugin.AllowCapability = " << capability << '\n';
         }
     }
     for (std::size_t index = 0; index < button_names.size(); ++index) {
@@ -191,7 +205,8 @@ void write_portable_settings(const std::filesystem::path& preference_directory,
               "serial, CPU, and game-state trace. Plugin.Discovery is opt-in; "
               "Plugin.Path may be repeated and is resolved relative to this file. "
               "Plugin.RequireAllowlist and repeated Plugin.AllowCore restrict "
-              "which descriptor identities are trusted.\n\n"
+              "which descriptor identities are trusted. Plugin.RequireCapabilityAllowlist "
+              "and repeated Plugin.AllowCapability restrict requested capabilities.\n\n"
               "palette = "
            << gameboy::display_palettes[settings.palette].id << "\n"
               "video.Mode = "
@@ -202,11 +217,17 @@ void write_portable_settings(const std::filesystem::path& preference_directory,
            << (settings.plugin_discovery ? "true" : "false") << '\n';
     output << "plugin.RequireAllowlist = "
            << (settings.plugin_require_allowlist ? "true" : "false") << '\n';
+    output << "plugin.RequireCapabilityAllowlist = "
+           << (settings.plugin_require_capability_allowlist ? "true" : "false")
+           << '\n';
     for (const auto& plugin_path : settings.plugin_paths) {
         output << "plugin.Path = " << plugin_path.string() << '\n';
     }
     for (const auto& core_id : settings.plugin_allowed_core_ids) {
         output << "plugin.AllowCore = " << core_id << '\n';
+    }
+    for (const auto& capability : settings.plugin_allowed_capability_ids) {
+        output << "plugin.AllowCapability = " << capability << '\n';
     }
     output << '\n';
     for (std::size_t index = 0; index < button_names.size(); ++index) {
@@ -396,6 +417,8 @@ AppSettings load_portable_settings(
     bool has_plugin_require_allowlist = false;
     bool has_plugin_path = false;
     bool has_plugin_allow_core = false;
+    bool has_plugin_require_capability_allowlist = false;
+    bool has_plugin_allow_capability = false;
     std::array<bool, 8> has_keyboard{};
     std::array<bool, 8> has_gamepad{};
     std::array<bool, shortcut_names.size()> has_shortcuts{};
@@ -447,6 +470,12 @@ AppSettings load_portable_settings(
                 value, settings.plugin_require_allowlist);
             continue;
         }
+        if (key == "plugin.RequireCapabilityAllowlist") {
+            has_plugin_require_capability_allowlist = true;
+            settings.plugin_require_capability_allowlist = parse_bool_setting(
+                value, settings.plugin_require_capability_allowlist);
+            continue;
+        }
         if (key == "plugin.Path") {
             has_plugin_path = true;
             if (!value.empty()) settings.plugin_paths.push_back(
@@ -456,6 +485,13 @@ AppSettings load_portable_settings(
         if (key == "plugin.AllowCore") {
             has_plugin_allow_core = true;
             if (!value.empty()) settings.plugin_allowed_core_ids.push_back(value);
+            continue;
+        }
+        if (key == "plugin.AllowCapability") {
+            has_plugin_allow_capability = true;
+            if (!value.empty()) {
+                settings.plugin_allowed_capability_ids.push_back(value);
+            }
             continue;
         }
         if (key == "touch.Size") {
@@ -653,6 +689,8 @@ AppSettings load_portable_settings(
                                      has_plugin_discovery,
                                      has_plugin_require_allowlist,
                                      has_plugin_path, has_plugin_allow_core,
+                                     has_plugin_require_capability_allowlist,
+                                     has_plugin_allow_capability,
                                      has_touch_positions);
     return settings;
 }
@@ -715,6 +753,11 @@ gbb::PluginDiscoveryOptions load_plugin_discovery_options(
             options.require_allowlist = parse_bool_setting(entry.value, false);
             continue;
         }
+        if (entry.key == "plugin.RequireCapabilityAllowlist") {
+            options.require_capability_allowlist =
+                parse_bool_setting(entry.value, false);
+            continue;
+        }
         if (entry.key != "plugin.Path" || entry.value.empty()) continue;
         auto path = std::filesystem::u8path(entry.value);
         if (path.is_relative()) path = settings_path.parent_path() / path;
@@ -724,6 +767,9 @@ gbb::PluginDiscoveryOptions load_plugin_discovery_options(
     for (const auto& entry : document.entries) {
         if (entry.key == "plugin.AllowCore" && !entry.value.empty()) {
             options.allowed_core_ids.push_back(entry.value);
+        }
+        if (entry.key == "plugin.AllowCapability" && !entry.value.empty()) {
+            options.allowed_capability_ids.push_back(entry.value);
         }
     }
     return options;

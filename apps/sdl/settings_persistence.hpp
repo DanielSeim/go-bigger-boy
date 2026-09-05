@@ -18,6 +18,8 @@ struct AppSettings {
     std::vector<std::filesystem::path> plugin_paths;
     std::vector<std::string> plugin_allowed_core_ids;
     bool plugin_require_allowlist{};
+    std::vector<std::string> plugin_allowed_capability_ids;
+    bool plugin_require_capability_allowlist{};
     TouchControlSettings touch;
 };
 
@@ -50,6 +52,8 @@ void append_missing_portable_settings(
     bool has_touch_menu_position, bool has_plugin_discovery,
     bool has_plugin_require_allowlist, bool has_plugin_path,
     bool has_plugin_allow_core,
+    bool has_plugin_require_capability_allowlist,
+    bool has_plugin_allow_capability,
     const std::array<bool, touch_layout_count * touch_control_count>&
         has_touch_positions);
 

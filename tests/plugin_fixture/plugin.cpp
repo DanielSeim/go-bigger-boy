@@ -23,6 +23,13 @@ constexpr std::uint32_t frame_height = 2;
 constexpr std::uint32_t frame_pitch = frame_width * sizeof(std::uint32_t);
 constexpr std::uint64_t frame_bytes = frame_pitch * frame_height;
 
+#if GBB_PLUGIN_FIXTURE_MODE == 13
+constexpr std::uint64_t fixture_capabilities =
+    GBB_PLUGIN_CAP_PERSISTENT_MEMORY;
+#else
+constexpr std::uint64_t fixture_capabilities = 0;
+#endif
+
 struct FixtureCore {
     std::uint64_t fingerprint{};
     std::uint32_t steps{};
@@ -39,7 +46,8 @@ constexpr gbb_plugin_descriptor_v1 descriptor{
     {sizeof(gbb_plugin_descriptor_v1), GBB_PLUGIN_ABI_MAJOR,
      GBB_PLUGIN_ABI_MINOR},
     "fixture", "GBB ABI fixture", GBB_PLUGIN_SYSTEM_GB, 0, 0, 0,
-    frame_width, frame_height, 60000, 4194304, 4, 44100, 2, inputs, 2, 0,
+    frame_width, frame_height, 60000, 4194304, 4, 44100, 2, inputs, 2,
+    fixture_capabilities,
     "ABI fixture ROM", 0, 0};
 
 std::uint64_t fingerprint(const std::uint8_t* rom, const std::uint64_t size) {

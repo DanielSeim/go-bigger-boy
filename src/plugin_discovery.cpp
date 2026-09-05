@@ -6,11 +6,56 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
 #include <set>
+#include <string_view>
 #include <system_error>
 
 namespace gbb {
 namespace {
+
+struct CapabilityName {
+    std::string_view id;
+    std::uint64_t bit;
+};
+
+constexpr CapabilityName capability_names[] = {
+    {"persistent_memory", GBB_PLUGIN_CAP_PERSISTENT_MEMORY},
+    {"rtc", GBB_PLUGIN_CAP_RTC},
+    {"rumble", GBB_PLUGIN_CAP_RUMBLE},
+    {"camera", GBB_PLUGIN_CAP_CAMERA},
+    {"printer", GBB_PLUGIN_CAP_PRINTER},
+    {"compatibility_palette", GBB_PLUGIN_CAP_COMPATIBILITY_PALETTE},
+    {"cheats", GBB_PLUGIN_CAP_CHEATS},
+    {"debugger", GBB_PLUGIN_CAP_DEBUGGER},
+    {"sprite_editor", GBB_PLUGIN_CAP_SPRITE_EDITOR},
+    {"scene_layers", GBB_PLUGIN_CAP_SCENE_LAYERS},
+    {"link_cable", GBB_PLUGIN_CAP_LINK_CABLE},
+};
+
+std::string capability_list(std::uint64_t bits) {
+    std::string result;
+    for (const auto& capability : capability_names) {
+        if ((bits & capability.bit) == 0) continue;
+        if (!result.empty()) result += ", ";
+        result += capability.id;
+        bits &= ~capability.bit;
+    }
+    if (bits != 0) {
+        if (!result.empty()) result += ", ";
+        result += "unknown(0x";
+        constexpr char digits[] = "0123456789abcdef";
+        char buffer[16];
+        int position = 16;
+        do {
+            buffer[--position] = digits[bits & 0xf];
+            bits >>= 4;
+        } while (bits != 0);
+        result.append(buffer + position, buffer + 16);
+        result += ")";
+    }
+    return result;
+}
 
 bool supported_extension(const std::filesystem::path& path) {
     auto extension = path.extension().string();
@@ -62,6 +107,13 @@ void add_candidate(const std::filesystem::path& path,
 
 } // namespace
 
+std::uint64_t plugin_capability_bit(std::string_view id) noexcept {
+    for (const auto& capability : capability_names) {
+        if (capability.id == id) return capability.bit;
+    }
+    return 0;
+}
+
 PluginCatalog PluginCatalog::discover(const PluginDiscoveryOptions& options) {
     PluginCatalog catalog;
     catalog.registry_ = CoreRegistry{built_in_core_factories()};
@@ -77,6 +129,20 @@ PluginCatalog PluginCatalog::discover(const PluginDiscoveryOptions& options) {
             LogLevel::warning, LogCategory::core,
             "plugin discovery enabled but no paths were configured");
         return catalog;
+    }
+
+    std::uint64_t allowed_capabilities = 0;
+    for (const auto& id : options.allowed_capability_ids) {
+        const auto bit = plugin_capability_bit(id);
+        if (bit == 0) {
+            const auto message = std::string("unknown plugin capability "
+                                             "allowlist id: ") + id;
+            catalog.diagnostics_.push_back({{}, false, message});
+            Logger::instance().write(LogLevel::warning, LogCategory::core,
+                                     message);
+            continue;
+        }
+        allowed_capabilities |= bit;
     }
 
     const auto limit = std::min<std::size_t>(options.max_plugins, 256);
@@ -161,6 +227,32 @@ PluginCatalog PluginCatalog::discover(const PluginDiscoveryOptions& options) {
             if (!options.allowed_core_ids.empty() && !allowed) {
                 const auto message = std::string("core id is not allowlisted: ") +
                                      descriptor.core_id;
+                catalog.diagnostics_.push_back({path, false, message});
+                Logger::instance().write(
+                    LogLevel::warning, LogCategory::core,
+                    std::string("plugin rejected path=") + path.string() +
+                        " reason=" + message);
+                continue;
+            }
+            const auto denied_capabilities =
+                descriptor.capabilities & ~allowed_capabilities;
+            if ((options.require_capability_allowlist ||
+                 !options.allowed_capability_ids.empty()) &&
+                denied_capabilities != 0) {
+                const auto message =
+                    std::string("plugin requests capabilities not granted by "
+                                "policy: ") +
+                    capability_list(denied_capabilities);
+                catalog.diagnostics_.push_back({path, false, message});
+                Logger::instance().write(
+                    LogLevel::warning, LogCategory::core,
+                    std::string("plugin rejected path=") + path.string() +
+                        " reason=" + message);
+                continue;
+            }
+            if (options.trust_callback &&
+                !options.trust_callback(path, descriptor)) {
+                const auto message = "plugin rejected by trust policy";
                 catalog.diagnostics_.push_back({path, false, message});
                 Logger::instance().write(
                     LogLevel::warning, LogCategory::core,

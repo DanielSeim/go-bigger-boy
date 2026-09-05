@@ -1057,6 +1057,8 @@ int main(int argc, char** argv) {
                     settings.plugin_discovery = result.plugin_discovery;
                     settings.plugin_require_allowlist =
                         result.plugin_require_allowlist;
+                    settings.plugin_require_capability_allowlist =
+                        result.plugin_require_capability_allowlist;
                     write_portable_settings(preference_path, settings);
                     show_error(
                         sdl.window,

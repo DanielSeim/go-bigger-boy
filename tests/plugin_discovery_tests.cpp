@@ -1,8 +1,11 @@
 #include "gbb/plugin_discovery.hpp"
+#include "gbb/plugin_trust.hpp"
 
 #include <filesystem>
 #include <iostream>
+#include <fstream>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <vector>
 
@@ -18,13 +21,29 @@ void check(const bool condition, const char* message) {
 } // namespace
 
 int main(int argc, char** argv) {
-    if (argc < 2) {
-        std::cerr << "usage: gameboy_plugin_discovery_tests FIXTURE_LIBRARY\n";
+    if (argc < 3) {
+        std::cerr << "usage: gameboy_plugin_discovery_tests FIXTURE_LIBRARY "
+                     "CAPABILITY_FIXTURE_LIBRARY\n";
         return 2;
     }
 
     const auto fixture = std::filesystem::path(argv[1]);
+    const auto capability_fixture = std::filesystem::path(argv[2]);
     const auto missing = fixture.parent_path() / "does-not-exist.so";
+
+    const auto hash_fixture =
+        std::filesystem::temp_directory_path() / "gbb-plugin-trust-vector";
+    {
+        std::ofstream output(hash_fixture, std::ios::binary | std::ios::trunc);
+        output << "abc";
+    }
+    std::string hash_error;
+    const auto hash = gbb::plugin_sha256_file(hash_fixture, hash_error);
+    check(hash && *hash ==
+                  "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+          "plugin SHA-256 helper matches the standard test vector");
+    std::error_code hash_remove_error;
+    std::filesystem::remove(hash_fixture, hash_remove_error);
 
     const auto disabled = gbb::PluginCatalog::discover({});
     check(disabled.loaded_count() == 0 &&
@@ -62,6 +81,47 @@ int main(int argc, char** argv) {
     const auto accepted = gbb::PluginCatalog::discover(allowlisted);
     check(accepted.loaded_count() == 1,
           "identity allowlists permit explicitly approved descriptors");
+
+    gbb::PluginDiscoveryOptions capability_policy;
+    capability_policy.enabled = true;
+    capability_policy.paths = {capability_fixture};
+    capability_policy.require_capability_allowlist = true;
+    const auto capability_denied =
+        gbb::PluginCatalog::discover(capability_policy);
+    check(capability_denied.loaded_count() == 0 &&
+              capability_denied.diagnostics().size() == 1 &&
+              capability_denied.diagnostics().front().message.find(
+                  "capabilities") != std::string::npos,
+          "required capability allowlists reject unapproved capabilities");
+
+    capability_policy.allowed_capability_ids = {"persistent_memory"};
+    const auto capability_accepted =
+        gbb::PluginCatalog::discover(capability_policy);
+    check(capability_accepted.loaded_count() == 1,
+          "capability allowlists permit explicitly approved capabilities");
+
+    capability_policy.allowed_capability_ids = {"not-a-capability"};
+    const auto unknown_capability =
+        gbb::PluginCatalog::discover(capability_policy);
+    check(unknown_capability.loaded_count() == 0 &&
+              unknown_capability.diagnostics().size() >= 2 &&
+              unknown_capability.diagnostics().front().message.find(
+                  "unknown plugin capability") != std::string::npos,
+          "unknown capability allowlist IDs never broaden trust");
+
+    gbb::PluginDiscoveryOptions trust_policy;
+    trust_policy.enabled = true;
+    trust_policy.paths = {fixture};
+    trust_policy.trust_callback = [](const std::filesystem::path&,
+                                     const gbb_plugin_descriptor_v1& descriptor) {
+        return std::string_view{descriptor.core_id} == "approved";
+    };
+    const auto trust_denied = gbb::PluginCatalog::discover(trust_policy);
+    check(trust_denied.loaded_count() == 0 &&
+              trust_denied.diagnostics().size() == 1 &&
+              trust_denied.diagnostics().front().message.find("trust policy") !=
+                  std::string::npos,
+          "trust callbacks reject descriptors before registration");
 
     gbb::PluginDiscoveryOptions rejected;
     rejected.enabled = true;
