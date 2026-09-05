@@ -53,7 +53,10 @@ TSAN_OPTIONS="$tsan_options" timeout --signal=INT --kill-after=5s \
             exit 10
         fi
 
-        xdotool windowactivate --sync "$window"
+        # Xvfb does not provide a window manager on every runner. Targeted
+        # xdotool events work without activation, so treat activation as a
+        # best-effort convenience rather than a smoke-test prerequisite.
+        xdotool windowactivate --sync "$window" 2>/dev/null || true
         # Navigate the dashboard and open/close the help modal. These are real
         # X11 input events, so event dispatch, focus, rendering, and modal
         # cleanup all run on the instrumented SDL thread.
