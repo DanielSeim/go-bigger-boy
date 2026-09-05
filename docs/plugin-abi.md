@@ -21,7 +21,7 @@ adapters, and frontend integration are intentionally still out of scope.
   extension adapters exist.
 - Fixture variants now cover malformed capabilities/tables, invalid frame
   metadata, malformed state blobs, failed creation, allocator alignment, and
-  result/error conversion (including a defensive throwing-query rejection);
+  result/error conversion;
   loader tests also verify missing-library diagnostics and unload ordering.
 - Native plugin ABI tests run in CI under both GCC and Clang; the existing
   Windows build matrix exercises the same suite under MSVC. The GCC job also

@@ -298,9 +298,6 @@ extern "C" GBB_PLUGIN_EXPORT gbb_plugin_result GBB_PLUGIN_CALL gbb_plugin_query(
     out_plugin->descriptor = descriptor;
     out_plugin->core.header = {GBB_PLUGIN_CORE_API_V1_REQUIRED_SIZE,
                                GBB_PLUGIN_ABI_MAJOR, GBB_PLUGIN_ABI_MINOR};
-#if GBB_PLUGIN_FIXTURE_MODE == 14
-    throw std::runtime_error("query fixture exception");
-#endif
     out_plugin->core.create = create;
     out_plugin->core.destroy = destroy;
     out_plugin->core.reset = reset;

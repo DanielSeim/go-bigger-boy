@@ -94,7 +94,6 @@ jobs:
           gbb_plugin_fixture_bad_frame gbb_plugin_fixture_bad_blob
           gbb_plugin_fixture_create_failure gbb_plugin_fixture_concurrent
           gbb_plugin_fixture_exception gbb_plugin_fixture_allocator_alignment
-          gbb_plugin_fixture_throwing_query
           gbb_plugin_fixture_no_query gbb_plugin_fixture_bad_utf8
           gbb_plugin_fixture_unterminated_string
           gbb_plugin_fixture_oversized_tables

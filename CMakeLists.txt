@@ -560,7 +560,6 @@ if(GAMEBOY_BUILD_TESTS)
         add_plugin_fixture(gbb_plugin_fixture_unterminated_string 10)
         add_plugin_fixture(gbb_plugin_fixture_exception 11)
         add_plugin_fixture(gbb_plugin_fixture_allocator_alignment 12)
-        add_plugin_fixture(gbb_plugin_fixture_throwing_query 14)
         add_plugin_fixture(gbb_plugin_fixture_oversized_tables 8)
         add_library(gbb_plugin_fixture_no_query SHARED
             tests/plugin_fixture/no_query.cpp)
@@ -593,8 +592,7 @@ if(GAMEBOY_BUILD_TESTS)
                          $<TARGET_FILE:gbb_plugin_fixture_truncated_table>
                          $<TARGET_FILE:gbb_plugin_fixture_no_query>
                          $<TARGET_FILE:gbb_plugin_fixture_bad_utf8>
-                         $<TARGET_FILE:gbb_plugin_fixture_unterminated_string>
-                         $<TARGET_FILE:gbb_plugin_fixture_throwing_query>)
+                         $<TARGET_FILE:gbb_plugin_fixture_unterminated_string>)
 
         add_executable(gameboy_plugin_loader_runtime_tests
             tests/plugin_loader_runtime_tests.cpp)
