@@ -11,6 +11,15 @@
 - Add desktop Settings controls for enabling discovery and requiring an
   identity allowlist, with restart-required messaging and visible load/rejection
   status.
+- Add an explicit capability permission allowlist with stable capability names,
+  unknown-name rejection, desktop settings support, and discovery regression
+  coverage.
+- Add a fail-closed pre-registration trust callback for host integrations,
+  providing the enforcement boundary needed by a future interactive prompt.
+- Add a portable SHA-256 file helper with standard-vector coverage for digest
+  pinning and the future signed-manifest verifier.
+- Define the canonical signed plug-in manifest, trust-store rotation, and
+  fail-closed verification order for the remaining publisher-trust work.
 - Extend the core registry with context-owning providers so dynamically loaded
   plug-ins stay alive for the lifetime of their adapted cores.
 

@@ -131,10 +131,13 @@ Deferred follow-up:
   adapter, cross-toolchain checks, freeze record, explicit `PluginCatalog`, and
   settings-controlled desktop loading path are complete. Automatic discovery
   remains opt-in; native settings controls, an identity allowlist, and a
-  clearer startup summary now cover the first trust/UX gate. Cryptographic
-  signing policy and the final security review are still required before
+  clearer startup summary, capability permission policy, pre-registration
+  trust callback, and portable digest pinning now cover the first trust/UX gate.
+  Cryptographic signing policy, interactive trust prompts,
+  isolation, and the final security review are still required before
   general-user enablement; the current rules are recorded in
-  `docs/plugin-security.md`.
+  `docs/plugin-security.md` and the signed-manifest design in
+  `docs/plugin-manifest.md`.
 
 ## Concrete issue found during the audit
 
@@ -163,12 +166,13 @@ fallbacks for standalone source builds).
    boundary.**
 8. Consider dynamically loaded core plugins only after the static API is stable.
    **v1.0 ABI frozen; explicit opt-in catalog/loading, desktop controls,
-   diagnostics, and identity allowlisting are implemented. Automatic scanning,
-   signed trust, and broad distribution remain deferred.**
+   diagnostics, identity allowlisting, and capability permissions are
+   implemented. Automatic scanning, signed trust, interactive prompts,
+   isolation, and broad distribution remain deferred.**
 
 The static audit implementation is complete. The dynamic-plugin v1.0 contract
 is frozen against the settled core contract; future work may add signed trust,
-capability permissions, and isolation based on the policy in
+interactive trust prompts, and isolation based on the policy in
 `docs/plugin-security.md`.
 
 ## Progress

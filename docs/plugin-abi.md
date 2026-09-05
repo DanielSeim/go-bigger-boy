@@ -243,11 +243,14 @@ the compatibility baseline throughout this work.
 5. Add explicit opt-in discovery and diagnostics to the desktop frontend.
    **Complete for the first security/UX gate: the catalog, settings-controlled
    loading path, native UI controls, restart boundary, allowlist policy, and
-   diagnostics are implemented. Cryptographic trust and broad enablement remain
-   deferred.**
+   diagnostics, and capability permission policy are implemented. Cryptographic
+   trust and broad enablement remain deferred.**
 6. Only then consider advanced capability extensions and other frontends.
 
 The static API remains the default in-process extension mechanism. The frozen
 ABI may be consumed by explicitly configured native plug-ins through the
-reference loader; automatic scanning, signed trust, and broad distribution
-remain deferred pending the security policy in `docs/plugin-security.md`.
+reference loader; the host-side catalog now supports identity/capability
+allowlists and a pre-registration trust callback. Automatic scanning, signed
+trust, and broad distribution remain deferred pending the manifest contract in
+[`docs/plugin-manifest.md`](plugin-manifest.md) and the security policy in
+`docs/plugin-security.md`.

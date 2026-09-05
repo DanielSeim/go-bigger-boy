@@ -446,9 +446,19 @@ For a stricter trust policy, set `plugin.RequireAllowlist = true` and add
 repeated `plugin.AllowCore = <core-id>` entries; descriptor IDs not on that
 allowlist are rejected before registration. This is an identity policy, not a
 cryptographic signature system.
+Capability permissions can be restricted independently with
+`plugin.RequireCapabilityAllowlist = true` and repeated
+`plugin.AllowCapability = <name>` entries. Stable names are
+`persistent_memory`, `rtc`, `rumble`, `camera`, `printer`,
+`compatibility_palette`, `cheats`, `debugger`, `sprite_editor`, `scene_layers`,
+and `link_cable`. Unknown names never grant access, and a plug-in must still
+pass the host adapter's capability validation.
+Host integrations can use the pre-registration trust callback together with
+`plugin_sha256_file` to pin approved binary digests; this is tamper detection,
+not a replacement for signed manifests.
 Android never loads native plug-ins.
 On Windows, the Settings page exposes the discovery and allowlist switches and
-shows the current loaded/rejected status; changing either switch takes effect
+shows the current loaded/rejected status; changing any switch takes effect
 after restarting the emulator.
 
 The video pipeline is configurable across desktop, Android, and web builds:
