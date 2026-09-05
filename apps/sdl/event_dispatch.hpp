@@ -84,6 +84,7 @@ struct SdlEventContext {
     std::function<std::optional<std::size_t>(float, float)> dashboard_row_at;
     std::function<void(std::size_t)> activate_dashboard;
     std::function<void()> open_library;
+    std::function<void()> open_android_link_settings;
     std::function<void()> show_help;
     std::function<void()> open_rom_dialog;
     std::function<void()> choose_palette;

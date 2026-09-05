@@ -19,7 +19,10 @@ namespace gbb::sdl {
 [[nodiscard]] float touch_game_scale(const SdlResources& sdl);
 [[nodiscard]] bool voxel_mode_enabled(const SdlResources& sdl);
 [[nodiscard]] SDL_FRect android_menu_button_rect(const SdlResources& sdl);
+[[nodiscard]] SDL_FRect android_link_button_rect(const SdlResources& sdl);
 [[nodiscard]] bool android_menu_touch_hit(const SdlResources& sdl, float x,
+                                          float y);
+[[nodiscard]] bool android_link_touch_hit(const SdlResources& sdl, float x,
                                           float y);
 [[nodiscard]] bool android_menu_button_hit(const SdlResources& sdl, float x,
                                            float y);

@@ -6,6 +6,7 @@
 #include "gameboy/video_pipeline.hpp"
 #include "settings_persistence.hpp"
 
+#include <SDL3/SDL.h>
 #include <jni.h>
 
 #include <array>
@@ -27,6 +28,8 @@ bool android_back_requested{};
 gbb::LogContext android_back_context{};
 std::mutex android_runtime_context_mutex;
 gbb::LogContext android_runtime_context{};
+std::mutex android_link_settings_mutex;
+bool android_link_settings_changed{};
 
 bool context_is_empty(const gbb::LogContext context) noexcept {
     return context.session == 0 && context.frame == 0 &&
@@ -72,6 +75,30 @@ void request_android_rom(AndroidRomRequest request) {
     }
     std::lock_guard<std::mutex> lock(android_rom_request_mutex);
     android_rom_request = std::move(request);
+}
+
+void open_android_link_settings() noexcept {
+    auto* environment = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
+    auto activity = static_cast<jobject>(SDL_GetAndroidActivity());
+    if (environment == nullptr || activity == nullptr) return;
+    const auto activity_class = environment->GetObjectClass(activity);
+    if (activity_class != nullptr) {
+        const auto method = environment->GetMethodID(
+            activity_class, "showLinkSettingsDialog", "()V");
+        if (method != nullptr) {
+            environment->CallVoidMethod(activity, method);
+        }
+        environment->DeleteLocalRef(activity_class);
+    }
+    if (environment->ExceptionCheck()) environment->ExceptionClear();
+    environment->DeleteLocalRef(activity);
+}
+
+bool take_android_link_settings_changed() noexcept {
+    std::lock_guard<std::mutex> lock(android_link_settings_mutex);
+    const auto changed = android_link_settings_changed;
+    android_link_settings_changed = false;
+    return changed;
 }
 
 } // namespace gbb::sdl
@@ -384,6 +411,13 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_danielseim_gbb_GbbActivity_nativeAndroidBackPressed(
     JNIEnv*, jclass) {
     gbb::sdl::request_android_back();
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_danielseim_gbb_GbbActivity_nativeAndroidLinkSettingsChanged(
+    JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(gbb::sdl::android_link_settings_mutex);
+    gbb::sdl::android_link_settings_changed = true;
 }
 
 extern "C" JNIEXPORT void JNICALL

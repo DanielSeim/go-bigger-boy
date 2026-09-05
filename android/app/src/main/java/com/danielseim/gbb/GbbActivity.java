@@ -1,14 +1,22 @@
 package com.danielseim.gbb;
 
 import android.annotation.SuppressLint;
+import android.app.AlertDialog;
+import android.graphics.Color;
 import android.content.Intent;
 import android.hardware.SensorManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Looper;
 import android.view.OrientationEventListener;
 import android.view.View;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
+import android.text.InputType;
+import android.widget.CheckBox;
+import android.widget.EditText;
+import android.widget.LinearLayout;
+import android.widget.Toast;
 import android.window.OnBackInvokedCallback;
 import android.window.OnBackInvokedDispatcher;
 
@@ -28,6 +36,88 @@ public final class GbbActivity extends SDLActivity {
 
     private static native void nativeOpenRom(String rom, String displayName);
     private static native void nativeAndroidBackPressed();
+    private static native void nativeAndroidLinkSettingsChanged();
+
+    /**
+     * Opens the link configuration without leaving the running game. The
+     * native SDL menu invokes this method through the activity instance so
+     * Android supplies a real text-input dialog and soft keyboard.
+     */
+    public void showLinkSettingsDialog() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            runOnUiThread(this::showLinkSettingsDialog);
+            return;
+        }
+        final String directory = getFilesDir().getAbsolutePath();
+        final LinearLayout form = new LinearLayout(this);
+        form.setOrientation(LinearLayout.VERTICAL);
+        final int padding = Math.round(20 *
+                getResources().getDisplayMetrics().density);
+        form.setPadding(padding, 0, padding, 0);
+
+        final EditText host = linkField("Host address",
+                LibraryActivity.nativeLinkRemoteHost(directory),
+                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        final EditText bind = linkField("Host bind address",
+                LibraryActivity.nativeLinkRemoteBind(directory),
+                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        final EditText port = linkField("TCP port",
+                Integer.toString(LibraryActivity.nativeLinkRemotePort(directory)),
+                InputType.TYPE_CLASS_NUMBER);
+        final CheckBox discovery = new CheckBox(this);
+        discovery.setText("Advertise and discover hosts on the LAN");
+        discovery.setTextColor(Color.DKGRAY);
+        discovery.setChecked(LibraryActivity.nativeLinkLanDiscovery(directory));
+        form.addView(host);
+        form.addView(bind);
+        form.addView(port);
+        form.addView(discovery);
+
+        final AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("TCP link settings")
+                .setMessage("These values are used by Host, Join, and LAN discovery.")
+                .setView(form)
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Save", null)
+                .create();
+        dialog.setOnShowListener(ignored -> dialog.getButton(
+                AlertDialog.BUTTON_POSITIVE).setOnClickListener(view -> {
+                    final int selectedPort;
+                    try {
+                        selectedPort = Integer.parseInt(
+                                port.getText().toString().trim());
+                    } catch (NumberFormatException error) {
+                        port.setError("Enter a port from 1 to 65535");
+                        return;
+                    }
+                    final String hostValue = host.getText().toString().trim();
+                    final String bindValue = bind.getText().toString().trim();
+                    if (selectedPort < 1 || selectedPort > 65535 ||
+                            hostValue.isEmpty() || bindValue.isEmpty()) {
+                        Toast.makeText(this,
+                                "Enter host, bind address, and a valid port",
+                                Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    LibraryActivity.nativeSetLinkSettings(
+                            directory, hostValue, bindValue, selectedPort,
+                            discovery.isChecked());
+                    nativeAndroidLinkSettingsChanged();
+                    Toast.makeText(this, "TCP link settings saved",
+                            Toast.LENGTH_SHORT).show();
+                    dialog.dismiss();
+                }));
+        dialog.show();
+    }
+
+    private EditText linkField(String hint, String value, int inputType) {
+        final EditText field = new EditText(this);
+        field.setHint(hint);
+        field.setText(value == null ? "" : value);
+        field.setSingleLine(true);
+        field.setInputType(inputType);
+        return field;
+    }
 
     @Override
     protected String[] getArguments() {

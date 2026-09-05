@@ -55,12 +55,36 @@ SDL_FRect android_menu_button_rect(const SdlResources& sdl) {
     return {x, margin, size, button_height};
 }
 
+SDL_FRect android_link_button_rect(const SdlResources& sdl) {
+    const auto menu = android_menu_button_rect(sdl);
+    const auto gap = std::max(6.0F, menu.w * 0.2F);
+    const auto x = sdl.touch_settings.menu_top_right
+                       ? menu.x - gap - menu.w
+                       : menu.x + menu.w + gap;
+    return {x, menu.y, menu.w, menu.h};
+}
+
 bool android_menu_touch_hit(const SdlResources& sdl, const float x,
                             const float y) {
     int width = 1;
     int height = 1;
     static_cast<void>(SDL_GetWindowSize(sdl.window, &width, &height));
     const auto button = android_menu_button_rect(sdl);
+    const auto pixel_x = x * static_cast<float>(width);
+    const auto pixel_y = y * static_cast<float>(height);
+    constexpr float hit_slop = 8.0F;
+    return pixel_x >= button.x - hit_slop &&
+           pixel_x <= button.x + button.w + hit_slop &&
+           pixel_y >= button.y - hit_slop &&
+           pixel_y <= button.y + button.h + hit_slop;
+}
+
+bool android_link_touch_hit(const SdlResources& sdl, const float x,
+                            const float y) {
+    int width = 1;
+    int height = 1;
+    static_cast<void>(SDL_GetWindowSize(sdl.window, &width, &height));
+    const auto button = android_link_button_rect(sdl);
     const auto pixel_x = x * static_cast<float>(width);
     const auto pixel_y = y * static_cast<float>(height);
     constexpr float hit_slop = 8.0F;

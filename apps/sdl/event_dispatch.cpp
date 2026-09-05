@@ -781,7 +781,7 @@ void handle_touch_event(const SDL_Event& event, SdlEventContext& context) {
     // The Android menu is a full-window overlay rather than part of the
     // 160x144 Game Boy viewport. Resolve its actions on finger-up so a drag
     // cannot accidentally start a link or leave the game.
-    if (sdl.android_menu_visible) {
+    if (sdl.android_menu_visible || sdl.android_link_menu_visible) {
         if (event.type == SDL_EVENT_FINGER_UP ||
             event.type == SDL_EVENT_FINGER_CANCELED) {
             if (event.type == SDL_EVENT_FINGER_UP) {
@@ -803,20 +803,37 @@ void handle_touch_event(const SDL_Event& event, SdlEventContext& context) {
                     pixel_y < panel_y + row_height * 7.0F) {
                     const auto row = static_cast<unsigned>(
                         (pixel_y - panel_y) / row_height);
-                    switch (row) {
-                    case 0: context.remote_host_requested = true; break;
-                    case 1: context.remote_join_requested = true; break;
-                    case 2: context.remote_discover_requested = true; break;
-                    case 3: context.link_retry_requested = true; break;
-                    case 4: context.remote_stop_requested = true; break;
-                    case 5:
-                        if (context.open_library) context.open_library();
-                        break;
-                    default: break;
+                    if (sdl.android_link_menu_visible) {
+                        switch (row) {
+                        case 0: context.remote_host_requested = true; break;
+                        case 1: context.remote_join_requested = true; break;
+                        case 2: context.remote_discover_requested = true; break;
+                        case 3:
+                            if (context.open_android_link_settings) {
+                                context.open_android_link_settings();
+                            }
+                            break;
+                        case 4: context.link_retry_requested = true; break;
+                        case 5: context.remote_stop_requested = true; break;
+                        default: break;
+                        }
+                    } else {
+                        switch (row) {
+                        case 0: context.remote_host_requested = true; break;
+                        case 1: context.remote_join_requested = true; break;
+                        case 2: context.remote_discover_requested = true; break;
+                        case 3: context.link_retry_requested = true; break;
+                        case 4: context.remote_stop_requested = true; break;
+                        case 5:
+                            if (context.open_library) context.open_library();
+                            break;
+                        default: break;
+                        }
                     }
                 }
             }
             sdl.android_menu_visible = false;
+            sdl.android_link_menu_visible = false;
             clear_touch_buttons(context.core.get(), sdl);
         }
         return;
@@ -832,10 +849,11 @@ void handle_touch_event(const SDL_Event& event, SdlEventContext& context) {
         if (existing != sdl.touches.end()) sdl.touches.erase(existing);
     } else if (existing == sdl.touches.end()) {
         const auto menu_tap = android_menu_touch_hit(sdl, touch_x, touch_y);
+        const auto link_tap = android_link_touch_hit(sdl, touch_x, touch_y);
         const auto control = touch_button_index(touch_x, touch_y, sdl);
         const auto orbit = supports(context.core.get(),
                                     CoreCapability::scene_layers) &&
-                           !menu_tap &&
+                           !menu_tap && !link_tap &&
                            voxel_mode_enabled(sdl) &&
                            sdl.touch_settings.voxel_orbit && !control;
         sdl.touches.push_back(
@@ -869,6 +887,12 @@ void handle_touch_event(const SDL_Event& event, SdlEventContext& context) {
         android_menu_touch_hit(sdl, touch_x, touch_y)) {
         clear_touch_buttons(context.core.get(), sdl);
         sdl.android_menu_visible = true;
+        sdl.android_link_menu_visible = false;
+    } else if (event.type == SDL_EVENT_FINGER_DOWN &&
+               android_link_touch_hit(sdl, touch_x, touch_y)) {
+        clear_touch_buttons(context.core.get(), sdl);
+        sdl.android_link_menu_visible = true;
+        sdl.android_menu_visible = false;
     }
     refresh_touch_buttons(context.core.get(), sdl);
 }

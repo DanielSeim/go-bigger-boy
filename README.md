@@ -431,6 +431,10 @@ these values are stored in `settings.ini` as `touch.Size` and `touch.Opacity`.
 Voxel modes also support touch-drag orbiting when `touch.VoxelOrbit` is enabled;
 the Android Settings page provides a toggle for this gesture. The in-game menu
 button can be placed at the top left or top right with `touch.MenuPosition`.
+While a ROM is running, the adjacent link button opens TCP Host, Join, LAN
+discovery, Retry, Stop, and Link settings. Link settings open as an Android
+dialog with text input and apply to the next connection without leaving the
+game.
 Its layout editor has separate portrait and landscape layouts. The D-pad is
 always moved as one control, while A, B, Select, and Start can be positioned
 individually beside or below the emulation screen. Positions are stored as
@@ -508,11 +512,13 @@ the framebuffer-facade option is a clear toggle for comparing the 2D front
 panel with the voxel mesh. Save profile applies the values when you return to
 the game, while Reset profile restores the defaults.
 
-The default action bindings are `keyboard.FastForward = Tab` (hold for 4×
-speed), `keyboard.Rewind = Left Shift` (hold to step backward through the last three
-seconds), `keyboard.SaveState = F5`, and `keyboard.LoadState = F8`. Set any of
-these to a different key, or to `None` to disable it. Rewind uses in-memory
-snapshots and is cleared when changing ROMs or loading a saved state.
+The default action bindings are `keyboard.FastForward = Tab` (hold for up to
+4× speed), `keyboard.Rewind = Left Shift` (hold to step backward through the last three
+seconds), `keyboard.SaveState = F5`, and `keyboard.LoadState = F8`. Fast-forward
+adapts its batch size to the core's measured frame cost so slower systems remain
+responsive while faster systems can reach the full 4× rate. Set any of these to
+a different key, or to `None` to disable it. Rewind uses in-memory snapshots
+and is cleared when changing ROMs or loading a saved state.
 
 At startup, the desktop and Android apps check GitHub's latest stable release in a
 background thread. If its semantic version is newer than the running build,

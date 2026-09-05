@@ -162,6 +162,8 @@ using gbb::sdl::update_rumble;
 #ifdef __ANDROID__
 using gbb::sdl::android_menu_button_hit;
 using gbb::sdl::android_menu_touch_hit;
+using gbb::sdl::android_link_button_rect;
+using gbb::sdl::android_link_touch_hit;
 using gbb::sdl::clear_touch_buttons;
 using gbb::sdl::logical_touch_position;
 using gbb::sdl::refresh_touch_buttons;
@@ -502,6 +504,8 @@ void leave_android_game(
         return;
     }
     clear_touch_buttons(core.get(), sdl);
+    sdl.android_menu_visible = false;
+    sdl.android_link_menu_visible = false;
     flush_battery_safely(core.get());
     if (!confirm_exit(sdl.window)) return;
 
@@ -618,8 +622,9 @@ void present_menu_button(SdlResources& sdl) {
     const auto button_y = button_rect.y;
     const auto button_width = button_rect.w;
     const auto button_height = button_rect.h;
+    const auto link_button_rect = android_link_button_rect(sdl);
 
-    if (sdl.android_menu_visible) {
+    if (sdl.android_menu_visible || sdl.android_link_menu_visible) {
         int width = 1;
         int height = 1;
         static_cast<void>(SDL_GetWindowSize(sdl.window, &width, &height));
@@ -635,9 +640,14 @@ void present_menu_button(SdlResources& sdl) {
         static_cast<void>(SDL_RenderFillRect(sdl.renderer, &panel));
         static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 220, 235, 220, 255));
         static_cast<void>(SDL_RenderRect(sdl.renderer, &panel));
-        constexpr std::array<const char*, 7> labels{{
+        constexpr std::array<const char*, 7> general_labels{{
             "Host TCP link", "Join TCP link", "Discover LAN hosts",
             "Retry link", "Stop link", "Open library", "Close menu"}};
+        constexpr std::array<const char*, 7> link_labels{{
+            "Host TCP link", "Join TCP link", "Discover LAN hosts",
+            "Link settings", "Retry link", "Stop link", "Close menu"}};
+        const auto& labels = sdl.android_link_menu_visible ? link_labels
+                                                            : general_labels;
         for (std::size_t index = 0; index < labels.size(); ++index) {
             const auto y = panel_y + row_height * static_cast<float>(index);
             if (index != 0) {
@@ -684,6 +694,40 @@ void present_menu_button(SdlResources& sdl) {
     static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
                                                  SDL_BLENDMODE_NONE));
 #ifdef __ANDROID__
+    // Keep TCP access discoverable without opening the general menu. The
+    // chain-style glyph is drawn from lines so it remains crisp at any phone
+    // density and does not depend on a font being available.
+    static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
+                                                 SDL_BLENDMODE_BLEND));
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 220, 235, 220, 190));
+    const SDL_FRect link_button{link_button_rect.x, link_button_rect.y,
+                                link_button_rect.w, link_button_rect.h};
+    static_cast<void>(SDL_RenderFillRect(sdl.renderer, &link_button));
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 16, 20, 16, 220));
+    static_cast<void>(SDL_RenderRect(sdl.renderer, &link_button));
+    const auto link_center_y = link_button_rect.y + link_button_rect.h * 0.5F;
+    static_cast<void>(SDL_RenderLine(
+        sdl.renderer, link_button_rect.x + link_button_rect.w * 0.22F,
+        link_center_y, link_button_rect.x + link_button_rect.w * 0.78F,
+        link_center_y));
+    static_cast<void>(SDL_RenderLine(
+        sdl.renderer, link_button_rect.x + link_button_rect.w * 0.22F,
+        link_center_y, link_button_rect.x + link_button_rect.w * 0.38F,
+        link_center_y - link_button_rect.h * 0.2F));
+    static_cast<void>(SDL_RenderLine(
+        sdl.renderer, link_button_rect.x + link_button_rect.w * 0.22F,
+        link_center_y, link_button_rect.x + link_button_rect.w * 0.38F,
+        link_center_y + link_button_rect.h * 0.2F));
+    static_cast<void>(SDL_RenderLine(
+        sdl.renderer, link_button_rect.x + link_button_rect.w * 0.78F,
+        link_center_y, link_button_rect.x + link_button_rect.w * 0.62F,
+        link_center_y - link_button_rect.h * 0.2F));
+    static_cast<void>(SDL_RenderLine(
+        sdl.renderer, link_button_rect.x + link_button_rect.w * 0.78F,
+        link_center_y, link_button_rect.x + link_button_rect.w * 0.62F,
+        link_center_y + link_button_rect.h * 0.2F));
+    static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
+                                                 SDL_BLENDMODE_NONE));
     if (!restore_video_presentation(sdl)) {
         sdl_error("Could not restore game presentation after menu button");
     }
@@ -1287,6 +1331,13 @@ int main(int argc, char** argv) {
                 pending_rom_name = std::move(requested->display_name);
                 gbb::log_frontend_info("Android ROM open request accepted");
             }
+            if (gbb::sdl::take_android_link_settings_changed()) {
+                const auto updated = load_app_settings(preference_path);
+                remote_link_options.host = updated.link_remote_host;
+                remote_link_options.bind_address = updated.link_remote_bind;
+                remote_link_options.port = updated.link_remote_port;
+                remote_link_options.lan_discovery = updated.link_lan_discovery;
+            }
 #endif
             SdlEventContext event_context{
                 core,
@@ -1345,6 +1396,13 @@ int main(int argc, char** argv) {
                         sdl, preference_path, pending_rom, dashboard_visible,
                         display_palette, running);
                 }
+#ifdef __ANDROID__
+                , [&]() {
+                    gbb::sdl::open_android_link_settings();
+                }
+#else
+                , std::function<void()>{}
+#endif
                 , [&]() {
                     if (core) release_all_buttons(*core);
 #ifdef __ANDROID__
