@@ -3,6 +3,7 @@
 #include "gameboy/save_state_error.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <limits>
@@ -15,6 +16,11 @@ constexpr std::size_t maximum_serial_output = 1024 * 1024;
 
 class Writer {
 public:
+    // A normal emulator snapshot is roughly 190 KiB. Reserving once keeps
+    // rewind capture from repeatedly reallocating and copying the payload on
+    // every frame while still allowing unusually large cartridges to grow.
+    Writer() { bytes_.reserve(256 * 1024); }
+
     void u8(const std::uint8_t value) { bytes_.push_back(value); }
     void boolean(const bool value) { u8(value ? 1 : 0); }
     void u16(const std::uint16_t value) {
@@ -133,12 +139,25 @@ private:
 
 [[nodiscard]] inline std::uint32_t crc32(const std::uint8_t* data,
                                          const std::size_t size) noexcept {
+    // The bit-at-a-time implementation made every rewind snapshot perform
+    // eight dependent branches per byte. A small lookup table preserves the
+    // exact CRC-32 polynomial while reducing the integrity pass to one table
+    // lookup per byte.
+    static const auto table = [] {
+        std::array<std::uint32_t, 256> values{};
+        for (std::uint32_t index = 0; index < values.size(); ++index) {
+            auto value = index;
+            for (unsigned bit = 0; bit < 8; ++bit) {
+                value = (value >> 1) ^
+                        ((value & 1U) != 0 ? UINT32_C(0xEDB88320) : 0);
+            }
+            values[index] = value;
+        }
+        return values;
+    }();
     auto crc = UINT32_C(0xFFFFFFFF);
-    for (std::size_t index = 0; index < size; ++index) {
-        crc ^= data[index];
-        for (unsigned bit = 0; bit < 8; ++bit)
-            crc = (crc >> 1) ^ ((crc & 1) != 0 ? UINT32_C(0xEDB88320) : 0);
-    }
+    for (std::size_t index = 0; index < size; ++index)
+        crc = table[(crc ^ data[index]) & 0xFFU] ^ (crc >> 8);
     return ~crc;
 }
 

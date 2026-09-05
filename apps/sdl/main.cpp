@@ -60,6 +60,7 @@
 #include <atomic>
 #include <cctype>
 #include <cmath>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <deque>
@@ -77,6 +78,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <unordered_map>
 #include <utility>
@@ -205,6 +207,54 @@ using gbb::sdl::process_remote_link_requests;
 using gbb::sdl::handle_desktop_menu_event;
 #endif
 
+bool frame_timing_trace_enabled() noexcept {
+    const auto* value = std::getenv("GBB_FRAME_TIMING");
+    return value != nullptr && *value != '\0' &&
+           std::string_view{value} != "0";
+}
+
+std::int64_t microseconds_between(
+    const std::chrono::steady_clock::time_point begin,
+    const std::chrono::steady_clock::time_point end) noexcept {
+    return std::chrono::duration_cast<std::chrono::microseconds>(end - begin)
+        .count();
+}
+
+class FrameTimingTrace {
+  public:
+    explicit FrameTimingTrace(const bool enabled) {
+        if (!enabled) return;
+        const auto* configured_path = std::getenv("GBB_FRAME_TIMING_FILE");
+        path_ = configured_path != nullptr && *configured_path != '\0'
+                    ? std::filesystem::u8path(configured_path)
+                    : std::filesystem::temp_directory_path() /
+                          "go-bigger-boy-frame-timing.log";
+        output_.open(path_, std::ios::out | std::ios::trunc);
+        if (output_) {
+            output_ << "GBB frame timing trace version=1\n";
+            output_.flush();
+        }
+    }
+
+    [[nodiscard]] bool enabled() const noexcept {
+        return output_.is_open() && static_cast<bool>(output_);
+    }
+
+    void write(const std::string_view record) noexcept {
+        if (!enabled()) return;
+        output_ << record << '\n';
+        output_.flush();
+    }
+
+    [[nodiscard]] const std::filesystem::path& path() const noexcept {
+        return path_;
+    }
+
+  private:
+    std::filesystem::path path_;
+    std::ofstream output_;
+};
+
 #ifndef GBB_VERSION
 #define GBB_VERSION "0.0.0-dev"
 #endif
@@ -278,6 +328,12 @@ void render_tool_text(SDL_Renderer* renderer, const float x, const float y,
 
 
 constexpr std::size_t maximum_rewind_frames = 180;
+// Serializing a complete machine is intentionally amortized across four
+// frames. This keeps rewind responsive while leaving enough CPU headroom for
+// cores/toolchains whose save-state codec is more expensive (notably MSVC).
+// The history still retains 180 snapshots, so the available rewind window is
+// longer; only the rewind step granularity changes from one frame to four.
+constexpr unsigned rewind_capture_interval = 4;
 constexpr unsigned fast_forward_factor = 4;
 using RewindHistory = std::deque<std::vector<std::uint8_t>>;
 
@@ -848,6 +904,33 @@ int main(int argc, char** argv) {
         desktop_menu.attach(sdl.window);
 #endif
         const auto preference_path = preference_directory();
+        const auto frame_timing_enabled = frame_timing_trace_enabled();
+        FrameTimingTrace frame_timing_trace(frame_timing_enabled);
+        if (frame_timing_enabled) {
+            const auto* renderer_name = SDL_GetRendererName(sdl.renderer);
+            frame_timing_trace.write(
+                std::string("renderer=") +
+                (renderer_name == nullptr ? "unknown" : renderer_name));
+            frame_timing_trace.write(
+                std::string("build=") +
+#ifdef NDEBUG
+                "release"
+#else
+                "debug"
+#endif
+#ifdef _ITERATOR_DEBUG_LEVEL
+                " iterator_debug=" +
+                std::to_string(_ITERATOR_DEBUG_LEVEL)
+#else
+                " iterator_debug=unknown"
+#endif
+            );
+            if (!frame_timing_trace.enabled()) {
+                gbb::log_frontend_warning(
+                    std::string("Could not open frame timing trace: ") +
+                    frame_timing_trace.path().string());
+            }
+        }
         const auto app_settings = load_app_settings(preference_path);
         RemoteLinkOptions remote_link_options{
             app_settings.link_remote_host, app_settings.link_remote_bind,
@@ -952,6 +1035,7 @@ int main(int argc, char** argv) {
         bool pending_rom_from_dashboard = false;
         std::uint64_t print_sequence = 0;
         RewindHistory rewind_history;
+        unsigned rewind_capture_phase = 0;
 #ifndef __ANDROID__
         DesktopDebugger debugger;
         InputMovie input_movie;
@@ -985,8 +1069,16 @@ int main(int argc, char** argv) {
         auto cycles_per_frame = 70224U;
         gbb::sdl::FramePacer frame_pacer(cycles_per_frame);
         std::uint64_t frontend_frame = 0;
+        std::uint64_t rewind_capture_count = 0;
+        std::uint64_t rewind_capture_total_us = 0;
+        std::uint64_t rewind_capture_max_us = 0;
+        std::size_t rewind_capture_bytes = 0;
+        std::uint64_t core_step_count = 0;
+        std::uint64_t core_step_total_us = 0;
+        std::uint64_t core_step_max_us = 0;
 
         while (running) {
+            const auto frame_started = std::chrono::steady_clock::now();
             // Make the current presentation frame available to every nested
             // diagnostic without threading context through each SDL helper.
             gbb::LogContextScope frame_log_context(
@@ -1237,6 +1329,7 @@ int main(int argc, char** argv) {
                 }
             };
             process_events(event_context);
+            const auto events_finished = std::chrono::steady_clock::now();
             // Event callbacks may close the current core (for example when
             // Android returns to the native library). Refresh the non-owning
             // service view before any lifecycle or presentation work below.
@@ -1423,6 +1516,7 @@ int main(int argc, char** argv) {
                     fast_forward = false;
                     rewind = false;
                     rewind_history.clear();
+                    rewind_capture_phase = 0;
                     dashboard_visible = false;
 #ifdef _WIN32
                     reveal_sdl_after_present = true;
@@ -1539,11 +1633,34 @@ int main(int argc, char** argv) {
                         }
 #endif
                         if (link_emulator == nullptr) {
-                            rewind_history.push_back(core->save_state());
+                            const bool capture_rewind_state =
+                                rewind_capture_phase == 0;
+                            rewind_capture_phase =
+                                (rewind_capture_phase + 1) %
+                                rewind_capture_interval;
+                            if (capture_rewind_state) {
+                                const auto rewind_save_started =
+                                    std::chrono::steady_clock::now();
+                                auto rewind_state = core->save_state();
+                                const auto rewind_save_us =
+                                    static_cast<std::uint64_t>(
+                                        microseconds_between(
+                                            rewind_save_started,
+                                            std::chrono::steady_clock::now()));
+                                rewind_capture_bytes = rewind_state.size();
+                                rewind_history.push_back(
+                                    std::move(rewind_state));
+                                ++rewind_capture_count;
+                                rewind_capture_total_us += rewind_save_us;
+                                rewind_capture_max_us = std::max(
+                                    rewind_capture_max_us, rewind_save_us);
+                            }
                             while (rewind_history.size() > maximum_rewind_frames) {
                                 rewind_history.pop_front();
                             }
                         }
+                        const auto core_step_started =
+                            std::chrono::steady_clock::now();
                         if (link_emulator != nullptr && link_session != nullptr) {
                             // The session owns the cable and keeps both CPU
                             // timelines balanced so serial interrupts cannot
@@ -1581,6 +1698,14 @@ int main(int argc, char** argv) {
                             }
                             if (remote_link.active()) remote_link.endpoint.poll();
                         }
+                        const auto core_step_us =
+                            static_cast<std::uint64_t>(microseconds_between(
+                                core_step_started,
+                                std::chrono::steady_clock::now()));
+                        ++core_step_count;
+                        core_step_total_us += core_step_us;
+                        core_step_max_us =
+                            std::max(core_step_max_us, core_step_us);
                         if (core->frame_ready()) core->consume_frame();
                         if (link_emulator != nullptr &&
                             link_emulator->frame_ready()) {
@@ -1603,6 +1728,7 @@ int main(int argc, char** argv) {
 #ifndef __ANDROID__
             if (replay_ended) debugger.pause();
 #endif
+            const auto audio_started = std::chrono::steady_clock::now();
             update_rumble(core.get(), sdl,
                           !paused && !debugger_paused && !rewind &&
                               !dashboard_visible &&
@@ -1615,6 +1741,7 @@ int main(int argc, char** argv) {
                 // memory pressure during long link sessions.
                 static_cast<void>(link_emulator->take_audio_samples());
             }
+            const auto audio_finished = std::chrono::steady_clock::now();
             try {
                 save_completed_prints(core.get(), sdl.window,
                                       preference_path, current_rom,
@@ -1637,6 +1764,7 @@ int main(int argc, char** argv) {
 #ifndef _WIN32
             menu_overlay = [&]() { present_menu_button(sdl); };
 #endif
+            const auto presentation_started = std::chrono::steady_clock::now();
             present_frame({
                 core.get(), emulator, link_emulator.get(), sdl,
                 link_session.get(),
@@ -1644,6 +1772,7 @@ int main(int argc, char** argv) {
                 gameboy::display_palettes[display_palette], dashboard_visible,
                 std::move(dashboard_overlay), std::move(touch_overlay),
                 std::move(menu_overlay)});
+            const auto presentation_finished = std::chrono::steady_clock::now();
 #ifndef __ANDROID__
             if (emulator) {
                 debugger.present(*emulator,
@@ -1662,11 +1791,64 @@ int main(int argc, char** argv) {
 #endif
 
             frame_pacer.advance();
+            const auto pacing_started = std::chrono::steady_clock::now();
             ++frontend_frame;
             if (remote_link.active()) {
                 frame_pacer.wait([&] { remote_link.endpoint.poll(); });
             } else {
                 frame_pacer.wait();
+            }
+            const auto pacing_finished = std::chrono::steady_clock::now();
+            if (frame_timing_enabled && frontend_frame % 60U == 0U) {
+                frame_timing_trace.write(
+                    std::string("frame_timing frame=") +
+                    std::to_string(frontend_frame) +
+                    " work_us=" +
+                    std::to_string(microseconds_between(
+                        frame_started, presentation_started)) +
+                    " events_us=" +
+                    std::to_string(microseconds_between(
+                        frame_started, events_finished)) +
+                    " emulation_us=" +
+                    std::to_string(microseconds_between(
+                        events_finished, audio_started)) +
+                    " rewind_captures=" +
+                    std::to_string(rewind_capture_count) +
+                    " rewind_capture_avg_us=" +
+                    std::to_string(rewind_capture_count == 0
+                                       ? 0
+                                       : rewind_capture_total_us /
+                                             rewind_capture_count) +
+                    " rewind_capture_max_us=" +
+                    std::to_string(rewind_capture_max_us) +
+                    " rewind_capture_bytes=" +
+                    std::to_string(rewind_capture_bytes) +
+                    " core_steps=" + std::to_string(core_step_count) +
+                    " core_step_avg_us=" +
+                    std::to_string(core_step_count == 0
+                                       ? 0
+                                       : core_step_total_us / core_step_count) +
+                    " core_step_max_us=" +
+                    std::to_string(core_step_max_us) +
+                    " audio_us=" +
+                    std::to_string(microseconds_between(
+                        audio_started, audio_finished)) +
+                    " present_us=" +
+                    std::to_string(microseconds_between(
+                        presentation_started, presentation_finished)) +
+                    " wait_us=" +
+                    std::to_string(microseconds_between(
+                        pacing_started, pacing_finished)) +
+                    " total_us=" +
+                    std::to_string(microseconds_between(
+                        frame_started, pacing_finished)));
+                rewind_capture_count = 0;
+                rewind_capture_total_us = 0;
+                rewind_capture_max_us = 0;
+                rewind_capture_bytes = 0;
+                core_step_count = 0;
+                core_step_total_us = 0;
+                core_step_max_us = 0;
             }
         }
 #ifndef __ANDROID__
