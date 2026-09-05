@@ -553,9 +553,15 @@ void test_packet_channel_endpoint_contract() {
         first_endpoint.poll();
         second_endpoint.poll();
     }
+    // The host is link-ready as soon as both compatibility handshakes are
+    // complete. The join side intentionally remains passive until it sees
+    // the host's first serial request; requiring peer_ready_for_link() on
+    // both sides here would therefore reject the documented arbitration
+    // contract even though the packet channel handshake succeeded.
     check(first_endpoint.peer_ready_for_link() &&
-              second_endpoint.peer_ready_for_link() &&
-              first_endpoint.peer_compatibility_id() == profile,
+              second_endpoint.peer_hello_seen() &&
+              first_endpoint.peer_compatibility_id() == profile &&
+              second_endpoint.peer_compatibility_id() == profile,
           "serial endpoint accepts a non-TCP packet channel");
     first_endpoint.detach();
     second_endpoint.detach();
