@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased]
+
+### Plug-in integration
+
+- Add an explicit, settings-controlled native plug-in catalog with deterministic
+  path/directory handling, duplicate suppression, load diagnostics, and a hard
+  discovery limit. Plug-ins remain disabled by default and are never loaded on
+  Android.
+- Add desktop Settings controls for enabling discovery and requiring an
+  identity allowlist, with restart-required messaging and visible load/rejection
+  status.
+- Extend the core registry with context-owning providers so dynamically loaded
+  plug-ins stay alive for the lifetime of their adapted cores.
+
 ## [0.29.0] - 2026-09-05
 
 ### Dynamic plug-in ABI

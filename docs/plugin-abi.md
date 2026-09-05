@@ -3,9 +3,13 @@
 Status: **frozen and approved** as of 2026-09-05. The public C declarations,
 isolated fixture plug-in, native loader, and contract tests define the v1.0
 compatibility boundary. Loading remains explicit and opt-in; automatic
-production discovery and frontend integration are intentionally still out of
-scope. The approval record and immutable baseline are documented in
+production scanning and broad frontend enablement are intentionally still out
+of scope. The reference desktop catalog and Settings controls are available
+for explicitly configured native plug-ins. The approval record and immutable
+baseline are documented in
 [`plugin-abi-freeze.md`](plugin-abi-freeze.md).
+The current trust and desktop UX rules are recorded in
+[`plugin-security.md`](plugin-security.md).
 
 ## Current implementation status
 
@@ -29,9 +33,13 @@ scope. The approval record and immutable baseline are documented in
 - Native plugin ABI tests run in CI under both GCC and Clang; the existing
   Windows build matrix exercises the same suite under MSVC. The GCC job also
   loads a fixture built with Clang to catch compiler-boundary assumptions.
-- ABI v1.0 is a stable plug-in contract. Production discovery and frontend
-  integration remain separate, opt-in migration work and do not change the
-  frozen boundary.
+- ABI v1.0 is a stable plug-in contract. The reference `PluginCatalog` and
+  desktop Settings integration are separate, opt-in migration work and do not
+  change the frozen boundary. The catalog supports explicit paths
+  and deterministic directory scans for native desktop builds; it never scans
+  implicit system or working-directory locations. A descriptor identity
+  allowlist can be required before a library is registered; this is an explicit
+  trust policy and is intentionally distinct from cryptographic signing.
 
 ## Purpose
 
@@ -233,9 +241,13 @@ the compatibility baseline throughout this work.
    existing contract validator at the adapter boundary. **Complete; native
    loader and adapter are implemented.**
 5. Add explicit opt-in discovery and diagnostics to the desktop frontend.
+   **Complete for the first security/UX gate: the catalog, settings-controlled
+   loading path, native UI controls, restart boundary, allowlist policy, and
+   diagnostics are implemented. Cryptographic trust and broad enablement remain
+   deferred.**
 6. Only then consider advanced capability extensions and other frontends.
 
 The static API remains the default in-process extension mechanism. The frozen
 ABI may be consumed by explicitly configured native plug-ins through the
-reference loader; automatic discovery and frontend exposure require their own
-security and UX review.
+reference loader; automatic scanning, signed trust, and broad distribution
+remain deferred pending the security policy in `docs/plugin-security.md`.

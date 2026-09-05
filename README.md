@@ -436,6 +436,21 @@ always moved as one control, while A, B, Select, and Start can be positioned
 individually beside or below the emulation screen. Positions are stored as
 normalized `touch.Portrait.*` and `touch.Landscape.*` coordinates.
 
+Native desktop plug-ins are opt-in. Set `plugin.Discovery = true` in
+`settings.ini`, then add one or more repeated `plugin.Path = ...` entries for
+shared libraries or directories containing them. Relative paths are resolved
+against the settings file; only platform-native library extensions are
+considered, symbolic links are rejected, and at most 32 candidates are
+loaded. Rejected or duplicate plug-ins are reported through the core logger.
+For a stricter trust policy, set `plugin.RequireAllowlist = true` and add
+repeated `plugin.AllowCore = <core-id>` entries; descriptor IDs not on that
+allowlist are rejected before registration. This is an identity policy, not a
+cryptographic signature system.
+Android never loads native plug-ins.
+On Windows, the Settings page exposes the discovery and allowlist switches and
+shows the current loaded/rejected status; changing either switch takes effect
+after restarting the emulator.
+
 The video pipeline is configurable across desktop, Android, and web builds:
 `nearest` keeps crisp pixel edges, `bilinear` smooths the presentation, `sharp`
 adds edge-aware smoothing without blanket blur, `integer` uses only whole-number

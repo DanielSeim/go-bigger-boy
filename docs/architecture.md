@@ -117,8 +117,10 @@ explicit ownership, result codes, version negotiation, and size-prefixed
 tables; exporting `EmulatorCore` directly would make STL and compiler-runtime
 details part of the binary contract. The approved v1.0 contract, fixture, and
 loader limits are documented in [`plugin-abi.md`](plugin-abi.md) and its
-[`freeze record`](plugin-abi-freeze.md). Automatic production discovery and
-frontend exposure remain deferred pending a separate security and UX review.
+[`freeze record`](plugin-abi-freeze.md). Explicit settings-controlled desktop
+discovery is now implemented by `PluginCatalog`; automatic loading remains
+disabled by default, and signed/trusted plugin policy is still required before
+broad enablement.
 
 Save-state framing and checksum validation are isolated from hardware field
 serialization. CPU, cartridge, joypad, timer, PPU, and APU fields are delegated

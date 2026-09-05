@@ -8,8 +8,9 @@ ABI freeze update: 2026-09-05
 The project has a sound first abstraction in `gbb::EmulatorCore`, and the
 ordinary SDL, Android, Web, and CLI paths now use it. Advanced development
 tools and some link/UI paths still depend on the Game Boy adapter. The dynamic
-plugin ABI v1.0 is now formally frozen; automatic discovery and frontend
-exposure remain separate, opt-in work. The emulator core is testable and well
+plugin ABI v1.0 is now formally frozen; explicit, settings-controlled desktop
+catalog loading is implemented as an opt-in security/UX gate, while automatic
+scanning and broad frontend enablement remain deferred. The emulator core is testable and well
 covered, and the remaining organization work is focused on making those
 optional boundaries and diagnostics just as explicit.
 
@@ -126,9 +127,14 @@ the smoke retains stdout/stderr and TSan reports as CI artifacts.
 Deferred follow-up:
 
 - automatic dynamically loaded core-plugin discovery and frontend exposure
-  remain deferred. The v1.0 C header, fixture matrix, native loader, adapter,
-  cross-toolchain checks, and freeze record are complete; discovery still needs
-  a separate security and UX review.
+  remain partially deferred. The v1.0 C header, fixture matrix, native loader,
+  adapter, cross-toolchain checks, freeze record, explicit `PluginCatalog`, and
+  settings-controlled desktop loading path are complete. Automatic discovery
+  remains opt-in; native settings controls, an identity allowlist, and a
+  clearer startup summary now cover the first trust/UX gate. Cryptographic
+  signing policy and the final security review are still required before
+  general-user enablement; the current rules are recorded in
+  `docs/plugin-security.md`.
 
 ## Concrete issue found during the audit
 
@@ -156,11 +162,14 @@ fallbacks for standalone source builds).
    lifecycle and capability isolation is now centralized at the SDL dispatch
    boundary.**
 8. Consider dynamically loaded core plugins only after the static API is stable.
-   **v1.0 ABI frozen; automatic discovery remains deferred.**
+   **v1.0 ABI frozen; explicit opt-in catalog/loading, desktop controls,
+   diagnostics, and identity allowlisting are implemented. Automatic scanning,
+   signed trust, and broad distribution remain deferred.**
 
 The static audit implementation is complete. The dynamic-plugin v1.0 contract
-is frozen against the settled core contract; future work may add discovery only
-after the separate security and UX gates are complete.
+is frozen against the settled core contract; future work may add signed trust,
+capability permissions, and isolation based on the policy in
+`docs/plugin-security.md`.
 
 ## Progress
 
