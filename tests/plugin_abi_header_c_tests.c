@@ -27,6 +27,30 @@ _Static_assert(offsetof(gbb_plugin_core_api_v1, flush_persistent_data) == 128,
                "v1 flush callback offset changed");
 #endif
 
+/* Numeric identifiers are part of the frozen v1.0 wire contract. */
+_Static_assert(GBB_PLUGIN_ABI_MAJOR == 1 && GBB_PLUGIN_ABI_MINOR == 0,
+               "v1.0 ABI version changed");
+_Static_assert(GBB_PLUGIN_OK == 0 && GBB_PLUGIN_INVALID_ARGUMENT == 1 &&
+                   GBB_PLUGIN_UNSUPPORTED == 2 &&
+                   GBB_PLUGIN_BUFFER_TOO_SMALL == 3 &&
+                   GBB_PLUGIN_INVALID_STATE == 4 &&
+                   GBB_PLUGIN_INTERNAL_ERROR == 5 && GBB_PLUGIN_FATAL == 6,
+               "v1.0 result identifiers changed");
+_Static_assert(GBB_PLUGIN_SYSTEM_GB == 0 && GBB_PLUGIN_SYSTEM_GBC == 1 &&
+                   GBB_PLUGIN_SYSTEM_GBA == 2,
+               "v1.0 system identifiers changed");
+_Static_assert(GBB_PLUGIN_INPUT_RIGHT == 0 && GBB_PLUGIN_INPUT_LEFT == 1 &&
+                   GBB_PLUGIN_INPUT_UP == 2 && GBB_PLUGIN_INPUT_DOWN == 3 &&
+                   GBB_PLUGIN_INPUT_A == 4 && GBB_PLUGIN_INPUT_B == 5 &&
+                   GBB_PLUGIN_INPUT_X == 6 && GBB_PLUGIN_INPUT_Y == 7 &&
+                   GBB_PLUGIN_INPUT_L == 8 && GBB_PLUGIN_INPUT_R == 9 &&
+                   GBB_PLUGIN_INPUT_SELECT == 10 &&
+                   GBB_PLUGIN_INPUT_START == 11,
+               "v1.0 input identifiers changed");
+_Static_assert(GBB_PLUGIN_CAP_PERSISTENT_MEMORY == (UINT64_C(1) << 0) &&
+                   GBB_PLUGIN_CAP_LINK_CABLE == (UINT64_C(1) << 10),
+               "v1.0 capability identifiers changed");
+
 int main(void) {
     gbb_plugin_struct_header header = {
         sizeof(gbb_plugin_struct_header), GBB_PLUGIN_ABI_MAJOR,

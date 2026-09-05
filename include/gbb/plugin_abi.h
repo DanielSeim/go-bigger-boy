@@ -2,12 +2,13 @@
 #define GBB_PLUGIN_ABI_H
 
 /*
- * Go Bigger Boy dynamic-core ABI v1.
+ * Go Bigger Boy dynamic-core ABI v1.0 (frozen).
  *
  * This header is deliberately C-compatible. Do not expose EmulatorCore or
- * any C++ standard-library type from a shared library. Every structure is
- * size-prefixed so a newer producer can append fields without changing the
- * meaning of older fields.
+ * any C++ standard-library type from a shared library. The v1.0 numeric IDs,
+ * field order, and required prefixes are frozen. Every structure is
+ * size-prefixed so a future minor revision can append fields without changing
+ * the meaning of older fields.
  */
 #include <stdint.h>
 
@@ -24,6 +25,7 @@
 #endif
 
 #define GBB_PLUGIN_ABI_MAJOR UINT16_C(1)
+/* Frozen v1.0. Append-only changes require a separately approved minor. */
 #define GBB_PLUGIN_ABI_MINOR UINT16_C(0)
 #define GBB_PLUGIN_MAX_STRING_BYTES UINT32_C(4096)
 
@@ -37,6 +39,7 @@ typedef struct gbb_plugin_struct_header {
  * defined and therefore unsuitable for a binary boundary. */
 typedef int32_t gbb_plugin_result;
 enum {
+    /* v1.0 result values are frozen; append new values only in a new minor. */
     GBB_PLUGIN_OK = INT32_C(0),
     GBB_PLUGIN_INVALID_ARGUMENT = INT32_C(1),
     GBB_PLUGIN_UNSUPPORTED = INT32_C(2),

@@ -1,8 +1,11 @@
-# Dynamic core plug-in ABI (draft)
+# Dynamic core plug-in ABI v1.0 (frozen)
 
-Status: draft implementation. The public C declarations and an isolated fixture
-plug-in are now built and exercised by native tests. Production discovery,
-adapters, and frontend integration are intentionally still out of scope.
+Status: **frozen and approved** as of 2026-09-05. The public C declarations,
+isolated fixture plug-in, native loader, and contract tests define the v1.0
+compatibility boundary. Loading remains explicit and opt-in; automatic
+production discovery and frontend integration are intentionally still out of
+scope. The approval record and immutable baseline are documented in
+[`plugin-abi-freeze.md`](plugin-abi-freeze.md).
 
 ## Current implementation status
 
@@ -26,8 +29,9 @@ adapters, and frontend integration are intentionally still out of scope.
 - Native plugin ABI tests run in CI under both GCC and Clang; the existing
   Windows build matrix exercises the same suite under MSVC. The GCC job also
   loads a fixture built with Clang to catch compiler-boundary assumptions.
-- The ABI is not stable or a supported plug-in contract yet. Production
-  discovery and frontend integration remain the next migration step.
+- ABI v1.0 is a stable plug-in contract. Production discovery and frontend
+  integration remain separate, opt-in migration work and do not change the
+  frozen boundary.
 
 ## Purpose
 
@@ -218,16 +222,20 @@ the compatibility baseline throughout this work.
 
 ## Migration order
 
-1. Review and freeze this C ABI document and numeric IDs.
-2. Add a public C header containing only the fixed-width ABI declarations. *(Draft
-   implementation complete; freeze is still pending.)*
-3. Add the fixture plug-in and loader tests, without changing frontends. *(Native
-   fixture, rejection matrix, and loader tests implemented.)*
+1. Review and freeze this C ABI document and numeric IDs. **Complete; see the
+   [freeze record](plugin-abi-freeze.md).**
+2. Add a public C header containing only the fixed-width ABI declarations.
+   **Complete and frozen as v1.0.**
+3. Add the fixture plug-in and loader tests, without changing frontends.
+   **Complete; native fixture, rejection matrix, and loader tests are
+   implemented.**
 4. Implement a host-side adapter from ABI v1 to `EmulatorCore` and run the
-   existing contract validator at the adapter boundary. *(Native loader and
-   adapter implemented; production discovery is still absent.)*
+   existing contract validator at the adapter boundary. **Complete; native
+   loader and adapter are implemented.**
 5. Add explicit opt-in discovery and diagnostics to the desktop frontend.
 6. Only then consider advanced capability extensions and other frontends.
 
-Until these steps are complete, the static API remains the supported extension
-mechanism and no dynamic plug-in ABI should be advertised as stable.
+The static API remains the default in-process extension mechanism. The frozen
+ABI may be consumed by explicitly configured native plug-ins through the
+reference loader; automatic discovery and frontend exposure require their own
+security and UX review.

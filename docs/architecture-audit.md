@@ -1,15 +1,17 @@
 # Architecture and maintainability audit
 
 Date: 2026-09-04
+ABI freeze update: 2026-09-05
 
 ## Summary
 
 The project has a sound first abstraction in `gbb::EmulatorCore`, and the
 ordinary SDL, Android, Web, and CLI paths now use it. Advanced development
-tools and some link/UI paths still depend on the Game Boy adapter, while a
-stable dynamic-plugin ABI is intentionally not promised yet. The emulator core
-is testable and well covered, and the remaining organization work is focused on
-making those optional boundaries and diagnostics just as explicit.
+tools and some link/UI paths still depend on the Game Boy adapter. The dynamic
+plugin ABI v1.0 is now formally frozen; automatic discovery and frontend
+exposure remain separate, opt-in work. The emulator core is testable and well
+covered, and the remaining organization work is focused on making those
+optional boundaries and diagnostics just as explicit.
 
 The recommended approach is incremental extraction, not a rewrite.
 
@@ -67,8 +69,8 @@ ambiguous layers before a frontend sees them. Frontends can still fall back to
 the framebuffer when they do not implement a known format.
 
 `gbb_core_api` is described as system-neutral, but it links directly to
-`gameboy_core`. This is acceptable for the current static build, but it is not
-yet a stable plugin ABI.
+`gameboy_core`. This is acceptable for the current static build; the separately
+defined and frozen C plug-in ABI is documented in `docs/plugin-abi.md`.
 
 ## Logging and diagnostics
 
@@ -123,10 +125,10 @@ the smoke retains stdout/stderr and TSan reports as CI artifacts.
 
 Deferred follow-up:
 
-- a stable dynamically loaded core-plugin ABI remains deferred. The draft C
-  header, fixture matrix, native loader, and `EmulatorCore` adapter now exist;
-  production discovery, cross-toolchain compatibility, and security review are
-  still required before the ABI can be promised.
+- automatic dynamically loaded core-plugin discovery and frontend exposure
+  remain deferred. The v1.0 C header, fixture matrix, native loader, adapter,
+  cross-toolchain checks, and freeze record are complete; discovery still needs
+  a separate security and UX review.
 
 ## Concrete issue found during the audit
 
@@ -154,11 +156,11 @@ fallbacks for standalone source builds).
    lifecycle and capability isolation is now centralized at the SDL dispatch
    boundary.**
 8. Consider dynamically loaded core plugins only after the static API is stable.
-   **Draft implementation started; stable-plugin release remains deferred.**
+   **v1.0 ABI frozen; automatic discovery remains deferred.**
 
-The static audit implementation is complete. The dynamic-plugin draft is now
-being validated against the settled core contract; future work should complete
-the compatibility and security gates before enabling discovery in a frontend.
+The static audit implementation is complete. The dynamic-plugin v1.0 contract
+is frozen against the settled core contract; future work may add discovery only
+after the separate security and UX gates are complete.
 
 ## Progress
 

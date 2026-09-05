@@ -111,14 +111,14 @@ frontend-facing target is `gbb_core_api`.
 
 ## Dynamic plug-ins
 
-The static C++ API remains the supported extension seam today. A draft native
-loader and `EmulatorCore` adapter now use a separate fixed-width C ABI with
+The static C++ API remains the default in-process extension seam. A native
+loader and `EmulatorCore` adapter use a separate frozen, fixed-width C ABI with
 explicit ownership, result codes, version negotiation, and size-prefixed
 tables; exporting `EmulatorCore` directly would make STL and compiler-runtime
-details part of the binary contract. The design, fixture, and current loader
-limits are documented in [`plugin-abi.md`](plugin-abi.md). Production discovery
-and a stable plug-in ABI are still deferred until the compatibility matrix and
-security review are complete.
+details part of the binary contract. The approved v1.0 contract, fixture, and
+loader limits are documented in [`plugin-abi.md`](plugin-abi.md) and its
+[`freeze record`](plugin-abi-freeze.md). Automatic production discovery and
+frontend exposure remain deferred pending a separate security and UX review.
 
 Save-state framing and checksum validation are isolated from hardware field
 serialization. CPU, cartridge, joypad, timer, PPU, and APU fields are delegated

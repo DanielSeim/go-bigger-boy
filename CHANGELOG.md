@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+
+### Dynamic plug-in ABI
+
+- Formally approve and freeze the v1.0 fixed-width C plug-in contract,
+  including numeric identifiers, 64-bit table layouts, ownership/error rules,
+  and cross-toolchain compatibility requirements.
+- Record the freeze baseline and change-control policy in
+  [`docs/plugin-abi-freeze.md`](docs/plugin-abi-freeze.md). Automatic discovery
+  remains a separate, opt-in security and UX project.
+
 ## [0.28.0] - 2026-09-04
 
 This minor release consolidates the post-0.27.7 architecture, diagnostics, and
