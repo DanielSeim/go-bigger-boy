@@ -808,6 +808,26 @@ int main(int argc, char** argv) {
         desktop_menu.attach(sdl.window);
 #endif
         const auto preference_path = preference_directory();
+        const auto plugin_options =
+            load_plugin_discovery_options(preference_path);
+        auto plugin_catalog = gbb::PluginCatalog::discover(plugin_options);
+        const auto& core_registry = plugin_catalog.registry();
+        std::size_t plugin_rejections = 0;
+        for (const auto& diagnostic : plugin_catalog.diagnostics()) {
+            if (!diagnostic.loaded) {
+                ++plugin_rejections;
+                gbb::log_frontend_warning(
+                    std::string("Plugin discovery: ") + diagnostic.message);
+            }
+        }
+        if (plugin_options.enabled) {
+            gbb::log_frontend_info(
+                std::string("Plugin discovery complete: loaded=") +
+                std::to_string(plugin_catalog.loaded_count()) +
+                " rejected=" + std::to_string(plugin_rejections) +
+                (plugin_options.require_allowlist ? " allowlist=required"
+                                                   : " allowlist=optional"));
+        }
         sdl.voxel_profile_path = preference_path.empty()
                                     ? std::filesystem::path{}
                                     : preference_path / "voxel-profiles.ini";
@@ -980,6 +1000,7 @@ int main(int argc, char** argv) {
                     display_palette,
                     sdl.video_mode,
                     dashboard_bindings, dashboard_actions,
+                    plugin_options, plugin_catalog,
                     preference_path);
                 if (!result.removed_fingerprints.empty()) {
                     for (const auto fingerprint : result.removed_fingerprints) {
@@ -1030,6 +1051,16 @@ int main(int argc, char** argv) {
                             result.action_bindings[index]);
                     }
                     save_bindings(preference_path, bindings);
+                }
+                if (result.plugin_settings_changed) {
+                    auto settings = load_app_settings(preference_path);
+                    settings.plugin_discovery = result.plugin_discovery;
+                    settings.plugin_require_allowlist =
+                        result.plugin_require_allowlist;
+                    write_portable_settings(preference_path, settings);
+                    show_error(
+                        sdl.window,
+                        "Plugin settings saved. Restart Go Bigger Boy to reload native plugins.");
                 }
                 switch (result.action) {
                 case gbb_desktop::DashboardResultAction::open_rom:
@@ -1305,6 +1336,7 @@ int main(int argc, char** argv) {
                     const bool reopening_current =
                         emulator && requested_rom == current_rom;
                     load_rom(requested_rom, core,
+                             core_registry,
                              gameboy::display_palettes[display_palette], sdl,
                              preference_path);
                     emulator = gbb::gameboy_emulator(core.get());

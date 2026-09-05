@@ -22,6 +22,7 @@ bool restore_video_presentation(const SdlResources& sdl);
 
 void load_rom(const std::string& path,
               std::unique_ptr<gbb::EmulatorCore>& core,
+              const gbb::CoreRegistry& registry,
               const gameboy::DisplayPalette& palette,
               SdlResources& sdl,
               const std::filesystem::path& preference_path);

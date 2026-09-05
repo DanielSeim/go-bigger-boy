@@ -57,6 +57,8 @@ constexpr int id_shortcuts = 112;
 constexpr int id_voxel_save = 113;
 constexpr int id_voxel_reset = 114;
 constexpr int id_voxel_preview = 115;
+constexpr int id_plugin_discovery = 116;
+constexpr int id_plugin_require_allowlist = 117;
 constexpr int id_voxel_first_edit = 120;
 constexpr int id_binding_first = 200;
 constexpr int id_action_first = 220;
@@ -100,6 +102,30 @@ std::string narrow(const std::wstring& value) {
                         static_cast<int>(value.size()), result.data(), count,
                         nullptr, nullptr);
     return result;
+}
+
+std::wstring plugin_status_text(const gbb::PluginDiscoveryOptions& options,
+                               const gbb::PluginCatalog& catalog) {
+    std::size_t rejected = 0;
+    for (const auto& diagnostic : catalog.diagnostics()) {
+        if (!diagnostic.loaded) ++rejected;
+    }
+    std::wostringstream text;
+    text << L"Loaded: " << catalog.loaded_count()
+         << L"    Rejected: " << rejected << L"\r\n"
+         << (options.enabled ? L"Discovery enabled" : L"Discovery disabled")
+         << (options.require_allowlist ? L"; identity allowlist required"
+                                       : L"; identity allowlist optional")
+         << L"\r\nPaths and allowed core IDs are configured in settings.ini.";
+    if (rejected != 0) {
+        text << L"\r\n\r\nFirst rejection:";
+        for (const auto& diagnostic : catalog.diagnostics()) {
+            if (diagnostic.loaded) continue;
+            text << L"\r\n- " << widen(diagnostic.message);
+            break;
+        }
+    }
+    return text.str();
 }
 
 std::wstring formatted_last_played(const std::int64_t timestamp) {
@@ -150,6 +176,10 @@ struct State {
     std::array<HWND, 8> voxel_edits{};
     HWND voxel_save{};
     HWND voxel_reset{};
+    HWND plugin_heading{};
+    HWND plugin_status{};
+    HWND plugin_discovery{};
+    HWND plugin_require_allowlist{};
     HWND library_tab{};
     HWND settings_tab{};
     HWND shortcuts_tab{};
@@ -164,6 +194,8 @@ struct State {
     enum class Page { library, settings, shortcuts } page{Page::library};
     std::filesystem::path preference_directory;
     std::filesystem::path voxel_profile_path;
+    gbb::PluginDiscoveryOptions plugin_options;
+    std::wstring plugin_status_text;
     std::uint64_t voxel_fingerprint{};
     gbb::VoxelProfile voxel_profile{};
     std::thread artwork_worker;
@@ -858,6 +890,10 @@ void show_page(State& state, const State::Page page) {
     }
     ShowWindow(state.voxel_save, show_voxel ? SW_SHOW : SW_HIDE);
     ShowWindow(state.voxel_reset, show_voxel ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.plugin_heading, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.plugin_status, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.plugin_discovery, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.plugin_require_allowlist, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.shortcuts_heading, shortcuts ? SW_SHOW : SW_HIDE);
     ShowWindow(state.shortcuts_text, shortcuts ? SW_SHOW : SW_HIDE);
     ShowScrollBar(state.window, SB_VERT, settings ? TRUE : FALSE);
@@ -928,7 +964,7 @@ void layout_dashboard(State& state) {
     place_child(state.remove, 382, static_cast<int>(actions_y), 170, 44, 0);
     place_child(state.resume, 572, static_cast<int>(actions_y), 150, 44, 0);
 
-    const auto content_bottom = 1058L;
+    const auto content_bottom = 1245L;
     const auto max_scroll = std::max(0L, content_bottom - height + 24L);
     state.settings_scroll = std::clamp(state.settings_scroll, 0,
                                        static_cast<int>(max_scroll));
@@ -990,6 +1026,10 @@ void layout_dashboard(State& state) {
     }
     place_child(state.voxel_save, 680, 1020, 120, 38, offset);
     place_child(state.voxel_reset, 810, 1020, 120, 38, offset);
+    place_child(state.plugin_heading, 32, 1080, 320, 28, offset);
+    place_child(state.plugin_status, 32, 1115, 916, 72, offset);
+    place_child(state.plugin_discovery, 32, 1195, 260, 28, offset);
+    place_child(state.plugin_require_allowlist, 320, 1195, 320, 28, offset);
 }
 
 void finish(State& state, const DashboardResultAction action,
@@ -1276,6 +1316,28 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                         static_cast<std::size_t>(selected)].mode;
                     state->result.video_mode_changed = true;
                 }
+            }
+            return 0;
+        case id_plugin_discovery:
+            if (HIWORD(wparam) == BN_CLICKED) {
+                state->result.plugin_discovery =
+                    SendMessageW(state->plugin_discovery, BM_GETCHECK, 0, 0) ==
+                    BST_CHECKED;
+                state->result.plugin_settings_changed = true;
+                SetWindowTextW(
+                    state->plugin_status,
+                    L"Plugin setting changed. Restart the emulator to reload plugins.");
+            }
+            return 0;
+        case id_plugin_require_allowlist:
+            if (HIWORD(wparam) == BN_CLICKED) {
+                state->result.plugin_require_allowlist =
+                    SendMessageW(state->plugin_require_allowlist, BM_GETCHECK,
+                                 0, 0) == BST_CHECKED;
+                state->result.plugin_settings_changed = true;
+                SetWindowTextW(
+                    state->plugin_status,
+                    L"Plugin trust policy changed. Restart the emulator to reload plugins.");
             }
             return 0;
         case id_voxel_save:
@@ -1851,6 +1913,8 @@ DashboardResult show_windows_dashboard(
     const std::size_t palette, const gameboy::VideoMode video_mode,
     const KeyboardBindings& keyboard_bindings,
     const ActionBindings& action_bindings,
+    const gbb::PluginDiscoveryOptions& plugin_options,
+    const gbb::PluginCatalog& plugin_catalog,
     const std::filesystem::path& preference_directory) {
     INITCOMMONCONTROLSEX controls{sizeof(controls), ICC_LISTVIEW_CLASSES};
     InitCommonControlsEx(&controls);
@@ -1889,6 +1953,10 @@ DashboardResult show_windows_dashboard(
     state.result.video_mode = video_mode;
     state.result.keyboard_bindings = keyboard_bindings;
     state.result.action_bindings = action_bindings;
+    state.result.plugin_discovery = plugin_options.enabled;
+    state.result.plugin_require_allowlist = plugin_options.require_allowlist;
+    state.plugin_options = plugin_options;
+    state.plugin_status_text = plugin_status_text(plugin_options, plugin_catalog);
     state.preference_directory = preference_directory;
     const auto saved_position = load_window_position(preference_directory);
     const auto window_title = std::wstring{L"Go Bigger Boy - Game Library v"} +
@@ -2165,6 +2233,27 @@ DashboardResult show_windows_dashboard(
     state.voxel_reset = control(state, L"BUTTON", L"Reset profile",
                                 BS_PUSHBUTTON, 810, 1020, 120, 38,
                                 id_voxel_reset);
+    state.plugin_heading = control(state, L"STATIC", L"Native plug-ins",
+                                   0, 32, 1080, 320, 28, 0);
+    SendMessageW(state.plugin_heading, WM_SETFONT,
+                 reinterpret_cast<WPARAM>(state.title_font), TRUE);
+    state.plugin_status = control(
+        state, L"EDIT", state.plugin_status_text.c_str(),
+        ES_MULTILINE | ES_READONLY | WS_BORDER | WS_VSCROLL,
+        32, 1115, 916, 72, 0);
+    state.plugin_discovery = control(
+        state, L"BUTTON", L"Enable native plug-in discovery",
+        BS_AUTOCHECKBOX, 32, 1195, 260, 28, id_plugin_discovery);
+    state.plugin_require_allowlist = control(
+        state, L"BUTTON", L"Require core identity allowlist",
+        BS_AUTOCHECKBOX, 320, 1195, 320, 28,
+        id_plugin_require_allowlist);
+    SendMessageW(state.plugin_discovery, BM_SETCHECK,
+                 plugin_options.enabled ? BST_CHECKED : BST_UNCHECKED, 0);
+    SendMessageW(state.plugin_require_allowlist, BM_SETCHECK,
+                 plugin_options.require_allowlist ? BST_CHECKED
+                                                   : BST_UNCHECKED,
+                 0);
     refresh_voxel_profile_controls(state);
     state.shortcuts_heading = control(
         state, L"STATIC", L"Keyboard shortcuts", 0,

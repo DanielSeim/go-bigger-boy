@@ -3,11 +3,14 @@
 #include "gbb/core.hpp"
 
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <string_view>
 #include <vector>
 
 namespace gbb {
+
+class PluginLoader;
 
 struct CoreLoadOptions {
     std::filesystem::path source_path;
@@ -35,10 +38,24 @@ using CoreCreate = std::unique_ptr<EmulatorCore> (*)(
 struct CoreFactory {
     // The id and name are mirrored in the created CoreDescriptor. Registry
     // validation rejects factories that cannot provide stable UI metadata.
+    // Provider-backed entries may expose metadata-only callbacks here; use
+    // CoreRegistry::probe/create rather than invoking those fields directly.
     std::string_view core_id;
     std::string_view core_name;
     CoreProbe probe{};
     CoreCreate create{};
+};
+
+// A runtime provider extends the function-pointer factory seam with an
+// optional context captured by the implementation.  Built-in cores continue
+// to use CoreFactory directly; dynamically loaded cores use this type so the
+// registry can retain their loader for the lifetime of every created core.
+struct CoreProvider {
+    CoreFactory factory;
+    std::function<CoreProbeResult(const std::vector<std::uint8_t>&,
+                                  const CoreLoadOptions&)> probe;
+    std::function<std::unique_ptr<EmulatorCore>(
+        std::vector<std::uint8_t>, const CoreLoadOptions&)> create;
 };
 
 class CoreRegistry {
@@ -47,6 +64,11 @@ public:
     explicit CoreRegistry(std::vector<CoreFactory> factories);
 
     void register_factory(CoreFactory factory);
+    void register_provider(CoreProvider provider);
+    // Register an already validated, explicitly loaded native plug-in. The
+    // loader is retained by the provider so its shared library cannot unload
+    // while a core instance is using it.
+    void register_plugin(std::shared_ptr<const PluginLoader> loader);
     [[nodiscard]] const std::vector<CoreFactory>& factories() const noexcept;
     [[nodiscard]] std::vector<CoreProbeMatch> probe_matches(
         const std::vector<std::uint8_t>& rom,
@@ -57,9 +79,13 @@ public:
     [[nodiscard]] std::unique_ptr<EmulatorCore> create(
         std::vector<std::uint8_t> rom,
         const CoreLoadOptions& options = {}) const;
+    [[nodiscard]] std::unique_ptr<EmulatorCore> create_from_file(
+        const std::filesystem::path& path,
+        const CoreLoadOptions& options = {}) const;
 
 private:
     std::vector<CoreFactory> factories_;
+    std::vector<CoreProvider> providers_;
 };
 
 // The application registry contains every core contributed by this build.

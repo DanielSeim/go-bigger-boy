@@ -3,15 +3,21 @@
 #include "settings_model.hpp"
 
 #include "gameboy/video_pipeline.hpp"
+#include "gbb/plugin_discovery.hpp"
 
 #include <filesystem>
 #include <string>
+#include <vector>
 
 struct AppSettings {
     InputBindings bindings;
     std::size_t palette{};
     gameboy::VideoMode video_mode{gameboy::default_video_mode};
     bool link_diagnostics{};
+    bool plugin_discovery{};
+    std::vector<std::filesystem::path> plugin_paths;
+    std::vector<std::string> plugin_allowed_core_ids;
+    bool plugin_require_allowlist{};
     TouchControlSettings touch;
 };
 
@@ -41,7 +47,9 @@ void append_missing_portable_settings(
     const std::array<bool, shortcut_names.size()>& has_shortcuts,
     bool has_video_mode, bool has_link_diagnostics, bool has_touch_scale,
     bool has_touch_opacity, bool has_touch_voxel_orbit,
-    bool has_touch_menu_position,
+    bool has_touch_menu_position, bool has_plugin_discovery,
+    bool has_plugin_require_allowlist, bool has_plugin_path,
+    bool has_plugin_allow_core,
     const std::array<bool, touch_layout_count * touch_control_count>&
         has_touch_positions);
 
@@ -54,6 +62,8 @@ void save_app_settings(const std::filesystem::path& preference_directory,
 [[nodiscard]] gameboy::VideoMode load_video_mode(
     const std::filesystem::path& directory);
 [[nodiscard]] bool load_link_diagnostics(
+    const std::filesystem::path& directory);
+[[nodiscard]] gbb::PluginDiscoveryOptions load_plugin_discovery_options(
     const std::filesystem::path& directory);
 void save_video_mode(const std::filesystem::path& directory,
                      gameboy::VideoMode mode);

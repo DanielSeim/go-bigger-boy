@@ -51,6 +51,7 @@ bool restore_video_presentation(const SdlResources& sdl) {
 }
 void load_rom(const std::string& path,
               std::unique_ptr<gbb::EmulatorCore>& core,
+              const gbb::CoreRegistry& registry,
               const gameboy::DisplayPalette& palette, SdlResources& sdl,
               const std::filesystem::path& preference_path) {
 #ifdef __ANDROID__
@@ -66,7 +67,7 @@ void load_rom(const std::string& path,
     // Probe once to derive the persistence filename without exposing
     // cartridge details to the frontend. The actual instance is created
     // through the core registry with that path applied.
-    auto metadata = gbb::create_core(bytes);
+    auto metadata = registry.create(bytes);
     gbb::CoreLoadOptions options;
     if (metadata->descriptor().has_battery && !preference_path.empty()) {
         const auto save_directory = preference_path / "saves";
@@ -76,11 +77,10 @@ void load_rom(const std::string& path,
              << metadata->rom_fingerprint() << ".gb";
         options.persistence_path = save_directory / name.str();
     }
-    auto replacement = gbb::create_core(std::move(bytes), options);
+    auto replacement = registry.create(std::move(bytes), options);
 #else
     static_cast<void>(preference_path);
-    auto replacement = gbb::create_core_from_file(
-        std::filesystem::u8path(path));
+    auto replacement = registry.create_from_file(std::filesystem::u8path(path));
 #endif
     if (gbb::has_capability(replacement->descriptor().capabilities,
                             gbb::CoreCapability::printer)) {

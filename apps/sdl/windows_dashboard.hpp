@@ -4,6 +4,7 @@
 #include "gameboy/video_pipeline.hpp"
 #include "gbb/voxel_profile.hpp"
 #include "gbb/core.hpp"
+#include "gbb/plugin_discovery.hpp"
 
 #include <array>
 #include <cstddef>
@@ -33,6 +34,9 @@ struct DashboardResult {
     ActionBindings action_bindings{};
     bool action_bindings_changed{};
     bool voxel_profile_changed{};
+    bool plugin_discovery{};
+    bool plugin_require_allowlist{};
+    bool plugin_settings_changed{};
     std::vector<std::uint64_t> removed_fingerprints;
 };
 
@@ -43,6 +47,8 @@ DashboardResult show_windows_dashboard(
     std::size_t palette, gameboy::VideoMode video_mode,
     const KeyboardBindings& keyboard_bindings,
     const ActionBindings& action_bindings,
+    const gbb::PluginDiscoveryOptions& plugin_options,
+    const gbb::PluginCatalog& plugin_catalog,
     const std::filesystem::path& preference_directory);
 
 } // namespace gbb_desktop

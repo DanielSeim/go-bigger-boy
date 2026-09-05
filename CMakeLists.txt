@@ -134,6 +134,7 @@ add_library(gbb_core_api
     src/gameboy_core_factory.cpp
     src/core_runtime.cpp
     src/plugin_loader.cpp
+    src/plugin_discovery.cpp
     src/gameboy_scene.cpp
     src/video.cpp
     src/rom_library.cpp
@@ -580,6 +581,13 @@ if(GAMEBOY_BUILD_TESTS)
                  COMMAND gameboy_plugin_loader_tests
                          $<TARGET_FILE:gbb_plugin_fixture>
                          $<TARGET_FILE:gbb_plugin_fixture_oversized_tables>)
+
+        add_executable(gameboy_plugin_discovery_tests
+            tests/plugin_discovery_tests.cpp)
+        target_link_libraries(gameboy_plugin_discovery_tests PRIVATE gbb_core_api)
+        add_test(NAME gameboy_plugin_discovery
+                 COMMAND gameboy_plugin_discovery_tests
+                         $<TARGET_FILE:gbb_plugin_fixture>)
 
         add_executable(gameboy_plugin_loader_rejection_tests
             tests/plugin_loader_rejection_tests.cpp)
