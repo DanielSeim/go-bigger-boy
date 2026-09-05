@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-09-06
+
+### Bluetooth link cable
+
+- Generalize the serial endpoint around a packet-channel boundary shared by
+  TCP and Bluetooth transports.
+- Add Bluetooth Classic RFCOMM framing on Windows, including SDP service
+  registration, and an Android worker-backed RFCOMM bridge.
+- Add Bluetooth transport, device address, and service UUID settings plus the
+  Android nearby-device permissions and setup guidance.
+
 ## [0.30.6] - 2026-09-05
 
 ### Android LAN link
