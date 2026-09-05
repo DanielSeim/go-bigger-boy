@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [0.30.3] - 2026-09-05
+
+### Frontend performance
+
+- Keep a TCP host on the efficient emulation path while it is waiting for a
+  peer, avoiding excessive non-blocking socket polling.
+- Skip expensive rewind snapshots during fast-forward while preserving the
+  existing rewind history.
+- Buffer link diagnostics between periodic flushes instead of forcing disk I/O
+  after every emulated frame.
+
 ## [0.30.2] - 2026-09-05
 
 ### Windows updater
