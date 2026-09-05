@@ -294,7 +294,7 @@ void show_lan_hosts(SDL_Window* window,
             message << peer.name << " — " << peer.address << ':' << peer.port
                     << '\n';
         }
-        message << "\nSet link.RemoteHost to one of these addresses before joining.";
+        message << "\nThe first host is selected for the next Join command.";
     }
     static_cast<void>(SDL_ShowSimpleMessageBox(
         SDL_MESSAGEBOX_INFORMATION, "LAN link discovery", message.str().c_str(),

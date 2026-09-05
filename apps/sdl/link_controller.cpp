@@ -40,6 +40,13 @@ void process_link_requests(LinkControlContext context) {
                 scanner.poll();
                 const auto peers = scanner.take_peers();
                 scanner.stop();
+                if (!peers.empty()) {
+                    // Keep the discovery flow one step: the next Join
+                    // command uses the first matching peer without requiring
+                    // users to transcribe an address from the dialog.
+                    context.remote_options.host = peers.front().address;
+                    context.remote_options.port = peers.front().port;
+                }
                 show_lan_hosts(context.sdl.window, peers);
             }
         }

@@ -810,7 +810,7 @@ int main(int argc, char** argv) {
 #endif
         const auto preference_path = preference_directory();
         const auto app_settings = load_app_settings(preference_path);
-        const RemoteLinkOptions remote_link_options{
+        RemoteLinkOptions remote_link_options{
             app_settings.link_remote_host, app_settings.link_remote_bind,
             app_settings.link_remote_port, app_settings.link_lan_discovery};
         const auto plugin_options =
