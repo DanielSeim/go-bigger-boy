@@ -258,6 +258,7 @@ if(GAMEBOY_BUILD_SDL)
                 apps/sdl/presentation.cpp
                 apps/sdl/frame_pacer.cpp
                 apps/sdl/emulation_session.cpp
+                apps/sdl/remote_link_controller.cpp
                 apps/sdl/event_dispatch.cpp
                 apps/sdl/event_policy.cpp
                 apps/sdl/event_lifecycle.cpp

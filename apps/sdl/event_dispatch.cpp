@@ -778,6 +778,50 @@ void handle_touch_event(const SDL_Event& event, SdlEventContext& context) {
         return;
     }
 
+    // The Android menu is a full-window overlay rather than part of the
+    // 160x144 Game Boy viewport. Resolve its actions on finger-up so a drag
+    // cannot accidentally start a link or leave the game.
+    if (sdl.android_menu_visible) {
+        if (event.type == SDL_EVENT_FINGER_UP ||
+            event.type == SDL_EVENT_FINGER_CANCELED) {
+            if (event.type == SDL_EVENT_FINGER_UP) {
+                int width = 1;
+                int height = 1;
+                static_cast<void>(SDL_GetWindowSize(sdl.window, &width, &height));
+                const auto pixel_x = touch_x * static_cast<float>(width);
+                const auto pixel_y = touch_y * static_cast<float>(height);
+                const auto panel_width = std::min(
+                    static_cast<float>(width) * 0.86F, 360.0F);
+                const auto panel_x = (static_cast<float>(width) - panel_width) *
+                                     0.5F;
+                const auto row_height = std::max(36.0F,
+                                                 touch_game_scale(sdl) * 15.0F);
+                const auto panel_y = std::max(24.0F,
+                                              static_cast<float>(height) * 0.12F);
+                if (pixel_x >= panel_x && pixel_x <= panel_x + panel_width &&
+                    pixel_y >= panel_y &&
+                    pixel_y < panel_y + row_height * 7.0F) {
+                    const auto row = static_cast<unsigned>(
+                        (pixel_y - panel_y) / row_height);
+                    switch (row) {
+                    case 0: context.remote_host_requested = true; break;
+                    case 1: context.remote_join_requested = true; break;
+                    case 2: context.remote_discover_requested = true; break;
+                    case 3: context.link_retry_requested = true; break;
+                    case 4: context.remote_stop_requested = true; break;
+                    case 5:
+                        if (context.open_library) context.open_library();
+                        break;
+                    default: break;
+                    }
+                }
+            }
+            sdl.android_menu_visible = false;
+            clear_touch_buttons(context.core.get(), sdl);
+        }
+        return;
+    }
+
     const auto existing = std::find_if(
         sdl.touches.begin(), sdl.touches.end(),
         [finger](const SdlResources::TouchPoint& point) {
@@ -824,7 +868,7 @@ void handle_touch_event(const SDL_Event& event, SdlEventContext& context) {
     if (event.type == SDL_EVENT_FINGER_DOWN &&
         android_menu_touch_hit(sdl, touch_x, touch_y)) {
         clear_touch_buttons(context.core.get(), sdl);
-        if (context.open_library) context.open_library();
+        sdl.android_menu_visible = true;
     }
     refresh_touch_buttons(context.core.get(), sdl);
 }

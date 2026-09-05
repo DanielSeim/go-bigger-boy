@@ -65,6 +65,7 @@ class SdlResources {
     };
     std::vector<TouchPoint> touches;
     std::array<bool, 8> touch_buttons{};
+    bool android_menu_visible{};
     TouchControlSettings touch_settings;
     std::filesystem::file_time_type touch_settings_write_time{};
     bool touch_settings_write_time_valid{};

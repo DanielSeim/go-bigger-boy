@@ -5,6 +5,7 @@
 #include "gameboy/lan_discovery.hpp"
 
 #include <cstdint>
+#include <chrono>
 #include <string>
 
 namespace gbb::sdl {
@@ -26,6 +27,8 @@ struct RemoteLinkSession {
     bool enabled{};
     bool hosting{};
     bool diagnostics{};
+    bool scanning{};
+    std::chrono::steady_clock::time_point scan_deadline{};
 
     [[nodiscard]] bool active() const noexcept { return enabled; }
 };

@@ -60,6 +60,7 @@ void stop_local_link_session(
 void retry_local_link_session(gameboy::Emulator& first,
                               gameboy::Emulator& second,
                               gameboy::LinkSession& session) noexcept;
+#endif
 
 void start_remote_link_session(gameboy::Emulator& emulator,
                                RemoteLinkSession& remote,
@@ -73,6 +74,5 @@ void stop_remote_link_session(gameboy::Emulator& emulator,
 void retry_remote_link_session(gameboy::Emulator& emulator,
                                RemoteLinkSession& remote,
                                const RemoteLinkOptions& options);
-#endif
 
 } // namespace gbb::sdl

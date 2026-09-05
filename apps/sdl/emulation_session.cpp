@@ -110,6 +110,23 @@ void load_rom(const std::string& path,
     core = std::move(replacement);
 }
 
+void reset_pokemon_link_handshake(gameboy::Emulator& emulator) {
+    // The Gen I Cable Club keeps its negotiated role in HRAM in addition to
+    // FF01/FF02. A linked player starts from a copy of the current game state,
+    // so clear that transient protocol state before attaching the cable.
+    constexpr std::uint16_t serial_status = 0xFFAA;
+    emulator.bus().write8(serial_status, 0xFF);
+    emulator.bus().write8(0xFFAB, 0x00); // hSerialReceivedNewData
+    emulator.bus().write8(0xFFAC, 0x00); // hSerialSendData
+    emulator.bus().write8(0xFFAD, 0x00); // hSerialReceiveData
+    emulator.bus().write8(0xFF01, 0x02);
+    emulator.bus().write8(0xFF02, 0x80);
+    emulator.bus().write8(0xFFFF, static_cast<std::uint8_t>(
+                                      emulator.bus().read8(0xFFFF) | 0x08U));
+    emulator.bus().write8(0xFF0F, static_cast<std::uint8_t>(
+                                      emulator.bus().read8(0xFF0F) & ~0x08U));
+}
+
 #ifndef __ANDROID__
 std::unique_ptr<gameboy::Emulator> load_link_player(
     const std::string& path, const gameboy::DisplayPalette& palette) {
@@ -409,23 +426,6 @@ void trace_remote_frame(const gameboy::Emulator& emulator,
     output.flush();
 }
 
-void reset_pokemon_link_handshake(gameboy::Emulator& emulator) {
-    // The Gen I Cable Club keeps its negotiated role in HRAM in addition to
-    // FF01/FF02. A linked player starts from a copy of the current game state,
-    // so clear that transient protocol state before attaching the cable.
-    constexpr std::uint16_t serial_status = 0xFFAA;
-    emulator.bus().write8(serial_status, 0xFF);
-    emulator.bus().write8(0xFFAB, 0x00); // hSerialReceivedNewData
-    emulator.bus().write8(0xFFAC, 0x00); // hSerialSendData
-    emulator.bus().write8(0xFFAD, 0x00); // hSerialReceiveData
-    emulator.bus().write8(0xFF01, 0x02);
-    emulator.bus().write8(0xFF02, 0x80);
-    emulator.bus().write8(0xFFFF, static_cast<std::uint8_t>(
-                                      emulator.bus().read8(0xFFFF) | 0x08U));
-    emulator.bus().write8(0xFF0F, static_cast<std::uint8_t>(
-                                      emulator.bus().read8(0xFF0F) & ~0x08U));
-}
-
 void start_local_link_session(
     const std::string& path, gameboy::Emulator& first,
     std::unique_ptr<gameboy::Emulator>& second,
@@ -563,6 +563,8 @@ void retry_local_link_session(gameboy::Emulator& first,
     release_all_buttons(second);
 }
 
+#endif // __ANDROID__
+
 void start_remote_link_session(gameboy::Emulator& emulator,
                                RemoteLinkSession& remote,
                                const RemoteLinkOptions& options,
@@ -606,6 +608,7 @@ void start_remote_link_session(gameboy::Emulator& emulator,
         }
     }
     remote.enabled = true;
+#ifndef __ANDROID__
     if (link_diagnostics) {
         start_link_trace(preference_path, hosting ? "host" : "join");
         if (link_trace.is_open()) {
@@ -623,13 +626,24 @@ void start_remote_link_session(gameboy::Emulator& emulator,
                 message, window));
         }
     }
+#else
+    // Android does not expose the desktop trace-file dialog. The transport
+    // remains fully functional; diagnostics can be added through the native
+    // Android logging bridge without blocking the emulation thread.
+    static_cast<void>(preference_path);
+    static_cast<void>(link_diagnostics);
+    static_cast<void>(window);
+#endif
 }
 
 void stop_remote_link_session(gameboy::Emulator& emulator,
                               RemoteLinkSession& remote) noexcept {
+#ifndef __ANDROID__
     stop_link_trace();
+#endif
     remote.endpoint.detach();
     remote.discovery.stop();
+    remote.scanning = false;
     remote.channel.close();
     remote.enabled = false;
     remote.diagnostics = false;
@@ -666,7 +680,6 @@ void retry_remote_link_session(gameboy::Emulator& emulator,
     remote.endpoint.attach(emulator.bus().serial_port(), remote.channel,
                            emulator.link_compatibility_id());
 }
-#endif
 
 
 

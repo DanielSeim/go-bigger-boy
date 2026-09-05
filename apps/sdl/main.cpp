@@ -42,6 +42,7 @@
 #include "android_bridge.hpp"
 #endif
 #include "remote_link_session.hpp"
+#include "remote_link_controller.hpp"
 #include "settings_model.hpp"
 #include "settings_persistence.hpp"
 #ifndef __ANDROID__
@@ -127,10 +128,10 @@ using gbb::sdl::trace_remote_frame;
 using gbb::sdl::start_local_link_session;
 using gbb::sdl::stop_local_link_session;
 using gbb::sdl::retry_local_link_session;
+#endif
 using gbb::sdl::start_remote_link_session;
 using gbb::sdl::stop_remote_link_session;
 using gbb::sdl::retry_remote_link_session;
-#endif
 using gbb::sdl::VoxelRenderContext;
 using gbb::sdl::render_voxel_diorama;
 using gbb::sdl::FrameRenderContext;
@@ -199,6 +200,7 @@ using gbb::sdl::process_link_requests;
 using gbb::sdl::handle_desktop_tool_event;
 using gbb::sdl::handle_desktop_voxel_mouse_event;
 #endif
+using gbb::sdl::process_remote_link_requests;
 #ifdef _WIN32
 using gbb::sdl::handle_desktop_menu_event;
 #endif
@@ -560,6 +562,43 @@ void present_menu_button(SdlResources& sdl) {
     const auto button_y = button_rect.y;
     const auto button_width = button_rect.w;
     const auto button_height = button_rect.h;
+
+    if (sdl.android_menu_visible) {
+        int width = 1;
+        int height = 1;
+        static_cast<void>(SDL_GetWindowSize(sdl.window, &width, &height));
+        const auto panel_width = std::min(static_cast<float>(width) * 0.86F,
+                                          360.0F);
+        const auto panel_x = (static_cast<float>(width) - panel_width) * 0.5F;
+        const auto row_height = std::max(36.0F, touch_game_scale(sdl) * 15.0F);
+        const auto panel_y = std::max(24.0F, static_cast<float>(height) * 0.12F);
+        const SDL_FRect panel{panel_x, panel_y, panel_width, row_height * 7.0F};
+        static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
+                                                     SDL_BLENDMODE_BLEND));
+        static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 16, 20, 16, 235));
+        static_cast<void>(SDL_RenderFillRect(sdl.renderer, &panel));
+        static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 220, 235, 220, 255));
+        static_cast<void>(SDL_RenderRect(sdl.renderer, &panel));
+        constexpr std::array<const char*, 7> labels{{
+            "Host TCP link", "Join TCP link", "Discover LAN hosts",
+            "Retry link", "Stop link", "Open library", "Close menu"}};
+        for (std::size_t index = 0; index < labels.size(); ++index) {
+            const auto y = panel_y + row_height * static_cast<float>(index);
+            if (index != 0) {
+                static_cast<void>(SDL_SetRenderDrawColor(
+                    sdl.renderer, 80, 100, 80, 220));
+                const SDL_FRect divider{panel_x, y, panel_width, 1.0F};
+                static_cast<void>(SDL_RenderFillRect(sdl.renderer, &divider));
+            }
+            static_cast<void>(SDL_SetRenderDrawColor(
+                sdl.renderer, 248, 252, 255, 255));
+            static_cast<void>(SDL_RenderDebugText(
+                sdl.renderer, panel_x + 14.0F,
+                y + std::max(10.0F, (row_height - 8.0F) * 0.5F), labels[index]));
+        }
+        static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
+                                                     SDL_BLENDMODE_NONE));
+    }
 #else
     const auto button_x = 3.0F;
     const auto button_y = 3.0F;
@@ -813,6 +852,14 @@ int main(int argc, char** argv) {
         RemoteLinkOptions remote_link_options{
             app_settings.link_remote_host, app_settings.link_remote_bind,
             app_settings.link_remote_port, app_settings.link_lan_discovery};
+#ifdef __ANDROID__
+        // A phone hosting a LAN session must listen on the Wi-Fi interface.
+        // Preserve an explicit user choice, but migrate the old desktop
+        // loopback default so a fresh Android install is reachable.
+        if (remote_link_options.bind_address == "127.0.0.1") {
+            remote_link_options.bind_address = "0.0.0.0";
+        }
+#endif
         const auto plugin_options =
             load_plugin_discovery_options(preference_path);
         auto plugin_catalog = gbb::PluginCatalog::discover(plugin_options);
@@ -1180,6 +1227,9 @@ int main(int argc, char** argv) {
                 , [&]() { show_about(sdl.window); }
                 , [&]() {
 #ifdef __ANDROID__
+                    if (remote_link.active() && emulator != nullptr) {
+                        stop_remote_link_session(*emulator, remote_link);
+                    }
                     leave_android_game(core, emulator, sdl, dashboard_visible,
                                        paused, fast_forward, rewind,
                                        rewind_history, running);
@@ -1213,6 +1263,13 @@ int main(int argc, char** argv) {
                 remote_join_requested, remote_discover_requested,
                 link_retry_requested,
                 link_toggle_requested, automatic_local_retry_used, rewind});
+#else
+            process_remote_link_requests({
+                services, emulator, remote_link, remote_link_options, sdl,
+                preference_path, link_diagnostics, remote_stop_requested,
+                remote_host_requested, remote_join_requested,
+                remote_discover_requested, link_retry_requested, rewind,
+                rewind_history});
 #endif
 
             std::optional<std::string> dialog_error;
@@ -1320,10 +1377,10 @@ int main(int argc, char** argv) {
 #endif
                 running) {
                 try {
-#ifndef __ANDROID__
-                    if (remote_link.active()) {
+                    if (remote_link.active() && emulator != nullptr) {
                         stop_remote_link_session(*emulator, remote_link);
                     }
+#ifndef __ANDROID__
                     if (link_emulator != nullptr) {
                         stop_local_link_session(*emulator, link_emulator,
                                                 link_session, link_first_endpoint,
@@ -1411,9 +1468,7 @@ int main(int argc, char** argv) {
 
             sdl.camera.update(
                 services.get(gbb::CoreCapability::camera));
-#ifndef __ANDROID__
             if (remote_link.active()) remote_link.endpoint.poll();
-#endif
 #ifndef __ANDROID__
             if (input_movie.replaying()) {
                 fast_forward = false;
@@ -1511,7 +1566,6 @@ int main(int argc, char** argv) {
                                    !emulator->frame_ready()) {
                                 const auto stepped = step_emulator();
                                 cycles += stepped;
-#ifndef __ANDROID__
                                 if (remote_link.active()) {
                                     remote_poll_cycles += stepped;
                                     // Keep network serial edges well below a
@@ -1524,11 +1578,8 @@ int main(int argc, char** argv) {
                                         remote_poll_cycles = 0;
                                     }
                                 }
-#endif
                             }
-#ifndef __ANDROID__
                             if (remote_link.active()) remote_link.endpoint.poll();
-#endif
                         }
                         if (core->frame_ready()) core->consume_frame();
                         if (link_emulator != nullptr &&
@@ -1636,10 +1687,10 @@ int main(int argc, char** argv) {
                                     link_first_endpoint, link_second_endpoint,
                                     sdl);
         }
+#endif
         if (emulator != nullptr && remote_link.active()) {
             stop_remote_link_session(*emulator, remote_link);
         }
-#endif
         flush_battery_safely(core.get());
     } catch (const std::exception& error) {
         gbb::log_frontend_error(std::string("SDL frontend error: ") +

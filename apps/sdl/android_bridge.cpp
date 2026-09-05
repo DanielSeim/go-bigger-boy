@@ -9,6 +9,7 @@
 #include <jni.h>
 
 #include <array>
+#include <algorithm>
 #include <cstdint>
 #include <filesystem>
 #include <iomanip>
@@ -205,6 +206,84 @@ Java_com_danielseim_gbb_LibraryActivity_nativeSetTouchMenuTopRight(
     save_touch_menu_position(std::filesystem::u8path(raw_directory),
                              top_right == JNI_TRUE);
     environment->ReleaseStringUTFChars(directory, raw_directory);
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_danielseim_gbb_LibraryActivity_nativeLinkRemoteHost(
+    JNIEnv* environment, jclass, jstring directory) {
+    const auto* raw_directory =
+        environment->GetStringUTFChars(directory, nullptr);
+    if (raw_directory == nullptr) return nullptr;
+    const auto value = load_app_settings(
+        std::filesystem::u8path(raw_directory)).link_remote_host;
+    environment->ReleaseStringUTFChars(directory, raw_directory);
+    return environment->NewStringUTF(value.c_str());
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_danielseim_gbb_LibraryActivity_nativeLinkRemoteBind(
+    JNIEnv* environment, jclass, jstring directory) {
+    const auto* raw_directory =
+        environment->GetStringUTFChars(directory, nullptr);
+    if (raw_directory == nullptr) return nullptr;
+    auto value = load_app_settings(
+        std::filesystem::u8path(raw_directory)).link_remote_bind;
+    if (value == "127.0.0.1") value = "0.0.0.0";
+    environment->ReleaseStringUTFChars(directory, raw_directory);
+    return environment->NewStringUTF(value.c_str());
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_danielseim_gbb_LibraryActivity_nativeLinkRemotePort(
+    JNIEnv* environment, jclass, jstring directory) {
+    const auto* raw_directory =
+        environment->GetStringUTFChars(directory, nullptr);
+    if (raw_directory == nullptr) return 8765;
+    const auto value = load_app_settings(
+        std::filesystem::u8path(raw_directory)).link_remote_port;
+    environment->ReleaseStringUTFChars(directory, raw_directory);
+    return static_cast<jint>(value);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_danielseim_gbb_LibraryActivity_nativeLinkLanDiscovery(
+    JNIEnv* environment, jclass, jstring directory) {
+    const auto* raw_directory =
+        environment->GetStringUTFChars(directory, nullptr);
+    if (raw_directory == nullptr) return JNI_FALSE;
+    const auto value = load_app_settings(
+        std::filesystem::u8path(raw_directory)).link_lan_discovery;
+    environment->ReleaseStringUTFChars(directory, raw_directory);
+    return value ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_danielseim_gbb_LibraryActivity_nativeSetLinkSettings(
+    JNIEnv* environment, jclass, jstring directory, jstring host,
+    jstring bind, const jint port, const jboolean discovery) {
+    const auto* raw_directory =
+        environment->GetStringUTFChars(directory, nullptr);
+    const auto* raw_host = environment->GetStringUTFChars(host, nullptr);
+    const auto* raw_bind = environment->GetStringUTFChars(bind, nullptr);
+    if (raw_directory == nullptr || raw_host == nullptr || raw_bind == nullptr) {
+        if (raw_directory != nullptr)
+            environment->ReleaseStringUTFChars(directory, raw_directory);
+        if (raw_host != nullptr)
+            environment->ReleaseStringUTFChars(host, raw_host);
+        if (raw_bind != nullptr)
+            environment->ReleaseStringUTFChars(bind, raw_bind);
+        return;
+    }
+    auto settings = load_app_settings(std::filesystem::u8path(raw_directory));
+    settings.link_remote_host = raw_host;
+    settings.link_remote_bind = raw_bind;
+    settings.link_remote_port = static_cast<std::uint16_t>(
+        std::clamp<jint>(port, 1, 65535));
+    settings.link_lan_discovery = discovery == JNI_TRUE;
+    write_portable_settings(std::filesystem::u8path(raw_directory), settings);
+    environment->ReleaseStringUTFChars(directory, raw_directory);
+    environment->ReleaseStringUTFChars(host, raw_host);
+    environment->ReleaseStringUTFChars(bind, raw_bind);
 }
 
 extern "C" JNIEXPORT jfloatArray JNICALL

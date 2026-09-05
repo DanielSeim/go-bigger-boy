@@ -50,6 +50,12 @@ public final class LibraryActivity extends Activity {
     static native void nativeResetTouchControlLayout(String directory);
     static native String nativeVideoMode(String directory);
     static native void nativeSetVideoMode(String directory, String mode);
+    static native String nativeLinkRemoteHost(String directory);
+    static native String nativeLinkRemoteBind(String directory);
+    static native int nativeLinkRemotePort(String directory);
+    static native boolean nativeLinkLanDiscovery(String directory);
+    static native void nativeSetLinkSettings(String directory, String host,
+            String bind, int port, boolean discovery);
 
     private ArtworkService artworkService;
     private LinearLayout content;

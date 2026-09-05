@@ -10,6 +10,8 @@ import android.view.Window;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.EditText;
+import android.text.InputType;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
@@ -215,6 +217,67 @@ final class SettingsScreen {
             LibraryActivity.nativeResetTouchControlLayout(settingsDirectory);
         });
         touchCard.addView(resetTouch);
+
+        final LinearLayout linkCard = sectionCard("LAN link cable");
+        linkCard.addView(activity.text(
+                "Connect two devices running compatible Game Boy games over the same network. " +
+                "Use the in-game menu to host, join, or discover a host.",
+                15, Color.DKGRAY));
+        final EditText host = linkField("Host address",
+                LibraryActivity.nativeLinkRemoteHost(settingsDirectory),
+                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        final EditText bind = linkField("Host bind address",
+                LibraryActivity.nativeLinkRemoteBind(settingsDirectory),
+                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        final EditText port = linkField("TCP port",
+                Integer.toString(LibraryActivity.nativeLinkRemotePort(
+                        settingsDirectory)), InputType.TYPE_CLASS_NUMBER);
+        linkCard.addView(host);
+        linkCard.addView(bind);
+        linkCard.addView(port);
+        final Switch discovery = new Switch(activity);
+        discovery.setText("Advertise and discover hosts on the LAN");
+        discovery.setTextSize(16);
+        discovery.setPadding(0, activity.dp(8), 0, activity.dp(8));
+        discovery.setChecked(LibraryActivity.nativeLinkLanDiscovery(
+                settingsDirectory));
+        linkCard.addView(discovery);
+        final Button saveLink = new Button(activity);
+        saveLink.setText("Save link settings");
+        saveLink.setOnClickListener(view -> {
+            final int selectedPort;
+            try {
+                selectedPort = Integer.parseInt(port.getText().toString().trim());
+            } catch (NumberFormatException error) {
+                Toast.makeText(activity, "TCP port must be 1–65535",
+                        Toast.LENGTH_SHORT).show();
+                return;
+            }
+            if (selectedPort < 1 || selectedPort > 65535 ||
+                    host.getText().toString().trim().isEmpty() ||
+                    bind.getText().toString().trim().isEmpty()) {
+                Toast.makeText(activity, "Enter host, bind address, and a valid port",
+                        Toast.LENGTH_SHORT).show();
+                return;
+            }
+            LibraryActivity.nativeSetLinkSettings(settingsDirectory,
+                    host.getText().toString().trim(),
+                    bind.getText().toString().trim(), selectedPort,
+                    discovery.isChecked());
+            Toast.makeText(activity, "Link settings saved",
+                    Toast.LENGTH_SHORT).show();
+        });
+        linkCard.addView(saveLink);
+    }
+
+    private EditText linkField(String hint, String value, int inputType) {
+        final EditText field = new EditText(activity);
+        field.setHint(hint);
+        field.setText(value == null ? "" : value);
+        field.setSingleLine(true);
+        field.setInputType(inputType);
+        field.setPadding(0, activity.dp(8), 0, activity.dp(4));
+        return field;
     }
 
     private LinearLayout sectionCard(String title) {
