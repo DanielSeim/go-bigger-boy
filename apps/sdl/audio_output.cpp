@@ -10,9 +10,6 @@
 #include <string>
 
 namespace gbb::sdl {
-namespace {
-constexpr unsigned fast_forward_factor = 4;
-}
 
 AudioOutput::AudioOutput() {
     if (SDL_InitSubSystem(SDL_INIT_AUDIO)) {
@@ -51,10 +48,11 @@ int AudioOutput::queued_bytes() const noexcept {
 }
 
 void AudioOutput::submit(gbb::EmulatorCore* core,
-                         const bool fast_forward) {
+                         const bool fast_forward,
+                         const unsigned fast_forward_factor) {
     if (core == nullptr) return;
     auto samples = core->take_audio_samples();
-    if (fast_forward && !samples.empty()) {
+    if (fast_forward && fast_forward_factor > 1 && !samples.empty()) {
         samples = gbb::downsample_audio_box(samples, 2, fast_forward_factor);
     }
     if (stream_ == nullptr || samples.empty()) return;

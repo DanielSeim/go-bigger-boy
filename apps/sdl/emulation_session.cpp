@@ -606,6 +606,7 @@ void start_remote_link_session(gameboy::Emulator& emulator,
         }
     }
     remote.enabled = true;
+    remote.next_pending_poll = {};
 #ifndef __ANDROID__
     if (link_diagnostics) {
         start_link_trace(preference_path, hosting ? "host" : "join");
@@ -644,6 +645,7 @@ void stop_remote_link_session(gameboy::Emulator& emulator,
     remote.scanning = false;
     remote.channel.close();
     remote.enabled = false;
+    remote.next_pending_poll = {};
     remote.diagnostics = false;
     emulator.bus().connect_printer(true);
 }
@@ -668,6 +670,7 @@ void retry_remote_link_session(gameboy::Emulator& emulator,
                                emulator.link_compatibility_id());
         throw std::runtime_error("Could not retry the TCP link session.");
     }
+    remote.next_pending_poll = {};
     if (remote.hosting && options.lan_discovery &&
         !remote.discovery.start_host(options.port,
                                      emulator.link_compatibility_id(),

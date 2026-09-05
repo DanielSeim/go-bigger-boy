@@ -4,8 +4,8 @@
 #include "gameboy/tcp_serial_endpoint.hpp"
 #include "gameboy/lan_discovery.hpp"
 
-#include <cstdint>
 #include <chrono>
+#include <cstdint>
 #include <string>
 
 namespace gbb::sdl {
@@ -21,6 +21,8 @@ struct RemoteLinkOptions {
 // of main.cpp makes it possible for another desktop frontend to reuse the
 // same endpoint setup without depending on SDL's event loop implementation.
 struct RemoteLinkSession {
+    static constexpr auto pending_poll_interval = std::chrono::milliseconds(25);
+
     gameboy::TcpLinkChannel channel;
     gameboy::TcpSerialEndpoint endpoint;
     gameboy::LanDiscovery discovery;
@@ -29,6 +31,7 @@ struct RemoteLinkSession {
     bool diagnostics{};
     bool scanning{};
     std::chrono::steady_clock::time_point scan_deadline{};
+    std::chrono::steady_clock::time_point next_pending_poll{};
 
     [[nodiscard]] bool active() const noexcept { return enabled; }
 
@@ -40,6 +43,23 @@ struct RemoteLinkSession {
     [[nodiscard]] bool transport_connected() const noexcept {
         return enabled &&
                channel.state() == gameboy::TcpLinkChannel::State::connected;
+    }
+
+    // Listening and non-blocking connection setup do not need the
+    // instruction-level poll rate used by an established serial link. Keep
+    // the pending state responsive while avoiding a socket syscall on every
+    // video frame (particularly visible on Windows hosts with no peer yet).
+    void poll() noexcept {
+        if (!enabled) return;
+        if (!transport_connected()) {
+            const auto now = std::chrono::steady_clock::now();
+            if (next_pending_poll != std::chrono::steady_clock::time_point{} &&
+                now < next_pending_poll) {
+                return;
+            }
+            next_pending_poll = now + pending_poll_interval;
+        }
+        endpoint.poll();
     }
 };
 

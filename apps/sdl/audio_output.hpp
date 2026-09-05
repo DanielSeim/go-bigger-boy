@@ -19,7 +19,8 @@ class AudioOutput {
 
     void close() noexcept;
     void clear() noexcept;
-    void submit(gbb::EmulatorCore* core, bool fast_forward = false);
+    void submit(gbb::EmulatorCore* core, bool fast_forward = false,
+                unsigned fast_forward_factor = 4);
     [[nodiscard]] bool available() const noexcept { return stream_ != nullptr; }
     [[nodiscard]] int queued_bytes() const noexcept;
 

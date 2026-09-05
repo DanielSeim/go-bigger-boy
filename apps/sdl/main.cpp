@@ -336,7 +336,31 @@ constexpr std::size_t maximum_rewind_frames = 180;
 // The history still retains 180 snapshots, so the available rewind window is
 // longer; only the rewind step granularity changes from one frame to four.
 constexpr unsigned rewind_capture_interval = 4;
-constexpr unsigned fast_forward_factor = 4;
+constexpr unsigned fast_forward_max_factor = 4;
+constexpr unsigned fast_forward_default_factor = 2;
+// TCP serial responses are serviced from the emulation thread. Polling every
+// 64 CPU cycles is unnecessarily syscall-heavy on Windows (over one thousand
+// polls per video frame); 256 cycles is still below a tenth of a millisecond
+// at the Game Boy clock and keeps link-edge latency comfortably sub-frame.
+constexpr unsigned remote_poll_cycle_interval = 256;
+
+// Four frames per presentation is only useful when the core can finish that
+// batch inside one normal frame interval. Slower Windows machines otherwise
+// present at 20–30 Hz while the shortcut is held, which feels like a global
+// slowdown despite the emulator doing more work. Keep the common case at two
+// frames and allow faster cores to scale up to the documented four-frame
+// maximum. The measurements are reset every diagnostic window, so a ROM or
+// renderer change naturally re-evaluates the choice.
+[[nodiscard]] constexpr unsigned fast_forward_batch_factor(
+    const std::uint64_t step_count,
+    const std::uint64_t step_total_us) noexcept {
+    if (step_count == 0) return fast_forward_default_factor;
+    const auto average_us = step_total_us / step_count;
+    if (average_us >= 13'000) return 1;
+    if (average_us >= 7'000) return 2;
+    if (average_us >= 4'000) return 3;
+    return fast_forward_max_factor;
+}
 using RewindHistory = std::deque<std::vector<std::uint8_t>>;
 
 
@@ -429,9 +453,18 @@ bool offer_update(const gbb_desktop::UpdateInfo& update,
         {SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, 1, "Update now"},
         {SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, "Later"},
     }};
+    // The native Windows library dashboard starts with the SDL window hidden.
+    // Passing that hidden window as the message-box owner can make SDL briefly
+    // show and activate it before displaying the update prompt. A top-level
+    // message box is still modal and foregrounded without a hidden owner.
+    auto* const parent = sdl.window != nullptr &&
+                                 (SDL_GetWindowFlags(sdl.window) &
+                                  SDL_WINDOW_HIDDEN) == 0
+                             ? sdl.window
+                             : nullptr;
     const SDL_MessageBoxData box{
         SDL_MESSAGEBOX_INFORMATION,
-        sdl.window,
+        parent,
         "Go Bigger Boy update available",
         message.c_str(),
         static_cast<int>(buttons.size()),
@@ -1634,7 +1667,7 @@ int main(int argc, char** argv) {
 
             sdl.camera.update(
                 services.get(gbb::CoreCapability::camera));
-            if (remote_link.active()) remote_link.endpoint.poll();
+            remote_link.poll();
             // Starting a TCP host puts the channel into a listening state. It
             // is still an active session for the UI, but until a peer is
             // connected it should follow the efficient ordinary core path.
@@ -1683,6 +1716,7 @@ int main(int argc, char** argv) {
 #else
             constexpr auto debugger_paused = false;
 #endif
+            auto emulated_frame_batch_factor = 1U;
             if (core && !debugger_stepped && !paused && !debugger_paused &&
                 !dashboard_visible && !configuring
 #ifndef __ANDROID__
@@ -1705,7 +1739,12 @@ int main(int argc, char** argv) {
                     // rewind state capture for that session. Fast-forward
                     // also suppresses snapshots because it already executes
                     // multiple frames per presentation.
-                    const auto frames = fast_forward ? fast_forward_factor : 1U;
+                    emulated_frame_batch_factor =
+                        fast_forward
+                            ? fast_forward_batch_factor(core_step_count,
+                                                        core_step_total_us)
+                            : 1U;
+                    const auto frames = emulated_frame_batch_factor;
                     for (auto frame = 0U; frame < frames && running; ++frame) {
 #ifndef __ANDROID__
                         if (services.cheats() != nullptr) {
@@ -1759,10 +1798,19 @@ int main(int argc, char** argv) {
 #endif
                         ) {
                             // Keep the ordinary single-console path on the
-                            // shared runtime contract. Link transport polling
-                            // and input replay retain their specialized loops.
-                            static_cast<void>(gbb::advance_to_frame(
-                                *core, cycles_per_frame));
+                            // shared runtime contract. Use the concrete
+                            // emulator adapter when available so the built-in
+                            // core does not pay an extra virtual dispatch for
+                            // every CPU instruction (especially noticeable
+                            // during fast-forward). Plug-in cores continue to
+                            // use the generic contract.
+                            if (emulator != nullptr) {
+                                static_cast<void>(gbb::advance_to_frame(
+                                    *emulator, cycles_per_frame));
+                            } else {
+                                static_cast<void>(gbb::advance_to_frame(
+                                    *core, cycles_per_frame));
+                            }
                         } else {
                             unsigned cycles = 0;
                             unsigned remote_poll_cycles = 0;
@@ -1777,7 +1825,8 @@ int main(int argc, char** argv) {
                                     // 64 CPU cycles avoids the per-frame delay
                                     // that can make Pokémon's Cable Club probe
                                     // time out even on loopback.
-                                    if (remote_poll_cycles >= 64) {
+                                    if (remote_poll_cycles >=
+                                        remote_poll_cycle_interval) {
                                         remote_link.endpoint.poll();
                                         remote_poll_cycles = 0;
                                     }
@@ -1823,7 +1872,12 @@ int main(int argc, char** argv) {
                               !dashboard_visible &&
                               !configuring &&
                               !dialog_active(dialog));
-            sdl.audio.submit(core.get(), fast_forward);
+            // Keep accelerated audio aligned with the number of frames
+            // actually emulated in this presentation tick. Adaptive batches
+            // must not use a fixed divisor or playback would become quiet or
+            // slow whenever the batch is reduced.
+            sdl.audio.submit(core.get(), fast_forward,
+                             emulated_frame_batch_factor);
             if (link_emulator != nullptr) {
                 // Player two currently shares the primary audio device. Drain
                 // its mixer buffer so it cannot grow stale and add latency or
@@ -1919,6 +1973,8 @@ int main(int argc, char** argv) {
                                        : core_step_total_us / core_step_count) +
                     " core_step_max_us=" +
                     std::to_string(core_step_max_us) +
+                    " fast_forward_factor=" +
+                    std::to_string(emulated_frame_batch_factor) +
                     " audio_us=" +
                     std::to_string(microseconds_between(
                         audio_started, audio_finished)) +

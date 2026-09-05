@@ -205,7 +205,7 @@ void show_help(SDL_Window* window, const InputBindings& bindings) {
         "Ctrl+1 through Ctrl+9: Open recent ROM\n"
         "Configured SaveState key: Save state\n"
         "Configured LoadState key: Load state\n"
-        "Configured FastForward key: Hold for 4x speed\n"
+        "Configured FastForward key: Hold for up to 4x speed\n"
         "Configured Rewind key: Hold to rewind\n"
         "F12: Open/close debugger\n"
         "Debugger F5: Run/pause\n"

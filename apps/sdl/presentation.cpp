@@ -73,7 +73,13 @@ void present_frame(const PresentationContext& context) {
                 presentation_error("Could not present framebuffer");
             }
         }
-        if (context.remote_link != nullptr && context.remote_link->active()) {
+        // A listening host has no serial traffic yet. Avoid rebuilding and
+        // drawing the diagnostic strip on every frame while it waits for a
+        // peer; on Windows that otherwise adds measurable renderer work to
+        // the ordinary emulation path. Once the transport is established the
+        // strip becomes useful again for link-state and counter diagnostics.
+        if (context.remote_link != nullptr &&
+            context.remote_link->transport_connected()) {
             FrameRenderContext frame_context{
                 sdl.renderer, sdl.texture, sdl.link_texture, sdl.video_mode};
             if (!present_remote_link_status(frame_context,
