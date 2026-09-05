@@ -112,6 +112,7 @@ std::string sanitize_name(std::string value) {
 LanDiscovery::~LanDiscovery() { stop(); }
 
 bool LanDiscovery::start_host(const std::uint16_t tcp_port,
+                              const std::uint64_t compatibility_id,
                               const std::uint64_t rom_fingerprint,
                               const std::string& name) noexcept {
     stop();
@@ -137,12 +138,20 @@ bool LanDiscovery::start_host(const std::uint16_t tcp_port,
     socket_ = as_handle(socket);
     mode_ = Mode::host;
     tcp_port_ = tcp_port;
+    compatibility_id_ = compatibility_id;
     rom_fingerprint_ = rom_fingerprint;
     name_ = sanitize_name(name);
     return true;
 }
 
-bool LanDiscovery::start_scan(const std::uint64_t rom_fingerprint) noexcept {
+bool LanDiscovery::start_host(const std::uint16_t tcp_port,
+                              const std::uint64_t rom_fingerprint,
+                              const std::string& name) noexcept {
+    return start_host(tcp_port, rom_fingerprint, rom_fingerprint, name);
+}
+
+bool LanDiscovery::start_scan(const std::uint64_t compatibility_id,
+                              const std::uint64_t rom_fingerprint) noexcept {
     stop();
     if (!sockets_ready()) return false;
     const auto socket = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -165,10 +174,11 @@ bool LanDiscovery::start_scan(const std::uint64_t rom_fingerprint) noexcept {
     }
     socket_ = as_handle(socket);
     mode_ = Mode::scan;
+    compatibility_id_ = compatibility_id;
     rom_fingerprint_ = rom_fingerprint;
     peers_.clear();
     const auto message = std::string("GBB-DISCOVERY/1 Q ") +
-                         fingerprint_text(rom_fingerprint_);
+                         fingerprint_text(compatibility_id_);
     // A broadcast can be rejected by a host firewall even when ordinary
     // unicast UDP is available. Keep the scanner alive so the loopback and
     // any later interface-specific responses can still be consumed.
@@ -185,6 +195,10 @@ bool LanDiscovery::start_scan(const std::uint64_t rom_fingerprint) noexcept {
     return true;
 }
 
+bool LanDiscovery::start_scan(const std::uint64_t rom_fingerprint) noexcept {
+    return start_scan(rom_fingerprint, rom_fingerprint);
+}
+
 void LanDiscovery::poll() noexcept {
     if (socket_ == -1) return;
     receive_available();
@@ -196,6 +210,7 @@ void LanDiscovery::stop() noexcept {
     peers_.clear();
     name_.clear();
     tcp_port_ = 0;
+    compatibility_id_ = 0;
     rom_fingerprint_ = 0;
 }
 
@@ -243,14 +258,14 @@ void LanDiscovery::receive_available() noexcept {
                                              static_cast<std::size_t>(count)});
         std::string magic;
         char type = 0;
-        std::string fingerprint;
-        if (!(input >> magic >> type >> fingerprint) ||
+        std::string compatibility;
+        if (!(input >> magic >> type >> compatibility) ||
             magic != "GBB-DISCOVERY/1") {
             continue;
         }
-        std::uint64_t parsed_fingerprint = 0;
-        if (!parse_hex(fingerprint, parsed_fingerprint) ||
-            parsed_fingerprint != rom_fingerprint_) {
+        std::uint64_t parsed_compatibility = 0;
+        if (!parse_hex(compatibility, parsed_compatibility) ||
+            parsed_compatibility != compatibility_id_) {
             continue;
         }
         char address_text[INET_ADDRSTRLEN]{};
@@ -260,13 +275,19 @@ void LanDiscovery::receive_available() noexcept {
         }
         if (mode_ == Mode::host && type == 'Q') {
             std::ostringstream response;
-            response << "GBB-DISCOVERY/1 R " << fingerprint_text(rom_fingerprint_)
-                     << ' ' << tcp_port_ << ' ' << name_;
+            response << "GBB-DISCOVERY/1 R "
+                     << fingerprint_text(compatibility_id_) << ' '
+                     << fingerprint_text(rom_fingerprint_) << ' ' << tcp_port_
+                     << ' ' << name_;
             static_cast<void>(send_message(response.str(), address_text,
                                             ntohs(source.sin_port)));
             continue;
         }
         if (mode_ != Mode::scan || type != 'R') continue;
+        std::string fingerprint;
+        if (!(input >> fingerprint)) continue;
+        std::uint64_t parsed_fingerprint = 0;
+        if (!parse_hex(fingerprint, parsed_fingerprint)) continue;
         unsigned port = 0;
         if (!(input >> port) || port == 0 || port > UINT16_MAX) continue;
         std::string name;
@@ -280,6 +301,7 @@ void LanDiscovery::receive_available() noexcept {
             if (peers_.size() >= 64) continue;
             peers_.push_back({address_text, sanitize_name(std::move(name)),
                               static_cast<std::uint16_t>(port),
+                              parsed_compatibility,
                               parsed_fingerprint});
         }
     }

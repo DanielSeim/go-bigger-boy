@@ -90,6 +90,33 @@ void test_serial_transfer() {
           "external-clock serial transfer waits for an external peer");
 }
 
+void test_link_compatibility_profiles() {
+    const auto pokemon_rom = [](const std::string_view title,
+                                const std::uint8_t destination) {
+        auto rom = test_rom();
+        std::fill(rom.begin() + 0x134, rom.begin() + 0x144, 0);
+        std::copy(title.begin(), title.end(), rom.begin() + 0x134);
+        rom[0x14A] = destination;
+        return rom;
+    };
+    const auto red = gameboy::Cartridge{pokemon_rom("POKEMON RED", 1)};
+    const auto blue = gameboy::Cartridge{pokemon_rom("POKEMON BLUE", 1)};
+    const auto yellow = gameboy::Cartridge{pokemon_rom("POKEMON YELLOW", 1)};
+    const auto gold = gameboy::Cartridge{pokemon_rom("POKEMON G", 1)};
+    const auto crystal = gameboy::Cartridge{pokemon_rom("POKEMON C", 1)};
+    const auto japanese = gameboy::Cartridge{pokemon_rom("POKEMON RED", 0)};
+    check(red.link_compatibility_id() == blue.link_compatibility_id() &&
+              blue.link_compatibility_id() == yellow.link_compatibility_id() &&
+              yellow.link_compatibility_id() == gold.link_compatibility_id() &&
+              gold.link_compatibility_id() == crystal.link_compatibility_id(),
+          "Western Pokémon Gen I and Gen II releases share a link profile");
+    check(red.link_compatibility_id() != japanese.link_compatibility_id(),
+          "Japanese Pokémon releases use a separate link profile");
+    const auto unknown = gameboy::Cartridge{test_rom()};
+    check(unknown.link_compatibility_id() == unknown.rom_fingerprint(),
+          "unknown software retains strict ROM link compatibility");
+}
+
 void test_serial_link_cable() {
     gameboy::MemoryBus first{gameboy::Cartridge{test_rom()}};
     gameboy::MemoryBus second{gameboy::Cartridge{test_rom()}};
@@ -554,9 +581,9 @@ void test_tcp_serial_endpoint_loopback() {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     check(first_endpoint.peer_compatible() && second_endpoint.peer_compatible() &&
-              first_endpoint.peer_rom_fingerprint() == rom_fingerprint &&
-              second_endpoint.peer_rom_fingerprint() == rom_fingerprint,
-          "TCP endpoint exchanges and validates the ROM fingerprint handshake");
+              first_endpoint.peer_compatibility_id() == rom_fingerprint &&
+              second_endpoint.peer_compatibility_id() == rom_fingerprint,
+          "TCP endpoint exchanges and validates the link compatibility handshake");
     first.write8(0xFF01, 0xA5);
     second.write8(0xFF01, 0x5A);
     first.write8(0xFF02, 0x81);
@@ -753,6 +780,7 @@ void test_tcp_serial_endpoint_rejects_mismatched_rom() {
 
 int main() {
     test_serial_transfer();
+    test_link_compatibility_profiles();
     test_serial_link_cable();
     test_serial_link_interrupt_handshake();
     test_serial_link_interrupt_rearm();

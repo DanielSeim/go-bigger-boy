@@ -384,9 +384,9 @@ void trace_remote_frame(const gameboy::Emulator& emulator,
                << " u=" << remote.endpoint.responses_unmatched()
                << " w=" << remote.endpoint.waiting_for_peer()
                << " z=" << remote.endpoint.response_ready()
-               << " hh=" << remote.endpoint.peer_hello_seen()
                << " compat=" << remote.endpoint.peer_compatible()
-               << " peer_fp=" << remote.endpoint.peer_rom_fingerprint()
+               << " peer_compat=" << remote.endpoint.peer_compatibility_id()
+               << " rom_fp=" << emulator.rom_fingerprint()
                << " pr=" << remote.endpoint.peer_request_seen()
                << " pb=" << remote.endpoint.peer_byte_released()
                << " pc=" << remote.endpoint.peer_clock_busy()
@@ -590,10 +590,12 @@ void start_remote_link_session(gameboy::Emulator& emulator,
     remote.diagnostics = link_diagnostics;
     remote.endpoint.set_arbitration_priority(hosting);
     remote.endpoint.attach(emulator.bus().serial_port(), remote.channel,
-                           emulator.rom_fingerprint());
+                           emulator.link_compatibility_id());
     if (options.lan_discovery) {
         const auto discovered = hosting
-            ? remote.discovery.start_host(options.port, emulator.rom_fingerprint(),
+            ? remote.discovery.start_host(options.port,
+                                          emulator.link_compatibility_id(),
+                                          emulator.rom_fingerprint(),
                                           "Go Bigger Boy")
             : true;
         if (!discovered) {
@@ -651,16 +653,18 @@ void retry_remote_link_session(gameboy::Emulator& emulator,
                            : remote.channel.connect(options.host, options.port);
     if (!ready) {
         remote.endpoint.attach(emulator.bus().serial_port(), remote.channel,
-                               emulator.rom_fingerprint());
+                               emulator.link_compatibility_id());
         throw std::runtime_error("Could not retry the TCP link session.");
     }
     if (remote.hosting && options.lan_discovery &&
-        !remote.discovery.start_host(options.port, emulator.rom_fingerprint(),
+        !remote.discovery.start_host(options.port,
+                                     emulator.link_compatibility_id(),
+                                     emulator.rom_fingerprint(),
                                      "Go Bigger Boy")) {
         throw std::runtime_error("Could not restart LAN discovery.");
     }
     remote.endpoint.attach(emulator.bus().serial_port(), remote.channel,
-                           emulator.rom_fingerprint());
+                           emulator.link_compatibility_id());
 }
 #endif
 

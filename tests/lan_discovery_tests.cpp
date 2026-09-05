@@ -19,9 +19,11 @@ void check(const bool condition, const char* message) {
 int main() {
     gameboy::LanDiscovery host;
     gameboy::LanDiscovery scanner;
-    const auto fingerprint = UINT64_C(0x0123456789abcdef);
-    const auto host_started = host.start_host(8765, fingerprint, "Test Host");
-    const auto scanner_started = scanner.start_scan(fingerprint);
+    const auto compatibility_id = UINT64_C(0x0123456789abcdef);
+    const auto fingerprint = UINT64_C(0xfedcba9876543210);
+    const auto host_started =
+        host.start_host(8765, compatibility_id, fingerprint, "Test Host");
+    const auto scanner_started = scanner.start_scan(compatibility_id, 0);
     if (!host_started || !scanner_started) {
         // Some hermetic CI/sandbox environments deny UDP sockets entirely.
         // Keep the test visible as skipped there; real desktop CI exercises
@@ -43,6 +45,7 @@ int main() {
         check(!peers.empty(), "scanner receives a matching host");
         if (!peers.empty()) {
             check(peers.front().port == 8765 &&
+                      peers.front().compatibility_id == compatibility_id &&
                       peers.front().rom_fingerprint == fingerprint &&
                       peers.front().name == "Test Host",
                   "discovery response carries host metadata");

@@ -60,6 +60,10 @@ std::uint64_t Emulator::rom_fingerprint() const noexcept {
     return bus_.cartridge().rom_fingerprint();
 }
 
+std::uint64_t Emulator::link_compatibility_id() const noexcept {
+    return bus_.cartridge().link_compatibility_id();
+}
+
 std::vector<std::uint8_t> Emulator::save_state() const {
     return SaveStateCodec::encode(*this);
 }

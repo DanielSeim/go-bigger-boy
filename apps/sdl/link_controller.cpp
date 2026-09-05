@@ -14,10 +14,10 @@ void process_link_requests(LinkControlContext context) {
         context.remote_link.endpoint.peer_hello_seen() &&
         !context.remote_link.endpoint.peer_compatible()) {
         gbb::log_frontend_warning(
-            "TCP link rejected: peer ROM fingerprint does not match");
+            "TCP link rejected: peer compatibility profile does not match");
         stop_remote_link_session(*context.emulator, context.remote_link);
         show_error(context.sdl.window,
-                   "The remote link was rejected because the ROMs differ.");
+                   "The remote link was rejected because the ROM versions are not compatible.");
     }
 
     if (context.remote_discover_requested) {
@@ -27,7 +27,8 @@ void process_link_requests(LinkControlContext context) {
                        "Load a ROM before searching for LAN link hosts.");
         } else {
             gameboy::LanDiscovery scanner;
-            if (!scanner.start_scan(context.emulator->rom_fingerprint())) {
+            if (!scanner.start_scan(context.emulator->link_compatibility_id(),
+                                    context.emulator->rom_fingerprint())) {
                 show_error(context.sdl.window,
                            "Could not start LAN link discovery.");
             } else {

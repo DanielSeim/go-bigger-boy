@@ -18,7 +18,7 @@ public:
     TcpSerialEndpoint& operator=(const TcpSerialEndpoint&) = delete;
 
     void attach(SerialPort& port, TcpLinkChannel& channel,
-                std::uint64_t rom_fingerprint = 0) noexcept;
+                std::uint64_t link_compatibility_id = 0) noexcept;
     void detach() noexcept;
     void poll() noexcept;
     void set_arbitration_priority(bool priority) noexcept {
@@ -36,7 +36,8 @@ public:
         return pending_sequence_.has_value() && !response_.has_value();
     }
 
-    // Read-only arbitration state used by opt-in link diagnostics. These
+    // Read-only arbitration and compatibility state used by opt-in link
+    // diagnostics. These
     // values explain a slow but otherwise healthy exchange without exposing
     // transport internals to the emulated serial port.
     [[nodiscard]] bool response_ready() const noexcept {
@@ -48,8 +49,8 @@ public:
     [[nodiscard]] bool peer_compatible() const noexcept {
         return peer_compatible_;
     }
-    [[nodiscard]] std::uint64_t peer_rom_fingerprint() const noexcept {
-        return peer_rom_fingerprint_;
+    [[nodiscard]] std::uint64_t peer_compatibility_id() const noexcept {
+        return peer_compatibility_id_;
     }
     [[nodiscard]] bool peer_request_seen() const noexcept {
         return peer_request_seen_;
@@ -123,8 +124,8 @@ private:
     bool peer_compatible_{true};
     std::uint8_t hello_parts_sent_{};
     std::uint8_t hello_parts_received_{};
-    std::uint64_t rom_fingerprint_{};
-    std::uint64_t peer_rom_fingerprint_{};
+    std::uint64_t compatibility_id_{};
+    std::uint64_t peer_compatibility_id_{};
     bool peer_request_seen_{};
     bool peer_byte_released_{};
     bool peer_clock_busy_{};

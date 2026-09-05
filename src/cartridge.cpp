@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iterator>
 #include <stdexcept>
+#include <string_view>
 #include <utility>
 
 namespace gameboy {
@@ -569,6 +570,55 @@ std::uint64_t Cartridge::rom_fingerprint() const noexcept {
         hash *= UINT64_C(1099511628211);
     }
     return hash;
+}
+
+std::uint64_t Cartridge::link_compatibility_id() const noexcept {
+    // The exact ROM hash remains the save-state and diagnostic identity. For
+    // link negotiation, the original Pokémon releases intentionally share a
+    // broader protocol family: Western Gen I (Red/Blue/Yellow) can use the
+    // Cable Club with one another, and Western Gen II (Gold/Silver/Crystal)
+    // can use the Time Capsule with Western Gen I. Japanese releases must be
+    // kept separate because their character/data encodings are different.
+    constexpr auto family_id = [](const std::string_view name) constexpr {
+        auto hash = UINT64_C(14695981039346656037);
+        for (const auto byte : name) {
+            hash ^= static_cast<std::uint8_t>(byte);
+            hash *= UINT64_C(1099511628211);
+        }
+        return hash;
+    };
+    constexpr std::string_view gen1_titles[] = {
+        "POKEMON RED", "POKEMON BLUE", "POKEMON YELLOW", "POKEMON GREEN"};
+    constexpr std::string_view gen2_titles[] = {
+        "POKEMON GOLD", "POKEMON SILVER", "POKEMON CRYSTAL", "POKEMON G",
+        "POKEMON S", "POKEMON C"};
+    const auto matches_title = [this](const std::string_view expected) {
+        constexpr std::size_t title_begin = 0x134;
+        if (rom_.size() < title_begin + expected.size()) return false;
+        for (std::size_t index = 0; index < expected.size(); ++index) {
+            auto byte = rom_[title_begin + index];
+            if (byte >= 'a' && byte <= 'z') {
+                byte = static_cast<std::uint8_t>(byte - 'a' + 'A');
+            }
+            if (byte != static_cast<std::uint8_t>(expected[index])) return false;
+        }
+        return true;
+    };
+    const auto japanese = rom_.size() > 0x14A && rom_[0x14A] == 0;
+    for (const auto title : gen1_titles) {
+        if (matches_title(title)) {
+            return family_id(japanese ? "pokemon-gen1-gen2-japanese-link-v1"
+                                      : "pokemon-gen1-gen2-western-link-v1");
+        }
+    }
+    for (const auto title : gen2_titles) {
+        if (matches_title(title)) {
+            return family_id(japanese ? "pokemon-gen1-gen2-japanese-link-v1"
+                                      : "pokemon-gen1-gen2-western-link-v1");
+        }
+    }
+    // Unknown software remains strict: only an identical ROM may negotiate.
+    return rom_fingerprint();
 }
 
 std::uint8_t Cartridge::read_rom_bank(const std::size_t bank,

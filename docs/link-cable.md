@@ -51,10 +51,20 @@ preserves the partial shift register across Pokémon's repeated SB/SC probe
 rewrites; an explicit link reset remains the cancellation boundary.
 
 Before serial traffic, endpoints send a five-part hello containing the local
-ROM fingerprint (two bytes per part) and the host/join role. A link becomes
-ready only after all parts arrive and the fingerprints match. Endpoints created
-without a fingerprint retain the one-packet legacy hello for core-level tests;
-the SDL frontend always supplies the loaded ROM fingerprint.
+link-compatibility ID (two bytes per part) and the host/join role. A link
+becomes ready only after all parts arrive and the IDs match. The exact ROM
+fingerprint remains separate for save-state validation and diagnostics. The
+SDL frontend derives the ID from the loaded cartridge; unknown software falls
+back to its exact fingerprint and therefore remains strict. Endpoints created
+without an ID retain the one-packet legacy hello for core-level tests.
+
+The built-in cartridge profile groups Western Pokémon Red, Blue, Yellow, Gold,
+Silver, and Crystal for transport discovery because Gen II's Time Capsule is a
+Gen I/Gen II trade path. The game still controls which room and operation are
+valid: a cross-generation trade must be initiated through Time Capsule, and
+the emulator does not claim that every cross-generation battle mode is valid.
+Japanese Gen I/II releases use a separate profile; unknown language or hacked
+ROMs remain exact-match only.
 
 The printer and test-ROM serial-output paths remain available through the
 `MemoryBus` adapter. A serial endpoint is deliberately not embedded in a save
@@ -142,7 +152,7 @@ emulator instance in host mode and another in join mode,
 `link.LanDiscovery = true` enables the host beacon and the
 **Discover LAN Link Hosts** (`Ctrl+Shift+D`) command performs a bounded scan. The
 scan reports matching addresses but never joins automatically.
-with the same ROM and prepared Cable Club saves. For Pokémon Gen I, have the
+with compatible ROM releases and prepared Cable Club saves. For Pokémon Gen I, have the
 host player talk to the Cable Club attendant and confirm the link first; the
 join player should then confirm on its side. This gives the game's serial
 handshake a clock owner before the peer starts its probe. The single-screen
@@ -166,10 +176,10 @@ session. Click a window to focus it before navigating its Cable Club menu.
 `gameboy::LanDiscovery` provides the opt-in UDP discovery layer used by the
 desktop frontend. A host answers versioned queries on UDP port 8764 with its
 TCP port, ROM fingerprint, and display name; a scanner broadcasts a query and
-returns matching peers without opening a TCP connection. TCP endpoints also
-exchange the ROM fingerprint during their hello handshake and refuse to
-advance a link when the fingerprints differ. Discovery is not authentication,
-and should only be enabled on a trusted LAN.
+returns matching peers without opening a TCP connection. Responses carry both
+the compatibility ID used for matching and the exact ROM fingerprint for
+operator diagnostics. Discovery is not authentication, and should only be
+enabled on a trusted LAN.
 
 Link tracing is opt-in. Add `link.Diagnostics = true` to the portable
 `settings.ini` beside the executable before starting a session; normal users
@@ -196,7 +206,8 @@ role, so host and join logs can be compared directly.
 
 TCP frame records also include endpoint arbitration fields: `z` indicates a
 response ready to consume, `hh` that the peer hello was seen, `compat` that
-the ROM fingerprints matched, and `peer_fp` records the peer fingerprint.
+the compatibility IDs matched, `peer_compat` records the peer compatibility
+ID, and `rom_fp` records the local exact ROM fingerprint.
 `pr` indicates that the peer has requested a byte, `pb` that the peer released
 a completed byte, `pc` that the peer currently owns the clock, and `bo` gives
 the remaining request backoff. These fields are diagnostic-only and help

@@ -49,6 +49,7 @@ public:
     [[nodiscard]] std::vector<std::uint8_t> export_rtc_data() const;
     void import_rtc_data(const std::vector<std::uint8_t>& data);
     [[nodiscard]] std::uint64_t rom_fingerprint() const noexcept;
+    [[nodiscard]] std::uint64_t link_compatibility_id() const noexcept;
     void set_dmg_compatibility_colors(bool enabled) noexcept;
     [[nodiscard]] std::vector<std::uint8_t> save_state() const;
     void load_state(const std::vector<std::uint8_t>& state);
