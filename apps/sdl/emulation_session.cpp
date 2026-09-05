@@ -358,7 +358,6 @@ void trace_link_frame(const gameboy::Emulator& first,
                                  first_serial.transfer_active(),
                                  second_serial.transfer_active(),
                                  first_serial, second_serial);
-    output.flush();
 }
 
 void trace_remote_frame(const gameboy::Emulator& emulator,
@@ -423,7 +422,6 @@ void trace_remote_frame(const gameboy::Emulator& emulator,
                                  serial.transfer_active(),
                                  false,
                                  serial, serial);
-    output.flush();
 }
 
 void start_local_link_session(

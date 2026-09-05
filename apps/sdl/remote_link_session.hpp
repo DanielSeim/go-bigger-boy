@@ -31,6 +31,16 @@ struct RemoteLinkSession {
     std::chrono::steady_clock::time_point scan_deadline{};
 
     [[nodiscard]] bool active() const noexcept { return enabled; }
+
+    // A session is active as soon as a listener or non-blocking connect has
+    // been created, but the serial endpoint must not take over the emulation
+    // loop until the TCP peer is actually connected. Keeping this distinction
+    // prevents a host waiting for a peer from paying per-instruction network
+    // polling overhead on every emulated frame.
+    [[nodiscard]] bool transport_connected() const noexcept {
+        return enabled &&
+               channel.state() == gameboy::TcpLinkChannel::State::connected;
+    }
 };
 
 } // namespace gbb::sdl

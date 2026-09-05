@@ -1577,6 +1577,12 @@ int main(int argc, char** argv) {
             sdl.camera.update(
                 services.get(gbb::CoreCapability::camera));
             if (remote_link.active()) remote_link.endpoint.poll();
+            // Starting a TCP host puts the channel into a listening state. It
+            // is still an active session for the UI, but until a peer is
+            // connected it should follow the efficient ordinary core path.
+            // Only a connected transport needs instruction-level polling.
+            const auto remote_transport_connected =
+                remote_link.transport_connected();
 #ifndef __ANDROID__
             if (input_movie.replaying()) {
                 fast_forward = false;
@@ -1638,7 +1644,9 @@ int main(int argc, char** argv) {
                     // linked session there are two machines and the history
                     // would be both incomplete and expensive to serialize;
                     // keep normal-speed multiplayer responsive by disabling
-                    // rewind state capture for that session.
+                    // rewind state capture for that session. Fast-forward
+                    // also suppresses snapshots because it already executes
+                    // multiple frames per presentation.
                     const auto frames = fast_forward ? fast_forward_factor : 1U;
                     for (auto frame = 0U; frame < frames && running; ++frame) {
 #ifndef __ANDROID__
@@ -1646,7 +1654,14 @@ int main(int argc, char** argv) {
                             cheat_manager.apply(*emulator);
                         }
 #endif
-                        if (link_emulator == nullptr) {
+                        if (link_emulator == nullptr && !fast_forward) {
+                            // Serializing a rewind snapshot is intentionally
+                            // skipped during fast-forward. A snapshot costs
+                            // several milliseconds on desktop builds and
+                            // doing it while emulating four frames per
+                            // presentation defeats the purpose of the speed
+                            // shortcut. The existing history remains valid
+                            // and normal capture resumes when released.
                             const bool capture_rewind_state =
                                 rewind_capture_phase == 0;
                             rewind_capture_phase =
@@ -1680,7 +1695,7 @@ int main(int argc, char** argv) {
                             // timelines balanced so serial interrupts cannot
                             // be starved by frontend scheduling.
                             link_session->advance(cycles_per_frame);
-                        } else if (!remote_link.active()
+                        } else if (!remote_transport_connected
 #ifndef __ANDROID__
                                    && !input_movie.replaying()
 #endif
@@ -1697,7 +1712,7 @@ int main(int argc, char** argv) {
                                    !emulator->frame_ready()) {
                                 const auto stepped = step_emulator();
                                 cycles += stepped;
-                                if (remote_link.active()) {
+                                if (remote_transport_connected) {
                                     remote_poll_cycles += stepped;
                                     // Keep network serial edges well below a
                                     // video-frame of latency. Polling every
@@ -1710,7 +1725,9 @@ int main(int argc, char** argv) {
                                     }
                                 }
                             }
-                            if (remote_link.active()) remote_link.endpoint.poll();
+                            if (remote_transport_connected) {
+                                remote_link.endpoint.poll();
+                            }
                         }
                         const auto core_step_us =
                             static_cast<std::uint64_t>(microseconds_between(
@@ -1730,7 +1747,7 @@ int main(int argc, char** argv) {
                             const auto audio_queued_bytes = sdl.audio.queued_bytes();
                             trace_link_frame(*emulator, *link_emulator,
                                              audio_queued_bytes);
-                        } else if (remote_link.active()) {
+                        } else if (remote_transport_connected) {
                             const auto audio_queued_bytes = sdl.audio.queued_bytes();
                             trace_remote_frame(*emulator, remote_link,
                                                audio_queued_bytes);
@@ -1807,7 +1824,7 @@ int main(int argc, char** argv) {
             frame_pacer.advance();
             const auto pacing_started = std::chrono::steady_clock::now();
             ++frontend_frame;
-            if (remote_link.active()) {
+            if (remote_transport_connected) {
                 frame_pacer.wait([&] { remote_link.endpoint.poll(); });
             } else {
                 frame_pacer.wait();
