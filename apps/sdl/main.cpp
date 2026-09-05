@@ -1002,6 +1002,24 @@ int main(int argc, char** argv) {
         bool update_cancel_requested = false;
         bool update_check_complete = false;
         std::optional<bool> cheat_pause_restore;
+        const auto poll_update_checker = [&] {
+            if (update_check_complete) return;
+            std::string update_error;
+            std::optional<gbb_desktop::UpdateInfo> update_result;
+            gbb::LogContext update_context{};
+            if (update_checker.take_result(update_result, update_error,
+                                           &update_context)) {
+                auto callback_context =
+                    gbb::LogContextScope::exact(update_context);
+                update_check_complete = true;
+                if (!update_error.empty()) {
+                    gbb::log_frontend_warning(
+                        std::string("Update check unavailable: ") +
+                        update_error);
+                }
+                available_update = std::move(update_result);
+            }
+        };
 #endif
 #ifdef _WIN32
         bool reveal_sdl_after_present = false;
@@ -1100,22 +1118,47 @@ int main(int argc, char** argv) {
             refresh_touch_settings_if_changed(sdl, preference_path);
 #endif
 #ifndef __ANDROID__
-            if (!update_check_complete) {
-                std::string update_error;
-                std::optional<gbb_desktop::UpdateInfo> update_result;
-                gbb::LogContext update_context{};
-                if (update_checker.take_result(update_result, update_error,
-                                               &update_context)) {
-                    auto callback_context =
-                        gbb::LogContextScope::exact(update_context);
-                    update_check_complete = true;
-                    if (!update_error.empty()) {
-                        gbb::log_frontend_warning(
-                            std::string("Update check unavailable: ") +
-                            update_error);
-                    }
-                    available_update = std::move(update_result);
+            poll_update_checker();
+#endif
+#ifndef __ANDROID__
+            // Offer updates before entering the native dashboard. The
+            // dashboard has its own modal message loop, so handling this
+            // first ensures a startup update is not deferred until a ROM is
+            // selected.
+            if (available_update && !dialog_active(dialog) && !configuring) {
+                if (pending_rom_from_dashboard) {
+                    SDL_ShowWindow(sdl.window);
+                    SDL_RaiseWindow(sdl.window);
                 }
+                if (offer_update(*available_update, emulator, sdl)) {
+                    try {
+                        const auto [root, executable] = installation_paths();
+                        if (!installation_is_writable(root)) {
+                            throw std::runtime_error(
+                                "The installation directory is not writable. "
+                                "Install GBB in a user-writable folder to use "
+                                "automatic updates.");
+                        }
+                        const auto directory =
+                            (preference_path.empty()
+                                 ? std::filesystem::temp_directory_path() /
+                                       "go-bigger-boy"
+                                 : preference_path) /
+                            "updates" / available_update->version;
+                        update_download =
+                            std::make_unique<gbb_desktop::UpdateDownload>(
+                                *available_update, directory);
+                        SDL_ShowWindow(sdl.window);
+                        SDL_RaiseWindow(sdl.window);
+                        static_cast<void>(SDL_SetWindowTitle(
+                            sdl.window,
+                            "Go Bigger Boy (GBB) - Downloading update..."));
+                    } catch (const std::exception& error) {
+                        show_error(sdl.window, error.what());
+                    }
+                }
+                available_update.reset();
+                frame_pacer.reset();
             }
 #endif
 #ifdef _WIN32
@@ -1146,7 +1189,11 @@ int main(int argc, char** argv) {
                     sdl.video_mode,
                     dashboard_bindings, dashboard_actions,
                     plugin_options, plugin_catalog,
-                    preference_path);
+                    preference_path,
+                    [&] {
+                        poll_update_checker();
+                        return available_update.has_value();
+                    });
                 if (!result.removed_fingerprints.empty()) {
                     for (const auto fingerprint : result.removed_fingerprints) {
                         static_cast<void>(rom_library.remove(fingerprint));
@@ -1221,6 +1268,12 @@ int main(int argc, char** argv) {
                     break;
                 case gbb_desktop::DashboardResultAction::quit:
                     running = false;
+                    break;
+                case gbb_desktop::DashboardResultAction::update_available:
+                    // The dashboard closes itself when its timer observes an
+                    // available update. Keep it selected so the update offer
+                    // above can run, then reopen it if the user declines.
+                    dashboard_visible = true;
                     break;
                 }
                 if (!running) break;
@@ -1375,45 +1428,6 @@ int main(int argc, char** argv) {
             }
 
 #ifndef __ANDROID__
-            // Handle the update offer before loading a ROM selected from the
-            // dashboard.  The dashboard itself is a modal native window, so
-            // this runs as soon as it returns with the user's selection.
-            if (available_update && !dialog_active(dialog) && !configuring) {
-                if (pending_rom_from_dashboard) {
-                    SDL_ShowWindow(sdl.window);
-                    SDL_RaiseWindow(sdl.window);
-                }
-                if (offer_update(*available_update, emulator, sdl)) {
-                    try {
-                        const auto [root, executable] = installation_paths();
-                        if (!installation_is_writable(root)) {
-                            throw std::runtime_error(
-                                "The installation directory is not writable. "
-                                "Install GBB in a user-writable folder to use "
-                                "automatic updates.");
-                        }
-                        const auto directory =
-                            (preference_path.empty()
-                                 ? std::filesystem::temp_directory_path() /
-                                       "go-bigger-boy"
-                                 : preference_path) /
-                            "updates" / available_update->version;
-                        update_download =
-                            std::make_unique<gbb_desktop::UpdateDownload>(
-                                *available_update, directory);
-                        SDL_ShowWindow(sdl.window);
-                        SDL_RaiseWindow(sdl.window);
-                        static_cast<void>(SDL_SetWindowTitle(
-                            sdl.window,
-                            "Go Bigger Boy (GBB) - Downloading update..."));
-                    } catch (const std::exception& error) {
-                        show_error(sdl.window, error.what());
-                    }
-                }
-                available_update.reset();
-                frame_pacer.reset();
-            }
-
             if (update_download) {
                 const auto downloaded_bytes = update_download->downloaded_bytes();
                 const auto total_bytes = update_download->total_bytes();

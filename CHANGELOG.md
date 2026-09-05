@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.30.2] - 2026-09-05
+
+### Windows updater
+
+- Poll for updates while the native game library dashboard is open, so update
+  notifications no longer wait until a ROM is selected.
+
 ## [0.30.1] - 2026-09-05
 
 ### Windows performance

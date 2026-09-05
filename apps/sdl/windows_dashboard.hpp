@@ -9,6 +9,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -17,7 +18,7 @@
 
 namespace gbb_desktop {
 
-enum class DashboardResultAction { resume, open_rom, quit };
+enum class DashboardResultAction { resume, open_rom, quit, update_available };
 
 using KeyboardBindings = std::array<std::array<std::int64_t, 2>, 8>;
 using ActionBindings = std::array<std::int64_t, 4>;
@@ -50,7 +51,11 @@ DashboardResult show_windows_dashboard(
     const ActionBindings& action_bindings,
     const gbb::PluginDiscoveryOptions& plugin_options,
     const gbb::PluginCatalog& plugin_catalog,
-    const std::filesystem::path& preference_directory);
+    const std::filesystem::path& preference_directory,
+    // Called on the dashboard's UI thread while its modal loop is running.
+    // Returning true closes the dashboard so the caller can present the
+    // update offer without competing with native controls.
+    const std::function<bool()>& poll_update);
 
 } // namespace gbb_desktop
 #endif

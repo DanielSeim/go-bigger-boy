@@ -64,6 +64,7 @@ constexpr int id_voxel_first_edit = 120;
 constexpr int id_binding_first = 200;
 constexpr int id_action_first = 220;
 constexpr UINT artwork_ready = WM_APP + 1;
+constexpr UINT update_poll_timer = 2;
 constexpr int dashboard_width = 980;
 constexpr int dashboard_height = 1120;
 
@@ -198,6 +199,7 @@ struct State {
     HFONT ui_font{};
     enum class Page { library, settings, shortcuts } page{Page::library};
     std::filesystem::path preference_directory;
+    std::function<bool()> poll_update;
     std::filesystem::path voxel_profile_path;
     gbb::PluginDiscoveryOptions plugin_options;
     std::wstring plugin_status_text;
@@ -1049,6 +1051,7 @@ void finish(State& state, const DashboardResultAction action,
     state.artwork_download.cancel_requested.store(true,
                                                   std::memory_order_relaxed);
     state.done = true;
+    if (state.window != nullptr) KillTimer(state.window, update_poll_timer);
     DestroyWindow(state.window);
 }
 
@@ -1128,6 +1131,12 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                               std::to_wstring(state->artwork_total) +
                               L"... (close to cancel)";
             SetWindowTextW(state->artwork_status, text.c_str());
+        }
+        return 0;
+    }
+    if (message == WM_TIMER && wparam == update_poll_timer) {
+        if (state->poll_update && state->poll_update()) {
+            finish(*state, DashboardResultAction::update_available);
         }
         return 0;
     }
@@ -1934,7 +1943,8 @@ DashboardResult show_windows_dashboard(
     const ActionBindings& action_bindings,
     const gbb::PluginDiscoveryOptions& plugin_options,
     const gbb::PluginCatalog& plugin_catalog,
-    const std::filesystem::path& preference_directory) {
+    const std::filesystem::path& preference_directory,
+    const std::function<bool()>& poll_update) {
     INITCOMMONCONTROLSEX controls{sizeof(controls), ICC_LISTVIEW_CLASSES};
     InitCommonControlsEx(&controls);
     const auto instance = GetModuleHandleW(nullptr);
@@ -1979,6 +1989,7 @@ DashboardResult show_windows_dashboard(
     state.plugin_options = plugin_options;
     state.plugin_status_text = plugin_status_text(plugin_options, plugin_catalog);
     state.preference_directory = preference_directory;
+    state.poll_update = poll_update;
     const auto saved_position = load_window_position(preference_directory);
     const auto window_title = std::wstring{L"Go Bigger Boy - Game Library v"} +
                               widen(GBB_VERSION);
@@ -2316,6 +2327,11 @@ DashboardResult show_windows_dashboard(
         SetTimer(state.window, 1, 100, nullptr);
     }
     state.artwork_worker = std::thread([&state] { resolve_artwork(state); });
+    if (state.poll_update) {
+        // GetMessageW blocks when the dashboard is idle. A timer keeps the
+        // background updater observable without spinning the UI thread.
+        SetTimer(state.window, update_poll_timer, 50, nullptr);
+    }
     MSG message{};
     while (!state.done && GetMessageW(&message, nullptr, 0, 0) > 0) {
         if ((message.message == WM_KEYDOWN ||
