@@ -177,17 +177,17 @@ bool LanDiscovery::start_scan(const std::uint64_t compatibility_id,
     compatibility_id_ = compatibility_id;
     rom_fingerprint_ = rom_fingerprint;
     peers_.clear();
-    const auto message = std::string("GBB-DISCOVERY/1 Q ") +
-                         fingerprint_text(compatibility_id_);
+    scan_message_ = std::string("GBB-DISCOVERY/1 Q ") +
+                    fingerprint_text(compatibility_id_);
     // A broadcast can be rejected by a host firewall even when ordinary
     // unicast UDP is available. Keep the scanner alive so the loopback and
     // any later interface-specific responses can still be consumed.
     const auto broadcast_sent =
-        send_message(message, "255.255.255.255", discovery_port);
+        send_message(scan_message_, "255.255.255.255", discovery_port);
     // Loopback makes discovery testable and covers hosts where broadcast is
     // filtered by the local firewall; it does not replace the LAN broadcast.
     const auto loopback_sent =
-        send_message(message, "127.0.0.1", discovery_port);
+        send_message(scan_message_, "127.0.0.1", discovery_port);
     if (!broadcast_sent && !loopback_sent) {
         stop();
         return false;
@@ -201,6 +201,22 @@ bool LanDiscovery::start_scan(const std::uint64_t rom_fingerprint) noexcept {
 
 void LanDiscovery::poll() noexcept {
     if (socket_ == -1) return;
+    if (mode_ == Mode::scan && !scan_message_.empty()) {
+        const auto now = std::chrono::steady_clock::now();
+        if (next_scan_broadcast_ == std::chrono::steady_clock::time_point{} ||
+            now >= next_scan_broadcast_) {
+            // Repeat the query while the bounded scan is active. Broadcast
+            // packets are routinely dropped by Wi-Fi access points and
+            // firewalls; a short retry window makes discovery reliable
+            // without blocking the emulation thread.
+            static_cast<void>(send_message(scan_message_,
+                                            "255.255.255.255",
+                                            discovery_port));
+            static_cast<void>(send_message(scan_message_, "127.0.0.1",
+                                            discovery_port));
+            next_scan_broadcast_ = now + std::chrono::milliseconds(200);
+        }
+    }
     receive_available();
 }
 
@@ -212,6 +228,8 @@ void LanDiscovery::stop() noexcept {
     tcp_port_ = 0;
     compatibility_id_ = 0;
     rom_fingerprint_ = 0;
+    scan_message_.clear();
+    next_scan_broadcast_ = {};
 }
 
 std::vector<LanPeer> LanDiscovery::take_peers() {

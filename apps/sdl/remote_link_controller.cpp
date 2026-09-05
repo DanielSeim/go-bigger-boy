@@ -19,8 +19,10 @@ void process_remote_link_requests(RemoteLinkControlContext context) {
             context.remote_link.discovery.stop();
             context.remote_link.scanning = false;
             if (peers.empty()) {
-                show_error(context.sdl.window,
-                           "No compatible GBB link hosts were found on the LAN.");
+                show_error(
+                    context.sdl.window,
+                    "No compatible GBB link hosts were found on the LAN. "
+                    "Enable LAN discovery on the host and allow UDP port 8764.");
             } else {
                 context.remote_options.host = peers.front().address;
                 context.remote_options.port = peers.front().port;
@@ -53,7 +55,7 @@ void process_remote_link_requests(RemoteLinkControlContext context) {
             } else {
                 context.remote_link.scanning = true;
                 context.remote_link.scan_deadline =
-                    now + std::chrono::milliseconds(600);
+                    now + std::chrono::milliseconds(2000);
                 gbb::log_frontend_info("LAN link discovery started");
             }
         }

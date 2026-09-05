@@ -14,6 +14,13 @@ namespace gbb::sdl {
 
 #ifdef __ANDROID__
 
+// Keep the popup's hit targets in lockstep with its renderer. These values
+// are full-window pixels (the overlay is drawn outside the Game Boy logical
+// viewport), so using the same constants avoids row drift on high-density
+// Android displays.
+inline constexpr float android_link_menu_max_width = 500.0F;
+inline constexpr float android_link_menu_min_row_height = 44.0F;
+
 [[nodiscard]] bool touch_is_landscape(const SdlResources& sdl);
 [[nodiscard]] std::size_t touch_layout_offset(const SdlResources& sdl);
 [[nodiscard]] float touch_game_scale(const SdlResources& sdl);

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -58,6 +59,8 @@ private:
     std::uint64_t rom_fingerprint_{};
     std::string name_;
     std::vector<LanPeer> peers_;
+    std::string scan_message_;
+    std::chrono::steady_clock::time_point next_scan_broadcast_{};
 };
 
 } // namespace gameboy

@@ -160,6 +160,8 @@ using gbb::sdl::flush_battery_safely;
 using gbb::sdl::stop_rumble;
 using gbb::sdl::update_rumble;
 #ifdef __ANDROID__
+using gbb::sdl::android_link_menu_max_width;
+using gbb::sdl::android_link_menu_min_row_height;
 using gbb::sdl::android_menu_button_hit;
 using gbb::sdl::android_menu_touch_hit;
 using gbb::sdl::android_link_button_rect;
@@ -665,10 +667,12 @@ void present_menu_button(SdlResources& sdl) {
         int width = 1;
         int height = 1;
         static_cast<void>(SDL_GetWindowSize(sdl.window, &width, &height));
-        const auto panel_width = std::min(static_cast<float>(width) * 0.86F,
-                                          500.0F);
+        const auto panel_width = std::min(
+            static_cast<float>(width) * 0.86F,
+            android_link_menu_max_width);
         const auto panel_x = (static_cast<float>(width) - panel_width) * 0.5F;
-        const auto row_height = std::max(44.0F, touch_game_scale(sdl) * 18.0F);
+        const auto row_height = std::max(
+            android_link_menu_min_row_height, touch_game_scale(sdl) * 18.0F);
         const auto panel_y = std::max(24.0F, static_cast<float>(height) * 0.12F);
         // SDL_RenderDebugText is an intentionally tiny built-in bitmap font.
         // Scale the renderer while drawing this full-window Android overlay so
@@ -1033,14 +1037,14 @@ int main(int argc, char** argv) {
         RemoteLinkOptions remote_link_options{
             app_settings.link_remote_host, app_settings.link_remote_bind,
             app_settings.link_remote_port, app_settings.link_lan_discovery};
-#ifdef __ANDROID__
-        // A phone hosting a LAN session must listen on the Wi-Fi interface.
-        // Preserve an explicit user choice, but migrate the old desktop
-        // loopback default so a fresh Android install is reachable.
-        if (remote_link_options.bind_address == "127.0.0.1") {
+        // LAN discovery is useful only when the corresponding TCP listener is
+        // reachable from another device. Migrate the historical loopback
+        // default whenever LAN advertisement is enabled, while preserving an
+        // explicit bind address for users who need a particular interface.
+        if (remote_link_options.lan_discovery &&
+            remote_link_options.bind_address == "127.0.0.1") {
             remote_link_options.bind_address = "0.0.0.0";
         }
-#endif
         const auto plugin_options =
             load_plugin_discovery_options(preference_path);
         auto plugin_catalog = gbb::PluginCatalog::discover(plugin_options);

@@ -791,11 +791,13 @@ void handle_touch_event(const SDL_Event& event, SdlEventContext& context) {
                 const auto pixel_x = touch_x * static_cast<float>(width);
                 const auto pixel_y = touch_y * static_cast<float>(height);
                 const auto panel_width = std::min(
-                    static_cast<float>(width) * 0.86F, 360.0F);
+                    static_cast<float>(width) * 0.86F,
+                    android_link_menu_max_width);
                 const auto panel_x = (static_cast<float>(width) - panel_width) *
                                      0.5F;
-                const auto row_height = std::max(36.0F,
-                                                 touch_game_scale(sdl) * 15.0F);
+                const auto row_height = std::max(
+                    android_link_menu_min_row_height,
+                    touch_game_scale(sdl) * 18.0F);
                 const auto panel_y = std::max(24.0F,
                                               static_cast<float>(height) * 0.12F);
                 if (pixel_x >= panel_x && pixel_x <= panel_x + panel_width &&
