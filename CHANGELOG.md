@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-09-05
+
+### Android LAN link cable
+
+- Add Android host, join, retry, stop, and LAN discovery actions to the
+  in-game touch menu.
+- Add Android settings for the remote host, bind address, TCP port, and LAN
+  discovery advertisement.
+- Share the TCP serial endpoint and compatibility checks between Windows and
+  Android, including safe teardown when leaving a running game.
+- Document Windows-to-Android and Android-to-Android LAN setup.
+
 ### Plug-in integration
 
 - Add an explicit, settings-controlled native plug-in catalog with deterministic

@@ -161,6 +161,18 @@ connected but the link handshake is still waiting for the host); **Retry Link
 Handshake** reopens the same endpoint after a disconnect, and **Stop TCP Link**
 restores the printer.
 
+Android uses the same TCP endpoint and compatibility checks. In **Settings →
+LAN link cable**, set the joiner's host address and the shared TCP port. A
+host normally binds to `0.0.0.0` so other devices on Wi-Fi can reach it; the
+app migrates the old loopback default to that address on Android. While a ROM
+is running, tap the in-game menu button and choose **Host TCP link**, **Join
+TCP link**, **Discover LAN hosts**, **Retry link**, or **Stop link**. Discovery
+runs asynchronously for a short bounded window and, when a compatible host is
+found, fills its address and port for the next **Join TCP link** action. The
+Android menu also provides a direct return to the library. Both devices must
+be on the same LAN, and Android's normal `INTERNET` permission is declared by
+the application manifest.
+
 In a TCP session the host wins the initial clock race. Clock ownership is then
 released explicitly after each completed byte, allowing Pokémon to alternate
 which side clocks subsequent exchanges without permitting simultaneous clocks.
