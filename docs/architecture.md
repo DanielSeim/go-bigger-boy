@@ -95,6 +95,9 @@ non-blocking `gameboy::TcpLinkChannel` supplies loopback host/connect and
 framing. `gameboy::TcpSerialEndpoint` binds those queued packets to serial
 edges without blocking; a frontend can compose it with one emulator for a
 remote session.
+`gameboy::LinkPacketChannel` is the transport-neutral packet boundary used by
+TCP and Bluetooth Classic RFCOMM. It keeps future stream transports from
+duplicating serial arbitration and compatibility-handshake logic.
 
 ## Adding a GBA core
 

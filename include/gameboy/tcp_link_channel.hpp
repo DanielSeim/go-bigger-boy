@@ -1,6 +1,6 @@
 #pragma once
 
-#include "gameboy/link_transport.hpp"
+#include "gameboy/link_packet_channel.hpp"
 
 #include <cstdint>
 #include <deque>
@@ -14,14 +14,14 @@ namespace gameboy {
 // the frontend thread; send() only queues bytes and never waits for the peer.
 // It is intentionally separate from LinkSession until a remote serial-edge
 // adapter can provide ready bits without blocking the emulation thread.
-class TcpLinkChannel final {
+class TcpLinkChannel final : public LinkPacketChannel {
 public:
-    enum class State { disconnected, listening, connecting, connected, failed };
+    using State = LinkPacketChannel::State;
 
     TcpLinkChannel() noexcept = default;
     TcpLinkChannel(const TcpLinkChannel&) = delete;
     TcpLinkChannel& operator=(const TcpLinkChannel&) = delete;
-    ~TcpLinkChannel();
+    ~TcpLinkChannel() override;
 
     // The one-argument form remains loopback-only for backwards
     // compatibility. Pass an explicit bind address (for example 0.0.0.0)
@@ -31,16 +31,16 @@ public:
                               const std::string& bind_address) noexcept;
     [[nodiscard]] bool connect(const std::string& host,
                                std::uint16_t port) noexcept;
-    void poll() noexcept;
-    void close() noexcept;
+    void poll() noexcept override;
+    void close() noexcept override;
 
-    [[nodiscard]] bool send(const LinkPacket& packet) noexcept;
-    [[nodiscard]] std::optional<LinkPacket> receive() noexcept;
-    [[nodiscard]] State state() const noexcept { return state_; }
-    [[nodiscard]] std::uint16_t local_port() const noexcept;
+    [[nodiscard]] bool send(const LinkPacket& packet) noexcept override;
+    [[nodiscard]] std::optional<LinkPacket> receive() noexcept override;
+    [[nodiscard]] State state() const noexcept override { return state_; }
+    [[nodiscard]] std::uint16_t local_port() const noexcept override;
     // Number of complete frames rejected by LinkPacketCodec since the last
     // connection reset. Kept separate from socket failures for diagnostics.
-    [[nodiscard]] std::uint64_t malformed_packets() const noexcept {
+    [[nodiscard]] std::uint64_t malformed_packets() const noexcept override {
         return malformed_packets_;
     }
 

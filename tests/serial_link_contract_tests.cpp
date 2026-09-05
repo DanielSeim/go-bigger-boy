@@ -3,6 +3,7 @@
 #include "gameboy/gameboy_link_endpoint.hpp"
 #include "gameboy/link_endpoint.hpp"
 #include "gameboy/link_transport.hpp"
+#include "gameboy/link_packet_channel.hpp"
 #include "gameboy/tcp_link_channel.hpp"
 #include "gameboy/tcp_serial_endpoint.hpp"
 #include "gameboy/memory_bus.hpp"
@@ -11,7 +12,9 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <deque>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <thread>
 #include <string_view>
@@ -44,6 +47,38 @@ public:
 private:
     gameboy::SerialPort serial_port_;
     unsigned steps_{};
+};
+
+// A deterministic in-memory packet channel stands in for a non-TCP stream.
+// This keeps the endpoint contract test independent of socket availability
+// while proving that transports only need to implement LinkPacketChannel.
+class QueuePacketChannel final : public gameboy::LinkPacketChannel {
+public:
+    using State = gameboy::LinkPacketChannel::State;
+
+    void connect_to(QueuePacketChannel& peer) noexcept {
+        peer_ = &peer;
+        state_ = State::connected;
+    }
+    void poll() noexcept override {}
+    void close() noexcept override { state_ = State::disconnected; }
+    [[nodiscard]] bool send(const gameboy::LinkPacket& packet) noexcept override {
+        if (peer_ == nullptr || state_ != State::connected) return false;
+        peer_->packets_.push_back(packet);
+        return true;
+    }
+    [[nodiscard]] std::optional<gameboy::LinkPacket> receive() noexcept override {
+        if (packets_.empty()) return std::nullopt;
+        auto packet = packets_.front();
+        packets_.pop_front();
+        return packet;
+    }
+    [[nodiscard]] State state() const noexcept override { return state_; }
+
+private:
+    QueuePacketChannel* peer_{};
+    State state_{State::disconnected};
+    std::deque<gameboy::LinkPacket> packets_;
 };
 
 std::vector<std::uint8_t> test_rom(
@@ -500,6 +535,32 @@ void test_link_transport_framing() {
           "link transport framing rejects a truncated packet");
 }
 
+void test_packet_channel_endpoint_contract() {
+    QueuePacketChannel first_channel;
+    QueuePacketChannel second_channel;
+    first_channel.connect_to(second_channel);
+    second_channel.connect_to(first_channel);
+    gameboy::MemoryBus first{gameboy::Cartridge{test_rom()}};
+    gameboy::MemoryBus second{gameboy::Cartridge{test_rom()}};
+    gameboy::TcpSerialEndpoint first_endpoint;
+    gameboy::TcpSerialEndpoint second_endpoint;
+    first_endpoint.set_arbitration_priority(true);
+    second_endpoint.set_arbitration_priority(false);
+    constexpr std::uint64_t profile = 0x1020304050607080ULL;
+    first_endpoint.attach(first.serial_port(), first_channel, profile);
+    second_endpoint.attach(second.serial_port(), second_channel, profile);
+    for (unsigned attempt = 0; attempt < 12; ++attempt) {
+        first_endpoint.poll();
+        second_endpoint.poll();
+    }
+    check(first_endpoint.peer_ready_for_link() &&
+              second_endpoint.peer_ready_for_link() &&
+              first_endpoint.peer_compatibility_id() == profile,
+          "serial endpoint accepts a non-TCP packet channel");
+    first_endpoint.detach();
+    second_endpoint.detach();
+}
+
 void test_tcp_link_channel_loopback() {
     gameboy::TcpLinkChannel server;
     gameboy::TcpLinkChannel client;
@@ -789,6 +850,7 @@ int main() {
     test_link_session_timeout_and_retry();
     test_link_session_core_neutral_endpoint();
     test_link_transport_framing();
+    test_packet_channel_endpoint_contract();
     test_tcp_link_channel_loopback();
     test_tcp_serial_endpoint_loopback();
     test_tcp_serial_endpoint_rejects_mismatched_rom();

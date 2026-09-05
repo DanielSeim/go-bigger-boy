@@ -22,7 +22,8 @@ public:
     ~LinkTraceFile() { stop(); }
 
     void start(const std::filesystem::path& preference_path,
-               const char* role_suffix = nullptr);
+               const char* role_suffix = nullptr,
+               const char* transport = nullptr);
     void stop() noexcept;
 
     [[nodiscard]] bool is_open() const noexcept { return stream_.is_open(); }

@@ -25,6 +25,10 @@ struct AppSettings {
     std::string link_remote_bind{"127.0.0.1"};
     std::uint16_t link_remote_port{8765};
     bool link_lan_discovery{};
+    std::string link_transport{"tcp"};
+    std::string link_bluetooth_address;
+    std::string link_bluetooth_service_uuid{
+        "7b8f5d6e-7a47-4e17-9f9d-4b4d9d8e4f3a"};
     TouchControlSettings touch;
 };
 

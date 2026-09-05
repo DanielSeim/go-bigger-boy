@@ -20,6 +20,9 @@ import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.util.Locale;
+import java.util.UUID;
+
 /** Builds display, artwork, and touch settings independently from navigation. */
 final class SettingsScreen {
     private static final String[] PALETTE_NAMES = {
@@ -218,11 +221,14 @@ final class SettingsScreen {
         });
         touchCard.addView(resetTouch);
 
-        final LinearLayout linkCard = sectionCard("LAN link cable");
+        final LinearLayout linkCard = sectionCard("Remote link cable");
         linkCard.addView(activity.text(
-                "Connect two devices running compatible Game Boy games over the same network. " +
+                "Use tcp for LAN links or bluetooth for a paired Bluetooth Classic device. " +
                 "Use the in-game menu to host, join, or discover a host.",
                 15, Color.DKGRAY));
+        final EditText transport = linkField("Transport (tcp or bluetooth)",
+                LibraryActivity.nativeLinkTransport(settingsDirectory),
+                InputType.TYPE_CLASS_TEXT);
         final EditText host = linkField("Host address",
                 LibraryActivity.nativeLinkRemoteHost(settingsDirectory),
                 InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
@@ -232,9 +238,18 @@ final class SettingsScreen {
         final EditText port = linkField("TCP port",
                 Integer.toString(LibraryActivity.nativeLinkRemotePort(
                         settingsDirectory)), InputType.TYPE_CLASS_NUMBER);
+        final EditText bluetoothAddress = linkField("Bluetooth device address",
+                LibraryActivity.nativeLinkBluetoothAddress(settingsDirectory),
+                InputType.TYPE_CLASS_TEXT);
+        final EditText bluetoothUuid = linkField("Bluetooth service UUID",
+                LibraryActivity.nativeLinkBluetoothServiceUuid(settingsDirectory),
+                InputType.TYPE_CLASS_TEXT);
+        linkCard.addView(transport);
         linkCard.addView(host);
         linkCard.addView(bind);
         linkCard.addView(port);
+        linkCard.addView(bluetoothAddress);
+        linkCard.addView(bluetoothUuid);
         final Switch discovery = new Switch(activity);
         discovery.setText("Advertise and discover hosts on the LAN");
         discovery.setTextSize(16);
@@ -255,8 +270,11 @@ final class SettingsScreen {
             }
             if (selectedPort < 1 || selectedPort > 65535 ||
                     host.getText().toString().trim().isEmpty() ||
-                    bind.getText().toString().trim().isEmpty()) {
-                Toast.makeText(activity, "Enter host, bind address, and a valid port",
+                    bind.getText().toString().trim().isEmpty() ||
+                    !(transport.getText().toString().trim().equalsIgnoreCase("tcp") ||
+                      transport.getText().toString().trim().equalsIgnoreCase("bluetooth")) ||
+                    !validServiceUuid(bluetoothUuid.getText().toString().trim())) {
+                Toast.makeText(activity, "Enter valid link and Bluetooth settings",
                         Toast.LENGTH_SHORT).show();
                 return;
             }
@@ -264,10 +282,23 @@ final class SettingsScreen {
                     host.getText().toString().trim(),
                     bind.getText().toString().trim(), selectedPort,
                     discovery.isChecked());
+            LibraryActivity.nativeSetBluetoothLinkSettings(
+                    settingsDirectory, transport.getText().toString().trim().toLowerCase(Locale.ROOT),
+                    bluetoothAddress.getText().toString().trim(),
+                    bluetoothUuid.getText().toString().trim());
             Toast.makeText(activity, "Link settings saved",
                     Toast.LENGTH_SHORT).show();
         });
         linkCard.addView(saveLink);
+    }
+
+    private static boolean validServiceUuid(String value) {
+        try {
+            UUID.fromString(value);
+            return true;
+        } catch (IllegalArgumentException error) {
+            return false;
+        }
     }
 
     private EditText linkField(String hint, String value, int inputType) {

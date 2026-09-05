@@ -29,7 +29,8 @@ void load_rom(const std::string& path,
 
 #ifndef __ANDROID__
 void start_link_trace(const std::filesystem::path& preference_path,
-                      const char* role_suffix = nullptr);
+                      const char* role_suffix = nullptr,
+                      const char* transport = nullptr);
 void stop_link_trace() noexcept;
 
 void trace_link_frame(const gameboy::Emulator& first,

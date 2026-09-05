@@ -11,8 +11,8 @@ std::atomic<std::uint64_t> next_diagnostic_session{1};
 
 } // namespace
 
-void TcpSerialEndpoint::attach(SerialPort& port,
-                                TcpLinkChannel& channel,
+void LinkSerialEndpoint::attach(SerialPort& port,
+                                LinkPacketChannel& channel,
                                 const std::uint64_t link_compatibility_id) noexcept {
     detach();
     port_ = &port;
@@ -44,11 +44,11 @@ void TcpSerialEndpoint::attach(SerialPort& port,
     port_->set_endpoint(this);
     gbb::Logger::instance().write(gbb::LogLevel::info,
                                   gbb::LogCategory::link,
-                                  "TCP serial endpoint attached",
+                                  "packet serial endpoint attached",
                                   {diagnostic_session_, 0, 0});
 }
 
-void TcpSerialEndpoint::detach() noexcept {
+void LinkSerialEndpoint::detach() noexcept {
     const auto was_attached = port_ != nullptr || channel_ != nullptr;
     const auto diagnostic_session = diagnostic_session_;
     if (port_ != nullptr) port_->set_endpoint(nullptr);
@@ -72,19 +72,19 @@ void TcpSerialEndpoint::detach() noexcept {
     if (was_attached) {
         gbb::Logger::instance().write(gbb::LogLevel::info,
                                       gbb::LogCategory::link,
-                                      "TCP serial endpoint detached",
+                                      "packet serial endpoint detached",
                                       {diagnostic_session, 0, 0});
     }
 }
 
-bool TcpSerialEndpoint::connected() const noexcept {
+bool LinkSerialEndpoint::connected() const noexcept {
     return channel_ != nullptr &&
-           channel_->state() == TcpLinkChannel::State::connected;
+           channel_->state() == LinkPacketChannel::State::connected;
 }
 
-void TcpSerialEndpoint::prepare_bit(const bool outgoing) noexcept {
+void LinkSerialEndpoint::prepare_bit(const bool outgoing) noexcept {
     if (pending_sequence_.has_value() || !connected()) return;
-    // The TCP connection can come up before the peer has attached its serial
+    // The transport connection can come up before the peer has attached its serial
     // endpoint. Hold the first edge until the transport handshake is complete;
     // the serial port will retain its phase at this boundary.
     if (!peer_ready_for_link()) return;
@@ -106,7 +106,7 @@ void TcpSerialEndpoint::prepare_bit(const bool outgoing) noexcept {
     }
 }
 
-bool TcpSerialEndpoint::exchange_bit(const bool /*outgoing*/) noexcept {
+bool LinkSerialEndpoint::exchange_bit(const bool /*outgoing*/) noexcept {
     if (!response_.has_value()) return true;
     const auto incoming = *response_;
     response_.reset();
@@ -114,7 +114,7 @@ bool TcpSerialEndpoint::exchange_bit(const bool /*outgoing*/) noexcept {
     return incoming;
 }
 
-bool TcpSerialEndpoint::request_internal_clock(
+bool LinkSerialEndpoint::request_internal_clock(
     SerialPort& /*port*/) noexcept {
     // Permit only one clock owner at a time. The host wins the initial race;
     // after it releases a completed byte, Pokémon may legitimately let the
@@ -127,7 +127,7 @@ bool TcpSerialEndpoint::request_internal_clock(
     return true;
 }
 
-void TcpSerialEndpoint::release_internal_clock(SerialPort& port) noexcept {
+void LinkSerialEndpoint::release_internal_clock(SerialPort& port) noexcept {
     // A guest can rewrite SC while a remote bit is still outstanding (as
     // Pokémon does while probing the Cable Club). Keep the request alive: a
     // TCP response may already be in flight, and dropping it turns every
@@ -154,7 +154,7 @@ void TcpSerialEndpoint::release_internal_clock(SerialPort& port) noexcept {
     static_cast<void>(channel_->send(release));
 }
 
-void TcpSerialEndpoint::cancel_internal_clock(SerialPort& /*port*/) noexcept {
+void LinkSerialEndpoint::cancel_internal_clock(SerialPort& /*port*/) noexcept {
     // A reset can follow a bit request that is already queued in the peer's
     // socket. Send an ordered reset marker so the peer drops any deferred
     // request from the abandoned transfer before the next guest arms SC.
@@ -170,7 +170,7 @@ void TcpSerialEndpoint::cancel_internal_clock(SerialPort& /*port*/) noexcept {
     peer_clock_busy_ = false;
 }
 
-void TcpSerialEndpoint::poll() noexcept {
+void LinkSerialEndpoint::poll() noexcept {
     if (channel_ == nullptr) return;
     channel_->poll();
     if (!connected()) return;
@@ -192,8 +192,7 @@ void TcpSerialEndpoint::poll() noexcept {
                               : hello_parts_sent_ >= 5;
             gbb::Logger::instance().write(
                 gbb::LogLevel::debug, gbb::LogCategory::link,
-                hello_sent_ ? "TCP link hello sent"
-                            : "TCP link hello part sent",
+                hello_sent_ ? "link hello sent" : "link hello part sent",
                 {diagnostic_session_, part, compatibility_id_});
         }
     }
@@ -243,7 +242,7 @@ void TcpSerialEndpoint::poll() noexcept {
                 if (!peer_hello_seen_) {
                     gbb::Logger::instance().write(
                         gbb::LogLevel::debug, gbb::LogCategory::link,
-                        "TCP link peer hello received",
+                        "link peer hello received",
                         {diagnostic_session_, packet->sequence, 0});
                 }
                 peer_hello_seen_ = true;
@@ -271,8 +270,8 @@ void TcpSerialEndpoint::poll() noexcept {
                     peer_compatible_ ? gbb::LogLevel::debug
                                      : gbb::LogLevel::warning,
                     gbb::LogCategory::link,
-                    peer_compatible_ ? "TCP link peer hello received"
-                                     : "TCP link peer compatibility mismatch",
+                    peer_compatible_ ? "link peer hello received"
+                                     : "link peer compatibility mismatch",
                     {diagnostic_session_, peer_compatibility_id_,
                      compatibility_id_});
             }
@@ -317,7 +316,7 @@ void TcpSerialEndpoint::poll() noexcept {
                 ++responses_unmatched_;
                 gbb::Logger::instance().write(
                     gbb::LogLevel::warning, gbb::LogCategory::link,
-                    "TCP link response did not match a pending request",
+                    "link response did not match a pending request",
                     {diagnostic_session_, 0, 0});
                 continue;
             }
@@ -325,7 +324,7 @@ void TcpSerialEndpoint::poll() noexcept {
                 ++denials_received_;
                 gbb::Logger::instance().write(
                     gbb::LogLevel::debug, gbb::LogCategory::link,
-                    "TCP link request denied; backing off before retry",
+                    "link request denied; backing off before retry",
                     {diagnostic_session_, 0, 0});
                 if (port_ != nullptr && port_->transfer_active() &&
                     port_->internal_clock()) {
@@ -344,7 +343,7 @@ void TcpSerialEndpoint::poll() noexcept {
                 // the socket while the guest ISR re-arms its receiver.
                 gbb::Logger::instance().write(
                     gbb::LogLevel::debug, gbb::LogCategory::link,
-                    "TCP link peer is not ready; backing off before retry",
+                    "link peer is not ready; backing off before retry",
                     {diagnostic_session_, 0, 0});
                 pending_sequence_.reset();
                 response_.reset();

@@ -121,6 +121,7 @@ add_library(gameboy_core
     src/timer.cpp
     src/tcp_link_channel.cpp
     src/tcp_serial_endpoint.cpp
+    src/bluetooth_link_channel.cpp
 )
 
 # Stable, system-neutral boundary consumed by frontends. The current GB/GBC
@@ -167,7 +168,7 @@ target_include_directories(gameboy_core PUBLIC include)
 target_compile_features(gameboy_core PUBLIC cxx_std_17)
 
 if(WIN32)
-    target_link_libraries(gameboy_core PUBLIC ws2_32)
+    target_link_libraries(gameboy_core PUBLIC ws2_32 uuid)
 endif()
 
 if(EMSCRIPTEN)

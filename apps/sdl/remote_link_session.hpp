@@ -2,6 +2,7 @@
 
 #include "gameboy/tcp_link_channel.hpp"
 #include "gameboy/tcp_serial_endpoint.hpp"
+#include "gameboy/bluetooth_link_channel.hpp"
 #include "gameboy/lan_discovery.hpp"
 
 #include <chrono>
@@ -11,20 +12,27 @@
 namespace gbb::sdl {
 
 struct RemoteLinkOptions {
+    // "tcp" remains the default for backwards-compatible settings files.
+    std::string transport{"tcp"};
     std::string host{"127.0.0.1"};
     std::string bind_address{"127.0.0.1"};
     std::uint16_t port{8765};
     bool lan_discovery{};
+    std::string bluetooth_address;
+    std::string bluetooth_service_uuid{
+        "7b8f5d6e-7a47-4e17-9f9d-4b4d9d8e4f3a"};
 };
 
-// Frontend-owned state for a TCP link. Keeping this transport aggregate out
+// Frontend-owned state for a remote link. Keeping this transport aggregate out
 // of main.cpp makes it possible for another desktop frontend to reuse the
 // same endpoint setup without depending on SDL's event loop implementation.
 struct RemoteLinkSession {
     static constexpr auto pending_poll_interval = std::chrono::milliseconds(25);
 
     gameboy::TcpLinkChannel channel;
+    gameboy::BluetoothLinkChannel bluetooth_channel;
     gameboy::TcpSerialEndpoint endpoint;
+    bool bluetooth{};
     gameboy::LanDiscovery discovery;
     bool enabled{};
     bool hosting{};
@@ -42,7 +50,17 @@ struct RemoteLinkSession {
     // polling overhead on every emulated frame.
     [[nodiscard]] bool transport_connected() const noexcept {
         return enabled &&
-               channel.state() == gameboy::TcpLinkChannel::State::connected;
+               active_channel().state() ==
+                   gameboy::LinkPacketChannel::State::connected;
+    }
+
+    [[nodiscard]] gameboy::LinkPacketChannel& active_channel() noexcept {
+        return bluetooth ? static_cast<gameboy::LinkPacketChannel&>(bluetooth_channel)
+                         : static_cast<gameboy::LinkPacketChannel&>(channel);
+    }
+    [[nodiscard]] const gameboy::LinkPacketChannel& active_channel() const noexcept {
+        return bluetooth ? static_cast<const gameboy::LinkPacketChannel&>(bluetooth_channel)
+                         : static_cast<const gameboy::LinkPacketChannel&>(channel);
     }
 
     // Listening and non-blocking connection setup do not need the

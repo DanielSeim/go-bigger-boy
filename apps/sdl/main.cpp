@@ -694,10 +694,10 @@ void present_menu_button(SdlResources& sdl) {
         static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 220, 235, 220, 255));
         static_cast<void>(SDL_RenderRect(sdl.renderer, &panel));
         constexpr std::array<const char*, 7> general_labels{{
-            "Host TCP link", "Join TCP link", "Discover LAN hosts",
+            "Host link", "Join link", "Discover LAN hosts",
             "Retry link", "Stop link", "Open library", "Close menu"}};
         constexpr std::array<const char*, 7> link_labels{{
-            "Host TCP link", "Join TCP link", "Discover LAN hosts",
+            "Host link", "Join link", "Discover LAN hosts",
             "Link settings", "Retry link", "Stop link", "Close menu"}};
         const auto& labels = sdl.android_link_menu_visible ? link_labels
                                                             : general_labels;
@@ -752,7 +752,7 @@ void present_menu_button(SdlResources& sdl) {
     static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
                                                  SDL_BLENDMODE_NONE));
 #ifdef __ANDROID__
-    // Keep TCP access discoverable without opening the general menu. The
+    // Keep remote-link access discoverable without opening the general menu. The
     // chain-style glyph is drawn from lines so it remains crisp at any phone
     // density and does not depend on a font being available.
     static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
@@ -1034,9 +1034,16 @@ int main(int argc, char** argv) {
             }
         }
         const auto app_settings = load_app_settings(preference_path);
-        RemoteLinkOptions remote_link_options{
-            app_settings.link_remote_host, app_settings.link_remote_bind,
-            app_settings.link_remote_port, app_settings.link_lan_discovery};
+        RemoteLinkOptions remote_link_options;
+        remote_link_options.transport = app_settings.link_transport;
+        remote_link_options.host = app_settings.link_remote_host;
+        remote_link_options.bind_address = app_settings.link_remote_bind;
+        remote_link_options.port = app_settings.link_remote_port;
+        remote_link_options.lan_discovery = app_settings.link_lan_discovery;
+        remote_link_options.bluetooth_address =
+            app_settings.link_bluetooth_address;
+        remote_link_options.bluetooth_service_uuid =
+            app_settings.link_bluetooth_service_uuid;
         // LAN discovery is useful only when the corresponding TCP listener is
         // reachable from another device. Migrate the historical loopback
         // default whenever LAN advertisement is enabled, while preserving an
@@ -1395,6 +1402,11 @@ int main(int argc, char** argv) {
                 remote_link_options.bind_address = updated.link_remote_bind;
                 remote_link_options.port = updated.link_remote_port;
                 remote_link_options.lan_discovery = updated.link_lan_discovery;
+                remote_link_options.transport = updated.link_transport;
+                remote_link_options.bluetooth_address =
+                    updated.link_bluetooth_address;
+                remote_link_options.bluetooth_service_uuid =
+                    updated.link_bluetooth_service_uuid;
             }
 #endif
             SdlEventContext event_context{
@@ -1693,7 +1705,7 @@ int main(int argc, char** argv) {
             sdl.camera.update(
                 services.get(gbb::CoreCapability::camera));
             remote_link.poll();
-            // Starting a TCP host puts the channel into a listening state. It
+            // Starting a remote host puts the channel into a listening state. It
             // is still an active session for the UI, but until a peer is
             // connected it should follow the efficient ordinary core path.
             // Only a connected transport needs instruction-level polling.

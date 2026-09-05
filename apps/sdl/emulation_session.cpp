@@ -289,8 +289,8 @@ void append_trace_pokemon_transition(
 }
 
 void start_link_trace(const std::filesystem::path& preference_path,
-                      const char* role_suffix) {
-    link_trace.start(preference_path, role_suffix);
+                      const char* role_suffix, const char* transport) {
+    link_trace.start(preference_path, role_suffix, transport);
     link_trace_previous = {};
 }
 
@@ -407,7 +407,7 @@ void trace_remote_frame(const gameboy::Emulator& emulator,
                << " pb=" << remote.endpoint.peer_byte_released()
                << " pc=" << remote.endpoint.peer_clock_busy()
                << " bo=" << remote.endpoint.request_backoff()
-               << " m=" << remote.channel.malformed_packets()
+               << " m=" << remote.active_channel().malformed_packets()
                << " phase=" << std::dec << serial.phase();
     append_trace_cpu(output, emulator);
     append_trace_pokemon(output, emulator);
@@ -576,22 +576,36 @@ void start_remote_link_session(gameboy::Emulator& emulator,
     emulator.bus().serial_port().reset_diagnostics();
     if (is_pokemon_gen1(emulator)) reset_pokemon_link_handshake(emulator);
     release_all_buttons(emulator);
-    const auto ready = hosting
-                           ? remote.channel.listen(options.port,
-                                                   options.bind_address)
-                           : remote.channel.connect(options.host, options.port);
+    remote.bluetooth = options.transport == "bluetooth";
+    auto& channel = remote.active_channel();
+    const auto ready = remote.bluetooth
+                           ? (hosting
+                                  ? remote.bluetooth_channel.listen(
+                                        options.bluetooth_service_uuid)
+                                  : remote.bluetooth_channel.connect(
+                                        options.bluetooth_address,
+                                        options.bluetooth_service_uuid))
+                           : (hosting
+                                  ? remote.channel.listen(options.port,
+                                                          options.bind_address)
+                                  : remote.channel.connect(options.host,
+                                                           options.port));
     if (!ready) {
         emulator.bus().connect_printer(true);
         throw std::runtime_error(
-            hosting ? "Could not host TCP link on the configured address."
-                    : "Could not connect to the configured TCP link host.");
+            hosting ? (remote.bluetooth
+                           ? "Could not host Bluetooth link. Pairing or the Bluetooth adapter may be unavailable."
+                           : "Could not host TCP link on the configured address.")
+                    : (remote.bluetooth
+                           ? "Could not connect to the Bluetooth link device. Check pairing and the device address."
+                           : "Could not connect to the configured TCP link host."));
     }
     remote.hosting = hosting;
     remote.diagnostics = link_diagnostics;
     remote.endpoint.set_arbitration_priority(hosting);
-    remote.endpoint.attach(emulator.bus().serial_port(), remote.channel,
+    remote.endpoint.attach(emulator.bus().serial_port(), channel,
                            emulator.link_compatibility_id());
-    if (options.lan_discovery) {
+    if (options.lan_discovery && !remote.bluetooth) {
         const auto discovered = hosting
             ? remote.discovery.start_host(options.port,
                                           emulator.link_compatibility_id(),
@@ -600,7 +614,7 @@ void start_remote_link_session(gameboy::Emulator& emulator,
             : true;
         if (!discovered) {
             remote.endpoint.detach();
-            remote.channel.close();
+            channel.close();
             emulator.bus().connect_printer(true);
             throw std::runtime_error("Could not start LAN discovery.");
         }
@@ -609,12 +623,17 @@ void start_remote_link_session(gameboy::Emulator& emulator,
     remote.next_pending_poll = {};
 #ifndef __ANDROID__
     if (link_diagnostics) {
-        start_link_trace(preference_path, hosting ? "host" : "join");
+        start_link_trace(preference_path, hosting ? "host" : "join",
+                         remote.bluetooth ? "bluetooth" : "tcp");
         if (link_trace.is_open()) {
-            const auto message = "TCP link trace is being written to:\n" +
+            const auto message = std::string(remote.bluetooth
+                                                 ? "Bluetooth link trace is being written to:\n"
+                                                 : "TCP link trace is being written to:\n") +
                                  link_trace.path().string();
             static_cast<void>(SDL_ShowSimpleMessageBox(
-                SDL_MESSAGEBOX_INFORMATION, "GBB TCP link diagnostics",
+                SDL_MESSAGEBOX_INFORMATION,
+                remote.bluetooth ? "GBB Bluetooth link diagnostics"
+                                  : "GBB TCP link diagnostics",
                 message.c_str(), window));
         } else {
             const auto message =
@@ -644,6 +663,7 @@ void stop_remote_link_session(gameboy::Emulator& emulator,
     remote.discovery.stop();
     remote.scanning = false;
     remote.channel.close();
+    remote.bluetooth_channel.close();
     remote.enabled = false;
     remote.next_pending_poll = {};
     remote.diagnostics = false;
@@ -657,28 +677,40 @@ void retry_remote_link_session(gameboy::Emulator& emulator,
     remote.endpoint.detach();
     remote.discovery.stop();
     remote.channel.close();
+    remote.bluetooth_channel.close();
     emulator.bus().serial_port().reset_link();
     emulator.bus().serial_port().reset_diagnostics();
     if (is_pokemon_gen1(emulator)) reset_pokemon_link_handshake(emulator);
     release_all_buttons(emulator);
-    const auto ready = remote.hosting
-                           ? remote.channel.listen(options.port,
-                                                   options.bind_address)
-                           : remote.channel.connect(options.host, options.port);
+    auto& channel = remote.active_channel();
+    const auto ready = remote.bluetooth
+                           ? (remote.hosting
+                                  ? remote.bluetooth_channel.listen(
+                                        options.bluetooth_service_uuid)
+                                  : remote.bluetooth_channel.connect(
+                                        options.bluetooth_address,
+                                        options.bluetooth_service_uuid))
+                           : (remote.hosting
+                                  ? remote.channel.listen(options.port,
+                                                          options.bind_address)
+                                  : remote.channel.connect(options.host,
+                                                           options.port));
     if (!ready) {
-        remote.endpoint.attach(emulator.bus().serial_port(), remote.channel,
+        remote.endpoint.attach(emulator.bus().serial_port(), channel,
                                emulator.link_compatibility_id());
-        throw std::runtime_error("Could not retry the TCP link session.");
+        throw std::runtime_error(remote.bluetooth
+                                     ? "Could not retry the Bluetooth link session."
+                                     : "Could not retry the TCP link session.");
     }
     remote.next_pending_poll = {};
-    if (remote.hosting && options.lan_discovery &&
+    if (remote.hosting && options.lan_discovery && !remote.bluetooth &&
         !remote.discovery.start_host(options.port,
                                      emulator.link_compatibility_id(),
                                      emulator.rom_fingerprint(),
                                      "Go Bigger Boy")) {
         throw std::runtime_error("Could not restart LAN discovery.");
     }
-    remote.endpoint.attach(emulator.bus().serial_port(), remote.channel,
+    remote.endpoint.attach(emulator.bus().serial_port(), channel,
                            emulator.link_compatibility_id());
 }
 

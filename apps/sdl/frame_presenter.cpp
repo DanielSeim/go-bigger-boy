@@ -91,13 +91,13 @@ bool present_link_status(FrameRenderContext& context,
 }
 
 const char* remote_link_state_label(
-    const gameboy::TcpLinkChannel::State state) noexcept {
+    const gameboy::LinkPacketChannel::State state) noexcept {
     switch (state) {
-    case gameboy::TcpLinkChannel::State::disconnected: return "DISCONNECTED";
-    case gameboy::TcpLinkChannel::State::listening: return "LISTENING";
-    case gameboy::TcpLinkChannel::State::connecting: return "CONNECTING";
-    case gameboy::TcpLinkChannel::State::connected: return "CONNECTED";
-    case gameboy::TcpLinkChannel::State::failed: return "FAILED";
+    case gameboy::LinkPacketChannel::State::disconnected: return "DISCONNECTED";
+    case gameboy::LinkPacketChannel::State::listening: return "LISTENING";
+    case gameboy::LinkPacketChannel::State::connecting: return "CONNECTING";
+    case gameboy::LinkPacketChannel::State::connected: return "CONNECTED";
+    case gameboy::LinkPacketChannel::State::failed: return "FAILED";
     }
     return "UNKNOWN";
 }
@@ -112,12 +112,12 @@ bool present_remote_link_status(FrameRenderContext& context,
     static_cast<void>(SDL_SetRenderDrawColor(context.renderer, 235, 245, 235, 255));
     const auto role = remote.hosting ? "H" : "J";
     const auto state = [&]() {
-        switch (remote.channel.state()) {
-        case gameboy::TcpLinkChannel::State::disconnected: return "D";
-        case gameboy::TcpLinkChannel::State::listening: return "L";
-        case gameboy::TcpLinkChannel::State::connecting: return "N";
-        case gameboy::TcpLinkChannel::State::connected: return "C";
-        case gameboy::TcpLinkChannel::State::failed: return "F";
+        switch (remote.active_channel().state()) {
+        case gameboy::LinkPacketChannel::State::disconnected: return "D";
+        case gameboy::LinkPacketChannel::State::listening: return "L";
+        case gameboy::LinkPacketChannel::State::connecting: return "N";
+        case gameboy::LinkPacketChannel::State::connected: return "C";
+        case gameboy::LinkPacketChannel::State::failed: return "F";
         }
         return "?";
     }();
@@ -140,7 +140,7 @@ bool present_remote_link_status(FrameRenderContext& context,
         return static_cast<unsigned>(value % 1000U);
     };
     std::ostringstream status;
-    status << "TCP " << role << ' ' << link_state
+    status << (remote.bluetooth ? "BT " : "TCP ") << role << ' ' << link_state
            << (remote.diagnostics ? " D" : "") << " Q"
            << compact_count(remote.endpoint.requests_sent()) << " R"
            << compact_count(remote.endpoint.responses_received()) << " X"

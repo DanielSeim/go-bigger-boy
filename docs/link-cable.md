@@ -142,36 +142,52 @@ the corresponding localized message in VRAM; `game_ui=other` covers all other
 screens. Matching transitions are emitted as `event=pokemon_state` with the
 same UI label.
 
-On desktop, **Emulation → Host TCP Link** (`Ctrl+Shift+H`) listens on the
-`link.RemoteBind` address and `link.RemotePort`, while **Join TCP Link**
-(`Ctrl+Shift+J`) connects to `link.RemoteHost` and that port. The defaults are
-`127.0.0.1:8765`, preserving loopback-only behavior. Set `link.RemoteBind =
-0.0.0.0` (or a specific local address) on the host to opt into LAN hosting,
-and set the joiner's `link.RemoteHost` to the host's LAN address. Use one
-emulator instance in host mode and another in join mode,
-`link.LanDiscovery = true` enables the host beacon and the
-**Discover LAN Link Hosts** (`Ctrl+Shift+D`) command performs a bounded scan. The
-scan reports matching addresses but never joins automatically.
-with compatible ROM releases and prepared Cable Club saves. For Pokémon Gen I, have the
-host player talk to the Cable Club attendant and confirm the link first; the
-join player should then confirm on its side. This gives the game's serial
-handshake a clock owner before the peer starts its probe. The single-screen
-status strip shows the TCP role and state (`W` means the TCP socket is
-connected but the link handshake is still waiting for the host); **Retry Link
-Handshake** reopens the same endpoint after a disconnect, and **Stop TCP Link**
-restores the printer.
+On desktop, **Emulation → Host Remote Link** (`Ctrl+Shift+H`) and **Join Remote
+Link** (`Ctrl+Shift+J`) use the configured transport. With TCP, the host listens
+on `link.RemoteBind` and `link.RemotePort`, while the joiner connects to
+`link.RemoteHost` and that port. The defaults are `127.0.0.1:8765`, preserving
+loopback-only behavior. Set `link.RemoteBind = 0.0.0.0` (or a specific local
+address) on the host to opt into LAN hosting, and set the joiner's
+`link.RemoteHost` to the host's LAN address. `link.LanDiscovery = true` enables
+the TCP host beacon; **Discover LAN Link Hosts** (`Ctrl+Shift+D`) performs a
+bounded scan and reports matching addresses without joining automatically.
 
-Android uses the same TCP endpoint and compatibility checks. In **Settings →
-LAN link cable**, set the joiner's host address and the shared TCP port. A
-host normally binds to `0.0.0.0` so other devices on Wi-Fi can reach it; the
-app migrates the old loopback default to that address on Android. While a ROM
-is running, tap the in-game menu button and choose **Host TCP link**, **Join
-TCP link**, **Discover LAN hosts**, **Retry link**, or **Stop link**. Discovery
-runs asynchronously for a short bounded window and, when a compatible host is
-found, fills its address and port for the next **Join TCP link** action. The
-Android menu also provides a direct return to the library. Both devices must
-be on the same LAN, and Android's normal `INTERNET` permission is declared by
-the application manifest.
+Use compatible ROM releases and prepared Cable Club saves. For Pokémon Gen I,
+have the host player talk to the Cable Club attendant and confirm the link first;
+the join player should then confirm on its side. This gives the game's serial
+handshake a clock owner before the peer starts its probe. The status strip shows
+the transport (`TCP` or `BT`), role, and state (`W` means the stream is connected
+but the link handshake is still waiting); **Retry Link Handshake** reopens the
+same endpoint after a disconnect, and **Stop Remote Link** restores the printer.
+
+Android uses the same remote endpoint and compatibility checks. In **Settings →
+Remote link cable**, select `tcp` or `bluetooth` and set the corresponding host,
+port, paired Bluetooth address, and shared service UUID. While a ROM is running,
+tap the in-game link button and choose **Host link**, **Join link**, **Discover
+LAN hosts**, **Retry link**, or **Stop link**. LAN discovery is available only
+for TCP; Bluetooth uses paired-device selection and RFCOMM service discovery.
+The Android menu also provides a direct return to the library. TCP peers must be
+on the same LAN, and Android's `INTERNET` plus nearby-device permissions are
+declared by the application manifest.
+
+### Bluetooth Classic (RFCOMM)
+
+Bluetooth uses the same packet framing, compatibility hello, arbitration, and
+serial-edge watchdog as TCP, but replaces the LAN socket with a Bluetooth
+Classic RFCOMM stream. Set `link.Transport = bluetooth` and keep the shared
+`link.BluetoothServiceUuid` (the default application UUID is already suitable).
+Pair the Windows computer and phone in the operating-system Bluetooth settings
+first. The joiner sets `link.BluetoothAddress` to the host adapter's address;
+the host does not need an address. Start **Host link** on one side and **Join
+link** on the other. LAN discovery is intentionally disabled for Bluetooth;
+device and service discovery happen through Bluetooth pairing/SDP instead.
+
+On Android 12 and newer, the app requests nearby-device permissions the first
+time Bluetooth is used. Grant them and retry the action. RFCOMM setup and stream
+I/O run on a worker thread, so a pairing or radio delay cannot block emulation.
+The Windows backend registers the application service UUID with Bluetooth SDP
+while hosting. Bluetooth hardware testing must be done on native Windows and a
+physical Android device; WSL cannot provide a meaningful RFCOMM test surface.
 
 In a TCP session the host wins the initial clock race. Clock ownership is then
 released explicitly after each completed byte, allowing Pokémon to alternate

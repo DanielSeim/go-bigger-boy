@@ -35,7 +35,7 @@ void process_remote_link_requests(RemoteLinkControlContext context) {
         context.remote_link.endpoint.peer_hello_seen() &&
         !context.remote_link.endpoint.peer_compatible()) {
         gbb::log_frontend_warning(
-            "TCP link rejected: peer compatibility profile does not match");
+            "Remote link rejected: peer compatibility profile does not match");
         stop_remote_link_session(*context.emulator, context.remote_link);
         show_error(context.sdl.window,
                    "The remote link was rejected because the ROM versions are not compatible.");
@@ -46,6 +46,10 @@ void process_remote_link_requests(RemoteLinkControlContext context) {
         if (context.emulator == nullptr) {
             show_error(context.sdl.window,
                        "Load a ROM before searching for LAN link hosts.");
+        } else if (context.remote_options.transport != "tcp") {
+            show_error(context.sdl.window,
+                       "LAN discovery is available only for TCP links. "
+                       "Choose a paired Bluetooth device in Link settings.");
         } else if (!context.remote_link.scanning) {
             if (!context.remote_link.discovery.start_scan(
                     context.emulator->link_compatibility_id(),
@@ -92,9 +96,12 @@ void process_remote_link_requests(RemoteLinkControlContext context) {
                     context.sdl.window);
                 context.rewind = false;
                 context.rewind_history.clear();
-                gbb::log_frontend_info(hosting
-                                           ? "TCP link host started"
-                                           : "TCP link join started");
+                gbb::log_frontend_info(
+                    context.remote_link.bluetooth
+                        ? (hosting ? "Bluetooth link host started"
+                                   : "Bluetooth link join started")
+                        : (hosting ? "TCP link host started"
+                                   : "TCP link join started"));
             } catch (const std::exception& error) {
                 show_error(context.sdl.window, error.what());
             }

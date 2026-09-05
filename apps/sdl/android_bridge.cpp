@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <iomanip>
+#include <limits>
 #include <mutex>
 #include <sstream>
 #include <utility>
@@ -284,6 +285,36 @@ Java_com_danielseim_gbb_LibraryActivity_nativeLinkLanDiscovery(
     return value ? JNI_TRUE : JNI_FALSE;
 }
 
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_danielseim_gbb_LibraryActivity_nativeLinkTransport(
+    JNIEnv* environment, jclass, jstring directory) {
+    const auto* raw_directory = environment->GetStringUTFChars(directory, nullptr);
+    if (raw_directory == nullptr) return nullptr;
+    const auto value = load_app_settings(std::filesystem::u8path(raw_directory)).link_transport;
+    environment->ReleaseStringUTFChars(directory, raw_directory);
+    return environment->NewStringUTF(value.c_str());
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_danielseim_gbb_LibraryActivity_nativeLinkBluetoothAddress(
+    JNIEnv* environment, jclass, jstring directory) {
+    const auto* raw_directory = environment->GetStringUTFChars(directory, nullptr);
+    if (raw_directory == nullptr) return nullptr;
+    const auto value = load_app_settings(std::filesystem::u8path(raw_directory)).link_bluetooth_address;
+    environment->ReleaseStringUTFChars(directory, raw_directory);
+    return environment->NewStringUTF(value.c_str());
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_danielseim_gbb_LibraryActivity_nativeLinkBluetoothServiceUuid(
+    JNIEnv* environment, jclass, jstring directory) {
+    const auto* raw_directory = environment->GetStringUTFChars(directory, nullptr);
+    if (raw_directory == nullptr) return nullptr;
+    const auto value = load_app_settings(std::filesystem::u8path(raw_directory)).link_bluetooth_service_uuid;
+    environment->ReleaseStringUTFChars(directory, raw_directory);
+    return environment->NewStringUTF(value.c_str());
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_danielseim_gbb_LibraryActivity_nativeSetLinkSettings(
     JNIEnv* environment, jclass, jstring directory, jstring host,
@@ -311,6 +342,33 @@ Java_com_danielseim_gbb_LibraryActivity_nativeSetLinkSettings(
     environment->ReleaseStringUTFChars(directory, raw_directory);
     environment->ReleaseStringUTFChars(host, raw_host);
     environment->ReleaseStringUTFChars(bind, raw_bind);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_danielseim_gbb_LibraryActivity_nativeSetBluetoothLinkSettings(
+    JNIEnv* environment, jclass, jstring directory, jstring transport,
+    jstring address, jstring service_uuid) {
+    const auto* raw_directory = environment->GetStringUTFChars(directory, nullptr);
+    const auto* raw_transport = environment->GetStringUTFChars(transport, nullptr);
+    const auto* raw_address = environment->GetStringUTFChars(address, nullptr);
+    const auto* raw_uuid = environment->GetStringUTFChars(service_uuid, nullptr);
+    if (raw_directory == nullptr || raw_transport == nullptr ||
+        raw_address == nullptr || raw_uuid == nullptr) {
+        if (raw_directory != nullptr) environment->ReleaseStringUTFChars(directory, raw_directory);
+        if (raw_transport != nullptr) environment->ReleaseStringUTFChars(transport, raw_transport);
+        if (raw_address != nullptr) environment->ReleaseStringUTFChars(address, raw_address);
+        if (raw_uuid != nullptr) environment->ReleaseStringUTFChars(service_uuid, raw_uuid);
+        return;
+    }
+    auto settings = load_app_settings(std::filesystem::u8path(raw_directory));
+    settings.link_transport = raw_transport;
+    settings.link_bluetooth_address = raw_address;
+    settings.link_bluetooth_service_uuid = raw_uuid;
+    write_portable_settings(std::filesystem::u8path(raw_directory), settings);
+    environment->ReleaseStringUTFChars(directory, raw_directory);
+    environment->ReleaseStringUTFChars(transport, raw_transport);
+    environment->ReleaseStringUTFChars(address, raw_address);
+    environment->ReleaseStringUTFChars(service_uuid, raw_uuid);
 }
 
 extern "C" JNIEXPORT jfloatArray JNICALL
@@ -436,6 +494,124 @@ Java_com_danielseim_gbb_GbbActivity_nativeOpenRom(
         environment->ReleaseStringUTFChars(display_name, raw_name);
     }
     environment->ReleaseStringUTFChars(rom, raw_rom);
+}
+
+// The packet channel calls these small JNI shims from the SDL emulation
+// thread. Java owns BluetoothSocket streams and performs all blocking work on
+// its worker thread; these methods only enqueue or dequeue already-framed
+// packets and therefore keep the core loop non-blocking.
+extern "C" bool gbb_android_bluetooth_start_host(const char* uuid) noexcept {
+    auto* environment = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
+    auto activity = static_cast<jobject>(SDL_GetAndroidActivity());
+    if (environment == nullptr || activity == nullptr || uuid == nullptr) return false;
+    const auto klass = environment->GetObjectClass(activity);
+    const auto method = klass == nullptr ? nullptr : environment->GetMethodID(
+        klass, "bluetoothStartHost", "(Ljava/lang/String;)Z");
+    const auto uuid_string = environment->NewStringUTF(uuid);
+    const auto value = method == nullptr || uuid_string == nullptr
+                           ? JNI_FALSE
+                           : environment->CallBooleanMethod(activity, method,
+                                                             uuid_string);
+    if (uuid_string != nullptr) environment->DeleteLocalRef(uuid_string);
+    if (environment->ExceptionCheck()) environment->ExceptionClear();
+    if (klass != nullptr) environment->DeleteLocalRef(klass);
+    environment->DeleteLocalRef(activity);
+    return value == JNI_TRUE;
+}
+
+extern "C" bool gbb_android_bluetooth_start_join(const char* address,
+                                                   const char* uuid) noexcept {
+    auto* environment = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
+    auto activity = static_cast<jobject>(SDL_GetAndroidActivity());
+    if (environment == nullptr || activity == nullptr || address == nullptr ||
+        uuid == nullptr) return false;
+    const auto klass = environment->GetObjectClass(activity);
+    const auto method = klass == nullptr ? nullptr : environment->GetMethodID(
+        klass, "bluetoothStartJoin", "(Ljava/lang/String;Ljava/lang/String;)Z");
+    auto address_string = environment->NewStringUTF(address);
+    auto uuid_string = environment->NewStringUTF(uuid);
+    const auto value = method == nullptr ? JNI_FALSE : environment->CallBooleanMethod(
+        activity, method, address_string, uuid_string);
+    if (address_string != nullptr) environment->DeleteLocalRef(address_string);
+    if (uuid_string != nullptr) environment->DeleteLocalRef(uuid_string);
+    if (environment->ExceptionCheck()) environment->ExceptionClear();
+    if (klass != nullptr) environment->DeleteLocalRef(klass);
+    environment->DeleteLocalRef(activity);
+    return value == JNI_TRUE;
+}
+
+extern "C" int gbb_android_bluetooth_state() noexcept {
+    auto* environment = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
+    auto activity = static_cast<jobject>(SDL_GetAndroidActivity());
+    if (environment == nullptr || activity == nullptr) return 0;
+    const auto klass = environment->GetObjectClass(activity);
+    const auto method = klass == nullptr ? nullptr : environment->GetMethodID(
+        klass, "bluetoothState", "()I");
+    const auto value = method == nullptr ? 0 : environment->CallIntMethod(activity, method);
+    if (environment->ExceptionCheck()) environment->ExceptionClear();
+    if (klass != nullptr) environment->DeleteLocalRef(klass);
+    environment->DeleteLocalRef(activity);
+    return value;
+}
+
+extern "C" void gbb_android_bluetooth_stop() noexcept {
+    auto* environment = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
+    auto activity = static_cast<jobject>(SDL_GetAndroidActivity());
+    if (environment == nullptr || activity == nullptr) return;
+    const auto klass = environment->GetObjectClass(activity);
+    const auto method = klass == nullptr ? nullptr : environment->GetMethodID(
+        klass, "bluetoothStop", "()V");
+    if (method != nullptr) environment->CallVoidMethod(activity, method);
+    if (environment->ExceptionCheck()) environment->ExceptionClear();
+    if (klass != nullptr) environment->DeleteLocalRef(klass);
+    environment->DeleteLocalRef(activity);
+}
+
+extern "C" bool gbb_android_bluetooth_send(const std::uint8_t* bytes,
+                                              const std::size_t size) noexcept {
+    auto* environment = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
+    auto activity = static_cast<jobject>(SDL_GetAndroidActivity());
+    if (environment == nullptr || activity == nullptr || bytes == nullptr || size == 0 ||
+        size > static_cast<std::size_t>(std::numeric_limits<jsize>::max())) return false;
+    const auto klass = environment->GetObjectClass(activity);
+    const auto method = klass == nullptr ? nullptr : environment->GetMethodID(
+        klass, "bluetoothSend", "([B)Z");
+    auto array = environment->NewByteArray(static_cast<jsize>(size));
+    if (array != nullptr) environment->SetByteArrayRegion(
+        array, 0, static_cast<jsize>(size), reinterpret_cast<const jbyte*>(bytes));
+    const auto value = method == nullptr || array == nullptr ? JNI_FALSE :
+        environment->CallBooleanMethod(activity, method, array);
+    if (array != nullptr) environment->DeleteLocalRef(array);
+    if (environment->ExceptionCheck()) environment->ExceptionClear();
+    if (klass != nullptr) environment->DeleteLocalRef(klass);
+    environment->DeleteLocalRef(activity);
+    return value == JNI_TRUE;
+}
+
+extern "C" std::size_t gbb_android_bluetooth_receive(
+    std::uint8_t* bytes, const std::size_t capacity) noexcept {
+    auto* environment = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
+    auto activity = static_cast<jobject>(SDL_GetAndroidActivity());
+    if (environment == nullptr || activity == nullptr || bytes == nullptr || capacity == 0) return 0;
+    const auto klass = environment->GetObjectClass(activity);
+    const auto method = klass == nullptr ? nullptr : environment->GetMethodID(
+        klass, "bluetoothReceive", "()[B");
+    auto array = method == nullptr ? nullptr : static_cast<jbyteArray>(
+        environment->CallObjectMethod(activity, method));
+    std::size_t count = 0;
+    if (array != nullptr) {
+        const auto length = static_cast<std::size_t>(environment->GetArrayLength(array));
+        if (length <= capacity) {
+            environment->GetByteArrayRegion(array, 0, static_cast<jsize>(length),
+                                             reinterpret_cast<jbyte*>(bytes));
+            count = length;
+        }
+        environment->DeleteLocalRef(array);
+    }
+    if (environment->ExceptionCheck()) environment->ExceptionClear();
+    if (klass != nullptr) environment->DeleteLocalRef(klass);
+    environment->DeleteLocalRef(activity);
+    return count;
 }
 
 #endif

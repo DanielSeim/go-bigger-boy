@@ -54,8 +54,13 @@ public final class LibraryActivity extends Activity {
     static native String nativeLinkRemoteBind(String directory);
     static native int nativeLinkRemotePort(String directory);
     static native boolean nativeLinkLanDiscovery(String directory);
+    static native String nativeLinkTransport(String directory);
+    static native String nativeLinkBluetoothAddress(String directory);
+    static native String nativeLinkBluetoothServiceUuid(String directory);
     static native void nativeSetLinkSettings(String directory, String host,
             String bind, int port, boolean discovery);
+    static native void nativeSetBluetoothLinkSettings(String directory,
+            String transport, String address, String serviceUuid);
 
     private ArtworkService artworkService;
     private LinearLayout content;

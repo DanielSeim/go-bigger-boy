@@ -50,13 +50,13 @@ struct DesktopMenuBar::Impl {
         append(emulation_, DesktopMenuCommand::link_retry,
                L"Retry Link Handshake\tCtrl+Shift+R");
         append(emulation_, DesktopMenuCommand::remote_host,
-               L"Host TCP Link\tCtrl+Shift+H");
+               L"Host Remote Link\tCtrl+Shift+H");
         append(emulation_, DesktopMenuCommand::remote_join,
-               L"Join TCP Link\tCtrl+Shift+J");
+               L"Join Remote Link\tCtrl+Shift+J");
         append(emulation_, DesktopMenuCommand::remote_discover,
                L"Discover LAN Link Hosts\tCtrl+Shift+D");
         append(emulation_, DesktopMenuCommand::remote_stop,
-               L"Stop TCP Link");
+               L"Stop Remote Link");
 
         append(view_, DesktopMenuCommand::fullscreen, L"&Fullscreen\tF11");
         AppendMenuW(view_, MF_SEPARATOR, 0, nullptr);

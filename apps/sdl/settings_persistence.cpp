@@ -220,7 +220,9 @@ void write_portable_settings(const std::filesystem::path& preference_directory,
               "Plugin.Path may be repeated and is resolved relative to this file. "
               "Plugin.RequireAllowlist and repeated Plugin.AllowCore restrict "
               "which descriptor identities are trusted. Plugin.RequireCapabilityAllowlist "
-              "and repeated Plugin.AllowCapability restrict requested capabilities.\n\n"
+              "and repeated Plugin.AllowCapability restrict requested capabilities. "
+              "Link.Transport accepts tcp or bluetooth; Bluetooth uses Classic "
+              "RFCOMM and the configured service UUID/address.\n\n"
               "palette = "
            << gameboy::display_palettes[settings.palette].id << "\n"
               "video.Mode = "
@@ -239,6 +241,11 @@ void write_portable_settings(const std::filesystem::path& preference_directory,
     output << "link.RemotePort = " << settings.link_remote_port << '\n';
     output << "link.LanDiscovery = "
            << (settings.link_lan_discovery ? "true" : "false") << '\n';
+    output << "link.Transport = " << settings.link_transport << '\n';
+    output << "link.BluetoothAddress = " << settings.link_bluetooth_address
+           << '\n';
+    output << "link.BluetoothServiceUuid = "
+           << settings.link_bluetooth_service_uuid << '\n';
     for (const auto& plugin_path : settings.plugin_paths) {
         output << "plugin.Path = " << plugin_path.string() << '\n';
     }
@@ -529,6 +536,20 @@ AppSettings load_portable_settings(
         if (key == "link.LanDiscovery") {
             settings.link_lan_discovery =
                 parse_bool_setting(value, settings.link_lan_discovery);
+            continue;
+        }
+        if (key == "link.Transport") {
+            if (value == "tcp" || value == "bluetooth") {
+                settings.link_transport = value;
+            }
+            continue;
+        }
+        if (key == "link.BluetoothAddress") {
+            settings.link_bluetooth_address = value;
+            continue;
+        }
+        if (key == "link.BluetoothServiceUuid") {
+            if (!value.empty()) settings.link_bluetooth_service_uuid = value;
             continue;
         }
         if (key == "touch.Size") {

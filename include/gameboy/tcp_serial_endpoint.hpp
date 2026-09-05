@@ -1,23 +1,24 @@
 #pragma once
 
 #include "gameboy/serial.hpp"
-#include "gameboy/tcp_link_channel.hpp"
+#include "gameboy/link_packet_channel.hpp"
 
 #include <cstdint>
 #include <optional>
 
 namespace gameboy {
 
-// Bridges one local SerialPort to a non-blocking TCP channel. The endpoint
+// Bridges one local SerialPort to a non-blocking packet channel. The endpoint
 // never waits for the network: a local internal edge is held by peer_ready()
-// until poll() receives the peer's response bit.
-class TcpSerialEndpoint final : public SerialEndpoint {
+// until poll() receives the peer's response bit. The historical header and
+// alias retain the TCP name for source compatibility with existing harnesses.
+class LinkSerialEndpoint final : public SerialEndpoint {
 public:
-    TcpSerialEndpoint() noexcept = default;
-    TcpSerialEndpoint(const TcpSerialEndpoint&) = delete;
-    TcpSerialEndpoint& operator=(const TcpSerialEndpoint&) = delete;
+    LinkSerialEndpoint() noexcept = default;
+    LinkSerialEndpoint(const LinkSerialEndpoint&) = delete;
+    LinkSerialEndpoint& operator=(const LinkSerialEndpoint&) = delete;
 
-    void attach(SerialPort& port, TcpLinkChannel& channel,
+    void attach(SerialPort& port, LinkPacketChannel& channel,
                 std::uint64_t link_compatibility_id = 0) noexcept;
     void detach() noexcept;
     void poll() noexcept;
@@ -112,7 +113,7 @@ private:
     static constexpr std::uint8_t reset_flag = 0x80;
 
     SerialPort* port_{};
-    TcpLinkChannel* channel_{};
+    LinkPacketChannel* channel_{};
     std::uint32_t next_sequence_{};
     std::optional<std::uint32_t> pending_sequence_;
     std::optional<bool> response_;
@@ -138,5 +139,8 @@ private:
     std::uint64_t responses_unmatched_{};
     std::uint64_t diagnostic_session_{};
 };
+
+// Source compatibility for callers that adopted the original TCP-only name.
+using TcpSerialEndpoint = LinkSerialEndpoint;
 
 } // namespace gameboy

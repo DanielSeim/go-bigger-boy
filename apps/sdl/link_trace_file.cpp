@@ -20,7 +20,7 @@ std::uint64_t LinkTraceFile::elapsed_ms() const noexcept {
 }
 
 void LinkTraceFile::start(const std::filesystem::path& preference_path,
-                          const char* role_suffix) {
+                          const char* role_suffix, const char* transport) {
     stop();
     std::error_code temp_error;
     const auto temporary_directory =
@@ -41,7 +41,9 @@ void LinkTraceFile::start(const std::filesystem::path& preference_path,
 
     frame_ = 0;
     path_.clear();
-    transport_ = role_suffix == nullptr ? "local" : "tcp";
+    transport_ = transport != nullptr && *transport != '\0'
+                     ? transport
+                     : (role_suffix == nullptr ? "local" : "tcp");
     role_ = role_suffix == nullptr ? "local" : role_suffix;
     started_at_ = std::chrono::steady_clock::now();
     session_ = gbb::next_trace_session_id();

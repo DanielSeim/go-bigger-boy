@@ -14,7 +14,7 @@ void process_link_requests(LinkControlContext context) {
         context.remote_link.endpoint.peer_hello_seen() &&
         !context.remote_link.endpoint.peer_compatible()) {
         gbb::log_frontend_warning(
-            "TCP link rejected: peer compatibility profile does not match");
+            "Remote link rejected: peer compatibility profile does not match");
         stop_remote_link_session(*context.emulator, context.remote_link);
         show_error(context.sdl.window,
                    "The remote link was rejected because the ROM versions are not compatible.");
