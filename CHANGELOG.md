@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [0.31.8] - 2026-09-06
+
+### Link cable discovery and performance
+
+- Make LAN discovery resilient when broadcast or multicast traffic is
+  filtered: hosts advertise periodically, Windows scanners probe local
+  subnets with unicast UDP, and scanners listen on the discovery port when
+  available.
+- Enable broadcast delivery on host discovery sockets so Android-hosted
+  sessions can be found automatically from Windows.
+- Avoid unnecessary remote-link socket polling while idle and reduce legacy
+  bit-link polling overhead to improve Windows frame pacing.
+
 ## [0.31.7] - 2026-09-06
 
 ### Link cable discovery and performance
