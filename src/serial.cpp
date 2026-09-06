@@ -67,6 +67,12 @@ void SerialPort::write_control(const std::uint8_t value) noexcept {
     }
     active_ = true;
     fast_clock_ = cgb_mode_ && (control_ & 0x02) != 0;
+    // `phase_` tracks the free-running serial divider while the port is
+    // idle. Its storage domain is the normal 512-cycle period, but CGB fast
+    // mode observes the divider's 16-cycle sub-period. Reduce the retained
+    // phase when selecting that clock; otherwise a transfer started after an
+    // idle interval could replay dozens of fast edges in one tick batch.
+    phase_ %= cycles_per_bit();
     if (!preserve_transfer) {
         transfer_byte_ = data_;
         bits_shifted_ = 0;
@@ -187,15 +193,16 @@ void SerialPort::restore_state(const std::uint8_t data,
                                const std::uint8_t bits_shifted,
                                const bool active,
                                const bool internal_clock,
-                               const bool fast_clock) noexcept {
+                               const bool fast_clock,
+                               const std::uint8_t transfer_byte) noexcept {
     data_ = data;
     control_ = static_cast<std::uint8_t>(control & (cgb_mode_ ? 0x83 : 0x81));
-    bits_shifted_ = bits_shifted > 7 ? 0 : bits_shifted;
+    bits_shifted_ = bits_shifted > 8 ? 0 : bits_shifted;
     internal_clock_ = internal_clock;
     fast_clock_ = cgb_mode_ && fast_clock;
     phase_ = phase % cycles_per_bit();
     active_ = active && (control_ & 0x80) != 0;
-    transfer_byte_ = data_;
+    transfer_byte_ = transfer_byte;
 }
 
 bool SerialCable::Endpoint::exchange_bit(const bool outgoing) noexcept {

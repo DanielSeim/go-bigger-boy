@@ -166,6 +166,14 @@ void SaveStateBusCodec::write(save_state_format::Writer& writer,
     writer.u8(bus.ppu_.sgb_mask_mode_);
     write_bytes(writer, *bus.ppu_.sgb_border_tiles_);
     write_bytes(writer, *bus.ppu_.sgb_border_pct_);
+    // Serial state is appended so versions 1–23 retain their established
+    // payload offsets while current states can resume a transfer exactly.
+    writer.u32(bus.serial_.phase());
+    writer.u8(bus.serial_.bits_shifted());
+    writer.boolean(bus.serial_.transfer_active());
+    writer.boolean(bus.serial_.internal_clock());
+    writer.boolean(bus.serial_.fast_clock());
+    writer.u8(bus.serial_.transfer_byte());
 }
 
 } // namespace gameboy

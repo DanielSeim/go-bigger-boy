@@ -12,7 +12,7 @@ namespace gameboy::save_state_container {
 // fields.
 constexpr std::size_t header_size = 28;
 constexpr std::size_t maximum_state_size = 2 * 1024 * 1024;
-constexpr std::uint32_t current_version = 23;
+constexpr std::uint32_t current_version = 24;
 constexpr std::uint32_t oldest_supported_version = 1;
 
 struct DecodedState {

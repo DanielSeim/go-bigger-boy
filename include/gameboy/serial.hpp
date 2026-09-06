@@ -73,6 +73,9 @@ public:
     [[nodiscard]] std::uint8_t bits_shifted() const noexcept {
         return bits_shifted_;
     }
+    [[nodiscard]] std::uint8_t transfer_byte() const noexcept {
+        return transfer_byte_;
+    }
     [[nodiscard]] bool internal_clock() const noexcept { return internal_clock_; }
     [[nodiscard]] bool fast_clock() const noexcept { return fast_clock_; }
     [[nodiscard]] std::uint64_t transfers_completed() const noexcept {
@@ -98,7 +101,8 @@ public:
     void restore_state(std::uint8_t data, std::uint8_t control,
                        std::uint32_t phase, std::uint8_t bits_shifted,
                        bool active, bool internal_clock,
-                       bool fast_clock) noexcept;
+                       bool fast_clock,
+                       std::uint8_t transfer_byte) noexcept;
 
     void set_endpoint(SerialEndpoint* endpoint) noexcept;
     void set_completion_callback(void* context,

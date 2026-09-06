@@ -46,6 +46,12 @@ cannot silently alter the generated waveform. Desktop audio cleanup clears an
 overdue queue even when a frame produces no new samples, preventing stale audio
 from repeating after a pause or link wait.
 
+Serial transfers now retain the divider phase and partial-byte state in
+save-state version 24. This matters for CGB fast mode because the serial clock
+uses a 16-cycle sub-period; restoring only SB/SC could otherwise move the next
+edge or replay an entire byte at once. Older save-state versions remain
+loadable with the previous restart-at-boundary behavior.
+
 ## Next accuracy work
 
 The visual harness runs a ROM to a deterministic frame, writes a dependency-free

@@ -291,6 +291,49 @@ void test_serial_link_cable() {
           "CGB fast serial completes after 128 CPU cycles");
 }
 
+void test_cgb_fast_serial_starts_on_divider_subperiod() {
+    gameboy::MemoryBus cgb{gameboy::Cartridge{cgb_test_rom()}};
+
+    // The serial divider keeps running before a transfer is armed. Starting
+    // CGB fast mode must observe its 16-cycle sub-period, rather than treating
+    // the retained normal-speed phase as a sequence of missed fast edges.
+    cgb.tick(460);
+    cgb.write8(0xFF01, 0x00);
+    cgb.write8(0xFF02, 0x83);
+    cgb.tick(3);
+    check(cgb.serial_port().bits_shifted() == 0 &&
+              cgb.serial_port().transfer_active(),
+          "CGB fast serial waits for the next divider sub-period");
+    cgb.tick(1);
+    check(cgb.serial_port().bits_shifted() == 1 &&
+              cgb.serial_port().transfer_active(),
+          "CGB fast serial emits one edge at the aligned sub-period");
+}
+
+void test_serial_save_state_round_trip() {
+    gameboy::Emulator original{gameboy::Cartridge{cgb_test_rom()}};
+    original.bus().write8(0xFF01, 0xA5);
+    original.bus().write8(0xFF02, 0x83);
+    original.bus().tick(17); // One fast edge, with seven bits remaining.
+    const auto state = original.save_state();
+
+    gameboy::Emulator restored{gameboy::Cartridge{cgb_test_rom()}};
+    restored.load_state(state);
+    check(restored.bus().serial_port().transfer_active() &&
+              restored.bus().serial_port().bits_shifted() == 1 &&
+              restored.bus().serial_port().phase() == 1 &&
+              restored.bus().serial_port().transfer_byte() == 0xA5,
+          "save states preserve partial serial transfers and divider phase");
+
+    original.bus().tick(111);
+    restored.bus().tick(111);
+    check(original.bus().read8(0xFF01) == restored.bus().read8(0xFF01) &&
+              original.bus().read8(0xFF02) == restored.bus().read8(0xFF02) &&
+              original.bus().take_serial_output() ==
+                  restored.bus().take_serial_output(),
+          "restored serial transfers complete with identical guest-visible data");
+}
+
 void test_serial_link_interrupt_handshake() {
     // A tiny ROM-level probe matching Pokémon's external-then-internal
     // connection routine. The ISR copies the received SB byte into the HRAM
@@ -1008,6 +1051,8 @@ int main() {
     test_serial_transfer();
     test_link_compatibility_profiles();
     test_serial_link_cable();
+    test_cgb_fast_serial_starts_on_divider_subperiod();
+    test_serial_save_state_round_trip();
     test_serial_link_interrupt_handshake();
     test_serial_link_interrupt_rearm();
     test_serial_link_asymmetric_scheduling();

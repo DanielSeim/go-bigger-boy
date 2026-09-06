@@ -143,7 +143,8 @@ void SaveStateBusCodec::read(save_state_format::Reader& reader,
     bus.serial_.restore_state(
         bus.io_[0x01], bus.io_[0x02], 0, 0,
         (bus.io_[0x02] & 0x80) != 0,
-        (bus.io_[0x02] & 0x01) != 0, (bus.io_[0x02] & 0x02) != 0);
+        (bus.io_[0x02] & 0x01) != 0, (bus.io_[0x02] & 0x02) != 0,
+        bus.io_[0x01]);
     if (version >= 7) {
         const auto contains_camera = reader.boolean();
         if (contains_camera != bus.cartridge_.has_camera()) {
@@ -440,6 +441,23 @@ void SaveStateBusCodec::read(save_state_format::Reader& reader,
         bus.ppu_.sgb_mask_mode_ = 0;
         bus.ppu_.sgb_border_tiles_->fill(0);
         bus.ppu_.sgb_border_pct_->fill(0);
+    }
+    if (version >= 24) {
+        const auto serial_phase = reader.u32();
+        const auto serial_bits = reader.u8();
+        const auto serial_active = reader.boolean();
+        const auto serial_internal = reader.boolean();
+        const auto serial_fast = reader.boolean();
+        const auto serial_transfer_byte = reader.u8();
+        if (serial_phase >= 512 || serial_bits > 8 ||
+            (serial_active && serial_bits == 8) ||
+            (!bus.cgb_mode_ && serial_fast)) {
+            throw SaveStateError("Save state contains invalid serial state");
+        }
+        bus.serial_.restore_state(
+            bus.io_[0x01], bus.io_[0x02], serial_phase, serial_bits,
+            serial_active, serial_internal, serial_fast,
+            serial_transfer_byte);
     }
     if (bus.printer_connected_) bus.printer_.reset();
 }

@@ -156,18 +156,20 @@ void test_save_state_round_trip_and_validation() {
     constexpr std::size_t version_twenty_timing_size = 3;
     constexpr std::size_t version_twenty_one_pulse_timing_size = 10;
     // Version 23 adds SGB border transfer latches and mask state after the
-    // version 22 joypad/parser, palette, and attribute block. Strip both
-    // when constructing the legacy v1-v21
-    // fixtures below, just like the earlier version deltas.
+    // version 22 joypad/parser, palette, and attribute block. Version 24
+    // appends serial transfer timing. Strip all newer blocks when constructing
+    // the legacy fixtures below, just like the earlier version deltas.
     constexpr std::size_t version_twenty_two_sgb_size = 237 + 393;
     constexpr std::size_t version_twenty_three_sgb_border_size =
         1 + 0x2000 + 0x1000;
+    constexpr std::size_t version_twenty_four_serial_size = 9;
     constexpr std::size_t version_nine_fetcher_size =
         737 + version_ten_window_latch_size + version_eleven_fetcher_size +
         version_twelve_sprite_size + version_thirteen_sprite_fetch_size +
         version_fourteen_sprite_deadline_size + version_fifteen_sprite_render_size;
     auto legacy_saved = saved;
     legacy_saved.resize(legacy_saved.size() -
+                        version_twenty_four_serial_size -
                         version_twenty_three_sgb_border_size -
                         version_twenty_two_sgb_size -
                         version_twenty_one_pulse_timing_size -
@@ -484,6 +486,24 @@ void test_save_state_round_trip_and_validation() {
     check(emulator.save_state() == replay.save_state(),
           "restored emulators continue deterministically");
 
+    auto version_twenty_three = saved;
+    version_twenty_three.resize(version_twenty_three.size() -
+                                version_twenty_four_serial_size);
+    version_twenty_three[8] = 23;
+    const auto version_twenty_three_payload_size = static_cast<std::uint32_t>(
+        version_twenty_three.size() - state_header_size);
+    write_little_u32(version_twenty_three, 20,
+                     version_twenty_three_payload_size);
+    write_little_u32(
+        version_twenty_three, 24,
+        state_crc32(version_twenty_three.data() + state_header_size,
+                    version_twenty_three_payload_size));
+    gameboy::Emulator version_twenty_three_loader{gameboy::Cartridge{rom}};
+    version_twenty_three_loader.load_state(version_twenty_three);
+    check(version_twenty_three_loader.cpu().registers().pc == saved_pc &&
+              version_twenty_three_loader.cpu().total_cycles() == saved_cycles,
+          "version 23 save states remain loadable after appending serial timing");
+
     const auto unchanged = emulator.save_state();
     auto corrupted = saved;
     corrupted.back() ^= 0x80;
@@ -509,6 +529,7 @@ void test_save_state_round_trip_and_validation() {
 
     auto version_sixteen = saved;
     version_sixteen.resize(version_sixteen.size() -
+                           version_twenty_four_serial_size -
                            version_twenty_three_sgb_border_size -
                            version_twenty_two_sgb_size -
                            version_twenty_one_pulse_timing_size -
@@ -533,6 +554,7 @@ void test_save_state_round_trip_and_validation() {
 
     auto version_seventeen = saved;
     version_seventeen.resize(version_seventeen.size() -
+                             version_twenty_four_serial_size -
                              version_twenty_three_sgb_border_size -
                              version_twenty_two_sgb_size -
                              version_twenty_one_pulse_timing_size -
@@ -555,7 +577,7 @@ void test_save_state_round_trip_and_validation() {
           "version 17 save states remain loadable after adding object deadlines");
 
     auto future_version = saved;
-    future_version[8] = 24;
+    future_version[8] = 25;
     auto rejected_version = false;
     try {
         emulator.load_state(future_version);
