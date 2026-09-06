@@ -64,6 +64,10 @@ std::uint64_t Emulator::link_compatibility_id() const noexcept {
     return bus_.cartridge().link_compatibility_id();
 }
 
+LinkCompatibilityProfile Emulator::link_compatibility_profile() const noexcept {
+    return bus_.cartridge().link_compatibility_profile();
+}
+
 std::vector<std::uint8_t> Emulator::save_state() const {
     return SaveStateCodec::encode(*this);
 }

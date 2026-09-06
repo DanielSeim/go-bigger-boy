@@ -53,7 +53,8 @@ void process_remote_link_requests(RemoteLinkControlContext context) {
         } else if (!context.remote_link.scanning) {
             if (!context.remote_link.discovery.start_scan(
                     context.emulator->link_compatibility_id(),
-                    context.emulator->rom_fingerprint())) {
+                    context.emulator->rom_fingerprint(),
+                    context.emulator->link_compatibility_profile())) {
                 show_error(context.sdl.window,
                            "Could not start LAN link discovery.");
             } else {

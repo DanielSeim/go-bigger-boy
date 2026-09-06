@@ -21,9 +21,16 @@ int main() {
     gameboy::LanDiscovery scanner;
     const auto compatibility_id = UINT64_C(0x0123456789abcdef);
     const auto fingerprint = UINT64_C(0xfedcba9876543210);
+    const gameboy::LinkCompatibilityProfile profile{
+        gameboy::LinkCompatibilityProfile::current_version,
+        gameboy::LinkGeneration::gen2, gameboy::LinkRegion::western,
+        static_cast<std::uint8_t>(gameboy::LinkMode::gen2_cable_club) |
+            static_cast<std::uint8_t>(gameboy::LinkMode::time_capsule)};
     const auto host_started =
-        host.start_host(8765, compatibility_id, fingerprint, "Test Host");
-    const auto scanner_started = scanner.start_scan(compatibility_id, 0);
+        host.start_host(8765, compatibility_id, fingerprint, "Test Host",
+                        profile);
+    const auto scanner_started =
+        scanner.start_scan(compatibility_id, 0, profile);
     if (!host_started || !scanner_started) {
         // Some hermetic CI/sandbox environments deny UDP sockets entirely.
         // Keep the test visible as skipped there; real desktop CI exercises
@@ -47,7 +54,9 @@ int main() {
             check(peers.front().port == 8765 &&
                       peers.front().compatibility_id == compatibility_id &&
                       peers.front().rom_fingerprint == fingerprint &&
-                      peers.front().name == "Test Host",
+                      peers.front().name == "Test Host" &&
+                      peers.front().compatibility_profile.generation ==
+                          gameboy::LinkGeneration::gen2,
                   "discovery response carries host metadata");
         }
     }

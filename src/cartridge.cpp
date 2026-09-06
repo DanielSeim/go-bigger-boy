@@ -572,6 +572,45 @@ std::uint64_t Cartridge::rom_fingerprint() const noexcept {
     return hash;
 }
 
+LinkCompatibilityProfile Cartridge::link_compatibility_profile() const noexcept {
+    constexpr std::string_view gen1_titles[] = {
+        "POKEMON RED", "POKEMON BLUE", "POKEMON YELLOW", "POKEMON GREEN"};
+    constexpr std::string_view gen2_titles[] = {
+        "POKEMON GOLD", "POKEMON SILVER", "POKEMON CRYSTAL", "POKEMON G",
+        "POKEMON S", "POKEMON C"};
+    const auto matches_title = [this](const std::string_view expected) {
+        constexpr std::size_t title_begin = 0x134;
+        if (rom_.size() < title_begin + expected.size()) return false;
+        for (std::size_t index = 0; index < expected.size(); ++index) {
+            auto byte = rom_[title_begin + index];
+            if (byte >= 'a' && byte <= 'z') {
+                byte = static_cast<std::uint8_t>(byte - 'a' + 'A');
+            }
+            if (byte != static_cast<std::uint8_t>(expected[index])) return false;
+        }
+        return true;
+    };
+    const auto region = rom_.size() > 0x14A && rom_[0x14A] == 0
+                            ? LinkRegion::japanese
+                            : LinkRegion::western;
+    for (const auto title : gen1_titles) {
+        if (matches_title(title)) {
+            return {LinkCompatibilityProfile::current_version,
+                    LinkGeneration::gen1, region,
+                    static_cast<std::uint8_t>(LinkMode::gen1_cable_club)};
+        }
+    }
+    for (const auto title : gen2_titles) {
+        if (matches_title(title)) {
+            return {LinkCompatibilityProfile::current_version,
+                    LinkGeneration::gen2, region,
+                    static_cast<std::uint8_t>(LinkMode::gen2_cable_club) |
+                        static_cast<std::uint8_t>(LinkMode::time_capsule)};
+        }
+    }
+    return {};
+}
+
 std::uint64_t Cartridge::link_compatibility_id() const noexcept {
     // The exact ROM hash remains the save-state and diagnostic identity. For
     // link negotiation, the original Pokémon releases intentionally share a

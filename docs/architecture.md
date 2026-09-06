@@ -98,6 +98,12 @@ remote session.
 `gameboy::LinkPacketChannel` is the transport-neutral packet boundary used by
 TCP and Bluetooth Classic RFCOMM. It keeps future stream transports from
 duplicating serial arbitration and compatibility-handshake logic.
+The optional `gameboy::LinkCompatibilityProfile` is exchanged alongside the
+legacy compatibility ID. It identifies Pokémon generation, region, and
+protocol capabilities: Gen I↔Gen I uses Cable Club, Gen II↔Gen II uses the
+Gen II protocol, and mixed generations are admitted for Time Capsule only.
+The extension is backwards-compatible with peers that predate profile
+negotiation.
 
 ## Adding a GBA core
 

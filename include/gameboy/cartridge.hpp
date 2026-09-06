@@ -1,5 +1,7 @@
 #pragma once
 
+#include "gameboy/link_compatibility.hpp"
+
 #include <cstddef>
 #include <array>
 #include <cstdint>
@@ -54,6 +56,7 @@ public:
     // rom_fingerprint(): compatible Pokémon releases may have different
     // localized/versioned ROM bytes while sharing a link protocol.
     [[nodiscard]] std::uint64_t link_compatibility_id() const noexcept;
+    [[nodiscard]] LinkCompatibilityProfile link_compatibility_profile() const noexcept;
     [[nodiscard]] std::vector<std::uint8_t> export_battery_ram() const;
     void import_battery_ram(const std::vector<std::uint8_t>& data);
     [[nodiscard]] std::vector<std::uint8_t> export_battery_save() const;

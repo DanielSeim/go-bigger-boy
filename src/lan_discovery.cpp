@@ -122,6 +122,36 @@ std::string fingerprint_text(const std::uint64_t value) {
     return output.str();
 }
 
+std::string profile_text(const LinkCompatibilityProfile profile) {
+    if (!profile.known()) return {};
+    std::ostringstream output;
+    output << "profile=" << static_cast<unsigned>(profile.version) << '-'
+           << static_cast<unsigned>(profile.generation) << '-'
+           << static_cast<unsigned>(profile.region) << '-'
+           << static_cast<unsigned>(profile.modes);
+    return output.str();
+}
+
+bool parse_profile_text(const std::string& text,
+                        LinkCompatibilityProfile& profile) noexcept {
+    if (text.rfind("profile=", 0) != 0) return false;
+    std::istringstream input(text.substr(8));
+    unsigned version = 0, generation = 0, region = 0, modes = 0;
+    char separator = 0;
+    if (!(input >> version >> separator) || separator != '-' ||
+        !(input >> generation >> separator) || separator != '-' ||
+        !(input >> region >> separator) || separator != '-' ||
+        !(input >> modes) || version > UINT8_MAX || generation > UINT8_MAX ||
+        region > UINT8_MAX || modes > UINT8_MAX) {
+        return false;
+    }
+    profile = {static_cast<std::uint8_t>(version),
+               static_cast<LinkGeneration>(generation),
+               static_cast<LinkRegion>(region),
+               static_cast<std::uint8_t>(modes)};
+    return profile.known();
+}
+
 bool parse_hex(const std::string& text, std::uint64_t& value) noexcept {
     if (text.empty() || text.size() > 16) return false;
     value = 0;
@@ -163,7 +193,8 @@ LanDiscovery::~LanDiscovery() { stop(); }
 bool LanDiscovery::start_host(const std::uint16_t tcp_port,
                               const std::uint64_t compatibility_id,
                               const std::uint64_t rom_fingerprint,
-                              const std::string& name) noexcept {
+                              const std::string& name,
+                              const LinkCompatibilityProfile profile) noexcept {
     stop();
     if (!sockets_ready()) return false;
     const auto socket = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -256,6 +287,7 @@ bool LanDiscovery::start_host(const std::uint16_t tcp_port,
     tcp_port_ = tcp_port;
     compatibility_id_ = compatibility_id;
     rom_fingerprint_ = rom_fingerprint;
+    compatibility_profile_ = profile;
     name_ = sanitize_name(name);
     next_host_advertisement_ = std::chrono::steady_clock::now();
     return true;
@@ -268,7 +300,8 @@ bool LanDiscovery::start_host(const std::uint16_t tcp_port,
 }
 
 bool LanDiscovery::start_scan(const std::uint64_t compatibility_id,
-                              const std::uint64_t rom_fingerprint) noexcept {
+                              const std::uint64_t rom_fingerprint,
+                              const LinkCompatibilityProfile profile) noexcept {
     stop();
     if (!sockets_ready()) return false;
     const auto socket = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -312,9 +345,14 @@ bool LanDiscovery::start_scan(const std::uint64_t compatibility_id,
     mode_ = Mode::scan;
     compatibility_id_ = compatibility_id;
     rom_fingerprint_ = rom_fingerprint;
+    compatibility_profile_ = profile;
     peers_.clear();
     scan_message_ = std::string("GBB-DISCOVERY/1 Q ") +
                     fingerprint_text(compatibility_id_);
+    if (const auto descriptor = profile_text(compatibility_profile_);
+        !descriptor.empty()) {
+        scan_message_ += ' ' + descriptor;
+    }
     // A broadcast can be rejected by a host firewall even when ordinary
     // unicast UDP is available. Keep the scanner alive so the loopback and
     // any later interface-specific responses can still be consumed.
@@ -352,7 +390,12 @@ void LanDiscovery::poll() noexcept {
         response << "GBB-DISCOVERY/1 R "
                  << fingerprint_text(compatibility_id_) << ' '
                  << fingerprint_text(rom_fingerprint_) << ' ' << tcp_port_
-                 << ' ' << name_;
+                 << ' ';
+        if (const auto descriptor = profile_text(compatibility_profile_);
+            !descriptor.empty()) {
+            response << descriptor << ' ';
+        }
+        response << name_;
         const auto message = response.str();
         // Advertise periodically as well as answering queries. This handles
         // networks that drop broadcast/multicast packets in one direction
@@ -395,6 +438,7 @@ void LanDiscovery::stop() noexcept {
     tcp_port_ = 0;
     compatibility_id_ = 0;
     rom_fingerprint_ = 0;
+    compatibility_profile_ = {};
     scan_message_.clear();
     next_scan_broadcast_ = {};
     next_host_advertisement_ = {};
@@ -640,11 +684,24 @@ void LanDiscovery::receive_available() noexcept {
             continue;
         }
         if (mode_ == Mode::host && type == 'Q') {
+            std::string token;
+            LinkCompatibilityProfile peer_profile{};
+            const auto has_profile = static_cast<bool>(input >> token) &&
+                                     parse_profile_text(token, peer_profile);
+            if (compatibility_profile_.known() && has_profile &&
+                !link_profiles_compatible(compatibility_profile_, peer_profile)) {
+                continue;
+            }
             std::ostringstream response;
             response << "GBB-DISCOVERY/1 R "
                      << fingerprint_text(compatibility_id_) << ' '
                      << fingerprint_text(rom_fingerprint_) << ' ' << tcp_port_
-                     << ' ' << name_;
+                     << ' ';
+            if (const auto descriptor = profile_text(compatibility_profile_);
+                !descriptor.empty()) {
+                response << descriptor << ' ';
+            }
+            response << name_;
             static_cast<void>(send_message(response.str(), address_text,
                                             ntohs(source.sin_port)));
             continue;
@@ -656,8 +713,19 @@ void LanDiscovery::receive_available() noexcept {
         if (!parse_hex(fingerprint, parsed_fingerprint)) continue;
         unsigned port = 0;
         if (!(input >> port) || port == 0 || port > UINT16_MAX) continue;
+        std::string first_name;
+        if (!(input >> first_name)) continue;
+        LinkCompatibilityProfile peer_profile{};
+        if (parse_profile_text(first_name, peer_profile)) {
+            if (compatibility_profile_.known() &&
+                !link_profiles_compatible(compatibility_profile_, peer_profile)) {
+                continue;
+            }
+            first_name.clear();
+        }
         std::string name;
         std::getline(input, name);
+        if (!first_name.empty()) name = ' ' + first_name + name;
         if (!name.empty() && name.front() == ' ') name.erase(0, 1);
         const auto duplicate = std::find_if(
             peers_.begin(), peers_.end(), [&](const LanPeer& peer) {
@@ -668,7 +736,8 @@ void LanDiscovery::receive_available() noexcept {
             peers_.push_back({address_text, sanitize_name(std::move(name)),
                               static_cast<std::uint16_t>(port),
                               parsed_compatibility,
-                              parsed_fingerprint});
+                              parsed_fingerprint,
+                              peer_profile});
         }
     }
 }

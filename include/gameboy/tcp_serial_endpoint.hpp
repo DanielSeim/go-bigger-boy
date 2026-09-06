@@ -2,6 +2,7 @@
 
 #include "gameboy/serial.hpp"
 #include "gameboy/link_packet_channel.hpp"
+#include "gameboy/link_compatibility.hpp"
 
 #include <cstdint>
 #include <optional>
@@ -19,7 +20,8 @@ public:
     LinkSerialEndpoint& operator=(const LinkSerialEndpoint&) = delete;
 
     void attach(SerialPort& port, LinkPacketChannel& channel,
-                std::uint64_t link_compatibility_id = 0) noexcept;
+                std::uint64_t link_compatibility_id = 0,
+                LinkCompatibilityProfile compatibility_profile = {}) noexcept;
     void detach() noexcept;
     void poll() noexcept;
     void set_arbitration_priority(bool priority) noexcept {
@@ -44,6 +46,8 @@ public:
     [[nodiscard]] bool needs_poll() const noexcept {
         return channel_ != nullptr &&
                (!peer_hello_seen_ || waiting_for_peer() ||
+                (compatibility_profile_.known() && !peer_profile_seen_ &&
+                 profile_wait_polls_ < profile_wait_limit) ||
                 (port_ != nullptr && port_->transfer_active()));
     }
 
@@ -62,6 +66,12 @@ public:
     }
     [[nodiscard]] std::uint64_t peer_compatibility_id() const noexcept {
         return peer_compatibility_id_;
+    }
+    [[nodiscard]] LinkCompatibilityProfile compatibility_profile() const noexcept {
+        return compatibility_profile_;
+    }
+    [[nodiscard]] LinkCompatibilityProfile peer_compatibility_profile() const noexcept {
+        return peer_compatibility_profile_;
     }
     [[nodiscard]] bool peer_request_seen() const noexcept {
         return peer_request_seen_;
@@ -149,6 +159,11 @@ private:
     std::uint8_t hello_parts_received_{};
     std::uint64_t compatibility_id_{};
     std::uint64_t peer_compatibility_id_{};
+    LinkCompatibilityProfile compatibility_profile_{};
+    LinkCompatibilityProfile peer_compatibility_profile_{};
+    bool peer_profile_seen_{};
+    std::uint16_t profile_wait_polls_{};
+    static constexpr std::uint16_t profile_wait_limit = 120;
     bool peer_request_seen_{};
     bool peer_byte_released_{};
     bool peer_byte_transfer_{};

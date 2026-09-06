@@ -147,6 +147,20 @@ void test_link_compatibility_profiles() {
           "Western Pokémon Gen I and Gen II releases share a link profile");
     check(red.link_compatibility_id() != japanese.link_compatibility_id(),
           "Japanese Pokémon releases use a separate link profile");
+    const auto red_profile = red.link_compatibility_profile();
+    const auto blue_profile = blue.link_compatibility_profile();
+    const auto gen2_profile = gold.link_compatibility_profile();
+    const auto japanese_profile = japanese.link_compatibility_profile();
+    check(red_profile.known() && red_profile.generation == gameboy::LinkGeneration::gen1 &&
+              gen2_profile.known() && gen2_profile.generation == gameboy::LinkGeneration::gen2,
+          "Pokémon cartridges expose generation-aware link metadata");
+    check(gameboy::link_profiles_compatible(red_profile, blue_profile) &&
+              gameboy::link_profiles_compatible(gen2_profile,
+                                                 crystal.link_compatibility_profile()) &&
+              gameboy::link_profiles_compatible(red_profile, gen2_profile),
+          "Gen I, Gen II, and Time Capsule compatibility are negotiated explicitly");
+    check(!gameboy::link_profiles_compatible(red_profile, japanese_profile),
+          "cross-region Pokémon link sessions are rejected before serial traffic");
     const auto unknown = gameboy::Cartridge{test_rom()};
     check(unknown.link_compatibility_id() == unknown.rom_fingerprint(),
           "unknown software retains strict ROM link compatibility");
@@ -547,8 +561,19 @@ void test_packet_channel_endpoint_contract() {
     first_endpoint.set_arbitration_priority(true);
     second_endpoint.set_arbitration_priority(false);
     constexpr std::uint64_t profile = 0x1020304050607080ULL;
-    first_endpoint.attach(first.serial_port(), first_channel, profile);
-    second_endpoint.attach(second.serial_port(), second_channel, profile);
+    const gameboy::LinkCompatibilityProfile gen1_profile{
+        gameboy::LinkCompatibilityProfile::current_version,
+        gameboy::LinkGeneration::gen1, gameboy::LinkRegion::western,
+        static_cast<std::uint8_t>(gameboy::LinkMode::gen1_cable_club)};
+    const gameboy::LinkCompatibilityProfile gen2_profile{
+        gameboy::LinkCompatibilityProfile::current_version,
+        gameboy::LinkGeneration::gen2, gameboy::LinkRegion::western,
+        static_cast<std::uint8_t>(gameboy::LinkMode::gen2_cable_club) |
+            static_cast<std::uint8_t>(gameboy::LinkMode::time_capsule)};
+    first_endpoint.attach(first.serial_port(), first_channel, profile,
+                          gen1_profile);
+    second_endpoint.attach(second.serial_port(), second_channel, profile,
+                           gen2_profile);
     for (unsigned attempt = 0; attempt < 12; ++attempt) {
         first_endpoint.poll();
         second_endpoint.poll();
@@ -566,6 +591,11 @@ void test_packet_channel_endpoint_contract() {
     check(first_endpoint.peer_byte_transfer() &&
               second_endpoint.peer_byte_transfer(),
           "packet-channel peers advertise byte-transfer capability");
+    check(first_endpoint.peer_compatibility_profile().generation ==
+                  gameboy::LinkGeneration::gen2 &&
+              second_endpoint.peer_compatibility_profile().generation ==
+                  gameboy::LinkGeneration::gen1,
+          "packet handshake exchanges generation and protocol capabilities");
 
     first.write8(0xFF01, 0xA5);
     second.write8(0xFF01, 0x3C);
@@ -656,6 +686,40 @@ void test_packet_channel_handoff_race() {
           "early join arm completes after the host release");
     host_endpoint.detach();
     join_endpoint.detach();
+}
+
+void test_packet_channel_rejects_profile_mismatch() {
+    QueuePacketChannel first_channel;
+    QueuePacketChannel second_channel;
+    first_channel.connect_to(second_channel);
+    second_channel.connect_to(first_channel);
+    gameboy::MemoryBus first{gameboy::Cartridge{test_rom()}};
+    gameboy::MemoryBus second{gameboy::Cartridge{test_rom()}};
+    gameboy::TcpSerialEndpoint first_endpoint;
+    gameboy::TcpSerialEndpoint second_endpoint;
+    first_endpoint.set_arbitration_priority(true);
+    second_endpoint.set_arbitration_priority(false);
+    const gameboy::LinkCompatibilityProfile western{
+        gameboy::LinkCompatibilityProfile::current_version,
+        gameboy::LinkGeneration::gen1, gameboy::LinkRegion::western,
+        static_cast<std::uint8_t>(gameboy::LinkMode::gen1_cable_club)};
+    const gameboy::LinkCompatibilityProfile japanese{
+        gameboy::LinkCompatibilityProfile::current_version,
+        gameboy::LinkGeneration::gen1, gameboy::LinkRegion::japanese,
+        static_cast<std::uint8_t>(gameboy::LinkMode::gen1_cable_club)};
+    constexpr std::uint64_t profile_id = 0x8899aabbccddeeffULL;
+    first_endpoint.attach(first.serial_port(), first_channel, profile_id,
+                          western);
+    second_endpoint.attach(second.serial_port(), second_channel, profile_id,
+                           japanese);
+    for (unsigned attempt = 0; attempt < 12; ++attempt) {
+        first_endpoint.poll();
+        second_endpoint.poll();
+    }
+    check(first_endpoint.peer_hello_seen() && second_endpoint.peer_hello_seen() &&
+              !first_endpoint.peer_compatible() &&
+              !second_endpoint.peer_compatible(),
+          "profile negotiation rejects same-ID releases from different regions");
 }
 
 void test_tcp_link_channel_loopback() {
@@ -953,6 +1017,7 @@ int main() {
     test_link_transport_framing();
     test_packet_channel_endpoint_contract();
     test_packet_channel_handoff_race();
+    test_packet_channel_rejects_profile_mismatch();
     test_tcp_link_channel_loopback();
     test_tcp_serial_endpoint_loopback();
     test_tcp_serial_endpoint_rejects_mismatched_rom();

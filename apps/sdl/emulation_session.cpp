@@ -454,6 +454,14 @@ void trace_remote_frame(gameboy::Emulator& emulator,
                << " z=" << remote.endpoint.response_ready()
                << " compat=" << remote.endpoint.peer_compatible()
                << " peer_compat=" << remote.endpoint.peer_compatibility_id()
+               << " link_gen=" << static_cast<unsigned>(
+                                      emulator.link_compatibility_profile().generation)
+               << " peer_link_gen=" << static_cast<unsigned>(
+                                           remote.endpoint.peer_compatibility_profile().generation)
+               << " peer_link_region=" << static_cast<unsigned>(
+                                              remote.endpoint.peer_compatibility_profile().region)
+               << " peer_link_modes=" << static_cast<unsigned>(
+                                             remote.endpoint.peer_compatibility_profile().modes)
                << " rom_fp=" << emulator.rom_fingerprint()
                << " pr=" << remote.endpoint.peer_request_seen()
                << " pb=" << remote.endpoint.peer_byte_released()
@@ -656,13 +664,15 @@ void start_remote_link_session(gameboy::Emulator& emulator,
     remote.diagnostics = link_diagnostics;
     remote.endpoint.set_arbitration_priority(hosting);
     remote.endpoint.attach(emulator.bus().serial_port(), channel,
-                           emulator.link_compatibility_id());
+                           emulator.link_compatibility_id(),
+                           emulator.link_compatibility_profile());
     if (options.lan_discovery && !remote.bluetooth) {
         const auto discovered = hosting
             ? remote.discovery.start_host(options.port,
                                           emulator.link_compatibility_id(),
                                           emulator.rom_fingerprint(),
-                                          "Go Bigger Boy")
+                                          "Go Bigger Boy",
+                                          emulator.link_compatibility_profile())
             : true;
         if (!discovered) {
             remote.endpoint.detach();
@@ -766,7 +776,8 @@ void retry_remote_link_session(gameboy::Emulator& emulator,
                                                            options.port));
     if (!ready) {
         remote.endpoint.attach(emulator.bus().serial_port(), channel,
-                               emulator.link_compatibility_id());
+                               emulator.link_compatibility_id(),
+                               emulator.link_compatibility_profile());
         throw std::runtime_error(remote.bluetooth
                                      ? "Could not retry the Bluetooth link session."
                                      : "Could not retry the TCP link session.");
@@ -776,7 +787,8 @@ void retry_remote_link_session(gameboy::Emulator& emulator,
         !remote.discovery.start_host(options.port,
                                      emulator.link_compatibility_id(),
                                      emulator.rom_fingerprint(),
-                                     "Go Bigger Boy")) {
+                                     "Go Bigger Boy",
+                                     emulator.link_compatibility_profile())) {
         throw std::runtime_error("Could not restart LAN discovery.");
     }
 #ifdef __ANDROID__
@@ -789,7 +801,8 @@ void retry_remote_link_session(gameboy::Emulator& emulator,
     }
 #endif
     remote.endpoint.attach(emulator.bus().serial_port(), channel,
-                           emulator.link_compatibility_id());
+                           emulator.link_compatibility_id(),
+                           emulator.link_compatibility_profile());
 }
 
 

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "gameboy/link_compatibility.hpp"
+
 #include <chrono>
 #include <cstdint>
 #include <string>
@@ -13,6 +15,7 @@ struct LanPeer {
     std::uint16_t port{};
     std::uint64_t compatibility_id{};
     std::uint64_t rom_fingerprint{};
+    LinkCompatibilityProfile compatibility_profile{};
 };
 
 // Opt-in UDP discovery for desktop LAN links. A host answers queries while a
@@ -33,14 +36,16 @@ public:
     [[nodiscard]] bool start_host(std::uint16_t tcp_port,
                                   std::uint64_t compatibility_id,
                                   std::uint64_t rom_fingerprint,
-                                  const std::string& name) noexcept;
+                                  const std::string& name,
+                                  LinkCompatibilityProfile profile = {}) noexcept;
     // Legacy convenience form: exact ROM identity also acts as the
     // compatibility identity for callers that do not have a profile.
     [[nodiscard]] bool start_host(std::uint16_t tcp_port,
                                   std::uint64_t rom_fingerprint,
                                   const std::string& name) noexcept;
     [[nodiscard]] bool start_scan(std::uint64_t compatibility_id,
-                                  std::uint64_t rom_fingerprint) noexcept;
+                                  std::uint64_t rom_fingerprint,
+                                  LinkCompatibilityProfile profile = {}) noexcept;
     [[nodiscard]] bool start_scan(std::uint64_t rom_fingerprint) noexcept;
     void poll() noexcept;
     void stop() noexcept;
@@ -61,6 +66,7 @@ private:
     std::uint16_t tcp_port_{};
     std::uint64_t compatibility_id_{};
     std::uint64_t rom_fingerprint_{};
+    LinkCompatibilityProfile compatibility_profile_{};
     std::string name_;
     std::vector<LanPeer> peers_;
     std::string scan_message_;

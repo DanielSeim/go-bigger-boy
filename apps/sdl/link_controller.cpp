@@ -28,7 +28,8 @@ void process_link_requests(LinkControlContext context) {
         } else {
             gameboy::LanDiscovery scanner;
             if (!scanner.start_scan(context.emulator->link_compatibility_id(),
-                                    context.emulator->rom_fingerprint())) {
+                                    context.emulator->rom_fingerprint(),
+                                    context.emulator->link_compatibility_profile())) {
                 show_error(context.sdl.window,
                            "Could not start LAN link discovery.");
             } else {

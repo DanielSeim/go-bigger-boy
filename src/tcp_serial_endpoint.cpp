@@ -13,7 +13,8 @@ std::atomic<std::uint64_t> next_diagnostic_session{1};
 
 void LinkSerialEndpoint::attach(SerialPort& port,
                                 LinkPacketChannel& channel,
-                                const std::uint64_t link_compatibility_id) noexcept {
+                                const std::uint64_t link_compatibility_id,
+                                const LinkCompatibilityProfile compatibility_profile) noexcept {
     detach();
     port_ = &port;
     channel_ = &channel;
@@ -31,6 +32,10 @@ void LinkSerialEndpoint::attach(SerialPort& port,
     hello_parts_received_ = 0;
     compatibility_id_ = link_compatibility_id;
     peer_compatibility_id_ = 0;
+    compatibility_profile_ = compatibility_profile;
+    peer_compatibility_profile_ = {};
+    peer_profile_seen_ = false;
+    profile_wait_polls_ = 0;
     peer_request_seen_ = false;
     peer_byte_released_ = false;
     peer_byte_transfer_ = false;
@@ -72,6 +77,10 @@ void LinkSerialEndpoint::detach() noexcept {
     hello_parts_received_ = 0;
     compatibility_id_ = 0;
     peer_compatibility_id_ = 0;
+    compatibility_profile_ = {};
+    peer_compatibility_profile_ = {};
+    peer_profile_seen_ = false;
+    profile_wait_polls_ = 0;
     peer_request_seen_ = false;
     peer_byte_released_ = false;
     peer_byte_transfer_ = false;
@@ -214,6 +223,10 @@ void LinkSerialEndpoint::poll() noexcept {
     if (channel_ == nullptr) return;
     channel_->poll();
     if (!connected()) return;
+    if (compatibility_profile_.known() && peer_hello_seen_ &&
+        !peer_profile_seen_ && profile_wait_polls_ < profile_wait_limit) {
+        ++profile_wait_polls_;
+    }
     if (!hello_sent_) {
         const auto part = hello_parts_sent_;
         LinkPacket hello{LinkPacketType::hello, part,
@@ -224,16 +237,27 @@ void LinkSerialEndpoint::poll() noexcept {
                          // harmless to older endpoints, which ignore flags
                          // on the arbitration hello.
                          byte_transfer_capability};
-        if (compatibility_id_ != 0 && part != 0) {
+        if (compatibility_id_ != 0 && part != 0 && part < 5) {
             const auto shift = static_cast<unsigned>((part - 1U) * 16U);
             hello.value = static_cast<std::uint8_t>(compatibility_id_ >> shift);
             hello.flags = static_cast<std::uint8_t>(compatibility_id_ >> (shift + 8U));
+        } else if (compatibility_profile_.known() && part == 5) {
+            // Optional profile extension. Legacy peers ignore sequence 5,
+            // while current peers can distinguish Gen I, Gen II, and Time
+            // Capsule-compatible sessions without changing the packet frame.
+            hello.value = static_cast<std::uint8_t>(
+                static_cast<std::uint8_t>(compatibility_profile_.generation) |
+                (static_cast<std::uint8_t>(compatibility_profile_.region) << 4U));
+            hello.flags = static_cast<std::uint8_t>(
+                (compatibility_profile_.modes & 0x0fU) |
+                ((compatibility_profile_.version & 0x0fU) << 4U));
         }
         if (channel_->send(hello)) {
             ++hello_parts_sent_;
             hello_sent_ = compatibility_id_ == 0
                               ? hello_parts_sent_ >= 1
-                              : hello_parts_sent_ >= 5;
+                              : hello_parts_sent_ >=
+                                    (compatibility_profile_.known() ? 6 : 5);
             gbb::Logger::instance().write(
                 gbb::LogLevel::debug, gbb::LogCategory::link,
                 hello_sent_ ? "link hello sent" : "link hello part sent",
@@ -313,6 +337,27 @@ void LinkSerialEndpoint::poll() noexcept {
                 peer_hello_seen_ = true;
                 continue;
             }
+            if (packet->sequence == 5) {
+                const auto generation = static_cast<LinkGeneration>(
+                    packet->value & 0x0fU);
+                const auto region = static_cast<LinkRegion>(
+                    (packet->value >> 4U) & 0x0fU);
+                const auto version = static_cast<std::uint8_t>(
+                    (packet->flags >> 4U) & 0x0fU);
+                const auto modes = static_cast<std::uint8_t>(packet->flags & 0x0fU);
+                peer_compatibility_profile_ = {
+                    version,
+                    generation, region, modes};
+                peer_profile_seen_ = peer_compatibility_profile_.known();
+                if (peer_hello_seen_ && compatibility_profile_.known() &&
+                    peer_profile_seen_) {
+                    peer_compatible_ =
+                        peer_compatibility_id_ == compatibility_id_ &&
+                        link_profiles_compatible(compatibility_profile_,
+                                                 peer_compatibility_profile_);
+                }
+                continue;
+            }
             if (packet->sequence >= 5) continue;
             if (packet->sequence == 0) {
                 hello_parts_received_ = static_cast<std::uint8_t>(
@@ -331,6 +376,12 @@ void LinkSerialEndpoint::poll() noexcept {
                 peer_hello_seen_ = true;
                 peer_compatible_ =
                     peer_compatibility_id_ == compatibility_id_;
+                if (compatibility_profile_.known() && peer_profile_seen_) {
+                    peer_compatible_ =
+                        peer_compatible_ &&
+                        link_profiles_compatible(compatibility_profile_,
+                                                 peer_compatibility_profile_);
+                }
                 gbb::Logger::instance().write(
                     peer_compatible_ ? gbb::LogLevel::debug
                                      : gbb::LogLevel::warning,
