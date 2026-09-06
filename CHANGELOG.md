@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.31.7] - 2026-09-06
+
+### Link cable discovery and performance
+
+- Add Windows adapter-specific subnet broadcast queries for LAN discovery when
+  limited broadcast traffic is filtered by the local network.
+- Skip rewind snapshot serialization during remote link sessions so it cannot
+  interrupt emulation frame pacing.
+- Link the Windows discovery implementation with the system IP Helper API.
+
 ## [0.31.6] - 2026-09-06
 
 ### Link cable discovery and performance
