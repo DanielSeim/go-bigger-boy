@@ -1,0 +1,26 @@
+# GBB audio waveform reference v1
+format=gbb-audio-waveform-v1
+name=pulse
+model=dmg
+source=trusted-emulator
+comparison=normalized
+provenance=SameBoy v1.0.3 commit 208ba4afabffab9edde416f2dbb8ae459e34adb8; dmg model; pulse fixture; synthetic GBB APU REFERENCE ROM; 96 kHz callback; startup trim 16 frames; three takes
+sample_rate=48000
+channels=2
+quantization=64
+samples=186
+max_abs_error=3
+rms_error=3
+data=
+65 65 63 63 63 63 63 63 65 65 -26 -26 -63 -63 -63 -63
+-63 -63 -35 -35 66 66 63 63 63 63 64 64 -52 -52 -64 -64
+-64 -64 -64 -64 -3 -3 63 63 63 63 62 62 53 53 -65 -65
+-65 -65 -65 -65 -66 -66 29 29 62 62 62 62 61 61 29 29
+-67 -67 -65 -65 -64 -64 -64 -64 53 53 62 62 62 62 63 63
+-2 -2 -65 -65 -64 -64 -63 -63 -52 -52 64 64 63 63 63 63
+65 65 -34 -34 -63 -63 -63 -63 -63 -63 -27 -27 65 65 63 63
+63 63 62 62 -57 -57 -64 -64 -64 -64 -64 -64 5 5 63 63
+62 62 62 62 48 48 -66 -66 -65 -65 -65 -65 -66 -66 36 36
+62 62 62 62 62 62 22 22 -66 -66 -64 -64 -64 -64 -62 -62
+57 57 63 63 63 63 64 64 -11 -11 -64 -64 -64 -64 -63 -63
+-47 -47 65 65 64 64 63 63 65 65

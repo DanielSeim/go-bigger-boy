@@ -20,6 +20,15 @@ mutually exclusive boot-ROM expectations run under explicit DMG0, DMG/MGB,
 SGB, SGB2, CGB0, or CGB post-boot hardware profiles. Mooneye's two AGB-only
 misc ROMs are excluded because GBB does not emulate Game Boy Advance hardware.
 
+The `gameboy_hardware_model_matrix_contract` test complements the ROM suites by
+constructing each supported profile directly. It checks the post-boot CPU
+registers, DIV handoff value, serial-divider phase, JOYP selection, APU channel
+startup state, CGB register defaults, and save-state round trips. Automatic
+selection is also checked for ordinary DMG, SGB-capable, and CGB-capable
+cartridges. This is a digital profile contract; it does not claim to model
+analog clock tolerance, LCD response, DAC variation, or Game Boy Advance/Game
+Boy Player hardware.
+
 ## Super Game Boy baseline
 
 Cartridges with the SGB header capability flag (`0x0146 = 0x03`) are selected
@@ -121,35 +130,75 @@ vectors are quantized to one unit per 64 PCM levels so harmless low-bit
 floating-point rounding does not make Linux and Windows disagree. They are the
 reviewable software baseline; the existing Blargg sound ROMs still validate
 CPU-visible APU behavior rather than analog PCM output. CMake copies the
-baseline files beside `gameboy_tests`, so the same check works from a Windows
-build or an arbitrary working directory.
+baseline files beside `gameboy_apu_waveform_contract_tests`, so the same check
+works from a Windows build or an arbitrary working directory.
 
 For comparison against a recording from hardware or a trusted emulator, place
 matching `dmg-pulse.txt`, `dmg-wave.txt`, `dmg-noise.txt`, `cgb-pulse.txt`,
-`cgb-wave.txt`, and `cgb-noise.txt` files in a separate directory and point the
-unit test at it:
+`cgb-wave.txt`, and `cgb-noise.txt` files in
+[`tests/fixtures/audio-external`](../tests/fixtures/audio-external) (or another
+separate directory) and run the focused waveform contract:
 
 ```sh
-GBB_AUDIO_REFERENCE_DIR=/path/to/reference build-sdl/gameboy_tests
+GBB_AUDIO_REFERENCE_DIR=/path/to/reference \
+GBB_AUDIO_REQUIRE_EXTERNAL=1 \
+  build-sdl/gameboy_apu_waveform_contract_tests
 ```
 
 Each file uses the `GBB audio waveform reference v1` text format. Its metadata
-declares the sample rate, channel count, quantization, sample count, and allowed
-`max_abs_error`/`rms_error`; the test reports the first differing sample when a
-fixture exceeds either limit. To capture the emulator's current output for
-inspection (not to replace a trusted reference), use:
+declares the sample rate, channel count, quantization, sample count, source,
+comparison mode, and allowed `max_abs_error`/`rms_error`; the test reports the
+first differing
+sample when a fixture exceeds either limit. External files must include
+`source=hardware` or `source=trusted-emulator` (the older `source=external`
+spelling remains accepted for compatibility) when the strict external gate is
+enabled. To capture the emulator's current output for inspection (not to
+replace a trusted reference), use:
 
 ```sh
 GBB_AUDIO_REFERENCE_CAPTURE_DIR=/tmp/gbb-audio-reference \
 GBB_AUDIO_REFERENCE_DIR=/tmp/gbb-audio-reference \
-  build-sdl/gameboy_tests
+  build-sdl/gameboy_apu_waveform_contract_tests
 ```
 
-The next accuracy pass is to collect those same fixtures from DMG and CGB
-hardware (or a validated hardware-level emulator), set tolerances from the
-measurement noise, and then keep those external references in the release
-verification job. That will cover revision-specific DAC levels and analog
-high-pass response without weakening the deterministic software regression.
+The conversion and tolerance workflow is provided by
+[`scripts/audio_reference.py`](../scripts/audio_reference.py). It accepts
+uncompressed 48 kHz, 16-bit stereo WAV by default so a bad capture setup
+cannot be hidden by an implicit resample or channel conversion. SameBoy's
+commonly used 96 kHz output is supported only with an explicit
+`--downsample 2`; the converter applies a deterministic two-frame box average
+before quantization. Use `--source trusted-emulator` and record the exact
+SameBoy commit, model/revision, callback rate, fixture, alignment, and gain in
+`--provenance`. Hardware captures use `--source hardware`. Capture at least
+three takes, convert each one, and use `aggregate` to build a per-sample
+median reference; never mix the two source classes. The aggregate reports
+observed variation and writes `max_abs_error`/`rms_error` with a one-quantum
+safety margin by default; use `--margin` to make that review decision explicit.
+The complete procedure and provenance requirements are in
+[`tests/fixtures/audio-external/README.md`](../tests/fixtures/audio-external/README.md).
+The SameBoy release and immutable commit used by this workflow are pinned in
+[`sameboy-reference-pin.json`](../tests/fixtures/audio-external/sameboy-reference-pin.json).
+
+The release accuracy workflow runs the external gate automatically whenever
+reviewed `*.txt` files are present in that directory. Until captures are
+reviewed, CI continues using the deterministic software fixtures. SameBoy is a
+trusted digital reference only; it does not validate hardware DAC levels,
+analog high-pass response, amplifier noise, or LCD/audio coupling. The
+official SameBoy project documents revision-specific models and sample-
+accurate audio output at [`sameboy.github.io/features`](https://sameboy.github.io/features/)
+and exposes sample-rate/audio-recording APIs in its
+[`Core API`](https://github.com/LIJI32/SameBoy/wiki).
+
+The pinned SameBoy fixture producer and three-take captures have been exercised
+locally. Direct PCM comparison shows a substantial mixer level/filter and
+startup-window difference from GBB (SameBoy uses band-limited digital
+synthesis), so the reviewed SameBoy files use `comparison=normalized`. The
+normalized comparator removes each channel's DC mean and RMS scale after the
+explicit 96 -> 48 kHz conversion; it remains sensitive to timing, duty-cycle,
+wavetable, and LFSR shape while deliberately not claiming DAC gain or analog
+filter agreement. The six reviewed references align a 16-frame startup trim
+and use a three-unit normalized tolerance margin. Raw hardware captures continue to
+use the default `comparison=raw` path for absolute-level validation.
 
 SameSuite provides the complementary digital-APU research tests. It is an
 opt-in CTest suite because its APU ROMs intentionally expose revision-specific

@@ -1,0 +1,26 @@
+# GBB audio waveform reference v1
+format=gbb-audio-waveform-v1
+name=wave
+model=dmg
+source=trusted-emulator
+comparison=normalized
+provenance=SameBoy v1.0.3 commit 208ba4afabffab9edde416f2dbb8ae459e34adb8; dmg model; wave fixture; synthetic GBB APU REFERENCE ROM; 96 kHz callback; startup trim 16 frames; three takes
+sample_rate=48000
+channels=2
+quantization=64
+samples=186
+max_abs_error=3
+rms_error=3
+data=
+65 65 63 63 63 63 63 63 62 62 62 62 62 62 62 62
+61 61 61 61 61 61 7 7 -58 -58 -57 -57 -57 -57 -57 -57
+-57 -57 -30 -30 -14 -14 -14 -14 -13 -13 -13 -13 -12 -12 -47 -47
+-55 -55 -55 -55 -55 -55 -55 -55 -56 -56 37 37 45 45 45 45
+45 45 45 45 42 42 -46 -46 -47 -47 -47 -47 -46 -46 -46 -46
+-44 -44 -29 -29 -29 -29 -29 -29 -29 -29 -29 -29 -33 -33 -46 -46
+-45 -45 -45 -45 -45 -45 -45 -45 -12 -12 32 32 31 31 31 31
+31 31 31 31 -10 -10 -36 -36 -36 -36 -36 -36 -36 -36 -36 -36
+-43 -43 -44 -44 -44 -44 -44 -44 -44 -44 -44 -44 -36 -36 -35 -35
+-35 -35 -35 -35 -34 -34 -33 -33 15 15 16 16 15 15 15 15
+15 15 10 10 -27 -27 -26 -26 -26 -26 -26 -26 -26 -26 -34 -34
+-60 -60 -59 -59 -59 -59 -59 -59 -59 -59

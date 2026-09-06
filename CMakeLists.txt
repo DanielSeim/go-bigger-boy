@@ -499,6 +499,12 @@ endif()
 
 if(GAMEBOY_BUILD_TESTS)
     enable_testing()
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME gameboy_audio_reference_tool
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/audio_reference_tool_tests.py)
+    endif()
     add_executable(gameboy_tests tests/core_tests.cpp)
     target_link_libraries(gameboy_tests PRIVATE gbb_core_api)
     add_custom_command(TARGET gameboy_tests POST_BUILD
@@ -797,6 +803,13 @@ if(GAMEBOY_BUILD_TESTS)
     target_link_libraries(gameboy_cgb_contract_tests PRIVATE gameboy_core)
     add_test(NAME gameboy_cgb_contract
              COMMAND gameboy_cgb_contract_tests)
+
+    add_executable(gameboy_hardware_model_matrix_contract_tests
+        tests/hardware_model_matrix_contract_tests.cpp)
+    target_link_libraries(gameboy_hardware_model_matrix_contract_tests
+        PRIVATE gameboy_core)
+    add_test(NAME gameboy_hardware_model_matrix_contract
+             COMMAND gameboy_hardware_model_matrix_contract_tests)
 
     add_executable(gameboy_ppu_sgb_contract_tests
         tests/ppu_sgb_contract_tests.cpp)

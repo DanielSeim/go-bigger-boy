@@ -1,0 +1,12 @@
+{
+  "project": "SameBoy",
+  "repository": "https://github.com/LIJI32/SameBoy",
+  "release": "v1.0.3",
+  "commit": "208ba4afabffab9edde416f2dbb8ae459e34adb8",
+  "release_url": "https://github.com/LIJI32/SameBoy/releases/tag/v1.0.3",
+  "commit_url": "https://github.com/LIJI32/SameBoy/commit/208ba4afabffab9edde416f2dbb8ae459e34adb8",
+  "audio_capture_rate_hz": 96000,
+  "reference_rate_hz": 48000,
+  "conversion": "deterministic integer box average",
+  "converter": "scripts/audio_reference.py"
+}

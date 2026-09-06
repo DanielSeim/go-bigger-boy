@@ -46,6 +46,16 @@ jobs:
           --output-on-failure
           --parallel 2
 
+      - name: Run external DMG/CGB audio reference gate
+        if: ${{ hashFiles('tests/fixtures/audio-external/*.txt') != '' }}
+        env:
+          GBB_AUDIO_REFERENCE_DIR: ${{ github.workspace }}/tests/fixtures/audio-external
+          GBB_AUDIO_REQUIRE_EXTERNAL: "1"
+        run: >-
+          ctest --test-dir build-accuracy -C Release
+          --tests-regex gameboy_apu_waveform_contract
+          --output-on-failure
+
       - name: Upload visual test captures
         if: always()
         uses: actions/upload-artifact@v7
