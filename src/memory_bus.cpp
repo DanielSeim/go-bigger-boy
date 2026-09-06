@@ -21,13 +21,16 @@ MemoryBus::MemoryBus(Cartridge cartridge)
 
 void MemoryBus::initialize_post_boot(const HardwareModel model) noexcept {
     cgb_hardware_ = model == HardwareModel::cgb0 ||
-                    model == HardwareModel::cgb;
+                    model == HardwareModel::cgb ||
+                    model == HardwareModel::cgb_c ||
+                    model == HardwareModel::cgb_e;
     // The APU's 1 MHz alignment divider starts in its low phase at the boot
     // handoff.  It is intentionally independent of the free-running DIV
     // counter: normal-speed APU clocks are already one tick per bus cycle.
     apu_cycle_phase_ = false;
     ppu_.set_cgb_hardware(cgb_hardware_);
-    ppu_.set_cgb_late_revision(model == HardwareModel::cgb);
+    ppu_.set_cgb_late_revision(model == HardwareModel::cgb ||
+                               model == HardwareModel::cgb_e);
     timer_.initialize_post_boot(model);
     // The serial divider is reset-derived and is not synchronized when a
     // transfer starts. Preserve the phase at the boot-ROM handoff.

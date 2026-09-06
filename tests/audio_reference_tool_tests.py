@@ -42,6 +42,18 @@ def main() -> int:
             pin.get("reference_rate_hz") != 48000):
         print("SameBoy reference pin is incomplete or changed unexpectedly", file=sys.stderr)
         return 1
+    boundary = (ROOT / "tests" / "fixtures" / "audio-external" /
+                "sameboy-revision-boundaries.txt").read_text(encoding="utf-8")
+    required_boundaries = {
+        "alignment cgb0 42", "alignment cgb-c 42", "alignment cgb-e 41",
+        "pcm cgb0 15", "pcm cgb-c 15", "pcm cgb-e 14",
+        "lfsr cgb0 20", "lfsr cgb-c 20", "lfsr cgb-e 23",
+    }
+    if ("format=gbb-apu-revision-boundary-v1\n" not in boundary or
+            "takes=3\n" not in boundary or
+            not required_boundaries.issubset(set(boundary.splitlines()))):
+        print("SameBoy revision-boundary fixture summary is incomplete", file=sys.stderr)
+        return 1
     with tempfile.TemporaryDirectory(prefix="gbb-audio-reference-") as directory:
         root = Path(directory)
         first_wav = root / "first.wav"

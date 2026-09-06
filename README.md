@@ -190,7 +190,8 @@ The runner recognizes Mooneye's `LD B,B` result protocol and serial test output
 containing `Passed` or `Failed`, plus Blargg's `$A000` memory result protocol.
 Use `--protocol mooneye`, `--protocol serial`, or `--protocol blargg` to disable
 automatic protocol detection. Model-specific post-boot tests can select
-`--model dmg0`, `dmg`, `mgb`, `sgb`, `sgb2`, `cgb0`, or `cgb`.
+`--model dmg0`, `dmg`, `mgb`, `sgb`, `sgb2`, `cgb0`, `cgb-c`, or `cgb-e`.
+The historical `cgb` spelling remains accepted as the late CGB-E profile.
 
 The APU passes all 12 upstream Blargg `dmg_sound` tests and all 12 `cgb_sound`
 tests, including model-specific power behavior, active wave-RAM access, and the

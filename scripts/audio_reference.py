@@ -272,7 +272,12 @@ def build_parser() -> argparse.ArgumentParser:
     convert_parser.add_argument("input", type=Path)
     convert_parser.add_argument("output", type=Path)
     convert_parser.add_argument("--name", required=True)
-    convert_parser.add_argument("--model", choices=("dmg", "cgb"), required=True)
+    convert_parser.add_argument(
+        "--model",
+        choices=("dmg", "dmg0", "dmg-b", "mgb", "cgb0", "cgb-c", "cgb-e", "cgb"),
+        required=True,
+        help="hardware or trusted-emulator revision label",
+    )
     convert_parser.add_argument("--start-frame", type=int, default=0)
     convert_parser.add_argument("--frames", type=int, default=DEFAULT_FRAMES)
     convert_parser.add_argument("--gain", type=float, default=1.0)

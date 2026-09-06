@@ -1,0 +1,19 @@
+# Reviewed SameBoy revision-boundary probe summary
+format=gbb-apu-revision-boundary-v1
+source=trusted-emulator
+sameboy_release=v1.0.3
+sameboy_commit=208ba4afabffab9edde416f2dbb8ae459e34adb8
+run_loop=GB_run_8MHz
+takes=3
+inter_take_variation=0
+
+# Each row is: fixture model first_nonzero_step
+alignment cgb0 42
+alignment cgb-c 42
+alignment cgb-e 41
+pcm cgb0 15
+pcm cgb-c 15
+pcm cgb-e 14
+lfsr cgb0 20
+lfsr cgb-c 20
+lfsr cgb-e 23

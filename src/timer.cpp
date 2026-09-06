@@ -16,8 +16,10 @@ void Timer::initialize_post_boot(const HardwareModel model) noexcept {
     case HardwareModel::automatic:
     case HardwareModel::dmg:
     case HardwareModel::mgb: divider_counter_ = 0xABC8; break;
-    case HardwareModel::cgb0: divider_counter_ = 0x2880; break;
-    case HardwareModel::cgb: divider_counter_ = 0x2674; break;
+    case HardwareModel::cgb0:
+    case HardwareModel::cgb_c: divider_counter_ = 0x2880; break;
+    case HardwareModel::cgb:
+    case HardwareModel::cgb_e: divider_counter_ = 0x2674; break;
     }
 }
 

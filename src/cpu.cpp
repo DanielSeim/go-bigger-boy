@@ -42,7 +42,9 @@ void Cpu::reset(const HardwareModel model) noexcept {
                       0xC0, 0x60, 0xFFFE, 0x0100};
         break;
     case HardwareModel::cgb0:
+    case HardwareModel::cgb_c:
     case HardwareModel::cgb:
+    case HardwareModel::cgb_e:
         registers_ = {0x11, 0x80, 0x00, 0x00, 0x00, 0x08,
                       0x00, 0x7C, 0xFFFE, 0x0100};
         break;

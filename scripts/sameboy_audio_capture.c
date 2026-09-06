@@ -16,16 +16,40 @@ static void discard_sample(GB_gameboy_t *gb, GB_sample_t *sample) {
     (void)sample;
 }
 
-static GB_model_t model_for(const char *name) {
-    if (!strcmp(name, "dmg")) return GB_MODEL_DMG_B;
-    if (!strcmp(name, "cgb")) return GB_MODEL_CGB_C;
+static int model_for(const char *name, GB_model_t *model) {
+    /* SameBoy v1.0.3 intentionally does not expose a DMG-0 model. Keep the
+     * distinction explicit instead of silently producing a DMG-B capture. */
+    if (!strcmp(name, "dmg0")) return 0;
+    if (!strcmp(name, "dmg") || !strcmp(name, "dmg-b")) {
+        *model = GB_MODEL_DMG_B;
+        return 1;
+    }
+    if (!strcmp(name, "mgb")) {
+        *model = GB_MODEL_MGB;
+        return 1;
+    }
+    if (!strcmp(name, "cgb0")) {
+        *model = GB_MODEL_CGB_0;
+        return 1;
+    }
+    if (!strcmp(name, "cgbc") || !strcmp(name, "cgb-c")) {
+        *model = GB_MODEL_CGB_C;
+        return 1;
+    }
+    if (!strcmp(name, "cgbe") || !strcmp(name, "cgb-e") || !strcmp(name, "cgb")) {
+        *model = GB_MODEL_CGB_E;
+        return 1;
+    }
     return 0;
 }
 
 int main(int argc, char **argv) {
     if (argc != 4) return 2;
-    const GB_model_t model = model_for(argv[1]);
-    if (!model) return 2;
+    GB_model_t model = GB_MODEL_DMG_B;
+    if (!model_for(argv[1], &model)) {
+        fprintf(stderr, "unsupported SameBoy model '%s' (DMG-0 is unavailable in v1.0.3)\n", argv[1]);
+        return 2;
+    }
     uint8_t rom[0x8000] = {0};
     memcpy(rom + 0x134, "GBB APU REFERENCE", 17);
     GB_gameboy_t *gb = GB_init(GB_alloc(), model);

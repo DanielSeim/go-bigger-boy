@@ -53,7 +53,7 @@ struct ModelCase {
     bool pulse_one_enabled;
 };
 
-constexpr std::array<ModelCase, 7> model_cases{{
+constexpr std::array<ModelCase, 9> model_cases{{
     {gameboy::HardwareModel::dmg0, "DMG0",
      {0x01, 0x00, 0xFF, 0x13, 0x00, 0xC1, 0x84, 0x03}, 0x18, 0, false,
      false, true},
@@ -72,7 +72,13 @@ constexpr std::array<ModelCase, 7> model_cases{{
     {gameboy::HardwareModel::cgb0, "CGB0",
      {0x11, 0x80, 0x00, 0x00, 0x00, 0x08, 0x00, 0x7C}, 0x28, 0, true,
      false, true},
-    {gameboy::HardwareModel::cgb, "CGB",
+    {gameboy::HardwareModel::cgb_c, "CGB-C",
+     {0x11, 0x80, 0x00, 0x00, 0x00, 0x08, 0x00, 0x7C}, 0x28, 0, true,
+     false, true},
+    {gameboy::HardwareModel::cgb_e, "CGB-E",
+     {0x11, 0x80, 0x00, 0x00, 0x00, 0x08, 0x00, 0x7C}, 0x26, 0, true,
+     false, true},
+    {gameboy::HardwareModel::cgb, "CGB alias",
      {0x11, 0x80, 0x00, 0x00, 0x00, 0x08, 0x00, 0x7C}, 0x26, 0, true,
      false, true},
 }};

@@ -34,9 +34,12 @@ cc -std=c11 -I/path/to/SameBoy -I/path/to/SameBoy/Core \
 /tmp/sameboy-audio-capture dmg pulse /tmp/sameboy-dmg-pulse-96k.wav
 ```
 
-Run it for `dmg`/`cgb` and `pulse`/`wave`/`noise`, taking three independent
-captures per fixture. The helper uses the same register sequences as the GBB
-waveform contract and writes 96 kHz WAV output.
+Run it for `dmg`/`mgb`/`cgb0`/`cgb-c`/`cgb-e` and
+`pulse`/`wave`/`noise`, taking three independent captures per fixture. The
+helper uses the same register sequences as the GBB waveform contract and
+writes 96 kHz WAV output. SameBoy v1.0.3 does not expose a DMG-0 model; use
+GBB's `dmg0` hardware-model contract for that revision rather than labelling a
+DMG-B capture as DMG-0.
 
 ```sh
 python3 scripts/audio_reference.py convert sameboy-dmg-pulse-96k.wav \

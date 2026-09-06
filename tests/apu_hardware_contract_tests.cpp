@@ -258,6 +258,92 @@ void test_apu_pulse2_samples_and_length() {
           "the skipped APU edge does not shift later frame-sequencer clocks");
 }
 
+void test_cgb_revision_envelope_write_behavior() {
+    // SameBoy's CGB-D/E model implements the NRx2 "zombie" write path,
+    // while CGB-0 through CGB-C retain the pre-modern behavior.  A write
+    // which changes only the direction bit is a compact, CPU-visible probe:
+    // CGB-E immediately transforms the live volume, whereas the early
+    // revisions leave it at the triggered value.
+    const auto pcm_after_write = [](const gameboy::HardwareModel model) {
+        gameboy::MemoryBus bus{gameboy::Cartridge{cgb_test_rom()}};
+        bus.initialize_post_boot(model);
+        bus.write8(0xFF11, 0x80);
+        bus.write8(0xFF12, 0xF0);
+        bus.write8(0xFF13, 0x00);
+        bus.write8(0xFF14, 0x87);
+        bus.write8(0xFF12, 0x08);
+        return bus.read8(0xFF76) & 0x0F;
+    };
+    check(pcm_after_write(gameboy::HardwareModel::cgb0) == 0x0F,
+          "CGB0 keeps the live pulse volume on an NRx2 direction write");
+    check(pcm_after_write(gameboy::HardwareModel::cgb_c) == 0x0F,
+          "CGB-C keeps the live pulse volume on an NRx2 direction write");
+    check(pcm_after_write(gameboy::HardwareModel::cgb_e) == 0x00,
+          "CGB-E applies the zombie-mode NRx2 direction write");
+}
+
+void test_cgb_revision_boundary_fixtures() {
+    const auto first_pulse2_high_cycle = [](const gameboy::HardwareModel model) {
+        gameboy::MemoryBus bus{gameboy::Cartridge{cgb_test_rom()}};
+        bus.initialize_post_boot(model);
+        bus.write8(0xFF24, 0x77);
+        bus.write8(0xFF25, 0x22);
+        bus.write8(0xFF16, 0x80); // 25% duty, high at the reviewed edge.
+        bus.write8(0xFF17, 0x80);
+        bus.write8(0xFF18, 0xF8); // SameBoy alignment fixture: period 32.
+        bus.write8(0xFF19, 0x87);
+        for (unsigned cycle = 1; cycle <= 256; ++cycle) {
+            bus.tick(1);
+            if ((bus.read8(0xFF76) >> 4) == 8) return cycle;
+        }
+        return 0U;
+    };
+    const auto cgb_c_pulse =
+        first_pulse2_high_cycle(gameboy::HardwareModel::cgb_c);
+    const auto cgb_e_pulse =
+        first_pulse2_high_cycle(gameboy::HardwareModel::cgb_e);
+    check(cgb_c_pulse != 0 && cgb_e_pulse != 0 && cgb_c_pulse == cgb_e_pulse + 4,
+          "CGB-E square retriggers advance the first duty edge by four clocks");
+
+    const auto first_noise_high_cycle = [](const gameboy::HardwareModel model) {
+        gameboy::MemoryBus bus{gameboy::Cartridge{cgb_test_rom()}};
+        bus.initialize_post_boot(model);
+        bus.write8(0xFF24, 0x77);
+        bus.write8(0xFF25, 0x88);
+        bus.write8(0xFF21, 0xF0);
+        bus.write8(0xFF22, 0x08); // Fast 7-bit LFSR startup fixture.
+        bus.write8(0xFF23, 0x80);
+        for (unsigned cycle = 1; cycle <= 256; ++cycle) {
+            bus.tick(1);
+            if ((bus.read8(0xFF77) >> 4) == 0x0F) return cycle;
+        }
+        return 0U;
+    };
+    const auto cgb_c_noise =
+        first_noise_high_cycle(gameboy::HardwareModel::cgb_c);
+    const auto cgb_e_noise =
+        first_noise_high_cycle(gameboy::HardwareModel::cgb_e);
+    check(cgb_c_noise != 0 && cgb_e_noise != 0 && cgb_c_noise == cgb_e_noise + 4,
+          "CGB-0/CGB-C noise startup trails CGB-E by one divider quarter-cycle");
+
+    const auto pcm_visible = [](const gameboy::HardwareModel model) {
+        gameboy::MemoryBus bus{gameboy::Cartridge{cgb_test_rom()}};
+        bus.initialize_post_boot(model);
+        bus.write8(0xFF11, 0x80);
+        bus.write8(0xFF12, 0xF0);
+        bus.write8(0xFF13, 0x00);
+        bus.write8(0xFF14, 0x87);
+        bus.write8(0xFF21, 0xF0);
+        bus.write8(0xFF22, 0x08);
+        bus.write8(0xFF23, 0x80);
+        return bus.read8(0xFF76) != 0xFF && bus.read8(0xFF77) != 0xFF;
+    };
+    check(pcm_visible(gameboy::HardwareModel::cgb0) &&
+              pcm_visible(gameboy::HardwareModel::cgb_c) &&
+              pcm_visible(gameboy::HardwareModel::cgb_e),
+          "CGB-0/CGB-C/CGB-E expose live PCM12 and PCM34 reads");
+}
+
 void test_apu_pulse1_sweep_wave_and_noise() {
     gameboy::MemoryBus pulse_bus{gameboy::Cartridge{test_rom()}};
     pulse_bus.initialize_post_boot();
@@ -339,6 +425,8 @@ int main() {
     test_apu_power_registers_and_wave_ram();
     test_active_wave_ram_timing();
     test_apu_pulse1_sweep_wave_and_noise();
+    test_cgb_revision_envelope_write_behavior();
+    test_cgb_revision_boundary_fixtures();
     test_apu_pulse2_samples_and_length();
     test_apu_high_pass_filter();
     return failures == 0 ? 0 : 1;

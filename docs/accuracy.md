@@ -17,7 +17,7 @@ bundle. GitHub Actions verifies the archive checksum before running any ROM.
 
 The acceptance figure covers every acceptance ROM in the pinned bundle. Tests with
 mutually exclusive boot-ROM expectations run under explicit DMG0, DMG/MGB,
-SGB, SGB2, CGB0, or CGB post-boot hardware profiles. Mooneye's two AGB-only
+SGB, SGB2, CGB0, CGB-C, or CGB-E post-boot hardware profiles. Mooneye's two AGB-only
 misc ROMs are excluded because GBB does not emulate Game Boy Advance hardware.
 
 The `gameboy_hardware_model_matrix_contract` test complements the ROM suites by
@@ -28,6 +28,16 @@ selection is also checked for ordinary DMG, SGB-capable, and CGB-capable
 cartridges. This is a digital profile contract; it does not claim to model
 analog clock tolerance, LCD response, DAC variation, or Game Boy Advance/Game
 Boy Player hardware.
+
+The revision matrix is intentionally explicit: `dmg0`, `dmg` (DMG-B), `mgb`,
+`cgb0`, `cgb-c`, and `cgb-e` are selectable in the test runner. The historical
+`cgb` spelling remains an alias for `cgb-e` so existing scripts and save states
+keep their behavior. The CGB-C profile uses the early-revision APU and DIV
+phase rules, while CGB-E enables the late-revision envelope (NRx2 zombie-mode)
+behavior. The focused APU contract covers the reviewed CGB-C/CGB-E envelope
+write mismatch; channel alignment, PCM register visibility, and noise LFSR
+startup remain covered by shared contracts until a reproducible revision-only
+mismatch is measured.
 
 ## Super Game Boy baseline
 
@@ -199,6 +209,10 @@ wavetable, and LFSR shape while deliberately not claiming DAC gain or analog
 filter agreement. The six reviewed references align a 16-frame startup trim
 and use a three-unit normalized tolerance margin. Raw hardware captures continue to
 use the default `comparison=raw` path for absolute-level validation.
+
+The revision-by-revision capture review (including the pinned-model limitations
+and the reasons no insensitive startup fixtures were promoted) is recorded in
+[`sameboy-revision-matrix.md`](../tests/fixtures/audio-external/sameboy-revision-matrix.md).
 
 SameSuite provides the complementary digital-APU research tests. It is an
 opt-in CTest suite because its APU ROMs intentionally expose revision-specific

@@ -11,10 +11,14 @@ constexpr std::size_t maximum_buffered_samples = Apu::sample_rate * 2;
 // A trigger does not expose the newly started waveform until the five-clock
 // startup delay has elapsed. This is observable through CGB PCM12/PCM34 reads.
 constexpr unsigned channel_trigger_delay = 5;
-// Later CGB revisions add an alignment interval when an inactive square
-// channel is started. The interval is two clocks at short periods and four
+// Later CGB revisions advance the phase when an inactive square channel is
+// started. The equivalent alignment is two clocks at short periods and four
 // clocks at long periods in this core.
 constexpr unsigned modern_cgb_inactive_square_alignment = 4;
+// SameBoy's CGB-0/CGB-C traces show the channel-4 startup edge one APU
+// divider quarter-cycle later than CGB-D/E.  Keep this revision-specific
+// offset local to CGB hardware; DMG/MGB noise startup remains unchanged.
+constexpr unsigned early_cgb_noise_start_delay = 4;
 
 constexpr std::array<std::array<std::uint8_t, 8>, 4> duty_patterns{{
     {{0, 0, 0, 0, 0, 0, 0, 1}},
@@ -27,8 +31,10 @@ constexpr std::array<std::array<std::uint8_t, 8>, 4> duty_patterns{{
 void Apu::initialize_post_boot(const HardwareModel model,
                                const bool divider_apu_signal) noexcept {
     cgb_hardware_ = model == HardwareModel::cgb0 ||
-                    model == HardwareModel::cgb;
-    modern_cgb_ = model == HardwareModel::cgb;
+                    model == HardwareModel::cgb ||
+                    model == HardwareModel::cgb_c ||
+                    model == HardwareModel::cgb_e;
+    modern_cgb_ = model == HardwareModel::cgb || model == HardwareModel::cgb_e;
     power_off();
     powered_ = true;
     // If the APU is enabled while the DIV/APU input is high, hardware skips
@@ -161,7 +167,7 @@ void Apu::write_register(const std::uint16_t address,
     case 0xFF12:
         pulse1_.dac_enabled = (value & 0xF8) != 0;
         if (!pulse1_.dac_enabled) pulse1_.enabled = false;
-        else if (cgb_hardware_ && pulse1_.enabled)
+        else if (modern_cgb_ && pulse1_.enabled)
             apply_envelope_write_glitch(pulse1_.envelope, value, old_value);
         break;
     case 0xFF13:
@@ -197,7 +203,7 @@ void Apu::write_register(const std::uint16_t address,
     case 0xFF17:
         pulse2_.dac_enabled = (value & 0xF8) != 0;
         if (!pulse2_.dac_enabled) pulse2_.enabled = false;
-        else if (cgb_hardware_ && pulse2_.enabled)
+        else if (modern_cgb_ && pulse2_.enabled)
             apply_envelope_write_glitch(pulse2_.envelope, value, old_value);
         break;
     case 0xFF18:
@@ -242,7 +248,7 @@ void Apu::write_register(const std::uint16_t address,
     case 0xFF21:
         noise_.dac_enabled = (value & 0xF8) != 0;
         if (!noise_.dac_enabled) noise_.enabled = false;
-        else if (cgb_hardware_ && noise_.enabled)
+        else if (modern_cgb_ && noise_.enabled)
             apply_envelope_write_glitch(noise_.envelope, value, old_value);
         break;
     case 0xFF23:
@@ -372,12 +378,17 @@ void Apu::trigger_pulse1() noexcept {
     pulse1_.period = period;
     pulse1_.timer = (pulse1_.timer & 3U) | (period & ~3U);
     pulse1_.just_reloaded = false;
-    pulse1_.timer += channel_trigger_delay +
-                     (modern_cgb_ && !was_enabled
-                          ? (period >= 16
-                                 ? modern_cgb_inactive_square_alignment
-                                 : modern_cgb_inactive_square_alignment / 2)
-                          : 0U);
+    pulse1_.timer += channel_trigger_delay;
+    if (modern_cgb_ && !was_enabled) {
+        const auto alignment = period >= 16
+                                   ? modern_cgb_inactive_square_alignment
+                                   : modern_cgb_inactive_square_alignment / 2;
+        // CGB-D/E aligns an inactive square restart by advancing the
+        // internal phase, making the first duty edge earlier than on CGB-C.
+        pulse1_.timer = pulse1_.timer > alignment
+                            ? pulse1_.timer - alignment
+                            : 0;
+    }
     trigger_envelope(pulse1_.envelope, registers_[0x02]);
     if (frame_sequencer_step_ == 7 && pulse1_.envelope.running) {
         ++pulse1_.envelope.timer;
@@ -412,12 +423,15 @@ void Apu::trigger_pulse2() noexcept {
     pulse2_.period = period;
     pulse2_.timer = (pulse2_.timer & 3U) | (period & ~3U);
     pulse2_.just_reloaded = false;
-    pulse2_.timer += channel_trigger_delay +
-                     (modern_cgb_ && !was_enabled
-                          ? (period >= 16
-                                 ? modern_cgb_inactive_square_alignment
-                                 : modern_cgb_inactive_square_alignment / 2)
-                          : 0U);
+    pulse2_.timer += channel_trigger_delay;
+    if (modern_cgb_ && !was_enabled) {
+        const auto alignment = period >= 16
+                                   ? modern_cgb_inactive_square_alignment
+                                   : modern_cgb_inactive_square_alignment / 2;
+        pulse2_.timer = pulse2_.timer > alignment
+                            ? pulse2_.timer - alignment
+                            : 0;
+    }
     trigger_envelope(pulse2_.envelope, registers_[0x07]);
     if (frame_sequencer_step_ == 7 && pulse2_.envelope.running) {
         ++pulse2_.envelope.timer;
@@ -455,7 +469,10 @@ void Apu::trigger_noise() noexcept {
         noise_.length = static_cast<std::uint8_t>(
             64 - (noise_.length_enabled && next_step_skips_length() ? 1 : 0));
     }
-    noise_.timer = noise_period();
+    noise_.timer = noise_period() +
+                   (cgb_hardware_ && !modern_cgb_
+                        ? early_cgb_noise_start_delay
+                        : 0U);
     noise_.lfsr = 0x7FFF;
     trigger_envelope(noise_.envelope, registers_[0x11]);
     if (frame_sequencer_step_ == 7 && noise_.envelope.running) {

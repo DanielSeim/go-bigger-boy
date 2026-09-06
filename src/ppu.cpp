@@ -77,7 +77,8 @@ void Ppu::initialize_post_boot_phase(const HardwareModel model) noexcept {
         std::copy(trademark_tile.begin(), trademark_tile.end(),
                   vram_.begin() + 0x190);
     }
-    if (model == HardwareModel::cgb0 || model == HardwareModel::cgb) {
+    if (model == HardwareModel::cgb0 || model == HardwareModel::cgb ||
+        model == HardwareModel::cgb_c || model == HardwareModel::cgb_e) {
         bg_palette_index_ = 0x88;
         object_palette_index_ = 0x90;
         return;
