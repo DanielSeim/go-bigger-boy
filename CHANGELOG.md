@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.31.12] - 2026-09-06
+
+### Link cable reliability
+
+- Preserve a joiner's pending internal-clock request while the host finishes
+  the current byte, preventing Android/Windows Cable Club handoff desyncs.
+- Clear completed host-side arbitration denials so a stale busy flag cannot
+  block subsequent link transfers.
+- Add regression coverage for the cross-frame clock-ownership handoff race.
+
 ## [0.31.11] - 2026-09-06
 
 ### Link cable performance and diagnostics
