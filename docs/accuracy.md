@@ -50,9 +50,11 @@ Serial transfers now retain the divider phase and partial-byte state in
 save-state version 24. This matters for CGB fast mode because the serial clock
 uses a 16-cycle sub-period; restoring only SB/SC could otherwise move the next
 edge or replay an entire byte at once. Older save-state versions remain
-loadable with the previous restart-at-boundary behavior.
+loadable with the previous restart-at-boundary behavior. CGB SCY's pending
+two-T-cycle latch is preserved by save-state version 25 for the same reason:
+restoring during a mode-3 write must not expose the new scroll value early.
 
-## Next accuracy work
+## Accuracy status
 
 The visual harness runs a ROM to a deterministic frame, writes a dependency-free
 PPM capture, and compares every RGB pixel with the suite's reference PNG. A
@@ -186,11 +188,16 @@ conformance work. The current implementation preserves the existing audio
 regressions while covering the stable startup, divider, and reload-boundary
 timing cases.
 
-The next PPU refinement is the hardware-revision-specific edge behavior around
-object-fetch cancellation, window triggers changed before the first visible
-pixel (including the remaining `WX=1..6` comparator cases), and the output-pipeline
-collisions caused by precisely timed SCY/LCDC writes. Those cases remain outside
-the release gate until their framebuffer references match exactly.
+The mode-3 timing model now carries the hardware distinction needed by these
+edge cases: DMG and early CGB revisions re-sample SCY during both bitplane
+fetches, while CPU GBC D and later use the tile-name sample only; CGB writes
+also pass through the documented two-T-cycle latch. The in-flight SCY latch is
+serialized so a restore cannot change a partially fetched tile. Object
+cancellation now invalidates both the queued pixel and its cancellation
+deadline, preventing stale output-pipeline state from leaking into a later
+LCDC transition. The remaining revision-specific framebuffer references are
+kept as diagnostic fixtures until the CPU C/D profiles are fully matched
+pixel-for-pixel.
 
 CGB HBlank DMA now consumes each HBlank edge at dot granularity. Previously a
 large peripheral tick could collapse multiple PPU HBlank notifications into one
@@ -203,9 +210,9 @@ Window comparator positions are normalized at the visible left edge for
 The core suite now exercises every `WX=1..6` value with a distinct first-tile
 column pattern, guarding the visible-edge comparator and source-column mapping
 independently of the external framebuffer fixtures.
-The `WX=6` sequence still has a substantial mismatch after the handoff because
-the internal window row and queued tile pipeline are not yet fully modeled
-cycle by cycle; it remains exploratory and is not part of the release gate.
+The `WX=6` handoff is covered by the exact Mealybug reference in the visual
+release gate; the core `WX=1..6` loop independently checks the visible-edge
+source-column comparator for every off-screen-left value.
 
 For timing investigations, set `GBB_TRACE_WX` to a file path before running an
 emulator or test runner (or set it to `1`/`stderr` to write to standard error).

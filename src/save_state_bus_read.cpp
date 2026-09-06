@@ -459,6 +459,20 @@ void SaveStateBusCodec::read(save_state_format::Reader& reader,
             serial_active, serial_internal, serial_fast,
             serial_transfer_byte);
     }
+    if (version >= 25) {
+        bus.ppu_.scy_pending_ = reader.u8();
+        bus.ppu_.scy_pending_delay_ = reader.u8();
+        bus.ppu_.scy_pending_valid_ = reader.boolean();
+        if (bus.ppu_.scy_pending_delay_ > 2 ||
+            (!bus.ppu_.scy_pending_valid_ &&
+             bus.ppu_.scy_pending_delay_ != 0)) {
+            throw SaveStateError("Save state contains invalid SCY latch state");
+        }
+    } else {
+        bus.ppu_.scy_pending_ = 0;
+        bus.ppu_.scy_pending_delay_ = 0;
+        bus.ppu_.scy_pending_valid_ = false;
+    }
     if (bus.printer_connected_) bus.printer_.reset();
 }
 

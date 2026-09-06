@@ -174,6 +174,11 @@ void SaveStateBusCodec::write(save_state_format::Writer& writer,
     writer.boolean(bus.serial_.internal_clock());
     writer.boolean(bus.serial_.fast_clock());
     writer.u8(bus.serial_.transfer_byte());
+    // CGB SCY writes become visible two T-cycles later. Keep the in-flight
+    // latch so restoring during that window cannot change rendered pixels.
+    writer.u8(bus.ppu_.scy_pending_);
+    writer.u8(bus.ppu_.scy_pending_delay_);
+    writer.boolean(bus.ppu_.scy_pending_valid_);
 }
 
 } // namespace gameboy

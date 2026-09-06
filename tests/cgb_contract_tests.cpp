@@ -68,6 +68,7 @@ void test_cgb_memory_and_rendering() {
               emulator.cpu().registers().e == 0x08 &&
               emulator.cpu().registers().l == 0x7C,
           "CGB cartridges start with CGB hardware detection state");
+
     auto edited_registers = emulator.cpu().registers();
     edited_registers.a = 0x42;
     edited_registers.f = 0xAF;
@@ -121,7 +122,33 @@ void test_cgb_memory_and_rendering() {
     check(bus.framebuffer()[0] == 0xFFFF0000,
           "CGB tile attributes select VRAM banks and RGB555 palettes");
 
+    // CGB/AGB expose SCY through a two-T-cycle latch. A write must not be
+    // visible on the register readback until that delay has elapsed.
+    bus.write8(0xFF42, 0x37);
+    bus.write8(0xFF40, 0x91);
+    check(bus.read8(0xFF42) == 0x00,
+          "CGB SCY writes remain pending for the documented delay");
+    bus.tick(1);
+    check(bus.read8(0xFF42) == 0x00,
+          "CGB SCY remains old after one T-cycle");
+    bus.tick(1);
+    check(bus.read8(0xFF42) == 0x37,
+          "CGB SCY becomes visible after two T-cycles");
     bus.write8(0xFF40, 0);
+
+    bus.write8(0xFF42, 0x52);
+    const auto scy_latch_state = emulator.save_state();
+    bus.write8(0xFF40, 0x91);
+    bus.tick(2);
+    check(bus.read8(0xFF42) == 0x52,
+          "CGB SCY pending writes complete before the next sample");
+    emulator.load_state(scy_latch_state);
+    bus.write8(0xFF40, 0x91);
+    bus.tick(2);
+    check(bus.read8(0xFF42) == 0x52,
+          "save states preserve an in-flight CGB SCY latch");
+    bus.write8(0xFF40, 0);
+
     for (unsigned byte = 0; byte < 0x30; ++byte) {
         bus.write8(static_cast<std::uint16_t>(0xC000 + byte),
                    static_cast<std::uint8_t>(0x40 + byte));
@@ -215,4 +242,3 @@ int main() {
     }
     return failures == 0 ? 0 : 1;
 }
-

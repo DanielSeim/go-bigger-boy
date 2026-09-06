@@ -24,6 +24,9 @@ public:
 
     void set_cgb_mode(bool enabled) noexcept;
     void set_cgb_hardware(bool enabled) noexcept;
+    // CPU GBC D and later only sample SCY during the tile-name (B) phase;
+    // earlier CGB revisions also re-sample it for both bitplanes.
+    void set_cgb_late_revision(bool enabled) noexcept;
     void set_sgb_mode(bool enabled) noexcept;
     [[nodiscard]] bool cgb_mode() const noexcept;
     void set_dmg_palette(const DmgPalette& palette) noexcept;
@@ -127,6 +130,8 @@ private:
     std::uint8_t lcdc_{};
     std::uint8_t stat_select_{};
     std::uint8_t scy_{};
+    std::uint8_t scy_pending_{};
+    std::uint8_t scy_pending_delay_{};
     std::uint8_t scx_{};
     std::uint8_t ly_{};
     std::uint8_t lyc_{};
@@ -151,6 +156,8 @@ private:
     bool window_rendered_this_line_{};
     bool cgb_mode_{};
     bool cgb_hardware_{};
+    bool cgb_late_revision_{};
+    bool scy_pending_valid_{};
     bool sgb_mode_{};
     bool coincidence_{};
     bool lcd_startup_{};

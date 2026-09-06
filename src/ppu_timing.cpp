@@ -32,6 +32,11 @@ std::uint8_t Ppu::tick(const unsigned cycles) noexcept {
 
     std::uint8_t requests = 0;
     for (unsigned cycle = 0; cycle < cycles; ++cycle) {
+        if (scy_pending_valid_ && scy_pending_delay_ != 0 &&
+            --scy_pending_delay_ == 0) {
+            scy_ = scy_pending_;
+            scy_pending_valid_ = false;
+        }
         ++dot_;
         if (ly_ < screen_height) {
             // LCD startup exposes its transitions immediately. On subsequent
@@ -388,6 +393,11 @@ void Ppu::tick_background_fetcher() noexcept {
         return;
     }
     case 1: {
+        // B is the tile-name phase. Every hardware revision samples SCY here;
+        // only the older revisions continue sampling it for the bitplanes.
+        if (!fetched_window_) {
+            fetched_source_y_ = static_cast<std::uint8_t>(ly_ + scy_);
+        }
         const auto source_y = static_cast<unsigned>(fetched_source_y_);
         const auto source_x = static_cast<unsigned>(fetched_source_x_) & 0xFFU;
         const auto map_base = fetched_window_
@@ -401,7 +411,7 @@ void Ppu::tick_background_fetcher() noexcept {
         auto row = static_cast<std::uint8_t>(source_y & 7U);
         if ((fetched_attributes_ & 0x40) != 0) row = 7 - row;
         fetched_row_ = row;
-        if (!cgb_hardware_) {
+        if (!cgb_late_revision_) {
             const auto live_y = fetched_window_
                                     ? window_fetch_line_
                                     : static_cast<std::uint8_t>(ly_ + scy_);
@@ -413,7 +423,7 @@ void Ppu::tick_background_fetcher() noexcept {
     }
     case 2: {
         fetched_low_ = read_bitplane(0);
-        if (!cgb_hardware_) {
+        if (!cgb_late_revision_) {
             const auto live_y = fetched_window_
                                     ? window_fetch_line_
                                     : static_cast<std::uint8_t>(ly_ + scy_);

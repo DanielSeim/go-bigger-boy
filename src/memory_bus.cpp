@@ -24,6 +24,7 @@ void MemoryBus::initialize_post_boot(const HardwareModel model) noexcept {
                     model == HardwareModel::cgb;
     apu_cycle_phase_ = false;
     ppu_.set_cgb_hardware(cgb_hardware_);
+    ppu_.set_cgb_late_revision(model == HardwareModel::cgb);
     timer_.initialize_post_boot(model);
     // The serial divider is reset-derived and is not synchronized when a
     // transfer starts. Preserve the phase at the boot-ROM handoff.

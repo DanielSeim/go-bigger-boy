@@ -36,6 +36,13 @@ void Ppu::set_cgb_mode(const bool enabled) noexcept {
 
 void Ppu::set_cgb_hardware(const bool enabled) noexcept {
     cgb_hardware_ = enabled;
+    scy_pending_ = 0;
+    scy_pending_delay_ = 0;
+    scy_pending_valid_ = false;
+}
+
+void Ppu::set_cgb_late_revision(const bool enabled) noexcept {
+    cgb_late_revision_ = enabled;
 }
 
 void Ppu::set_sgb_mode(const bool enabled) noexcept {
@@ -299,6 +306,7 @@ bool Ppu::write_register(const std::uint16_t address,
                 // the opposite order would redraw the very OBJ pixel that
                 // the LCDC write is meant to cancel.
                 object_pixels_[x].valid = false;
+                object_pixel_deadlines_[x] = 0;
                 if (x < output_x_) {
                     (*framebuffer_)[static_cast<std::size_t>(ly_) * screen_width +
                                      x] = compose_pixel(
@@ -349,7 +357,17 @@ bool Ppu::write_register(const std::uint16_t address,
         break;
     }
     case 0xFF41: stat_select_ = static_cast<std::uint8_t>(value & 0x78); break;
-    case 0xFF42: scy_ = value; break;
+    case 0xFF42:
+        if (cgb_hardware_) {
+            // CGB/AGB expose SCY two T-cycles after the CPU write. Coalesce
+            // writes in the same delay window, as the hardware's latch does.
+            scy_pending_ = value;
+            scy_pending_delay_ = 2;
+            scy_pending_valid_ = true;
+        } else {
+            scy_ = value;
+        }
+        break;
     case 0xFF43: scx_ = value; break;
     case 0xFF44: break; // LY is read-only.
     case 0xFF45:
