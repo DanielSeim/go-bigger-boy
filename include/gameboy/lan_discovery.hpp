@@ -49,6 +49,7 @@ public:
 private:
     enum class Mode { host, scan };
     void receive_available() noexcept;
+    bool send_directed_broadcasts(const std::string& message) noexcept;
     bool send_message(const std::string& message, const char* address,
                       std::uint16_t port) noexcept;
 

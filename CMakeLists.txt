@@ -168,7 +168,7 @@ target_include_directories(gameboy_core PUBLIC include)
 target_compile_features(gameboy_core PUBLIC cxx_std_17)
 
 if(WIN32)
-    target_link_libraries(gameboy_core PUBLIC ws2_32 uuid)
+    target_link_libraries(gameboy_core PUBLIC ws2_32 uuid iphlpapi)
 endif()
 
 if(EMSCRIPTEN)

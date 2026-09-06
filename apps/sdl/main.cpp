@@ -1829,7 +1829,8 @@ int main(int argc, char** argv) {
                             cheat_manager.apply(*emulator);
                         }
 #endif
-                        if (link_emulator == nullptr && !fast_forward) {
+                        if (link_emulator == nullptr &&
+                            !remote_transport_connected && !fast_forward) {
                             // Serializing a rewind snapshot is intentionally
                             // skipped during fast-forward. A snapshot costs
                             // several milliseconds on desktop builds and

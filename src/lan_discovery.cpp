@@ -14,6 +14,8 @@
 #endif
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <iphlpapi.h>
+#include <iptypes.h>
 #else
 #include <arpa/inet.h>
 #if defined(__ANDROID__)
@@ -27,6 +29,8 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #endif
+
+#include <vector>
 
 namespace gameboy {
 namespace {
@@ -291,13 +295,16 @@ bool LanDiscovery::start_scan(const std::uint64_t compatibility_id,
     // any later interface-specific responses can still be consumed.
     const auto broadcast_sent =
         send_message(scan_message_, "255.255.255.255", discovery_port);
+    const auto directed_broadcast_sent =
+        send_directed_broadcasts(scan_message_);
     const auto multicast_sent =
         send_message(scan_message_, discovery_multicast_address, discovery_port);
     // Loopback makes discovery testable and covers hosts where broadcast is
     // filtered by the local firewall; it does not replace the LAN broadcast.
     const auto loopback_sent =
         send_message(scan_message_, "127.0.0.1", discovery_port);
-    if (!broadcast_sent && !multicast_sent && !loopback_sent) {
+    if (!broadcast_sent && !directed_broadcast_sent && !multicast_sent &&
+        !loopback_sent) {
         stop();
         return false;
     }
@@ -321,6 +328,7 @@ void LanDiscovery::poll() noexcept {
             static_cast<void>(send_message(scan_message_,
                                             "255.255.255.255",
                                             discovery_port));
+            static_cast<void>(send_directed_broadcasts(scan_message_));
             static_cast<void>(send_message(scan_message_,
                                            discovery_multicast_address,
                                            discovery_port));
@@ -348,6 +356,63 @@ std::vector<LanPeer> LanDiscovery::take_peers() {
     auto peers = std::move(peers_);
     peers_.clear();
     return peers;
+}
+
+bool LanDiscovery::send_directed_broadcasts(
+    const std::string& message) noexcept {
+#if defined(_WIN32)
+    // Some access points and Windows firewall profiles discard the limited
+    // broadcast address (255.255.255.255) but still deliver a subnet-directed
+    // broadcast. Query every active IPv4 adapter so Android hosts can be
+    // discovered without requiring users to enter their address manually.
+    ULONG buffer_size = 15U * 1024U;
+    std::vector<unsigned char> buffer(buffer_size);
+    auto* addresses = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data());
+    auto result = GetAdaptersAddresses(
+        AF_INET, GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_DNS_SERVER, nullptr,
+        addresses, &buffer_size);
+    if (result == ERROR_BUFFER_OVERFLOW) {
+        if (buffer_size == 0 || buffer_size > 1024U * 1024U) return false;
+        buffer.resize(buffer_size);
+        addresses = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data());
+        result = GetAdaptersAddresses(
+            AF_INET, GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_DNS_SERVER,
+            nullptr, addresses, &buffer_size);
+    }
+    if (result != NO_ERROR) return false;
+
+    bool sent = false;
+    for (auto* adapter = addresses; adapter != nullptr;
+         adapter = adapter->Next) {
+        if (adapter->OperStatus != IfOperStatusUp) continue;
+        for (auto* unicast = adapter->FirstUnicastAddress;
+             unicast != nullptr; unicast = unicast->Next) {
+            if (unicast->Address.lpSockaddr == nullptr ||
+                unicast->Address.lpSockaddr->sa_family != AF_INET ||
+                unicast->OnLinkPrefixLength > 32) {
+                continue;
+            }
+            const auto* address = reinterpret_cast<const sockaddr_in*>(
+                unicast->Address.lpSockaddr);
+            const auto host = ntohl(address->sin_addr.s_addr);
+            if ((host >> 24U) == 127U) continue;
+            const auto prefix = unicast->OnLinkPrefixLength;
+            const auto mask = prefix == 0
+                                  ? 0U
+                                  : 0xffffffffU << (32U - prefix);
+            const auto broadcast = htonl(host | ~mask);
+            char text[INET_ADDRSTRLEN]{};
+            if (inet_ntop(AF_INET, &broadcast, text, sizeof(text)) == nullptr) {
+                continue;
+            }
+            sent = send_message(message, text, discovery_port) || sent;
+        }
+    }
+    return sent;
+#else
+    static_cast<void>(message);
+    return false;
+#endif
 }
 
 bool LanDiscovery::send_message(const std::string& message,
