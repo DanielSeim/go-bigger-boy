@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [0.31.6] - 2026-09-06
+
+### Link cable discovery and performance
+
+- Join LAN discovery multicast on every active Android/Linux IPv4 interface,
+  while retaining an API-21-safe Android fallback.
+- Extend the Windows discovery retry window to tolerate delayed Android Wi-Fi
+  multicast setup.
+- Reduce socket polling overhead for negotiated byte-level serial links to
+  improve Windows frame pacing without changing legacy bit-link timing.
+
 ## [0.31.5] - 2026-09-06
 
 ### Link cable performance
