@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.33.1] - 2026-09-06
+
+### Link compatibility
+
+- Recognize the compact international Pokémon Gold, Silver, and Crystal CGB
+  headers so Gen I/Gen II Time Capsule sessions negotiate correctly.
+- Add regression coverage for the retail Gen II header aliases and shared
+  Western compatibility profile.
+
 ## [0.33.0] - 2026-09-06
 
 ### CGB revision accuracy
