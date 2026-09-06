@@ -2,11 +2,15 @@
 
 ## [Unreleased]
 
-### Link cable performance
+## [0.31.11] - 2026-09-06
+
+### Link cable performance and diagnostics
 
 - Reduce polling work on passive byte-capable receivers while keeping the
   host-clock response path on the low-latency cadence. This avoids unnecessary
   Windows frame-time jitter during LAN/Bluetooth sessions.
+- Make Pokémon link diagnostics bank-aware so localized WRAM state is reported
+  correctly for German and other European ROMs.
 
 ## [0.31.10] - 2026-09-06
 
