@@ -111,6 +111,14 @@ bool register_service(const GUID& uuid, const Socket socket,
     CSADDR_INFO address{};
     address.LocalAddr.lpSockaddr = reinterpret_cast<sockaddr*>(&local);
     address.LocalAddr.iSockaddrLength = length;
+    // The Bluetooth namespace uses the complete CSADDR_INFO tuple when it
+    // builds the RFCOMM ProtocolDescriptorList. Populate the same protocol
+    // metadata as Microsoft's Winsock RFCOMM server sample; leaving these
+    // fields zero makes WSASetService reject registration on some adapters.
+    address.RemoteAddr.lpSockaddr = reinterpret_cast<sockaddr*>(&local);
+    address.RemoteAddr.iSockaddrLength = length;
+    address.iSocketType = SOCK_STREAM;
+    address.iProtocol = BTHPROTO_RFCOMM;
     WSAQUERYSETW query{};
     query.dwSize = sizeof(query);
     query.lpszServiceInstanceName = const_cast<wchar_t*>(service_name);
