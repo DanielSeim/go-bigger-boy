@@ -341,10 +341,11 @@ constexpr std::size_t maximum_rewind_frames = 180;
 constexpr unsigned rewind_capture_interval = 4;
 // TCP serial responses are serviced from the emulation thread. Legacy bit
 // packets retain a tight cadence because every edge is a network round trip.
-// Negotiated byte packets need far fewer polls: 2048 CPU cycles is still under
-// half a millisecond at the Game Boy clock, while avoiding hundreds of socket
-// syscalls per video frame on Windows.
-constexpr unsigned remote_bit_poll_cycle_interval = 256;
+// A 512-cycle cadence stays below 0.13 ms at the Game Boy clock while halving
+// the non-blocking socket calls that were producing visible Windows jitter.
+// Negotiated byte packets need far fewer polls: 2048 cycles is still under
+// half a millisecond while avoiding hundreds of socket syscalls per frame.
+constexpr unsigned remote_bit_poll_cycle_interval = 512;
 constexpr unsigned remote_byte_poll_cycle_interval = 2048;
 
 using RewindHistory = std::deque<std::vector<std::uint8_t>>;
@@ -1899,7 +1900,8 @@ int main(int argc, char** argv) {
                                    !emulator->frame_ready()) {
                                 const auto stepped = step_emulator();
                                 cycles += stepped;
-                                if (remote_transport_connected) {
+                                if (remote_transport_connected &&
+                                    remote_link.endpoint.needs_poll()) {
                                     remote_poll_cycles += stepped;
                                     // Keep network serial edges well below a
                                     // video-frame of latency. The negotiated
@@ -2024,7 +2026,11 @@ int main(int argc, char** argv) {
                 // from delaying the first frame after the key is released.
                 frame_pacer.reset();
             } else if (remote_transport_connected) {
-                frame_pacer.wait([&] { remote_link.endpoint.poll(); });
+                frame_pacer.wait([&] {
+                    if (remote_link.endpoint.needs_poll()) {
+                        remote_link.endpoint.poll();
+                    }
+                });
             } else {
                 frame_pacer.wait();
             }

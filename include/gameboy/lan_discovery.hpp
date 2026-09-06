@@ -16,9 +16,11 @@ struct LanPeer {
 };
 
 // Opt-in UDP discovery for desktop LAN links. A host answers queries while a
-// scanner sends one broadcast and collects replies. Compatibility IDs are
-// used for matching; exact ROM fingerprints are returned for diagnostics.
-// Discovery never opens the TCP link or starts emulation by itself.
+// scanner sends broadcast/unicast probes and collects replies. Hosts also
+// advertise periodically so one-way broadcast filtering does not make a
+// valid LAN peer invisible. Compatibility IDs are used for matching; exact
+// ROM fingerprints are returned for diagnostics. Discovery never opens the
+// TCP link or starts emulation by itself.
 class LanDiscovery final {
 public:
     static constexpr std::uint16_t discovery_port = 8764;
@@ -50,6 +52,7 @@ private:
     enum class Mode { host, scan };
     void receive_available() noexcept;
     bool send_directed_broadcasts(const std::string& message) noexcept;
+    bool send_subnet_probes(const std::string& message) noexcept;
     bool send_message(const std::string& message, const char* address,
                       std::uint16_t port) noexcept;
 
@@ -62,6 +65,7 @@ private:
     std::vector<LanPeer> peers_;
     std::string scan_message_;
     std::chrono::steady_clock::time_point next_scan_broadcast_{};
+    std::chrono::steady_clock::time_point next_host_advertisement_{};
 };
 
 } // namespace gameboy

@@ -6,6 +6,7 @@
 #include <charconv>
 #include <cstring>
 #include <iomanip>
+#include <limits>
 #include <sstream>
 
 #if defined(_WIN32)
@@ -174,6 +175,10 @@ bool LanDiscovery::start_host(const std::uint16_t tcp_port,
     static_cast<void>(setsockopt(socket, SOL_SOCKET, SO_REUSEADDR,
                                  reinterpret_cast<const char*>(&reuse),
                                  sizeof(reuse)));
+    int broadcast = 1;
+    static_cast<void>(setsockopt(socket, SOL_SOCKET, SO_BROADCAST,
+                                 reinterpret_cast<const char*>(&broadcast),
+                                 sizeof(broadcast)));
     sockaddr_in address{};
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -252,6 +257,7 @@ bool LanDiscovery::start_host(const std::uint16_t tcp_port,
     compatibility_id_ = compatibility_id;
     rom_fingerprint_ = rom_fingerprint;
     name_ = sanitize_name(name);
+    next_host_advertisement_ = std::chrono::steady_clock::now();
     return true;
 }
 
@@ -277,13 +283,32 @@ bool LanDiscovery::start_scan(const std::uint64_t compatibility_id,
     sockaddr_in address{};
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = htonl(INADDR_ANY);
-    address.sin_port = 0;
+    // Prefer the well-known port so unsolicited host advertisements have a
+    // destination that scanners can receive. A host and scanner may also run
+    // on the same machine (the contract test does this), so fall back to an
+    // ephemeral port when the discovery port is already occupied.
+    address.sin_port = htons(discovery_port);
     if (bind(socket, reinterpret_cast<const sockaddr*>(&address),
              sizeof(address)) != 0) {
         close_socket(socket);
-        return false;
+        const auto fallback = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        if (fallback == invalid_socket || !set_nonblocking(fallback)) {
+            if (fallback != invalid_socket) close_socket(fallback);
+            return false;
+        }
+        static_cast<void>(setsockopt(
+            fallback, SOL_SOCKET, SO_BROADCAST,
+            reinterpret_cast<const char*>(&broadcast), sizeof(broadcast)));
+        address.sin_port = 0;
+        if (bind(fallback, reinterpret_cast<const sockaddr*>(&address),
+                 sizeof(address)) != 0) {
+            close_socket(fallback);
+            return false;
+        }
+        socket_ = as_handle(fallback);
+    } else {
+        socket_ = as_handle(socket);
     }
-    socket_ = as_handle(socket);
     mode_ = Mode::scan;
     compatibility_id_ = compatibility_id;
     rom_fingerprint_ = rom_fingerprint;
@@ -297,13 +322,15 @@ bool LanDiscovery::start_scan(const std::uint64_t compatibility_id,
         send_message(scan_message_, "255.255.255.255", discovery_port);
     const auto directed_broadcast_sent =
         send_directed_broadcasts(scan_message_);
+    const auto subnet_probe_sent = send_subnet_probes(scan_message_);
     const auto multicast_sent =
         send_message(scan_message_, discovery_multicast_address, discovery_port);
     // Loopback makes discovery testable and covers hosts where broadcast is
     // filtered by the local firewall; it does not replace the LAN broadcast.
     const auto loopback_sent =
         send_message(scan_message_, "127.0.0.1", discovery_port);
-    if (!broadcast_sent && !directed_broadcast_sent && !multicast_sent &&
+    if (!broadcast_sent && !directed_broadcast_sent && !subnet_probe_sent &&
+        !multicast_sent &&
         !loopback_sent) {
         stop();
         return false;
@@ -317,8 +344,27 @@ bool LanDiscovery::start_scan(const std::uint64_t rom_fingerprint) noexcept {
 
 void LanDiscovery::poll() noexcept {
     if (socket_ == -1) return;
+    const auto now = std::chrono::steady_clock::now();
+    if (mode_ == Mode::host && !name_.empty() &&
+        (next_host_advertisement_ == std::chrono::steady_clock::time_point{} ||
+         now >= next_host_advertisement_)) {
+        std::ostringstream response;
+        response << "GBB-DISCOVERY/1 R "
+                 << fingerprint_text(compatibility_id_) << ' '
+                 << fingerprint_text(rom_fingerprint_) << ' ' << tcp_port_
+                 << ' ' << name_;
+        const auto message = response.str();
+        // Advertise periodically as well as answering queries. This handles
+        // networks that drop broadcast/multicast packets in one direction
+        // (notably Windows scanners discovering Android hosts).
+        static_cast<void>(send_message(message, "255.255.255.255",
+                                        discovery_port));
+        static_cast<void>(send_directed_broadcasts(message));
+        static_cast<void>(send_message(message, discovery_multicast_address,
+                                       discovery_port));
+        next_host_advertisement_ = now + std::chrono::milliseconds(250);
+    }
     if (mode_ == Mode::scan && !scan_message_.empty()) {
-        const auto now = std::chrono::steady_clock::now();
         if (next_scan_broadcast_ == std::chrono::steady_clock::time_point{} ||
             now >= next_scan_broadcast_) {
             // Repeat the query while the bounded scan is active. Broadcast
@@ -329,6 +375,7 @@ void LanDiscovery::poll() noexcept {
                                             "255.255.255.255",
                                             discovery_port));
             static_cast<void>(send_directed_broadcasts(scan_message_));
+            static_cast<void>(send_subnet_probes(scan_message_));
             static_cast<void>(send_message(scan_message_,
                                            discovery_multicast_address,
                                            discovery_port));
@@ -350,6 +397,7 @@ void LanDiscovery::stop() noexcept {
     rom_fingerprint_ = 0;
     scan_message_.clear();
     next_scan_broadcast_ = {};
+    next_host_advertisement_ = {};
 }
 
 std::vector<LanPeer> LanDiscovery::take_peers() {
@@ -406,6 +454,129 @@ bool LanDiscovery::send_directed_broadcasts(
                 continue;
             }
             sent = send_message(message, text, discovery_port) || sent;
+        }
+    }
+    return sent;
+#elif !defined(__ANDROID__)
+    ifaddrs* interfaces = nullptr;
+    if (getifaddrs(&interfaces) != 0 || interfaces == nullptr) return false;
+    bool sent = false;
+    for (auto* entry = interfaces; entry != nullptr; entry = entry->ifa_next) {
+        if (entry->ifa_addr == nullptr || entry->ifa_netmask == nullptr ||
+            entry->ifa_addr->sa_family != AF_INET ||
+            (entry->ifa_flags & IFF_LOOPBACK) != 0 ||
+            (entry->ifa_flags & IFF_UP) == 0) {
+            continue;
+        }
+        const auto* address = reinterpret_cast<const sockaddr_in*>(
+            entry->ifa_addr);
+        const auto* netmask = reinterpret_cast<const sockaddr_in*>(
+            entry->ifa_netmask);
+        const auto host = ntohl(address->sin_addr.s_addr);
+        const auto mask = ntohl(netmask->sin_addr.s_addr);
+        if (mask == 0 || mask == std::numeric_limits<std::uint32_t>::max()) {
+            continue;
+        }
+        const auto broadcast = htonl(host | ~mask);
+        char text[INET_ADDRSTRLEN]{};
+        if (inet_ntop(AF_INET, &broadcast, text, sizeof(text)) != nullptr) {
+            sent = send_message(message, text, discovery_port) || sent;
+        }
+    }
+    freeifaddrs(interfaces);
+    return sent;
+#else
+    // Android's minSdk is below the API level where getifaddrs is available
+    // at link time. Resolve it through libc, as the multicast join path does.
+    const AndroidIfaddrsApi ifaddrs_api;
+    if (ifaddrs_api.get == nullptr || ifaddrs_api.free == nullptr) return false;
+    ifaddrs* interfaces = nullptr;
+    if (ifaddrs_api.get(&interfaces) != 0 || interfaces == nullptr) return false;
+    bool sent = false;
+    for (auto* entry = interfaces; entry != nullptr; entry = entry->ifa_next) {
+        if (entry->ifa_addr == nullptr || entry->ifa_netmask == nullptr ||
+            entry->ifa_addr->sa_family != AF_INET ||
+            (entry->ifa_flags & IFF_LOOPBACK) != 0 ||
+            (entry->ifa_flags & IFF_UP) == 0) {
+            continue;
+        }
+        const auto* address = reinterpret_cast<const sockaddr_in*>(
+            entry->ifa_addr);
+        const auto* netmask = reinterpret_cast<const sockaddr_in*>(
+            entry->ifa_netmask);
+        const auto host = ntohl(address->sin_addr.s_addr);
+        const auto mask = ntohl(netmask->sin_addr.s_addr);
+        if (mask == 0 || mask == std::numeric_limits<std::uint32_t>::max()) {
+            continue;
+        }
+        const auto broadcast = htonl(host | ~mask);
+        char text[INET_ADDRSTRLEN]{};
+        if (inet_ntop(AF_INET, &broadcast, text, sizeof(text)) != nullptr) {
+            sent = send_message(message, text, discovery_port) || sent;
+        }
+    }
+    ifaddrs_api.free(interfaces);
+    return sent;
+#endif
+}
+
+bool LanDiscovery::send_subnet_probes(const std::string& message) noexcept {
+#if defined(_WIN32)
+    // If a firewall or access point filters broadcasts, probe the local
+    // subnet with ordinary unicast UDP. Replies then follow the outbound
+    // flow and are commonly permitted even when unsolicited broadcasts are
+    // blocked. Limit probing to practical LAN sizes; directed broadcasts and
+    // multicast remain the paths for larger networks.
+    ULONG buffer_size = 15U * 1024U;
+    std::vector<unsigned char> buffer(buffer_size);
+    auto* addresses = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data());
+    auto result = GetAdaptersAddresses(
+        AF_INET, GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_DNS_SERVER, nullptr,
+        addresses, &buffer_size);
+    if (result == ERROR_BUFFER_OVERFLOW) {
+        if (buffer_size == 0 || buffer_size > 1024U * 1024U) return false;
+        buffer.resize(buffer_size);
+        addresses = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data());
+        result = GetAdaptersAddresses(
+            AF_INET, GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_DNS_SERVER,
+            nullptr, addresses, &buffer_size);
+    }
+    if (result != NO_ERROR) return false;
+
+    bool sent = false;
+    for (auto* adapter = addresses; adapter != nullptr;
+         adapter = adapter->Next) {
+        if (adapter->OperStatus != IfOperStatusUp) continue;
+        for (auto* unicast = adapter->FirstUnicastAddress;
+             unicast != nullptr; unicast = unicast->Next) {
+            if (unicast->Address.lpSockaddr == nullptr ||
+                unicast->Address.lpSockaddr->sa_family != AF_INET ||
+                unicast->OnLinkPrefixLength < 16 ||
+                unicast->OnLinkPrefixLength > 30) {
+                continue;
+            }
+            const auto* address = reinterpret_cast<const sockaddr_in*>(
+                unicast->Address.lpSockaddr);
+            const auto host = ntohl(address->sin_addr.s_addr);
+            const auto prefix = unicast->OnLinkPrefixLength;
+            const auto mask = 0xffffffffU << (32U - prefix);
+            const auto network = host & mask;
+            const auto broadcast = network | ~mask;
+            // Avoid generating traffic for the local machine and cap each
+            // interface at 4094 destinations (the common /24 is complete).
+            const auto first = network + 1U;
+            const auto last = broadcast - 1U;
+            if (last < first || last - first > 4093U) continue;
+            for (auto candidate = first; candidate <= last; ++candidate) {
+                if (candidate == host) continue;
+                in_addr destination{};
+                destination.s_addr = htonl(candidate);
+                char text[INET_ADDRSTRLEN]{};
+                if (inet_ntop(AF_INET, &destination, text, sizeof(text)) !=
+                    nullptr) {
+                    sent = send_message(message, text, discovery_port) || sent;
+                }
+            }
         }
     }
     return sent;

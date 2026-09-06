@@ -38,6 +38,15 @@ public:
                !byte_response_.has_value();
     }
 
+    // The frontend can avoid polling a quiet socket on every CPU slice. A
+    // poll is still required while the hello exchange or a serial transfer is
+    // active, including when this side is receiving the peer's clock.
+    [[nodiscard]] bool needs_poll() const noexcept {
+        return channel_ != nullptr &&
+               (!peer_hello_seen_ || waiting_for_peer() ||
+                (port_ != nullptr && port_->transfer_active()));
+    }
+
     // Read-only arbitration and compatibility state used by opt-in link
     // diagnostics. These
     // values explain a slow but otherwise healthy exchange without exposing
