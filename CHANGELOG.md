@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-09-06
+
+### CGB timing and accuracy
+
+- Preserve the CGB APU's 1 MHz phase across normal-speed execution, double-speed
+  switches, split bus ticks, and save-state restores.
+- Add contract coverage and diagnostics for the CGB APU phase boundary.
+- Document the CGB phase behavior and refresh the accuracy status counts.
+
 ## [0.31.13] - 2026-09-06
 
 ### Link audio and scheduling
