@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-09-06
+
+### CGB revision accuracy
+
+- Add a pinned SameBoy v1.0.3 revision matrix for CGB-0, CGB-C, and CGB-E
+  boundary behavior.
+- Model revision-specific CGB APU envelope writes, square retrigger alignment,
+  and channel-4 startup timing, with focused hardware-contract coverage.
+- Add repeatable SameBoy register-boundary probes and reviewed three-take
+  summaries for PCM visibility and noise LFSR reload diagnostics.
+- Keep external reference conversion provenance and the accuracy report in
+  sync with the reviewed fixtures.
+
 ## [0.32.0] - 2026-09-06
 
 ### CGB timing and accuracy
