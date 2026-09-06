@@ -102,6 +102,35 @@ bool take_android_link_settings_changed() noexcept {
     return changed;
 }
 
+bool start_android_lan_discovery() noexcept {
+    auto* environment = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
+    auto activity = static_cast<jobject>(SDL_GetAndroidActivity());
+    if (environment == nullptr || activity == nullptr) return false;
+    const auto klass = environment->GetObjectClass(activity);
+    const auto method = klass == nullptr ? nullptr : environment->GetMethodID(
+        klass, "startLanDiscovery", "()Z");
+    const auto value = method == nullptr
+                           ? JNI_FALSE
+                           : environment->CallBooleanMethod(activity, method);
+    if (environment->ExceptionCheck()) environment->ExceptionClear();
+    if (klass != nullptr) environment->DeleteLocalRef(klass);
+    environment->DeleteLocalRef(activity);
+    return value == JNI_TRUE;
+}
+
+void stop_android_lan_discovery() noexcept {
+    auto* environment = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
+    auto activity = static_cast<jobject>(SDL_GetAndroidActivity());
+    if (environment == nullptr || activity == nullptr) return;
+    const auto klass = environment->GetObjectClass(activity);
+    const auto method = klass == nullptr ? nullptr : environment->GetMethodID(
+        klass, "stopLanDiscovery", "()V");
+    if (method != nullptr) environment->CallVoidMethod(activity, method);
+    if (environment->ExceptionCheck()) environment->ExceptionClear();
+    if (klass != nullptr) environment->DeleteLocalRef(klass);
+    environment->DeleteLocalRef(activity);
+}
+
 } // namespace gbb::sdl
 
 extern "C" JNIEXPORT jobjectArray JNICALL

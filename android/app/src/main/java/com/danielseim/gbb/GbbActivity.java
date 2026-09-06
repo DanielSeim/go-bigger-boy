@@ -14,6 +14,7 @@ import android.hardware.SensorManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Looper;
+import android.net.wifi.WifiManager;
 import android.view.OrientationEventListener;
 import android.view.View;
 import android.view.WindowInsets;
@@ -69,6 +70,9 @@ public final class GbbActivity extends SDLActivity {
     private final Object bluetoothLifecycleLock = new Object();
     private long bluetoothGeneration;
     private static final int BLUETOOTH_PERMISSION_REQUEST = 47;
+    private static final int LAN_PERMISSION_REQUEST = 48;
+    private final Object lanDiscoveryLock = new Object();
+    private WifiManager.MulticastLock lanMulticastLock;
 
     private static native void nativeOpenRom(String rom, String displayName);
     private static native void nativeAndroidBackPressed();
@@ -267,6 +271,57 @@ public final class GbbActivity extends SDLActivity {
                     Toast.LENGTH_LONG).show();
         });
         return false;
+    }
+
+    /**
+     * Enables reception of LAN discovery broadcasts for the native UDP
+     * socket. Android Wi-Fi normally filters multicast/broadcast traffic;
+     * keeping this lock scoped to an active link session avoids a permanent
+     * battery cost. Android 16's opt-in local-network protection also maps
+     * raw LAN sockets to the Nearby devices permission.
+     */
+    public boolean startLanDiscovery() {
+        if (Build.VERSION.SDK_INT >= 36 &&
+                checkSelfPermission(android.Manifest.permission.NEARBY_WIFI_DEVICES) !=
+                        PackageManager.PERMISSION_GRANTED) {
+            runOnUiThread(() -> {
+                requestPermissions(new String[]{
+                        android.Manifest.permission.NEARBY_WIFI_DEVICES},
+                        LAN_PERMISSION_REQUEST);
+                Toast.makeText(this,
+                        "Allow Nearby devices, then retry the link action",
+                        Toast.LENGTH_LONG).show();
+            });
+            return false;
+        }
+        synchronized (lanDiscoveryLock) {
+            if (lanMulticastLock != null && lanMulticastLock.isHeld()) return true;
+            final WifiManager manager =
+                    (WifiManager)getApplicationContext().getSystemService(WIFI_SERVICE);
+            if (manager == null) return false;
+            try {
+                final WifiManager.MulticastLock lock =
+                        manager.createMulticastLock("gbb-lan-discovery");
+                lock.setReferenceCounted(false);
+                lock.acquire();
+                lanMulticastLock = lock;
+                return true;
+            } catch (RuntimeException error) {
+                lanMulticastLock = null;
+                return false;
+            }
+        }
+    }
+
+    /** Releases the LAN discovery Wi-Fi lock, if one is held. */
+    public void stopLanDiscovery() {
+        synchronized (lanDiscoveryLock) {
+            if (lanMulticastLock == null) return;
+            try {
+                if (lanMulticastLock.isHeld()) lanMulticastLock.release();
+            } catch (RuntimeException ignored) { }
+            lanMulticastLock = null;
+        }
     }
 
     private void chooseBluetoothDevice(EditText target) {
@@ -580,6 +635,7 @@ public final class GbbActivity extends SDLActivity {
 
     @Override
     protected void onDestroy() {
+        stopLanDiscovery();
         bluetoothStop();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                 backCallback != null) {

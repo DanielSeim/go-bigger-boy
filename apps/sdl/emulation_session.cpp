@@ -5,6 +5,10 @@
 #include "link_trace_file.hpp"
 #include "pokemon_link_diagnostics.hpp"
 
+#ifdef __ANDROID__
+#include "android_bridge.hpp"
+#endif
+
 #include <iomanip>
 #include <stdexcept>
 #include <sstream>
@@ -618,6 +622,17 @@ void start_remote_link_session(gameboy::Emulator& emulator,
             emulator.bus().connect_printer(true);
             throw std::runtime_error("Could not start LAN discovery.");
         }
+#ifdef __ANDROID__
+        if (hosting && !start_android_lan_discovery()) {
+            remote.discovery.stop();
+            remote.endpoint.detach();
+            channel.close();
+            emulator.bus().connect_printer(true);
+            throw std::runtime_error(
+                "Could not enable Android LAN discovery. Allow Nearby devices "
+                "and retry the link action.");
+        }
+#endif
     }
     remote.enabled = true;
     remote.next_pending_poll = {};
@@ -659,6 +674,9 @@ void stop_remote_link_session(gameboy::Emulator& emulator,
 #ifndef __ANDROID__
     stop_link_trace();
 #endif
+#ifdef __ANDROID__
+    stop_android_lan_discovery();
+#endif
     remote.endpoint.detach();
     remote.discovery.stop();
     remote.scanning = false;
@@ -675,6 +693,9 @@ void retry_remote_link_session(gameboy::Emulator& emulator,
                                const RemoteLinkOptions& options) {
     if (!remote.enabled) return;
     remote.endpoint.detach();
+#ifdef __ANDROID__
+    stop_android_lan_discovery();
+#endif
     remote.discovery.stop();
     remote.channel.close();
     remote.bluetooth_channel.close();
@@ -710,6 +731,15 @@ void retry_remote_link_session(gameboy::Emulator& emulator,
                                      "Go Bigger Boy")) {
         throw std::runtime_error("Could not restart LAN discovery.");
     }
+#ifdef __ANDROID__
+    if (remote.hosting && options.lan_discovery && !remote.bluetooth &&
+        !start_android_lan_discovery()) {
+        remote.discovery.stop();
+        throw std::runtime_error(
+            "Could not enable Android LAN discovery. Allow Nearby devices "
+            "and retry the link action.");
+    }
+#endif
     remote.endpoint.attach(emulator.bus().serial_port(), channel,
                            emulator.link_compatibility_id());
 }
