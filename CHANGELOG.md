@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.31.1] - 2026-09-06
+
+### Bluetooth link cable
+
+- Correct Windows RFCOMM SDP service removal so restarting a host does not
+  leave a stale Bluetooth advertisement behind.
+- Populate the complete RFCOMM service metadata required by Windows Bluetooth
+  adapters when registering the host service.
+
 ## [0.31.0] - 2026-09-06
 
 ### Bluetooth link cable
