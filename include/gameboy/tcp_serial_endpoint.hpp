@@ -34,7 +34,8 @@ public:
                (arbitration_priority_ || peer_request_seen_);
     }
     [[nodiscard]] bool waiting_for_peer() const noexcept {
-        return pending_sequence_.has_value() && !response_.has_value();
+        return pending_sequence_.has_value() && !response_.has_value() &&
+               !byte_response_.has_value();
     }
 
     // Read-only arbitration and compatibility state used by opt-in link
@@ -42,7 +43,7 @@ public:
     // values explain a slow but otherwise healthy exchange without exposing
     // transport internals to the emulated serial port.
     [[nodiscard]] bool response_ready() const noexcept {
-        return response_.has_value();
+        return response_.has_value() || byte_response_.has_value();
     }
     [[nodiscard]] bool peer_hello_seen() const noexcept {
         return peer_hello_seen_;
@@ -58,6 +59,9 @@ public:
     }
     [[nodiscard]] bool peer_byte_released() const noexcept {
         return peer_byte_released_;
+    }
+    [[nodiscard]] bool peer_byte_transfer() const noexcept {
+        return peer_byte_transfer_;
     }
     [[nodiscard]] bool peer_clock_busy() const noexcept {
         return peer_clock_busy_;
@@ -91,6 +95,12 @@ public:
     [[nodiscard]] std::uint64_t responses_unmatched() const noexcept {
         return responses_unmatched_;
     }
+    [[nodiscard]] std::uint64_t byte_packets_sent() const noexcept {
+        return byte_packets_sent_;
+    }
+    [[nodiscard]] std::uint64_t byte_packets_received() const noexcept {
+        return byte_packets_received_;
+    }
     [[nodiscard]] std::uint64_t transfers_completed() const noexcept {
         return port_ == nullptr ? 0 : port_->transfers_completed();
     }
@@ -98,7 +108,7 @@ public:
     void prepare_bit(bool outgoing) noexcept override;
     [[nodiscard]] bool exchange_bit(bool outgoing) noexcept override;
     [[nodiscard]] bool peer_ready() const noexcept override {
-        return response_.has_value();
+        return response_.has_value() || byte_response_.has_value();
     }
     [[nodiscard]] bool request_internal_clock(
         SerialPort& /*port*/) noexcept override;
@@ -111,12 +121,15 @@ private:
     static constexpr std::uint8_t denied_flag = 0x04;
     static constexpr std::uint8_t not_ready_flag = 0x08;
     static constexpr std::uint8_t reset_flag = 0x80;
+    static constexpr std::uint8_t byte_transfer_capability = 0x10;
 
     SerialPort* port_{};
     LinkPacketChannel* channel_{};
     std::uint32_t next_sequence_{};
     std::optional<std::uint32_t> pending_sequence_;
     std::optional<bool> response_;
+    std::optional<std::uint8_t> byte_response_;
+    std::uint8_t byte_bits_consumed_{};
     std::optional<LinkPacket> deferred_request_;
     unsigned request_backoff_{};
     bool arbitration_priority_{};
@@ -129,6 +142,7 @@ private:
     std::uint64_t peer_compatibility_id_{};
     bool peer_request_seen_{};
     bool peer_byte_released_{};
+    bool peer_byte_transfer_{};
     bool peer_clock_busy_{};
     std::uint64_t requests_sent_{};
     std::uint64_t requests_received_{};
@@ -137,6 +151,8 @@ private:
     std::uint64_t denials_sent_{};
     std::uint64_t denials_received_{};
     std::uint64_t responses_unmatched_{};
+    std::uint64_t byte_packets_sent_{};
+    std::uint64_t byte_packets_received_{};
     std::uint64_t diagnostic_session_{};
 };
 

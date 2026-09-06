@@ -107,6 +107,9 @@ void append_trace_player(std::ostream& output,
         field("deny_sent", endpoint->denials_sent());
         field("deny_recv", endpoint->denials_received());
         field("unmatched", endpoint->responses_unmatched());
+        field("byte_sent", endpoint->byte_packets_sent());
+        field("byte_recv", endpoint->byte_packets_received());
+        field("byte_cap", endpoint->peer_byte_transfer());
         field("waiting", endpoint->waiting_for_peer());
         field("connected", endpoint->connected());
     }

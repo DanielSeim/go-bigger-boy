@@ -50,6 +50,16 @@ emulator for a remote session. While a TCP bit is in flight, the endpoint also
 preserves the partial shift register across Pokémon's repeated SB/SC probe
 rewrites; an explicit link reset remains the cancellation boundary.
 
+New endpoints negotiate a byte-level fast path in the hello arbitration flags.
+When both peers advertise it, one packet carries all eight outgoing serial
+bits and the response carries the eight incoming bits. The local serial port
+still shifts those bits at normal Game Boy timing, while the peer clocks its
+external receiver as one complete byte. This removes seven network round
+trips per byte, which is important on Wi-Fi and prevents a long sequence of
+bit-sized waits from starving a desktop frame loop. Peers that do not advertise
+the capability continue to use the original bit packets automatically, so a
+new build remains compatible with older releases.
+
 Before serial traffic, endpoints send a five-part hello containing the local
 link-compatibility ID (two bytes per part) and the host/join role. A link
 becomes ready only after all parts arrive and the IDs match. The exact ROM
@@ -245,6 +255,10 @@ a completed byte, `pc` that the peer currently owns the clock, and `bo` gives
 the remaining request backoff. These fields are diagnostic-only and help
 distinguish a slow TCP exchange from a guest-side synchronization delay or an
 incompatible ROM pair.
+`bs` and `br` count negotiated byte packets sent and received; a zero value on
+either side means that the peer fell back to the bit protocol (or is an older
+build). `bt` reports whether the peer advertised the byte-transfer capability,
+even before the first serial byte is exchanged.
 
 WebRTC, Bluetooth, and USB transports can reuse the same packet and serial-edge
 seams; each should preserve the non-blocking poll boundary and add its own

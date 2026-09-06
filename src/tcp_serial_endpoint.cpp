@@ -20,6 +20,8 @@ void LinkSerialEndpoint::attach(SerialPort& port,
     next_sequence_ = 0;
     pending_sequence_.reset();
     response_.reset();
+    byte_response_.reset();
+    byte_bits_consumed_ = 0;
     deferred_request_.reset();
     request_backoff_ = 0;
     hello_sent_ = false;
@@ -31,6 +33,7 @@ void LinkSerialEndpoint::attach(SerialPort& port,
     peer_compatibility_id_ = 0;
     peer_request_seen_ = false;
     peer_byte_released_ = false;
+    peer_byte_transfer_ = false;
     peer_clock_busy_ = false;
     requests_sent_ = 0;
     requests_received_ = 0;
@@ -39,6 +42,8 @@ void LinkSerialEndpoint::attach(SerialPort& port,
     denials_sent_ = 0;
     denials_received_ = 0;
     responses_unmatched_ = 0;
+    byte_packets_sent_ = 0;
+    byte_packets_received_ = 0;
     diagnostic_session_ =
         next_diagnostic_session.fetch_add(1, std::memory_order_relaxed);
     port_->set_endpoint(this);
@@ -56,6 +61,8 @@ void LinkSerialEndpoint::detach() noexcept {
     channel_ = nullptr;
     pending_sequence_.reset();
     response_.reset();
+    byte_response_.reset();
+    byte_bits_consumed_ = 0;
     deferred_request_.reset();
     request_backoff_ = 0;
     hello_sent_ = false;
@@ -67,7 +74,10 @@ void LinkSerialEndpoint::detach() noexcept {
     peer_compatibility_id_ = 0;
     peer_request_seen_ = false;
     peer_byte_released_ = false;
+    peer_byte_transfer_ = false;
     peer_clock_busy_ = false;
+    byte_packets_sent_ = 0;
+    byte_packets_received_ = 0;
     diagnostic_session_ = 0;
     if (was_attached) {
         gbb::Logger::instance().write(gbb::LogLevel::info,
@@ -97,16 +107,34 @@ void LinkSerialEndpoint::prepare_bit(const bool outgoing) noexcept {
         return;
     }
     const auto sequence = next_sequence_++;
-    const LinkPacket packet{LinkPacketType::bit, sequence,
-                            static_cast<std::uint8_t>(outgoing ? 1U : 0U),
-                            request_flag};
+    const auto use_byte_transfer = peer_byte_transfer_ && peer_hello_seen_ &&
+                                   port_ != nullptr &&
+                                   port_->bits_shifted() == 0;
+    const LinkPacket packet{
+        use_byte_transfer ? LinkPacketType::byte : LinkPacketType::bit,
+        sequence,
+        use_byte_transfer ? port_->read_data()
+                          : static_cast<std::uint8_t>(outgoing ? 1U : 0U),
+        request_flag};
     if (channel_->send(packet)) {
         pending_sequence_ = sequence;
         ++requests_sent_;
+        if (use_byte_transfer) ++byte_packets_sent_;
     }
 }
 
 bool LinkSerialEndpoint::exchange_bit(const bool /*outgoing*/) noexcept {
+    if (byte_response_.has_value()) {
+        const auto incoming = static_cast<bool>(
+            (*byte_response_ >> (7U - byte_bits_consumed_)) & 0x01U);
+        ++byte_bits_consumed_;
+        if (byte_bits_consumed_ == 8) {
+            byte_response_.reset();
+            byte_bits_consumed_ = 0;
+            pending_sequence_.reset();
+        }
+        return incoming;
+    }
     if (!response_.has_value()) return true;
     const auto incoming = *response_;
     response_.reset();
@@ -134,7 +162,8 @@ void LinkSerialEndpoint::release_internal_clock(SerialPort& port) noexcept {
     // re-arm into an unmatched response that can never advance the byte.
     // reset_link() calls cancel_internal_clock() explicitly when a session is
     // really being abandoned.
-    const auto response_ready = response_.has_value();
+    const auto response_ready = response_.has_value() ||
+                                byte_response_.has_value();
     if (!response_ready && !port.transfer_active()) {
         pending_sequence_.reset();
         request_backoff_ = 0;
@@ -165,6 +194,8 @@ void LinkSerialEndpoint::cancel_internal_clock(SerialPort& /*port*/) noexcept {
     }
     pending_sequence_.reset();
     response_.reset();
+    byte_response_.reset();
+    byte_bits_consumed_ = 0;
     deferred_request_.reset();
     request_backoff_ = 0;
     peer_clock_busy_ = false;
@@ -179,7 +210,11 @@ void LinkSerialEndpoint::poll() noexcept {
         LinkPacket hello{LinkPacketType::hello, part,
                          static_cast<std::uint8_t>(
                              arbitration_priority_ ? 1U : 0U),
-                         0};
+                         // Sequence zero has no compatibility payload and
+                         // carries capability bits instead. This remains
+                         // harmless to older endpoints, which ignore flags
+                         // on the arbitration hello.
+                         byte_transfer_capability};
         if (compatibility_id_ != 0 && part != 0) {
             const auto shift = static_cast<unsigned>((part - 1U) * 16U);
             hello.value = static_cast<std::uint8_t>(compatibility_id_ >> shift);
@@ -198,6 +233,7 @@ void LinkSerialEndpoint::poll() noexcept {
     }
 
     const auto service_request = [this](const LinkPacket& packet) {
+        const auto byte_request = packet.type == LinkPacketType::byte;
         if (port_ == nullptr || !port_->transfer_active()) {
             // Keep the request at the cable boundary until the guest arms
             // SC. Completing it as "not ready" loses the first byte when the
@@ -207,7 +243,7 @@ void LinkSerialEndpoint::poll() noexcept {
         }
         if (port_->internal_clock()) {
             if (arbitration_priority_) {
-                const LinkPacket denied{LinkPacketType::bit,
+                const LinkPacket denied{packet.type,
                                         packet.sequence, 1,
                                         static_cast<std::uint8_t>(
                                             response_flag | denied_flag)};
@@ -228,16 +264,32 @@ void LinkSerialEndpoint::poll() noexcept {
             deferred_request_ = packet;
             return;
         }
-        const auto outgoing = port_->clock_external_bit(packet.value != 0);
-        const LinkPacket response{LinkPacketType::bit, packet.sequence,
-                                  static_cast<std::uint8_t>(outgoing ? 1U
-                                                                      : 0U),
+        std::uint8_t incoming_byte = 0;
+        if (byte_request) {
+            for (unsigned bit = 0; bit < 8; ++bit) {
+                const auto outgoing = port_->clock_external_bit(
+                    ((packet.value >> (7U - bit)) & 0x01U) != 0);
+                incoming_byte = static_cast<std::uint8_t>(
+                    (incoming_byte << 1U) | (outgoing ? 1U : 0U));
+            }
+        } else {
+            const auto outgoing = port_->clock_external_bit(packet.value != 0);
+            incoming_byte = static_cast<std::uint8_t>(outgoing ? 1U : 0U);
+        }
+        const LinkPacket response{packet.type, packet.sequence, incoming_byte,
                                   response_flag};
-        if (channel_->send(response)) ++responses_sent_;
+        if (channel_->send(response)) {
+            ++responses_sent_;
+            if (byte_request) ++byte_packets_sent_;
+        }
     };
 
     while (const auto packet = channel_->receive()) {
         if (packet->type == LinkPacketType::hello) {
+            if (packet->sequence == 0) {
+                peer_byte_transfer_ =
+                    (packet->flags & byte_transfer_capability) != 0;
+            }
             if (compatibility_id_ == 0) {
                 if (!peer_hello_seen_) {
                     gbb::Logger::instance().write(
@@ -289,6 +341,8 @@ void LinkSerialEndpoint::poll() noexcept {
                 }
                 pending_sequence_.reset();
                 response_.reset();
+                byte_response_.reset();
+                byte_bits_consumed_ = 0;
                 deferred_request_.reset();
                 request_backoff_ = 0;
                 peer_clock_busy_ = false;
@@ -300,7 +354,10 @@ void LinkSerialEndpoint::poll() noexcept {
             if (packet->value != 0) peer_byte_released_ = true;
             continue;
         }
-        if (packet->type != LinkPacketType::bit) continue;
+        if (packet->type != LinkPacketType::bit &&
+            packet->type != LinkPacketType::byte)
+            continue;
+        if (packet->type == LinkPacketType::byte) ++byte_packets_received_;
         if ((packet->flags & request_flag) != 0) {
             ++requests_received_;
             peer_request_seen_ = true;
@@ -333,6 +390,8 @@ void LinkSerialEndpoint::poll() noexcept {
                 }
                 pending_sequence_.reset();
                 response_.reset();
+                byte_response_.reset();
+                byte_bits_consumed_ = 0;
                 // Let the winning host arm its external receiver before the
                 // join side retries. Without this yield, Pokémon can rewrite
                 // SC immediately and generate a denial storm that leaves the
@@ -349,7 +408,12 @@ void LinkSerialEndpoint::poll() noexcept {
                 response_.reset();
                 request_backoff_ = 64;
             } else {
-                response_ = packet->value != 0;
+                if (packet->type == LinkPacketType::byte) {
+                    byte_response_ = packet->value;
+                    byte_bits_consumed_ = 0;
+                } else {
+                    response_ = packet->value != 0;
+                }
             }
         }
     }

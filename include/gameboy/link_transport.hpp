@@ -50,6 +50,10 @@ enum class LinkPacketType : std::uint8_t {
     bit = 2,
     acknowledgement = 3,
     clock_release = 4,
+    // A negotiated byte exchange carries all eight serial bits in one
+    // request/response pair. Older peers do not advertise this capability,
+    // so endpoints automatically fall back to bit packets.
+    byte = 5,
 };
 
 struct LinkPacket {

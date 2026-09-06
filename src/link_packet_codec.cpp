@@ -28,7 +28,7 @@ std::optional<LinkPacket> LinkPacketCodec::decode(const std::uint8_t* bytes,
     if (bytes == nullptr || size != wire_size || bytes[0] != 'G' ||
         bytes[1] != 'B' || bytes[2] != 1 ||
         (bytes[3] < static_cast<std::uint8_t>(LinkPacketType::hello) ||
-         bytes[3] > static_cast<std::uint8_t>(LinkPacketType::clock_release))) {
+         bytes[3] > static_cast<std::uint8_t>(LinkPacketType::byte))) {
         return std::nullopt;
     }
     std::uint8_t checksum = 0;

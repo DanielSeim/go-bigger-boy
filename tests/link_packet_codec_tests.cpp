@@ -29,7 +29,7 @@ void test_deterministic_round_trips() {
     for (unsigned index = 0; index < 128; ++index) {
         const auto random = next_value(state);
         const auto type = static_cast<gameboy::LinkPacketType>(
-            1U + (random % 4U));
+            1U + (random % 5U));
         const gameboy::LinkPacket packet{type, next_value(state),
                                          static_cast<std::uint8_t>(next_value(state)),
                                          static_cast<std::uint8_t>(next_value(state))};

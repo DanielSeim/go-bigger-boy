@@ -563,6 +563,30 @@ void test_packet_channel_endpoint_contract() {
               first_endpoint.peer_compatibility_id() == profile &&
               second_endpoint.peer_compatibility_id() == profile,
           "serial endpoint accepts a non-TCP packet channel");
+    check(first_endpoint.peer_byte_transfer() &&
+              second_endpoint.peer_byte_transfer(),
+          "packet-channel peers advertise byte-transfer capability");
+
+    first.write8(0xFF01, 0xA5);
+    second.write8(0xFF01, 0x3C);
+    first.write8(0xFF02, 0x81);  // Player one supplies the clock.
+    second.write8(0xFF02, 0x80); // Player two uses the external clock.
+    for (unsigned cycle = 0; cycle < 2000; ++cycle) {
+        first.tick(4);
+        second.tick(4);
+        first_endpoint.poll();
+        second_endpoint.poll();
+        if (!first.serial_port().transfer_active() &&
+            !second.serial_port().transfer_active()) {
+            break;
+        }
+    }
+    check(first.read8(0xFF01) == 0x3C && second.read8(0xFF01) == 0xA5 &&
+              !first.serial_port().transfer_active() &&
+              !second.serial_port().transfer_active() &&
+              first_endpoint.byte_packets_sent() != 0 &&
+              second_endpoint.byte_packets_received() != 0,
+          "packet-channel byte fast path exchanges a complete serial byte");
     first_endpoint.detach();
     second_endpoint.detach();
 }
@@ -651,6 +675,9 @@ void test_tcp_serial_endpoint_loopback() {
               first_endpoint.peer_compatibility_id() == rom_fingerprint &&
               second_endpoint.peer_compatibility_id() == rom_fingerprint,
           "TCP endpoint exchanges and validates the link compatibility handshake");
+    check(first_endpoint.peer_byte_transfer() &&
+              second_endpoint.peer_byte_transfer(),
+          "TCP endpoints negotiate the byte-level serial fast path");
     first.write8(0xFF01, 0xA5);
     second.write8(0xFF01, 0x5A);
     first.write8(0xFF02, 0x81);
