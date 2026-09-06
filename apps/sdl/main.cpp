@@ -343,10 +343,11 @@ constexpr unsigned rewind_capture_interval = 4;
 // packets retain a tight cadence because every edge is a network round trip.
 // A 512-cycle cadence stays below 0.13 ms at the Game Boy clock while halving
 // the non-blocking socket calls that were producing visible Windows jitter.
-// Negotiated byte packets need far fewer polls: 2048 cycles is still under
-// half a millisecond while avoiding hundreds of socket syscalls per frame.
+// Negotiated byte packets need far fewer polls: 4096 cycles is still under a
+// millisecond while avoiding redundant socket syscalls during the long
+// passive receive waits used by the Cable Club.
 constexpr unsigned remote_bit_poll_cycle_interval = 512;
-constexpr unsigned remote_byte_poll_cycle_interval = 2048;
+constexpr unsigned remote_byte_poll_cycle_interval = 4096;
 
 using RewindHistory = std::deque<std::vector<std::uint8_t>>;
 
@@ -1898,21 +1899,29 @@ int main(int argc, char** argv) {
                                     : remote_bit_poll_cycle_interval;
                             while (running && cycles < cycles_per_frame &&
                                    !emulator->frame_ready()) {
-                                const auto stepped = step_emulator();
-                                cycles += stepped;
+                                // Run the core in bounded slices instead of
+                                // checking the remote endpoint after every
+                                // instruction. A transfer can begin anywhere
+                                // in a slice; the next boundary remains below
+                                // the selected serial-poll interval and the
+                                // endpoint never blocks the emulation thread.
+                                const auto remaining =
+                                    cycles_per_frame - cycles;
+                                const auto slice_budget = std::min(
+                                    remaining, remote_poll_cycle_interval);
+                                const auto advanced = gbb::advance_to_frame(
+                                    *emulator, slice_budget);
+                                if (advanced.cycles == 0) break;
+                                cycles += advanced.cycles;
+                                remote_poll_cycles += advanced.cycles;
                                 if (remote_transport_connected &&
-                                    remote_link.endpoint.needs_poll()) {
-                                    remote_poll_cycles += stepped;
-                                    // Keep network serial edges well below a
-                                    // video-frame of latency. The negotiated
-                                    // byte path uses a wider interval to avoid
-                                    // needless socket calls while retaining a
-                                    // tight cadence for legacy bit peers.
-                                    if (remote_poll_cycles >=
-                                        remote_poll_cycle_interval) {
+                                    (remote_poll_cycles >=
+                                         remote_poll_cycle_interval ||
+                                     advanced.frame_ready)) {
+                                    if (remote_link.endpoint.needs_poll()) {
                                         remote_link.endpoint.poll();
-                                        remote_poll_cycles = 0;
                                     }
+                                    remote_poll_cycles = 0;
                                 }
                             }
                             if (remote_transport_connected) {
@@ -2026,11 +2035,21 @@ int main(int argc, char** argv) {
                 // from delaying the first frame after the key is released.
                 frame_pacer.reset();
             } else if (remote_transport_connected) {
-                frame_pacer.wait([&] {
-                    if (remote_link.endpoint.needs_poll()) {
-                        remote_link.endpoint.poll();
-                    }
-                });
+                // A byte-capable peer is serviced by the emulation-clock
+                // cadence above. Polling it again every 1 ms while the guest
+                // is passively waiting for the host clock adds a steady
+                // stream of Windows socket calls and visible frame jitter.
+                // Legacy bit peers still need the fine-grained pacing poll to
+                // keep each individual edge below a video frame of latency.
+                if (remote_link.endpoint.peer_byte_transfer()) {
+                    frame_pacer.wait();
+                } else {
+                    frame_pacer.wait([&] {
+                        if (remote_link.endpoint.needs_poll()) {
+                            remote_link.endpoint.poll();
+                        }
+                    });
+                }
             } else {
                 frame_pacer.wait();
             }

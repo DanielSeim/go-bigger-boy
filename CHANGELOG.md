@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.31.9] - 2026-09-06
+
+### Link cable performance
+
+- Run connected remote emulation in bounded cycle slices instead of a
+  per-instruction frontend loop, preserving serial polling deadlines while
+  reducing Windows joiner frame jitter.
+- Avoid redundant frame-pacer socket polling for negotiated byte-level links
+  and keep the legacy bit-level polling cadence unchanged.
+
 ## [0.31.8] - 2026-09-06
 
 ### Link cable discovery and performance
