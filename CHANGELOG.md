@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.31.5] - 2026-09-06
+
+### Link cable performance
+
+- Negotiate a byte-level TCP/Bluetooth serial fast path to eliminate seven
+  network round trips per transferred byte while retaining fallback support
+  for older peers.
+- Add byte-path negotiation and packet counters to link diagnostics and
+  integration traces.
+- Extend link codec and endpoint regression coverage for complete byte
+  exchanges.
+
 ## [0.31.4] - 2026-09-06
 
 ### Link cable discovery
