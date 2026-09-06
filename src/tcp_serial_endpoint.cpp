@@ -101,7 +101,14 @@ void LinkSerialEndpoint::prepare_bit(const bool outgoing) noexcept {
     // Keep the Pokémon join side passive until the host has initiated its
     // first request. This mirrors the physical Cable Club sequence and avoids
     // the late entrant being treated as a competing host.
-    if (!arbitration_priority_ && !peer_request_seen_) return;
+    if (!arbitration_priority_ &&
+        (peer_clock_busy_ || !peer_request_seen_)) {
+        // The join side may arm its next internal transfer before the host's
+        // clock-release packet arrives. Keep the emulated SC bit asserted and
+        // hold the first edge until ownership is released instead of
+        // permanently demoting the guest to an external receiver.
+        return;
+    }
     if (request_backoff_ != 0) {
         --request_backoff_;
         return;
@@ -146,10 +153,12 @@ bool LinkSerialEndpoint::request_internal_clock(
     SerialPort& /*port*/) noexcept {
     // Permit only one clock owner at a time. The host wins the initial race;
     // after it releases a completed byte, Pokémon may legitimately let the
-    // join side clock the next exchange.
-    if (!connected() || peer_clock_busy_) return false;
-    if (!arbitration_priority_ &&
-        (!peer_request_seen_ || !peer_byte_released_)) {
+    // join side clock the next exchange. If the join side arms while the
+    // current host byte is still in flight, accept the arm and let
+    // prepare_bit() hold the first edge until release rather than demoting
+    // the guest to an external receiver.
+    if (!connected()) return false;
+    if (!arbitration_priority_ && !peer_request_seen_) {
         return false;
     }
     return true;
@@ -251,6 +260,10 @@ void LinkSerialEndpoint::poll() noexcept {
                     ++responses_sent_;
                     ++denials_sent_;
                 }
+                // A denied request has been fully handled. Do not leave the
+                // host blocked behind a stale peer_clock_busy_ flag while
+                // the join side backs off and retries.
+                peer_clock_busy_ = false;
                 return;
             }
             // The lower-priority requester yields its internal clock and

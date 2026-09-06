@@ -591,6 +591,73 @@ void test_packet_channel_endpoint_contract() {
     second_endpoint.detach();
 }
 
+void test_packet_channel_handoff_race() {
+    QueuePacketChannel host_channel;
+    QueuePacketChannel join_channel;
+    host_channel.connect_to(join_channel);
+    join_channel.connect_to(host_channel);
+    gameboy::MemoryBus host{gameboy::Cartridge{test_rom()}};
+    gameboy::MemoryBus join{gameboy::Cartridge{test_rom()}};
+    gameboy::TcpSerialEndpoint host_endpoint;
+    gameboy::TcpSerialEndpoint join_endpoint;
+    host_endpoint.set_arbitration_priority(true);
+    join_endpoint.set_arbitration_priority(false);
+    constexpr std::uint64_t profile = 0x1020304050607080ULL;
+    host_endpoint.attach(host.serial_port(), host_channel, profile);
+    join_endpoint.attach(join.serial_port(), join_channel, profile);
+    for (unsigned attempt = 0; attempt < 12; ++attempt) {
+        host_endpoint.poll();
+        join_endpoint.poll();
+    }
+
+    // Complete a host-owned byte, but deliberately leave the host's response
+    // and clock-release packets queued while the join side arms its next
+    // internal transfer. This is the ordering that occurs when Android and
+    // Windows advance the Cable Club state machines on different frames.
+    host.write8(0xFF01, 0xA5);
+    join.write8(0xFF01, 0x5A);
+    host.write8(0xFF02, 0x81);
+    join.write8(0xFF02, 0x80);
+    host.tick(512);
+    join_endpoint.poll();
+    check(join.serial_port().transfers_completed() == 1 &&
+              join_endpoint.peer_clock_busy(),
+          "join endpoint observes a host byte before its release marker");
+
+    join.write8(0xFF01, 0x3C);
+    join.write8(0xFF02, 0x81);
+    check(join.serial_port().internal_clock(),
+          "join keeps an early internal-clock arm pending during handoff");
+
+    host_endpoint.poll();
+    host.tick(4096);
+    join_endpoint.poll();
+    check(!join_endpoint.peer_clock_busy(),
+          "join consumes the host release after the early arm");
+
+    // The deferred join request must remain usable once the host grants the
+    // next edge. Put the host in external-clock mode and let the join clock a
+    // second byte through the same packet channel.
+    host.write8(0xFF01, 0xC3);
+    host.write8(0xFF02, 0x80);
+    for (unsigned cycle = 0; cycle < 20000; ++cycle) {
+        join.tick(4);
+        host_endpoint.poll();
+        join_endpoint.poll();
+        host.tick(4);
+        if (!host.serial_port().transfer_active() &&
+            !join.serial_port().transfer_active()) {
+            break;
+        }
+    }
+    check(host.read8(0xFF01) == 0x3C && join.read8(0xFF01) == 0xC3 &&
+              !host.serial_port().transfer_active() &&
+              !join.serial_port().transfer_active(),
+          "early join arm completes after the host release");
+    host_endpoint.detach();
+    join_endpoint.detach();
+}
+
 void test_tcp_link_channel_loopback() {
     gameboy::TcpLinkChannel server;
     gameboy::TcpLinkChannel client;
@@ -787,9 +854,9 @@ void test_tcp_serial_endpoint_loopback() {
     for (unsigned byte = 0; byte < 12; ++byte) {
         // The previous owner's completion callback queues clock_release on
         // its TCP channel. Give both endpoints a normal idle polling window
-        // before arming the next byte; otherwise a fast runner can have both
-        // guests observe the old peer_clock_busy state and become external
-        // receivers, leaving the alternating transfer stalled.
+        // before arming the next byte. The join side now safely keeps an
+        // early internal arm pending, but this cadence still models the
+        // normal frame boundary used by the frontends.
         for (unsigned attempt = 0; attempt < 4; ++attempt) {
             first_endpoint.poll();
             second_endpoint.poll();
@@ -884,6 +951,7 @@ int main() {
     test_link_session_core_neutral_endpoint();
     test_link_transport_framing();
     test_packet_channel_endpoint_contract();
+    test_packet_channel_handoff_race();
     test_tcp_link_channel_loopback();
     test_tcp_serial_endpoint_loopback();
     test_tcp_serial_endpoint_rejects_mismatched_rom();
