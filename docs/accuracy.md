@@ -94,11 +94,11 @@ DMG window-enable changes also latch a comparator already inside the queued
 tile, cancel fetches during their first two pixels, insert the color-zero pixel
 at the tile-name boundary, and delay off-screen-left disables through the next
 full visible tile. `WX=0` now also pays its extra DMG activation dot when fine
-`SCX` scrolling is active. An early rewrite from `WX=6` to a lower comparator
-now defers the active handoff through the queued window-tile boundary before
-resuming the background fetch path, preserving the queued tile boundary on
-reactivation, and reducing the exploratory `m3_wx_6_change` mismatch from
-13,810 to 12,932 pixels without changing the existing `WX=4/5` references.
+`SCX` scrolling is active. The `WX=6` handoff is covered by the
+`m3_wx_6_change` visual fixture: near-edge rewrites preserve the already
+primed background prefix while advancing the window FIFO, and retargets at or
+within the four-dot handoff latency miss the activation for that line. The
+`WX=4`, `WX=5`, and `WX=6` Mealybug references now match exactly.
 Later monochrome post-boot profiles reproduce the
 registered-trademark tile that the boot ROM leaves at `$8190`, so edge tests do
 not accidentally run against zero-filled startup VRAM.

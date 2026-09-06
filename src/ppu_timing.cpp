@@ -60,8 +60,15 @@ std::uint8_t Ppu::tick(const unsigned cycles) noexcept {
 
             if (dot_ == mode3_end_dot_) {
                 stat_mode_ = 0;
-                window_line_ = static_cast<std::uint8_t>(
-                    window_line_ + window_activation_count_);
+                // A comparator can start a window handoff that is cancelled
+                // before its first visible pixel (notably WX=6 rewritten to
+                // another off-screen-left value). Such a handoff does not
+                // consume a row of window tile data. Count only activations
+                // that actually rendered pixels on this line.
+                if (window_rendered_this_line_) {
+                    window_line_ = static_cast<std::uint8_t>(
+                        window_line_ + window_activation_count_);
+                }
                 if (lcd_startup_) {
                     mode_ = 0;
                     requests |= 0x04;
@@ -645,13 +652,26 @@ void Ppu::fetch_object(const unsigned index) noexcept {
 void Ppu::emit_pixel() noexcept {
     const auto insert_window_glitch =
         window_glitch_pending_ && output_x_ == window_glitch_x_;
+    const auto window_background_prefix =
+        using_window_ && window_disable_source_x_ >= 0x100U &&
+        output_x_ < (window_disable_source_x_ & 0xFFU);
     auto background = insert_window_glitch
                           ? BackgroundPixel{}
                           : pop_background_pixel();
+    if (window_background_prefix) {
+        // A WX=6 retarget can leave a few already-primed window pixels behind
+        // the comparator.  They are consumed to keep the window source phase
+        // aligned, but the visible output is still the background stream.
+        background = background_pixel_at_screen(output_x_);
+    }
     if (!cgb_mode_ && (lcdc_ & 0x01) == 0) background = BackgroundPixel{};
     if (using_window_ && !insert_window_glitch) {
         window_rendered_this_line_ = true;
         ++window_source_x_;
+    }
+    if (using_window_ && window_disable_source_x_ >= 0x100U &&
+        output_x_ + 1U >= (window_disable_source_x_ & 0xFFU)) {
+        window_disable_source_x_ = 0;
     }
 
     auto result = compose_pixel(output_x_, background);
@@ -809,4 +829,3 @@ std::uint32_t Ppu::sgb_palette_color(const std::uint8_t palette,
 
 
 } // namespace gameboy
-

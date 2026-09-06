@@ -362,6 +362,10 @@ bool Ppu::write_register(const std::uint16_t address,
     case 0xFF4A: window_y_ = value; break;
     case 0xFF4B: {
         const auto new_window_start = static_cast<int>(value) - 7;
+        auto cancelled_early_window_handoff = false;
+        const auto wx6_edge_phase_update = using_window_ && output_x_ < 8 &&
+                                           window_x_ == 6 && value >= 7;
+        const auto wx6_retarget = wx6_edge_phase_update && value >= 15;
         if (window_glitch_applied_ &&
             output_x_ <= static_cast<unsigned>(window_glitch_applied_x_) + 3) {
             const auto applied_x =
@@ -399,7 +403,11 @@ bool Ppu::write_register(const std::uint16_t address,
             new_window_start < static_cast<int>(screen_width)) {
             const auto pixels_until_target = static_cast<unsigned>(
                 new_window_start - static_cast<int>(output_x_));
-            if (((window_source_x_ + pixels_until_target) & 7U) == 0) {
+            // A WX write during the WX=6 edge-phase handoff is a comparator
+            // retime, not the ordinary one-pixel window glitch; applying the
+            // generic color-zero insertion would replace a real queued pixel.
+            if (!wx6_edge_phase_update &&
+                ((window_source_x_ + pixels_until_target) & 7U) == 0) {
                 window_glitch_x_ = static_cast<std::uint8_t>(new_window_start);
                 window_glitch_pending_ = true;
             }
@@ -410,11 +418,68 @@ bool Ppu::write_register(const std::uint16_t address,
             // visible pixels cancels the in-flight window handoff. The
             // already-emitted prefix remains window data; subsequent pixels
             // resume the background fetch pipeline.
+            // At WX=6 the window fetch is a special one-dot handoff at the
+            // left edge.  A write to another off-screen-left WX during that
+            // handoff cancels the window before its first visible pixel;
+            // waiting for the queued tile boundary would leak a prefix of
+            // window data and leave the background fetcher one pixel late.
             window_disable_pending_ = true;
             window_disable_source_x_ = 8;
+            resume_background_fetch();
+            cancelled_early_window_handoff = true;
+        } else if (!using_window_ && window_trigger_pending_ &&
+                   new_window_start < static_cast<int>(output_x_) &&
+                   window_trigger_x_ >=
+                       static_cast<unsigned>(output_x_) + 4U) {
+            // The comparator can be moved behind the current pixel while a
+            // retargeted window trigger is still queued.  If the compare
+            // point is already within the handoff latency, the hardware
+            // misses that activation for this line rather than starting the
+            // window late.
+            window_trigger_pending_ = false;
+            window_retrigger_armed_ = false;
+            // Keep the comparator inactive for the remainder of this line.
+            // Line-end accounting ignores this sentinel when no window pixel
+            // was rendered, so it does not consume a window row.
+            window_activation_count_ = 1;
         }
         const auto comparator_start = std::max(0, new_window_start);
-        if (window_activation_count_ != 0 &&
+        if (wx6_retarget) {
+            // Once the rewritten comparator is eight or more pixels into the
+            // line, cancel the provisional x=0 handoff and arm a normal
+            // trigger at the new comparator position. The current window row
+            // is preserved; the cancelled attempt must not consume one.
+            resume_background_fetch();
+            window_activation_count_ = window_rendered_this_line_ ? 1 : 0;
+            window_retrigger_armed_ = true;
+            window_trigger_pending_ = true;
+            window_trigger_x_ = static_cast<std::uint8_t>(new_window_start);
+            if (new_window_start >= 0 && new_window_start <= 6) {
+                // The provisional WX=6 handoff has already primed the
+                // window FIFO.  On these near-edge retargets the first
+                // comparator pixels remain background while the FIFO still
+                // advances; retain the prefix length in the existing
+                // disable-source scratch field.
+                window_disable_source_x_ = static_cast<std::uint16_t>(
+                    0x100U + static_cast<unsigned>(new_window_start));
+            }
+        } else if (wx6_edge_phase_update) {
+            // During the WX=6 left-edge handoff the in-flight tile has
+            // already been selected, but its source column is still mutable.
+            // Retiming every part of that queued fetch keeps the first
+            // visible pixel and subsequent tile boundary aligned with
+            // hardware (WX=7.. values select columns 0, 7, 6, ...).
+            const auto source = static_cast<std::uint8_t>((7U - value) & 7U);
+            window_source_x_ = source;
+            window_fetch_start_x_ = source;
+            if (fetched_window_) fetched_source_x_ = source;
+            if (new_window_start >= 0 && new_window_start <= 6) {
+                window_disable_source_x_ = static_cast<std::uint16_t>(
+                    0x100U + static_cast<unsigned>(new_window_start));
+            }
+        }
+        if (!cancelled_early_window_handoff &&
+            window_activation_count_ != 0 &&
             comparator_start >= static_cast<int>(output_x_) &&
             comparator_start < static_cast<int>(screen_width)) {
             window_retrigger_armed_ = true;
