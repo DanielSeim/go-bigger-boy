@@ -348,6 +348,12 @@ constexpr unsigned rewind_capture_interval = 4;
 // passive receive waits used by the Cable Club.
 constexpr unsigned remote_bit_poll_cycle_interval = 512;
 constexpr unsigned remote_byte_poll_cycle_interval = 4096;
+// When a connected peer is idle, there is no serial response deadline to
+// service. Use a larger bounded slice so an established-but-unused link does
+// not add active-transfer polling overhead to every video frame. If a
+// transfer starts inside the slice, it is serviced at that boundary and the
+// active interval is used from the following slice onward.
+constexpr unsigned remote_idle_poll_cycle_interval = 16384;
 
 using RewindHistory = std::deque<std::vector<std::uint8_t>>;
 
@@ -1907,8 +1913,13 @@ int main(int argc, char** argv) {
                                 // endpoint never blocks the emulation thread.
                                 const auto remaining =
                                     cycles_per_frame - cycles;
+                                const auto polling_required =
+                                    remote_link.endpoint.needs_poll();
+                                const auto slice_interval = polling_required
+                                                               ? remote_poll_cycle_interval
+                                                               : remote_idle_poll_cycle_interval;
                                 const auto slice_budget = std::min(
-                                    remaining, remote_poll_cycle_interval);
+                                    remaining, slice_interval);
                                 const auto advanced = gbb::advance_to_frame(
                                     *emulator, slice_budget);
                                 if (advanced.cycles == 0) break;
@@ -1916,7 +1927,7 @@ int main(int argc, char** argv) {
                                 remote_poll_cycles += advanced.cycles;
                                 if (remote_transport_connected &&
                                     (remote_poll_cycles >=
-                                         remote_poll_cycle_interval ||
+                                         slice_interval ||
                                      advanced.frame_ready)) {
                                     if (remote_link.endpoint.needs_poll()) {
                                         remote_link.endpoint.poll();

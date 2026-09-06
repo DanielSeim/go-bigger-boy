@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.31.10] - 2026-09-06
+
+### Link cable performance
+
+- Add an idle-link execution fast path so an established but inactive remote
+  session does not add per-frame scheduling overhead on Windows.
+- Keep active serial transfers on the bounded low-latency polling cadence when
+  they begin during an idle slice.
+
 ## [0.31.9] - 2026-09-06
 
 ### Link cable performance
