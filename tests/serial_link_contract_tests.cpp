@@ -847,11 +847,12 @@ void test_tcp_serial_endpoint_loopback() {
               !second.serial_port().transfer_active(),
           "TCP endpoint recovers when SC is rewritten before a response");
 
-    // Exercise a short alternating payload, which is the pattern used by
-    // Pokémon's trade/battle data exchange after the initial probe. The
-    // owner changes every byte and the network is still polled only once per
-    // 64 CPU cycles.
-    for (unsigned byte = 0; byte < 12; ++byte) {
+    // Exercise a sustained alternating payload, which is the pattern used by
+    // Pokémon's trade/battle data exchange after the initial probe. A longer
+    // run catches ownership drift that only appears after many battle bytes;
+    // the owner changes every byte and the network is still polled only once
+    // per 64 CPU cycles.
+    for (unsigned byte = 0; byte < 64; ++byte) {
         // The previous owner's completion callback queues clock_release on
         // its TCP channel. Give both endpoints a normal idle polling window
         // before arming the next byte. The join side now safely keeps an

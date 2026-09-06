@@ -355,7 +355,15 @@ constexpr unsigned remote_byte_poll_cycle_interval = 4096;
 // Keep the receiver latency bounded below two milliseconds while avoiding
 // that steady syscall load. Internal-clock owners retain the tighter cadence
 // because they are waiting for a response before producing the next edge.
+#if defined(__ANDROID__)
+// Android can suspend or coalesce the SDL thread for longer scheduler
+// intervals than desktop builds. Keep passive byte receivers responsive
+// enough that Pokémon's battle link waits cannot observe a stale external
+// byte while retaining the lower-syscall cadence used to smooth Windows.
+constexpr unsigned remote_byte_receive_poll_cycle_interval = 2048;
+#else
 constexpr unsigned remote_byte_receive_poll_cycle_interval = 8192;
+#endif
 // When a connected peer is idle, there is no serial response deadline to
 // service. Use a larger bounded slice so an established-but-unused link does
 // not add active-transfer polling overhead to every video frame. If a
