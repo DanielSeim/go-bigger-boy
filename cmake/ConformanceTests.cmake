@@ -13,9 +13,20 @@ function(gbb_add_conformance_test suite relative_path protocol cycle_limit)
         list(APPEND test_command --model "${ARGV4}")
     endif()
     add_test(NAME "${test_name}" COMMAND ${test_command})
+    # The individual Blargg sound ROMs deliberately spend a long interval
+    # exercising the APU while it is already running.  On a cycle-accurate
+    # host this is roughly 100 million emulated cycles, which can take just
+    # over the generic 30-second budget on a slower CI worker even though the
+    # ROM has reached its successful result.  Keep a finite timeout, but give
+    # this subset enough headroom to avoid turning a successful ROM exit into
+    # a CTest timeout.
+    set(test_timeout 30)
+    if(suite MATCHES "^blargg-sound-")
+        set(test_timeout 90)
+    endif()
     set_tests_properties("${test_name}" PROPERTIES
                          LABELS "conformance;${suite}"
-                         TIMEOUT 30)
+                         TIMEOUT "${test_timeout}")
 endfunction()
 
 function(gbb_add_direct_conformance_test suite rom protocol cycle_limit)
