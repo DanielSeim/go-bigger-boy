@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.31.3] - 2026-09-06
+
+### Link cable reliability
+
+- Restore the Windows Game Library menu action after the SDL event callback
+  ordering was corrected.
+- Improve Android LAN host discovery by enabling scoped Wi-Fi multicast
+  reception and handling Android 16 local-network permission requirements.
+
 ## [0.31.2] - 2026-09-06
 
 ### Frontend architecture and link settings
