@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [0.31.13] - 2026-09-06
+
+### Link audio and scheduling
+
+- Prebuffer SDL audio before playback and re-prime it after ROM/state resets,
+  preventing short link-polling delays from becoming audible underruns.
+- Tighten passive byte-receive polling on Android to keep active battle links
+  responsive across LAN and Bluetooth sessions.
+- Extend serial link regression coverage with a sustained alternating payload
+  exchange to catch ownership drift after long battles.
+
 ## [0.31.12] - 2026-09-06
 
 ### Link cable reliability
