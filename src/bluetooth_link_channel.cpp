@@ -118,8 +118,12 @@ bool register_service(const GUID& uuid, const Socket socket,
     query.dwNameSpace = NS_BTH;
     query.dwNumberOfCsAddrs = 1;
     query.lpcsaBuffer = &address;
+    // Bluetooth uses RNRSERVICE_DELETE to remove a service record. The
+    // similarly named RNRSERVICE_DEREGISTER operation is not valid for the
+    // NS_BTH provider and leaves a stale SDP advertisement behind, causing a
+    // later host attempt to fail even though the adapter is healthy.
     return WSASetServiceW(&query,
-                          unregister ? RNRSERVICE_DEREGISTER : RNRSERVICE_REGISTER,
+                          unregister ? RNRSERVICE_DELETE : RNRSERVICE_REGISTER,
                           0) == 0;
 }
 #endif
