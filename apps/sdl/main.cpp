@@ -338,35 +338,19 @@ constexpr std::size_t maximum_rewind_frames = 180;
 // The history still retains 180 snapshots, so the available rewind window is
 // longer; only the rewind step granularity changes from one frame to four.
 constexpr unsigned rewind_capture_interval = 4;
-constexpr unsigned fast_forward_max_factor = 4;
-constexpr unsigned fast_forward_default_factor = 2;
+// Keep the historical fast-forward throughput: each presentation tick runs
+// four emulated frames and is intentionally uncapped by the normal deadline.
+// Reducing this batch based on frame-time measurements makes fast-forward
+// feel like a slowdown on Windows systems whose ordinary frame cost is in the
+// 7–17 ms range, which is precisely the common case this shortcut is meant to
+// accelerate.
+constexpr unsigned fast_forward_factor = 4;
 // TCP serial responses are serviced from the emulation thread. Polling every
 // 64 CPU cycles is unnecessarily syscall-heavy on Windows (over one thousand
 // polls per video frame); 256 cycles is still below a tenth of a millisecond
 // at the Game Boy clock and keeps link-edge latency comfortably sub-frame.
 constexpr unsigned remote_poll_cycle_interval = 256;
 
-// Four frames per presentation is only useful when the core can finish that
-// batch inside one normal frame interval. Slower Windows machines otherwise
-// present at 20–30 Hz while the shortcut is held, which feels like a global
-// slowdown despite the emulator doing more work. Keep the common case at two
-// frames and allow faster cores to scale up to the documented four-frame
-// maximum. The measurements are reset every diagnostic window, so a ROM or
-// renderer change naturally re-evaluates the choice.
-[[nodiscard]] constexpr unsigned fast_forward_batch_factor(
-    const std::uint64_t step_count,
-    const std::uint64_t step_total_us) noexcept {
-    if (step_count == 0) return fast_forward_default_factor;
-    const auto average_us = step_total_us / step_count;
-    // Fast-forward must remain observably faster than normal pacing even on a
-    // slower machine. A one-frame batch is indistinguishable from ordinary
-    // emulation and was the reason the Windows shortcut appeared to do
-    // nothing after the adaptive scheduler was introduced.
-    if (average_us >= 13'000) return 2;
-    if (average_us >= 7'000) return 2;
-    if (average_us >= 4'000) return 3;
-    return fast_forward_max_factor;
-}
 using RewindHistory = std::deque<std::vector<std::uint8_t>>;
 
 
@@ -1777,10 +1761,7 @@ int main(int argc, char** argv) {
                     // also suppresses snapshots because it already executes
                     // multiple frames per presentation.
                     emulated_frame_batch_factor =
-                        fast_forward
-                            ? fast_forward_batch_factor(core_step_count,
-                                                        core_step_total_us)
-                            : 1U;
+                        fast_forward ? fast_forward_factor : 1U;
                     const auto frames = emulated_frame_batch_factor;
                     for (auto frame = 0U; frame < frames && running; ++frame) {
 #ifndef __ANDROID__
