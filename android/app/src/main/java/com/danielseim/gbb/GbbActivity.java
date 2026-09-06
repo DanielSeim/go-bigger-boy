@@ -19,10 +19,15 @@ import android.view.View;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.text.InputType;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
 import android.widget.CheckBox;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.Spinner;
+import android.widget.ScrollView;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.ByteArrayOutputStream;
@@ -85,7 +90,39 @@ public final class GbbActivity extends SDLActivity {
         final int padding = Math.round(20 *
                 getResources().getDisplayMetrics().density);
         form.setPadding(padding, 0, padding, 0);
+        final ScrollView formScroll = new ScrollView(this);
+        formScroll.addView(form);
 
+        final TextView intro = new TextView(this);
+        intro.setText("Choose one connection method. TCP is for the same " +
+                "Wi-Fi/LAN; Bluetooth uses a paired Bluetooth Classic device.");
+        intro.setTextColor(Color.DKGRAY);
+        intro.setPadding(0, 0, 0, padding / 2);
+        form.addView(intro);
+
+        final TextView transportLabel = new TextView(this);
+        transportLabel.setText("Connection method");
+        transportLabel.setTextColor(Color.DKGRAY);
+        form.addView(transportLabel);
+        final Spinner transport = new Spinner(this);
+        transport.setAdapter(new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_dropdown_item,
+                new String[]{"TCP (Wi-Fi / LAN)", "Bluetooth Classic"}));
+        transport.setSelection("bluetooth".equalsIgnoreCase(
+                LibraryActivity.nativeLinkTransport(directory)) ? 1 : 0);
+        form.addView(transport);
+
+        final TextView tcpHeading = new TextView(this);
+        tcpHeading.setText("TCP connection");
+        tcpHeading.setTextColor(Color.rgb(24, 29, 39));
+        tcpHeading.setTypeface(null, android.graphics.Typeface.BOLD);
+        tcpHeading.setPadding(0, padding / 2, 0, 0);
+        form.addView(tcpHeading);
+        final TextView tcpDescription = new TextView(this);
+        tcpDescription.setText("The joiner enters the host computer's LAN " +
+                "address. The host usually binds to 0.0.0.0 for discovery.");
+        tcpDescription.setTextColor(Color.GRAY);
+        form.addView(tcpDescription);
         final EditText host = linkField("Host address",
                 LibraryActivity.nativeLinkRemoteHost(directory),
                 InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
@@ -95,42 +132,81 @@ public final class GbbActivity extends SDLActivity {
         final EditText port = linkField("TCP port",
                 Integer.toString(LibraryActivity.nativeLinkRemotePort(directory)),
                 InputType.TYPE_CLASS_NUMBER);
-        final EditText transport = linkField("Transport (tcp or bluetooth)",
-                LibraryActivity.nativeLinkTransport(directory),
-                InputType.TYPE_CLASS_TEXT);
+        form.addView(host);
+        form.addView(bind);
+        form.addView(port);
+
+        final CheckBox discovery = new CheckBox(this);
+        discovery.setText("Advertise this host for LAN discovery");
+        discovery.setTextColor(Color.DKGRAY);
+        discovery.setChecked(LibraryActivity.nativeLinkLanDiscovery(directory));
+        form.addView(discovery);
+
+        final TextView bluetoothHeading = new TextView(this);
+        bluetoothHeading.setText("Bluetooth connection");
+        bluetoothHeading.setTextColor(Color.rgb(24, 29, 39));
+        bluetoothHeading.setTypeface(null, android.graphics.Typeface.BOLD);
+        bluetoothHeading.setPadding(0, padding / 2, 0, 0);
+        form.addView(bluetoothHeading);
+        final TextView bluetoothDescription = new TextView(this);
+        bluetoothDescription.setText("Pair the devices first. The host does " +
+                "not need an address; the joiner enters the host adapter address.");
+        bluetoothDescription.setTextColor(Color.GRAY);
+        form.addView(bluetoothDescription);
         final EditText bluetoothAddress = linkField("Bluetooth device address",
                 LibraryActivity.nativeLinkBluetoothAddress(directory),
                 InputType.TYPE_CLASS_TEXT);
         final EditText bluetoothUuid = linkField("Bluetooth service UUID",
                 LibraryActivity.nativeLinkBluetoothServiceUuid(directory),
                 InputType.TYPE_CLASS_TEXT);
-        final CheckBox discovery = new CheckBox(this);
-        discovery.setText("Advertise and discover hosts on the LAN");
-        discovery.setTextColor(Color.DKGRAY);
-        discovery.setChecked(LibraryActivity.nativeLinkLanDiscovery(directory));
-        form.addView(host);
-        form.addView(bind);
-        form.addView(port);
-        form.addView(transport);
         form.addView(bluetoothAddress);
         final Button chooseBluetooth = new Button(this);
         chooseBluetooth.setText("Choose paired Bluetooth device");
         chooseBluetooth.setOnClickListener(view -> chooseBluetoothDevice(bluetoothAddress));
         form.addView(chooseBluetooth);
         form.addView(bluetoothUuid);
-        form.addView(discovery);
+
+        final AdapterView.OnItemSelectedListener transportListener =
+                new AdapterView.OnItemSelectedListener() {
+                    @Override public void onItemSelected(AdapterView<?> parent,
+                                                         View view, int position,
+                                                         long id) {
+                        final boolean bluetooth = position == 1;
+                        final int tcpVisibility = bluetooth ? View.GONE : View.VISIBLE;
+                        tcpHeading.setVisibility(tcpVisibility);
+                        tcpDescription.setVisibility(tcpVisibility);
+                        host.setVisibility(tcpVisibility);
+                        bind.setVisibility(tcpVisibility);
+                        port.setVisibility(tcpVisibility);
+                        discovery.setVisibility(tcpVisibility);
+                        bluetoothHeading.setVisibility(
+                                bluetooth ? View.VISIBLE : View.GONE);
+                        bluetoothDescription.setVisibility(
+                                bluetooth ? View.VISIBLE : View.GONE);
+                        bluetoothAddress.setVisibility(
+                                bluetooth ? View.VISIBLE : View.GONE);
+                        chooseBluetooth.setVisibility(
+                                bluetooth ? View.VISIBLE : View.GONE);
+                        bluetoothUuid.setVisibility(
+                                bluetooth ? View.VISIBLE : View.GONE);
+                    }
+                    @Override public void onNothingSelected(AdapterView<?> parent) {}
+                };
+        transport.setOnItemSelectedListener(transportListener);
+        transportListener.onItemSelected(transport, null,
+                transport.getSelectedItemPosition(), 0);
 
         final AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("Link settings")
-                .setMessage("Use tcp for LAN or bluetooth for a paired RFCOMM device.")
-                .setView(form)
+                .setView(formScroll)
                 .setNegativeButton("Cancel", null)
                 .setPositiveButton("Save", null)
                 .create();
         dialog.setOnShowListener(ignored -> dialog.getButton(
                 AlertDialog.BUTTON_POSITIVE).setOnClickListener(view -> {
-                    final int selectedPort;
-                    try {
+                    final boolean bluetooth = transport.getSelectedItemPosition() == 1;
+                    int selectedPort = LibraryActivity.nativeLinkRemotePort(directory);
+                    if (!bluetooth) try {
                         selectedPort = Integer.parseInt(
                                 port.getText().toString().trim());
                     } catch (NumberFormatException error) {
@@ -139,7 +215,6 @@ public final class GbbActivity extends SDLActivity {
                     }
                     final String hostValue = host.getText().toString().trim();
                     final String bindValue = bind.getText().toString().trim();
-                    final String transportValue = transport.getText().toString().trim().toLowerCase(Locale.ROOT);
                     final String addressValue = bluetoothAddress.getText().toString().trim();
                     final String uuidValue = bluetoothUuid.getText().toString().trim();
                     boolean validUuid = false;
@@ -149,20 +224,21 @@ public final class GbbActivity extends SDLActivity {
                     } catch (IllegalArgumentException error) {
                         // Keep the default false for malformed UUID input.
                     }
-                    if ((selectedPort < 1 || selectedPort > 65535 ||
-                            hostValue.isEmpty() || bindValue.isEmpty()) ||
-                            !(transportValue.equals("tcp") || transportValue.equals("bluetooth")) ||
-                            !validUuid) {
+                    if ((!bluetooth && (selectedPort < 1 || selectedPort > 65535 ||
+                            hostValue.isEmpty() || bindValue.isEmpty())) ||
+                            (bluetooth && !validUuid)) {
                         Toast.makeText(this,
-                                "Enter valid TCP fields, transport, and service UUID",
+                                bluetooth ? "Enter a valid service UUID"
+                                          : "Enter a host, bind address, and port",
                                 Toast.LENGTH_SHORT).show();
                         return;
                     }
                     LibraryActivity.nativeSetLinkSettings(
                             directory, hostValue, bindValue, selectedPort,
-                            discovery.isChecked());
+                            !bluetooth && discovery.isChecked());
                     LibraryActivity.nativeSetBluetoothLinkSettings(
-                            directory, transportValue, addressValue, uuidValue);
+                            directory, bluetooth ? "bluetooth" : "tcp",
+                            addressValue, uuidValue);
                     nativeAndroidLinkSettingsChanged();
                     Toast.makeText(this, "Link settings saved",
                             Toast.LENGTH_SHORT).show();

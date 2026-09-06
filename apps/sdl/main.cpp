@@ -19,6 +19,7 @@
 #include "voxel_renderer.hpp"
 #include "frame_presenter.hpp"
 #include "frame_pacer.hpp"
+#include "emulation_policy.hpp"
 #include "event_dispatch.hpp"
 #include "event_policy.hpp"
 #include "emulation_session.hpp"
@@ -338,13 +339,6 @@ constexpr std::size_t maximum_rewind_frames = 180;
 // The history still retains 180 snapshots, so the available rewind window is
 // longer; only the rewind step granularity changes from one frame to four.
 constexpr unsigned rewind_capture_interval = 4;
-// Keep the historical fast-forward throughput: each presentation tick runs
-// four emulated frames and is intentionally uncapped by the normal deadline.
-// Reducing this batch based on frame-time measurements makes fast-forward
-// feel like a slowdown on Windows systems whose ordinary frame cost is in the
-// 7–17 ms range, which is precisely the common case this shortcut is meant to
-// accelerate.
-constexpr unsigned fast_forward_factor = 4;
 // TCP serial responses are serviced from the emulation thread. Polling every
 // 64 CPU cycles is unnecessarily syscall-heavy on Windows (over one thousand
 // polls per video frame); 256 cycles is still below a tenth of a millisecond
@@ -1066,7 +1060,7 @@ int main(int argc, char** argv) {
         auto bindings = load_bindings(preference_path);
         auto configuration_backup = bindings;
         auto display_palette = load_display_palette(preference_path);
-        const auto link_diagnostics = load_link_diagnostics(preference_path);
+        auto link_diagnostics = load_link_diagnostics(preference_path);
         auto video_mode = load_video_mode(preference_path);
         if (!configure_video_pipeline(sdl, video_mode)) {
             sdl_error("Could not configure video pipeline");
@@ -1273,6 +1267,20 @@ int main(int argc, char** argv) {
                     dashboard_actions[index] = static_cast<std::int64_t>(
                         bindings.shortcuts[index]);
                 }
+                gbb_desktop::DashboardLinkSettings dashboard_link_settings;
+                dashboard_link_settings.transport =
+                    remote_link_options.transport;
+                dashboard_link_settings.remote_host = remote_link_options.host;
+                dashboard_link_settings.remote_bind =
+                    remote_link_options.bind_address;
+                dashboard_link_settings.remote_port = remote_link_options.port;
+                dashboard_link_settings.lan_discovery =
+                    remote_link_options.lan_discovery;
+                dashboard_link_settings.bluetooth_address =
+                    remote_link_options.bluetooth_address;
+                dashboard_link_settings.bluetooth_service_uuid =
+                    remote_link_options.bluetooth_service_uuid;
+                dashboard_link_settings.diagnostics = link_diagnostics;
                 const auto result = gbb_desktop::show_windows_dashboard(
                     nullptr, rom_library, core != nullptr,
                     core ? core->rom_fingerprint() : 0,
@@ -1281,6 +1289,7 @@ int main(int argc, char** argv) {
                     display_palette,
                     sdl.video_mode,
                     dashboard_bindings, dashboard_actions,
+                    dashboard_link_settings,
                     plugin_options, plugin_catalog,
                     preference_path,
                     [&] {
@@ -1316,6 +1325,35 @@ int main(int argc, char** argv) {
                 }
                 if (result.voxel_profile_changed) {
                     sdl.voxel_profile_loaded = false;
+                }
+                if (result.link_settings_changed) {
+                    const auto& updated = result.link_settings;
+                    remote_link_options.transport = updated.transport;
+                    remote_link_options.host = updated.remote_host;
+                    remote_link_options.bind_address = updated.remote_bind;
+                    remote_link_options.port = updated.remote_port;
+                    remote_link_options.lan_discovery = updated.lan_discovery;
+                    remote_link_options.bluetooth_address =
+                        updated.bluetooth_address;
+                    remote_link_options.bluetooth_service_uuid =
+                        updated.bluetooth_service_uuid;
+                    link_diagnostics = updated.diagnostics;
+                    if (remote_link_options.lan_discovery &&
+                        remote_link_options.bind_address == "127.0.0.1") {
+                        remote_link_options.bind_address = "0.0.0.0";
+                    }
+                    auto settings = load_app_settings(preference_path);
+                    settings.link_transport = updated.transport;
+                    settings.link_remote_host = updated.remote_host;
+                    settings.link_remote_bind = updated.remote_bind;
+                    settings.link_remote_port = updated.remote_port;
+                    settings.link_lan_discovery = updated.lan_discovery;
+                    settings.link_bluetooth_address =
+                        updated.bluetooth_address;
+                    settings.link_bluetooth_service_uuid =
+                        updated.bluetooth_service_uuid;
+                    settings.link_diagnostics = updated.diagnostics;
+                    write_portable_settings(preference_path, settings);
                 }
                 if (result.keyboard_bindings_changed) {
                     for (std::size_t index = 0; index < bindings.keys.size();
@@ -1737,14 +1775,34 @@ int main(int argc, char** argv) {
 #else
             constexpr auto debugger_paused = false;
 #endif
-            auto emulated_frame_batch_factor = 1U;
-            if (core && !debugger_stepped && !paused && !debugger_paused &&
-                !dashboard_visible && !configuring
+            bool cheat_visible = false;
+            bool cheat_fetching = false;
 #ifndef __ANDROID__
-                && !cheat_manager.visible() && !cheat_manager.fetching()
+            cheat_visible = cheat_manager.visible();
+            cheat_fetching = cheat_manager.fetching();
 #endif
-                && !dialog_active(dialog)) {
-                if (rewind && link_emulator == nullptr) {
+            const auto execution_plan = gbb::sdl::plan_emulation({
+                core != nullptr,
+                debugger_stepped,
+                paused,
+                debugger_paused,
+                dashboard_visible,
+                configuring.has_value(),
+                cheat_visible,
+                cheat_fetching,
+                dialog_active(dialog),
+                rewind,
+                link_emulator != nullptr && link_session != nullptr,
+                remote_transport_connected,
+#ifndef __ANDROID__
+                input_movie.replaying(),
+#else
+                false,
+#endif
+                fast_forward});
+            auto emulated_frame_batch_factor = 1U;
+            if (execution_plan.should_run()) {
+                if (execution_plan.restores_rewind_state()) {
                     if (!rewind_history.empty()) {
                         auto state = std::move(rewind_history.back());
                         rewind_history.pop_back();
@@ -1761,7 +1819,7 @@ int main(int argc, char** argv) {
                     // also suppresses snapshots because it already executes
                     // multiple frames per presentation.
                     emulated_frame_batch_factor =
-                        fast_forward ? fast_forward_factor : 1U;
+                        execution_plan.frame_batch_factor;
                     const auto frames = emulated_frame_batch_factor;
                     for (auto frame = 0U; frame < frames && running; ++frame) {
 #ifndef __ANDROID__
@@ -1805,16 +1863,14 @@ int main(int argc, char** argv) {
                         }
                         const auto core_step_started =
                             std::chrono::steady_clock::now();
-                        if (link_emulator != nullptr && link_session != nullptr) {
+                        if (execution_plan.mode ==
+                            gbb::sdl::EmulationMode::local_link) {
                             // The session owns the cable and keeps both CPU
                             // timelines balanced so serial interrupts cannot
                             // be starved by frontend scheduling.
                             link_session->advance(cycles_per_frame);
-                        } else if (!remote_transport_connected
-#ifndef __ANDROID__
-                                   && !input_movie.replaying()
-#endif
-                        ) {
+                        } else if (execution_plan.mode ==
+                                   gbb::sdl::EmulationMode::ordinary) {
                             // Keep the ordinary single-console path on the
                             // shared runtime contract. Use the concrete
                             // emulator adapter when available so the built-in

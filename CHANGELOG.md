@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [0.31.2] - 2026-09-06
+
+### Frontend architecture and link settings
+
+- Extract SDL emulation-mode selection into a core-independent policy contract
+  with standalone coverage for pause, rewind, local link, replay, remote link,
+  and fast-forward precedence.
+- Add complete TCP, LAN-discovery, Bluetooth, and diagnostics settings to the
+  Windows dashboard and Android settings flow, with transport-specific fields
+  and persistence.
+- Reduce the default Windows dashboard height so it remains usable on 1080p
+  displays.
+
 ## [0.31.1] - 2026-09-06
 
 ### Bluetooth link cable

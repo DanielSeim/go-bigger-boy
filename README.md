@@ -464,6 +464,10 @@ Android never loads native plug-ins.
 On Windows, the Settings page exposes the discovery and allowlist switches and
 shows the current loaded/rejected status; changing any switch takes effect
 after restarting the emulator.
+The same page also exposes the remote link transport and endpoint settings:
+TCP host/bind/port and LAN advertisement, or Bluetooth Classic address and
+service UUID. The link diagnostics trace can be enabled there as well; link
+settings are applied to the next session and persisted in `settings.ini`.
 
 The video pipeline is configurable across desktop, Android, and web builds:
 `nearest` keeps crisp pixel edges, `bilinear` smooths the presentation, `sharp`

@@ -61,12 +61,23 @@ constexpr int id_plugin_discovery = 116;
 constexpr int id_plugin_require_allowlist = 117;
 constexpr int id_plugin_require_capability_allowlist = 118;
 constexpr int id_voxel_first_edit = 120;
+constexpr int id_link_transport = 121;
+constexpr int id_link_remote_host = 122;
+constexpr int id_link_remote_bind = 123;
+constexpr int id_link_remote_port = 124;
+constexpr int id_link_lan_discovery = 125;
+constexpr int id_link_bluetooth_address = 126;
+constexpr int id_link_bluetooth_uuid = 127;
+constexpr int id_link_diagnostics = 128;
 constexpr int id_binding_first = 200;
 constexpr int id_action_first = 220;
 constexpr UINT artwork_ready = WM_APP + 1;
 constexpr UINT update_poll_timer = 2;
 constexpr int dashboard_width = 980;
-constexpr int dashboard_height = 1120;
+// Keep the initial dashboard usable on 1080p displays after non-client
+// chrome, while the settings page remains fully accessible through scrolling.
+constexpr int dashboard_height = 900;
+constexpr long settings_content_bottom = 1510;
 
 struct MetadataRecord {
     std::string name;
@@ -186,6 +197,21 @@ struct State {
     HWND plugin_discovery{};
     HWND plugin_require_allowlist{};
     HWND plugin_require_capability_allowlist{};
+    HWND link_heading{};
+    HWND link_transport_label{};
+    HWND link_transport{};
+    HWND link_remote_host_label{};
+    HWND link_remote_host{};
+    HWND link_remote_bind_label{};
+    HWND link_remote_bind{};
+    HWND link_remote_port_label{};
+    HWND link_remote_port{};
+    HWND link_lan_discovery{};
+    HWND link_bluetooth_address_label{};
+    HWND link_bluetooth_address{};
+    HWND link_bluetooth_uuid_label{};
+    HWND link_bluetooth_uuid{};
+    HWND link_diagnostics{};
     HWND library_tab{};
     HWND settings_tab{};
     HWND shortcuts_tab{};
@@ -205,6 +231,7 @@ struct State {
     std::wstring plugin_status_text;
     std::uint64_t voxel_fingerprint{};
     gbb::VoxelProfile voxel_profile{};
+    DashboardLinkSettings initial_link_settings;
     std::thread artwork_worker;
     std::atomic_bool closing{};
     DownloadProgress artwork_download;
@@ -276,6 +303,86 @@ KeyboardBindings default_keyboard_bindings() {
 
 ActionBindings default_action_bindings() {
     return {{SDLK_TAB, SDLK_LSHIFT, SDLK_F5, SDLK_F8}};
+}
+
+std::wstring edit_value(const HWND control) {
+    if (control == nullptr) return {};
+    const auto length = GetWindowTextLengthW(control);
+    if (length <= 0) return {};
+    std::wstring value(static_cast<std::size_t>(length) + 1, L'\0');
+    GetWindowTextW(control, value.data(), length + 1);
+    value.resize(static_cast<std::size_t>(length));
+    return value;
+}
+
+bool equal_link_settings(const DashboardLinkSettings& left,
+                         const DashboardLinkSettings& right) {
+    return left.transport == right.transport &&
+           left.remote_host == right.remote_host &&
+           left.remote_bind == right.remote_bind &&
+           left.remote_port == right.remote_port &&
+           left.lan_discovery == right.lan_discovery &&
+           left.bluetooth_address == right.bluetooth_address &&
+           left.bluetooth_service_uuid == right.bluetooth_service_uuid &&
+           left.diagnostics == right.diagnostics;
+}
+
+DashboardLinkSettings read_link_settings(State& state) {
+    auto settings = state.initial_link_settings;
+    const auto selected = SendMessageW(state.link_transport, CB_GETCURSEL, 0, 0);
+    settings.transport = selected == 1 ? "bluetooth" : "tcp";
+
+    const auto host = narrow(edit_value(state.link_remote_host));
+    if (!host.empty()) settings.remote_host = host;
+    const auto bind = narrow(edit_value(state.link_remote_bind));
+    if (!bind.empty()) settings.remote_bind = bind;
+    const auto address = narrow(edit_value(state.link_bluetooth_address));
+    settings.bluetooth_address = address;
+    const auto uuid = narrow(edit_value(state.link_bluetooth_uuid));
+    if (!uuid.empty()) settings.bluetooth_service_uuid = uuid;
+
+    const auto port_text = narrow(edit_value(state.link_remote_port));
+    try {
+        const auto parsed = std::stoul(port_text);
+        if (parsed > 0 && parsed <= 65535) {
+            settings.remote_port = static_cast<std::uint16_t>(parsed);
+        }
+    } catch (...) {
+        // Preserve the last valid port until the user enters a valid value.
+    }
+    settings.lan_discovery = SendMessageW(
+        state.link_lan_discovery, BM_GETCHECK, 0, 0) == BST_CHECKED;
+    settings.diagnostics = SendMessageW(
+        state.link_diagnostics, BM_GETCHECK, 0, 0) == BST_CHECKED;
+    return settings;
+}
+
+void collect_link_settings(State& state) {
+    state.result.link_settings = read_link_settings(state);
+    state.result.link_settings_changed = !equal_link_settings(
+        state.result.link_settings, state.initial_link_settings);
+}
+
+void update_link_control_state(State& state) {
+    const auto bluetooth = SendMessageW(
+        state.link_transport, CB_GETCURSEL, 0, 0) == 1;
+    const auto set_enabled = [bluetooth](const HWND control, const bool bt) {
+        if (control != nullptr) EnableWindow(control, bluetooth == bt);
+    };
+    // TCP endpoint fields are irrelevant for Bluetooth; hiding that distinction
+    // is a common source of misconfigured sessions. Keep the values intact so
+    // switching transport does not discard a user's previous endpoint.
+    set_enabled(state.link_remote_host_label, false);
+    set_enabled(state.link_remote_host, false);
+    set_enabled(state.link_remote_bind_label, false);
+    set_enabled(state.link_remote_bind, false);
+    set_enabled(state.link_remote_port_label, false);
+    set_enabled(state.link_remote_port, false);
+    set_enabled(state.link_lan_discovery, false);
+    set_enabled(state.link_bluetooth_address_label, true);
+    set_enabled(state.link_bluetooth_address, true);
+    set_enabled(state.link_bluetooth_uuid_label, true);
+    set_enabled(state.link_bluetooth_uuid, true);
 }
 
 std::wstring binding_name(const std::int64_t value) {
@@ -902,6 +1009,22 @@ void show_page(State& state, const State::Page page) {
     ShowWindow(state.plugin_discovery, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.plugin_require_allowlist, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.plugin_require_capability_allowlist, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.link_heading, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.link_transport_label, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.link_transport, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.link_remote_host_label, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.link_remote_host, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.link_remote_bind_label, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.link_remote_bind, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.link_remote_port_label, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.link_remote_port, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.link_lan_discovery, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.link_bluetooth_address_label,
+               settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.link_bluetooth_address, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.link_bluetooth_uuid_label, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.link_bluetooth_uuid, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.link_diagnostics, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.shortcuts_heading, shortcuts ? SW_SHOW : SW_HIDE);
     ShowWindow(state.shortcuts_text, shortcuts ? SW_SHOW : SW_HIDE);
     ShowScrollBar(state.window, SB_VERT, settings ? TRUE : FALSE);
@@ -972,7 +1095,7 @@ void layout_dashboard(State& state) {
     place_child(state.remove, 382, static_cast<int>(actions_y), 170, 44, 0);
     place_child(state.resume, 572, static_cast<int>(actions_y), 150, 44, 0);
 
-    const auto content_bottom = 1245L;
+    const auto content_bottom = settings_content_bottom;
     const auto max_scroll = std::max(0L, content_bottom - height + 24L);
     state.settings_scroll = std::clamp(state.settings_scroll, 0,
                                        static_cast<int>(max_scroll));
@@ -1040,10 +1163,27 @@ void layout_dashboard(State& state) {
     place_child(state.plugin_require_allowlist, 320, 1195, 320, 28, offset);
     place_child(state.plugin_require_capability_allowlist, 660, 1195, 290, 28,
                 offset);
+    place_child(state.link_heading, 32, 1270, 420, 28, offset);
+    place_child(state.link_transport_label, 32, 1310, 120, 26, offset);
+    place_child(state.link_transport, 154, 1305, 220, 26, offset);
+    place_child(state.link_remote_host_label, 400, 1310, 120, 26, offset);
+    place_child(state.link_remote_host, 522, 1305, 190, 26, offset);
+    place_child(state.link_remote_bind_label, 730, 1310, 100, 26, offset);
+    place_child(state.link_remote_bind, 832, 1305, 116, 26, offset);
+    place_child(state.link_remote_port_label, 32, 1350, 120, 26, offset);
+    place_child(state.link_remote_port, 154, 1345, 100, 26, offset);
+    place_child(state.link_lan_discovery, 280, 1345, 250, 28, offset);
+    place_child(state.link_bluetooth_address_label, 32, 1390, 180, 26,
+                offset);
+    place_child(state.link_bluetooth_address, 218, 1385, 220, 26, offset);
+    place_child(state.link_bluetooth_uuid_label, 460, 1390, 180, 26, offset);
+    place_child(state.link_bluetooth_uuid, 646, 1385, 302, 26, offset);
+    place_child(state.link_diagnostics, 32, 1430, 330, 28, offset);
 }
 
 void finish(State& state, const DashboardResultAction action,
             const std::string& path = {}) {
+    if (state.link_transport != nullptr) collect_link_settings(state);
     save_window_position(state);
     state.result.action = action;
     state.result.rom_path = path;
@@ -1150,7 +1290,8 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
         RECT client{};
         GetClientRect(window, &client);
         const auto max_scroll = std::max(
-            0L, 1058L - static_cast<long>(client.bottom - client.top) + 24L);
+            0L, settings_content_bottom -
+                    static_cast<long>(client.bottom - client.top) + 24L);
         auto next = state->settings_scroll;
         switch (LOWORD(wparam)) {
         case SB_LINEUP: next -= 32; break;
@@ -1333,6 +1474,11 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                         static_cast<std::size_t>(selected)].mode;
                     state->result.video_mode_changed = true;
                 }
+            }
+            return 0;
+        case id_link_transport:
+            if (HIWORD(wparam) == CBN_SELCHANGE) {
+                update_link_control_state(*state);
             }
             return 0;
         case id_plugin_discovery:
@@ -1941,6 +2087,7 @@ DashboardResult show_windows_dashboard(
     const std::size_t palette, const gameboy::VideoMode video_mode,
     const KeyboardBindings& keyboard_bindings,
     const ActionBindings& action_bindings,
+    const DashboardLinkSettings& link_settings,
     const gbb::PluginDiscoveryOptions& plugin_options,
     const gbb::PluginCatalog& plugin_catalog,
     const std::filesystem::path& preference_directory,
@@ -1982,6 +2129,8 @@ DashboardResult show_windows_dashboard(
     state.result.video_mode = video_mode;
     state.result.keyboard_bindings = keyboard_bindings;
     state.result.action_bindings = action_bindings;
+    state.result.link_settings = link_settings;
+    state.initial_link_settings = link_settings;
     state.result.plugin_discovery = plugin_options.enabled;
     state.result.plugin_require_allowlist = plugin_options.require_allowlist;
     state.result.plugin_require_capability_allowlist =
@@ -1991,6 +2140,17 @@ DashboardResult show_windows_dashboard(
     state.preference_directory = preference_directory;
     state.poll_update = poll_update;
     const auto saved_position = load_window_position(preference_directory);
+    RECT work_area{};
+    const auto work_area_available = SystemParametersInfoW(
+        SPI_GETWORKAREA, 0, &work_area, 0) != FALSE;
+    const auto work_height = work_area_available
+                                 ? work_area.bottom - work_area.top
+                                 : 0L;
+    const auto initial_height = std::max(
+        520, std::min(dashboard_height, static_cast<int>(
+                                  work_height > 80
+                                      ? work_height - 40
+                                      : dashboard_height)));
     const auto window_title = std::wstring{L"Go Bigger Boy - Game Library v"} +
                               widen(GBB_VERSION);
     state.window = CreateWindowExW(
@@ -1999,7 +2159,7 @@ DashboardResult show_windows_dashboard(
             WS_MAXIMIZEBOX | WS_THICKFRAME | WS_VSCROLL,
         saved_position ? saved_position->x : CW_USEDEFAULT,
         saved_position ? saved_position->y : CW_USEDEFAULT,
-        dashboard_width, dashboard_height, owner, nullptr, instance, &state);
+        dashboard_width, initial_height, owner, nullptr, instance, &state);
     if (state.window == nullptr) {
         if (state.background_brush != nullptr) {
             DeleteObject(state.background_brush);
@@ -2293,6 +2453,62 @@ DashboardResult show_windows_dashboard(
                  plugin_options.require_capability_allowlist ? BST_CHECKED
                                                               : BST_UNCHECKED,
                  0);
+    state.link_heading = control(state, L"STATIC", L"Remote link cable",
+                                 0, 32, 1270, 420, 28, 0);
+    SendMessageW(state.link_heading, WM_SETFONT,
+                 reinterpret_cast<WPARAM>(state.title_font), TRUE);
+    state.link_transport_label = control(
+        state, L"STATIC", L"Transport", 0, 32, 1310, 120, 26, 0);
+    state.link_transport = control(
+        state, L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL,
+        154, 1305, 220, 26, id_link_transport);
+    SendMessageW(state.link_transport, CB_ADDSTRING, 0,
+                 reinterpret_cast<LPARAM>(L"TCP (LAN)"));
+    SendMessageW(state.link_transport, CB_ADDSTRING, 0,
+                 reinterpret_cast<LPARAM>(L"Bluetooth Classic"));
+    SendMessageW(state.link_transport, CB_SETCURSEL,
+                 link_settings.transport == "bluetooth" ? 1 : 0, 0);
+    state.link_remote_host_label = control(
+        state, L"STATIC", L"Remote host", 0, 400, 1310, 120, 26, 0);
+    state.link_remote_host = control(
+        state, L"EDIT", widen(link_settings.remote_host).c_str(),
+        WS_BORDER | ES_AUTOHSCROLL, 522, 1305, 190, 26,
+        id_link_remote_host);
+    state.link_remote_bind_label = control(
+        state, L"STATIC", L"Bind", 0, 730, 1310, 100, 26, 0);
+    state.link_remote_bind = control(
+        state, L"EDIT", widen(link_settings.remote_bind).c_str(),
+        WS_BORDER | ES_AUTOHSCROLL, 832, 1305, 116, 26,
+        id_link_remote_bind);
+    state.link_remote_port_label = control(
+        state, L"STATIC", L"Port", 0, 32, 1350, 120, 26, 0);
+    state.link_remote_port = control(
+        state, L"EDIT", std::to_wstring(link_settings.remote_port).c_str(),
+        WS_BORDER | ES_AUTOHSCROLL | ES_NUMBER, 154, 1345, 100, 26,
+        id_link_remote_port);
+    state.link_lan_discovery = control(
+        state, L"BUTTON", L"Advertise for LAN discovery", BS_AUTOCHECKBOX,
+        280, 1345, 250, 28, id_link_lan_discovery);
+    SendMessageW(state.link_lan_discovery, BM_SETCHECK,
+                 link_settings.lan_discovery ? BST_CHECKED : BST_UNCHECKED, 0);
+    state.link_bluetooth_address_label = control(
+        state, L"STATIC", L"Bluetooth address", 0, 32, 1390, 180, 26, 0);
+    state.link_bluetooth_address = control(
+        state, L"EDIT", widen(link_settings.bluetooth_address).c_str(),
+        WS_BORDER | ES_AUTOHSCROLL, 218, 1385, 220, 26,
+        id_link_bluetooth_address);
+    state.link_bluetooth_uuid_label = control(
+        state, L"STATIC", L"Service UUID", 0, 460, 1390, 180, 26, 0);
+    state.link_bluetooth_uuid = control(
+        state, L"EDIT", widen(link_settings.bluetooth_service_uuid).c_str(),
+        WS_BORDER | ES_AUTOHSCROLL, 646, 1385, 302, 26,
+        id_link_bluetooth_uuid);
+    state.link_diagnostics = control(
+        state, L"BUTTON", L"Write link diagnostics trace", BS_AUTOCHECKBOX,
+        32, 1430, 330, 28, id_link_diagnostics);
+    SendMessageW(state.link_diagnostics, BM_SETCHECK,
+                 link_settings.diagnostics ? BST_CHECKED : BST_UNCHECKED, 0);
+    update_link_control_state(state);
     refresh_voxel_profile_controls(state);
     state.shortcuts_heading = control(
         state, L"STATIC", L"Keyboard shortcuts", 0,

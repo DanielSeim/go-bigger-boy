@@ -1,6 +1,6 @@
 # Architecture and maintainability audit
 
-Date: 2026-09-04
+Date: 2026-09-06
 ABI freeze update: 2026-09-05
 
 ## Summary
@@ -20,11 +20,11 @@ The recommended approach is incremental extraction, not a rewrite.
 
 | Area | Evidence | Risk |
 | --- | --- | --- |
-| SDL frontend | `apps/sdl/main.cpp` was 9,118 lines at audit time and is now about 1,899 lines after incremental extractions; resource construction/teardown, desktop storage/dialogs, dashboard navigation, shared event routing/tool controls, event-policy ordering, voxel, linked-frame presentation, Windows menu, camera capture, audio output, all desktop tool windows, Android touch input, binding configuration, lifecycle cleanup, ROM/link session lifecycle, frame pacing, and the Android JNI bridge are isolated | Very high search and regression cost |
+| SDL frontend | `apps/sdl/main.cpp` was 9,118 lines at audit time and is now about 2,100 lines after incremental extractions; resource construction/teardown, desktop storage/dialogs, dashboard navigation, shared event routing/tool controls, event-policy ordering, emulation-mode policy, voxel, linked-frame presentation, Windows menu, camera capture, audio output, all desktop tool windows, Android touch input, binding configuration, lifecycle cleanup, ROM/link session lifecycle, frame pacing, and the Android JNI bridge are isolated | Very high search and regression cost |
 | Android frontend | `LibraryActivity.java` was 1,006 lines and combined library, settings, artwork, touch-layout editing, and update UI; library and settings screens, touch-layout editing, artwork, and updates are now isolated and the activity is about 300 lines | UI changes can affect unrelated flows |
-| Link harness | `apps/link_harness/main.cpp` was 2,008 lines at audit time and is now about 440 lines; scenario state, Pokémon probes/automation, trace formatting, trace-file lifecycle, and semantic detection are isolated | Difficult to isolate trade/battle failures |
+| Link harness | `apps/link_harness/main.cpp` was 2,008 lines at audit time and is now about 450 lines; scenario state, Pokémon probes/automation, trace formatting, trace-file lifecycle, and semantic detection are isolated | Difficult to isolate trade/battle failures |
 | Tests | `tests/core_tests.cpp` is now about 314 lines with manually invoked smoke tests in `main()`; 38 subsystem and integration contracts are registered as separate CTest executables | Deeper malformed-input and replay coverage remains |
-| Save states | `src/save_state.cpp` is now a small compatibility orchestrator (about 120 lines); CPU and the complete bus payload are delegated to focused codecs, while container framing, ROM identity, size limits, and CRC validation are isolated in `src/save_state_container.cpp` | Every new field increases compatibility risk |
+| Save states | `src/save_state.cpp` is now a small compatibility orchestrator (about 85 lines); CPU and the complete bus payload are delegated to focused codecs, while container framing, ROM identity, size limits, and CRC validation are isolated in `src/save_state_container.cpp` | Every new field increases compatibility risk |
 | PPU/cartridge | `src/ppu.cpp` now owns register/memory behavior while `src/ppu_timing.cpp` owns scanline timing, fetcher, sprite, and pixel composition; cartridge mapping is separated from persistence/peripheral storage in `src/cartridge_persistence.cpp` | Hardware bugs are hard to localize |
 
 ## Core and frontend architecture
@@ -253,6 +253,11 @@ The first guardrail pass is implemented:
   reports the actual cycles executed (including an indivisible instruction
   crossing the budget) and deliberately leaves frame consumption to the
   frontend.
+- SDL execution-mode selection now lives in the pure
+  `apps/sdl/emulation_policy.hpp` contract. The main loop no longer embeds
+  the precedence between pause/debugger/dashboard gates, rewind, local link,
+  ordinary core stepping, replay, and connected remote stepping; a standalone
+  contract test covers those combinations without requiring SDL or a ROM.
 - Web uses the generic `EmulatorCore` overload, while SDL's ordinary
   single-console loop uses an explicitly marked transitional Game Boy overload.
   Link/debugger/replay paths remain on their existing per-instruction loops;

@@ -645,6 +645,13 @@ if(GAMEBOY_BUILD_TESTS)
     add_test(NAME gameboy_sdl_core_capability
              COMMAND gameboy_sdl_core_capability_tests)
 
+    add_executable(gameboy_sdl_emulation_policy_tests
+        tests/sdl_emulation_policy_tests.cpp)
+    target_include_directories(gameboy_sdl_emulation_policy_tests
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/apps/sdl)
+    add_test(NAME gameboy_sdl_emulation_policy
+             COMMAND gameboy_sdl_emulation_policy_tests)
+
     add_executable(gameboy_rom_library_contract_tests
         tests/rom_library_contract_tests.cpp)
     target_link_libraries(gameboy_rom_library_contract_tests PRIVATE gbb_core_api)
