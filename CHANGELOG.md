@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.31.4] - 2026-09-06
+
+### Link cable discovery
+
+- Add multicast LAN discovery alongside broadcast and loopback fallback paths,
+  improving Windows discovery of Android-hosted TCP sessions.
+- Bind the discovery socket before joining the multicast group for reliable
+  delivery on Android and Linux network stacks.
+
 ## [0.31.3] - 2026-09-06
 
 ### Link cable reliability
