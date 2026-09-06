@@ -348,6 +348,14 @@ constexpr unsigned rewind_capture_interval = 4;
 // passive receive waits used by the Cable Club.
 constexpr unsigned remote_bit_poll_cycle_interval = 512;
 constexpr unsigned remote_byte_poll_cycle_interval = 4096;
+// A passive byte-capable receiver does not have a response deadline of its
+// own: it only needs to notice the host's next request. Polling it at the
+// host-clock cadence causes roughly 17 non-blocking socket calls per video
+// frame on Windows, even while the guest is waiting in a Cable Club loop.
+// Keep the receiver latency bounded below two milliseconds while avoiding
+// that steady syscall load. Internal-clock owners retain the tighter cadence
+// because they are waiting for a response before producing the next edge.
+constexpr unsigned remote_byte_receive_poll_cycle_interval = 8192;
 // When a connected peer is idle, there is no serial response deadline to
 // service. Use a larger bounded slice so an established-but-unused link does
 // not add active-transfer polling overhead to every video frame. If a
@@ -1899,9 +1907,15 @@ int main(int argc, char** argv) {
                         } else {
                             unsigned cycles = 0;
                             unsigned remote_poll_cycles = 0;
+                            const auto byte_transfer =
+                                remote_link.endpoint.peer_byte_transfer();
+                            const auto internal_clock =
+                                emulator->bus().serial_port().internal_clock();
                             const auto remote_poll_cycle_interval =
-                                remote_link.endpoint.peer_byte_transfer()
-                                    ? remote_byte_poll_cycle_interval
+                                byte_transfer
+                                    ? (internal_clock
+                                           ? remote_byte_poll_cycle_interval
+                                           : remote_byte_receive_poll_cycle_interval)
                                     : remote_bit_poll_cycle_interval;
                             while (running && cycles < cycles_per_frame &&
                                    !emulator->frame_ready()) {

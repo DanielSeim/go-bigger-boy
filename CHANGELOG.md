@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Link cable performance
+
+- Reduce polling work on passive byte-capable receivers while keeping the
+  host-clock response path on the low-latency cadence. This avoids unnecessary
+  Windows frame-time jitter during LAN/Bluetooth sessions.
+
 ## [0.31.10] - 2026-09-06
 
 ### Link cable performance

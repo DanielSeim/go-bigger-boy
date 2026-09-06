@@ -177,28 +177,68 @@ void append_trace_cpu(std::ostream& output,
            << " stopped=" << emulator.cpu().stopped();
 }
 
+class WramBank1Guard final {
+public:
+    explicit WramBank1Guard(gameboy::Emulator& emulator)
+        : bus_(emulator.bus()) {
+        if (!bus_.cgb_mode()) return;
+        previous_ = static_cast<std::uint8_t>(bus_.read8(0xFF70) & 0x07U);
+        if (previous_ != 1) {
+            bus_.write8(0xFF70, 1);
+            switched_ = true;
+        }
+    }
+
+    ~WramBank1Guard() {
+        if (switched_) bus_.write8(0xFF70, previous_);
+    }
+
+    WramBank1Guard(const WramBank1Guard&) = delete;
+    WramBank1Guard& operator=(const WramBank1Guard&) = delete;
+
+private:
+    gameboy::MemoryBus& bus_;
+    std::uint8_t previous_{1};
+    bool switched_{};
+};
+
+std::uint16_t pokemon_wram_offset(const gameboy::MemoryBus& bus) {
+    const auto primary = bus.read8(0xD12B);
+    const auto localized = bus.read8(0xD130);
+    const auto plausible = [](const std::uint8_t value) {
+        return value <= 0x05 || value == 0x32;
+    };
+    return !plausible(primary) && plausible(localized) ? 5 : 0;
+}
+
 void append_trace_pokemon(std::ostream& output,
-                          const gameboy::Emulator& emulator) {
+                          gameboy::Emulator& emulator) {
     if (!is_pokemon_gen1(emulator)) return;
+    WramBank1Guard bank(emulator);
     const auto& bus = emulator.bus();
+    const auto offset = pokemon_wram_offset(bus);
+    const auto read_wram = [&bus, offset](const std::uint16_t address) {
+        return bus.read8(static_cast<std::uint16_t>(address + offset));
+    };
     // These WRAM locations are Pokémon Red/Blue's serial exchange scratch
     // bytes and timeout counters. They are guest diagnostics only; reading
     // them does not affect the link handshake.
     const auto serial_wait_counter = static_cast<unsigned>(
-        bus.read8(0xCC47) | (static_cast<unsigned>(bus.read8(0xCC48)) << 8));
+        read_wram(0xCC47) | (static_cast<unsigned>(read_wram(0xCC48)) << 8));
     const auto serial_wait_counter2 = static_cast<unsigned>(
-        bus.read8(0xD074) | (static_cast<unsigned>(bus.read8(0xD075)) << 8));
+        read_wram(0xD074) | (static_cast<unsigned>(read_wram(0xD075)) << 8));
     const auto ui_state = pokemon_ui_state(bus);
-    output << " game_link=" << std::hex << static_cast<unsigned>(bus.read8(0xD12B))
+    output << " game_link=" << std::hex << static_cast<unsigned>(read_wram(0xD12B))
            << " game_link_alt=" << static_cast<unsigned>(bus.read8(0xD130))
-           << " game_battle=" << static_cast<unsigned>(bus.read8(0xD057))
-           << " game_battle_type=" << static_cast<unsigned>(bus.read8(0xD05A))
-           << " game_serial_send=" << static_cast<unsigned>(bus.read8(0xCC42))
-           << " game_serial_recv=" << static_cast<unsigned>(bus.read8(0xCC3E))
+           << " game_link_offset=" << offset
+           << " game_battle=" << static_cast<unsigned>(read_wram(0xD057))
+           << " game_battle_type=" << static_cast<unsigned>(read_wram(0xD05A))
+           << " game_serial_send=" << static_cast<unsigned>(read_wram(0xCC42))
+           << " game_serial_recv=" << static_cast<unsigned>(read_wram(0xCC3E))
            << " game_serial_wait=" << serial_wait_counter
            << " game_serial_wait2=" << serial_wait_counter2
            << " game_ui=" << pokemon_ui_state_name(ui_state)
-           << " party_count=" << static_cast<unsigned>(bus.read8(0xD163));
+           << " party_count=" << static_cast<unsigned>(read_wram(0xD163));
 }
 
 void append_trace_transfer_events(std::ostream& output,
@@ -262,16 +302,21 @@ void append_trace_transfer_events(std::ostream& output,
 }
 
 void append_trace_pokemon_transition(
-    std::ostream& output, const gameboy::Emulator& emulator,
+    std::ostream& output, gameboy::Emulator& emulator,
     const unsigned player, const std::uint64_t frame,
     const std::uint64_t elapsed_ms, const std::uint64_t transfers_completed,
     LinkTracePrevious::PokemonState& previous) {
     if (!is_pokemon_gen1(emulator)) return;
+    WramBank1Guard bank(emulator);
     const auto& bus = emulator.bus();
+    const auto offset = pokemon_wram_offset(bus);
+    const auto read_wram = [&bus, offset](const std::uint16_t address) {
+        return bus.read8(static_cast<std::uint16_t>(address + offset));
+    };
     const auto ui_state = pokemon_ui_state(bus);
     const LinkTracePrevious::PokemonState current{
-        true, bus.read8(0xD12B), bus.read8(0xD130), bus.read8(0xD057),
-        bus.read8(0xD05A), static_cast<std::uint8_t>(ui_state)};
+        true, read_wram(0xD12B), bus.read8(0xD130), read_wram(0xD057),
+        read_wram(0xD05A), static_cast<std::uint8_t>(ui_state)};
     if (!previous.initialized || current.link != previous.link ||
         current.link_alt != previous.link_alt ||
         current.battle != previous.battle ||
@@ -303,8 +348,8 @@ void stop_link_trace() noexcept {
     link_trace_previous = {};
 }
 
-void trace_link_frame(const gameboy::Emulator& first,
-                      const gameboy::Emulator& second,
+void trace_link_frame(gameboy::Emulator& first,
+                      gameboy::Emulator& second,
                       const int audio_queued_bytes) {
     if (!link_trace.is_open()) return;
     const auto& first_serial = first.bus().serial_port();
@@ -364,7 +409,7 @@ void trace_link_frame(const gameboy::Emulator& first,
                                  first_serial, second_serial);
 }
 
-void trace_remote_frame(const gameboy::Emulator& emulator,
+void trace_remote_frame(gameboy::Emulator& emulator,
                         const RemoteLinkSession& remote,
                         const int audio_queued_bytes) {
     if (!link_trace.is_open()) return;

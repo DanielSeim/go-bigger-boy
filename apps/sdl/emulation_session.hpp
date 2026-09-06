@@ -33,10 +33,10 @@ void start_link_trace(const std::filesystem::path& preference_path,
                       const char* transport = nullptr);
 void stop_link_trace() noexcept;
 
-void trace_link_frame(const gameboy::Emulator& first,
-                      const gameboy::Emulator& second,
+void trace_link_frame(gameboy::Emulator& first,
+                      gameboy::Emulator& second,
                       int audio_queued_bytes);
-void trace_remote_frame(const gameboy::Emulator& emulator,
+void trace_remote_frame(gameboy::Emulator& emulator,
                         const RemoteLinkSession& remote,
                         int audio_queued_bytes);
 
