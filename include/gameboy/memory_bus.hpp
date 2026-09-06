@@ -38,6 +38,10 @@ public:
     [[nodiscard]] Cartridge& cartridge() noexcept;
     [[nodiscard]] bool cgb_mode() const noexcept;
     [[nodiscard]] bool double_speed() const noexcept;
+    // Diagnostic view of the CGB APU's 1 MHz phase.  The phase advances only
+    // while the CPU is in double-speed mode; normal-speed APU clocks already
+    // run once per bus cycle and must not perturb this half-cycle alignment.
+    [[nodiscard]] bool debug_apu_cycle_phase() const noexcept;
     void set_dmg_palette(const DmgPalette& palette) noexcept;
     [[nodiscard]] std::uint8_t debug_read_vram(std::uint8_t bank,
                                                std::uint16_t offset) const noexcept;

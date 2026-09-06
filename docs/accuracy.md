@@ -11,9 +11,9 @@ bundle. GitHub Actions verifies the archive checksum before running any ROM.
 | Mooneye acceptance | 75/75 | Complete acceptance directory, with model-specific boot profiles |
 | Mooneye CGB misc | 6/6 | Every CGB/CGB0 ROM applicable to emulated Game Boy Color hardware |
 | Mooneye emulator-only | 28/28 | Complete MBC1, MBC2, and MBC5 mapper directories |
-| Blargg | 38 | CPU/timing baseline plus all 12 DMG and all 12 CGB sound ROMs |
-| Visual PPU | 20/20 | Acid2, Scribbltests, Mealybug, and Gambatte framebuffer comparisons |
-| Total CI gate | **167** | Every listed ROM must pass before a release can be published |
+| Blargg | 38/38 | CPU/timing baseline plus all 12 DMG and all 12 CGB sound ROMs |
+| Visual PPU | 21/21 | Acid2, Scribbltests, Mealybug, and Gambatte framebuffer comparisons |
+| Total CI gate | **168** | Every listed ROM must pass before a release can be published |
 
 The acceptance figure covers every acceptance ROM in the pinned bundle. Tests with
 mutually exclusive boot-ROM expectations run under explicit DMG0, DMG/MGB,
@@ -30,11 +30,14 @@ and `ATTR_BLK`/`ATTR_LIN`/`ATTR_DIV`/`ATTR_CHR` update the 20×18 tile attribute
 map used by the Game Boy viewport. `CHR_TRN` and `PCT_TRN` now snapshot their
 4 KiB VRAM payloads into SNES-side transfer latches, and `MASK_EN` implements
 disabled, freeze, black, and color-zero viewport modes. These latches and the
-packet parser are covered by core tests and save states (version 23). A future
-frontend phase can consume the retained transfer data to compose the full
-256×224 SNES border; multiplayer polling, fade timing, and the complete SGB
-boot/header handshake remain deferred. These limitations do not affect
-ordinary DMG or CGB emulation.
+packet parser are covered by core tests and save states (version 23). This is
+deliberately not a full SNES emulation path: the real adapter relies on SNES-
+side execution, graphics, and audio ([Pan Docs SGB overview](https://gbdev.io/pandocs/SGB_Functions.html)), so complete SGB compatibility would
+require either those SNES subsystems or an equivalent dedicated host model.
+A future frontend phase can consume the retained transfer data to compose the
+full 256×224 SNES border; SNES audio, multiplayer polling, fade timing, and
+the complete SGB boot/header handshake remain deferred. These limitations do
+not affect ordinary DMG or CGB emulation.
 
 The APU evaluates channel output and the hardware high-pass response on every
 master-clock cycle, then integrates those values over exact 48 kHz sample
@@ -176,17 +179,20 @@ restarts keep the established startup timing.
 Square duty writes now use a latched duty value: writes made while a channel is
 active take effect at the next waveform boundary, while writes made while it is
 inactive are applied for the next trigger. The latched and pending values are
-stored in save-state version 21 so restoring during a duty transition or period
-reload remains deterministic. The CGB APU phase used by double-speed timing is
-saved alongside that state.
+stored in save-state version 19, and trigger suppression plus the CGB 1 MHz
+phase are stored in version 20, so restoring during a duty transition, period
+reload, or speed-switch half-cycle remains deterministic. The APU phase is
+stable during normal-speed execution and advances only on alternating CGB
+double-speed half-cycles; this also works when bus ticks are split across
+individual CPU accesses.
 
 Frequency writes that land on a waveform reload now update the active period at
-that boundary; otherwise the current countdown is preserved. The remaining
-hardware-sensitive cases are tracked separately: exact CGB 1 MHz phase
-alignment and revision-specific restart timing still need further dedicated
-conformance work. The current implementation preserves the existing audio
-regressions while covering the stable startup, divider, and reload-boundary
-timing cases.
+that boundary; otherwise the current countdown is preserved. Revision-specific
+restart and envelope-glitch behavior remains tracked separately, while the
+double-speed 1 MHz phase boundary is now covered by the CGB contract tests.
+The current implementation preserves the existing audio regressions while
+covering the stable startup, divider, reload-boundary, and speed-switch timing
+cases.
 
 The mode-3 timing model now carries the hardware distinction needed by these
 edge cases: DMG and early CGB revisions re-sample SCY during both bitplane

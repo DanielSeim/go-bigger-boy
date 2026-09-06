@@ -49,12 +49,32 @@ void test_cgb_memory_and_rendering() {
     })}};
     static_cast<void>(speed.step());
     static_cast<void>(speed.step());
+    check(!speed.bus().debug_apu_cycle_phase(),
+          "CGB APU 1 MHz phase remains stable during normal-speed CPU cycles");
+    speed.bus().tick(1);
+    check(!speed.bus().debug_apu_cycle_phase(),
+          "CGB APU 1 MHz phase ignores an odd normal-speed bus tick");
     check(speed.bus().read8(0xFF4D) == 0x7F,
           "KEY1 exposes a requested CGB speed switch");
     static_cast<void>(speed.step());
     check(speed.bus().double_speed() && !speed.cpu().stopped() &&
               speed.bus().read8(0xFF4D) == 0xFE,
           "CGB STOP performs an armed double-speed switch");
+    check(!speed.bus().debug_apu_cycle_phase(),
+          "CGB speed switch starts the APU at its retained 1 MHz phase");
+    speed.bus().tick(1);
+    check(speed.bus().debug_apu_cycle_phase(),
+          "CGB double-speed advances the APU phase after one half-cycle");
+    speed.bus().tick(1);
+    check(!speed.bus().debug_apu_cycle_phase(),
+          "CGB double-speed returns to the APU phase after one full cycle");
+    const auto apu_phase_state = speed.save_state();
+    speed.bus().tick(1);
+    check(speed.bus().debug_apu_cycle_phase(),
+          "CGB APU phase changes on a split double-speed bus tick");
+    speed.load_state(apu_phase_state);
+    check(!speed.bus().debug_apu_cycle_phase(),
+          "save states preserve the CGB APU 1 MHz phase");
     static_cast<void>(speed.step());
     static_cast<void>(speed.step());
     static_cast<void>(speed.step());

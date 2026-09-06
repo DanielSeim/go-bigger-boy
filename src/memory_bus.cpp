@@ -22,6 +22,9 @@ MemoryBus::MemoryBus(Cartridge cartridge)
 void MemoryBus::initialize_post_boot(const HardwareModel model) noexcept {
     cgb_hardware_ = model == HardwareModel::cgb0 ||
                     model == HardwareModel::cgb;
+    // The APU's 1 MHz alignment divider starts in its low phase at the boot
+    // handoff.  It is intentionally independent of the free-running DIV
+    // counter: normal-speed APU clocks are already one tick per bus cycle.
     apu_cycle_phase_ = false;
     ppu_.set_cgb_hardware(cgb_hardware_);
     ppu_.set_cgb_late_revision(model == HardwareModel::cgb);
@@ -264,8 +267,19 @@ void MemoryBus::tick(const unsigned cycles) noexcept {
     // peripheral-cycle conversion.
     auto timer_interrupt = false;
     for (unsigned cycle = 0; cycle < cycles; ++cycle) {
-        if (!double_speed_ || apu_cycle_phase_) apu_.tick(1);
-        apu_cycle_phase_ = !apu_cycle_phase_;
+        if (!double_speed_) {
+            // Sound runs at its normal rate even while the CPU is in normal
+            // speed.  Do not advance the 1 MHz phase here; doing so makes the
+            // first APU tick after a later speed switch depend on how many
+            // normal-speed cycles happened before STOP.
+            apu_.tick(1);
+        } else {
+            // In CGB double speed each CPU bus cycle is a half APU clock.
+            // Keep the phase across speed switches and tick on alternating
+            // half-cycles, matching the hardware's 1 MHz alignment divider.
+            if (apu_cycle_phase_) apu_.tick(1);
+            apu_cycle_phase_ = !apu_cycle_phase_;
+        }
         timer_interrupt = timer_.tick(1) || timer_interrupt;
         for (auto ticks = timer_.take_apu_ticks(); ticks > 0; --ticks) {
             apu_.clock_frame_sequencer();
@@ -444,6 +458,10 @@ bool MemoryBus::try_speed_switch() noexcept {
     double_speed_ = !double_speed_;
     timer_.set_double_speed(double_speed_);
     return true;
+}
+
+bool MemoryBus::debug_apu_cycle_phase() const noexcept {
+    return apu_cycle_phase_;
 }
 
 std::uint8_t MemoryBus::read_wram(std::uint16_t address) const noexcept {
