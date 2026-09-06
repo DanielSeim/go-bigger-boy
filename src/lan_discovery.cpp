@@ -131,16 +131,6 @@ bool LanDiscovery::start_host(const std::uint16_t tcp_port,
     static_cast<void>(setsockopt(socket, SOL_SOCKET, SO_REUSEADDR,
                                  reinterpret_cast<const char*>(&reuse),
                                  sizeof(reuse)));
-    ip_mreq membership{};
-    if (inet_pton(AF_INET, discovery_multicast_address,
-                  &membership.imr_multiaddr) == 1) {
-        membership.imr_interface.s_addr = htonl(INADDR_ANY);
-        // Joining is best effort: older desktop networks may reject
-        // multicast while still supporting the legacy broadcast path.
-        static_cast<void>(setsockopt(
-            socket, IPPROTO_IP, IP_ADD_MEMBERSHIP,
-            reinterpret_cast<const char*>(&membership), sizeof(membership)));
-    }
     sockaddr_in address{};
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -149,6 +139,18 @@ bool LanDiscovery::start_host(const std::uint16_t tcp_port,
              sizeof(address)) != 0) {
         close_socket(socket);
         return false;
+    }
+    ip_mreq membership{};
+    if (inet_pton(AF_INET, discovery_multicast_address,
+                  &membership.imr_multiaddr) == 1) {
+        membership.imr_interface.s_addr = htonl(INADDR_ANY);
+        // Joining is best effort: older desktop networks may reject
+        // multicast while still supporting the legacy broadcast path. Bind
+        // first because Android/Linux require the local port to be selected
+        // before multicast membership can reliably deliver datagrams.
+        static_cast<void>(setsockopt(
+            socket, IPPROTO_IP, IP_ADD_MEMBERSHIP,
+            reinterpret_cast<const char*>(&membership), sizeof(membership)));
     }
     socket_ = as_handle(socket);
     mode_ = Mode::host;
