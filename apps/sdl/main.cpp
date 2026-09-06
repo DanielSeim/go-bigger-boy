@@ -339,11 +339,13 @@ constexpr std::size_t maximum_rewind_frames = 180;
 // The history still retains 180 snapshots, so the available rewind window is
 // longer; only the rewind step granularity changes from one frame to four.
 constexpr unsigned rewind_capture_interval = 4;
-// TCP serial responses are serviced from the emulation thread. Polling every
-// 64 CPU cycles is unnecessarily syscall-heavy on Windows (over one thousand
-// polls per video frame); 256 cycles is still below a tenth of a millisecond
-// at the Game Boy clock and keeps link-edge latency comfortably sub-frame.
-constexpr unsigned remote_poll_cycle_interval = 256;
+// TCP serial responses are serviced from the emulation thread. Legacy bit
+// packets retain a tight cadence because every edge is a network round trip.
+// Negotiated byte packets need far fewer polls: 2048 CPU cycles is still under
+// half a millisecond at the Game Boy clock, while avoiding hundreds of socket
+// syscalls per video frame on Windows.
+constexpr unsigned remote_bit_poll_cycle_interval = 256;
+constexpr unsigned remote_byte_poll_cycle_interval = 2048;
 
 using RewindHistory = std::deque<std::vector<std::uint8_t>>;
 
@@ -1888,6 +1890,10 @@ int main(int argc, char** argv) {
                         } else {
                             unsigned cycles = 0;
                             unsigned remote_poll_cycles = 0;
+                            const auto remote_poll_cycle_interval =
+                                remote_link.endpoint.peer_byte_transfer()
+                                    ? remote_byte_poll_cycle_interval
+                                    : remote_bit_poll_cycle_interval;
                             while (running && cycles < cycles_per_frame &&
                                    !emulator->frame_ready()) {
                                 const auto stepped = step_emulator();
@@ -1895,10 +1901,10 @@ int main(int argc, char** argv) {
                                 if (remote_transport_connected) {
                                     remote_poll_cycles += stepped;
                                     // Keep network serial edges well below a
-                                    // video-frame of latency. Polling every
-                                    // 64 CPU cycles avoids the per-frame delay
-                                    // that can make Pokémon's Cable Club probe
-                                    // time out even on loopback.
+                                    // video-frame of latency. The negotiated
+                                    // byte path uses a wider interval to avoid
+                                    // needless socket calls while retaining a
+                                    // tight cadence for legacy bit peers.
                                     if (remote_poll_cycles >=
                                         remote_poll_cycle_interval) {
                                         remote_link.endpoint.poll();

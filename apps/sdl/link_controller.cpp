@@ -34,7 +34,12 @@ void process_link_requests(LinkControlContext context) {
             } else {
                 // Discovery is a user-invoked, bounded scan. It never blocks
                 // the emulation thread or opens a TCP session by itself.
-                for (unsigned attempt = 0; attempt < 100; ++attempt) {
+                // Android may need a short interval to acquire its Wi-Fi
+                // multicast lock and join the discovery group after the host
+                // session starts. Keep querying for the same two-second
+                // window used by the Android controller instead of giving up
+                // after the old 500 ms burst.
+                for (unsigned attempt = 0; attempt < 400; ++attempt) {
                     scanner.poll();
                     SDL_Delay(5);
                 }

@@ -16,7 +16,12 @@
 #include <ws2tcpip.h>
 #else
 #include <arpa/inet.h>
+#if defined(__ANDROID__)
+#include <dlfcn.h>
+#endif
 #include <fcntl.h>
+#include <ifaddrs.h>
+#include <net/if.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -30,6 +35,40 @@ namespace {
 // Android network stacks. Keep it as a compatibility path, but use a scoped
 // administratively-local multicast group as the primary LAN query channel.
 constexpr const char* discovery_multicast_address = "239.255.42.99";
+
+#if defined(__ANDROID__)
+// getifaddrs was added to the Android NDK at API 24, while GBB keeps a
+// minSdk of 21. Resolve it at runtime so current devices can select the Wi-Fi
+// interface without making older supported devices fail to load the library.
+struct AndroidIfaddrsApi {
+    using get_fn = int (*)(ifaddrs**);
+    using free_fn = void (*)(ifaddrs*);
+
+    void* library{};
+    get_fn get{};
+    free_fn free{};
+
+    AndroidIfaddrsApi() noexcept {
+        library = dlopen("libc.so", RTLD_NOW | RTLD_LOCAL);
+        if (library == nullptr) return;
+        get = reinterpret_cast<get_fn>(dlsym(library, "getifaddrs"));
+        free = reinterpret_cast<free_fn>(dlsym(library, "freeifaddrs"));
+        if (get == nullptr || free == nullptr) {
+            dlclose(library);
+            library = nullptr;
+            get = nullptr;
+            free = nullptr;
+        }
+    }
+
+    ~AndroidIfaddrsApi() {
+        if (library != nullptr) dlclose(library);
+    }
+
+    AndroidIfaddrsApi(const AndroidIfaddrsApi&) = delete;
+    AndroidIfaddrsApi& operator=(const AndroidIfaddrsApi&) = delete;
+};
+#endif
 
 #if defined(_WIN32)
 using Socket = SOCKET;
@@ -141,17 +180,68 @@ bool LanDiscovery::start_host(const std::uint16_t tcp_port,
         return false;
     }
     ip_mreq membership{};
-    if (inet_pton(AF_INET, discovery_multicast_address,
-                  &membership.imr_multiaddr) == 1) {
+    const auto multicast_ready =
+        inet_pton(AF_INET, discovery_multicast_address,
+                  &membership.imr_multiaddr) == 1;
+    bool multicast_joined = false;
+#if defined(_WIN32)
+    if (multicast_ready) {
         membership.imr_interface.s_addr = htonl(INADDR_ANY);
-        // Joining is best effort: older desktop networks may reject
-        // multicast while still supporting the legacy broadcast path. Bind
-        // first because Android/Linux require the local port to be selected
-        // before multicast membership can reliably deliver datagrams.
-        static_cast<void>(setsockopt(
-            socket, IPPROTO_IP, IP_ADD_MEMBERSHIP,
-            reinterpret_cast<const char*>(&membership), sizeof(membership)));
+        multicast_joined = setsockopt(
+                                socket, IPPROTO_IP, IP_ADD_MEMBERSHIP,
+                                reinterpret_cast<const char*>(&membership),
+                                sizeof(membership)) == 0;
     }
+#else
+    // Android and Linux may select a non-Wi-Fi route for INADDR_ANY. Join on
+    // every active non-loopback IPv4 interface so a Windows scanner's
+    // multicast query is received regardless of the device's route table.
+    if (multicast_ready) {
+        ifaddrs* interfaces = nullptr;
+#if defined(__ANDROID__)
+        const AndroidIfaddrsApi ifaddrs_api;
+        const auto interfaces_loaded = ifaddrs_api.get != nullptr &&
+                                        ifaddrs_api.get(&interfaces) == 0;
+#else
+        const auto interfaces_loaded = getifaddrs(&interfaces) == 0;
+#endif
+        if (interfaces_loaded) {
+            for (auto* entry = interfaces; entry != nullptr;
+                 entry = entry->ifa_next) {
+                if (entry->ifa_addr == nullptr ||
+                    entry->ifa_addr->sa_family != AF_INET ||
+                    (entry->ifa_flags & IFF_LOOPBACK) != 0 ||
+                    (entry->ifa_flags & IFF_UP) == 0) {
+                    continue;
+                }
+                membership.imr_interface =
+                    reinterpret_cast<sockaddr_in*>(entry->ifa_addr)->sin_addr;
+                if (setsockopt(socket, IPPROTO_IP, IP_ADD_MEMBERSHIP,
+                               reinterpret_cast<const char*>(&membership),
+                               sizeof(membership)) == 0) {
+                    multicast_joined = true;
+                }
+            }
+#if defined(__ANDROID__)
+            ifaddrs_api.free(interfaces);
+#else
+            freeifaddrs(interfaces);
+#endif
+        }
+        if (!multicast_joined) {
+            membership.imr_interface.s_addr = htonl(INADDR_ANY);
+            multicast_joined = setsockopt(
+                                   socket, IPPROTO_IP, IP_ADD_MEMBERSHIP,
+                                   reinterpret_cast<const char*>(&membership),
+                                   sizeof(membership)) == 0;
+        }
+    }
+#endif
+    static_cast<void>(multicast_joined);
+    // Joining is best effort: broadcast remains a compatibility path on
+    // networks that reject multicast. Bind first because Android/Linux
+    // require the local port to be selected before multicast delivery is
+    // reliable.
     socket_ = as_handle(socket);
     mode_ = Mode::host;
     tcp_port_ = tcp_port;
