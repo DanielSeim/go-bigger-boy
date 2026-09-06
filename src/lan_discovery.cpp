@@ -26,6 +26,11 @@
 namespace gameboy {
 namespace {
 
+// Broadcast delivery is disabled by a number of Wi-Fi access points and
+// Android network stacks. Keep it as a compatibility path, but use a scoped
+// administratively-local multicast group as the primary LAN query channel.
+constexpr const char* discovery_multicast_address = "239.255.42.99";
+
 #if defined(_WIN32)
 using Socket = SOCKET;
 constexpr Socket invalid_socket = INVALID_SOCKET;
@@ -126,6 +131,16 @@ bool LanDiscovery::start_host(const std::uint16_t tcp_port,
     static_cast<void>(setsockopt(socket, SOL_SOCKET, SO_REUSEADDR,
                                  reinterpret_cast<const char*>(&reuse),
                                  sizeof(reuse)));
+    ip_mreq membership{};
+    if (inet_pton(AF_INET, discovery_multicast_address,
+                  &membership.imr_multiaddr) == 1) {
+        membership.imr_interface.s_addr = htonl(INADDR_ANY);
+        // Joining is best effort: older desktop networks may reject
+        // multicast while still supporting the legacy broadcast path.
+        static_cast<void>(setsockopt(
+            socket, IPPROTO_IP, IP_ADD_MEMBERSHIP,
+            reinterpret_cast<const char*>(&membership), sizeof(membership)));
+    }
     sockaddr_in address{};
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -184,11 +199,13 @@ bool LanDiscovery::start_scan(const std::uint64_t compatibility_id,
     // any later interface-specific responses can still be consumed.
     const auto broadcast_sent =
         send_message(scan_message_, "255.255.255.255", discovery_port);
+    const auto multicast_sent =
+        send_message(scan_message_, discovery_multicast_address, discovery_port);
     // Loopback makes discovery testable and covers hosts where broadcast is
     // filtered by the local firewall; it does not replace the LAN broadcast.
     const auto loopback_sent =
         send_message(scan_message_, "127.0.0.1", discovery_port);
-    if (!broadcast_sent && !loopback_sent) {
+    if (!broadcast_sent && !multicast_sent && !loopback_sent) {
         stop();
         return false;
     }
@@ -212,6 +229,9 @@ void LanDiscovery::poll() noexcept {
             static_cast<void>(send_message(scan_message_,
                                             "255.255.255.255",
                                             discovery_port));
+            static_cast<void>(send_message(scan_message_,
+                                           discovery_multicast_address,
+                                           discovery_port));
             static_cast<void>(send_message(scan_message_, "127.0.0.1",
                                             discovery_port));
             next_scan_broadcast_ = now + std::chrono::milliseconds(200);
