@@ -577,7 +577,11 @@ LinkCompatibilityProfile Cartridge::link_compatibility_profile() const noexcept 
         "POKEMON RED", "POKEMON BLUE", "POKEMON YELLOW", "POKEMON GREEN"};
     constexpr std::string_view gen2_titles[] = {
         "POKEMON GOLD", "POKEMON SILVER", "POKEMON CRYSTAL", "POKEMON G",
-        "POKEMON S", "POKEMON C"};
+        "POKEMON S", "POKEMON C",
+        // CGB cartridges use the 11-byte compact title field. The retail
+        // international headers therefore abbreviate Gold/Silver and use an
+        // underscore separator; Crystal uses the legacy ``PM_`` prefix.
+        "POKEMON_GLD", "POKEMON_SLV", "PM_CRYSTAL"};
     const auto matches_title = [this](const std::string_view expected) {
         constexpr std::size_t title_begin = 0x134;
         if (rom_.size() < title_begin + expected.size()) return false;
@@ -630,7 +634,8 @@ std::uint64_t Cartridge::link_compatibility_id() const noexcept {
         "POKEMON RED", "POKEMON BLUE", "POKEMON YELLOW", "POKEMON GREEN"};
     constexpr std::string_view gen2_titles[] = {
         "POKEMON GOLD", "POKEMON SILVER", "POKEMON CRYSTAL", "POKEMON G",
-        "POKEMON S", "POKEMON C"};
+        "POKEMON S", "POKEMON C", "POKEMON_GLD", "POKEMON_SLV",
+        "PM_CRYSTAL"};
     const auto matches_title = [this](const std::string_view expected) {
         constexpr std::size_t title_begin = 0x134;
         if (rom_.size() < title_begin + expected.size()) return false;

@@ -139,6 +139,9 @@ void test_link_compatibility_profiles() {
     const auto yellow = gameboy::Cartridge{pokemon_rom("POKEMON YELLOW", 1)};
     const auto gold = gameboy::Cartridge{pokemon_rom("POKEMON G", 1)};
     const auto crystal = gameboy::Cartridge{pokemon_rom("POKEMON C", 1)};
+    const auto gold_cgb = gameboy::Cartridge{pokemon_rom("POKEMON_GLD", 1)};
+    const auto silver_cgb = gameboy::Cartridge{pokemon_rom("POKEMON_SLV", 1)};
+    const auto crystal_cgb = gameboy::Cartridge{pokemon_rom("PM_CRYSTAL", 1)};
     const auto japanese = gameboy::Cartridge{pokemon_rom("POKEMON RED", 0)};
     check(red.link_compatibility_id() == blue.link_compatibility_id() &&
               blue.link_compatibility_id() == yellow.link_compatibility_id() &&
@@ -154,6 +157,15 @@ void test_link_compatibility_profiles() {
     check(red_profile.known() && red_profile.generation == gameboy::LinkGeneration::gen1 &&
               gen2_profile.known() && gen2_profile.generation == gameboy::LinkGeneration::gen2,
           "Pokémon cartridges expose generation-aware link metadata");
+    check(gold_cgb.link_compatibility_profile().known() &&
+              gold_cgb.link_compatibility_profile().generation ==
+                  gameboy::LinkGeneration::gen2 &&
+              silver_cgb.link_compatibility_profile().known() &&
+              crystal_cgb.link_compatibility_profile().known() &&
+              gold_cgb.link_compatibility_id() == red.link_compatibility_id() &&
+              silver_cgb.link_compatibility_id() == red.link_compatibility_id() &&
+              crystal_cgb.link_compatibility_id() == red.link_compatibility_id(),
+          "retail compact CGB Gen II headers expose the shared Time Capsule profile");
     check(gameboy::link_profiles_compatible(red_profile, blue_profile) &&
               gameboy::link_profiles_compatible(gen2_profile,
                                                  crystal.link_compatibility_profile()) &&
