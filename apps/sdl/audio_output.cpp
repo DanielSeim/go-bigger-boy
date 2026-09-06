@@ -11,16 +11,23 @@
 
 namespace gbb::sdl {
 
+namespace {
+
+// Keep enough audio for a short packet burst or frame-pacing overrun, without
+// adding a noticeable startup delay. At 48 kHz stereo this is 7680 bytes.
+constexpr std::size_t playback_prebuffer_ms = 40;
+
+} // namespace
+
 AudioOutput::AudioOutput() {
     if (SDL_InitSubSystem(SDL_INIT_AUDIO)) {
         const SDL_AudioSpec audio_spec{
             SDL_AUDIO_S16, 2, static_cast<int>(gameboy::Apu::sample_rate)};
         stream_ = SDL_OpenAudioDeviceStream(
             SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &audio_spec, nullptr, nullptr);
-        if (stream_ != nullptr && !SDL_ResumeAudioStreamDevice(stream_)) {
-            SDL_DestroyAudioStream(stream_);
-            stream_ = nullptr;
-        }
+        // Leave the stream paused until submit() has queued a small cushion.
+        // Starting the device immediately lets it consume the first frame
+        // while the emulation thread is still producing the next one.
     }
     if (stream_ == nullptr) {
         gbb::log_frontend_warning(
@@ -37,10 +44,18 @@ void AudioOutput::close() noexcept {
         SDL_DestroyAudioStream(stream_);
         stream_ = nullptr;
     }
+    playback_started_ = false;
 }
 
 void AudioOutput::clear() noexcept {
-    if (stream_ != nullptr) static_cast<void>(SDL_ClearAudioStream(stream_));
+    if (stream_ != nullptr) {
+        static_cast<void>(SDL_PauseAudioStreamDevice(stream_));
+        static_cast<void>(SDL_ClearAudioStream(stream_));
+    }
+    // State loads, ROM changes, and debugger operations can introduce a
+    // scheduling gap. Re-prime the stream instead of exposing that gap as a
+    // click or a short burst of repeated samples.
+    playback_started_ = false;
 }
 
 int AudioOutput::queued_bytes() const noexcept {
@@ -73,6 +88,19 @@ void AudioOutput::submit(gbb::EmulatorCore* core,
             static_cast<int>(samples.size() * sizeof(samples.front())))) {
         throw std::runtime_error(std::string{"Could not queue audio samples: "} +
                                  SDL_GetError());
+    }
+    if (!playback_started_) {
+        const auto prebuffer_bytes = gbb::audio_queue_bytes(
+            gameboy::Apu::sample_rate, 2, playback_prebuffer_ms);
+        if (queued_bytes() < static_cast<int>(prebuffer_bytes)) return;
+        if (!SDL_ResumeAudioStreamDevice(stream_)) {
+            gbb::log_frontend_warning(
+                std::string{"Audio playback is unavailable: "} +
+                SDL_GetError());
+            close();
+            return;
+        }
+        playback_started_ = true;
     }
 }
 

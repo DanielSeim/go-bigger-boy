@@ -26,6 +26,11 @@ class AudioOutput {
 
   private:
     SDL_AudioStream* stream_{};
+    // Start playback only after a small cushion has been queued. Link
+    // sessions can spend a few milliseconds servicing packet bursts on the
+    // emulation thread; without a cushion those harmless scheduling gaps
+    // become audible underruns.
+    bool playback_started_{};
 };
 
 } // namespace gbb::sdl
