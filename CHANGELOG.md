@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.33.5] - 2026-09-07
+
+### Android Play internal testing
+
+- Publish a new patch version for validating Google Play internal-test updates
+  and the Play-signed Android package distribution path.
+
 ## [0.33.4] - 2026-09-07
 
 ### Link performance and battle stability
