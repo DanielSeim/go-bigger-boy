@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.33.8] - 2026-09-07
+
+### Android launcher identity
+
+- Use adaptive `mipmap` launcher icons in the Android manifest so system
+  update surfaces show the Go Bigger Boy artwork instead of a generic icon.
+- Keep density-qualified fallbacks for older Android versions and isolate the
+  monochrome layer to Android 13 and newer.
+
 ## [0.33.7] - 2026-09-07
 
 ### Android updater reliability
