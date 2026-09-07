@@ -16,6 +16,15 @@ import android.provider.Settings;
 import android.util.Log;
 import android.widget.Toast;
 
+import com.google.android.play.core.appupdate.AppUpdateInfo;
+import com.google.android.play.core.appupdate.AppUpdateManager;
+import com.google.android.play.core.appupdate.AppUpdateManagerFactory;
+import com.google.android.play.core.appupdate.AppUpdateOptions;
+import com.google.android.play.core.install.InstallStateUpdatedListener;
+import com.google.android.play.core.install.model.AppUpdateType;
+import com.google.android.play.core.install.model.InstallStatus;
+import com.google.android.play.core.install.model.UpdateAvailability;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -40,8 +49,15 @@ final class AndroidUpdateManager {
     private static final String APK_ASSET = "go-bigger-boy-android.apk";
     private static final long MAXIMUM_APK_SIZE = 256L * 1024L * 1024L;
     private static boolean checkStarted;
+    private static boolean playCheckStarted;
 
     private final Activity activity;
+    private AppUpdateManager playUpdateManager;
+    private InstallStateUpdatedListener playUpdateListener;
+    private boolean playUpdateListenerRegistered;
+    private boolean playUpdatePromptShown;
+    private boolean playUpdateReadyPromptShown;
+    private AppUpdateInfo pendingPlayUpdate;
     private File pendingUpdate;
     private boolean awaitingInstallPermission;
     private boolean resumed;
@@ -69,7 +85,7 @@ final class AndroidUpdateManager {
         // copy), so evaluate it for every check rather than caching it in the
         // constructor.
         if (installedFromPlayStore()) {
-            Log.i(TAG, "Play Store installation; update checks delegated to Google Play");
+            checkForPlayStoreUpdate();
             return;
         }
         synchronized (AndroidUpdateManager.class) {
@@ -120,10 +136,17 @@ final class AndroidUpdateManager {
 
     void onResume() {
         resumed = true;
+        registerPlayUpdateListener();
+        refreshPlayUpdateState();
         if (pendingOffer != null) {
             final UpdateOffer offer = pendingOffer;
             pendingOffer = null;
             offerUpdate(offer);
+        }
+        if (pendingPlayUpdate != null) {
+            final AppUpdateInfo update = pendingPlayUpdate;
+            pendingPlayUpdate = null;
+            offerPlayStoreUpdate(update);
         }
         if (!awaitingInstallPermission) return;
         awaitingInstallPermission = false;
@@ -137,7 +160,128 @@ final class AndroidUpdateManager {
     }
 
     void onPause() {
+        unregisterPlayUpdateListener();
         resumed = false;
+    }
+
+    private void checkForPlayStoreUpdate() {
+        synchronized (AndroidUpdateManager.class) {
+            if (playCheckStarted) return;
+            playCheckStarted = true;
+        }
+        ensurePlayUpdateManager();
+        playUpdateManager.getAppUpdateInfo()
+                .addOnSuccessListener(this::handlePlayUpdateInfo)
+                .addOnFailureListener(error ->
+                        Log.w(TAG, "Play Store update check unavailable", error));
+    }
+
+    private void ensurePlayUpdateManager() {
+        if (playUpdateManager != null) return;
+        playUpdateManager = AppUpdateManagerFactory.create(activity);
+        playUpdateListener = state -> {
+            if (state.installStatus() == InstallStatus.DOWNLOADED) {
+                offerPlayStoreUpdateReady();
+            }
+        };
+        registerPlayUpdateListener();
+    }
+
+    private void registerPlayUpdateListener() {
+        if (playUpdateManager == null || playUpdateListenerRegistered) return;
+        playUpdateManager.registerListener(playUpdateListener);
+        playUpdateListenerRegistered = true;
+    }
+
+    private void unregisterPlayUpdateListener() {
+        if (playUpdateManager == null || !playUpdateListenerRegistered) return;
+        playUpdateManager.unregisterListener(playUpdateListener);
+        playUpdateListenerRegistered = false;
+    }
+
+    private void refreshPlayUpdateState() {
+        if (playUpdateManager == null) return;
+        playUpdateManager.getAppUpdateInfo()
+                .addOnSuccessListener(update -> {
+                    if (update.installStatus() == InstallStatus.DOWNLOADED) {
+                        offerPlayStoreUpdateReady();
+                    } else {
+                        handlePlayUpdateInfo(update);
+                    }
+                })
+                .addOnFailureListener(error ->
+                        Log.w(TAG, "Could not refresh Play Store update state", error));
+    }
+
+    private void handlePlayUpdateInfo(AppUpdateInfo update) {
+        if (update.updateAvailability() ==
+                UpdateAvailability.DEVELOPER_TRIGGERED_UPDATE_IN_PROGRESS) {
+            if (resumed && update.isUpdateTypeAllowed(AppUpdateType.FLEXIBLE)) {
+                startPlayStoreUpdate(update);
+            } else {
+                pendingPlayUpdate = update;
+            }
+            return;
+        }
+        if (update.updateAvailability() != UpdateAvailability.UPDATE_AVAILABLE ||
+                !update.isUpdateTypeAllowed(AppUpdateType.FLEXIBLE)) {
+            Log.i(TAG, "No flexible Play Store update available");
+            return;
+        }
+        Log.i(TAG, "Play Store update available; prompting for flexible update");
+        if (resumed) {
+            offerPlayStoreUpdate(update);
+        } else {
+            pendingPlayUpdate = update;
+        }
+    }
+
+    private void offerPlayStoreUpdate(AppUpdateInfo update) {
+        if (playUpdatePromptShown || activity.isFinishing() || activity.isDestroyed()) return;
+        playUpdatePromptShown = true;
+        new AlertDialog.Builder(activity)
+                .setTitle("Go Bigger Boy update available")
+                .setMessage("A newer version is available on Google Play.")
+                .setNegativeButton("Later", null)
+                .setPositiveButton("Update", (dialog, which) -> startPlayStoreUpdate(update))
+                .show();
+    }
+
+    private void startPlayStoreUpdate(AppUpdateInfo update) {
+        ensurePlayUpdateManager();
+        try {
+            playUpdateManager.startUpdateFlowForResult(
+                    update,
+                    activity,
+                    AppUpdateOptions.newBuilder(AppUpdateType.FLEXIBLE).build(),
+                    0x4742);
+        } catch (Exception error) {
+            playUpdatePromptShown = false;
+            Log.w(TAG, "Could not start Play Store update", error);
+        }
+    }
+
+    private void offerPlayStoreUpdateReady() {
+        if (playUpdateReadyPromptShown || !resumed ||
+                activity.isFinishing() || activity.isDestroyed()) return;
+        playUpdateReadyPromptShown = true;
+        new AlertDialog.Builder(activity)
+                .setTitle("Update downloaded")
+                .setMessage("Restart Go Bigger Boy to install the update.")
+                .setNegativeButton("Later", null)
+                .setPositiveButton("Restart", (dialog, which) -> completePlayStoreUpdate())
+                .show();
+    }
+
+    private void completePlayStoreUpdate() {
+        if (playUpdateManager == null) return;
+        playUpdateManager.completeUpdate()
+                .addOnFailureListener(error -> {
+                    playUpdateReadyPromptShown = false;
+                    Log.w(TAG, "Could not complete Play Store update", error);
+                    activity.runOnUiThread(() -> Toast.makeText(activity,
+                            "The update could not be installed yet.", Toast.LENGTH_LONG).show());
+                });
     }
 
     private void offerUpdate(UpdateOffer offer) {

@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.33.9] - 2026-09-07
+
+### Android Play updates
+
+- Add Google Play flexible in-app update prompts for Play-installed builds;
+  updates are downloaded and completed by Google Play while direct APK builds
+  continue using the verified GitHub updater.
+
 ## [0.33.8] - 2026-09-07
 
 ### Android launcher identity

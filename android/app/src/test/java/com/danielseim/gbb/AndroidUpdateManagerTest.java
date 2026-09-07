@@ -44,4 +44,12 @@ public final class AndroidUpdateManagerTest {
         assertFalse(AndroidUpdateManager.isPlayStoreSource(
                 null, "com.example.store", null, null));
     }
+
+    @Test
+    public void doesNotTreatPartialPlayMetadataAsPlayInstall() {
+        assertFalse(AndroidUpdateManager.isPlayStoreSource(
+                "com.android.packageinstaller", null, null, null));
+        assertFalse(AndroidUpdateManager.isPlayStoreSource(
+                null, null, null, "com.google.android.gms"));
+    }
 }

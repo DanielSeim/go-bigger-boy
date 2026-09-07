@@ -537,9 +537,10 @@ restarts. Windows uses the system HTTP service and a native update helper
 Linux and macOS use the system `curl` and archive tools. Direct-download
 Android builds download the signed APK, then open the system package installer;
 Android may require enabling “Allow from this source” and always controls the
-final confirmation. Android installations made by Google Play delegate update
-discovery and installation to the Play Store instead, so they do not download
-or install GitHub APKs. After a successful direct APK installation, Android
+final confirmation. Android installations made by Google Play use Play's
+flexible in-app update flow, so they can show an in-app update prompt and
+download the update through Google Play without downloading or installing
+GitHub APKs. After a successful direct APK installation, Android
 relaunches the updated emulator. System-wide read-only desktop installations
 must still be updated through their package manager or replaced manually.
 
