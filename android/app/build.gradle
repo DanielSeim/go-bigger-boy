@@ -1,5 +1,6 @@
 plugins {
     id "com.android.application"
+    id "com.github.triplet.play"
 }
 
 def releaseKeystore = System.getenv("GBB_ANDROID_KEYSTORE_FILE")
@@ -72,6 +73,14 @@ android {
             version "3.31.6"
         }
     }
+}
+
+play {
+    // Tagged CI builds publish the already-signed App Bundle to Play's
+    // internal-testing track using GitHub Actions' short-lived ADC token.
+    track.set("internal")
+    defaultToAppBundles.set(true)
+    useApplicationDefaultCredentials.set(true)
 }
 
 dependencies {

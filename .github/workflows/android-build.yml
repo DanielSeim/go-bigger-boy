@@ -12,6 +12,9 @@ jobs:
   build:
     name: go-bigger-boy-android
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - name: Check out source
         uses: actions/checkout@v6
@@ -77,6 +80,34 @@ jobs:
              android/release/go-bigger-boy-android.apk
           cp android/app/build/outputs/bundle/release/app-release.aab \
              android/release/go-bigger-boy-android.aab
+
+      - name: Verify Google Play publishing configuration
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GBB_WIF_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          GBB_PLAY_SERVICE_ACCOUNT: ${{ vars.GCP_SERVICE_ACCOUNT }}
+        run: |
+          test -n "$GBB_WIF_PROVIDER" || {
+            echo "GCP_WORKLOAD_IDENTITY_PROVIDER repository variable is missing" >&2
+            exit 1
+          }
+          test -n "$GBB_PLAY_SERVICE_ACCOUNT" || {
+            echo "GCP_SERVICE_ACCOUNT repository variable is missing" >&2
+            exit 1
+          }
+
+      - name: Authenticate for Google Play publishing
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: go-bigger-boy
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: Publish signed bundle to Google Play internal track
+        if: startsWith(github.ref, 'refs/tags/v')
+        working-directory: android
+        run: ./gradlew --no-daemon publishBundle --artifact-dir app/build/outputs/bundle/release
 
       - name: Upload debug APK
         if: github.event_name == 'pull_request'

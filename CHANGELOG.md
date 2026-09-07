@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [0.33.6] - 2026-09-07
+
+### Android Play publishing
+
+- Delegate update discovery for Play-installed Android builds to Google Play
+  while retaining the verified GitHub APK updater for direct downloads.
+- Publish signed tagged Android App Bundles automatically to the Play internal
+  testing track through Workload Identity Federation.
+- Pin Gradle Play Publisher to the Gradle 8.13-compatible 3.13.0 release and
+  validate the Play publishing configuration in CI.
+
 ## [0.33.5] - 2026-09-07
 
 ### Android Play internal testing

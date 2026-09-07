@@ -525,20 +525,23 @@ responsive while faster systems can reach the full 4× rate. Set any of these to
 a different key, or to `None` to disable it. Rewind uses in-memory snapshots
 and is cleared when changing ROMs or loading a saved state.
 
-At startup, the desktop and Android apps check GitHub's latest stable release in a
-background thread. If its semantic version is newer than the running build,
+At startup, the desktop and direct-download Android builds check GitHub's latest
+stable release in a background thread. If its semantic version is newer than
+the running build,
 GBB can download the matching release asset and verify GitHub's published
 SHA-256 digest. Nothing is downloaded without confirmation. Network failures
 remain non-blocking and do not display a dialog. On desktop, a user-writable
 installation is replaced after the emulator exits and the updated executable
 restarts. Windows uses the system HTTP service and a native update helper
 (signed when release signing is configured);
-Linux and macOS use the system `curl` and archive tools. Android downloads the
-signed APK, then opens the system package installer; Android may require enabling
-“Allow from this source” and always controls the final confirmation. After a
-successful installation, Android relaunches the updated emulator. System-wide
-read-only desktop installations must still be updated through their package
-manager or replaced manually.
+Linux and macOS use the system `curl` and archive tools. Direct-download
+Android builds download the signed APK, then open the system package installer;
+Android may require enabling “Allow from this source” and always controls the
+final confirmation. Android installations made by Google Play delegate update
+discovery and installation to the Play Store instead, so they do not download
+or install GitHub APKs. After a successful direct APK installation, Android
+relaunches the updated emulator. System-wide read-only desktop installations
+must still be updated through their package manager or replaced manually.
 
 Desktop update downloads run asynchronously and show progress in the window
 title; press Escape to cancel. Library artwork and metadata are resolved in
@@ -624,7 +627,11 @@ use encrypted GitHub secrets to produce a consistently signed release APK and
 Play-ready Android App Bundle. The signing key must be kept permanently:
 Android will not accept future updates signed with a different key.
 Tagged builds attach both signed packages to the matching GitHub release so
-installed copies can discover and verify the APK through the in-app updater.
+direct-download installations can discover and verify the APK through the
+in-app updater. After the initial manual Play Console upload, tagged builds
+also publish the signed App Bundle to the internal-testing track through
+GitHub Actions Workload Identity Federation; Play-installed copies update
+through Google Play.
 
 ### Web build
 

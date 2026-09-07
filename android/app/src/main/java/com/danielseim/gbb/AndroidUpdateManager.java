@@ -5,8 +5,10 @@ import android.app.ActivityOptions;
 import android.app.AlertDialog;
 import android.app.PendingIntent;
 import android.content.Intent;
+import android.content.pm.InstallSourceInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageInstaller;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -29,9 +31,10 @@ import java.net.URL;
 import java.security.MessageDigest;
 import java.util.Locale;
 
-/** Checks for and installs verified Android releases from the library screen. */
+/** Checks for direct-download updates; Play Store builds use Play for updates. */
 final class AndroidUpdateManager {
     private static final String TAG = "GBB updater";
+    private static final String PLAY_STORE_PACKAGE = "com.android.vending";
     private static final String RELEASE_API =
             "https://api.github.com/repos/DanielSeim/go-bigger-boy/releases/latest";
     private static final String APK_ASSET = "go-bigger-boy-android.apk";
@@ -39,6 +42,7 @@ final class AndroidUpdateManager {
     private static boolean checkStarted;
 
     private final Activity activity;
+    private final boolean playStoreInstalled;
     private File pendingUpdate;
     private boolean awaitingInstallPermission;
     private boolean resumed;
@@ -58,9 +62,14 @@ final class AndroidUpdateManager {
 
     AndroidUpdateManager(Activity activity) {
         this.activity = activity;
+        this.playStoreInstalled = installedFromPlayStore();
     }
 
     void checkForUpdates() {
+        if (playStoreInstalled) {
+            Log.i(TAG, "Play Store installation; update checks delegated to Google Play");
+            return;
+        }
         synchronized (AndroidUpdateManager.class) {
             if (checkStarted) return;
             checkStarted = true;
@@ -267,6 +276,31 @@ final class AndroidUpdateManager {
         final PackageInfo info = activity.getPackageManager().getPackageInfo(
                 activity.getPackageName(), 0);
         return info.versionName == null ? "0.0.0" : info.versionName;
+    }
+
+    private boolean installedFromPlayStore() {
+        try {
+            final PackageManager packageManager = activity.getPackageManager();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                final InstallSourceInfo source =
+                        packageManager.getInstallSourceInfo(activity.getPackageName());
+                return isPlayStoreInstaller(source.getInstallingPackageName()) ||
+                        isPlayStoreInstaller(source.getInitiatingPackageName());
+            }
+            @SuppressWarnings("deprecation")
+            final String installer = packageManager.getInstallerPackageName(
+                    activity.getPackageName());
+            return isPlayStoreInstaller(installer);
+        } catch (Exception error) {
+            // Unknown installers are treated as direct builds so their updater
+            // remains available rather than silently disabling updates.
+            Log.d(TAG, "Could not identify app installer", error);
+            return false;
+        }
+    }
+
+    static boolean isPlayStoreInstaller(String installerPackage) {
+        return PLAY_STORE_PACKAGE.equals(installerPackage);
     }
 
     private static int compareVersions(String left, String right) {
