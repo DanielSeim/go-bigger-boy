@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [0.33.2] - 2026-09-07
+
+### Link transport reliability
+
+- Keep mixed Gen I/Gen II Time Capsule sessions on the conservative bit-level
+  serial path instead of the byte-transfer shortcut, preserving each game's
+  interrupt and transfer pacing.
+- Bound deferred serial requests and return a retryable `not-ready` response
+  when a peer stops arming its receiver, preventing both guests from waiting
+  indefinitely.
+- Extend link diagnostics with byte-path eligibility and deferred-request
+  polling state, and add regression coverage for both safeguards.
+
 ## [0.33.1] - 2026-09-06
 
 ### Link compatibility
