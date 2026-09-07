@@ -348,13 +348,22 @@ constexpr unsigned rewind_capture_interval = 4;
 // passive receive waits used by the Cable Club.
 constexpr unsigned remote_bit_poll_cycle_interval = 512;
 constexpr unsigned remote_byte_poll_cycle_interval = 4096;
+// An internal clock owner cannot advance its next byte until the peer's
+// response arrives. Keep the active wait below 0.13 ms at the normal CGB/DMG
+// clock, but do not pay that syscall rate before a request has been queued.
+constexpr unsigned remote_byte_internal_poll_cycle_interval = 512;
+// CGB fast mode has a 16-cycle serial bit period. The network round trip is
+// still the dominant cost, but a shorter polling slice prevents avoidable
+// scheduling delay when a fast-mode battle is already waiting for a response.
+constexpr unsigned remote_byte_fast_internal_poll_cycle_interval = 256;
 // A passive byte-capable receiver does not have a response deadline of its
 // own: it only needs to notice the host's next request. Polling it at the
 // host-clock cadence causes roughly 17 non-blocking socket calls per video
 // frame on Windows, even while the guest is waiting in a Cable Club loop.
-// Keep the receiver latency bounded below two milliseconds while avoiding
-// that steady syscall load. Internal-clock owners retain the tighter cadence
-// because they are waiting for a response before producing the next edge.
+// Keep the idle receiver cadence at roughly four milliseconds, then switch
+// to the tighter active cadence as soon as a peer request is observed. This
+// bounds handshake latency without making every passive frame pay the full
+// socket syscall rate.
 #if defined(__ANDROID__)
 // Android can suspend or coalesce the SDL thread for longer scheduler
 // intervals than desktop builds. Keep passive byte receivers responsive
@@ -362,8 +371,11 @@ constexpr unsigned remote_byte_poll_cycle_interval = 4096;
 // byte while retaining the lower-syscall cadence used to smooth Windows.
 constexpr unsigned remote_byte_receive_poll_cycle_interval = 2048;
 #else
-constexpr unsigned remote_byte_receive_poll_cycle_interval = 8192;
+constexpr unsigned remote_byte_receive_poll_cycle_interval = 16384;
 #endif
+// Once a request is in flight, keep release/next-request visibility below a
+// millisecond without returning to the old all-frame polling rate.
+constexpr unsigned remote_byte_busy_poll_cycle_interval = 4096;
 // When a connected peer is idle, there is no serial response deadline to
 // service. Use a larger bounded slice so an established-but-unused link does
 // not add active-transfer polling overhead to every video frame. If a
@@ -1917,14 +1929,6 @@ int main(int argc, char** argv) {
                             unsigned remote_poll_cycles = 0;
                             const auto byte_transfer =
                                 remote_link.endpoint.peer_byte_transfer();
-                            const auto internal_clock =
-                                emulator->bus().serial_port().internal_clock();
-                            const auto remote_poll_cycle_interval =
-                                byte_transfer
-                                    ? (internal_clock
-                                           ? remote_byte_poll_cycle_interval
-                                           : remote_byte_receive_poll_cycle_interval)
-                                    : remote_bit_poll_cycle_interval;
                             while (running && cycles < cycles_per_frame &&
                                    !emulator->frame_ready()) {
                                 // Run the core in bounded slices instead of
@@ -1937,8 +1941,31 @@ int main(int argc, char** argv) {
                                     cycles_per_frame - cycles;
                                 const auto polling_required =
                                     remote_link.endpoint.needs_poll();
+                                // SC can change from external to internal
+                                // while a Pokémon link byte is in flight.
+                                // Re-evaluate the direction at each boundary
+                                // so a newly elected clock owner immediately
+                                // receives the low-latency cadence.
+                                const auto internal_clock =
+                                    emulator->bus().serial_port().internal_clock();
+                                const auto remote_poll_cycle_interval =
+                                    !byte_transfer
+                                        ? remote_bit_poll_cycle_interval
+                                        : (!internal_clock
+                                               ? remote_byte_receive_poll_cycle_interval
+                                               : remote_byte_poll_cycle_interval);
+                                const auto active_poll_interval =
+                                    byte_transfer && internal_clock &&
+                                            remote_link.endpoint.waiting_for_peer()
+                                        ? (emulator->bus().serial_port().fast_clock()
+                                               ? remote_byte_fast_internal_poll_cycle_interval
+                                               : remote_byte_internal_poll_cycle_interval)
+                                        : (byte_transfer && !internal_clock &&
+                                                   remote_link.endpoint.peer_clock_busy()
+                                               ? remote_byte_busy_poll_cycle_interval
+                                               : remote_poll_cycle_interval);
                                 const auto slice_interval = polling_required
-                                                               ? remote_poll_cycle_interval
+                                                               ? active_poll_interval
                                                                : remote_idle_poll_cycle_interval;
                                 const auto slice_budget = std::min(
                                     remaining, slice_interval);

@@ -60,6 +60,12 @@ bit-sized waits from starving a desktop frame loop. Peers that do not advertise
 the capability continue to use the original bit packets automatically, so a
 new build remains compatible with older releases.
 
+For a byte-capable remote receiver, the SDL frontend uses a deliberately
+coarse polling cadence while the guest is passively waiting, then switches to
+the low-latency cadence as soon as a peer request is observed. This avoids a
+steady stream of Windows socket calls (and the resulting audio/frame jitter)
+without delaying an in-flight byte or clock handoff.
+
 Before serial traffic, endpoints send a five-part hello containing the local
 link-compatibility ID (two bytes per part) and the host/join role. A link
 becomes ready only after all parts arrive and the IDs match. The exact ROM
