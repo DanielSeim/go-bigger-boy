@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [0.33.7] - 2026-09-07
+
+### Android updater reliability
+
+- Recognize Google Play installations through installing, initiating,
+  originating, and update-owner metadata before selecting the direct GitHub
+  APK update channel.
+- Re-evaluate the install source for each update check and log the metadata
+  used for the decision, covering Play updates of previously sideloaded builds.
+- Add regression coverage for every supported Play installer metadata path.
+
 ## [0.33.6] - 2026-09-07
 
 ### Android Play publishing

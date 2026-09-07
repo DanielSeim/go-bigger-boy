@@ -42,7 +42,6 @@ final class AndroidUpdateManager {
     private static boolean checkStarted;
 
     private final Activity activity;
-    private final boolean playStoreInstalled;
     private File pendingUpdate;
     private boolean awaitingInstallPermission;
     private boolean resumed;
@@ -62,11 +61,14 @@ final class AndroidUpdateManager {
 
     AndroidUpdateManager(Activity activity) {
         this.activity = activity;
-        this.playStoreInstalled = installedFromPlayStore();
     }
 
     void checkForUpdates() {
-        if (playStoreInstalled) {
+        // Installer metadata can be populated or corrected after the activity
+        // is created (for example when Play updates a previously sideloaded
+        // copy), so evaluate it for every check rather than caching it in the
+        // constructor.
+        if (installedFromPlayStore()) {
             Log.i(TAG, "Play Store installation; update checks delegated to Google Play");
             return;
         }
@@ -284,13 +286,30 @@ final class AndroidUpdateManager {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 final InstallSourceInfo source =
                         packageManager.getInstallSourceInfo(activity.getPackageName());
-                return isPlayStoreInstaller(source.getInstallingPackageName()) ||
-                        isPlayStoreInstaller(source.getInitiatingPackageName());
+                if (source == null) {
+                    Log.i(TAG, "Install source unavailable; using direct update channel");
+                    return false;
+                }
+                final String installing = source.getInstallingPackageName();
+                final String initiating = source.getInitiatingPackageName();
+                final String originating = source.getOriginatingPackageName();
+                final String updateOwner = source.getUpdateOwnerPackageName();
+                final boolean playStore = isPlayStoreSource(
+                        installing, initiating, originating, updateOwner);
+                Log.i(TAG, "Install source installing=" + installing +
+                        " initiating=" + initiating +
+                        " originating=" + originating +
+                        " updateOwner=" + updateOwner +
+                        " playStore=" + playStore);
+                return playStore;
             }
             @SuppressWarnings("deprecation")
             final String installer = packageManager.getInstallerPackageName(
                     activity.getPackageName());
-            return isPlayStoreInstaller(installer);
+            final boolean playStore = isPlayStoreInstaller(installer);
+            Log.i(TAG, "Install source installer=" + installer +
+                    " playStore=" + playStore);
+            return playStore;
         } catch (Exception error) {
             // Unknown installers are treated as direct builds so their updater
             // remains available rather than silently disabling updates.
@@ -301,6 +320,14 @@ final class AndroidUpdateManager {
 
     static boolean isPlayStoreInstaller(String installerPackage) {
         return PLAY_STORE_PACKAGE.equals(installerPackage);
+    }
+
+    static boolean isPlayStoreSource(String installingPackage, String initiatingPackage,
+            String originatingPackage, String updateOwnerPackage) {
+        return isPlayStoreInstaller(installingPackage) ||
+                isPlayStoreInstaller(initiatingPackage) ||
+                isPlayStoreInstaller(originatingPackage) ||
+                isPlayStoreInstaller(updateOwnerPackage);
     }
 
     private static int compareVersions(String left, String right) {

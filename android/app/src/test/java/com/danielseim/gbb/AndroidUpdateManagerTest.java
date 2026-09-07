@@ -12,9 +12,36 @@ public final class AndroidUpdateManagerTest {
     }
 
     @Test
+    public void recognizesPlayAsInstallingPackage() {
+        assertTrue(AndroidUpdateManager.isPlayStoreSource(
+                "com.android.vending", null, null, null));
+    }
+
+    @Test
+    public void recognizesPlayAsInitiatingPackage() {
+        assertTrue(AndroidUpdateManager.isPlayStoreSource(
+                null, "com.android.vending", null, null));
+    }
+
+    @Test
+    public void recognizesPlayAsOriginatingPackage() {
+        assertTrue(AndroidUpdateManager.isPlayStoreSource(
+                null, null, "com.android.vending", null));
+    }
+
+    @Test
+    public void recognizesPlayAsUpdateOwner() {
+        assertTrue(AndroidUpdateManager.isPlayStoreSource(
+                null, null, null, "com.android.vending"));
+    }
+
+    @Test
     public void keepsDirectInstallersOnDirectUpdateChannel() {
-        assertFalse(AndroidUpdateManager.isPlayStoreInstaller(null));
-        assertFalse(AndroidUpdateManager.isPlayStoreInstaller("com.google.android.packageinstaller"));
-        assertFalse(AndroidUpdateManager.isPlayStoreInstaller("com.example.store"));
+        assertFalse(AndroidUpdateManager.isPlayStoreSource(
+                null, null, null, null));
+        assertFalse(AndroidUpdateManager.isPlayStoreSource(
+                "com.google.android.packageinstaller", null, null, null));
+        assertFalse(AndroidUpdateManager.isPlayStoreSource(
+                null, "com.example.store", null, null));
     }
 }
