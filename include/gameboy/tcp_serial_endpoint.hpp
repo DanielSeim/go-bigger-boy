@@ -86,16 +86,13 @@ public:
     [[nodiscard]] bool peer_clock_busy() const noexcept {
         return peer_clock_busy_;
     }
-    // The byte packet optimization is safe when both games run the same
-    // software link protocol.  Gen-I/Gen-II Time Capsule sessions have two
-    // different interrupt/state-machine schedules; preserve the physical
-    // cable's per-bit pacing there so one side cannot advance an entire byte
-    // while the other side is between serial edges.
+    // Byte packets are the established transport representation for every
+    // negotiated Pokémon link profile, including Gen-I/Gen-II Time Capsule
+    // entry.  The guest protocol owns the byte-level conversion and pacing;
+    // changing the representation before that handshake completes can leave
+    // the two games in different Cable Club states.
     [[nodiscard]] bool byte_transfer_allowed() const noexcept {
-        if (!compatibility_profile_.known()) return true;
-        if (!peer_profile_seen_) return false;
-        return compatibility_profile_.generation ==
-               peer_compatibility_profile_.generation;
+        return true;
     }
     [[nodiscard]] unsigned request_backoff() const noexcept {
         return request_backoff_;

@@ -26,12 +26,13 @@ Time Capsule data conversion (species indices, held-item/catch-rate bytes,
 party layouts, and patch lists) remains in the Pokémon ROM, matching the
 original hardware division of responsibility.
 
-For a mixed Gen I/Gen II session, the packet transport deliberately uses
-bit-level serial packets instead of its optional byte packet shortcut. The
-two games run different interrupt and transfer state machines during the Time
-Capsule exchange; retaining each cable edge prevents one side from advancing
-an entire byte while the other side is between serial interrupts. Same-family
-sessions may continue to use the byte shortcut after profile negotiation.
+The packet transport keeps its negotiated byte representation for both
+same-generation links and mixed Gen I/Gen II Time Capsule entry. The guest ROMs
+perform the generation-specific conversion and pacing; changing transport
+granularity during the initial Cable Club handshake can leave the two games in
+different reserved/waiting states. Deferred requests are bounded separately so
+a peer that stops arming its receiver can recover instead of holding a packet
+forever.
 
 The protocol behavior was cross-checked against the pret disassemblies:
 [pokecrystal link code](https://github.com/pret/pokecrystal/tree/master/engine/link)

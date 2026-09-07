@@ -651,9 +651,9 @@ void test_packet_channel_endpoint_contract() {
               second_endpoint.peer_compatibility_profile().generation ==
                   gameboy::LinkGeneration::gen1,
           "packet handshake exchanges generation and protocol capabilities");
-    check(!first_endpoint.byte_transfer_allowed() &&
-              !second_endpoint.byte_transfer_allowed(),
-          "mixed-generation links use conservative bit-level pacing");
+    check(first_endpoint.byte_transfer_allowed() &&
+              second_endpoint.byte_transfer_allowed(),
+          "mixed-generation links retain the negotiated byte transport");
 
     first.write8(0xFF01, 0xA5);
     second.write8(0xFF01, 0x3C);
@@ -672,8 +672,8 @@ void test_packet_channel_endpoint_contract() {
     check(first.read8(0xFF01) == 0x3C && second.read8(0xFF01) == 0xA5 &&
               !first.serial_port().transfer_active() &&
               !second.serial_port().transfer_active() &&
-              first_endpoint.byte_packets_sent() == 0 &&
-              second_endpoint.byte_packets_received() == 0,
+              first_endpoint.byte_packets_sent() != 0 &&
+              second_endpoint.byte_packets_received() != 0,
           "mixed-generation packet channel exchanges a complete serial byte");
     first_endpoint.detach();
     second_endpoint.detach();
