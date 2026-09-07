@@ -25,6 +25,7 @@ void LinkSerialEndpoint::attach(SerialPort& port,
     byte_bits_consumed_ = 0;
     deferred_request_.reset();
     request_backoff_ = 0;
+    deferred_request_polls_ = 0;
     hello_sent_ = false;
     peer_hello_seen_ = false;
     peer_compatible_ = true;
@@ -70,6 +71,7 @@ void LinkSerialEndpoint::detach() noexcept {
     byte_bits_consumed_ = 0;
     deferred_request_.reset();
     request_backoff_ = 0;
+    deferred_request_polls_ = 0;
     hello_sent_ = false;
     peer_hello_seen_ = false;
     peer_compatible_ = true;
@@ -124,7 +126,7 @@ void LinkSerialEndpoint::prepare_bit(const bool outgoing) noexcept {
     }
     const auto sequence = next_sequence_++;
     const auto use_byte_transfer = peer_byte_transfer_ && peer_hello_seen_ &&
-                                   port_ != nullptr &&
+                                   byte_transfer_allowed() && port_ != nullptr &&
                                    port_->bits_shifted() == 0;
     const LinkPacket packet{
         use_byte_transfer ? LinkPacketType::byte : LinkPacketType::bit,
@@ -216,6 +218,7 @@ void LinkSerialEndpoint::cancel_internal_clock(SerialPort& /*port*/) noexcept {
     byte_bits_consumed_ = 0;
     deferred_request_.reset();
     request_backoff_ = 0;
+    deferred_request_polls_ = 0;
     peer_clock_busy_ = false;
 }
 
@@ -271,6 +274,7 @@ void LinkSerialEndpoint::poll() noexcept {
             // Keep the request at the cable boundary until the guest arms
             // SC. Completing it as "not ready" loses the first byte when the
             // two emulators reach the Cable Club a few frames apart.
+            if (!deferred_request_.has_value()) deferred_request_polls_ = 0;
             deferred_request_ = packet;
             return;
         }
@@ -409,6 +413,7 @@ void LinkSerialEndpoint::poll() noexcept {
                 byte_bits_consumed_ = 0;
                 deferred_request_.reset();
                 request_backoff_ = 0;
+                deferred_request_polls_ = 0;
                 peer_clock_busy_ = false;
                 peer_byte_released_ = false;
                 peer_request_seen_ = false;
@@ -481,11 +486,34 @@ void LinkSerialEndpoint::poll() noexcept {
             }
         }
     }
-    if (deferred_request_.has_value() && port_ != nullptr &&
-        port_->transfer_active() && !port_->internal_clock()) {
-        const auto request = *deferred_request_;
-        deferred_request_.reset();
-        service_request(request);
+    if (deferred_request_.has_value()) {
+        if (port_ != nullptr && port_->transfer_active() &&
+            !port_->internal_clock()) {
+            const auto request = *deferred_request_;
+            deferred_request_.reset();
+            deferred_request_polls_ = 0;
+            service_request(request);
+        } else if (port_ == nullptr || !port_->transfer_active()) {
+            // A peer that has stopped arming SC must not leave the other
+            // endpoint's request pending indefinitely. Return a retryable
+            // response after a bounded grace period so the guest's own link
+            // timeout/recovery path can run instead of freezing both sides.
+            ++deferred_request_polls_;
+            if (deferred_request_polls_ >= deferred_request_poll_limit) {
+                const auto request = *deferred_request_;
+                deferred_request_.reset();
+                deferred_request_polls_ = 0;
+                gbb::Logger::instance().write(
+                    gbb::LogLevel::warning, gbb::LogCategory::link,
+                    "deferred link request expired; returning not-ready",
+                    {diagnostic_session_, request.sequence,
+                     deferred_request_poll_limit});
+                const LinkPacket not_ready{request.type, request.sequence, 0,
+                                           static_cast<std::uint8_t>(
+                                               response_flag | not_ready_flag)};
+                if (channel_->send(not_ready)) ++responses_sent_;
+            }
+        }
     }
 }
 

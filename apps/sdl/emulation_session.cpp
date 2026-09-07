@@ -450,6 +450,9 @@ void trace_remote_frame(gameboy::Emulator& emulator,
                << " bs=" << remote.endpoint.byte_packets_sent()
                << " br=" << remote.endpoint.byte_packets_received()
                << " bt=" << remote.endpoint.peer_byte_transfer()
+               << " byte_allowed=" << remote.endpoint.byte_transfer_allowed()
+               << " deferred_polls="
+               << remote.endpoint.deferred_request_polls()
                << " w=" << remote.endpoint.waiting_for_peer()
                << " z=" << remote.endpoint.response_ready()
                << " compat=" << remote.endpoint.peer_compatible()

@@ -46,6 +46,7 @@ public:
     [[nodiscard]] bool needs_poll() const noexcept {
         return channel_ != nullptr &&
                (!peer_hello_seen_ || waiting_for_peer() ||
+                deferred_request_.has_value() ||
                 (compatibility_profile_.known() && !peer_profile_seen_ &&
                  profile_wait_polls_ < profile_wait_limit) ||
                 (port_ != nullptr && port_->transfer_active()));
@@ -85,8 +86,22 @@ public:
     [[nodiscard]] bool peer_clock_busy() const noexcept {
         return peer_clock_busy_;
     }
+    // The byte packet optimization is safe when both games run the same
+    // software link protocol.  Gen-I/Gen-II Time Capsule sessions have two
+    // different interrupt/state-machine schedules; preserve the physical
+    // cable's per-bit pacing there so one side cannot advance an entire byte
+    // while the other side is between serial edges.
+    [[nodiscard]] bool byte_transfer_allowed() const noexcept {
+        if (!compatibility_profile_.known()) return true;
+        if (!peer_profile_seen_) return false;
+        return compatibility_profile_.generation ==
+               peer_compatibility_profile_.generation;
+    }
     [[nodiscard]] unsigned request_backoff() const noexcept {
         return request_backoff_;
+    }
+    [[nodiscard]] unsigned deferred_request_polls() const noexcept {
+        return deferred_request_polls_;
     }
 
     // Transport diagnostics are intentionally read-only and do not expose or
@@ -140,6 +155,9 @@ private:
     static constexpr std::uint8_t denied_flag = 0x04;
     static constexpr std::uint8_t not_ready_flag = 0x08;
     static constexpr std::uint8_t reset_flag = 0x80;
+    // A request may legitimately arrive a few frames before the peer arms
+    // its receiver. Do not retain it forever when the peer has left serial.
+    static constexpr unsigned deferred_request_poll_limit = 240;
     static constexpr std::uint8_t byte_transfer_capability = 0x10;
 
     SerialPort* port_{};
@@ -151,6 +169,7 @@ private:
     std::uint8_t byte_bits_consumed_{};
     std::optional<LinkPacket> deferred_request_;
     unsigned request_backoff_{};
+    unsigned deferred_request_polls_{};
     bool arbitration_priority_{};
     bool hello_sent_{};
     bool peer_hello_seen_{};

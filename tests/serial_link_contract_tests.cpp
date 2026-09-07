@@ -651,6 +651,9 @@ void test_packet_channel_endpoint_contract() {
               second_endpoint.peer_compatibility_profile().generation ==
                   gameboy::LinkGeneration::gen1,
           "packet handshake exchanges generation and protocol capabilities");
+    check(!first_endpoint.byte_transfer_allowed() &&
+              !second_endpoint.byte_transfer_allowed(),
+          "mixed-generation links use conservative bit-level pacing");
 
     first.write8(0xFF01, 0xA5);
     second.write8(0xFF01, 0x3C);
@@ -669,9 +672,9 @@ void test_packet_channel_endpoint_contract() {
     check(first.read8(0xFF01) == 0x3C && second.read8(0xFF01) == 0xA5 &&
               !first.serial_port().transfer_active() &&
               !second.serial_port().transfer_active() &&
-              first_endpoint.byte_packets_sent() != 0 &&
-              second_endpoint.byte_packets_received() != 0,
-          "packet-channel byte fast path exchanges a complete serial byte");
+              first_endpoint.byte_packets_sent() == 0 &&
+              second_endpoint.byte_packets_received() == 0,
+          "mixed-generation packet channel exchanges a complete serial byte");
     first_endpoint.detach();
     second_endpoint.detach();
 }
@@ -1016,6 +1019,49 @@ void test_tcp_serial_endpoint_loopback() {
     second_endpoint.detach();
 }
 
+void test_packet_channel_deferred_request_timeout() {
+    QueuePacketChannel host_channel;
+    QueuePacketChannel join_channel;
+    host_channel.connect_to(join_channel);
+    join_channel.connect_to(host_channel);
+    gameboy::MemoryBus host{gameboy::Cartridge{test_rom()}};
+    gameboy::MemoryBus join{gameboy::Cartridge{test_rom()}};
+    gameboy::TcpSerialEndpoint host_endpoint;
+    gameboy::TcpSerialEndpoint join_endpoint;
+    host_endpoint.set_arbitration_priority(true);
+    join_endpoint.set_arbitration_priority(false);
+    host_endpoint.attach(host.serial_port(), host_channel,
+                         UINT64_C(0x1111111111111111));
+    join_endpoint.attach(join.serial_port(), join_channel,
+                         UINT64_C(0x1111111111111111));
+    for (unsigned attempt = 0; attempt < 12; ++attempt) {
+        host_endpoint.poll();
+        join_endpoint.poll();
+    }
+
+    // The host starts a byte while the peer has not armed SC. The request is
+    // deferred briefly to cover normal frame skew, then must be completed as
+    // a retryable not-ready response rather than leaving the host blocked
+    // forever behind one pending packet.
+    host.write8(0xFF01, 0xA5);
+    host.write8(0xFF02, 0x81);
+    host.tick(512);
+    join_endpoint.poll();
+    check(host_endpoint.waiting_for_peer() &&
+              join_endpoint.deferred_request_polls() != 0,
+          "inactive peer request is deferred at the cable boundary");
+    for (unsigned attempt = 0; attempt < 260; ++attempt) {
+        join_endpoint.poll();
+        host_endpoint.poll();
+        if (!host_endpoint.waiting_for_peer()) break;
+    }
+    check(!host_endpoint.waiting_for_peer() &&
+              join_endpoint.responses_sent() != 0,
+          "deferred request timeout releases a stalled serial sender");
+    host_endpoint.detach();
+    join_endpoint.detach();
+}
+
 void test_tcp_serial_endpoint_rejects_mismatched_rom() {
     gameboy::TcpLinkChannel server;
     gameboy::TcpLinkChannel client;
@@ -1074,6 +1120,7 @@ int main() {
     test_link_transport_framing();
     test_packet_channel_endpoint_contract();
     test_packet_channel_handoff_race();
+    test_packet_channel_deferred_request_timeout();
     test_packet_channel_rejects_profile_mismatch();
     test_tcp_link_channel_loopback();
     test_tcp_serial_endpoint_loopback();
