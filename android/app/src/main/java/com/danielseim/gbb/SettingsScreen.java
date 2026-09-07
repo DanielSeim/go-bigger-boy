@@ -114,6 +114,48 @@ final class SettingsScreen {
         privacy.setPadding(0, 0, 0, activity.dp(20));
         artworkCard.addView(privacy);
 
+        final LinearLayout dataCard = sectionCard("Data and saves");
+        dataCard.addView(activity.text(
+                "Back up your private app data to a ZIP file that you can copy " +
+                "to a computer. ROMs, battery saves, quick states, settings, " +
+                "and the library are included. Save exports preserve the " +
+                "fingerprint-based filenames needed to restore them.",
+                15, Color.DKGRAY));
+
+        final Button exportBackup = new Button(activity);
+        exportBackup.setText("Export full backup (ZIP)");
+        exportBackup.setOnClickListener(view -> activity.exportBackup());
+        dataCard.addView(exportBackup);
+
+        final Button importBackup = new Button(activity);
+        importBackup.setText("Import full backup (ZIP)");
+        importBackup.setOnClickListener(view -> new AlertDialog.Builder(activity)
+                .setTitle("Restore backup?")
+                .setMessage("Existing ROMs, saves, states, and settings with " +
+                        "the same names will be replaced.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Restore", (dialog, which) ->
+                        activity.importBackup())
+                .show());
+        dataCard.addView(importBackup);
+
+        final Button exportSaves = new Button(activity);
+        exportSaves.setText("Export save files (ZIP)");
+        exportSaves.setOnClickListener(view -> activity.exportSaves());
+        dataCard.addView(exportSaves);
+
+        final Button importSave = new Button(activity);
+        importSave.setText("Import a .sav file");
+        importSave.setOnClickListener(view -> activity.importSave());
+        dataCard.addView(importSave);
+
+        final TextView saveHelp = activity.text(
+                "Imported .sav files keep their filename and are placed in the " +
+                "main save folder. For a ROM to use one, the filename must " +
+                "match that ROM's fingerprint.", 13, Color.GRAY);
+        saveHelp.setPadding(0, activity.dp(4), 0, 0);
+        dataCard.addView(saveHelp);
+
         final LinearLayout touchCard = sectionCard("Touch controls");
         touchCard.addView(activity.text(
                 "Touch controls are shown while playing. Connected controllers " +

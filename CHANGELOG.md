@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.33.10] - 2026-09-07
+
+### Android data portability
+
+- Add full backup and restore through Android's system file picker.
+- Add save-file ZIP export and individual `.sav` import while preserving
+  fingerprint-based filenames.
+- Validate backup archive paths and size limits before writing app data.
+
 ## [0.33.9] - 2026-09-07
 
 ### Android Play updates

@@ -18,6 +18,7 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 import android.window.OnBackInvokedCallback;
 import android.window.OnBackInvokedDispatcher;
 
@@ -26,6 +27,10 @@ public final class LibraryActivity extends Activity {
     static final String EXTRA_RETURN_TO_GAME =
             "com.danielseim.gbb.RETURN_TO_GAME";
     private static final int OPEN_ROM = 1;
+    private static final int CREATE_BACKUP = 2;
+    private static final int OPEN_BACKUP = 3;
+    private static final int CREATE_SAVES = 4;
+    private static final int OPEN_SAVE = 5;
     static {
         System.loadLibrary("SDL3");
         System.loadLibrary("main");
@@ -272,13 +277,97 @@ public final class LibraryActivity extends Activity {
         startActivityForResult(intent, OPEN_ROM);
     }
 
+    void exportBackup() {
+        final Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/zip");
+        intent.putExtra(Intent.EXTRA_TITLE, "gbb-backup.zip");
+        startActivityForResult(intent, CREATE_BACKUP);
+    }
+
+    void importBackup() {
+        final Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/zip");
+        startActivityForResult(intent, OPEN_BACKUP);
+    }
+
+    void exportSaves() {
+        final Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/zip");
+        intent.putExtra(Intent.EXTRA_TITLE, "gbb-saves.zip");
+        startActivityForResult(intent, CREATE_SAVES);
+    }
+
+    void importSave() {
+        final Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/octet-stream");
+        intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{
+                "application/octet-stream", "application/x-gba-save",
+                "application/x-gameboy-save", "application/vnd.gb-save"});
+        startActivityForResult(intent, OPEN_SAVE);
+    }
+
+    private void runDataTransfer(String successMessage, TransferOperation operation) {
+        runDataTransfer(successMessage, operation, null);
+    }
+
+    private void runDataTransfer(String successMessage, TransferOperation operation,
+                                 Runnable onSuccess) {
+        Toast.makeText(this, "Preparing data transfer…",
+                Toast.LENGTH_SHORT).show();
+        new Thread(() -> {
+            try {
+                operation.run();
+                runOnUiThread(() -> {
+                    if (onSuccess != null) onSuccess.run();
+                    Toast.makeText(this, successMessage,
+                            Toast.LENGTH_LONG).show();
+                });
+            } catch (Exception error) {
+                runOnUiThread(() -> Toast.makeText(this,
+                        "Data transfer failed: " + error.getMessage(),
+                        Toast.LENGTH_LONG).show());
+            }
+        }, "gbb-data-transfer").start();
+    }
+
+    @FunctionalInterface
+    private interface TransferOperation {
+        void run() throws Exception;
+    }
+
     @Override
     @SuppressLint("WrongConstant")
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != OPEN_ROM || resultCode != RESULT_OK ||
-                data == null || data.getData() == null) return;
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
         final Uri uri = data.getData();
+        if (requestCode == CREATE_BACKUP) {
+            runDataTransfer("Backup exported", () ->
+                    AndroidDataTransfer.exportBackup(this, uri));
+            return;
+        }
+        if (requestCode == OPEN_BACKUP) {
+            runDataTransfer("Backup restored", () ->
+                    AndroidDataTransfer.importBackup(this, uri),
+                    () -> showDashboard(settingsVisible));
+            return;
+        }
+        if (requestCode == CREATE_SAVES) {
+            runDataTransfer("Save files exported", () ->
+                    AndroidDataTransfer.exportSaves(this, uri));
+            return;
+        }
+        if (requestCode == OPEN_SAVE) {
+            final String displayName = AndroidDataTransfer.displayName(this, uri);
+            runDataTransfer("Save file imported", () ->
+                    AndroidDataTransfer.importSave(this, uri, displayName));
+            return;
+        }
+        if (requestCode != OPEN_ROM) return;
         final int flags = data.getFlags() &
                 (Intent.FLAG_GRANT_READ_URI_PERMISSION |
                  Intent.FLAG_GRANT_WRITE_URI_PERMISSION);

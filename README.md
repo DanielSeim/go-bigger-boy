@@ -584,6 +584,14 @@ battery saves, and optional camera permission. ROMs selected through Android's
 games remain launchable after a restart; they are never uploaded. Save data is
 stored privately by ROM fingerprint.
 
+The Settings screen includes **Export full backup (ZIP)** and **Import full
+backup (ZIP)** actions. A full backup contains the private ROM copies, battery
+saves, link saves, quick states, settings, and library metadata, so the ZIP can
+be copied to a Windows or other computer through shared storage. Dedicated
+save-file actions export all saves as a ZIP or import an individual `.sav`
+file; imported save filenames are preserved because they include the ROM
+fingerprint.
+
 Install JDK 17 and the Android SDK command-line tools, then let the repository
 install the pinned SDK 36, NDK r28c, CMake 3.31.6, and SDL3 dependencies. The
 checked-in Gradle wrapper downloads and verifies Gradle 8.13 automatically:
