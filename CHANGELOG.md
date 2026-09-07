@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.33.11] - 2026-09-07
+
+### Android Play closed beta publishing
+
+- Publish tagged Android App Bundles automatically to the configured `GBB Beta`
+  closed-testing track through GitHub Actions Workload Identity Federation.
+- Document the closed-beta release path and keep direct-download updater
+  behavior unchanged.
+
 ## [0.33.10] - 2026-09-07
 
 ### Android data portability

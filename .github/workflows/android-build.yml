@@ -104,7 +104,7 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
 
-      - name: Publish signed bundle to Google Play internal track
+      - name: Publish signed bundle to Google Play closed track (GBB Beta)
         if: startsWith(github.ref, 'refs/tags/v')
         working-directory: android
         run: ./gradlew --no-daemon publishBundle --artifact-dir app/build/outputs/bundle/release

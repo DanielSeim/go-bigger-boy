@@ -76,9 +76,10 @@ android {
 }
 
 play {
-    // Tagged CI builds publish the already-signed App Bundle to Play's
-    // internal-testing track using GitHub Actions' short-lived ADC token.
-    track.set("internal")
+    // Tagged CI builds publish the already-signed App Bundle to the manually
+    // created closed-testing track named "GBB Beta" using GitHub Actions'
+    // short-lived ADC token. GPP accepts custom Play track names directly.
+    track.set("GBB Beta")
     defaultToAppBundles.set(true)
     useApplicationDefaultCredentials.set(true)
 }

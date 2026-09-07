@@ -638,9 +638,9 @@ Android will not accept future updates signed with a different key.
 Tagged builds attach both signed packages to the matching GitHub release so
 direct-download installations can discover and verify the APK through the
 in-app updater. After the initial manual Play Console upload, tagged builds
-also publish the signed App Bundle to the internal-testing track through
-GitHub Actions Workload Identity Federation; Play-installed copies update
-through Google Play.
+also publish the signed App Bundle to the closed-testing track **GBB Beta**
+through GitHub Actions Workload Identity Federation; Play-installed copies
+update through Google Play.
 
 ### Web build
 

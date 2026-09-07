@@ -29,9 +29,10 @@ Use this short smoke test for releases that include local link-cable changes.
       workflows to complete successfully.
 - [ ] Verify the GitHub Release contains Windows, Linux, macOS, APK, and AAB
       artifacts before announcing the release.
-- [ ] For Google Play testing, upload the AAB to the internal-testing track,
+- [ ] For Google Play testing, upload the AAB to the closed-testing track
+      `GBB Beta`,
       install it from Play, and verify updates are offered by Play Store
       without invoking the GitHub APK updater.
 - [ ] For tagged releases after the initial Play upload, verify the Android
-      workflow publishes the signed AAB automatically to the internal-testing
-      track using Workload Identity Federation.
+      workflow publishes the signed AAB automatically to the closed-testing
+      track `GBB Beta` using Workload Identity Federation.
