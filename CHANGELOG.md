@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.33.4] - 2026-09-07
+
+### Link performance and battle stability
+
+- Reduce Windows frame jitter during remote byte-link sessions by using a
+  coarse cadence while a receiver is passive and a low-latency cadence only
+  while a response is pending.
+- Re-evaluate the serial clock direction at each emulation slice so CGB fast
+  mode and clock handoffs cannot inherit a stale polling interval.
+
 ## [0.33.3] - 2026-09-07
 
 ### Link handshake reliability
