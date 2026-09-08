@@ -226,7 +226,12 @@ Cartridge::Cartridge(std::vector<std::uint8_t> rom) : rom_(std::move(rom)) {
             throw std::invalid_argument("MBC1 ROM exceeds the 2 MiB address limit");
         }
         if (ram_capacity > 0x8000) {
-            throw std::invalid_argument("MBC1 RAM exceeds the 32 KiB address limit");
+            // A few established diagnostic/multicart images carry the
+            // generic 128-KiB RAM header (0x04), although MBC1 only wires
+            // four 8-KiB RAM banks.  Real hardware exposes the available
+            // 32 KiB rather than refusing to boot such a cartridge; clamp
+            // the advertised capacity to the controller's addressable RAM.
+            ram_capacity = 0x8000;
         }
         large_mbc1_rom_ = expected_rom_size > 0x80000;
         if (expected_rom_size == 0x100000) {

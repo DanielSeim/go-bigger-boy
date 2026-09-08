@@ -158,6 +158,13 @@ void test_mbc1_ram_banking() {
     large.write(0x4000, 0);
     check(large.read(0xA000) == 0x77,
           "large-ROM MBC1 wiring keeps its 8 KiB RAM unbanked");
+
+    // Some established MBC1 diagnostics use the generic 128-KiB RAM header
+    // even though the controller can address only four 8-KiB banks.  Keep
+    // those images bootable and expose the hardware's 32-KiB limit.
+    gameboy::Cartridge legacy_header{banked_rom(2, 0x03, 0x00, 0x04)};
+    check(legacy_header.ram_size() == 0x8000,
+          "MBC1 clamps legacy oversized RAM headers to 32 KiB");
 }
 
 void test_battery_ram_persistence() {
