@@ -19,9 +19,10 @@ shared everywhere.
 ## Current status
 
 The current automated baseline passes **168/168 fixed tests** (ROM,
-framebuffer, and core contract cases). The pinned external bundle additionally
-adds machine-readable suites discovered at configure time. See the [accuracy
-report](docs/accuracy.md) for the suite-by-suite breakdown.
+framebuffer, and core contract cases). The pinned external bundle is also
+available to the opt-in per-hardware matrix; it remains separate from the
+release gate until each suite's model contract has been reviewed. See the
+[accuracy report](docs/accuracy.md) for the suite-by-suite breakdown.
 
 - Cartridge loading and basic header parsing
 - Initial DMG memory map, including work RAM echo behavior
@@ -202,14 +203,13 @@ original DMG hardware's channel 3 retrigger corruption.
 The current headless CI accuracy gate passes all 75 Mooneye acceptance ROMs,
 all 6 applicable CGB misc ROMs, all 28 emulator-only mapper ROMs, 38 curated
 Blargg ROMs, and 20 exact Acid2/Scribbltests/Mealybug/Gambatte framebuffer
-comparisons. The pinned bundle also contributes discovered GBMicrotest,
-Mooneye-wilbertpol, and SameSuite non-APU cases; see the
-[accuracy report](docs/accuracy.md) for details.
+comparisons. The separate hardware-model matrix evaluates additional
+GBMicrotest and Mooneye-wilbertpol cases; AGE and SameSuite remain deferred
+pending dedicated harnesses (see the [accuracy report](docs/accuracy.md)).
 
 To register the pinned v7.0 bundle locally, download and extract
 `c-sp/game-boy-test-roms`, then set its root as the opt-in cache path. The
-machine-readable suites are discovered during configuration; test ROMs are
-deliberately not bundled or downloaded by the build:
+test ROMs are deliberately not bundled or downloaded by the build:
 
 ```sh
 cmake -S . -B build-conformance \
@@ -223,6 +223,9 @@ To generate the hardware-revision matrix report, add
 `ctest --test-dir build-conformance -L model-matrix --output-on-failure`.
 The report is written to `hardware-model-matrix.md`; it keeps reviewed
 `EXPECTED_FAIL`/`KNOWN_FAIL` outcomes separate from `REGRESSION` failures.
+Individual discovered-suite CTest cases are available with
+`-DGAMEBOY_ENABLE_DISCOVERED_CONFORMANCE=ON`; this bring-up mode is
+intentionally separate from the normal release baseline.
 
 The headless runner can also capture a deterministic framebuffer without SDL:
 

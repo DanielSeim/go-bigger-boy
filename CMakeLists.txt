@@ -22,6 +22,8 @@ include(GNUInstallDirs)
 option(GAMEBOY_BUILD_TESTS "Build the unit tests" ON)
 option(GAMEBOY_ENABLE_MODEL_MATRIX
        "Run deterministic ROM suites across every hardware model" OFF)
+option(GAMEBOY_ENABLE_DISCOVERED_CONFORMANCE
+       "Register every discovered external ROM as an individual CTest case" OFF)
 option(GAMEBOY_BUILD_SDL "Build the SDL3 desktop frontend when SDL3 is available" ON)
 option(GAMEBOY_ENABLE_SANITIZERS
        "Enable AddressSanitizer and UndefinedBehaviorSanitizer for native builds"

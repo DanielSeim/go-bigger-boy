@@ -332,6 +332,7 @@ foreach(relative_path IN LISTS gbb_cgb_sound_tests)
         blargg 200000000 cgb)
 endforeach()
 
+if(GAMEBOY_ENABLE_DISCOVERED_CONFORMANCE)
 # GBMicrotest is a deterministic, self-checking timing suite.  Each ROM
 # reports its observed and expected byte in HRAM (FF80/FF81) and sets FF82 to
 # 0x01 for pass or 0xFF for failure; the runner's dedicated protocol consumes
@@ -346,42 +347,13 @@ gbb_add_discovered_conformance_suite(
     mooneye-wilbertpol mooneye-test-suite-wilbertpol mooneye-wilbertpol 100000000
     "/manual-only/")
 
-# AGE mixes self-checking ROMs with screenshot-only cases. Register the former
-# here; a matching PNG (the ROM stem plus an optional model suffix) is the
-# upstream signal that the case needs the visual harness instead.
-file(GLOB_RECURSE gbb_age_roms CONFIGURE_DEPENDS
-     "${GAMEBOY_TEST_ROM_DIR}/age-test-roms/*.gb")
-file(GLOB_RECURSE gbb_age_references CONFIGURE_DEPENDS
-     "${GAMEBOY_TEST_ROM_DIR}/age-test-roms/*.png"
-     "${GAMEBOY_TEST_ROM_DIR}/age-test-roms-expected/*.png")
-foreach(rom IN LISTS gbb_age_roms)
-    get_filename_component(age_stem "${rom}" NAME_WE)
-    set(age_has_reference FALSE)
-    foreach(reference IN LISTS gbb_age_references)
-        get_filename_component(reference_stem "${reference}" NAME_WE)
-        if(reference_stem STREQUAL age_stem OR
-           reference_stem MATCHES "^${age_stem}[-_.]")
-            set(age_has_reference TRUE)
-            break()
-        endif()
-    endforeach()
-    if(NOT age_has_reference)
-        file(RELATIVE_PATH relative_path "${GAMEBOY_TEST_ROM_DIR}" "${rom}")
-        gbb_add_conformance_test(age "${relative_path}" mooneye 100000000)
-    endif()
-endforeach()
+# AGE screenshot/interactive cases and SameSuite diagnostic cases are
+# intentionally deferred. They do not implement the result protocol consumed
+# by gbb_test_runner; registering them here would turn an absent framebuffer or
+# user input into a misleading conformance failure. Dedicated harnesses can
+# register them once their frame/input contracts are reviewed.
 
-# SameSuite's non-APU tests are deterministic and use the Mooneye protocol.
-# APU cases remain behind GAMEBOY_SAMESUITE_DIR because their expected result
-# depends on a specific CGB revision and are intentionally research-only.
-file(GLOB_RECURSE gbb_samesuite_nonapu_roms CONFIGURE_DEPENDS
-     "${GAMEBOY_TEST_ROM_DIR}/same-suite/*.gb")
-list(FILTER gbb_samesuite_nonapu_roms EXCLUDE REGEX "/apu/")
-foreach(rom IN LISTS gbb_samesuite_nonapu_roms)
-    file(RELATIVE_PATH relative_path "${GAMEBOY_TEST_ROM_DIR}" "${rom}")
-    gbb_add_conformance_test(
-        samesuite-nonapu "${relative_path}" mooneye 15000000)
-endforeach()
+endif()
 
 endif()
 

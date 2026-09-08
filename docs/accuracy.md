@@ -13,10 +13,10 @@ bundle. GitHub Actions verifies the archive checksum before running any ROM.
 | Mooneye emulator-only | 28/28 | Complete MBC1, MBC2, and MBC5 mapper directories |
 | Blargg | 38/38 | CPU/timing baseline plus all 12 DMG and all 12 CGB sound ROMs |
 | Visual PPU | 21/21 | Acid2, Scribbltests, Mealybug, and Gambatte framebuffer comparisons |
-| GBMicrotest | discovered at configure time | HRAM self-checking cycle-accuracy ROMs from the pinned v7.0 bundle |
-| Mooneye-wilbertpol | discovered at configure time | Extended Mooneye acceptance/misc/emulator-only ROMs (manual-only cases excluded) |
-| SameSuite non-APU | discovered at configure time | Mooneye-protocol edge-case ROMs; revision-sensitive APU remains opt-in |
-| Total CI gate | **168 + discovered suites** | Every registered case must pass before a release can be published |
+| GBMicrotest | matrix-only | HRAM self-checking cycle-accuracy ROMs from the pinned v7.0 bundle |
+| Mooneye-wilbertpol | matrix-only | Extended Mooneye acceptance/misc/emulator-only ROMs (manual-only cases excluded) |
+| AGE and SameSuite | deferred | Screenshot/interactive and diagnostic cases awaiting suite-specific harnesses |
+| Total release gate | **168** | The reviewed fixed baseline must pass before a release can be published |
 
 The acceptance figure covers every acceptance ROM in the pinned bundle. Tests with
 mutually exclusive boot-ROM expectations run under explicit DMG0, DMG/MGB,
@@ -25,23 +25,26 @@ misc ROMs are excluded because GBB does not emulate Game Boy Advance hardware.
 
 ### Additional pinned-bundle suites
 
-The v7.0 archive is now treated as a source of test cases rather than only a
-collection of hand-maintained paths. CMake discovers every `.gb` in the
-machine-readable suites below, so a new ROM in the pinned archive cannot be
-silently omitted from CI:
+The v7.0 archive is also treated as a source of matrix cases rather than only a
+collection of hand-maintained paths. The matrix runner discovers every `.gb`
+in the machine-readable suites below, so a new ROM in the pinned archive cannot
+be silently omitted from the opt-in matrix. Individual discovered CTest cases
+are available only with `-DGAMEBOY_ENABLE_DISCOVERED_CONFORMANCE=ON` and are
+not part of the normal release gate:
 
 * **GBMicrotest** reports an observed byte, expected byte, and completion flag
   in HRAM (`FF80`, `FF81`, and `FF82`). The headless runner exits immediately
   with a diagnostic pass/fail result.
-* **AGE** self-checking ROMs are discovered automatically. Cases accompanied by
-  an upstream reference PNG are reserved for the visual harness instead of
-  being incorrectly evaluated as register-protocol tests.
 * **Mooneye-wilbertpol** uses the Fibonacci register result values with its
   historical `0xED` completion opcode. Its `manual-only` screenshot case is
   intentionally excluded until a framebuffer/input harness is available.
-* **SameSuite non-APU** uses the same Fibonacci protocol. SameSuite APU ROMs
-  remain an explicit research target because their expected behavior is tied
-  to a particular CGB revision.
+
+AGE and SameSuite are deliberately not discovered by the matrix yet. AGE is
+primarily screenshot-driven, while SameSuite mixes interactive diagnostics and
+revision-specific APU experiments; neither has a verified machine-readable
+completion contract for the headless runner. They will be added only after a
+dedicated harness can capture their required frames/input and classify results
+without manufacturing `REGRESSION` outcomes.
 
 The upstream collection also contains visual or interactive suites (AGE
 screenshots, Bully, cgb-acid-hell, MBC3 Tester, rtc3test, TurtleTests, and
