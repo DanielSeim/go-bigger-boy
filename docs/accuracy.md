@@ -85,6 +85,12 @@ hardware-specific result. The matrix is opt-in because running every
 deterministic ROM eight times is substantially slower than the normal release
 gate.
 
+CI runs the same matrix in the dedicated [Hardware model matrix workflow](https://github.com/DanielSeim/go-bigger-boy/actions/workflows/hardware-model-matrix.yml).
+Its run summary shows aggregate counts, and the `hardware-model-matrix`
+artifact contains the complete report. Matrix findings are intentionally kept
+separate from the Desktop builds workflow while applicability and emulator
+revision mismatches are being reviewed.
+
 ## Super Game Boy baseline
 
 Cartridges with the SGB header capability flag (`0x0146 = 0x03`) are selected

@@ -1,0 +1,70 @@
+name: Hardware model matrix
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  matrix:
+    name: Per-model ROM matrix
+    runs-on: ubuntu-24.04
+    env:
+      TEST_ROMS_URL: https://github.com/c-sp/game-boy-test-roms/releases/download/v7.0/game-boy-test-roms-v7.0.zip
+      TEST_ROMS_SHA256: b9a9d7a1075aa35a3d07c07c34974048672d8520dca9e07a50178f5860c3832c
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Download pinned test ROM bundle
+        run: curl --fail --location --retry 3 "$TEST_ROMS_URL" --output test-roms.zip
+
+      - name: Verify test ROM bundle
+        run: echo "$TEST_ROMS_SHA256  test-roms.zip" | sha256sum --check -
+
+      - name: Extract test ROM bundle
+        run: unzip -q test-roms.zip -d test-roms
+
+      - name: Configure hardware model matrix
+        run: >-
+          cmake -S . -B build-model-matrix
+          -DCMAKE_BUILD_TYPE=Release
+          -DGAMEBOY_BUILD_TESTS=ON
+          -DGAMEBOY_BUILD_SDL=OFF
+          -DGAMEBOY_TEST_ROM_DIR="$PWD/test-roms"
+          -DGAMEBOY_ENABLE_MODEL_MATRIX=ON
+
+      - name: Build matrix runner
+        run: cmake --build build-model-matrix --target gameboy_test_runner --parallel
+
+      - name: Run hardware model matrix
+        continue-on-error: true
+        run: >-
+          ctest --test-dir build-model-matrix -C Release
+          --label-regex model-matrix
+          --output-on-failure
+
+      - name: Add matrix summary
+        if: always()
+        run: |
+          report=build-model-matrix/hardware-model-matrix.md
+          if [ -f "$report" ]; then
+            {
+              echo '### Hardware model matrix'
+              echo
+              sed -n '/^## Summary$/,/^## Compact results$/p' "$report" | head -n 4
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload hardware model matrix report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: hardware-model-matrix
+          path: build-model-matrix/hardware-model-matrix.md
+          if-no-files-found: warn
+          retention-days: 14

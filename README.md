@@ -4,6 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/DanielSeim/go-bigger-boy/actions/workflows/desktop-builds.yml"><img src="https://github.com/DanielSeim/go-bigger-boy/actions/workflows/desktop-builds.yml/badge.svg" alt="Desktop builds"></a>
+  <a href="https://github.com/DanielSeim/go-bigger-boy/actions/workflows/hardware-model-matrix.yml"><img src="https://github.com/DanielSeim/go-bigger-boy/actions/workflows/hardware-model-matrix.yml/badge.svg" alt="Hardware model matrix"></a>
   <a href="https://github.com/DanielSeim/go-bigger-boy/actions/workflows/android-build.yml"><img src="https://github.com/DanielSeim/go-bigger-boy/actions/workflows/android-build.yml/badge.svg" alt="Android build"></a>
   <a href="https://github.com/DanielSeim/go-bigger-boy/actions/workflows/web-pages.yml"><img src="https://github.com/DanielSeim/go-bigger-boy/actions/workflows/web-pages.yml/badge.svg" alt="Web build and Pages"></a>
 </p>
@@ -203,9 +204,11 @@ original DMG hardware's channel 3 retrigger corruption.
 The current headless CI accuracy gate passes all 75 Mooneye acceptance ROMs,
 all 6 applicable CGB misc ROMs, all 28 emulator-only mapper ROMs, 38 curated
 Blargg ROMs, and 20 exact Acid2/Scribbltests/Mealybug/Gambatte framebuffer
-comparisons. The separate hardware-model matrix evaluates additional
-GBMicrotest and Mooneye-wilbertpol cases; AGE and SameSuite remain deferred
-pending dedicated harnesses (see the [accuracy report](docs/accuracy.md)).
+comparisons. The separate [hardware-model matrix workflow](https://github.com/DanielSeim/go-bigger-boy/actions/workflows/hardware-model-matrix.yml)
+evaluates additional GBMicrotest and Mooneye-wilbertpol cases; AGE and
+SameSuite remain deferred pending dedicated harnesses (see the [accuracy
+report](docs/accuracy.md)). Each run publishes the full Markdown report as a
+downloadable artifact and summarizes its counts on the Actions page.
 
 To register the pinned v7.0 bundle locally, download and extract
 `c-sp/game-boy-test-roms`, then set its root as the opt-in cache path. The
