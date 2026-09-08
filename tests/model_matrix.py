@@ -35,11 +35,24 @@ def expected_models(suite: str, relative: str) -> Optional[Set[str]]:
     if suite == "mooneye-wilbertpol":
         # Mooneye's documented group suffixes are authoritative: G is
         # DMG/MGB, S is SGB/SGB2, C is the CGB family, and GS combines G+S.
-        # A bare `-C` suffix denotes the CGB-C-era cases in this extension.
+        # A bare `-C` suffix is the CGB group (not the CGB-C revision).
+        if re.search(r"-dmg0(?:[-_.]|$)", name):
+            return {"dmg0"}
+        if "dmgabcmgb" in name:
+            return {"dmg", "mgb"}
+        if re.search(r"-dmgabc(?:[-_.]|$)", name):
+            return {"dmg"}
+        if re.search(r"-cgb0(?:[-_.]|$)", name):
+            return {"cgb0"}
+        if re.search(r"-cgb(?:[-_.]|$)", name):
+            return {"cgb0", "cgb-c", "cgb-e"}
+        if re.search(r"-a(?:[-_.]|$)", name):
+            # A is the AGB/AGS group, which is outside GBB's model set.
+            return set()
         if re.search(r"(?:^|[/_.-])cgb(?:[/_.-]|$)", name):
             return {"cgb0", "cgb-c", "cgb-e"}
         if re.search(r"-c(?:[-_.]|$)", name):
-            return {"cgb-c"}
+            return {"cgb0", "cgb-c", "cgb-e"}
         if "sgb2" in name:
             return {"sgb2"}
         if re.search(r"(?:^|[/_.-])sgb(?:[/_.-]|$)", name):
@@ -47,9 +60,9 @@ def expected_models(suite: str, relative: str) -> Optional[Set[str]]:
         if re.search(r"(?:^|[/_.-])mgb(?:[/_.-]|$)", name):
             return {"mgb"}
         if re.search(r"-gs(?:[-_.]|$)", name):
-            return {"dmg0", "dmg", "mgb", "sgb", "sgb2"}
+            return {"dmg", "mgb", "sgb", "sgb2"}
         if re.search(r"-g(?:[-_.]|$)", name):
-            return {"dmg0", "dmg", "mgb"}
+            return {"dmg", "mgb"}
         if re.search(r"-s(?:[-_.]|$)", name):
             return {"sgb", "sgb2"}
         return ALL_MODELS
@@ -58,6 +71,14 @@ def expected_models(suite: str, relative: str) -> Optional[Set[str]]:
         # unsuffixed ROM is DMG-only. The upstream README states that a model
         # restriction is encoded in the filename; unsuffixed tests therefore
         # remain applicable to every profile we expose.
+        if re.search(r"-dmg0(?:[-_.]|$)", name):
+            return {"dmg0"}
+        if "dmgabcmgb" in name:
+            return {"dmg", "mgb"}
+        if re.search(r"-dmgabc(?:[-_.]|$)", name):
+            return {"dmg"}
+        if re.search(r"-cgb0(?:[-_.]|$)", name):
+            return {"cgb0"}
         if "cgb" in name:
             return {"cgb0", "cgb-c", "cgb-e"}
         if "sgb2" in name:
@@ -67,17 +88,19 @@ def expected_models(suite: str, relative: str) -> Optional[Set[str]]:
         if "mgb" in name:
             return {"mgb"}
         if re.search(r"-gs(?:[-_.]|$)", name):
-            return {"dmg0", "dmg", "mgb", "sgb", "sgb2"}
+            return {"dmg", "mgb", "sgb", "sgb2"}
         if re.search(r"-g(?:[-_.]|$)", name):
-            return {"dmg0", "dmg", "mgb"}
+            return {"dmg", "mgb"}
         if re.search(r"-s(?:[-_.]|$)", name):
             return {"sgb", "sgb2"}
         if re.search(r"-c(?:[-_.]|$)", name):
             return {"cgb0", "cgb-c", "cgb-e"}
+        if re.search(r"-a(?:[-_.]|$)", name):
+            return set()
         return ALL_MODELS
     for marker, models in (
         ("-dmg0", {"dmg0"}),
-        ("-dmgabc", {"dmg0", "dmg", "mgb"}),
+        ("-dmgabc", {"dmg"}),
         ("-mgb", {"mgb"}),
         ("-sgb2", {"sgb2"}),
         ("-sgb", {"sgb", "sgb2"}),
@@ -95,6 +118,12 @@ def expected_models(suite: str, relative: str) -> Optional[Set[str]]:
     return None
 
 
+def has_gbmicrotest_result_marker(rom: Path) -> bool:
+    """Return whether a GBMicrotest ROM implements the FF82 result ABI."""
+    data = rom.read_bytes()
+    return b"\xe0\x82" in data or b"\xea\x82\xff" in data
+
+
 def discover(rom_root: Path) -> List[Tuple[str, Path, str, int]]:
     # Keep this list limited to suites whose completion/result protocol is
     # implemented and verified by gbb_test_runner. AGE is primarily a
@@ -108,12 +137,29 @@ def discover(rom_root: Path) -> List[Tuple[str, Path, str, int]]:
          "mooneye-wilbertpol", 100_000_000),
     ]
     cases: List[Tuple[str, Path, str, int]] = []
+    # The upstream Mooneye repositories contain helper, manual, and hardware
+    # diagnostic ROMs alongside the machine-readable acceptance suites.  The
+    # runner's Fibonacci/result-register protocol is only defined for these
+    # three directories; including the others turns a non-test timeout into a
+    # misleading REGRESSION row.
+    machine_readable_roots = {"acceptance", "emulator-only", "misc"}
     for suite, root, protocol, cycles in suites:
         if not root.is_dir():
             continue
         for rom in sorted(root.rglob("*.gb")):
             relative = rom.relative_to(rom_root).as_posix()
-            if suite == "mooneye-wilbertpol" and "/manual-only/" in f"/{relative}":
+            if suite in {"mooneye", "mooneye-wilbertpol"}:
+                suite_relative = rom.relative_to(root).as_posix()
+                if suite_relative.split("/", 1)[0] not in machine_readable_roots:
+                    continue
+            if suite == "gbmicrotest" and not has_gbmicrotest_result_marker(rom):
+                # v7.0 ships a handful of testbench/helper ROMs which never
+                # write FF82, so they cannot be evaluated by this runner.
+                continue
+            if suite == "gbmicrotest" and rom.stem.lower().startswith("poweron_"):
+                # These cases assert reset-before-boot state.  This matrix
+                # intentionally starts from the documented post-boot profile;
+                # keep them deferred until a boot-ROM harness is available.
                 continue
             cases.append((suite, rom, protocol, cycles))
     return cases

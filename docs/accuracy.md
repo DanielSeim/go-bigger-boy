@@ -26,9 +26,12 @@ misc ROMs are excluded because GBB does not emulate Game Boy Advance hardware.
 ### Additional pinned-bundle suites
 
 The v7.0 archive is also treated as a source of matrix cases rather than only a
-collection of hand-maintained paths. The matrix runner discovers every `.gb`
-in the machine-readable suites below, so a new ROM in the pinned archive cannot
-be silently omitted from the opt-in matrix. Individual discovered CTest cases
+collection of hand-maintained paths. The matrix runner discovers every
+machine-readable `.gb` in the supported suite directories below, so a new ROM
+cannot be silently omitted from the opt-in matrix. Upstream helper/manual
+directories are intentionally excluded, as are GBMicrotest power-on fixtures
+until the emulator can run an actual boot ROM; those images do not implement
+the result protocol from a post-boot run. Individual discovered CTest cases
 are available only with `-DGAMEBOY_ENABLE_DISCOVERED_CONFORMANCE=ON` and are
 not part of the normal release gate:
 
@@ -36,8 +39,9 @@ not part of the normal release gate:
   in HRAM (`FF80`, `FF81`, and `FF82`). The headless runner exits immediately
   with a diagnostic pass/fail result.
 * **Mooneye-wilbertpol** uses the Fibonacci register result values with its
-  historical `0xED` completion opcode. Its `manual-only` screenshot case is
-  intentionally excluded until a framebuffer/input harness is available.
+  historical `0xED` completion opcode. Only `acceptance`, `emulator-only`, and
+  `misc` are machine-readable; helper, `manual-only`, and boot-only diagnostics
+  remain outside this post-boot matrix until their required harness exists.
 
 AGE and SameSuite are deliberately not discovered by the matrix yet. AGE is
 primarily screenshot-driven, while SameSuite mixes interactive diagnostics and
