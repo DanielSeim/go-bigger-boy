@@ -8,7 +8,9 @@ PASS, EXPECTED_FAIL (the ROM is not defined for that hardware), KNOWN_FAIL
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import json
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -117,6 +119,23 @@ def discover(rom_root: Path) -> List[Tuple[str, Path, str, int]]:
     return cases
 
 
+def run_case_command(
+        task: Tuple[Path, Path, Path, str, str, int, str]
+) -> Tuple[str, str, str, bool, str]:
+    runner, rom_root, rom, suite, protocol, cycles, model = task
+    relative = rom.relative_to(rom_root).as_posix()
+    command = [str(runner), str(rom), "--max-cycles", str(cycles),
+               "--protocol", protocol, "--model", model]
+    try:
+        result = subprocess.run(command, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, text=True,
+                                timeout=max(30, cycles // 1_000_000 * 8))
+        return suite, relative, model, result.returncode == 0, \
+            result.stdout.splitlines()[-1] if result.stdout else ""
+    except subprocess.TimeoutExpired:
+        return suite, relative, model, False, "timeout"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--runner", required=True, type=Path)
@@ -124,28 +143,28 @@ def main() -> int:
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--models", nargs="*", default=list(MODELS),
                         choices=MODELS)
+    parser.add_argument("--jobs", type=int,
+                        default=min(8, os.cpu_count() or 1),
+                        help="parallel ROM workers (default: detected CPU count, capped at 8)")
     parser.add_argument("--expectations", type=Path,
                         default=Path(__file__).with_name("model_expectations.json"))
     args = parser.parse_args()
     metadata = json.loads(args.expectations.read_text()) if args.expectations.exists() else {}
     known = {(item["suite"], item["path"], item["model"])
              for item in metadata.get("known_failures", [])}
+    if args.jobs < 1:
+        parser.error("--jobs must be positive")
     rows: List[Tuple[str, str, str, str, str]] = []
     regressions = 0
+    tasks = []
     for suite, rom, protocol, cycles in discover(args.rom_root):
-        relative = rom.relative_to(args.rom_root).as_posix()
-        applicable = expected_models(suite, relative)
         for model in args.models:
-            command = [str(args.runner), str(rom), "--max-cycles", str(cycles),
-                       "--protocol", protocol, "--model", model]
-            try:
-                result = subprocess.run(command, stdout=subprocess.PIPE,
-                                        stderr=subprocess.STDOUT, text=True,
-                                        timeout=max(30, cycles // 1_000_000 * 8))
-                passed = result.returncode == 0
-                detail = result.stdout.splitlines()[-1] if result.stdout else ""
-            except subprocess.TimeoutExpired:
-                passed, detail = False, "timeout"
+            tasks.append((args.runner, args.rom_root, rom, suite, protocol,
+                          cycles, model))
+    with ThreadPoolExecutor(max_workers=args.jobs) as executor:
+        results = executor.map(run_case_command, tasks)
+        for suite, relative, model, passed, detail in results:
+            applicable = expected_models(suite, relative)
             if passed:
                 status = "PASS"
             elif (suite, relative, model) in known:
