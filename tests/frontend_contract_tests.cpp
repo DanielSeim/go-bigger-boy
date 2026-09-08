@@ -89,6 +89,17 @@ void test_core_registry_contract() {
           "optional GB development tools are capability-gated behind the adapter");
     check(core->take_printer_pages().empty(),
           "printer output is exposed through the generic core contract");
+
+    // Hardware selection is carried through the frontend-neutral factory
+    // options, so browser and SDL model pickers exercise the same path.
+    auto model_options = gbb::CoreLoadOptions{};
+    model_options.hardware_model = "cgb0";
+    auto model_core = registry.create(cgb_test_rom(), model_options);
+    const auto* model_emulator = gbb::gameboy_emulator(model_core.get());
+    check(model_emulator != nullptr &&
+              model_emulator->hardware_model() == gameboy::HardwareModel::cgb0,
+          "core factory applies an explicitly selected hardware model");
+
     const auto state_before_printer_toggle = core->save_state();
     core->set_printer_enabled(true);
     core->set_printer_enabled(false);

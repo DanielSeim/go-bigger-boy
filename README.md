@@ -671,10 +671,13 @@ update through Google Play.
 The browser frontend uses SDL3 and Emscripten. It accepts local `.gb` and
 `.gbc` files from the picker or by drag and drop; ROM data stays in the browser
 and is never uploaded. Keyboard and standard gamepad controls match the desktop
-frontend. The display palette and video-pipeline selectors offer the same
-options as the desktop frontend and remember their selections in browser
-storage. Battery-backed RAM, Game Boy Camera captures, and MBC3 clock state
-are saved automatically in IndexedDB for each ROM. A synchronous local-storage
+frontend. The hardware-model, display-palette, and video-pipeline selectors
+offer the same options as the desktop frontend and remember their selections
+in browser storage. The selected hardware model is applied the next time a ROM
+is loaded, allowing revision-specific DMG, MGB, SGB, and CGB behavior to be
+tested directly in the browser. Battery-backed RAM, Game Boy Camera captures,
+and MBC3 clock state are saved automatically in IndexedDB for each ROM. A
+synchronous local-storage
 fallback also protects the latest save when a tab is closed before IndexedDB
 finishes.
 Browser saves can also be imported from or exported to desktop-compatible

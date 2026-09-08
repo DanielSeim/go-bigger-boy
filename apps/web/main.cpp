@@ -3,6 +3,7 @@
 #include <SDL3/SDL_main.h>
 
 #include "gameboy/emulator.hpp"
+#include "gameboy/hardware_model.hpp"
 #include "gameboy/display_palette.hpp"
 #include "gameboy/printer.hpp"
 #include "gameboy/video_pipeline.hpp"
@@ -74,12 +75,15 @@ struct WebApp {
     double cycle_credit{};
     std::uint64_t presentation_frame{};
     std::size_t display_palette{};
+    gameboy::HardwareModel hardware_model{gameboy::HardwareModel::automatic};
     gameboy::VideoMode video_mode{gameboy::default_video_mode};
     bool paused{};
 };
 
 WebApp* active_app{};
 unsigned requested_video_mode{};
+gameboy::HardwareModel requested_hardware_model{
+    gameboy::HardwareModel::automatic};
 std::string scene_snapshot_export;
 
 void set_status(const std::string& message, bool error);
@@ -961,7 +965,10 @@ int load_rom_from_browser(emscripten::val bytes) noexcept {
     try {
         auto rom = copy_browser_bytes(bytes);
         if (rom.empty()) return 0;
-        active_app->emulator = gbb::create_core(std::move(rom));
+        gbb::CoreLoadOptions options;
+        options.hardware_model = std::string(
+            gameboy::hardware_model_id(active_app->hardware_model));
+        active_app->emulator = gbb::create_core(std::move(rom), options);
         active_app->voxel_camera_pitch_offset = 0.0F;
         active_app->voxel_camera_yaw_offset = 0.0F;
         if (!configure_core_io(*active_app)) {
@@ -1000,6 +1007,17 @@ int load_rom_from_browser_with_palette(emscripten::val bytes,
     if (!active_app || palette >= gameboy::display_palettes.size()) return 0;
     active_app->display_palette = palette;
     return load_rom_from_browser(std::move(bytes));
+}
+
+emscripten::val browser_hardware_models() {
+    auto result = emscripten::val::array();
+    for (const auto model : gameboy::selectable_hardware_models) {
+        auto entry = emscripten::val::object();
+        entry.set("id", std::string(gameboy::hardware_model_id(model)));
+        entry.set("name", std::string(gameboy::hardware_model_name(model)));
+        result.call<void>("push", entry);
+    }
+    return result;
 }
 
 std::string browser_rom_fingerprint() {
@@ -1120,6 +1138,7 @@ EMSCRIPTEN_BINDINGS(gbb_web_bindings) {
     emscripten::function("loadRom", &load_rom_from_browser);
     emscripten::function("loadRomWithPalette",
                          &load_rom_from_browser_with_palette);
+    emscripten::function("hardwareModelOptions", &browser_hardware_models);
     emscripten::function("romFingerprint", &browser_rom_fingerprint);
     emscripten::function("hasBattery", &browser_has_battery);
     emscripten::function("hasRtc", &browser_has_rtc);
@@ -1178,6 +1197,13 @@ extern "C" EMSCRIPTEN_KEEPALIVE void gbb_set_video_mode(
     if (active_app) apply_video_mode(*active_app, requested_video_mode);
 }
 
+extern "C" EMSCRIPTEN_KEEPALIVE void gbb_set_hardware_model(
+    const unsigned index) noexcept {
+    if (index >= gameboy::selectable_hardware_models.size()) return;
+    requested_hardware_model = gameboy::selectable_hardware_models[index];
+    if (active_app) active_app->hardware_model = requested_hardware_model;
+}
+
 extern "C" EMSCRIPTEN_KEEPALIVE void gbb_set_voxel_camera(
     const float yaw_delta, const float pitch_delta) noexcept {
     if (!active_app) return;
@@ -1219,6 +1245,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int, char**) {
     app->renderer = SDL_CreateRenderer(app->window, nullptr);
     if (!app->renderer) return SDL_APP_FAILURE;
     static_cast<void>(SDL_SetRenderVSync(app->renderer, 1));
+    app->hardware_model = requested_hardware_model;
     active_app = app.get();
     *appstate = app.release();
     set_status("Ready. Choose a Game Boy ROM to begin.");

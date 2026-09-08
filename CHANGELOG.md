@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Web hardware model selection
+
+- Expose the shared DMG, MGB, SGB, and CGB hardware-model catalog in the
+  browser frontend.
+- Persist the selected model in browser storage and apply it when the next ROM
+  is loaded, matching desktop and Android behavior.
+
 ## [0.33.11] - 2026-09-07
 
 ### Android Play closed beta publishing

@@ -18,7 +18,7 @@
     .subtitle { margin: 4px 0 0; color: #a7b9aa; }
     button { border: 0; border-radius: 8px; padding: 11px 16px; font: inherit; font-weight: 700; background: #8bcf69; color: #10200d; cursor: pointer; }
     button:disabled { cursor: wait; opacity: .55; }
-    .actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; flex: 1 1 100%; min-width: 0; gap: 10px; }
+    .actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; align-items: end; flex: 1 1 100%; min-width: 0; gap: 10px; }
     .palette { display: grid; gap: 4px; color: #a7b9aa; font-size: .8rem; font-weight: 700; }
     select { width: 100%; min-width: 0; min-height: 41px; border: 1px solid #526b58; border-radius: 8px; padding: 7px 30px 7px 10px; background: #18231c; color: #e7f0e9; font: inherit; }
     select:focus-visible { outline: 3px solid #8bcf69; outline-offset: 1px; }
@@ -75,6 +75,10 @@
             <option value="7">Voxel pop-up book (WebGL)</option>
           </select>
         </label>
+        <label class="palette" for="hardware-model">
+          Hardware model
+          <select id="hardware-model" disabled></select>
+        </label>
         <button id="open-rom" type="button" disabled>Choose ROM</button>
       </div>
       <input id="rom-file" type="file" accept=".gb,.gbc,application/octet-stream">
@@ -112,6 +116,7 @@
     const dropZone = document.getElementById('drop-zone');
     const palettePicker = document.getElementById('display-palette');
     const videoPicker = document.getElementById('video-mode');
+    const hardwareModelPicker = document.getElementById('hardware-model');
     const savePicker = document.getElementById('save-file');
     const saveActions = document.getElementById('save-actions');
     const importSaveButton = document.getElementById('import-save');
@@ -532,6 +537,29 @@
       videoPicker.disabled = false;
     }
 
+    function restoreHardwareModel() {
+      if (!Module.hardwareModelOptions) return;
+      hardwareModelPicker.replaceChildren();
+      for (const model of Module.hardwareModelOptions()) {
+        const option = document.createElement('option');
+        option.value = model.id;
+        option.textContent = model.name;
+        hardwareModelPicker.append(option);
+      }
+      try {
+        const stored = localStorage.getItem('gbb-hardware-model');
+        if ([...hardwareModelPicker.options].some(option => option.value === stored)) {
+          hardwareModelPicker.value = stored;
+        }
+      } catch (error) {
+        console.warn('Could not restore the hardware model:', error);
+      }
+      // The C++ setter uses the shared catalog order, which is also the
+      // option order returned by hardwareModelOptions().
+      Module._gbb_set_hardware_model(hardwareModelPicker.selectedIndex);
+      hardwareModelPicker.disabled = false;
+    }
+
     var Module = {
       canvas,
       printErr: (...parts) => console.error(...parts),
@@ -541,6 +569,7 @@
       },
       onRuntimeInitialized() {
         openButton.disabled = false;
+        restoreHardwareModel();
         restorePalette();
         Module.gbbSetStatus('Ready. Choose or drop a Game Boy ROM.', false);
       }
@@ -834,6 +863,20 @@
         localStorage.setItem('gbb-video-mode', videoPicker.value);
       } catch (error) {
         console.warn('Could not save the video pipeline:', error);
+      }
+      canvas.focus();
+    });
+    hardwareModelPicker.addEventListener('change', () => {
+      Module._gbb_set_hardware_model(hardwareModelPicker.selectedIndex);
+      try {
+        localStorage.setItem('gbb-hardware-model', hardwareModelPicker.value);
+      } catch (error) {
+        console.warn('Could not save the hardware model:', error);
+      }
+      if (currentRom) {
+        Module.gbbSetStatus(
+          `Hardware model set to ${hardwareModelPicker.options[hardwareModelPicker.selectedIndex].textContent}. Reload the ROM to apply it.`,
+          false);
       }
       canvas.focus();
     });
