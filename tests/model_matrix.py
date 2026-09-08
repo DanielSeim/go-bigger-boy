@@ -9,23 +9,70 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
 MODELS = ("dmg0", "dmg", "mgb", "sgb", "sgb2", "cgb0", "cgb-c", "cgb-e")
+ALL_MODELS = set(MODELS)
+DEFERRED_SUITES = {
+    "age-test-roms": "screenshot-driven AGE cases need a visual harness",
+    "same-suite": "interactive and revision-specific diagnostics need a suite harness",
+}
 
 
 def expected_models(suite: str, relative: str) -> Optional[Set[str]]:
     """Return models covered by upstream's hardware naming convention."""
-    name = relative.lower()
+    name = relative.lower().replace("\\", "/")
     if suite == "gbmicrotest":
-        return {"dmg0", "dmg", "mgb"}
-    if suite == "samesuite-apu":
-        return {"cgb-e"}
+        # GBMicrotest v7.0 documents DMG-CPU-08 (DMG CPU B/C) as its
+        # reference target.  `dmg` is the corresponding selectable profile;
+        # DMG-0 and MGB are deliberately reported as EXPECTED_FAIL.
+        return {"dmg"}
     if suite == "mooneye-wilbertpol":
-        # This suite is a DMG timing suite unless a CGB suffix is present.
-        return {"cgb0", "cgb-c", "cgb-e"} if "-c" in name else {"dmg0", "dmg", "mgb"}
+        # Mooneye's documented group suffixes are authoritative: G is
+        # DMG/MGB, S is SGB/SGB2, C is the CGB family, and GS combines G+S.
+        # A bare `-C` suffix denotes the CGB-C-era cases in this extension.
+        if re.search(r"(?:^|[/_.-])cgb(?:[/_.-]|$)", name):
+            return {"cgb0", "cgb-c", "cgb-e"}
+        if re.search(r"-c(?:[-_.]|$)", name):
+            return {"cgb-c"}
+        if "sgb2" in name:
+            return {"sgb2"}
+        if re.search(r"(?:^|[/_.-])sgb(?:[/_.-]|$)", name):
+            return {"sgb", "sgb2"}
+        if re.search(r"(?:^|[/_.-])mgb(?:[/_.-]|$)", name):
+            return {"mgb"}
+        if re.search(r"-gs(?:[-_.]|$)", name):
+            return {"dmg0", "dmg", "mgb", "sgb", "sgb2"}
+        if re.search(r"-g(?:[-_.]|$)", name):
+            return {"dmg0", "dmg", "mgb"}
+        if re.search(r"-s(?:[-_.]|$)", name):
+            return {"sgb", "sgb2"}
+        return ALL_MODELS
+    if suite == "mooneye":
+        # Follow the upstream group markers rather than assuming an
+        # unsuffixed ROM is DMG-only. The upstream README states that a model
+        # restriction is encoded in the filename; unsuffixed tests therefore
+        # remain applicable to every profile we expose.
+        if "cgb" in name:
+            return {"cgb0", "cgb-c", "cgb-e"}
+        if "sgb2" in name:
+            return {"sgb2"}
+        if re.search(r"(?:^|[/_.-])sgb(?:[/_.-]|$)", name):
+            return {"sgb", "sgb2"}
+        if "mgb" in name:
+            return {"mgb"}
+        if re.search(r"-gs(?:[-_.]|$)", name):
+            return {"dmg0", "dmg", "mgb", "sgb", "sgb2"}
+        if re.search(r"-g(?:[-_.]|$)", name):
+            return {"dmg0", "dmg", "mgb"}
+        if re.search(r"-s(?:[-_.]|$)", name):
+            return {"sgb", "sgb2"}
+        if re.search(r"-c(?:[-_.]|$)", name):
+            return {"cgb0", "cgb-c", "cgb-e"}
+        return ALL_MODELS
     for marker, models in (
         ("-dmg0", {"dmg0"}),
         ("-dmgabc", {"dmg0", "dmg", "mgb"}),
@@ -41,20 +88,22 @@ def expected_models(suite: str, relative: str) -> Optional[Set[str]]:
             return models
     if "dmgabcmgb" in name:
         return {"dmg", "mgb"}
-    # Unsuffixed deterministic ROMs are expected to run on the ordinary
-    # monochrome and CGB hardware families. SGB-specific behavior is marked
-    # explicitly by the upstream -S suffix.
-    return {"dmg0", "dmg", "mgb", "cgb0", "cgb-c", "cgb-e"}
+    # Do not infer applicability for an unknown suite. An explicit metadata
+    # entry can be added once its upstream hardware contract is reviewed.
+    return None
 
 
 def discover(rom_root: Path) -> List[Tuple[str, Path, str, int]]:
+    # Keep this list limited to suites whose completion/result protocol is
+    # implemented and verified by gbb_test_runner. AGE is primarily a
+    # screenshot suite and SameSuite contains interactive/APU experiments;
+    # treating either as a Fibonacci test produces false regressions. They
+    # remain documented as deferred until dedicated harnesses exist.
     suites = [
         ("mooneye", rom_root / "mooneye-test-suite", "mooneye", 20_000_000),
         ("gbmicrotest", rom_root / "gbmicrotest", "gbmicrotest", 5_000_000),
         ("mooneye-wilbertpol", rom_root / "mooneye-test-suite-wilbertpol",
          "mooneye-wilbertpol", 100_000_000),
-        ("age", rom_root / "age-test-roms", "mooneye", 100_000_000),
-        ("samesuite-nonapu", rom_root / "same-suite", "mooneye", 15_000_000),
     ]
     cases: List[Tuple[str, Path, str, int]] = []
     for suite, root, protocol, cycles in suites:
@@ -62,8 +111,6 @@ def discover(rom_root: Path) -> List[Tuple[str, Path, str, int]]:
             continue
         for rom in sorted(root.rglob("*.gb")):
             relative = rom.relative_to(rom_root).as_posix()
-            if suite == "samesuite-nonapu" and "/apu/" in f"/{relative}":
-                continue
             if suite == "mooneye-wilbertpol" and "/manual-only/" in f"/{relative}":
                 continue
             cases.append((suite, rom, protocol, cycles))
@@ -122,6 +169,9 @@ def main() -> int:
                          f"{detail.replace('|', '/')[:160]} |\n")
         output.write("\n## Summary\n\n")
         output.write(" ".join(f"{key}={value}" for key, value in counts.items()) + "\n")
+        output.write("\n## Deferred suites\n\n")
+        for suite, reason in DEFERRED_SUITES.items():
+            output.write(f"* `{suite}`: {reason}.\n")
         output.write("\n## Compact results\n\n")
         grouped: Dict[Tuple[str, str], List[Tuple[str, str]]] = {}
         for suite, relative, model, status, _ in rows:
