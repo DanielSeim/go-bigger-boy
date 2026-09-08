@@ -18,10 +18,10 @@ shared everywhere.
 
 ## Current status
 
-The current automated baseline passes **168/168 tests**: 167 ROM and
-framebuffer conformance cases, including **20/20 exact visual comparisons**,
-plus the core unit-test executable. See the [accuracy report](docs/accuracy.md)
-for the suite-by-suite breakdown.
+The current automated baseline passes **168/168 fixed tests** (ROM,
+framebuffer, and core contract cases). The pinned external bundle additionally
+adds machine-readable suites discovered at configure time. See the [accuracy
+report](docs/accuracy.md) for the suite-by-suite breakdown.
 
 - Cartridge loading and basic header parsing
 - Initial DMG memory map, including work RAM echo behavior
@@ -188,8 +188,11 @@ Run an individual acceptance-test ROM with a bounded cycle budget:
 
 The runner recognizes Mooneye's `LD B,B` result protocol and serial test output
 containing `Passed` or `Failed`, plus Blargg's `$A000` memory result protocol.
-Use `--protocol mooneye`, `--protocol serial`, or `--protocol blargg` to disable
-automatic protocol detection. Model-specific post-boot tests can select
+GBMicrotest's HRAM result protocol (`FF80`/`FF81`/`FF82`) is available through
+`--protocol gbmicrotest`. The wilbertpol extension uses its `0xED` completion
+opcode via `--protocol mooneye-wilbertpol`. Use `--protocol mooneye`,
+`--protocol serial`, or `--protocol blargg` to disable automatic protocol
+detection. Model-specific post-boot tests can select
 `--model dmg0`, `dmg`, `mgb`, `sgb`, `sgb2`, `cgb0`, `cgb-c`, or `cgb-e`.
 The historical `cgb` spelling remains accepted as the late CGB-E profile.
 
@@ -199,12 +202,14 @@ original DMG hardware's channel 3 retrigger corruption.
 The current headless CI accuracy gate passes all 75 Mooneye acceptance ROMs,
 all 6 applicable CGB misc ROMs, all 28 emulator-only mapper ROMs, 38 curated
 Blargg ROMs, and 20 exact Acid2/Scribbltests/Mealybug/Gambatte framebuffer
-comparisons; see the
+comparisons. The pinned bundle also contributes discovered GBMicrotest,
+Mooneye-wilbertpol, and SameSuite non-APU cases; see the
 [accuracy report](docs/accuracy.md) for details.
 
-To register the curated 143-ROM CI baseline locally, download and extract the
-`c-sp/game-boy-test-roms` v7.0 bundle, then set its root as the opt-in cache
-path. Test ROMs are deliberately not bundled or downloaded by the build:
+To register the pinned v7.0 bundle locally, download and extract
+`c-sp/game-boy-test-roms`, then set its root as the opt-in cache path. The
+machine-readable suites are discovered during configuration; test ROMs are
+deliberately not bundled or downloaded by the build:
 
 ```sh
 cmake -S . -B build-conformance \
@@ -212,6 +217,12 @@ cmake -S . -B build-conformance \
 cmake --build build-conformance
 ctest --test-dir build-conformance -L conformance --output-on-failure
 ```
+
+To generate the hardware-revision matrix report, add
+`-DGAMEBOY_ENABLE_MODEL_MATRIX=ON` to the configure command and run
+`ctest --test-dir build-conformance -L model-matrix --output-on-failure`.
+The report is written to `hardware-model-matrix.md`; it keeps reviewed
+`EXPECTED_FAIL`/`KNOWN_FAIL` outcomes separate from `REGRESSION` failures.
 
 The headless runner can also capture a deterministic framebuffer without SDL:
 
@@ -440,6 +451,13 @@ Its layout editor has separate portrait and landscape layouts. The D-pad is
 always moved as one control, while A, B, Select, and Start can be positioned
 individually beside or below the emulation screen. Positions are stored as
 normalized `touch.Portrait.*` and `touch.Landscape.*` coordinates.
+
+The desktop and Android settings pages also expose a **Hardware model**
+selector. `Automatic (cartridge)` preserves normal header-based selection;
+the explicit profiles are DMG-0, DMG-B/DMG, MGB, SGB, SGB2, CGB-0, CGB-C, and
+CGB-E. The choice is stored as `hardware.Model` in `settings.ini` and applies
+when the ROM is started again. The test runner accepts the same IDs through
+`--model`, so a result can be reproduced against a named hardware revision.
 
 Native desktop plug-ins are opt-in. Set `plugin.Discovery = true` in
 `settings.ini`, then add one or more repeated `plugin.Path = ...` entries for

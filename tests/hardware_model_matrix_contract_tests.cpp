@@ -171,12 +171,23 @@ void test_automatic_selection() {
           "automatic selection gives CGB-capable software priority over SGB");
 }
 
+void test_public_model_catalog() {
+    check(gameboy::selectable_hardware_models.size() == 9,
+          "public hardware model catalog includes automatic plus eight profiles");
+    check(gameboy::hardware_model_id(gameboy::HardwareModel::cgb_c) == "cgb-c" &&
+              gameboy::hardware_model_id(gameboy::HardwareModel::cgb_e) == "cgb-e",
+          "CGB revision IDs are stable for settings and runner reports");
+    check(gameboy::hardware_model_name(gameboy::HardwareModel::sgb2) == "SGB2",
+          "hardware model display names are stable");
+}
+
 } // namespace
 
 int main() {
     try {
         test_explicit_profiles();
         test_automatic_selection();
+        test_public_model_catalog();
     } catch (const std::exception& error) {
         std::cerr << "Unexpected exception: " << error.what() << '\n';
         return 1;

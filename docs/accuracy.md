@@ -13,12 +13,43 @@ bundle. GitHub Actions verifies the archive checksum before running any ROM.
 | Mooneye emulator-only | 28/28 | Complete MBC1, MBC2, and MBC5 mapper directories |
 | Blargg | 38/38 | CPU/timing baseline plus all 12 DMG and all 12 CGB sound ROMs |
 | Visual PPU | 21/21 | Acid2, Scribbltests, Mealybug, and Gambatte framebuffer comparisons |
-| Total CI gate | **168** | Every listed ROM must pass before a release can be published |
+| GBMicrotest | discovered at configure time | HRAM self-checking cycle-accuracy ROMs from the pinned v7.0 bundle |
+| Mooneye-wilbertpol | discovered at configure time | Extended Mooneye acceptance/misc/emulator-only ROMs (manual-only cases excluded) |
+| SameSuite non-APU | discovered at configure time | Mooneye-protocol edge-case ROMs; revision-sensitive APU remains opt-in |
+| Total CI gate | **168 + discovered suites** | Every registered case must pass before a release can be published |
 
 The acceptance figure covers every acceptance ROM in the pinned bundle. Tests with
 mutually exclusive boot-ROM expectations run under explicit DMG0, DMG/MGB,
 SGB, SGB2, CGB0, CGB-C, or CGB-E post-boot hardware profiles. Mooneye's two AGB-only
 misc ROMs are excluded because GBB does not emulate Game Boy Advance hardware.
+
+### Additional pinned-bundle suites
+
+The v7.0 archive is now treated as a source of test cases rather than only a
+collection of hand-maintained paths. CMake discovers every `.gb` in the
+machine-readable suites below, so a new ROM in the pinned archive cannot be
+silently omitted from CI:
+
+* **GBMicrotest** reports an observed byte, expected byte, and completion flag
+  in HRAM (`FF80`, `FF81`, and `FF82`). The headless runner exits immediately
+  with a diagnostic pass/fail result.
+* **AGE** self-checking ROMs are discovered automatically. Cases accompanied by
+  an upstream reference PNG are reserved for the visual harness instead of
+  being incorrectly evaluated as register-protocol tests.
+* **Mooneye-wilbertpol** uses the Fibonacci register result values with its
+  historical `0xED` completion opcode. Its `manual-only` screenshot case is
+  intentionally excluded until a framebuffer/input harness is available.
+* **SameSuite non-APU** uses the same Fibonacci protocol. SameSuite APU ROMs
+  remain an explicit research target because their expected behavior is tied
+  to a particular CGB revision.
+
+The upstream collection also contains visual or interactive suites (AGE
+screenshots, Bully, cgb-acid-hell, MBC3 Tester, rtc3test, TurtleTests, and
+parts of little-things-gb). Their ROMs and references remain documented by the
+bundle, but they are not registered as pass/fail CTest cases yet: each needs
+suite-specific frame timing, input scripting, or screenshot selection. This
+distinction prevents a timeout or an unreviewed screenshot from being reported
+as a core emulation failure.
 
 The `gameboy_hardware_model_matrix_contract` test complements the ROM suites by
 constructing each supported profile directly. It checks the post-boot CPU
@@ -30,7 +61,7 @@ analog clock tolerance, LCD response, DAC variation, or Game Boy Advance/Game
 Boy Player hardware.
 
 The revision matrix is intentionally explicit: `dmg0`, `dmg` (DMG-B), `mgb`,
-`cgb0`, `cgb-c`, and `cgb-e` are selectable in the test runner. The historical
+`sgb`, `sgb2`, `cgb0`, `cgb-c`, and `cgb-e` are selectable in the test runner. The historical
 `cgb` spelling remains an alias for `cgb-e` so existing scripts and save states
 keep their behavior. The CGB-C profile uses the early-revision APU and DIV
 phase rules, while CGB-E enables the late-revision envelope (NRx2 zombie-mode)
@@ -38,6 +69,18 @@ behavior. The focused APU contract covers the reviewed CGB-C/CGB-E envelope
 write mismatch; channel alignment, PCM register visibility, and noise LFSR
 startup remain covered by shared contracts until a reproducible revision-only
 mismatch is measured.
+
+For a full ROM-by-model run, configure with
+`-DGAMEBOY_ENABLE_MODEL_MATRIX=ON` and execute `ctest -L model-matrix`. The
+`hardware_model_matrix_report` test writes a Markdown table containing one
+row per ROM and model. Each row is classified as `PASS`, `EXPECTED_FAIL` (the
+ROM's documented hardware group excludes that model), `KNOWN_FAIL` (a reviewed
+limitation listed in `tests/model_expectations.json`), or `REGRESSION` (an
+unexpected failure). A ROM can therefore be reported in the compact form
+`same-suite/foo.gb CGB-C -> EXPECTED_FAIL; CGB-E -> PASS` without hiding the
+hardware-specific result. The matrix is opt-in because running every
+deterministic ROM eight times is substantially slower than the normal release
+gate.
 
 ## Super Game Boy baseline
 

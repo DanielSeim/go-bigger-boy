@@ -15,7 +15,14 @@
 
 namespace {
 
-enum class Protocol { automatic, mooneye, serial, blargg };
+enum class Protocol {
+    automatic,
+    mooneye,
+    mooneye_wilbertpol,
+    serial,
+    blargg,
+    gbmicrotest
+};
 
 struct Options {
     std::string rom_path;
@@ -30,7 +37,8 @@ struct Options {
 
 void usage() {
     std::cerr << "Usage: gbb_test_runner <rom.gb> "
-                 "[--max-cycles N] [--protocol auto|mooneye|serial|blargg] "
+                 "[--max-cycles N] [--protocol auto|mooneye|"
+                 "mooneye-wilbertpol|serial|blargg|gbmicrotest] "
                  "[--model auto|dmg0|dmg|mgb|sgb|sgb2|cgb0|cgb-c|cgb-e] "
                  "[--frames N --frame-output capture.ppm] "
                  "[--frame-on-ld-bb --frame-output capture.ppm] "
@@ -73,8 +81,12 @@ Options parse_options(const int argc, char** argv) {
             const std::string value = argv[++index];
             if (value == "auto") options.protocol = Protocol::automatic;
             else if (value == "mooneye") options.protocol = Protocol::mooneye;
+            else if (value == "mooneye-wilbertpol")
+                options.protocol = Protocol::mooneye_wilbertpol;
             else if (value == "serial") options.protocol = Protocol::serial;
             else if (value == "blargg") options.protocol = Protocol::blargg;
+            else if (value == "gbmicrotest")
+                options.protocol = Protocol::gbmicrotest;
             else throw std::invalid_argument("unknown protocol: " + value);
         } else if (argument == "--model" && index + 1 < argc) {
             options.model = parse_model(argv[++index]);
@@ -180,6 +192,14 @@ bool has_blargg_signature(const gameboy::MemoryBus& bus) {
            bus.read8(0xA003) == 0x61;
 }
 
+// GBMicrotest publishes its result in HRAM so a harness does not need to
+// scrape the test's display. FF80 is the observed value, FF81 is the expected
+// value, and FF82 is the completion flag (0x01 pass, 0xFF fail).
+bool has_gbmicrotest_result(const gameboy::MemoryBus& bus) {
+    const auto status = bus.read8(0xFF82);
+    return status == 0x01 || status == 0xFF;
+}
+
 std::string blargg_output(const gameboy::MemoryBus& bus) {
     std::string output;
     for (std::uint16_t address = 0xA004; address < 0xC000; ++address) {
@@ -265,9 +285,12 @@ int main(int argc, char** argv) {
             const bool watches_mooneye =
                 !captures_frame &&
                 (options.protocol == Protocol::mooneye ||
+                 options.protocol == Protocol::mooneye_wilbertpol ||
                  (options.protocol == Protocol::automatic && !saw_blargg));
+            const auto mooneye_breakpoint =
+                options.protocol == Protocol::mooneye_wilbertpol ? 0xED : 0x40;
             if (watches_mooneye &&
-                emulator.bus().read8(registers.pc) == 0x40) { // LD B,B
+                emulator.bus().read8(registers.pc) == mooneye_breakpoint) {
                 const auto automatic_failure_signature =
                     registers.b == 0x42 && registers.c == 0x42 &&
                     registers.d == 0x42 && registers.e == 0x42 &&
@@ -277,6 +300,7 @@ int main(int argc, char** argv) {
                     return EXIT_SUCCESS;
                 }
                 if (options.protocol == Protocol::mooneye ||
+                    options.protocol == Protocol::mooneye_wilbertpol ||
                     automatic_failure_signature) {
                     std::cerr << "FAIL (Mooneye result registers)\n";
                     print_state(emulator.cpu());
@@ -309,6 +333,27 @@ int main(int argc, char** argv) {
             if (!bytes.empty()) {
                 serial_output += bytes;
                 std::cout << bytes << std::flush;
+            }
+
+            if (options.protocol == Protocol::gbmicrotest &&
+                has_gbmicrotest_result(emulator.bus())) {
+                const auto result = emulator.bus().read8(0xFF80);
+                const auto expected = emulator.bus().read8(0xFF81);
+                const auto status = emulator.bus().read8(0xFF82);
+                if (status == 0x01 && result == expected) {
+                    std::cout << "PASS (GBMicrotest) result=0x" << std::hex
+                              << static_cast<unsigned>(result) << std::dec << '\n';
+                    return EXIT_SUCCESS;
+                }
+                std::cerr << "FAIL (GBMicrotest status=0x" << std::hex
+                          << static_cast<unsigned>(status)
+                          << " result=0x" << static_cast<unsigned>(result)
+                          << " expected=0x" << static_cast<unsigned>(expected)
+                          << std::dec << ")\n";
+                print_state(emulator.cpu());
+                print_recent_pcs(recent_pcs, recent_pc_next, recent_pc_count);
+                print_hram_head(emulator.bus());
+                return EXIT_FAILURE;
             }
 
             const bool watches_serial =
