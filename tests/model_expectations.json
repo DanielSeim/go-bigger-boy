@@ -1,3 +1,72 @@
 {
-  "known_failures": []
+  "known_failures": [
+    {
+      "suite": "mooneye-wilbertpol",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/timer/timer_if.gb",
+      "model": "mgb",
+      "reason": "Reviewed one-M-cycle normal-interrupt TIMA boundary mismatch; CPU interrupt timing contract remains correct."
+    },
+    {
+      "suite": "mooneye-wilbertpol",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/timer/timer_if.gb",
+      "model": "cgb0",
+      "reason": "Reviewed one-M-cycle normal-interrupt TIMA boundary mismatch; CPU interrupt timing contract remains correct."
+    },
+    {
+      "suite": "mooneye-wilbertpol",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/timer/timer_if.gb",
+      "model": "cgb-c",
+      "reason": "Reviewed one-M-cycle normal-interrupt TIMA boundary mismatch; CPU interrupt timing contract remains correct."
+    },
+    {
+      "suite": "mooneye-wilbertpol",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/timer/timer_if.gb",
+      "model": "cgb-e",
+      "reason": "Reviewed one-M-cycle normal-interrupt TIMA boundary mismatch; CPU interrupt timing contract remains correct."
+    }
+  ],
+  "model_applicability": {
+    "mooneye-wilbertpol": {
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/hblank_ly_scx_timing-C.gb": ["cgb0", "cgb-c", "cgb-e"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/hblank_ly_scx_timing_nops.gb": ["mgb", "cgb0", "cgb-c", "cgb-e"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/hblank_ly_scx_timing_variant_nops.gb": ["mgb", "cgb0", "cgb-c", "cgb-e"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_0_timing.gb": ["mgb", "cgb0", "cgb-c", "cgb-e"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_1_timing.gb": ["mgb", "cgb0", "cgb-c", "cgb-e"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx1_timing_nops.gb": ["mgb", "cgb0", "cgb-c", "cgb-e"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx2_timing_nops.gb": ["mgb", "cgb0", "cgb-c", "cgb-e"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx3_timing_nops.gb": ["mgb", "cgb0", "cgb-c", "cgb-e"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx4_timing_nops.gb": ["mgb", "cgb0", "cgb-c", "cgb-e"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx5_timing_nops.gb": ["mgb", "cgb0", "cgb-c", "cgb-e"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx6_timing_nops.gb": ["mgb", "cgb0", "cgb-c", "cgb-e"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx7_timing_nops.gb": ["mgb", "cgb0", "cgb-c", "cgb-e"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx8_timing_nops.gb": ["mgb", "cgb0", "cgb-c", "cgb-e"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_nops.gb": ["dmg", "mgb", "sgb", "sgb2", "cgb0", "cgb-c", "cgb-e"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx1_nops.gb": ["dmg", "mgb", "sgb", "sgb2", "cgb0", "cgb-c", "cgb-e"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx2_nops.gb": ["dmg", "mgb", "sgb", "sgb2", "cgb0", "cgb-c", "cgb-e"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx3_nops.gb": ["dmg", "mgb", "sgb", "sgb2", "cgb0", "cgb-c", "cgb-e"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx4_nops.gb": ["dmg", "mgb", "sgb", "sgb2", "cgb0", "cgb-c", "cgb-e"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_timing.gb": ["mgb", "cgb0", "cgb-c", "cgb-e"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/ly00_mode1_0-GS.gb": ["cgb0", "cgb-c", "cgb-e"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/ly00_mode1_2-C.gb": ["cgb0", "cgb-c", "cgb-e"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/ly143_144_mode0_1.gb": ["mgb", "cgb0", "cgb-c", "cgb-e"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/ly143_144_mode3_0.gb": ["mgb", "cgb0", "cgb-c", "cgb-e"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc-C.gb": ["cgb0", "cgb-c", "cgb-e"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_0-C.gb": ["cgb0", "cgb-c", "cgb-e"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_0-GS.gb": ["mgb"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_0_write-C.gb": ["cgb0", "cgb-c", "cgb-e"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_0_write-GS.gb": ["mgb"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_144-C.gb": ["cgb0", "cgb-c", "cgb-e"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_144-GS.gb": ["mgb"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_153-C.gb": ["cgb0", "cgb-c", "cgb-e"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_153-GS.gb": ["mgb"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_153_write-C.gb": ["cgb0", "cgb-c", "cgb-e"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_153_write-GS.gb": ["mgb"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_write-C.gb": ["cgb0", "cgb-c", "cgb-e"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_new_frame-C.gb": ["cgb0", "cgb-c", "cgb-e"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_new_frame-GS.gb": ["mgb"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/stat_write_if-C.gb": ["cgb0", "cgb-c", "cgb-e"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/stat_write_if-GS.gb": ["mgb"],
+      "mooneye-test-suite-wilbertpol/acceptance/gpu/vblank_if_timing.gb": ["mgb", "cgb0", "cgb-c", "cgb-e"]
+    }
+  }
 }

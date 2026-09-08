@@ -24,9 +24,19 @@ DEFERRED_SUITES = {
 }
 
 
-def expected_models(suite: str, relative: str) -> Optional[Set[str]]:
-    """Return models covered by upstream's hardware naming convention."""
+def expected_models(
+        suite: str, relative: str,
+        applicability: Optional[Dict[str, Dict[str, List[str]]]] = None,
+) -> Optional[Set[str]]:
+    """Return models covered by the reviewed upstream hardware contract."""
     name = relative.lower().replace("\\", "/")
+    # Some upstream fixtures have no model suffix because their hardware
+    # scope is recorded in the source comment instead.  Keep that reviewed
+    # scope in repository metadata rather than inferring applicability from a
+    # filename and accidentally reporting an untested profile as a regression.
+    reviewed = (applicability or {}).get(suite, {}).get(relative)
+    if reviewed is not None:
+        return set(reviewed)
     if suite == "gbmicrotest":
         # GBMicrotest v7.0 documents DMG-CPU-08 (DMG CPU B/C) as its
         # reference target.  `dmg` is the corresponding selectable profile;
@@ -36,6 +46,12 @@ def expected_models(suite: str, relative: str) -> Optional[Set[str]]:
         # Mooneye's documented group suffixes are authoritative: G is
         # DMG/MGB, S is SGB/SGB2, C is the CGB family, and GS combines G+S.
         # A bare `-C` suffix is the CGB group (not the CGB-C revision).
+        if name.endswith("/acceptance/timer/timer_if.gb"):
+            # Wilbert Pol's fixture documents results only for MGB, CGB, and
+            # AGS. AGS is outside this matrix; keep the represented MGB/CGB
+            # profiles applicable and report unverified DMG/SGB profiles as
+            # EXPECTED_FAIL instead of inventing regressions.
+            return {"mgb", "cgb0", "cgb-c", "cgb-e"}
         if re.search(r"-dmg0(?:[-_.]|$)", name):
             return {"dmg0"}
         if "dmgabcmgb" in name:
@@ -167,7 +183,22 @@ def discover(rom_root: Path) -> List[Tuple[str, Path, str, int]]:
                 # cartridge entry point, so running them here only reports a
                 # harness limitation as a core regression.
                 continue
-            cases.append((suite, rom, protocol, cycles))
+            # The RAMG boundary probes deliberately walk every address in the
+            # mapper's control range (0x0000-0x1fff for MBC1 and
+            # 0x0000-0x3fff for MBC2).  They are machine-readable, but the
+            # generic 20M-cycle budget expires before the final `quit_ok`
+            # even when the mapper is correct.  Give only these exhaustive
+            # probes the budget they require; keeping the normal budget for
+            # the rest of the suite preserves fast feedback and timeout
+            # diagnostics.
+            case_cycles = cycles
+            if (suite == "mooneye" and
+                    suite_relative in {
+                        "emulator-only/mbc1/bits_ramg.gb",
+                        "emulator-only/mbc2/bits_ramg.gb",
+                    }):
+                case_cycles = 100_000_000
+            cases.append((suite, rom, protocol, case_cycles))
     return cases
 
 
@@ -207,8 +238,9 @@ def main() -> int:
                         default=Path(__file__).with_name("model_expectations.json"))
     args = parser.parse_args()
     metadata = json.loads(args.expectations.read_text()) if args.expectations.exists() else {}
-    known = {(item["suite"], item["path"], item["model"])
-             for item in metadata.get("known_failures", [])}
+    applicability = metadata.get("model_applicability", {})
+    known_items = {(item["suite"], item["path"], item["model"]): item
+                   for item in metadata.get("known_failures", [])}
     if args.jobs < 1:
         parser.error("--jobs must be positive")
     rows: List[Tuple[str, str, str, str, str]] = []
@@ -221,16 +253,20 @@ def main() -> int:
     with ThreadPoolExecutor(max_workers=args.jobs) as executor:
         results = executor.map(run_case_command, tasks)
         for suite, relative, model, passed, detail in results:
-            applicable = expected_models(suite, relative)
+            applicable = expected_models(suite, relative, applicability)
             if passed:
                 status = "PASS"
-            elif (suite, relative, model) in known:
+            elif (suite, relative, model) in known_items:
                 status = "KNOWN_FAIL"
             elif applicable is not None and model not in applicable:
                 status = "EXPECTED_FAIL"
             else:
                 status = "REGRESSION"
                 regressions += 1
+            if status == "KNOWN_FAIL":
+                reason = known_items[(suite, relative, model)].get(
+                    "reason", "reviewed limitation")
+                detail = f"{detail}; {reason}" if detail else reason
             rows.append((suite, relative, model.upper().replace("-", "-"), status, detail))
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
