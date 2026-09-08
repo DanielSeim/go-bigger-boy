@@ -31,7 +31,8 @@ machine-readable `.gb` in the supported suite directories below, so a new ROM
 cannot be silently omitted from the opt-in matrix. Upstream helper/manual
 directories are intentionally excluded, as are GBMicrotest power-on fixtures
 until the emulator can run an actual boot ROM; those images do not implement
-the result protocol from a post-boot run. Individual discovered CTest cases
+the result protocol from a post-boot run. Mooneye `boot_*` and `boot-*` images
+are excluded for the same reason. Individual discovered CTest cases
 are available only with `-DGAMEBOY_ENABLE_DISCOVERED_CONFORMANCE=ON` and are
 not part of the normal release gate:
 

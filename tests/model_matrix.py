@@ -161,6 +161,12 @@ def discover(rom_root: Path) -> List[Tuple[str, Path, str, int]]:
                 # intentionally starts from the documented post-boot profile;
                 # keep them deferred until a boot-ROM harness is available.
                 continue
+            if suite in {"mooneye", "mooneye-wilbertpol"} and rom.stem.lower().startswith(("boot_", "boot-")):
+                # These fixtures validate the boot ROM's own hand-off state.
+                # The matrix deliberately starts at the documented post-boot
+                # cartridge entry point, so running them here only reports a
+                # harness limitation as a core regression.
+                continue
             cases.append((suite, rom, protocol, cycles))
     return cases
 
