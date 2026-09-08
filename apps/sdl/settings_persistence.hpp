@@ -3,6 +3,7 @@
 #include "settings_model.hpp"
 
 #include "gameboy/video_pipeline.hpp"
+#include "gameboy/hardware_model.hpp"
 #include "gbb/plugin_discovery.hpp"
 
 #include <filesystem>
@@ -13,6 +14,7 @@
 struct AppSettings {
     InputBindings bindings;
     std::size_t palette{};
+    gameboy::HardwareModel hardware_model{gameboy::HardwareModel::automatic};
     gameboy::VideoMode video_mode{gameboy::default_video_mode};
     bool link_diagnostics{};
     bool plugin_discovery{};
@@ -53,7 +55,8 @@ void write_portable_settings(const std::filesystem::path& preference_directory,
 
 void append_missing_portable_settings(
     const std::filesystem::path& path, const AppSettings& settings,
-    bool has_palette, const std::array<bool, 8>& has_keyboard,
+    bool has_palette, bool has_hardware_model,
+    const std::array<bool, 8>& has_keyboard,
     const std::array<bool, 8>& has_gamepad,
     const std::array<bool, shortcut_names.size()>& has_shortcuts,
     bool has_video_mode, bool has_link_diagnostics, bool has_touch_scale,
@@ -98,10 +101,14 @@ void save_touch_control_layout(
     const std::filesystem::path& directory);
 [[nodiscard]] std::size_t load_display_palette(
     const std::filesystem::path& directory);
+[[nodiscard]] gameboy::HardwareModel load_hardware_model(
+    const std::filesystem::path& directory);
 void save_bindings(const std::filesystem::path& directory,
                    const InputBindings& bindings);
 void save_display_palette(const std::filesystem::path& directory,
                           std::size_t palette);
+void save_hardware_model(const std::filesystem::path& directory,
+                         gameboy::HardwareModel model);
 
 
 

@@ -1,10 +1,12 @@
 #pragma once
 
 #include "gbb/core.hpp"
+#include "gameboy/hardware_model.hpp"
 
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -15,6 +17,10 @@ class PluginLoader;
 struct CoreLoadOptions {
     std::filesystem::path source_path;
     std::filesystem::path persistence_path;
+    // String form keeps the common core/plugin seam independent of the
+    // built-in Game Boy enum. Built-in cores interpret this value; plugins
+    // may ignore it or expose their own model vocabulary.
+    std::string hardware_model{"auto"};
 };
 
 struct CoreProbeResult {

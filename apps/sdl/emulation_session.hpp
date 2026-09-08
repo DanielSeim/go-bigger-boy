@@ -25,7 +25,8 @@ void load_rom(const std::string& path,
               const gbb::CoreRegistry& registry,
               const gameboy::DisplayPalette& palette,
               SdlResources& sdl,
-              const std::filesystem::path& preference_path);
+              const std::filesystem::path& preference_path,
+              std::string hardware_model = "auto");
 
 #ifndef __ANDROID__
 void start_link_trace(const std::filesystem::path& preference_path,

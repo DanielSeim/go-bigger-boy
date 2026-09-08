@@ -1050,6 +1050,7 @@ int main(int argc, char** argv) {
             }
         }
         const auto app_settings = load_app_settings(preference_path);
+        auto hardware_model = app_settings.hardware_model;
         RemoteLinkOptions remote_link_options;
         remote_link_options.transport = app_settings.link_transport;
         remote_link_options.host = app_settings.link_remote_host;
@@ -1326,6 +1327,7 @@ int main(int argc, char** argv) {
                          : gbb::CoreCapability::none,
                     display_palette,
                     sdl.video_mode,
+                    hardware_model,
                     dashboard_bindings, dashboard_actions,
                     dashboard_link_settings,
                     plugin_options, plugin_catalog,
@@ -1360,6 +1362,14 @@ int main(int argc, char** argv) {
                         show_error(sdl.window,
                                    "Could not configure the selected video pipeline.");
                     }
+                }
+                if (result.hardware_model_changed) {
+                    hardware_model = result.hardware_model;
+                    auto settings = load_app_settings(preference_path);
+                    settings.hardware_model = hardware_model;
+                    write_portable_settings(preference_path, settings);
+                    show_error(sdl.window,
+                               "Hardware model saved. Restart the ROM to apply it.");
                 }
                 if (result.voxel_profile_changed) {
                     sdl.voxel_profile_loaded = false;
@@ -1698,10 +1708,16 @@ int main(int argc, char** argv) {
 #endif
                     const bool reopening_current =
                         emulator && requested_rom == current_rom;
+                    // Settings can be changed from the native Android
+                    // dashboard while the SDL loop is paused. Read the
+                    // selected profile at the actual construction boundary
+                    // so the next ROM launch always uses the latest choice.
+                    hardware_model = load_hardware_model(preference_path);
                     load_rom(requested_rom, core,
                              core_registry,
                              gameboy::display_palettes[display_palette], sdl,
-                             preference_path);
+                             preference_path,
+                             std::string{gameboy::hardware_model_id(hardware_model)});
                     emulator = gbb::gameboy_emulator(core.get());
                     services = {core.get(), emulator};
                     sdl.camera.close();

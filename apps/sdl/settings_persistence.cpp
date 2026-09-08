@@ -65,7 +65,8 @@ SDL_GamepadButton gamepad_button_from_setting(const std::string& value) {
 
 void append_missing_portable_settings(
     const std::filesystem::path& path, const AppSettings& settings,
-    const bool has_palette, const std::array<bool, 8>& has_keyboard,
+    const bool has_palette, const bool has_hardware_model,
+    const std::array<bool, 8>& has_keyboard,
     const std::array<bool, 8>& has_gamepad,
     const std::array<bool, shortcut_names.size()>& has_shortcuts,
     const bool has_video_mode, const bool has_link_diagnostics,
@@ -78,7 +79,7 @@ void append_missing_portable_settings(
     const bool has_plugin_allow_capability,
     const std::array<bool, touch_layout_count * touch_control_count>&
         has_touch_positions) {
-    const auto complete = has_palette &&
+    const auto complete = has_palette && has_hardware_model &&
         std::all_of(has_keyboard.begin(), has_keyboard.end(),
                     [](const bool value) { return value; }) &&
         std::all_of(has_gamepad.begin(), has_gamepad.end(),
@@ -103,6 +104,10 @@ void append_missing_portable_settings(
     if (!has_palette) {
         output << "palette = "
                << gameboy::display_palettes[settings.palette].id << '\n';
+    }
+    if (!has_hardware_model) {
+        output << "hardware.Model = "
+               << gameboy::hardware_model_id(settings.hardware_model) << '\n';
     }
     if (!has_video_mode) {
         output << "video.Mode = "
@@ -225,6 +230,8 @@ void write_portable_settings(const std::filesystem::path& preference_directory,
               "RFCOMM and the configured service UUID/address.\n\n"
               "palette = "
            << gameboy::display_palettes[settings.palette].id << "\n"
+              "hardware.Model = "
+           << gameboy::hardware_model_id(settings.hardware_model) << "\n"
               "video.Mode = "
            << gameboy::video_mode_info(settings.video_mode).id << "\n"
               "link.Diagnostics = "
@@ -437,6 +444,7 @@ AppSettings load_portable_settings(
     std::array<float, 16> legacy_touch_positions{};
     std::array<bool, 8> has_legacy_touch_positions{};
     bool has_palette = false;
+    bool has_hardware_model = false;
     bool has_video_mode = false;
     bool has_link_diagnostics = false;
     bool has_plugin_discovery = false;
@@ -470,6 +478,17 @@ AppSettings load_portable_settings(
             if (found != gameboy::display_palettes.end()) {
                 settings.palette = static_cast<std::size_t>(
                     found - gameboy::display_palettes.begin());
+            }
+            continue;
+        }
+        if (key == "hardware.Model") {
+            has_hardware_model = true;
+            settings.hardware_model = gameboy::HardwareModel::automatic;
+            for (const auto candidate : gameboy::concrete_hardware_models) {
+                if (value == gameboy::hardware_model_id(candidate)) {
+                    settings.hardware_model = candidate;
+                    break;
+                }
             }
             continue;
         }
@@ -739,6 +758,7 @@ AppSettings load_portable_settings(
     }
     settings.touch.positions = loaded_touch_positions;
     append_missing_portable_settings(path, settings, has_palette,
+                                     has_hardware_model,
                                      has_keyboard, has_gamepad, has_shortcuts,
                                      has_video_mode, has_link_diagnostics,
                                      has_touch_scale, has_touch_opacity,
@@ -895,6 +915,11 @@ std::size_t load_display_palette(const std::filesystem::path& directory) {
     return load_app_settings(directory).palette;
 }
 
+gameboy::HardwareModel load_hardware_model(
+    const std::filesystem::path& directory) {
+    return load_app_settings(directory).hardware_model;
+}
+
 void save_bindings(const std::filesystem::path& directory,
                    const InputBindings& bindings) {
     save_app_settings(directory, bindings, load_display_palette(directory));
@@ -903,4 +928,11 @@ void save_bindings(const std::filesystem::path& directory,
 void save_display_palette(const std::filesystem::path& directory,
                           const std::size_t palette) {
     save_app_settings(directory, load_bindings(directory), palette);
+}
+
+void save_hardware_model(const std::filesystem::path& directory,
+                         const gameboy::HardwareModel model) {
+    auto settings = load_app_settings(directory);
+    settings.hardware_model = model;
+    write_portable_settings(directory, settings);
 }

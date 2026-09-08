@@ -46,6 +46,14 @@ final class SettingsScreen {
             "nearest", "bilinear", "integer", "lcd", "voxel", "voxel_shape",
             "voxel_popup"
     };
+    private static final String[] HARDWARE_MODEL_NAMES = {
+            "Automatic (cartridge)", "DMG-0", "DMG-B / DMG", "MGB",
+            "SGB", "SGB2", "CGB-0", "CGB-C", "CGB-E"
+    };
+    private static final String[] HARDWARE_MODEL_IDS = {
+            "auto", "dmg0", "dmg", "mgb", "sgb", "sgb2", "cgb0",
+            "cgb-c", "cgb-e"
+    };
     private static final String[] MENU_POSITION_NAMES = {
             "Top left", "Top right"
     };
@@ -95,6 +103,24 @@ final class SettingsScreen {
             @Override public void onNothingSelected(AdapterView<?> parent) {}
         });
         display.addView(video, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        display.addView(settingLabel("Hardware model"));
+        final Spinner hardware = new Spinner(activity);
+        hardware.setAdapter(new ArrayAdapter<>(activity,
+                android.R.layout.simple_spinner_dropdown_item,
+                HARDWARE_MODEL_NAMES));
+        hardware.setSelection(currentHardwareModel());
+        hardware.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view,
+                                       int position, long id) {
+                saveHardwareModel(position);
+            }
+            @Override public void onNothingSelected(AdapterView<?> parent) {}
+        });
+        display.addView(hardware, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -598,6 +624,33 @@ final class SettingsScreen {
                     VIDEO_MODE_IDS[position]);
         } catch (Exception error) {
             Toast.makeText(activity, "Could not save video setting",
+                    Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private int currentHardwareModel() {
+        try {
+            final String current = LibraryActivity.nativeHardwareModel(
+                    activity.getFilesDir().getAbsolutePath());
+            for (int index = 0; index < HARDWARE_MODEL_IDS.length; ++index) {
+                if (HARDWARE_MODEL_IDS[index].equals(current)) return index;
+            }
+        } catch (Exception ignored) {
+        }
+        return 0;
+    }
+
+    private void saveHardwareModel(int position) {
+        if (position < 0 || position >= HARDWARE_MODEL_IDS.length) return;
+        try {
+            LibraryActivity.nativeSetHardwareModel(
+                    activity.getFilesDir().getAbsolutePath(),
+                    HARDWARE_MODEL_IDS[position]);
+            Toast.makeText(activity,
+                    "Hardware model applies when the ROM is started again",
+                    Toast.LENGTH_SHORT).show();
+        } catch (Exception error) {
+            Toast.makeText(activity, "Could not save hardware model",
                     Toast.LENGTH_SHORT).show();
         }
     }

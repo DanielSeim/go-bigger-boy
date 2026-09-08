@@ -17,6 +17,7 @@
 #include <limits>
 #include <mutex>
 #include <sstream>
+#include <string_view>
 #include <utility>
 
 namespace gbb::sdl {
@@ -492,6 +493,39 @@ Java_com_danielseim_gbb_LibraryActivity_nativeSetVideoMode(
     if (raw_directory != nullptr) {
         environment->ReleaseStringUTFChars(directory, raw_directory);
     }
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_danielseim_gbb_LibraryActivity_nativeHardwareModel(
+    JNIEnv* environment, jclass, jstring directory) {
+    const auto* raw_directory =
+        environment->GetStringUTFChars(directory, nullptr);
+    if (raw_directory == nullptr) return nullptr;
+    const auto model = load_hardware_model(std::filesystem::u8path(raw_directory));
+    environment->ReleaseStringUTFChars(directory, raw_directory);
+    return environment->NewStringUTF(std::string{gameboy::hardware_model_id(model)}.c_str());
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_danielseim_gbb_LibraryActivity_nativeSetHardwareModel(
+    JNIEnv* environment, jclass, jstring directory, jstring model) {
+    const auto* raw_directory =
+        environment->GetStringUTFChars(directory, nullptr);
+    const auto* raw_model = model == nullptr
+                                ? nullptr
+                                : environment->GetStringUTFChars(model, nullptr);
+    if (raw_directory != nullptr && raw_model != nullptr) {
+        gameboy::HardwareModel selected = gameboy::HardwareModel::automatic;
+        for (const auto candidate : gameboy::selectable_hardware_models) {
+            if (std::string_view{raw_model} == gameboy::hardware_model_id(candidate)) {
+                selected = candidate;
+                break;
+            }
+        }
+        save_hardware_model(std::filesystem::u8path(raw_directory), selected);
+    }
+    if (raw_model != nullptr) environment->ReleaseStringUTFChars(model, raw_model);
+    if (raw_directory != nullptr) environment->ReleaseStringUTFChars(directory, raw_directory);
 }
 
 extern "C" JNIEXPORT void JNICALL

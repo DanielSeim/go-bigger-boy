@@ -57,7 +57,8 @@ void load_rom(const std::string& path,
               std::unique_ptr<gbb::EmulatorCore>& core,
               const gbb::CoreRegistry& registry,
               const gameboy::DisplayPalette& palette, SdlResources& sdl,
-              const std::filesystem::path& preference_path) {
+              const std::filesystem::path& preference_path,
+              std::string hardware_model) {
 #ifdef __ANDROID__
     std::size_t byte_count{};
     void* loaded = SDL_LoadFile(path.c_str(), &byte_count);
@@ -73,6 +74,7 @@ void load_rom(const std::string& path,
     // through the core registry with that path applied.
     auto metadata = registry.create(bytes);
     gbb::CoreLoadOptions options;
+    options.hardware_model = std::move(hardware_model);
     if (metadata->descriptor().has_battery && !preference_path.empty()) {
         const auto save_directory = preference_path / "saves";
         std::filesystem::create_directories(save_directory);
@@ -84,7 +86,10 @@ void load_rom(const std::string& path,
     auto replacement = registry.create(std::move(bytes), options);
 #else
     static_cast<void>(preference_path);
-    auto replacement = registry.create_from_file(std::filesystem::u8path(path));
+    gbb::CoreLoadOptions options;
+    options.hardware_model = std::move(hardware_model);
+    auto replacement = registry.create_from_file(std::filesystem::u8path(path),
+                                                 options);
 #endif
     if (gbb::has_capability(replacement->descriptor().capabilities,
                             gbb::CoreCapability::printer)) {
@@ -133,9 +138,11 @@ void reset_pokemon_link_handshake(gameboy::Emulator& emulator) {
 
 #ifndef __ANDROID__
 std::unique_ptr<gameboy::Emulator> load_link_player(
-    const std::string& path, const gameboy::DisplayPalette& palette) {
+    const std::string& path, const gameboy::DisplayPalette& palette,
+    const gameboy::HardwareModel model) {
     auto player = std::make_unique<gameboy::Emulator>(
-        gameboy::Cartridge::from_file(std::filesystem::u8path(path)));
+        gameboy::Cartridge::from_file(std::filesystem::u8path(path)),
+        model);
     player->bus().connect_printer();
     player->set_dmg_compatibility_colors(palette.cgb_compatibility);
     return player;
@@ -497,7 +504,7 @@ void start_local_link_session(
     const std::filesystem::path& preference_path,
     const bool link_diagnostics) {
     if (path.empty()) throw std::runtime_error("No ROM is currently loaded.");
-    auto replacement = load_link_player(path, palette);
+    auto replacement = load_link_player(path, palette, first.hardware_model());
     // A second console must have its own battery image. Sharing the primary
     // .sav path gives both Pokémon instances the same trainer identity and
     // causes link trading/battles to reject the peer (and lets the last flush

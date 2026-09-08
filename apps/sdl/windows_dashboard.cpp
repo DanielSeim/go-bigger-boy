@@ -51,6 +51,7 @@ constexpr int id_resume = 105;
 constexpr int id_palette = 107;
 constexpr int id_remove = 108;
 constexpr int id_video = 109;
+constexpr int id_hardware_model = 130;
 constexpr int id_gameboy_background = 110;
 constexpr int id_reset_controls = 111;
 constexpr int id_shortcuts = 112;
@@ -174,6 +175,8 @@ struct State {
     HWND palette_label{};
     HWND video_label{};
     HWND video{};
+    HWND hardware_model{};
+    HWND hardware_model_label{};
     HWND controls_label{};
     HWND controls_instruction{};
     HWND actions_label{};
@@ -967,6 +970,8 @@ void show_page(State& state, const State::Page page) {
     ShowWindow(state.palette, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.video_label, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.video, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.hardware_model_label, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.hardware_model, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.controls_label, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.controls_instruction, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.actions_label, settings ? SW_SHOW : SW_HIDE);
@@ -1109,6 +1114,8 @@ void layout_dashboard(State& state) {
     place_child(state.palette, 154, 240, 290, 26, offset);
     place_child(state.video_label, 32, 275, 110, 26, offset);
     place_child(state.video, 154, 270, 290, 26, offset);
+    place_child(state.hardware_model_label, 32, 305, 110, 26, offset);
+    place_child(state.hardware_model, 154, 300, 290, 26, offset);
     place_child(state.controls_label, 510, 200, 240, 30, offset);
     place_child(state.controls_instruction, 510, 238, 420, 26, offset);
     place_child(state.gameboy_background, 32, 310, 916, 268, offset);
@@ -1473,6 +1480,17 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                     state->result.video_mode = gameboy::video_modes[
                         static_cast<std::size_t>(selected)].mode;
                     state->result.video_mode_changed = true;
+                }
+            }
+            return 0;
+        case id_hardware_model:
+            if (HIWORD(wparam) == CBN_SELCHANGE) {
+                const auto selected = SendMessageW(state->hardware_model,
+                                                   CB_GETCURSEL, 0, 0);
+                if (selected >= 0 && selected < static_cast<LRESULT>(gameboy::selectable_hardware_models.size())) {
+                    state->result.hardware_model = gameboy::selectable_hardware_models[
+                        static_cast<std::size_t>(selected)];
+                    state->result.hardware_model_changed = true;
                 }
             }
             return 0;
@@ -2085,6 +2103,7 @@ DashboardResult show_windows_dashboard(
     const std::uint64_t current_fingerprint,
     const gbb::CoreCapability capabilities,
     const std::size_t palette, const gameboy::VideoMode video_mode,
+    const gameboy::HardwareModel hardware_model,
     const KeyboardBindings& keyboard_bindings,
     const ActionBindings& action_bindings,
     const DashboardLinkSettings& link_settings,
@@ -2127,6 +2146,7 @@ DashboardResult show_windows_dashboard(
                                                    current_fingerprint);
     state.result.palette = palette;
     state.result.video_mode = video_mode;
+    state.result.hardware_model = hardware_model;
     state.result.keyboard_bindings = keyboard_bindings;
     state.result.action_bindings = action_bindings;
     state.result.link_settings = link_settings;
@@ -2334,6 +2354,23 @@ DashboardResult show_windows_dashboard(
                      }));
     SendMessageW(state.video, CB_SETCURSEL,
                  static_cast<WPARAM>(selected_video), 0);
+    state.hardware_model_label = control(state, L"STATIC", L"Hardware model",
+        0, 32, 300, 110, 26, 0);
+    state.hardware_model = control(state, L"COMBOBOX", L"",
+        CBS_DROPDOWNLIST | WS_VSCROLL, 154, 300, 290, 200,
+        id_hardware_model);
+    for (const auto model : gameboy::selectable_hardware_models) {
+        const auto name = widen(std::string{gameboy::hardware_model_name(model)});
+        SendMessageW(state.hardware_model, CB_ADDSTRING, 0,
+                     reinterpret_cast<LPARAM>(name.c_str()));
+    }
+    auto selected_model = std::distance(
+        gameboy::selectable_hardware_models.begin(),
+        std::find(gameboy::selectable_hardware_models.begin(),
+                  gameboy::selectable_hardware_models.end(), hardware_model));
+    if (selected_model < 0) selected_model = 0;
+    SendMessageW(state.hardware_model, CB_SETCURSEL,
+                 static_cast<WPARAM>(selected_model), 0);
     state.controls_label = control(state, L"STATIC", L"Keyboard controls",
         0, 510, 200, 240, 30, 0);
     SendMessageW(state.controls_label, WM_SETFONT,
@@ -2520,6 +2557,13 @@ DashboardResult show_windows_dashboard(
         state, L"EDIT", shortcut_reference.c_str(),
         ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL,
         32, 240, 916, 565, 0);
+    // The owner-drawn controller illustration is created before the settings
+    // widgets and covers their rectangle. Keep the model selector above it so
+    // it remains clickable on the settings page.
+    SetWindowPos(state.hardware_model_label, HWND_TOP, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    SetWindowPos(state.hardware_model, HWND_TOP, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
     refresh_binding_buttons(state);
     layout_dashboard(state);
     show_page(state, State::Page::library);

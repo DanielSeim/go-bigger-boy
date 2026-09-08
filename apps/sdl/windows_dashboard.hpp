@@ -2,6 +2,7 @@
 
 #include "gameboy/rom_library.hpp"
 #include "gameboy/video_pipeline.hpp"
+#include "gameboy/hardware_model.hpp"
 #include "gbb/voxel_profile.hpp"
 #include "gbb/core.hpp"
 #include "gbb/plugin_discovery.hpp"
@@ -45,6 +46,8 @@ struct DashboardResult {
     bool palette_changed{};
     gameboy::VideoMode video_mode{gameboy::default_video_mode};
     bool video_mode_changed{};
+    gameboy::HardwareModel hardware_model{gameboy::HardwareModel::automatic};
+    bool hardware_model_changed{};
     KeyboardBindings keyboard_bindings{};
     bool keyboard_bindings_changed{};
     ActionBindings action_bindings{};
@@ -64,6 +67,7 @@ DashboardResult show_windows_dashboard(
     std::uint64_t current_fingerprint,
     gbb::CoreCapability capabilities,
     std::size_t palette, gameboy::VideoMode video_mode,
+    gameboy::HardwareModel hardware_model,
     const KeyboardBindings& keyboard_bindings,
     const ActionBindings& action_bindings,
     const DashboardLinkSettings& link_settings,

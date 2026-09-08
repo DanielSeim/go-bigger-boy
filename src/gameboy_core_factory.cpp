@@ -7,6 +7,7 @@
 
 #include <array>
 #include <string>
+#include <stdexcept>
 #include <utility>
 
 namespace gbb {
@@ -49,10 +50,25 @@ bool is_game_boy_input(const InputId input) noexcept {
            input == InputId::select || input == InputId::start;
 }
 
+gameboy::HardwareModel hardware_model_from_option(const std::string& value) {
+    if (value.empty() || value == "auto") return gameboy::HardwareModel::automatic;
+    if (value == "dmg0") return gameboy::HardwareModel::dmg0;
+    if (value == "dmg") return gameboy::HardwareModel::dmg;
+    if (value == "mgb") return gameboy::HardwareModel::mgb;
+    if (value == "sgb") return gameboy::HardwareModel::sgb;
+    if (value == "sgb2") return gameboy::HardwareModel::sgb2;
+    if (value == "cgb0") return gameboy::HardwareModel::cgb0;
+    if (value == "cgb-c" || value == "cgbc") return gameboy::HardwareModel::cgb_c;
+    if (value == "cgb-e" || value == "cgbe") return gameboy::HardwareModel::cgb_e;
+    if (value == "cgb") return gameboy::HardwareModel::cgb;
+    throw std::invalid_argument("unknown Game Boy hardware model: " + value);
+}
+
 class GameBoyCore final : public EmulatorCore {
 public:
-    explicit GameBoyCore(gameboy::Cartridge cartridge)
-        : emulator_(std::move(cartridge)) {
+    explicit GameBoyCore(gameboy::Cartridge cartridge,
+                          const gameboy::HardwareModel model)
+        : emulator_(std::move(cartridge), model) {
         descriptor_.system = emulator_.bus().cgb_mode()
                                  ? SystemId::game_boy_color
                                  : SystemId::game_boy;
@@ -181,7 +197,8 @@ CoreFactory gameboy_core_factory() {
             } else if (!options.source_path.empty()) {
                 cartridge.set_persistence_path(options.source_path);
             }
-            return std::make_unique<GameBoyCore>(std::move(cartridge));
+            return std::make_unique<GameBoyCore>(
+                std::move(cartridge), hardware_model_from_option(options.hardware_model));
         }};
 }
 

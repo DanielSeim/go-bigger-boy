@@ -51,6 +51,9 @@ public:
     void import_rtc_data(const std::vector<std::uint8_t>& data);
     [[nodiscard]] std::uint64_t rom_fingerprint() const noexcept;
     [[nodiscard]] std::uint64_t link_compatibility_id() const noexcept;
+    [[nodiscard]] HardwareModel hardware_model() const noexcept {
+        return hardware_model_;
+    }
     [[nodiscard]] LinkCompatibilityProfile link_compatibility_profile() const noexcept;
     void set_dmg_compatibility_colors(bool enabled) noexcept;
     [[nodiscard]] std::vector<std::uint8_t> save_state() const;
