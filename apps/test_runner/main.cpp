@@ -380,6 +380,11 @@ int main(int argc, char** argv) {
 
         std::cerr << "TIMEOUT after reaching the cycle limit\n";
         print_state(emulator.cpu());
+        // Keep the same diagnostic memory window used by protocol failures.
+        // Many hardware ROMs deliberately park in HRAM after a mismatch, so
+        // this exposes their last observed value instead of leaving a timeout
+        // indistinguishable from a harness hang.
+        print_hram_head(emulator.bus());
         return 2;
     } catch (const std::exception& error) {
         usage();
