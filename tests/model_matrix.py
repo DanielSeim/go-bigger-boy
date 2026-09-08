@@ -130,8 +130,13 @@ def run_case_command(
         result = subprocess.run(command, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, text=True,
                                 timeout=max(30, cycles // 1_000_000 * 8))
-        return suite, relative, model, result.returncode == 0, \
-            result.stdout.splitlines()[-1] if result.stdout else ""
+        detail = result.stdout.splitlines()[-1] if result.stdout else ""
+        # A few diagnostic ROMs leave raw bytes in the runner's combined
+        # stream. Keep the artifact valid UTF-8/plain text instead of writing
+        # NUL/control characters into Markdown, while preserving useful tabs.
+        detail = "".join(char if char.isprintable() or char == "\t" else "?"
+                          for char in detail)
+        return suite, relative, model, result.returncode == 0, detail
     except subprocess.TimeoutExpired:
         return suite, relative, model, False, "timeout"
 
