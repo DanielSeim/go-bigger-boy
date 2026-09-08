@@ -372,6 +372,7 @@ void SaveStateBusCodec::read(save_state_format::Reader& reader,
     } else {
         bus.ppu_.object_pixel_deadlines_.fill(0);
     }
+    bus.ppu_.rebuild_object_pixel_deadline_index();
     if (version >= 19) {
         bus.apu_.pulse1_.duty = reader.u8();
         bus.apu_.pulse1_.pending_duty = reader.u8();

@@ -205,8 +205,39 @@ void Ppu::begin_mode3() noexcept {
     have_previous_sprite_tile_ = false;
     object_pixels_.fill(ObjectPixel{});
     object_pixel_deadlines_.fill(0);
+    active_object_pixel_count_ = 0;
+    object_pixel_active_index_.fill(0xFF);
     select_line_sprites();
     trace_window_state("mode3_start");
+}
+
+void Ppu::activate_object_pixel(const unsigned x) noexcept {
+    if (x >= screen_width || object_pixel_active_index_[x] != 0xFF) return;
+    const auto count = active_object_pixel_count_;
+    if (count >= active_object_pixels_.size()) return;
+    active_object_pixels_[count] = static_cast<std::uint8_t>(x);
+    object_pixel_active_index_[x] = count;
+    active_object_pixel_count_ = static_cast<std::uint8_t>(count + 1);
+}
+
+void Ppu::deactivate_object_pixel(const unsigned x) noexcept {
+    if (x >= screen_width) return;
+    const auto index = object_pixel_active_index_[x];
+    if (index == 0xFF || index >= active_object_pixel_count_) return;
+    const auto last_index = static_cast<std::uint8_t>(active_object_pixel_count_ - 1);
+    const auto last_x = active_object_pixels_[last_index];
+    active_object_pixels_[index] = last_x;
+    object_pixel_active_index_[last_x] = index;
+    object_pixel_active_index_[x] = 0xFF;
+    active_object_pixel_count_ = last_index;
+}
+
+void Ppu::rebuild_object_pixel_deadline_index() noexcept {
+    active_object_pixel_count_ = 0;
+    object_pixel_active_index_.fill(0xFF);
+    for (unsigned x = 0; x < screen_width; ++x) {
+        if (object_pixel_deadlines_[x] != 0) activate_object_pixel(x);
+    }
 }
 
 void Ppu::tick_mode3() noexcept {
@@ -243,8 +274,15 @@ void Ppu::tick_mode3() noexcept {
             }
         }
     }
-    for (auto& deadline : object_pixel_deadlines_) {
+    for (unsigned index = 0; index < active_object_pixel_count_;) {
+        const auto x = active_object_pixels_[index];
+        auto& deadline = object_pixel_deadlines_[x];
         if (deadline != 0) --deadline;
+        if (deadline == 0) {
+            deactivate_object_pixel(x);
+        } else {
+            ++index;
+        }
     }
     if (sprite_delay_ != 0) {
         --sprite_delay_;
@@ -653,8 +691,15 @@ void Ppu::fetch_object(const unsigned index) noexcept {
                                       static_cast<std::uint8_t>(index), true};
             const auto deadline =
                 static_cast<unsigned>(pending_sprite_deadlines_[index]) + pixel;
-            object_pixel_deadlines_[static_cast<unsigned>(screen_x)] =
-                static_cast<std::uint8_t>(std::min(deadline, 0xFFU));
+            const auto x = static_cast<unsigned>(screen_x);
+            const auto bounded_deadline = static_cast<std::uint8_t>(
+                std::min(deadline, 0xFFU));
+            if (bounded_deadline == 0) {
+                deactivate_object_pixel(x);
+            } else {
+                activate_object_pixel(x);
+            }
+            object_pixel_deadlines_[x] = bounded_deadline;
         }
     }
 }

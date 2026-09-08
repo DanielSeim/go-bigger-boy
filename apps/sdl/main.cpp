@@ -339,6 +339,11 @@ constexpr std::size_t maximum_rewind_frames = 180;
 // The history still retains 180 snapshots, so the available rewind window is
 // longer; only the rewind step granularity changes from one frame to four.
 constexpr unsigned rewind_capture_interval = 4;
+// Leave enough headroom for the snapshot itself. On slower devices a frame
+// can already consume the whole deadline; taking a snapshot there would turn
+// a small timing overrun into a visible hitch, so that capture is deferred to
+// the next eligible frame instead.
+constexpr auto rewind_capture_guard = std::chrono::milliseconds(6);
 // TCP serial responses are serviced from the emulation thread. Legacy bit
 // packets retain a tight cadence because every edge is a network round trip.
 // A 512-cycle cadence stays below 0.13 ms at the Game Boy clock while halving
@@ -1881,41 +1886,6 @@ int main(int argc, char** argv) {
                             cheat_manager.apply(*emulator);
                         }
 #endif
-                        if (link_emulator == nullptr &&
-                            !remote_transport_connected && !fast_forward) {
-                            // Serializing a rewind snapshot is intentionally
-                            // skipped during fast-forward. A snapshot costs
-                            // several milliseconds on desktop builds and
-                            // doing it while emulating four frames per
-                            // presentation defeats the purpose of the speed
-                            // shortcut. The existing history remains valid
-                            // and normal capture resumes when released.
-                            const bool capture_rewind_state =
-                                rewind_capture_phase == 0;
-                            rewind_capture_phase =
-                                (rewind_capture_phase + 1) %
-                                rewind_capture_interval;
-                            if (capture_rewind_state) {
-                                const auto rewind_save_started =
-                                    std::chrono::steady_clock::now();
-                                auto rewind_state = core->save_state();
-                                const auto rewind_save_us =
-                                    static_cast<std::uint64_t>(
-                                        microseconds_between(
-                                            rewind_save_started,
-                                            std::chrono::steady_clock::now()));
-                                rewind_capture_bytes = rewind_state.size();
-                                rewind_history.push_back(
-                                    std::move(rewind_state));
-                                ++rewind_capture_count;
-                                rewind_capture_total_us += rewind_save_us;
-                                rewind_capture_max_us = std::max(
-                                    rewind_capture_max_us, rewind_save_us);
-                            }
-                            while (rewind_history.size() > maximum_rewind_frames) {
-                                rewind_history.pop_front();
-                            }
-                        }
                         const auto core_step_started =
                             std::chrono::steady_clock::now();
                         if (execution_plan.mode ==
@@ -2101,7 +2071,43 @@ int main(int argc, char** argv) {
             }
 #endif
 
+            // Advance the deadline before capturing rewind state. Save-state
+            // serialization can take several milliseconds on Windows/MSVC;
+            // placing it in the interval that the pacer would otherwise spend
+            // waiting keeps that work off the visible emulation boundary.
             frame_pacer.advance();
+            if (execution_plan.should_run() &&
+                !execution_plan.restores_rewind_state() &&
+                link_emulator == nullptr && !remote_transport_connected &&
+                !fast_forward && core != nullptr &&
+                emulated_frame_batch_factor == 1) {
+                const auto pacing_remaining =
+                    frame_pacer.deadline() - std::chrono::steady_clock::now();
+                const bool capture_rewind_state =
+                    rewind_capture_phase == 0 &&
+                    pacing_remaining > rewind_capture_guard;
+                rewind_capture_phase =
+                    (rewind_capture_phase + 1) % rewind_capture_interval;
+                if (capture_rewind_state) {
+                    const auto rewind_save_started =
+                        std::chrono::steady_clock::now();
+                    auto rewind_state = core->save_state();
+                    const auto rewind_save_us = static_cast<std::uint64_t>(
+                        microseconds_between(
+                            rewind_save_started,
+                            std::chrono::steady_clock::now()));
+                    rewind_capture_bytes = rewind_state.size();
+                    rewind_history.push_back(std::move(rewind_state));
+                    ++rewind_capture_count;
+                    rewind_capture_total_us += rewind_save_us;
+                    rewind_capture_max_us = std::max(
+                        rewind_capture_max_us, rewind_save_us);
+                }
+                while (rewind_history.size() > maximum_rewind_frames) {
+                    rewind_history.pop_front();
+                }
+            }
+
             const auto pacing_started = std::chrono::steady_clock::now();
             ++frontend_frame;
             if (fast_forward) {

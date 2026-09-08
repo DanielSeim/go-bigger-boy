@@ -106,6 +106,9 @@ private:
     void select_line_sprites() noexcept;
     [[nodiscard]] unsigned trigger_sprites(unsigned x) noexcept;
     void fetch_object(unsigned index) noexcept;
+    void activate_object_pixel(unsigned x) noexcept;
+    void deactivate_object_pixel(unsigned x) noexcept;
+    void rebuild_object_pixel_deadline_index() noexcept;
     void emit_pixel() noexcept;
     [[nodiscard]] BackgroundPixel pop_background_pixel() noexcept;
     [[nodiscard]] BackgroundPixel background_pixel_at_screen(
@@ -187,6 +190,12 @@ private:
     // drains the object FIFO over several dots, so cancellation can affect a
     // suffix of a sprite rather than all eight pixels equally.
     std::array<std::uint8_t, screen_width> object_pixel_deadlines_{};
+    // Only pixels with a non-zero deadline need to be decremented. Keeping a
+    // compact index avoids scanning the full 160-pixel line on every Mode 3
+    // dot while preserving the deadline array used by save states.
+    std::array<std::uint8_t, screen_width> active_object_pixels_{};
+    std::array<std::uint8_t, screen_width> object_pixel_active_index_{};
+    std::uint8_t active_object_pixel_count_{};
     std::array<std::uint8_t, 10> line_sprites_{};
     std::uint8_t background_fifo_size_{};
     std::uint8_t fetcher_phase_{};

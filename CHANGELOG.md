@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.33.12] - 2026-09-08
+
+### Cross-platform frame pacing
+
+- Optimize PPU object-pixel deadline tracking to remove a full-screen scan from
+  every Mode 3 dot, reducing CPU work in sprite-heavy games such as Pokémon.
+- Schedule rewind snapshots inside the frame pacer's idle interval and defer
+  captures when a frame has insufficient headroom, avoiding visible Windows
+  and Android stutter.
+
 ### Web hardware model selection
 
 - Expose the shared DMG, MGB, SGB, and CGB hardware-model catalog in the

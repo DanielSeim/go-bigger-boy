@@ -26,6 +26,7 @@ Ppu::Ppu()
     framebuffer_->fill(dmg_colors[0]);
     cgb_bg_palette_.fill(0xFF);
     cgb_object_palette_.fill(0xFF);
+    object_pixel_active_index_.fill(0xFF);
     trace_window_state("construct");
 }
 
@@ -308,6 +309,7 @@ bool Ppu::write_register(const std::uint16_t address,
                 // the LCDC write is meant to cancel.
                 object_pixels_[x].valid = false;
                 object_pixel_deadlines_[x] = 0;
+                deactivate_object_pixel(x);
                 if (x < output_x_) {
                     (*framebuffer_)[static_cast<std::size_t>(ly_) * screen_width +
                                      x] = compose_pixel(
