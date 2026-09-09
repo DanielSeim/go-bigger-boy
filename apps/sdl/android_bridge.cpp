@@ -4,6 +4,7 @@
 
 #include "gameboy/rom_library.hpp"
 #include "gameboy/video_pipeline.hpp"
+#include "emulation_session.hpp"
 #include "settings_persistence.hpp"
 
 #include <SDL3/SDL.h>
@@ -90,6 +91,21 @@ void open_android_link_settings() noexcept {
         if (method != nullptr) {
             environment->CallVoidMethod(activity, method);
         }
+        environment->DeleteLocalRef(activity_class);
+    }
+    if (environment->ExceptionCheck()) environment->ExceptionClear();
+    environment->DeleteLocalRef(activity);
+}
+
+void open_android_link_diagnostics() noexcept {
+    auto* environment = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
+    auto activity = static_cast<jobject>(SDL_GetAndroidActivity());
+    if (environment == nullptr || activity == nullptr) return;
+    const auto activity_class = environment->GetObjectClass(activity);
+    if (activity_class != nullptr) {
+        const auto method = environment->GetMethodID(
+            activity_class, "saveLinkDiagnostics", "()V");
+        if (method != nullptr) environment->CallVoidMethod(activity, method);
         environment->DeleteLocalRef(activity_class);
     }
     if (environment->ExceptionCheck()) environment->ExceptionClear();
@@ -315,6 +331,18 @@ Java_com_danielseim_gbb_LibraryActivity_nativeLinkLanDiscovery(
     return value ? JNI_TRUE : JNI_FALSE;
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_danielseim_gbb_LibraryActivity_nativeLinkDiagnostics(
+    JNIEnv* environment, jclass, jstring directory) {
+    const auto* raw_directory =
+        environment->GetStringUTFChars(directory, nullptr);
+    if (raw_directory == nullptr) return JNI_FALSE;
+    const auto value = load_app_settings(
+        std::filesystem::u8path(raw_directory)).link_diagnostics;
+    environment->ReleaseStringUTFChars(directory, raw_directory);
+    return value ? JNI_TRUE : JNI_FALSE;
+}
+
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_danielseim_gbb_LibraryActivity_nativeLinkTransport(
     JNIEnv* environment, jclass, jstring directory) {
@@ -372,6 +400,18 @@ Java_com_danielseim_gbb_LibraryActivity_nativeSetLinkSettings(
     environment->ReleaseStringUTFChars(directory, raw_directory);
     environment->ReleaseStringUTFChars(host, raw_host);
     environment->ReleaseStringUTFChars(bind, raw_bind);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_danielseim_gbb_LibraryActivity_nativeSetLinkDiagnostics(
+    JNIEnv* environment, jclass, jstring directory, const jboolean enabled) {
+    const auto* raw_directory =
+        environment->GetStringUTFChars(directory, nullptr);
+    if (raw_directory == nullptr) return;
+    auto settings = load_app_settings(std::filesystem::u8path(raw_directory));
+    settings.link_diagnostics = enabled == JNI_TRUE;
+    write_portable_settings(std::filesystem::u8path(raw_directory), settings);
+    environment->ReleaseStringUTFChars(directory, raw_directory);
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -539,6 +579,28 @@ Java_com_danielseim_gbb_GbbActivity_nativeAndroidLinkSettingsChanged(
     JNIEnv*, jclass) {
     std::lock_guard<std::mutex> lock(gbb::sdl::android_link_settings_mutex);
     gbb::sdl::android_link_settings_changed = true;
+}
+
+extern "C" JNIEXPORT jbyteArray JNICALL
+Java_com_danielseim_gbb_GbbActivity_nativeLinkDiagnostics(
+    JNIEnv* environment, jclass, jstring) {
+    if (environment == nullptr) return nullptr;
+    const auto bytes = gbb::sdl::read_link_trace();
+    if (bytes.empty() ||
+        bytes.size() > static_cast<std::size_t>(std::numeric_limits<jsize>::max())) {
+        return nullptr;
+    }
+    const auto array = environment->NewByteArray(static_cast<jsize>(bytes.size()));
+    if (array == nullptr) return nullptr;
+    environment->SetByteArrayRegion(
+        array, 0, static_cast<jsize>(bytes.size()),
+        reinterpret_cast<const jbyte*>(bytes.data()));
+    if (environment->ExceptionCheck()) {
+        environment->ExceptionClear();
+        environment->DeleteLocalRef(array);
+        return nullptr;
+    }
+    return array;
 }
 
 extern "C" JNIEXPORT void JNICALL

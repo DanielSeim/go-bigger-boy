@@ -49,11 +49,13 @@ public final class GbbActivity extends SDLActivity {
     public static final String EXTRA_ROM_NAME = "com.danielseim.gbb.ROM_NAME";
     static final String ACTION_INSTALL_RESULT =
             "com.danielseim.gbb.INSTALL_UPDATE_RESULT";
+    private static final int LINK_DIAGNOSTICS_EXPORT_REQUEST = 49;
 
     private AndroidUpdateManager updateManager;
     private volatile int cameraOrientationDegrees;
     private OrientationEventListener cameraOrientationListener;
     private OnBackInvokedCallback backCallback;
+    private byte[] pendingLinkDiagnostics;
 
     // Bluetooth Classic RFCOMM data path. The worker owns all blocking socket
     // operations; native code only observes the state and exchanges complete
@@ -77,6 +79,7 @@ public final class GbbActivity extends SDLActivity {
     private static native void nativeOpenRom(String rom, String displayName);
     private static native void nativeAndroidBackPressed();
     private static native void nativeAndroidLinkSettingsChanged();
+    private static native byte[] nativeLinkDiagnostics(String directory);
 
     /**
      * Opens the link configuration without leaving the running game. The
@@ -145,6 +148,12 @@ public final class GbbActivity extends SDLActivity {
         discovery.setTextColor(Color.DKGRAY);
         discovery.setChecked(LibraryActivity.nativeLinkLanDiscovery(directory));
         form.addView(discovery);
+
+        final CheckBox diagnostics = new CheckBox(this);
+        diagnostics.setText("Write link diagnostics trace");
+        diagnostics.setTextColor(Color.DKGRAY);
+        diagnostics.setChecked(LibraryActivity.nativeLinkDiagnostics(directory));
+        form.addView(diagnostics);
 
         final TextView bluetoothHeading = new TextView(this);
         bluetoothHeading.setText("Bluetooth connection");
@@ -240,6 +249,8 @@ public final class GbbActivity extends SDLActivity {
                     LibraryActivity.nativeSetLinkSettings(
                             directory, hostValue, bindValue, selectedPort,
                             !bluetooth && discovery.isChecked());
+                    LibraryActivity.nativeSetLinkDiagnostics(
+                            directory, diagnostics.isChecked());
                     LibraryActivity.nativeSetBluetoothLinkSettings(
                             directory, bluetooth ? "bluetooth" : "tcp",
                             addressValue, uuidValue);
@@ -249,6 +260,59 @@ public final class GbbActivity extends SDLActivity {
                     dialog.dismiss();
                 }));
         dialog.show();
+    }
+
+    /**
+     * Saves the most recent native link trace through Android's system picker.
+     * The native side flushes an active trace first, so this is safe to use
+     * while the Cable Club session is still running.
+     */
+    public void saveLinkDiagnostics() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            runOnUiThread(this::saveLinkDiagnostics);
+            return;
+        }
+        final byte[] trace = nativeLinkDiagnostics(getFilesDir().getAbsolutePath());
+        if (trace == null || trace.length == 0) {
+            Toast.makeText(this,
+                    "No link diagnostics available. Enable diagnostics before connecting.",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        pendingLinkDiagnostics = trace;
+        final Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("text/plain");
+        intent.putExtra(Intent.EXTRA_TITLE, "gbb-link-trace-android.log");
+        try {
+            startActivityForResult(intent, LINK_DIAGNOSTICS_EXPORT_REQUEST);
+        } catch (RuntimeException error) {
+            pendingLinkDiagnostics = null;
+            Toast.makeText(this, "Could not open the file picker",
+                    Toast.LENGTH_LONG).show();
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != LINK_DIAGNOSTICS_EXPORT_REQUEST) return;
+        final byte[] trace = pendingLinkDiagnostics;
+        pendingLinkDiagnostics = null;
+        if (resultCode != RESULT_OK || data == null || data.getData() == null ||
+                trace == null) {
+            return;
+        }
+        try (OutputStream output = getContentResolver().openOutputStream(data.getData())) {
+            if (output == null) throw new IOException("Could not open destination");
+            output.write(trace);
+            output.flush();
+            Toast.makeText(this, "Link diagnostics saved",
+                    Toast.LENGTH_SHORT).show();
+        } catch (IOException error) {
+            Toast.makeText(this, "Could not save link diagnostics",
+                    Toast.LENGTH_LONG).show();
+        }
     }
 
     private boolean bluetoothPermission(String permission) {

@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace gbb::sdl {
 
@@ -28,19 +29,27 @@ void load_rom(const std::string& path,
               const std::filesystem::path& preference_path,
               std::string hardware_model = "auto");
 
-#ifndef __ANDROID__
 void start_link_trace(const std::filesystem::path& preference_path,
                       const char* role_suffix = nullptr,
                       const char* transport = nullptr);
 void stop_link_trace() noexcept;
 
+// Android exports the active or most recently completed trace through the
+// system file picker. The snapshot is empty when diagnostics were disabled or
+// no trace has been written yet.
+[[nodiscard]] std::vector<std::uint8_t> read_link_trace() noexcept;
+
+#ifndef __ANDROID__
 void trace_link_frame(gameboy::Emulator& first,
                       gameboy::Emulator& second,
                       int audio_queued_bytes);
+#endif
+
 void trace_remote_frame(gameboy::Emulator& emulator,
                         const RemoteLinkSession& remote,
                         int audio_queued_bytes);
 
+#ifndef __ANDROID__
 void start_local_link_session(
     const std::string& path, gameboy::Emulator& first,
     std::unique_ptr<gameboy::Emulator>& second,

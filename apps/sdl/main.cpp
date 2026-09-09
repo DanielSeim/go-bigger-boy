@@ -124,14 +124,14 @@ using gbb::sdl::dashboard_first_row_y;
 using gbb::sdl::dashboard_row_height;
 #ifndef __ANDROID__
 using InputMovie = gbb::sdl::InputMovie;
-using gbb::sdl::start_link_trace;
-using gbb::sdl::stop_link_trace;
 using gbb::sdl::trace_link_frame;
-using gbb::sdl::trace_remote_frame;
 using gbb::sdl::start_local_link_session;
 using gbb::sdl::stop_local_link_session;
 using gbb::sdl::retry_local_link_session;
 #endif
+using gbb::sdl::start_link_trace;
+using gbb::sdl::stop_link_trace;
+using gbb::sdl::trace_remote_frame;
 using gbb::sdl::start_remote_link_session;
 using gbb::sdl::stop_remote_link_session;
 using gbb::sdl::retry_remote_link_session;
@@ -707,19 +707,21 @@ void present_menu_button(SdlResources& sdl) {
         const auto render_width = panel_width / text_scale;
         const auto render_row_height = row_height / text_scale;
         const SDL_FRect panel{render_x, render_y, render_width,
-                              render_row_height * 7.0F};
+                              render_row_height * 8.0F};
         static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
                                                      SDL_BLENDMODE_BLEND));
         static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 16, 20, 16, 235));
         static_cast<void>(SDL_RenderFillRect(sdl.renderer, &panel));
         static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 220, 235, 220, 255));
         static_cast<void>(SDL_RenderRect(sdl.renderer, &panel));
-        constexpr std::array<const char*, 7> general_labels{{
+        constexpr std::array<const char*, 8> general_labels{{
             "Host link", "Join link", "Discover LAN hosts",
-            "Retry link", "Stop link", "Open library", "Close menu"}};
-        constexpr std::array<const char*, 7> link_labels{{
+            "Retry link", "Stop link", "Open library", "Save diagnostics",
+            "Close menu"}};
+        constexpr std::array<const char*, 8> link_labels{{
             "Host link", "Join link", "Discover LAN hosts",
-            "Link settings", "Retry link", "Stop link", "Close menu"}};
+            "Link settings", "Retry link", "Stop link", "Save diagnostics",
+            "Close menu"}};
         const auto& labels = sdl.android_link_menu_visible ? link_labels
                                                             : general_labels;
         for (std::size_t index = 0; index < labels.size(); ++index) {
@@ -1545,7 +1547,11 @@ int main(int argc, char** argv) {
                 , [&]() {
                     gbb::sdl::open_android_link_settings();
                 }
+                , [&]() {
+                    gbb::sdl::open_android_link_diagnostics();
+                }
 #else
+                , std::function<void()>{}
                 , std::function<void()>{}
 #endif
                 , [&]() {
@@ -1992,12 +1998,13 @@ int main(int argc, char** argv) {
                             const auto audio_queued_bytes = sdl.audio.queued_bytes();
                             trace_link_frame(*emulator, *link_emulator,
                                              audio_queued_bytes);
-                        } else if (remote_transport_connected) {
+                        }
+#endif
+                        if (link_emulator == nullptr && remote_transport_connected) {
                             const auto audio_queued_bytes = sdl.audio.queued_bytes();
                             trace_remote_frame(*emulator, remote_link,
                                                audio_queued_bytes);
                         }
-#endif
                     }
                 }
             }

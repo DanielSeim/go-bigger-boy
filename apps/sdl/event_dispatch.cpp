@@ -802,7 +802,7 @@ void handle_touch_event(const SDL_Event& event, SdlEventContext& context) {
                                               static_cast<float>(height) * 0.12F);
                 if (pixel_x >= panel_x && pixel_x <= panel_x + panel_width &&
                     pixel_y >= panel_y &&
-                    pixel_y < panel_y + row_height * 7.0F) {
+                    pixel_y < panel_y + row_height * 8.0F) {
                     const auto row = static_cast<unsigned>(
                         (pixel_y - panel_y) / row_height);
                     if (sdl.android_link_menu_visible) {
@@ -817,6 +817,11 @@ void handle_touch_event(const SDL_Event& event, SdlEventContext& context) {
                             break;
                         case 4: context.link_retry_requested = true; break;
                         case 5: context.remote_stop_requested = true; break;
+                        case 6:
+                            if (context.save_android_link_diagnostics) {
+                                context.save_android_link_diagnostics();
+                            }
+                            break;
                         default: break;
                         }
                     } else {
@@ -828,6 +833,11 @@ void handle_touch_event(const SDL_Event& event, SdlEventContext& context) {
                         case 4: context.remote_stop_requested = true; break;
                         case 5:
                             if (context.open_library) context.open_library();
+                            break;
+                        case 6:
+                            if (context.save_android_link_diagnostics) {
+                                context.save_android_link_diagnostics();
+                            }
                             break;
                         default: break;
                         }

@@ -147,6 +147,7 @@ std::unique_ptr<gameboy::Emulator> load_link_player(
     player->set_dmg_compatibility_colors(palette.cgb_compatibility);
     return player;
 }
+#endif
 
 // A failed Pokémon Cable Club negotiation is otherwise indistinguishable
 // from a game-side timeout. Keep a compact trace of the two serial ports so a
@@ -355,9 +356,15 @@ void stop_link_trace() noexcept {
     link_trace_previous = {};
 }
 
+std::vector<std::uint8_t> read_link_trace() noexcept {
+    return link_trace.snapshot();
+}
+
+#ifndef __ANDROID__
 void trace_link_frame(gameboy::Emulator& first,
                       gameboy::Emulator& second,
                       const int audio_queued_bytes) {
+    std::lock_guard<std::recursive_mutex> lock(link_trace.mutex());
     if (!link_trace.is_open()) return;
     const auto& first_serial = first.bus().serial_port();
     const auto& second_serial = second.bus().serial_port();
@@ -416,9 +423,12 @@ void trace_link_frame(gameboy::Emulator& first,
                                  first_serial, second_serial);
 }
 
+#endif
+
 void trace_remote_frame(gameboy::Emulator& emulator,
                         const RemoteLinkSession& remote,
                         const int audio_queued_bytes) {
+    std::lock_guard<std::recursive_mutex> lock(link_trace.mutex());
     if (!link_trace.is_open()) return;
     const auto& serial = emulator.bus().serial_port();
     link_trace.advance_frame();
@@ -494,6 +504,7 @@ void trace_remote_frame(gameboy::Emulator& emulator,
                                  serial, serial);
 }
 
+#ifndef __ANDROID__
 void start_local_link_session(
     const std::string& path, gameboy::Emulator& first,
     std::unique_ptr<gameboy::Emulator>& second,
@@ -704,10 +715,10 @@ void start_remote_link_session(gameboy::Emulator& emulator,
     }
     remote.enabled = true;
     remote.next_pending_poll = {};
-#ifndef __ANDROID__
     if (link_diagnostics) {
         start_link_trace(preference_path, hosting ? "host" : "join",
                          remote.bluetooth ? "bluetooth" : "tcp");
+#ifndef __ANDROID__
         if (link_trace.is_open()) {
             const auto message = std::string(remote.bluetooth
                                                  ? "Bluetooth link trace is being written to:\n"
@@ -726,11 +737,12 @@ void start_remote_link_session(gameboy::Emulator& emulator,
                 SDL_MESSAGEBOX_WARNING, "GBB TCP link diagnostics",
                 message, window));
         }
+#endif
     }
-#else
+#ifdef __ANDROID__
     // Android does not expose the desktop trace-file dialog. The transport
-    // remains fully functional; diagnostics can be added through the native
-    // Android logging bridge without blocking the emulation thread.
+    // remains fully functional and the trace is available from the in-game
+    // menu's "Save link diagnostics" action.
     static_cast<void>(preference_path);
     static_cast<void>(link_diagnostics);
     static_cast<void>(window);
@@ -739,9 +751,7 @@ void start_remote_link_session(gameboy::Emulator& emulator,
 
 void stop_remote_link_session(gameboy::Emulator& emulator,
                               RemoteLinkSession& remote) noexcept {
-#ifndef __ANDROID__
     stop_link_trace();
-#endif
 #ifdef __ANDROID__
     stop_android_lan_discovery();
 #endif

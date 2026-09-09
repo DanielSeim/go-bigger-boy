@@ -229,8 +229,9 @@ the compatibility ID used for matching and the exact ROM fingerprint for
 operator diagnostics. Discovery is not authentication, and should only be
 enabled on a trusted LAN.
 
-Link tracing is opt-in. Add `link.Diagnostics = true` to the portable
-`settings.ini` beside the executable before starting a session; normal users
+Link tracing is opt-in. On desktop, add `link.Diagnostics = true` to the portable
+`settings.ini` beside the executable; on Android, enable **Write link
+diagnostics trace** in the in-game **Link settings** dialog. Normal users
 therefore get no diagnostic popup and no trace file. When enabled, the trace is
 reset for each local session. It begins with a `session_start` marker and ends
 with `session_end`; transfer counters therefore describe only that session, and
@@ -251,6 +252,16 @@ party count. Additional `event=serial_complete` and `event=serial_active` lines
 make byte completions and clock ownership changes easy to locate without
 manually diffing every frame. The session header identifies the transport and
 role, so host and join logs can be compared directly.
+
+On Android, after enabling diagnostics in **Link settings**, open the in-game
+menu and choose **Save diagnostics**. The native trace is flushed
+and passed to Android's system document picker, where it can be saved to
+Downloads or shared with a bug report. This works while the link is active and
+after it has been stopped; the latter exports the most recently completed
+session. If no trace is available, the action explains that diagnostics must
+be enabled before connecting. The trace is kept in the app-private files area
+until the next diagnostic session starts and is not included in ROM or save
+data.
 
 TCP frame records also include endpoint arbitration fields: `z` indicates a
 response ready to consume, `hh` that the peer hello was seen, `compat` that

@@ -37,8 +37,19 @@ int main() {
             trace.stream() << "frame=" << frame << " marker=checkpoint\n";
             trace.advance_frame();
         }
+        const auto active_snapshot = trace.snapshot();
+        check(!active_snapshot.empty(),
+              "SDL trace can be snapshotted while the session is active");
+        if (!active_snapshot.empty()) {
+            const std::string snapshot_contents(active_snapshot.begin(),
+                                                active_snapshot.end());
+            check(snapshot_contents.find("marker=checkpoint") != std::string::npos,
+                  "active trace snapshot includes flushed event data");
+        }
         const auto path = trace.path();
         trace.stop();
+        check(!trace.snapshot().empty(),
+              "SDL trace remains available for export after stopping");
         std::ifstream input(path);
         const std::string contents((std::istreambuf_iterator<char>(input)),
                                    std::istreambuf_iterator<char>());
