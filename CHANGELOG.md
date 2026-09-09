@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.33.13] - 2026-09-09
+
+### Android link diagnostics
+
+- Add an Android Link settings toggle for opt-in link tracing.
+- Add an in-game **Save diagnostics** action that exports the active or most
+  recently completed trace through the system file picker.
+- Keep Android traces in durable app-private storage and add snapshot coverage
+  for active and stopped sessions.
+
 ## [0.33.12] - 2026-09-08
 
 ### Cross-platform frame pacing
