@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.33.14] - 2026-09-09
+
+### Android settings and diagnostics
+
+- Avoid showing the hardware-model restart toast when merely opening Settings.
+- Apply newly enabled link diagnostics immediately to the running Android
+  frontend, so traces can be captured without restarting the emulator.
+
 ## [0.33.13] - 2026-09-09
 
 ### Android link diagnostics

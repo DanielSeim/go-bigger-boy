@@ -111,12 +111,19 @@ final class SettingsScreen {
         hardware.setAdapter(new ArrayAdapter<>(activity,
                 android.R.layout.simple_spinner_dropdown_item,
                 HARDWARE_MODEL_NAMES));
-        hardware.setSelection(currentHardwareModel());
+        // Spinner invokes its listener once when it is attached. Keep the
+        // initial persisted value from being treated as a user change (and
+        // avoid showing a misleading "applies on restart" toast every time
+        // the settings screen is opened).
+        final int initialHardwareModel = currentHardwareModel();
+        hardware.setSelection(initialHardwareModel);
         hardware.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view,
                                        int position, long id) {
-                saveHardwareModel(position);
+                if (position != initialHardwareModel) {
+                    saveHardwareModel(position);
+                }
             }
             @Override public void onNothingSelected(AdapterView<?> parent) {}
         });

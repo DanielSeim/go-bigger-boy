@@ -1484,6 +1484,11 @@ int main(int argc, char** argv) {
                     updated.link_bluetooth_address;
                 remote_link_options.bluetooth_service_uuid =
                     updated.link_bluetooth_service_uuid;
+                // Link diagnostics is edited from Android while the SDL
+                // activity remains alive. Refresh the runtime flag as well;
+                // otherwise a newly enabled trace would not start until the
+                // entire emulator process was restarted.
+                link_diagnostics = updated.link_diagnostics;
             }
 #endif
             SdlEventContext event_context{
