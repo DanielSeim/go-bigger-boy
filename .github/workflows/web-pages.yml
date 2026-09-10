@@ -62,7 +62,9 @@ jobs:
           node-version: '22'
 
       - name: Install Chromium for browser smoke
-        run: npx --yes @playwright/test@1.52.0 install --with-deps chromium
+        run: |
+          npm install --no-save --no-package-lock @playwright/test@1.52.0
+          npx playwright install --with-deps chromium
 
       - name: Run Web frontend browser smoke
         run: |
@@ -79,7 +81,7 @@ jobs:
             sleep 1
           done
           test "$ready" = 1
-          npx --yes @playwright/test@1.52.0 test tests/web/frontend.spec.mjs
+          npx playwright test tests/web/frontend.spec.mjs
 
       - name: Configure GitHub Pages
         if: github.event_name != 'pull_request'
