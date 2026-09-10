@@ -147,9 +147,9 @@ bool test_tcp_session() {
         }
         // macOS can defer completion notifications for a non-blocking
         // localhost connect while this deterministic loop is continuously
-        // emulating instructions. Yield briefly so the socket stack gets a
-        // scheduling opportunity without making the test sleep-dependent.
-        std::this_thread::yield();
+        // emulating instructions. Give the socket stack a short scheduling
+        // opportunity; this also keeps the test from spinning at 100% CPU.
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     first_endpoint.poll();
     second_endpoint.poll();
