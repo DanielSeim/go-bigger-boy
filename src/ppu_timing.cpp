@@ -104,6 +104,7 @@ std::uint8_t Ppu::tick(const unsigned cycles) noexcept {
                 mode_ = 1;
                 stat_mode_ = 1;
                 frame_ready_ = true;
+                complete_sgb_transfer();
                 requests |= 0x01;
             } else if (ly_ > 153) {
                 ly_ = 0;
@@ -729,6 +730,11 @@ void Ppu::emit_pixel() noexcept {
         window_disable_source_x_ = 0;
     }
 
+    if (sgb_mode_) {
+        (*sgb_screen_buffer_)[static_cast<std::size_t>(ly_) * screen_width +
+                              output_x_] =
+            sgb_source_pixel(output_x_, background);
+    }
     auto result = compose_pixel(output_x_, background);
     if (sgb_mode_) {
         if (sgb_mask_mode_ == 1) {
@@ -841,6 +847,17 @@ std::uint32_t Ppu::compose_pixel(
         object.color,
         (object.attributes & 0x10) != 0 ? dmg_palette_.object_1
                                         : dmg_palette_.object_0);
+}
+
+std::uint8_t Ppu::sgb_source_pixel(
+    const unsigned x, const BackgroundPixel background) const noexcept {
+    auto color = background.color;
+    const auto& object = object_pixels_[x];
+    if ((lcdc_ & 0x02) == 0 || !object.valid) return color;
+    const auto background_blocks_object =
+        background.color != 0 && (object.attributes & 0x80) != 0;
+    if (!background_blocks_object) color = object.color;
+    return color;
 }
 
 std::uint32_t Ppu::cgb_palette_color(

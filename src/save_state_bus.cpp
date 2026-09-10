@@ -186,6 +186,8 @@ void SaveStateBusCodec::write(save_state_format::Writer& writer,
     // The compositor's border latch is stateful even when the transferred
     // PCT bytes happen to be all zero, so persist it explicitly.
     writer.boolean(bus.ppu_.sgb_border_transferred_);
+    writer.u8(static_cast<std::uint8_t>(bus.ppu_.sgb_transfer_));
+    writer.u8(bus.ppu_.sgb_transfer_countdown_);
 }
 
 } // namespace gameboy

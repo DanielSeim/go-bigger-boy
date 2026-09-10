@@ -405,7 +405,8 @@ void SaveStateBusCodec::read(save_state_format::Reader& reader,
         // The SGB block is append-only; version 23 adds the mask and border
         // data after the version 22 packet/palette fields, while version 26
         // adds transferred palette and attribute-file memories. Version 27
-        // adds the explicit PCT transfer latch used by the border compositor.
+        // adds the explicit PCT transfer latch used by the border compositor;
+        // version 28 adds an in-flight transfer destination and countdown.
         bus.joypad_.sgb_mode_ = reader.boolean();
         bus.joypad_.sgb_ready_for_pulse_ = reader.boolean();
         bus.joypad_.sgb_ready_for_write_ = reader.boolean();
@@ -508,6 +509,22 @@ void SaveStateBusCodec::read(save_state_format::Reader& reader,
         bus.ppu_.sgb_border_transferred_ = reader.boolean();
     } else {
         bus.ppu_.sgb_border_transferred_ = false;
+    }
+    if (version >= 28) {
+        const auto transfer = reader.u8();
+        bus.ppu_.sgb_transfer_countdown_ = reader.u8();
+        if (transfer > static_cast<std::uint8_t>(Ppu::SgbTransfer::border) ||
+            bus.ppu_.sgb_transfer_countdown_ > 3 ||
+            (transfer == static_cast<std::uint8_t>(Ppu::SgbTransfer::none) &&
+             bus.ppu_.sgb_transfer_countdown_ != 0) ||
+            (transfer != static_cast<std::uint8_t>(Ppu::SgbTransfer::none) &&
+             bus.ppu_.sgb_transfer_countdown_ == 0)) {
+            throw SaveStateError("Save state contains invalid SGB transfer state");
+        }
+        bus.ppu_.sgb_transfer_ = static_cast<Ppu::SgbTransfer>(transfer);
+    } else {
+        bus.ppu_.sgb_transfer_ = Ppu::SgbTransfer::none;
+        bus.ppu_.sgb_transfer_countdown_ = 0;
     }
     if (bus.printer_connected_) bus.printer_.reset();
 }

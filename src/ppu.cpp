@@ -26,7 +26,9 @@ Ppu::Ppu()
           std::make_unique<std::array<std::uint8_t, 0x2D * 90>>()),
       sgb_border_tiles_(std::make_unique<std::array<std::uint8_t, 0x2000>>()),
       sgb_border_pct_(std::make_unique<std::array<std::uint8_t, 0x1000>>()),
-      sgb_framebuffer_(std::make_unique<SgbFramebuffer>()) {
+      sgb_framebuffer_(std::make_unique<SgbFramebuffer>()),
+      sgb_screen_buffer_(
+          std::make_unique<std::array<std::uint8_t, screen_width * screen_height>>()) {
     framebuffer_->fill(dmg_colors[0]);
     cgb_bg_palette_.fill(0xFF);
     cgb_object_palette_.fill(0xFF);
@@ -52,7 +54,13 @@ void Ppu::set_cgb_late_revision(const bool enabled) noexcept {
 
 void Ppu::set_sgb_mode(const bool enabled) noexcept {
     sgb_mode_ = enabled;
-    if (!enabled) return;
+    if (!enabled) {
+        // A transfer command cannot complete after the SGB adapter is
+        // detached. Do not let a stale countdown leak into a later state.
+        sgb_transfer_ = SgbTransfer::none;
+        sgb_transfer_countdown_ = 0;
+        return;
+    }
     // SGB starts with the same four neutral colors as a DMG until the game
     // sends its first PAL command.
     sgb_palettes_ = default_sgb_palettes;
@@ -62,6 +70,9 @@ void Ppu::set_sgb_mode(const bool enabled) noexcept {
     sgb_border_tiles_->fill(0);
     sgb_border_pct_->fill(0);
     sgb_border_transferred_ = false;
+    sgb_screen_buffer_->fill(0);
+    sgb_transfer_ = SgbTransfer::none;
+    sgb_transfer_countdown_ = 0;
     sgb_mask_mode_ = 0;
 }
 

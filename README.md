@@ -36,7 +36,8 @@ release gate until each suite's model contract has been reviewed. See the
 - Game Boy Color mode with banked VRAM/WRAM, RGB555 palettes, tile attributes,
   CGB sprite priority, VRAM DMA, fast serial, and double-speed CPU switching
 - Super Game Boy software detection with HLE JOYP command packets, color
-  palettes, tile attribute mapping, CHR_TRN/PCT_TRN transfer latches, a
+  palettes, tile attribute mapping, screen-data CHR_TRN/PCT_TRN/PAL_TRN/
+  ATTR_TRN transfer latches, a
   deterministic 256×224 SNES border framebuffer, and MASK_EN viewport masking
   (SNES audio and boot animation remain future work)
 - Active-low joypad matrix with keyboard/gamepad input and interrupts

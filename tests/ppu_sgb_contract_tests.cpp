@@ -32,13 +32,22 @@ std::vector<std::uint8_t> test_rom() {
     return rom;
 }
 
+void advance_sgb_frames(gameboy::Ppu& ppu, const unsigned count) {
+    static_cast<void>(ppu.write_register(0xFF40, 0x91));
+    for (unsigned frame = 0; frame < count; ++frame) {
+        static_cast<void>(ppu.tick(70224));
+    }
+}
+
 void test_transfer_commands_and_guards() {
     gameboy::Ppu ppu;
     std::array<std::uint8_t, 16 * 7> packet{};
     packet[0] = static_cast<std::uint8_t>(0x13U << 3); // CHR_TRN
 
-    ppu.debug_write_vram(0, 0x0000, 0xA5);
-    ppu.debug_write_vram(0, 0x0FFF, 0x5A);
+    // The transfer source is the indexed display image. Tile zero's first
+    // row has one colour-1 pixel at the right edge, yielding packed value 1.
+    ppu.debug_write_vram(0, 0x0000, 0x01);
+    ppu.debug_write_vram(0, 0x0001, 0x00);
     ppu.apply_sgb_command(packet, packet.size());
     check(ppu.debug_read_sgb_border_tile(0x0000) == 0,
           "SGB commands are ignored while SGB mode is disabled");
@@ -49,25 +58,34 @@ void test_transfer_commands_and_guards() {
           "truncated SGB packets do not modify transfer latches");
 
     ppu.apply_sgb_command(packet, packet.size());
-    check(ppu.debug_read_sgb_border_tile(0x0000) == 0xA5 &&
-              ppu.debug_read_sgb_border_tile(0x0FFF) == 0x5A,
-          "CHR_TRN copies the first tile-data bank");
+    check(ppu.debug_read_sgb_border_tile(0x0000) == 0,
+          "CHR_TRN transfer remains pending during its hardware delay");
+    advance_sgb_frames(ppu, 2);
+    check(ppu.debug_read_sgb_border_tile(0x0000) == 0,
+          "CHR_TRN transfer remains pending for two frames");
+    advance_sgb_frames(ppu, 1);
+    check(ppu.debug_read_sgb_border_tile(0x0000) == 0x01 &&
+              ppu.debug_read_sgb_border_tile(0x0001) == 0x00,
+          "CHR_TRN encodes the first tile-data bank from the display");
 
     packet[1] = 1;
-    ppu.debug_write_vram(0, 0x0000, 0x3C);
-    ppu.debug_write_vram(0, 0x0FFF, 0xC3);
+    ppu.debug_write_vram(0, 0x0000, 0x80);
+    ppu.debug_write_vram(0, 0x0001, 0x00);
     ppu.apply_sgb_command(packet, packet.size());
-    check(ppu.debug_read_sgb_border_tile(0x1000) == 0x3C &&
-              ppu.debug_read_sgb_border_tile(0x1FFF) == 0xC3,
+    advance_sgb_frames(ppu, 3);
+    check(ppu.debug_read_sgb_border_tile(0x1000) == 0x80 &&
+              ppu.debug_read_sgb_border_tile(0x1FFF) == 0x00,
           "CHR_TRN selects the second tile-data bank");
 
     packet[0] = static_cast<std::uint8_t>(0x14U << 3); // PCT_TRN
-    ppu.debug_write_vram(0, 0x0000, 0x11);
-    ppu.debug_write_vram(0, 0x0FFF, 0xEE);
+    ppu.debug_write_vram(0, 0x0000, 0x01);
+    ppu.debug_write_vram(0, 0x0001, 0x00);
     ppu.apply_sgb_command(packet, packet.size());
-    check(ppu.debug_read_sgb_border_pct(0x0000) == 0x11 &&
-              ppu.debug_read_sgb_border_pct(0x0FFF) == 0xEE,
-          "PCT_TRN copies the complete border payload");
+    advance_sgb_frames(ppu, 3);
+    check(ppu.debug_read_sgb_border_pct(0x0000) == 0x01 &&
+              ppu.debug_read_sgb_border_pct(0x0001) == 0x00 &&
+              ppu.debug_read_sgb_border_pct(0x0FFF) == 0x00,
+          "PCT_TRN encodes the complete border payload");
 }
 
 void test_mask_command_is_bounded() {
@@ -193,15 +211,21 @@ void test_palette_and_attribute_transfer_commands() {
     gameboy::Ppu ppu;
     ppu.set_sgb_mode(true);
     for (std::size_t index = 0; index < 0x1000; ++index) {
-        ppu.debug_write_vram(0, static_cast<std::uint16_t>(index),
-                             static_cast<std::uint8_t>(index ^ 0x5A));
+        ppu.debug_write_vram(0, static_cast<std::uint16_t>(index), 0);
+    }
+    for (unsigned row = 0; row < 8; ++row) {
+        // One colour-1 pixel per row, moving left, produces packed entries
+        // 1, 2, 4, ... 0x80 in the PAL_TRN stream.
+        ppu.debug_write_vram(0, static_cast<std::uint16_t>(row * 2),
+                             static_cast<std::uint8_t>(1U << row));
     }
 
     std::array<std::uint8_t, 16 * 7> packet{};
     packet[0] = static_cast<std::uint8_t>(0x0B << 3); // PAL_TRN
     ppu.apply_sgb_command(packet, packet.size());
-    check(ppu.debug_read_sgb_palette(0) == 0x5B5A &&
-              ppu.debug_read_sgb_palette(0x7FF) == 0xA5A4,
+    advance_sgb_frames(ppu, 3);
+    check(ppu.debug_read_sgb_palette(0) == 0x0001 &&
+              ppu.debug_read_sgb_palette(0x7FF) == 0x0080,
           "PAL_TRN stores all transferred RGB555 palette entries");
 
     packet.fill(0);
@@ -211,20 +235,21 @@ void test_palette_and_attribute_transfer_commands() {
     packet[5] = 0x03;
     packet[7] = 0x04;
     ppu.apply_sgb_command(packet, packet.size());
-    check(ppu.debug_read_sgb_palette(1) == 0x5958 &&
-              ppu.debug_read_sgb_active_palette(4) == 0x5352,
+    check(ppu.debug_read_sgb_palette(1) == 0x0002 &&
+              ppu.debug_read_sgb_active_palette(4) == 0x0010,
           "PAL_SET selects colors from transferred palette memory");
 
-    ppu.debug_write_vram(0, 0x0000, 0x1B);
+    ppu.debug_write_vram(0, 0x0000, 0x40);
     packet.fill(0);
     packet[0] = static_cast<std::uint8_t>(0x15 << 3); // ATTR_TRN
     ppu.apply_sgb_command(packet, packet.size());
+    advance_sgb_frames(ppu, 3);
     packet.fill(0);
     packet[0] = static_cast<std::uint8_t>(0x16 << 3); // ATTR_SET
     packet[1] = 0x00;
     ppu.apply_sgb_command(packet, packet.size());
-    check(ppu.debug_read_sgb_attribute(0, 0) == 0 &&
-              ppu.debug_read_sgb_attribute(1, 0) == 1,
+    check(ppu.debug_read_sgb_attribute(0, 0) == 1 &&
+              ppu.debug_read_sgb_attribute(1, 0) == 0,
           "ATTR_TRN and ATTR_SET restore packed tile attributes");
 }
 
@@ -232,31 +257,37 @@ void test_sgb_border_compositor() {
     gameboy::Ppu ppu;
     ppu.set_sgb_mode(true);
 
-    // Tile 1 is solid SNES colour 1 (plane 0 set, all other planes clear).
+    // The SGB samples the rendered 2-bit screen image. Arrange source tiles
+    // so CHR_TRN produces solid border tile 1, PCT_TRN produces map entry 1,
+    // and palette 0 colour 1 is RGB555 red.
     for (std::size_t row = 0; row < 8; ++row) {
-        ppu.debug_write_vram(0, static_cast<std::uint16_t>(0x20 + row * 2),
+        ppu.debug_write_vram(0, static_cast<std::uint16_t>(0x10 + row * 2),
                              0xFF);
         ppu.debug_write_vram(0,
-                             static_cast<std::uint16_t>(0x20 + row * 2 + 1),
+                             static_cast<std::uint16_t>(0x10 + row * 2 + 1),
                              0x00);
     }
+    // Source tile 0 row 0 packs to map entry 1 (one colour-1 pixel at x=7).
+    ppu.debug_write_vram(0, 0x0000, 0x01);
+    // Source tile 2 becomes the low 2-bit half of SNES tile 1; leave source
+    // tile 3 at colour zero so the resulting border pixel is SNES colour 1.
+    ppu.debug_write_vram(0, 0x1802, 0x01);
+    // Source tile 128 supplies PCT palette colour zero (0x7C00) and colour
+    // one (0x001F) in successive rows.
+    ppu.debug_write_vram(0, 0x18C8, 0x80);
+    ppu.debug_write_vram(0, 0x0800, 0x00);
+    ppu.debug_write_vram(0, 0x0801, 0x7C);
+    ppu.debug_write_vram(0, 0x0802, 0x1F);
+    ppu.debug_write_vram(0, 0x0803, 0x00);
     std::array<std::uint8_t, 16 * 7> packet{};
     packet[0] = static_cast<std::uint8_t>(0x13U << 3); // CHR_TRN
     ppu.apply_sgb_command(packet, packet.size());
+    advance_sgb_frames(ppu, 3);
 
-    // The first tilemap entry selects tile 1 and border palette 0. Palette 0,
-    // colour 1 is RGB555 red in the second half of the PCT payload.
-    ppu.debug_write_vram(0, 0x0000, 0x01);
-    ppu.debug_write_vram(0, 0x0001, 0x00);
-    ppu.debug_write_vram(0, 0x0802, 0x1F);
-    ppu.debug_write_vram(0, 0x0803, 0x00);
-    // Make the border palette's colour zero visibly different from the SGB
-    // screen colour zero to verify the transparent-border rule.
-    ppu.debug_write_vram(0, 0x0800, 0x00);
-    ppu.debug_write_vram(0, 0x0801, 0x7C);
     packet.fill(0);
     packet[0] = static_cast<std::uint8_t>(0x14U << 3); // PCT_TRN
     ppu.apply_sgb_command(packet, packet.size());
+    advance_sgb_frames(ppu, 3);
 
     const auto& border = ppu.sgb_framebuffer();
     check(border[0] == 0xFFFF0000,

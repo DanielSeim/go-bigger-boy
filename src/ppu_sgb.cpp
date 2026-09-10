@@ -1,8 +1,34 @@
 #include "gameboy/ppu.hpp"
 
 #include <algorithm>
+#include <array>
 
 namespace gameboy {
+namespace {
+
+std::uint16_t pack_sgb_transfer_row(
+    const std::array<std::uint8_t, Ppu::screen_width * Ppu::screen_height>&
+        screen,
+    const unsigned tile, const unsigned row) noexcept {
+    static constexpr std::array<std::uint16_t, 4> pixel_to_bits{
+        0x0000, 0x0080, 0x8000, 0x8080};
+    const auto tile_x = (tile % 20U) * 8U;
+    const auto tile_y = (tile / 20U) * 8U;
+    std::uint16_t packed = 0;
+    for (unsigned x = 0; x < 8; ++x) {
+        const auto source_x = tile_x + x;
+        const auto source_y = tile_y + row;
+        const auto color = source_x < Ppu::screen_width &&
+                                   source_y < Ppu::screen_height
+                               ? screen[source_y * Ppu::screen_width + source_x]
+                               : 0;
+        packed = static_cast<std::uint16_t>(
+            packed | (pixel_to_bits[color & 3U] >> x));
+    }
+    return packed;
+}
+
+} // namespace
 
 void Ppu::apply_sgb_command(
     const std::array<std::uint8_t, 16 * 7>& packet,
@@ -146,19 +172,13 @@ void Ppu::apply_sgb_command(
         break;
     }
     case 0x0B: { // PAL_TRN
-        // The 4 KiB VRAM transfer contains 2048 little-endian RGB555 entries.
-        for (std::size_t index = 0; index < sgb_ram_palettes_->size(); ++index) {
-            const auto offset = index * 2;
-            (*sgb_ram_palettes_)[index] = static_cast<std::uint16_t>(
-                vram_[offset] | (static_cast<std::uint16_t>(vram_[offset + 1])
-                                 << 8));
-        }
+        sgb_transfer_ = SgbTransfer::palettes;
+        sgb_transfer_countdown_ = 3;
         break;
     }
     case 0x15: { // ATTR_TRN
-        // Each of the 45 attribute files is a packed 20x18 map (90 bytes).
-        std::copy_n(vram_.begin(), sgb_attribute_files_->size(),
-                    sgb_attribute_files_->begin());
+        sgb_transfer_ = SgbTransfer::attributes;
+        sgb_transfer_countdown_ = 3;
         break;
     }
     case 0x16: { // ATTR_SET
@@ -169,19 +189,108 @@ void Ppu::apply_sgb_command(
     }
     case 0x13: { // CHR_TRN
         const auto bank = static_cast<std::size_t>(packet[1] & 1U);
-        std::copy_n(vram_.begin(), 0x1000,
-                    sgb_border_tiles_->begin() + bank * 0x1000);
+        sgb_transfer_ = bank == 0 ? SgbTransfer::chr_low : SgbTransfer::chr_high;
+        sgb_transfer_countdown_ = 3;
         break;
     }
     case 0x14: // PCT_TRN
-        std::copy_n(vram_.begin(), 0x1000, sgb_border_pct_->begin());
-        sgb_border_transferred_ = true;
+        sgb_transfer_ = SgbTransfer::border;
+        sgb_transfer_countdown_ = 3;
         break;
     case 0x17: // MASK_EN
         sgb_mask_mode_ = static_cast<std::uint8_t>(packet[1] & 3U);
         break;
     default: break;
     }
+}
+
+void Ppu::complete_sgb_transfer() noexcept {
+    if (sgb_transfer_ == SgbTransfer::none || sgb_transfer_countdown_ == 0) {
+        return;
+    }
+    --sgb_transfer_countdown_;
+    if (sgb_transfer_countdown_ != 0) return;
+
+    switch (sgb_transfer_) {
+    case SgbTransfer::palettes:
+        // PAL_TRN samples the indexed Game Boy image in 256 eight-row tiles.
+        // Each packed row becomes one little-endian RGB555 palette entry.
+        for (unsigned tile = 0; tile < 0x100; ++tile) {
+            for (unsigned row = 0; row < 8; ++row) {
+                (*sgb_ram_palettes_)[tile * 8U + row] =
+                    pack_sgb_transfer_row(*sgb_screen_buffer_, tile, row);
+            }
+        }
+        break;
+    case SgbTransfer::attributes:
+        // ATTR_TRN uses the same 2-bit row encoding as PAL_TRN, with the
+        // first 4,050 bytes holding 45 packed 20x18 attribute files.
+        for (unsigned tile = 0; tile < 0xFE; ++tile) {
+            for (unsigned row = 0; row < 8; ++row) {
+                const auto packed =
+                    pack_sgb_transfer_row(*sgb_screen_buffer_, tile, row);
+                const auto offset = (tile * 8U + row) * 2U;
+                if (offset < sgb_attribute_files_->size()) {
+                    (*sgb_attribute_files_)[offset] =
+                        static_cast<std::uint8_t>(packed);
+                }
+                if (offset + 1U < sgb_attribute_files_->size()) {
+                    (*sgb_attribute_files_)[offset + 1U] =
+                        static_cast<std::uint8_t>(packed >> 8);
+                }
+            }
+        }
+        break;
+    case SgbTransfer::chr_low:
+        for (unsigned source_tile = 0; source_tile < 0x100; ++source_tile) {
+            const auto tile = source_tile / 2U;
+            const auto plane_offset = (source_tile & 1U) != 0 ? 16U : 0U;
+            for (unsigned row = 0; row < 8; ++row) {
+                const auto packed =
+                    pack_sgb_transfer_row(*sgb_screen_buffer_, source_tile, row);
+                const auto offset = tile * 32U + plane_offset + row * 2U;
+                (*sgb_border_tiles_)[offset] =
+                    static_cast<std::uint8_t>(packed);
+                (*sgb_border_tiles_)[offset + 1U] =
+                    static_cast<std::uint8_t>(packed >> 8);
+            }
+        }
+        break;
+    case SgbTransfer::chr_high:
+        for (unsigned source_tile = 0; source_tile < 0x100; ++source_tile) {
+            const auto tile = 0x80U + source_tile / 2U;
+            const auto plane_offset = (source_tile & 1U) != 0 ? 16U : 0U;
+            for (unsigned row = 0; row < 8; ++row) {
+                const auto packed =
+                    pack_sgb_transfer_row(*sgb_screen_buffer_, source_tile, row);
+                const auto offset = tile * 32U + plane_offset + row * 2U;
+                (*sgb_border_tiles_)[offset] =
+                    static_cast<std::uint8_t>(packed);
+                (*sgb_border_tiles_)[offset + 1U] =
+                    static_cast<std::uint8_t>(packed >> 8);
+            }
+        }
+        break;
+    case SgbTransfer::border:
+        // PCT_TRN transfers 0x440 packed rows (0x880 bytes). The remainder of
+        // the 4 KiB latch is don't-care and is kept deterministic at zero.
+        sgb_border_pct_->fill(0);
+        for (unsigned tile = 0; tile < 0x88; ++tile) {
+            for (unsigned row = 0; row < 8; ++row) {
+                const auto packed =
+                    pack_sgb_transfer_row(*sgb_screen_buffer_, tile, row);
+                const auto offset = (tile * 8U + row) * 2U;
+                (*sgb_border_pct_)[offset] =
+                    static_cast<std::uint8_t>(packed);
+                (*sgb_border_pct_)[offset + 1U] =
+                    static_cast<std::uint8_t>(packed >> 8);
+            }
+        }
+        sgb_border_transferred_ = true;
+        break;
+    case SgbTransfer::none: break;
+    }
+    sgb_transfer_ = SgbTransfer::none;
 }
 
 const Ppu::SgbFramebuffer& Ppu::sgb_framebuffer() const noexcept {

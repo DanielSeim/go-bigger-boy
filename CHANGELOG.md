@@ -4,7 +4,7 @@
 
 ### Super Game Boy
 
-- Decode retained `CHR_TRN`/`PCT_TRN` data into a deterministic 256×224 SGB
+- Decode sampled `CHR_TRN`/`PCT_TRN` data into a deterministic 256×224 SGB
   border framebuffer, including SNES 4bpp tiles, tilemap flips, RGB555 border
   palettes, and transparent overlay of the native Game Boy viewport.
 - Expose the SGB framebuffer through the core, emulator, and memory-bus APIs.
@@ -12,6 +12,8 @@
   Android, and web presentation use the 256×224 dimensions automatically.
 - Persist the PCT transfer latch in save-state format version 27 and add
   compositor regression coverage.
+- Model the hardware's three-frame latency for `CHR_TRN`, `PCT_TRN`, `PAL_TRN`,
+  and `ATTR_TRN`, including in-flight transfer state in save-state version 28.
 
 ## [0.33.14] - 2026-09-09
 

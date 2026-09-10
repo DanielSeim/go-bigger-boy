@@ -126,6 +126,8 @@ private:
         unsigned x) const noexcept;
     [[nodiscard]] std::uint32_t compose_pixel(
         unsigned x, BackgroundPixel background) const noexcept;
+    [[nodiscard]] std::uint8_t sgb_source_pixel(
+        unsigned x, BackgroundPixel background) const noexcept;
     [[nodiscard]] std::uint32_t palette_color(
         std::uint8_t palette, std::uint8_t color,
         const std::array<std::uint32_t, 4>& colors) const noexcept;
@@ -136,6 +138,16 @@ private:
                                                   std::uint8_t color) const noexcept;
     [[nodiscard]] std::uint8_t sgb_attribute_for_pixel(unsigned x) const noexcept;
     void load_sgb_attribute_file(std::size_t index) noexcept;
+    void complete_sgb_transfer() noexcept;
+
+    enum class SgbTransfer : std::uint8_t {
+        none,
+        palettes,
+        attributes,
+        chr_low,
+        chr_high,
+        border,
+    };
 
     std::array<std::uint8_t, 0x2000> vram_{};
     std::unique_ptr<std::array<std::uint8_t, 0x2000>> cgb_vram_;
@@ -188,12 +200,19 @@ private:
     // attribute maps consumed by PAL_SET and ATTR_SET.
     std::unique_ptr<std::array<std::uint16_t, 0x800>> sgb_ram_palettes_;
     std::unique_ptr<std::array<std::uint8_t, 0x2D * 90>> sgb_attribute_files_;
-    // CHR_TRN latches two 4 KiB tile-data banks. PCT_TRN is retained
-    // byte-for-byte because its map/attribute/palette packing is SNES-side.
+    // CHR_TRN latches two 4 KiB tile-data banks. PCT_TRN retains the packed
+    // SNES map/attribute/palette payload generated from the indexed screen.
     std::unique_ptr<std::array<std::uint8_t, 0x2000>> sgb_border_tiles_;
     std::unique_ptr<std::array<std::uint8_t, 0x1000>> sgb_border_pct_;
     mutable std::unique_ptr<SgbFramebuffer> sgb_framebuffer_;
+    // The SGB VRAM transfer commands sample the live, indexed Game Boy image
+    // rather than the host-rendered RGB framebuffer. Keep the 2-bit source
+    // pixels so transfers can be encoded into SNES bitplanes deterministically.
+    std::unique_ptr<std::array<std::uint8_t, screen_width * screen_height>>
+        sgb_screen_buffer_;
     bool sgb_border_transferred_{};
+    SgbTransfer sgb_transfer_{SgbTransfer::none};
+    std::uint8_t sgb_transfer_countdown_{};
     // MASK_EN: 0=disabled, 1=freeze, 2=black, 3=color-zero fill.
     std::uint8_t sgb_mask_mode_{};
 
