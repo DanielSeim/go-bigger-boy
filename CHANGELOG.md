@@ -9,6 +9,12 @@
 
 ### Super Game Boy
 
+- Render a deterministic SGB BIOS-style fallback border before a cartridge's
+  custom `PCT_TRN` data arrives, restoring visible borders for games that defer
+  or omit custom border uploads on all frontends.
+- Arm the SGB command receiver at adapter startup so the first `00` start pulse
+  is accepted; this restores Pokémon and other games' initial `MLT_REQ`,
+  `CHR_TRN`, and `PCT_TRN` border setup sequence.
 - Correct SGB screen-data transfer timing to the documented five-frame window,
   preventing border graphics from being sampled before a game has finished
   preparing the transfer image.

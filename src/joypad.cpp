@@ -71,6 +71,12 @@ void Joypad::set_sgb_mode(const bool enabled) noexcept {
     if (!enabled) {
         sgb_player_count_ = 1;
         sgb_current_player_ = 0;
+    } else {
+        // The ICD2 is idle-high when the SGB link is enabled.  The first
+        // command therefore begins with the game's 00 start write; there is
+        // no preceding 30 pulse to arm the parser as there is between later
+        // packets.  SameBoy models this initial armed state as well.
+        sgb_ready_for_pulse_ = true;
     }
 }
 

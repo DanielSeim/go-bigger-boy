@@ -129,7 +129,12 @@ memories, while the `_TRN` commands sample the live indexed Game Boy image and
 encode it into SNES-side transfer latches. The core now exposes a deterministic 256×224 SGB
 border framebuffer: it decodes the SNES 4bpp tile data, tilemap flips, and
 RGB555 border palettes, then overlays the native Game Boy viewport through
-transparent border pixels. `MASK_EN` implements disabled, freeze, black, and
+transparent border pixels. Before a cartridge uploads a custom border, the
+core renders a deterministic BIOS-style fallback frame so SGB output does not
+collapse to a black letterbox. The command receiver is armed at adapter startup,
+matching the first direct `00` start pulse used by licensed software; this is
+required for the initial multiplayer probe and subsequent border transfers.
+`MASK_EN` implements disabled, freeze, black, and
 color-zero viewport modes. `MLT_REQ` supports deterministic one-, two-, and
 four-player polling IDs; the current local button state is intentionally shared
 by each emulated controller until a multi-device input backend is added. These

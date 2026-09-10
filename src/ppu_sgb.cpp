@@ -295,14 +295,45 @@ void Ppu::complete_sgb_transfer() noexcept {
 
 const Ppu::SgbFramebuffer& Ppu::sgb_framebuffer() const noexcept {
     constexpr auto black = UINT32_C(0xFF000000);
-    sgb_framebuffer_->fill(black);
 
-    // A border is only meaningful after PCT_TRN. Before that transfer, keep a
-    // deterministic black surround and expose the native Game Boy viewport in
-    // the same 48,40 letterbox used by the SGB hardware.
+    // The real SGB has a built-in border in its BIOS.  It is visible before a
+    // cartridge uploads a custom border (and many games never issue PCT_TRN at
+    // all).  Leaving this path black made SGB look like a letterboxed DMG and
+    // hid the fact that the 256x224 presentation path was working.  Keep the
+    // fallback deterministic and generated rather than baking copyrighted
+    // game-specific artwork into the core; a later PCT_TRN transfer still
+    // replaces it with the cartridge's border data.
     constexpr std::size_t viewport_x = (sgb_border_width - screen_width) / 2;
     constexpr std::size_t viewport_y = (sgb_border_height - screen_height) / 2;
     if (!sgb_border_transferred_) {
+        // Keep the fallback immutable and shared: frontends request the
+        // composed frame every video tick, so regenerating 57,344 border
+        // pixels per frame would needlessly compete with emulation on mobile.
+        static const auto default_border = [] {
+            std::array<std::uint32_t,
+                       sgb_border_width * sgb_border_height> border{};
+            constexpr auto base = UINT32_C(0xFF101820);
+            constexpr auto shade = UINT32_C(0xFF182A34);
+            constexpr auto highlight = UINT32_C(0xFF2E5966);
+            constexpr auto edge = UINT32_C(0xFF081014);
+            for (std::size_t y = 0; y < sgb_border_height; ++y) {
+                for (std::size_t x = 0; x < sgb_border_width; ++x) {
+                    auto color = ((x / 8 + y / 8) & 1U) != 0 ? shade : base;
+                    // A tiled inner frame approximates the stable BIOS border
+                    // silhouette while keeping the fallback deterministic.
+                    if ((x >= 16 && x < 240 && (y == 16 || y == 207)) ||
+                        (y >= 16 && y < 208 && (x == 16 || x == 239))) {
+                        color = highlight;
+                    }
+                    if ((x == 15 || x == 240 || y == 15 || y == 208)) {
+                        color = edge;
+                    }
+                    border[y * sgb_border_width + x] = color;
+                }
+            }
+            return border;
+        }();
+        *sgb_framebuffer_ = default_border;
         for (std::size_t y = 0; y < screen_height; ++y) {
             std::copy_n(framebuffer_->begin() + y * screen_width, screen_width,
                         sgb_framebuffer_->begin() +
@@ -310,6 +341,8 @@ const Ppu::SgbFramebuffer& Ppu::sgb_framebuffer() const noexcept {
         }
         return *sgb_framebuffer_;
     }
+
+    sgb_framebuffer_->fill(black);
 
     const auto expand = [](const unsigned component) {
         return (component << 3) | (component >> 2);

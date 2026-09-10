@@ -153,6 +153,34 @@ void test_multiplayer_command_reaches_joypad() {
           "bus joypad polling advances after P15 is released");
 }
 
+void test_sgb_first_packet_accepts_start_pulse() {
+    gameboy::Joypad joypad;
+    joypad.set_sgb_mode(true);
+    std::array<std::uint8_t, gameboy::Joypad::sgb_packet_size> command{};
+    command[0] = static_cast<std::uint8_t>((0x11U << 3) | 1U);
+    command[1] = 0x01; // two players
+
+    // A first packet starts directly with 00, unlike subsequent packets
+    // which are preceded by the previous packet's 30 finish write.
+    static_cast<void>(joypad.write(0x00));
+    static_cast<void>(joypad.write(0x30));
+    for (std::size_t bit = 0; bit < command.size() * 8; ++bit) {
+        static_cast<void>(joypad.write(0x30));
+        static_cast<void>(joypad.write(
+            (command[bit / 8] & (1U << (bit & 7U))) != 0 ? 0x10 : 0x20));
+    }
+    static_cast<void>(joypad.write(0x30));
+    static_cast<void>(joypad.write(0x20));
+
+    std::array<std::uint8_t, gameboy::Joypad::sgb_packet_size *
+                                  gameboy::Joypad::sgb_max_packets>
+        packet{};
+    std::size_t size = 0;
+    check(joypad.take_sgb_packet(packet, size) && size == command.size() &&
+              packet[0] == command[0] && packet[1] == command[1],
+          "SGB parser accepts the first packet's direct start pulse");
+}
+
 void test_malformed_command_matrix_is_bounded() {
     gameboy::Ppu ppu;
     ppu.set_sgb_mode(true);
@@ -300,9 +328,12 @@ void test_sgb_border_compositor() {
     check(border[40 * gameboy::Ppu::sgb_border_width + 48] == 0xFFFFFFFF,
           "SGB compositor overlays transparent border pixels with the GB viewport");
 
-    // A missing transfer still exposes a deterministic centered viewport.
+    // A missing transfer still exposes a deterministic centered viewport and
+    // the SGB BIOS border instead of collapsing to a black letterbox.
     gameboy::Ppu no_border;
     no_border.set_sgb_mode(true);
+    check(no_border.sgb_framebuffer()[8] == 0xFF182A34,
+          "SGB compositor exposes the built-in border before cartridge upload");
     check(no_border.sgb_framebuffer()[40 * gameboy::Ppu::sgb_border_width + 48] ==
               0xFFFFFFFF,
           "SGB compositor centers the native viewport before border transfer");
@@ -331,6 +362,7 @@ int main() {
     test_mask_command_is_bounded();
     test_multiplayer_request_and_polling();
     test_multiplayer_command_reaches_joypad();
+    test_sgb_first_packet_accepts_start_pulse();
     test_malformed_command_matrix_is_bounded();
     test_palette_command_reaches_video();
     test_palette_and_attribute_transfer_commands();
