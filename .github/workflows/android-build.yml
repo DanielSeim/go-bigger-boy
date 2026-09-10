@@ -67,7 +67,6 @@ jobs:
         with:
           api-level: 35
           arch: x86_64
-          profile: Pixel_2
           disable-animations: true
           script: cd android && ./gradlew --no-daemon connectedDebugAndroidTest
 
