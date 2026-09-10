@@ -26,7 +26,7 @@ test('loads a ROM and persists the primary display settings', async ({page}) => 
 
   await page.goto('/');
   await expect(page.locator('#status')).toHaveText(
-    'Ready. Choose or drop a Game Boy ROM.', {timeout: 90_000});
+    'Ready. Choose a Game Boy ROM to begin.', {timeout: 90_000});
   await expect(page.locator('#open-rom')).toBeEnabled();
   await expect(page.locator('#display-palette')).toBeEnabled();
   await expect(page.locator('#video-mode')).toBeEnabled();
@@ -45,7 +45,7 @@ test('loads a ROM and persists the primary display settings', async ({page}) => 
 
   await page.reload();
   await expect(page.locator('#status')).toHaveText(
-    'Ready. Choose or drop a Game Boy ROM.', {timeout: 90_000});
+    'Ready. Choose a Game Boy ROM to begin.', {timeout: 90_000});
   await expect(page.locator('#audio-enabled')).not.toBeChecked();
   await expect(page.locator('#display-palette')).toHaveValue('3');
   await expect(page.locator('#video-mode')).toHaveValue('2');
