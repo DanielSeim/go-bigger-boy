@@ -220,7 +220,27 @@ bool test_tcp_session() {
                second.bus().serial_port().transfers_completed() >= second_target;
     };
 
-    if (!run_guest_transfer(0xA5, 0x3C, true)) {
+    // Let the synthetic guests perform their first transfer from their ROM
+    // entry points. This mirrors production startup exactly and avoids
+    // overwriting a guest's initial SB/SC writes with test-side registers.
+    const auto initial_deadline = std::chrono::steady_clock::now() +
+                                  std::chrono::seconds(5);
+    while (std::chrono::steady_clock::now() < initial_deadline &&
+           (first.bus().serial_port().transfers_completed() < 1 ||
+            second.bus().serial_port().transfers_completed() < 1)) {
+        first_endpoint.poll();
+        second_endpoint.poll();
+        if (first.cpu().total_cycles() <= second.cpu().total_cycles()) {
+            static_cast<void>(first.step());
+        } else {
+            static_cast<void>(second.step());
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    first_endpoint.poll();
+    second_endpoint.poll();
+    if (first.bus().serial_port().transfers_completed() < 1 ||
+        second.bus().serial_port().transfers_completed() < 1) {
         report_tcp_failure(server, client, second_endpoint, first_endpoint,
                            first, second);
     }
