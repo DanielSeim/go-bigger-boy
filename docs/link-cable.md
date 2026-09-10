@@ -265,7 +265,11 @@ summarizes frame ordering and link-event classes; it also accepts older
 `frame=` records so existing captures remain useful for regression tests.
 For a quick human-readable summary of a captured file, run
 `gbb_trace_report PATH`; a nonzero exit status indicates malformed canonical
-records and the output lists the offending lines.
+records and the output lists the offending lines. The report also prints the
+maximum progress gap and transfer duration for each player, counts gaps of at
+least 250 ms, and summarizes long Pokémon state transitions. A transition is
+flagged as stalled when it is long and no serial progress occurred between the
+preceding Pokémon state event and the transition.
 Each frame also records CPU cycle totals, PC/SP, halt/stop status, serial phase,
 interrupt registers, and (for Pokémon Gen I) the game link/battle markers and
 party count. Additional `event=serial_complete`, `event=serial_active`, and

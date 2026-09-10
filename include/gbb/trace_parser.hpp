@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <array>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -37,6 +38,12 @@ struct TraceRecord {
         std::string_view name) const noexcept;
 };
 
+struct TraceSerialTiming {
+    std::uint64_t max_progress_gap_ms{};
+    std::uint64_t max_transfer_ms{};
+    std::size_t long_progress_gaps{};
+};
+
 // A parsed trace is intentionally a lightweight report rather than a replay
 // of emulator state. It validates the stable envelope and summarizes event
 // classes so callers can build deterministic replay/assertion tooling without
@@ -64,6 +71,10 @@ struct TraceReport {
     std::size_t pokemon_transition_events{};
     std::size_t trade_phase_events{};
     std::size_t stall_events{};
+    std::array<TraceSerialTiming, 2> serial_timing{};
+    std::uint64_t max_pokemon_transition_ms{};
+    std::size_t long_pokemon_transitions{};
+    std::size_t stalled_pokemon_transitions{};
 
     [[nodiscard]] bool valid() const noexcept { return errors.empty(); }
     [[nodiscard]] bool has_event(std::string_view name) const noexcept;

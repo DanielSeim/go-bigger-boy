@@ -1,6 +1,7 @@
 #include "gbb/trace_parser.hpp"
 
 #include <algorithm>
+#include <array>
 #include <charconv>
 #include <cctype>
 #include <limits>
@@ -94,6 +95,13 @@ bool TraceReport::has_event(const std::string_view name) const noexcept {
 
 TraceReport parse_trace(const std::string_view text) {
     TraceReport report;
+    constexpr std::uint64_t suspicious_latency_ms = 250;
+    struct TimingState {
+        std::optional<std::uint64_t> last_progress_ms;
+        std::optional<std::uint64_t> transfer_start_ms;
+        std::optional<std::uint64_t> last_pokemon_state_ms;
+    };
+    std::array<TimingState, 2> timing{};
     if (text.size() > trace_parser_max_bytes) {
         report.errors.push_back("trace exceeds the 16 MiB parser limit");
     }
@@ -251,6 +259,72 @@ TraceReport parse_trace(const std::string_view text) {
                 }
                 if (record.event == "trade_input_phase") ++report.trade_phase_events;
                 if (record.event.find("stall") != std::string::npos) ++report.stall_events;
+                const auto elapsed = record.uint64_field("elapsed_ms");
+                const auto player_value = record.uint64_field("player");
+                const auto player_index = [&]() -> std::optional<std::size_t> {
+                    if (!player_value.has_value() || *player_value < 1 ||
+                        *player_value > 2) {
+                        return std::nullopt;
+                    }
+                    return static_cast<std::size_t>(*player_value - 1);
+                }();
+                if (elapsed.has_value() && player_index.has_value()) {
+                    auto& state = timing[*player_index];
+                    auto& serial = report.serial_timing[*player_index];
+                    if (record.event == "serial_progress") {
+                        if (state.last_progress_ms.has_value() &&
+                            *elapsed >= *state.last_progress_ms) {
+                            const auto gap = *elapsed - *state.last_progress_ms;
+                            serial.max_progress_gap_ms =
+                                std::max(serial.max_progress_gap_ms, gap);
+                            if (gap >= suspicious_latency_ms) {
+                                ++serial.long_progress_gaps;
+                            }
+                        }
+                        state.last_progress_ms = *elapsed;
+                    } else if (record.event == "serial_active") {
+                        const auto active = record.uint64_field("value");
+                        if (active.has_value() && *active != 0) {
+                            state.transfer_start_ms = *elapsed;
+                        } else if (active.has_value() &&
+                                   state.transfer_start_ms.has_value() &&
+                                   *elapsed >= *state.transfer_start_ms) {
+                            serial.max_transfer_ms = std::max(
+                                serial.max_transfer_ms,
+                                *elapsed - *state.transfer_start_ms);
+                            state.transfer_start_ms.reset();
+                        }
+                    } else if (record.event == "serial_complete" &&
+                               state.transfer_start_ms.has_value() &&
+                               *elapsed >= *state.transfer_start_ms) {
+                        serial.max_transfer_ms = std::max(
+                            serial.max_transfer_ms,
+                            *elapsed - *state.transfer_start_ms);
+                        state.transfer_start_ms.reset();
+                    } else if (record.event == "pokemon_state") {
+                        const auto delta_ms = record.uint64_field("delta_ms");
+                        if (delta_ms.has_value()) {
+                            report.max_pokemon_transition_ms = std::max(
+                                report.max_pokemon_transition_ms, *delta_ms);
+                            if (*delta_ms >= suspicious_latency_ms) {
+                                ++report.long_pokemon_transitions;
+                                const auto has_previous_state =
+                                    state.last_pokemon_state_ms.has_value();
+                                const auto has_progress_since_previous =
+                                    has_previous_state &&
+                                    state.last_progress_ms.has_value() &&
+                                    *state.last_progress_ms >
+                                        *state.last_pokemon_state_ms &&
+                                    *state.last_progress_ms <= *elapsed;
+                                if (has_previous_state &&
+                                    !has_progress_since_previous) {
+                                    ++report.stalled_pokemon_transitions;
+                                }
+                            }
+                        }
+                        state.last_pokemon_state_ms = *elapsed;
+                    }
+                }
             } else if (starts_with(token, "frame=")) {
                 record.kind = TraceRecordKind::legacy_frame;
                 if (!parse_fields(line, record))

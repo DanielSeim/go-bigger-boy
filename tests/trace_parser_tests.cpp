@@ -41,11 +41,43 @@ void test_sdl_trace_replay() {
               report.serial_active_changes == 1 && report.serial_progress_events == 1 &&
               report.pokemon_state_events == 1 && report.pokemon_transition_events == 1,
           "SDL replay summarizes canonical event classes");
+    check(report.serial_timing[0].max_progress_gap_ms == 0 &&
+              report.serial_timing[0].max_transfer_ms == 2 &&
+              report.max_pokemon_transition_ms == 3,
+          "SDL replay derives transfer and transition timing");
     check(report.has_frame && report.first_frame == 10 && report.last_frame == 12 &&
               report.frames_monotonic,
           "SDL replay validates frame ordering");
     check(report.has_event("serial_complete"),
           "SDL replay can locate a specific event");
+}
+
+void test_trace_latency_warnings() {
+    const auto report = gbb::parse_trace(
+        "session_start id=8 trace_version=1 transport=tcp role=join "
+        "session_id=8\n"
+        "event=serial_active trace_version=1 session_id=8 frame=1 elapsed_ms=0 "
+        "transport=tcp role=join player=1 value=1\n"
+        "event=serial_progress trace_version=1 session_id=8 frame=2 elapsed_ms=1 "
+        "transport=tcp role=join player=1 bits=1\n"
+        "event=serial_progress trace_version=1 session_id=8 frame=3 elapsed_ms=300 "
+        "transport=tcp role=join player=1 bits=2\n"
+        "event=serial_complete trace_version=1 session_id=8 frame=4 elapsed_ms=301 "
+        "transport=tcp role=join player=1 count=1\n"
+        "event=pokemon_state trace_version=1 session_id=8 frame=5 elapsed_ms=302 "
+        "transport=tcp role=join player=1 delta_frame=1 delta_ms=302 changed=ui\n"
+        "event=pokemon_state trace_version=1 session_id=8 frame=6 elapsed_ms=604 "
+        "transport=tcp role=join player=1 delta_frame=1 delta_ms=302 changed=ui\n");
+    check(report.valid(), "latency trace remains valid");
+    check(report.serial_timing[0].max_progress_gap_ms == 299 &&
+              report.serial_timing[0].long_progress_gaps == 1,
+          "latency report identifies long serial progress gaps");
+    check(report.serial_timing[0].max_transfer_ms == 301,
+          "latency report measures transfer duration");
+    check(report.max_pokemon_transition_ms == 302 &&
+              report.long_pokemon_transitions == 2 &&
+              report.stalled_pokemon_transitions == 1,
+          "latency report identifies long and stalled state transitions");
 }
 
 void test_harness_trace_replay() {
@@ -131,6 +163,7 @@ void test_bounded_and_mutated_input() {
 
 int main() {
     test_sdl_trace_replay();
+    test_trace_latency_warnings();
     test_harness_trace_replay();
     test_invalid_trace();
     test_legacy_session_records();

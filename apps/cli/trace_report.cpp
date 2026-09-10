@@ -40,6 +40,24 @@ int main(int argc, char** argv) {
               << "pokemon_transition_events=" << report.pokemon_transition_events << '\n'
               << "trade_phase_events=" << report.trade_phase_events << '\n'
               << "stall_events=" << report.stall_events << '\n'
+              << "serial_player_1_max_progress_gap_ms="
+              << report.serial_timing[0].max_progress_gap_ms << '\n'
+              << "serial_player_1_max_transfer_ms="
+              << report.serial_timing[0].max_transfer_ms << '\n'
+              << "serial_player_1_long_progress_gaps="
+              << report.serial_timing[0].long_progress_gaps << '\n'
+              << "serial_player_2_max_progress_gap_ms="
+              << report.serial_timing[1].max_progress_gap_ms << '\n'
+              << "serial_player_2_max_transfer_ms="
+              << report.serial_timing[1].max_transfer_ms << '\n'
+              << "serial_player_2_long_progress_gaps="
+              << report.serial_timing[1].long_progress_gaps << '\n'
+              << "max_pokemon_transition_ms="
+              << report.max_pokemon_transition_ms << '\n'
+              << "long_pokemon_transitions="
+              << report.long_pokemon_transitions << '\n'
+              << "stalled_pokemon_transitions="
+              << report.stalled_pokemon_transitions << '\n'
               << "frames=";
     if (report.has_frame) {
         std::cout << report.first_frame << '-' << report.last_frame;
