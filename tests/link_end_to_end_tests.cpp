@@ -184,6 +184,15 @@ bool test_tcp_session() {
     const auto run_guest_transfer = [&](const std::uint8_t first_value,
                                         const std::uint8_t second_value,
                                         const bool first_internal) {
+        // A completed transfer releases clock ownership asynchronously. Let
+        // both packet queues drain before arming the next guest byte so the
+        // next owner cannot race a stale release marker (this is especially
+        // observable with Windows' socket scheduling).
+        for (unsigned attempt = 0; attempt < 20; ++attempt) {
+            first_endpoint.poll();
+            second_endpoint.poll();
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
         const auto first_target =
             first.bus().serial_port().transfers_completed() + 1;
         const auto second_target =
