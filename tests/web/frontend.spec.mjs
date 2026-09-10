@@ -36,7 +36,7 @@ test('loads a ROM and persists the primary display settings', async ({page}) => 
   await page.locator('#display-palette').selectOption('3');
   await page.locator('#video-mode').selectOption('2');
   await page.locator('#hardware-model').selectOption('cgb-e');
-  await expect(page.evaluate(() => ({
+  await expect(await page.evaluate(() => ({
     audio: localStorage.getItem('gbb-audio-enabled'),
     palette: localStorage.getItem('gbb-display-palette'),
     video: localStorage.getItem('gbb-video-mode'),
