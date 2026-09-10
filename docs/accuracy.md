@@ -117,6 +117,9 @@ revision mismatches are being reviewed.
 
 Cartridges with the SGB header capability flag (`0x0146 = 0x03`) are selected
 automatically for the SGB hardware profile unless they require CGB hardware.
+When SGB/SGB2 is selected explicitly, that profile also overrides a cartridge's
+CGB compatibility flag so dual-mode software sees the DMG-compatible SGB bus
+and can issue its border-transfer commands.
 The SGB path is a deterministic HLE implementation: JOYP command packets are
 decoded at the bit level, `PAL01`/`PAL23`/`PAL03`/`PAL12` set RGB555 palettes,
 and `ATTR_BLK`/`ATTR_LIN`/`ATTR_DIV`/`ATTR_CHR` update the 20×18 tile attribute
@@ -131,7 +134,7 @@ color-zero viewport modes. `MLT_REQ` supports deterministic one-, two-, and
 four-player polling IDs; the current local button state is intentionally shared
 by each emulated controller until a multi-device input backend is added. These
 behaviors are covered by core tests and save states (version 28). SGB VRAM
-transfer commands retain their payload for the hardware-like three-frame
+transfer commands retain their payload for the hardware-like five-frame
 transfer latency before the new data becomes visible. This is deliberately not
 a full SNES emulation path: the real adapter relies on SNES-
 side execution, graphics, and audio ([Pan Docs SGB overview](https://gbdev.io/pandocs/SGB_Functions.html)), so complete SGB compatibility would

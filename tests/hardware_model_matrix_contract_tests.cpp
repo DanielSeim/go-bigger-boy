@@ -169,6 +169,12 @@ void test_automatic_selection() {
     gameboy::Emulator cgb{gameboy::Cartridge{test_rom(true, true)}};
     check(cgb.bus().cgb_mode() && cgb.bus().read8(0xFF4F) == 0xFE,
           "automatic selection gives CGB-capable software priority over SGB");
+
+    gameboy::Emulator explicit_sgb{gameboy::Cartridge{test_rom(true, true)},
+                                   gameboy::HardwareModel::sgb};
+    check(!explicit_sgb.bus().cgb_mode() &&
+              explicit_sgb.bus().read8(0xFF4F) == 0xFF,
+          "explicit SGB selection keeps CGB-compatible software on the SGB path");
 }
 
 void test_public_model_catalog() {

@@ -173,12 +173,12 @@ void Ppu::apply_sgb_command(
     }
     case 0x0B: { // PAL_TRN
         sgb_transfer_ = SgbTransfer::palettes;
-        sgb_transfer_countdown_ = 3;
+        sgb_transfer_countdown_ = sgb_transfer_delay_frames;
         break;
     }
     case 0x15: { // ATTR_TRN
         sgb_transfer_ = SgbTransfer::attributes;
-        sgb_transfer_countdown_ = 3;
+        sgb_transfer_countdown_ = sgb_transfer_delay_frames;
         break;
     }
     case 0x16: { // ATTR_SET
@@ -190,12 +190,12 @@ void Ppu::apply_sgb_command(
     case 0x13: { // CHR_TRN
         const auto bank = static_cast<std::size_t>(packet[1] & 1U);
         sgb_transfer_ = bank == 0 ? SgbTransfer::chr_low : SgbTransfer::chr_high;
-        sgb_transfer_countdown_ = 3;
+        sgb_transfer_countdown_ = sgb_transfer_delay_frames;
         break;
     }
     case 0x14: // PCT_TRN
         sgb_transfer_ = SgbTransfer::border;
-        sgb_transfer_countdown_ = 3;
+        sgb_transfer_countdown_ = sgb_transfer_delay_frames;
         break;
     case 0x17: // MASK_EN
         sgb_mask_mode_ = static_cast<std::uint8_t>(packet[1] & 3U);

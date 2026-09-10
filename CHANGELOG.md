@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Super Game Boy
+
+- Correct SGB screen-data transfer timing to the documented five-frame window,
+  preventing border graphics from being sampled before a game has finished
+  preparing the transfer image.
+- Make an explicit SGB/SGB2 model selection override a cartridge's CGB
+  compatibility flag, allowing dual-mode games to enter their SGB border path.
+
 ## [0.33.15] - 2026-09-10
 
 ### Link diagnostics and audio continuity

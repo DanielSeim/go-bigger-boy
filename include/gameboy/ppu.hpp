@@ -148,6 +148,9 @@ private:
         chr_high,
         border,
     };
+    // SGB screen-data transfers begin on the frame after the command and
+    // complete at the end of the fifth subsequent frame.
+    static constexpr std::uint8_t sgb_transfer_delay_frames = 5;
 
     std::array<std::uint8_t, 0x2000> vram_{};
     std::unique_ptr<std::array<std::uint8_t, 0x2000>> cgb_vram_;

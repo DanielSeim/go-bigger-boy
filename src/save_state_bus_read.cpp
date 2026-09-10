@@ -514,7 +514,7 @@ void SaveStateBusCodec::read(save_state_format::Reader& reader,
         const auto transfer = reader.u8();
         bus.ppu_.sgb_transfer_countdown_ = reader.u8();
         if (transfer > static_cast<std::uint8_t>(Ppu::SgbTransfer::border) ||
-            bus.ppu_.sgb_transfer_countdown_ > 3 ||
+            bus.ppu_.sgb_transfer_countdown_ > Ppu::sgb_transfer_delay_frames ||
             (transfer == static_cast<std::uint8_t>(Ppu::SgbTransfer::none) &&
              bus.ppu_.sgb_transfer_countdown_ != 0) ||
             (transfer != static_cast<std::uint8_t>(Ppu::SgbTransfer::none) &&

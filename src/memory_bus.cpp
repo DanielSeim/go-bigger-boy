@@ -20,6 +20,18 @@ MemoryBus::MemoryBus(Cartridge cartridge)
 }
 
 void MemoryBus::initialize_post_boot(const HardwareModel model) noexcept {
+    // The selected hardware profile controls the CPU-visible mode.  A
+    // cartridge can advertise CGB compatibility while still being run in an
+    // explicit SGB profile; in that case the game must see DMG/SGB hardware
+    // so it takes its SGB command path instead of the CGB path.
+    const auto cgb_profile = model == HardwareModel::cgb0 ||
+                             model == HardwareModel::cgb ||
+                             model == HardwareModel::cgb_c ||
+                             model == HardwareModel::cgb_e;
+    cgb_mode_ = cgb_profile && cartridge_.supports_cgb();
+    ppu_.set_cgb_mode(cgb_mode_);
+    serial_ = SerialPort{cgb_mode_};
+    serial_.set_completion_callback(this, &MemoryBus::serial_transfer_complete);
     cgb_hardware_ = model == HardwareModel::cgb0 ||
                     model == HardwareModel::cgb ||
                     model == HardwareModel::cgb_c ||

@@ -62,7 +62,10 @@ void test_transfer_commands_and_guards() {
           "CHR_TRN transfer remains pending during its hardware delay");
     advance_sgb_frames(ppu, 2);
     check(ppu.debug_read_sgb_border_tile(0x0000) == 0,
-          "CHR_TRN transfer remains pending for two frames");
+          "CHR_TRN transfer remains pending during the first two frames");
+    advance_sgb_frames(ppu, 2);
+    check(ppu.debug_read_sgb_border_tile(0x0000) == 0,
+          "CHR_TRN transfer remains pending through the fourth frame");
     advance_sgb_frames(ppu, 1);
     check(ppu.debug_read_sgb_border_tile(0x0000) == 0x01 &&
               ppu.debug_read_sgb_border_tile(0x0001) == 0x00,
@@ -72,7 +75,7 @@ void test_transfer_commands_and_guards() {
     ppu.debug_write_vram(0, 0x0000, 0x80);
     ppu.debug_write_vram(0, 0x0001, 0x00);
     ppu.apply_sgb_command(packet, packet.size());
-    advance_sgb_frames(ppu, 3);
+    advance_sgb_frames(ppu, 5);
     check(ppu.debug_read_sgb_border_tile(0x1000) == 0x80 &&
               ppu.debug_read_sgb_border_tile(0x1FFF) == 0x00,
           "CHR_TRN selects the second tile-data bank");
@@ -81,7 +84,7 @@ void test_transfer_commands_and_guards() {
     ppu.debug_write_vram(0, 0x0000, 0x01);
     ppu.debug_write_vram(0, 0x0001, 0x00);
     ppu.apply_sgb_command(packet, packet.size());
-    advance_sgb_frames(ppu, 3);
+    advance_sgb_frames(ppu, 5);
     check(ppu.debug_read_sgb_border_pct(0x0000) == 0x01 &&
               ppu.debug_read_sgb_border_pct(0x0001) == 0x00 &&
               ppu.debug_read_sgb_border_pct(0x0FFF) == 0x00,
@@ -223,7 +226,7 @@ void test_palette_and_attribute_transfer_commands() {
     std::array<std::uint8_t, 16 * 7> packet{};
     packet[0] = static_cast<std::uint8_t>(0x0B << 3); // PAL_TRN
     ppu.apply_sgb_command(packet, packet.size());
-    advance_sgb_frames(ppu, 3);
+    advance_sgb_frames(ppu, 5);
     check(ppu.debug_read_sgb_palette(0) == 0x0001 &&
               ppu.debug_read_sgb_palette(0x7FF) == 0x0080,
           "PAL_TRN stores all transferred RGB555 palette entries");
@@ -243,7 +246,7 @@ void test_palette_and_attribute_transfer_commands() {
     packet.fill(0);
     packet[0] = static_cast<std::uint8_t>(0x15 << 3); // ATTR_TRN
     ppu.apply_sgb_command(packet, packet.size());
-    advance_sgb_frames(ppu, 3);
+    advance_sgb_frames(ppu, 5);
     packet.fill(0);
     packet[0] = static_cast<std::uint8_t>(0x16 << 3); // ATTR_SET
     packet[1] = 0x00;
@@ -282,12 +285,12 @@ void test_sgb_border_compositor() {
     std::array<std::uint8_t, 16 * 7> packet{};
     packet[0] = static_cast<std::uint8_t>(0x13U << 3); // CHR_TRN
     ppu.apply_sgb_command(packet, packet.size());
-    advance_sgb_frames(ppu, 3);
+    advance_sgb_frames(ppu, 5);
 
     packet.fill(0);
     packet[0] = static_cast<std::uint8_t>(0x14U << 3); // PCT_TRN
     ppu.apply_sgb_command(packet, packet.size());
-    advance_sgb_frames(ppu, 3);
+    advance_sgb_frames(ppu, 5);
 
     const auto& border = ppu.sgb_framebuffer();
     check(border[0] == 0xFFFF0000,
