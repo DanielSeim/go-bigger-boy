@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.33.16] - 2026-09-10
+
 ### Windows settings
 
 - Show the hardware-model restart notice immediately after a confirmed model
