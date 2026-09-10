@@ -18,8 +18,10 @@
     .subtitle { margin: 4px 0 0; color: #a7b9aa; }
     button { border: 0; border-radius: 8px; padding: 11px 16px; font: inherit; font-weight: 700; background: #8bcf69; color: #10200d; cursor: pointer; }
     button:disabled { cursor: wait; opacity: .55; }
-    .actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; align-items: end; flex: 1 1 100%; min-width: 0; gap: 10px; }
+    .actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) auto; align-items: end; flex: 1 1 100%; min-width: 0; gap: 10px; }
     .palette { display: grid; gap: 4px; color: #a7b9aa; font-size: .8rem; font-weight: 700; }
+    .audio-toggle { display: flex; align-items: center; align-self: end; gap: 8px; min-height: 41px; color: #a7b9aa; font-size: .8rem; font-weight: 700; white-space: nowrap; cursor: pointer; }
+    .audio-toggle input { display: block; width: 18px; height: 18px; margin: 0; accent-color: #8bcf69; }
     select { width: 100%; min-width: 0; min-height: 41px; border: 1px solid #526b58; border-radius: 8px; padding: 7px 30px 7px 10px; background: #18231c; color: #e7f0e9; font: inherit; }
     select:focus-visible { outline: 3px solid #8bcf69; outline-offset: 1px; }
     select:disabled { cursor: wait; opacity: .55; }
@@ -38,9 +40,9 @@
     .help { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin-top: 18px; color: #a7b9aa; }
     .help p { margin: 0; padding: 12px; border-radius: 9px; background: #111a15; }
     a { color: #aadc91; }
-    input { display: none; }
+    input[type="file"] { display: none; }
     [hidden] { display: none !important; }
-    @media (max-width: 560px) { header { align-items: flex-start; flex-direction: column; } .actions, header button { width: 100%; } .actions { display: flex; align-items: stretch; flex-direction: column; } .actions .palette, .actions button { width: 100%; } main { padding-top: 16px; } }
+    @media (max-width: 560px) { header { align-items: flex-start; flex-direction: column; } .actions, header button { width: 100%; } .actions { display: flex; align-items: stretch; flex-direction: column; } .actions .palette, .actions .audio-toggle, .actions button { width: 100%; } main { padding-top: 16px; } }
   </style>
 </head>
 <body>
@@ -79,8 +81,9 @@
           Hardware model
           <select id="hardware-model" disabled></select>
         </label>
-        <label class="palette" for="audio-enabled">
-          <span><input id="audio-enabled" type="checkbox" checked> Generate audio</span>
+        <label class="audio-toggle" for="audio-enabled">
+          <input id="audio-enabled" type="checkbox" checked>
+          <span>Generate audio</span>
         </label>
         <button id="open-rom" type="button" disabled>Choose ROM</button>
       </div>
