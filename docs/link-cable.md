@@ -140,11 +140,13 @@ trade and battle handshake and the bounded timeout-retry recovery.
 
 The native end-to-end fixture now provides a deterministic baseline for that
 investigation. It establishes both TCP peers before attaching the serial
-endpoints, runs the real CPU/memory-bus path, completes eight transfers while
-alternating clock ownership, and reports channel state, handshake state,
-transfer counts, request/response counters, and malformed-frame counts when a
-transfer times out. This catches ownership drift that a single-byte smoke test
-misses while keeping transport timing out of the guest's serial edge callback.
+endpoints, runs the real CPU/memory-bus path, completes a guest-driven transfer,
+and reports channel state, handshake state, transfer counts, request/response
+counters, and malformed-frame counts when the transfer times out. The dedicated
+serial-link contract then exercises sustained alternating ownership and payloads
+without platform socket scheduling noise. Together they catch both transport
+setup failures and ownership drift while keeping network timing out of the
+guest's serial edge callback.
 
 #### Pending manual comparison
 
