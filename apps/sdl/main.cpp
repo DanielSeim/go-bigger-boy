@@ -1385,8 +1385,6 @@ int main(int argc, char** argv) {
                     auto settings = load_app_settings(preference_path);
                     settings.hardware_model = hardware_model;
                     write_portable_settings(preference_path, settings);
-                    show_error(sdl.window,
-                               "Hardware model saved. Restart the ROM to apply it.");
                 }
                 if (result.voxel_profile_changed) {
                     sdl.voxel_profile_loaded = false;

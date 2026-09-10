@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Windows settings
+
+- Show the hardware-model restart notice immediately after a confirmed model
+  selection instead of delaying it until the next ROM launch.
+
 ### Super Game Boy
 
 - Correct SGB screen-data transfer timing to the documented five-frame window,

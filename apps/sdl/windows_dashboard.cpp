@@ -1488,13 +1488,23 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
             }
             return 0;
         case id_hardware_model:
-            if (HIWORD(wparam) == CBN_SELCHANGE) {
+            // CBN_SELENDOK fires after the drop-down has closed, so the
+            // restart notice is tied to the user's confirmed change instead
+            // of being deferred until the next ROM is opened.
+            if (HIWORD(wparam) == CBN_SELENDOK) {
                 const auto selected = SendMessageW(state->hardware_model,
                                                    CB_GETCURSEL, 0, 0);
                 if (selected >= 0 && selected < static_cast<LRESULT>(gameboy::selectable_hardware_models.size())) {
-                    state->result.hardware_model = gameboy::selectable_hardware_models[
+                    const auto model = gameboy::selectable_hardware_models[
                         static_cast<std::size_t>(selected)];
-                    state->result.hardware_model_changed = true;
+                    if (model != state->result.hardware_model) {
+                        state->result.hardware_model = model;
+                        state->result.hardware_model_changed = true;
+                        MessageBoxW(
+                            state->window,
+                            L"Hardware model changed. Restart the ROM to apply it.",
+                            L"Hardware model", MB_OK | MB_ICONINFORMATION);
+                    }
                 }
             }
             return 0;
