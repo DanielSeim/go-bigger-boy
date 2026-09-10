@@ -131,18 +131,30 @@ final class SettingsScreen {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
 
+        final String settingsDirectory = activity.getFilesDir().getAbsolutePath();
+        final AudioSettingModel audioSetting = new AudioSettingModel(
+                new AudioSettingModel.Store() {
+                    @Override
+                    public boolean read() {
+                        return LibraryActivity.nativeAudioEnabled(settingsDirectory);
+                    }
+
+                    @Override
+                    public void write(boolean enabled) {
+                        LibraryActivity.nativeSetAudioEnabled(
+                                settingsDirectory, enabled);
+                    }
+                });
         final Switch audio = new Switch(activity);
-        audio.setText("Generate audio");
+        audio.setText(AudioSettingModel.LABEL);
         audio.setTextSize(16);
         audio.setPadding(0, activity.dp(10), 0, activity.dp(8));
-        final String settingsDirectory = activity.getFilesDir().getAbsolutePath();
-        audio.setChecked(LibraryActivity.nativeAudioEnabled(settingsDirectory));
+        audio.setChecked(audioSetting.isEnabled());
         audio.setOnCheckedChangeListener((button, enabled) ->
-                LibraryActivity.nativeSetAudioEnabled(settingsDirectory, enabled));
+                audioSetting.setEnabled(enabled));
         display.addView(audio);
-        display.addView(activity.text(
-                "Disable audio generation to keep the emulator quiet and reduce CPU use.",
-                13, Color.GRAY));
+        display.addView(activity.text(AudioSettingModel.DESCRIPTION, 13,
+                Color.GRAY));
 
         final LinearLayout artworkCard = sectionCard("Artwork");
         final Switch artwork = new Switch(activity);

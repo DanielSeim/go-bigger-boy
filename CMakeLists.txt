@@ -891,6 +891,18 @@ if(GAMEBOY_BUILD_TESTS)
     # The version path intentionally runs before SDL video initialization, so
     # it is safe in headless CI and catches broken desktop entry-point builds.
     if(TARGET SDL3::SDL3)
+        add_executable(gameboy_settings_audio_contract_tests
+            tests/settings_audio_contract_tests.cpp
+            apps/sdl/settings_persistence.cpp)
+        target_include_directories(gameboy_settings_audio_contract_tests
+            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/apps/sdl)
+        target_compile_definitions(gameboy_settings_audio_contract_tests
+            PRIVATE GBB_SETTINGS_PERSISTENCE_TEST_PATH)
+        target_link_libraries(gameboy_settings_audio_contract_tests
+            PRIVATE gbb_core_api SDL3::SDL3)
+        add_test(NAME gameboy_settings_audio_contract
+                 COMMAND gameboy_settings_audio_contract_tests)
+
         add_executable(gameboy_sdl_input_mapping_tests
             tests/sdl_input_mapping_tests.cpp
             apps/sdl/input_mapping.cpp)
