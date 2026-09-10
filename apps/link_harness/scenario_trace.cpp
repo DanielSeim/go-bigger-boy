@@ -82,10 +82,24 @@ void append_trace_player(std::ostream& output,
     field("facing_alt", bus.read8(static_cast<std::uint16_t>(w_player_direction + 5)), true);
     field("party", bus.read8(w_party_count));
     field("party_alt", bus.read8(static_cast<std::uint16_t>(w_party_count + 5)));
+    field("g2_link_mode", bus.read8(g2_w_link_mode), true);
+    field("g2_party", bus.read8(g2_w_party_count));
+    field("g2_party_species_1", bus.read8(g2_w_party_species), true);
     field("menu", at_battle_trade_menu(emulator));
     field("trade_selection", at_trade_selection_menu(emulator));
     field("trade_stats", at_trade_stats_menu(emulator));
     field("trade_cancel", at_trade_cancel_menu(emulator));
+    const auto battle = probe_battle(emulator);
+    field("battle_active", battle.active);
+    field("battle_link_mode", battle.link_mode, true);
+    field("battle_just_started", battle.battle_just_started, true);
+    field("battle_ended", battle.battle_ended, true);
+    field("battle_mode", battle.battle_mode, true);
+    field("battle_type", battle.battle_type, true);
+    field("battle_mon", battle.current_mon, true);
+    field("battle_action", battle.player_action, true);
+    field("battle_mon_hp", battle.battle_mon_hp, true);
+    field("enemy_mon_hp", battle.enemy_mon_hp, true);
     field("serial_nybble_send", bus.read8(w_serial_nybble_send), true);
     field("serial_nybble_receive", bus.read8(w_serial_nybble_receive), true);
     field("serial_nybble_temp", bus.read8(w_serial_nybble_temp), true);
@@ -166,7 +180,87 @@ void ScenarioTrace::write_frame(
              << " auto_p2_battle_confirmed=" << input_state.second_battle_confirmed
              << " link_session=" << (session_state == nullptr ? "tcp" : session_state)
              << " session_transfers=" << session_transfers << '\n';
+    write_battle_checkpoint(frame, first, second);
     writer_.checkpoint_frame(frame);
+}
+
+void ScenarioTrace::write_battle_checkpoint(const std::uint64_t frame,
+                                            gameboy::Emulator& first,
+                                            gameboy::Emulator& second) {
+    if (!writer_.enabled()) return;
+    WramBank1Guard first_bank(first);
+    WramBank1Guard second_bank(second);
+    const auto first_battle = probe_battle(first);
+    const auto second_battle = probe_battle(second);
+    const auto first_entered = !first_battle_seen_ && first_battle.active;
+    const auto second_entered = !second_battle_seen_ && second_battle.active;
+    const auto has_entry = first_battle_seen_ || second_battle_seen_ ||
+                           first_battle.active || second_battle.active;
+    if (!has_entry) return;
+
+    const char* phase = "checkpoint";
+    if (first_entered || second_entered) {
+        phase = "entry";
+    } else if (!battle_divergence_reported_ &&
+               first_battle.active != second_battle.active &&
+               (first_battle_seen_ || second_battle_seen_)) {
+        phase = "first_divergence";
+        battle_divergence_reported_ = true;
+    } else if (frame < last_battle_checkpoint_frame_ + 30) {
+        return;
+    }
+
+    auto& output = writer_.stream();
+    gbb::write_trace_event_prefix(output, "battle_checkpoint", writer_.session(),
+                                  frame, writer_.elapsed_ms(), writer_.transport(),
+                                  writer_.role());
+    output << " phase=" << phase;
+    const auto append = [&](const char* prefix,
+                            gameboy::Emulator& emulator,
+                            const PokemonBattleSnapshot& battle) {
+        const auto& registers = emulator.cpu().registers();
+        const auto& serial = emulator.bus().serial_port();
+        output << ' ' << prefix << "_active=" << battle.active
+               << ' ' << prefix << "_generation="
+               << static_cast<unsigned>(battle.generation)
+               << ' ' << prefix << "_link_mode=0x" << std::hex
+               << static_cast<unsigned>(battle.link_mode)
+               << ' ' << prefix << "_just_started=0x"
+               << static_cast<unsigned>(battle.battle_just_started)
+               << ' ' << prefix << "_ended=0x"
+               << static_cast<unsigned>(battle.battle_ended)
+               << ' ' << prefix << "_mode=0x"
+               << static_cast<unsigned>(battle.battle_mode)
+               << ' ' << prefix << "_type=0x"
+               << static_cast<unsigned>(battle.battle_type)
+               << ' ' << prefix << "_mon=0x"
+               << static_cast<unsigned>(battle.current_mon)
+               << ' ' << prefix << "_action=0x"
+               << static_cast<unsigned>(battle.player_action)
+               << ' ' << prefix << "_player_hp=0x" << battle.battle_mon_hp
+               << ' ' << prefix << "_enemy_hp=0x" << battle.enemy_mon_hp
+               << ' ' << prefix << "_pc=0x" << registers.pc
+               << ' ' << prefix << "_sp=0x" << registers.sp
+               << ' ' << prefix << "_cycles=" << std::dec
+               << emulator.cpu().total_cycles()
+               << ' ' << prefix << "_serial_active=" << serial.transfer_active()
+               << ' ' << prefix << "_serial_internal=" << serial.internal_clock()
+               << ' ' << prefix << "_serial_bits="
+               << static_cast<unsigned>(serial.bits_shifted())
+               << ' ' << prefix << "_sb=0x" << std::hex
+               << static_cast<unsigned>(serial.read_data())
+               << ' ' << prefix << "_sc=0x"
+               << static_cast<unsigned>(serial.read_control())
+               << std::dec;
+    };
+    append("p1", first, first_battle);
+    append("p2", second, second_battle);
+    output << " first_seen=" << first_battle_seen_
+           << " second_seen=" << second_battle_seen_ << '\n';
+    writer_.flush();
+    last_battle_checkpoint_frame_ = frame;
+    first_battle_seen_ = first_battle_seen_ || first_battle.active;
+    second_battle_seen_ = second_battle_seen_ || second_battle.active;
 }
 
 void ScenarioTrace::write_serial_event(

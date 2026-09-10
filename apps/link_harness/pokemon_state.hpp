@@ -32,6 +32,24 @@ inline constexpr std::uint16_t w_text_box_id = 0xD125;
 inline constexpr std::uint16_t w_two_option_menu_id = 0xD12C;
 inline constexpr std::uint16_t party_mon_size = 0x2C;
 
+// Pokémon Gold/Silver/Crystal use a separate WRAM map. These addresses are
+// from the linked battle/link state variables (WRAM bank 1 unless noted).
+inline constexpr std::uint16_t g2_w_link_mode = 0xC2DC;
+inline constexpr std::uint16_t g2_w_cur_battle_mon = 0xD0D4;
+inline constexpr std::uint16_t g2_w_battle_mode = 0xD22D;
+inline constexpr std::uint16_t g2_w_battle_type = 0xD230;
+inline constexpr std::uint16_t g2_w_battle_just_started = 0xD264;
+inline constexpr std::uint16_t g2_w_battle_ended = 0xC734;
+inline constexpr std::uint16_t g2_w_battle_player_action = 0xD0EC;
+inline constexpr std::uint16_t g2_w_battle_mon_hp = 0xC63C;
+inline constexpr std::uint16_t g2_w_enemy_mon = 0xD206;
+inline constexpr std::uint16_t g2_w_enemy_mon_hp = g2_w_enemy_mon + 0x10;
+inline constexpr std::uint16_t g2_w_party_count = 0xDCD7;
+inline constexpr std::uint16_t g2_w_party_species = g2_w_party_count + 1;
+inline constexpr std::uint16_t g2_w_party_mon1 = 0xDCDF;
+inline constexpr std::uint16_t g2_party_mon_size = 0x30;
+inline constexpr std::uint8_t g2_link_mode_colosseum = 0x03;
+
 inline constexpr std::uint8_t link_state_battling = 0x04;
 inline constexpr std::uint8_t link_state_trading = 0x32;
 
@@ -49,9 +67,26 @@ private:
     bool switched_{};
 };
 
+struct PokemonBattleSnapshot {
+    gameboy::LinkGeneration generation{gameboy::LinkGeneration::unknown};
+    std::uint8_t link_mode{};
+    std::uint8_t battle_state{};
+    std::uint8_t battle_just_started{};
+    std::uint8_t battle_ended{};
+    std::uint8_t battle_mode{};
+    std::uint8_t battle_type{};
+    std::uint8_t current_mon{};
+    std::uint8_t player_action{};
+    std::uint16_t battle_mon_hp{};
+    std::uint16_t enemy_mon_hp{};
+    bool active{};
+};
+
 [[nodiscard]] std::uint16_t read16be(const gameboy::Emulator& emulator,
                                      std::uint16_t address);
 [[nodiscard]] PartySnapshot read_party(const gameboy::Emulator& emulator);
+[[nodiscard]] PokemonBattleSnapshot probe_battle(
+    const gameboy::Emulator& emulator);
 [[nodiscard]] bool same_party(const PartySnapshot& first,
                               const PartySnapshot& second);
 [[nodiscard]] bool contains_mon(const PartySnapshot& party,

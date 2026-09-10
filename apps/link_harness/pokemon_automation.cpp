@@ -14,6 +14,17 @@ void apply_auto_inputs(const Options& options, const std::uint64_t frame,
     WramBank1Guard first_bank(first);
     WramBank1Guard second_bank(second);
     constexpr std::uint64_t confirm_interval = 24;
+    const auto gen2 = first.link_compatibility_profile().generation ==
+                          gameboy::LinkGeneration::gen2 &&
+                      second.link_compatibility_profile().generation ==
+                          gameboy::LinkGeneration::gen2;
+    if (gen2 && options.scenario != Scenario::none) {
+        // Gen II selects Trade Center/Colosseum at the receptionist and then
+        // enters a different room flow; the Gen I table/menu writes below are
+        // unsafe on its WRAM map. Keep a prepared Gen II state untouched so
+        // the harness can observe the real battle protocol and checkpoints.
+        return;
+    }
     if (!options.state1.empty()) {
         const auto scenario_start_delay = options.scenario == Scenario::none ? 24 : 120;
         if (options.scenario != Scenario::none) {
@@ -499,5 +510,4 @@ void append_auto_input_report(std::ostream& report,
 }
 
 } // namespace gbb::link_harness
-
 

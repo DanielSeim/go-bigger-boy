@@ -10,6 +10,8 @@
 #include <iterator>
 #include <string>
 #include <vector>
+#include <algorithm>
+#include <string_view>
 
 namespace {
 
@@ -69,6 +71,56 @@ int main() {
           "semantic tracker recognizes exchanged party records");
     check(tracker.battle_observed(),
           "semantic tracker recognizes both battle states");
+
+    SemanticTracker gen2_tracker(first_before, second_before);
+    SemanticSample gen2_sample;
+    gen2_sample.first_battle_active = true;
+    gen2_sample.second_battle_active = true;
+    gen2_sample.first_battle_link_mode = g2_link_mode_colosseum;
+    gen2_sample.second_battle_link_mode = g2_link_mode_colosseum;
+    gen2_sample.first_battle_just_started = 1;
+    gen2_sample.second_battle_just_started = 1;
+    gen2_tracker.sample(gen2_sample);
+    check(gen2_tracker.battle_observed(),
+          "semantic tracker recognizes Gen II Colosseum markers");
+    SemanticTracker gen2_asymmetric(first_before, second_before);
+    gen2_sample.second_battle_active = false;
+    gen2_asymmetric.sample(gen2_sample);
+    check(!gen2_asymmetric.battle_observed() &&
+              std::string{semantic_failure(gen2_asymmetric,
+                                           Expectation::battle)} ==
+                  "player2_did_not_enter_battle",
+          "semantic tracker reports an asymmetric Gen II battle entry");
+
+    std::vector<std::uint8_t> gen2_rom(0x8000, 0);
+    constexpr std::string_view gen2_title = "POKEMON G";
+    std::copy(gen2_title.begin(), gen2_title.end(), gen2_rom.begin() + 0x134);
+    gen2_rom[0x143] = 0x80; // CGB-capable cartridge.
+    gen2_rom[0x14A] = 1;    // Western destination code.
+    gameboy::Emulator gen2_emulator{gameboy::Cartridge{gen2_rom}};
+    gen2_emulator.bus().write8(0xFF70, 1);
+    gen2_emulator.bus().write8(g2_w_party_count, 1);
+    gen2_emulator.bus().write8(g2_w_party_species, 0x19);
+    gen2_emulator.bus().write8(g2_w_party_species + 1, 0xFF);
+    gen2_emulator.bus().write8(g2_w_party_mon1, 0x19);
+    gen2_emulator.bus().write8(g2_w_party_mon1 + 5, 0x12);
+    gen2_emulator.bus().write8(g2_w_party_mon1 + 6, 0x34);
+    const auto gen2_party = read_party(gen2_emulator);
+    check(gen2_party.valid && gen2_party.count == 1 &&
+              gen2_party.species[0] == 0x19 &&
+              gen2_party.ot_ids[0] == 0x1234,
+          "party probe reads the Gen II party layout and trainer ID");
+    gen2_emulator.bus().write8(g2_w_link_mode, g2_link_mode_colosseum);
+    gen2_emulator.bus().write8(g2_w_battle_just_started, 1);
+    gen2_emulator.bus().write8(g2_w_cur_battle_mon, 2);
+    gen2_emulator.bus().write8(g2_w_battle_mode, 1);
+    gen2_emulator.bus().write8(g2_w_battle_type, 2);
+    gen2_emulator.bus().write8(g2_w_battle_mon_hp, 0);
+    gen2_emulator.bus().write8(g2_w_battle_mon_hp + 1, 100);
+    const auto gen2_battle = probe_battle(gen2_emulator);
+    check(gen2_battle.active && gen2_battle.link_mode == g2_link_mode_colosseum &&
+              gen2_battle.current_mon == 2 && gen2_battle.battle_mon_hp == 100,
+          "battle probe recognizes the Gen II Colosseum marker");
 
     AutoInputState runner_input;
     unsigned callback_count = 0;

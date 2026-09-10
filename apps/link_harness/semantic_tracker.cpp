@@ -79,6 +79,24 @@ void SemanticTracker::sample(const SemanticSample& sample) {
     second_battle_state_localized = sample.second_battle_state_localized;
     first_map_localized = sample.first_map_localized;
     second_map_localized = sample.second_map_localized;
+    first_battle_link_mode = sample.first_battle_link_mode;
+    second_battle_link_mode = sample.second_battle_link_mode;
+    first_battle_just_started = sample.first_battle_just_started;
+    second_battle_just_started = sample.second_battle_just_started;
+    first_battle_ended = sample.first_battle_ended;
+    second_battle_ended = sample.second_battle_ended;
+    first_battle_mode = sample.first_battle_mode;
+    second_battle_mode = sample.second_battle_mode;
+    first_battle_type = sample.first_battle_type;
+    second_battle_type = sample.second_battle_type;
+    first_current_battle_mon = sample.first_current_battle_mon;
+    second_current_battle_mon = sample.second_current_battle_mon;
+    first_battle_player_action = sample.first_battle_player_action;
+    second_battle_player_action = sample.second_battle_player_action;
+    first_battle_mon_hp = sample.first_battle_mon_hp;
+    second_battle_mon_hp = sample.second_battle_mon_hp;
+    first_enemy_mon_hp = sample.first_enemy_mon_hp;
+    second_enemy_mon_hp = sample.second_enemy_mon_hp;
     first_battle_trade_menu_seen =
         first_battle_trade_menu_seen || sample.first_battle_trade_menu;
     second_battle_trade_menu_seen =
@@ -103,11 +121,13 @@ void SemanticTracker::sample(const SemanticSample& sample) {
     first_battle_seen = first_battle_seen || first_effective == link_state_battling ||
                         (first_battle_state != 0 && first_battle_state != 0xFF) ||
                         (first_battle_state_localized != 0 &&
-                         first_battle_state_localized != 0xFF);
+                         first_battle_state_localized != 0xFF) ||
+                        sample.first_battle_active;
     second_battle_seen = second_battle_seen || second_effective == link_state_battling ||
                          (second_battle_state != 0 && second_battle_state != 0xFF) ||
                          (second_battle_state_localized != 0 &&
-                          second_battle_state_localized != 0xFF);
+                          second_battle_state_localized != 0xFF) ||
+                         sample.second_battle_active;
 }
 
 bool SemanticTracker::trade_observed() const {
@@ -226,6 +246,42 @@ void append_semantic_report(std::ostream& report,
            << hex(tracker.first_battle_state_localized) << '\n'
            << "player2_battle_state_localized_final="
            << hex(tracker.second_battle_state_localized) << '\n'
+           << "player1_battle_link_mode_final="
+           << hex(tracker.first_battle_link_mode) << '\n'
+           << "player2_battle_link_mode_final="
+           << hex(tracker.second_battle_link_mode) << '\n'
+           << "player1_battle_just_started_final="
+           << hex(tracker.first_battle_just_started) << '\n'
+           << "player2_battle_just_started_final="
+           << hex(tracker.second_battle_just_started) << '\n'
+           << "player1_battle_ended_final="
+           << hex(tracker.first_battle_ended) << '\n'
+           << "player2_battle_ended_final="
+           << hex(tracker.second_battle_ended) << '\n'
+           << "player1_battle_mode_final="
+           << hex(tracker.first_battle_mode) << '\n'
+           << "player2_battle_mode_final="
+           << hex(tracker.second_battle_mode) << '\n'
+           << "player1_battle_type_final="
+           << hex(tracker.first_battle_type) << '\n'
+           << "player2_battle_type_final="
+           << hex(tracker.second_battle_type) << '\n'
+           << "player1_current_battle_mon_final="
+           << hex(tracker.first_current_battle_mon) << '\n'
+           << "player2_current_battle_mon_final="
+           << hex(tracker.second_current_battle_mon) << '\n'
+           << "player1_battle_action_final="
+           << hex(tracker.first_battle_player_action) << '\n'
+           << "player2_battle_action_final="
+           << hex(tracker.second_battle_player_action) << '\n'
+           << "player1_battle_mon_hp_final="
+           << hex(tracker.first_battle_mon_hp) << '\n'
+           << "player2_battle_mon_hp_final="
+           << hex(tracker.second_battle_mon_hp) << '\n'
+           << "player1_enemy_mon_hp_final="
+           << hex(tracker.first_enemy_mon_hp) << '\n'
+           << "player2_enemy_mon_hp_final="
+           << hex(tracker.second_enemy_mon_hp) << '\n'
            << "player1_map_localized_final=" << hex(tracker.first_map_localized) << '\n'
            << "player2_map_localized_final=" << hex(tracker.second_map_localized) << '\n';
 }

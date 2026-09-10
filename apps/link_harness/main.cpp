@@ -77,6 +77,28 @@ SemanticSample capture_semantic_sample(gameboy::Emulator& first,
     sample.second_trade_stats_menu = at_trade_stats_menu(second);
     sample.first_trade_cancel_menu = at_trade_cancel_menu(first);
     sample.second_trade_cancel_menu = at_trade_cancel_menu(second);
+    const auto first_battle = probe_battle(first);
+    const auto second_battle = probe_battle(second);
+    sample.first_battle_active = first_battle.active;
+    sample.second_battle_active = second_battle.active;
+    sample.first_battle_link_mode = first_battle.link_mode;
+    sample.second_battle_link_mode = second_battle.link_mode;
+    sample.first_battle_just_started = first_battle.battle_just_started;
+    sample.second_battle_just_started = second_battle.battle_just_started;
+    sample.first_battle_ended = first_battle.battle_ended;
+    sample.second_battle_ended = second_battle.battle_ended;
+    sample.first_battle_mode = first_battle.battle_mode;
+    sample.second_battle_mode = second_battle.battle_mode;
+    sample.first_battle_type = first_battle.battle_type;
+    sample.second_battle_type = second_battle.battle_type;
+    sample.first_current_battle_mon = first_battle.current_mon;
+    sample.second_current_battle_mon = second_battle.current_mon;
+    sample.first_battle_player_action = first_battle.player_action;
+    sample.second_battle_player_action = second_battle.player_action;
+    sample.first_battle_mon_hp = first_battle.battle_mon_hp;
+    sample.second_battle_mon_hp = second_battle.battle_mon_hp;
+    sample.first_enemy_mon_hp = first_battle.enemy_mon_hp;
+    sample.second_enemy_mon_hp = second_battle.enemy_mon_hp;
     return sample;
 }
 void poll_pair(gameboy::TcpSerialEndpoint& first,
@@ -95,6 +117,12 @@ void validate_scenario_states(const Options& options,
     // a transport timeout or a trade deadlock.
     if (options.scenario == Scenario::none || options.state1.empty() ||
         !is_pokemon) {
+        return;
+    }
+    if (first.link_compatibility_profile().generation == gameboy::LinkGeneration::gen2) {
+        // Gen II's Cable Club has a different map/menu layout. The semantic
+        // probe below reports whether both guests entered Colosseum; do not
+        // reject a valid Gen II state using Gen I's 0xEF/0xF0 map IDs.
         return;
     }
     WramBank1Guard first_bank(first);
@@ -202,12 +230,17 @@ int main(int argc, char** argv) {
                                 initial_semantic.second_party);
         const auto initial_save1 = first.export_battery_save();
         const auto initial_save2 = second.export_battery_save();
-        const auto is_pokemon = first.bus().cartridge().title() == "POKEMON BLUE" ||
-                                first.bus().cartridge().title() == "POKEMON RED" ||
-                                first.bus().cartridge().title() == "POKEMON YELLOW";
+        const auto first_profile = first.link_compatibility_profile();
+        const auto second_profile = second.link_compatibility_profile();
+        const auto is_pokemon = first_profile.known() && second_profile.known() &&
+                                first_profile.generation == second_profile.generation;
         validate_scenario_states(options, first, second, is_pokemon);
         const auto starts_at_link_choice = [&]() {
             if (options.scenario == Scenario::none || options.state1.empty()) return false;
+            if (first.link_compatibility_profile().generation ==
+                gameboy::LinkGeneration::gen2) {
+                return false;
+            }
             WramBank1Guard first_bank(first);
             WramBank1Guard second_bank(second);
             return at_ready_link_choice(first) && at_ready_link_choice(second);
@@ -221,7 +254,9 @@ int main(int argc, char** argv) {
             // these save states. Preserve that setup and only reset the game
             // handshake registers below; resetting the serial phase here can
             // strand the CPU in its initial transfer wait.
-            if (is_pokemon && !starts_at_link_choice) {
+            if (is_pokemon && first.link_compatibility_profile().generation ==
+                                gameboy::LinkGeneration::gen1 &&
+                !starts_at_link_choice) {
                 reset_pokemon_link_handshake(first);
                 reset_pokemon_link_handshake(second);
             }
@@ -325,7 +360,9 @@ int main(int argc, char** argv) {
         gameboy::TcpSerialEndpoint second_endpoint;
         first_endpoint.set_arbitration_priority(true);
         second_endpoint.set_arbitration_priority(false);
-        if (is_pokemon && !starts_at_link_choice) {
+        if (is_pokemon && first.link_compatibility_profile().generation ==
+                            gameboy::LinkGeneration::gen1 &&
+            !starts_at_link_choice) {
             reset_pokemon_link_handshake(first);
             reset_pokemon_link_handshake(second);
         } else {

@@ -345,9 +345,11 @@ being mistaken for a successful test.
 
 The party and link-state probes understand the five-byte WRAM displacement used
 by the European Gen I translations, so the same assertions work with the
-German Pokémon Blue ROM. The two `*_link_state_localized_final` fields are the
-alternate probe values and are retained in the report for diagnosing a ROM
-layout mismatch.
+German Pokémon Blue ROM. Gold, Silver, and Crystal use their native Gen II
+party layout (`wPartyCount` at `DCD7`) and the link-battle marker
+`wLinkMode=LINK_COLOSSEUM` (`C2DC`). The two `*_link_state_localized_final`
+fields are the alternate Gen I probe values and are retained in the report for
+diagnosing a ROM layout mismatch.
 
 For a reproducible scripted run, use `--scenario trade` or `--scenario battle`
 with the two Cable Club save states. The scenario enables confirmation input,
@@ -362,6 +364,10 @@ trade confirmation after the game's synchronization delay. Scenarios require
 battery saves. If
 the frame budget expires, the report includes `semantic_failure`, menu-seen
 flags, and the final localized map markers to identify which phase stalled.
+Gen II states use the game's native link-room selection and are not subjected
+to the Gen I map validator; capture them after the receptionist has selected
+the Colosseum room. The Gen II probe and battle checkpoints remain useful even
+when guest-side menu automation is bypassed.
 
 For deeper scripted-run debugging, add `--trace PATH`. The harness writes one
 flushed key/value record per emulated frame, including both CPUs' PC/SP and
@@ -371,6 +377,16 @@ response, denial, and waiting counters. The `auto_*` fields show which phase
 of the scenario input driver has been reached. A `trace_end` record makes
 partial files from a crashed or forcibly stopped run easy to identify. The
 trace is opt-in and is never written unless this option is supplied.
+
+Battle traces additionally contain `event=battle_checkpoint` records. An
+`entry` record captures the first frame either guest reports a battle marker;
+`first_divergence` is emitted when one guest has entered while the other has
+not, and periodic `checkpoint` records retain the raw Gen II link mode,
+current-mon/action, HP, CPU PC/SP/cycles, and serial ownership. These records
+make Android-host/Windows-joiner desynchronisation reproducible without
+guessing from screenshots. For Gen I the same event carries the legacy link
+and battle markers, so the trace schema remains transport- and generation-
+agnostic.
 
 During a scripted trade run, the harness also watches for a narrow post-menu
 serial deadlock: both games

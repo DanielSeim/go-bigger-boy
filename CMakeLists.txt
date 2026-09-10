@@ -854,10 +854,14 @@ if(GAMEBOY_BUILD_TESTS)
 
         add_executable(gameboy_link_harness_trace_tests
             tests/link_harness_trace_tests.cpp
-            apps/link_harness/scenario_trace_writer.cpp)
+            apps/link_harness/scenario_trace_writer.cpp
+            apps/link_harness/scenario_trace.cpp
+            apps/link_harness/pokemon_state.cpp
+            apps/link_harness/scenario_state.cpp)
         target_include_directories(gameboy_link_harness_trace_tests
             PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/apps/link_harness
                     ${CMAKE_CURRENT_SOURCE_DIR}/include)
+        target_link_libraries(gameboy_link_harness_trace_tests PRIVATE gameboy_core)
         add_test(NAME gameboy_link_harness_trace
                  COMMAND gameboy_link_harness_trace_tests)
 

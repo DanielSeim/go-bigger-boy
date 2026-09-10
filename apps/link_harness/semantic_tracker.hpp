@@ -41,6 +41,26 @@ struct SemanticSample {
     bool second_trade_stats_menu{};
     bool first_trade_cancel_menu{};
     bool second_trade_cancel_menu{};
+    bool first_battle_active{};
+    bool second_battle_active{};
+    std::uint8_t first_battle_link_mode{};
+    std::uint8_t second_battle_link_mode{};
+    std::uint8_t first_battle_just_started{};
+    std::uint8_t second_battle_just_started{};
+    std::uint8_t first_battle_ended{};
+    std::uint8_t second_battle_ended{};
+    std::uint8_t first_battle_mode{};
+    std::uint8_t second_battle_mode{};
+    std::uint8_t first_battle_type{};
+    std::uint8_t second_battle_type{};
+    std::uint8_t first_current_battle_mon{};
+    std::uint8_t second_current_battle_mon{};
+    std::uint8_t first_battle_player_action{};
+    std::uint8_t second_battle_player_action{};
+    std::uint16_t first_battle_mon_hp{};
+    std::uint16_t second_battle_mon_hp{};
+    std::uint16_t first_enemy_mon_hp{};
+    std::uint16_t second_enemy_mon_hp{};
 };
 
 class SemanticTracker {
@@ -78,6 +98,24 @@ public:
     std::uint8_t second_battle_state_localized{};
     std::uint8_t first_map_localized{};
     std::uint8_t second_map_localized{};
+    std::uint8_t first_battle_link_mode{};
+    std::uint8_t second_battle_link_mode{};
+    std::uint8_t first_battle_just_started{};
+    std::uint8_t second_battle_just_started{};
+    std::uint8_t first_battle_ended{};
+    std::uint8_t second_battle_ended{};
+    std::uint8_t first_battle_mode{};
+    std::uint8_t second_battle_mode{};
+    std::uint8_t first_battle_type{};
+    std::uint8_t second_battle_type{};
+    std::uint8_t first_current_battle_mon{};
+    std::uint8_t second_current_battle_mon{};
+    std::uint8_t first_battle_player_action{};
+    std::uint8_t second_battle_player_action{};
+    std::uint16_t first_battle_mon_hp{};
+    std::uint16_t second_battle_mon_hp{};
+    std::uint16_t first_enemy_mon_hp{};
+    std::uint16_t second_enemy_mon_hp{};
 };
 
 [[nodiscard]] const char* expectation_name(Expectation expectation) noexcept;

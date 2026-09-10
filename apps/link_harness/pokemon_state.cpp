@@ -30,7 +30,9 @@ std::uint16_t read16be(const gameboy::Emulator& emulator,
 
 PartySnapshot read_party(const gameboy::Emulator& emulator) {
     const auto read_candidate = [&](const std::uint16_t base,
-                                    const std::uint16_t mon_start) {
+                                    const std::uint16_t mon_start,
+                                    const std::uint16_t mon_size,
+                                    const std::uint16_t ot_id_offset) {
         PartySnapshot snapshot;
         snapshot.base_address = base;
         snapshot.count = emulator.bus().read8(base);
@@ -48,14 +50,14 @@ PartySnapshot read_party(const gameboy::Emulator& emulator) {
                 snapshot.valid = false;
             }
             const auto mon_address = static_cast<std::uint16_t>(
-                mon_start + index * party_mon_size);
+                mon_start + index * mon_size);
             if (emulator.bus().read8(mon_address) != snapshot.species[index]) {
                 snapshot.valid = false;
             }
             snapshot.ot_ids[index] = read16be(
-                emulator, static_cast<std::uint16_t>(mon_address + 0x0C));
+                emulator, static_cast<std::uint16_t>(mon_address + ot_id_offset));
             std::uint64_t signature = UINT64_C(1469598103934665603);
-            for (std::uint16_t offset = 0; offset < party_mon_size; ++offset) {
+            for (std::uint16_t offset = 0; offset < mon_size; ++offset) {
                 signature ^= emulator.bus().read8(
                     static_cast<std::uint16_t>(mon_address + offset));
                 signature *= UINT64_C(1099511628211);
@@ -65,15 +67,58 @@ PartySnapshot read_party(const gameboy::Emulator& emulator) {
         return snapshot;
     };
 
-    auto snapshot = read_candidate(w_party_count, w_party_mon1);
+    const auto generation = emulator.link_compatibility_profile().generation;
+    if (generation == gameboy::LinkGeneration::gen2) {
+        return read_candidate(g2_w_party_count, g2_w_party_mon1,
+                              g2_party_mon_size, 0x05);
+    }
+
+    auto snapshot = read_candidate(w_party_count, w_party_mon1,
+                                    party_mon_size, 0x0C);
     if (!snapshot.valid) {
         // European translations retain the same data layout with the legacy
         // party block shifted five bytes forward.
         snapshot = read_candidate(static_cast<std::uint16_t>(w_party_count + 5),
-                                  static_cast<std::uint16_t>(w_party_mon1 + 5));
+                                  static_cast<std::uint16_t>(w_party_mon1 + 5),
+                                  party_mon_size, 0x0C);
     }
     if (snapshot.valid) return snapshot;
     return {};
+}
+
+PokemonBattleSnapshot probe_battle(const gameboy::Emulator& emulator) {
+    PokemonBattleSnapshot snapshot;
+    snapshot.generation = emulator.link_compatibility_profile().generation;
+    if (snapshot.generation == gameboy::LinkGeneration::gen2) {
+        snapshot.link_mode = emulator.bus().read8(g2_w_link_mode);
+        snapshot.battle_just_started =
+            emulator.bus().read8(g2_w_battle_just_started);
+        snapshot.battle_ended = emulator.bus().read8(g2_w_battle_ended);
+        snapshot.battle_mode = emulator.bus().read8(g2_w_battle_mode);
+        snapshot.battle_type = emulator.bus().read8(g2_w_battle_type);
+        snapshot.current_mon = emulator.bus().read8(g2_w_cur_battle_mon);
+        snapshot.player_action =
+            emulator.bus().read8(g2_w_battle_player_action);
+        snapshot.battle_mon_hp = read16be(emulator, g2_w_battle_mon_hp);
+        snapshot.enemy_mon_hp = read16be(emulator, g2_w_enemy_mon_hp);
+        // LINK_COLOSSEUM is set before the linked battle protocol starts and
+        // remains set until the link session closes. Keep the raw marker in
+        // the sample even after a battle has ended so a first-divergence trace
+        // can distinguish link setup from a normal field state.
+        snapshot.active = snapshot.link_mode == g2_link_mode_colosseum;
+        return snapshot;
+    }
+
+    snapshot.link_mode = effective_link_state(
+        emulator.bus().read8(w_link_state),
+        emulator.bus().read8(w_link_state_localized));
+    snapshot.battle_state = emulator.bus().read8(w_is_in_battle);
+    snapshot.active = snapshot.link_mode == link_state_battling ||
+                      (snapshot.battle_state != 0 &&
+                       snapshot.battle_state != 0xFF) ||
+                      (emulator.bus().read8(w_is_in_battle_localized) != 0 &&
+                       emulator.bus().read8(w_is_in_battle_localized) != 0xFF);
+    return snapshot;
 }
 
 bool same_party(const PartySnapshot& first, const PartySnapshot& second) {

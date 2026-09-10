@@ -72,6 +72,10 @@ class ScenarioTrace {
                                  const char* session_state,
                                  std::uint64_t session_transfers);
 
+    void write_battle_checkpoint(std::uint64_t frame,
+                                 gameboy::Emulator& first,
+                                 gameboy::Emulator& second);
+
     [[nodiscard]] const std::filesystem::path& path() const noexcept {
         return writer_.path();
     }
@@ -80,6 +84,10 @@ class ScenarioTrace {
     ScenarioTraceWriter writer_;
     std::uint32_t last_trade_phase_mask_{};
     bool trade_phase_initialized_{};
+    bool first_battle_seen_{};
+    bool second_battle_seen_{};
+    bool battle_divergence_reported_{};
+    std::uint64_t last_battle_checkpoint_frame_{};
 };
 
 void update_serial_progress_watchdog(
