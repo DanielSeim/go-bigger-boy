@@ -10,6 +10,7 @@
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -131,7 +132,7 @@ bool test_tcp_session() {
                            profile);
 
     const auto deadline = std::chrono::steady_clock::now() +
-                          std::chrono::seconds(5);
+                          std::chrono::seconds(15);
     while (std::chrono::steady_clock::now() < deadline &&
            (first.bus().serial_port().transfers_completed() < 1 ||
             second.bus().serial_port().transfers_completed() < 1)) {
@@ -144,6 +145,11 @@ bool test_tcp_session() {
         } else {
             static_cast<void>(second.step());
         }
+        // macOS can defer completion notifications for a non-blocking
+        // localhost connect while this deterministic loop is continuously
+        // emulating instructions. Yield briefly so the socket stack gets a
+        // scheduling opportunity without making the test sleep-dependent.
+        std::this_thread::yield();
     }
     first_endpoint.poll();
     second_endpoint.poll();
