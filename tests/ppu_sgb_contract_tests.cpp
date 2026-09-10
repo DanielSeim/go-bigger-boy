@@ -250,6 +250,10 @@ void test_sgb_border_compositor() {
     ppu.debug_write_vram(0, 0x0001, 0x00);
     ppu.debug_write_vram(0, 0x0802, 0x1F);
     ppu.debug_write_vram(0, 0x0803, 0x00);
+    // Make the border palette's colour zero visibly different from the SGB
+    // screen colour zero to verify the transparent-border rule.
+    ppu.debug_write_vram(0, 0x0800, 0x00);
+    ppu.debug_write_vram(0, 0x0801, 0x7C);
     packet.fill(0);
     packet[0] = static_cast<std::uint8_t>(0x14U << 3); // PCT_TRN
     ppu.apply_sgb_command(packet, packet.size());
@@ -257,6 +261,8 @@ void test_sgb_border_compositor() {
     const auto& border = ppu.sgb_framebuffer();
     check(border[0] == 0xFFFF0000,
           "SGB compositor decodes tile data and RGB555 border palettes");
+    check(border[8] == 0xFFFFFFFF,
+          "SGB border colour zero uses the screen colour-zero outside the viewport");
     check(border[40 * gameboy::Ppu::sgb_border_width + 48] == 0xFFFFFFFF,
           "SGB compositor overlays transparent border pixels with the GB viewport");
 

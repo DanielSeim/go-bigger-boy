@@ -253,12 +253,19 @@ const Ppu::SgbFramebuffer& Ppu::sgb_framebuffer() const noexcept {
                         (((high_high >> bit) & 1U) << 3));
                     const auto x = tile_x * 8 + pixel_x;
                     const auto y = tile_y * 8 + pixel_y;
-                    if (color == 0 && x >= viewport_x &&
-                        x < viewport_x + screen_width && y >= viewport_y &&
-                        y < viewport_y + screen_height) {
-                        (*sgb_framebuffer_)[y * sgb_border_width + x] =
-                            (*framebuffer_)[(y - viewport_y) * screen_width +
-                                            (x - viewport_x)];
+                    if (color == 0) {
+                        if (x >= viewport_x && x < viewport_x + screen_width &&
+                            y >= viewport_y && y < viewport_y + screen_height) {
+                            (*sgb_framebuffer_)[y * sgb_border_width + x] =
+                                (*framebuffer_)[(y - viewport_y) * screen_width +
+                                                (x - viewport_x)];
+                        } else {
+                            // Outside the GB viewport, tile colour zero is
+                            // the SGB screen colour-zero, matching the SGB
+                            // renderer's transparent-border rule.
+                            (*sgb_framebuffer_)[y * sgb_border_width + x] =
+                                sgb_palette_color(0, 0);
+                        }
                     } else {
                         (*sgb_framebuffer_)[y * sgb_border_width + x] =
                             border_color(palette, color);
