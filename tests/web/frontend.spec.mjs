@@ -1,4 +1,5 @@
 import {expect, test} from '@playwright/test';
+import {Buffer} from 'node:buffer';
 
 function makeLoopingRom() {
   // A valid 32 KiB MBC1 cartridge with battery RAM and a deterministic loop
@@ -54,7 +55,7 @@ test('loads a ROM and persists the primary display settings', async ({page}) => 
   await page.locator('#rom-file').setInputFiles({
     name: 'gbb-browser-e2e.gb',
     mimeType: 'application/octet-stream',
-    buffer: makeLoopingRom(),
+    buffer: Buffer.from(makeLoopingRom()),
   });
   await expect(page.locator('#status')).toContainText('ROM loaded', {
     timeout: 30_000,
