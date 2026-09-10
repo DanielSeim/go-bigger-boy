@@ -138,6 +138,14 @@ also remain fed while a link wait is in progress so an audio underflow cannot
 replay the last buffer. Any timing optimization must preserve the now-working
 trade and battle handshake and the bounded timeout-retry recovery.
 
+The native end-to-end fixture now provides a deterministic baseline for that
+investigation. It establishes both TCP peers before attaching the serial
+endpoints, runs the real CPU/memory-bus path, completes eight transfers while
+alternating clock ownership, and reports channel state, handshake state,
+transfer counts, request/response counters, and malformed-frame counts when a
+transfer times out. This catches ownership drift that a single-byte smoke test
+misses while keeping transport timing out of the guest's serial edge callback.
+
 #### Pending manual comparison
 
 Further testing is paused until the two-player emulator setup is available

@@ -54,17 +54,21 @@ gameboy::Emulator make_emulator(const std::uint8_t payload,
 
 void check_exchange(const gameboy::Emulator& first,
                     const gameboy::Emulator& second,
+                    const std::uint8_t first_value,
+                    const std::uint8_t second_value,
+                    const std::uint64_t expected_transfers,
                     const char* transport) {
     const auto& first_serial = first.bus().serial_port();
     const auto& second_serial = second.bus().serial_port();
     const std::string prefix = std::string{transport} + " end-to-end";
-    check(first_serial.transfers_completed() == 1 &&
-              second_serial.transfers_completed() == 1,
-          (prefix + " completes one transfer on both emulators").c_str());
-    const auto bytes_match = first_serial.last_transmitted() == 0xA5 &&
-                             first_serial.last_received() == 0x3C &&
-                             second_serial.last_transmitted() == 0x3C &&
-                             second_serial.last_received() == 0xA5;
+    check(first_serial.transfers_completed() == expected_transfers &&
+              second_serial.transfers_completed() == expected_transfers,
+          (prefix + " completes the expected transfers on both emulators")
+              .c_str());
+    const auto bytes_match = first_serial.last_transmitted() == first_value &&
+                             first_serial.last_received() == second_value &&
+                             second_serial.last_transmitted() == second_value &&
+                             second_serial.last_received() == first_value;
     if (!bytes_match) {
         std::cerr << "FAIL: " << prefix
                   << " preserves both transmitted and received bytes"
@@ -75,6 +79,31 @@ void check_exchange(const gameboy::Emulator& first,
                   << ")\n";
         ++failures;
     }
+}
+
+void report_tcp_failure(const gameboy::TcpLinkChannel& server,
+                        const gameboy::TcpLinkChannel& client,
+                        const gameboy::TcpSerialEndpoint& server_endpoint,
+                        const gameboy::TcpSerialEndpoint& client_endpoint,
+                        const gameboy::Emulator& first,
+                        const gameboy::Emulator& second) {
+    const auto& first_serial = first.bus().serial_port();
+    const auto& second_serial = second.bus().serial_port();
+    std::cerr << "TCP diagnostics: channel(server="
+              << static_cast<int>(server.state()) << ",client="
+              << static_cast<int>(client.state()) << ") hello(server="
+              << server_endpoint.peer_hello_seen() << ",client="
+              << client_endpoint.peer_hello_seen() << ") compatible(server="
+              << server_endpoint.peer_compatible() << ",client="
+              << client_endpoint.peer_compatible() << ") transfers(server="
+              << second_serial.transfers_completed() << ",client="
+              << first_serial.transfers_completed() << ") requests(server="
+              << server_endpoint.requests_received() << ",client="
+              << client_endpoint.requests_received() << ") responses(server="
+              << server_endpoint.responses_sent() << ",client="
+              << client_endpoint.responses_sent() << ") malformed(server="
+              << server.malformed_packets() << ",client="
+              << client.malformed_packets() << ")\n";
 }
 
 void test_local_session() {
@@ -90,7 +119,7 @@ void test_local_session() {
         session.advance(1024);
     }
     check(session.active(), "local end-to-end session remains active");
-    check_exchange(first, second, "local");
+    check_exchange(first, second, 0xA5, 0x3C, 1, "local");
     session.stop();
 }
 
@@ -152,34 +181,80 @@ bool test_tcp_session() {
     second_endpoint.attach(second.bus().serial_port(), server, shared_link_id,
                            profile);
 
-    const auto deadline = std::chrono::steady_clock::now() +
-                          std::chrono::seconds(15);
-    while (std::chrono::steady_clock::now() < deadline &&
-           (first.bus().serial_port().transfers_completed() < 1 ||
-            second.bus().serial_port().transfers_completed() < 1)) {
+    const auto run_guest_transfer = [&](const std::uint8_t first_value,
+                                        const std::uint8_t second_value,
+                                        const bool first_internal) {
+        const auto first_target =
+            first.bus().serial_port().transfers_completed() + 1;
+        const auto second_target =
+            second.bus().serial_port().transfers_completed() + 1;
+        first.bus().write8(0xFF01, first_value);
+        second.bus().write8(0xFF01, second_value);
+        if (first_internal) {
+            second.bus().write8(0xFF02, 0x80);
+            first.bus().write8(0xFF02, 0x81);
+        } else {
+            first.bus().write8(0xFF02, 0x80);
+            second.bus().write8(0xFF02, 0x81);
+        }
+        const auto deadline = std::chrono::steady_clock::now() +
+                              std::chrono::seconds(5);
+        while (std::chrono::steady_clock::now() < deadline &&
+               (first.bus().serial_port().transfers_completed() < first_target ||
+                second.bus().serial_port().transfers_completed() < second_target)) {
+            first_endpoint.poll();
+            second_endpoint.poll();
+            // Keep both guest clocks moving while the endpoint services
+            // non-blocking sockets. This is the same balanced cadence used by
+            // the production remote-link scheduler.
+            if (first.cpu().total_cycles() <= second.cpu().total_cycles()) {
+                static_cast<void>(first.step());
+            } else {
+                static_cast<void>(second.step());
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
         first_endpoint.poll();
         second_endpoint.poll();
-        // Keep the two guest clocks balanced, just as the production link
-        // scheduler does, while the endpoint services non-blocking sockets.
-        if (first.cpu().total_cycles() <= second.cpu().total_cycles()) {
-            static_cast<void>(first.step());
-        } else {
-            static_cast<void>(second.step());
-        }
-        // macOS can defer completion notifications for a non-blocking
-        // localhost connect while this deterministic loop is continuously
-        // emulating instructions. Give the socket stack a short scheduling
-        // opportunity; this also keeps the test from spinning at 100% CPU.
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        return first.bus().serial_port().transfers_completed() >= first_target &&
+               second.bus().serial_port().transfers_completed() >= second_target;
+    };
+
+    if (!run_guest_transfer(0xA5, 0x3C, true)) {
+        report_tcp_failure(server, client, second_endpoint, first_endpoint,
+                           first, second);
     }
+    check(first.bus().serial_port().transfers_completed() >= 1 &&
+              second.bus().serial_port().transfers_completed() >= 1,
+          "TCP end-to-end completes the initial guest transfer");
+
+    // Continue with alternating clock ownership and payloads. A single
+    // successful byte can hide ownership drift that appears after Pokémon's
+    // Cable Club handshake; this sustained exchange exercises the same
+    // repeated battle/trade traffic while retaining real CPU execution.
+    for (unsigned transfer = 1; transfer < 8; ++transfer) {
+        const auto first_value = static_cast<std::uint8_t>(0xA5U + transfer);
+        const auto second_value = static_cast<std::uint8_t>(0x3CU + transfer);
+        if (!run_guest_transfer(first_value, second_value,
+                                (transfer & 1U) == 0)) {
+            report_tcp_failure(server, client, second_endpoint, first_endpoint,
+                               first, second);
+            break;
+        }
+        check(first.bus().serial_port().last_transmitted() == first_value &&
+                  first.bus().serial_port().last_received() == second_value &&
+                  second.bus().serial_port().last_transmitted() == second_value &&
+                  second.bus().serial_port().last_received() == first_value,
+              "TCP end-to-end preserves alternating guest payloads");
+    }
+
     first_endpoint.poll();
     second_endpoint.poll();
-
     check(first_endpoint.peer_hello_seen() && second_endpoint.peer_hello_seen(),
           "TCP end-to-end peers complete the compatibility handshake");
     check(first_endpoint.peer_compatible() && second_endpoint.peer_compatible(),
           "TCP end-to-end peers accept matching compatibility identities");
-    check_exchange(first, second, "TCP");
+    check_exchange(first, second, 0xAC, 0x43, 8, "TCP");
     first_endpoint.detach();
     second_endpoint.detach();
     return true;
