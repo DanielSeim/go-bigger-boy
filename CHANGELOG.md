@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.33.15] - 2026-09-10
+
 ### Link diagnostics and audio continuity
 
 - Record serial bit-progress boundaries and elapsed/frame deltas for Pokémon
