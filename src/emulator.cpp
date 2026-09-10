@@ -52,6 +52,10 @@ const Ppu::Framebuffer& Emulator::framebuffer() const noexcept {
     return bus_.framebuffer();
 }
 
+const Ppu::SgbFramebuffer& Emulator::sgb_framebuffer() const noexcept {
+    return bus_.sgb_framebuffer();
+}
+
 bool Emulator::frame_ready() const noexcept { return bus_.frame_ready(); }
 
 void Emulator::consume_frame() noexcept { bus_.consume_frame(); }

@@ -496,6 +496,10 @@ const Ppu::Framebuffer& MemoryBus::framebuffer() const noexcept {
     return ppu_.framebuffer();
 }
 
+const Ppu::SgbFramebuffer& MemoryBus::sgb_framebuffer() const noexcept {
+    return ppu_.sgb_framebuffer();
+}
+
 bool MemoryBus::frame_ready() const noexcept { return ppu_.frame_ready(); }
 
 void MemoryBus::consume_frame() noexcept { ppu_.consume_frame(); }

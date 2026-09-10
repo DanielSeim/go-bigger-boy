@@ -19,6 +19,10 @@ public:
     static constexpr std::size_t screen_width = 160;
     static constexpr std::size_t screen_height = 144;
     using Framebuffer = std::array<std::uint32_t, screen_width * screen_height>;
+    static constexpr std::size_t sgb_border_width = 256;
+    static constexpr std::size_t sgb_border_height = 224;
+    using SgbFramebuffer =
+        std::array<std::uint32_t, sgb_border_width * sgb_border_height>;
 
     Ppu();
 
@@ -35,9 +39,9 @@ public:
         const std::array<std::uint8_t, 16 * 7>& packet,
         std::size_t size) noexcept;
 
-    // Read-only hooks for diagnostics/tests. Border compositing remains a
-    // separate 256x224 frontend concern; these expose the raw SNES-side
-    // transfer latches deterministically.
+    // Read-only hooks for diagnostics/tests and frontend presentation. The
+    // SGB framebuffer is a deterministic 256x224 composite of the retained
+    // SNES border and the native 160x144 Game Boy viewport.
     [[nodiscard]] std::uint8_t debug_read_sgb_border_tile(
         std::uint16_t offset) const noexcept;
     [[nodiscard]] std::uint8_t debug_read_sgb_border_pct(
@@ -77,6 +81,7 @@ public:
     [[nodiscard]] std::uint8_t tick(unsigned cycles) noexcept;
 
     [[nodiscard]] const Framebuffer& framebuffer() const noexcept;
+    [[nodiscard]] const SgbFramebuffer& sgb_framebuffer() const noexcept;
     [[nodiscard]] bool frame_ready() const noexcept;
     void consume_frame() noexcept;
 
@@ -187,6 +192,8 @@ private:
     // byte-for-byte because its map/attribute/palette packing is SNES-side.
     std::unique_ptr<std::array<std::uint8_t, 0x2000>> sgb_border_tiles_;
     std::unique_ptr<std::array<std::uint8_t, 0x1000>> sgb_border_pct_;
+    mutable std::unique_ptr<SgbFramebuffer> sgb_framebuffer_;
+    bool sgb_border_transferred_{};
     // MASK_EN: 0=disabled, 1=freeze, 2=black, 3=color-zero fill.
     std::uint8_t sgb_mask_mode_{};
 

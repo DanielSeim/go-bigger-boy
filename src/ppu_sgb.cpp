@@ -175,12 +175,99 @@ void Ppu::apply_sgb_command(
     }
     case 0x14: // PCT_TRN
         std::copy_n(vram_.begin(), 0x1000, sgb_border_pct_->begin());
+        sgb_border_transferred_ = true;
         break;
     case 0x17: // MASK_EN
         sgb_mask_mode_ = static_cast<std::uint8_t>(packet[1] & 3U);
         break;
     default: break;
     }
+}
+
+const Ppu::SgbFramebuffer& Ppu::sgb_framebuffer() const noexcept {
+    constexpr auto black = UINT32_C(0xFF000000);
+    sgb_framebuffer_->fill(black);
+
+    // A border is only meaningful after PCT_TRN. Before that transfer, keep a
+    // deterministic black surround and expose the native Game Boy viewport in
+    // the same 48,40 letterbox used by the SGB hardware.
+    constexpr std::size_t viewport_x = (sgb_border_width - screen_width) / 2;
+    constexpr std::size_t viewport_y = (sgb_border_height - screen_height) / 2;
+    if (!sgb_border_transferred_) {
+        for (std::size_t y = 0; y < screen_height; ++y) {
+            std::copy_n(framebuffer_->begin() + y * screen_width, screen_width,
+                        sgb_framebuffer_->begin() +
+                            (y + viewport_y) * sgb_border_width + viewport_x);
+        }
+        return *sgb_framebuffer_;
+    }
+
+    const auto expand = [](const unsigned component) {
+        return (component << 3) | (component >> 2);
+    };
+    const auto border_color = [&](const unsigned palette,
+                                  const unsigned color) {
+        // PCT border tilemap entries select one of four 16-colour palettes.
+        // The Game Boy viewport uses its separate four-colour SGB palettes.
+        if (palette > 3) return black;
+        const auto offset = 0x800U + palette * 32U +
+                            std::min<unsigned>(color, 15U) * 2U;
+        if (offset + 1 >= sgb_border_pct_->size()) return black;
+        const auto rgb555 = static_cast<std::uint16_t>(
+            (*sgb_border_pct_)[offset] |
+            (static_cast<std::uint16_t>((*sgb_border_pct_)[offset + 1]) << 8));
+        return UINT32_C(0xFF000000) | (expand(rgb555 & 0x1FU) << 16) |
+               (expand((rgb555 >> 5) & 0x1FU) << 8) |
+               expand((rgb555 >> 10) & 0x1FU);
+    };
+
+    for (std::size_t tile_y = 0; tile_y < 28; ++tile_y) {
+        for (std::size_t tile_x = 0; tile_x < 32; ++tile_x) {
+            const auto map_offset = (tile_y * 32 + tile_x) * 2;
+            const auto map_entry = static_cast<std::uint16_t>(
+                (*sgb_border_pct_)[map_offset] |
+                (static_cast<std::uint16_t>((*sgb_border_pct_)[map_offset + 1])
+                 << 8));
+            const auto tile = static_cast<std::size_t>(map_entry & 0x03FFU);
+            const auto palette = static_cast<unsigned>((map_entry >> 10) & 3U);
+            const auto x_flip = (map_entry & 0x4000U) != 0;
+            const auto y_flip = (map_entry & 0x8000U) != 0;
+            if (tile >= 0x100 || tile * 32 + 31 >= sgb_border_tiles_->size()) {
+                continue;
+            }
+            const auto tile_offset = tile * 32;
+            for (std::size_t pixel_y = 0; pixel_y < 8; ++pixel_y) {
+                const auto source_y = y_flip ? 7 - pixel_y : pixel_y;
+                const auto low_offset = tile_offset + source_y * 2;
+                const auto high_offset = tile_offset + 16 + source_y * 2;
+                const auto low = (*sgb_border_tiles_)[low_offset];
+                const auto low_high = (*sgb_border_tiles_)[low_offset + 1];
+                const auto high = (*sgb_border_tiles_)[high_offset];
+                const auto high_high = (*sgb_border_tiles_)[high_offset + 1];
+                for (std::size_t pixel_x = 0; pixel_x < 8; ++pixel_x) {
+                    const auto source_x = x_flip ? 7 - pixel_x : pixel_x;
+                    const auto bit = 7U - static_cast<unsigned>(source_x);
+                    const auto color = static_cast<unsigned>(
+                        ((low >> bit) & 1U) | (((low_high >> bit) & 1U) << 1) |
+                        (((high >> bit) & 1U) << 2) |
+                        (((high_high >> bit) & 1U) << 3));
+                    const auto x = tile_x * 8 + pixel_x;
+                    const auto y = tile_y * 8 + pixel_y;
+                    if (color == 0 && x >= viewport_x &&
+                        x < viewport_x + screen_width && y >= viewport_y &&
+                        y < viewport_y + screen_height) {
+                        (*sgb_framebuffer_)[y * sgb_border_width + x] =
+                            (*framebuffer_)[(y - viewport_y) * screen_width +
+                                            (x - viewport_x)];
+                    } else {
+                        (*sgb_framebuffer_)[y * sgb_border_width + x] =
+                            border_color(palette, color);
+                    }
+                }
+            }
+        }
+    }
+    return *sgb_framebuffer_;
 }
 
 void Ppu::load_sgb_attribute_file(const std::size_t index) noexcept {

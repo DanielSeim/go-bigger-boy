@@ -55,6 +55,7 @@ public:
                           std::uint8_t value) noexcept;
     void flush_battery();
     [[nodiscard]] const Ppu::Framebuffer& framebuffer() const noexcept;
+    [[nodiscard]] const Ppu::SgbFramebuffer& sgb_framebuffer() const noexcept;
     [[nodiscard]] bool frame_ready() const noexcept;
     void consume_frame() noexcept;
     [[nodiscard]] std::vector<std::int16_t> take_audio_samples();

@@ -25,7 +25,8 @@ Ppu::Ppu()
       sgb_attribute_files_(
           std::make_unique<std::array<std::uint8_t, 0x2D * 90>>()),
       sgb_border_tiles_(std::make_unique<std::array<std::uint8_t, 0x2000>>()),
-      sgb_border_pct_(std::make_unique<std::array<std::uint8_t, 0x1000>>()) {
+      sgb_border_pct_(std::make_unique<std::array<std::uint8_t, 0x1000>>()),
+      sgb_framebuffer_(std::make_unique<SgbFramebuffer>()) {
     framebuffer_->fill(dmg_colors[0]);
     cgb_bg_palette_.fill(0xFF);
     cgb_object_palette_.fill(0xFF);
@@ -60,6 +61,7 @@ void Ppu::set_sgb_mode(const bool enabled) noexcept {
     sgb_attribute_files_->fill(0);
     sgb_border_tiles_->fill(0);
     sgb_border_pct_->fill(0);
+    sgb_border_transferred_ = false;
     sgb_mask_mode_ = 0;
 }
 

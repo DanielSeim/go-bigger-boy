@@ -228,6 +228,46 @@ void test_palette_and_attribute_transfer_commands() {
           "ATTR_TRN and ATTR_SET restore packed tile attributes");
 }
 
+void test_sgb_border_compositor() {
+    gameboy::Ppu ppu;
+    ppu.set_sgb_mode(true);
+
+    // Tile 1 is solid SNES colour 1 (plane 0 set, all other planes clear).
+    for (std::size_t row = 0; row < 8; ++row) {
+        ppu.debug_write_vram(0, static_cast<std::uint16_t>(0x20 + row * 2),
+                             0xFF);
+        ppu.debug_write_vram(0,
+                             static_cast<std::uint16_t>(0x20 + row * 2 + 1),
+                             0x00);
+    }
+    std::array<std::uint8_t, 16 * 7> packet{};
+    packet[0] = static_cast<std::uint8_t>(0x13U << 3); // CHR_TRN
+    ppu.apply_sgb_command(packet, packet.size());
+
+    // The first tilemap entry selects tile 1 and border palette 0. Palette 0,
+    // colour 1 is RGB555 red in the second half of the PCT payload.
+    ppu.debug_write_vram(0, 0x0000, 0x01);
+    ppu.debug_write_vram(0, 0x0001, 0x00);
+    ppu.debug_write_vram(0, 0x0802, 0x1F);
+    ppu.debug_write_vram(0, 0x0803, 0x00);
+    packet.fill(0);
+    packet[0] = static_cast<std::uint8_t>(0x14U << 3); // PCT_TRN
+    ppu.apply_sgb_command(packet, packet.size());
+
+    const auto& border = ppu.sgb_framebuffer();
+    check(border[0] == 0xFFFF0000,
+          "SGB compositor decodes tile data and RGB555 border palettes");
+    check(border[40 * gameboy::Ppu::sgb_border_width + 48] == 0xFFFFFFFF,
+          "SGB compositor overlays transparent border pixels with the GB viewport");
+
+    // A missing transfer still exposes a deterministic centered viewport.
+    gameboy::Ppu no_border;
+    no_border.set_sgb_mode(true);
+    check(no_border.sgb_framebuffer()[40 * gameboy::Ppu::sgb_border_width + 48] ==
+              0xFFFFFFFF,
+          "SGB compositor centers the native viewport before border transfer");
+}
+
 void test_default_palette_uses_display_setting() {
     gameboy::Emulator emulator{gameboy::Cartridge{test_rom()}};
     gameboy::DmgPalette layer_colors{
@@ -254,6 +294,7 @@ int main() {
     test_malformed_command_matrix_is_bounded();
     test_palette_command_reaches_video();
     test_palette_and_attribute_transfer_commands();
+    test_sgb_border_compositor();
     test_default_palette_uses_display_setting();
     return failures == 0 ? 0 : 1;
 }

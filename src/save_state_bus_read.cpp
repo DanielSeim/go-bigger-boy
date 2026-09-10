@@ -404,7 +404,8 @@ void SaveStateBusCodec::read(save_state_format::Reader& reader,
     if (version >= 22) {
         // The SGB block is append-only; version 23 adds the mask and border
         // data after the version 22 packet/palette fields, while version 26
-        // adds transferred palette and attribute-file memories.
+        // adds transferred palette and attribute-file memories. Version 27
+        // adds the explicit PCT transfer latch used by the border compositor.
         bus.joypad_.sgb_mode_ = reader.boolean();
         bus.joypad_.sgb_ready_for_pulse_ = reader.boolean();
         bus.joypad_.sgb_ready_for_write_ = reader.boolean();
@@ -502,6 +503,11 @@ void SaveStateBusCodec::read(save_state_format::Reader& reader,
         bus.ppu_.scy_pending_ = 0;
         bus.ppu_.scy_pending_delay_ = 0;
         bus.ppu_.scy_pending_valid_ = false;
+    }
+    if (version >= 27) {
+        bus.ppu_.sgb_border_transferred_ = reader.boolean();
+    } else {
+        bus.ppu_.sgb_border_transferred_ = false;
     }
     if (bus.printer_connected_) bus.printer_.reset();
 }

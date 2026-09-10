@@ -159,6 +159,7 @@ void test_save_state_round_trip_and_validation() {
     // version 22 joypad/parser, palette, and attribute block. Version 24
     // appends serial transfer timing, version 25 appends the CGB SCY latch,
     // and version 26 appends transferred SGB palette/attribute memories.
+    // Version 27 appends the explicit SGB PCT transfer latch.
     // Strip all newer blocks when constructing
     // the legacy fixtures below, just like the earlier version deltas.
     constexpr std::size_t version_twenty_two_sgb_size = 237 + 393;
@@ -168,12 +169,14 @@ void test_save_state_round_trip_and_validation() {
     constexpr std::size_t version_twenty_five_scy_latch_size = 3;
     constexpr std::size_t version_twenty_six_sgb_memory_size =
         2 + 0x800 * 2 + 0x2D * 90;
+    constexpr std::size_t version_twenty_seven_sgb_latch_size = 1;
     constexpr std::size_t version_nine_fetcher_size =
         737 + version_ten_window_latch_size + version_eleven_fetcher_size +
         version_twelve_sprite_size + version_thirteen_sprite_fetch_size +
         version_fourteen_sprite_deadline_size + version_fifteen_sprite_render_size;
     auto legacy_saved = saved;
     legacy_saved.resize(legacy_saved.size() -
+                        version_twenty_seven_sgb_latch_size -
                         version_twenty_six_sgb_memory_size -
                         version_twenty_five_scy_latch_size -
                         version_twenty_four_serial_size -
@@ -495,6 +498,7 @@ void test_save_state_round_trip_and_validation() {
 
     auto version_twenty_three = saved;
     version_twenty_three.resize(version_twenty_three.size() -
+                                version_twenty_seven_sgb_latch_size -
                                 version_twenty_six_sgb_memory_size -
                                 version_twenty_five_scy_latch_size -
                                 version_twenty_four_serial_size);
@@ -538,6 +542,7 @@ void test_save_state_round_trip_and_validation() {
 
     auto version_sixteen = saved;
     version_sixteen.resize(version_sixteen.size() -
+                           version_twenty_seven_sgb_latch_size -
                            version_twenty_six_sgb_memory_size -
                            version_twenty_five_scy_latch_size -
                            version_twenty_four_serial_size -
@@ -565,6 +570,7 @@ void test_save_state_round_trip_and_validation() {
 
     auto version_seventeen = saved;
     version_seventeen.resize(version_seventeen.size() -
+                             version_twenty_seven_sgb_latch_size -
                              version_twenty_six_sgb_memory_size -
                              version_twenty_five_scy_latch_size -
                              version_twenty_four_serial_size -
@@ -590,7 +596,7 @@ void test_save_state_round_trip_and_validation() {
           "version 17 save states remain loadable after adding object deadlines");
 
     auto future_version = saved;
-    future_version[8] = 27;
+    future_version[8] = 28;
     auto rejected_version = false;
     try {
         emulator.load_state(future_version);

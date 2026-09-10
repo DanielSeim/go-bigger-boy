@@ -123,18 +123,21 @@ and `ATTR_BLK`/`ATTR_LIN`/`ATTR_DIV`/`ATTR_CHR` update the 20×18 tile attribute
 map used by the Game Boy viewport. The transfer commands `PAL_TRN`/`PAL_SET`
 and `ATTR_TRN`/`ATTR_SET` retain and apply the SGB palette and attribute-file
 memories, while `CHR_TRN` and `PCT_TRN` snapshot their 4 KiB VRAM payloads into
-SNES-side transfer latches. `MASK_EN` implements disabled, freeze, black, and
+SNES-side transfer latches. The core now exposes a deterministic 256×224 SGB
+border framebuffer: it decodes the SNES 4bpp tile data, tilemap flips, and
+RGB555 border palettes, then overlays the native Game Boy viewport through
+transparent border pixels. `MASK_EN` implements disabled, freeze, black, and
 color-zero viewport modes. `MLT_REQ` supports deterministic one-, two-, and
 four-player polling IDs; the current local button state is intentionally shared
 by each emulated controller until a multi-device input backend is added. These
-behaviors are covered by core tests and save states (version 26). This is
+behaviors are covered by core tests and save states (version 27). This is
 deliberately not a full SNES emulation path: the real adapter relies on SNES-
 side execution, graphics, and audio ([Pan Docs SGB overview](https://gbdev.io/pandocs/SGB_Functions.html)), so complete SGB compatibility would
 require either those SNES subsystems or an equivalent dedicated host model.
-A future frontend phase can consume the retained transfer data to compose the
-full 256×224 SNES border; SNES audio, fade timing, and the complete SGB
-boot/header handshake remain deferred. These limitations do not affect ordinary
-DMG or CGB emulation.
+Desktop, Android, and web presentation still use their established 160×144
+viewport path; wiring the SGB framebuffer into each frontend, along with SNES
+audio, fade timing, and the complete SGB boot/header handshake, remains
+deferred. These limitations do not affect ordinary DMG or CGB emulation.
 
 The APU evaluates channel output and the hardware high-pass response on every
 master-clock cycle, then integrates those values over exact 48 kHz sample
