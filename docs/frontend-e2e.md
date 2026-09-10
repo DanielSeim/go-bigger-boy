@@ -21,7 +21,8 @@ Run the browser flow locally after building the Web bundle:
 ```sh
 python3 -m http.server 8765 --directory build-web/web
 npx --yes @playwright/test@1.52.0 install chromium
-npx --yes @playwright/test@1.52.0 test tests/web/frontend.spec.mjs
+npx --yes @playwright/test@1.52.0 test \
+  --config=tests/web/playwright.config.mjs tests/web/frontend.spec.mjs
 ```
 
 Run Android instrumentation on a connected emulator or device:

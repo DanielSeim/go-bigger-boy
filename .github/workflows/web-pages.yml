@@ -81,7 +81,8 @@ jobs:
             sleep 1
           done
           test "$ready" = 1
-          npx playwright test tests/web/frontend.spec.mjs
+          npx playwright test --config=tests/web/playwright.config.mjs \
+            tests/web/frontend.spec.mjs
 
       - name: Configure GitHub Pages
         if: github.event_name != 'pull_request'
