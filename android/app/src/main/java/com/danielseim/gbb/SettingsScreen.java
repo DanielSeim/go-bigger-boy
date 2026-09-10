@@ -131,6 +131,19 @@ final class SettingsScreen {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
 
+        final Switch audio = new Switch(activity);
+        audio.setText("Generate audio");
+        audio.setTextSize(16);
+        audio.setPadding(0, activity.dp(10), 0, activity.dp(8));
+        final String settingsDirectory = activity.getFilesDir().getAbsolutePath();
+        audio.setChecked(LibraryActivity.nativeAudioEnabled(settingsDirectory));
+        audio.setOnCheckedChangeListener((button, enabled) ->
+                LibraryActivity.nativeSetAudioEnabled(settingsDirectory, enabled));
+        display.addView(audio);
+        display.addView(activity.text(
+                "Disable audio generation to keep the emulator quiet and reduce CPU use.",
+                13, Color.GRAY));
+
         final LinearLayout artworkCard = sectionCard("Artwork");
         final Switch artwork = new Switch(activity);
         artwork.setText("Download game cover artwork");
@@ -200,7 +213,6 @@ final class SettingsScreen {
                 "is active, a touch that starts outside a button can orbit the " +
                 "camera.", 15, Color.DKGRAY));
 
-        final String settingsDirectory = activity.getFilesDir().getAbsolutePath();
         final Spinner menuPosition = new Spinner(activity);
         menuPosition.setAdapter(new ArrayAdapter<>(activity,
                 android.R.layout.simple_spinner_dropdown_item,

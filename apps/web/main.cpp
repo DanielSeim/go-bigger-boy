@@ -77,6 +77,7 @@ struct WebApp {
     std::size_t display_palette{};
     gameboy::HardwareModel hardware_model{gameboy::HardwareModel::automatic};
     gameboy::VideoMode video_mode{gameboy::default_video_mode};
+    bool audio_enabled{true};
     bool paused{};
 };
 
@@ -87,6 +88,19 @@ gameboy::HardwareModel requested_hardware_model{
 std::string scene_snapshot_export;
 
 void set_status(const std::string& message, bool error);
+
+void set_audio_enabled(WebApp& app, const bool enabled) noexcept {
+    app.audio_enabled = enabled;
+    if (app.emulator) {
+        if (auto* emulator = gbb::gameboy_emulator(app.emulator.get())) {
+            emulator->set_audio_enabled(enabled);
+        }
+    }
+    if (!enabled && app.audio_stream) {
+        static_cast<void>(SDL_PauseAudioStreamDevice(app.audio_stream));
+        static_cast<void>(SDL_ClearAudioStream(app.audio_stream));
+    }
+}
 
 void apply_video_mode(WebApp& app, const unsigned mode) noexcept {
     if (mode >= gameboy::video_modes.size()) return;
@@ -829,6 +843,7 @@ bool configure_core_io(WebApp& app) {
         gbb::log_frontend_warning(
             std::string("Audio output is unavailable: ") + SDL_GetError());
     }
+    set_audio_enabled(app, app.audio_enabled);
     app.display_pixels.assign(core.video_width * core.video_height, 0);
     apply_video_mode(app, requested_video_mode);
     return true;
@@ -904,6 +919,7 @@ bool gamepad_button(const Uint8 raw, gbb::InputId& button) {
 void submit_audio(WebApp& app) {
     if (!app.emulator) return;
     const auto samples = app.emulator->take_audio_samples();
+    if (!app.audio_enabled) return;
     if (!app.audio_stream || samples.empty()) return;
 
     const auto maximum_queued_bytes = static_cast<int>(gbb::audio_queue_bytes(
@@ -1202,6 +1218,11 @@ extern "C" EMSCRIPTEN_KEEPALIVE void gbb_set_hardware_model(
     if (index >= gameboy::selectable_hardware_models.size()) return;
     requested_hardware_model = gameboy::selectable_hardware_models[index];
     if (active_app) active_app->hardware_model = requested_hardware_model;
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE void gbb_set_audio_enabled(
+    const bool enabled) noexcept {
+    if (active_app) set_audio_enabled(*active_app, enabled);
 }
 
 extern "C" EMSCRIPTEN_KEEPALIVE void gbb_set_voxel_camera(

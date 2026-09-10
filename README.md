@@ -446,6 +446,12 @@ tap the in-game menu button in its configured corner and choose
 `Display palette` to select and persist the same five palette options. The
 Android Settings page also provides touch-control size and opacity sliders;
 these values are stored in `settings.ini` as `touch.Size` and `touch.Opacity`.
+It also provides a **Generate audio** toggle. Disabling it silences the
+emulator and skips APU mixer/resampler work to reduce CPU use, while channel
+timing and CGB PCM register behavior continue normally. Desktop Settings
+provides the same toggle, persisted as `audio.Enabled`.
+The browser frontend exposes the same control and remembers it in browser
+storage.
 Voxel modes also support touch-drag orbiting when `touch.VoxelOrbit` is enabled;
 the Android Settings page provides a toggle for this gesture. The in-game menu
 button can be placed at the top left or top right with `touch.MenuPosition`.

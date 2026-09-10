@@ -52,6 +52,7 @@ constexpr int id_palette = 107;
 constexpr int id_remove = 108;
 constexpr int id_video = 109;
 constexpr int id_hardware_model = 130;
+constexpr int id_audio_enabled = 131;
 constexpr int id_gameboy_background = 110;
 constexpr int id_reset_controls = 111;
 constexpr int id_shortcuts = 112;
@@ -177,6 +178,7 @@ struct State {
     HWND video{};
     HWND hardware_model{};
     HWND hardware_model_label{};
+    HWND audio_enabled{};
     HWND controls_label{};
     HWND controls_instruction{};
     HWND actions_label{};
@@ -972,6 +974,7 @@ void show_page(State& state, const State::Page page) {
     ShowWindow(state.video, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.hardware_model_label, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.hardware_model, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.audio_enabled, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.controls_label, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.controls_instruction, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.actions_label, settings ? SW_SHOW : SW_HIDE);
@@ -1116,6 +1119,7 @@ void layout_dashboard(State& state) {
     place_child(state.video, 154, 270, 290, 26, offset);
     place_child(state.hardware_model_label, 32, 305, 110, 26, offset);
     place_child(state.hardware_model, 154, 300, 290, 26, offset);
+    place_child(state.audio_enabled, 510, 270, 300, 34, offset);
     place_child(state.controls_label, 510, 200, 240, 30, offset);
     place_child(state.controls_instruction, 510, 238, 420, 26, offset);
     place_child(state.gameboy_background, 32, 310, 916, 268, offset);
@@ -1492,6 +1496,14 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                         static_cast<std::size_t>(selected)];
                     state->result.hardware_model_changed = true;
                 }
+            }
+            return 0;
+        case id_audio_enabled:
+            if (HIWORD(wparam) == BN_CLICKED) {
+                state->result.audio_enabled =
+                    SendMessageW(state->audio_enabled, BM_GETCHECK, 0, 0) ==
+                    BST_CHECKED;
+                state->result.audio_enabled_changed = true;
             }
             return 0;
         case id_link_transport:
@@ -2104,6 +2116,7 @@ DashboardResult show_windows_dashboard(
     const gbb::CoreCapability capabilities,
     const std::size_t palette, const gameboy::VideoMode video_mode,
     const gameboy::HardwareModel hardware_model,
+    const bool audio_enabled,
     const KeyboardBindings& keyboard_bindings,
     const ActionBindings& action_bindings,
     const DashboardLinkSettings& link_settings,
@@ -2147,6 +2160,7 @@ DashboardResult show_windows_dashboard(
     state.result.palette = palette;
     state.result.video_mode = video_mode;
     state.result.hardware_model = hardware_model;
+    state.result.audio_enabled = audio_enabled;
     state.result.keyboard_bindings = keyboard_bindings;
     state.result.action_bindings = action_bindings;
     state.result.link_settings = link_settings;
@@ -2371,6 +2385,11 @@ DashboardResult show_windows_dashboard(
     if (selected_model < 0) selected_model = 0;
     SendMessageW(state.hardware_model, CB_SETCURSEL,
                  static_cast<WPARAM>(selected_model), 0);
+    state.audio_enabled = control(
+        state, L"BUTTON", L"Generate audio",
+        WS_TABSTOP | BS_AUTOCHECKBOX, 510, 270, 300, 34, id_audio_enabled);
+    SendMessageW(state.audio_enabled, BM_SETCHECK,
+                 audio_enabled ? BST_CHECKED : BST_UNCHECKED, 0);
     state.controls_label = control(state, L"STATIC", L"Keyboard controls",
         0, 510, 200, 240, 30, 0);
     SendMessageW(state.controls_label, WM_SETFONT,

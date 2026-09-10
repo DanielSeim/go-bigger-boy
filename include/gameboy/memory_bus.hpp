@@ -58,6 +58,8 @@ public:
     [[nodiscard]] bool frame_ready() const noexcept;
     void consume_frame() noexcept;
     [[nodiscard]] std::vector<std::int16_t> take_audio_samples();
+    void set_audio_enabled(bool enabled) noexcept;
+    [[nodiscard]] bool audio_enabled() const noexcept;
     [[nodiscard]] std::string take_serial_output();
     [[nodiscard]] SerialPort& serial_port() noexcept;
     [[nodiscard]] const SerialPort& serial_port() const noexcept;

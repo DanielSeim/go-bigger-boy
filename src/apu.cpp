@@ -271,6 +271,11 @@ void Apu::tick(const unsigned cycles) noexcept {
         tick_wave();
         tick_noise();
 
+        // Keep clocking all channels above: their state drives register reads
+        // (including CGB PCM12/PCM34) and must not depend on presentation
+        // audio. Skip only the costly analog mixer/resampler path.
+        if (!audio_enabled_) continue;
+
         const std::array<float, 4> outputs{
             powered_ ? pulse_output(pulse1_, 0x01) : 0.0F,
             powered_ ? pulse_output(pulse2_, 0x06) : 0.0F,
@@ -298,6 +303,20 @@ void Apu::tick(const unsigned cycles) noexcept {
     }
 }
 
+void Apu::set_audio_enabled(const bool enabled) noexcept {
+    if (audio_enabled_ == enabled) return;
+    audio_enabled_ = enabled;
+    // Never allow samples generated before muting to play after a later
+    // unmute. These are presentation-only accumulators and are intentionally
+    // not part of save states.
+    samples_.clear();
+    sample_accumulator_ = 0;
+    left_capacitor_ = 0.0F;
+    right_capacitor_ = 0.0F;
+    sample_integrator_left_ = 0.0F;
+    sample_integrator_right_ = 0.0F;
+}
+
 void Apu::clock_frame_sequencer() noexcept {
     if (skip_frame_sequencer_event_) {
         skip_frame_sequencer_event_ = false;
@@ -315,6 +334,10 @@ void Apu::clock_frame_sequencer() noexcept {
 }
 
 std::vector<std::int16_t> Apu::take_samples() {
+    if (!audio_enabled_) {
+        samples_.clear();
+        return {};
+    }
     std::vector<std::int16_t> output;
     output.swap(samples_);
     samples_.reserve(4096);

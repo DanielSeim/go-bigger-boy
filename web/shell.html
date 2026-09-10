@@ -79,6 +79,9 @@
           Hardware model
           <select id="hardware-model" disabled></select>
         </label>
+        <label class="palette" for="audio-enabled">
+          <span><input id="audio-enabled" type="checkbox" checked> Generate audio</span>
+        </label>
         <button id="open-rom" type="button" disabled>Choose ROM</button>
       </div>
       <input id="rom-file" type="file" accept=".gb,.gbc,application/octet-stream">
@@ -117,6 +120,7 @@
     const palettePicker = document.getElementById('display-palette');
     const videoPicker = document.getElementById('video-mode');
     const hardwareModelPicker = document.getElementById('hardware-model');
+    const audioEnabledPicker = document.getElementById('audio-enabled');
     const savePicker = document.getElementById('save-file');
     const saveActions = document.getElementById('save-actions');
     const importSaveButton = document.getElementById('import-save');
@@ -571,6 +575,11 @@
         openButton.disabled = false;
         restoreHardwareModel();
         restorePalette();
+        try {
+          audioEnabledPicker.checked =
+            localStorage.getItem('gbb-audio-enabled') !== 'false';
+        } catch (error) {}
+        Module._gbb_set_audio_enabled(audioEnabledPicker.checked);
         Module.gbbSetStatus('Ready. Choose or drop a Game Boy ROM.', false);
       }
     };
@@ -596,6 +605,7 @@
         // earlier setter call that may not have an active C++ app yet.
         if (!Module.loadRomWithPalette(
             bytes, Number(palettePicker.value))) return;
+        Module._gbb_set_audio_enabled(audioEnabledPicker.checked);
         loaded = true;
         currentRom = {
           key: Module.romFingerprint(),
@@ -878,6 +888,14 @@
           `Hardware model set to ${hardwareModelPicker.options[hardwareModelPicker.selectedIndex].textContent}. Reload the ROM to apply it.`,
           false);
       }
+      canvas.focus();
+    });
+    audioEnabledPicker.addEventListener('change', () => {
+      Module._gbb_set_audio_enabled(audioEnabledPicker.checked);
+      try {
+        localStorage.setItem('gbb-audio-enabled',
+          String(audioEnabledPicker.checked));
+      } catch (error) {}
       canvas.focus();
     });
     importSaveButton.addEventListener('click', () => savePicker.click());

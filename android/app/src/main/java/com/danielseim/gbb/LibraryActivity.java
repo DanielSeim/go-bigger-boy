@@ -62,6 +62,8 @@ public final class LibraryActivity extends Activity {
     static native int nativeLinkRemotePort(String directory);
     static native boolean nativeLinkLanDiscovery(String directory);
     static native boolean nativeLinkDiagnostics(String directory);
+    static native boolean nativeAudioEnabled(String directory);
+    static native void nativeSetAudioEnabled(String directory, boolean enabled);
     static native String nativeLinkTransport(String directory);
     static native String nativeLinkBluetoothAddress(String directory);
     static native String nativeLinkBluetoothServiceUuid(String directory);

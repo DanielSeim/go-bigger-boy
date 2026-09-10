@@ -343,6 +343,34 @@ Java_com_danielseim_gbb_LibraryActivity_nativeLinkDiagnostics(
     return value ? JNI_TRUE : JNI_FALSE;
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_danielseim_gbb_LibraryActivity_nativeAudioEnabled(
+    JNIEnv* environment, jclass, jstring directory) {
+    const auto* raw_directory =
+        environment->GetStringUTFChars(directory, nullptr);
+    if (raw_directory == nullptr) return JNI_TRUE;
+    const auto value = load_app_settings(
+        std::filesystem::u8path(raw_directory)).audio_enabled;
+    environment->ReleaseStringUTFChars(directory, raw_directory);
+    return value ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_danielseim_gbb_LibraryActivity_nativeSetAudioEnabled(
+    JNIEnv* environment, jclass, jstring directory, const jboolean enabled) {
+    const auto* raw_directory =
+        environment->GetStringUTFChars(directory, nullptr);
+    if (raw_directory == nullptr) return;
+    auto settings = load_app_settings(std::filesystem::u8path(raw_directory));
+    settings.audio_enabled = enabled == JNI_TRUE;
+    write_portable_settings(std::filesystem::u8path(raw_directory), settings);
+    {
+        std::lock_guard<std::mutex> lock(gbb::sdl::android_link_settings_mutex);
+        gbb::sdl::android_link_settings_changed = true;
+    }
+    environment->ReleaseStringUTFChars(directory, raw_directory);
+}
+
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_danielseim_gbb_LibraryActivity_nativeLinkTransport(
     JNIEnv* environment, jclass, jstring directory) {

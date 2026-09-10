@@ -60,6 +60,12 @@ std::vector<std::int16_t> Emulator::take_audio_samples() {
     return bus_.take_audio_samples();
 }
 
+void Emulator::set_audio_enabled(const bool enabled) noexcept {
+    bus_.set_audio_enabled(enabled);
+}
+
+bool Emulator::audio_enabled() const noexcept { return bus_.audio_enabled(); }
+
 void Emulator::set_button(const Button button, const bool pressed) noexcept {
     bus_.set_button(button, pressed);
 }

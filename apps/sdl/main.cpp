@@ -1106,6 +1106,7 @@ int main(int argc, char** argv) {
         auto bindings = load_bindings(preference_path);
         auto configuration_backup = bindings;
         auto display_palette = load_display_palette(preference_path);
+        auto audio_enabled = app_settings.audio_enabled;
         auto link_diagnostics = load_link_diagnostics(preference_path);
         auto video_mode = load_video_mode(preference_path);
         if (!configure_video_pipeline(sdl, video_mode)) {
@@ -1335,6 +1336,7 @@ int main(int argc, char** argv) {
                     display_palette,
                     sdl.video_mode,
                     hardware_model,
+                    audio_enabled,
                     dashboard_bindings, dashboard_actions,
                     dashboard_link_settings,
                     plugin_options, plugin_catalog,
@@ -1369,6 +1371,14 @@ int main(int argc, char** argv) {
                         show_error(sdl.window,
                                    "Could not configure the selected video pipeline.");
                     }
+                }
+                if (result.audio_enabled_changed) {
+                    audio_enabled = result.audio_enabled;
+                    auto settings = load_app_settings(preference_path);
+                    settings.audio_enabled = audio_enabled;
+                    write_portable_settings(preference_path, settings);
+                    if (emulator) emulator->set_audio_enabled(audio_enabled);
+                    sdl.audio.set_enabled(audio_enabled);
                 }
                 if (result.hardware_model_changed) {
                     hardware_model = result.hardware_model;
@@ -1489,6 +1499,9 @@ int main(int argc, char** argv) {
                 // otherwise a newly enabled trace would not start until the
                 // entire emulator process was restarted.
                 link_diagnostics = updated.link_diagnostics;
+                audio_enabled = updated.audio_enabled;
+                if (emulator) emulator->set_audio_enabled(audio_enabled);
+                sdl.audio.set_enabled(audio_enabled);
             }
 #endif
             SdlEventContext event_context{
@@ -1735,6 +1748,9 @@ int main(int argc, char** argv) {
                              preference_path,
                              std::string{gameboy::hardware_model_id(hardware_model)});
                     emulator = gbb::gameboy_emulator(core.get());
+                    audio_enabled = load_app_settings(preference_path).audio_enabled;
+                    if (emulator) emulator->set_audio_enabled(audio_enabled);
+                    sdl.audio.set_enabled(audio_enabled);
                     services = {core.get(), emulator};
                     sdl.camera.close();
                     if (const auto* camera_emulator =

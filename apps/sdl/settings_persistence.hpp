@@ -16,6 +16,7 @@ struct AppSettings {
     std::size_t palette{};
     gameboy::HardwareModel hardware_model{gameboy::HardwareModel::automatic};
     gameboy::VideoMode video_mode{gameboy::default_video_mode};
+    bool audio_enabled{true};
     bool link_diagnostics{};
     bool plugin_discovery{};
     std::vector<std::filesystem::path> plugin_paths;
@@ -59,7 +60,8 @@ void append_missing_portable_settings(
     const std::array<bool, 8>& has_keyboard,
     const std::array<bool, 8>& has_gamepad,
     const std::array<bool, shortcut_names.size()>& has_shortcuts,
-    bool has_video_mode, bool has_link_diagnostics, bool has_touch_scale,
+    bool has_video_mode, bool has_audio_enabled, bool has_link_diagnostics,
+    bool has_touch_scale,
     bool has_touch_opacity, bool has_touch_voxel_orbit,
     bool has_touch_menu_position, bool has_plugin_discovery,
     bool has_plugin_require_allowlist, bool has_plugin_path,

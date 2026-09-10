@@ -26,6 +26,11 @@ public:
     void tick(unsigned cycles) noexcept;
     void clock_frame_sequencer() noexcept;
     [[nodiscard]] std::vector<std::int16_t> take_samples();
+    // Audio generation is a presentation preference. Channel state and
+    // register-visible behavior continue to advance while disabled, but the
+    // mixer and sample resampler do no work and produce no samples.
+    void set_audio_enabled(bool enabled) noexcept;
+    [[nodiscard]] bool audio_enabled() const noexcept { return audio_enabled_; }
     [[nodiscard]] std::uint8_t pcm12() const noexcept;
     [[nodiscard]] std::uint8_t pcm34() const noexcept;
 
@@ -126,6 +131,7 @@ private:
     bool cgb_hardware_{};
     bool modern_cgb_{};
     bool powered_{};
+    bool audio_enabled_{true};
     PulseState pulse1_{};
     PulseState pulse2_{};
     WaveState wave_{};

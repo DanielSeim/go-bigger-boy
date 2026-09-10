@@ -48,6 +48,8 @@ struct DashboardResult {
     bool video_mode_changed{};
     gameboy::HardwareModel hardware_model{gameboy::HardwareModel::automatic};
     bool hardware_model_changed{};
+    bool audio_enabled{true};
+    bool audio_enabled_changed{};
     KeyboardBindings keyboard_bindings{};
     bool keyboard_bindings_changed{};
     ActionBindings action_bindings{};
@@ -68,6 +70,7 @@ DashboardResult show_windows_dashboard(
     gbb::CoreCapability capabilities,
     std::size_t palette, gameboy::VideoMode video_mode,
     gameboy::HardwareModel hardware_model,
+    bool audio_enabled,
     const KeyboardBindings& keyboard_bindings,
     const ActionBindings& action_bindings,
     const DashboardLinkSettings& link_settings,

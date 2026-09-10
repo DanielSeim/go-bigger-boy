@@ -503,6 +503,12 @@ std::vector<std::int16_t> MemoryBus::take_audio_samples() {
     return apu_.take_samples();
 }
 
+void MemoryBus::set_audio_enabled(const bool enabled) noexcept {
+    apu_.set_audio_enabled(enabled);
+}
+
+bool MemoryBus::audio_enabled() const noexcept { return apu_.audio_enabled(); }
+
 std::string MemoryBus::take_serial_output() {
     auto output = std::move(serial_output_);
     serial_output_.clear();

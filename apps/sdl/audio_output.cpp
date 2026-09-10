@@ -58,6 +58,12 @@ void AudioOutput::clear() noexcept {
     playback_started_ = false;
 }
 
+void AudioOutput::set_enabled(const bool enabled) noexcept {
+    if (enabled_ == enabled) return;
+    enabled_ = enabled;
+    if (!enabled_) clear();
+}
+
 int AudioOutput::queued_bytes() const noexcept {
     return stream_ == nullptr ? -1 : SDL_GetAudioStreamQueued(stream_);
 }
@@ -67,6 +73,7 @@ void AudioOutput::submit(gbb::EmulatorCore* core,
                          const unsigned fast_forward_factor) {
     if (core == nullptr) return;
     auto samples = core->take_audio_samples();
+    if (!enabled_) return;
     if (fast_forward && fast_forward_factor > 1 && !samples.empty()) {
         samples = gbb::downsample_audio_box(samples, 2, fast_forward_factor);
     }

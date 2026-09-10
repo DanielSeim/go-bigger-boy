@@ -69,7 +69,8 @@ void append_missing_portable_settings(
     const std::array<bool, 8>& has_keyboard,
     const std::array<bool, 8>& has_gamepad,
     const std::array<bool, shortcut_names.size()>& has_shortcuts,
-    const bool has_video_mode, const bool has_link_diagnostics,
+    const bool has_video_mode, const bool has_audio_enabled,
+    const bool has_link_diagnostics,
     const bool has_touch_scale, const bool has_touch_opacity,
     const bool has_touch_voxel_orbit, const bool has_touch_menu_position,
     const bool has_plugin_discovery,
@@ -86,7 +87,8 @@ void append_missing_portable_settings(
                     [](const bool value) { return value; }) &&
         std::all_of(has_shortcuts.begin(), has_shortcuts.end(),
                     [](const bool value) { return value; }) &&
-        has_video_mode && has_link_diagnostics && has_touch_scale &&
+        has_video_mode && has_audio_enabled && has_link_diagnostics &&
+        has_touch_scale &&
         has_touch_opacity && has_touch_voxel_orbit && has_touch_menu_position &&
         has_plugin_discovery && has_plugin_require_allowlist &&
         has_plugin_require_capability_allowlist &&
@@ -112,6 +114,10 @@ void append_missing_portable_settings(
     if (!has_video_mode) {
         output << "video.Mode = "
                << gameboy::video_mode_info(settings.video_mode).id << '\n';
+    }
+    if (!has_audio_enabled) {
+        output << "audio.Enabled = "
+               << (settings.audio_enabled ? "true" : "false") << '\n';
     }
     if (!has_link_diagnostics) {
         output << "link.Diagnostics = "
@@ -220,6 +226,7 @@ void write_portable_settings(const std::filesystem::path& preference_directory,
               "in voxel modes and Touch.MenuPosition accepts top-left or "
               "top-right. Video.Mode accepts nearest, bilinear, sharp, "
               "integer, lcd, voxel, voxel_shape, or voxel_popup. "
+              "Audio.Enabled controls whether the APU generates playback samples. "
               "Link.Diagnostics enables the opt-in link "
               "serial, CPU, and game-state trace. Plugin.Discovery is opt-in; "
               "Plugin.Path may be repeated and is resolved relative to this file. "
@@ -234,6 +241,8 @@ void write_portable_settings(const std::filesystem::path& preference_directory,
            << gameboy::hardware_model_id(settings.hardware_model) << "\n"
               "video.Mode = "
            << gameboy::video_mode_info(settings.video_mode).id << "\n"
+              "audio.Enabled = "
+           << (settings.audio_enabled ? "true" : "false") << "\n"
               "link.Diagnostics = "
            << (settings.link_diagnostics ? "true" : "false") << "\n\n";
     output << "plugin.Discovery = "
@@ -446,6 +455,7 @@ AppSettings load_portable_settings(
     bool has_palette = false;
     bool has_hardware_model = false;
     bool has_video_mode = false;
+    bool has_audio_enabled = false;
     bool has_link_diagnostics = false;
     bool has_plugin_discovery = false;
     bool has_plugin_require_allowlist = false;
@@ -495,6 +505,12 @@ AppSettings load_portable_settings(
         if (key == "video.Mode") {
             has_video_mode = true;
             settings.video_mode = gameboy::video_mode_from_id(value);
+            continue;
+        }
+        if (key == "audio.Enabled") {
+            has_audio_enabled = true;
+            settings.audio_enabled = parse_bool_setting(
+                value, settings.audio_enabled);
             continue;
         }
         if (key == "link.Diagnostics") {
@@ -760,7 +776,8 @@ AppSettings load_portable_settings(
     append_missing_portable_settings(path, settings, has_palette,
                                      has_hardware_model,
                                      has_keyboard, has_gamepad, has_shortcuts,
-                                     has_video_mode, has_link_diagnostics,
+                                     has_video_mode, has_audio_enabled,
+                                     has_link_diagnostics,
                                      has_touch_scale, has_touch_opacity,
                                      has_touch_voxel_orbit,
                                      has_touch_menu_position,
