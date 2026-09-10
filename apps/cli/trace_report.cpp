@@ -35,7 +35,9 @@ int main(int argc, char** argv) {
               << "canonical_events=" << report.canonical_events << '\n'
               << "serial_completions=" << report.serial_completions << '\n'
               << "serial_active_changes=" << report.serial_active_changes << '\n'
+              << "serial_progress_events=" << report.serial_progress_events << '\n'
               << "pokemon_state_events=" << report.pokemon_state_events << '\n'
+              << "pokemon_transition_events=" << report.pokemon_transition_events << '\n'
               << "trade_phase_events=" << report.trade_phase_events << '\n'
               << "stall_events=" << report.stall_events << '\n'
               << "frames=";

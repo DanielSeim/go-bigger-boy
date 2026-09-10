@@ -21,7 +21,8 @@ class AudioOutput {
     void clear() noexcept;
     void set_enabled(bool enabled) noexcept;
     void submit(gbb::EmulatorCore* core, bool fast_forward = false,
-                unsigned fast_forward_factor = 4);
+                unsigned fast_forward_factor = 4,
+                bool maintain_during_link_wait = false);
     [[nodiscard]] bool available() const noexcept { return stream_ != nullptr; }
     [[nodiscard]] int queued_bytes() const noexcept;
     [[nodiscard]] bool enabled() const noexcept { return enabled_; }

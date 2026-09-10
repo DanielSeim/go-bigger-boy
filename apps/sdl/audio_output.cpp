@@ -6,8 +6,10 @@
 
 #include <SDL3/SDL.h>
 
+#include <algorithm>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace gbb::sdl {
 
@@ -70,14 +72,15 @@ int AudioOutput::queued_bytes() const noexcept {
 
 void AudioOutput::submit(gbb::EmulatorCore* core,
                          const bool fast_forward,
-                         const unsigned fast_forward_factor) {
+                         const unsigned fast_forward_factor,
+                         const bool maintain_during_link_wait) {
     if (core == nullptr) return;
     auto samples = core->take_audio_samples();
     if (!enabled_) return;
     if (fast_forward && fast_forward_factor > 1 && !samples.empty()) {
         samples = gbb::downsample_audio_box(samples, 2, fast_forward_factor);
     }
-    if (stream_ == nullptr || samples.empty()) return;
+    if (stream_ == nullptr) return;
 
     const auto& descriptor = core->descriptor();
     const auto maximum_queued_bytes =
@@ -90,11 +93,41 @@ void AudioOutput::submit(gbb::EmulatorCore* core,
         // corresponding frame.
         clear();
     }
-    if (!SDL_PutAudioStreamData(
-            stream_, samples.data(),
-            static_cast<int>(samples.size() * sizeof(samples.front())))) {
-        throw std::runtime_error(std::string{"Could not queue audio samples: "} +
-                                 SDL_GetError());
+    if (!samples.empty()) {
+        if (!SDL_PutAudioStreamData(
+                stream_, samples.data(),
+                static_cast<int>(samples.size() * sizeof(samples.front())))) {
+            throw std::runtime_error(
+                std::string{"Could not queue audio samples: "} + SDL_GetError());
+        }
+    }
+
+    // A Pokémon Cable Club can spend several frames waiting for the peer
+    // while the guest produces no new PCM. Keep a short cushion in the SDL
+    // stream during that wait so the device consumes silence instead of
+    // replaying the last packet or underrunning between serial bursts.
+    if (maintain_during_link_wait && enabled_) {
+        const auto target_bytes = gbb::audio_queue_bytes(
+            descriptor.audio_sample_rate, descriptor.audio_channels,
+            playback_prebuffer_ms);
+        const auto queued = queued_bytes();
+        if (queued >= 0 && static_cast<std::size_t>(queued) < target_bytes) {
+            const auto missing_bytes = target_bytes - static_cast<std::size_t>(queued);
+            const auto sample_bytes = sizeof(std::int16_t);
+            const auto channel_count = std::max(1U, descriptor.audio_channels);
+            const auto sample_count =
+                ((missing_bytes + sample_bytes - 1U) / sample_bytes +
+                 channel_count - 1U) /
+                channel_count * channel_count;
+            const std::vector<std::int16_t> silence(sample_count, 0);
+            if (!silence.empty() &&
+                !SDL_PutAudioStreamData(
+                    stream_, silence.data(),
+                    static_cast<int>(silence.size() * sample_bytes))) {
+                throw std::runtime_error(
+                    std::string{"Could not queue link wait audio: "} + SDL_GetError());
+            }
+        }
     }
     if (!playback_started_) {
         const auto prebuffer_bytes = gbb::audio_queue_bytes(

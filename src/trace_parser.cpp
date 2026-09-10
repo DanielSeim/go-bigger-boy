@@ -243,7 +243,12 @@ TraceReport parse_trace(const std::string_view text) {
                 update_frame(record, true);
                 if (record.event == "serial_complete") ++report.serial_completions;
                 if (record.event == "serial_active") ++report.serial_active_changes;
+                if (record.event == "serial_progress") ++report.serial_progress_events;
                 if (record.event == "pokemon_state") ++report.pokemon_state_events;
+                if (record.event == "pokemon_state" &&
+                    record.field("delta_frame") != nullptr) {
+                    ++report.pokemon_transition_events;
+                }
                 if (record.event == "trade_input_phase") ++report.trade_phase_events;
                 if (record.event.find("stall") != std::string::npos) ++report.stall_events;
             } else if (starts_with(token, "frame=")) {

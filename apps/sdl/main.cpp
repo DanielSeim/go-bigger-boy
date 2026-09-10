@@ -2043,7 +2043,8 @@ int main(int argc, char** argv) {
             // must not use a fixed divisor or playback would become quiet or
             // slow whenever the batch is reduced.
             sdl.audio.submit(core.get(), fast_forward,
-                             emulated_frame_batch_factor);
+                             emulated_frame_batch_factor,
+                             link_emulator != nullptr || remote_transport_connected);
             if (link_emulator != nullptr) {
                 // Player two currently shares the primary audio device. Drain
                 // its mixer buffer so it cannot grow stale and add latency or

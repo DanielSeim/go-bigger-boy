@@ -23,10 +23,12 @@ void test_sdl_trace_replay() {
         "transport=tcp role=host cpu_cycles=702240\n"
         "event=serial_active trace_version=1 session_id=7 frame=11 elapsed_ms=21 "
         "transport=tcp role=host player=1 value=1\n"
+        "event=serial_progress trace_version=1 session_id=7 frame=11 elapsed_ms=22 "
+        "transport=tcp role=host player=1 bits=4 delta_bits=1 cpu_cycles=702300\n"
         "event=serial_complete trace_version=1 session_id=7 frame=12 elapsed_ms=23 "
         "transport=tcp role=host player=1 count=1 tx=ff rx=01\n"
         "event=pokemon_state trace_version=1 session_id=7 frame=12 elapsed_ms=23 "
-        "transport=tcp role=host player=1 link=60 battle=0\n"
+        "transport=tcp role=host player=1 link=60 battle=0 delta_frame=2 delta_ms=3 changed=ui\n"
         "session_end id=7 frames=12 elapsed_ms=24 session_id=7\n";
     const auto report = gbb::parse_trace(trace);
     check(report.valid(), "valid SDL trace has no parser errors");
@@ -35,8 +37,9 @@ void test_sdl_trace_replay() {
     check(report.session_id == 7 && report.transport == "tcp" &&
               report.role == "host",
           "SDL replay retains session context");
-    check(report.canonical_events == 4 && report.serial_completions == 1 &&
-              report.serial_active_changes == 1 && report.pokemon_state_events == 1,
+    check(report.canonical_events == 5 && report.serial_completions == 1 &&
+              report.serial_active_changes == 1 && report.serial_progress_events == 1 &&
+              report.pokemon_state_events == 1 && report.pokemon_transition_events == 1,
           "SDL replay summarizes canonical event classes");
     check(report.has_frame && report.first_frame == 10 && report.last_frame == 12 &&
               report.frames_monotonic,

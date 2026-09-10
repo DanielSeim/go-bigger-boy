@@ -161,10 +161,14 @@ struct LinkTracePrevious {
     bool initialized{};
     std::uint64_t first_completed{};
     std::uint64_t second_completed{};
+    std::uint8_t first_bits{};
+    std::uint8_t second_bits{};
     bool first_active{};
     bool second_active{};
     struct PokemonState {
         bool initialized{};
+        std::uint64_t frame{};
+        std::uint64_t elapsed_ms{};
         std::uint8_t link{};
         std::uint8_t link_alt{};
         std::uint8_t battle{};
@@ -257,7 +261,9 @@ void append_trace_transfer_events(std::ostream& output,
                                   const bool first_active,
                                   const bool second_active,
                                   const gameboy::SerialPort& first_serial,
-                                  const gameboy::SerialPort& second_serial) {
+                                  const gameboy::SerialPort& second_serial,
+                                  const std::uint64_t first_cycles = 0,
+                                  const std::uint64_t second_cycles = 0) {
     if (link_trace_previous.initialized) {
         if (first_completed > link_trace_previous.first_completed) {
             gbb::write_trace_event_prefix(output, "serial_complete",
@@ -301,10 +307,36 @@ void append_trace_transfer_events(std::ostream& output,
                    << " bits=" << std::dec
                    << static_cast<unsigned>(second_serial.bits_shifted()) << '\n';
         }
+        const auto write_progress = [&](const unsigned player,
+                                        const gameboy::SerialPort& serial,
+                                        const std::uint8_t previous_bits,
+                                        const std::uint64_t cpu_cycles) {
+            if (serial.bits_shifted() == previous_bits) return;
+            gbb::write_trace_event_prefix(output, "serial_progress",
+                                          link_trace.session(), frame,
+                                          elapsed_ms, link_trace.transport(),
+                                          link_trace.role());
+            output << " player=" << player
+                   << " bits=" << std::dec
+                   << static_cast<unsigned>(serial.bits_shifted())
+                   << " delta_bits="
+                   << static_cast<int>(serial.bits_shifted()) -
+                          static_cast<int>(previous_bits)
+                   << " active=" << serial.transfer_active()
+                   << " internal=" << serial.internal_clock()
+                   << " phase=" << serial.phase()
+                   << " cpu_cycles=" << cpu_cycles << '\n';
+        };
+        write_progress(1, first_serial, link_trace_previous.first_bits,
+                       first_cycles);
+        write_progress(2, second_serial, link_trace_previous.second_bits,
+                       second_cycles);
     }
     link_trace_previous.initialized = true;
     link_trace_previous.first_completed = first_completed;
     link_trace_previous.second_completed = second_completed;
+    link_trace_previous.first_bits = first_serial.bits_shifted();
+    link_trace_previous.second_bits = second_serial.bits_shifted();
     link_trace_previous.first_active = first_active;
     link_trace_previous.second_active = second_active;
 }
@@ -323,12 +355,16 @@ void append_trace_pokemon_transition(
     };
     const auto ui_state = pokemon_ui_state(bus);
     const LinkTracePrevious::PokemonState current{
-        true, read_wram(0xD12B), bus.read8(0xD130), read_wram(0xD057),
-        read_wram(0xD05A), static_cast<std::uint8_t>(ui_state)};
-    if (!previous.initialized || current.link != previous.link ||
-        current.link_alt != previous.link_alt ||
-        current.battle != previous.battle ||
-        current.battle_type != previous.battle_type) {
+        true, frame, elapsed_ms, read_wram(0xD12B), bus.read8(0xD130),
+        read_wram(0xD057), read_wram(0xD05A),
+        static_cast<std::uint8_t>(ui_state)};
+    const auto link_changed = current.link != previous.link;
+    const auto link_alt_changed = current.link_alt != previous.link_alt;
+    const auto battle_changed = current.battle != previous.battle;
+    const auto battle_type_changed = current.battle_type != previous.battle_type;
+    const auto ui_changed = current.ui_state != previous.ui_state;
+    if (!previous.initialized || link_changed || link_alt_changed ||
+        battle_changed || battle_type_changed || ui_changed) {
         gbb::write_trace_event_prefix(output, "pokemon_state", link_trace.session(),
                                       frame, elapsed_ms, link_trace.transport(),
                                       link_trace.role());
@@ -340,7 +376,28 @@ void append_trace_pokemon_transition(
                << static_cast<unsigned>(current.battle_type)
                << " ui="
                << pokemon_ui_state_name(static_cast<PokemonUiState>(current.ui_state))
-               << " transfers=" << std::dec << transfers_completed << '\n';
+               << " transfers=" << std::dec << transfers_completed
+               << " delta_frame="
+               << (previous.initialized ? frame - previous.frame : 0)
+               << " delta_ms="
+               << (previous.initialized ? elapsed_ms - previous.elapsed_ms : 0)
+               << " changed=";
+        if (!previous.initialized) output << "initial";
+        else {
+            bool first = true;
+            const auto append_change = [&](const char* name, const bool changed) {
+                if (!changed) return;
+                if (!first) output << ',';
+                output << name;
+                first = false;
+            };
+            append_change("link", link_changed);
+            append_change("link_alt", link_alt_changed);
+            append_change("battle", battle_changed);
+            append_change("battle_type", battle_type_changed);
+            append_change("ui", ui_changed);
+        }
+        output << '\n';
     }
     previous = current;
 }
@@ -420,7 +477,9 @@ void trace_link_frame(gameboy::Emulator& first,
                                  second_serial.transfers_completed(),
                                  first_serial.transfer_active(),
                                  second_serial.transfer_active(),
-                                 first_serial, second_serial);
+                                 first_serial, second_serial,
+                                 first.cpu().total_cycles(),
+                                 second.cpu().total_cycles());
 }
 
 #endif
@@ -501,7 +560,7 @@ void trace_remote_frame(gameboy::Emulator& emulator,
                                  0,
                                  serial.transfer_active(),
                                  false,
-                                 serial, serial);
+                                 serial, serial, emulator.cpu().total_cycles(), 0);
 }
 
 #ifndef __ANDROID__

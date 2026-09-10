@@ -59,7 +59,9 @@ struct TraceReport {
     std::size_t canonical_events{};
     std::size_t serial_completions{};
     std::size_t serial_active_changes{};
+    std::size_t serial_progress_events{};
     std::size_t pokemon_state_events{};
+    std::size_t pokemon_transition_events{};
     std::size_t trade_phase_events{};
     std::size_t stall_events{};
 

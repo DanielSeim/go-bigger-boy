@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Link diagnostics and audio continuity
+
+- Record serial bit-progress boundaries and elapsed/frame deltas for Pokémon
+  link state transitions, making guest-side waits distinguishable from cable
+  scheduling delays.
+- Keep a short silence cushion on the SDL audio stream while an active link
+  session is waiting for the peer, avoiding repeated audio and underruns.
+- Extend trace parsing and reporting with serial-progress and transition
+  counters, with regression coverage for the new event fields.
+
 ### Super Game Boy
 
 - Decode sampled `CHR_TRN`/`PCT_TRN` data into a deterministic 256×224 SGB

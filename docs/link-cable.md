@@ -131,12 +131,16 @@ intervals the currently playing sound can repeat, which makes the emulator
 appear stuck even though the transfer eventually completes.
 
 This is tracked as a performance/UX follow-up, not as a currently failing link
-protocol. The next investigation should record timestamps for the trade state
-transitions and serial byte progress, then determine whether the delay is in
-the guest's synchronization loop or in cable scheduling. The audio path should
-also remain fed while a link wait is in progress so an audio underflow cannot
-replay the last buffer. Any timing optimization must preserve the now-working
-trade and battle handshake and the bounded timeout-retry recovery.
+protocol. Link diagnostics now record the frame and wall-clock delta since the
+previous Pokémon state transition (`delta_frame`, `delta_ms`, and a `changed`
+field), as well as every serial bit-progress boundary (`event=serial_progress`
+with `bits`, `delta_bits`, `phase`, and `cpu_cycles`). These records make it
+possible to distinguish a guest synchronization loop from cable scheduling
+without manually correlating two frame dumps. During an active link session the
+SDL audio output also tops up a short silence cushion whenever the guest has no
+new PCM, preventing a serial wait from replaying the last buffer or exposing an
+audio underflow. Any timing optimization must preserve the now-working trade
+and battle handshake and the bounded timeout-retry recovery.
 
 The native end-to-end fixture now provides a deterministic baseline for that
 investigation. It establishes both TCP peers before attaching the serial
@@ -264,10 +268,12 @@ For a quick human-readable summary of a captured file, run
 records and the output lists the offending lines.
 Each frame also records CPU cycle totals, PC/SP, halt/stop status, serial phase,
 interrupt registers, and (for Pokémon Gen I) the game link/battle markers and
-party count. Additional `event=serial_complete` and `event=serial_active` lines
-make byte completions and clock ownership changes easy to locate without
-manually diffing every frame. The session header identifies the transport and
-role, so host and join logs can be compared directly.
+party count. Additional `event=serial_complete`, `event=serial_active`, and
+`event=serial_progress` lines make byte completions, clock ownership changes,
+and individual bit boundaries easy to locate without manually diffing every
+frame. Pokémon state events include the elapsed/frame distance from the prior
+state and the fields that changed. The session header identifies the transport
+and role, so host and join logs can be compared directly.
 
 On Android, after enabling diagnostics in **Link settings**, open the in-game
 menu and choose **Save diagnostics**. The native trace is flushed
