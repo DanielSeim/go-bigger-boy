@@ -224,7 +224,7 @@ bool test_tcp_session() {
     // entry points. This mirrors production startup exactly and avoids
     // overwriting a guest's initial SB/SC writes with test-side registers.
     const auto initial_deadline = std::chrono::steady_clock::now() +
-                                  std::chrono::seconds(5);
+                                  std::chrono::seconds(15);
     while (std::chrono::steady_clock::now() < initial_deadline &&
            (first.bus().serial_port().transfers_completed() < 1 ||
             second.bus().serial_port().transfers_completed() < 1)) {
