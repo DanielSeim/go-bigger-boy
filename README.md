@@ -164,6 +164,24 @@ SDL_AUDIODRIVER=dummy SDL_VIDEODRIVER=x11 WAYLAND_DISPLAY= \
   xvfb-run -a ./build-tsan-sdl/gbb
 ```
 
+The Web frontend has a browser-level smoke that loads the real WebAssembly
+bundle, changes the persisted display/audio settings, reloads the page, and
+opens a small synthetic ROM. CI runs it with headless Chromium. With Node.js
+and Playwright available locally:
+
+```sh
+python3 -m http.server 8765 --directory build-web/web
+npx --yes @playwright/test@1.52.0 install chromium
+npx --yes @playwright/test@1.52.0 test tests/web/frontend.spec.mjs
+```
+
+Android UI coverage runs the same library-to-settings flow through Espresso on
+an emulator. The workflow invokes `connectedDebugAndroidTest`; locally use:
+
+```sh
+(cd android && ./gradlew connectedDebugAndroidTest)
+```
+
 Inspect a ROM and execute a requested number of starter instructions:
 
 ```sh
@@ -674,6 +692,24 @@ also publish the signed App Bundle to the closed-testing track **GBB Beta**
 through GitHub Actions Workload Identity Federation; Play-installed copies
 update through Google Play.
 
+The native link end-to-end test also cross-compiles for Android. It exercises
+two real emulator cores over the deterministic local cable (the TCP leg remains
+desktop-only because it requires a socket-capable runner):
+
+```sh
+cmake -S . -B build-android-link-e2e \
+  -DCMAKE_TOOLCHAIN_FILE="$ANDROID_HOME/ndk/28.2.13676358/build/cmake/android.toolchain.cmake" \
+  -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-21 \
+  -DGAMEBOY_BUILD_TESTS=ON -DGAMEBOY_BUILD_SDL=OFF
+cmake --build build-android-link-e2e --target gameboy_link_end_to_end_tests
+adb push build-android-link-e2e/gameboy_link_end_to_end_tests /data/local/tmp/gbb-link-e2e
+adb shell chmod 755 /data/local/tmp/gbb-link-e2e
+adb shell /data/local/tmp/gbb-link-e2e
+```
+
+The Android workflow performs this cross-compilation gate on every change. The
+test binary is intentionally not packaged into the user-facing APK.
+
 ### Web build
 
 The browser frontend uses SDL3 and Emscripten. It accepts local `.gb` and
@@ -692,6 +728,11 @@ Browser saves can also be imported from or exported to desktop-compatible
 `.sav` and `.rtc` files. Game Boy Camera cartridges request webcam permission
 and use a center-cropped 128×112 live image; when access is unavailable, they
 remain playable with the built-in fallback image.
+
+Web link-cable sessions are intentionally not enabled yet. The browser build
+therefore does not register the native link E2E binary; a browser-compatible
+transport (for example WebRTC or a relay-backed WebSocket) and a browser test
+runner are required before cross-device Web link testing can be meaningful.
 
 The repository bootstrap installs the pinned Emscripten 4.0.15 and SDL 3.4.2
 toolchains below the ignored `.cache/toolchains/` directory. Build and optionally

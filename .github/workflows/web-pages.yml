@@ -56,6 +56,31 @@ jobs:
           test -s build-web/web/go_bigger_boy_icon.png
           test -s build-web/web/go_bigger_boy_logo.png
 
+      - name: Set up Node.js for browser smoke
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Install Chromium for browser smoke
+        run: npx --yes @playwright/test@1.52.0 install --with-deps chromium
+
+      - name: Run Web frontend browser smoke
+        run: |
+          python3 -m http.server 8765 --directory build-web/web \
+            > web-smoke-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          ready=0
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8765/ >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = 1
+          npx --yes @playwright/test@1.52.0 test tests/web/frontend.spec.mjs
+
       - name: Configure GitHub Pages
         if: github.event_name != 'pull_request'
         uses: actions/configure-pages@v5

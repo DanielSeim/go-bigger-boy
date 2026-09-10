@@ -35,6 +35,12 @@ network I/O outside the serial edge callback and present only ready edges to
 the emulation thread. `LinkPacketCodec` defines the fixed `GB`/versioned,
 checksummed frame used by the TCP endpoint and future transports.
 
+The Web frontend does not expose link sessions yet. Its single-player browser
+runtime has no transport endpoint, and the native end-to-end test is excluded
+from Emscripten builds. Once a browser transport is selected, add a browser
+runner around the same packet/endpoint contract rather than coupling Web-only
+logic into the core scheduler.
+
 `gameboy::TcpLinkChannel` provides the first transport-layer implementation:
 loopback or explicitly bound host/connect, non-blocking polling, partial-write
 handling, and frame validation. It enables TCP's low-latency mode for the

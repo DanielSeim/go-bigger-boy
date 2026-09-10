@@ -39,6 +39,17 @@ jobs:
           "ndk;28.2.13676358"
           "cmake;3.31.6"
 
+      - name: Build Android native link end-to-end test
+        run: >-
+          cmake -S . -B build-android-link-e2e
+          -DCMAKE_TOOLCHAIN_FILE="$ANDROID_HOME/ndk/28.2.13676358/build/cmake/android.toolchain.cmake"
+          -DANDROID_ABI=arm64-v8a
+          -DANDROID_PLATFORM=android-21
+          -DGAMEBOY_BUILD_TESTS=ON
+          -DGAMEBOY_BUILD_SDL=OFF
+          && cmake --build build-android-link-e2e
+          --target gameboy_link_end_to_end_tests --parallel
+
       - name: Fetch pinned SDL3 Android archive
         run: android/fetch-sdl.sh
 
@@ -47,8 +58,18 @@ jobs:
         run: ./gradlew --no-daemon test
 
       - name: Build debug APK
-        if: github.event_name == 'pull_request'
         run: scripts/build-android.sh debug
+
+      - name: Run Android frontend instrumentation smoke
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          GRADLE_USER_HOME: ${{ github.workspace }}/.cache/gradle
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: Pixel_2
+          disable-animations: true
+          script: cd android && ./gradlew --no-daemon connectedDebugAndroidTest
 
       - name: Restore release signing key
         if: github.event_name != 'pull_request'

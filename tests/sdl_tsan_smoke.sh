@@ -63,11 +63,11 @@ TSAN_OPTIONS="$tsan_options" timeout --signal=INT --kill-after=5s \
         # xdotool events work without activation, so treat activation as a
         # best-effort convenience rather than a smoke-test prerequisite.
         send_input windowactivate --sync "$window"
-        # Navigate the dashboard and open/close the help modal. These are real
-        # X11 input events, so event dispatch, focus, rendering, and modal
-        # cleanup all run on the instrumented SDL thread.
-        send_input key --window "$window" Down Up
-        send_input key --window "$window" F1
+        # Navigate the dashboard to its keyboard-shortcuts row and activate it.
+        # These are real X11 input events, so dashboard selection, focus,
+        # rendering, modal cleanup, and the SDL event loop all run on the
+        # instrumented frontend thread.
+        send_input key --window "$window" Down Down Down Enter
         sleep 0.3
         send_input key --window "$window" Escape
         sleep 0.3

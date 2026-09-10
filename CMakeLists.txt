@@ -732,6 +732,20 @@ if(GAMEBOY_BUILD_TESTS)
     add_test(NAME gameboy_serial_link_contract
              COMMAND gameboy_serial_link_contract_tests)
 
+    if(NOT EMSCRIPTEN)
+        add_executable(gameboy_link_end_to_end_tests
+            tests/link_end_to_end_tests.cpp)
+        target_link_libraries(gameboy_link_end_to_end_tests PRIVATE gameboy_core)
+        if(NOT ANDROID)
+            add_test(NAME gameboy_link_end_to_end_local
+                     COMMAND gameboy_link_end_to_end_tests local)
+            add_test(NAME gameboy_link_end_to_end_tcp
+                     COMMAND gameboy_link_end_to_end_tests tcp)
+            set_tests_properties(gameboy_link_end_to_end_tcp PROPERTIES
+                                 SKIP_RETURN_CODE 77)
+        endif()
+    endif()
+
     add_executable(gameboy_printer_contract_tests
         tests/printer_contract_tests.cpp)
     target_link_libraries(gameboy_printer_contract_tests PRIVATE gameboy_core)
