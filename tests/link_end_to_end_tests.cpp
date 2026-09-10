@@ -116,6 +116,27 @@ bool test_tcp_session() {
         return false;
     }
 
+    // Establish the transport before attaching the serial endpoints.  The
+    // endpoint's hello exchange is intentionally non-blocking, so attaching
+    // while the socket is still connecting can otherwise leave the first
+    // handshake part queued behind a platform-specific connect notification
+    // (notably on macOS).  Waiting here keeps this deterministic fixture
+    // focused on the protocol rather than socket-establishment timing.
+    const auto connection_deadline = std::chrono::steady_clock::now() +
+                                     std::chrono::seconds(2);
+    while (std::chrono::steady_clock::now() < connection_deadline &&
+           (server.state() != gameboy::TcpLinkChannel::State::connected ||
+            client.state() != gameboy::TcpLinkChannel::State::connected)) {
+        server.poll();
+        client.poll();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    if (server.state() != gameboy::TcpLinkChannel::State::connected ||
+        client.state() != gameboy::TcpLinkChannel::State::connected) {
+        std::cerr << "SKIP: TCP loopback did not establish a peer\n";
+        return false;
+    }
+
     gameboy::TcpSerialEndpoint first_endpoint;
     gameboy::TcpSerialEndpoint second_endpoint;
     first_endpoint.set_arbitration_priority(true);
