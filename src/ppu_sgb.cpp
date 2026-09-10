@@ -117,6 +117,56 @@ void Ppu::apply_sgb_command(
         }
         break;
     }
+    case 0x0A: { // PAL_SET
+        if (size < 10) return;
+        const auto palette_index = [&](const std::size_t offset) {
+            return static_cast<std::size_t>(
+                packet[offset] | ((packet[offset + 1] & 1U) << 8));
+        };
+        const auto indexes = std::array<std::size_t, 4>{
+            palette_index(1), palette_index(3), palette_index(5),
+            palette_index(7)};
+        for (const auto index : indexes) {
+            if (index >= 0x200 || index * 4 + 3 >= sgb_ram_palettes_->size()) {
+                return;
+            }
+        }
+        const auto color_zero = (*sgb_ram_palettes_)[indexes[0] * 4];
+        for (std::size_t palette = 0; palette < indexes.size(); ++palette) {
+            sgb_palettes_[palette * 4] = color_zero;
+            for (std::size_t color = 1; color < 4; ++color) {
+                sgb_palettes_[palette * 4 + color] =
+                    (*sgb_ram_palettes_)[indexes[palette] * 4 + color];
+            }
+        }
+        if ((packet[9] & 0x80U) != 0) {
+            load_sgb_attribute_file(packet[9] & 0x3FU);
+        }
+        if ((packet[9] & 0x40U) != 0) sgb_mask_mode_ = 0;
+        break;
+    }
+    case 0x0B: { // PAL_TRN
+        // The 4 KiB VRAM transfer contains 2048 little-endian RGB555 entries.
+        for (std::size_t index = 0; index < sgb_ram_palettes_->size(); ++index) {
+            const auto offset = index * 2;
+            (*sgb_ram_palettes_)[index] = static_cast<std::uint16_t>(
+                vram_[offset] | (static_cast<std::uint16_t>(vram_[offset + 1])
+                                 << 8));
+        }
+        break;
+    }
+    case 0x15: { // ATTR_TRN
+        // Each of the 45 attribute files is a packed 20x18 map (90 bytes).
+        std::copy_n(vram_.begin(), sgb_attribute_files_->size(),
+                    sgb_attribute_files_->begin());
+        break;
+    }
+    case 0x16: { // ATTR_SET
+        if (size < 2) return;
+        load_sgb_attribute_file(packet[1] & 0x3FU);
+        if ((packet[1] & 0x40U) != 0) sgb_mask_mode_ = 0;
+        break;
+    }
     case 0x13: { // CHR_TRN
         const auto bank = static_cast<std::size_t>(packet[1] & 1U);
         std::copy_n(vram_.begin(), 0x1000,
@@ -126,12 +176,21 @@ void Ppu::apply_sgb_command(
     case 0x14: // PCT_TRN
         std::copy_n(vram_.begin(), 0x1000, sgb_border_pct_->begin());
         break;
-    case 0x16: // ATTR_SET
-        break;
     case 0x17: // MASK_EN
         sgb_mask_mode_ = static_cast<std::uint8_t>(packet[1] & 3U);
         break;
     default: break;
+    }
+}
+
+void Ppu::load_sgb_attribute_file(const std::size_t index) noexcept {
+    constexpr std::size_t file_count = 0x2D;
+    constexpr std::size_t file_size = 90;
+    if (index >= file_count) return;
+    const auto* source = sgb_attribute_files_->data() + index * file_size;
+    for (std::size_t entry = 0; entry < sgb_attributes_.size(); ++entry) {
+        sgb_attributes_[entry] = static_cast<std::uint8_t>(
+            (source[entry / 4] >> ((3U - (entry & 3U)) * 2U)) & 3U);
     }
 }
 

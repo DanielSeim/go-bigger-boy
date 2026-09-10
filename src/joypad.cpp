@@ -3,13 +3,28 @@
 namespace gameboy {
 
 std::uint8_t Joypad::read() const noexcept {
+    if (sgb_mode_ && sgb_player_count_ > 1 && select_ == 0x30) {
+        return static_cast<std::uint8_t>(0xC0 | select_ |
+                                         (0x0F - sgb_current_player_));
+    }
     return static_cast<std::uint8_t>(0xC0 | select_ | input_lines());
 }
 
 bool Joypad::write(const std::uint8_t value) noexcept {
     const auto old_lines = input_lines();
-    select_ = static_cast<std::uint8_t>(value & 0x30);
-    if (sgb_mode_) process_sgb_write(value);
+    const auto old_select = select_;
+    if (sgb_mode_) {
+        // The SGB increments its active controller when P15 transitions from
+        // low to high. P14 is independent and may be used to read either the
+        // d-pad or action buttons for the newly selected controller.
+        if (sgb_player_count_ > 1 && (value & 0x20U) != 0 &&
+            (old_select & 0x20U) == 0) {
+            sgb_current_player_ = static_cast<std::uint8_t>(
+                (sgb_current_player_ + 1) & (sgb_player_count_ - 1));
+        }
+        select_ = static_cast<std::uint8_t>(value & 0x30);
+        process_sgb_write(value);
+    } else select_ = static_cast<std::uint8_t>(value & 0x30);
     const auto new_lines = input_lines();
     return (old_lines & static_cast<std::uint8_t>(~new_lines) & 0x0F) != 0;
 }
@@ -53,6 +68,24 @@ std::uint8_t Joypad::input_lines() const noexcept {
 void Joypad::set_sgb_mode(const bool enabled) noexcept {
     if (sgb_mode_ != enabled) reset_sgb_packet();
     sgb_mode_ = enabled;
+    if (!enabled) {
+        sgb_player_count_ = 1;
+        sgb_current_player_ = 0;
+    }
+}
+
+void Joypad::apply_sgb_command(
+    const std::array<std::uint8_t, sgb_packet_size * sgb_max_packets>& packet,
+    const std::size_t size) noexcept {
+    if (!sgb_mode_ || size < 2 || (packet[0] >> 3) != 0x11) return;
+    switch (packet[1] & 3U) {
+    case 0: sgb_player_count_ = 1; break;
+    case 1: sgb_player_count_ = 2; break;
+    case 3: sgb_player_count_ = 4; break;
+    default: sgb_player_count_ = 1; break;
+    }
+    sgb_current_player_ = static_cast<std::uint8_t>(
+        sgb_current_player_ & (sgb_player_count_ - 1));
 }
 
 bool Joypad::take_sgb_packet(

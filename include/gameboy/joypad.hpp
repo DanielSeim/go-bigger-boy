@@ -32,6 +32,12 @@ public:
     [[nodiscard]] bool write(std::uint8_t value) noexcept;
     [[nodiscard]] bool set_button(Button button, bool pressed) noexcept;
     void set_sgb_mode(bool enabled) noexcept;
+    void apply_sgb_command(
+        const std::array<std::uint8_t, sgb_packet_size * sgb_max_packets>& packet,
+        std::size_t size) noexcept;
+    [[nodiscard]] std::uint8_t sgb_player_count() const noexcept {
+        return sgb_player_count_;
+    }
     [[nodiscard]] bool take_sgb_packet(
         std::array<std::uint8_t, sgb_packet_size * sgb_max_packets>& packet,
         std::size_t& size) noexcept;
@@ -58,6 +64,8 @@ private:
     std::array<std::uint8_t, sgb_packet_size * sgb_max_packets> sgb_packet_{};
     bool sgb_packet_ready_{};
     std::size_t sgb_packet_bytes_{};
+    std::uint8_t sgb_player_count_{1};
+    std::uint8_t sgb_current_player_{};
 };
 
 } // namespace gameboy

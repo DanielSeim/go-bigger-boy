@@ -403,7 +403,8 @@ void SaveStateBusCodec::read(save_state_format::Reader& reader,
     }
     if (version >= 22) {
         // The SGB block is append-only; version 23 adds the mask and border
-        // data after the version 22 packet/palette fields.
+        // data after the version 22 packet/palette fields, while version 26
+        // adds transferred palette and attribute-file memories.
         bus.joypad_.sgb_mode_ = reader.boolean();
         bus.joypad_.sgb_ready_for_pulse_ = reader.boolean();
         bus.joypad_.sgb_ready_for_write_ = reader.boolean();
@@ -418,6 +419,21 @@ void SaveStateBusCodec::read(save_state_format::Reader& reader,
             bus.joypad_.sgb_packet_bytes_ > bus.joypad_.sgb_packet_.size()) {
             throw SaveStateError("Save state contains invalid SGB joypad state");
         }
+        if (version >= 26) {
+            bus.joypad_.sgb_player_count_ = reader.u8();
+            bus.joypad_.sgb_current_player_ = reader.u8();
+            if (bus.joypad_.sgb_player_count_ != 1 &&
+                bus.joypad_.sgb_player_count_ != 2 &&
+                bus.joypad_.sgb_player_count_ != 4) {
+                throw SaveStateError("Save state contains invalid SGB player count");
+            }
+            bus.joypad_.sgb_current_player_ = static_cast<std::uint8_t>(
+                bus.joypad_.sgb_current_player_ &
+                (bus.joypad_.sgb_player_count_ - 1));
+        } else {
+            bus.joypad_.sgb_player_count_ = 1;
+            bus.joypad_.sgb_current_player_ = 0;
+        }
         bus.ppu_.sgb_mode_ = reader.boolean();
         for (auto& color : bus.ppu_.sgb_palettes_) color = reader.u16();
         read_bytes(reader, bus.ppu_.sgb_attributes_);
@@ -425,6 +441,15 @@ void SaveStateBusCodec::read(save_state_format::Reader& reader,
             bus.ppu_.sgb_mask_mode_ = reader.u8() & 3U;
             read_bytes(reader, *bus.ppu_.sgb_border_tiles_);
             read_bytes(reader, *bus.ppu_.sgb_border_pct_);
+            if (version >= 26) {
+                for (auto& color : *bus.ppu_.sgb_ram_palettes_) {
+                    color = reader.u16();
+                }
+                read_bytes(reader, *bus.ppu_.sgb_attribute_files_);
+            } else {
+                bus.ppu_.sgb_ram_palettes_->fill(0);
+                bus.ppu_.sgb_attribute_files_->fill(0);
+            }
         } else {
             bus.ppu_.sgb_mask_mode_ = 0;
             bus.ppu_.sgb_border_tiles_->fill(0);
@@ -436,12 +461,16 @@ void SaveStateBusCodec::read(save_state_format::Reader& reader,
         bus.joypad_.sgb_packet_.fill(0);
         bus.joypad_.sgb_packet_ready_ = false;
         bus.joypad_.sgb_packet_bytes_ = 0;
+        bus.joypad_.sgb_player_count_ = 1;
+        bus.joypad_.sgb_current_player_ = 0;
         bus.ppu_.sgb_mode_ = false;
         bus.ppu_.sgb_palettes_.fill(0);
         bus.ppu_.sgb_attributes_.fill(0);
         bus.ppu_.sgb_mask_mode_ = 0;
         bus.ppu_.sgb_border_tiles_->fill(0);
         bus.ppu_.sgb_border_pct_->fill(0);
+        bus.ppu_.sgb_ram_palettes_->fill(0);
+        bus.ppu_.sgb_attribute_files_->fill(0);
     }
     if (version >= 24) {
         const auto serial_phase = reader.u32();

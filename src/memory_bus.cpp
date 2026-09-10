@@ -194,6 +194,7 @@ void MemoryBus::write8(const std::uint16_t address, const std::uint8_t value) no
         }
         std::size_t packet_size = 0;
         if (joypad_.take_sgb_packet(sgb_packet_, packet_size)) {
+            joypad_.apply_sgb_command(sgb_packet_, packet_size);
             ppu_.apply_sgb_command(sgb_packet_, packet_size);
         }
     } else if (address == 0xFF01) {

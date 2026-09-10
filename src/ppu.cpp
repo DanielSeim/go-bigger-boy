@@ -21,6 +21,9 @@ constexpr std::array<std::uint16_t, 16> default_sgb_palettes{
 Ppu::Ppu()
     : cgb_vram_(std::make_unique<std::array<std::uint8_t, 0x2000>>()),
       framebuffer_(std::make_unique<Framebuffer>()),
+      sgb_ram_palettes_(std::make_unique<std::array<std::uint16_t, 0x800>>()),
+      sgb_attribute_files_(
+          std::make_unique<std::array<std::uint8_t, 0x2D * 90>>()),
       sgb_border_tiles_(std::make_unique<std::array<std::uint8_t, 0x2000>>()),
       sgb_border_pct_(std::make_unique<std::array<std::uint8_t, 0x1000>>()) {
     framebuffer_->fill(dmg_colors[0]);
@@ -53,6 +56,8 @@ void Ppu::set_sgb_mode(const bool enabled) noexcept {
     // sends its first PAL command.
     sgb_palettes_ = default_sgb_palettes;
     sgb_attributes_.fill(0);
+    sgb_ram_palettes_->fill(0);
+    sgb_attribute_files_->fill(0);
     sgb_border_tiles_->fill(0);
     sgb_border_pct_->fill(0);
     sgb_mask_mode_ = 0;
@@ -106,6 +111,21 @@ std::uint8_t Ppu::debug_read_sgb_border_tile(
 std::uint8_t Ppu::debug_read_sgb_border_pct(
     const std::uint16_t offset) const noexcept {
     return offset < sgb_border_pct_->size() ? (*sgb_border_pct_)[offset] : 0xFF;
+}
+
+std::uint16_t Ppu::debug_read_sgb_palette(
+    const std::uint16_t index) const noexcept {
+    return index < sgb_ram_palettes_->size() ? (*sgb_ram_palettes_)[index] : 0;
+}
+
+std::uint16_t Ppu::debug_read_sgb_active_palette(
+    const std::uint8_t index) const noexcept {
+    return index < sgb_palettes_.size() ? sgb_palettes_[index] : 0;
+}
+
+std::uint8_t Ppu::debug_read_sgb_attribute(const std::uint8_t x,
+                                           const std::uint8_t y) const noexcept {
+    return x < 20 && y < 18 ? sgb_attributes_[x + y * 20] : 0xFF;
 }
 
 std::uint8_t Ppu::sgb_mask_mode() const noexcept { return sgb_mask_mode_; }

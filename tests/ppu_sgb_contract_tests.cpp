@@ -1,4 +1,5 @@
 #include "gameboy/emulator.hpp"
+#include "gameboy/joypad.hpp"
 #include "gameboy/ppu.hpp"
 
 #include <array>
@@ -80,6 +81,57 @@ void test_mask_command_is_bounded() {
           "MASK_EN stores only the two-bit mask mode");
 }
 
+void test_multiplayer_request_and_polling() {
+    gameboy::Joypad joypad;
+    joypad.set_sgb_mode(true);
+    std::array<std::uint8_t, 16 * 7> packet{};
+    packet[0] = static_cast<std::uint8_t>(0x11 << 3); // MLT_REQ
+    packet[1] = 0x01; // two players
+    joypad.apply_sgb_command(packet, packet.size());
+    check(joypad.sgb_player_count() == 2,
+          "MLT_REQ enables two-player SGB polling");
+    static_cast<void>(joypad.write(0x30));
+    check((joypad.read() & 0x0F) == 0x0F,
+          "SGB multiplayer polling starts with player one ID");
+    static_cast<void>(joypad.write(0x10));
+    static_cast<void>(joypad.write(0x30));
+    check((joypad.read() & 0x0F) == 0x0E,
+          "SGB multiplayer polling advances to player two");
+    packet[1] = 0x03; // four players
+    joypad.apply_sgb_command(packet, packet.size());
+    check(joypad.sgb_player_count() == 4,
+          "MLT_REQ enables four-player SGB polling");
+    static_cast<void>(joypad.write(0x10));
+    static_cast<void>(joypad.write(0x30));
+    check((joypad.read() & 0x0F) == 0x0D,
+          "SGB four-player polling advances through controller IDs");
+}
+
+void test_multiplayer_command_reaches_joypad() {
+    gameboy::Emulator emulator{gameboy::Cartridge{test_rom()}};
+    std::array<std::uint8_t, 16> command{};
+    command[0] = static_cast<std::uint8_t>((0x11U << 3) | 1U);
+    command[1] = 0x01;
+    const auto write = [&](const std::uint8_t value) {
+        emulator.bus().write8(0xFF00, value);
+    };
+    write(0x30);
+    write(0x00);
+    for (std::size_t bit = 0; bit < command.size() * 8; ++bit) {
+        write(0x30);
+        write((command[bit / 8] & (1U << (bit & 7U))) != 0 ? 0x10 : 0x20);
+    }
+    write(0x30);
+    write(0x20);
+    emulator.bus().write8(0xFF00, 0x30);
+    check((emulator.bus().read8(0xFF00) & 0x0F) == 0x0F,
+          "MLT_REQ packets configure the bus joypad controller ID");
+    emulator.bus().write8(0xFF00, 0x10);
+    emulator.bus().write8(0xFF00, 0x30);
+    check((emulator.bus().read8(0xFF00) & 0x0F) == 0x0E,
+          "bus joypad polling advances after P15 is released");
+}
+
 void test_malformed_command_matrix_is_bounded() {
     gameboy::Ppu ppu;
     ppu.set_sgb_mode(true);
@@ -137,6 +189,45 @@ void test_palette_command_reaches_video() {
           "PAL01 updates the rendered SGB palette");
 }
 
+void test_palette_and_attribute_transfer_commands() {
+    gameboy::Ppu ppu;
+    ppu.set_sgb_mode(true);
+    for (std::size_t index = 0; index < 0x1000; ++index) {
+        ppu.debug_write_vram(0, static_cast<std::uint16_t>(index),
+                             static_cast<std::uint8_t>(index ^ 0x5A));
+    }
+
+    std::array<std::uint8_t, 16 * 7> packet{};
+    packet[0] = static_cast<std::uint8_t>(0x0B << 3); // PAL_TRN
+    ppu.apply_sgb_command(packet, packet.size());
+    check(ppu.debug_read_sgb_palette(0) == 0x5B5A &&
+              ppu.debug_read_sgb_palette(0x7FF) == 0xA5A4,
+          "PAL_TRN stores all transferred RGB555 palette entries");
+
+    packet.fill(0);
+    packet[0] = static_cast<std::uint8_t>(0x0A << 3); // PAL_SET
+    packet[1] = 0x01;
+    packet[3] = 0x02;
+    packet[5] = 0x03;
+    packet[7] = 0x04;
+    ppu.apply_sgb_command(packet, packet.size());
+    check(ppu.debug_read_sgb_palette(1) == 0x5958 &&
+              ppu.debug_read_sgb_active_palette(4) == 0x5352,
+          "PAL_SET selects colors from transferred palette memory");
+
+    ppu.debug_write_vram(0, 0x0000, 0x1B);
+    packet.fill(0);
+    packet[0] = static_cast<std::uint8_t>(0x15 << 3); // ATTR_TRN
+    ppu.apply_sgb_command(packet, packet.size());
+    packet.fill(0);
+    packet[0] = static_cast<std::uint8_t>(0x16 << 3); // ATTR_SET
+    packet[1] = 0x00;
+    ppu.apply_sgb_command(packet, packet.size());
+    check(ppu.debug_read_sgb_attribute(0, 0) == 0 &&
+              ppu.debug_read_sgb_attribute(1, 0) == 1,
+          "ATTR_TRN and ATTR_SET restore packed tile attributes");
+}
+
 void test_default_palette_uses_display_setting() {
     gameboy::Emulator emulator{gameboy::Cartridge{test_rom()}};
     gameboy::DmgPalette layer_colors{
@@ -158,8 +249,11 @@ void test_default_palette_uses_display_setting() {
 int main() {
     test_transfer_commands_and_guards();
     test_mask_command_is_bounded();
+    test_multiplayer_request_and_polling();
+    test_multiplayer_command_reaches_joypad();
     test_malformed_command_matrix_is_bounded();
     test_palette_command_reaches_video();
+    test_palette_and_attribute_transfer_commands();
     test_default_palette_uses_display_setting();
     return failures == 0 ? 0 : 1;
 }

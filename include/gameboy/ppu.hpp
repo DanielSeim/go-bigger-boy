@@ -42,6 +42,12 @@ public:
         std::uint16_t offset) const noexcept;
     [[nodiscard]] std::uint8_t debug_read_sgb_border_pct(
         std::uint16_t offset) const noexcept;
+    [[nodiscard]] std::uint16_t debug_read_sgb_palette(
+        std::uint16_t index) const noexcept;
+    [[nodiscard]] std::uint16_t debug_read_sgb_active_palette(
+        std::uint8_t index) const noexcept;
+    [[nodiscard]] std::uint8_t debug_read_sgb_attribute(
+        std::uint8_t x, std::uint8_t y) const noexcept;
     [[nodiscard]] std::uint8_t sgb_mask_mode() const noexcept;
 
     [[nodiscard]] std::uint8_t read_vram(std::uint16_t address) const noexcept;
@@ -124,6 +130,7 @@ private:
     [[nodiscard]] std::uint32_t sgb_palette_color(std::uint8_t palette,
                                                   std::uint8_t color) const noexcept;
     [[nodiscard]] std::uint8_t sgb_attribute_for_pixel(unsigned x) const noexcept;
+    void load_sgb_attribute_file(std::size_t index) noexcept;
 
     std::array<std::uint8_t, 0x2000> vram_{};
     std::unique_ptr<std::array<std::uint8_t, 0x2000>> cgb_vram_;
@@ -172,6 +179,10 @@ private:
     // palettes so monochrome rendering remains unchanged on ordinary models.
     std::array<std::uint16_t, 16> sgb_palettes_{};
     std::array<std::uint8_t, 20 * 18> sgb_attributes_{};
+    // PAL_TRN stores 2048 RGB555 entries; ATTR_TRN stores 45 packed 20x18
+    // attribute maps consumed by PAL_SET and ATTR_SET.
+    std::unique_ptr<std::array<std::uint16_t, 0x800>> sgb_ram_palettes_;
+    std::unique_ptr<std::array<std::uint8_t, 0x2D * 90>> sgb_attribute_files_;
     // CHR_TRN latches two 4 KiB tile-data banks. PCT_TRN is retained
     // byte-for-byte because its map/attribute/palette packing is SNES-side.
     std::unique_ptr<std::array<std::uint8_t, 0x2000>> sgb_border_tiles_;

@@ -160,12 +160,16 @@ void SaveStateBusCodec::write(save_state_format::Writer& writer,
     write_bytes(writer, bus.joypad_.sgb_packet_);
     writer.boolean(bus.joypad_.sgb_packet_ready_);
     writer.u32(static_cast<std::uint32_t>(bus.joypad_.sgb_packet_bytes_));
+    writer.u8(bus.joypad_.sgb_player_count_);
+    writer.u8(bus.joypad_.sgb_current_player_);
     writer.boolean(bus.ppu_.sgb_mode_);
     for (const auto color : bus.ppu_.sgb_palettes_) writer.u16(color);
     write_bytes(writer, bus.ppu_.sgb_attributes_);
     writer.u8(bus.ppu_.sgb_mask_mode_);
     write_bytes(writer, *bus.ppu_.sgb_border_tiles_);
     write_bytes(writer, *bus.ppu_.sgb_border_pct_);
+    for (const auto color : *bus.ppu_.sgb_ram_palettes_) writer.u16(color);
+    write_bytes(writer, *bus.ppu_.sgb_attribute_files_);
     // Serial state is appended so versions 1–23 retain their established
     // payload offsets while current states can resume a transfer exactly.
     writer.u32(bus.serial_.phase());
