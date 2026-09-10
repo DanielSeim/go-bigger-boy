@@ -80,6 +80,11 @@ public:
         descriptor_.has_battery = cartridge_info.has_battery();
         descriptor_.supports_color = cartridge_info.supports_cgb();
         descriptor_.requires_color = cartridge_info.requires_cgb();
+        if (emulator_.hardware_model() == gameboy::HardwareModel::sgb ||
+            emulator_.hardware_model() == gameboy::HardwareModel::sgb2) {
+            descriptor_.video_width = gameboy::Ppu::sgb_border_width;
+            descriptor_.video_height = gameboy::Ppu::sgb_border_height;
+        }
         descriptor_.capabilities =
             CoreCapability::compatibility_palette |
             CoreCapability::cheats | CoreCapability::debugger |
@@ -109,10 +114,21 @@ public:
     bool frame_ready() const noexcept override { return emulator_.frame_ready(); }
     void consume_frame() noexcept override { emulator_.consume_frame(); }
     VideoFrameView video_frame() const noexcept override {
+        if (emulator_.hardware_model() == gameboy::HardwareModel::sgb ||
+            emulator_.hardware_model() == gameboy::HardwareModel::sgb2) {
+            const auto& frame = emulator_.sgb_framebuffer();
+            return {frame.data(), frame.size(), gameboy::Ppu::sgb_border_width,
+                    gameboy::Ppu::sgb_border_height,
+                    gameboy::Ppu::sgb_border_width * sizeof(std::uint32_t)};
+        }
         const auto& frame = emulator_.framebuffer();
         return {frame.data(), frame.size(), gameboy::Ppu::screen_width,
                 gameboy::Ppu::screen_height,
                 gameboy::Ppu::screen_width * sizeof(std::uint32_t)};
+    }
+    bool video_frame_native_colors() const noexcept override {
+        return emulator_.hardware_model() == gameboy::HardwareModel::sgb ||
+               emulator_.hardware_model() == gameboy::HardwareModel::sgb2;
     }
     const SceneSnapshot& scene_snapshot() const noexcept override {
         populate_gameboy_scene_snapshot(emulator_, scene_);

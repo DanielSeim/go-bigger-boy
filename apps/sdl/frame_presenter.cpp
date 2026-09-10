@@ -9,6 +9,7 @@ std::vector<std::uint32_t> colorize_frame(
     const gameboy::DisplayPalette& palette) {
     const auto frame = core.video_frame();
     const auto native_colors =
+        core.video_frame_native_colors() ||
         core.descriptor().system == gbb::SystemId::game_boy_color ||
         palette.cgb_compatibility;
     std::vector<std::uint32_t> colored_pixels;

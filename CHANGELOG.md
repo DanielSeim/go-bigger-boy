@@ -8,6 +8,8 @@
   border framebuffer, including SNES 4bpp tiles, tilemap flips, RGB555 border
   palettes, and transparent overlay of the native Game Boy viewport.
 - Expose the SGB framebuffer through the core, emulator, and memory-bus APIs.
+- Route SGB/SGB2 frames through the frontend-neutral video contract so SDL,
+  Android, and web presentation use the 256×224 dimensions automatically.
 - Persist the PCT transfer latch in save-state format version 27 and add
   compositor regression coverage.
 

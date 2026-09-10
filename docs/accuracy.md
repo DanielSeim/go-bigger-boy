@@ -134,10 +134,11 @@ behaviors are covered by core tests and save states (version 27). This is
 deliberately not a full SNES emulation path: the real adapter relies on SNES-
 side execution, graphics, and audio ([Pan Docs SGB overview](https://gbdev.io/pandocs/SGB_Functions.html)), so complete SGB compatibility would
 require either those SNES subsystems or an equivalent dedicated host model.
-Desktop, Android, and web presentation still use their established 160×144
-viewport path; wiring the SGB framebuffer into each frontend, along with SNES
-audio, fade timing, and the complete SGB boot/header handshake, remains
-deferred. These limitations do not affect ordinary DMG or CGB emulation.
+The frontend-neutral SDL and web presentation paths now consume the SGB frame
+dimensions from the core descriptor, so desktop, Android, and browser builds
+can display the border without a frontend-specific decoder. SNES audio, fade
+timing, and the complete SGB boot/header handshake remain deferred. These
+limitations do not affect ordinary DMG or CGB emulation.
 
 The APU evaluates channel output and the hardware high-pass response on every
 master-clock cycle, then integrates those values over exact 48 kHz sample

@@ -38,6 +38,8 @@ void present_frame(const PresentationContext& context) {
         if (context.emulator != nullptr &&
             has_capability(context.core->descriptor().capabilities,
                            CoreCapability::scene_layers) &&
+            sdl.core_video_width == gameboy::Ppu::screen_width &&
+            sdl.core_video_height == gameboy::Ppu::screen_height &&
             (sdl.video_mode == gameboy::VideoMode::voxel_diorama ||
              sdl.video_mode == gameboy::VideoMode::voxel_shape ||
              sdl.video_mode == gameboy::VideoMode::voxel_popup)) {

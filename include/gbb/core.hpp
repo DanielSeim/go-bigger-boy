@@ -169,6 +169,12 @@ public:
     [[nodiscard]] virtual bool frame_ready() const noexcept = 0;
     virtual void consume_frame() noexcept = 0;
     [[nodiscard]] virtual VideoFrameView video_frame() const noexcept = 0;
+    // Most cores expose display-independent native pixels which the frontend
+    // may recolor. SGB border frames already contain RGB555-expanded colors,
+    // so adapters can opt out of that palette transform.
+    [[nodiscard]] virtual bool video_frame_native_colors() const noexcept {
+        return false;
+    }
     // Optional read-only scene data for presentation renderers such as a
     // voxel diorama. The ordinary framebuffer remains the universal fallback.
     [[nodiscard]] virtual const SceneSnapshot& scene_snapshot() const noexcept {

@@ -18,8 +18,12 @@ void populate_gameboy_scene_snapshot(const gameboy::Emulator& emulator,
     scene.producer_id = "gameboy";
     const auto& bus = emulator.bus();
     scene.emulation_cycles = emulator.cpu().total_cycles();
-    scene.width = gameboy::Ppu::screen_width;
-    scene.height = gameboy::Ppu::screen_height;
+    const auto sgb_model = emulator.hardware_model() == gameboy::HardwareModel::sgb ||
+                           emulator.hardware_model() == gameboy::HardwareModel::sgb2;
+    scene.width = sgb_model ? gameboy::Ppu::sgb_border_width
+                            : gameboy::Ppu::screen_width;
+    scene.height = sgb_model ? gameboy::Ppu::sgb_border_height
+                             : gameboy::Ppu::screen_height;
     scene.cgb_mode = bus.cgb_mode();
     scene.lcdc = bus.read8(0xFF40);
     scene.scx = bus.read8(0xFF43);

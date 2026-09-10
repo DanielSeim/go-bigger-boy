@@ -100,6 +100,19 @@ void test_core_registry_contract() {
               model_emulator->hardware_model() == gameboy::HardwareModel::cgb0,
           "core factory applies an explicitly selected hardware model");
 
+    auto sgb_rom = test_rom();
+    sgb_rom[0x146] = 0x03;
+    auto sgb_options = gbb::CoreLoadOptions{};
+    sgb_options.hardware_model = "sgb";
+    auto sgb_core = registry.create(std::move(sgb_rom), sgb_options);
+    const auto sgb_frame = sgb_core->video_frame();
+    check(sgb_core->descriptor().video_width == 256 &&
+              sgb_core->descriptor().video_height == 224 &&
+              sgb_frame.pixel_count == 256 * 224 &&
+              sgb_frame.pitch == 256 * sizeof(std::uint32_t) &&
+              sgb_core->video_frame_native_colors(),
+          "SGB cores expose the 256x224 border framebuffer contract");
+
     const auto state_before_printer_toggle = core->save_state();
     core->set_printer_enabled(true);
     core->set_printer_enabled(false);

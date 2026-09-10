@@ -942,6 +942,7 @@ void present(WebApp& app) {
         const auto frame = app.emulator->video_frame();
         const auto& palette = gameboy::display_palettes[app.display_palette];
         const auto native_colors =
+            app.emulator->video_frame_native_colors() ||
             app.emulator->descriptor().system ==
                 gbb::SystemId::game_boy_color ||
             palette.cgb_compatibility;
