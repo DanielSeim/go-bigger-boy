@@ -310,6 +310,9 @@ void refresh_touch_buttons(gbb::EmulatorCore* core, SdlResources& sdl) {
         if (touch.control && *touch.control < pressed.size()) {
             pressed[*touch.control] = true;
         }
+        if (touch.secondary_control && *touch.secondary_control < pressed.size()) {
+            pressed[*touch.secondary_control] = true;
+        }
     }
     if (core != nullptr) {
         for (std::size_t index = 0; index < pressed.size(); ++index) {

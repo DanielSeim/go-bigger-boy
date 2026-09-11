@@ -347,12 +347,28 @@ void test_scene_snapshot_json() {
 void test_touch_controls() {
     const std::optional<std::size_t> dpad_right{0};
     const std::optional<std::size_t> button_a{4};
+    const std::optional<std::size_t> button_b{5};
     check(gbb::retain_touch_control(dpad_right, std::nullopt) == dpad_right,
           "touch ownership survives motion through neutral space");
     check(gbb::retain_touch_control(dpad_right, button_a) == button_a,
           "touch ownership transfers when another control is entered");
     check(!gbb::retain_touch_control(std::nullopt, std::nullopt).has_value(),
           "neutral touch remains unassigned until it enters a control");
+
+    const auto held_b = gbb::TouchControlState{button_b, std::nullopt};
+    const auto held_b_and_a = gbb::update_touch_control_state(held_b, button_a);
+    check(held_b_and_a.primary == button_b &&
+              held_b_and_a.secondary == button_a,
+          "one finger can hold B while activating A");
+    const auto held_b_after_leaving_a =
+        gbb::update_touch_control_state(held_b_and_a, std::nullopt);
+    check(held_b_after_leaving_a.primary == button_b &&
+              !held_b_after_leaving_a.secondary,
+          "the secondary action releases while the primary action remains held");
+    const auto moved_to_dpad =
+        gbb::update_touch_control_state(held_b_and_a, dpad_right);
+    check(moved_to_dpad.primary == dpad_right && !moved_to_dpad.secondary,
+          "moving to the D-pad keeps its existing single-control behavior");
 }
 
 void test_dashboard_navigation() {

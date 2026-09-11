@@ -869,7 +869,8 @@ void handle_touch_event(const SDL_Event& event, SdlEventContext& context) {
                            voxel_mode_enabled(sdl) &&
                            sdl.touch_settings.voxel_orbit && !control;
         sdl.touches.push_back(
-            {finger, touch_x, touch_y, orbit, orbit ? std::nullopt : control});
+            {finger, touch_x, touch_y, orbit, orbit ? std::nullopt : control,
+             std::nullopt});
     } else {
         if (event.type == SDL_EVENT_FINGER_MOTION && existing->orbit &&
             supports(context.core.get(), CoreCapability::scene_layers) &&
@@ -889,8 +890,11 @@ void handle_touch_event(const SDL_Event& event, SdlEventContext& context) {
                 sdl.voxel_camera_yaw_offset + delta_x * 0.25F,
                 -voxel_camera_yaw_drag_limit, voxel_camera_yaw_drag_limit);
         } else if (event.type == SDL_EVENT_FINGER_MOTION && !existing->orbit) {
-            existing->control = gbb::retain_touch_control(
-                existing->control, touch_button_index(touch_x, touch_y, sdl));
+            const auto state = gbb::update_touch_control_state(
+                {existing->control, existing->secondary_control},
+                touch_button_index(touch_x, touch_y, sdl));
+            existing->control = state.primary;
+            existing->secondary_control = state.secondary;
         }
         existing->x = touch_x;
         existing->y = touch_y;
