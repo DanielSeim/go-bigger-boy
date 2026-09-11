@@ -64,6 +64,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <deque>
 #include <exception>
 #include <filesystem>
@@ -847,20 +848,188 @@ void draw_touch_circle(SDL_Renderer* renderer, const float center_x,
     }
 }
 
-void draw_touch_round_rect(SDL_Renderer* renderer, const SDL_FRect rect,
-                           const float radius, const SDL_Color color) {
-    const auto r = std::min(radius, std::min(rect.w, rect.h) * 0.5F);
+void draw_touch_pill(SDL_Renderer* renderer, const SDL_FRect rect,
+                     const SDL_Color color) {
+    // A capsule's radius is half its height. Using the full height here
+    // places the cap centers below the rectangle and leaves only the top
+    // half visible on Android.
+    const auto radius = std::min(rect.h * 0.5F, rect.w * 0.5F);
     static_cast<void>(SDL_SetRenderDrawColor(renderer, color.r, color.g,
                                              color.b, color.a));
-    const SDL_FRect horizontal{rect.x + r, rect.y, rect.w - 2.0F * r, rect.h};
-    const SDL_FRect vertical{rect.x, rect.y + r, rect.w, rect.h - 2.0F * r};
-    static_cast<void>(SDL_RenderFillRect(renderer, &horizontal));
-    static_cast<void>(SDL_RenderFillRect(renderer, &vertical));
-    draw_touch_circle(renderer, rect.x + r, rect.y + r, r, color);
-    draw_touch_circle(renderer, rect.x + rect.w - r, rect.y + r, r, color);
-    draw_touch_circle(renderer, rect.x + r, rect.y + rect.h - r, r, color);
-    draw_touch_circle(renderer, rect.x + rect.w - r, rect.y + rect.h - r, r,
-                      color);
+    const auto center_x = rect.x + rect.w * 0.5F;
+    const auto center_y = rect.y + radius;
+    const auto half_body = rect.w * 0.5F - radius;
+    const auto top = static_cast<int>(std::ceil(rect.y));
+    const auto bottom = static_cast<int>(std::floor(rect.y + rect.h));
+    for (auto y = top; y <= bottom; ++y) {
+        const auto dy = static_cast<float>(y) - center_y;
+        const auto span = std::sqrt(
+            std::max(0.0F, radius * radius - dy * dy));
+        const SDL_FRect row{center_x - half_body - span,
+                            static_cast<float>(y),
+                            (half_body + span) * 2.0F, 1.0F};
+        static_cast<void>(SDL_RenderFillRect(renderer, &row));
+    }
+}
+
+void draw_touch_pill_accent(SDL_Renderer* renderer, const SDL_FRect rect,
+                            const bool right, const float accent_width,
+                            const SDL_Color color) {
+    const auto radius = std::min(rect.h * 0.5F, rect.w * 0.5F);
+    static_cast<void>(SDL_SetRenderDrawColor(renderer, color.r, color.g,
+                                             color.b, color.a));
+    const auto center_x = rect.x + rect.w * 0.5F;
+    const auto center_y = rect.y + rect.h * 0.5F;
+    const auto half_body = rect.w * 0.5F - radius;
+    const auto top = static_cast<int>(std::ceil(rect.y));
+    const auto bottom = static_cast<int>(std::floor(rect.y + rect.h));
+    const auto accent_left = right ? rect.x + rect.w - accent_width : rect.x;
+    const auto accent_right = right ? rect.x + rect.w : rect.x + accent_width;
+    for (auto y = top; y <= bottom; ++y) {
+        const auto dy = static_cast<float>(y) - center_y;
+        const auto span = std::sqrt(
+            std::max(0.0F, radius * radius - dy * dy));
+        const auto left = std::max(center_x - half_body - span, accent_left);
+        const auto right_edge = std::min(center_x + half_body + span,
+                                         accent_right);
+        if (right_edge <= left) continue;
+        const SDL_FRect row{left, static_cast<float>(y),
+                            right_edge - left, 1.0F};
+        static_cast<void>(SDL_RenderFillRect(renderer, &row));
+    }
+}
+
+void draw_touch_cross(SDL_Renderer* renderer, const SDL_FPoint center,
+                      const float half_extent, const float thickness,
+                      const SDL_Color color) {
+    // The draft uses rounded rectangle corners, not pill-shaped arm ends.
+    const auto radius = thickness * 0.30F;
+    static_cast<void>(SDL_SetRenderDrawColor(renderer, color.r, color.g,
+                                             color.b, color.a));
+    const auto top = static_cast<int>(std::ceil(center.y - half_extent));
+    const auto bottom = static_cast<int>(std::floor(center.y + half_extent));
+    for (auto y = top; y <= bottom; ++y) {
+        const auto distance = std::abs(static_cast<float>(y) - center.y);
+        float half_width = 0.0F;
+        // Union two rounded rectangles: one horizontal and one vertical.
+        // This preserves the rounded ends of the draft instead of making the
+        // horizontal arm terminate in square corners.
+        if (distance <= radius) {
+            const auto cap = std::sqrt(
+                std::max(0.0F, radius * radius - distance * distance));
+            half_width = half_extent - radius + cap;
+        }
+        if (distance <= half_extent) {
+            const auto cap_distance = std::max(0.0F,
+                                                distance - (half_extent - radius));
+            const auto vertical_half_width =
+                cap_distance == 0.0F
+                    ? radius
+                    : std::sqrt(std::max(0.0F, radius * radius -
+                                                   cap_distance * cap_distance));
+            half_width = std::max(half_width, vertical_half_width);
+        }
+        const SDL_FRect row{center.x - half_width, static_cast<float>(y),
+                            half_width * 2.0F, 1.0F};
+        static_cast<void>(SDL_RenderFillRect(renderer, &row));
+    }
+}
+
+void draw_touch_cross_accent(SDL_Renderer* renderer, const SDL_FPoint center,
+                             const float half_extent, const float thickness,
+                             const float accent_width,
+                             const SDL_Color color) {
+    const auto radius = thickness * 0.30F;
+    static_cast<void>(SDL_SetRenderDrawColor(renderer, color.r, color.g,
+                                             color.b, color.a));
+    const auto top = static_cast<int>(std::ceil(center.y - half_extent));
+    const auto bottom = static_cast<int>(std::floor(center.y + half_extent));
+    const auto accent_left = center.x - half_extent;
+    const auto accent_right = accent_left + accent_width;
+    for (auto y = top; y <= bottom; ++y) {
+        const auto distance = std::abs(static_cast<float>(y) - center.y);
+        float half_width = 0.0F;
+        if (distance <= radius) {
+            const auto cap = std::sqrt(
+                std::max(0.0F, radius * radius - distance * distance));
+            half_width = half_extent - radius + cap;
+        }
+        if (distance <= half_extent) {
+            const auto cap_distance = std::max(
+                0.0F, distance - (half_extent - radius));
+            const auto vertical_half_width =
+                cap_distance == 0.0F
+                    ? radius
+                    : std::sqrt(std::max(0.0F, radius * radius -
+                                                   cap_distance * cap_distance));
+            half_width = std::max(half_width, vertical_half_width);
+        }
+        const auto left = std::max(center.x - half_width, accent_left);
+        const auto right = std::min(center.x + half_width, accent_right);
+        if (right <= left) continue;
+        const SDL_FRect row{left, static_cast<float>(y), right - left, 1.0F};
+        static_cast<void>(SDL_RenderFillRect(renderer, &row));
+    }
+}
+
+void draw_touch_cross_arm(SDL_Renderer* renderer, const SDL_FPoint center,
+                          const float half_extent, const float thickness,
+                          const std::size_t direction,
+                          const SDL_Color color) {
+    const auto radius = thickness * 0.30F;
+    static_cast<void>(SDL_SetRenderDrawColor(renderer, color.r, color.g,
+                                             color.b, color.a));
+    const auto top = static_cast<int>(std::ceil(center.y - half_extent));
+    const auto bottom = static_cast<int>(std::floor(center.y + half_extent));
+    for (auto y = top; y <= bottom; ++y) {
+        const auto distance = std::abs(static_cast<float>(y) - center.y);
+        if (direction < 2) {
+            if (distance > radius) continue;
+            const auto cap = std::sqrt(
+                std::max(0.0F, radius * radius - distance * distance));
+            const auto extent = half_extent - radius + cap;
+            const SDL_FRect row{
+                direction == 0 ? center.x : center.x - extent,
+                static_cast<float>(y), extent, 1.0F};
+            static_cast<void>(SDL_RenderFillRect(renderer, &row));
+        } else {
+            const auto start = direction == 2 ? center.y - half_extent
+                                              : center.y;
+            const auto end = direction == 2 ? center.y : center.y + half_extent;
+            const auto current_y = static_cast<float>(y);
+            if (current_y < start || current_y > end) continue;
+            float half_width = radius;
+            if (direction == 2 && current_y < start + radius * 2.0F) {
+                const auto cap_distance = current_y - (start + radius);
+                half_width = std::sqrt(std::max(
+                    0.0F, radius * radius - cap_distance * cap_distance));
+            } else if (direction == 3 && current_y > end - radius * 2.0F) {
+                const auto cap_distance = current_y - (end - radius);
+                half_width = std::sqrt(std::max(
+                    0.0F, radius * radius - cap_distance * cap_distance));
+            }
+            const SDL_FRect row{center.x - half_width, current_y,
+                                half_width * 2.0F, 1.0F};
+            static_cast<void>(SDL_RenderFillRect(renderer, &row));
+        }
+    }
+}
+
+void draw_touch_triangle(SDL_Renderer* renderer, const SDL_FPoint first,
+                         const SDL_FPoint second, const SDL_FPoint third,
+                         const SDL_Color color) {
+    const SDL_FColor vertex_color{
+        static_cast<float>(color.r) / 255.0F,
+        static_cast<float>(color.g) / 255.0F,
+        static_cast<float>(color.b) / 255.0F,
+        static_cast<float>(color.a) / 255.0F};
+    const SDL_Vertex vertices[3]{
+        {first, vertex_color, {0.0F, 0.0F}},
+        {second, vertex_color, {0.0F, 0.0F}},
+        {third, vertex_color, {0.0F, 0.0F}},
+    };
+    static_cast<void>(SDL_RenderGeometry(renderer, nullptr, vertices, 3,
+                                          nullptr, 0));
 }
 
 void draw_branded_touch_label(SDL_Renderer* renderer, const float center_x,
@@ -868,7 +1037,7 @@ void draw_branded_touch_label(SDL_Renderer* renderer, const float center_x,
                               const std::uint8_t alpha, const char* label) {
     if (label == nullptr) return;
     const auto length = static_cast<float>(std::char_traits<char>::length(label));
-    const auto text_scale = std::clamp(scale * 0.42F, 2.5F, 4.0F);
+    const auto text_scale = std::clamp(scale * 0.62F, 4.0F, 5.8F);
     static_cast<void>(SDL_SetRenderScale(renderer, text_scale, text_scale));
     static_cast<void>(SDL_SetRenderDrawColor(renderer, 8, 175, 244, alpha));
     static_cast<void>(SDL_RenderDebugText(
@@ -899,74 +1068,51 @@ void draw_touch_frame(SDL_Renderer* renderer, const SDL_FRect rect,
 
 void draw_branded_touch_dpad(SDL_Renderer* renderer, const SDL_FPoint center,
                              const float scale, const std::uint8_t alpha,
-                             const std::array<bool, 4>& pressed) {
+                             const std::array<bool, 4>& pressed,
+                             const bool landscape) {
     const auto half_extent = android_touch_dpad_dimension * scale * 0.5F;
-    const auto thickness = 15.0F * scale;
+    const auto thickness = (landscape ? 30.0F : 26.0F) * scale;
     const auto shadow_offset = 3.0F * scale;
-    const auto draw_union = [&](const float x, const float y,
-                                const float arm, const float arm_thickness,
-                                const SDL_Color color) {
-        draw_touch_round_rect(
-            renderer,
-            SDL_FRect{center.x - arm + x,
-                      center.y - arm_thickness * 0.5F + y, arm * 2.0F,
-                      arm_thickness},
-            4.0F * scale, color);
-        draw_touch_round_rect(
-            renderer,
-            SDL_FRect{center.x - arm_thickness * 0.5F + x,
-                      center.y - arm + y, arm_thickness, arm * 2.0F},
-            4.0F * scale, color);
-    };
-    draw_union(shadow_offset, shadow_offset, half_extent, thickness,
-               SDL_Color{0, 0, 0, 120});
-    draw_union(0.0F, 0.0F, half_extent, thickness,
-               SDL_Color{247, 249, 250, alpha});
+    draw_touch_cross(renderer, {center.x + shadow_offset,
+                                center.y + shadow_offset},
+                     half_extent, thickness, SDL_Color{0, 0, 0, 120});
+    draw_touch_cross(renderer, center, half_extent, thickness,
+                     SDL_Color{247, 249, 250, alpha});
+    draw_touch_cross_accent(renderer, center, half_extent, thickness,
+                            4.0F * scale, SDL_Color{8, 175, 244, alpha});
     const auto inset = 3.0F * scale;
-    draw_union(0.0F, 0.0F, half_extent - inset, thickness - inset * 2.0F,
-               SDL_Color{12, 18, 24, alpha});
-
-    const auto draw_pressed_arm = [&](const SDL_FRect rect, const bool active) {
-        if (!active) return;
-        draw_touch_round_rect(renderer, rect, 3.0F * scale,
-                              SDL_Color{8, 175, 244, alpha});
-    };
-    draw_pressed_arm(
-        {center.x, center.y - thickness * 0.5F, half_extent, thickness},
-        pressed[0]);
-    draw_pressed_arm(
-        {center.x - half_extent, center.y - thickness * 0.5F, half_extent,
-         thickness},
-        pressed[1]);
-    draw_pressed_arm(
-        {center.x - thickness * 0.5F, center.y - half_extent, thickness,
-         half_extent},
-        pressed[2]);
-    draw_pressed_arm(
-        {center.x - thickness * 0.5F, center.y, thickness, half_extent},
-        pressed[3]);
-    draw_touch_circle(renderer, center.x, center.y, thickness * 0.56F,
+    draw_touch_cross(renderer, center, half_extent - inset,
+                     thickness - inset * 2.0F, SDL_Color{12, 18, 24, alpha});
+    for (std::size_t direction = 0; direction < pressed.size(); ++direction) {
+        if (pressed[direction]) {
+            draw_touch_cross_arm(renderer, center, half_extent - inset,
+                                 thickness - inset * 2.0F, direction,
+                                 SDL_Color{8, 175, 244, alpha});
+        }
+    }
+    draw_touch_circle(renderer, center.x, center.y, thickness * 0.35F,
                       SDL_Color{18, 25, 31, alpha});
 
     static_cast<void>(SDL_SetRenderDrawColor(renderer, 8, 175, 244, alpha));
-    const auto arrow = thickness * 0.30F;
-    const auto chevron = [&](const float x1, const float y1, const float x2,
-                             const float y2, const float x3, const float y3) {
-        static_cast<void>(SDL_RenderLine(renderer, x1, y1, x2, y2));
-        static_cast<void>(SDL_RenderLine(renderer, x2, y2, x3, y3));
-    };
-    chevron(center.x - arrow, center.y - half_extent * 0.62F + arrow,
-            center.x, center.y - half_extent * 0.62F,
-            center.x + arrow, center.y - half_extent * 0.62F + arrow);
-    chevron(center.x - arrow, center.y + half_extent * 0.62F - arrow,
-            center.x, center.y + half_extent * 0.62F,
-            center.x + arrow, center.y + half_extent * 0.62F - arrow);
-    chevron(center.x - half_extent * 0.62F + arrow, center.y - arrow,
-            center.x - half_extent * 0.62F, center.y,
-            center.x - half_extent * 0.62F + arrow, center.y + arrow);
-    chevron(center.x + half_extent * 0.62F - arrow, center.y - arrow,
-            center.x + half_extent * 0.62F, center.y,
-            center.x + half_extent * 0.62F - arrow, center.y + arrow);
+    const auto arrow = thickness * 0.12F;
+    const auto arrow_offset = half_extent * 0.56F;
+    const auto cyan = SDL_Color{8, 175, 244, alpha};
+    draw_touch_triangle(
+        renderer, {center.x, center.y - arrow_offset - arrow},
+        {center.x - arrow, center.y - arrow_offset + arrow},
+        {center.x + arrow, center.y - arrow_offset + arrow}, cyan);
+    draw_touch_triangle(
+        renderer, {center.x, center.y + arrow_offset + arrow},
+        {center.x - arrow, center.y + arrow_offset - arrow},
+        {center.x + arrow, center.y + arrow_offset - arrow}, cyan);
+    draw_touch_triangle(
+        renderer, {center.x - arrow_offset - arrow, center.y},
+        {center.x - arrow_offset + arrow, center.y - arrow},
+        {center.x - arrow_offset + arrow, center.y + arrow}, cyan);
+    draw_touch_triangle(
+        renderer, {center.x + arrow_offset + arrow, center.y},
+        {center.x + arrow_offset - arrow, center.y - arrow},
+        {center.x + arrow_offset - arrow, center.y + arrow}, cyan);
 }
 
 void draw_branded_touch_circle(SDL_Renderer* renderer, const SDL_FPoint center,
@@ -982,10 +1128,9 @@ void draw_branded_touch_circle(SDL_Renderer* renderer, const SDL_FPoint center,
     draw_touch_circle(renderer, center.x, center.y, radius,
                       pressed ? SDL_Color{8, 175, 244, alpha}
                               : SDL_Color{12, 18, 24, alpha});
-    draw_touch_circle(renderer, center.x, center.y - radius * 0.22F,
-                      radius * 0.68F,
-                      pressed ? SDL_Color{118, 216, 255, 110}
-                              : SDL_Color{8, 175, 244, 95});
+    draw_touch_circle(renderer, center.x, center.y, radius * 0.34F,
+                      pressed ? SDL_Color{118, 216, 255, alpha}
+                              : SDL_Color{8, 175, 244, alpha});
     draw_branded_touch_label(renderer, center.x,
                              center.y + outer_radius + 8.0F * scale, scale,
                              alpha, label);
@@ -1001,18 +1146,20 @@ void draw_branded_touch_system(SDL_Renderer* renderer, const SDL_FPoint center,
     const SDL_FRect outer{center.x - outer_width * 0.5F,
                           center.y - outer_height * 0.5F, outer_width,
                           outer_height};
-    draw_touch_round_rect(
-        renderer,
-        SDL_FRect{outer.x + 3.0F * scale, outer.y + 3.0F * scale, outer.w,
-                  outer.h},
-        outer_height * 0.5F, SDL_Color{0, 0, 0, 120});
-    draw_touch_round_rect(renderer, outer, outer_height * 0.5F,
-                          SDL_Color{247, 249, 250, alpha});
+    draw_touch_pill(renderer,
+                    {outer.x + 3.0F * scale, outer.y + 3.0F * scale,
+                     outer.w, outer.h},
+                    SDL_Color{0, 0, 0, 120});
+    draw_touch_pill(renderer, outer, SDL_Color{247, 249, 250, alpha});
+    draw_touch_pill_accent(renderer, outer,
+                           label != nullptr &&
+                               std::strcmp(label, "START") == 0,
+                           4.0F * scale, SDL_Color{8, 175, 244, alpha});
     const SDL_FRect inner{center.x - width * 0.5F, center.y - height * 0.5F,
                           width, height};
-    draw_touch_round_rect(renderer, inner, height * 0.5F,
-                          pressed ? SDL_Color{8, 175, 244, alpha}
-                                  : SDL_Color{12, 18, 24, alpha});
+    draw_touch_pill(renderer, inner,
+                    pressed ? SDL_Color{8, 175, 244, alpha}
+                            : SDL_Color{12, 18, 24, alpha});
     draw_branded_touch_label(renderer, center.x,
                              outer.y + outer.h + 8.0F * scale, scale, alpha,
                              label);
@@ -1035,8 +1182,12 @@ void present_touch_controls(SdlResources& sdl) {
     }
     const auto alpha = static_cast<std::uint8_t>(std::clamp(
         opacity * 255.0F, 0.0F, 255.0F));
-    const auto point_for = [&sdl](const std::size_t control) {
-        return touch_control_pixel_position(sdl, control);
+    const auto point_for = [&sdl, have_game_viewport,
+                            game_viewport](const std::size_t control) {
+        return have_game_viewport
+                   ? touch_control_pixel_position_for_viewport(
+                         sdl, control, game_viewport)
+                   : touch_control_pixel_position(sdl, control);
     };
 
     if (!touch_is_landscape(sdl)) {
@@ -1061,7 +1212,7 @@ void present_touch_controls(SdlResources& sdl) {
         draw_branded_touch_dpad(
             sdl.renderer, point_for(0), size, alpha,
             {sdl.touch_buttons[0], sdl.touch_buttons[1],
-             sdl.touch_buttons[2], sdl.touch_buttons[3]});
+             sdl.touch_buttons[2], sdl.touch_buttons[3]}, false);
         draw_branded_touch_circle(sdl.renderer, point_for(1), size, alpha,
                                   sdl.touch_buttons[4], "A");
         draw_branded_touch_circle(sdl.renderer, point_for(2), size, alpha,
@@ -1144,7 +1295,7 @@ void present_touch_controls(SdlResources& sdl) {
     draw_branded_touch_dpad(
         sdl.renderer, point_for(0), size, alpha,
         {sdl.touch_buttons[0], sdl.touch_buttons[1],
-         sdl.touch_buttons[2], sdl.touch_buttons[3]});
+         sdl.touch_buttons[2], sdl.touch_buttons[3]}, true);
     draw_branded_touch_circle(sdl.renderer, point_for(1), size, alpha,
                               sdl.touch_buttons[4], "A");
     draw_branded_touch_circle(sdl.renderer, point_for(2), size, alpha,

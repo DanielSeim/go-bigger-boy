@@ -176,8 +176,58 @@ SDL_FPoint touch_control_pixel_position(const SdlResources& sdl,
                                         const std::size_t control) {
     const auto safe = android_safe_area(sdl);
     const auto [x, y] = touch_control_position(sdl, control);
-    return {static_cast<float>(safe.x) + x * static_cast<float>(safe.w),
-            static_cast<float>(safe.y) + y * static_cast<float>(safe.h)};
+    SDL_FPoint point{static_cast<float>(safe.x) + x * static_cast<float>(safe.w),
+                     static_cast<float>(safe.y) + y * static_cast<float>(safe.h)};
+    if (!touch_is_landscape(sdl)) return point;
+
+    SDL_FRect viewport{};
+    if (!SDL_GetRenderLogicalPresentationRect(sdl.renderer, &viewport)) {
+        return point;
+    }
+    return touch_control_pixel_position_for_viewport(sdl, control, viewport);
+}
+
+SDL_FPoint touch_control_pixel_position_for_viewport(
+    const SdlResources& sdl, const std::size_t control,
+    const SDL_FRect viewport) {
+    const auto safe = android_safe_area(sdl);
+    const auto [x, y] = touch_control_position(sdl, control);
+    SDL_FPoint point{static_cast<float>(safe.x) + x * static_cast<float>(safe.w),
+                     static_cast<float>(safe.y) + y * static_cast<float>(safe.h)};
+    if (!touch_is_landscape(sdl)) return point;
+
+    const auto size = touch_control_scale(sdl);
+    const auto gutter = 8.0F * size;
+    const auto left_edge = static_cast<float>(safe.x);
+    const auto right_edge = static_cast<float>(safe.x + safe.w);
+    if (control == 0) {
+        const auto half_width = android_touch_dpad_dimension * size * 0.5F;
+        const auto minimum = left_edge + half_width + gutter;
+        const auto maximum = viewport.x - half_width - gutter;
+        point.x = minimum <= maximum ? std::clamp(point.x, minimum, maximum)
+                                     : (minimum + maximum) * 0.5F;
+    } else if (control == 1 || control == 2) {
+        const auto radius =
+            (android_touch_action_diameter * 0.5F + 3.0F) * size;
+        const auto minimum = viewport.x + viewport.w + radius + gutter;
+        const auto maximum = right_edge - radius - gutter;
+        // Keep B at the inside edge of the right column and A at the outside
+        // edge, matching the approved draft while keeping both circles clear
+        // of the game viewport.
+        if (minimum <= maximum) {
+            point.x = control == 1 ? maximum : minimum;
+        } else {
+            point.x = (minimum + maximum) * 0.5F;
+        }
+    } else if (control == 3 || control == 4) {
+        const auto half_width =
+            (android_touch_system_width * 0.5F + 2.0F) * size;
+        const auto minimum = left_edge + half_width + gutter;
+        const auto maximum = viewport.x - half_width - gutter;
+        point.x = control == 3 ? minimum : right_edge - half_width - gutter;
+        if (minimum > maximum) point.x = (minimum + maximum) * 0.5F;
+    }
+    return point;
 }
 
 std::optional<std::size_t> touch_button_index(const float x, const float y,

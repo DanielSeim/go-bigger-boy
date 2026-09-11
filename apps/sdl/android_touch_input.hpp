@@ -23,9 +23,9 @@ inline constexpr float android_link_menu_min_row_height = 44.0F;
 // These are portrait-editor design units, not Game Boy framebuffer pixels.
 // Keeping the controls in a fixed device layout prevents SGB's 256x224 video
 // surface (or a high-density DMG scale) from making the controls jump in size.
-inline constexpr float android_touch_dpad_dimension = 42.0F;
+inline constexpr float android_touch_dpad_dimension = 48.0F;
 inline constexpr float android_touch_action_diameter = 24.0F;
-inline constexpr float android_touch_system_width = 22.0F;
+inline constexpr float android_touch_system_width = 38.0F;
 inline constexpr float android_touch_system_height = 10.0F;
 
 [[nodiscard]] bool touch_is_landscape(const SdlResources& sdl);
@@ -47,6 +47,8 @@ inline constexpr float android_touch_system_height = 10.0F;
     const SdlResources& sdl, std::size_t control);
 [[nodiscard]] SDL_FPoint touch_control_pixel_position(
     const SdlResources& sdl, std::size_t control);
+[[nodiscard]] SDL_FPoint touch_control_pixel_position_for_viewport(
+    const SdlResources& sdl, std::size_t control, SDL_FRect viewport);
 [[nodiscard]] std::optional<std::size_t> touch_button_index(
     float x, float y, const SdlResources& sdl);
 

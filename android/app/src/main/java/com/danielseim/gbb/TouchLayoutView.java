@@ -36,9 +36,9 @@ final class TouchLayoutView extends View {
 
     static float[] defaultLayout() {
         return new float[]{
-                0.28f, 0.71f, 0.77f, 0.62f, 0.62f, 0.78f, 0.40f, 0.91f,
-                0.60f, 0.91f,
-                0.10f, 0.46f, 0.92f, 0.34f, 0.89f, 0.54f, 0.18f, 0.84f,
+                0.28f, 0.71f, 0.80f, 0.62f, 0.58f, 0.78f, 0.35f, 0.91f,
+                0.65f, 0.91f,
+                0.10f, 0.46f, 0.94f, 0.34f, 0.76f, 0.60f, 0.18f, 0.84f,
                 0.88f, 0.84f};
     }
 

@@ -7,12 +7,49 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <fstream>
 #include <sstream>
 #include <string>
 #include <utility>
 
 namespace {
+bool migrate_legacy_touch_layout(AppSettings& settings) {
+    // Versions before the draft-aligned controls used these defaults. Migrate
+    // only the known old default pairs so arbitrary custom arrangements stay
+    // intact while existing installs receive the corrected spacing.
+    const auto near = [](const float actual, const float expected) {
+        return std::abs(actual - expected) < 0.0001F;
+    };
+    auto migrated = false;
+    auto& positions = settings.touch.positions;
+    if (near(positions[2], 0.77F) && near(positions[3], 0.62F) &&
+        near(positions[4], 0.62F) && near(positions[5], 0.78F)) {
+        positions[2] = 0.80F;
+        positions[4] = 0.58F;
+        migrated = true;
+    }
+    if (near(positions[6], 0.40F) && near(positions[7], 0.91F) &&
+        near(positions[8], 0.60F) && near(positions[9], 0.91F)) {
+        positions[6] = 0.35F;
+        positions[8] = 0.65F;
+        migrated = true;
+    }
+    if (near(positions[12], 0.92F) && near(positions[13], 0.34F)) {
+        positions[12] = 0.94F;
+        migrated = true;
+    }
+    if ((near(positions[14], 0.82F) && near(positions[15], 0.54F)) ||
+        (near(positions[14], 0.89F) && near(positions[15], 0.54F)) ||
+        (near(positions[14], 0.89F) && near(positions[15], 0.60F)) ||
+        (near(positions[14], 0.84F) && near(positions[15], 0.60F))) {
+        positions[14] = 0.76F;
+        positions[15] = 0.60F;
+        migrated = true;
+    }
+    return migrated;
+}
+
 std::uint16_t parse_link_port(const std::string& value,
                               const std::uint16_t fallback) {
     try {
@@ -777,6 +814,9 @@ AppSettings load_portable_settings(
         }
     }
     settings.touch.positions = loaded_touch_positions;
+    if (migrate_legacy_touch_layout(settings)) {
+        write_portable_settings(preference_directory, settings);
+    }
     append_missing_portable_settings(path, settings, has_palette,
                                      has_hardware_model,
                                      has_keyboard, has_gamepad, has_shortcuts,

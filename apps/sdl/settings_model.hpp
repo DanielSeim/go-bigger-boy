@@ -41,16 +41,16 @@ struct InputBindings {
 
 struct TouchControlSettings {
     float scale{1.35F};
-    float opacity{0.78F};
+    float opacity{1.00F};
     bool voxel_orbit{true};
     bool menu_top_right{};
     // Safe-area coordinates normalized to 0..1. Each orientation has one
     // movable D-pad plus A, B, Select, and Start. The first ten values are
     // portrait; the second ten are landscape. Each control stores x, y.
     std::array<float, 20> positions{
-        0.28F, 0.71F, 0.77F, 0.62F, 0.62F, 0.78F, 0.40F, 0.91F,
-        0.60F, 0.91F,
-        0.10F, 0.46F, 0.92F, 0.34F, 0.89F, 0.54F, 0.18F, 0.84F,
+        0.28F, 0.71F, 0.80F, 0.62F, 0.58F, 0.78F, 0.35F, 0.91F,
+        0.65F, 0.91F,
+        0.10F, 0.46F, 0.94F, 0.34F, 0.76F, 0.60F, 0.18F, 0.84F,
         0.88F, 0.84F};
 };
 
