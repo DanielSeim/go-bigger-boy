@@ -1,0 +1,149 @@
+{
+  "frames_analyzed": 900,
+  "proposal_policy": {
+    "high_confidence": 0.65,
+    "low_confidence": "flat",
+    "medium_confidence": 0.4
+  },
+  "proposals": [
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.8055,
+      "features": {
+        "area": 0.625,
+        "aspect": 0.1,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        892,
+        893,
+        894,
+        895,
+        896,
+        897,
+        898,
+        899
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0000",
+      "map_cells": [
+        {
+          "map_x": 1,
+          "map_y": 0
+        },
+        {
+          "map_x": 2,
+          "map_y": 0
+        },
+        {
+          "map_x": 3,
+          "map_y": 0
+        },
+        {
+          "map_x": 4,
+          "map_y": 0
+        },
+        {
+          "map_x": 5,
+          "map_y": 0
+        },
+        {
+          "map_x": 6,
+          "map_y": 0
+        },
+        {
+          "map_x": 7,
+          "map_y": 0
+        },
+        {
+          "map_x": 8,
+          "map_y": 0
+        },
+        {
+          "map_x": 9,
+          "map_y": 0
+        },
+        {
+          "map_x": 10,
+          "map_y": 0
+        }
+      ],
+      "observations": 8
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.8055,
+      "features": {
+        "area": 0.625,
+        "aspect": 0.1,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        893,
+        894,
+        895,
+        896,
+        897,
+        898,
+        899
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0001",
+      "map_cells": [
+        {
+          "map_x": 1,
+          "map_y": 2
+        },
+        {
+          "map_x": 2,
+          "map_y": 2
+        },
+        {
+          "map_x": 3,
+          "map_y": 2
+        },
+        {
+          "map_x": 4,
+          "map_y": 2
+        },
+        {
+          "map_x": 5,
+          "map_y": 2
+        },
+        {
+          "map_x": 6,
+          "map_y": 2
+        },
+        {
+          "map_x": 7,
+          "map_y": 2
+        },
+        {
+          "map_x": 8,
+          "map_y": 2
+        },
+        {
+          "map_x": 9,
+          "map_y": 2
+        },
+        {
+          "map_x": 10,
+          "map_y": 2
+        }
+      ],
+      "observations": 7
+    }
+  ],
+  "rom_fingerprints": [
+    9636094839106264359
+  ],
+  "schema": "gbb.voxel.proposals.v1"
+}

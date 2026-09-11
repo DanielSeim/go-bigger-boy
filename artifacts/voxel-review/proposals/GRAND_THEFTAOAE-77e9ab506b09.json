@@ -1,0 +1,13 @@
+{
+  "frames_analyzed": 5,
+  "proposal_policy": {
+    "high_confidence": 0.65,
+    "low_confidence": "flat",
+    "medium_confidence": 0.4
+  },
+  "proposals": [],
+  "rom_fingerprints": [
+    10813624882305946448
+  ],
+  "schema": "gbb.voxel.proposals.v1"
+}

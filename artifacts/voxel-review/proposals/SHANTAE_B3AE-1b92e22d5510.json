@@ -1,0 +1,1604 @@
+{
+  "frames_analyzed": 5,
+  "proposal_policy": {
+    "high_confidence": 0.65,
+    "low_confidence": "flat",
+    "medium_confidence": 0.4
+  },
+  "proposals": [
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.8275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 1.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0000",
+      "map_cells": [
+        {
+          "map_x": 1,
+          "map_y": 15
+        },
+        {
+          "map_x": 1,
+          "map_y": 16
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.8275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 1.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0001",
+      "map_cells": [
+        {
+          "map_x": 3,
+          "map_y": 15
+        },
+        {
+          "map_x": 3,
+          "map_y": 16
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.8275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 1.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0002",
+      "map_cells": [
+        {
+          "map_x": 5,
+          "map_y": 15
+        },
+        {
+          "map_x": 5,
+          "map_y": 16
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.8275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 1.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0003",
+      "map_cells": [
+        {
+          "map_x": 7,
+          "map_y": 15
+        },
+        {
+          "map_x": 7,
+          "map_y": 16
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.8275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 1.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0004",
+      "map_cells": [
+        {
+          "map_x": 9,
+          "map_y": 15
+        },
+        {
+          "map_x": 9,
+          "map_y": 16
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.8275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 1.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0005",
+      "map_cells": [
+        {
+          "map_x": 11,
+          "map_y": 15
+        },
+        {
+          "map_x": 11,
+          "map_y": 16
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.8275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 1.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0006",
+      "map_cells": [
+        {
+          "map_x": 13,
+          "map_y": 15
+        },
+        {
+          "map_x": 13,
+          "map_y": 16
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.8275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 1.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0007",
+      "map_cells": [
+        {
+          "map_x": 15,
+          "map_y": 15
+        },
+        {
+          "map_x": 15,
+          "map_y": 16
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.8275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 1.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0008",
+      "map_cells": [
+        {
+          "map_x": 17,
+          "map_y": 15
+        },
+        {
+          "map_x": 17,
+          "map_y": 16
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.8275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 1.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0009",
+      "map_cells": [
+        {
+          "map_x": 19,
+          "map_y": 15
+        },
+        {
+          "map_x": 19,
+          "map_y": 16
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7279,
+      "features": {
+        "area": 0.1875,
+        "aspect": 0.3333,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0010",
+      "map_cells": [
+        {
+          "map_x": 13,
+          "map_y": 0
+        },
+        {
+          "map_x": 13,
+          "map_y": 1
+        },
+        {
+          "map_x": 13,
+          "map_y": 2
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7279,
+      "features": {
+        "area": 0.1875,
+        "aspect": 0.3333,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0011",
+      "map_cells": [
+        {
+          "map_x": 15,
+          "map_y": 0
+        },
+        {
+          "map_x": 15,
+          "map_y": 1
+        },
+        {
+          "map_x": 15,
+          "map_y": 2
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7279,
+      "features": {
+        "area": 0.1875,
+        "aspect": 0.3333,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0012",
+      "map_cells": [
+        {
+          "map_x": 17,
+          "map_y": 0
+        },
+        {
+          "map_x": 17,
+          "map_y": 1
+        },
+        {
+          "map_x": 17,
+          "map_y": 2
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7279,
+      "features": {
+        "area": 0.1875,
+        "aspect": 0.3333,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0013",
+      "map_cells": [
+        {
+          "map_x": 1,
+          "map_y": 4
+        },
+        {
+          "map_x": 1,
+          "map_y": 5
+        },
+        {
+          "map_x": 1,
+          "map_y": 6
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7279,
+      "features": {
+        "area": 0.1875,
+        "aspect": 0.3333,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0014",
+      "map_cells": [
+        {
+          "map_x": 3,
+          "map_y": 4
+        },
+        {
+          "map_x": 3,
+          "map_y": 5
+        },
+        {
+          "map_x": 3,
+          "map_y": 6
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7279,
+      "features": {
+        "area": 0.1875,
+        "aspect": 0.3333,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0015",
+      "map_cells": [
+        {
+          "map_x": 17,
+          "map_y": 7
+        },
+        {
+          "map_x": 17,
+          "map_y": 8
+        },
+        {
+          "map_x": 17,
+          "map_y": 9
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7279,
+      "features": {
+        "area": 0.1875,
+        "aspect": 0.3333,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0016",
+      "map_cells": [
+        {
+          "map_x": 19,
+          "map_y": 7
+        },
+        {
+          "map_x": 19,
+          "map_y": 8
+        },
+        {
+          "map_x": 19,
+          "map_y": 9
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7279,
+      "features": {
+        "area": 0.1875,
+        "aspect": 0.3333,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0017",
+      "map_cells": [
+        {
+          "map_x": 3,
+          "map_y": 11
+        },
+        {
+          "map_x": 3,
+          "map_y": 12
+        },
+        {
+          "map_x": 3,
+          "map_y": 13
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7279,
+      "features": {
+        "area": 0.1875,
+        "aspect": 0.3333,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0018",
+      "map_cells": [
+        {
+          "map_x": 5,
+          "map_y": 11
+        },
+        {
+          "map_x": 5,
+          "map_y": 12
+        },
+        {
+          "map_x": 5,
+          "map_y": 13
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7279,
+      "features": {
+        "area": 0.1875,
+        "aspect": 0.3333,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0019",
+      "map_cells": [
+        {
+          "map_x": 7,
+          "map_y": 11
+        },
+        {
+          "map_x": 7,
+          "map_y": 12
+        },
+        {
+          "map_x": 7,
+          "map_y": 13
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0020",
+      "map_cells": [
+        {
+          "map_x": 19,
+          "map_y": 0
+        },
+        {
+          "map_x": 19,
+          "map_y": 1
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0021",
+      "map_cells": [
+        {
+          "map_x": 1,
+          "map_y": 1
+        },
+        {
+          "map_x": 1,
+          "map_y": 2
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0022",
+      "map_cells": [
+        {
+          "map_x": 3,
+          "map_y": 1
+        },
+        {
+          "map_x": 3,
+          "map_y": 2
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0023",
+      "map_cells": [
+        {
+          "map_x": 5,
+          "map_y": 1
+        },
+        {
+          "map_x": 5,
+          "map_y": 2
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0024",
+      "map_cells": [
+        {
+          "map_x": 7,
+          "map_y": 1
+        },
+        {
+          "map_x": 7,
+          "map_y": 2
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0025",
+      "map_cells": [
+        {
+          "map_x": 9,
+          "map_y": 1
+        },
+        {
+          "map_x": 9,
+          "map_y": 2
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0026",
+      "map_cells": [
+        {
+          "map_x": 11,
+          "map_y": 1
+        },
+        {
+          "map_x": 11,
+          "map_y": 2
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0027",
+      "map_cells": [
+        {
+          "map_x": 5,
+          "map_y": 4
+        },
+        {
+          "map_x": 5,
+          "map_y": 5
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0028",
+      "map_cells": [
+        {
+          "map_x": 7,
+          "map_y": 4
+        },
+        {
+          "map_x": 7,
+          "map_y": 5
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0029",
+      "map_cells": [
+        {
+          "map_x": 9,
+          "map_y": 4
+        },
+        {
+          "map_x": 9,
+          "map_y": 5
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0030",
+      "map_cells": [
+        {
+          "map_x": 11,
+          "map_y": 4
+        },
+        {
+          "map_x": 11,
+          "map_y": 5
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0031",
+      "map_cells": [
+        {
+          "map_x": 13,
+          "map_y": 4
+        },
+        {
+          "map_x": 13,
+          "map_y": 5
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0032",
+      "map_cells": [
+        {
+          "map_x": 15,
+          "map_y": 4
+        },
+        {
+          "map_x": 15,
+          "map_y": 5
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0033",
+      "map_cells": [
+        {
+          "map_x": 17,
+          "map_y": 4
+        },
+        {
+          "map_x": 17,
+          "map_y": 5
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0034",
+      "map_cells": [
+        {
+          "map_x": 19,
+          "map_y": 4
+        },
+        {
+          "map_x": 19,
+          "map_y": 5
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0035",
+      "map_cells": [
+        {
+          "map_x": 1,
+          "map_y": 8
+        },
+        {
+          "map_x": 1,
+          "map_y": 9
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0036",
+      "map_cells": [
+        {
+          "map_x": 3,
+          "map_y": 8
+        },
+        {
+          "map_x": 3,
+          "map_y": 9
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0037",
+      "map_cells": [
+        {
+          "map_x": 5,
+          "map_y": 8
+        },
+        {
+          "map_x": 5,
+          "map_y": 9
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0038",
+      "map_cells": [
+        {
+          "map_x": 7,
+          "map_y": 8
+        },
+        {
+          "map_x": 7,
+          "map_y": 9
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0039",
+      "map_cells": [
+        {
+          "map_x": 9,
+          "map_y": 8
+        },
+        {
+          "map_x": 9,
+          "map_y": 9
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0040",
+      "map_cells": [
+        {
+          "map_x": 11,
+          "map_y": 8
+        },
+        {
+          "map_x": 11,
+          "map_y": 9
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0041",
+      "map_cells": [
+        {
+          "map_x": 13,
+          "map_y": 8
+        },
+        {
+          "map_x": 13,
+          "map_y": 9
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0042",
+      "map_cells": [
+        {
+          "map_x": 15,
+          "map_y": 8
+        },
+        {
+          "map_x": 15,
+          "map_y": 9
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0043",
+      "map_cells": [
+        {
+          "map_x": 9,
+          "map_y": 11
+        },
+        {
+          "map_x": 9,
+          "map_y": 12
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0044",
+      "map_cells": [
+        {
+          "map_x": 11,
+          "map_y": 11
+        },
+        {
+          "map_x": 11,
+          "map_y": 12
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0045",
+      "map_cells": [
+        {
+          "map_x": 13,
+          "map_y": 11
+        },
+        {
+          "map_x": 13,
+          "map_y": 12
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0046",
+      "map_cells": [
+        {
+          "map_x": 15,
+          "map_y": 11
+        },
+        {
+          "map_x": 15,
+          "map_y": 12
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0047",
+      "map_cells": [
+        {
+          "map_x": 17,
+          "map_y": 11
+        },
+        {
+          "map_x": 17,
+          "map_y": 12
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0048",
+      "map_cells": [
+        {
+          "map_x": 19,
+          "map_y": 11
+        },
+        {
+          "map_x": 19,
+          "map_y": 12
+        }
+      ],
+      "observations": 3
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7275,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2,
+        3,
+        4
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0049",
+      "map_cells": [
+        {
+          "map_x": 1,
+          "map_y": 12
+        },
+        {
+          "map_x": 1,
+          "map_y": 13
+        }
+      ],
+      "observations": 3
+    }
+  ],
+  "rom_fingerprints": [
+    5394154829428528913
+  ],
+  "schema": "gbb.voxel.proposals.v1"
+}

@@ -1,0 +1,832 @@
+{
+  "frames_analyzed": 3,
+  "proposal_policy": {
+    "high_confidence": 0.65,
+    "low_confidence": "flat",
+    "medium_confidence": 0.4
+  },
+  "proposals": [
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7787,
+      "features": {
+        "area": 1.0,
+        "aspect": 0.2,
+        "boundary": 0.3,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 1.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0000",
+      "map_cells": [
+        {
+          "map_x": 0,
+          "map_y": 14
+        },
+        {
+          "map_x": 0,
+          "map_y": 15
+        },
+        {
+          "map_x": 0,
+          "map_y": 16
+        },
+        {
+          "map_x": 0,
+          "map_y": 17
+        },
+        {
+          "map_x": 1,
+          "map_y": 14
+        },
+        {
+          "map_x": 1,
+          "map_y": 15
+        },
+        {
+          "map_x": 1,
+          "map_y": 16
+        },
+        {
+          "map_x": 1,
+          "map_y": 17
+        },
+        {
+          "map_x": 2,
+          "map_y": 14
+        },
+        {
+          "map_x": 2,
+          "map_y": 15
+        },
+        {
+          "map_x": 2,
+          "map_y": 16
+        },
+        {
+          "map_x": 2,
+          "map_y": 17
+        },
+        {
+          "map_x": 3,
+          "map_y": 14
+        },
+        {
+          "map_x": 3,
+          "map_y": 15
+        },
+        {
+          "map_x": 3,
+          "map_y": 16
+        },
+        {
+          "map_x": 3,
+          "map_y": 17
+        },
+        {
+          "map_x": 4,
+          "map_y": 14
+        },
+        {
+          "map_x": 4,
+          "map_y": 15
+        },
+        {
+          "map_x": 4,
+          "map_y": 16
+        },
+        {
+          "map_x": 4,
+          "map_y": 17
+        },
+        {
+          "map_x": 5,
+          "map_y": 14
+        },
+        {
+          "map_x": 5,
+          "map_y": 15
+        },
+        {
+          "map_x": 5,
+          "map_y": 16
+        },
+        {
+          "map_x": 5,
+          "map_y": 17
+        },
+        {
+          "map_x": 6,
+          "map_y": 14
+        },
+        {
+          "map_x": 6,
+          "map_y": 15
+        },
+        {
+          "map_x": 6,
+          "map_y": 16
+        },
+        {
+          "map_x": 6,
+          "map_y": 17
+        },
+        {
+          "map_x": 7,
+          "map_y": 14
+        },
+        {
+          "map_x": 7,
+          "map_y": 15
+        },
+        {
+          "map_x": 7,
+          "map_y": 16
+        },
+        {
+          "map_x": 7,
+          "map_y": 17
+        },
+        {
+          "map_x": 8,
+          "map_y": 14
+        },
+        {
+          "map_x": 8,
+          "map_y": 15
+        },
+        {
+          "map_x": 8,
+          "map_y": 16
+        },
+        {
+          "map_x": 8,
+          "map_y": 17
+        },
+        {
+          "map_x": 9,
+          "map_y": 14
+        },
+        {
+          "map_x": 9,
+          "map_y": 15
+        },
+        {
+          "map_x": 9,
+          "map_y": 16
+        },
+        {
+          "map_x": 9,
+          "map_y": 17
+        },
+        {
+          "map_x": 10,
+          "map_y": 14
+        },
+        {
+          "map_x": 10,
+          "map_y": 15
+        },
+        {
+          "map_x": 10,
+          "map_y": 16
+        },
+        {
+          "map_x": 10,
+          "map_y": 17
+        },
+        {
+          "map_x": 11,
+          "map_y": 14
+        },
+        {
+          "map_x": 11,
+          "map_y": 15
+        },
+        {
+          "map_x": 11,
+          "map_y": 16
+        },
+        {
+          "map_x": 11,
+          "map_y": 17
+        },
+        {
+          "map_x": 12,
+          "map_y": 14
+        },
+        {
+          "map_x": 12,
+          "map_y": 15
+        },
+        {
+          "map_x": 12,
+          "map_y": 16
+        },
+        {
+          "map_x": 12,
+          "map_y": 17
+        },
+        {
+          "map_x": 13,
+          "map_y": 14
+        },
+        {
+          "map_x": 13,
+          "map_y": 15
+        },
+        {
+          "map_x": 13,
+          "map_y": 16
+        },
+        {
+          "map_x": 13,
+          "map_y": 17
+        },
+        {
+          "map_x": 14,
+          "map_y": 14
+        },
+        {
+          "map_x": 14,
+          "map_y": 15
+        },
+        {
+          "map_x": 14,
+          "map_y": 16
+        },
+        {
+          "map_x": 14,
+          "map_y": 17
+        },
+        {
+          "map_x": 15,
+          "map_y": 14
+        },
+        {
+          "map_x": 15,
+          "map_y": 15
+        },
+        {
+          "map_x": 15,
+          "map_y": 16
+        },
+        {
+          "map_x": 15,
+          "map_y": 17
+        },
+        {
+          "map_x": 16,
+          "map_y": 14
+        },
+        {
+          "map_x": 16,
+          "map_y": 15
+        },
+        {
+          "map_x": 16,
+          "map_y": 16
+        },
+        {
+          "map_x": 16,
+          "map_y": 17
+        },
+        {
+          "map_x": 17,
+          "map_y": 14
+        },
+        {
+          "map_x": 17,
+          "map_y": 15
+        },
+        {
+          "map_x": 17,
+          "map_y": 16
+        },
+        {
+          "map_x": 17,
+          "map_y": 17
+        },
+        {
+          "map_x": 18,
+          "map_y": 14
+        },
+        {
+          "map_x": 18,
+          "map_y": 15
+        },
+        {
+          "map_x": 18,
+          "map_y": 16
+        },
+        {
+          "map_x": 18,
+          "map_y": 17
+        },
+        {
+          "map_x": 19,
+          "map_y": 14
+        },
+        {
+          "map_x": 19,
+          "map_y": 15
+        },
+        {
+          "map_x": 19,
+          "map_y": 16
+        },
+        {
+          "map_x": 19,
+          "map_y": 17
+        }
+      ],
+      "observations": 1
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7507,
+      "features": {
+        "area": 1.0,
+        "aspect": 0.05,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0001",
+      "map_cells": [
+        {
+          "map_x": 0,
+          "map_y": 7
+        },
+        {
+          "map_x": 1,
+          "map_y": 7
+        },
+        {
+          "map_x": 2,
+          "map_y": 7
+        },
+        {
+          "map_x": 3,
+          "map_y": 7
+        },
+        {
+          "map_x": 4,
+          "map_y": 7
+        },
+        {
+          "map_x": 5,
+          "map_y": 7
+        },
+        {
+          "map_x": 6,
+          "map_y": 7
+        },
+        {
+          "map_x": 7,
+          "map_y": 7
+        },
+        {
+          "map_x": 8,
+          "map_y": 7
+        },
+        {
+          "map_x": 9,
+          "map_y": 7
+        },
+        {
+          "map_x": 10,
+          "map_y": 7
+        },
+        {
+          "map_x": 11,
+          "map_y": 7
+        },
+        {
+          "map_x": 12,
+          "map_y": 7
+        },
+        {
+          "map_x": 13,
+          "map_y": 7
+        },
+        {
+          "map_x": 14,
+          "map_y": 7
+        },
+        {
+          "map_x": 15,
+          "map_y": 7
+        },
+        {
+          "map_x": 16,
+          "map_y": 7
+        },
+        {
+          "map_x": 17,
+          "map_y": 7
+        },
+        {
+          "map_x": 18,
+          "map_y": 7
+        },
+        {
+          "map_x": 19,
+          "map_y": 7
+        }
+      ],
+      "observations": 1
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7507,
+      "features": {
+        "area": 1.0,
+        "aspect": 0.05,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0002",
+      "map_cells": [
+        {
+          "map_x": 0,
+          "map_y": 8
+        },
+        {
+          "map_x": 1,
+          "map_y": 8
+        },
+        {
+          "map_x": 2,
+          "map_y": 8
+        },
+        {
+          "map_x": 3,
+          "map_y": 8
+        },
+        {
+          "map_x": 4,
+          "map_y": 8
+        },
+        {
+          "map_x": 5,
+          "map_y": 8
+        },
+        {
+          "map_x": 6,
+          "map_y": 8
+        },
+        {
+          "map_x": 7,
+          "map_y": 8
+        },
+        {
+          "map_x": 8,
+          "map_y": 8
+        },
+        {
+          "map_x": 9,
+          "map_y": 8
+        },
+        {
+          "map_x": 10,
+          "map_y": 8
+        },
+        {
+          "map_x": 11,
+          "map_y": 8
+        },
+        {
+          "map_x": 12,
+          "map_y": 8
+        },
+        {
+          "map_x": 13,
+          "map_y": 8
+        },
+        {
+          "map_x": 14,
+          "map_y": 8
+        },
+        {
+          "map_x": 15,
+          "map_y": 8
+        },
+        {
+          "map_x": 16,
+          "map_y": 8
+        },
+        {
+          "map_x": 17,
+          "map_y": 8
+        },
+        {
+          "map_x": 18,
+          "map_y": 8
+        },
+        {
+          "map_x": 19,
+          "map_y": 8
+        }
+      ],
+      "observations": 1
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7507,
+      "features": {
+        "area": 1.0,
+        "aspect": 0.05,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0003",
+      "map_cells": [
+        {
+          "map_x": 0,
+          "map_y": 13
+        },
+        {
+          "map_x": 1,
+          "map_y": 13
+        },
+        {
+          "map_x": 2,
+          "map_y": 13
+        },
+        {
+          "map_x": 3,
+          "map_y": 13
+        },
+        {
+          "map_x": 4,
+          "map_y": 13
+        },
+        {
+          "map_x": 5,
+          "map_y": 13
+        },
+        {
+          "map_x": 6,
+          "map_y": 13
+        },
+        {
+          "map_x": 7,
+          "map_y": 13
+        },
+        {
+          "map_x": 8,
+          "map_y": 13
+        },
+        {
+          "map_x": 9,
+          "map_y": 13
+        },
+        {
+          "map_x": 10,
+          "map_y": 13
+        },
+        {
+          "map_x": 11,
+          "map_y": 13
+        },
+        {
+          "map_x": 12,
+          "map_y": 13
+        },
+        {
+          "map_x": 13,
+          "map_y": 13
+        },
+        {
+          "map_x": 14,
+          "map_y": 13
+        },
+        {
+          "map_x": 15,
+          "map_y": 13
+        },
+        {
+          "map_x": 16,
+          "map_y": 13
+        },
+        {
+          "map_x": 17,
+          "map_y": 13
+        },
+        {
+          "map_x": 18,
+          "map_y": 13
+        },
+        {
+          "map_x": 19,
+          "map_y": 13
+        }
+      ],
+      "observations": 1
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.6712,
+      "features": {
+        "area": 1.0,
+        "aspect": 0.5,
+        "boundary": 0.6,
+        "compactness": 0.625,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0004",
+      "map_cells": [
+        {
+          "map_x": 12,
+          "map_y": 11
+        },
+        {
+          "map_x": 13,
+          "map_y": 11
+        },
+        {
+          "map_x": 14,
+          "map_y": 11
+        },
+        {
+          "map_x": 15,
+          "map_y": 10
+        },
+        {
+          "map_x": 15,
+          "map_y": 11
+        },
+        {
+          "map_x": 15,
+          "map_y": 12
+        },
+        {
+          "map_x": 16,
+          "map_y": 10
+        },
+        {
+          "map_x": 16,
+          "map_y": 11
+        },
+        {
+          "map_x": 16,
+          "map_y": 12
+        },
+        {
+          "map_x": 17,
+          "map_y": 10
+        },
+        {
+          "map_x": 17,
+          "map_y": 11
+        },
+        {
+          "map_x": 17,
+          "map_y": 12
+        },
+        {
+          "map_x": 18,
+          "map_y": 9
+        },
+        {
+          "map_x": 18,
+          "map_y": 10
+        },
+        {
+          "map_x": 18,
+          "map_y": 11
+        },
+        {
+          "map_x": 18,
+          "map_y": 12
+        },
+        {
+          "map_x": 19,
+          "map_y": 9
+        },
+        {
+          "map_x": 19,
+          "map_y": 10
+        },
+        {
+          "map_x": 19,
+          "map_y": 11
+        },
+        {
+          "map_x": 19,
+          "map_y": 12
+        }
+      ],
+      "observations": 1
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.6695,
+      "features": {
+        "area": 0.8125,
+        "aspect": 0.8,
+        "boundary": 0.6923,
+        "compactness": 0.65,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        2
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0005",
+      "map_cells": [
+        {
+          "map_x": 0,
+          "map_y": 9
+        },
+        {
+          "map_x": 0,
+          "map_y": 10
+        },
+        {
+          "map_x": 0,
+          "map_y": 11
+        },
+        {
+          "map_x": 0,
+          "map_y": 12
+        },
+        {
+          "map_x": 1,
+          "map_y": 10
+        },
+        {
+          "map_x": 1,
+          "map_y": 11
+        },
+        {
+          "map_x": 1,
+          "map_y": 12
+        },
+        {
+          "map_x": 2,
+          "map_y": 10
+        },
+        {
+          "map_x": 2,
+          "map_y": 11
+        },
+        {
+          "map_x": 2,
+          "map_y": 12
+        },
+        {
+          "map_x": 3,
+          "map_y": 10
+        },
+        {
+          "map_x": 3,
+          "map_y": 11
+        },
+        {
+          "map_x": 4,
+          "map_y": 11
+        }
+      ],
+      "observations": 1
+    }
+  ],
+  "rom_fingerprints": [
+    15520438301620423915
+  ],
+  "schema": "gbb.voxel.proposals.v1"
+}

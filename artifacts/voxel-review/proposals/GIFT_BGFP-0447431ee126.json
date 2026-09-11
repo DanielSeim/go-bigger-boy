@@ -1,0 +1,828 @@
+{
+  "frames_analyzed": 6,
+  "proposal_policy": {
+    "high_confidence": 0.65,
+    "low_confidence": "flat",
+    "medium_confidence": 0.4
+  },
+  "proposals": [
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7537,
+      "features": {
+        "area": 0.75,
+        "aspect": 0.8,
+        "boundary": 0.75,
+        "compactness": 0.6,
+        "density_variation": 0.0,
+        "ground_contact": 1.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        5
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0000",
+      "map_cells": [
+        {
+          "map_x": 16,
+          "map_y": 16
+        },
+        {
+          "map_x": 17,
+          "map_y": 16
+        },
+        {
+          "map_x": 17,
+          "map_y": 17
+        },
+        {
+          "map_x": 18,
+          "map_y": 13
+        },
+        {
+          "map_x": 18,
+          "map_y": 14
+        },
+        {
+          "map_x": 18,
+          "map_y": 15
+        },
+        {
+          "map_x": 18,
+          "map_y": 16
+        },
+        {
+          "map_x": 18,
+          "map_y": 17
+        },
+        {
+          "map_x": 19,
+          "map_y": 14
+        },
+        {
+          "map_x": 19,
+          "map_y": 15
+        },
+        {
+          "map_x": 19,
+          "map_y": 16
+        },
+        {
+          "map_x": 19,
+          "map_y": 17
+        }
+      ],
+      "observations": 1
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.7536,
+      "features": {
+        "area": 1.0,
+        "aspect": 0.6154,
+        "boundary": 0.5818,
+        "compactness": 0.5288,
+        "density_variation": 0.0,
+        "ground_contact": 0.9273,
+        "repetition": 1.0
+      },
+      "frames": [
+        5
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0001",
+      "map_cells": [
+        {
+          "map_x": 0,
+          "map_y": 11
+        },
+        {
+          "map_x": 0,
+          "map_y": 12
+        },
+        {
+          "map_x": 0,
+          "map_y": 13
+        },
+        {
+          "map_x": 0,
+          "map_y": 14
+        },
+        {
+          "map_x": 0,
+          "map_y": 15
+        },
+        {
+          "map_x": 0,
+          "map_y": 16
+        },
+        {
+          "map_x": 0,
+          "map_y": 17
+        },
+        {
+          "map_x": 1,
+          "map_y": 12
+        },
+        {
+          "map_x": 1,
+          "map_y": 13
+        },
+        {
+          "map_x": 1,
+          "map_y": 14
+        },
+        {
+          "map_x": 1,
+          "map_y": 15
+        },
+        {
+          "map_x": 1,
+          "map_y": 16
+        },
+        {
+          "map_x": 1,
+          "map_y": 17
+        },
+        {
+          "map_x": 2,
+          "map_y": 12
+        },
+        {
+          "map_x": 2,
+          "map_y": 13
+        },
+        {
+          "map_x": 2,
+          "map_y": 14
+        },
+        {
+          "map_x": 2,
+          "map_y": 16
+        },
+        {
+          "map_x": 2,
+          "map_y": 17
+        },
+        {
+          "map_x": 3,
+          "map_y": 12
+        },
+        {
+          "map_x": 3,
+          "map_y": 13
+        },
+        {
+          "map_x": 3,
+          "map_y": 16
+        },
+        {
+          "map_x": 3,
+          "map_y": 17
+        },
+        {
+          "map_x": 4,
+          "map_y": 11
+        },
+        {
+          "map_x": 4,
+          "map_y": 12
+        },
+        {
+          "map_x": 4,
+          "map_y": 13
+        },
+        {
+          "map_x": 4,
+          "map_y": 16
+        },
+        {
+          "map_x": 4,
+          "map_y": 17
+        },
+        {
+          "map_x": 5,
+          "map_y": 10
+        },
+        {
+          "map_x": 5,
+          "map_y": 11
+        },
+        {
+          "map_x": 5,
+          "map_y": 12
+        },
+        {
+          "map_x": 5,
+          "map_y": 13
+        },
+        {
+          "map_x": 5,
+          "map_y": 14
+        },
+        {
+          "map_x": 5,
+          "map_y": 16
+        },
+        {
+          "map_x": 6,
+          "map_y": 11
+        },
+        {
+          "map_x": 6,
+          "map_y": 12
+        },
+        {
+          "map_x": 6,
+          "map_y": 13
+        },
+        {
+          "map_x": 6,
+          "map_y": 14
+        },
+        {
+          "map_x": 6,
+          "map_y": 16
+        },
+        {
+          "map_x": 7,
+          "map_y": 10
+        },
+        {
+          "map_x": 7,
+          "map_y": 11
+        },
+        {
+          "map_x": 7,
+          "map_y": 12
+        },
+        {
+          "map_x": 7,
+          "map_y": 13
+        },
+        {
+          "map_x": 7,
+          "map_y": 16
+        },
+        {
+          "map_x": 8,
+          "map_y": 11
+        },
+        {
+          "map_x": 8,
+          "map_y": 12
+        },
+        {
+          "map_x": 8,
+          "map_y": 13
+        },
+        {
+          "map_x": 8,
+          "map_y": 16
+        },
+        {
+          "map_x": 9,
+          "map_y": 11
+        },
+        {
+          "map_x": 9,
+          "map_y": 12
+        },
+        {
+          "map_x": 9,
+          "map_y": 13
+        },
+        {
+          "map_x": 9,
+          "map_y": 16
+        },
+        {
+          "map_x": 10,
+          "map_y": 12
+        },
+        {
+          "map_x": 10,
+          "map_y": 13
+        },
+        {
+          "map_x": 11,
+          "map_y": 13
+        },
+        {
+          "map_x": 12,
+          "map_y": 13
+        }
+      ],
+      "observations": 1
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.6988,
+      "features": {
+        "area": 1.0,
+        "aspect": 1.0,
+        "boundary": 0.4242,
+        "compactness": 0.6735,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        5
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0002",
+      "map_cells": [
+        {
+          "map_x": 12,
+          "map_y": 8
+        },
+        {
+          "map_x": 13,
+          "map_y": 7
+        },
+        {
+          "map_x": 13,
+          "map_y": 8
+        },
+        {
+          "map_x": 13,
+          "map_y": 9
+        },
+        {
+          "map_x": 14,
+          "map_y": 5
+        },
+        {
+          "map_x": 14,
+          "map_y": 6
+        },
+        {
+          "map_x": 14,
+          "map_y": 7
+        },
+        {
+          "map_x": 14,
+          "map_y": 8
+        },
+        {
+          "map_x": 14,
+          "map_y": 9
+        },
+        {
+          "map_x": 15,
+          "map_y": 4
+        },
+        {
+          "map_x": 15,
+          "map_y": 5
+        },
+        {
+          "map_x": 15,
+          "map_y": 6
+        },
+        {
+          "map_x": 15,
+          "map_y": 7
+        },
+        {
+          "map_x": 15,
+          "map_y": 8
+        },
+        {
+          "map_x": 15,
+          "map_y": 9
+        },
+        {
+          "map_x": 15,
+          "map_y": 10
+        },
+        {
+          "map_x": 16,
+          "map_y": 4
+        },
+        {
+          "map_x": 16,
+          "map_y": 5
+        },
+        {
+          "map_x": 16,
+          "map_y": 6
+        },
+        {
+          "map_x": 16,
+          "map_y": 7
+        },
+        {
+          "map_x": 16,
+          "map_y": 8
+        },
+        {
+          "map_x": 16,
+          "map_y": 9
+        },
+        {
+          "map_x": 16,
+          "map_y": 10
+        },
+        {
+          "map_x": 17,
+          "map_y": 4
+        },
+        {
+          "map_x": 17,
+          "map_y": 5
+        },
+        {
+          "map_x": 17,
+          "map_y": 6
+        },
+        {
+          "map_x": 17,
+          "map_y": 7
+        },
+        {
+          "map_x": 17,
+          "map_y": 8
+        },
+        {
+          "map_x": 17,
+          "map_y": 9
+        },
+        {
+          "map_x": 18,
+          "map_y": 5
+        },
+        {
+          "map_x": 18,
+          "map_y": 6
+        },
+        {
+          "map_x": 18,
+          "map_y": 7
+        },
+        {
+          "map_x": 18,
+          "map_y": 8
+        }
+      ],
+      "observations": 1
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.6942,
+      "features": {
+        "area": 0.125,
+        "aspect": 0.5,
+        "boundary": 1.0,
+        "compactness": 1.0,
+        "density_variation": 0.0,
+        "ground_contact": 1.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        5
+      ],
+      "geometry": "shallow_volume",
+      "id": "background-object-0003",
+      "map_cells": [
+        {
+          "map_x": 13,
+          "map_y": 16
+        },
+        {
+          "map_x": 14,
+          "map_y": 16
+        }
+      ],
+      "observations": 1
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.6088,
+      "features": {
+        "area": 1.0,
+        "aspect": 0.45,
+        "boundary": 0.4925,
+        "compactness": 0.3722,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        5
+      ],
+      "geometry": "proposal_only",
+      "id": "background-object-0004",
+      "map_cells": [
+        {
+          "map_x": 0,
+          "map_y": 0
+        },
+        {
+          "map_x": 0,
+          "map_y": 1
+        },
+        {
+          "map_x": 0,
+          "map_y": 2
+        },
+        {
+          "map_x": 0,
+          "map_y": 3
+        },
+        {
+          "map_x": 0,
+          "map_y": 4
+        },
+        {
+          "map_x": 0,
+          "map_y": 5
+        },
+        {
+          "map_x": 0,
+          "map_y": 6
+        },
+        {
+          "map_x": 0,
+          "map_y": 7
+        },
+        {
+          "map_x": 0,
+          "map_y": 8
+        },
+        {
+          "map_x": 1,
+          "map_y": 0
+        },
+        {
+          "map_x": 1,
+          "map_y": 1
+        },
+        {
+          "map_x": 1,
+          "map_y": 2
+        },
+        {
+          "map_x": 1,
+          "map_y": 3
+        },
+        {
+          "map_x": 1,
+          "map_y": 4
+        },
+        {
+          "map_x": 1,
+          "map_y": 5
+        },
+        {
+          "map_x": 1,
+          "map_y": 6
+        },
+        {
+          "map_x": 1,
+          "map_y": 7
+        },
+        {
+          "map_x": 2,
+          "map_y": 0
+        },
+        {
+          "map_x": 2,
+          "map_y": 1
+        },
+        {
+          "map_x": 2,
+          "map_y": 2
+        },
+        {
+          "map_x": 2,
+          "map_y": 3
+        },
+        {
+          "map_x": 2,
+          "map_y": 4
+        },
+        {
+          "map_x": 2,
+          "map_y": 5
+        },
+        {
+          "map_x": 3,
+          "map_y": 0
+        },
+        {
+          "map_x": 3,
+          "map_y": 1
+        },
+        {
+          "map_x": 3,
+          "map_y": 2
+        },
+        {
+          "map_x": 3,
+          "map_y": 3
+        },
+        {
+          "map_x": 3,
+          "map_y": 4
+        },
+        {
+          "map_x": 4,
+          "map_y": 0
+        },
+        {
+          "map_x": 4,
+          "map_y": 1
+        },
+        {
+          "map_x": 4,
+          "map_y": 2
+        },
+        {
+          "map_x": 4,
+          "map_y": 3
+        },
+        {
+          "map_x": 5,
+          "map_y": 0
+        },
+        {
+          "map_x": 5,
+          "map_y": 1
+        },
+        {
+          "map_x": 5,
+          "map_y": 2
+        },
+        {
+          "map_x": 5,
+          "map_y": 3
+        },
+        {
+          "map_x": 6,
+          "map_y": 0
+        },
+        {
+          "map_x": 6,
+          "map_y": 1
+        },
+        {
+          "map_x": 6,
+          "map_y": 2
+        },
+        {
+          "map_x": 7,
+          "map_y": 0
+        },
+        {
+          "map_x": 7,
+          "map_y": 1
+        },
+        {
+          "map_x": 7,
+          "map_y": 2
+        },
+        {
+          "map_x": 8,
+          "map_y": 0
+        },
+        {
+          "map_x": 8,
+          "map_y": 1
+        },
+        {
+          "map_x": 8,
+          "map_y": 2
+        },
+        {
+          "map_x": 8,
+          "map_y": 3
+        },
+        {
+          "map_x": 9,
+          "map_y": 0
+        },
+        {
+          "map_x": 9,
+          "map_y": 1
+        },
+        {
+          "map_x": 9,
+          "map_y": 3
+        },
+        {
+          "map_x": 10,
+          "map_y": 0
+        },
+        {
+          "map_x": 10,
+          "map_y": 1
+        },
+        {
+          "map_x": 11,
+          "map_y": 0
+        },
+        {
+          "map_x": 11,
+          "map_y": 1
+        },
+        {
+          "map_x": 12,
+          "map_y": 0
+        },
+        {
+          "map_x": 12,
+          "map_y": 1
+        },
+        {
+          "map_x": 12,
+          "map_y": 2
+        },
+        {
+          "map_x": 13,
+          "map_y": 0
+        },
+        {
+          "map_x": 13,
+          "map_y": 1
+        },
+        {
+          "map_x": 14,
+          "map_y": 0
+        },
+        {
+          "map_x": 14,
+          "map_y": 1
+        },
+        {
+          "map_x": 15,
+          "map_y": 0
+        },
+        {
+          "map_x": 16,
+          "map_y": 0
+        },
+        {
+          "map_x": 16,
+          "map_y": 1
+        },
+        {
+          "map_x": 17,
+          "map_y": 0
+        },
+        {
+          "map_x": 17,
+          "map_y": 1
+        },
+        {
+          "map_x": 18,
+          "map_y": 0
+        },
+        {
+          "map_x": 19,
+          "map_y": 0
+        }
+      ],
+      "observations": 1
+    },
+    {
+      "class": "background_object_candidate",
+      "confidence": 0.6029,
+      "features": {
+        "area": 0.1875,
+        "aspect": 1.0,
+        "boundary": 1.0,
+        "compactness": 0.75,
+        "density_variation": 0.0,
+        "ground_contact": 0.0,
+        "repetition": 1.0
+      },
+      "frames": [
+        5
+      ],
+      "geometry": "proposal_only",
+      "id": "background-object-0005",
+      "map_cells": [
+        {
+          "map_x": 2,
+          "map_y": 8
+        },
+        {
+          "map_x": 2,
+          "map_y": 9
+        },
+        {
+          "map_x": 3,
+          "map_y": 9
+        }
+      ],
+      "observations": 1
+    }
+  ],
+  "rom_fingerprints": [
+    16937145862014083142
+  ],
+  "schema": "gbb.voxel.proposals.v1"
+}
