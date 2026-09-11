@@ -64,6 +64,34 @@ SDL_FRect android_link_button_rect(const SdlResources& sdl) {
     return {x, menu.y, menu.w, menu.h};
 }
 
+SDL_Rect android_safe_area(const SdlResources& sdl) {
+    int width = 1;
+    int height = 1;
+    static_cast<void>(SDL_GetWindowSize(sdl.window, &width, &height));
+    SDL_Rect safe{0, 0, width, height};
+    if (!SDL_GetWindowSafeArea(sdl.window, &safe)) {
+        safe = {0, 0, width, height};
+    }
+    safe.x = std::clamp(safe.x, 0, width);
+    safe.y = std::clamp(safe.y, 0, height);
+    safe.w = std::clamp(safe.w, 0, width - safe.x);
+    safe.h = std::clamp(safe.h, 0, height - safe.y);
+    return safe;
+}
+
+SDL_FRect android_portrait_game_rect(const SdlResources& sdl) {
+    const auto safe = android_safe_area(sdl);
+    const auto aspect = static_cast<float>(sdl.core_video_width) /
+                        static_cast<float>(sdl.core_video_height);
+    const auto margin = std::clamp(static_cast<float>(safe.w) * 0.035F,
+                                   12.0F, 32.0F);
+    const auto width = std::max(1.0F, static_cast<float>(safe.w) - margin * 2.0F);
+    const auto height = std::min(width / aspect,
+                                 static_cast<float>(safe.h) * 0.52F);
+    return {static_cast<float>(safe.x) + (static_cast<float>(safe.w) - width) * 0.5F,
+            static_cast<float>(safe.y) + margin, width, height};
+}
+
 bool android_menu_touch_hit(const SdlResources& sdl, const float x,
                             const float y) {
     int width = 1;
@@ -111,6 +139,14 @@ std::pair<float, float> touch_control_position(const SdlResources& sdl,
             sdl.touch_settings.positions[index + 1]};
 }
 
+SDL_FPoint touch_control_pixel_position(const SdlResources& sdl,
+                                        const std::size_t control) {
+    const auto safe = android_safe_area(sdl);
+    const auto [x, y] = touch_control_position(sdl, control);
+    return {static_cast<float>(safe.x) + x * static_cast<float>(safe.w),
+            static_cast<float>(safe.y) + y * static_cast<float>(safe.h)};
+}
+
 std::optional<std::size_t> touch_button_index(const float x, const float y,
                                               const SdlResources& sdl) {
     const auto scale = std::clamp(sdl.touch_settings.scale,
@@ -120,31 +156,55 @@ std::optional<std::size_t> touch_button_index(const float x, const float y,
     static_cast<void>(SDL_GetWindowSize(sdl.window, &width, &height));
     const auto pixel_x = x * static_cast<float>(width);
     const auto pixel_y = y * static_cast<float>(height);
+    const auto density = std::max(1.0F, SDL_GetWindowDisplayScale(sdl.window));
     const auto size = touch_game_scale(sdl) * scale;
-    constexpr std::array<float, 4> widths{{42.0F, 24.0F, 24.0F, 22.0F}};
-    constexpr std::array<float, 4> heights{{42.0F, 24.0F, 24.0F, 10.0F}};
+    constexpr std::array<float, 4> widths{{android_touch_dpad_dimension,
+                                            android_touch_action_diameter,
+                                            android_touch_action_diameter,
+                                            android_touch_system_width}};
+    constexpr std::array<float, 4> heights{{android_touch_dpad_dimension,
+                                             android_touch_action_diameter,
+                                             android_touch_action_diameter,
+                                             android_touch_system_height}};
+    const auto minimum_target = 48.0F * density;
+    const auto label_height = 18.0F * density;
     const auto inside = [&](const std::size_t control) {
-        const auto [normalized_x, normalized_y] =
-            touch_control_position(sdl, control);
-        const auto center_x = normalized_x * static_cast<float>(width);
-        const auto center_y = normalized_y * static_cast<float>(height);
+        const auto center = touch_control_pixel_position(sdl, control);
+        const auto center_x = center.x;
+        const auto center_y = center.y;
         const auto dx = pixel_x - center_x;
         const auto dy = pixel_y - center_y;
         if (control == 0) {
-            return std::abs(dx) <= widths[0] * size * 0.5F &&
-                   std::abs(dy) <= heights[0] * size * 0.5F;
+            const auto half_width = std::max(widths[0] * size * 0.5F,
+                                             minimum_target * 0.5F);
+            const auto half_height = std::max(heights[0] * size * 0.5F,
+                                              minimum_target * 0.5F);
+            return std::abs(dx) <= half_width && std::abs(dy) <= half_height;
         }
         if (control == 1 || control == 2) {
-            const auto radius = widths[control] * size * 0.5F;
-            return dx * dx + dy * dy <= radius * radius;
+            const auto visual_radius = widths[control] * size * 0.5F;
+            const auto radius = std::max(visual_radius, minimum_target * 0.5F);
+            if (dx * dx + dy * dy <= radius * radius) return true;
+            const auto label_y = center_y + visual_radius + 7.0F * size +
+                                 label_height * 0.5F;
+            return std::abs(dx) <= radius &&
+                   std::abs(pixel_y - label_y) <= label_height * 0.5F;
         }
         // Face/system controls are stored in the arrays starting at index
         // zero (A, B, Select, Start), while their control IDs start at one.
         // Using `control` directly made Start read past both arrays and gave
         // it an undefined (usually non-interactive) touch hitbox.
         const auto face_index = control - 1;
-        return std::abs(dx) <= widths[face_index] * size * 0.5F &&
-               std::abs(dy) <= heights[face_index] * size * 0.5F;
+        const auto half_width = std::max(widths[face_index] * size * 0.5F,
+                                         minimum_target * 0.5F);
+        const auto visual_half_height = heights[face_index] * size * 0.5F;
+        const auto half_height = std::max(visual_half_height,
+                                          minimum_target * 0.5F);
+        if (std::abs(dx) <= half_width && std::abs(dy) <= half_height) return true;
+        const auto label_y = center_y + visual_half_height + 7.0F * size +
+                             label_height * 0.5F;
+        return std::abs(dx) <= half_width &&
+               std::abs(pixel_y - label_y) <= label_height * 0.5F;
     };
     // Check the face and system buttons before the D-pad if a custom layout
     // intentionally places controls near one another.
@@ -153,9 +213,9 @@ std::optional<std::size_t> touch_button_index(const float x, const float y,
         if (inside(control)) return control + 3;
     }
     if (inside(0)) {
-        const auto [normalized_x, normalized_y] = touch_control_position(sdl, 0);
-        const auto dx = pixel_x - normalized_x * static_cast<float>(width);
-        const auto dy = pixel_y - normalized_y * static_cast<float>(height);
+        const auto center = touch_control_pixel_position(sdl, 0);
+        const auto dx = pixel_x - center.x;
+        const auto dy = pixel_y - center.y;
         return std::abs(dx) >= std::abs(dy) ? (dx >= 0.0F ? 0U : 1U)
                                             : (dy >= 0.0F ? 3U : 2U);
     }

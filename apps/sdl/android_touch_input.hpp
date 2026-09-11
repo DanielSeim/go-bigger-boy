@@ -20,6 +20,10 @@ namespace gbb::sdl {
 // Android displays.
 inline constexpr float android_link_menu_max_width = 500.0F;
 inline constexpr float android_link_menu_min_row_height = 44.0F;
+inline constexpr float android_touch_dpad_dimension = 44.0F;
+inline constexpr float android_touch_action_diameter = 26.0F;
+inline constexpr float android_touch_system_width = 30.0F;
+inline constexpr float android_touch_system_height = 14.0F;
 
 [[nodiscard]] bool touch_is_landscape(const SdlResources& sdl);
 [[nodiscard]] std::size_t touch_layout_offset(const SdlResources& sdl);
@@ -27,6 +31,8 @@ inline constexpr float android_link_menu_min_row_height = 44.0F;
 [[nodiscard]] bool voxel_mode_enabled(const SdlResources& sdl);
 [[nodiscard]] SDL_FRect android_menu_button_rect(const SdlResources& sdl);
 [[nodiscard]] SDL_FRect android_link_button_rect(const SdlResources& sdl);
+[[nodiscard]] SDL_Rect android_safe_area(const SdlResources& sdl);
+[[nodiscard]] SDL_FRect android_portrait_game_rect(const SdlResources& sdl);
 [[nodiscard]] bool android_menu_touch_hit(const SdlResources& sdl, float x,
                                           float y);
 [[nodiscard]] bool android_link_touch_hit(const SdlResources& sdl, float x,
@@ -34,6 +40,8 @@ inline constexpr float android_link_menu_min_row_height = 44.0F;
 [[nodiscard]] bool android_menu_button_hit(const SdlResources& sdl, float x,
                                            float y);
 [[nodiscard]] std::pair<float, float> touch_control_position(
+    const SdlResources& sdl, std::size_t control);
+[[nodiscard]] SDL_FPoint touch_control_pixel_position(
     const SdlResources& sdl, std::size_t control);
 [[nodiscard]] std::optional<std::size_t> touch_button_index(
     float x, float y, const SdlResources& sdl);

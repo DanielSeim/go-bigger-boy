@@ -1,5 +1,9 @@
 #include "presentation.hpp"
 
+#ifdef __ANDROID__
+#include "android_touch_input.hpp"
+#endif
+
 #include <stdexcept>
 #include <string>
 
@@ -70,8 +74,22 @@ void present_frame(const PresentationContext& context) {
             const auto frame = context.core->video_frame();
             if (!SDL_UpdateTexture(
                     sdl.texture, nullptr, colored_pixels.data(),
-                    static_cast<int>(frame.width * sizeof(std::uint32_t))) ||
-                !SDL_RenderTexture(sdl.renderer, sdl.texture, nullptr, nullptr)) {
+                    static_cast<int>(frame.width * sizeof(std::uint32_t)))) {
+                presentation_error("Could not present framebuffer");
+            }
+#ifdef __ANDROID__
+            if (!touch_is_landscape(sdl) && !voxel_mode_enabled(sdl)) {
+                const auto game_rect = android_portrait_game_rect(sdl);
+                if (!SDL_SetRenderLogicalPresentation(
+                        sdl.renderer, 0, 0,
+                        SDL_LOGICAL_PRESENTATION_DISABLED) ||
+                    !SDL_RenderTexture(sdl.renderer, sdl.texture, nullptr,
+                                       &game_rect)) {
+                    presentation_error("Could not present portrait framebuffer");
+                }
+            } else
+#endif
+            if (!SDL_RenderTexture(sdl.renderer, sdl.texture, nullptr, nullptr)) {
                 presentation_error("Could not present framebuffer");
             }
         }
