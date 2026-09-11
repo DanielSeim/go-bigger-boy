@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-09-11
+
+### Super Game Boy
+
+- Add a branded default SGB/SGB2 border for games that do not upload a custom
+  border, including the `SUPER` and `GO BIGGER BOY` wordmark.
+- Preserve cartridge-provided borders when a game supplies custom border data.
+
+### Android controls
+
+- Allow one finger to hold B while activating A, then release A while keeping
+  B held for platform-game run-and-jump controls.
+
 ## [0.33.18] - 2026-09-11
 
 ### Android controls
