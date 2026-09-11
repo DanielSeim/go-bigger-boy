@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.33.17] - 2026-09-11
+
+### Android emulation
+
+- Resume the already-running ROM when selecting it again from the library
+  instead of restarting the emulation session.
+- Add branded portrait and landscape touch controls with labeled buttons,
+  expanded gameplay viewports, and consistent Go Bigger Boy styling.
+
 ## [0.33.16] - 2026-09-10
 
 ### Windows settings
