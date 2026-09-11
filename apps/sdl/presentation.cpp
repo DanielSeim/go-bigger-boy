@@ -19,7 +19,11 @@ namespace {
 
 void present_frame(const PresentationContext& context) {
     auto& sdl = context.sdl;
+#ifdef __ANDROID__
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 8, 12, 20, 255));
+#else
     static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 16, 20, 16, 255));
+#endif
     if (!SDL_RenderClear(sdl.renderer)) presentation_error("Could not clear framebuffer");
 
     if (context.dashboard_visible) {

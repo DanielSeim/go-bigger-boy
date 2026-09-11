@@ -37,21 +37,28 @@ float touch_control_scale(const SdlResources& sdl) {
     const auto configured_scale = std::clamp(sdl.touch_settings.scale,
                                              minimum_touch_scale,
                                              maximum_touch_scale);
+    const auto safe = android_safe_area(sdl);
     auto size = touch_game_scale(sdl) * configured_scale;
-    if (!touch_is_landscape(sdl)) return size;
+    if (!touch_is_landscape(sdl)) {
+        // The approved portrait layout uses a 180-unit-wide design board.
+        // Scale from the actual game frame width so DMG and SGB controls have
+        // the same physical size while retaining the user's size setting.
+        const auto game_rect = android_portrait_game_rect(sdl);
+        return game_rect.w / 180.0F * configured_scale;
+    }
 
     SDL_FRect viewport{};
     if (!SDL_GetRenderLogicalPresentationRect(sdl.renderer, &viewport)) {
         return size;
     }
-    const auto safe = android_safe_area(sdl);
     const auto left_space = viewport.x - static_cast<float>(safe.x);
     const auto right_space = static_cast<float>(safe.x + safe.w) -
                              (viewport.x + viewport.w);
     const auto side_space = std::min(left_space, right_space);
     if (side_space > 0.0F) {
-        // Leave a small gutter between the controls and the viewport while
-        // keeping the visual controls large enough for one-handed play.
+        // The approved landscape layout uses a 90-unit side column. Keep a
+        // gutter around the D-pad even when the user increases touch.Size.
+        size = side_space / 90.0F * configured_scale;
         size = std::min(size, side_space /
                                   (android_touch_dpad_dimension + 12.0F));
     }
@@ -71,9 +78,10 @@ SDL_FRect android_menu_button_rect(const SdlResources& sdl) {
     // The game framebuffer is normally rendered through a 160x144 logical
     // viewport. The menu is an Android overlay, however, so size and position
     // it in full-window pixels after disabling logical presentation.
-    const auto size = touch_game_scale(sdl) * 20.0F;
-    const auto button_height = size * 0.75F;
-    const auto margin = std::max(8.0F, size * 0.15F);
+    const auto size = std::clamp(touch_game_scale(sdl) * 16.0F, 56.0F,
+                                 96.0F);
+    const auto button_height = size * 0.82F;
+    const auto margin = std::max(12.0F, size * 0.18F);
     const auto x = sdl.touch_settings.menu_top_right
                        ? std::max(margin, static_cast<float>(width) - size - margin)
                        : margin;

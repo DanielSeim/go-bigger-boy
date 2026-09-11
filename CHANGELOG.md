@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.33.18] - 2026-09-11
+
+### Android controls
+
+- Repair portrait and landscape touch controls to match the approved branded
+  layouts, with stable sizing, crisp layered buttons, readable labels, and
+  the dark navy and cyan visual treatment.
+
 ## [0.33.17] - 2026-09-11
 
 ### Android emulation
