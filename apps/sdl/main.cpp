@@ -456,7 +456,8 @@ void refresh_display_palette_if_changed(
 
 #endif
 #ifdef __ANDROID__
-void open_android_library(bool return_to_game = true) noexcept;
+void open_android_library(bool return_to_game = true,
+                          const std::string& running_rom = {}) noexcept;
 void leave_android_game(
     std::unique_ptr<gbb::EmulatorCore>& core,
     gameboy::Emulator*& emulator, SdlResources& sdl,
@@ -536,17 +537,21 @@ bool installation_is_writable(const std::filesystem::path& root) {
 #endif
 
 #ifdef __ANDROID__
-void open_android_library(const bool return_to_game) noexcept {
+void open_android_library(const bool return_to_game,
+                          const std::string& running_rom) noexcept {
     auto* environment = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
     auto activity = static_cast<jobject>(SDL_GetAndroidActivity());
     if (environment == nullptr || activity == nullptr) return;
     const auto activity_class = environment->GetObjectClass(activity);
     if (activity_class != nullptr) {
         const auto method = environment->GetMethodID(
-            activity_class, "openLibrary", "(Z)V");
+            activity_class, "openLibrary", "(ZLjava/lang/String;)V");
         if (method != nullptr) {
+            const auto path = environment->NewStringUTF(running_rom.c_str());
             environment->CallVoidMethod(activity, method,
-                                         static_cast<jboolean>(return_to_game));
+                                         static_cast<jboolean>(return_to_game),
+                                         path);
+            if (path != nullptr) environment->DeleteLocalRef(path);
         }
         environment->DeleteLocalRef(activity_class);
     }
@@ -1573,7 +1578,7 @@ int main(int argc, char** argv) {
                 , [&]() {
                     if (core) release_all_buttons(*core);
 #ifdef __ANDROID__
-                    open_android_library();
+                    open_android_library(true, current_rom);
 #else
 #ifdef _WIN32
                     SDL_HideWindow(sdl.window);
@@ -1788,7 +1793,7 @@ int main(int argc, char** argv) {
                         dashboard_visible = false;
                         dashboard_selection = 0;
 #ifdef __ANDROID__
-                        open_android_library();
+                        open_android_library(true, current_rom);
 #endif
                     }
                 }

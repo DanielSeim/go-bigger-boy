@@ -722,9 +722,11 @@ public final class GbbActivity extends SDLActivity {
     }
 
     /** Opens the native library, optionally keeping the running game underneath. */
-    public void openLibrary(boolean returnToGame) {
+    public void openLibrary(boolean returnToGame, String runningRom) {
         startActivity(new Intent(this, LibraryActivity.class)
                 .putExtra(LibraryActivity.EXTRA_RETURN_TO_GAME, returnToGame)
+                .putExtra(LibraryActivity.EXTRA_RUNNING_ROM,
+                        runningRom == null ? "" : runningRom)
                 .addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT));
     }
 }

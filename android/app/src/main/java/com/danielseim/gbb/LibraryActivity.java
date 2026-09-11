@@ -26,6 +26,8 @@ import android.window.OnBackInvokedDispatcher;
 public final class LibraryActivity extends Activity {
     static final String EXTRA_RETURN_TO_GAME =
             "com.danielseim.gbb.RETURN_TO_GAME";
+    static final String EXTRA_RUNNING_ROM =
+            "com.danielseim.gbb.RUNNING_ROM";
     private static final int OPEN_ROM = 1;
     private static final int CREATE_BACKUP = 2;
     private static final int OPEN_BACKUP = 3;
@@ -80,6 +82,7 @@ public final class LibraryActivity extends Activity {
     private SharedPreferences preferences;
     private boolean settingsVisible;
     private boolean returnToGame;
+    private String runningRom;
     private int libraryScrollY;
     private int settingsScrollY;
     private AndroidUpdateManager updateManager;
@@ -93,11 +96,15 @@ public final class LibraryActivity extends Activity {
         preferences = getSharedPreferences("dashboard", MODE_PRIVATE);
         artworkService = new ArtworkService(this);
         returnToGame = getIntent().getBooleanExtra(EXTRA_RETURN_TO_GAME, false);
+        runningRom = getIntent().getStringExtra(EXTRA_RUNNING_ROM);
+        if (runningRom == null) runningRom = "";
         updateManager = new AndroidUpdateManager(this);
         settingsVisible = savedInstanceState != null &&
                 savedInstanceState.getBoolean("settings_visible", false);
         if (savedInstanceState != null) {
             returnToGame = savedInstanceState.getBoolean("return_to_game", returnToGame);
+            runningRom = savedInstanceState.getString("running_rom", runningRom);
+            if (runningRom == null) runningRom = "";
             libraryScrollY = savedInstanceState.getInt("library_scroll_y", 0);
             settingsScrollY = savedInstanceState.getInt("settings_scroll_y", 0);
         }
@@ -115,6 +122,8 @@ public final class LibraryActivity extends Activity {
         super.onNewIntent(intent);
         setIntent(intent);
         returnToGame = intent.getBooleanExtra(EXTRA_RETURN_TO_GAME, false);
+        runningRom = intent.getStringExtra(EXTRA_RUNNING_ROM);
+        if (runningRom == null) runningRom = "";
         showDashboard(settingsVisible);
     }
 
@@ -122,6 +131,7 @@ public final class LibraryActivity extends Activity {
     protected void onSaveInstanceState(Bundle state) {
         state.putBoolean("settings_visible", settingsVisible);
         state.putBoolean("return_to_game", returnToGame);
+        state.putString("running_rom", runningRom);
         state.putInt("library_scroll_y", libraryScrollY);
         state.putInt("settings_scroll_y", settingsScrollY);
         super.onSaveInstanceState(state);
@@ -399,6 +409,11 @@ public final class LibraryActivity extends Activity {
     }
 
     void launchRom(String path, String displayName) {
+        if (RomLaunchPolicy.shouldResumeExistingRom(
+                returnToGame, path, runningRom)) {
+            finish();
+            return;
+        }
         startActivity(new Intent(this, GbbActivity.class)
                 .putExtra(GbbActivity.EXTRA_ROM, path)
                 .putExtra(GbbActivity.EXTRA_ROM_NAME, displayName));
