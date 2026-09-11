@@ -50,8 +50,8 @@ struct TouchControlSettings {
     std::array<float, 20> positions{
         0.28F, 0.71F, 0.77F, 0.62F, 0.62F, 0.78F, 0.40F, 0.91F,
         0.60F, 0.91F,
-        0.12F, 0.50F, 0.88F, 0.42F, 0.88F, 0.62F, 0.42F, 0.92F,
-        0.58F, 0.92F};
+        0.10F, 0.46F, 0.92F, 0.34F, 0.89F, 0.54F, 0.18F, 0.84F,
+        0.88F, 0.84F};
 };
 
 constexpr float minimum_touch_scale = 0.80F;

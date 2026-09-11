@@ -28,6 +28,7 @@ inline constexpr float android_touch_system_height = 14.0F;
 [[nodiscard]] bool touch_is_landscape(const SdlResources& sdl);
 [[nodiscard]] std::size_t touch_layout_offset(const SdlResources& sdl);
 [[nodiscard]] float touch_game_scale(const SdlResources& sdl);
+[[nodiscard]] float touch_control_scale(const SdlResources& sdl);
 [[nodiscard]] bool voxel_mode_enabled(const SdlResources& sdl);
 [[nodiscard]] SDL_FRect android_menu_button_rect(const SdlResources& sdl);
 [[nodiscard]] SDL_FRect android_link_button_rect(const SdlResources& sdl);

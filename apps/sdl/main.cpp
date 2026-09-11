@@ -179,6 +179,7 @@ using gbb::sdl::refresh_touch_settings;
 using gbb::sdl::refresh_touch_settings_if_changed;
 using gbb::sdl::touch_button_index;
 using gbb::sdl::touch_control_pixel_position;
+using gbb::sdl::touch_control_scale;
 using gbb::sdl::touch_is_landscape;
 using gbb::sdl::voxel_mode_enabled;
 using gbb::sdl::window_touch_position;
@@ -860,15 +861,6 @@ void draw_touch_round_rect(SDL_Renderer* renderer, const SDL_FRect rect,
                       color);
 }
 
-void draw_touch_label(SDL_Renderer* renderer, const float center_x,
-                      const float center_y, const char* label) {
-    if (label == nullptr) return;
-    const auto length = static_cast<float>(std::char_traits<char>::length(label));
-    static_cast<void>(SDL_SetRenderDrawColor(renderer, 248, 252, 255, 235));
-    static_cast<void>(SDL_RenderDebugText(renderer, center_x - length * 4.0F,
-                                          center_y - 4.0F, label));
-}
-
 void draw_branded_touch_label(SDL_Renderer* renderer, const float center_x,
                               const float top, const float scale,
                               const std::uint8_t alpha, const char* label) {
@@ -884,39 +876,22 @@ void draw_branded_touch_label(SDL_Renderer* renderer, const float center_x,
 }
 
 void present_touch_controls(SdlResources& sdl) {
-    const auto scale = std::clamp(sdl.touch_settings.scale,
-                                  minimum_touch_scale, maximum_touch_scale);
     const auto opacity = std::clamp(sdl.touch_settings.opacity,
                                     minimum_touch_opacity,
                                     maximum_touch_opacity);
     static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
                                                  SDL_BLENDMODE_BLEND));
-    const auto game_scale = touch_game_scale(sdl);
-    const auto size = game_scale * scale;
+    const auto size = touch_control_scale(sdl);
+    SDL_FRect game_viewport{};
+    const auto have_game_viewport =
+        touch_is_landscape(sdl) &&
+        SDL_GetRenderLogicalPresentationRect(sdl.renderer, &game_viewport);
     if (!SDL_SetRenderLogicalPresentation(
             sdl.renderer, 0, 0, SDL_LOGICAL_PRESENTATION_DISABLED)) {
         sdl_error("Could not prepare touch controls");
     }
     const auto alpha = static_cast<std::uint8_t>(std::clamp(
         opacity * 255.0F, 0.0F, 255.0F));
-    const auto draw_circle_button = [&](const SDL_FPoint point, const float radius,
-                                        const bool pressed, const char* label) {
-        // A small offset shadow separates controls from bright game scenes;
-        // the pressed state uses a warm accent and a slightly smaller face,
-        // giving immediate visual feedback without waiting for animation.
-        draw_touch_circle(sdl.renderer, point.x + 2.0F, point.y + 3.0F,
-                          radius + 2.0F, SDL_Color{0, 0, 0, 95});
-        const auto face = pressed ? SDL_Color{244, 173, 67, alpha}
-                                  : SDL_Color{44, 93, 143, alpha};
-        draw_touch_circle(sdl.renderer, point.x, point.y,
-                          radius - (pressed ? 1.5F : 0.0F), face);
-        draw_touch_circle(sdl.renderer, point.x, point.y - radius * 0.18F,
-                          radius * 0.72F, pressed
-                              ? SDL_Color{255, 211, 124, 75}
-                              : SDL_Color{126, 181, 224, 72});
-        draw_touch_label(sdl.renderer, point.x, point.y, label);
-    };
-
     const auto point_for = [&sdl](const std::size_t control) {
         return touch_control_pixel_position(sdl, control);
     };
@@ -1048,69 +1023,175 @@ void present_touch_controls(SdlResources& sdl) {
         return;
     }
 
-    const auto dpad = point_for(0);
-    const auto dpad_arm = 21.0F * size;
-    const auto dpad_thickness = 14.0F * size;
-    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 0, 0, 0, 95));
-    const SDL_FRect dpad_shadow{dpad.x - dpad_arm + 2.0F,
-                                dpad.y - dpad_thickness * 0.5F + 3.0F,
-                                dpad_arm * 2.0F, dpad_thickness};
-    static_cast<void>(SDL_RenderFillRect(sdl.renderer, &dpad_shadow));
-    const SDL_FRect dpad_vertical_shadow{dpad.x - dpad_thickness * 0.5F + 2.0F,
-                                         dpad.y - dpad_arm + 3.0F,
-                                         dpad_thickness, dpad_arm * 2.0F};
-    static_cast<void>(SDL_RenderFillRect(sdl.renderer, &dpad_vertical_shadow));
-    const auto draw_dpad_arm = [&](const SDL_FRect& rect, const bool pressed) {
-        static_cast<void>(SDL_SetRenderDrawColor(
-            sdl.renderer, pressed ? 244 : 44, pressed ? 173 : 93,
-            pressed ? 67 : 143, alpha));
-        static_cast<void>(SDL_RenderFillRect(sdl.renderer, &rect));
-        static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 126, 181, 224,
-                                                 pressed ? 210 : 130));
-        static_cast<void>(SDL_RenderRect(sdl.renderer, &rect));
+    const auto safe = android_safe_area(sdl);
+    const auto decoration_size = std::clamp(
+        static_cast<float>(std::min(safe.w, safe.h)) * 0.055F, 32.0F, 72.0F);
+    const auto decoration_stroke = std::clamp(decoration_size * 0.18F, 5.0F,
+                                              10.0F);
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 8, 175, 244, alpha));
+    const auto draw_corner = [&](const float x, const float y,
+                                 const bool right, const bool bottom) {
+        const auto horizontal_x = right ? x - decoration_size : x;
+        const auto vertical_y = bottom ? y - decoration_size : y;
+        const SDL_FRect horizontal{horizontal_x, y - (bottom ? decoration_stroke : 0.0F),
+                                   decoration_size, decoration_stroke};
+        const SDL_FRect vertical{x - (right ? decoration_stroke : 0.0F), vertical_y,
+                                 decoration_stroke, decoration_size};
+        static_cast<void>(SDL_RenderFillRect(sdl.renderer, &horizontal));
+        static_cast<void>(SDL_RenderFillRect(sdl.renderer, &vertical));
     };
-    draw_dpad_arm(SDL_FRect{dpad.x, dpad.y - dpad_thickness * 0.5F, dpad_arm,
-                            dpad_thickness}, sdl.touch_buttons[0]);
-    draw_dpad_arm(SDL_FRect{dpad.x - dpad_arm, dpad.y - dpad_thickness * 0.5F,
-                            dpad_arm, dpad_thickness}, sdl.touch_buttons[1]);
-    draw_dpad_arm(SDL_FRect{dpad.x - dpad_thickness * 0.5F, dpad.y - dpad_arm,
-                            dpad_thickness, dpad_arm}, sdl.touch_buttons[2]);
-    draw_dpad_arm(SDL_FRect{dpad.x - dpad_thickness * 0.5F, dpad.y,
-                            dpad_thickness, dpad_arm}, sdl.touch_buttons[3]);
+    draw_corner(static_cast<float>(safe.x) + decoration_stroke,
+                static_cast<float>(safe.y) + decoration_stroke, false, false);
+    draw_corner(static_cast<float>(safe.x + safe.w) - decoration_stroke,
+                static_cast<float>(safe.y + safe.h) - decoration_stroke, true,
+                true);
+    const auto pixel_size = std::max(4.0F, decoration_stroke * 0.9F);
+    const auto draw_pixel_plus = [&](const float center_x, const float center_y) {
+        const SDL_FRect vertical{center_x - pixel_size * 0.5F,
+                                 center_y - pixel_size * 1.5F, pixel_size,
+                                 pixel_size * 3.0F};
+        const SDL_FRect horizontal{center_x - pixel_size * 1.5F,
+                                   center_y - pixel_size * 0.5F,
+                                   pixel_size * 3.0F, pixel_size};
+        static_cast<void>(SDL_RenderFillRect(sdl.renderer, &vertical));
+        static_cast<void>(SDL_RenderFillRect(sdl.renderer, &horizontal));
+    };
+    draw_pixel_plus(static_cast<float>(safe.x + safe.w) - decoration_size,
+                    static_cast<float>(safe.y) + decoration_size);
+    draw_pixel_plus(static_cast<float>(safe.x) + decoration_size,
+                    static_cast<float>(safe.y + safe.h) - decoration_size);
+
+    if (have_game_viewport) {
+        const auto frame = std::clamp(game_viewport.h * 0.008F, 4.0F, 12.0F);
+        const SDL_FRect shadow{game_viewport.x - frame - 3.0F,
+                               game_viewport.y - frame - 3.0F,
+                               game_viewport.w + (frame + 3.0F) * 2.0F,
+                               game_viewport.h + (frame + 3.0F) * 2.0F};
+        static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 0, 0, 0, 160));
+        static_cast<void>(SDL_RenderRect(sdl.renderer, &shadow));
+        const SDL_FRect cyan_frame{game_viewport.x - frame,
+                                   game_viewport.y - frame,
+                                   game_viewport.w + frame * 2.0F,
+                                   game_viewport.h + frame * 2.0F};
+        static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 8, 175, 244,
+                                                 alpha));
+        static_cast<void>(SDL_RenderRect(sdl.renderer, &cyan_frame));
+        const SDL_FRect dark_frame{game_viewport.x - 1.5F, game_viewport.y - 1.5F,
+                                   game_viewport.w + 3.0F,
+                                   game_viewport.h + 3.0F};
+        static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 8, 15, 22,
+                                                 alpha));
+        static_cast<void>(SDL_RenderRect(sdl.renderer, &dark_frame));
+    }
+
+    const auto dpad = point_for(0);
+    const auto dpad_arm = android_touch_dpad_dimension * size * 0.5F;
+    const auto dpad_thickness = 15.0F * size;
+    const auto dpad_shadow = 4.0F * size;
+    const auto draw_dpad_part = [&](const SDL_FRect rect, const bool pressed) {
+        draw_touch_round_rect(
+            sdl.renderer,
+            SDL_FRect{rect.x + dpad_shadow, rect.y + dpad_shadow, rect.w,
+                      rect.h},
+            4.0F * size, SDL_Color{0, 0, 0, 110});
+        draw_touch_round_rect(sdl.renderer, rect, 4.0F * size,
+                              SDL_Color{247, 249, 250, alpha});
+        const auto inset = 3.0F * size;
+        draw_touch_round_rect(
+            sdl.renderer,
+            SDL_FRect{rect.x + inset, rect.y + inset, rect.w - inset * 2.0F,
+                      rect.h - inset * 2.0F},
+            3.0F * size,
+            pressed ? SDL_Color{8, 175, 244, alpha}
+                    : SDL_Color{12, 18, 24, alpha});
+    };
+    draw_dpad_part({dpad.x, dpad.y - dpad_thickness * 0.5F, dpad_arm,
+                    dpad_thickness}, sdl.touch_buttons[0]);
+    draw_dpad_part({dpad.x - dpad_arm, dpad.y - dpad_thickness * 0.5F,
+                    dpad_arm, dpad_thickness}, sdl.touch_buttons[1]);
+    draw_dpad_part({dpad.x - dpad_thickness * 0.5F, dpad.y - dpad_arm,
+                    dpad_thickness, dpad_arm}, sdl.touch_buttons[2]);
+    draw_dpad_part({dpad.x - dpad_thickness * 0.5F, dpad.y,
+                    dpad_thickness, dpad_arm}, sdl.touch_buttons[3]);
     draw_touch_circle(sdl.renderer, dpad.x, dpad.y, dpad_thickness * 0.56F,
-                      SDL_Color{28, 63, 98, alpha});
-    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 210, 235, 250, 210));
+                      SDL_Color{18, 25, 31, alpha});
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 8, 175, 244, alpha));
+    const auto arrow = dpad_thickness * 0.30F;
     const auto chevron = [&](const float x1, const float y1, const float x2,
                              const float y2, const float x3, const float y3) {
         static_cast<void>(SDL_RenderLine(sdl.renderer, x1, y1, x2, y2));
         static_cast<void>(SDL_RenderLine(sdl.renderer, x2, y2, x3, y3));
     };
-    const auto arrow = dpad_thickness * 0.28F;
-    chevron(dpad.x - arrow, dpad.y - dpad_arm * 0.62F + arrow,
-            dpad.x, dpad.y - dpad_arm * 0.62F,
-            dpad.x + arrow, dpad.y - dpad_arm * 0.62F + arrow);
-    chevron(dpad.x - arrow, dpad.y + dpad_arm * 0.62F - arrow,
-            dpad.x, dpad.y + dpad_arm * 0.62F,
-            dpad.x + arrow, dpad.y + dpad_arm * 0.62F - arrow);
+    chevron(dpad.x - arrow, dpad.y - dpad_arm * 0.62F + arrow, dpad.x,
+            dpad.y - dpad_arm * 0.62F, dpad.x + arrow,
+            dpad.y - dpad_arm * 0.62F + arrow);
+    chevron(dpad.x - arrow, dpad.y + dpad_arm * 0.62F - arrow, dpad.x,
+            dpad.y + dpad_arm * 0.62F, dpad.x + arrow,
+            dpad.y + dpad_arm * 0.62F - arrow);
     chevron(dpad.x - dpad_arm * 0.62F + arrow, dpad.y - arrow,
             dpad.x - dpad_arm * 0.62F, dpad.y,
             dpad.x - dpad_arm * 0.62F + arrow, dpad.y + arrow);
     chevron(dpad.x + dpad_arm * 0.62F - arrow, dpad.y - arrow,
             dpad.x + dpad_arm * 0.62F, dpad.y,
             dpad.x + dpad_arm * 0.62F - arrow, dpad.y + arrow);
-    const std::array<float, 4> radii{{12.0F, 12.0F, 11.0F, 11.0F}};
-    const std::array<const char*, 4> labels{{"A", "B", "SELECT", "START"}};
-    for (std::size_t control = 1; control < touch_control_count; ++control) {
-        const auto point = point_for(control);
-        const auto radius = radii[control - 1] * size;
-        draw_circle_button(point, radius, sdl.touch_buttons[control + 3],
-                           labels[control - 1]);
-    }
+
+    const auto draw_branded_circle = [&](const SDL_FPoint point,
+                                         const bool pressed,
+                                         const char* label) {
+        const auto radius = android_touch_action_diameter * size * 0.5F;
+        draw_touch_circle(sdl.renderer, point.x + dpad_shadow,
+                          point.y + dpad_shadow, radius + dpad_shadow,
+                          SDL_Color{0, 0, 0, 110});
+        draw_touch_circle(sdl.renderer, point.x, point.y, radius + 4.0F * size,
+                          SDL_Color{247, 249, 250, alpha});
+        draw_touch_circle(sdl.renderer, point.x, point.y, radius,
+                          pressed ? SDL_Color{8, 175, 244, alpha}
+                                  : SDL_Color{12, 18, 24, alpha});
+        draw_touch_circle(sdl.renderer, point.x, point.y - radius * 0.22F,
+                          radius * 0.68F,
+                          pressed ? SDL_Color{118, 216, 255, 100}
+                                  : SDL_Color{8, 175, 244, 95});
+        draw_branded_touch_label(sdl.renderer, point.x,
+                                 point.y + radius + 7.0F * size, size, alpha,
+                                 label);
+    };
+    draw_branded_circle(point_for(1), sdl.touch_buttons[4], "A");
+    draw_branded_circle(point_for(2), sdl.touch_buttons[5], "B");
+
+    const auto draw_branded_system = [&](const SDL_FPoint point,
+                                         const bool pressed,
+                                         const char* label) {
+        const auto width = android_touch_system_width * size;
+        const auto height = android_touch_system_height * size;
+        const SDL_FRect rect{point.x - width * 0.5F, point.y - height * 0.5F,
+                             width, height};
+        draw_touch_round_rect(
+            sdl.renderer,
+            SDL_FRect{rect.x + dpad_shadow, rect.y + dpad_shadow, rect.w,
+                      rect.h},
+            height * 0.5F, SDL_Color{0, 0, 0, 110});
+        draw_touch_round_rect(sdl.renderer, rect, height * 0.5F,
+                              SDL_Color{247, 249, 250, alpha});
+        draw_touch_round_rect(
+            sdl.renderer,
+            SDL_FRect{rect.x + 3.0F * size, rect.y + 3.0F * size,
+                      rect.w - 6.0F * size, rect.h - 6.0F * size},
+            height * 0.35F,
+            pressed ? SDL_Color{8, 175, 244, alpha}
+                    : SDL_Color{12, 18, 24, alpha});
+        draw_branded_touch_label(sdl.renderer, point.x,
+                                 rect.y + rect.h + 7.0F * size, size, alpha,
+                                 label);
+    };
+    draw_branded_system(point_for(3), sdl.touch_buttons[6], "SELECT");
+    draw_branded_system(point_for(4), sdl.touch_buttons[7], "START");
+
     if (!restore_video_presentation(sdl)) {
         sdl_error("Could not restore game presentation");
     }
     static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
                                                  SDL_BLENDMODE_NONE));
+    return;
 }
 #endif
 

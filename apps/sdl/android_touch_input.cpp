@@ -33,6 +33,31 @@ float touch_game_scale(const SdlResources& sdl) {
                         static_cast<float>(sdl.core_video_height));
 }
 
+float touch_control_scale(const SdlResources& sdl) {
+    const auto configured_scale = std::clamp(sdl.touch_settings.scale,
+                                             minimum_touch_scale,
+                                             maximum_touch_scale);
+    auto size = touch_game_scale(sdl) * configured_scale;
+    if (!touch_is_landscape(sdl)) return size;
+
+    SDL_FRect viewport{};
+    if (!SDL_GetRenderLogicalPresentationRect(sdl.renderer, &viewport)) {
+        return size;
+    }
+    const auto safe = android_safe_area(sdl);
+    const auto left_space = viewport.x - static_cast<float>(safe.x);
+    const auto right_space = static_cast<float>(safe.x + safe.w) -
+                             (viewport.x + viewport.w);
+    const auto side_space = std::min(left_space, right_space);
+    if (side_space > 0.0F) {
+        // Leave a small gutter between the controls and the viewport while
+        // keeping the visual controls large enough for one-handed play.
+        size = std::min(size, side_space /
+                                  (android_touch_dpad_dimension + 12.0F));
+    }
+    return size;
+}
+
 bool voxel_mode_enabled(const SdlResources& sdl) {
     return sdl.video_mode == gameboy::VideoMode::voxel_diorama ||
            sdl.video_mode == gameboy::VideoMode::voxel_shape ||
@@ -149,15 +174,13 @@ SDL_FPoint touch_control_pixel_position(const SdlResources& sdl,
 
 std::optional<std::size_t> touch_button_index(const float x, const float y,
                                               const SdlResources& sdl) {
-    const auto scale = std::clamp(sdl.touch_settings.scale,
-                                  minimum_touch_scale, maximum_touch_scale);
     int width = 1;
     int height = 1;
     static_cast<void>(SDL_GetWindowSize(sdl.window, &width, &height));
     const auto pixel_x = x * static_cast<float>(width);
     const auto pixel_y = y * static_cast<float>(height);
     const auto density = std::max(1.0F, SDL_GetWindowDisplayScale(sdl.window));
-    const auto size = touch_game_scale(sdl) * scale;
+    const auto size = touch_control_scale(sdl);
     constexpr std::array<float, 4> widths{{android_touch_dpad_dimension,
                                             android_touch_action_diameter,
                                             android_touch_action_diameter,
