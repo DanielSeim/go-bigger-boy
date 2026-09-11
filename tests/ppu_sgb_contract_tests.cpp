@@ -332,8 +332,10 @@ void test_sgb_border_compositor() {
     // the SGB BIOS border instead of collapsing to a black letterbox.
     gameboy::Ppu no_border;
     no_border.set_sgb_mode(true);
-    check(no_border.sgb_framebuffer()[8] == 0xFF182A34,
-          "SGB compositor exposes the built-in border before cartridge upload");
+    check(no_border.sgb_framebuffer()[8] == 0xFFB7A9B8 &&
+              no_border.sgb_framebuffer()[27 * gameboy::Ppu::sgb_border_width +
+                                          16] == 0xFFE52B22,
+          "SGB compositor exposes the branded default border before upload");
     check(no_border.sgb_framebuffer()[40 * gameboy::Ppu::sgb_border_width + 48] ==
               0xFFFFFFFF,
           "SGB compositor centers the native viewport before border transfer");

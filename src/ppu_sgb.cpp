@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <string_view>
 
 namespace gameboy {
 namespace {
@@ -26,6 +27,153 @@ std::uint16_t pack_sgb_transfer_row(
             packed | (pixel_to_bits[color & 3U] >> x));
     }
     return packed;
+}
+
+std::array<std::uint8_t, 7> default_border_glyph(const char character) noexcept {
+    switch (character) {
+    case 'B': return {0b11110, 0b10001, 0b10001, 0b11110,
+                     0b10001, 0b10001, 0b11110};
+    case 'E': return {0b11111, 0b10000, 0b10000, 0b11110,
+                     0b10000, 0b10000, 0b11111};
+    case 'G': return {0b01110, 0b10001, 0b10000, 0b10111,
+                     0b10001, 0b10001, 0b01110};
+    case 'I': return {0b11111, 0b00100, 0b00100, 0b00100,
+                     0b00100, 0b00100, 0b11111};
+    case 'O': return {0b01110, 0b10001, 0b10001, 0b10001,
+                     0b10001, 0b10001, 0b01110};
+    case 'P': return {0b11110, 0b10001, 0b10001, 0b11110,
+                     0b10000, 0b10000, 0b10000};
+    case 'R': return {0b11110, 0b10001, 0b10001, 0b11110,
+                     0b10100, 0b10010, 0b10001};
+    case 'S': return {0b01111, 0b10000, 0b10000, 0b01110,
+                     0b00001, 0b00001, 0b11110};
+    case 'U': return {0b10001, 0b10001, 0b10001, 0b10001,
+                     0b10001, 0b10001, 0b01110};
+    case 'Y': return {0b10001, 0b10001, 0b01010, 0b00100,
+                     0b00100, 0b00100, 0b00100};
+    default: return {};
+    }
+}
+
+void draw_default_border_text(Ppu::SgbFramebuffer& border,
+                              const std::string_view text, const int x,
+                              const int y, const int scale,
+                              const std::uint32_t color,
+                              const std::uint32_t shadow) noexcept {
+    constexpr auto width = static_cast<int>(Ppu::sgb_border_width);
+    constexpr auto height = static_cast<int>(Ppu::sgb_border_height);
+    const auto draw = [&](const int origin_x, const int origin_y,
+                          const std::uint32_t draw_color) {
+        auto cursor = origin_x;
+        for (const auto character : text) {
+            if (character == ' ') {
+                cursor += 6 * scale;
+                continue;
+            }
+            const auto glyph = default_border_glyph(character);
+            for (int row = 0; row < 7; ++row) {
+                // A small stepped skew gives SUPER the angled pixel-logo feel
+                // of the reference without depending on a runtime font.
+                const auto skew = (6 - row) * scale / 3;
+                for (int column = 0; column < 5; ++column) {
+                    if ((glyph[static_cast<std::size_t>(row)] &
+                         (1U << (4 - column))) == 0) {
+                        continue;
+                    }
+                    for (int pixel_y = 0; pixel_y < scale; ++pixel_y) {
+                        for (int pixel_x = 0; pixel_x < scale; ++pixel_x) {
+                            const auto target_x = cursor + column * scale +
+                                                  skew + pixel_x;
+                            const auto target_y = origin_y + row * scale + pixel_y;
+                            if (target_x >= 0 && target_x < width &&
+                                target_y >= 0 && target_y < height) {
+                                border[static_cast<std::size_t>(target_y) *
+                                           Ppu::sgb_border_width +
+                                       static_cast<std::size_t>(target_x)] =
+                                    draw_color;
+                            }
+                        }
+                    }
+                }
+            }
+            cursor += 6 * scale;
+        }
+    };
+    draw(x + scale, y + scale, shadow);
+    draw(x, y, color);
+}
+
+Ppu::SgbFramebuffer make_default_sgb_border() {
+    Ppu::SgbFramebuffer border{};
+    constexpr auto outer = UINT32_C(0xFFB7A9B8);
+    constexpr auto body = UINT32_C(0xFF303040);
+    constexpr auto body_shadow = UINT32_C(0xFF20202E);
+    constexpr auto body_highlight = UINT32_C(0xFF5D5A6D);
+    constexpr auto edge = UINT32_C(0xFF171722);
+    constexpr auto screen_shadow = UINT32_C(0xFF11111A);
+    constexpr auto screen_highlight = UINT32_C(0xFF6C687A);
+    constexpr auto red = UINT32_C(0xFFE52B22);
+    constexpr auto violet = UINT32_C(0xFF5C36D4);
+    constexpr auto logo_red = UINT32_C(0xFFE52B22);
+    constexpr auto logo_blue = UINT32_C(0xFF2B246F);
+
+    border.fill(outer);
+    for (int y = 18; y < 195; ++y) {
+        auto left = 8;
+        auto right = 248;
+        if (y == 18) {
+            left = 16;
+            right = 240;
+        } else if (y == 19) {
+            left = 12;
+            right = 244;
+        } else if (y == 20) {
+            left = 10;
+            right = 246;
+        }
+        if (y >= 186) right -= ((y - 186) / 2 + 1) * 2;
+        for (int x = left; x < right; ++x) {
+            border[static_cast<std::size_t>(y) * Ppu::sgb_border_width +
+                   static_cast<std::size_t>(x)] = body;
+        }
+    }
+
+    const auto fill = [&](const int x, const int y, const int width,
+                          const int height, const std::uint32_t color) {
+        for (int row = y; row < y + height; ++row) {
+            for (int column = x; column < x + width; ++column) {
+                if (column >= 0 && column <
+                                      static_cast<int>(Ppu::sgb_border_width) &&
+                    row >= 0 && row <
+                                  static_cast<int>(Ppu::sgb_border_height)) {
+                    border[static_cast<std::size_t>(row) *
+                               Ppu::sgb_border_width +
+                           static_cast<std::size_t>(column)] = color;
+                }
+            }
+        }
+    };
+
+    fill(8, 21, 2, 164, body_highlight);
+    fill(10, 21, 2, 164, body_shadow);
+    fill(10, 19, 236, 2, body_highlight);
+    fill(10, 21, 236, 2, edge);
+    fill(16, 27, 224, 2, red);
+    fill(16, 31, 224, 2, violet);
+    fill(45, 37, 166, 150, screen_highlight);
+    fill(47, 39, 162, 146, screen_shadow);
+    fill(48, 40, 160, 144, outer);
+    fill(45, 184, 166, 3, body_highlight);
+    fill(8, 192, 214, 2, edge);
+
+    // Keep the red SUPER script-like lockup above the larger replacement
+    // wording, matching the approved reference while removing Nintendo and
+    // the original GAME BOY mark entirely.
+    draw_default_border_text(border, "SUPER", 99, 192, 2, logo_red,
+                             logo_blue);
+    draw_default_border_text(border, "GO BIGGER BOY", 50, 208, 2, logo_blue,
+                             logo_red);
+    return border;
 }
 
 } // namespace
@@ -296,43 +444,17 @@ void Ppu::complete_sgb_transfer() noexcept {
 const Ppu::SgbFramebuffer& Ppu::sgb_framebuffer() const noexcept {
     constexpr auto black = UINT32_C(0xFF000000);
 
-    // The real SGB has a built-in border in its BIOS.  It is visible before a
+    // The real SGB has a built-in border in its BIOS. It is visible before a
     // cartridge uploads a custom border (and many games never issue PCT_TRN at
-    // all).  Leaving this path black made SGB look like a letterboxed DMG and
-    // hid the fact that the 256x224 presentation path was working.  Keep the
-    // fallback deterministic and generated rather than baking copyrighted
-    // game-specific artwork into the core; a later PCT_TRN transfer still
-    // replaces it with the cartridge's border data.
+    // all). Keep this branded fallback deterministic; a later PCT_TRN transfer
+    // still replaces it with the cartridge's border data.
     constexpr std::size_t viewport_x = (sgb_border_width - screen_width) / 2;
     constexpr std::size_t viewport_y = (sgb_border_height - screen_height) / 2;
     if (!sgb_border_transferred_) {
         // Keep the fallback immutable and shared: frontends request the
         // composed frame every video tick, so regenerating 57,344 border
         // pixels per frame would needlessly compete with emulation on mobile.
-        static const auto default_border = [] {
-            std::array<std::uint32_t,
-                       sgb_border_width * sgb_border_height> border{};
-            constexpr auto base = UINT32_C(0xFF101820);
-            constexpr auto shade = UINT32_C(0xFF182A34);
-            constexpr auto highlight = UINT32_C(0xFF2E5966);
-            constexpr auto edge = UINT32_C(0xFF081014);
-            for (std::size_t y = 0; y < sgb_border_height; ++y) {
-                for (std::size_t x = 0; x < sgb_border_width; ++x) {
-                    auto color = ((x / 8 + y / 8) & 1U) != 0 ? shade : base;
-                    // A tiled inner frame approximates the stable BIOS border
-                    // silhouette while keeping the fallback deterministic.
-                    if ((x >= 16 && x < 240 && (y == 16 || y == 207)) ||
-                        (y >= 16 && y < 208 && (x == 16 || x == 239))) {
-                        color = highlight;
-                    }
-                    if ((x == 15 || x == 240 || y == 15 || y == 208)) {
-                        color = edge;
-                    }
-                    border[y * sgb_border_width + x] = color;
-                }
-            }
-            return border;
-        }();
+        static const auto default_border = make_default_sgb_border();
         *sgb_framebuffer_ = default_border;
         for (std::size_t y = 0; y < screen_height; ++y) {
             std::copy_n(framebuffer_->begin() + y * screen_width, screen_width,
