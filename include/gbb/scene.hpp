@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -31,6 +32,33 @@ struct SceneSprite {
     std::int16_t screen_x{};
     std::int16_t screen_y{};
     bool visible{};
+};
+
+enum class SceneTileSource : std::uint8_t {
+    background,
+    window,
+};
+
+// A visible 8x8 tile cell in the native Game Boy 160x144 viewport. The cell
+// may be clipped at the viewport edge when SCX/SCY or WX/WY is not tile aligned.
+// `opaque_mask` is in displayed orientation, while tile_id/attributes preserve
+// the source map entry. Background and Window cells are both exported when they
+// overlap so consumers can apply the hardware layer ordering themselves.
+struct SceneVisibleTileCell {
+    SceneTileSource source{SceneTileSource::background};
+    std::int16_t screen_x{};
+    std::int16_t screen_y{};
+    std::uint8_t visible_width{};
+    std::uint8_t visible_height{};
+    std::uint8_t map_x{};
+    std::uint8_t map_y{};
+    std::uint16_t map_address{};
+    std::uint8_t tile_id{};
+    std::uint8_t attributes{};
+    std::uint16_t tile_data_index{};
+    std::uint8_t tile_bank{};
+    std::uint8_t palette{};
+    std::array<std::uint8_t, 8> opaque_mask{};
 };
 
 // An optional, core-defined scene layer. The format identifier is deliberately
@@ -82,6 +110,9 @@ struct SceneSnapshot {
     std::vector<std::uint8_t> cgb_bg_palette;
     std::vector<std::uint8_t> cgb_object_palette;
     std::vector<SceneSprite> sprites;
+    // Native viewport provenance used by offline voxel/object analysis. This
+    // remains empty for cores that do not expose a tile-based scene.
+    std::vector<SceneVisibleTileCell> visible_tile_cells;
     std::vector<SceneLayer> layers;
 };
 

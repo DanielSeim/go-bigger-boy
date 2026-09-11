@@ -288,6 +288,7 @@ void test_scene_snapshot_contract() {
     bus.debug_write_oam(1, 40);
     bus.debug_write_oam(2, 0x2A);
     bus.debug_write_oam(3, 0x20);
+    bus.write8(0xFF43, 3);
 
     const auto& scene = core->scene_snapshot();
     check(scene.width == 160 && scene.height == 144 && scene.cgb_mode,
@@ -298,6 +299,26 @@ void test_scene_snapshot_contract() {
           "scene snapshot exposes the selected background tile and CGB attributes");
     check(scene.tile_data[0x2A * 16] == 0xAB,
           "scene snapshot exposes banked tile graphics");
+    check(scene.visible_tile_cells.size() == 21U * 18U &&
+              scene.visible_tile_cells.front().source ==
+                  gbb::SceneTileSource::background &&
+              scene.visible_tile_cells.front().screen_x == -3 &&
+              scene.visible_tile_cells.front().screen_y == 0 &&
+              scene.visible_tile_cells.front().visible_width == 5 &&
+              scene.visible_tile_cells.front().visible_height == 8 &&
+              scene.visible_tile_cells.front().map_x == 0 &&
+              scene.visible_tile_cells.front().map_y == 0 &&
+              scene.visible_tile_cells.front().map_address == 0x9800,
+          "scene snapshot maps clipped viewport cells back to BG coordinates");
+    check(scene.visible_tile_cells.front().tile_id == 0x2A &&
+              scene.visible_tile_cells.front().attributes == 0x60 &&
+              scene.visible_tile_cells.front().tile_data_index == 0x2A &&
+              scene.visible_tile_cells.front().tile_bank == 0 &&
+              scene.visible_tile_cells.front().palette == 0 &&
+              std::any_of(scene.visible_tile_cells.front().opaque_mask.begin(),
+                          scene.visible_tile_cells.front().opaque_mask.end(),
+                          [](const std::uint8_t row) { return row != 0; }),
+          "visible tile provenance includes attributes and displayed occupancy");
     check(scene.sprites[0].visible && scene.sprites[0].screen_x == 32 &&
               scene.sprites[0].screen_y == 32 && scene.sprites[0].tile == 0x2A &&
               scene.sprites[0].attributes == 0x20,
@@ -319,6 +340,7 @@ void test_scene_snapshot_json() {
     check(json.find("\"background\":{") != std::string::npos &&
               json.find("\"tile_data\":[") != std::string::npos &&
               json.find("\"sprites\":[") != std::string::npos &&
+              json.find("\"visible_tile_cells\":[") != std::string::npos &&
               json.find("\"producer\":\"gameboy\"") != std::string::npos &&
               json.find("\"layers\":[]") != std::string::npos,
           "scene JSON includes legacy data and optional core-defined layers");

@@ -4,10 +4,105 @@
 #include "gameboy/memory_bus.hpp"
 #include "gameboy/ppu.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 
 namespace gbb {
+namespace {
+
+void append_visible_tile_cells(SceneSnapshot& scene,
+                               const SceneTileLayer& layer,
+                               const SceneTileSource source,
+                               const int origin_x,
+                               const int origin_y,
+                               const std::size_t first_map_x,
+                               const std::size_t first_map_y) {
+    constexpr int tile_size = 8;
+    constexpr int viewport_width = gameboy::Ppu::screen_width;
+    constexpr int viewport_height = gameboy::Ppu::screen_height;
+    if (!layer.enabled || layer.width == 0 || layer.height == 0) return;
+
+    const auto append_cell = [&](const int column, const int row,
+                                 const int screen_x, const int screen_y) {
+        const auto right = std::min(screen_x + tile_size, viewport_width);
+        const auto bottom = std::min(screen_y + tile_size, viewport_height);
+        const auto left = std::max(screen_x, 0);
+        const auto top = std::max(screen_y, 0);
+        if (right <= left || bottom <= top) return;
+
+        const auto map_x = (first_map_x + static_cast<std::size_t>(column)) %
+                           layer.width;
+        const auto map_y = (first_map_y + static_cast<std::size_t>(row)) %
+                           layer.height;
+        const auto map_index = map_y * layer.width + map_x;
+        const auto tile_id = layer.tile_ids[map_index];
+        const auto attributes = layer.attributes[map_index];
+        const auto tile_bank = scene.cgb_mode
+                                   ? static_cast<std::size_t>((attributes >> 3U) & 1U)
+                                   : 0U;
+        const auto signed_tile = static_cast<int>(
+            static_cast<std::int8_t>(tile_id));
+        const auto tile_data_index = layer.tile_data_unsigned
+                                         ? static_cast<std::size_t>(tile_id)
+                                         : static_cast<std::size_t>(0x100 + signed_tile);
+
+        SceneVisibleTileCell cell{};
+        cell.source = source;
+        cell.screen_x = static_cast<std::int16_t>(screen_x);
+        cell.screen_y = static_cast<std::int16_t>(screen_y);
+        cell.visible_width = static_cast<std::uint8_t>(right - left);
+        cell.visible_height = static_cast<std::uint8_t>(bottom - top);
+        cell.map_x = static_cast<std::uint8_t>(map_x);
+        cell.map_y = static_cast<std::uint8_t>(map_y);
+        cell.map_address = static_cast<std::uint16_t>(
+            layer.map_address + map_y * layer.width + map_x);
+        cell.tile_id = tile_id;
+        cell.attributes = attributes;
+        cell.tile_data_index = static_cast<std::uint16_t>(tile_data_index);
+        cell.tile_bank = static_cast<std::uint8_t>(tile_bank);
+        cell.palette = scene.cgb_mode
+                           ? static_cast<std::uint8_t>(attributes & 0x07U)
+                           : 0;
+
+        const auto tile_offset = tile_bank * scene.tile_bank_stride +
+                                 tile_data_index * scene.tile_size_bytes;
+        if (tile_data_index < scene.tile_count &&
+            tile_offset + 1 < scene.tile_data.size()) {
+            const auto x_flip = (attributes & 0x20U) != 0;
+            const auto y_flip = (attributes & 0x40U) != 0;
+            for (unsigned displayed_y = 0; displayed_y < 8; ++displayed_y) {
+                const auto source_y = y_flip ? 7U - displayed_y : displayed_y;
+                const auto low = scene.tile_data[tile_offset + source_y * 2U];
+                const auto high = scene.tile_data[tile_offset + source_y * 2U + 1U];
+                for (unsigned displayed_x = 0; displayed_x < 8; ++displayed_x) {
+                    const auto source_x = x_flip ? 7U - displayed_x : displayed_x;
+                    const auto bit = 7U - source_x;
+                    const auto color = static_cast<unsigned>(
+                        ((low >> bit) & 0x01U) |
+                        (((high >> bit) & 0x01U) << 1U));
+                    if (color != 0) {
+                        cell.opaque_mask[displayed_y] |=
+                            static_cast<std::uint8_t>(1U << displayed_x);
+                    }
+                }
+            }
+        }
+        scene.visible_tile_cells.push_back(cell);
+    };
+
+    for (int row = 0;; ++row) {
+        const auto screen_y = origin_y + row * tile_size;
+        if (screen_y >= viewport_height) break;
+        for (int column = 0;; ++column) {
+            const auto screen_x = origin_x + column * tile_size;
+            if (screen_x >= viewport_width) break;
+            append_cell(column, row, screen_x, screen_y);
+        }
+    }
+}
+
+} // namespace
 
 void populate_gameboy_scene_snapshot(const gameboy::Emulator& emulator,
                                      SceneSnapshot& scene) {
@@ -15,6 +110,7 @@ void populate_gameboy_scene_snapshot(const gameboy::Emulator& emulator,
     // contributions so a future extension cannot accidentally retain stale
     // layers after a core state transition.
     scene.layers.clear();
+    scene.visible_tile_cells.clear();
     scene.producer_id = "gameboy";
     const auto& bus = emulator.bus();
     scene.emulation_cycles = emulator.cpu().total_cycles();
@@ -81,6 +177,24 @@ void populate_gameboy_scene_snapshot(const gameboy::Emulator& emulator,
         scene.cgb_object_palette[index] = bus.debug_read_cgb_object_palette(
             static_cast<std::uint8_t>(index));
     }
+
+    // Export the visible native viewport as map-aware cells. Background cells
+    // and overlapping Window cells are intentionally retained together so a
+    // future object detector can apply layer ordering and partial clipping
+    // without reconstructing provenance from the final framebuffer.
+    scene.visible_tile_cells.reserve(21U * 19U * 2U);
+    const auto background_origin_x = -static_cast<int>(scene.scx & 0x07U);
+    const auto background_origin_y = -static_cast<int>(scene.scy & 0x07U);
+    append_visible_tile_cells(
+        scene, scene.background, SceneTileSource::background,
+        background_origin_x, background_origin_y, scene.scx / 8U,
+        scene.scy / 8U);
+    if (scene.window.enabled) {
+        append_visible_tile_cells(
+            scene, scene.window, SceneTileSource::window,
+            static_cast<int>(scene.wx) - 7, scene.wy, 0, 0);
+    }
+
     scene.sprites.resize(40);
     const auto object_height = (scene.lcdc & 0x04U) != 0 ? 16 : 8;
     for (std::size_t index = 0; index < scene.sprites.size(); ++index) {

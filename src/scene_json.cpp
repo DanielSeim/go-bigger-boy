@@ -106,6 +106,33 @@ void write_sprite(JsonWriter& json, const SceneSprite& sprite) {
     json.comma();
 }
 
+void write_visible_tile_cell(JsonWriter& json,
+                             const SceneVisibleTileCell& cell) {
+    json.begin_object();
+    json.key("source");
+    json.string(cell.source == SceneTileSource::window ? "window"
+                                                       : "background");
+    json.key("screen_x"); json.number(cell.screen_x);
+    json.key("screen_y"); json.number(cell.screen_y);
+    json.key("visible_width"); json.number(cell.visible_width);
+    json.key("visible_height"); json.number(cell.visible_height);
+    json.key("map_x"); json.number(cell.map_x);
+    json.key("map_y"); json.number(cell.map_y);
+    json.key("map_address"); json.number(cell.map_address);
+    json.key("tile_id"); json.number(cell.tile_id);
+    json.key("attributes"); json.number(cell.attributes);
+    json.key("tile_data_index"); json.number(cell.tile_data_index);
+    json.key("tile_bank"); json.number(cell.tile_bank);
+    json.key("palette"); json.number(cell.palette);
+    json.key("opaque_mask");
+    write_array(json, cell.opaque_mask,
+                [](JsonWriter& output, const std::uint8_t value) {
+                    output.number(value);
+                });
+    json.end_object();
+    json.comma();
+}
+
 void write_scene_layer(JsonWriter& json, const SceneLayer& layer) {
     json.begin_object();
     json.key("id"); json.string(layer.id);
@@ -168,6 +195,11 @@ std::string scene_snapshot_to_json(const SceneSnapshot& scene) {
     write_array(json, scene.sprites,
                 [](JsonWriter& output, const SceneSprite& value) {
                     write_sprite(output, value);
+                });
+    json.key("visible_tile_cells");
+    write_array(json, scene.visible_tile_cells,
+                [](JsonWriter& output, const SceneVisibleTileCell& value) {
+                    write_visible_tile_cell(output, value);
                 });
     json.key("layers");
     write_array(json, scene.layers,
