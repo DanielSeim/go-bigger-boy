@@ -163,12 +163,21 @@ def render_run(result: dict[str, Any], manifest: Path) -> str:
         "partial_capture": "partial capture",
         "skipped": "reused existing capture",
     }[status]
+    variant = result.get("selected_variant")
+    capture_metrics = result.get("capture_metrics", {})
+    capture_summary = ""
+    if variant:
+        capture_summary = (
+            f' · exploration {html.escape(str(variant))}'
+            f' · {int(capture_metrics.get("unique_scenes", 0))} unique scenes'
+            f' · {int(capture_metrics.get("interactive_responses", 0))} input responses'
+        )
     return (
         f'<article class="run"><h2>{title}</h2>'
         f'<p>Status: <code>{status_label}</code></p>'
         f'<p><code>{html.escape(str(result.get("path", "")))}</code> · '
         f'{len(records)} frames · {len(proposals)} proposals · '
-        f'max confidence {confidence:.2f}</p>'
+        f'max confidence {confidence:.2f}{capture_summary}</p>'
         f'<div class="frames">{frames}</div>'
         '<details><summary>Proposal table</summary><table>'
         '<thead><tr><th>ID</th><th>Confidence</th><th>Geometry</th><th>Frames</th></tr></thead>'

@@ -735,9 +735,10 @@ recordings unchanged.
 
 ### Automated corpus review
 
-The bounded corpus runner generates a deterministic exploration movie for each
-selected ROM, captures observations, analyzes proposals, and writes an HTML/SVG
-review report in one pass:
+The bounded corpus runner generates several deterministic exploration movies for
+each selected ROM, captures observations, selects the most interactive and
+scene-diverse result, analyzes only that result, and writes an HTML/SVG review
+report in one pass:
 
 ```sh
 python3 scripts/run_voxel_corpus.py --frames 900
@@ -749,13 +750,16 @@ For a quick smoke run, limit it to a few ROMs:
 python3 scripts/run_voxel_corpus.py --limit 4 --frames 180
 ```
 
-The default output is `roms/voxel-review/`, containing generated movies,
-JSONL observations, proposal JSON, per-ROM logs, `run-manifest.json`, and
-`index.html`. The exploration pattern is intentionally conservative and
-repeatable: it taps `start`/`a`/`b` and holds each cardinal direction for a
-bounded interval. Slow LCD-off boot sequences are allowed up to the batch
-runner's bounded `--max-instructions-per-frame` budget (10 million by
-default). It is a coverage probe, not a game-specific gameplay bot.
+The default output is `roms/voxel-review/`, containing the selected generated
+movies, trimmed JSONL observations, proposal JSON, per-ROM logs,
+`run-manifest.json`, and `index.html`. Three repeatable exploration variants
+are tried by default: the original conservative pattern, repeated title/menu
+confirmation and navigation inputs, and a movement-oriented play pattern. The
+runner scores scene diversity and response after input, chooses the best
+variant, and removes the static boot/title prefix before analysis. This is a
+generic coverage probe rather than a game-specific gameplay bot; games that
+require saves, passwords, or unusual menu sequences may still need a tailored
+movie.
 Partial captures are retained and analyzed when a ROM stops producing frames
 after recording at least one observation. Failed ROMs are recorded in the
 manifest and do not prevent the remaining corpus from being attempted; the
