@@ -59,7 +59,8 @@ void draw_default_border_text(Ppu::SgbFramebuffer& border,
                               const std::string_view text, const int x,
                               const int y, const int scale,
                               const std::uint32_t color,
-                              const std::uint32_t shadow) noexcept {
+                              const std::uint32_t shadow,
+                              const bool italic = false) noexcept {
     constexpr auto width = static_cast<int>(Ppu::sgb_border_width);
     constexpr auto height = static_cast<int>(Ppu::sgb_border_height);
     const auto draw = [&](const int origin_x, const int origin_y,
@@ -72,9 +73,10 @@ void draw_default_border_text(Ppu::SgbFramebuffer& border,
             }
             const auto glyph = default_border_glyph(character);
             for (int row = 0; row < 7; ++row) {
-                // A small stepped skew gives SUPER the angled pixel-logo feel
-                // of the reference without depending on a runtime font.
-                const auto skew = (6 - row) * scale / 3;
+                // SUPER uses a small stepped skew to echo the reference's
+                // handwritten mark. The larger replacement wording remains
+                // square and legible at the native SGB pixel scale.
+                const auto skew = italic ? (6 - row) * scale / 3 : 0;
                 for (int column = 0; column < 5; ++column) {
                     if ((glyph[static_cast<std::size_t>(row)] &
                          (1U << (4 - column))) == 0) {
@@ -103,6 +105,35 @@ void draw_default_border_text(Ppu::SgbFramebuffer& border,
     draw(x, y, color);
 }
 
+void draw_default_border_lamp(Ppu::SgbFramebuffer& border) noexcept {
+    constexpr auto dark = UINT32_C(0xFF171722);
+    constexpr auto shadow = UINT32_C(0xFF20202E);
+    constexpr auto red = UINT32_C(0xFFE52B22);
+    constexpr auto bright = UINT32_C(0xFFFF4530);
+    constexpr auto glint = UINT32_C(0xFFFFE4C7);
+    constexpr std::array<std::string_view, 9> pixels{
+        "   dddd  ", "  drrrrd ", " drrRRrrd", " drr*Rrrd",
+        "drrrRRrrd", "drrrrrrrd", " drrrrrd ", "  drrrd  ",
+        "   ddd   "};
+    for (std::size_t row = 0; row < pixels.size(); ++row) {
+        for (std::size_t column = 0; column < pixels[row].size(); ++column) {
+            const auto pixel = pixels[row][column];
+            const auto color = pixel == 'd' ? dark
+                               : pixel == 'r' ? red
+                               : pixel == 'R' ? bright
+                               : pixel == '*' ? glint
+                                              : UINT32_C(0x00000000);
+            if (color != 0) {
+                border[(68 + row) * Ppu::sgb_border_width + 24 + column] = color;
+            }
+        }
+    }
+    // A restrained lower-right shadow gives the indicator the same raised
+    // pixel-art treatment as the reference without smoothing its edges.
+    border[77 * Ppu::sgb_border_width + 29] = shadow;
+    border[78 * Ppu::sgb_border_width + 28] = shadow;
+}
+
 Ppu::SgbFramebuffer make_default_sgb_border() {
     Ppu::SgbFramebuffer border{};
     constexpr auto outer = UINT32_C(0xFFB7A9B8);
@@ -118,21 +149,34 @@ Ppu::SgbFramebuffer make_default_sgb_border() {
     constexpr auto logo_blue = UINT32_C(0xFF2B246F);
 
     border.fill(outer);
-    for (int y = 18; y < 195; ++y) {
+
+    // Build the shell as stepped pixel-art layers. Keeping the silhouette in
+    // explicit horizontal runs avoids the uneven, one-pixel diagonals that
+    // made the previous fallback look like a rough rectangle.
+    const auto shell_span = [](const int y, const int inset) {
         auto left = 8;
         auto right = 248;
-        if (y == 18) {
+        if (y == 15) {
             left = 16;
             right = 240;
-        } else if (y == 19) {
+        } else if (y == 16) {
             left = 12;
             right = 244;
-        } else if (y == 20) {
+        } else if (y == 17) {
             left = 10;
             right = 246;
         }
         if (y >= 186) right -= ((y - 186) / 2 + 1) * 2;
-        for (int x = left; x < right; ++x) {
+        return std::array<int, 2>{left + inset, right - inset};
+    };
+    for (int y = 15; y < 195; ++y) {
+        const auto edge_span = shell_span(y, 0);
+        const auto body_span = shell_span(y, 2);
+        for (int x = edge_span[0]; x < edge_span[1]; ++x) {
+            border[static_cast<std::size_t>(y) * Ppu::sgb_border_width +
+                   static_cast<std::size_t>(x)] = edge;
+        }
+        for (int x = body_span[0]; x < body_span[1]; ++x) {
             border[static_cast<std::size_t>(y) * Ppu::sgb_border_width +
                    static_cast<std::size_t>(x)] = body;
         }
@@ -165,13 +209,14 @@ Ppu::SgbFramebuffer make_default_sgb_border() {
     fill(48, 40, 160, 144, outer);
     fill(45, 184, 166, 3, body_highlight);
     fill(8, 192, 214, 2, edge);
+    draw_default_border_lamp(border);
 
     // Keep the red SUPER script-like lockup above the larger replacement
     // wording, matching the approved reference while removing Nintendo and
     // the original GAME BOY mark entirely.
-    draw_default_border_text(border, "SUPER", 99, 192, 2, logo_red,
-                             logo_blue);
-    draw_default_border_text(border, "GO BIGGER BOY", 50, 208, 2, logo_blue,
+    draw_default_border_text(border, "SUPER", 93, 186, 2, logo_red,
+                             logo_blue, true);
+    draw_default_border_text(border, "GO BIGGER BOY", 50, 204, 2, logo_blue,
                              logo_red);
     return border;
 }
