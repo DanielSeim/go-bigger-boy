@@ -387,6 +387,11 @@ void test_touch_controls() {
     check(held_b_after_leaving_a.primary == button_b &&
               !held_b_after_leaving_a.secondary,
           "the secondary action releases while the primary action remains held");
+    const auto held_b_after_reentering_a =
+        gbb::update_touch_control_state(held_b_after_leaving_a, button_a);
+    check(held_b_after_reentering_a.primary == button_b &&
+              held_b_after_reentering_a.secondary == button_a,
+          "re-entering the secondary action presses it again while B stays held");
     const auto moved_to_dpad =
         gbb::update_touch_control_state(held_b_and_a, dpad_right);
     check(moved_to_dpad.primary == dpad_right && !moved_to_dpad.secondary,

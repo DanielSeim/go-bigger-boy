@@ -18,9 +18,9 @@ struct TouchControlState {
     return hit.has_value() ? hit : owned;
 }
 
-// A and B can be held together by one finger while the finger moves between
-// their hit targets. D-pad and system controls retain the original
-// single-control ownership behavior.
+// A and B can be held together by one finger while the finger is inside both
+// action hit targets in succession. D-pad and system controls retain the
+// original single-control ownership behavior.
 [[nodiscard]] inline bool is_touch_action_control(
     const std::size_t control) noexcept {
     return control == 4U || control == 5U;
@@ -33,9 +33,15 @@ struct TouchControlState {
     if (!is_touch_action_control(*state.primary)) {
         return {hit.has_value() ? hit : state.primary, std::nullopt};
     }
+    // Neutral motion means the secondary action is no longer under the
+    // finger. Keep the primary action held so B can continue running while A
+    // is released and pressed again for another jump.
     if (!hit.has_value()) return {state.primary, std::nullopt};
     if (!is_touch_action_control(*hit)) return {hit, std::nullopt};
-    if (*hit == *state.primary) return {state.primary, std::nullopt};
+    if (*hit == *state.primary ||
+        (state.secondary && *hit == *state.secondary)) {
+        return state;
+    }
     return {state.primary, hit};
 }
 
