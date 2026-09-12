@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [0.34.1] - 2026-09-12
+
+### Super Game Boy
+
+- Show a black border area while a cartridge's custom SGB border is loading,
+  keeping the branded fallback visible only when no custom border transfer has
+  started.
+- Refine the default Super Go Bigger Boy border artwork with stepped shell
+  edges, indicator lamp, framing, and logo details.
+- Persist the SGB border-loading state in save-state format version 29.
+
 ## [0.34.0] - 2026-09-11
 
 ### Super Game Boy
