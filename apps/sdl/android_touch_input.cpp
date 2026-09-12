@@ -48,7 +48,8 @@ float touch_control_scale(const SdlResources& sdl) {
     }
 
     SDL_FRect viewport{};
-    if (!SDL_GetRenderLogicalPresentationRect(sdl.renderer, &viewport)) {
+    if (!SDL_GetRenderLogicalPresentationRect(sdl.renderer, &viewport) ||
+        viewport.w <= 0.0F || viewport.h <= 0.0F) {
         return size;
     }
     const auto left_space = viewport.x - static_cast<float>(safe.x);
@@ -102,8 +103,12 @@ SDL_Rect android_safe_area(const SdlResources& sdl) {
     int height = 1;
     static_cast<void>(SDL_GetWindowSize(sdl.window, &width, &height));
     SDL_Rect safe{0, 0, width, height};
-    if (!SDL_GetWindowSafeArea(sdl.window, &safe)) {
-        safe = {0, 0, width, height};
+    SDL_Rect queried{};
+    if (SDL_GetWindowSafeArea(sdl.window, &queried) &&
+        queried.x >= 0 && queried.y >= 0 && queried.w > 0 &&
+        queried.h > 0 && queried.x < width && queried.y < height &&
+        queried.x + queried.w <= width && queried.y + queried.h <= height) {
+        safe = queried;
     }
     safe.x = std::clamp(safe.x, 0, width);
     safe.y = std::clamp(safe.y, 0, height);
@@ -196,6 +201,7 @@ SDL_FPoint touch_control_pixel_position_for_viewport(
                      static_cast<float>(safe.y) + y * static_cast<float>(safe.h)};
     if (!touch_is_landscape(sdl)) return point;
 
+    if (viewport.w <= 0.0F || viewport.h <= 0.0F) return point;
     const auto size = touch_control_scale(sdl);
     const auto gutter = 8.0F * size;
     const auto left_edge = static_cast<float>(safe.x);
@@ -205,27 +211,41 @@ SDL_FPoint touch_control_pixel_position_for_viewport(
         const auto minimum = left_edge + half_width + gutter;
         const auto maximum = viewport.x - half_width - gutter;
         point.x = minimum <= maximum ? std::clamp(point.x, minimum, maximum)
-                                     : (minimum + maximum) * 0.5F;
+                                     : minimum;
     } else if (control == 1 || control == 2) {
         const auto radius =
             (android_touch_action_diameter * 0.5F + 3.0F) * size;
         const auto minimum = viewport.x + viewport.w + radius + gutter;
         const auto maximum = right_edge - radius - gutter;
-        // Keep B at the inside edge of the right column and A at the outside
-        // edge, matching the approved draft while keeping both circles clear
-        // of the game viewport.
+        // Preserve the saved A/B spacing whenever the right column has room.
+        // If a transient viewport reports too little room, keep the buttons
+        // separated at the right edge instead of collapsing both to a
+        // midpoint over the viewport.
         if (minimum <= maximum) {
-            point.x = control == 1 ? maximum : minimum;
+            point.x = std::clamp(point.x, minimum, maximum);
         } else {
-            point.x = (minimum + maximum) * 0.5F;
+            const auto gap = 4.0F * size;
+            const auto outer = right_edge - radius - gutter;
+            const auto inner = std::max(left_edge + radius + gutter,
+                                        outer - radius * 2.0F - gap);
+            point.x = control == 1 ? outer : inner;
         }
     } else if (control == 3 || control == 4) {
         const auto half_width =
             (android_touch_system_width * 0.5F + 2.0F) * size;
-        const auto minimum = left_edge + half_width + gutter;
-        const auto maximum = viewport.x - half_width - gutter;
-        point.x = control == 3 ? minimum : right_edge - half_width - gutter;
-        if (minimum > maximum) point.x = (minimum + maximum) * 0.5F;
+        const auto left_minimum = left_edge + half_width + gutter;
+        const auto left_maximum = viewport.x - half_width - gutter;
+        const auto right_minimum = viewport.x + viewport.w + half_width + gutter;
+        const auto right_maximum = right_edge - half_width - gutter;
+        if (control == 3) {
+            point.x = left_minimum <= left_maximum
+                          ? std::clamp(point.x, left_minimum, left_maximum)
+                          : left_minimum;
+        } else {
+            point.x = right_minimum <= right_maximum
+                          ? std::clamp(point.x, right_minimum, right_maximum)
+                          : right_maximum;
+        }
     }
     return point;
 }
