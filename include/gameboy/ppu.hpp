@@ -214,6 +214,7 @@ private:
     std::unique_ptr<std::array<std::uint8_t, screen_width * screen_height>>
         sgb_screen_buffer_;
     bool sgb_border_transferred_{};
+    bool sgb_border_loading_{};
     SgbTransfer sgb_transfer_{SgbTransfer::none};
     std::uint8_t sgb_transfer_countdown_{};
     // MASK_EN: 0=disabled, 1=freeze, 2=black, 3=color-zero fill.

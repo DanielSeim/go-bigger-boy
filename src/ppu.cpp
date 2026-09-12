@@ -59,6 +59,7 @@ void Ppu::set_sgb_mode(const bool enabled) noexcept {
         // detached. Do not let a stale countdown leak into a later state.
         sgb_transfer_ = SgbTransfer::none;
         sgb_transfer_countdown_ = 0;
+        sgb_border_loading_ = false;
         return;
     }
     // SGB starts with the same four neutral colors as a DMG until the game
@@ -70,6 +71,7 @@ void Ppu::set_sgb_mode(const bool enabled) noexcept {
     sgb_border_tiles_->fill(0);
     sgb_border_pct_->fill(0);
     sgb_border_transferred_ = false;
+    sgb_border_loading_ = false;
     sgb_screen_buffer_->fill(0);
     sgb_transfer_ = SgbTransfer::none;
     sgb_transfer_countdown_ = 0;

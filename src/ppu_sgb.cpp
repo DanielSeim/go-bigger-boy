@@ -336,12 +336,16 @@ void Ppu::apply_sgb_command(
         break;
     }
     case 0x13: { // CHR_TRN
+        sgb_border_transferred_ = false;
+        sgb_border_loading_ = true;
         const auto bank = static_cast<std::size_t>(packet[1] & 1U);
         sgb_transfer_ = bank == 0 ? SgbTransfer::chr_low : SgbTransfer::chr_high;
         sgb_transfer_countdown_ = sgb_transfer_delay_frames;
         break;
     }
     case 0x14: // PCT_TRN
+        sgb_border_transferred_ = false;
+        sgb_border_loading_ = true;
         sgb_transfer_ = SgbTransfer::border;
         sgb_transfer_countdown_ = sgb_transfer_delay_frames;
         break;
@@ -435,6 +439,7 @@ void Ppu::complete_sgb_transfer() noexcept {
             }
         }
         sgb_border_transferred_ = true;
+        sgb_border_loading_ = false;
         break;
     case SgbTransfer::none: break;
     }
@@ -444,13 +449,11 @@ void Ppu::complete_sgb_transfer() noexcept {
 const Ppu::SgbFramebuffer& Ppu::sgb_framebuffer() const noexcept {
     constexpr auto black = UINT32_C(0xFF000000);
 
-    // The real SGB has a built-in border in its BIOS. It is visible before a
-    // cartridge uploads a custom border (and many games never issue PCT_TRN at
-    // all). Keep this branded fallback deterministic; a later PCT_TRN transfer
-    // still replaces it with the cartridge's border data.
+    // The real SGB has a built-in border in its BIOS. Keep this branded
+    // fallback deterministic when no cartridge border transfer has started.
     constexpr std::size_t viewport_x = (sgb_border_width - screen_width) / 2;
     constexpr std::size_t viewport_y = (sgb_border_height - screen_height) / 2;
-    if (!sgb_border_transferred_) {
+    if (!sgb_border_transferred_ && !sgb_border_loading_) {
         // Keep the fallback immutable and shared: frontends request the
         // composed frame every video tick, so regenerating 57,344 border
         // pixels per frame would needlessly compete with emulation on mobile.
@@ -465,6 +468,14 @@ const Ppu::SgbFramebuffer& Ppu::sgb_framebuffer() const noexcept {
     }
 
     sgb_framebuffer_->fill(black);
+    if (sgb_border_loading_) {
+        for (std::size_t y = 0; y < screen_height; ++y) {
+            std::copy_n(framebuffer_->begin() + y * screen_width, screen_width,
+                        sgb_framebuffer_->begin() +
+                            (y + viewport_y) * sgb_border_width + viewport_x);
+        }
+        return *sgb_framebuffer_;
+    }
 
     const auto expand = [](const unsigned component) {
         return (component << 3) | (component >> 2);

@@ -188,6 +188,7 @@ void SaveStateBusCodec::write(save_state_format::Writer& writer,
     writer.boolean(bus.ppu_.sgb_border_transferred_);
     writer.u8(static_cast<std::uint8_t>(bus.ppu_.sgb_transfer_));
     writer.u8(bus.ppu_.sgb_transfer_countdown_);
+    writer.boolean(bus.ppu_.sgb_border_loading_);
 }
 
 } // namespace gameboy

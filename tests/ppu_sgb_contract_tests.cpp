@@ -60,6 +60,8 @@ void test_transfer_commands_and_guards() {
     ppu.apply_sgb_command(packet, packet.size());
     check(ppu.debug_read_sgb_border_tile(0x0000) == 0,
           "CHR_TRN transfer remains pending during its hardware delay");
+    check(ppu.sgb_framebuffer()[8] == 0xFF000000,
+          "SGB border area is black while a custom border is loading");
     advance_sgb_frames(ppu, 2);
     check(ppu.debug_read_sgb_border_tile(0x0000) == 0,
           "CHR_TRN transfer remains pending during the first two frames");
@@ -70,6 +72,8 @@ void test_transfer_commands_and_guards() {
     check(ppu.debug_read_sgb_border_tile(0x0000) == 0x01 &&
               ppu.debug_read_sgb_border_tile(0x0001) == 0x00,
           "CHR_TRN encodes the first tile-data bank from the display");
+    check(ppu.sgb_framebuffer()[8] == 0xFF000000,
+          "SGB border stays black between custom border transfers");
 
     packet[1] = 1;
     ppu.debug_write_vram(0, 0x0000, 0x80);

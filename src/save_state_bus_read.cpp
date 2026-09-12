@@ -406,7 +406,8 @@ void SaveStateBusCodec::read(save_state_format::Reader& reader,
         // data after the version 22 packet/palette fields, while version 26
         // adds transferred palette and attribute-file memories. Version 27
         // adds the explicit PCT transfer latch used by the border compositor;
-        // version 28 adds an in-flight transfer destination and countdown.
+        // version 28 adds an in-flight transfer destination and countdown;
+        // version 29 adds the border-loading latch.
         bus.joypad_.sgb_mode_ = reader.boolean();
         bus.joypad_.sgb_ready_for_pulse_ = reader.boolean();
         bus.joypad_.sgb_ready_for_write_ = reader.boolean();
@@ -525,6 +526,11 @@ void SaveStateBusCodec::read(save_state_format::Reader& reader,
     } else {
         bus.ppu_.sgb_transfer_ = Ppu::SgbTransfer::none;
         bus.ppu_.sgb_transfer_countdown_ = 0;
+    }
+    if (version >= 29) {
+        bus.ppu_.sgb_border_loading_ = reader.boolean();
+    } else {
+        bus.ppu_.sgb_border_loading_ = false;
     }
     if (bus.printer_connected_) bus.printer_.reset();
 }
