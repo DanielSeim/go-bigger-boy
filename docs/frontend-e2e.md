@@ -31,6 +31,21 @@ Run Android instrumentation on a connected emulator or device:
 (cd android && ./gradlew connectedDebugAndroidTest)
 ```
 
+For the complete local Android regression pass, including native contracts for
+touch geometry, multi-button input, SGB borders, audio generation, and frame
+pacing, use:
+
+```sh
+scripts/run_android_regression.sh
+```
+
+The command runs the JVM tests and debug build first. If an authorized ADB
+device is connected, it also runs instrumentation, installs the debug APK,
+opens the library, and writes a bounded smoke screenshot to
+`/tmp/gbb-android-regression/library.png`. Set `ADB_SERIAL` when more than one
+device is connected, or set `GBB_SKIP_DEVICE_TESTS=1` to run only host-side
+checks.
+
 The Web and Android jobs are deliberately separate from link-cable E2E. Link
 transport tests require two cores/peers and are maintained in
 `tests/link_end_to_end_tests.cpp`; adding a browser transport will add a
