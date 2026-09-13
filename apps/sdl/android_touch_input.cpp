@@ -33,7 +33,10 @@ float touch_game_scale(const SdlResources& sdl) {
                         static_cast<float>(sdl.core_video_height));
 }
 
-float touch_control_scale(const SdlResources& sdl) {
+namespace {
+
+float touch_control_scale_for_viewport(const SdlResources& sdl,
+                                       const SDL_FRect viewport) {
     const auto configured_scale = std::clamp(sdl.touch_settings.scale,
                                              minimum_touch_scale,
                                              maximum_touch_scale);
@@ -47,9 +50,7 @@ float touch_control_scale(const SdlResources& sdl) {
         return game_rect.w / 180.0F * configured_scale;
     }
 
-    SDL_FRect viewport{};
-    if (!SDL_GetRenderLogicalPresentationRect(sdl.renderer, &viewport) ||
-        viewport.w <= 0.0F || viewport.h <= 0.0F) {
+    if (viewport.w <= 0.0F || viewport.h <= 0.0F) {
         return size;
     }
     const auto left_space = viewport.x - static_cast<float>(safe.x);
@@ -64,6 +65,16 @@ float touch_control_scale(const SdlResources& sdl) {
                                   (android_touch_dpad_dimension + 12.0F));
     }
     return size;
+}
+
+}  // namespace
+
+float touch_control_scale(const SdlResources& sdl) {
+    SDL_FRect viewport{};
+    if (!SDL_GetRenderLogicalPresentationRect(sdl.renderer, &viewport)) {
+        return touch_control_scale_for_viewport(sdl, {});
+    }
+    return touch_control_scale_for_viewport(sdl, viewport);
 }
 
 bool voxel_mode_enabled(const SdlResources& sdl) {
@@ -202,7 +213,12 @@ SDL_FPoint touch_control_pixel_position_for_viewport(
     if (!touch_is_landscape(sdl)) return point;
 
     if (viewport.w <= 0.0F || viewport.h <= 0.0F) return point;
-    const auto size = touch_control_scale(sdl);
+    // The renderer may currently be in full-window presentation mode while
+    // the supplied viewport still describes the game frame. Derive the
+    // control size from that same viewport instead of querying renderer state
+    // a second time; otherwise the visible center and touch hit center can
+    // drift apart in landscape mode.
+    const auto size = touch_control_scale_for_viewport(sdl, viewport);
     const auto gutter = 8.0F * size;
     const auto left_edge = static_cast<float>(safe.x);
     const auto right_edge = static_cast<float>(safe.x + safe.w);
