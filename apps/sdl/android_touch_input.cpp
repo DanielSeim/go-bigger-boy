@@ -209,63 +209,17 @@ SDL_FPoint touch_control_pixel_position_for_viewport(
     const SdlResources& sdl, const std::size_t control,
     const SDL_FRect viewport) {
     const auto safe = android_safe_area(sdl);
-    const auto [x, y] = touch_control_position(sdl, control);
-    SDL_FPoint point{static_cast<float>(safe.x) + x * static_cast<float>(safe.w),
-                     static_cast<float>(safe.y) + y * static_cast<float>(safe.h)};
-    if (!touch_is_landscape(sdl)) return point;
-
-    if (viewport.w <= 0.0F || viewport.h <= 0.0F) return point;
-    // The renderer may currently be in full-window presentation mode while
-    // the supplied viewport still describes the game frame. Derive the
-    // control size from that same viewport instead of querying renderer state
-    // a second time; otherwise the visible center and touch hit center can
-    // drift apart in landscape mode.
     const auto size = touch_control_scale_for_viewport(sdl, viewport);
-    const auto gutter = 8.0F * size;
-    const auto left_edge = static_cast<float>(safe.x);
-    const auto right_edge = static_cast<float>(safe.x + safe.w);
-    if (control == 0) {
-        const auto half_width = android_touch_dpad_dimension * size * 0.5F;
-        const auto minimum = left_edge + half_width + gutter;
-        const auto maximum = viewport.x - half_width - gutter;
-        point.x = minimum <= maximum ? std::clamp(point.x, minimum, maximum)
-                                     : minimum;
-    } else if (control == 1 || control == 2) {
-        const auto radius =
-            (android_touch_action_diameter * 0.5F + 3.0F) * size;
-        const auto minimum = viewport.x + viewport.w + radius + gutter;
-        const auto maximum = right_edge - radius - gutter;
-        // Preserve the saved A/B spacing whenever the right column has room.
-        // If a transient viewport reports too little room, keep the buttons
-        // separated at the right edge instead of collapsing both to a
-        // midpoint over the viewport.
-        if (minimum <= maximum) {
-            point.x = std::clamp(point.x, minimum, maximum);
-        } else {
-            const auto gap = 4.0F * size;
-            const auto outer = right_edge - radius - gutter;
-            const auto inner = std::max(left_edge + radius + gutter,
-                                        outer - radius * 2.0F - gap);
-            point.x = control == 1 ? outer : inner;
-        }
-    } else if (control == 3 || control == 4) {
-        const auto half_width =
-            (android_touch_system_width * 0.5F + 2.0F) * size;
-        const auto left_minimum = left_edge + half_width + gutter;
-        const auto left_maximum = viewport.x - half_width - gutter;
-        const auto right_minimum = viewport.x + viewport.w + half_width + gutter;
-        const auto right_maximum = right_edge - half_width - gutter;
-        if (control == 3) {
-            point.x = left_minimum <= left_maximum
-                          ? std::clamp(point.x, left_minimum, left_maximum)
-                          : left_minimum;
-        } else {
-            point.x = right_minimum <= right_maximum
-                          ? std::clamp(point.x, right_minimum, right_maximum)
-                          : right_maximum;
-        }
-    }
-    return point;
+    const auto positions = touch_control_position(sdl, control);
+    AndroidTouchGeometry geometry{
+        touch_is_landscape(sdl), static_cast<float>(safe.x),
+        static_cast<float>(safe.y), static_cast<float>(safe.w),
+        static_cast<float>(safe.h), true, viewport.x, viewport.y, viewport.w,
+        viewport.h, size, {}};
+    geometry.positions[control * 2] = positions.first;
+    geometry.positions[control * 2 + 1] = positions.second;
+    const auto point = android_touch_control_center(geometry, control);
+    return {point.x, point.y};
 }
 
 std::optional<std::size_t> touch_button_index(const float x, const float y,
@@ -285,7 +239,7 @@ std::optional<std::size_t> touch_button_index(const float x, const float y,
                                              android_touch_action_diameter,
                                              android_touch_action_diameter,
                                              android_touch_system_height}};
-    const auto minimum_target = 48.0F * density;
+    const auto minimum_target = android_touch_minimum_target_px(density);
     const auto label_height = 18.0F * density;
     const auto inside = [&](const std::size_t control) {
         const auto center = touch_control_pixel_position(sdl, control);

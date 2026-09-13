@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sdl_resources.hpp"
+#include "android_touch_geometry.hpp"
 #include "gbb/core.hpp"
 
 #include <SDL3/SDL.h>
@@ -20,14 +21,6 @@ namespace gbb::sdl {
 // Android displays.
 inline constexpr float android_link_menu_max_width = 500.0F;
 inline constexpr float android_link_menu_min_row_height = 44.0F;
-// These are portrait-editor design units, not Game Boy framebuffer pixels.
-// Keeping the controls in a fixed device layout prevents SGB's 256x224 video
-// surface (or a high-density DMG scale) from making the controls jump in size.
-inline constexpr float android_touch_dpad_dimension = 48.0F;
-inline constexpr float android_touch_action_diameter = 24.0F;
-inline constexpr float android_touch_system_width = 38.0F;
-inline constexpr float android_touch_system_height = 10.0F;
-
 [[nodiscard]] bool touch_is_landscape(const SdlResources& sdl);
 [[nodiscard]] std::size_t touch_layout_offset(const SdlResources& sdl);
 [[nodiscard]] float touch_game_scale(const SdlResources& sdl);
