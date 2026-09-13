@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [0.34.2] - 2026-09-13
+
+### Android
+
+- Keep one-finger secondary A/B actions held continuously while preserving the
+  primary action, allowing repeated run-and-jump input without short clicks.
+- Synchronize touch hit testing with the branded control layout and add motion
+  grace for stable action-button handoffs.
+- Avoid automatic rewind snapshot serialization on Android and optimize native
+  debug builds so on-device gameplay stays within the frame budget.
+
 ## [0.34.1] - 2026-09-12
 
 ### Super Game Boy
