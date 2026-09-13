@@ -28,6 +28,8 @@ public final class LibraryActivity extends Activity {
             "com.danielseim.gbb.RETURN_TO_GAME";
     static final String EXTRA_RUNNING_ROM =
             "com.danielseim.gbb.RUNNING_ROM";
+    static final String EXTRA_SKIP_UPDATE_CHECK =
+            "com.danielseim.gbb.SKIP_UPDATE_CHECK";
     private static final int OPEN_ROM = 1;
     private static final int CREATE_BACKUP = 2;
     private static final int OPEN_BACKUP = 3;
@@ -109,7 +111,9 @@ public final class LibraryActivity extends Activity {
             settingsScrollY = savedInstanceState.getInt("settings_scroll_y", 0);
         }
         showDashboard(settingsVisible);
-        updateManager.checkForUpdates();
+        if (!getIntent().getBooleanExtra(EXTRA_SKIP_UPDATE_CHECK, false)) {
+            updateManager.checkForUpdates();
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             backCallback = this::handleBack;
             getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
@@ -209,6 +213,16 @@ public final class LibraryActivity extends Activity {
         final LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Color.rgb(246, 247, 251));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            root.setOnApplyWindowInsetsListener((view, insets) -> {
+                view.setPadding(view.getPaddingLeft(),
+                        insets.getSystemWindowInsetTop(),
+                        view.getPaddingRight(),
+                        insets.getSystemWindowInsetBottom());
+                return insets;
+            });
+            root.requestApplyInsets();
+        }
 
         final LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.VERTICAL);
@@ -225,7 +239,17 @@ public final class LibraryActivity extends Activity {
         back.setMinHeight(dp(48));
         back.setContentDescription(settings ? "Back to library"
                 : returnToGame ? "Back to game" : "Exit");
-        back.setOnClickListener(view -> handleBack());
+        // Bind the dashboard back action to the screen being displayed. The
+        // activity can receive a restored/new intent while the old view tree
+        // is still visible; consulting the mutable field here can otherwise
+        // leave Settings on screen after a back tap.
+        back.setOnClickListener(view -> {
+            if (settings) {
+                showDashboard(false);
+            } else {
+                handleBack();
+            }
+        });
         toolbar.addView(back, new LinearLayout.LayoutParams(
                 dp(48), dp(48)));
         final TextView brand = text(settings ? "Settings" : "Library",

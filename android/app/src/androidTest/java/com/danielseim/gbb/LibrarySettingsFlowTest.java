@@ -7,9 +7,13 @@ import static androidx.test.espresso.assertion.ViewAssertions.matches;
 import static androidx.test.espresso.matcher.ViewMatchers.isDisplayed;
 import static androidx.test.espresso.matcher.ViewMatchers.withContentDescription;
 import static androidx.test.espresso.matcher.ViewMatchers.withText;
+import static org.hamcrest.Matchers.anyOf;
+
+import android.content.Intent;
 
 import androidx.test.ext.junit.rules.ActivityScenarioRule;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
+import androidx.test.platform.app.InstrumentationRegistry;
 
 import org.junit.Rule;
 import org.junit.Test;
@@ -20,10 +24,17 @@ import org.junit.runner.RunWith;
 public final class LibrarySettingsFlowTest {
     @Rule
     public ActivityScenarioRule<LibraryActivity> activity =
-            new ActivityScenarioRule<>(LibraryActivity.class);
+            new ActivityScenarioRule<>(new Intent(
+                    InstrumentationRegistry.getInstrumentation().getTargetContext(),
+                    LibraryActivity.class).putExtra(
+                    LibraryActivity.EXTRA_SKIP_UPDATE_CHECK, true));
 
     @Test
     public void librarySettingsAndAudioFlowIsReachable() {
+        // Android may restore the dashboard on its last selected tab. Start
+        // from a known state so this test covers navigation, not restoration.
+        onView(anyOf(withContentDescription("Library"),
+                withContentDescription("Library, selected"))).perform(click());
         onView(withText("Recently played")).check(matches(isDisplayed()));
         onView(withContentDescription("Settings")).perform(click());
         onView(withText("Display")).check(matches(isDisplayed()));
@@ -36,6 +47,8 @@ public final class LibrarySettingsFlowTest {
         onView(withText("Remote link cable")).perform(scrollTo())
                 .check(matches(isDisplayed()));
         onView(withContentDescription("Back to library")).perform(click());
+        onView(withContentDescription("Library, selected"))
+                .check(matches(isDisplayed()));
         onView(withText("Recently played")).check(matches(isDisplayed()));
     }
 }
