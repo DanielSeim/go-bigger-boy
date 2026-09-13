@@ -890,9 +890,14 @@ void handle_touch_event(const SDL_Event& event, SdlEventContext& context) {
                 sdl.voxel_camera_yaw_offset + delta_x * 0.25F,
                 -voxel_camera_yaw_drag_limit, voxel_camera_yaw_drag_limit);
         } else if (event.type == SDL_EVENT_FINGER_MOTION && !existing->orbit) {
+            const auto hit = touch_button_index(touch_x, touch_y, sdl);
+            const auto secondary_in_release_zone =
+                existing->secondary_control &&
+                touch_action_button_in_release_zone(
+                    touch_x, touch_y, sdl, *existing->secondary_control);
             const auto state = gbb::update_touch_control_state(
                 {existing->control, existing->secondary_control},
-                touch_button_index(touch_x, touch_y, sdl));
+                hit, secondary_in_release_zone);
             existing->control = state.primary;
             existing->secondary_control = state.secondary;
         }

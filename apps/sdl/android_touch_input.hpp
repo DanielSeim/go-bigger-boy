@@ -51,6 +51,8 @@ inline constexpr float android_touch_system_height = 10.0F;
     const SdlResources& sdl, std::size_t control, SDL_FRect viewport);
 [[nodiscard]] std::optional<std::size_t> touch_button_index(
     float x, float y, const SdlResources& sdl);
+[[nodiscard]] bool touch_action_button_in_release_zone(
+    float x, float y, const SdlResources& sdl, std::size_t input_control);
 
 void refresh_touch_buttons(gbb::EmulatorCore* core, SdlResources& sdl);
 void clear_touch_buttons(gbb::EmulatorCore* core, SdlResources& sdl);

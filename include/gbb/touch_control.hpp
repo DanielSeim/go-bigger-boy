@@ -28,18 +28,29 @@ struct TouchControlState {
 
 [[nodiscard]] inline TouchControlState update_touch_control_state(
     const TouchControlState state,
-    const std::optional<std::size_t> hit) noexcept {
+    const std::optional<std::size_t> hit,
+    const bool secondary_in_release_zone = false) noexcept {
     if (!state.primary) return {hit, std::nullopt};
     if (!is_touch_action_control(*state.primary)) {
         return {hit.has_value() ? hit : state.primary, std::nullopt};
     }
     // Neutral motion means the secondary action is no longer under the
-    // finger. Keep the primary action held so B can continue running while A
-    // is released and pressed again for another jump.
-    if (!hit.has_value()) return {state.primary, std::nullopt};
+    // finger. Allow a small release zone around it so touch sampling jitter
+    // cannot turn a held A/B handoff into a short click. Keep the primary
+    // action held so B can continue running while A is released and pressed
+    // again for another jump.
+    if (!hit.has_value()) {
+        return {state.primary,
+                state.secondary && secondary_in_release_zone
+                    ? state.secondary
+                    : std::nullopt};
+    }
     if (!is_touch_action_control(*hit)) return {hit, std::nullopt};
-    if (*hit == *state.primary ||
-        (state.secondary && *hit == *state.secondary)) {
+    // Returning to the primary button is the release gesture for the
+    // secondary button. This preserves B while allowing A to be released and
+    // pressed again without lifting the finger.
+    if (*hit == *state.primary) return {state.primary, std::nullopt};
+    if (state.secondary && *hit == *state.secondary) {
         return state;
     }
     return {state.primary, hit};
