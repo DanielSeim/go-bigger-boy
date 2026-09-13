@@ -891,15 +891,27 @@ void handle_touch_event(const SDL_Event& event, SdlEventContext& context) {
                 -voxel_camera_yaw_drag_limit, voxel_camera_yaw_drag_limit);
         } else if (event.type == SDL_EVENT_FINGER_MOTION && !existing->orbit) {
             const auto hit = touch_button_index(touch_x, touch_y, sdl);
-            const auto secondary_in_release_zone =
-                existing->secondary_control &&
-                touch_action_button_in_release_zone(
-                    touch_x, touch_y, sdl, *existing->secondary_control);
+            constexpr std::uint8_t secondary_release_grace_events = 2;
+            // Android can emit one or two neutral samples while a finger is
+            // rolled from B onto A. Keep the secondary action through those
+            // samples without querying renderer geometry again on every move.
+            const auto secondary_release_grace =
+                !hit && existing->secondary_control &&
+                existing->secondary_neutral_motion_count <
+                    secondary_release_grace_events;
             const auto state = gbb::update_touch_control_state(
                 {existing->control, existing->secondary_control},
-                hit, secondary_in_release_zone);
+                hit, secondary_release_grace);
             existing->control = state.primary;
             existing->secondary_control = state.secondary;
+            if (!hit && existing->secondary_control && state.secondary) {
+                if (existing->secondary_neutral_motion_count <
+                    secondary_release_grace_events) {
+                    ++existing->secondary_neutral_motion_count;
+                }
+            } else {
+                existing->secondary_neutral_motion_count = 0;
+            }
         }
         existing->x = touch_x;
         existing->y = touch_y;

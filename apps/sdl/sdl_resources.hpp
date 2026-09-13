@@ -63,6 +63,7 @@ class SdlResources {
         bool orbit{};
         std::optional<std::size_t> control;
         std::optional<std::size_t> secondary_control;
+        std::uint8_t secondary_neutral_motion_count{};
     };
     std::vector<TouchPoint> touches;
     std::array<bool, 8> touch_buttons{};

@@ -341,31 +341,6 @@ std::optional<std::size_t> touch_button_index(const float x, const float y,
     return std::nullopt;
 }
 
-bool touch_action_button_in_release_zone(const float x, const float y,
-                                         const SdlResources& sdl,
-                                         const std::size_t input_control) {
-    if (!gbb::is_touch_action_control(input_control)) return false;
-
-    int width = 1;
-    int height = 1;
-    static_cast<void>(SDL_GetWindowSize(sdl.window, &width, &height));
-    const auto pixel_x = x * static_cast<float>(width);
-    const auto pixel_y = y * static_cast<float>(height);
-    const auto density = std::max(1.0F, SDL_GetWindowDisplayScale(sdl.window));
-    const auto size = touch_control_scale(sdl);
-    const auto center = touch_control_pixel_position(sdl, input_control - 3U);
-    const auto dx = pixel_x - center.x;
-    const auto dy = pixel_y - center.y;
-    const auto visual_radius = android_touch_action_diameter * size * 0.5F;
-    const auto minimum_radius = 24.0F * density;
-    // A modest hysteresis band prevents Android's sampled motion from
-    // releasing a newly activated second action for one event. It is still
-    // small enough that deliberately leaving the button releases it.
-    const auto radius = std::max(visual_radius, minimum_radius) +
-                        10.0F * density;
-    return dx * dx + dy * dy <= radius * radius;
-}
-
 void refresh_touch_buttons(gbb::EmulatorCore* core, SdlResources& sdl) {
     std::array<bool, 8> pressed{};
     for (const auto& touch : sdl.touches) {

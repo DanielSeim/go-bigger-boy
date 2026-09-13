@@ -18,9 +18,9 @@ struct TouchControlState {
     return hit.has_value() ? hit : owned;
 }
 
-// A and B can be held together by one finger while the finger is inside both
-// action hit targets in succession. D-pad and system controls retain the
-// original single-control ownership behavior.
+// A and B can be held together by one finger while the finger moves between
+// their action hit targets. D-pad and system controls retain the original
+// single-control ownership behavior.
 [[nodiscard]] inline bool is_touch_action_control(
     const std::size_t control) noexcept {
     return control == 4U || control == 5U;
@@ -29,19 +29,18 @@ struct TouchControlState {
 [[nodiscard]] inline TouchControlState update_touch_control_state(
     const TouchControlState state,
     const std::optional<std::size_t> hit,
-    const bool secondary_in_release_zone = false) noexcept {
+    const bool secondary_release_grace = false) noexcept {
     if (!state.primary) return {hit, std::nullopt};
     if (!is_touch_action_control(*state.primary)) {
         return {hit.has_value() ? hit : state.primary, std::nullopt};
     }
     // Neutral motion means the secondary action is no longer under the
-    // finger. Allow a small release zone around it so touch sampling jitter
-    // cannot turn a held A/B handoff into a short click. Keep the primary
-    // action held so B can continue running while A is released and pressed
-    // again for another jump.
+    // finger. Allow a short grace period so touch sampling jitter cannot turn
+    // a held A/B handoff into a short click. Keep the primary action held so B
+    // can continue running while A is released and pressed again.
     if (!hit.has_value()) {
         return {state.primary,
-                state.secondary && secondary_in_release_zone
+                state.secondary && secondary_release_grace
                     ? state.secondary
                     : std::nullopt};
     }

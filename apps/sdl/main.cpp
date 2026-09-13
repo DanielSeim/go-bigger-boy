@@ -342,6 +342,15 @@ void render_tool_text(SDL_Renderer* renderer, const float x, const float y,
 
 
 constexpr std::size_t maximum_rewind_frames = 180;
+#ifdef __ANDROID__
+// Android has no rewind control in its native UI. Avoid serializing and
+// retaining a full machine snapshot every few frames on the emulation thread;
+// the resulting allocation burst is audible on slower devices after the
+// history fills. Desktop keeps the existing rewind history behavior.
+constexpr bool automatic_rewind_capture = false;
+#else
+constexpr bool automatic_rewind_capture = true;
+#endif
 // Serializing a complete machine is intentionally amortized across four
 // frames. This keeps rewind responsive while leaving enough CPU headroom for
 // cores/toolchains whose save-state codec is more expensive (notably MSVC).
@@ -2466,7 +2475,7 @@ int main(int argc, char** argv) {
             // placing it in the interval that the pacer would otherwise spend
             // waiting keeps that work off the visible emulation boundary.
             frame_pacer.advance();
-            if (execution_plan.should_run() &&
+            if (automatic_rewind_capture && execution_plan.should_run() &&
                 !execution_plan.restores_rewind_state() &&
                 link_emulator == nullptr && !remote_transport_connected &&
                 !fast_forward && core != nullptr &&

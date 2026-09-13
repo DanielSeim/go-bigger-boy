@@ -401,7 +401,7 @@ void test_touch_controls() {
         gbb::update_touch_control_state(held_b_and_a, std::nullopt, true);
     check(held_b_through_motion_jitter.primary == button_b &&
               held_b_through_motion_jitter.secondary == button_a,
-          "motion jitter does not turn the secondary action into a click");
+          "motion grace does not turn the secondary action into a click");
     const auto moved_to_dpad =
         gbb::update_touch_control_state(held_b_and_a, dpad_right);
     check(moved_to_dpad.primary == dpad_right && !moved_to_dpad.secondary,

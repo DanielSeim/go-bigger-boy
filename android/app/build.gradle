@@ -55,6 +55,15 @@ android {
         debug {
             applicationIdSuffix ".debug"
             versionNameSuffix "-debug"
+            // The native emulator must sustain a 16.7 ms frame budget even
+            // when the debug APK is used for on-device testing. Keep symbols
+            // and the debuggable package, but avoid the unusable -O0 native
+            // performance profile.
+            externalNativeBuild {
+                cmake {
+                    cppFlags "-O2"
+                }
+            }
         }
         release {
             minifyEnabled false
