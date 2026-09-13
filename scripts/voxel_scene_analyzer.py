@@ -17,6 +17,8 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Iterable
 
+MAX_TEMPLATE_PROPOSALS = 32
+
 
 def bit_count(value: int) -> int:
     return bin(value & 0xFF).count("1")
@@ -112,6 +114,31 @@ def union_find_components(cells: list[dict[str, Any]]) -> list[list[dict[str, An
     return list(components.values())
 
 
+def contextual_boundary(component: list[dict[str, Any]],
+                        all_cells: list[dict[str, Any]]) -> float:
+    """Measure how strongly a candidate's outside edge differs from it."""
+
+    component_positions = {visible_cell_key(cell) for cell in component}
+    by_position = {visible_cell_key(cell): cell for cell in all_cells}
+    exposed = 0
+    contrasting = 0
+    for x, y in component_positions:
+        for neighbour in ((x - 8, y), (x + 8, y), (x, y - 8), (x, y + 8)):
+            if neighbour in component_positions:
+                continue
+            outside = by_position.get(neighbour)
+            if outside is None:
+                continue
+            exposed += 1
+            inside = by_position[(x, y)]
+            if (int(inside.get("tile_id", 0)),
+                int(inside.get("attributes", 0)) & 0x78) != (
+                    int(outside.get("tile_id", 0)),
+                    int(outside.get("attributes", 0)) & 0x78):
+                contrasting += 1
+    return contrasting / max(1, exposed)
+
+
 def component_features(component: list[dict[str, Any]], all_cells: list[dict[str, Any]]) -> dict[str, float]:
     positions = {visible_cell_key(cell) for cell in component}
     width = max(x for x, _ in positions) - min(x for x, _ in positions) + 8
@@ -144,9 +171,107 @@ def component_features(component: list[dict[str, Any]], all_cells: list[dict[str
         "density_variation": min(1.0, density_range * 2.0),
         "repetition": repetition,
         "boundary": boundary,
+        "boundary_contrast": contextual_boundary(component, all_cells),
         "ground_contact": ground_contact,
         "aspect": aspect_score,
     }
+
+
+def component_layout(component: list[dict[str, Any]]) -> dict[str, Any]:
+    """Return a scroll-stable tile layout and a profile-template candidate."""
+
+    screen_positions = [
+        (int(cell.get("screen_x", 0)) // 8,
+         int(cell.get("screen_y", 0)) // 8)
+        for cell in component
+    ]
+    map_addresses = [int(cell.get("map_address", 0)) for cell in component]
+    # Map addresses remain stable while the viewport scrolls and avoid the
+    # 8-bit map_x/map_y wrap at the edge of a tilemap. Use screen coordinates
+    # for the relative rectangle itself so wrapped neighbors stay adjacent.
+    # Missing map provenance commonly serializes every address as zero; mark
+    # that fallback as less trustworthy for the authoring score.
+    map_usable = (len(component) > 1 and len(set(map_addresses)) == len(component)
+                  and any(map_addresses))
+    coordinates = screen_positions
+    coordinate_mode = "map" if map_usable else "screen"
+    min_x = min(x for x, _ in coordinates)
+    min_y = min(y for _, y in coordinates)
+    relative = [(x - min_x, y - min_y) for x, y in coordinates]
+    width = max(x for x, _ in relative) + 1
+    height = max(y for _, y in relative) + 1
+    complete = len(set(relative)) == width * height
+    tile_by_relative = {
+        position: int(cell.get("tile_id", 0))
+        for position, cell in zip(relative, component)
+    }
+    tile_ids = (
+        [tile_by_relative[(x, y)]
+         for y in range(height) for x in range(width)]
+        if complete else []
+    )
+    return {
+        "coordinate_mode": coordinate_mode,
+        "anchor": ({"map_address": min(map_addresses)} if map_usable else
+                   {"screen_x": min_x, "screen_y": min_y}),
+        "width": width,
+        "height": height,
+        "complete": complete,
+        "relative_cells": [
+            {"x": x, "y": y, "tile_id": tile_by_relative[(x, y)]}
+            for x, y in sorted(relative, key=lambda position: (position[1], position[0]))
+        ],
+        "tile_ids": tile_ids,
+    }
+
+
+def candidate_identity(component: list[dict[str, Any]]) -> tuple[Any, ...]:
+    layout = component_layout(component)
+    coordinates = [
+        (int(cell.get("map_address", 0)), 0)
+        for cell in component
+    ] if layout["coordinate_mode"] == "map" else [
+        (int(cell.get("screen_x", 0)) // 8,
+         int(cell.get("screen_y", 0)) // 8)
+        for cell in component
+    ]
+    return tuple(sorted(
+        (x, y, int(cell.get("tile_id", 0)),
+         int(cell.get("attributes", 0)) & 0x78)
+        for (x, y), cell in zip(coordinates, component)
+    ))
+
+
+def rectangular_layout_candidates(cells: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    """Find small complete layouts even when neighboring tile IDs differ."""
+
+    by_screen = {
+        visible_cell_key(cell): cell
+        for cell in cells
+        if int(cell.get("visible_width", 8)) == 8
+        and int(cell.get("visible_height", 8)) == 8
+    }
+    candidates: list[list[dict[str, Any]]] = []
+    # Buildings commonly fit these metatile-sized footprints. Larger or
+    # irregular arrangements should be authored explicitly after review.
+    for width, height in ((2, 2), (2, 3), (3, 2), (3, 3)):
+        for left, top in sorted(by_screen):
+            component: list[dict[str, Any]] = []
+            for row in range(height):
+                for column in range(width):
+                    cell = by_screen.get((left + column * 8, top + row * 8))
+                    if cell is None:
+                        component = []
+                        break
+                    component.append(cell)
+                if not component:
+                    break
+            if not component:
+                continue
+            if len({int(cell.get("tile_id", 0)) for cell in component}) < 2:
+                continue
+            candidates.append(component)
+    return candidates
 
 
 def candidate_from_component(
@@ -156,20 +281,22 @@ def candidate_from_component(
     frames: list[int],
 ) -> dict[str, Any]:
     features = component_features(component, all_cells)
+    layout = component_layout(component)
     stability = min(1.0, observations / 3.0)
     score = (
         0.22 * features["area"]
         + 0.18 * features["compactness"]
         + 0.14 * features["density_variation"]
         + 0.16 * features["repetition"]
-        + 0.12 * features["boundary"]
+        + 0.08 * features["boundary"]
+        + 0.04 * features["boundary_contrast"]
         + 0.10 * features["ground_contact"]
         + 0.08 * features["aspect"]
         + 0.20 * stability
     )
     positions = [(int(cell.get("map_x", 0)), int(cell.get("map_y", 0)))
                  for cell in component]
-    return {
+    candidate = {
         "class": "background_object_candidate",
         "geometry": "shallow_volume" if score >= 0.65 else "proposal_only",
         "confidence": round(min(1.0, score), 4),
@@ -179,10 +306,153 @@ def candidate_from_component(
             {"map_x": x, "map_y": y} for x, y in sorted(set(positions))
         ],
         "features": {key: round(value, 4) for key, value in features.items()},
+        "coordinate_mode": layout["coordinate_mode"],
+        "anchor": layout["anchor"],
+        "relative_cells": layout["relative_cells"],
     }
+    if layout["complete"]:
+        candidate["template"] = {
+            "width": layout["width"],
+            "height": layout["height"],
+            "tile_ids": layout["tile_ids"],
+        }
+    return candidate
 
 
-def analyze(records: Iterable[dict[str, Any]]) -> dict[str, Any]:
+def template_proposals(proposals: list[dict[str, Any]],
+                       frames_analyzed: int,
+                       minimum_capture_frames: int = 30) -> list[dict[str, Any]]:
+    """Cluster recurring complete layouts into manual-review profile rules."""
+
+    if frames_analyzed < minimum_capture_frames:
+        return []
+
+    groups: dict[tuple[Any, ...], list[dict[str, Any]]] = defaultdict(list)
+    for proposal in proposals:
+        template = proposal.get("template")
+        if not template:
+            continue
+        key = (
+            proposal.get("coordinate_mode", "screen"),
+            int(template["width"]),
+            int(template["height"]),
+            tuple(int(tile) for tile in template["tile_ids"]),
+        )
+        groups[key].append(proposal)
+
+    output: list[dict[str, Any]] = []
+    for index, (key, members) in enumerate(groups.items()):
+        coordinate_mode, width, height, tile_ids = key
+        tile_counts = Counter(tile_ids)
+        dominant_fraction = max(tile_counts.values()) / max(1, len(tile_ids))
+        # A rectangle made almost entirely from one common tile is usually a
+        # sliding window through terrain, not a semantic object.
+        if dominant_fraction > 0.75:
+            continue
+        anchors = {
+            tuple(sorted(proposal.get("anchor", {}).items()))
+            for proposal in members
+        }
+        frames = sorted({
+            int(frame)
+            for proposal in members
+            for frame in proposal.get("frames", [])
+        })
+        observations = sum(int(proposal.get("observations", 0))
+                          for proposal in members)
+        mean_candidate_confidence = sum(
+            float(proposal.get("confidence", 0.0)) for proposal in members
+        ) / max(1, len(members))
+        mean_ground_contact = sum(
+            float(proposal.get("features", {}).get("ground_contact", 0.0))
+            for proposal in members
+        ) / max(1, len(members))
+        mean_boundary_contrast = sum(
+            float(proposal.get("features", {}).get("boundary_contrast", 0.0))
+            for proposal in members
+        ) / max(1, len(members))
+        recurrence = min(1.0, observations / 6.0)
+        location_score = min(1.0, len(anchors) / 2.0)
+        risk = 0.0
+        risk_reasons: list[str] = []
+        if coordinate_mode != "map":
+            risk += 0.25
+            risk_reasons.append("map provenance is unavailable")
+        if len(anchors) == 1:
+            risk += 0.10
+            risk_reasons.append("seen at one location")
+        if width * height <= 2:
+            risk += 0.12
+            risk_reasons.append("small tile arrangement")
+        if mean_ground_contact < 0.35:
+            risk += 0.10
+            risk_reasons.append("weak ground contact")
+        if mean_boundary_contrast < 0.55:
+            risk += 0.25
+            risk_reasons.append("weak contextual boundary")
+        if dominant_fraction > 0.65:
+            risk += 0.15
+            risk_reasons.append("one tile dominates the footprint")
+        if len(anchors) > 8:
+            risk += 0.25
+            risk_reasons.append("pattern repeats across many locations")
+        if mean_boundary_contrast < 0.55:
+            continue
+        if len(anchors) > 8 and mean_boundary_contrast < 0.75:
+            continue
+        footprint_score = min(1.0, 4.0 / max(1, width * height))
+        base_confidence = (
+            0.35 * mean_candidate_confidence
+            + 0.20 * recurrence
+            + 0.15 * location_score
+            + 0.15 * mean_ground_contact
+            + 0.10 * mean_boundary_contrast
+            + 0.05 * footprint_score
+        )
+        confidence = round(max(0.0, min(1.0, base_confidence - risk)), 4)
+        tile_text = ",".join(str(tile) for tile in tile_ids)
+        output.append({
+            "id": f"template-proposal-{index:04d}",
+            "class": "background_object_template_proposal",
+            "decision": "manual_review",
+            "confidence": confidence,
+            "geometry": "shallow_volume" if confidence >= 0.65 else "proposal_only",
+            "coordinate_mode": coordinate_mode,
+            "template": {
+                "width": width,
+                "height": height,
+                "tile_ids": list(tile_ids),
+            },
+            "profile_entry": (
+                f"background_object_template={width}x{height}:{tile_text}"
+            ),
+            "observations": observations,
+            "frames": frames,
+            "locations": len(anchors),
+            "source_proposals": [proposal.get("id", "") for proposal in members],
+            "evidence": {
+                "candidate_confidence": round(mean_candidate_confidence, 4),
+                "recurrence": round(recurrence, 4),
+                "location_score": round(location_score, 4),
+                "ground_contact": round(mean_ground_contact, 4),
+                "boundary_contrast": round(mean_boundary_contrast, 4),
+                "dominant_tile_fraction": round(dominant_fraction, 4),
+                "risk": round(min(1.0, risk), 4),
+            },
+            "risk_reasons": risk_reasons,
+        })
+    output.sort(key=lambda proposal: proposal["confidence"], reverse=True)
+    # Keep the report a ranked shortlist. The full component proposals remain
+    # available for diagnostics, while hundreds of overlapping windows should
+    # not obscure the few candidates worth human review.
+    output = output[:MAX_TEMPLATE_PROPOSALS]
+    for index, proposal in enumerate(output):
+        proposal["id"] = f"template-proposal-{index:04d}"
+    return output
+
+
+def analyze(records: Iterable[dict[str, Any]],
+            minimum_capture_frames: int = 30) -> dict[str, Any]:
     frame_candidates: dict[tuple[Any, ...], dict[str, Any]] = {}
     frame_count = 0
     fingerprints: set[int] = set()
@@ -206,12 +476,21 @@ def analyze(records: Iterable[dict[str, Any]]) -> dict[str, Any]:
                 continue
             if len(component) > max(8, int(len(cells) * 0.55)):
                 continue
-            positions = tuple(sorted(
-                (int(cell.get("map_x", 0)), int(cell.get("map_y", 0)),
-                 int(cell.get("tile_id", 0)),
-                 int(cell.get("attributes", 0)) & 0x78)
-                for cell in component
-            ))
+            positions = candidate_identity(component)
+            entry = frame_candidates.setdefault(
+                positions,
+                {"count": 0, "frames": [], "component": component,
+                 "all_cells": cells},
+            )
+            entry["count"] += 1
+            entry["frames"].append(int(record.get("frame", frame_count - 1)))
+
+        # The graph deliberately remains conservative for live rendering, but
+        # authoring can inspect complete metatile footprints with unrelated
+        # tile IDs. These are proposal-only until recurrence and risk scoring
+        # (and ultimately human review) accepts them.
+        for component in rectangular_layout_candidates(cells):
+            positions = candidate_identity(component)
             entry = frame_candidates.setdefault(
                 positions,
                 {"count": 0, "frames": [], "component": component,
@@ -231,9 +510,16 @@ def analyze(records: Iterable[dict[str, Any]]) -> dict[str, Any]:
     for index, proposal in enumerate(proposals):
         proposal["id"] = f"background-object-{index:04d}"
 
+    template_candidates = template_proposals(
+        proposals, frame_count, minimum_capture_frames
+    )
     return {
-        "schema": "gbb.voxel.proposals.v1",
+        "schema": "gbb.voxel.proposals.v2",
         "frames_analyzed": frame_count,
+        "capture_quality": {
+            "eligible_for_templates": frame_count >= minimum_capture_frames,
+            "minimum_template_frames": minimum_capture_frames,
+        },
         "rom_fingerprints": sorted(fingerprints),
         "proposal_policy": {
             "high_confidence": 0.65,
@@ -241,6 +527,7 @@ def analyze(records: Iterable[dict[str, Any]]) -> dict[str, Any]:
             "low_confidence": "flat",
         },
         "proposals": proposals,
+        "template_proposals": template_candidates,
     }
 
 
@@ -272,7 +559,12 @@ def self_test() -> None:
     assert result["frames_analyzed"] == 3
     assert result["proposals"]
     assert result["proposals"][0]["observations"] == 3
-    assert len(result["proposals"][0]["map_cells"]) == 4
+    assert any(
+        len(proposal["map_cells"]) == 4
+        and proposal.get("template", {}).get("tile_ids") == [7, 7, 7, 7]
+        for proposal in result["proposals"]
+    )
+    assert not result["template_proposals"]
 
 
 def main() -> int:

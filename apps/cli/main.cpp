@@ -172,6 +172,35 @@ std::vector<MovieFrame> read_input_movie(const std::filesystem::path& path) {
     return frames;
 }
 
+std::vector<std::uint8_t> read_binary_file(const std::filesystem::path& path,
+                                           const char* description) {
+    if (path.empty()) {
+        throw std::invalid_argument(std::string(description) +
+                                    " requires a non-empty path");
+    }
+    std::ifstream input(path, std::ios::binary | std::ios::ate);
+    if (!input) {
+        throw std::runtime_error("Could not open " + std::string(description) +
+                                 ": " + path.string());
+    }
+    const auto end = input.tellg();
+    if (end < 0) {
+        throw std::runtime_error("Could not determine size of " +
+                                 std::string(description) + ": " + path.string());
+    }
+    std::vector<std::uint8_t> bytes(static_cast<std::size_t>(end));
+    input.seekg(0);
+    if (!bytes.empty()) {
+        input.read(reinterpret_cast<char*>(bytes.data()),
+                   static_cast<std::streamsize>(bytes.size()));
+    }
+    if (!input || input.gcount() != static_cast<std::streamsize>(bytes.size())) {
+        throw std::runtime_error("Could not read " + std::string(description) +
+                                 ": " + path.string());
+    }
+    return bytes;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -180,6 +209,7 @@ int main(int argc, char** argv) {
                      "[--scene-json <output>] "
                      "[--scene-jsonl <output> --frames <count> "
                      "--input-movie <path> "
+                     "[--battery-save <path>] [--state <path>] "
                      "[--max-instructions-per-frame <count>]]\n";
         return EXIT_FAILURE;
     }
@@ -190,6 +220,8 @@ int main(int argc, char** argv) {
         std::optional<std::filesystem::path> scene_json_path;
         std::optional<std::filesystem::path> scene_jsonl_path;
         std::optional<std::filesystem::path> input_movie_path;
+        std::optional<std::filesystem::path> battery_save_path;
+        std::optional<std::filesystem::path> state_path;
         unsigned long observation_frames = 0;
         bool observation_frames_set = false;
         unsigned long max_instructions_per_frame = 200000;
@@ -219,6 +251,17 @@ int main(int argc, char** argv) {
                         "--input-movie requires a path");
                 }
                 input_movie_path = std::filesystem::path(argv[++index]);
+            } else if (argument == "--battery-save") {
+                if (index + 1 >= argc) {
+                    throw std::invalid_argument(
+                        "--battery-save requires a path");
+                }
+                battery_save_path = std::filesystem::path(argv[++index]);
+            } else if (argument == "--state") {
+                if (index + 1 >= argc) {
+                    throw std::invalid_argument("--state requires a path");
+                }
+                state_path = std::filesystem::path(argv[++index]);
             } else if (argument == "--max-instructions-per-frame") {
                 if (index + 1 >= argc) {
                     throw std::invalid_argument(
@@ -249,6 +292,13 @@ int main(int argc, char** argv) {
             throw std::invalid_argument(
                 "--input-movie requires --scene-jsonl and --frames");
         }
+        const auto battery_save = battery_save_path
+                                      ? read_binary_file(*battery_save_path,
+                                                         "battery save")
+                                      : std::vector<std::uint8_t>{};
+        const auto state = state_path
+                               ? read_binary_file(*state_path, "save state")
+                               : std::vector<std::uint8_t>{};
         const auto input_movie = input_movie_path
                                     ? read_input_movie(*input_movie_path)
                                     : std::vector<MovieFrame>{};
@@ -257,6 +307,21 @@ int main(int argc, char** argv) {
         if (!gbb::validate_core_contract(*core, contract_error)) {
             throw std::runtime_error("Core contract violation: " +
                                      contract_error);
+        }
+        if (battery_save_path) {
+            if (!core->has_persistent_data(gbb::PersistentDataKind::battery_save)) {
+                throw std::runtime_error(
+                    "The loaded ROM does not expose battery-backed save data");
+            }
+            core->import_persistent_data(gbb::PersistentDataKind::battery_save,
+                                         battery_save);
+        }
+        if (state_path) {
+            if (state.empty()) {
+                throw std::runtime_error("Save state is empty: " +
+                                         state_path->string());
+            }
+            core->load_state(state);
         }
         const auto& descriptor = core->descriptor();
         gbb::LogContextScope log_context{
@@ -276,6 +341,10 @@ int main(int argc, char** argv) {
                                                         : "CGB enhanced")
                           : "DMG")
                   << '\n';
+        if (battery_save_path)
+            std::cout << "Battery save: " << battery_save_path->string() << '\n';
+        if (state_path)
+            std::cout << "Save state: " << state_path->string() << '\n';
 
         std::uint64_t total_cycles = 0;
         unsigned long executed_instructions = 0;

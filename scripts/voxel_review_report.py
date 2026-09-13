@@ -130,15 +130,15 @@ def render_run(result: dict[str, Any], manifest: Path) -> str:
     observation_path = resolve_path(result.get("observations", ""), manifest)
     status = result.get("status", "unknown")
     title = html.escape(str(result.get("title") or result.get("path", "ROM")))
-    if status not in {"complete", "partial_capture", "skipped"} or not proposal_path.is_file() or not observation_path.is_file():
+    if status not in {"complete", "partial_capture", "skipped", "reanalyzed"} or not proposal_path.is_file() or not observation_path.is_file():
         return (
             '<article class="run failed"><h2>' + title + '</h2>'
             f'<p>Status: <code>{html.escape(str(status))}</code></p>'
             f'<p>{html.escape(str(result.get("path", "")))}</p></article>'
         )
-    proposals = json.loads(
-        proposal_path.read_text(encoding="utf-8")
-    ).get("proposals", [])
+    proposal_data = json.loads(proposal_path.read_text(encoding="utf-8"))
+    proposals = proposal_data.get("proposals", [])
+    template_candidates = proposal_data.get("template_proposals", [])
     records = read_jsonl(observation_path)
     confidence = max(
         (float(item.get("confidence", 0.0)) for item in proposals),
@@ -158,10 +158,30 @@ def render_run(result: dict[str, Any], manifest: Path) -> str:
         "</tr>"
         for proposal in proposals[:20]
     )
+    template_rows = "".join(
+        "<tr>"
+        f"<td>{html.escape(str(proposal.get('id', '')))}</td>"
+        f"<td>{float(proposal.get('confidence', 0.0)):.2f}</td>"
+        f"<td>{int(proposal.get('locations', 0))}</td>"
+        f"<td>{int(proposal.get('observations', 0))}</td>"
+        f"<td><code>{html.escape(str(proposal.get('profile_entry', '')))}</code></td>"
+        f"<td>{html.escape(', '.join(str(reason) for reason in proposal.get('risk_reasons', [])) or 'none recorded')}</td>"
+        "</tr>"
+        for proposal in template_candidates[:20]
+    )
+    template_section = (
+        '<details open><summary>Generated template proposals</summary>'
+        '<p>These are manual-review suggestions. They are not enabled in live rendering.</p>'
+        '<table><thead><tr><th>ID</th><th>Confidence</th><th>Locations</th>'
+        '<th>Observations</th><th>Profile entry</th><th>Risk notes</th></tr></thead>'
+        f'<tbody>{template_rows or "<tr><td colspan=\"6\">No complete recurring layouts found.</td></tr>"}</tbody>'
+        '</table></details>'
+    )
     status_label = {
         "complete": "complete",
         "partial_capture": "partial capture",
         "skipped": "reused existing capture",
+        "reanalyzed": "reanalyzed existing capture",
     }[status]
     variant = result.get("selected_variant")
     capture_metrics = result.get("capture_metrics", {})
@@ -177,11 +197,13 @@ def render_run(result: dict[str, Any], manifest: Path) -> str:
         f'<p>Status: <code>{status_label}</code></p>'
         f'<p><code>{html.escape(str(result.get("path", "")))}</code> · '
         f'{len(records)} frames · {len(proposals)} proposals · '
+        f'{len(template_candidates)} template suggestions · '
         f'max confidence {confidence:.2f}{capture_summary}</p>'
         f'<div class="frames">{frames}</div>'
         '<details><summary>Proposal table</summary><table>'
         '<thead><tr><th>ID</th><th>Confidence</th><th>Geometry</th><th>Frames</th></tr></thead>'
-        f'<tbody>{proposal_rows}</tbody></table></details></article>'
+        f'<tbody>{proposal_rows}</tbody></table></details>'
+        f'{template_section}</article>'
     )
 
 

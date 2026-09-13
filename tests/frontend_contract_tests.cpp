@@ -7,6 +7,7 @@
 #include "gameboy/emulator.hpp"
 #include "gbb/touch_control.hpp"
 #include "gbb/voxel_profile.hpp"
+#include "gbb/voxel_scene.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -454,13 +455,22 @@ void test_voxel_profiles() {
     check(super_mario_land.depth_scale == 1.25F &&
               super_mario_land.zoom == 0.74F &&
               super_mario_land.perspective == 0.0012F &&
-              super_mario_land.lighting == 1.08F,
+              super_mario_land.lighting == 1.08F &&
+              super_mario_land.background_object_detection &&
+              super_mario_land.background_object_min_cells == 4,
           "Super Mario Land receives its specialized voxel profile");
     profile.depth_scale = 2.25F;
     profile.camera_yaw = -12.0F;
     profile.background_depth_near = 18.0F;
     profile.window_depth_near = 48.0F;
     profile.sprite_depth_near = 22.0F;
+    profile.background_object_detection = true;
+    profile.background_object_min_cells = 6;
+    profile.background_object_max_fraction = 0.42F;
+    profile.background_object_confidence = 0.81F;
+    profile.background_debug_overlay = true;
+    profile.background_object_templates.push_back(
+        {"building", 2, 2, {7, 8, 9, 10}});
     profile.framebuffer_facade = false;
     check(gbb::save_voxel_profile(path, fingerprint, profile),
           "voxel profile can be saved");
@@ -468,7 +478,19 @@ void test_voxel_profiles() {
     check(loaded.depth_scale == 2.25F && loaded.camera_yaw == -12.0F &&
               loaded.background_depth_near == 18.0F &&
               loaded.window_depth_near == 48.0F &&
-              loaded.sprite_depth_near == 22.0F && !loaded.framebuffer_facade,
+              loaded.sprite_depth_near == 22.0F &&
+              loaded.background_object_detection &&
+              loaded.background_object_min_cells == 6 &&
+              loaded.background_object_max_fraction == 0.42F &&
+              loaded.background_object_confidence == 0.81F &&
+              loaded.background_debug_overlay &&
+              loaded.background_object_templates.size() == 1 &&
+              loaded.background_object_templates.front().id == "template-0" &&
+              loaded.background_object_templates.front().width == 2 &&
+              loaded.background_object_templates.front().height == 2 &&
+              loaded.background_object_templates.front().tile_ids ==
+                  std::vector<std::int16_t>({7, 8, 9, 10}) &&
+              !loaded.framebuffer_facade,
           "voxel profile round-trips per-ROM values");
     auto second = gbb::VoxelProfile{};
     second.depth_scale = 3.5F;
@@ -479,6 +501,72 @@ void test_voxel_profiles() {
               gbb::load_voxel_profile(path, second_fingerprint).depth_scale == 3.5F,
           "saving one voxel profile preserves other ROM sections");
     std::filesystem::remove(path);
+}
+
+void test_voxel_scene_builder() {
+    gbb::SceneSnapshot snapshot;
+    snapshot.width = 32;
+    snapshot.height = 32;
+    snapshot.lcdc = 0x02;
+    snapshot.tile_size_bytes = 16;
+    snapshot.tile_count = 384;
+    snapshot.tile_bank_stride = snapshot.tile_count * snapshot.tile_size_bytes;
+    snapshot.tile_data.resize(snapshot.tile_bank_stride);
+    for (int row = 0; row < 8; ++row) {
+        snapshot.tile_data[7 * 16 + row * 2] = 0xFF;
+        snapshot.tile_data[7 * 16 + row * 2 + 1] = 0xFF;
+    }
+    for (int y = 0; y < 4; ++y) {
+        for (int x = 0; x < 4; ++x) {
+            gbb::SceneVisibleTileCell cell;
+            cell.source = gbb::SceneTileSource::background;
+            cell.screen_x = static_cast<std::int16_t>(x * 8);
+            cell.screen_y = static_cast<std::int16_t>(y * 8);
+            cell.visible_width = 8;
+            cell.visible_height = 8;
+            cell.map_x = static_cast<std::uint8_t>(x);
+            cell.map_y = static_cast<std::uint8_t>(y);
+            cell.tile_id = (x >= 1 && x <= 2 && y >= 1 && y <= 2) ? 7 : 1;
+            cell.opaque_mask.fill(0xFF);
+            snapshot.visible_tile_cells.push_back(cell);
+        }
+    }
+    gbb::VoxelSceneBuildOptions options;
+    options.detect_background_objects = true;
+    const auto scene = gbb::build_voxel_scene(snapshot, options);
+    check(scene.schema_version == 1 && scene.width == 32 &&
+              scene.object_owner.size() == 32U * 32U,
+          "voxel scene builder creates a versioned pixel ownership map");
+    check(std::any_of(scene.objects.begin(), scene.objects.end(),
+                      [](const gbb::VoxelObject& object) {
+                          return object.kind == gbb::VoxelObjectKind::background_object &&
+                                 object.source_cells.size() == 4 &&
+                                 object.confidence >= 0.72F &&
+                                 object.anchor_y == 24;
+                      }),
+          "voxel scene builder resolves a compact background object with a hinge");
+    const auto flat = gbb::build_voxel_scene(snapshot);
+    check(std::none_of(flat.objects.begin(), flat.objects.end(),
+                       [](const gbb::VoxelObject& object) {
+                           return object.kind == gbb::VoxelObjectKind::background_object;
+                       }),
+          "voxel scene builder keeps ambiguous background flat by default");
+
+    snapshot.visible_tile_cells[5].tile_id = 7;
+    snapshot.visible_tile_cells[6].tile_id = 8;
+    snapshot.visible_tile_cells[9].tile_id = 9;
+    snapshot.visible_tile_cells[10].tile_id = 10;
+    std::vector<gbb::VoxelObjectTemplate> templates{
+        {"building", 2, 2, {7, 8, 9, 10}}};
+    options.background_templates = &templates;
+    const auto templated = gbb::build_voxel_scene(snapshot, options);
+    check(std::any_of(templated.objects.begin(), templated.objects.end(),
+                      [](const gbb::VoxelObject& object) {
+                          return object.id.find("template-building") == 0 &&
+                                 object.source_cells.size() == 4 &&
+                                 object.confidence == 1.0F;
+                      }),
+          "voxel scene builder resolves an authored multi-tile template");
 }
 
 void test_audio_helpers() {
@@ -500,6 +588,7 @@ int main() {
     test_touch_controls();
     test_dashboard_navigation();
     test_voxel_profiles();
+    test_voxel_scene_builder();
     test_audio_helpers();
     return failures == 0 ? 0 : 1;
 }

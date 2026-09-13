@@ -271,6 +271,66 @@ def safe_stem(entry: dict[str, Any]) -> str:
     return f"{title[:64]}-{entry['sha256'][:12]}"
 
 
+def resolve_capture_input(
+    value: Any,
+    *,
+    rom_path: Path,
+    corpus_path: Path,
+    description: str,
+) -> Path | None:
+    """Resolve an optional save/state path relative to the corpus inputs.
+
+    Save files are commonly kept beside their ROM, while corpus files are
+    sometimes maintained outside the ROM directory. Try both locations and
+    finally the caller's working directory so the command line remains
+    convenient without silently selecting a wrong file.
+    """
+
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{description} must be a non-empty path")
+
+    configured = Path(value)
+    if configured.is_absolute():
+        candidates = [configured]
+    else:
+        candidates = [rom_path.parent / configured, corpus_path.parent / configured,
+                      configured]
+
+    unique_candidates: list[Path] = []
+    for candidate in candidates:
+        if candidate not in unique_candidates:
+            unique_candidates.append(candidate)
+        if candidate.is_file():
+            return candidate
+    searched = ", ".join(str(candidate) for candidate in unique_candidates)
+    raise FileNotFoundError(f"{description} not found: {value} (searched {searched})")
+
+
+def capture_cli_command(
+    cli: Path,
+    rom_path: Path,
+    movie_path: Path,
+    observations_path: Path,
+    frames: int,
+    max_instructions_per_frame: int,
+    *,
+    battery_save_path: Path | None = None,
+    state_path: Path | None = None,
+) -> list[str]:
+    command = [
+        str(cli), str(rom_path), "--input-movie", str(movie_path),
+        "--scene-jsonl", str(observations_path), "--frames", str(frames),
+        "--max-instructions-per-frame", str(max_instructions_per_frame),
+    ]
+    if battery_save_path is not None:
+        command.extend(["--battery-save", str(battery_save_path)])
+    if state_path is not None:
+        command.extend(["--state", str(state_path)])
+    return command
+
+
 def run_command(command: list[str], log_path: Path, timeout: int) -> int:
     try:
         result = subprocess.run(
@@ -312,10 +372,22 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--timeout", type=int, default=180)
     parser.add_argument(
+        "--battery-save", type=Path, default=None,
+        help="battery save to apply to every captured entry unless overridden",
+    )
+    parser.add_argument(
+        "--state", type=Path, default=None,
+        help="GBB save state to apply to every captured entry unless overridden",
+    )
+    parser.add_argument(
         "--variants", type=int, default=len(MOVIE_VARIANT_NAMES),
         help="number of deterministic exploration variants to try (1-3)",
     )
     parser.add_argument("--skip-existing", action="store_true")
+    parser.add_argument(
+        "--reanalyze-existing", action="store_true",
+        help="reuse existing observations and regenerate proposals/reports",
+    )
     args = parser.parse_args()
 
     if args.frames < 1 or args.timeout < 1 or args.max_instructions_per_frame < 1:
@@ -367,11 +439,62 @@ def main() -> int:
             results.append(result)
             print(f"[{index}/{len(entries)}] missing {rom_path}")
             continue
+        if args.reanalyze_existing and observations_path.is_file():
+            analyzer_command = [
+                sys.executable, str(args.analyzer), str(observations_path),
+                "--output", str(proposals_path),
+            ]
+            returncode = run_command(analyzer_command, log_path, args.timeout)
+            result.update({
+                "status": "reanalyzed" if returncode == 0 else "analysis_failed",
+                "returncode": returncode,
+                "capture_returncode": None,
+            })
+            if returncode == 0 and proposals_path.is_file():
+                try:
+                    proposals = json.loads(
+                        proposals_path.read_text(encoding="utf-8")
+                    )
+                    result["frames_analyzed"] = proposals.get("frames_analyzed", 0)
+                    result["proposal_count"] = len(proposals.get("proposals", []))
+                    result["template_proposal_count"] = len(
+                        proposals.get("template_proposals", [])
+                    )
+                except (OSError, json.JSONDecodeError):
+                    result["status"] = "analysis_output_invalid"
+            results.append(result)
+            print(f"[{index}/{len(entries)}] {result['status']} {entry['path']}")
+            continue
         if args.skip_existing and observations_path.is_file() and proposals_path.is_file():
             result.update({"status": "skipped", "returncode": 0})
             results.append(result)
             print(f"[{index}/{len(entries)}] skipped {entry['path']}")
             continue
+
+        try:
+            battery_save_path = resolve_capture_input(
+                entry.get("battery_save", args.battery_save),
+                rom_path=rom_path,
+                corpus_path=args.corpus,
+                description="battery save",
+            )
+            state_path = resolve_capture_input(
+                entry.get("state", args.state),
+                rom_path=rom_path,
+                corpus_path=args.corpus,
+                description="save state",
+            )
+        except (FileNotFoundError, ValueError) as error:
+            status = "missing_battery_save" if "battery save" in str(error) else "missing_state"
+            result.update({"status": status, "returncode": None, "error": str(error)})
+            results.append(result)
+            print(f"[{index}/{len(entries)}] {status} {entry['path']}: {error}")
+            continue
+
+        if battery_save_path is not None:
+            result["battery_save"] = battery_save_path.as_posix()
+        if state_path is not None:
+            result["state"] = state_path.as_posix()
 
         candidates: list[dict[str, Any]] = []
         with tempfile.TemporaryDirectory(
@@ -384,11 +507,12 @@ def main() -> int:
                 variant_observations = candidate_dir / f"{variant_name}.jsonl"
                 variant_log = candidate_dir / f"{variant_name}.log"
                 write_movie(variant_movie, args.frames, variant)
-                cli_command = [
-                    str(args.cli), str(rom_path), "--input-movie", str(variant_movie),
-                    "--scene-jsonl", str(variant_observations), "--frames", str(args.frames),
-                    "--max-instructions-per-frame", str(args.max_instructions_per_frame),
-                ]
+                cli_command = capture_cli_command(
+                    args.cli, rom_path, variant_movie, variant_observations,
+                    args.frames, args.max_instructions_per_frame,
+                    battery_save_path=battery_save_path,
+                    state_path=state_path,
+                )
                 capture_returncode = run_command(
                     cli_command, variant_log, args.timeout
                 )
@@ -482,6 +606,9 @@ def main() -> int:
         "frames_requested": args.frames,
         "variants_requested": args.variants,
         "variant_names": list(MOVIE_VARIANT_NAMES[:args.variants]),
+        "battery_save_default": args.battery_save.as_posix()
+        if args.battery_save is not None else None,
+        "state_default": args.state.as_posix() if args.state is not None else None,
         "results": results,
     }
     summary_path = args.output_dir / "run-manifest.json"
@@ -500,7 +627,10 @@ def main() -> int:
     print(f"Run manifest: {summary_path}")
     print(f"Review report: {report_path}")
     hard_failures = sum(
-        result["status"] in {"capture_failed", "analysis_failed", "analysis_output_invalid"}
+        result["status"] in {
+            "capture_failed", "analysis_failed", "analysis_output_invalid",
+            "missing_battery_save", "missing_state",
+        }
         for result in results
     )
     return 0 if hard_failures == 0 and report_returncode == 0 else 1

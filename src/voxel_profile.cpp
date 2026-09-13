@@ -34,6 +34,11 @@ constexpr std::string_view super_mario_land_profile =
     "window_depth_near=50\n"
     "sprite_depth_far=45\n"
     "sprite_depth_near=25\n"
+    "background_object_detection=1\n"
+    "background_object_min_cells=4\n"
+    "background_object_max_fraction=0.55\n"
+    "background_object_confidence=0.72\n"
+    "background_debug_overlay=0\n"
     "framebuffer_facade=0\n";
 
 std::string trim(std::string value) {
@@ -70,6 +75,47 @@ bool parse_bool(const std::string& text, bool& target) {
     return false;
 }
 
+bool parse_object_template(const std::string& text,
+                           VoxelObjectTemplate& target) {
+    const auto separator = text.find(':');
+    if (separator == std::string::npos) return false;
+    const auto dimensions = text.substr(0, separator);
+    const auto width_separator = dimensions.find('x');
+    if (width_separator == std::string::npos) return false;
+    try {
+        const auto width = std::stoul(dimensions.substr(0, width_separator));
+        const auto height = std::stoul(dimensions.substr(width_separator + 1));
+        if (width == 0 || height == 0 || width > 16 || height > 16 ||
+            width * height > 64)
+            return false;
+        std::vector<std::int16_t> tile_ids;
+        std::size_t start = separator + 1;
+        while (start <= text.size()) {
+            const auto end = text.find(',', start);
+            const auto token = trim(text.substr(start, end == std::string::npos
+                                                         ? std::string::npos
+                                                         : end - start));
+            if (token.empty()) return false;
+            if (token == "*") {
+                tile_ids.push_back(-1);
+            } else {
+                const auto tile = std::stol(token);
+                if (tile < 0 || tile > 255) return false;
+                tile_ids.push_back(static_cast<std::int16_t>(tile));
+            }
+            if (end == std::string::npos) break;
+            start = end + 1;
+        }
+        if (tile_ids.size() != width * height) return false;
+        target.width = static_cast<std::uint32_t>(width);
+        target.height = static_cast<std::uint32_t>(height);
+        target.tile_ids = std::move(tile_ids);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
 void parse_key(VoxelProfile& profile, const std::string& key,
                const std::string& value) {
     if (key == "depth_scale") parse_float(value, profile.depth_scale);
@@ -86,6 +132,23 @@ void parse_key(VoxelProfile& profile, const std::string& key,
     else if (key == "window_depth_near") parse_float(value, profile.window_depth_near);
     else if (key == "sprite_depth_far") parse_float(value, profile.sprite_depth_far);
     else if (key == "sprite_depth_near") parse_float(value, profile.sprite_depth_near);
+    else if (key == "background_object_detection") parse_bool(value, profile.background_object_detection);
+    else if (key == "background_object_min_cells") {
+        float parsed = 0.0F;
+        if (parse_float(value, parsed) && parsed >= 0.0F)
+            profile.background_object_min_cells = static_cast<std::uint32_t>(parsed);
+    }
+    else if (key == "background_object_max_fraction") parse_float(value, profile.background_object_max_fraction);
+    else if (key == "background_object_confidence") parse_float(value, profile.background_object_confidence);
+    else if (key == "background_object_template") {
+        VoxelObjectTemplate object_template;
+        if (parse_object_template(value, object_template)) {
+            object_template.id = "template-" +
+                                  std::to_string(profile.background_object_templates.size());
+            profile.background_object_templates.push_back(std::move(object_template));
+        }
+    }
+    else if (key == "background_debug_overlay") parse_bool(value, profile.background_debug_overlay);
     else if (key == "framebuffer_facade") parse_bool(value, profile.framebuffer_facade);
 }
 
@@ -106,6 +169,13 @@ void clamp_profile(VoxelProfile& profile) {
     profile.window_depth_near = std::clamp(profile.window_depth_near, 0.0F, profile.window_depth_far - 0.01F);
     profile.sprite_depth_far = std::clamp(profile.sprite_depth_far, 0.0F, 1000.0F);
     profile.sprite_depth_near = std::clamp(profile.sprite_depth_near, 0.0F, profile.sprite_depth_far - 0.01F);
+    profile.background_object_min_cells = std::clamp(profile.background_object_min_cells,
+                                                      std::uint32_t{2},
+                                                      std::uint32_t{64});
+    profile.background_object_max_fraction = std::clamp(profile.background_object_max_fraction,
+                                                         0.05F, 0.90F);
+    profile.background_object_confidence = std::clamp(profile.background_object_confidence,
+                                                       0.0F, 1.0F);
 }
 
 bool section_matches(const std::string& section, const std::uint64_t fingerprint) {
@@ -144,6 +214,10 @@ VoxelProfile built_in_voxel_profile(const std::uint64_t fingerprint) {
     profile.sprite_depth_far = 45.0F;
     profile.sprite_depth_near = 25.0F;
     profile.framebuffer_facade = false;
+    profile.background_object_detection = true;
+    profile.background_object_min_cells = 4;
+    profile.background_object_max_fraction = 0.55F;
+    profile.background_object_confidence = 0.72F;
     }
     return profile;
 }
@@ -209,7 +283,26 @@ bool save_voxel_profile(const std::filesystem::path& path,
             << "window_depth_near=" << clamped.window_depth_near << '\n'
             << "sprite_depth_far=" << clamped.sprite_depth_far << '\n'
             << "sprite_depth_near=" << clamped.sprite_depth_near << '\n'
-            << "framebuffer_facade=" << (clamped.framebuffer_facade ? 1 : 0);
+            << "background_object_detection=" << (clamped.background_object_detection ? 1 : 0) << '\n'
+            << "background_object_min_cells=" << clamped.background_object_min_cells << '\n'
+            << "background_object_max_fraction=" << clamped.background_object_max_fraction << '\n'
+            << "background_object_confidence=" << clamped.background_object_confidence << '\n'
+            << "background_debug_overlay=" << (clamped.background_debug_overlay ? 1 : 0) << '\n';
+    for (const auto& object_template : clamped.background_object_templates) {
+        if (object_template.width == 0 || object_template.height == 0 ||
+            object_template.tile_ids.size() !=
+                static_cast<std::size_t>(object_template.width) * object_template.height)
+            continue;
+        section << "background_object_template=" << object_template.width << 'x'
+                << object_template.height << ':';
+        for (std::size_t index = 0; index < object_template.tile_ids.size(); ++index) {
+            if (index != 0) section << ',';
+            if (object_template.tile_ids[index] < 0) section << '*';
+            else section << object_template.tile_ids[index];
+        }
+        section << '\n';
+    }
+    section << "framebuffer_facade=" << (clamped.framebuffer_facade ? 1 : 0);
     std::vector<std::string> replacement;
     std::istringstream section_input(section.str());
     std::string replacement_line;
@@ -311,6 +404,11 @@ void ensure_voxel_profile_file(const std::filesystem::path& path) {
               "window_depth_near=50\n"
               "sprite_depth_far=45\n"
               "sprite_depth_near=25\n"
+              "background_object_detection=0\n"
+              "background_object_min_cells=4\n"
+              "background_object_max_fraction=0.55\n"
+              "background_object_confidence=0.72\n"
+              "background_debug_overlay=0\n"
               "framebuffer_facade=0\n\n"
            << super_mario_land_profile;
 }

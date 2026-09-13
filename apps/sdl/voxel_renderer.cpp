@@ -1,6 +1,7 @@
 #include "voxel_renderer.hpp"
 
 #include "gbb/gameboy_scene.hpp"
+#include "gbb/voxel_scene.hpp"
 
 #include <algorithm>
 #include <array>
@@ -52,6 +53,17 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
         profile.camera_pitch + context.voxel_camera_pitch_offset, -75.0F, 75.0F);
     profile.camera_yaw = std::clamp(
         profile.camera_yaw + context.voxel_camera_yaw_offset, -180.0F, 180.0F);
+    const auto voxel_scene = gbb::build_voxel_scene(
+        context.scene_snapshot,
+        gbb::VoxelSceneBuildOptions{
+            true,
+            popup_book && profile.background_object_detection &&
+                context.scene_snapshot.width == gameboy::Ppu::screen_width &&
+                context.scene_snapshot.height == gameboy::Ppu::screen_height,
+            profile.background_object_min_cells,
+            profile.background_object_max_fraction,
+            profile.background_object_confidence,
+            &profile.background_object_templates});
     // Reserve a recessed plane for the complete framebuffer. Sprites and
     // window overlays are then elevated relative to this plane, giving the
     // diorama a clear far/middle/foreground separation.
@@ -351,7 +363,22 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
             }
         }
     }
-    if (popup_book) {
+    if (popup_book && profile.background_object_detection &&
+        scene.width == gameboy::Ppu::screen_width &&
+        scene.height == gameboy::Ppu::screen_height) {
+        for (std::size_t pixel = 0; pixel < voxel_scene.object_owner.size();
+             ++pixel) {
+            const auto owner = voxel_scene.object_owner[pixel];
+            if (owner < 0 ||
+                static_cast<std::size_t>(owner) >= voxel_scene.objects.size() ||
+                voxel_scene.objects[static_cast<std::size_t>(owner)].kind !=
+                    gbb::VoxelObjectKind::background_object)
+                continue;
+            popup_object_mask[pixel] = true;
+            popup_object_anchor_y[pixel] =
+                voxel_scene.objects[static_cast<std::size_t>(owner)].anchor_y;
+        }
+    } else if (popup_book) {
         // Tile-layer artwork in overhead games (buildings, trees, signs and
         // terrain edges) is not represented by OAM.  Split non-backdrop
         // pixels into connected shapes so substantial shapes can become
@@ -851,6 +878,53 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
             !SDL_RenderTexture(context.renderer, context.texture, nullptr, nullptr)) {
             return false;
         }
+    }
+    if (popup_book && profile.background_debug_overlay &&
+        scene.width == gameboy::Ppu::screen_width &&
+        scene.height == gameboy::Ppu::screen_height) {
+        // Diagnostics are deliberately opt-in. Rejected candidates are red;
+        // accepted profile/generic objects are cyan. Drawing source-space
+        // bounds through the same camera makes it possible to tell whether a
+        // bad result came from provenance classification or projection.
+        SDL_SetRenderDrawBlendMode(context.renderer, SDL_BLENDMODE_BLEND);
+        const auto is_accepted = [&](const gbb::VoxelObject& candidate) {
+            return std::any_of(
+                voxel_scene.objects.begin(), voxel_scene.objects.end(),
+                [&](const gbb::VoxelObject& object) {
+                    return object.kind == gbb::VoxelObjectKind::background_object &&
+                           object.id == candidate.id;
+                });
+        };
+        const auto draw_box = [&](const gbb::VoxelObject& object,
+                                  const SDL_Color color) {
+            const auto left_top = project(object.min_x, object.min_y,
+                                          base_depth - 0.25F);
+            const auto right_top = project(object.max_x, object.min_y,
+                                           base_depth - 0.25F);
+            const auto right_bottom = project(object.max_x, object.max_y,
+                                              base_depth - 0.25F);
+            const auto left_bottom = project(object.min_x, object.max_y,
+                                             base_depth - 0.25F);
+            SDL_SetRenderDrawColor(context.renderer, color.r, color.g, color.b,
+                                   color.a);
+            SDL_RenderLine(context.renderer, left_top.x, left_top.y,
+                           right_top.x, right_top.y);
+            SDL_RenderLine(context.renderer, right_top.x, right_top.y,
+                           right_bottom.x, right_bottom.y);
+            SDL_RenderLine(context.renderer, right_bottom.x, right_bottom.y,
+                           left_bottom.x, left_bottom.y);
+            SDL_RenderLine(context.renderer, left_bottom.x, left_bottom.y,
+                           left_top.x, left_top.y);
+        };
+        for (const auto& candidate : voxel_scene.candidates) {
+            if (!is_accepted(candidate))
+                draw_box(candidate, SDL_Color{245, 75, 75, 220});
+        }
+        for (const auto& object : voxel_scene.objects) {
+            if (object.kind == gbb::VoxelObjectKind::background_object)
+                draw_box(object, SDL_Color{40, 190, 255, 235});
+        }
+        SDL_SetRenderDrawBlendMode(context.renderer, SDL_BLENDMODE_NONE);
     }
     return true;
 }

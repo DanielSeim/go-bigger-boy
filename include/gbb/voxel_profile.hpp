@@ -2,8 +2,20 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <string>
+#include <vector>
 
 namespace gbb {
+
+// A compact authored tile arrangement. `tile_ids` is row-major and -1 is a
+// wildcard, allowing a profile to describe a roof/wall shape while ignoring
+// palette or animation variants.
+struct VoxelObjectTemplate {
+    std::string id;
+    std::uint32_t width{2};
+    std::uint32_t height{2};
+    std::vector<std::int16_t> tile_ids;
+};
 
 // Presentation-only tuning for the optional voxel diorama renderer. The
 // profile is intentionally independent from any emulation core and is keyed
@@ -26,6 +38,15 @@ struct VoxelProfile {
     float window_depth_near{50.0F};
     float sprite_depth_far{45.0F};
     float sprite_depth_near{25.0F};
+    // Enable the conservative provenance-based background object detector for
+    // profiles that have been visually reviewed. Unknown ROMs remain on the
+    // legacy heuristic path until a profile opts in.
+    bool background_object_detection{false};
+    std::uint32_t background_object_min_cells{4};
+    float background_object_max_fraction{0.55F};
+    float background_object_confidence{0.72F};
+    std::vector<VoxelObjectTemplate> background_object_templates;
+    bool background_debug_overlay{false};
     // Keep the voxel mesh visible by default. The original framebuffer can
     // be enabled explicitly when a front-facing reference image is desired.
     bool framebuffer_facade{false};

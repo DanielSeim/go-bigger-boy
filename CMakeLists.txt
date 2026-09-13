@@ -149,6 +149,7 @@ add_library(gbb_core_api
     src/settings.cpp
     src/trace_parser.cpp
     src/voxel_profile.cpp
+    src/voxel_scene.cpp
 )
 target_include_directories(gbb_core_api PUBLIC include)
 target_compile_features(gbb_core_api PUBLIC cxx_std_17)

@@ -672,9 +672,85 @@ python3 scripts/voxel_scene_analyzer.py \
 ```
 
 This is deliberately a first proposal pass, not a Pokémon building detector.
-The next tooling increment should add a visual overlay for accepting,
-rejecting, splitting and merging proposals. The resulting decisions can then
-become ROM-specific profile rules.
+The live scene builder now adds the missing review loop: authored multi-tile
+templates can accept a known roof/wall/door/window arrangement, while an
+opt-in SDL debug overlay draws accepted candidates in cyan and rejected
+candidates in red through the active camera projection. The resulting
+decisions can become ROM-specific profile rules without changing emulation.
+
+### Implemented first scene-builder slice
+
+The first backend-neutral extraction slice is now implemented in
+`gbb::build_voxel_scene`. It consumes the existing visible tile provenance and
+emits a deterministic ownership map plus resolved sprite/background-object
+records. Sprite records are authoritative because OAM supplies their native
+ownership. Background objects are intentionally conservative: only adjacent
+non-transparent cells sharing tile context are grouped, oversized regions are
+rejected, and a confidence score combines compactness, repetition, boundary,
+ground contact and aspect ratio. Ambiguous regions remain flat unless a ROM
+profile opts in.
+
+The Super Mario Land profile is the first profile to opt into this detector.
+The SDL pop-up renderer consumes its object ownership map while other ROMs
+retain the existing heuristic path. SGB-sized snapshots are excluded from this
+native 160×144 integration until their border/game-area coordinate mapping is
+represented explicitly. The scene builder itself remains independent of SDL
+and is covered by the frontend contract tests, so it can later be shared with
+the web and Android presentation backends.
+
+This is deliberately not a universal building detector yet. Profiles can now
+add `background_object_template=WxH:tile,...` entries; `*` matches any tile
+ID. Templates are matched against fully visible map cells before generic
+connected components, so a known building remains one coherent object even
+when its roof, wall, door and window use unrelated tiles. The optional
+`background_debug_overlay=1` setting shows rejected candidates in red and
+accepted background objects in cyan in the SDL pop-up renderer. It is meant
+for authoring and review, not as a default end-user visual.
+
+The remaining practical step is to capture reviewed template decisions from
+the Mario and Pokémon-style corpus and add them as small ROM-specific
+fixtures. Those fixtures should verify scrolling, partial visibility and
+false-positive rejection before any broader automatic detector is enabled.
+
+### Automated template authoring assistant
+
+The corpus analyzer now performs that discovery step automatically. In
+addition to conservative graph components, it scans small complete adjacent
+tile rectangles, which catches multi-tile buildings whose neighboring tiles
+have unrelated IDs. Repeated layouts are normalized to their local shape and
+grouped by tile pattern across frames and map locations. Map addresses are
+used for scroll-stable identity when available; captures without reliable map
+provenance are marked as higher risk and never become stronger than a manual
+review suggestion.
+
+Each proposal includes a generated profile entry, recurrence and location
+evidence, confidence, and explicit risk notes such as weak ground contact,
+single-location observation, or excessive repetition across the map. The
+analyzer writes these under `template_proposals` in
+`gbb.voxel.proposals.v2`. `voxel_review_report.py` displays them alongside the
+scene frames and clearly labels them as manual-review-only. It limits the
+template section to the top 32 ranked candidates while retaining the complete
+component proposal set for diagnostics; no proposal is automatically enabled
+in the live renderer.
+
+The normal corpus command now produces the suggestions as part of every
+review run:
+
+```sh
+python3 scripts/run_voxel_corpus.py --skip-existing
+```
+
+After changing analyzer heuristics, use `--reanalyze-existing` to regenerate
+the proposal JSON and HTML report from captured observations without running
+the emulator again:
+
+```sh
+python3 scripts/run_voxel_corpus.py --reanalyze-existing
+```
+
+For a single capture, inspect the generated `proposals/*.json` and open the
+corresponding `index.html`. Only after visual review should an author copy a
+`profile_entry` into the ROM-specific voxel profile.
 
 ### Building a local ROM observation corpus
 
@@ -727,11 +803,28 @@ build-desktop/gbb_cli roms/'Pokemon - Crystal Version (UE) (V1.0) [C][!].gbc' \
   --scene-jsonl /tmp/pokemon-overworld.jsonl --frames 600
 ```
 
-This is still deterministic frame driving rather than a full TAS format: it
-does not embed a save state, and the movie assumes the same ROM, emulator
-build, initial boot state, and instruction setup. That keeps it suitable for
-comparing scene observations while leaving the existing binary SDL movie
-recordings unchanged.
+This is still deterministic frame driving rather than a full TAS format. The
+CLI can optionally seed a capture from a matching battery save or a GBB save
+state:
+
+```sh
+build-desktop/gbb_cli roms/'Pokemon - Crystal Version (UE) (V1.0) [C][!].gbc' \
+  --battery-save saves/pokemon-crystal.sav \
+  --input-movie /tmp/pokemon-overworld.movie \
+  --scene-jsonl /tmp/pokemon-overworld.jsonl --frames 600
+```
+
+`--state` accepts the emulator's GBB save-state format and restores the exact
+ROM fingerprint it was created from. A battery save must match the cartridge's
+RAM layout. The corpus runner accepts the same `--battery-save` and `--state`
+options as defaults for all entries; for a mixed corpus, put `battery_save` or
+`state` on individual entries instead. Relative paths are searched beside the
+ROM, beside the corpus JSON, and then from the current working directory. The
+chosen inputs are recorded in `run-manifest.json` so a capture can be audited.
+
+Without a save input, the movie assumes the same ROM, emulator build, initial
+boot state, and instruction setup. That keeps it suitable for comparing scene
+observations while leaving the existing binary SDL movie recordings unchanged.
 
 ### Automated corpus review
 
