@@ -58,6 +58,9 @@ public:
     [[nodiscard]] bool take_sprite_request() noexcept {
         return std::exchange(sprite_requested_, false);
     }
+    [[nodiscard]] bool take_video_viewer_request() noexcept {
+        return std::exchange(video_viewer_requested_, false);
+    }
     [[nodiscard]] bool has_breakpoints() const noexcept {
         return !breakpoints_.empty();
     }
@@ -88,6 +91,7 @@ public:
     void request_replay() noexcept { replay_requested_ = true; }
     void request_tas_editor() noexcept { tas_requested_ = true; }
     void request_sprite_editor() noexcept { sprite_requested_ = true; }
+    void request_video_viewers() noexcept { video_viewer_requested_ = true; }
     void run() noexcept {
         breakpoints_.resume_after_hit();
         execution_paused_ = false;
@@ -153,6 +157,7 @@ public:
         replay_requested_ = false;
         tas_requested_ = false;
         sprite_requested_ = false;
+        video_viewer_requested_ = false;
         cancel_edit();
     }
 
@@ -230,6 +235,8 @@ public:
                     focus_index_, 10, (event.key.mod & SDL_KMOD_SHIFT) != 0);
             } else if (event.key.key == SDLK_F4) {
                 inspector_mode_ = !inspector_mode_;
+            } else if (event.key.key == SDLK_F1) {
+                video_viewer_requested_ = true;
             } else if ((event.key.key == SDLK_RETURN ||
                         event.key.key == SDLK_KP_ENTER ||
                         event.key.key == SDLK_SPACE) &&
@@ -398,6 +405,7 @@ public:
         render_tool_text(renderer_, 250, 20,
                          inspector_mode_ ? "F4: MAP VIEW"
                                          : "F4: HARDWARE INSPECTOR");
+        render_tool_text(renderer_, 500, 20, "F1: VIDEO VIEWERS");
         static_cast<void>(SDL_SetRenderDrawColor(renderer_, 177, 192, 208, 255));
 
         constexpr float map_scale = 2.0F;
@@ -1080,6 +1088,7 @@ private:
     bool replay_requested_{};
     bool tas_requested_{};
     bool sprite_requested_{};
+    bool video_viewer_requested_{};
     bool inspector_mode_{};
     int focus_index_{6};
     DesktopBreakpoints breakpoints_;

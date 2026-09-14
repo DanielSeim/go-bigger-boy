@@ -14,6 +14,7 @@
 #include "input_movie.hpp"
 #include "sprite_editor.hpp"
 #include "tas_editor.hpp"
+#include "video_viewer.hpp"
 #endif
 
 #ifdef _WIN32
@@ -76,6 +77,7 @@ struct SdlEventContext {
     InputMovie& input_movie;
     TasEditor& tas_editor;
     SpriteEditor& sprite_editor;
+    VideoViewer& video_viewer;
     CheatManager& cheat_manager;
 #ifdef _WIN32
     DesktopMenuBar& desktop_menu;

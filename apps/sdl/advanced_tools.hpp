@@ -12,6 +12,7 @@
 #include "sdl_resources.hpp"
 #include "sprite_editor.hpp"
 #include "tas_editor.hpp"
+#include "video_viewer.hpp"
 
 #include <SDL3/SDL.h>
 
@@ -32,6 +33,7 @@ struct AdvancedToolContext final {
     InputMovie& input_movie;
     TasEditor& tas_editor;
     SpriteEditor& sprite_editor;
+    VideoViewer& video_viewer;
     CheatManager& cheat_manager;
     const std::filesystem::path& movie_path;
     const std::filesystem::path& tas_movie_path;

@@ -1597,6 +1597,7 @@ int main(int argc, char** argv) {
         InputMovie input_movie;
         TasEditor tas_editor;
         SpriteEditor sprite_editor;
+        gbb::sdl::VideoViewer video_viewer;
         CheatManager cheat_manager;
         const auto movie_path = preference_path / "replays" /
                                 "last-input.gbbmovie";
@@ -1947,6 +1948,7 @@ int main(int argc, char** argv) {
                 input_movie,
                 tas_editor,
                 sprite_editor,
+                video_viewer,
                 cheat_manager
 #ifdef _WIN32
                 , desktop_menu
@@ -2236,7 +2238,8 @@ int main(int argc, char** argv) {
 #ifndef __ANDROID__
             process_advanced_tool_requests({
                 services, sdl, debugger, input_movie, tas_editor,
-                sprite_editor, cheat_manager, movie_path, tas_movie_path,
+                sprite_editor, video_viewer, cheat_manager, movie_path,
+                tas_movie_path,
                 sprite_patch_path,
                 sprite_ips_path, current_rom, rewind_history, paused,
                 fast_forward, rewind});
@@ -2571,6 +2574,8 @@ int main(int argc, char** argv) {
             }
             tas_editor.present();
             sprite_editor.present(emulator);
+            video_viewer.present(emulator,
+                                 gameboy::display_palettes[display_palette]);
             cheat_manager.present();
 #endif
 #ifdef _WIN32

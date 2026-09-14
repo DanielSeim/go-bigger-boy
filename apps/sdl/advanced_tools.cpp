@@ -59,6 +59,11 @@ void process_advanced_tool_requests(AdvancedToolContext context) {
         context.rewind_history.clear();
         context.debugger.pause();
     }
+    if (emulator != nullptr && context.debugger.take_video_viewer_request()) {
+        context.video_viewer.open(context.sdl.window);
+        context.rewind_history.clear();
+        context.debugger.pause();
+    }
     if (sprite_emulator != nullptr &&
         context.sprite_editor.take_save_patch_request()) {
         try {

@@ -182,6 +182,10 @@ bool handle_desktop_tool_event(const SDL_Event& event,
         context.sprite_editor.handle_event(event, tools.sprite_editor())) {
         return true;
     }
+    if (context.video_viewer.visible() &&
+        context.video_viewer.handle_event(event, tools.debugger())) {
+        return true;
+    }
     if (tools.debugger() != nullptr &&
         context.tas_editor.handle_event(event)) {
         return true;
