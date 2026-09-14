@@ -8,8 +8,14 @@ namespace gameboy {
 namespace {
 constexpr unsigned master_clock = 4194304;
 constexpr std::size_t maximum_buffered_samples = Apu::sample_rate * 2;
-// A trigger does not expose the newly started waveform until the five-clock
-// startup delay has elapsed. This is observable through CGB PCM12/PCM34 reads.
+// CGB-E's power-cycle startup path has separate delays for an inactive channel
+// and an active retrigger. The inactive path waits four 2-MHz ticks longer;
+// the distinction is observable through the PCM12 channel-delay and restart
+// tests.
+constexpr unsigned inactive_channel_trigger_delay = 8;
+constexpr unsigned active_channel_trigger_delay = 1;
+// The generic/DMG path retains the established five-clock startup timing;
+// the longer/shorter split is only for the explicit CGB-E profile below.
 constexpr unsigned channel_trigger_delay = 5;
 // Later CGB revisions advance the phase when an inactive square channel is
 // started. The equivalent alignment is two clocks at short periods and four
@@ -19,6 +25,7 @@ constexpr unsigned modern_cgb_inactive_square_alignment = 4;
 // divider quarter-cycle later than CGB-D/E.  Keep this revision-specific
 // offset local to CGB hardware; DMG/MGB noise startup remains unchanged.
 constexpr unsigned early_cgb_noise_start_delay = 4;
+constexpr unsigned modern_cgb_noise_start_delay = 1;
 
 constexpr std::array<std::array<std::uint8_t, 8>, 4> duty_patterns{{
     {{0, 0, 0, 0, 0, 0, 0, 1}},
@@ -35,6 +42,8 @@ void Apu::initialize_post_boot(const HardwareModel model,
                     model == HardwareModel::cgb_c ||
                     model == HardwareModel::cgb_e;
     modern_cgb_ = model == HardwareModel::cgb || model == HardwareModel::cgb_e;
+    cgb_e_revision_ = model == HardwareModel::cgb_e;
+    cgb_e_power_cycle_startup_ = false;
     power_off();
     powered_ = true;
     // If the APU is enabled while the DIV/APU input is high, hardware skips
@@ -120,6 +129,7 @@ void Apu::write_register(const std::uint16_t address,
             power_off();
         } else if (!powered_) {
             powered_ = true;
+            cgb_e_power_cycle_startup_ = cgb_e_revision_;
             frame_sequencer_step_ = 0;
             skip_frame_sequencer_event_ = divider_apu_signal;
         }
@@ -399,9 +409,15 @@ void Apu::trigger_pulse1() noexcept {
             64 - (pulse1_.length_enabled && next_step_skips_length() ? 1 : 0));
     }
     pulse1_.period = period;
-    pulse1_.timer = (pulse1_.timer & 3U) | (period & ~3U);
+    pulse1_.timer = cgb_e_revision_
+                        ? period
+                        : ((pulse1_.timer & 3U) | (period & ~3U));
     pulse1_.just_reloaded = false;
-    pulse1_.timer += channel_trigger_delay;
+    const auto cgb_e_startup = cgb_e_revision_ && cgb_e_power_cycle_startup_;
+    pulse1_.timer += cgb_e_startup
+                        ? (was_enabled ? active_channel_trigger_delay
+                                       : inactive_channel_trigger_delay)
+                        : channel_trigger_delay;
     if (modern_cgb_ && !was_enabled) {
         const auto alignment = period >= 16
                                    ? modern_cgb_inactive_square_alignment
@@ -444,9 +460,15 @@ void Apu::trigger_pulse2() noexcept {
             64 - (pulse2_.length_enabled && next_step_skips_length() ? 1 : 0));
     }
     pulse2_.period = period;
-    pulse2_.timer = (pulse2_.timer & 3U) | (period & ~3U);
+    pulse2_.timer = cgb_e_revision_
+                        ? period
+                        : ((pulse2_.timer & 3U) | (period & ~3U));
     pulse2_.just_reloaded = false;
-    pulse2_.timer += channel_trigger_delay;
+    const auto cgb_e_startup = cgb_e_revision_ && cgb_e_power_cycle_startup_;
+    pulse2_.timer += cgb_e_startup
+                        ? (was_enabled ? active_channel_trigger_delay
+                                       : inactive_channel_trigger_delay)
+                        : channel_trigger_delay;
     if (modern_cgb_ && !was_enabled) {
         const auto alignment = period >= 16
                                    ? modern_cgb_inactive_square_alignment
@@ -495,7 +517,9 @@ void Apu::trigger_noise() noexcept {
     noise_.timer = noise_period() +
                    (cgb_hardware_ && !modern_cgb_
                         ? early_cgb_noise_start_delay
-                        : 0U);
+                        : cgb_e_revision_ && cgb_e_power_cycle_startup_
+                              ? modern_cgb_noise_start_delay
+                              : 0U);
     noise_.lfsr = 0x7FFF;
     trigger_envelope(noise_.envelope, registers_[0x11]);
     if (frame_sequencer_step_ == 7 && noise_.envelope.running) {

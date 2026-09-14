@@ -385,6 +385,25 @@ void test_ppu_background_window_and_sprites() {
           "DMG rendering routes background, OBJ0, and OBJ1 independently");
 }
 
+void test_io_trace_diagnostics() {
+    gameboy::MemoryBus bus{gameboy::Cartridge{test_rom()}};
+    bus.debug_enable_io_trace(true);
+    bus.write8(0xFF43, 0x12);
+    bus.write8(0xC000, 0x34);
+    bus.tick(4);
+    const auto events = bus.debug_take_io_trace();
+    check(events.size() == 1 && events[0].cycle == 0 &&
+              events[0].address == 0xFF43 && events[0].value == 0x12 &&
+              events[0].ly == 0 && events[0].dot == 0 && events[0].mode == 0,
+          "I/O tracing records register writes with the current bus and PPU phase");
+    check(bus.debug_take_io_trace().empty(),
+          "taking an I/O trace drains only the captured events");
+    bus.debug_enable_io_trace(false);
+    bus.write8(0xFF40, 0x80);
+    check(bus.debug_take_io_trace().empty(),
+          "disabled I/O tracing does not retain later writes");
+}
+
 void test_joypad_matrix_and_interrupts() {
     gameboy::MemoryBus bus{gameboy::Cartridge{test_rom()}};
     check(bus.read8(0xFF00) == 0xFF,
@@ -588,6 +607,7 @@ int main() {
     test_ppu_stat_interrupts();
     test_ppu_vblank_and_frame_publication();
     test_ppu_background_window_and_sprites();
+    test_io_trace_diagnostics();
     test_joypad_matrix_and_interrupts();
     test_oam_dma();
     return failures == 0 ? 0 : 1;

@@ -303,7 +303,8 @@ void test_cgb_revision_boundary_fixtures() {
     const auto cgb_e_pulse =
         first_pulse2_high_cycle(gameboy::HardwareModel::cgb_e);
     check(cgb_c_pulse != 0 && cgb_e_pulse != 0 && cgb_c_pulse == cgb_e_pulse + 4,
-          "CGB-E square retriggers advance the first duty edge by four clocks");
+          "CGB-E square retriggers advance the first duty edge by four clocks " +
+              std::to_string(cgb_c_pulse) + "/" + std::to_string(cgb_e_pulse));
 
     const auto first_noise_high_cycle = [](const gameboy::HardwareModel model) {
         gameboy::MemoryBus bus{gameboy::Cartridge{cgb_test_rom()}};
@@ -324,7 +325,8 @@ void test_cgb_revision_boundary_fixtures() {
     const auto cgb_e_noise =
         first_noise_high_cycle(gameboy::HardwareModel::cgb_e);
     check(cgb_c_noise != 0 && cgb_e_noise != 0 && cgb_c_noise == cgb_e_noise + 4,
-          "CGB-0/CGB-C noise startup trails CGB-E by one divider quarter-cycle");
+          "CGB-0/CGB-C noise startup trails CGB-E by one divider quarter-cycle " +
+              std::to_string(cgb_c_noise) + "/" + std::to_string(cgb_e_noise));
 
     const auto pcm_visible = [](const gameboy::HardwareModel model) {
         gameboy::MemoryBus bus{gameboy::Cartridge{cgb_test_rom()}};

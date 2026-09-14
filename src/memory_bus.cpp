@@ -190,6 +190,17 @@ bool MemoryBus::oam_dma_blocks(const std::uint16_t address) const noexcept {
 }
 
 void MemoryBus::write8(const std::uint16_t address, const std::uint8_t value) noexcept {
+    if (debug_io_trace_enabled_ && address >= 0xFF00 && address <= 0xFF7F) {
+        debug_io_trace_.push_back(IoTraceEvent{
+            debug_bus_cycles_, address, value,
+            ppu_.read_register(0xFF44),
+            static_cast<std::uint16_t>(ppu_.debug_dot()),
+            ppu_.debug_mode()});
+        if (debug_io_trace_.size() > 8192) {
+            debug_io_trace_.erase(debug_io_trace_.begin(),
+                                  debug_io_trace_.begin() + 4096);
+        }
+    }
     if (address <= 0x7FFF || (address >= 0xA000 && address <= 0xBFFF)) {
         cartridge_.write(address, value);
     } else if (address <= 0x9FFF) {
@@ -267,6 +278,7 @@ void MemoryBus::write8(const std::uint16_t address, const std::uint8_t value) no
 }
 
 void MemoryBus::tick(const unsigned cycles) noexcept {
+    debug_bus_cycles_ += cycles;
     const auto peripheral_cycles = double_speed_ ? cycles / 2 : cycles;
     tick_oam_dma(peripheral_cycles);
     serial_.tick(cycles);
@@ -484,6 +496,17 @@ bool MemoryBus::try_speed_switch() noexcept {
 
 bool MemoryBus::debug_apu_cycle_phase() const noexcept {
     return apu_cycle_phase_;
+}
+
+void MemoryBus::debug_enable_io_trace(const bool enabled) noexcept {
+    debug_io_trace_enabled_ = enabled;
+    debug_io_trace_.clear();
+}
+
+std::vector<MemoryBus::IoTraceEvent> MemoryBus::debug_take_io_trace() noexcept {
+    std::vector<IoTraceEvent> output;
+    output.swap(debug_io_trace_);
+    return output;
 }
 
 std::uint8_t MemoryBus::read_wram(std::uint16_t address) const noexcept {

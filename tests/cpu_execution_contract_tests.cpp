@@ -451,6 +451,21 @@ void test_interrupt_and_low_power_states() {
     check(bug_cpu.registers().pc == 0x0102,
           "execution resumes normally after the HALT bug fetch");
 
+    gameboy::MemoryBus ei_halt_bus{
+        gameboy::Cartridge{test_rom({0xFB, 0x76, 0x00})}};
+    ei_halt_bus.write8(0xFFFF, 1);
+    ei_halt_bus.write8(0xFF0F, 1);
+    gameboy::Cpu ei_halt_cpu;
+    ei_halt_cpu.load_registers(initial_registers());
+    static_cast<void>(ei_halt_cpu.step(ei_halt_bus));
+    check(ei_halt_cpu.step(ei_halt_bus) == 4 && !ei_halt_cpu.halted() &&
+              ei_halt_cpu.interrupts_enabled() &&
+              ei_halt_cpu.registers().pc == 0x0101,
+          "EI followed by HALT honors delayed IME without entering HALT mode");
+    check(ei_halt_cpu.step(ei_halt_bus) == 20 &&
+              ei_halt_cpu.registers().pc == 0x0040,
+          "a buffered interrupt wakes and dispatches after EI followed by HALT");
+
     gameboy::MemoryBus stop_bus{
         gameboy::Cartridge{test_rom({0x10, 0x00, 0x00})}};
     gameboy::Cpu stop_cpu;

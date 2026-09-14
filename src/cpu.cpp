@@ -335,7 +335,24 @@ unsigned Cpu::execute_instruction(MemoryBus& bus) {
             (flag(carry_flag) ? 0 : carry_flag));
         return 4;
     case 0x76: // HALT
-        if (!ime_ && pending_interrupts(bus) != 0) {
+        if (pending_interrupts(bus) != 0 &&
+            (ime_ || ime_enable_delay_ != 0)) {
+            // When IME is enabled (including the delayed EI window), a
+            // buffered interrupt is sampled during HALT's final machine
+            // cycle. HALT does not remain active, but the return address is
+            // the HALT opcode itself; after RETI the instruction is sampled
+            // again, allowing another buffered source to be serviced without
+            // advancing past HALT.
+            --registers_.pc;
+            halted_ = false;
+            return 4;
+        }
+        // EI enables IME after the following instruction. HALT must observe
+        // that delayed state: an already-buffered interrupt wakes the halted
+        // CPU on the next step, but it does not turn this HALT into the HALT
+        // bug. The bug only applies when IME is genuinely disabled.
+        if (!ime_ && ime_enable_delay_ == 0 &&
+            pending_interrupts(bus) != 0) {
             halt_bug_ = true;
         } else {
             halted_ = true;

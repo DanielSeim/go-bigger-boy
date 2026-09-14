@@ -23,6 +23,15 @@ class Cpu;
 
 class MemoryBus {
 public:
+    struct IoTraceEvent {
+        std::uint64_t cycle{};
+        std::uint16_t address{};
+        std::uint8_t value{};
+        std::uint8_t ly{};
+        std::uint16_t dot{};
+        std::uint8_t mode{};
+    };
+
     explicit MemoryBus(Cartridge cartridge);
     void initialize_post_boot(HardwareModel model = HardwareModel::dmg) noexcept;
 
@@ -42,6 +51,8 @@ public:
     // while the CPU is in double-speed mode; normal-speed APU clocks already
     // run once per bus cycle and must not perturb this half-cycle alignment.
     [[nodiscard]] bool debug_apu_cycle_phase() const noexcept;
+    void debug_enable_io_trace(bool enabled) noexcept;
+    [[nodiscard]] std::vector<IoTraceEvent> debug_take_io_trace() noexcept;
     void set_dmg_palette(const DmgPalette& palette) noexcept;
     [[nodiscard]] std::uint8_t debug_read_vram(std::uint8_t bank,
                                                std::uint16_t offset) const noexcept;
@@ -118,6 +129,9 @@ private:
     bool hdma_active_{};
     bool double_speed_{};
     bool speed_switch_requested_{};
+    std::uint64_t debug_bus_cycles_{};
+    bool debug_io_trace_enabled_{};
+    std::vector<IoTraceEvent> debug_io_trace_{};
     std::array<std::uint8_t, Joypad::sgb_packet_size * Joypad::sgb_max_packets>
         sgb_packet_{};
 };

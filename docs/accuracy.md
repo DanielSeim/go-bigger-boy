@@ -56,6 +56,29 @@ informational cases because they expose commands rather than the Fibonacci
 result ABI. Research failures remain visible in `external-suite-report.md` but
 are not release regressions until a case is promoted to the `required` gate.
 
+Each external report now includes stable failure clusters such as
+`ppu/mode3-background`, `ppu/stat`, `cgb/speed-switch`, and
+`apu/channel_1`. These labels are derived from the upstream case path and are
+triage aids, not claims that every case in a cluster has the same root cause.
+
+The test runner also supports `--trace-io PATH`. It records CPU-cycle, PPU
+line/dot, mode, address, and value for I/O writes, allowing a visual or PCM
+failure to be reduced to the exact register-write boundary. The generic
+`scripts/differential_test.py` harness can invoke an adapter around a trusted
+reference emulator with repeated `--reference-arg` options. Adapter arguments
+may use `{rom}`, `{model}`, `{max_cycles}`, `{frame}`, and `{trace}`; arguments
+are passed directly without a shell. For example:
+
+```sh
+python3 scripts/differential_test.py --candidate build-desktop/gbb_test_runner \
+  --reference /path/to/reference-adapter --reference-arg={rom} \
+  --reference-arg=--model --reference-arg={model} --rom tests/fixture.gb \
+  --output /tmp/differential --frame
+```
+
+This makes the reference connection reproducible while keeping the external
+emulator and any proprietary ROM/reference assets outside the repository.
+
 The upstream collection also contains visual or interactive suites (Bully,
 cgb-acid-hell, MBC3 Tester, rtc3test, TurtleTests, and parts of
 little-things-gb). Their ROMs and references remain documented by the bundle,

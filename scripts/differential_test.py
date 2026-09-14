@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import Sequence
 import struct
 import subprocess
 import sys
@@ -32,7 +33,21 @@ def result_marker(output: str) -> str:
 
 def command_for(executable: Path, rom: Path, model: str, max_cycles: int,
                 frame: Path | None, trace: Path | None,
-                trace_kind: str | None) -> list[str]:
+                trace_kind: str | None,
+                extra_args: Sequence[str] = ()) -> list[str]:
+    replacements = {
+        "{rom}": str(rom),
+        "{model}": model,
+        "{max_cycles}": str(max_cycles),
+        "{frame}": str(frame) if frame is not None else "",
+        "{trace}": str(trace) if trace is not None else "",
+    }
+
+    def expand(argument: str) -> str:
+        for placeholder, value in replacements.items():
+            argument = argument.replace(placeholder, value)
+        return argument
+
     command = [str(executable), str(rom), "--max-cycles", str(max_cycles),
                "--model", model]
     if frame is not None:
@@ -41,6 +56,7 @@ def command_for(executable: Path, rom: Path, model: str, max_cycles: int,
         command.extend(("--protocol", "mooneye"))
     if trace is not None and trace_kind is not None:
         command.extend((f"--trace-{trace_kind}", str(trace)))
+    command.extend(expand(argument) for argument in extra_args)
     return command
 
 
@@ -83,6 +99,11 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--candidate", required=True, type=Path)
     parser.add_argument("--reference", required=True, type=Path)
+    parser.add_argument(
+        "--reference-arg", action="append", default=[],
+        help="extra reference argument; supports {rom}, {model}, "
+             "{max_cycles}, {frame}, and {trace}",
+    )
     parser.add_argument("--rom", required=True, type=Path)
     parser.add_argument("--model", default="cgb-e")
     parser.add_argument("--max-cycles", type=int, default=100_000_000)
@@ -114,7 +135,8 @@ def main() -> int:
     reference_code = run(
         args.reference,
         command_for(args.reference, args.rom, args.model, args.max_cycles,
-                    reference_frame, reference_trace, trace_kind),
+                    reference_frame, reference_trace, trace_kind,
+                    args.reference_arg),
         reference_log,
     )
 

@@ -130,6 +130,8 @@ private:
     std::vector<std::int16_t> samples_{};
     bool cgb_hardware_{};
     bool modern_cgb_{};
+    bool cgb_e_revision_{};
+    bool cgb_e_power_cycle_startup_{};
     bool powered_{};
     bool audio_enabled_{true};
     PulseState pulse1_{};

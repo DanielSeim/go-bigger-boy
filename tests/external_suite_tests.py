@@ -94,6 +94,17 @@ class ExternalSuiteDiscoveryTests(unittest.TestCase):
         self.assertIn("expected_registers=B=03", summary)
         self.assertIn("observed_registers=B=42", summary)
 
+    def test_failure_clusters_group_external_subsystems(self) -> None:
+        make_case = lambda suite, case_id: MODULE.Case(
+            suite, case_id, None, None, None, False, "machine", 1,
+            "research", "fail")
+        self.assertEqual(
+            MODULE.failure_cluster(make_case("age-test-roms", "m3-bg-scx_x")),
+            "ppu/mode3-background")
+        self.assertEqual(
+            MODULE.failure_cluster(make_case("same-suite", "apu_channel_2_x")),
+            "apu/channel_2")
+
 
 if __name__ == "__main__":
     unittest.main()

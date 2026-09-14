@@ -224,6 +224,37 @@ def summarize_runner_output(output: str, returncode: int) -> str:
     return summary[:500]
 
 
+def failure_cluster(case: Case) -> str:
+    """Return a stable subsystem label for triaging external failures."""
+    name = case.case_id.casefold()
+    if case.suite == "age-test-roms":
+        for marker, label in (
+                ("m3-bg", "ppu/mode3-background"),
+                ("speed-switch", "cgb/speed-switch"),
+                ("halt", "cpu/halt"),
+                ("lcd-align-ly", "ppu/lcd-alignment"),
+                ("stat", "ppu/stat"),
+                ("oam", "ppu/oam"),
+                ("vram", "ppu/vram"),
+                ("ly", "ppu/ly")):
+            if marker in name:
+                return label
+        return "age/other"
+    if case.suite == "same-suite":
+        if name.startswith("apu_"):
+            for channel in ("channel_1", "channel_2", "channel_3", "channel_4"):
+                if channel in name:
+                    return f"apu/{channel}"
+            return "apu/divider"
+        for marker, label in (
+                ("dma", "dma"), ("interrupt", "interrupt"),
+                ("ppu", "ppu"), ("sgb", "sgb")):
+            if marker in name:
+                return label
+        return "same-suite/other"
+    return "other"
+
+
 def run_case(case: Case, runner: Path, output_dir: Path) -> Case:
     if case.status != "pending":
         return case
@@ -289,6 +320,18 @@ def write_report(path: Path, cases: Sequence[Case], missing: Sequence[str]) -> N
         output.write("## Summary\n\n")
         output.write(" ".join(f"{key.upper()}={value}"
                               for key, value in counts.items()) + "\n\n")
+        clusters = {}
+        for case in cases:
+            if case.status in {"fail", "timeout"}:
+                cluster = failure_cluster(case)
+                clusters[cluster] = clusters.get(cluster, 0) + 1
+        if clusters:
+            output.write("## Failure clusters\n\n")
+            output.write("| Cluster | Failures |\n|---|---:|\n")
+            for cluster, count in sorted(clusters.items(),
+                                         key=lambda item: (-item[1], item[0])):
+                output.write(f"| `{cluster}` | {count} |\n")
+            output.write("\n")
         output.write("| Suite | Case | Model | Kind | Gate | Status | Detail |\n")
         output.write("|---|---|---|---|---|---|---|\n")
         for case in cases:

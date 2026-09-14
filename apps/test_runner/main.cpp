@@ -33,6 +33,7 @@ struct Options {
     std::filesystem::path frame_output;
     std::filesystem::path apu_trace_output;
     std::filesystem::path ppu_trace_output;
+    std::filesystem::path io_trace_output;
     bool dmg_compatibility_colors{};
     bool frame_on_ld_bb{};
 };
@@ -43,7 +44,7 @@ void usage() {
                  "mooneye-wilbertpol|serial|blargg|gbmicrotest] "
                  "[--model auto|dmg0|dmg|mgb|sgb|sgb2|cgb0|cgb-c|cgb-e] "
                  "[--frames N --frame-output capture.ppm] "
-                 "[--trace-apu PATH] [--trace-ppu PATH] "
+                 "[--trace-apu PATH] [--trace-ppu PATH] [--trace-io PATH] "
                  "[--frame-on-ld-bb --frame-output capture.ppm] "
                  "[--dmg-compatibility-colors]\n";
 }
@@ -101,6 +102,8 @@ Options parse_options(const int argc, char** argv) {
             options.apu_trace_output = argv[++index];
         } else if (argument == "--trace-ppu" && index + 1 < argc) {
             options.ppu_trace_output = argv[++index];
+        } else if (argument == "--trace-io" && index + 1 < argc) {
+            options.io_trace_output = argv[++index];
         } else if (argument == "--dmg-compatibility-colors") {
             options.dmg_compatibility_colors = true;
         } else if (argument == "--frame-on-ld-bb") {
@@ -296,6 +299,22 @@ void write_ppu_trace(std::ofstream& output, const gameboy::Cpu& cpu,
            << std::dec << '\n';
 }
 
+void write_io_trace(
+    std::ofstream& output,
+    const std::vector<gameboy::MemoryBus::IoTraceEvent>& events) {
+    for (const auto& event : events) {
+        output << "cycle=" << event.cycle << " address=" << std::hex
+               << std::setw(4) << std::setfill('0') << event.address
+               << " value=" << std::setw(2)
+               << static_cast<unsigned>(event.value)
+               << " ly=" << std::setw(2) << static_cast<unsigned>(event.ly)
+               << " dot=" << std::setw(3)
+               << static_cast<unsigned>(event.dot)
+               << " mode=" << static_cast<unsigned>(event.mode)
+               << std::dec << '\n';
+    }
+}
+
 bool contains_failure(const std::string& output) {
     return output.find("Failed") != std::string::npos ||
            output.find("FAILED") != std::string::npos ||
@@ -346,6 +365,7 @@ int main(int argc, char** argv) {
             gameboy::Cartridge{std::move(rom)}, options.model};
         std::ofstream apu_trace;
         std::ofstream ppu_trace;
+        std::ofstream io_trace;
         if (!options.apu_trace_output.empty()) {
             if (options.apu_trace_output.has_parent_path()) {
                 std::filesystem::create_directories(
@@ -367,6 +387,18 @@ int main(int argc, char** argv) {
             if (!ppu_trace) throw std::runtime_error(
                 "could not open PPU trace: " + options.ppu_trace_output.string());
             ppu_trace << "trace_version=1 kind=ppu\n";
+        }
+        if (!options.io_trace_output.empty()) {
+            if (options.io_trace_output.has_parent_path()) {
+                std::filesystem::create_directories(
+                    options.io_trace_output.parent_path());
+            }
+            io_trace.open(options.io_trace_output,
+                          std::ios::out | std::ios::trunc);
+            if (!io_trace) throw std::runtime_error(
+                "could not open I/O trace: " + options.io_trace_output.string());
+            io_trace << "trace_version=1 kind=io\n";
+            emulator.bus().debug_enable_io_trace(true);
         }
         emulator.set_dmg_compatibility_colors(options.dmg_compatibility_colors);
         std::string serial_output;
@@ -465,6 +497,8 @@ int main(int argc, char** argv) {
                                            emulator.bus());
             if (ppu_trace) write_ppu_trace(ppu_trace, emulator.cpu(),
                                            emulator.bus());
+            if (io_trace) write_io_trace(
+                io_trace, emulator.bus().debug_take_io_trace());
             if (captures_frame && emulator.frame_ready()) {
                 ++completed_frames;
                 if (completed_frames == options.frames) {

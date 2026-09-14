@@ -47,6 +47,20 @@ class DifferentialTestTests(unittest.TestCase):
             self.assertIn("1 pixels differ", mismatch)
             self.assertTrue((root / "diff.ppm").exists())
 
+    def test_command_for_expands_reference_adapter_arguments(self) -> None:
+        command = MODULE.command_for(
+            Path("reference-adapter"), Path("game.gb"), "cgb-e", 1234,
+            Path("frame.ppm"), Path("trace.log"), "apu",
+            ("--rom-path", "{rom}", "--hardware", "{model}",
+             "--limit", "{max_cycles}", "--frame", "{frame}",
+             "--trace", "{trace}"),
+        )
+        self.assertEqual(command[-10:], [
+            "--rom-path", "game.gb", "--hardware", "cgb-e",
+            "--limit", "1234", "--frame", "frame.ppm", "--trace",
+            "trace.log",
+        ])
+
 
 if __name__ == "__main__":
     unittest.main()
