@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cstdint>
 #include <sstream>
 #include <stdexcept>
 #include <functional>
@@ -35,6 +36,12 @@ namespace gbb::sdl {
 namespace {
 
 #ifndef __ANDROID__
+struct DesktopNotification {
+    std::string message;
+    std::uint64_t expires_at{};
+    bool warning{};
+};
+
 struct DesktopDialog {
     std::string title;
     std::string message;
@@ -47,6 +54,12 @@ struct DesktopDialog {
 std::unordered_map<SDL_Window*, DesktopDialog>& desktop_dialogs() {
     static std::unordered_map<SDL_Window*, DesktopDialog> dialogs;
     return dialogs;
+}
+
+std::unordered_map<SDL_Window*, DesktopNotification>&
+desktop_notifications() {
+    static std::unordered_map<SDL_Window*, DesktopNotification> notifications;
+    return notifications;
 }
 
 void open_desktop_text_dialog(SDL_Window* window, std::string title,
@@ -145,6 +158,7 @@ SDL_FRect dialog_choice_rect(const DialogGeometry& geometry,
                 static_cast<float>(index) * (width + gap),
             geometry.y + geometry.height - 62.0F, width, 38.0F};
 }
+
 #endif
 
 [[nodiscard]] std::string rom_filename_for_title(const std::string& path) {
@@ -491,6 +505,68 @@ void show_lan_hosts(SDL_Window* window,
 }
 
 #ifndef __ANDROID__
+void show_desktop_notification(SDL_Window* window, std::string message,
+                               const bool warning) {
+    if (window == nullptr || message.empty()) return;
+    desktop_notifications()[window] = {
+        std::move(message), SDL_GetTicks() + 4000, warning};
+}
+
+bool desktop_notification_visible(SDL_Window* window) noexcept {
+    if (window == nullptr) return false;
+    auto& notifications = desktop_notifications();
+    const auto found = notifications.find(window);
+    if (found == notifications.end()) return false;
+    if (found->second.expires_at <= SDL_GetTicks()) {
+        notifications.erase(found);
+        return false;
+    }
+    return true;
+}
+
+void present_desktop_notification(SDL_Renderer* renderer, SDL_Window* window) {
+    auto& notifications = desktop_notifications();
+    const auto found = notifications.find(window);
+    if (found == notifications.end() || renderer == nullptr) return;
+    if (found->second.expires_at <= SDL_GetTicks()) {
+        notifications.erase(found);
+        return;
+    }
+    int width = 0;
+    int height = 0;
+    static_cast<void>(SDL_GetWindowSize(window, &width, &height));
+    const auto panel_width = std::min(680.0F,
+                                      std::max(320.0F, width - 48.0F));
+    const auto lines = wrap_dialog_message(
+        found->second.message,
+        static_cast<std::size_t>(std::max(24.0F, (panel_width - 48.0F) / 8.0F)));
+    const auto panel_height = std::min(
+        108.0F, 54.0F + static_cast<float>(std::min<std::size_t>(2, lines.size())) *
+                          20.0F);
+    const SDL_FRect panel{
+        (static_cast<float>(width) - panel_width) * 0.5F,
+        static_cast<float>(height) - panel_height - 28.0F,
+        panel_width, panel_height};
+    static_cast<void>(SDL_SetRenderLogicalPresentation(
+        renderer, 0, 0, SDL_LOGICAL_PRESENTATION_DISABLED));
+    static_cast<void>(SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND));
+    static_cast<void>(SDL_SetRenderDrawColor(renderer, 4, 9, 15, 238));
+    static_cast<void>(SDL_RenderFillRect(renderer, &panel));
+    static_cast<void>(SDL_SetRenderDrawColor(
+        renderer, found->second.warning ? 248 : 69,
+        found->second.warning ? 183 : 207,
+        found->second.warning ? 88 : 238, 255));
+    static_cast<void>(SDL_RenderRect(renderer, &panel));
+    render_tool_text(renderer, panel.x + 18.0F, panel.y + 12.0F,
+                     found->second.warning ? "CHECK" : "DONE");
+    for (std::size_t index = 0; index < 2 && index < lines.size(); ++index) {
+        render_tool_text(renderer, panel.x + 18.0F,
+                         panel.y + 34.0F + static_cast<float>(index) * 20.0F,
+                         lines[index].c_str());
+    }
+    static_cast<void>(SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE));
+}
+
 bool desktop_dialog_visible(SDL_Window* window) noexcept {
     return window != nullptr && desktop_dialogs().find(window) !=
                                     desktop_dialogs().end();

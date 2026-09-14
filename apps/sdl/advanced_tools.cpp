@@ -67,9 +67,7 @@ void process_advanced_tool_requests(AdvancedToolContext context) {
             context.sprite_editor.mark_saved(*sprite_emulator);
             const auto message = "Sprite patch saved to:\n" +
                                  context.sprite_patch_path.string();
-            static_cast<void>(SDL_ShowSimpleMessageBox(
-                SDL_MESSAGEBOX_INFORMATION, "Sprite patch saved",
-                message.c_str(), context.sdl.window));
+            show_desktop_notification(context.sdl.window, message);
         } catch (const std::exception& error) {
             show_error(context.sdl.window, error.what());
         }
@@ -93,9 +91,7 @@ void process_advanced_tool_requests(AdvancedToolContext context) {
                 "\n\nTiles exported: " + std::to_string(result.exported) +
                 "\nTiles skipped because their ROM source was missing or "
                 "ambiguous: " + std::to_string(result.unresolved);
-            static_cast<void>(SDL_ShowSimpleMessageBox(
-                SDL_MESSAGEBOX_INFORMATION, "IPS patch exported",
-                message.c_str(), context.sdl.window));
+            show_desktop_notification(context.sdl.window, message);
         } catch (const std::exception& error) {
             show_error(context.sdl.window, error.what());
         }

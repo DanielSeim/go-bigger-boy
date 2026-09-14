@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <string_view>
 #include <utility>
 
 namespace gbb::sdl {
@@ -26,6 +27,39 @@ namespace {
     return dashboard_text(rom_filename(path));
 }
 
+[[nodiscard]] std::string lowercase_ascii(std::string value) {
+    for (auto& character : value) {
+        character = static_cast<char>(std::tolower(
+            static_cast<unsigned char>(character)));
+    }
+    return value;
+}
+
+[[nodiscard]] std::vector<std::string> filtered_recent(
+    const std::vector<std::string>& recent, const std::string_view filter,
+    const gameboy::RomLibrary* library) {
+    if (filter.empty()) return recent;
+    const auto needle = lowercase_ascii(std::string{filter});
+    std::vector<std::string> result;
+    result.reserve(recent.size());
+    for (const auto& path : recent) {
+        auto searchable = rom_filename(path);
+        if (library != nullptr) {
+            for (const auto& entry : library->entries()) {
+                if (entry.path.u8string() == path) {
+                    searchable += " " + entry.metadata.title + " " +
+                                  entry.metadata.language;
+                    break;
+                }
+            }
+        }
+        if (lowercase_ascii(searchable).find(needle) != std::string::npos) {
+            result.push_back(path);
+        }
+    }
+    return result;
+}
+
 } // namespace
 
 std::string dashboard_text(std::string text, const std::size_t maximum) {
@@ -41,10 +75,12 @@ std::string dashboard_text(std::string text, const std::size_t maximum) {
 }
 
 std::vector<DashboardItem> dashboard_items(
-    const bool can_resume, const std::vector<std::string>& recent) {
+    const bool can_resume, const std::vector<std::string>& recent,
+    const std::string_view filter, const gameboy::RomLibrary* library) {
+    const auto visible_recent = filtered_recent(recent, filter, library);
     std::vector<DashboardItem> items;
     const auto navigation = gbb::desktop::dashboard_navigation_items(
-        can_resume, recent.size());
+        can_resume, visible_recent.size());
     items.reserve(navigation.size());
     for (const auto& item : navigation) {
         std::string label;
@@ -65,7 +101,16 @@ std::vector<DashboardItem> dashboard_items(
             label = "Keyboard shortcuts";
             break;
         case gbb::desktop::DashboardAction::recent_rom:
-            label = rom_display_name(recent[item.recent_index]);
+            label = rom_display_name(visible_recent[item.recent_index]);
+            if (library != nullptr) {
+                for (const auto& entry : library->entries()) {
+                    if (entry.path.u8string() == visible_recent[item.recent_index] &&
+                        !entry.metadata.title.empty()) {
+                        label = dashboard_text(entry.metadata.title);
+                        break;
+                    }
+                }
+            }
             break;
         case gbb::desktop::DashboardAction::quit:
             label = "Exit GBB";
@@ -103,8 +148,10 @@ void activate_dashboard_selection(
     DialogState& dialog, SdlResources& sdl,
     const std::filesystem::path& preference_path,
     std::optional<std::string>& pending_rom, bool& dashboard_visible,
-    std::size_t& display_palette, bool& running) {
-    const auto items = dashboard_items(core != nullptr, recent);
+    std::size_t& display_palette, bool& running,
+    const std::string_view filter, const gameboy::RomLibrary* library) {
+    const auto items = dashboard_items(core != nullptr, recent, filter, library);
+    const auto visible_recent = filtered_recent(recent, filter, library);
     if (selection >= items.size()) return;
     const auto& item = items[selection];
     switch (item.action) {
@@ -124,8 +171,8 @@ void activate_dashboard_selection(
         show_help(sdl.window, bindings);
         break;
     case gbb::desktop::DashboardAction::recent_rom:
-        if (item.recent_index < recent.size()) {
-            pending_rom = recent[item.recent_index];
+        if (item.recent_index < visible_recent.size()) {
+            pending_rom = visible_recent[item.recent_index];
         }
         break;
     case gbb::desktop::DashboardAction::quit:

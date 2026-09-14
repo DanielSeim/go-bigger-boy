@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace gbb::sdl {
@@ -28,7 +29,8 @@ constexpr float dashboard_row_height = 18.0F;
 [[nodiscard]] std::string dashboard_text(
     std::string text, std::size_t maximum = 16);
 [[nodiscard]] std::vector<DashboardItem> dashboard_items(
-    bool can_resume, const std::vector<std::string>& recent);
+    bool can_resume, const std::vector<std::string>& recent,
+    std::string_view filter = {}, const gameboy::RomLibrary* library = nullptr);
 [[nodiscard]] std::size_t dashboard_first_visible(std::size_t selection,
                                                    std::size_t item_count);
 [[nodiscard]] std::optional<std::size_t> dashboard_row_at(
@@ -41,6 +43,7 @@ void activate_dashboard_selection(
     DialogState& dialog, SdlResources& sdl,
     const std::filesystem::path& preference_path,
     std::optional<std::string>& pending_rom, bool& dashboard_visible,
-    std::size_t& display_palette, bool& running);
+    std::size_t& display_palette, bool& running,
+    std::string_view filter = {}, const gameboy::RomLibrary* library = nullptr);
 
 } // namespace gbb::sdl

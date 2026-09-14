@@ -180,6 +180,10 @@ public:
     void present(const gameboy::Emulator* emulator) {
         if (!visible() || emulator == nullptr) return;
         if (!emulator->bus().cgb_mode()) bank_ = 0;
+        int window_width = 1000;
+        int window_height = 780;
+        static_cast<void>(SDL_GetWindowSize(window_, &window_width,
+                                            &window_height));
         static_cast<void>(SDL_SetRenderDrawColor(renderer_, 8, 12, 20, 255));
         static_cast<void>(SDL_RenderClear(renderer_));
         static_cast<void>(SDL_SetRenderDrawColor(renderer_, 69, 207, 238, 255));
@@ -221,7 +225,7 @@ public:
             }
         }
 
-        constexpr float editor_x = 500.0F;
+        const auto editor_x = editor_origin_x(window_width);
         constexpr float editor_y = 100.0F;
         constexpr float pixel_size = 48.0F;
         for (std::size_t y = 0; y < 8; ++y) {
@@ -260,15 +264,16 @@ public:
             render_tool_text(renderer_, swatch.x + 24, swatch.y + 62,
                              label.c_str());
         }
-        draw_button({500, 620, 120, 36}, "CTRL+Z UNDO");
-        draw_button({636, 620, 120, 36}, "DELETE CLEAR");
-        draw_button({772, 620, 120, 36},
+        const auto action_y = action_origin_y(window_height);
+        draw_button({editor_x, action_y, 120, 36}, "CTRL+Z UNDO");
+        draw_button({editor_x + 136, action_y, 120, 36}, "DELETE CLEAR");
+        draw_button({editor_x + 272, action_y, 120, 36},
                     emulator->bus().cgb_mode()
                         ? (bank_ == 0 ? "B  BANK 0" : "B  BANK 1")
                         : "DMG BANK 0");
-        draw_button({500, 670, 120, 36}, "CTRL+S PATCH");
-        draw_button({636, 670, 120, 36}, "CTRL+O IMPORT");
-        draw_button({772, 670, 120, 36}, "CTRL+E IPS");
+        draw_button({editor_x, action_y + 50, 120, 36}, "CTRL+S PATCH");
+        draw_button({editor_x + 136, action_y + 50, 120, 36}, "CTRL+O IMPORT");
+        draw_button({editor_x + 272, action_y + 50, 120, 36}, "CTRL+E IPS");
         static_cast<void>(SDL_RenderPresent(renderer_));
     }
 
@@ -431,9 +436,30 @@ public:
     static constexpr float grid_x = 24.0F;
     static constexpr float grid_y = 82.0F;
     static constexpr float tile_size = 24.0F;
-    static constexpr float editor_x = 500.0F;
     static constexpr float editor_y = 100.0F;
     static constexpr float pixel_size = 48.0F;
+
+    [[nodiscard]] float editor_origin_x(const int width) const {
+        return std::max(500.0F, static_cast<float>(width) - 500.0F);
+    }
+
+    [[nodiscard]] float editor_origin_x() const {
+        int width = 1000;
+        int height = 780;
+        static_cast<void>(SDL_GetWindowSize(window_, &width, &height));
+        return editor_origin_x(width);
+    }
+
+    [[nodiscard]] static float action_origin_y(const int height) {
+        return std::max(620.0F, static_cast<float>(height) - 160.0F);
+    }
+
+    [[nodiscard]] float action_origin_y() const {
+        int width = 1000;
+        int height = 780;
+        static_cast<void>(SDL_GetWindowSize(window_, &width, &height));
+        return action_origin_y(height);
+    }
 
     [[nodiscard]] bool select_tile_at(const float x, const float y) {
         if (x < grid_x || x >= grid_x + 16 * tile_size || y < grid_y ||
@@ -447,24 +473,27 @@ public:
     }
 
     [[nodiscard]] bool select_color_at(const float x, const float y) {
-        if (y < 520 || y >= 576 || x < editor_x || x >= editor_x + 320) {
+        const auto origin = editor_origin_x();
+        if (y < 520 || y >= 576 || x < origin || x >= origin + 320) {
             return false;
         }
-        const auto color = static_cast<std::size_t>((x - editor_x) / 80);
+        const auto color = static_cast<std::size_t>((x - origin) / 80);
         if (color >= 4) return false;
         color_ = static_cast<std::uint8_t>(color);
         return true;
     }
 
-    [[nodiscard]] static bool paint_position(const float x, const float y) {
-        return x >= editor_x && x < editor_x + 8 * pixel_size &&
+    [[nodiscard]] bool paint_position(const float x, const float y) const {
+        const auto origin = editor_origin_x();
+        return x >= origin && x < origin + 8 * pixel_size &&
                y >= editor_y && y < editor_y + 8 * pixel_size;
     }
 
     void paint(gameboy::Emulator& emulator, const float mouse_x,
                const float mouse_y, const std::uint8_t color) {
         if (!paint_position(mouse_x, mouse_y)) return;
-        const auto x = static_cast<unsigned>((mouse_x - editor_x) / pixel_size);
+        const auto x = static_cast<unsigned>((mouse_x - editor_origin_x()) /
+                                             pixel_size);
         const auto y = static_cast<unsigned>((mouse_y - editor_y) / pixel_size);
         const auto offset = static_cast<std::uint16_t>(selected_tile_ * 16 + y * 2);
         auto low = emulator.bus().debug_read_vram(bank_, offset);
@@ -509,24 +538,26 @@ public:
 
     [[nodiscard]] bool handle_button(const float x, const float y,
                                      gameboy::Emulator& emulator) {
-        if (y >= 670 && y <= 706) {
-            if (x >= 500 && x <= 620) save_patch_requested_ = true;
-            else if (x >= 636 && x <= 756) load_patch_requested_ = true;
-            else if (x >= 772 && x <= 892) export_ips_requested_ = true;
+        const auto origin = editor_origin_x();
+        const auto action_y = action_origin_y();
+        if (y >= action_y + 50 && y <= action_y + 86) {
+            if (x >= origin && x <= origin + 120) save_patch_requested_ = true;
+            else if (x >= origin + 136 && x <= origin + 256) load_patch_requested_ = true;
+            else if (x >= origin + 272 && x <= origin + 392) export_ips_requested_ = true;
             else return false;
             return true;
         }
-        if (y < 620 || y > 656) return false;
-        if (x >= 500 && x <= 620) {
+        if (y < action_y || y > action_y + 36) return false;
+        if (x >= origin && x <= origin + 120) {
             undo(emulator);
             return true;
         }
-        if (x >= 636 && x <= 756) {
+        if (x >= origin + 136 && x <= origin + 256) {
             snapshot(emulator);
             clear_tile(emulator);
             return true;
         }
-        if (x >= 772 && x <= 892 && emulator.bus().cgb_mode()) {
+        if (x >= origin + 272 && x <= origin + 392 && emulator.bus().cgb_mode()) {
             bank_ ^= 1U;
             have_undo_ = false;
             return true;

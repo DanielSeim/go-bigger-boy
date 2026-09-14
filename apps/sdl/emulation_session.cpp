@@ -1,5 +1,8 @@
 #include "emulation_session.hpp"
 
+#ifndef __ANDROID__
+#include "dialogs.hpp"
+#endif
 #include "input_lifecycle.hpp"
 #include "input_mapping.hpp"
 #include "link_trace_file.hpp"
@@ -646,9 +649,13 @@ void start_local_link_session(
     if (link_trace.is_open()) {
         const auto message = "Link trace is being written to:\n" +
                              link_trace.path().string();
+#ifndef __ANDROID__
+        show_desktop_notification(sdl.window, message);
+#else
         static_cast<void>(SDL_ShowSimpleMessageBox(
             SDL_MESSAGEBOX_INFORMATION, "GBB link diagnostics",
             message.c_str(), sdl.window));
+#endif
     }
     sdl.split_screen = true;
     if (!configure_video_pipeline(sdl, sdl.video_mode)) {
@@ -783,18 +790,12 @@ void start_remote_link_session(gameboy::Emulator& emulator,
                                                  ? "Bluetooth link trace is being written to:\n"
                                                  : "TCP link trace is being written to:\n") +
                                  link_trace.path().string();
-            static_cast<void>(SDL_ShowSimpleMessageBox(
-                SDL_MESSAGEBOX_INFORMATION,
-                remote.bluetooth ? "GBB Bluetooth link diagnostics"
-                                  : "GBB TCP link diagnostics",
-                message.c_str(), window));
+            show_desktop_notification(window, message);
         } else {
             const auto message =
                 "Diagnostics are enabled, but no trace file could be opened.\n"
                 "Check that the executable folder is writable.";
-            static_cast<void>(SDL_ShowSimpleMessageBox(
-                SDL_MESSAGEBOX_WARNING, "GBB TCP link diagnostics",
-                message, window));
+            show_desktop_notification(window, message, true);
         }
 #endif
     }

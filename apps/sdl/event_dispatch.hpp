@@ -53,6 +53,7 @@ struct SdlEventContext {
     std::size_t& display_palette;
     bool& dashboard_visible;
     std::size_t& dashboard_selection;
+    std::string& dashboard_filter;
     bool& paused;
     bool& fullscreen;
     bool& fast_forward;

@@ -128,6 +128,16 @@ void present_frame(const PresentationContext& context) {
         static_cast<void>(SDL_SetRenderLogicalPresentation(
             sdl.renderer, logical_width,
             static_cast<int>(sdl.core_video_height), presentation));
+    } else if (desktop_notification_visible(sdl.window)) {
+        present_desktop_notification(sdl.renderer, sdl.window);
+        const auto presentation = sdl.video_mode == gameboy::VideoMode::integer
+                                       ? SDL_LOGICAL_PRESENTATION_INTEGER_SCALE
+                                       : SDL_LOGICAL_PRESENTATION_LETTERBOX;
+        const auto logical_width = static_cast<int>(
+            sdl.core_video_width * (sdl.split_screen ? 2U : 1U));
+        static_cast<void>(SDL_SetRenderLogicalPresentation(
+            sdl.renderer, logical_width,
+            static_cast<int>(sdl.core_video_height), presentation));
     }
 #endif
     if (!SDL_RenderPresent(sdl.renderer)) {

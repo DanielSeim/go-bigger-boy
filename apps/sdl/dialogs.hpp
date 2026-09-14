@@ -35,6 +35,10 @@ void show_error(SDL_Window* window, const std::string& message);
 void show_lan_hosts(SDL_Window* window, const std::vector<gameboy::LanPeer>& peers);
 
 #ifndef __ANDROID__
+void show_desktop_notification(SDL_Window* window, std::string message,
+                               bool warning = false);
+[[nodiscard]] bool desktop_notification_visible(SDL_Window* window) noexcept;
+void present_desktop_notification(SDL_Renderer* renderer, SDL_Window* window);
 void open_desktop_controls_dialog(
     SDL_Window* window, const InputBindings& bindings,
     std::function<void(ControlsAction)> on_choice);

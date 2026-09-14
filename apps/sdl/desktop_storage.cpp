@@ -1,5 +1,8 @@
 #include "desktop_storage.hpp"
 
+#ifndef __ANDROID__
+#include "dialogs.hpp"
+#endif
 #include "gbb/frontend_logging.hpp"
 
 #include <chrono>
@@ -277,8 +280,12 @@ void save_completed_prints(gbb::EmulatorCore* core, SDL_Window* window,
     message << " to:\n" << directory.u8string();
     const auto text = message.str();
     gbb::log_frontend_info(text);
+#ifndef __ANDROID__
+    show_desktop_notification(window, text);
+#else
     static_cast<void>(SDL_ShowSimpleMessageBox(
         SDL_MESSAGEBOX_INFORMATION, "Game Boy Printer", text.c_str(), window));
+#endif
 }
 
 void save_quick_state(const std::filesystem::path& preference_path,

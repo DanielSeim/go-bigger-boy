@@ -90,6 +90,11 @@ void process_events(SdlEventContext& context) {
         case SDL_EVENT_DROP_FILE:
             if (event.drop.data != nullptr) pending_rom = event.drop.data;
             break;
+        case SDL_EVENT_TEXT_INPUT:
+            if (dashboard_visible) {
+                static_cast<void>(handle_dashboard_key_event(event, context));
+            }
+            break;
         case SDL_EVENT_KEY_DOWN:
         case SDL_EVENT_KEY_UP:
 #ifdef __ANDROID__

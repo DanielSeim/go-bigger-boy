@@ -247,6 +247,8 @@ struct State {
     std::atomic_size_t artwork_completed{};
     std::size_t artwork_total{};
     std::wstring library_filter;
+    int library_sort_column{4};
+    bool library_sort_descending{};
     int settings_scroll{};
     HFONT title_font{};
     struct CapturingBinding {
@@ -937,6 +939,11 @@ LRESULT CALLBACK table_header_subclass(
                               reinterpret_cast<LPARAM>(&item))) {
                 continue;
             }
+            if (state->library_sort_column == index) {
+                const auto suffix = state->library_sort_descending ? L"  v" : L"  ^";
+                wcsncat_s(label, std::size(label), suffix,
+                          std::size(label) - wcslen(label) - 1);
+            }
             rectangle.left += 12;
             DrawTextW(dc, label, -1, &rectangle,
                       DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
@@ -1100,6 +1107,8 @@ void refresh_library_list(State& state) {
     if (state.list == nullptr || state.library == nullptr) return;
     state.library_filter = lowercase(edit_value(state.search));
     ListView_DeleteAllItems(state.list);
+    std::vector<std::size_t> indices;
+    indices.reserve(state.library->entries().size());
     for (std::size_t index = 0; index < state.library->entries().size(); ++index) {
         const auto& entry = state.library->entries()[index];
         const auto title = widen(entry.metadata.title);
@@ -1109,6 +1118,35 @@ void refresh_library_list(State& state) {
             searchable.find(state.library_filter) == std::wstring::npos) {
             continue;
         }
+        indices.push_back(index);
+    }
+    if (state.library_sort_column != 0) {
+        std::stable_sort(indices.begin(), indices.end(), [&](const auto left,
+                                                              const auto right) {
+            const auto value = [&](const std::size_t index) {
+                const auto& entry = state.library->entries()[index];
+                switch (state.library_sort_column) {
+                case 1: return widen(entry.metadata.title.empty()
+                                          ? entry.path.filename().u8string()
+                                          : entry.metadata.title);
+                case 2: return widen(gameboy::platform_name(entry.metadata.platform));
+                case 3: return widen(entry.metadata.language);
+                case 4: return formatted_last_played(entry.last_played);
+                default: return std::wstring{};
+                }
+            };
+            const auto left_value = value(left);
+            const auto right_value = value(right);
+            if (left_value == right_value) return left < right;
+            return state.library_sort_descending ? left_value > right_value
+                                                 : left_value < right_value;
+        });
+    }
+    for (const auto index : indices) {
+        const auto& entry = state.library->entries()[index];
+        const auto title = widen(entry.metadata.title);
+        const auto row_title = title.empty() ? entry.path.filename().wstring()
+                                              : title;
         LVITEMW item{};
         item.mask = LVIF_TEXT | LVIF_IMAGE | LVIF_PARAM;
         item.iItem = ListView_GetItemCount(state.list);
@@ -1121,7 +1159,7 @@ void refresh_library_list(State& state) {
         if (row < 0) continue;
         LVITEMW subitem{};
         subitem.iSubItem = 1;
-        subitem.pszText = const_cast<wchar_t*>(title.c_str());
+        subitem.pszText = const_cast<wchar_t*>(row_title.c_str());
         SendMessageW(state.list, LVM_SETITEMTEXTW,
                      static_cast<WPARAM>(row),
                      reinterpret_cast<LPARAM>(&subitem));
@@ -1745,6 +1783,23 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
         if (notification->idFrom == id_list &&
             notification->code == LVN_ITEMCHANGED) {
             refresh_library_actions(*state);
+        }
+        if (notification->idFrom == id_list &&
+            notification->code == LVN_COLUMNCLICK) {
+            const auto* column = reinterpret_cast<const NMLISTVIEW*>(lparam);
+            if (column != nullptr && column->iSubItem > 0 &&
+                column->iSubItem < 5) {
+                if (state->library_sort_column == column->iSubItem) {
+                    state->library_sort_descending =
+                        !state->library_sort_descending;
+                } else {
+                    state->library_sort_column = column->iSubItem;
+                    state->library_sort_descending = false;
+                }
+                refresh_library_list(*state);
+                InvalidateRect(ListView_GetHeader(state->list), nullptr, TRUE);
+                return 0;
+            }
         }
         if (notification->idFrom == id_list &&
             notification->code == LVN_KEYDOWN) {

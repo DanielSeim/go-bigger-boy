@@ -746,6 +746,26 @@ void present_menu_button(SdlResources& sdl) {
     static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 8, 175, 244, 230));
     static_cast<void>(SDL_RenderRect(sdl.renderer, &help_button));
     static_cast<void>(SDL_RenderDebugText(sdl.renderer, 32.0F, 7.0F, "?"));
+    float mouse_x = 0.0F;
+    float mouse_y = 0.0F;
+    static_cast<void>(SDL_GetMouseState(&mouse_x, &mouse_y));
+    static_cast<void>(SDL_RenderCoordinatesFromWindow(
+        sdl.renderer, mouse_x, mouse_y, &mouse_x, &mouse_y));
+    const char* tooltip = nullptr;
+    if (mouse_x >= 3.0F && mouse_x < 23.0F && mouse_y < 18.0F) {
+        tooltip = "LIBRARY";
+    } else if (mouse_x >= 25.0F && mouse_x < 45.0F && mouse_y < 18.0F) {
+        tooltip = "HELP";
+    }
+    if (tooltip != nullptr) {
+        const SDL_FRect tooltip_panel{3.0F, 20.0F, 70.0F, 14.0F};
+        static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 8, 15, 22, 245));
+        static_cast<void>(SDL_RenderFillRect(sdl.renderer, &tooltip_panel));
+        static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 8, 175, 244, 230));
+        static_cast<void>(SDL_RenderRect(sdl.renderer, &tooltip_panel));
+        static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 248, 252, 255, 255));
+        static_cast<void>(SDL_RenderDebugText(sdl.renderer, 8.0F, 23.0F, tooltip));
+    }
 #endif
     static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
                                                  SDL_BLENDMODE_NONE));
@@ -790,6 +810,33 @@ void present_menu_button(SdlResources& sdl) {
     }
 #endif
 }
+
+#ifndef __ANDROID__
+void present_desktop_status(SdlResources& sdl, const bool paused,
+                            const bool fast_forward, const bool rewind,
+                            const bool configuring, const bool recording,
+                            const bool replaying) {
+    std::string status;
+    if (configuring) status = "CONFIGURE";
+    if (paused) status = status.empty() ? "PAUSED" : status + "  PAUSED";
+    if (fast_forward) status = status.empty() ? "FAST FORWARD" : status + "  FAST";
+    if (rewind) status = status.empty() ? "REWIND" : status + "  REWIND";
+    if (recording) status = status.empty() ? "RECORDING" : status + "  REC";
+    if (replaying) status = status.empty() ? "REPLAYING" : status + "  PLAY";
+    if (status.empty()) return;
+    const auto width = std::clamp(12.0F + static_cast<float>(status.size()) * 8.0F,
+                                  48.0F, 152.0F);
+    const SDL_FRect panel{160.0F - width - 3.0F, 3.0F, width, 15.0F};
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 8, 15, 22, 245));
+    static_cast<void>(SDL_RenderFillRect(sdl.renderer, &panel));
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 8, 175, 244, 230));
+    static_cast<void>(SDL_RenderRect(sdl.renderer, &panel));
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 248, 252, 255, 255));
+    static_cast<void>(SDL_RenderDebugText(
+        sdl.renderer, panel.x + 6.0F, panel.y + 4.0F,
+        dashboard_text(status, 18).c_str()));
+}
+#endif
 
 #ifdef __ANDROID__
 void draw_touch_circle(SDL_Renderer* renderer, const float center_x,
@@ -1277,8 +1324,10 @@ void present_touch_controls(SdlResources& sdl) {
 #if !defined(_WIN32) && !defined(__ANDROID__)
 void present_dashboard(SdlResources& sdl,
                        const std::vector<std::string>& recent,
-                       const bool can_resume, std::size_t& selection) {
-    const auto items = dashboard_items(can_resume, recent);
+                       const gameboy::RomLibrary& library,
+                       const bool can_resume, std::size_t& selection,
+                       const std::string& filter) {
+    const auto items = dashboard_items(can_resume, recent, filter, &library);
     selection = std::min(selection, items.size() - 1);
     const auto first = dashboard_first_visible(selection, items.size());
     const auto visible = std::min(dashboard_visible_rows, items.size() - first);
@@ -1298,8 +1347,12 @@ void present_dashboard(SdlResources& sdl,
     static_cast<void>(SDL_RenderDebugText(sdl.renderer, 13, 5,
                                           "GO BIGGER BOY"));
     static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 177, 192, 208, 255));
+    const auto filter_label = filter.empty()
+                                  ? std::string{"GAME LIBRARY / TYPE TO FILTER"}
+                                  : std::string{"FILTER: "} +
+                                        dashboard_text(filter, 20);
     static_cast<void>(SDL_RenderDebugText(sdl.renderer, 13, 18,
-                                          "GAME LIBRARY"));
+                                          dashboard_text(filter_label, 18).c_str()));
 
     for (std::size_t row = 0; row < visible; ++row) {
         const auto index = first + row;
@@ -1328,8 +1381,10 @@ void present_dashboard(SdlResources& sdl,
     if (first + visible < items.size()) {
         static_cast<void>(SDL_RenderDebugText(sdl.renderer, 153, 111, "v"));
     }
-    static_cast<void>(SDL_RenderDebugText(sdl.renderer, 13, 134,
-                                          "ENTER OPEN  F1 HELP"));
+    static_cast<void>(SDL_RenderDebugText(
+        sdl.renderer, 13, 134,
+        filter.empty() ? "ENTER OPEN  F1 HELP"
+                       : "ENTER OPEN  BACKSPACE CLEAR"));
 }
 #endif
 
@@ -1447,6 +1502,7 @@ int main(int argc, char** argv) {
         std::unique_ptr<gameboy::GameBoyLinkEndpoint> link_second_endpoint;
         RemoteLinkSession remote_link;
         std::string current_rom;
+        std::string dashboard_filter;
         std::optional<std::string> pending_rom;
 #ifdef __ANDROID__
         std::string pending_rom_name;
@@ -1843,6 +1899,7 @@ int main(int argc, char** argv) {
                 display_palette,
                 dashboard_visible,
                 dashboard_selection,
+                dashboard_filter,
                 paused,
                 fullscreen,
                 fast_forward,
@@ -1871,18 +1928,22 @@ int main(int argc, char** argv) {
 #endif
 #endif
                 , [&]() {
-                    return dashboard_items(core != nullptr, recent_roms).size();
+                    return dashboard_items(core != nullptr, recent_roms,
+                                           dashboard_filter, &rom_library).size();
                 }
                 , [&](const float x, const float y) {
                     return dashboard_row_at(
                         x, y, dashboard_selection,
-                        dashboard_items(core != nullptr, recent_roms).size());
+                        dashboard_items(core != nullptr, recent_roms,
+                                        dashboard_filter,
+                                        &rom_library).size());
                 }
                 , [&](const std::size_t selection) {
                     activate_dashboard_selection(
                         selection, recent_roms, bindings, core.get(), dialog,
                         sdl, preference_path, pending_rom, dashboard_visible,
-                        display_palette, running);
+                        display_palette, running, dashboard_filter,
+                        &rom_library);
                 }
 #ifdef __ANDROID__
                 , [&]() {
@@ -1905,6 +1966,7 @@ int main(int argc, char** argv) {
 #endif
                     dashboard_visible = true;
                     dashboard_selection = 0;
+                    dashboard_filter.clear();
 #endif
                 }
                 , [&]() { show_help(sdl.window, bindings); }
@@ -1931,6 +1993,13 @@ int main(int argc, char** argv) {
 #endif
                 }
             };
+#ifndef __ANDROID__
+            if (dashboard_visible) {
+                static_cast<void>(SDL_StartTextInput(sdl.window));
+            } else {
+                static_cast<void>(SDL_StopTextInput(sdl.window));
+            }
+#endif
             process_events(event_context);
             const auto events_finished = std::chrono::steady_clock::now();
             // Event callbacks may close the current core (for example when
@@ -1975,7 +2044,7 @@ int main(int argc, char** argv) {
             if (reset_requested) {
                 if (!current_rom.empty()) pending_rom = current_rom;
                 reset_requested = false;
-            }
+}
 
 #ifndef __ANDROID__
             if (update_download) {
@@ -2424,14 +2493,25 @@ int main(int argc, char** argv) {
             std::function<void()> menu_overlay;
 #if !defined(_WIN32) && !defined(__ANDROID__)
             dashboard_overlay = [&]() {
-                present_dashboard(sdl, recent_roms, core != nullptr,
-                                  dashboard_selection);
+                present_dashboard(sdl, recent_roms, rom_library,
+                                  core != nullptr, dashboard_selection,
+                                  dashboard_filter);
             };
 #endif
 #ifdef __ANDROID__
             touch_overlay = [&]() { present_touch_controls(sdl); };
 #endif
+#ifndef __ANDROID__
+            menu_overlay = [&]() {
 #ifndef _WIN32
+                present_menu_button(sdl);
+#endif
+                present_desktop_status(
+                    sdl, paused, fast_forward, rewind,
+                    configuring.has_value(), input_movie.recording(),
+                    input_movie.replaying());
+            };
+#else
             menu_overlay = [&]() { present_menu_button(sdl); };
 #endif
             const auto presentation_started = std::chrono::steady_clock::now();

@@ -339,7 +339,9 @@ class TasEditor {
             const auto frame = first_visible_ + static_cast<std::size_t>(row);
             if (frame >= frames_.size()) break;
             const auto y = first_row_y + row * row_height;
-            const SDL_FRect background{24, y - 3, 840, row_height - 2};
+            const SDL_FRect background{
+                24, y - 3, static_cast<float>(std::max(840, width - 48)),
+                row_height - 2};
             static_cast<void>(SDL_SetRenderDrawColor(
                 renderer_, frame == selection_ ? 20 : 16,
                 frame == selection_ ? 77 : 27,

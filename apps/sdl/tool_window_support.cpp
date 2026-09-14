@@ -4,7 +4,9 @@
 #include <SDL3_ttf/SDL_ttf.h>
 #endif
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -24,9 +26,51 @@ struct ToolRendererCache {
     std::unordered_map<std::string, CachedToolText> entries;
 };
 
+std::unordered_map<int, TTF_Font*>& tool_fonts() {
+    static std::unordered_map<int, TTF_Font*> fonts;
+    return fonts;
+}
+
 std::unordered_map<SDL_Renderer*, ToolRendererCache>& tool_text_cache() {
     static std::unordered_map<SDL_Renderer*, ToolRendererCache> cache;
     return cache;
+}
+
+TTF_Font* font_for_renderer(SDL_Renderer* renderer, int& size) {
+    size = 14;
+    if (renderer != nullptr) {
+        auto* window = SDL_GetRenderWindow(renderer);
+        int window_width = 0;
+        int window_height = 0;
+        int output_width = 0;
+        int output_height = 0;
+        if (window != nullptr && SDL_GetWindowSize(window, &window_width,
+                                                   &window_height) &&
+            SDL_GetRenderOutputSize(renderer, &output_width, &output_height) &&
+            window_width > 0 && window_height > 0) {
+            const auto scale = std::clamp(
+                std::max(static_cast<float>(output_width) / window_width,
+                         static_cast<float>(output_height) / window_height),
+                1.0F, 1.5F);
+            size = std::clamp(static_cast<int>(std::lround(14.0F * scale)),
+                              14, 21);
+        }
+    }
+    auto& fonts = tool_fonts();
+    if (const auto found = fonts.find(size); found != fonts.end()) {
+        return found->second;
+    }
+    constexpr std::array<const char*, 5> candidates{
+        "fonts/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "C:/Windows/Fonts/segoeui.ttf",
+        "/System/Library/Fonts/Supplemental/Arial.ttf",
+        "/System/Library/Fonts/SFNS.ttf"};
+    for (const auto* candidate : candidates) {
+        auto* font = TTF_OpenFont(candidate, static_cast<float>(size));
+        if (font != nullptr) return fonts.emplace(size, font).first->second;
+    }
+    return nullptr;
 }
 #endif
 
@@ -45,20 +89,11 @@ void render_tool_text(SDL_Renderer* renderer, const float x, const float y,
                       const char* value) {
 #ifdef GBB_HAS_SDL_TTF
     static std::once_flag initialized;
-    static TTF_Font* font = nullptr;
     std::call_once(initialized, [] {
         if (!TTF_Init()) return;
-        constexpr std::array<const char*, 5> candidates{
-            "fonts/DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "C:/Windows/Fonts/segoeui.ttf",
-            "/System/Library/Fonts/Supplemental/Arial.ttf",
-            "/System/Library/Fonts/SFNS.ttf"};
-        for (const auto* candidate : candidates) {
-            font = TTF_OpenFont(candidate, 14.0F);
-            if (font != nullptr) break;
-        }
     });
+    int font_size = 14;
+    auto* const font = font_for_renderer(renderer, font_size);
     if (font != nullptr && renderer != nullptr && value != nullptr &&
         *value != '\0') {
         SDL_Color color{255, 255, 255, 255};
@@ -70,6 +105,7 @@ void render_tool_text(SDL_Renderer* renderer, const float x, const float y,
         key.push_back(static_cast<char>(color.g));
         key.push_back(static_cast<char>(color.b));
         key.push_back(static_cast<char>(color.a));
+        key.push_back(static_cast<char>(font_size));
         auto& entries = tool_text_cache()[renderer].entries;
         auto cached = entries.find(key);
         if (cached == entries.end()) {

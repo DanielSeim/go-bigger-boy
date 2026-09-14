@@ -126,9 +126,14 @@ void handle_gamepad_event(const SDL_Event& event, SdlEventContext& context) {
         if (context.configuring->index == context.bindings.gamepad_buttons.size()) {
             context.configuring.reset();
             save_bindings(context.preference_path, context.bindings);
+#ifndef __ANDROID__
+            show_desktop_notification(context.sdl.window,
+                                      "Gamepad bindings saved.");
+#else
             static_cast<void>(SDL_ShowSimpleMessageBox(
                 SDL_MESSAGEBOX_INFORMATION, "Gamepad controls",
                 "Gamepad bindings saved.", context.sdl.window));
+#endif
         }
         if (context.update_title) context.update_title();
         return;
@@ -305,9 +310,7 @@ void handle_desktop_menu_event(SdlEventContext& context) {
         if (core) {
             try {
                 save_quick_state(preference_path, *core);
-                static_cast<void>(SDL_ShowSimpleMessageBox(
-                    SDL_MESSAGEBOX_INFORMATION, "Save state", "State saved.",
-                    sdl.window));
+                show_desktop_notification(sdl.window, "State saved.");
             } catch (const std::exception& error) {
                 if (context.report_error) context.report_error(error.what());
             }
@@ -505,11 +508,25 @@ void handle_mouse_event(const SDL_Event& event, SdlEventContext& context) {
 bool handle_dashboard_key_event(const SDL_Event& event,
                                 SdlEventContext& context) {
     if (!context.dashboard_visible) return false;
+    if (event.type == SDL_EVENT_TEXT_INPUT) {
+        if (context.dashboard_filter.size() < 48) {
+            context.dashboard_filter += event.text.text;
+            context.dashboard_selection = 0;
+        }
+        return true;
+    }
     if (event.type != SDL_EVENT_KEY_DOWN || event.key.repeat) return true;
     const auto item_count = context.dashboard_item_count
                                 ? context.dashboard_item_count()
                                 : std::size_t{0};
-    if (event.key.key == SDLK_UP) {
+    if (event.key.key == SDLK_BACKSPACE && !context.dashboard_filter.empty()) {
+        context.dashboard_filter.pop_back();
+        context.dashboard_selection = 0;
+    } else if (event.key.key == SDLK_ESCAPE &&
+               !context.dashboard_filter.empty()) {
+        context.dashboard_filter.clear();
+        context.dashboard_selection = 0;
+    } else if (event.key.key == SDLK_UP) {
         context.dashboard_selection = gbb::desktop::dashboard_move_selection(
             context.dashboard_selection, item_count, -1);
     } else if (event.key.key == SDLK_DOWN) {
@@ -553,9 +570,8 @@ bool handle_keyboard_binding_event(const SDL_Event& event,
         if (configuration.index == context.bindings.keys.size()) {
             context.configuring.reset();
             save_bindings(context.preference_path, context.bindings);
-            static_cast<void>(SDL_ShowSimpleMessageBox(
-                SDL_MESSAGEBOX_INFORMATION, "Keyboard controls",
-                "Keyboard bindings saved.", context.sdl.window));
+            show_desktop_notification(context.sdl.window,
+                                      "Keyboard bindings saved.");
         }
         if (context.update_title) context.update_title();
         return true;
@@ -593,9 +609,8 @@ bool handle_keyboard_binding_event(const SDL_Event& event,
         if (configuration.index == context.bindings.keys.size()) {
             context.configuring.reset();
             save_bindings(context.preference_path, context.bindings);
-            static_cast<void>(SDL_ShowSimpleMessageBox(
-                SDL_MESSAGEBOX_INFORMATION, "Keyboard controls",
-                "Keyboard bindings saved.", context.sdl.window));
+            show_desktop_notification(context.sdl.window,
+                                      "Keyboard bindings saved.");
         }
     }
     if (context.update_title) context.update_title();
@@ -650,9 +665,7 @@ void handle_gameplay_key_event(const SDL_Event& event,
                core && !replaying_input) {
         try {
             save_quick_state(preference_path, *core);
-            static_cast<void>(SDL_ShowSimpleMessageBox(
-                SDL_MESSAGEBOX_INFORMATION, "Save state", "State saved.",
-                sdl.window));
+            show_desktop_notification(sdl.window, "State saved.");
         } catch (const std::exception& error) {
             if (context.report_error) context.report_error(error.what());
         }
@@ -664,9 +677,7 @@ void handle_gameplay_key_event(const SDL_Event& event,
             rewind_history.clear();
             release_all_buttons(*core);
             sdl.audio.clear();
-            static_cast<void>(SDL_ShowSimpleMessageBox(
-                SDL_MESSAGEBOX_INFORMATION, "Load state", "State loaded.",
-                sdl.window));
+            show_desktop_notification(sdl.window, "State loaded.");
         } catch (const std::exception& error) {
             if (context.report_error) context.report_error(error.what());
         }
