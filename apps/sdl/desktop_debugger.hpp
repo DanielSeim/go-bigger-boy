@@ -123,6 +123,7 @@ public:
 
     void close() noexcept {
         if (texture_ != nullptr) SDL_DestroyTexture(texture_);
+        clear_tool_text_cache(renderer_);
         if (renderer_ != nullptr) SDL_DestroyRenderer(renderer_);
         if (window_ != nullptr) SDL_DestroyWindow(window_);
         texture_ = nullptr;
@@ -256,8 +257,7 @@ public:
         static_cast<void>(SDL_SetRenderDrawColor(renderer_, 8, 12, 20, 255));
         static_cast<void>(SDL_RenderClear(renderer_));
         static_cast<void>(SDL_SetRenderDrawColor(renderer_, 69, 207, 238, 255));
-        static_cast<void>(SDL_RenderDebugText(renderer_, 24, 20,
-                                              "GO BIGGER BOY / DEBUGGER"));
+        render_tool_text(renderer_, 24, 20, "GO BIGGER BOY / DEBUGGER");
         static_cast<void>(SDL_SetRenderDrawColor(renderer_, 177, 192, 208, 255));
 
         constexpr float scale = 3.0F;
@@ -284,9 +284,8 @@ public:
         const SDL_FRect outer{preview_x - 3, preview_y - 3,
                               preview_width + 6, preview_height + 6};
         static_cast<void>(SDL_RenderRect(renderer_, &outer));
-        static_cast<void>(SDL_RenderDebugText(renderer_, preview_x,
-                                              preview_y + preview_height + 10,
-                                              "VISIBLE VIEWPORT 160 x 144"));
+        render_tool_text(renderer_, preview_x, preview_y + preview_height + 10,
+                         "VISIBLE VIEWPORT 160 x 144");
 
         const auto& r = emulator.cpu().registers();
         const auto pair = [](const std::uint8_t high, const std::uint8_t low) {
@@ -309,12 +308,11 @@ public:
         if (const auto hit = breakpoint_hit()) {
             execution_status = "BREAKPOINT HIT " + hex16(*hit);
         }
-        static_cast<void>(SDL_RenderDebugText(
-            renderer_, 24, 38, execution_status.c_str()));
+        render_tool_text(renderer_, 24, 38, execution_status.c_str());
         const auto text = [this](const float x, const float y,
                                  const std::string& value) {
             static_cast<void>(SDL_SetRenderDrawColor(renderer_, 230, 249, 255, 255));
-            static_cast<void>(SDL_RenderDebugText(renderer_, x, y, value.c_str()));
+            render_tool_text(renderer_, x, y, value.c_str());
         };
         const auto register_x = std::max(530.0F, static_cast<float>(width) - 350.0F);
         text(register_x, 72, "CPU REGISTERS");
@@ -403,8 +401,8 @@ public:
         const auto button = [this](const SDL_FRect& rect,
                                    const std::string& label) {
             draw_tool_button_background(renderer_, window_, rect);
-            static_cast<void>(SDL_RenderDebugText(renderer_, rect.x + 12,
-                                                  rect.y + 14, label.c_str()));
+            render_tool_text(renderer_, rect.x + 12, rect.y + 14,
+                             label.c_str());
         };
         const auto button_y = static_cast<float>(height - 58);
         const auto movie_y = static_cast<float>(height - 106);

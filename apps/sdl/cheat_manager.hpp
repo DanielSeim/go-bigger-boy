@@ -141,6 +141,7 @@ public:
         if (fetch_future_.valid()) fetch_future_.wait();
         fetch_in_progress_ = false;
         stop_editing();
+        clear_tool_text_cache(renderer_);
         if (renderer_ != nullptr) SDL_DestroyRenderer(renderer_);
         if (window_ != nullptr) SDL_DestroyWindow(window_);
         renderer_ = nullptr;
@@ -443,7 +444,7 @@ private:
               const std::uint8_t r, const std::uint8_t g,
               const std::uint8_t b) const {
         static_cast<void>(SDL_SetRenderDrawColor(renderer_, r, g, b, 255));
-        static_cast<void>(SDL_RenderDebugText(renderer_, x, y, value.c_str()));
+        render_tool_text(renderer_, x, y, value.c_str());
     }
 
     void button(const SDL_FRect& rect, const char* label) const {

@@ -1,4 +1,5 @@
 #include "event_dispatch.hpp"
+#include "dialogs.hpp"
 #include "emulation_session.hpp"
 #include "gbb/dashboard_navigation.hpp"
 #include "gameboy/display_palette.hpp"
@@ -19,6 +20,37 @@
 
 
 namespace gbb::sdl {
+
+#if !defined(__ANDROID__) && !defined(GBB_EVENT_DISPATCH_CORE_ONLY)
+void request_control_configuration(SdlEventContext& context) {
+    if (context.emulator != nullptr) release_all_buttons(*context.emulator);
+    open_desktop_controls_dialog(
+        context.sdl.window, context.bindings,
+        [&context](const ControlsAction action) {
+            if (action == ControlsAction::reset) {
+                context.bindings = InputBindings{};
+                save_bindings(context.preference_path, context.bindings);
+            } else if (action == ControlsAction::keyboard ||
+                       action == ControlsAction::gamepad) {
+                if (action == ControlsAction::gamepad &&
+                    context.sdl.gamepad == nullptr) {
+                    if (context.report_error) {
+                        context.report_error(
+                            "Connect a gamepad before configuring it.");
+                    }
+                } else {
+                    begin_binding_configuration(
+                        context.bindings, context.configuration_backup,
+                        context.configuring,
+                        action == ControlsAction::keyboard
+                            ? BindingDevice::keyboard
+                            : BindingDevice::gamepad);
+                }
+            }
+            if (context.update_title) context.update_title();
+        });
+}
+#endif
 
 constexpr float voxel_camera_yaw_drag_limit = 45.0F;
 
@@ -341,6 +373,9 @@ void handle_desktop_menu_event(SdlEventContext& context) {
         }
         break;
     case DesktopMenuCommand::controls: {
+#ifndef __ANDROID__
+        request_control_configuration(context);
+#else
         if (emulator) release_all_buttons(*emulator);
         const auto action = show_controls_dialog(sdl.window, bindings);
         if (action == ControlsAction::reset) {
@@ -361,6 +396,7 @@ void handle_desktop_menu_event(SdlEventContext& context) {
             }
         }
         if (context.update_title) context.update_title();
+#endif
         break;
     }
     case DesktopMenuCommand::gameshark:
@@ -442,6 +478,11 @@ void handle_mouse_event(const SDL_Event& event, SdlEventContext& context) {
         ) {
             if (context.open_library) context.open_library();
         }
+#ifndef __ANDROID__
+        else if (x >= 25.0F && x < 45.0F && y < 17.0F) {
+            if (context.show_help) context.show_help();
+        }
+#endif
 #endif
     } else if (event.type == SDL_EVENT_MOUSE_WHEEL) {
         if (context.dashboard_visible && context.dashboard_item_count) {
@@ -645,6 +686,9 @@ void handle_gameplay_key_event(const SDL_Event& event,
     } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
                event.key.key == SDLK_K &&
                (event.key.mod & SDL_KMOD_CTRL) != 0) {
+#ifndef __ANDROID__
+        request_control_configuration(context);
+#else
         if (emulator) release_all_buttons(*emulator);
         const auto action = show_controls_dialog(sdl.window, bindings);
         if (action == ControlsAction::reset) {
@@ -669,6 +713,7 @@ void handle_gameplay_key_event(const SDL_Event& event,
             }
         }
         if (context.update_title) context.update_title();
+#endif
     } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
                event.key.key == SDLK_G &&
                (event.key.mod & SDL_KMOD_CTRL) != 0 &&

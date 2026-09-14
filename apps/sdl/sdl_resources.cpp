@@ -1,4 +1,5 @@
 #include "sdl_resources.hpp"
+#include "tool_window_support.hpp"
 
 #include <stdexcept>
 #include <string>
@@ -93,6 +94,7 @@ void SdlResources::release() noexcept {
         link_texture = nullptr;
     }
     if (renderer != nullptr) {
+        clear_tool_text_cache(renderer);
         SDL_DestroyRenderer(renderer);
         renderer = nullptr;
     }

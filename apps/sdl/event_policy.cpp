@@ -1,6 +1,9 @@
 #include "event_policy.hpp"
 
 #include "event_dispatch.hpp"
+#ifndef __ANDROID__
+#include "dialogs.hpp"
+#endif
 
 #include "gbb/frontend_logging.hpp"
 #include "gbb/log.hpp"
@@ -62,6 +65,9 @@ void process_events(SdlEventContext& context) {
     pump_events(
         [&running] { return running; },
         [&](const SDL_Event& event) {
+#ifndef __ANDROID__
+        if (handle_desktop_dialog_event(event)) return;
+#endif
 #ifndef __ANDROID__
         if (handle_desktop_tool_event(event, context)) return;
 #endif

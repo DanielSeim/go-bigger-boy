@@ -110,6 +110,7 @@ class TasEditor {
     }
 
     void close() noexcept {
+        clear_tool_text_cache(renderer_);
         if (renderer_ != nullptr) SDL_DestroyRenderer(renderer_);
         if (window_ != nullptr) SDL_DestroyWindow(window_);
         renderer_ = nullptr;
@@ -301,33 +302,30 @@ class TasEditor {
         static_cast<void>(SDL_SetRenderDrawColor(renderer_, 8, 12, 20, 255));
         static_cast<void>(SDL_RenderClear(renderer_));
         static_cast<void>(SDL_SetRenderDrawColor(renderer_, 69, 207, 238, 255));
-        static_cast<void>(SDL_RenderDebugText(renderer_, 24, 18,
-                                              "TAS FRAME INPUT EDITOR"));
+        render_tool_text(renderer_, 24, 18, "TAS FRAME INPUT EDITOR");
         const auto title = std::string("Go Bigger Boy - TAS Input Editor") +
                            (has_unsaved_changes() ? " *" : "");
         static_cast<void>(SDL_SetWindowTitle(window_, title.c_str()));
         static_cast<void>(SDL_SetRenderDrawColor(renderer_, 177, 192, 208, 255));
-        static_cast<void>(SDL_RenderDebugText(
+        render_tool_text(
             renderer_, 24, 38,
             (std::string(has_unsaved_changes() ? "UNSAVED  " : "SAVED  ") +
-             status_).c_str()));
-        static_cast<void>(SDL_RenderDebugText(
+             status_).c_str());
+        render_tool_text(
             renderer_, 24, 54,
-            "CLICK OR DRAG CELLS  |  ARROWS/PAGE SELECT  |  CTRL+Z/Y UNDO/REDO"));
+            "CLICK OR DRAG CELLS  |  ARROWS/PAGE SELECT  |  CTRL+Z/Y UNDO/REDO");
 
         constexpr std::array<const char*, 8> names{
             "RIGHT", "LEFT", "UP", "DOWN", "A", "B", "SELECT", "START"};
         static_cast<void>(SDL_SetRenderDrawColor(renderer_, 230, 249, 255, 255));
         const auto frame_summary = "FRAME " + std::to_string(selection_) +
                                    " / " + std::to_string(frames_.size());
-        static_cast<void>(SDL_RenderDebugText(renderer_, 28, 76,
-                                              frame_summary.c_str()));
+        render_tool_text(renderer_, 28, 76, frame_summary.c_str());
         constexpr float first_button_x = 144.0F;
         constexpr float column_width = 82.0F;
         for (std::size_t button = 0; button < names.size(); ++button) {
-            static_cast<void>(SDL_RenderDebugText(
-                renderer_, first_button_x + button * column_width + 8, 76,
-                names[button]));
+            render_tool_text(renderer_, first_button_x + button * column_width + 8,
+                             76, names[button]);
         }
         constexpr float first_row_y = 94.0F;
         constexpr float row_height = 22.0F;
@@ -349,8 +347,7 @@ class TasEditor {
             static_cast<void>(SDL_RenderFillRect(renderer_, &background));
             static_cast<void>(SDL_SetRenderDrawColor(renderer_, 230, 249, 255, 255));
             const auto frame_text = std::to_string(frame);
-            static_cast<void>(SDL_RenderDebugText(renderer_, 30, y + 3,
-                                                  frame_text.c_str()));
+            render_tool_text(renderer_, 30, y + 3, frame_text.c_str());
             for (std::size_t button = 0; button < names.size(); ++button) {
                 const auto active = (frames_[frame] & (1U << button)) != 0;
                 const SDL_FRect cell{first_button_x + button * column_width,
@@ -362,15 +359,13 @@ class TasEditor {
                 static_cast<void>(SDL_RenderRect(renderer_, &cell));
                 if (active) {
                     static_cast<void>(SDL_SetRenderDrawColor(renderer_, 8, 12, 20, 255));
-                    static_cast<void>(SDL_RenderDebugText(renderer_, cell.x + 30,
-                                                          y + 3, "X"));
+                    render_tool_text(renderer_, cell.x + 30, y + 3, "X");
                 }
             }
         }
         const auto button = [this](const SDL_FRect& rect, const char* label) {
             draw_tool_button_background(renderer_, window_, rect);
-            static_cast<void>(SDL_RenderDebugText(renderer_, rect.x + 10,
-                                                  rect.y + 14, label));
+            render_tool_text(renderer_, rect.x + 10, rect.y + 14, label);
         };
         const auto bottom_y = static_cast<float>(height - 55);
         button({24, bottom_y, 130, 36}, "INSERT FRAME");
@@ -379,9 +374,9 @@ class TasEditor {
         button({450, bottom_y, 130, 36}, "SAVE MOVIE");
         button({592, bottom_y, 130, 36}, "RUN MOVIE");
         button({734, bottom_y, 130, 36}, "NEW FROM NOW");
-        static_cast<void>(SDL_RenderDebugText(
+        render_tool_text(
             renderer_, 24, bottom_y - 16,
-            "Ctrl+C/V COPY/PASTE  Ctrl+D DUPLICATE  Backspace CLEAR  Ctrl+Home/End JUMP"));
+            "Ctrl+C/V COPY/PASTE  Ctrl+D DUPLICATE  Backspace CLEAR  Ctrl+Home/End JUMP");
         static_cast<void>(SDL_RenderPresent(renderer_));
     }
 

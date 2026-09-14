@@ -52,10 +52,6 @@
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
-#ifdef GBB_HAS_SDL_TTF
-#include <SDL3_ttf/SDL_ttf.h>
-#endif
-
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -284,62 +280,6 @@ using SdlResources = gbb::sdl::SdlResources;
     this alias lets the event loop retain its small, readable `sdl.foo`
     access pattern while the ownership boundary stays in one module.
 */
-
-#ifndef __ANDROID__
-// SDL_RenderDebugText is useful for the Game Boy overlay, but its fixed
-// 8-pixel debug glyphs make the desktop tools hard to read. Use SDL_ttf for
-// tool windows when available and retain the debug renderer as a fallback for
-// minimal builds that do not ship the optional font library.
-void render_tool_text(SDL_Renderer* renderer, const float x, const float y,
-                      const char* value) {
-#ifdef GBB_HAS_SDL_TTF
-    static std::once_flag initialized;
-    static TTF_Font* font = nullptr;
-    std::call_once(initialized, [] {
-        if (!TTF_Init()) return;
-        constexpr std::array<const char*, 5> candidates{
-            "fonts/DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "C:/Windows/Fonts/segoeui.ttf",
-            "/System/Library/Fonts/Supplemental/Arial.ttf",
-            "/System/Library/Fonts/SFNS.ttf"};
-        for (const auto* candidate : candidates) {
-            font = TTF_OpenFont(candidate, 14.0F);
-            if (font != nullptr) break;
-        }
-    });
-    if (font != nullptr && value != nullptr && *value != '\0') {
-        SDL_Color color{255, 255, 255, 255};
-        static_cast<void>(SDL_GetRenderDrawColor(renderer, &color.r, &color.g,
-                                                  &color.b, &color.a));
-        auto* surface = TTF_RenderText_Blended(font, value, 0, color);
-        if (surface != nullptr) {
-            auto* texture = SDL_CreateTextureFromSurface(renderer, surface);
-            if (texture != nullptr) {
-                static_cast<void>(SDL_SetTextureBlendMode(
-                    texture, SDL_BLENDMODE_BLEND));
-                const SDL_FRect destination{x, y,
-                                            static_cast<float>(surface->w),
-                                            static_cast<float>(surface->h)};
-                static_cast<void>(SDL_RenderTexture(renderer, texture, nullptr,
-                                                     &destination));
-                SDL_DestroyTexture(texture);
-            }
-            SDL_DestroySurface(surface);
-            return;
-        }
-    }
-#endif
-    static_cast<void>(SDL_RenderDebugText(renderer, x, y, value));
-}
-
-#define SDL_RenderDebugText render_tool_text
-
-
-#endif
-
-#undef SDL_RenderDebugText
-
 
 constexpr std::size_t maximum_rewind_frames = 180;
 #ifdef __ANDROID__
@@ -796,6 +736,17 @@ void present_menu_button(SdlResources& sdl) {
     for (const auto& line : menu_lines) {
         static_cast<void>(SDL_RenderFillRect(sdl.renderer, &line));
     }
+#ifndef __ANDROID__
+    // Keep help discoverable on SDL desktop builds where there is no native
+    // menu bar. This action sits beside the library button in the letterboxed
+    // viewport and does not change the Game Boy framebuffer dimensions.
+    const SDL_FRect help_button{25.0F, 3.0F, 20.0F, 15.0F};
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 8, 15, 22, 235));
+    static_cast<void>(SDL_RenderFillRect(sdl.renderer, &help_button));
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 8, 175, 244, 230));
+    static_cast<void>(SDL_RenderRect(sdl.renderer, &help_button));
+    static_cast<void>(SDL_RenderDebugText(sdl.renderer, 32.0F, 7.0F, "?"));
+#endif
     static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
                                                  SDL_BLENDMODE_NONE));
 #ifdef __ANDROID__
@@ -1378,7 +1329,7 @@ void present_dashboard(SdlResources& sdl,
         static_cast<void>(SDL_RenderDebugText(sdl.renderer, 153, 111, "v"));
     }
     static_cast<void>(SDL_RenderDebugText(sdl.renderer, 13, 134,
-                                          "UP/DOWN  ENTER SELECT"));
+                                          "ENTER OPEN  F1 HELP"));
 }
 #endif
 

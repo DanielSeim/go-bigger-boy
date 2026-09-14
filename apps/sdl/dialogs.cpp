@@ -3,6 +3,8 @@
 #include "core_capability.hpp"
 #include "emulation_session.hpp"
 #include "settings_persistence.hpp"
+#include "tool_window_support.hpp"
+#include "window_event.hpp"
 
 #include "gameboy/display_palette.hpp"
 #include "gbb/frontend_logging.hpp"
@@ -12,7 +14,10 @@
 #include <cctype>
 #include <sstream>
 #include <stdexcept>
+#include <functional>
 #include <string_view>
+#include <unordered_map>
+#include <vector>
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -28,6 +33,119 @@
 
 namespace gbb::sdl {
 namespace {
+
+#ifndef __ANDROID__
+struct DesktopDialog {
+    std::string title;
+    std::string message;
+    std::vector<std::string> choices;
+    std::size_t selected{};
+    std::size_t scroll{};
+    std::function<void(std::size_t)> on_choice;
+};
+
+std::unordered_map<SDL_Window*, DesktopDialog>& desktop_dialogs() {
+    static std::unordered_map<SDL_Window*, DesktopDialog> dialogs;
+    return dialogs;
+}
+
+void open_desktop_text_dialog(SDL_Window* window, std::string title,
+                              std::string message) {
+    if (window == nullptr) return;
+    desktop_dialogs()[window] = {
+        std::move(title), std::move(message), {}, 0, 0, {}};
+}
+
+void open_desktop_choice_dialog(
+    SDL_Window* window, std::string title, std::string message,
+    std::vector<std::string> choices, const std::size_t selected,
+    std::function<void(std::size_t)> on_choice) {
+    if (window == nullptr || choices.empty()) return;
+    const auto choice_count = choices.size();
+    desktop_dialogs()[window] = {
+        std::move(title), std::move(message), std::move(choices),
+        std::min(selected, choice_count - 1), 0, std::move(on_choice)};
+}
+
+void open_desktop_controls_dialog_impl(
+    SDL_Window* window, const InputBindings& bindings,
+    std::function<void(ControlsAction)> on_choice) {
+    std::ostringstream message;
+    message << "Choose a device to configure. Current keyboard bindings:\n\n";
+    for (std::size_t index = 0; index < button_names.size(); ++index) {
+        message << button_names[index] << ": "
+                << keyboard_key_setting_name(bindings.keys[index][0]);
+        if (bindings.keys[index][1] != SDLK_UNKNOWN) {
+            message << " / "
+                    << keyboard_key_setting_name(bindings.keys[index][1]);
+        }
+        message << '\n';
+    }
+    open_desktop_choice_dialog(
+        window, "Configure controls", message.str(),
+        {"Keyboard", "Gamepad", "Restore defaults"}, 0,
+        [on_choice = std::move(on_choice)](const std::size_t index) {
+            if (!on_choice) return;
+            on_choice(index == 0   ? ControlsAction::keyboard
+                      : index == 1 ? ControlsAction::gamepad
+                                   : ControlsAction::reset);
+        });
+}
+
+struct DialogGeometry {
+    float x{};
+    float y{};
+    float width{};
+    float height{};
+};
+
+DialogGeometry dialog_geometry(SDL_Window* window) {
+    int width = 0;
+    int height = 0;
+    static_cast<void>(SDL_GetWindowSize(window, &width, &height));
+    const auto panel_width = std::min(860.0F,
+                                      std::max(320.0F, width - 48.0F));
+    const auto panel_height = std::min(680.0F,
+                                       std::max(260.0F, height - 48.0F));
+    return {(static_cast<float>(width) - panel_width) * 0.5F,
+            (static_cast<float>(height) - panel_height) * 0.5F,
+            panel_width, panel_height};
+}
+
+std::vector<std::string> wrap_dialog_message(const std::string& message,
+                                             const std::size_t maximum) {
+    std::vector<std::string> lines;
+    std::istringstream input(message);
+    std::string source;
+    while (std::getline(input, source)) {
+        if (source.empty()) {
+            lines.emplace_back();
+            continue;
+        }
+        while (source.size() > maximum) {
+            auto split = source.rfind(' ', maximum);
+            if (split == std::string::npos || split == 0) split = maximum;
+            lines.push_back(source.substr(0, split));
+            source.erase(0, split);
+            while (!source.empty() && source.front() == ' ') source.erase(0, 1);
+        }
+        lines.push_back(std::move(source));
+    }
+    return lines;
+}
+
+SDL_FRect dialog_choice_rect(const DialogGeometry& geometry,
+                             const std::size_t index,
+                             const std::size_t count) {
+    constexpr float gap = 10.0F;
+    const auto width = (geometry.width - 48.0F -
+                        gap * static_cast<float>(count - 1)) /
+                       static_cast<float>(count);
+    return {geometry.x + 24.0F +
+                static_cast<float>(index) * (width + gap),
+            geometry.y + geometry.height - 62.0F, width, 38.0F};
+}
+#endif
 
 [[nodiscard]] std::string rom_filename_for_title(const std::string& path) {
     auto name = std::filesystem::u8path(path).filename().u8string();
@@ -129,6 +247,33 @@ void update_window_title(
 
 void choose_video_mode(SdlResources& sdl,
                        const std::filesystem::path& preference_path) {
+#ifndef __ANDROID__
+    const auto current = std::distance(
+        gameboy::video_modes.begin(),
+        std::find_if(gameboy::video_modes.begin(), gameboy::video_modes.end(),
+                     [mode = sdl.video_mode](const auto& info) {
+                         return info.mode == mode;
+                     }));
+    std::vector<std::string> choices;
+    choices.reserve(gameboy::video_modes.size());
+    for (const auto& info : gameboy::video_modes) {
+        choices.emplace_back(info.name);
+    }
+    open_desktop_choice_dialog(
+        sdl.window, "Video pipeline",
+        "Choose how Go Bigger Boy presents the Game Boy framebuffer.",
+        std::move(choices), static_cast<std::size_t>(std::max<std::ptrdiff_t>(
+                                    0, current)),
+        [&sdl, preference_path](const std::size_t index) {
+            if (index >= gameboy::video_modes.size()) return;
+            if (!configure_video_pipeline(sdl, gameboy::video_modes[index].mode)) {
+                show_error(sdl.window,
+                           "Could not configure the selected video pipeline.");
+                return;
+            }
+            save_video_mode(preference_path, gameboy::video_modes[index].mode);
+        });
+#else
     const auto selected = show_video_dialog(sdl.window, sdl.video_mode);
     if (!selected) return;
     if (!configure_video_pipeline(sdl, *selected)) {
@@ -136,12 +281,34 @@ void choose_video_mode(SdlResources& sdl,
         return;
     }
     save_video_mode(preference_path, *selected);
+#endif
 }
 
 void choose_display_palette(gbb::EmulatorCore* core, SdlResources& sdl,
                             const std::filesystem::path& preference_path,
                             std::size_t& display_palette) {
     if (core != nullptr) release_all_buttons(*core);
+#ifndef __ANDROID__
+    std::vector<std::string> choices;
+    choices.reserve(gameboy::display_palettes.size());
+    for (const auto& palette : gameboy::display_palettes) {
+        choices.emplace_back(palette.name);
+    }
+    open_desktop_choice_dialog(
+        sdl.window, "Display palette",
+        "Choose the display palette used for compatible Game Boy frames.",
+        std::move(choices), display_palette,
+        [core, &sdl, preference_path, &display_palette](const std::size_t index) {
+            if (index >= gameboy::display_palettes.size()) return;
+            display_palette = index;
+            if (core != nullptr &&
+                supports(core, gbb::CoreCapability::compatibility_palette)) {
+                core->set_compatibility_colors(
+                    gameboy::display_palettes[display_palette].cgb_compatibility);
+            }
+            save_display_palette(preference_path, display_palette);
+        });
+#else
     const auto selected = show_palette_dialog(sdl.window, display_palette);
     if (!selected) return;
     display_palette = *selected;
@@ -151,6 +318,7 @@ void choose_display_palette(gbb::EmulatorCore* core, SdlResources& sdl,
             gameboy::display_palettes[display_palette].cgb_compatibility);
     }
     save_display_palette(preference_path, display_palette);
+#endif
 }
 
 bool confirm_exit(SDL_Window* window) {
@@ -236,13 +404,22 @@ void show_help(SDL_Window* window, const InputBindings& bindings) {
         "Game Boy Camera cartridges use the first available webcam.\n"
         "Rumble cartridges vibrate the connected gamepad when supported.";
     const auto text = message.str();
+#ifndef __ANDROID__
+    open_desktop_text_dialog(window, "Go Bigger Boy controls", text);
+#else
     static_cast<void>(SDL_ShowSimpleMessageBox(
         SDL_MESSAGEBOX_INFORMATION, "Go Bigger Boy (GBB) controls",
         text.c_str(), window));
+#endif
 }
 
 void show_about(SDL_Window* window) {
-#ifdef _WIN32
+#ifndef __ANDROID__
+    open_desktop_text_dialog(
+        window, "About Go Bigger Boy",
+        "Go Bigger Boy (GBB) v" GBB_VERSION
+        "\n\nA portable Game Boy and Game Boy Color emulator.");
+#elif defined(_WIN32)
     const auto owner = static_cast<HWND>(SDL_GetPointerProperty(
         SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WIN32_HWND_POINTER,
         nullptr));
@@ -271,6 +448,10 @@ void show_about(SDL_Window* window) {
 
 void show_error(SDL_Window* window, const std::string& message) {
     gbb::log_frontend_error(message);
+#ifndef __ANDROID__
+    open_desktop_text_dialog(window, "Go Bigger Boy — attention required",
+                             message);
+#else
 #ifdef _WIN32
     HWND owner = nullptr;
     if (window != nullptr) {
@@ -283,6 +464,7 @@ void show_error(SDL_Window* window, const std::string& message) {
 #else
     static_cast<void>(SDL_ShowSimpleMessageBox(
         SDL_MESSAGEBOX_ERROR, "Go Bigger Boy (GBB)", message.c_str(), window));
+#endif
 #endif
 }
 
@@ -299,9 +481,184 @@ void show_lan_hosts(SDL_Window* window,
         }
         message << "\nThe first host is selected for the next Join command.";
     }
+#ifndef __ANDROID__
+    open_desktop_text_dialog(window, "LAN link discovery", message.str());
+#else
     static_cast<void>(SDL_ShowSimpleMessageBox(
         SDL_MESSAGEBOX_INFORMATION, "LAN link discovery", message.str().c_str(),
         window));
+#endif
 }
+
+#ifndef __ANDROID__
+bool desktop_dialog_visible(SDL_Window* window) noexcept {
+    return window != nullptr && desktop_dialogs().find(window) !=
+                                    desktop_dialogs().end();
+}
+
+bool handle_desktop_dialog_event(const SDL_Event& event) {
+    SDL_Window* window = nullptr;
+    for (const auto& [candidate, unused] : desktop_dialogs()) {
+        if (event_window_id(event) == SDL_GetWindowID(candidate)) {
+            window = candidate;
+            break;
+        }
+    }
+    if (window == nullptr) {
+        if (event.type == SDL_EVENT_QUIT && !desktop_dialogs().empty()) {
+            return false;
+        }
+        return !desktop_dialogs().empty();
+    }
+    auto found = desktop_dialogs().find(window);
+    if (found == desktop_dialogs().end()) return false;
+    auto& dialog = found->second;
+    const auto close = [&] { desktop_dialogs().erase(found); };
+    if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
+        if (event.key.key == SDLK_ESCAPE) {
+            close();
+        } else if (!dialog.choices.empty() && event.key.key == SDLK_LEFT &&
+                   dialog.selected > 0) {
+            --dialog.selected;
+        } else if (!dialog.choices.empty() && event.key.key == SDLK_RIGHT &&
+                   dialog.selected + 1 < dialog.choices.size()) {
+            ++dialog.selected;
+        } else if (event.key.key == SDLK_UP && dialog.scroll > 0) {
+            --dialog.scroll;
+        } else if (event.key.key == SDLK_DOWN && dialog.choices.empty()) {
+            ++dialog.scroll;
+        } else if (event.key.key == SDLK_PAGEUP && dialog.choices.empty()) {
+            dialog.scroll = dialog.scroll > 12 ? dialog.scroll - 12 : 0;
+        } else if (event.key.key == SDLK_PAGEDOWN && dialog.choices.empty()) {
+            dialog.scroll += 12;
+        } else if ((event.key.key == SDLK_RETURN ||
+                    event.key.key == SDLK_KP_ENTER) && !dialog.choices.empty()) {
+            const auto choice = dialog.selected;
+            auto callback = std::move(dialog.on_choice);
+            close();
+            if (callback) callback(choice);
+        }
+        return true;
+    }
+    if (event.type == SDL_EVENT_MOUSE_WHEEL && dialog.choices.empty()) {
+        if (event.wheel.y > 0) {
+            dialog.scroll = dialog.scroll > 3 ? dialog.scroll - 3 : 0;
+        } else if (event.wheel.y < 0) {
+            dialog.scroll += 3;
+        }
+        return true;
+    }
+    if (event.type == SDL_EVENT_MOUSE_MOTION && !dialog.choices.empty()) {
+        const auto geometry = dialog_geometry(window);
+        for (std::size_t index = 0; index < dialog.choices.size(); ++index) {
+            const auto rect = dialog_choice_rect(geometry, index,
+                                                 dialog.choices.size());
+            if (event.motion.x >= rect.x && event.motion.x <= rect.x + rect.w &&
+                event.motion.y >= rect.y && event.motion.y <= rect.y + rect.h) {
+                dialog.selected = index;
+                break;
+            }
+        }
+        return true;
+    }
+    if (event.type == SDL_EVENT_MOUSE_BUTTON_UP &&
+        event.button.button == SDL_BUTTON_LEFT && !dialog.choices.empty()) {
+        const auto geometry = dialog_geometry(window);
+        const auto x = event.button.x;
+        const auto y = event.button.y;
+        for (std::size_t index = 0; index < dialog.choices.size(); ++index) {
+            const auto rect = dialog_choice_rect(geometry, index,
+                                                 dialog.choices.size());
+            if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y &&
+                y <= rect.y + rect.h) {
+                auto callback = std::move(dialog.on_choice);
+                close();
+                if (callback) callback(index);
+                break;
+            }
+        }
+        return true;
+    }
+    return true;
+}
+
+void present_desktop_dialog(SDL_Renderer* renderer, SDL_Window* window) {
+    const auto found = desktop_dialogs().find(window);
+    if (found == desktop_dialogs().end() || renderer == nullptr) return;
+    const auto& dialog = found->second;
+    const auto geometry = dialog_geometry(window);
+    static_cast<void>(SDL_SetRenderLogicalPresentation(
+        renderer, 0, 0, SDL_LOGICAL_PRESENTATION_DISABLED));
+    static_cast<void>(SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND));
+    static_cast<void>(SDL_SetRenderDrawColor(renderer, 0, 0, 0, 190));
+    int width = 0;
+    int height = 0;
+    static_cast<void>(SDL_GetWindowSize(window, &width, &height));
+    const SDL_FRect veil{0, 0, static_cast<float>(width),
+                         static_cast<float>(height)};
+    static_cast<void>(SDL_RenderFillRect(renderer, &veil));
+    static_cast<void>(SDL_SetRenderDrawColor(renderer, 12, 22, 32, 255));
+    const SDL_FRect panel{geometry.x, geometry.y, geometry.width, geometry.height};
+    static_cast<void>(SDL_RenderFillRect(renderer, &panel));
+    static_cast<void>(SDL_SetRenderDrawColor(renderer, 69, 207, 238, 255));
+    static_cast<void>(SDL_RenderRect(renderer, &panel));
+    static_cast<void>(SDL_SetRenderDrawColor(renderer, 230, 249, 255, 255));
+    render_tool_text(renderer, geometry.x + 24, geometry.y + 20,
+                     dialog.title.c_str());
+    const auto maximum = static_cast<std::size_t>(std::max(
+        24.0F, (geometry.width - 48.0F) / 8.0F));
+    const auto lines = wrap_dialog_message(dialog.message, maximum);
+    const auto content_top = geometry.y + 58.0F;
+    const auto content_bottom = dialog.choices.empty()
+                                    ? geometry.y + geometry.height - 52.0F
+                                    : geometry.y + geometry.height - 82.0F;
+    const auto visible_lines = static_cast<std::size_t>(std::max(
+        1.0F, (content_bottom - content_top) / 20.0F));
+    const auto first = std::min(dialog.scroll,
+                                lines.size() > visible_lines
+                                    ? lines.size() - visible_lines
+                                    : std::size_t{0});
+    static_cast<void>(SDL_SetRenderDrawColor(renderer, 177, 192, 208, 255));
+    for (std::size_t index = 0; index < visible_lines && first + index < lines.size();
+         ++index) {
+        render_tool_text(renderer, geometry.x + 24,
+                         content_top + static_cast<float>(index) * 20.0F,
+                         lines[first + index].c_str());
+    }
+    if (!dialog.choices.empty()) {
+        for (std::size_t index = 0; index < dialog.choices.size(); ++index) {
+            const auto rect = dialog_choice_rect(geometry, index,
+                                                 dialog.choices.size());
+            static_cast<void>(SDL_SetRenderDrawColor(
+                renderer, index == dialog.selected ? 20 : 28,
+                index == dialog.selected ? 104 : 47,
+                index == dialog.selected ? 135 : 68, 255));
+            static_cast<void>(SDL_RenderFillRect(renderer, &rect));
+            static_cast<void>(SDL_SetRenderDrawColor(
+                renderer, index == dialog.selected ? 69 : 112,
+                index == dialog.selected ? 207 : 160,
+                index == dialog.selected ? 238 : 183, 255));
+            static_cast<void>(SDL_RenderRect(renderer, &rect));
+            render_tool_text(renderer, rect.x + 10, rect.y + 10,
+                             dialog.choices[index].c_str());
+        }
+    }
+    static_cast<void>(SDL_SetRenderDrawColor(renderer, 137, 160, 183, 255));
+    const auto footer = dialog.choices.empty()
+                            ? "UP/DOWN SCROLL  PAGE UP/DOWN  ESC CLOSE"
+                            : "LEFT/RIGHT CHOOSE  ENTER SELECT  ESC CANCEL";
+    render_tool_text(renderer, geometry.x + 24, geometry.y + geometry.height - 30,
+                     footer);
+    static_cast<void>(SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE));
+}
+#endif
+
+#ifndef __ANDROID__
+void open_desktop_controls_dialog(
+    SDL_Window* window, const InputBindings& bindings,
+    std::function<void(ControlsAction)> on_choice) {
+    open_desktop_controls_dialog_impl(window, bindings, std::move(on_choice));
+}
+#endif
 
 } // namespace gbb::sdl

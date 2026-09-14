@@ -1,5 +1,9 @@
 #include "presentation.hpp"
 
+#ifndef __ANDROID__
+#include "dialogs.hpp"
+#endif
+
 #ifdef __ANDROID__
 #include "android_touch_input.hpp"
 #endif
@@ -113,6 +117,19 @@ void present_frame(const PresentationContext& context) {
         if (context.touch_overlay) context.touch_overlay();
         if (context.menu_overlay) context.menu_overlay();
     }
+#ifndef __ANDROID__
+    if (desktop_dialog_visible(sdl.window)) {
+        present_desktop_dialog(sdl.renderer, sdl.window);
+        const auto presentation = sdl.video_mode == gameboy::VideoMode::integer
+                                       ? SDL_LOGICAL_PRESENTATION_INTEGER_SCALE
+                                       : SDL_LOGICAL_PRESENTATION_LETTERBOX;
+        const auto logical_width = static_cast<int>(
+            sdl.core_video_width * (sdl.split_screen ? 2U : 1U));
+        static_cast<void>(SDL_SetRenderLogicalPresentation(
+            sdl.renderer, logical_width,
+            static_cast<int>(sdl.core_video_height), presentation));
+    }
+#endif
     if (!SDL_RenderPresent(sdl.renderer)) {
         presentation_error("Could not present framebuffer");
     }

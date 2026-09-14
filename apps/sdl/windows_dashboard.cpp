@@ -22,6 +22,7 @@
 #include <cctype>
 #include <cmath>
 #include <ctime>
+#include <cwctype>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -48,6 +49,7 @@ constexpr int id_list = 102;
 constexpr int id_open = 103;
 constexpr int id_play = 104;
 constexpr int id_resume = 105;
+constexpr int id_search = 106;
 constexpr int id_palette = 107;
 constexpr int id_remove = 108;
 constexpr int id_video = 109;
@@ -166,6 +168,8 @@ struct State {
     bool done{};
     HWND window{};
     HWND list{};
+    HWND search_label{};
+    HWND search{};
     HWND library_empty{};
     HWND play{};
     HWND open{};
@@ -242,6 +246,7 @@ struct State {
     DownloadProgress artwork_download;
     std::atomic_size_t artwork_completed{};
     std::size_t artwork_total{};
+    std::wstring library_filter;
     int settings_scroll{};
     HFONT title_font{};
     struct CapturingBinding {
@@ -951,6 +956,7 @@ LRESULT CALLBACK table_header_subclass(
 }
 
 void refresh_library_actions(State& state);
+void refresh_library_list(State& state);
 void layout_dashboard(State& state);
 
 void show_page(State& state, const State::Page page) {
@@ -963,6 +969,8 @@ void show_page(State& state, const State::Page page) {
         refresh_binding_buttons(state);
     }
     ShowWindow(state.list, library ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.search_label, library ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.search, library ? SW_SHOW : SW_HIDE);
     ShowWindow(state.artwork_status, library ? SW_SHOW : SW_HIDE);
     if (state.library_empty != nullptr) {
         const auto empty = library && ListView_GetItemCount(state.list) == 0;
@@ -1081,6 +1089,74 @@ void refresh_library_actions(State& state) {
     if (state.remove != nullptr) EnableWindow(state.remove, has_selection);
 }
 
+std::wstring lowercase(std::wstring value) {
+    for (auto& character : value) {
+        character = static_cast<wchar_t>(std::towlower(character));
+    }
+    return value;
+}
+
+void refresh_library_list(State& state) {
+    if (state.list == nullptr || state.library == nullptr) return;
+    state.library_filter = lowercase(edit_value(state.search));
+    ListView_DeleteAllItems(state.list);
+    for (std::size_t index = 0; index < state.library->entries().size(); ++index) {
+        const auto& entry = state.library->entries()[index];
+        const auto title = widen(entry.metadata.title);
+        const auto filename = entry.path.filename().wstring();
+        const auto searchable = lowercase(title + L" " + filename);
+        if (!state.library_filter.empty() &&
+            searchable.find(state.library_filter) == std::wstring::npos) {
+            continue;
+        }
+        LVITEMW item{};
+        item.mask = LVIF_TEXT | LVIF_IMAGE | LVIF_PARAM;
+        item.iItem = ListView_GetItemCount(state.list);
+        item.pszText = const_cast<wchar_t*>(L"");
+        item.iImage = 0;
+        item.lParam = static_cast<LPARAM>(index);
+        const auto row = static_cast<int>(SendMessageW(
+            state.list, LVM_INSERTITEMW, 0,
+            reinterpret_cast<LPARAM>(&item)));
+        if (row < 0) continue;
+        LVITEMW subitem{};
+        subitem.iSubItem = 1;
+        subitem.pszText = const_cast<wchar_t*>(title.c_str());
+        SendMessageW(state.list, LVM_SETITEMTEXTW,
+                     static_cast<WPARAM>(row),
+                     reinterpret_cast<LPARAM>(&subitem));
+        auto platform_name = widen(gameboy::platform_name(entry.metadata.platform));
+        subitem.iSubItem = 2;
+        subitem.pszText = const_cast<wchar_t*>(platform_name.c_str());
+        SendMessageW(state.list, LVM_SETITEMTEXTW,
+                     static_cast<WPARAM>(row),
+                     reinterpret_cast<LPARAM>(&subitem));
+        auto language = widen(entry.metadata.language);
+        subitem.iSubItem = 3;
+        subitem.pszText = const_cast<wchar_t*>(language.c_str());
+        SendMessageW(state.list, LVM_SETITEMTEXTW,
+                     static_cast<WPARAM>(row),
+                     reinterpret_cast<LPARAM>(&subitem));
+        auto last_played = formatted_last_played(entry.last_played);
+        subitem.iSubItem = 4;
+        subitem.pszText = const_cast<wchar_t*>(last_played.c_str());
+        SendMessageW(state.list, LVM_SETITEMTEXTW,
+                     static_cast<WPARAM>(row),
+                     reinterpret_cast<LPARAM>(&subitem));
+    }
+    const auto empty = state.page == State::Page::library &&
+                       ListView_GetItemCount(state.list) == 0;
+    if (state.library_empty != nullptr) {
+        SetWindowTextW(
+            state.library_empty,
+            state.library_filter.empty()
+                ? L"No games yet.\n\nChoose Open ROM... to add a game to your library."
+                : L"No games match this filter.\n\nTry another title or clear the search field.");
+        ShowWindow(state.library_empty, empty ? SW_SHOW : SW_HIDE);
+    }
+    refresh_library_actions(state);
+}
+
 void place_child(HWND child, int x, int y, int width, int height,
                  const int scroll) {
     if (child == nullptr) return;
@@ -1095,14 +1171,19 @@ void layout_dashboard(State& state) {
     const auto width = std::max(720L, client.right - client.left);
     const auto height = std::max(520L, client.bottom - client.top);
     const auto content_width = std::max(400L, width - 64L);
-    const auto list_height = std::max(220L, height - 300L);
-    place_child(state.list, 32, 200, static_cast<int>(content_width),
+    const auto list_top = 240L;
+    const auto list_height = std::max(180L, height - 340L);
+    place_child(state.search_label, 32, 180, 110, 26, 0);
+    place_child(state.search, 154, 176, 400, 28, 0);
+    place_child(state.list, 32, static_cast<int>(list_top),
+                static_cast<int>(content_width),
                 static_cast<int>(list_height), 0);
-    place_child(state.library_empty, 32, 300, static_cast<int>(content_width),
+    place_child(state.library_empty, 32, static_cast<int>(list_top + 100),
+                static_cast<int>(content_width),
                 100, 0);
-    place_child(state.artwork_status, 32, 180, static_cast<int>(content_width),
+    place_child(state.artwork_status, 32, 212, static_cast<int>(content_width),
                 20, 0);
-    const auto actions_y = 200L + list_height + 25L;
+    const auto actions_y = list_top + list_height + 20L;
     place_child(state.open, 32, static_cast<int>(actions_y), 150, 44, 0);
     place_child(state.play, 202, static_cast<int>(actions_y), 160, 44, 0);
     place_child(state.remove, 382, static_cast<int>(actions_y), 170, 44, 0);
@@ -1408,6 +1489,10 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
 
     if (message == WM_COMMAND) {
         const auto command = LOWORD(wparam);
+        if (command == id_search && HIWORD(wparam) == EN_CHANGE) {
+            refresh_library_list(*state);
+            return 0;
+        }
         if (command >= id_voxel_first_edit &&
             command < id_voxel_first_edit + 8 && state->voxel_available) {
             const auto index = static_cast<std::size_t>(
@@ -2299,42 +2384,12 @@ DashboardResult show_windows_dashboard(
                      static_cast<WPARAM>(index),
                      reinterpret_cast<LPARAM>(&column));
     }
-    for (std::size_t index = 0; index < library.entries().size(); ++index) {
-        const auto& entry = library.entries()[index];
-        auto title = widen(entry.metadata.title);
-        LVITEMW item{};
-        item.mask = LVIF_TEXT | LVIF_IMAGE | LVIF_PARAM;
-        item.iItem = static_cast<int>(index);
-        item.pszText = const_cast<wchar_t*>(L"");
-        item.iImage = 0;
-        item.lParam = static_cast<LPARAM>(index);
-        SendMessageW(state.list, LVM_INSERTITEMW, 0,
-                     reinterpret_cast<LPARAM>(&item));
-        LVITEMW subitem{};
-        subitem.iSubItem = 1;
-        subitem.pszText = title.data();
-        SendMessageW(state.list, LVM_SETITEMTEXTW,
-                     static_cast<WPARAM>(index),
-                     reinterpret_cast<LPARAM>(&subitem));
-        auto platform_name = widen(gameboy::platform_name(entry.metadata.platform));
-        subitem.iSubItem = 2;
-        subitem.pszText = platform_name.data();
-        SendMessageW(state.list, LVM_SETITEMTEXTW,
-                     static_cast<WPARAM>(index),
-                     reinterpret_cast<LPARAM>(&subitem));
-        auto language = widen(entry.metadata.language);
-        subitem.iSubItem = 3;
-        subitem.pszText = language.data();
-        SendMessageW(state.list, LVM_SETITEMTEXTW,
-                     static_cast<WPARAM>(index),
-                     reinterpret_cast<LPARAM>(&subitem));
-        auto last_played = formatted_last_played(entry.last_played);
-        subitem.iSubItem = 4;
-        subitem.pszText = last_played.data();
-        SendMessageW(state.list, LVM_SETITEMTEXTW,
-                     static_cast<WPARAM>(index),
-                     reinterpret_cast<LPARAM>(&subitem));
-    }
+    state.search_label = control(state, L"STATIC", L"Filter games", 0,
+                                 32, 180, 110, 26, 0);
+    state.search = control(state, L"EDIT", L"",
+                           WS_BORDER | ES_AUTOHSCROLL | ES_LEFT,
+                           154, 176, 400, 28, id_search);
+    refresh_library_list(state);
     state.open = control(state, L"BUTTON", L"Open ROM...",
         WS_VISIBLE | BS_PUSHBUTTON, 32, 575, 150, 44, id_open);
     state.play = control(state, L"BUTTON", L"Play selected",

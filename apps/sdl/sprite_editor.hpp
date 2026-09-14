@@ -84,6 +84,7 @@ public:
     }
 
     void close() noexcept {
+        clear_tool_text_cache(renderer_);
         if (renderer_ != nullptr) SDL_DestroyRenderer(renderer_);
         if (window_ != nullptr) SDL_DestroyWindow(window_);
         renderer_ = nullptr;
@@ -182,15 +183,13 @@ public:
         static_cast<void>(SDL_SetRenderDrawColor(renderer_, 8, 12, 20, 255));
         static_cast<void>(SDL_RenderClear(renderer_));
         static_cast<void>(SDL_SetRenderDrawColor(renderer_, 69, 207, 238, 255));
-        static_cast<void>(SDL_RenderDebugText(renderer_, 24, 18,
-                                              "LIVE VRAM SPRITE / TILE EDITOR"));
+        render_tool_text(renderer_, 24, 18,
+                         "LIVE VRAM SPRITE / TILE EDITOR");
         static_cast<void>(SDL_SetRenderDrawColor(renderer_, 177, 192, 208, 255));
-        static_cast<void>(SDL_RenderDebugText(
-            renderer_, 24, 38,
-            "SELECT A TILE, THEN PAINT ITS 2-BIT COLOR INDICES"));
-        static_cast<void>(SDL_RenderDebugText(
-            renderer_, 24, 54,
-            "CHANGES ARE LIVE AND MAY BE OVERWRITTEN WHEN THE GAME RESUMES"));
+        render_tool_text(renderer_, 24, 38,
+                         "SELECT A TILE, THEN PAINT ITS 2-BIT COLOR INDICES");
+        render_tool_text(renderer_, 24, 54,
+                         "CHANGES ARE LIVE AND MAY BE OVERWRITTEN WHEN THE GAME RESUMES");
 
         constexpr float grid_x = 24.0F;
         constexpr float grid_y = 82.0F;
@@ -247,8 +246,7 @@ public:
         const auto tile_label = "TILE " + std::to_string(selected_tile_) +
                                 "  VRAM $" + hex_address() +
                                 "  BANK " + std::to_string(bank_);
-        static_cast<void>(SDL_RenderDebugText(renderer_, editor_x, 82,
-                                              tile_label.c_str()));
+        render_tool_text(renderer_, editor_x, 82, tile_label.c_str());
         for (std::uint8_t color = 0; color < 4; ++color) {
             const SDL_FRect swatch{editor_x + color * 80.0F, 520, 56, 56};
             set_color(color);
@@ -259,8 +257,8 @@ public:
                 color == color_ ? 238 : 91, 255));
             static_cast<void>(SDL_RenderRect(renderer_, &swatch));
             const auto label = std::to_string(color + 1);
-            static_cast<void>(SDL_RenderDebugText(renderer_, swatch.x + 24,
-                                                  swatch.y + 62, label.c_str()));
+            render_tool_text(renderer_, swatch.x + 24, swatch.y + 62,
+                             label.c_str());
         }
         draw_button({500, 620, 120, 36}, "CTRL+Z UNDO");
         draw_button({636, 620, 120, 36}, "DELETE CLEAR");
@@ -635,8 +633,7 @@ public:
 
     void draw_button(const SDL_FRect& rect, const char* label) {
         draw_tool_button_background(renderer_, window_, rect);
-        static_cast<void>(SDL_RenderDebugText(renderer_, rect.x + 9,
-                                              rect.y + 14, label));
+        render_tool_text(renderer_, rect.x + 9, rect.y + 14, label);
     }
 
     [[nodiscard]] std::string hex_address() const {
