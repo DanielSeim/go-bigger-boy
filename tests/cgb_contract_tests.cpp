@@ -213,6 +213,26 @@ void test_cgb_memory_and_rendering() {
               batched_hdma.read8(0xFF55) == 0x00,
           "CGB HBlank DMA services every HBlank crossed by a batched tick");
 
+    gameboy::MemoryBus lcd_off_hdma{gameboy::Cartridge{cgb_test_rom()}};
+    for (unsigned byte = 0; byte < 0x30; ++byte) {
+        lcd_off_hdma.write8(static_cast<std::uint16_t>(0xC000 + byte),
+                            static_cast<std::uint8_t>(0x90 + byte));
+    }
+    lcd_off_hdma.write8(0xFF51, 0xC0);
+    lcd_off_hdma.write8(0xFF52, 0x00);
+    lcd_off_hdma.write8(0xFF53, 0x01);
+    lcd_off_hdma.write8(0xFF54, 0x60);
+    lcd_off_hdma.write8(0xFF55, 0x82); // Three blocks, HBlank mode.
+    check(lcd_off_hdma.read8(0x8160) == 0x90 &&
+              lcd_off_hdma.read8(0x816F) == 0x9F &&
+              lcd_off_hdma.read8(0x8170) == 0x00 &&
+              lcd_off_hdma.read8(0xFF55) == 0x01,
+          "CGB HBlank DMA starts with one block when the LCD is off");
+    lcd_off_hdma.write8(0xFF55, 0x00);
+    check(lcd_off_hdma.read8(0xFF55) == 0x80 &&
+              lcd_off_hdma.read8(0x8170) == 0x00,
+          "cancelling LCD-off HBlank DMA stops before the next block");
+
     const auto cgb_state = emulator.save_state();
     bus.write8(0xFF40, 0);
     bus.write8(0xFF4F, 1);

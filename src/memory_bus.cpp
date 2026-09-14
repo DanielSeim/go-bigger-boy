@@ -347,12 +347,18 @@ void MemoryBus::write_hdma_register(const std::uint16_t address,
     case 0xFF55:
         if (hdma_active_ && (value & 0x80) == 0) {
             hdma_active_ = false;
+            // The hardware exposes a stable zero-length status after an
+            // HBlank transfer is cancelled, rather than retaining the
+            // number of blocks that were still pending.
+            hdma_blocks_remaining_ = 1;
             return;
         }
         hdma_blocks_remaining_ = static_cast<std::uint8_t>((value & 0x7F) + 1);
-        hdma_active_ = (value & 0x80) != 0 &&
-                       (ppu_.read_register(0xFF40) & 0x80) != 0;
-        if (!hdma_active_) {
+        if ((value & 0x80) != 0) {
+            hdma_active_ = true;
+            if (ppu_.hblank_dma_available()) transfer_hdma_block();
+        } else {
+            hdma_active_ = false;
             while (hdma_blocks_remaining_ != 0) transfer_hdma_block();
         }
         break;

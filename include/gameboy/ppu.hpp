@@ -33,6 +33,9 @@ public:
     void set_cgb_late_revision(bool enabled) noexcept;
     void set_sgb_mode(bool enabled) noexcept;
     [[nodiscard]] bool cgb_mode() const noexcept;
+    // HBlank DMA may begin immediately only while the LCD is off or the
+    // visible PPU is already in mode 0. LCD startup is deliberately excluded.
+    [[nodiscard]] bool hblank_dma_available() const noexcept;
     void set_dmg_palette(const DmgPalette& palette) noexcept;
     void initialize_post_boot_phase(HardwareModel model) noexcept;
     void apply_sgb_command(

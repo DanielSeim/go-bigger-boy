@@ -370,6 +370,21 @@ large peripheral tick could collapse multiple PPU HBlank notifications into one
 bitmask, causing one or more requested 16-byte blocks to be skipped. The core
 regression suite covers a batched tick that crosses two HBlanks and verifies that
 both blocks are copied while the transfer remains active for the requested count.
+Starting HBlank DMA with the LCD disabled now performs exactly one immediate
+block, matching the CGB register behavior; cancellation leaves the inactive
+transfer status at `0x80` and does not copy a second block. HDMA source and
+destination low nibbles remain masked by the register write path.
+
+PPU VRAM arbitration follows the internal pixel-transfer boundary rather than
+the one-dot-later CPU-visible STAT mode. This closes the boundary where a CPU
+write could otherwise land after the fetcher had claimed VRAM but before STAT
+reported mode 3. The contract suite now checks this separately from the
+existing OAM handoff behavior.
+
+The external runner keeps a full per-case log beside generated captures and
+selects the actionable result line for the summary table. This makes timing
+failures distinguishable from timeouts and preserves the register/video/audio
+state printed by the runner for the next accuracy investigation.
 
 Window comparator positions are normalized at the visible left edge for
 `WX<7`, including writes made while the current window tile is still queued.

@@ -155,7 +155,10 @@ std::uint8_t Ppu::read_vram(const std::uint16_t address) const noexcept {
 
 void Ppu::write_vram(const std::uint16_t address,
                      const std::uint8_t value) noexcept {
-    if (!lcd_enabled() || mode_ != 3) {
+    // VRAM arbitration follows the internal pixel-transfer state.  On the
+    // one-dot handoff where STAT still reports mode 2, the fetcher has already
+    // claimed VRAM and a CPU write is ignored.
+    if (!lcd_enabled() || (mode_ != 3 && stat_mode_ != 3)) {
         auto& bank = cgb_mode_ && vram_bank_ != 0 ? *cgb_vram_ : vram_;
         bank[address - 0x8000] = value;
     }

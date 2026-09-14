@@ -73,6 +73,19 @@ class ExternalSuiteDiscoveryTests(unittest.TestCase):
             )
             self.assertTrue(any(case.model == "cgb-e" for case in cases))
 
+    def test_runner_summary_prefers_result_over_diagnostic_tail(self) -> None:
+        output = "FAIL (Mooneye result registers)\nPC=1234\nAPU PCM12=00 PCM34=00\n"
+        self.assertEqual(
+            MODULE.summarize_runner_output(output, 1),
+            "FAIL (Mooneye result registers)",
+        )
+
+    def test_runner_summary_reports_timeout_exit(self) -> None:
+        self.assertEqual(
+            MODULE.summarize_runner_output("TIMEOUT after reaching the cycle limit\n", 2),
+            "TIMEOUT after reaching the cycle limit",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

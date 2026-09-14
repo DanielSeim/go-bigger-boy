@@ -136,6 +136,10 @@ void Ppu::consume_frame() noexcept { frame_ready_ = false; }
 
 bool Ppu::lcd_enabled() const noexcept { return (lcdc_ & 0x80) != 0; }
 
+bool Ppu::hblank_dma_available() const noexcept {
+    return !lcd_enabled() || (!lcd_startup_ && mode_ == 0);
+}
+
 bool Ppu::stat_condition() const noexcept {
     if (!lcd_enabled()) {
         return false;

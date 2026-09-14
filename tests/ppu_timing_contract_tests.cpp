@@ -140,6 +140,9 @@ void test_ppu_modes_and_memory_access() {
     check((arbitration.read8(0xFF41) & 0x03) == 2 &&
               arbitration.read8(0x8000) == 0xFF,
           "VRAM locks on the internal mode-3 boundary before STAT changes");
+    arbitration.write8(0x8000, 0x77);
+    check(arbitration.debug_read_vram(0, 0) == 0,
+          "VRAM writes are also blocked on the internal mode-3 boundary");
     arbitration.write8(0xFE00, 0x66);
     arbitration.tick(173);
     check(arbitration.read8(0xFE00) == 0x66,

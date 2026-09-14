@@ -205,6 +205,16 @@ def discover_cases(
     return cases
 
 
+def summarize_runner_output(output: str, returncode: int) -> str:
+    """Keep the actionable result line in the table and full output in a log."""
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    for marker in ("PASS (", "FAIL (", "TIMEOUT", "Error:"):
+        for line in lines:
+            if marker in line:
+                return line[line.index(marker):][:180]
+    return lines[-1][:180] if lines else f"exit code {returncode}"
+
+
 def run_case(case: Case, runner: Path, output_dir: Path) -> Case:
     if case.status != "pending":
         return case
@@ -227,16 +237,28 @@ def run_case(case: Case, runner: Path, output_dir: Path) -> Case:
             str(runner), str(case.rom), "--max-cycles", str(case.max_cycles),
             "--protocol", "mooneye", "--model", case.model,
         ]
+    output_dir.mkdir(parents=True, exist_ok=True)
+    log_path = output_dir / f"{case.case_id}.log"
     try:
         result = subprocess.run(
             command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, timeout=timeout,
         )
-    except subprocess.TimeoutExpired:
-        return Case(**{**case.__dict__, "status": "timeout", "detail": "timeout"})
-    lines = result.stdout.splitlines() if result.stdout else []
-    detail = lines[-1] if lines else f"exit code {result.returncode}"
-    status = "pass" if result.returncode == 0 else "fail"
+    except subprocess.TimeoutExpired as error:
+        partial = ""
+        if isinstance(error.stdout, str):
+            partial = error.stdout
+        log_path.write_text(partial, encoding="utf-8")
+        return Case(**{**case.__dict__, "status": "timeout",
+                       "detail": f"TIMEOUT (log: {log_path.name})"})
+    output = result.stdout or ""
+    log_path.write_text(output, encoding="utf-8")
+    detail = summarize_runner_output(output, result.returncode)
+    status = ("pass" if result.returncode == 0 else
+              "timeout" if result.returncode == 2 and "TIMEOUT" in output
+              else "fail")
+    if status != "pass":
+        detail = f"{detail} (log: {log_path.name})"
     return Case(**{**case.__dict__, "status": status, "detail": detail})
 
 

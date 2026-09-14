@@ -181,6 +181,61 @@ void print_hram_head(const gameboy::MemoryBus& bus) {
     std::cerr << std::dec << '\n';
 }
 
+void print_hex_window(const char* label, const std::uint16_t base,
+                      const std::uint16_t size,
+                      const gameboy::MemoryBus& bus) {
+    std::cerr << label << ' ' << std::hex << std::setfill('0');
+    for (std::uint16_t offset = 0; offset < size; ++offset) {
+        if ((offset % 16) == 0) {
+            std::cerr << '\n' << std::setw(4)
+                      << static_cast<unsigned>(base + offset) << ':';
+        }
+        std::cerr << ' ' << std::setw(2)
+                  << static_cast<unsigned>(bus.read8(
+                         static_cast<std::uint16_t>(base + offset)));
+    }
+    std::cerr << std::dec << '\n';
+}
+
+void print_video_diagnostics(const gameboy::MemoryBus& bus) {
+    std::cerr << "Video registers: LCDC=" << std::hex << std::setfill('0')
+              << std::setw(2) << static_cast<unsigned>(bus.read8(0xFF40))
+              << " STAT=" << std::setw(2)
+              << static_cast<unsigned>(bus.read8(0xFF41))
+              << " LY=" << std::setw(2)
+              << static_cast<unsigned>(bus.read8(0xFF44))
+              << " LYC=" << std::setw(2)
+              << static_cast<unsigned>(bus.read8(0xFF45))
+              << " SCY=" << std::setw(2)
+              << static_cast<unsigned>(bus.read8(0xFF42))
+              << " SCX=" << std::setw(2)
+              << static_cast<unsigned>(bus.read8(0xFF43))
+              << " WY=" << std::setw(2)
+              << static_cast<unsigned>(bus.read8(0xFF4A))
+              << " WX=" << std::setw(2)
+              << static_cast<unsigned>(bus.read8(0xFF4B))
+              << " VBK=" << std::setw(2)
+              << static_cast<unsigned>(bus.read8(0xFF4F))
+              << " HDMA1-5=" << std::setw(2)
+              << static_cast<unsigned>(bus.read8(0xFF51)) << ' '
+              << std::setw(2) << static_cast<unsigned>(bus.read8(0xFF52))
+              << ' ' << std::setw(2)
+              << static_cast<unsigned>(bus.read8(0xFF53)) << ' '
+              << std::setw(2) << static_cast<unsigned>(bus.read8(0xFF54))
+              << ' ' << std::setw(2)
+              << static_cast<unsigned>(bus.read8(0xFF55)) << std::dec << '\n';
+    print_hex_window("VRAM 8800:", 0x8800, 0x40, bus);
+    print_hex_window("WRAM C000:", 0xC000, 0x40, bus);
+}
+
+void print_audio_diagnostics(const gameboy::MemoryBus& bus) {
+    print_hex_window("APU FF10:", 0xFF10, 0x17, bus);
+    std::cerr << "APU PCM12=" << std::hex << std::setfill('0') << std::setw(2)
+              << static_cast<unsigned>(bus.read8(0xFF76))
+              << " PCM34=" << std::setw(2)
+              << static_cast<unsigned>(bus.read8(0xFF77)) << std::dec << '\n';
+}
+
 bool contains_failure(const std::string& output) {
     return output.find("Failed") != std::string::npos ||
            output.find("FAILED") != std::string::npos ||
@@ -309,6 +364,8 @@ int main(int argc, char** argv) {
                     std::cerr << "Last low ROM PC=" << std::hex
                               << last_low_rom_pc << std::dec << '\n';
                     print_hram_head(emulator.bus());
+                    print_video_diagnostics(emulator.bus());
+                    print_audio_diagnostics(emulator.bus());
                     return EXIT_FAILURE;
                 }
             }
@@ -357,6 +414,8 @@ int main(int argc, char** argv) {
                 print_state(emulator.cpu());
                 print_recent_pcs(recent_pcs, recent_pc_next, recent_pc_count);
                 print_hram_head(emulator.bus());
+                print_video_diagnostics(emulator.bus());
+                print_audio_diagnostics(emulator.bus());
                 return EXIT_FAILURE;
             }
 
@@ -385,6 +444,8 @@ int main(int argc, char** argv) {
         // this exposes their last observed value instead of leaving a timeout
         // indistinguishable from a harness hang.
         print_hram_head(emulator.bus());
+        print_video_diagnostics(emulator.bus());
+        print_audio_diagnostics(emulator.bus());
         return 2;
     } catch (const std::exception& error) {
         usage();
