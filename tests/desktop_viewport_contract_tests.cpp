@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -41,20 +42,22 @@ void test_unsigned_tile_map_and_scroll() {
 
     std::uint32_t expected_center_pixel{};
     {
-        const auto map = gbb::sdl::render_desktop_background_map(
-            bus, gameboy::display_palettes[0]);
-        check(map.scroll_x == 197 && map.scroll_y == 23,
+        const auto map = std::make_unique<gbb::sdl::DesktopBackgroundMap>(
+            gbb::sdl::render_desktop_background_map(
+                bus, gameboy::display_palettes[0]));
+        check(map->scroll_x == 197 && map->scroll_y == 23,
               "reports the live scroll registers");
-        check(map.pixels[0] == gameboy::display_palettes[0].colors[1],
+        check(map->pixels[0] == gameboy::display_palettes[0].colors[1],
               "renders unsigned tile data with the DMG palette");
-        check(map.pixels[1] == gameboy::display_palettes[0].colors[0],
+        check(map->pixels[1] == gameboy::display_palettes[0].colors[0],
               "renders adjacent tile pixels in display order");
-        expected_center_pixel = map.pixels[23 * 256 + 197];
+        expected_center_pixel = map->pixels[23 * 256 + 197];
     }
-    const auto viewport = gbb::sdl::render_desktop_viewport(
-        bus, gameboy::display_palettes[0]);
-    check(viewport.pixels[gbb::sdl::DesktopBackgroundMap::visible_origin_y * 256 +
-                            gbb::sdl::DesktopBackgroundMap::visible_origin_x] ==
+    const auto viewport = std::make_unique<gbb::sdl::DesktopBackgroundMap>(
+        gbb::sdl::render_desktop_viewport(bus, gameboy::display_palettes[0]));
+    check(viewport->pixels[gbb::sdl::DesktopBackgroundMap::visible_origin_y *
+                               256 +
+                           gbb::sdl::DesktopBackgroundMap::visible_origin_x] ==
               expected_center_pixel,
           "centers the calculated view on the live scroll position");
 }
@@ -68,9 +71,10 @@ void test_signed_tile_map_and_flips() {
     bus.debug_write_vram(0, 0x0FF0, 0x01);
     bus.debug_write_vram(0, 0x0FF0 + 1, 0x00);
 
-    const auto map = gbb::sdl::render_desktop_background_map(
-        bus, gameboy::display_palettes[0]);
-    check(map.pixels[0] == gameboy::display_palettes[0].colors[1],
+    const auto map = std::make_unique<gbb::sdl::DesktopBackgroundMap>(
+        gbb::sdl::render_desktop_background_map(
+            bus, gameboy::display_palettes[0]));
+    check(map->pixels[0] == gameboy::display_palettes[0].colors[1],
           "uses the signed tile-data address range");
 
     // Tilemap attributes are present only in CGB VRAM bank 1.
@@ -86,9 +90,10 @@ void test_signed_tile_map_and_flips() {
     cgb_bus.debug_write_vram(0, 0x1C00, 0);
     cgb_bus.debug_write_vram(1, 0x1C00, 0x60);
     cgb_bus.debug_write_vram(0, 0x0000, 0x80);
-    const auto flipped = gbb::sdl::render_desktop_background_map(
-        cgb_bus, gameboy::display_palettes[0]);
-    check(flipped.pixels[7 * 256 + 7] == 0xFFFF0000,
+    const auto flipped = std::make_unique<gbb::sdl::DesktopBackgroundMap>(
+        gbb::sdl::render_desktop_background_map(
+            cgb_bus, gameboy::display_palettes[0]));
+    check(flipped->pixels[7 * 256 + 7] == 0xFFFF0000,
           "honors tilemap flip attributes when reconstructing the map");
 }
 
