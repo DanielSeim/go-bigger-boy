@@ -51,7 +51,7 @@ TTF_Font* font_for_renderer(SDL_Renderer* renderer, int& size) {
             const auto scale = std::clamp(
                 std::max(static_cast<float>(output_width) / window_width,
                          static_cast<float>(output_height) / window_height),
-                1.0F, 1.15F);
+                1.0F, 1.5F);
             size = std::clamp(static_cast<int>(std::lround(14.0F * scale)),
                               14, 16);
         }
@@ -142,7 +142,24 @@ void render_tool_text(SDL_Renderer* renderer, const float x, const float y,
         // SDL's built-in debug font is only 8px high. Keep it as a dependency-
         // free fallback, but enlarge it slightly so tool windows remain
         // legible when SDL_ttf is unavailable.
-        constexpr float fallback_scale = 1.15F;
+        auto fallback_scale = 1.15F;
+        if (renderer != nullptr) {
+            auto* const window = SDL_GetRenderWindow(renderer);
+            int window_width = 0;
+            int window_height = 0;
+            int output_width = 0;
+            int output_height = 0;
+            if (window != nullptr && SDL_GetWindowSize(window, &window_width,
+                                                       &window_height) &&
+                SDL_GetRenderOutputSize(renderer, &output_width,
+                                        &output_height) &&
+                window_width > 0 && window_height > 0) {
+                fallback_scale = std::clamp(
+                    std::max(static_cast<float>(output_width) / window_width,
+                             static_cast<float>(output_height) / window_height),
+                    1.15F, 1.5F);
+            }
+        }
         float old_scale_x = 1.0F;
         float old_scale_y = 1.0F;
         static_cast<void>(SDL_GetRenderScale(renderer, &old_scale_x,
@@ -189,6 +206,21 @@ void draw_tool_button_background(SDL_Renderer* renderer, SDL_Window* window,
         pressed ? 207 : (hovered ? 232 : 207),
         pressed ? 230 : (hovered ? 250 : 238), 255));
     static_cast<void>(SDL_RenderRect(renderer, &rect));
+}
+
+void draw_tool_focus_outline(SDL_Renderer* renderer, const SDL_FRect& rect) {
+    if (renderer == nullptr) return;
+    const SDL_FRect focus{rect.x - 3.0F, rect.y - 3.0F,
+                          rect.w + 6.0F, rect.h + 6.0F};
+    static_cast<void>(SDL_SetRenderDrawColor(renderer, 238, 249, 255, 255));
+    static_cast<void>(SDL_RenderRect(renderer, &focus));
+}
+
+int cycle_tool_focus(const int current, const int count,
+                     const bool reverse) noexcept {
+    if (count <= 0) return 0;
+    if (reverse) return current <= 0 ? count - 1 : current - 1;
+    return current + 1 >= count ? 0 : current + 1;
 }
 
 SDL_FRect tool_close_button_rect(const int width) noexcept {

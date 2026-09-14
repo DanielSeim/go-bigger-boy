@@ -16,6 +16,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <functional>
+#include <limits>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
@@ -533,8 +534,13 @@ void show_lan_hosts(SDL_Window* window,
 void show_desktop_notification(SDL_Window* window, std::string message,
                                const bool warning) {
     if (window == nullptr || message.empty()) return;
-    desktop_notifications()[window] = {
-        std::move(message), SDL_GetTicks() + 6000, warning};
+    // Warnings remain available until the user opens their details. A brief
+    // toast is appropriate for successful actions, but silently expiring a
+    // link or save failure makes recovery unnecessarily difficult.
+    const auto expires_at = warning
+                                ? (std::numeric_limits<std::uint64_t>::max)()
+                                : SDL_GetTicks() + 6000;
+    desktop_notifications()[window] = {std::move(message), expires_at, warning};
 }
 
 bool desktop_notification_visible(SDL_Window* window) noexcept {

@@ -137,6 +137,13 @@ class TasEditor {
                     confirm_discard_changes(window_, "Discard unsaved TAS changes?")) {
                     close();
                 }
+            } else if (event.key.key == SDLK_TAB) {
+                focus_index_ = cycle_tool_focus(
+                    focus_index_, 7, (event.key.mod & SDL_KMOD_SHIFT) != 0);
+            } else if ((event.key.key == SDLK_RETURN ||
+                        event.key.key == SDLK_KP_ENTER ||
+                        event.key.key == SDLK_SPACE) &&
+                       activate_focused()) {
             } else if (event.key.key == SDLK_UP && selection_ > 0) {
                 --selection_;
                 keep_selection_visible();
@@ -244,6 +251,7 @@ class TasEditor {
             static_cast<void>(SDL_GetWindowSize(window_, &width, &height));
             if (tool_close_button_hit(width, height, event.button.x,
                                       event.button.y)) {
+                focus_index_ = 0;
                 if (!has_unsaved_changes() ||
                     confirm_discard_changes(window_, "Discard unsaved TAS changes?")) {
                     close();
@@ -261,24 +269,30 @@ class TasEditor {
                        event.button.y <= static_cast<float>(height - 19)) {
                 const auto x = event.button.x;
                 if (x >= 24 && x <= 154) {
+                    focus_index_ = 1;
                     remember_edit();
                     frames_.insert(frames_.begin() +
                                        static_cast<std::ptrdiff_t>(selection_), 0);
                 } else if (x >= 166 && x <= 296) {
+                    focus_index_ = 2;
                     remember_edit();
                     delete_selected();
                 } else if (x >= 308 && x <= 438) {
+                    focus_index_ = 3;
                     remember_edit();
                     frames_.push_back(0);
                     selection_ = frames_.size() - 1;
                     keep_selection_visible();
                 } else if (x >= 450 && x <= 580) {
+                    focus_index_ = 4;
                     save_requested_ = true;
                     status_ = "SAVING...";
                 } else if (x >= 592 && x <= 722) {
+                    focus_index_ = 5;
                     replay_requested_ = true;
                     status_ = "BUILDING MOVIE...";
                 } else if (x >= 734 && x <= 864) {
+                    focus_index_ = 6;
                     request_new();
                 }
             }
@@ -388,6 +402,7 @@ class TasEditor {
         render_tool_text(
             renderer_, 24, bottom_y - 16,
             "Ctrl+C/V COPY/PASTE  Ctrl+D DUPLICATE  Backspace CLEAR  Ctrl+Home/End JUMP");
+        draw_tool_focus_outline(renderer_, focused_rect(width, height));
         static_cast<void>(SDL_RenderPresent(renderer_));
     }
 
@@ -404,6 +419,52 @@ class TasEditor {
         if (!has_unsaved_changes() ||
             confirm_discard_changes(window_, "Discard unsaved TAS changes?")) {
             new_requested_ = true;
+        }
+    }
+
+    [[nodiscard]] SDL_FRect focused_rect(const int width,
+                                          const int height) const noexcept {
+        if (focus_index_ == 0) return tool_close_button_rect(width);
+        const auto bottom_y = static_cast<float>(height - 55);
+        return {24.0F + static_cast<float>(focus_index_ - 1) * 142.0F,
+                bottom_y, 130.0F, 36.0F};
+    }
+
+    bool activate_focused() {
+        switch (focus_index_) {
+        case 0:
+            if (!has_unsaved_changes() ||
+                confirm_discard_changes(window_, "Discard unsaved TAS changes?")) {
+                close();
+            }
+            return true;
+        case 1:
+            remember_edit();
+            frames_.insert(frames_.begin() +
+                               static_cast<std::ptrdiff_t>(selection_), 0);
+            return true;
+        case 2:
+            remember_edit();
+            delete_selected();
+            return true;
+        case 3:
+            remember_edit();
+            frames_.push_back(0);
+            selection_ = frames_.size() - 1;
+            keep_selection_visible();
+            return true;
+        case 4:
+            save_requested_ = true;
+            status_ = "SAVING...";
+            return true;
+        case 5:
+            replay_requested_ = true;
+            status_ = "BUILDING MOVIE...";
+            return true;
+        case 6:
+            request_new();
+            return true;
+        default: return false;
         }
     }
 
@@ -509,6 +570,7 @@ class TasEditor {
     bool save_requested_{};
     bool replay_requested_{};
     bool new_requested_{};
+    int focus_index_{1};
 };
 
 } // namespace gbb::sdl

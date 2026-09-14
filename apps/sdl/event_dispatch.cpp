@@ -462,6 +462,12 @@ void handle_mouse_event(const SDL_Event& event, SdlEventContext& context) {
         static_cast<void>(SDL_RenderCoordinatesFromWindow(
             sdl.renderer, x, y, &x, &y));
         if (context.dashboard_visible) {
+            if (!context.dashboard_filter.empty() && x >= 125.0F &&
+                x < 157.0F && y >= 16.0F && y < 30.0F) {
+                context.dashboard_filter.clear();
+                context.dashboard_selection = 0;
+                return;
+            }
             if (context.dashboard_row_at) {
                 if (const auto selected = context.dashboard_row_at(x, y)) {
                     context.dashboard_selection = *selected;

@@ -172,6 +172,13 @@ public:
                            event.key.key == SDLK_KP_ENTER) {
                     add_manual();
                 }
+            } else if (event.key.key == SDLK_TAB) {
+                focus_index_ = cycle_tool_focus(
+                    focus_index_, 4, (event.key.mod & SDL_KMOD_SHIFT) != 0);
+            } else if ((event.key.key == SDLK_RETURN ||
+                        event.key.key == SDLK_KP_ENTER ||
+                        event.key.key == SDLK_SPACE) &&
+                       activate_focused()) {
             } else if (event.key.key == SDLK_ESCAPE) {
                 close();
             } else if (event.key.key == SDLK_UP && !cheats_.empty()) {
@@ -184,7 +191,9 @@ public:
                 cheats_[selected_].enabled = !cheats_[selected_].enabled;
                 save();
             } else if (event.key.key == SDLK_DELETE && !cheats_.empty()) {
-                erase_selected();
+                if (confirm_discard_changes(window_, "Delete the selected cheat?")) {
+                    erase_selected();
+                }
             }
         } else if (event.type == SDL_EVENT_MOUSE_WHEEL) {
             if (event.wheel.y > 0 && scroll_ > 0) --scroll_;
@@ -216,11 +225,23 @@ public:
                 }
             } else if (y >= height - 100 && y <= height - 64) {
                 if (x >= 24 && x <= 178 && !fetch_in_progress_) {
+                    focus_index_ = 1;
                     fetch_requested_ = true;
                 }
-                else if (x >= 194 && x <= 334) add_manual();
-                else if (x >= 350 && x <= 490) erase_selected();
-                else if (x >= width - 144 && x <= width - 24) close();
+                else if (x >= 194 && x <= 334) {
+                    focus_index_ = 2;
+                    add_manual();
+                }
+                else if (x >= 350 && x <= 490) {
+                    focus_index_ = 3;
+                    if (confirm_discard_changes(window_, "Delete the selected cheat?")) {
+                        erase_selected();
+                    }
+                }
+                else if (x >= width - 144 && x <= width - 24) {
+                    focus_index_ = 0;
+                    close();
+                }
             }
         }
         return true;
@@ -367,6 +388,7 @@ public:
         button({194, button_y, 140, 36}, "ADD MANUAL");
         button({350, button_y, 140, 36}, "DELETE");
         button({static_cast<float>(width - 144), button_y, 120, 36}, "CLOSE");
+        draw_tool_focus_outline(renderer_, focused_rect(width, height));
         text(24, static_cast<float>(height - 42),
              "Click [ ] to toggle. Up/Down select, Space toggles, Delete removes.",
              177, 192, 208);
@@ -374,6 +396,34 @@ public:
     }
 
 private:
+    [[nodiscard]] SDL_FRect focused_rect(const int width,
+                                          const int height) const noexcept {
+        const auto button_y = static_cast<float>(height - 100);
+        switch (focus_index_) {
+        case 0: return tool_close_button_rect(width);
+        case 1: return {24, button_y, 154, 36};
+        case 2: return {194, button_y, 140, 36};
+        case 3: return {350, button_y, 140, 36};
+        default: return tool_close_button_rect(width);
+        }
+    }
+
+    bool activate_focused() {
+        switch (focus_index_) {
+        case 0: close(); return true;
+        case 1:
+            if (!fetch_in_progress_) fetch_requested_ = true;
+            return true;
+        case 2: add_manual(); return true;
+        case 3:
+            if (confirm_discard_changes(window_, "Delete the selected cheat?")) {
+                erase_selected();
+            }
+            return true;
+        default: return false;
+        }
+    }
+
     enum class Field { none, description, code };
 
     static std::string url_component(const std::string& value) {
@@ -540,6 +590,7 @@ private:
     bool archive_attempted_{};
     std::future<std::string> fetch_future_;
     bool fetch_in_progress_{};
+    int focus_index_{1};
     std::optional<std::string> fetch_error_;
     gbb_desktop::DownloadProgress fetch_progress_;
 };

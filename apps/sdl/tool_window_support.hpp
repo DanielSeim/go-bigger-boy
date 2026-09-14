@@ -12,6 +12,8 @@ void clear_tool_text_cache(SDL_Renderer* renderer) noexcept;
 
 void draw_tool_button_background(SDL_Renderer* renderer, SDL_Window* window,
                                  const SDL_FRect& rect);
+void draw_tool_focus_outline(SDL_Renderer* renderer, const SDL_FRect& rect);
+[[nodiscard]] int cycle_tool_focus(int current, int count, bool reverse) noexcept;
 [[nodiscard]] SDL_FRect tool_close_button_rect(int width) noexcept;
 [[nodiscard]] bool tool_close_button_hit(int width, int height, float x,
                                          float y) noexcept;

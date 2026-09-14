@@ -1361,15 +1361,23 @@ void present_dashboard(SdlResources& sdl,
                                   : std::string{"FILTER: "} +
                                         (filter.empty()
                                              ? std::string{"type..."}
-                                             : dashboard_text(filter, 12));
+                                             : dashboard_text(filter, 5));
     static_cast<void>(SDL_RenderDebugText(sdl.renderer, 13, 18,
                                           dashboard_text(filter_label, 18).c_str()));
+    if (!filter.empty()) {
+        const SDL_FRect clear_filter{125, 16, 32, 14};
+        static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 20, 77, 101, 255));
+        static_cast<void>(SDL_RenderFillRect(sdl.renderer, &clear_filter));
+        static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 69, 207, 238, 255));
+        static_cast<void>(SDL_RenderRect(sdl.renderer, &clear_filter));
+        static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 238, 249, 255, 255));
+        static_cast<void>(SDL_RenderDebugText(sdl.renderer, 129, 19, "CLR"));
+    }
     static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 69, 207, 238, 255));
-    const auto cursor_x = 13.0F +
-                          static_cast<float>(std::min<std::size_t>(filter.size(), 12)) *
-                              8.0F + 64.0F;
-    const SDL_FRect filter_cursor{cursor_x, 17.0F, 1.0F, 10.0F};
-    static_cast<void>(SDL_RenderFillRect(sdl.renderer, &filter_cursor));
+    if (filter.empty()) {
+        const SDL_FRect filter_cursor{77, 17, 1, 10};
+        static_cast<void>(SDL_RenderFillRect(sdl.renderer, &filter_cursor));
+    }
 
     for (std::size_t row = 0; row < visible; ++row) {
         const auto index = first + row;

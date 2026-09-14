@@ -124,6 +124,7 @@ public:
             static_cast<void>(SDL_GetWindowSize(window_, &width, &height));
             if (tool_close_button_hit(width, height, event.button.x,
                                       event.button.y)) {
+                focus_index_ = 0;
                 if (!has_unsaved_changes(*emulator) ||
                     confirm_discard_changes(window_,
                                             "Discard unsaved sprite changes?")) {
@@ -133,7 +134,14 @@ public:
             }
         }
         if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
-            if (event.key.key == SDLK_ESCAPE || event.key.key == SDLK_F9) {
+            if (event.key.key == SDLK_TAB) {
+                focus_index_ = cycle_tool_focus(
+                    focus_index_, 11, (event.key.mod & SDL_KMOD_SHIFT) != 0);
+            } else if ((event.key.key == SDLK_RETURN ||
+                        event.key.key == SDLK_KP_ENTER ||
+                        event.key.key == SDLK_SPACE) &&
+                       activate_focused(*emulator)) {
+            } else if (event.key.key == SDLK_ESCAPE || event.key.key == SDLK_F9) {
                 if (!has_unsaved_changes(*emulator) ||
                     confirm_discard_changes(window_,
                                             "Discard unsaved sprite changes?")) {
@@ -141,12 +149,15 @@ public:
                 }
             } else if (event.key.key >= SDLK_1 && event.key.key <= SDLK_4) {
                 color_ = static_cast<std::uint8_t>(event.key.key - SDLK_1);
+                focus_index_ = static_cast<int>(color_) + 1;
             } else if (event.key.key == SDLK_B && emulator->bus().cgb_mode()) {
                 bank_ ^= 1U;
                 have_undo_ = false;
             } else if (event.key.key == SDLK_DELETE) {
-                snapshot(*emulator);
-                clear_tile(*emulator);
+                if (confirm_discard_changes(window_, "Clear the selected tile?")) {
+                    snapshot(*emulator);
+                    clear_tile(*emulator);
+                }
             } else if (event.key.key == SDLK_Z &&
                        (event.key.mod & SDL_KMOD_CTRL) != 0) {
                 undo(*emulator);
@@ -167,8 +178,10 @@ public:
                 have_undo_ = false;
                 return true;
             }
-            if (select_color_at(event.button.x, event.button.y)) return true;
-            if (handle_button(event.button.x, event.button.y, *emulator)) {
+            if (event.button.button == SDL_BUTTON_LEFT &&
+                select_color_at(event.button.x, event.button.y)) return true;
+            if (event.button.button == SDL_BUTTON_LEFT &&
+                handle_button(event.button.x, event.button.y, *emulator)) {
                 return true;
             }
             if (paint_position(event.button.x, event.button.y)) {
@@ -290,6 +303,7 @@ public:
         draw_button({editor_x, action_y + 50, 120, 36}, "CTRL+S PATCH");
         draw_button({editor_x + 136, action_y + 50, 120, 36}, "CTRL+O IMPORT");
         draw_button({editor_x + 272, action_y + 50, 120, 36}, "CTRL+E IPS");
+        draw_tool_focus_outline(renderer_, focused_rect(window_width, window_height));
         static_cast<void>(SDL_RenderPresent(renderer_));
     }
 
@@ -438,6 +452,54 @@ public:
     }
 
   private:
+    [[nodiscard]] SDL_FRect focused_rect(const int width,
+                                          const int height) const noexcept {
+        if (focus_index_ == 0) return tool_close_button_rect(width);
+        const auto origin = editor_origin_x(width);
+        if (focus_index_ >= 1 && focus_index_ <= 4) {
+            return {origin + static_cast<float>(focus_index_ - 1) * 80.0F,
+                    520, 56, 56};
+        }
+        const auto action_y = action_origin_y(height);
+        const auto button = focus_index_ - 5;
+        const auto row = button / 3;
+        const auto column = button % 3;
+        return {origin + static_cast<float>(column) * 136.0F,
+                action_y + static_cast<float>(row) * 50.0F, 120, 36};
+    }
+
+    bool activate_focused(gameboy::Emulator& emulator) {
+        if (focus_index_ == 0) {
+            if (!has_unsaved_changes(emulator) ||
+                confirm_discard_changes(window_,
+                                        "Discard unsaved sprite changes?")) {
+                close();
+            }
+            return true;
+        }
+        if (focus_index_ >= 1 && focus_index_ <= 4) {
+            color_ = static_cast<std::uint8_t>(focus_index_ - 1);
+            return true;
+        }
+        switch (focus_index_) {
+        case 5: undo(emulator); return true;
+        case 6:
+            if (confirm_discard_changes(window_, "Clear the selected tile?")) {
+                snapshot(emulator);
+                clear_tile(emulator);
+            }
+            return true;
+        case 7:
+            if (emulator.bus().cgb_mode()) bank_ ^= 1U;
+            have_undo_ = false;
+            return true;
+        case 8: save_patch_requested_ = true; return true;
+        case 9: load_patch_requested_ = true; return true;
+        case 10: export_ips_requested_ = true; return true;
+        default: return false;
+        }
+    }
+
     [[noreturn]] static void throw_sdl_error(const char* action) {
         throw std::runtime_error(std::string(action) + ": " + SDL_GetError());
     }
@@ -496,6 +558,7 @@ public:
         const auto color = static_cast<std::size_t>((x - origin) / 80);
         if (color >= 4) return false;
         color_ = static_cast<std::uint8_t>(color);
+        focus_index_ = static_cast<int>(color) + 1;
         return true;
     }
 
@@ -557,23 +620,35 @@ public:
         const auto origin = editor_origin_x();
         const auto action_y = action_origin_y();
         if (y >= action_y + 50 && y <= action_y + 86) {
-            if (x >= origin && x <= origin + 120) save_patch_requested_ = true;
-            else if (x >= origin + 136 && x <= origin + 256) load_patch_requested_ = true;
-            else if (x >= origin + 272 && x <= origin + 392) export_ips_requested_ = true;
+            if (x >= origin && x <= origin + 120) {
+                focus_index_ = 8;
+                save_patch_requested_ = true;
+            } else if (x >= origin + 136 && x <= origin + 256) {
+                focus_index_ = 9;
+                load_patch_requested_ = true;
+            } else if (x >= origin + 272 && x <= origin + 392) {
+                focus_index_ = 10;
+                export_ips_requested_ = true;
+            }
             else return false;
             return true;
         }
         if (y < action_y || y > action_y + 36) return false;
         if (x >= origin && x <= origin + 120) {
+            focus_index_ = 5;
             undo(emulator);
             return true;
         }
         if (x >= origin + 136 && x <= origin + 256) {
-            snapshot(emulator);
-            clear_tile(emulator);
+            focus_index_ = 6;
+            if (confirm_discard_changes(window_, "Clear the selected tile?")) {
+                snapshot(emulator);
+                clear_tile(emulator);
+            }
             return true;
         }
         if (x >= origin + 272 && x <= origin + 392 && emulator.bus().cgb_mode()) {
+            focus_index_ = 7;
             bank_ ^= 1U;
             have_undo_ = false;
             return true;
@@ -706,6 +781,7 @@ public:
     bool save_patch_requested_{};
     bool load_patch_requested_{};
     bool export_ips_requested_{};
+    int focus_index_{1};
 };
 
 } // namespace gbb::sdl

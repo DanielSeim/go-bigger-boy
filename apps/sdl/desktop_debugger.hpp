@@ -168,6 +168,13 @@ public:
                     const auto maximum = register_width(*editing_);
                     if (edit_value_.size() < maximum) edit_value_ += *digit;
                 }
+            } else if (event.key.key == SDLK_TAB) {
+                focus_index_ = cycle_tool_focus(
+                    focus_index_, 10, (event.key.mod & SDL_KMOD_SHIFT) != 0);
+            } else if ((event.key.key == SDLK_RETURN ||
+                        event.key.key == SDLK_KP_ENTER ||
+                        event.key.key == SDLK_SPACE) &&
+                       activate_focused(emulator)) {
             } else if (event.key.key == SDLK_F12 || event.key.key == SDLK_ESCAPE) {
                 close();
             } else if (event.key.key == SDLK_F5 || event.key.key == SDLK_SPACE) {
@@ -200,6 +207,7 @@ public:
             static_cast<void>(SDL_GetWindowSize(window_, &width, &height));
             if (tool_close_button_hit(width, height, event.button.x,
                                       event.button.y)) {
+                focus_index_ = 0;
                 close();
                 return true;
             }
@@ -220,31 +228,40 @@ public:
             if (event.button.y >= movie_y &&
                 event.button.y <= movie_y + 36.0F) {
                 if (x >= 24.0F && x <= 194.0F) {
+                    focus_index_ = 3;
                     toggle_recording_ = true;
                 } else if (x >= 208.0F && x <= 378.0F) {
+                    focus_index_ = 4;
                     replay_requested_ = true;
                 } else if (x >= 734.0F && x <= 884.0F) {
+                    focus_index_ = 5;
                     tas_requested_ = true;
                 }
             } else if (event.button.y >= breakpoint_y &&
                        event.button.y <= breakpoint_y + 36.0F) {
                 if (x >= 24.0F && x <= 274.0F && emulator != nullptr) {
+                    focus_index_ = 1;
                     static_cast<void>(toggle_breakpoint(
                         emulator->cpu().registers().pc));
                 } else if (x >= 288.0F && x <= 488.0F) {
+                    focus_index_ = 2;
                     clear_breakpoints();
                 }
             } else if (event.button.y >= y && event.button.y <= y + 36.0F) {
                 if (x >= 24.0F && x <= 174.0F) {
+                    focus_index_ = 6;
                     if (execution_paused_) run();
                     else pause();
                 } else if (x >= 188.0F && x <= 358.0F) {
+                    focus_index_ = 7;
                     execution_paused_ = true;
                     step_instruction_ = true;
                 } else if (x >= 372.0F && x <= 522.0F) {
+                    focus_index_ = 8;
                     execution_paused_ = true;
                     step_frame_ = true;
                 } else if (x >= 536.0F && x <= 686.0F) {
+                    focus_index_ = 9;
                     sprite_requested_ = true;
                 }
             }
@@ -432,10 +449,55 @@ public:
         button({372, button_y, 150, 36}, "F11 STEP FRAME");
         button({536, button_y, 150, 36}, "F9 SPRITE EDITOR");
         draw_tool_close_button(renderer_, window_, width);
+        draw_tool_focus_outline(renderer_, focused_rect(width, height));
         static_cast<void>(SDL_RenderPresent(renderer_));
     }
 
 private:
+    [[nodiscard]] SDL_FRect focused_rect(const int width,
+                                          const int height) const noexcept {
+        if (focus_index_ == 0) return tool_close_button_rect(width);
+        const auto breakpoint_y = static_cast<float>(height - 154);
+        const auto movie_y = static_cast<float>(height - 106);
+        const auto button_y = static_cast<float>(height - 58);
+        switch (focus_index_) {
+        case 1: return {24, breakpoint_y, 250, 36};
+        case 2: return {288, breakpoint_y, 200, 36};
+        case 3: return {24, movie_y, 170, 36};
+        case 4: return {208, movie_y, 170, 36};
+        case 5: return {734, movie_y, 150, 36};
+        case 6: return {24, button_y, 150, 36};
+        case 7: return {188, button_y, 170, 36};
+        case 8: return {372, button_y, 150, 36};
+        case 9: return {536, button_y, 150, 36};
+        default: return tool_close_button_rect(width);
+        }
+    }
+
+    bool activate_focused(gameboy::Emulator* emulator) {
+        switch (focus_index_) {
+        case 0: close(); return true;
+        case 1:
+            if (emulator != nullptr) {
+                static_cast<void>(toggle_breakpoint(
+                    emulator->cpu().registers().pc));
+            }
+            return true;
+        case 2: clear_breakpoints(); return true;
+        case 3: toggle_recording_ = true; return true;
+        case 4: replay_requested_ = true; return true;
+        case 5: tas_requested_ = true; return true;
+        case 6:
+            if (execution_paused_) run();
+            else pause();
+            return true;
+        case 7: execution_paused_ = true; step_instruction_ = true; return true;
+        case 8: execution_paused_ = true; step_frame_ = true; return true;
+        case 9: sprite_requested_ = true; return true;
+        default: return false;
+        }
+    }
+
     [[noreturn]] static void throw_sdl_error(const char* action) {
         throw std::runtime_error(std::string(action) + ": " + SDL_GetError());
     }
@@ -558,6 +620,7 @@ private:
     bool replay_requested_{};
     bool tas_requested_{};
     bool sprite_requested_{};
+    int focus_index_{6};
     DesktopBreakpoints breakpoints_;
     std::optional<RegisterTarget> editing_;
     std::string edit_value_;
