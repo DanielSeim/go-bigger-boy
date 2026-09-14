@@ -454,6 +454,12 @@ Cartridge& MemoryBus::cartridge() noexcept { return cartridge_; }
 
 bool MemoryBus::cgb_mode() const noexcept { return cgb_mode_; }
 
+unsigned MemoryBus::debug_ppu_dot() const noexcept { return ppu_.debug_dot(); }
+
+std::uint8_t MemoryBus::debug_ppu_mode() const noexcept {
+    return ppu_.debug_mode();
+}
+
 bool MemoryBus::double_speed() const noexcept { return double_speed_; }
 
 void MemoryBus::set_dmg_palette(const DmgPalette& palette) noexcept {

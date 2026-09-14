@@ -696,6 +696,13 @@ if(GAMEBOY_BUILD_TESTS)
     add_test(NAME gameboy_desktop_viewport_contract
              COMMAND gameboy_desktop_viewport_contract_tests)
 
+    add_executable(gameboy_desktop_memory_view_contract_tests
+        tests/desktop_memory_view_contract_tests.cpp)
+    target_include_directories(gameboy_desktop_memory_view_contract_tests
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/apps/sdl)
+    add_test(NAME gameboy_desktop_memory_view_contract
+             COMMAND gameboy_desktop_memory_view_contract_tests)
+
     add_executable(gameboy_sdl_emulation_policy_tests
         tests/sdl_emulation_policy_tests.cpp)
     target_include_directories(gameboy_sdl_emulation_policy_tests

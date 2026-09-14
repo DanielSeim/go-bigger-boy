@@ -7,6 +7,7 @@
 #include "gameboy/ppu.hpp"
 #include "desktop_breakpoints.hpp"
 #include "desktop_disassembler.hpp"
+#include "desktop_memory_view.hpp"
 #include "desktop_viewport.hpp"
 #include "input_movie.hpp"
 #include "tool_window_support.hpp"
@@ -18,11 +19,13 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <iomanip>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace gbb::sdl {
 
@@ -184,7 +187,29 @@ public:
                 }
             } else if (event.key.key == SDLK_UP || event.key.key == SDLK_DOWN ||
                        event.key.key == SDLK_PAGEUP ||
-                       event.key.key == SDLK_PAGEDOWN) {
+                       event.key.key == SDLK_PAGEDOWN ||
+                       (inspector_mode_ &&
+                        (event.key.key == SDLK_HOME ||
+                         event.key.key == SDLK_END))) {
+                if (inspector_mode_) {
+                    if (event.key.key == SDLK_HOME) {
+                        memory_start_ = 0;
+                    } else if (event.key.key == SDLK_END) {
+                        memory_start_ = desktop_memory_view_last_start;
+                    } else {
+                        const auto rows = event.key.key == SDLK_PAGEUP ||
+                                                  event.key.key == SDLK_PAGEDOWN
+                                              ? 16
+                                              : 1;
+                        memory_start_ = scroll_desktop_memory(
+                            memory_start_,
+                            (event.key.key == SDLK_UP ||
+                             event.key.key == SDLK_PAGEUP)
+                                ? -rows
+                                : rows);
+                    }
+                    return true;
+                }
                 disassembly_follow_pc_ = false;
                 const auto count = event.key.key == SDLK_PAGEUP ||
                                            event.key.key == SDLK_PAGEDOWN
@@ -203,6 +228,8 @@ public:
             } else if (event.key.key == SDLK_TAB) {
                 focus_index_ = cycle_tool_focus(
                     focus_index_, 10, (event.key.mod & SDL_KMOD_SHIFT) != 0);
+            } else if (event.key.key == SDLK_F4) {
+                inspector_mode_ = !inspector_mode_;
             } else if ((event.key.key == SDLK_RETURN ||
                         event.key.key == SDLK_KP_ENTER ||
                         event.key.key == SDLK_SPACE) &&
@@ -240,6 +267,15 @@ public:
             int height = 0;
             static_cast<void>(SDL_GetWindowSize(window_, &width, &height));
             const auto panel = disassembly_panel(width, height);
+            if (inspector_mode_) {
+                const auto memory = inspector_memory_panel(width, height);
+                if (mouse_x >= memory.x && mouse_x <= memory.x + memory.w &&
+                    mouse_y >= memory.y && mouse_y <= memory.y + memory.h) {
+                    memory_start_ = scroll_desktop_memory(
+                        memory_start_, event.wheel.y > 0 ? -1 : 1);
+                    return true;
+                }
+            }
             if (mouse_x >= panel.x && mouse_x <= panel.x + panel.w &&
                 mouse_y >= panel.y && mouse_y <= panel.y + panel.h) {
                 disassembly_follow_pc_ = false;
@@ -359,6 +395,9 @@ public:
         static_cast<void>(SDL_RenderClear(renderer_));
         static_cast<void>(SDL_SetRenderDrawColor(renderer_, 69, 207, 238, 255));
         render_tool_text(renderer_, 24, 20, "GO BIGGER BOY / DEBUGGER");
+        render_tool_text(renderer_, 250, 20,
+                         inspector_mode_ ? "F4: MAP VIEW"
+                                         : "F4: HARDWARE INSPECTOR");
         static_cast<void>(SDL_SetRenderDrawColor(renderer_, 177, 192, 208, 255));
 
         constexpr float map_scale = 2.0F;
@@ -391,7 +430,8 @@ public:
         static_cast<void>(SDL_RenderRect(renderer_, &outer));
         render_tool_text(renderer_, map_x, map_y + map_height + 10,
                          "CALCULATED VIEW 256 x 256  /  VISIBLE WINDOW 160 x 144");
-        render_visible_viewport_overlay(renderer_, map_x, map_y, map_scale);
+        render_visible_viewport_overlay(renderer_, texture_, map_x, map_y,
+                                        map_scale);
 
         const auto& r = emulator.cpu().registers();
         const auto pair = [](const std::uint8_t high, const std::uint8_t low) {
@@ -491,6 +531,9 @@ public:
         text(register_x, 574,
              "IF   " + hex8(bus.read8(0xFF0F)) +
                  "  IE   " + hex8(bus.read8(0xFFFF)));
+        if (inspector_mode_) {
+            render_hardware_inspector(emulator, width, height);
+        }
         const auto disassembly_panel_rect = disassembly_panel(width, height);
         static_cast<void>(SDL_SetRenderDrawColor(renderer_, 12, 20, 30, 255));
         static_cast<void>(SDL_RenderFillRect(renderer_, &disassembly_panel_rect));
@@ -596,7 +639,231 @@ private:
                 std::max(120.0F, bottom - 64.0F)};
     }
 
+    [[nodiscard]] static SDL_FRect inspector_panel(const int width,
+                                                   const int height) noexcept {
+        const auto disassembly_x = disassembly_panel(width, height).x;
+        const auto bottom = static_cast<float>(height - 174);
+        return {24.0F, 64.0F, disassembly_x - 36.0F,
+                std::max(120.0F, bottom - 64.0F)};
+    }
+
+    [[nodiscard]] static SDL_FRect inspector_memory_panel(
+        const int width, const int height) noexcept {
+        const auto panel = inspector_panel(width, height);
+        return {panel.x + 8.0F, panel.y + 302.0F, panel.w - 16.0F,
+                panel.h - 310.0F};
+    }
+
+    void render_hardware_inspector(const gameboy::Emulator& emulator,
+                                   const int width, const int height) const {
+        const auto& bus = emulator.bus();
+        const auto panel = inspector_panel(width, height);
+        const auto memory = inspector_memory_panel(width, height);
+        const auto hex8 = [](const std::uint8_t value) {
+            std::ostringstream output;
+            output << '$' << std::uppercase << std::hex << std::setfill('0')
+                   << std::setw(2) << static_cast<unsigned>(value);
+            return output.str();
+        };
+        const auto hex16 = [](const std::uint16_t value) {
+            std::ostringstream output;
+            output << '$' << std::uppercase << std::hex << std::setfill('0')
+                   << std::setw(4) << value;
+            return output.str();
+        };
+        const auto pair = [](const std::uint8_t high,
+                             const std::uint8_t low) {
+            return static_cast<std::uint16_t>(
+                (static_cast<std::uint16_t>(high) << 8U) | low);
+        };
+        const auto reg = [&](const std::uint16_t address) {
+            return hex8(bus.read8(address));
+        };
+        const auto text = [this](const float x, const float y,
+                                 const std::string& value) {
+            static_cast<void>(SDL_SetRenderDrawColor(renderer_, 230, 249, 255,
+                                                      255));
+            render_tool_text(renderer_, x, y, value.c_str());
+        };
+        const auto card = [&](const float x, const float y, const float w,
+                              const float h, const std::string& title,
+                              const std::vector<std::string>& lines) {
+            const SDL_FRect rect{x, y, w, h};
+            static_cast<void>(SDL_SetRenderDrawColor(renderer_, 12, 20, 30,
+                                                      255));
+            static_cast<void>(SDL_RenderFillRect(renderer_, &rect));
+            static_cast<void>(SDL_SetRenderDrawColor(renderer_, 34, 91, 111,
+                                                      255));
+            static_cast<void>(SDL_RenderRect(renderer_, &rect));
+            static_cast<void>(SDL_SetRenderDrawColor(renderer_, 238, 196, 100,
+                                                      255));
+            render_tool_text(renderer_, x + 10.0F, y + 8.0F, title.c_str());
+            for (std::size_t index = 0; index < lines.size(); ++index) {
+                text(x + 10.0F, y + 24.0F + static_cast<float>(index) * 14.0F,
+                     lines[index]);
+            }
+        };
+
+        static_cast<void>(SDL_SetRenderDrawColor(renderer_, 8, 12, 20, 255));
+        static_cast<void>(SDL_RenderFillRect(renderer_, &panel));
+        static_cast<void>(SDL_SetRenderDrawColor(renderer_, 34, 91, 111, 255));
+        static_cast<void>(SDL_RenderRect(renderer_, &panel));
+        static_cast<void>(SDL_SetRenderDrawColor(renderer_, 69, 207, 238, 255));
+        render_tool_text(renderer_, panel.x + 8.0F, panel.y + 8.0F,
+                         "HARDWARE INSPECTOR  F4 TOGGLE  MEMORY NAVIGATION");
+
+        const auto content_x = panel.x + 8.0F;
+        const auto card_gap = 8.0F;
+        const auto card_width = (panel.w - 16.0F - card_gap * 2.0F) / 3.0F;
+        const auto x0 = content_x;
+        const auto x1 = x0 + card_width + card_gap;
+        const auto x2 = x1 + card_width + card_gap;
+        const auto y0 = panel.y + 30.0F;
+        const auto y1 = y0 + 130.0F;
+
+        card(x0, y0, card_width, 122.0F, "LCD / PPU", {
+                                                     "LCDC " + reg(0xFF40) +
+                                                         "  STAT " + reg(0xFF41),
+                                                     "SCY  " + reg(0xFF42) +
+                                                         "  SCX  " + reg(0xFF43),
+                                                     "LY   " + reg(0xFF44) +
+                                                         "  LYC  " + reg(0xFF45),
+                                                     "WY   " + reg(0xFF4A) +
+                                                         "  WX   " + reg(0xFF4B),
+                                                     "BGP  " + reg(0xFF47) +
+                                                         "  OBP0 " + reg(0xFF48),
+                                                     "OBP1 " + reg(0xFF49) +
+                                                         "  DOT  " +
+                                                         std::to_string(bus.debug_ppu_dot()),
+                                                     "MODE " +
+                                                         std::to_string(bus.debug_ppu_mode()) +
+                                                         "  LCD " +
+                                                         ((bus.read8(0xFF40) & 0x80U) ?
+                                                              "ON" : "OFF"),
+                                                 });
+        const auto& registers = emulator.cpu().registers();
+        card(x1, y0, card_width, 122.0F, "CPU / INTERRUPTS", {
+                                                     "AF " +
+                                                         hex16(pair(registers.a, registers.f)) +
+                                                         "  BC " +
+                                                         hex16(pair(registers.b, registers.c)),
+                                                     "DE " +
+                                                         hex16(pair(registers.d, registers.e)) +
+                                                         "  HL " +
+                                                         hex16(pair(registers.h, registers.l)),
+                                                     "SP " + hex16(registers.sp) +
+                                                         "  PC " + hex16(registers.pc),
+                                                     "IME " +
+                                                         std::string(emulator.cpu().interrupts_enabled()
+                                                                         ? "ON"
+                                                                         : "OFF") +
+                                                         "  SPEED " +
+                                                         (bus.double_speed() ? "2X" : "1X"),
+                                                     "IF   " + reg(0xFF0F) +
+                                                         "  IE   " + reg(0xFFFF),
+                                                     "DIV  " + reg(0xFF04) +
+                                                         "  TIMA " + reg(0xFF05),
+                                                     "TMA  " + reg(0xFF06) +
+                                                         "  TAC  " + reg(0xFF07),
+                                                 });
+        card(x2, y0, card_width, 122.0F, "SOUND / LINK / DMA", {
+                                                     "NR50 " + reg(0xFF24) +
+                                                         "  NR51 " + reg(0xFF25),
+                                                     "NR52 " + reg(0xFF26) +
+                                                         "  PCM12 " + reg(0xFF76),
+                                                     "SB   " + reg(0xFF01) +
+                                                         "  SC   " + reg(0xFF02),
+                                                     "DMA  " + reg(0xFF46) +
+                                                         "  HDMA " + reg(0xFF55),
+                                                     "HDMA SRC " + reg(0xFF51) +
+                                                         reg(0xFF52),
+                                                     "HDMA DST " + reg(0xFF53) +
+                                                         reg(0xFF54),
+                                                     "WRAM BANK " + reg(0xFF70),
+                                                 });
+
+        card(x0, y1, card_width, 122.0F, "CH1 / CH2  (SQUARE)", {
+                                                     "NR10 " + reg(0xFF10) +
+                                                         "  NR11 " + reg(0xFF11),
+                                                     "NR12 " + reg(0xFF12) +
+                                                         "  NR13 " + reg(0xFF13),
+                                                     "NR14 " + reg(0xFF14),
+                                                     "NR21 " + reg(0xFF16) +
+                                                         "  NR22 " + reg(0xFF17),
+                                                     "NR23 " + reg(0xFF18) +
+                                                         "  NR24 " + reg(0xFF19),
+                                                     std::string{"ACTIVE "} +
+                                                         ((bus.read8(0xFF26) & 0x03U) ?
+                                                              "YES" : "NO"),
+                                                 });
+        card(x1, y1, card_width, 122.0F, "CH3 / CH4  (WAVE / NOISE)", {
+                                                     "NR30 " + reg(0xFF1A) +
+                                                         "  NR31 " + reg(0xFF1B),
+                                                     "NR32 " + reg(0xFF1C) +
+                                                         "  NR33 " + reg(0xFF1D),
+                                                     "NR34 " + reg(0xFF1E),
+                                                     "NR41 " + reg(0xFF20) +
+                                                         "  NR42 " + reg(0xFF21),
+                                                     "NR43 " + reg(0xFF22) +
+                                                         "  NR44 " + reg(0xFF23),
+                                                     std::string{"ACTIVE "} +
+                                                         ((bus.read8(0xFF26) & 0x0CU) ?
+                                                              "YES" : "NO"),
+                                                 });
+        card(x2, y1, card_width, 122.0F, "WAVE RAM  (FF30-FF3F)", {
+                                                     "FF30 " + reg(0xFF30) +
+                                                         "  FF31 " + reg(0xFF31),
+                                                     "FF32 " + reg(0xFF32) +
+                                                         "  FF33 " + reg(0xFF33),
+                                                     "FF34 " + reg(0xFF34) +
+                                                         "  FF35 " + reg(0xFF35),
+                                                     "FF36 " + reg(0xFF36) +
+                                                         "  FF37 " + reg(0xFF37),
+                                                     "FF38 " + reg(0xFF38) +
+                                                         "  FF39 " + reg(0xFF39),
+                                                     "FF3A " + reg(0xFF3A) +
+                                                         "  FF3B " + reg(0xFF3B),
+                                                 });
+
+        static_cast<void>(SDL_SetRenderDrawColor(renderer_, 12, 20, 30, 255));
+        static_cast<void>(SDL_RenderFillRect(renderer_, &memory));
+        static_cast<void>(SDL_SetRenderDrawColor(renderer_, 34, 91, 111, 255));
+        static_cast<void>(SDL_RenderRect(renderer_, &memory));
+        const auto last_address = static_cast<std::uint16_t>(
+            static_cast<unsigned>(memory_start_) +
+            desktop_memory_view_rows * desktop_memory_view_bytes_per_row - 1);
+        static_cast<void>(SDL_SetRenderDrawColor(renderer_, 238, 196, 100, 255));
+        const auto memory_title =
+            "MEMORY " + hex16(memory_start_) + "-" + hex16(last_address) +
+            "  (CPU BUS)";
+        render_tool_text(renderer_, memory.x + 10.0F, memory.y + 8.0F,
+                         memory_title.c_str());
+        for (std::size_t row = 0; row < desktop_memory_view_rows; ++row) {
+            const auto address = static_cast<std::uint16_t>(
+                memory_start_ + row * desktop_memory_view_bytes_per_row);
+            std::array<std::uint8_t, desktop_memory_view_bytes_per_row> bytes{};
+            for (std::size_t index = 0; index < bytes.size(); ++index) {
+                bytes[index] = bus.read8(static_cast<std::uint16_t>(
+                    address + static_cast<std::uint16_t>(index)));
+            }
+            if (registers.pc >= address &&
+                registers.pc < address + bytes.size()) {
+                const SDL_FRect highlight{
+                    memory.x + 6.0F, memory.y + 25.0F +
+                                        static_cast<float>(row) * 14.0F,
+                    memory.w - 12.0F, 14.0F};
+                static_cast<void>(SDL_SetRenderDrawColor(renderer_, 20, 77, 101,
+                                                          255));
+                static_cast<void>(SDL_RenderFillRect(renderer_, &highlight));
+            }
+            text(memory.x + 10.0F,
+                 memory.y + 25.0F + static_cast<float>(row) * 14.0F,
+                 format_desktop_memory_row(address, bytes));
+        }
+    }
+
     static void render_visible_viewport_overlay(SDL_Renderer* renderer,
+                                                SDL_Texture* live_texture,
                                                 const float map_x,
                                                 const float map_y,
                                                 const float scale) {
@@ -606,6 +873,14 @@ private:
             map_y + DesktopBackgroundMap::visible_origin_y * scale,
             gameboy::Ppu::screen_width * scale,
             gameboy::Ppu::screen_height * scale};
+        // The calculated map is useful for inspecting scrollable background
+        // data, but it cannot represent the live window layer or sprites
+        // outside the reconstructed background. Composite the authoritative
+        // 160x144 framebuffer over the visible window so HUD text stays
+        // screen-fixed while the surrounding map continues to scroll.
+        static_cast<void>(SDL_RenderTexture(renderer, live_texture, nullptr,
+                                            &visible));
+        static_cast<void>(SDL_SetRenderDrawColor(renderer, 69, 207, 238, 255));
         static_cast<void>(SDL_RenderRect(renderer, &visible));
         const SDL_FRect inner{visible.x + 2.0F, visible.y + 2.0F,
                               visible.w - 4.0F, visible.h - 4.0F};
@@ -805,9 +1080,11 @@ private:
     bool replay_requested_{};
     bool tas_requested_{};
     bool sprite_requested_{};
+    bool inspector_mode_{};
     int focus_index_{6};
     DesktopBreakpoints breakpoints_;
     std::uint16_t disassembly_start_{0x0100};
+    std::uint16_t memory_start_{};
     bool disassembly_follow_pc_{true};
     std::optional<RegisterTarget> editing_;
     std::string edit_value_;
