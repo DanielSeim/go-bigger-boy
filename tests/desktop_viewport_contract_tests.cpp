@@ -93,8 +93,9 @@ void test_signed_tile_map_and_flips() {
     const auto flipped = std::make_unique<gbb::sdl::DesktopBackgroundMap>(
         gbb::sdl::render_desktop_background_map(
             cgb_bus, gameboy::display_palettes[0]));
-    check(flipped->pixels[7 * 256 + 7] == 0xFFFF0000,
-          "honors tilemap flip attributes when reconstructing the map");
+    check(flipped->pixels[7 * 256] == 0xFFFF0000 &&
+              flipped->pixels[7 * 256 + 7] != 0xFFFF0000,
+          "honors horizontal and vertical tilemap flips when reconstructing the map");
 }
 
 } // namespace

@@ -87,11 +87,9 @@ namespace detail {
                     static_cast<std::uint16_t>(tile_offset + source_y * 2U + 1U));
                 for (unsigned tile_x = 0; tile_x < 8; ++tile_x) {
                     const auto source_x = (attributes & 0x20U) != 0
-                                              ? tile_x
-                                              : 7U - tile_x;
-                    const auto bit = (attributes & 0x20U) != 0
-                                         ? source_x
-                                         : 7U - source_x;
+                                              ? 7U - tile_x
+                                              : tile_x;
+                    const auto bit = 7U - source_x;
                     const auto color = static_cast<std::uint8_t>(
                         ((low >> bit) & 1U) | (((high >> bit) & 1U) << 1U));
                     const auto pixel = static_cast<std::size_t>(

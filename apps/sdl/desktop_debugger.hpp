@@ -390,27 +390,8 @@ public:
                               map_height + 6};
         static_cast<void>(SDL_RenderRect(renderer_, &outer));
         render_tool_text(renderer_, map_x, map_y + map_height + 10,
-                         "CALCULATED VIEW 256 x 256  /  LIVE 160 x 144");
+                         "CALCULATED VIEW 256 x 256  /  VISIBLE WINDOW 160 x 144");
         render_visible_viewport_overlay(renderer_, map_x, map_y, map_scale);
-
-        // Keep the actual rasterized output visible as a small diagnostic
-        // inset. The expanded map is reconstructed from VRAM; this inset is
-        // the emulator's authoritative composition, including window/OBJ.
-        constexpr float live_width = gameboy::Ppu::screen_width;
-        constexpr float live_height = gameboy::Ppu::screen_height;
-        const SDL_FRect live_frame{map_x + map_width - live_width - 12.0F,
-                                   map_y + map_height - live_height - 12.0F,
-                                   live_width, live_height};
-        const SDL_FRect live_outer{live_frame.x - 3.0F, live_frame.y - 3.0F,
-                                   live_frame.w + 6.0F, live_frame.h + 6.0F};
-        static_cast<void>(SDL_SetRenderDrawColor(renderer_, 8, 12, 20, 255));
-        static_cast<void>(SDL_RenderFillRect(renderer_, &live_outer));
-        static_cast<void>(SDL_RenderTexture(renderer_, texture_, nullptr,
-                                            &live_frame));
-        static_cast<void>(SDL_SetRenderDrawColor(renderer_, 230, 249, 255, 255));
-        static_cast<void>(SDL_RenderRect(renderer_, &live_outer));
-        render_tool_text(renderer_, live_frame.x, live_frame.y - 16.0F,
-                         "LIVE OUTPUT");
 
         const auto& r = emulator.cpu().registers();
         const auto pair = [](const std::uint8_t high, const std::uint8_t low) {
@@ -558,11 +539,11 @@ public:
                  instruction_text);
         }
         const auto breakpoint_y = static_cast<float>(height - 154);
-        text(24, breakpoint_y - 20,
+        text(24, breakpoint_y - 28,
              "BREAKPOINTS " + std::to_string(breakpoint_count()) +
                  "  F2 TOGGLE  F3 CLEAR");
         if (breakpoints_.empty()) {
-            text(24, breakpoint_y - 6, "AT CURRENT PC");
+            text(24, breakpoint_y - 14, "AT CURRENT PC");
         } else {
             std::string addresses = "PC ";
             for (std::size_t index = 0; index < breakpoints_.addresses().size();
@@ -570,7 +551,7 @@ public:
                 if (index != 0) addresses += ", ";
                 addresses += hex16(breakpoints_.addresses()[index]);
             }
-            text(24, breakpoint_y - 6, addresses.substr(0, 104));
+            text(24, breakpoint_y - 14, addresses.substr(0, 104));
         }
 
         const auto button = [this](const SDL_FRect& rect,
