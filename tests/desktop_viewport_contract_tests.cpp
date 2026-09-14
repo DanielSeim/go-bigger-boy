@@ -39,19 +39,23 @@ void test_unsigned_tile_map_and_scroll() {
     bus.debug_write_vram(0, 0x1800, 0);
     bus.debug_write_vram(0, 0x0000, 0x01); // Tile 0: first pixel is color 1.
 
-    const auto map = gbb::sdl::render_desktop_background_map(
-        bus, gameboy::display_palettes[0]);
-    check(map.scroll_x == 197 && map.scroll_y == 23,
-          "reports the live scroll registers");
-    check(map.pixels[0] == gameboy::display_palettes[0].colors[1],
-          "renders unsigned tile data with the DMG palette");
-    check(map.pixels[1] == gameboy::display_palettes[0].colors[0],
-          "renders adjacent tile pixels in display order");
+    std::uint32_t expected_center_pixel{};
+    {
+        const auto map = gbb::sdl::render_desktop_background_map(
+            bus, gameboy::display_palettes[0]);
+        check(map.scroll_x == 197 && map.scroll_y == 23,
+              "reports the live scroll registers");
+        check(map.pixels[0] == gameboy::display_palettes[0].colors[1],
+              "renders unsigned tile data with the DMG palette");
+        check(map.pixels[1] == gameboy::display_palettes[0].colors[0],
+              "renders adjacent tile pixels in display order");
+        expected_center_pixel = map.pixels[23 * 256 + 197];
+    }
     const auto viewport = gbb::sdl::render_desktop_viewport(
         bus, gameboy::display_palettes[0]);
     check(viewport.pixels[gbb::sdl::DesktopBackgroundMap::visible_origin_y * 256 +
                             gbb::sdl::DesktopBackgroundMap::visible_origin_x] ==
-              map.pixels[23 * 256 + 197],
+              expected_center_pixel,
           "centers the calculated view on the live scroll position");
 }
 
