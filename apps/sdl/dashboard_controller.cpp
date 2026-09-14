@@ -81,8 +81,13 @@ std::vector<DashboardItem> dashboard_items(
     std::vector<DashboardItem> items;
     const auto navigation = gbb::desktop::dashboard_navigation_items(
         can_resume, visible_recent.size());
-    items.reserve(navigation.size());
+    items.reserve(navigation.size() + 1);
     for (const auto& item : navigation) {
+        if (item.action == gbb::desktop::DashboardAction::quit &&
+            !filter.empty() && visible_recent.empty()) {
+            items.push_back({gbb::desktop::DashboardAction::no_matching_games,
+                             0, "No games match"});
+        }
         std::string label;
         switch (item.action) {
         case gbb::desktop::DashboardAction::resume:
@@ -111,6 +116,9 @@ std::vector<DashboardItem> dashboard_items(
                     }
                 }
             }
+            break;
+        case gbb::desktop::DashboardAction::no_matching_games:
+            label = "No games match";
             break;
         case gbb::desktop::DashboardAction::quit:
             label = "Exit GBB";
@@ -174,6 +182,9 @@ void activate_dashboard_selection(
         if (item.recent_index < visible_recent.size()) {
             pending_rom = visible_recent[item.recent_index];
         }
+        break;
+    case gbb::desktop::DashboardAction::no_matching_games:
+        // The row explains the empty state; Escape clears the filter.
         break;
     case gbb::desktop::DashboardAction::quit:
         if (confirm_exit(sdl.window)) running = false;

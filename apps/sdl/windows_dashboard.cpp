@@ -245,10 +245,11 @@ struct State {
     std::atomic_bool closing{};
     DownloadProgress artwork_download;
     std::atomic_size_t artwork_completed{};
+    std::atomic_size_t artwork_failed{};
     std::size_t artwork_total{};
     std::wstring library_filter;
     int library_sort_column{4};
-    bool library_sort_descending{};
+    bool library_sort_descending{true};
     int settings_scroll{};
     HFONT title_font{};
     struct CapturingBinding {
@@ -1123,6 +1124,19 @@ void refresh_library_list(State& state) {
     if (state.library_sort_column != 0) {
         std::stable_sort(indices.begin(), indices.end(), [&](const auto left,
                                                               const auto right) {
+            if (state.library_sort_column == 4) {
+                const auto left_time = state.library->entries()[left].last_played;
+                const auto right_time = state.library->entries()[right].last_played;
+                // Unknown entries belong at the end in either direction; a
+                // newly installed game should not hide older played games.
+                if (left_time <= 0 || right_time <= 0) {
+                    if (left_time <= 0 && right_time <= 0) return left < right;
+                    return left_time > 0;
+                }
+                if (left_time == right_time) return left < right;
+                return state.library_sort_descending ? left_time > right_time
+                                                     : left_time < right_time;
+            }
             const auto value = [&](const std::size_t index) {
                 const auto& entry = state.library->entries()[index];
                 switch (state.library_sort_column) {
@@ -1316,6 +1330,18 @@ void layout_dashboard(State& state) {
     place_child(state.link_diagnostics, 32, 1430, 330, 28, offset);
 }
 
+void scroll_settings(State& state, const int wheel_delta) {
+    RECT client{};
+    GetClientRect(state.window, &client);
+    const auto height = std::max(520L, client.bottom - client.top);
+    const auto max_scroll = std::max(
+        0L, settings_content_bottom - height + 24L);
+    const auto direction = wheel_delta > 0 ? -64 : 64;
+    state.settings_scroll = std::clamp(
+        state.settings_scroll + direction, 0, static_cast<int>(max_scroll));
+    layout_dashboard(state);
+}
+
 void finish(State& state, const DashboardResultAction action,
             const std::string& path = {}) {
     if (state.link_transport != nullptr) collect_link_settings(state);
@@ -1398,7 +1424,14 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
         const auto completed = state->artwork_completed.load(
             std::memory_order_relaxed);
         if (completed >= state->artwork_total) {
-            SetWindowTextW(state->artwork_status, L"Artwork: ready");
+            const auto failed = state->artwork_failed.load(
+                std::memory_order_relaxed);
+            const auto text = failed == 0
+                                  ? std::wstring{L"Artwork: ready"}
+                                  : L"Artwork: ready (" +
+                                        std::to_wstring(failed) +
+                                        L" unavailable)";
+            SetWindowTextW(state->artwork_status, text.c_str());
             KillTimer(window, 1);
         } else {
             const auto text = L"Artwork: loading " +
@@ -1417,7 +1450,9 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
     }
     if (message == WM_GETMINMAXINFO) {
         auto* limits = reinterpret_cast<MINMAXINFO*>(lparam);
-        limits->ptMinTrackSize.x = 720;
+        // Settings uses a fixed two-column canvas. Keep its right-hand
+        // controls reachable when the user resizes the window.
+        limits->ptMinTrackSize.x = dashboard_width;
         limits->ptMinTrackSize.y = 520;
         return 0;
     }
@@ -1444,10 +1479,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
         return 0;
     }
     if (message == WM_MOUSEWHEEL && state->page == State::Page::settings) {
-        const auto delta = GET_WHEEL_DELTA_WPARAM(wparam);
-        state->settings_scroll = std::max(
-            0, state->settings_scroll - (delta > 0 ? 64 : -64));
-        layout_dashboard(*state);
+        scroll_settings(*state, GET_WHEEL_DELTA_WPARAM(wparam));
         return 0;
     }
     if (message == WM_CTLCOLORSTATIC || message == WM_CTLCOLORLISTBOX ||
@@ -1794,7 +1826,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                         !state->library_sort_descending;
                 } else {
                     state->library_sort_column = column->iSubItem;
-                    state->library_sort_descending = false;
+                    state->library_sort_descending = column->iSubItem == 4;
                 }
                 refresh_library_list(*state);
                 InvalidateRect(ListView_GetHeader(state->list), nullptr, TRUE);
@@ -2172,6 +2204,9 @@ void resolve_artwork(State& state) {
                 url_component(thumbnail_name(canonical)) + ".png";
             static_cast<void>(download_public_file(
                 url, cover, 5 * 1024 * 1024, error, &state.artwork_download));
+        }
+        if (!std::filesystem::is_regular_file(cover)) {
+            state.artwork_failed.fetch_add(1, std::memory_order_relaxed);
         }
         auto update = std::make_unique<ArtworkUpdate>(ArtworkUpdate{
             index, std::move(title), std::move(language),
@@ -2714,7 +2749,9 @@ DashboardResult show_windows_dashboard(
     if (ListView_GetItemCount(state.list) > 0) {
         ListView_SetItemState(state.list, 0, LVIS_SELECTED | LVIS_FOCUSED,
                               LVIS_SELECTED | LVIS_FOCUSED);
-        SetFocus(state.list);
+        // Make the visible search field the initial keyboard target so typing
+        // immediately filters the library instead of moving the list cursor.
+        SetFocus(state.search);
     } else {
         SetFocus(state.open);
     }
@@ -2725,6 +2762,7 @@ DashboardResult show_windows_dashboard(
     UpdateWindow(state.window);
     state.artwork_total = library.entries().size();
     state.artwork_completed = 0;
+    state.artwork_failed = 0;
     if (state.artwork_total == 0) {
         SetWindowTextW(state.artwork_status, L"Artwork: ready");
     } else {
@@ -2738,6 +2776,14 @@ DashboardResult show_windows_dashboard(
     }
     MSG message{};
     while (!state.done && GetMessageW(&message, nullptr, 0, 0) > 0) {
+        // WM_MOUSEWHEEL is often dispatched to whichever child control is
+        // under the pointer. Handle it here as well as in the parent window
+        // procedure so settings scrolls consistently over edits and buttons.
+        if (message.message == WM_MOUSEWHEEL &&
+            state.page == State::Page::settings) {
+            scroll_settings(state, GET_WHEEL_DELTA_WPARAM(message.wParam));
+            continue;
+        }
         if ((message.message == WM_KEYDOWN ||
              message.message == WM_SYSKEYDOWN) &&
             message.wParam == VK_F1 && !state.capturing_binding) {

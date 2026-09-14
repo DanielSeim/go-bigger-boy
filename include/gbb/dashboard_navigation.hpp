@@ -18,6 +18,7 @@ enum class DashboardAction {
     video,
     shortcuts,
     recent_rom,
+    no_matching_games,
     quit,
 };
 

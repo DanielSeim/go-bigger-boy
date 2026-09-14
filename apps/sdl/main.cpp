@@ -1395,8 +1395,8 @@ void present_dashboard(SdlResources& sdl,
     }
     static_cast<void>(SDL_RenderDebugText(
         sdl.renderer, 13, 134,
-        filter.empty() ? "ENTER OPEN  TYPE"
-                       : "ENTER OPEN  CLEAR"));
+        filter.empty() ? "ENTER F1 HELP ESC"
+                       : "ENTER ESC CLEAR"));
 }
 #endif
 
