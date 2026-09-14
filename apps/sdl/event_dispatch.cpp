@@ -149,6 +149,30 @@ bool handle_desktop_tool_event(const SDL_Event& event,
         context.tas_editor.handle_event(event)) {
         return true;
     }
+    if (context.tas_editor.visible()) {
+        // The TAS editor owns the desktop debugging session while it is open.
+        // Prevent shortcuts sent to the game window from changing emulator
+        // state behind the editor. F12 closes the editor and then toggles the
+        // debugger, preserving the existing debugger shortcut.
+        if (event.type == SDL_EVENT_QUIT) {
+            if (context.tas_editor.close_with_confirmation()) return false;
+            return true;
+        }
+        if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED &&
+            event.window.windowID == SDL_GetWindowID(context.sdl.window)) {
+            if (context.tas_editor.close_with_confirmation()) return false;
+            return true;
+        }
+        if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+            event.key.key == SDLK_F12) {
+            if (context.tas_editor.close_with_confirmation()) {
+                release_all_buttons(*tools.debugger());
+                context.debugger.toggle(context.sdl.window);
+            }
+            return true;
+        }
+        return true;
+    }
     if (tools.debugger() != nullptr &&
         context.debugger.handle_event(event, tools.debugger())) {
         return true;
@@ -347,6 +371,10 @@ void handle_desktop_menu_event(SdlEventContext& context) {
         break;
     case DesktopMenuCommand::debugger:
         if (has_capability(CoreCapability::debugger)) {
+            if (context.tas_editor.visible() &&
+                !context.tas_editor.close_with_confirmation()) {
+                break;
+            }
             release_all_buttons(*tools.debugger());
             context.debugger.toggle(sdl.window);
         }
@@ -708,6 +736,10 @@ void handle_gameplay_key_event(const SDL_Event& event,
     } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
                event.key.key == SDLK_F12 && tools.debugger() != nullptr) {
 #ifndef __ANDROID__
+        if (context.tas_editor.visible() &&
+            !context.tas_editor.close_with_confirmation()) {
+            return;
+        }
         release_all_buttons(*tools.debugger());
         debugger.toggle(sdl.window);
 #endif

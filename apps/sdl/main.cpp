@@ -1568,6 +1568,8 @@ int main(int argc, char** argv) {
         CheatManager cheat_manager;
         const auto movie_path = preference_path / "replays" /
                                 "last-input.gbbmovie";
+        const auto tas_movie_path = preference_path / "replays" /
+                                    "last-tas.gbbmovie";
         const auto sprite_patch_path = preference_path / "sprite-patches" /
                                        "last-sprite-edit.gbbtiles";
         const auto sprite_ips_path = preference_path / "sprite-patches" /
@@ -2080,6 +2082,15 @@ int main(int argc, char** argv) {
                 !update_download &&
 #endif
                 running) {
+#ifndef __ANDROID__
+                if (tas_editor.visible() &&
+                    !tas_editor.close_with_confirmation()) {
+                    pending_rom.reset();
+                    pending_rom_from_dashboard = false;
+                    frame_pacer.reset();
+                    continue;
+                }
+#endif
                 try {
                     if (remote_link.active() && emulator != nullptr) {
                         stop_remote_link_session(*emulator, remote_link);
@@ -2180,7 +2191,8 @@ int main(int argc, char** argv) {
 #ifndef __ANDROID__
             process_advanced_tool_requests({
                 services, sdl, debugger, input_movie, tas_editor,
-                sprite_editor, cheat_manager, movie_path, sprite_patch_path,
+                sprite_editor, cheat_manager, movie_path, tas_movie_path,
+                sprite_patch_path,
                 sprite_ips_path, current_rom, rewind_history, paused,
                 fast_forward, rewind});
 #endif

@@ -119,12 +119,14 @@ void process_advanced_tool_requests(AdvancedToolContext context) {
         try {
             context.input_movie.stop(emulator);
             context.input_movie.save_frame_inputs(
-                *emulator, context.movie_path, context.tas_editor.fingerprint(),
+                *emulator, context.tas_movie_path,
+                context.tas_editor.fingerprint(),
                 context.tas_editor.start_state(), context.tas_editor.frames());
             static_cast<void>(emulator->take_audio_samples());
             context.sdl.audio.clear();
             context.tas_editor.mark_saved();
         } catch (const std::exception& error) {
+            context.tas_editor.set_status("SAVE FAILED");
             show_error(context.sdl.window, error.what());
         }
     }
@@ -132,18 +134,22 @@ void process_advanced_tool_requests(AdvancedToolContext context) {
         try {
             context.input_movie.stop(emulator);
             context.input_movie.save_frame_inputs(
-                *emulator, context.movie_path, context.tas_editor.fingerprint(),
+                *emulator, context.tas_movie_path,
+                context.tas_editor.fingerprint(),
                 context.tas_editor.start_state(), context.tas_editor.frames());
-            context.input_movie.start_replay(*emulator, context.movie_path);
+            context.input_movie.start_replay(*emulator, context.tas_movie_path);
             static_cast<void>(emulator->take_audio_samples());
             context.rewind_history.clear();
             context.paused = false;
             context.fast_forward = false;
             context.rewind = false;
             context.sdl.audio.clear();
+            context.tas_editor.mark_saved();
+            context.tas_editor.set_status("RUNNING TAS");
             context.debugger.run();
         } catch (const std::exception& error) {
             context.input_movie.stop(emulator);
+            context.tas_editor.set_status("RUN FAILED");
             show_error(context.sdl.window, error.what());
         }
     }

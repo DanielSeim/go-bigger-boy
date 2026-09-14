@@ -34,6 +34,7 @@ struct AdvancedToolContext final {
     SpriteEditor& sprite_editor;
     CheatManager& cheat_manager;
     const std::filesystem::path& movie_path;
+    const std::filesystem::path& tas_movie_path;
     const std::filesystem::path& sprite_patch_path;
     const std::filesystem::path& sprite_ips_path;
     const std::string& current_rom;

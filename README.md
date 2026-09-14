@@ -330,15 +330,22 @@ appending frames, saving the timeline, replaying it from its captured starting
 state, and starting a new timeline from the emulator's current state.
 
 - Arrow Up/Down: select a frame
+- Home / Ctrl+End: jump to the first / last frame
+- Page Up / Page Down: move by one visible page
 - Insert: insert an empty frame before the selection
 - Delete: remove the selected frame
 - End: append an empty frame
-- Ctrl+S: save to `replays/last-input.gbbmovie`
+- Ctrl+Z / Ctrl+Y: undo / redo timeline edits
+- Ctrl+C / Ctrl+V / Ctrl+D: copy / paste / duplicate a frame
+- Backspace: clear the selected frame; drag across cells to paint
+- Ctrl+S: save to `replays/last-tas.gbbmovie`
 - F7: save and run the timeline
 - Ctrl+N: discard the timeline and capture the current emulator state
 
 Normal input recordings and TAS timelines use the same deterministic movie
-format, so the latest result can be replayed with `F7` from the debugger.
+format, but are stored separately so saving a TAS cannot overwrite a normal
+recording. `F7` in the TAS editor runs the edited timeline; `F7` in the
+debugger replays the latest normal recording.
 
 ### Live sprite editor
 

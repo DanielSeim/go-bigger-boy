@@ -13,6 +13,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -46,9 +47,24 @@ class TasEditor {
     [[nodiscard]] bool has_unsaved_changes() const noexcept {
         return frames_ != saved_frames_;
     }
-    void mark_saved() { saved_frames_ = frames_; }
+    void mark_saved() {
+        saved_frames_ = frames_;
+        status_ = "SAVED";
+    }
+    [[nodiscard]] const std::string& status() const noexcept { return status_; }
+    void set_status(std::string status) { status_ = std::move(status); }
     [[nodiscard]] std::uint64_t fingerprint() const noexcept {
         return fingerprint_;
+    }
+
+    [[nodiscard]] bool close_with_confirmation() {
+        if (!visible()) return true;
+        if (has_unsaved_changes() &&
+            !confirm_discard_changes(window_, "Discard unsaved TAS changes?")) {
+            return false;
+        }
+        close();
+        return true;
     }
 
     void open(SDL_Window* parent, gameboy::Emulator& emulator) {
@@ -87,6 +103,10 @@ class TasEditor {
         saved_frames_ = frames_;
         selection_ = 0;
         first_visible_ = 0;
+        undo_frames_.clear();
+        redo_frames_.clear();
+        clipboard_frame_.reset();
+        status_ = "NEW TIMELINE";
     }
 
     void close() noexcept {
@@ -122,81 +142,152 @@ class TasEditor {
             } else if (event.key.key == SDLK_DOWN) {
                 if (selection_ + 1 < frames_.size()) ++selection_;
                 keep_selection_visible();
+            } else if (event.key.key == SDLK_HOME) {
+                selection_ = 0;
+                keep_selection_visible();
+            } else if (event.key.key == SDLK_PAGEUP) {
+                int width = 0;
+                int height = 0;
+                static_cast<void>(SDL_GetWindowSize(window_, &width, &height));
+                const auto amount = visible_rows(height);
+                selection_ = selection_ > amount ? selection_ - amount : 0;
+                keep_selection_visible();
+            } else if (event.key.key == SDLK_PAGEDOWN) {
+                int width = 0;
+                int height = 0;
+                static_cast<void>(SDL_GetWindowSize(window_, &width, &height));
+                selection_ = std::min(
+                    frames_.size() - 1, selection_ + visible_rows(height));
+                keep_selection_visible();
             } else if (event.key.key == SDLK_INSERT) {
+                remember_edit();
                 frames_.insert(frames_.begin() +
                                    static_cast<std::ptrdiff_t>(selection_), 0);
             } else if (event.key.key == SDLK_DELETE) {
+                remember_edit();
                 delete_selected();
             } else if (event.key.key == SDLK_END) {
-                frames_.push_back(0);
-                selection_ = frames_.size() - 1;
+                if ((event.key.mod & SDL_KMOD_CTRL) != 0) {
+                    selection_ = frames_.size() - 1;
+                    keep_selection_visible();
+                } else {
+                    remember_edit();
+                    frames_.push_back(0);
+                    selection_ = frames_.size() - 1;
+                }
                 keep_selection_visible();
             } else if (event.key.key == SDLK_N &&
                        (event.key.mod & SDL_KMOD_CTRL) != 0) {
-                if (!has_unsaved_changes() ||
-                    confirm_discard_changes(window_, "Discard unsaved TAS changes?")) {
-                    new_requested_ = true;
-                }
+                request_new();
             } else if (event.key.key == SDLK_S &&
                        (event.key.mod & SDL_KMOD_CTRL) != 0) {
                 save_requested_ = true;
+                status_ = "SAVING...";
+            } else if (event.key.key == SDLK_Z &&
+                       (event.key.mod & SDL_KMOD_CTRL) != 0) {
+                undo();
+            } else if (event.key.key == SDLK_Y &&
+                       (event.key.mod & SDL_KMOD_CTRL) != 0) {
+                redo();
+            } else if (event.key.key == SDLK_C &&
+                       (event.key.mod & SDL_KMOD_CTRL) != 0) {
+                clipboard_frame_ = frames_[selection_];
+                status_ = "FRAME COPIED";
+            } else if (event.key.key == SDLK_V &&
+                       (event.key.mod & SDL_KMOD_CTRL) != 0) {
+                if (clipboard_frame_) {
+                    remember_edit();
+                    frames_[selection_] = *clipboard_frame_;
+                    status_ = "FRAME PASTED";
+                }
+            } else if (event.key.key == SDLK_D &&
+                       (event.key.mod & SDL_KMOD_CTRL) != 0) {
+                remember_edit();
+                frames_.insert(frames_.begin() +
+                                   static_cast<std::ptrdiff_t>(selection_ + 1),
+                               frames_[selection_]);
+                ++selection_;
+                keep_selection_visible();
+                status_ = "FRAME DUPLICATED";
+            } else if (event.key.key == SDLK_BACKSPACE) {
+                if (frames_[selection_] != 0) {
+                    remember_edit();
+                    frames_[selection_] = 0;
+                    status_ = "FRAME CLEARED";
+                }
             } else if (event.key.key == SDLK_F7) {
                 replay_requested_ = true;
+                status_ = "BUILDING MOVIE...";
             }
             return true;
         }
         if (event.type == SDL_EVENT_MOUSE_WHEEL) {
-            if (event.wheel.y > 0 && first_visible_ > 0) --first_visible_;
-            if (event.wheel.y < 0 && first_visible_ + 1 < frames_.size()) {
-                ++first_visible_;
+            const auto raw_amount = static_cast<int>(event.wheel.y);
+            const auto amount = std::max(1, raw_amount < 0 ? -raw_amount
+                                                            : raw_amount);
+            if (event.wheel.y > 0) {
+                const auto delta = std::min<std::size_t>(
+                    first_visible_, static_cast<std::size_t>(amount));
+                first_visible_ -= delta;
+            } else if (event.wheel.y < 0) {
+                first_visible_ = std::min(
+                    frames_.size() - 1,
+                    first_visible_ + static_cast<std::size_t>(-amount));
             }
             return true;
         }
-        if (event.type == SDL_EVENT_MOUSE_BUTTON_UP &&
+        if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
             event.button.button == SDL_BUTTON_LEFT) {
             int width = 0;
             int height = 0;
             static_cast<void>(SDL_GetWindowSize(window_, &width, &height));
-            constexpr float first_row_y = 94.0F;
-            constexpr float row_height = 22.0F;
-            const auto bottom_y = static_cast<float>(height - 55);
-            if (event.button.y >= first_row_y && event.button.y < bottom_y - 18) {
-                const auto row = static_cast<std::size_t>(
-                    (event.button.y - first_row_y) / row_height);
-                const auto frame = first_visible_ + row;
-                if (frame < frames_.size()) {
-                    selection_ = frame;
-                    constexpr float first_button_x = 144.0F;
-                    constexpr float column_width = 82.0F;
-                    if (event.button.x >= first_button_x) {
-                        const auto button = static_cast<std::size_t>(
-                            (event.button.x - first_button_x) / column_width);
-                        if (button < InputMovie::movie_buttons.size()) {
-                            frames_[frame] ^=
-                                static_cast<std::uint8_t>(1U << button);
-                        }
-                    }
-                }
-            } else if (event.button.y >= bottom_y &&
-                       event.button.y <= bottom_y + 36.0F) {
+            if (event.button.x < 144.0F &&
+                select_row(event.button.y, height)) {
+                return true;
+            }
+            if (edit_cell(event.button.x, event.button.y, height, true)) {
+                dragging_ = true;
+                static_cast<void>(SDL_CaptureMouse(true));
+            } else if (event.button.y >= static_cast<float>(height - 55) &&
+                       event.button.y <= static_cast<float>(height - 19)) {
                 const auto x = event.button.x;
                 if (x >= 24 && x <= 154) {
+                    remember_edit();
                     frames_.insert(frames_.begin() +
                                        static_cast<std::ptrdiff_t>(selection_), 0);
                 } else if (x >= 166 && x <= 296) {
+                    remember_edit();
                     delete_selected();
                 } else if (x >= 308 && x <= 438) {
+                    remember_edit();
                     frames_.push_back(0);
                     selection_ = frames_.size() - 1;
                     keep_selection_visible();
                 } else if (x >= 450 && x <= 580) {
                     save_requested_ = true;
+                    status_ = "SAVING...";
                 } else if (x >= 592 && x <= 722) {
                     replay_requested_ = true;
+                    status_ = "BUILDING MOVIE...";
                 } else if (x >= 734 && x <= 864) {
-                    new_requested_ = true;
+                    request_new();
                 }
             }
+            return true;
+        }
+        if (event.type == SDL_EVENT_MOUSE_MOTION && dragging_ &&
+            (event.motion.state & SDL_BUTTON_LMASK) != 0) {
+            int width = 0;
+            int height = 0;
+            static_cast<void>(SDL_GetWindowSize(window_, &width, &height));
+            static_cast<void>(edit_cell(event.motion.x, event.motion.y, height,
+                                         false));
+            return true;
+        }
+        if (event.type == SDL_EVENT_MOUSE_BUTTON_UP &&
+            event.button.button == SDL_BUTTON_LEFT) {
+            dragging_ = false;
+            static_cast<void>(SDL_CaptureMouse(false));
             return true;
         }
         return true;
@@ -212,18 +303,25 @@ class TasEditor {
         static_cast<void>(SDL_SetRenderDrawColor(renderer_, 69, 207, 238, 255));
         static_cast<void>(SDL_RenderDebugText(renderer_, 24, 18,
                                               "TAS FRAME INPUT EDITOR"));
+        const auto title = std::string("Go Bigger Boy - TAS Input Editor") +
+                           (has_unsaved_changes() ? " *" : "");
+        static_cast<void>(SDL_SetWindowTitle(window_, title.c_str()));
         static_cast<void>(SDL_SetRenderDrawColor(renderer_, 177, 192, 208, 255));
         static_cast<void>(SDL_RenderDebugText(
             renderer_, 24, 38,
-            "CLICK CELLS TO HOLD BUTTONS FOR A FRAME  |  UP/DOWN SELECT"));
+            (std::string(has_unsaved_changes() ? "UNSAVED  " : "SAVED  ") +
+             status_).c_str()));
         static_cast<void>(SDL_RenderDebugText(
             renderer_, 24, 54,
-            "INSERT ADD BEFORE  DELETE REMOVE  END APPEND  CTRL+S SAVE  F7 RUN"));
+            "CLICK OR DRAG CELLS  |  ARROWS/PAGE SELECT  |  CTRL+Z/Y UNDO/REDO"));
 
         constexpr std::array<const char*, 8> names{
             "RIGHT", "LEFT", "UP", "DOWN", "A", "B", "SELECT", "START"};
         static_cast<void>(SDL_SetRenderDrawColor(renderer_, 230, 249, 255, 255));
-        static_cast<void>(SDL_RenderDebugText(renderer_, 28, 76, "FRAME"));
+        const auto frame_summary = "FRAME " + std::to_string(selection_) +
+                                   " / " + std::to_string(frames_.size());
+        static_cast<void>(SDL_RenderDebugText(renderer_, 28, 76,
+                                              frame_summary.c_str()));
         constexpr float first_button_x = 144.0F;
         constexpr float column_width = 82.0F;
         for (std::size_t button = 0; button < names.size(); ++button) {
@@ -281,12 +379,96 @@ class TasEditor {
         button({450, bottom_y, 130, 36}, "SAVE MOVIE");
         button({592, bottom_y, 130, 36}, "RUN MOVIE");
         button({734, bottom_y, 130, 36}, "NEW FROM NOW");
+        static_cast<void>(SDL_RenderDebugText(
+            renderer_, 24, bottom_y - 16,
+            "Ctrl+C/V COPY/PASTE  Ctrl+D DUPLICATE  Backspace CLEAR  Ctrl+Home/End JUMP"));
         static_cast<void>(SDL_RenderPresent(renderer_));
     }
 
   private:
     [[noreturn]] static void throw_sdl_error(const char* action) {
         throw std::runtime_error(std::string(action) + ": " + SDL_GetError());
+    }
+
+    [[nodiscard]] static int visible_rows(const int height) noexcept {
+        return std::max(1, static_cast<int>((height - 185.0F) / 22.0F));
+    }
+
+    void request_new() {
+        if (!has_unsaved_changes() ||
+            confirm_discard_changes(window_, "Discard unsaved TAS changes?")) {
+            new_requested_ = true;
+        }
+    }
+
+    void remember_edit() {
+        undo_frames_.push_back(frames_);
+        constexpr std::size_t maximum_history = 100;
+        if (undo_frames_.size() > maximum_history) undo_frames_.erase(undo_frames_.begin());
+        redo_frames_.clear();
+    }
+
+    void undo() {
+        if (undo_frames_.empty()) return;
+        redo_frames_.push_back(frames_);
+        frames_ = std::move(undo_frames_.back());
+        undo_frames_.pop_back();
+        if (selection_ >= frames_.size()) selection_ = frames_.size() - 1;
+        keep_selection_visible();
+        status_ = "UNDO";
+    }
+
+    void redo() {
+        if (redo_frames_.empty()) return;
+        undo_frames_.push_back(frames_);
+        frames_ = std::move(redo_frames_.back());
+        redo_frames_.pop_back();
+        if (selection_ >= frames_.size()) selection_ = frames_.size() - 1;
+        keep_selection_visible();
+        status_ = "REDO";
+    }
+
+    [[nodiscard]] bool edit_cell(const float x, const float y, const int height,
+                                 const bool begin_drag) {
+        constexpr float first_row_y = 94.0F;
+        constexpr float row_height = 22.0F;
+        constexpr float first_button_x = 144.0F;
+        constexpr float column_width = 82.0F;
+        const auto bottom_y = static_cast<float>(height - 55);
+        if (y < first_row_y || y >= bottom_y - 18 || x < first_button_x) {
+            return false;
+        }
+        const auto row = static_cast<std::size_t>((y - first_row_y) / row_height);
+        const auto frame = first_visible_ + row;
+        const auto button = static_cast<std::size_t>((x - first_button_x) /
+                                                     column_width);
+        if (frame >= frames_.size() || button >= InputMovie::movie_buttons.size()) {
+            return false;
+        }
+        selection_ = frame;
+        const auto bit = static_cast<std::uint8_t>(1U << button);
+        if (begin_drag) {
+            remember_edit();
+            drag_value_ = (frames_[frame] & bit) == 0;
+        }
+        if (((frames_[frame] & bit) != 0) != drag_value_) {
+            frames_[frame] = drag_value_
+                                 ? static_cast<std::uint8_t>(frames_[frame] | bit)
+                                 : static_cast<std::uint8_t>(frames_[frame] & ~bit);
+        }
+        return true;
+    }
+
+    [[nodiscard]] bool select_row(const float y, const int height) noexcept {
+        constexpr float first_row_y = 94.0F;
+        constexpr float row_height = 22.0F;
+        const auto bottom_y = static_cast<float>(height - 55);
+        if (y < first_row_y || y >= bottom_y - 18) return false;
+        const auto row = static_cast<std::size_t>((y - first_row_y) / row_height);
+        const auto frame = first_visible_ + row;
+        if (frame >= frames_.size()) return false;
+        selection_ = frame;
+        return true;
     }
 
     void delete_selected() {
@@ -312,6 +494,12 @@ class TasEditor {
     std::vector<std::uint8_t> saved_frames_{1, 0};
     std::size_t selection_{};
     std::size_t first_visible_{};
+    std::vector<std::vector<std::uint8_t>> undo_frames_;
+    std::vector<std::vector<std::uint8_t>> redo_frames_;
+    std::optional<std::uint8_t> clipboard_frame_;
+    std::string status_{"READY"};
+    bool dragging_{};
+    bool drag_value_{};
     bool save_requested_{};
     bool replay_requested_{};
     bool new_requested_{};
