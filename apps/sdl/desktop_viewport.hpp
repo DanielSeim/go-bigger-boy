@@ -3,10 +3,9 @@
 #include "gameboy/display_palette.hpp"
 #include "gameboy/memory_bus.hpp"
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
-#include <memory>
+#include <vector>
 
 namespace gbb::sdl {
 
@@ -15,9 +14,9 @@ struct DesktopBackgroundMap {
     static constexpr std::size_t height = 256;
     static constexpr unsigned visible_origin_x = 48;
     static constexpr unsigned visible_origin_y = 56;
-    using Pixels = std::array<std::uint32_t, width * height>;
+    using Pixels = std::vector<std::uint32_t>;
 
-    Pixels pixels{};
+    Pixels pixels = Pixels(width * height);
     std::uint8_t scroll_x{};
     std::uint8_t scroll_y{};
 };
@@ -54,11 +53,9 @@ namespace detail {
 [[nodiscard]] inline DesktopBackgroundMap render_desktop_background_map(
     const gameboy::MemoryBus& bus,
     const gameboy::DisplayPalette& palette) noexcept {
-    // This diagnostic surface is 256 KiB. Keep it off the Windows stack;
-    // MemoryBus already owns several large video buffers of its own.
-    auto result = std::make_unique<DesktopBackgroundMap>();
-    result->scroll_x = bus.read8(0xFF43);
-    result->scroll_y = bus.read8(0xFF42);
+    DesktopBackgroundMap result;
+    result.scroll_x = bus.read8(0xFF43);
+    result.scroll_y = bus.read8(0xFF42);
     const auto lcdc = bus.read8(0xFF40);
     const auto map_base = (lcdc & 0x08U) != 0 ? 0x1C00U : 0x1800U;
     const auto cgb = bus.cgb_mode();
@@ -100,7 +97,7 @@ namespace detail {
                     const auto pixel = static_cast<std::size_t>(
                         (map_y * 8U + tile_y) * DesktopBackgroundMap::width +
                         map_x * 8U + tile_x);
-                    result->pixels[pixel] =
+                    result.pixels[pixel] =
                         cgb ? detail::cgb_background_color(
                                     bus, attributes & 0x07U, color)
                             : palette.colors[(bus.read8(0xFF47) >>
@@ -109,7 +106,7 @@ namespace detail {
             }
         }
     }
-    return *result;
+    return result;
 }
 
 // Reframe the raw tilemap around the current hardware scroll position. The
@@ -118,29 +115,25 @@ namespace detail {
 [[nodiscard]] inline DesktopBackgroundMap render_desktop_viewport(
     const gameboy::MemoryBus& bus,
     const gameboy::DisplayPalette& palette) noexcept {
-    // Keep the two 256 KiB frame buffers off the relatively small Windows
-    // test/application stack. The returned map retains the same value-type
-    // API, while the raw map is only an implementation temporary.
-    const auto raw = std::make_unique<DesktopBackgroundMap>(
-        render_desktop_background_map(bus, palette));
-    auto result = std::make_unique<DesktopBackgroundMap>();
-    result->scroll_x = raw->scroll_x;
-    result->scroll_y = raw->scroll_y;
+    const auto raw = render_desktop_background_map(bus, palette);
+    DesktopBackgroundMap result;
+    result.scroll_x = raw.scroll_x;
+    result.scroll_y = raw.scroll_y;
     for (unsigned y = 0; y < DesktopBackgroundMap::height; ++y) {
         for (unsigned x = 0; x < DesktopBackgroundMap::width; ++x) {
             const auto source_x =
-                (static_cast<unsigned>(raw->scroll_x) + x + 256U -
+                (static_cast<unsigned>(raw.scroll_x) + x + 256U -
                  DesktopBackgroundMap::visible_origin_x) & 0xFFU;
             const auto source_y =
-                (static_cast<unsigned>(raw->scroll_y) + y + 256U -
+                (static_cast<unsigned>(raw.scroll_y) + y + 256U -
                  DesktopBackgroundMap::visible_origin_y) & 0xFFU;
-            result->pixels[static_cast<std::size_t>(y) *
-                               DesktopBackgroundMap::width + x] =
-                raw->pixels[static_cast<std::size_t>(source_y) *
-                                DesktopBackgroundMap::width + source_x];
+            result.pixels[static_cast<std::size_t>(y) *
+                              DesktopBackgroundMap::width + x] =
+                raw.pixels[static_cast<std::size_t>(source_y) *
+                               DesktopBackgroundMap::width + source_x];
         }
     }
-    return *result;
+    return result;
 }
 
 } // namespace gbb::sdl
