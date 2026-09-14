@@ -54,6 +54,14 @@ void test_record_and_replay() {
     loaded.start_replay(replay, path);
     check(loaded.replaying() && loaded.event_count() == movie.event_count(),
           "replay validates the ROM and restores the recorded event stream");
+    replay.bus().write8(0xFF00, 0x10); // Select the action-button lines.
+    check(!loaded.update_replay(replay) &&
+              (replay.bus().read8(0xFF00) & 0x01U) == 0,
+          "replay injects the first recorded button transition");
+    static_cast<void>(replay.step());
+    check(loaded.update_replay(replay) &&
+              (replay.bus().read8(0xFF00) & 0x01U) != 0,
+          "replay injects the release transition and finishes");
     loaded.stop(&replay);
     check(loaded.mode() == gbb::sdl::InputMovie::Mode::idle,
           "replay can be stopped cleanly");

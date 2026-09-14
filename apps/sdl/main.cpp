@@ -2385,8 +2385,13 @@ int main(int argc, char** argv) {
                             // use the generic contract.
                             if (emulator != nullptr) {
 #ifndef __ANDROID__
-                                if (debugger.visible() &&
-                                    debugger.has_breakpoints()) {
+                                // Replays must advance instruction-by-
+                                // instruction so update_replay() can inject
+                                // each recorded transition at its cycle. The
+                                // generic frame helper bypasses that hook.
+                                if (input_movie.replaying() ||
+                                    (debugger.visible() &&
+                                     debugger.has_breakpoints())) {
                                     static_cast<void>(advance_debuggable_frame(
                                         cycles_per_frame));
                                 } else {
