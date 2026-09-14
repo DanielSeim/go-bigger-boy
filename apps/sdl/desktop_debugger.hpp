@@ -5,6 +5,7 @@
 #include "gameboy/display_palette.hpp"
 #include "gameboy/emulator.hpp"
 #include "gameboy/ppu.hpp"
+#include "desktop_breakpoints.hpp"
 #include "input_movie.hpp"
 #include "tool_window_support.hpp"
 #include "window_event.hpp"
@@ -52,11 +53,40 @@ public:
     [[nodiscard]] bool take_sprite_request() noexcept {
         return std::exchange(sprite_requested_, false);
     }
+    [[nodiscard]] bool has_breakpoints() const noexcept {
+        return !breakpoints_.empty();
+    }
+    [[nodiscard]] bool breakpoint_at(const std::uint16_t address) const noexcept {
+        return breakpoints_.contains(address);
+    }
+    [[nodiscard]] std::size_t breakpoint_count() const noexcept {
+        return breakpoints_.size();
+    }
+    [[nodiscard]] const std::vector<std::uint16_t>& breakpoints() const noexcept {
+        return breakpoints_.addresses();
+    }
+    [[nodiscard]] std::optional<std::uint16_t> breakpoint_hit() const noexcept {
+        return breakpoints_.last_hit();
+    }
+    [[nodiscard]] bool toggle_breakpoint(const std::uint16_t address) {
+        return breakpoints_.toggle(address);
+    }
+    void clear_breakpoints() noexcept { breakpoints_.clear(); }
+    [[nodiscard]] bool check_breakpoint(const std::uint16_t address) noexcept {
+        if (const auto hit = breakpoints_.check(address)) {
+            execution_paused_ = true;
+            return true;
+        }
+        return false;
+    }
     void request_record_toggle() noexcept { toggle_recording_ = true; }
     void request_replay() noexcept { replay_requested_ = true; }
     void request_tas_editor() noexcept { tas_requested_ = true; }
     void request_sprite_editor() noexcept { sprite_requested_ = true; }
-    void run() noexcept { execution_paused_ = false; }
+    void run() noexcept {
+        breakpoints_.resume_after_hit();
+        execution_paused_ = false;
+    }
     void pause() noexcept { execution_paused_ = true; }
 
     void toggle(SDL_Window* parent) {
@@ -140,13 +170,19 @@ public:
             } else if (event.key.key == SDLK_F12 || event.key.key == SDLK_ESCAPE) {
                 close();
             } else if (event.key.key == SDLK_F5 || event.key.key == SDLK_SPACE) {
-                execution_paused_ = !execution_paused_;
+                if (execution_paused_) run();
+                else pause();
             } else if (event.key.key == SDLK_F10) {
                 execution_paused_ = true;
                 step_instruction_ = true;
             } else if (event.key.key == SDLK_F11) {
                 execution_paused_ = true;
                 step_frame_ = true;
+            } else if (event.key.key == SDLK_F2 && emulator != nullptr) {
+                static_cast<void>(toggle_breakpoint(
+                    emulator->cpu().registers().pc));
+            } else if (event.key.key == SDLK_F3) {
+                clear_breakpoints();
             } else if (event.key.key == SDLK_F6) {
                 toggle_recording_ = true;
             } else if (event.key.key == SDLK_F7) {
@@ -163,6 +199,7 @@ public:
             static_cast<void>(SDL_GetWindowSize(window_, &width, &height));
             const auto y = static_cast<float>(height - 58);
             const auto movie_y = static_cast<float>(height - 106);
+            const auto breakpoint_y = static_cast<float>(height - 154);
             const auto x = event.button.x;
             const auto register_x =
                 std::max(530.0F, static_cast<float>(width) - 350.0F);
@@ -183,9 +220,18 @@ public:
                 } else if (x >= 734.0F && x <= 884.0F) {
                     tas_requested_ = true;
                 }
+            } else if (event.button.y >= breakpoint_y &&
+                       event.button.y <= breakpoint_y + 36.0F) {
+                if (x >= 24.0F && x <= 274.0F && emulator != nullptr) {
+                    static_cast<void>(toggle_breakpoint(
+                        emulator->cpu().registers().pc));
+                } else if (x >= 288.0F && x <= 488.0F) {
+                    clear_breakpoints();
+                }
             } else if (event.button.y >= y && event.button.y <= y + 36.0F) {
                 if (x >= 24.0F && x <= 174.0F) {
-                    execution_paused_ = !execution_paused_;
+                    if (execution_paused_) run();
+                    else pause();
                 } else if (x >= 188.0F && x <= 358.0F) {
                     execution_paused_ = true;
                     step_instruction_ = true;
@@ -213,8 +259,6 @@ public:
         static_cast<void>(SDL_RenderDebugText(renderer_, 24, 20,
                                               "GO BIGGER BOY / DEBUGGER"));
         static_cast<void>(SDL_SetRenderDrawColor(renderer_, 177, 192, 208, 255));
-        static_cast<void>(SDL_RenderDebugText(
-            renderer_, 24, 38, execution_paused_ ? "PAUSED" : "RUNNING"));
 
         constexpr float scale = 3.0F;
         constexpr float preview_x = 24.0F;
@@ -261,6 +305,12 @@ public:
                 << std::setw(4) << value;
             return out.str();
         };
+        std::string execution_status = execution_paused_ ? "PAUSED" : "RUNNING";
+        if (const auto hit = breakpoint_hit()) {
+            execution_status = "BREAKPOINT HIT " + hex16(*hit);
+        }
+        static_cast<void>(SDL_RenderDebugText(
+            renderer_, 24, 38, execution_status.c_str()));
         const auto text = [this](const float x, const float y,
                                  const std::string& value) {
             static_cast<void>(SDL_SetRenderDrawColor(renderer_, 230, 249, 255, 255));
@@ -337,6 +387,18 @@ public:
         text(register_x, 574,
              "IF   " + hex8(bus.read8(0xFF0F)) +
                  "  IE   " + hex8(bus.read8(0xFFFF)));
+        text(24, 592, "BREAKPOINTS  " + std::to_string(breakpoint_count()));
+        if (breakpoints_.empty()) {
+            text(24, 608, "F2 TOGGLE AT CURRENT PC");
+        } else {
+            std::string addresses = "PC ";
+            for (std::size_t index = 0; index < breakpoints_.addresses().size();
+                 ++index) {
+                if (index != 0) addresses += ", ";
+                addresses += hex16(breakpoints_.addresses()[index]);
+            }
+            text(24, 608, addresses);
+        }
 
         const auto button = [this](const SDL_FRect& rect,
                                    const std::string& label) {
@@ -346,6 +408,9 @@ public:
         };
         const auto button_y = static_cast<float>(height - 58);
         const auto movie_y = static_cast<float>(height - 106);
+        const auto breakpoint_y = static_cast<float>(height - 154);
+        button({24, breakpoint_y, 250, 36}, "F2 TOGGLE PC BREAKPOINT");
+        button({288, breakpoint_y, 200, 36}, "F3 CLEAR BREAKPOINTS");
         button({24, movie_y, 170, 36},
                movie.recording() ? "F6 STOP + SAVE" : "F6 START RECORDING");
         button({208, movie_y, 170, 36}, "F7 REPLAY LAST");
@@ -488,6 +553,7 @@ private:
     bool replay_requested_{};
     bool tas_requested_{};
     bool sprite_requested_{};
+    DesktopBreakpoints breakpoints_;
     std::optional<RegisterTarget> editing_;
     std::string edit_value_;
     bool replace_on_type_{true};

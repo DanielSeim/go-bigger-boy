@@ -542,6 +542,13 @@ if(GAMEBOY_BUILD_TESTS)
     add_test(NAME gameboy_frontend_contract
              COMMAND gameboy_frontend_contract_tests)
 
+    add_executable(gameboy_desktop_breakpoint_contract_tests
+        tests/desktop_breakpoint_contract_tests.cpp)
+    target_include_directories(gameboy_desktop_breakpoint_contract_tests
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/apps/sdl)
+    add_test(NAME gameboy_desktop_breakpoint_contract
+             COMMAND gameboy_desktop_breakpoint_contract_tests)
+
     add_executable(gameboy_android_touch_layout_contract_tests
         tests/android_touch_layout_contract_tests.cpp)
     target_include_directories(gameboy_android_touch_layout_contract_tests

@@ -282,6 +282,14 @@ advance one frame. The same actions are available as clickable buttons. While
 paused, click an individual CPU register value to edit it in hexadecimal;
 press Enter to apply the value or Escape to cancel the edit.
 
+For PC breakpoints, pause at the desired instruction (or edit `PC` directly)
+and press `F2`; pressing `F2` again at the same PC removes that breakpoint.
+Press `F3` to clear all desktop breakpoints. Breakpoints are checked before an
+instruction executes, so a hit leaves the CPU and framebuffer ready for
+inspection and shows the hit address in the debugger. Resuming with `F5` lets
+the current instruction execute once before the breakpoint is checked again.
+Breakpoints are cleared when a different ROM is loaded.
+
 The debugger also provides deterministic input movies. Press `F6` to start a
 recording and `F6` again to stop and save it; press `F7` to replay the latest
 recording. A recording includes its starting emulator state, ROM fingerprint,

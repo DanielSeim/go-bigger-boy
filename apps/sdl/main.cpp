@@ -2132,6 +2132,11 @@ int main(int argc, char** argv) {
                                            core->descriptor().clock_rate);
                     sdl.audio.clear();
                     current_rom = requested_rom;
+#ifndef __ANDROID__
+                    // Breakpoints are addresses in the current ROM's address
+                    // space. Never carry them into a different session.
+                    debugger.clear_breakpoints();
+#endif
                     if (!reopening_current) paused = false;
                     fast_forward = false;
                     rewind = false;
@@ -2207,6 +2212,22 @@ int main(int argc, char** argv) {
 #endif
                 return emulator->step();
             };
+#ifndef __ANDROID__
+            const auto advance_debuggable_frame = [&](const unsigned budget) {
+                gbb::FrameAdvanceResult result{0, emulator->frame_ready()};
+                while (running && !result.frame_ready && result.cycles < budget) {
+                    if (debugger.check_breakpoint(
+                            emulator->cpu().registers().pc)) {
+                        break;
+                    }
+                    const auto stepped = step_emulator();
+                    if (stepped == 0) break;
+                    result.cycles += stepped;
+                    result.frame_ready = emulator->frame_ready();
+                }
+                return result;
+            };
+#endif
 #ifndef __ANDROID__
             if (services.debugger() != nullptr &&
                 debugger.take_instruction_step()) {
@@ -2301,8 +2322,14 @@ int main(int argc, char** argv) {
                             // during fast-forward). Plug-in cores continue to
                             // use the generic contract.
                             if (emulator != nullptr) {
-                                static_cast<void>(gbb::advance_to_frame(
-                                    *emulator, cycles_per_frame));
+                                if (debugger.visible() &&
+                                    debugger.has_breakpoints()) {
+                                    static_cast<void>(advance_debuggable_frame(
+                                        cycles_per_frame));
+                                } else {
+                                    static_cast<void>(gbb::advance_to_frame(
+                                        *emulator, cycles_per_frame));
+                                }
                             } else {
                                 static_cast<void>(gbb::advance_to_frame(
                                     *core, cycles_per_frame));
