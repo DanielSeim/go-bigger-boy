@@ -576,8 +576,10 @@ bool handle_keyboard_binding_event(const SDL_Event& event,
         if (configuration.index == context.bindings.keys.size()) {
             context.configuring.reset();
             save_bindings(context.preference_path, context.bindings);
+#ifndef __ANDROID__
             show_desktop_notification(context.sdl.window,
                                       "Keyboard bindings saved.");
+#endif
         }
         if (context.update_title) context.update_title();
         return true;
@@ -615,8 +617,10 @@ bool handle_keyboard_binding_event(const SDL_Event& event,
         if (configuration.index == context.bindings.keys.size()) {
             context.configuring.reset();
             save_bindings(context.preference_path, context.bindings);
+#ifndef __ANDROID__
             show_desktop_notification(context.sdl.window,
                                       "Keyboard bindings saved.");
+#endif
         }
     }
     if (context.update_title) context.update_title();
@@ -671,7 +675,9 @@ void handle_gameplay_key_event(const SDL_Event& event,
                core && !replaying_input) {
         try {
             save_quick_state(preference_path, *core);
+#ifndef __ANDROID__
             show_desktop_notification(sdl.window, "State saved.");
+#endif
         } catch (const std::exception& error) {
             if (context.report_error) context.report_error(error.what());
         }
@@ -683,7 +689,9 @@ void handle_gameplay_key_event(const SDL_Event& event,
             rewind_history.clear();
             release_all_buttons(*core);
             sdl.audio.clear();
+#ifndef __ANDROID__
             show_desktop_notification(sdl.window, "State loaded.");
+#endif
         } catch (const std::exception& error) {
             if (context.report_error) context.report_error(error.what());
         }

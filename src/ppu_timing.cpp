@@ -179,10 +179,10 @@ void Ppu::begin_mode3() noexcept {
     fetcher_phase_ticks_ = 2;
     fetcher_tile_index_ = 0;
     output_x_ = 0;
-    // The LCD-enable line has a shorter startup path than ordinary visible
-    // lines. AGE's later-line fetch fixtures expose the seven-dot pipeline
-    // lead that is otherwise hidden by the startup-line compatibility path.
-    startup_delay_ = lcd_startup_ || ly_ < 8 ? 12 : 19;
+    // LCD startup and ordinary visible lines share the established fetch
+    // startup delay. Keep this timing uniform; line-specific differences are
+    // represented by the fetcher and window state below.
+    startup_delay_ = 12;
     scroll_discard_ = static_cast<std::uint8_t>(scx_ & 7);
     window_delay_ = 0;
     sprite_delay_ = 0;

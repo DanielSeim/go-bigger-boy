@@ -164,6 +164,21 @@ void Ppu::write_vram(const std::uint16_t address,
     }
 }
 
+void Ppu::cpu_write_vram(const std::uint16_t address,
+                         const std::uint8_t value) noexcept {
+    // A CPU write that completes on the mode-2-to-mode-3 handoff still
+    // reaches VRAM on DMG-family hardware. Direct bus writes remain governed
+    // by the internal mode-3 arbitration boundary used by diagnostics.
+    const auto mode_transition_write = !cgb_hardware_ && !lcd_startup_ &&
+                                       dot_ == 80 &&
+                                       mode_ == 2 && stat_mode_ == 3;
+    if (!lcd_enabled() || (mode_ != 3 && stat_mode_ != 3) ||
+        mode_transition_write) {
+        auto& bank = cgb_mode_ && vram_bank_ != 0 ? *cgb_vram_ : vram_;
+        bank[address - 0x8000] = value;
+    }
+}
+
 void Ppu::dma_write_vram(const std::uint16_t address,
                          const std::uint8_t value) noexcept {
     auto& bank = cgb_mode_ && vram_bank_ != 0 ? *cgb_vram_ : vram_;

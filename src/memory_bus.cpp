@@ -172,6 +172,10 @@ void MemoryBus::cpu_write8(const std::uint16_t address,
         timer_.write_control(value, true);
         return;
     }
+    if (address >= 0x8000 && address <= 0x9FFF) {
+        ppu_.cpu_write_vram(address, value);
+        return;
+    }
     write8(address, value);
 }
 

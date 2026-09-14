@@ -2384,6 +2384,7 @@ int main(int argc, char** argv) {
                             // during fast-forward). Plug-in cores continue to
                             // use the generic contract.
                             if (emulator != nullptr) {
+#ifndef __ANDROID__
                                 if (debugger.visible() &&
                                     debugger.has_breakpoints()) {
                                     static_cast<void>(advance_debuggable_frame(
@@ -2392,6 +2393,10 @@ int main(int argc, char** argv) {
                                     static_cast<void>(gbb::advance_to_frame(
                                         *emulator, cycles_per_frame));
                                 }
+#else
+                                static_cast<void>(gbb::advance_to_frame(
+                                    *emulator, cycles_per_frame));
+#endif
                             } else {
                                 static_cast<void>(gbb::advance_to_frame(
                                     *core, cycles_per_frame));
