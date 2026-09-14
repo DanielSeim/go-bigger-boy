@@ -71,7 +71,7 @@ function(gbb_add_discovered_conformance_suite suite root protocol cycle_limit)
     endforeach()
 endfunction()
 
-if(GAMEBOY_TEST_ROM_DIR)
+if(GAMEBOY_TEST_ROM_DIR OR GAMEBOY_ENABLE_EXTERNAL_SUITES)
     find_package(Python3 3.8 REQUIRED COMPONENTS Interpreter)
 endif()
 
@@ -357,12 +357,11 @@ endif()
 
 endif()
 
-# SameSuite is an opt-in research suite. Its APU ROMs are designed for
-# hardware investigation and currently expose revision-specific failures even
-# in established emulators, so they must not silently become a release gate.
-# Build the ROMs with RGBDS (`make` in a SameSuite checkout), then configure
-# with -DGAMEBOY_SAMESUITE_DIR=/path/to/SameSuite and run -L samesuite-apu.
-if(GAMEBOY_SAMESUITE_DIR)
+# The legacy direct SameSuite registration remains available for callers that
+# want individual APU CTest cases. The metadata-driven runner below supersedes
+# it when external-suite reporting is enabled, so a case is not registered
+# twice.
+if(GAMEBOY_SAMESUITE_DIR AND NOT GAMEBOY_ENABLE_EXTERNAL_SUITES)
     file(GLOB_RECURSE gbb_samesuite_apu_roms CONFIGURE_DEPENDS
          "${GAMEBOY_SAMESUITE_DIR}/apu/*.gb")
     if(NOT gbb_samesuite_apu_roms)
@@ -381,6 +380,31 @@ if(GAMEBOY_SAMESUITE_DIR)
         gbb_add_direct_conformance_test(
             samesuite-apu "${rom}" mooneye 15000000 "${model}")
     endforeach()
+endif()
+
+if(GAMEBOY_ENABLE_EXTERNAL_SUITES AND
+   (GAMEBOY_TEST_ROM_DIR OR GAMEBOY_SAMESUITE_DIR))
+    set(gbb_external_suite_command
+        ${Python3_EXECUTABLE}
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_external_suites.py"
+        --runner $<TARGET_FILE:gameboy_test_runner>
+        --manifest
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/external_suite_manifest.json"
+        --output
+        "${CMAKE_CURRENT_BINARY_DIR}/external-suite-report.md")
+    if(GAMEBOY_TEST_ROM_DIR)
+        list(APPEND gbb_external_suite_command
+             --rom-root "${GAMEBOY_TEST_ROM_DIR}")
+    endif()
+    if(GAMEBOY_SAMESUITE_DIR)
+        list(APPEND gbb_external_suite_command
+             --same-suite-root "${GAMEBOY_SAMESUITE_DIR}")
+    endif()
+    add_test(NAME external_suite_report
+             COMMAND ${gbb_external_suite_command})
+    set_tests_properties(external_suite_report PROPERTIES
+                         LABELS "conformance;external-suites"
+                         TIMEOUT 3600)
 endif()
 
 # Exact framebuffer comparisons against the reference images distributed with

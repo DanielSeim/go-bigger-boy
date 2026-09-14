@@ -24,6 +24,8 @@ option(GAMEBOY_ENABLE_MODEL_MATRIX
        "Run deterministic ROM suites across every hardware model" OFF)
 option(GAMEBOY_ENABLE_DISCOVERED_CONFORMANCE
        "Register every discovered external ROM as an individual CTest case" OFF)
+option(GAMEBOY_ENABLE_EXTERNAL_SUITES
+       "Run metadata-driven AGE and SameSuite research suites" OFF)
 option(GAMEBOY_BUILD_SDL "Build the SDL3 desktop frontend when SDL3 is available" ON)
 option(GAMEBOY_ENABLE_SANITIZERS
        "Enable AddressSanitizer and UndefinedBehaviorSanitizer for native builds"
@@ -509,6 +511,9 @@ if(GAMEBOY_BUILD_TESTS)
         add_test(NAME gameboy_audio_reference_tool
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/audio_reference_tool_tests.py)
+        add_test(NAME gameboy_external_suite_harness
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/external_suite_tests.py)
     endif()
     add_executable(gameboy_tests tests/core_tests.cpp)
     target_link_libraries(gameboy_tests PRIVATE gbb_core_api)
@@ -988,7 +993,8 @@ if(GAMEBOY_BUILD_TESTS)
         add_test(NAME gameboy_sdl_version COMMAND gameboy_sdl --version)
     endif()
 
-    if(GAMEBOY_TEST_ROM_DIR OR GAMEBOY_SAMESUITE_DIR)
+    if(GAMEBOY_TEST_ROM_DIR OR GAMEBOY_SAMESUITE_DIR OR
+       GAMEBOY_ENABLE_EXTERNAL_SUITES)
         include(cmake/ConformanceTests.cmake)
     endif()
 endif()

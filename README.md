@@ -226,10 +226,12 @@ The current headless CI accuracy gate passes all 75 Mooneye acceptance ROMs,
 all 6 applicable CGB misc ROMs, all 28 emulator-only mapper ROMs, 38 curated
 Blargg ROMs, and 20 exact Acid2/Scribbltests/Mealybug/Gambatte framebuffer
 comparisons. The separate [hardware-model matrix workflow](https://github.com/DanielSeim/go-bigger-boy/actions/workflows/hardware-model-matrix.yml)
-evaluates additional GBMicrotest and Mooneye-wilbertpol cases; AGE and
-SameSuite remain deferred pending dedicated harnesses (see the [accuracy
-report](docs/accuracy.md)). Each run publishes the full Markdown report as a
-downloadable artifact and summarizes its counts on the Actions page.
+evaluates additional GBMicrotest and Mooneye-wilbertpol cases. The desktop
+workflow also publishes a research report for AGE and SameSuite: it discovers
+AGE screenshot references, applies its DMG-compatibility color rules, maps
+SameSuite diagnostics to documented hardware profiles, and keeps exploratory
+failures outside the release gate (see the [accuracy report](docs/accuracy.md)).
+Each run publishes the full Markdown reports as downloadable artifacts.
 
 To register the pinned v7.0 bundle locally, download and extract
 `c-sp/game-boy-test-roms`, then set its root as the opt-in cache path. The
@@ -241,6 +243,17 @@ cmake -S . -B build-conformance \
 cmake --build build-conformance
 ctest --test-dir build-conformance -L conformance --output-on-failure
 ```
+
+To run the metadata-driven AGE and SameSuite research harness locally, add
+`-DGAMEBOY_ENABLE_EXTERNAL_SUITES=ON` to the configure command and run:
+
+```sh
+ctest --test-dir build-conformance -L external-suites --output-on-failure
+```
+
+The report is written to `external-suite-report.md`. Research failures are
+reported for review but do not fail unless a suite entry is explicitly
+promoted to the `required` gate.
 
 To generate the hardware-revision matrix report, add
 `-DGAMEBOY_ENABLE_MODEL_MATRIX=ON` to the configure command and run

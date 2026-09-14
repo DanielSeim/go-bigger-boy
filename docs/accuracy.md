@@ -15,7 +15,7 @@ bundle. GitHub Actions verifies the archive checksum before running any ROM.
 | Visual PPU | 21/21 | Acid2, Scribbltests, Mealybug, and Gambatte framebuffer comparisons |
 | GBMicrotest | matrix-only | HRAM self-checking cycle-accuracy ROMs from the pinned v7.0 bundle |
 | Mooneye-wilbertpol | matrix-only | Extended Mooneye acceptance/misc/emulator-only ROMs (manual-only cases excluded) |
-| AGE and SameSuite | deferred | Screenshot/interactive and diagnostic cases awaiting suite-specific harnesses |
+| AGE and SameSuite | research report | AGE screenshot references plus SameSuite hardware diagnostics, outside the release gate |
 | Total release gate | **168** | The reviewed fixed baseline must pass before a release can be published |
 
 The acceptance figure covers every acceptance ROM in the pinned bundle. Tests with
@@ -44,17 +44,22 @@ not part of the normal release gate:
   `misc` are machine-readable; helper, `manual-only`, and boot-only diagnostics
   remain outside this post-boot matrix until their required harness exists.
 
-AGE and SameSuite are deliberately not discovered by the matrix yet. AGE is
-primarily screenshot-driven, while SameSuite mixes interactive diagnostics and
-revision-specific APU experiments; neither has a verified machine-readable
-completion contract for the headless runner. They will be added only after a
-dedicated harness can capture their required frames/input and classify results
-without manufacturing `REGRESSION` outcomes.
+AGE and SameSuite are covered by the opt-in metadata-driven external-suite
+runner rather than the per-model matrix. AGE cases with reference PNGs are
+captured at the runner's `LD B,B` completion point and compared with the
+upstream image, including the documented non-CGB compatibility palette. AGE
+machine cases use the Mooneye-compatible Fibonacci result registers. SameSuite
+APU cases select DMG, CGB0, CGB-C, or CGB-E from the upstream filename and
+documentation; DMA, interrupt, and PPU cases use the broad CGB-E research
+profile until revision coverage is documented. SGB probes are retained as
+informational cases because they expose commands rather than the Fibonacci
+result ABI. Research failures remain visible in `external-suite-report.md` but
+are not release regressions until a case is promoted to the `required` gate.
 
-The upstream collection also contains visual or interactive suites (AGE
-screenshots, Bully, cgb-acid-hell, MBC3 Tester, rtc3test, TurtleTests, and
-parts of little-things-gb). Their ROMs and references remain documented by the
-bundle, but they are not registered as pass/fail CTest cases yet: each needs
+The upstream collection also contains visual or interactive suites (Bully,
+cgb-acid-hell, MBC3 Tester, rtc3test, TurtleTests, and parts of
+little-things-gb). Their ROMs and references remain documented by the bundle,
+but they are not registered by the external runner yet: each needs
 suite-specific frame timing, input scripting, or screenshot selection. This
 distinction prevents a timeout or an unreviewed screenshot from being reported
 as a core emulation failure.

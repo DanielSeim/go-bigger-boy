@@ -19,8 +19,8 @@ from typing import Dict, List, Optional, Set, Tuple
 MODELS = ("dmg0", "dmg", "mgb", "sgb", "sgb2", "cgb0", "cgb-c", "cgb-e")
 ALL_MODELS = set(MODELS)
 DEFERRED_SUITES = {
-    "age-test-roms": "screenshot-driven AGE cases need a visual harness",
-    "same-suite": "interactive and revision-specific diagnostics need a suite harness",
+    "age-test-roms": "reported by the metadata-driven external-suite runner",
+    "same-suite": "reported by the metadata-driven external-suite runner",
 }
 
 
@@ -141,11 +141,10 @@ def has_gbmicrotest_result_marker(rom: Path) -> bool:
 
 
 def discover(rom_root: Path) -> List[Tuple[str, Path, str, int]]:
-    # Keep this list limited to suites whose completion/result protocol is
-    # implemented and verified by gbb_test_runner. AGE is primarily a
-    # screenshot suite and SameSuite contains interactive/APU experiments;
-    # treating either as a Fibonacci test produces false regressions. They
-    # remain documented as deferred until dedicated harnesses exist.
+    # Keep this list limited to the deterministic model matrix. AGE and
+    # SameSuite are covered by tests/run_external_suites.py, which applies
+    # screenshot, revision, and informational-result rules that do not fit
+    # this matrix's single Fibonacci protocol.
     suites = [
         ("mooneye", rom_root / "mooneye-test-suite", "mooneye", 20_000_000),
         ("gbmicrotest", rom_root / "gbmicrotest", "gbmicrotest", 5_000_000),

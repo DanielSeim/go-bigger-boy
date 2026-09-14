@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "suites": {
+    "age-test-roms": {
+      "root": "age-test-roms",
+      "kind": "age",
+      "max_cycles": 100000000,
+      "gate": "research"
+    },
+    "same-suite": {
+      "root": "same-suite",
+      "kind": "samesuite",
+      "max_cycles": 15000000,
+      "gate": "research"
+    }
+  }
+}
