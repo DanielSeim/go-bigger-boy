@@ -54,9 +54,11 @@ namespace detail {
 [[nodiscard]] inline DesktopBackgroundMap render_desktop_background_map(
     const gameboy::MemoryBus& bus,
     const gameboy::DisplayPalette& palette) noexcept {
-    DesktopBackgroundMap result;
-    result.scroll_x = bus.read8(0xFF43);
-    result.scroll_y = bus.read8(0xFF42);
+    // This diagnostic surface is 256 KiB. Keep it off the Windows stack;
+    // MemoryBus already owns several large video buffers of its own.
+    auto result = std::make_unique<DesktopBackgroundMap>();
+    result->scroll_x = bus.read8(0xFF43);
+    result->scroll_y = bus.read8(0xFF42);
     const auto lcdc = bus.read8(0xFF40);
     const auto map_base = (lcdc & 0x08U) != 0 ? 0x1C00U : 0x1800U;
     const auto cgb = bus.cgb_mode();
@@ -98,18 +100,16 @@ namespace detail {
                     const auto pixel = static_cast<std::size_t>(
                         (map_y * 8U + tile_y) * DesktopBackgroundMap::width +
                         map_x * 8U + tile_x);
-                    result.pixels[pixel] = cgb
-                                                ? detail::cgb_background_color(
-                                                      bus, attributes & 0x07U,
-                                                      color)
-                                                : palette.colors[(bus.read8(0xFF47) >>
-                                                                  (color * 2U)) &
-                                                                 0x03U];
+                    result->pixels[pixel] =
+                        cgb ? detail::cgb_background_color(
+                                    bus, attributes & 0x07U, color)
+                            : palette.colors[(bus.read8(0xFF47) >>
+                                               (color * 2U)) & 0x03U];
                 }
             }
         }
     }
-    return result;
+    return *result;
 }
 
 // Reframe the raw tilemap around the current hardware scroll position. The
