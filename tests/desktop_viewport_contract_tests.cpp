@@ -47,6 +47,12 @@ void test_unsigned_tile_map_and_scroll() {
           "renders unsigned tile data with the DMG palette");
     check(map.pixels[1] == gameboy::display_palettes[0].colors[0],
           "renders adjacent tile pixels in display order");
+    const auto viewport = gbb::sdl::render_desktop_viewport(
+        bus, gameboy::display_palettes[0]);
+    check(viewport.pixels[gbb::sdl::DesktopBackgroundMap::visible_origin_y * 256 +
+                            gbb::sdl::DesktopBackgroundMap::visible_origin_x] ==
+              map.pixels[23 * 256 + 197],
+          "centers the calculated view on the live scroll position");
 }
 
 void test_signed_tile_map_and_flips() {

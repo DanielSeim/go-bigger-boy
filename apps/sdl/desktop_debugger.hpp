@@ -377,7 +377,7 @@ public:
         static_cast<void>(SDL_UpdateTexture(
             texture_, nullptr, pixels.data(),
             static_cast<int>(gameboy::Ppu::screen_width * sizeof(std::uint32_t))));
-        const auto map = render_desktop_background_map(emulator.bus(), palette);
+        const auto map = render_desktop_viewport(emulator.bus(), palette);
         static_cast<void>(SDL_UpdateTexture(
             background_texture_, nullptr, map.pixels.data(),
             static_cast<int>(DesktopBackgroundMap::width * sizeof(std::uint32_t))));
@@ -390,9 +390,8 @@ public:
                               map_height + 6};
         static_cast<void>(SDL_RenderRect(renderer_, &outer));
         render_tool_text(renderer_, map_x, map_y + map_height + 10,
-                         "BACKGROUND MAP 256 x 256  /  VISIBLE 160 x 144");
-        render_visible_viewport_overlay(renderer_, map_x, map_y, map_scale,
-                                        map.scroll_x, map.scroll_y);
+                         "CALCULATED VIEW 256 x 256  /  LIVE 160 x 144");
+        render_visible_viewport_overlay(renderer_, map_x, map_y, map_scale);
 
         // Keep the actual rasterized output visible as a small diagnostic
         // inset. The expanded map is reconstructed from VRAM; this inset is
@@ -619,31 +618,17 @@ private:
     static void render_visible_viewport_overlay(SDL_Renderer* renderer,
                                                 const float map_x,
                                                 const float map_y,
-                                                const float scale,
-                                                const std::uint8_t scroll_x,
-                                                const std::uint8_t scroll_y) {
+                                                const float scale) {
         static_cast<void>(SDL_SetRenderDrawColor(renderer, 69, 207, 238, 255));
-        const auto segments = [](const unsigned scroll, const unsigned length) {
-            const auto first = std::min(length, 256U - scroll);
-            using SegmentList = std::array<std::pair<unsigned, unsigned>, 2>;
-            return std::make_pair(
-                SegmentList{{{scroll, first}, {0, length - first}}},
-                length - first > 0U ? 2U : 1U);
-        };
-        const auto horizontal = segments(scroll_x, gameboy::Ppu::screen_width);
-        const auto vertical = segments(scroll_y, gameboy::Ppu::screen_height);
-        for (unsigned x_index = 0; x_index < horizontal.second; ++x_index) {
-            for (unsigned y_index = 0; y_index < vertical.second; ++y_index) {
-                const auto [x, width] = horizontal.first[x_index];
-                const auto [y, height] = vertical.first[y_index];
-                const SDL_FRect visible{
-                    map_x + static_cast<float>(x) * scale,
-                    map_y + static_cast<float>(y) * scale,
-                    static_cast<float>(width) * scale,
-                    static_cast<float>(height) * scale};
-                static_cast<void>(SDL_RenderRect(renderer, &visible));
-            }
-        }
+        const SDL_FRect visible{
+            map_x + DesktopBackgroundMap::visible_origin_x * scale,
+            map_y + DesktopBackgroundMap::visible_origin_y * scale,
+            gameboy::Ppu::screen_width * scale,
+            gameboy::Ppu::screen_height * scale};
+        static_cast<void>(SDL_RenderRect(renderer, &visible));
+        const SDL_FRect inner{visible.x + 2.0F, visible.y + 2.0F,
+                              visible.w - 4.0F, visible.h - 4.0F};
+        static_cast<void>(SDL_RenderRect(renderer, &inner));
     }
 
     [[nodiscard]] static float register_panel_x(const int width) noexcept {

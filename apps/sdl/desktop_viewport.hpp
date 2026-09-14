@@ -12,6 +12,8 @@ namespace gbb::sdl {
 struct DesktopBackgroundMap {
     static constexpr std::size_t width = 256;
     static constexpr std::size_t height = 256;
+    static constexpr unsigned visible_origin_x = 48;
+    static constexpr unsigned visible_origin_y = 56;
     using Pixels = std::array<std::uint32_t, width * height>;
 
     Pixels pixels{};
@@ -104,6 +106,33 @@ namespace detail {
                                                                  0x03U];
                 }
             }
+        }
+    }
+    return result;
+}
+
+// Reframe the raw tilemap around the current hardware scroll position. The
+// live 160x144 viewport is placed at (48,56), leaving the surrounding pixels
+// visible on every side while retaining the Game Boy's modulo-256 wrapping.
+[[nodiscard]] inline DesktopBackgroundMap render_desktop_viewport(
+    const gameboy::MemoryBus& bus,
+    const gameboy::DisplayPalette& palette) noexcept {
+    const auto raw = render_desktop_background_map(bus, palette);
+    DesktopBackgroundMap result;
+    result.scroll_x = raw.scroll_x;
+    result.scroll_y = raw.scroll_y;
+    for (unsigned y = 0; y < DesktopBackgroundMap::height; ++y) {
+        for (unsigned x = 0; x < DesktopBackgroundMap::width; ++x) {
+            const auto source_x =
+                (static_cast<unsigned>(raw.scroll_x) + x + 256U -
+                 DesktopBackgroundMap::visible_origin_x) & 0xFFU;
+            const auto source_y =
+                (static_cast<unsigned>(raw.scroll_y) + y + 256U -
+                 DesktopBackgroundMap::visible_origin_y) & 0xFFU;
+            result.pixels[static_cast<std::size_t>(y) *
+                              DesktopBackgroundMap::width + x] =
+                raw.pixels[static_cast<std::size_t>(source_y) *
+                               DesktopBackgroundMap::width + source_x];
         }
     }
     return result;
