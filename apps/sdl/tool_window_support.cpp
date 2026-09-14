@@ -51,9 +51,9 @@ TTF_Font* font_for_renderer(SDL_Renderer* renderer, int& size) {
             const auto scale = std::clamp(
                 std::max(static_cast<float>(output_width) / window_width,
                          static_cast<float>(output_height) / window_height),
-                1.0F, 1.5F);
+                1.0F, 1.15F);
             size = std::clamp(static_cast<int>(std::lround(14.0F * scale)),
-                              14, 21);
+                              14, 16);
         }
     }
     auto& fonts = tool_fonts();

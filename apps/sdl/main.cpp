@@ -825,7 +825,13 @@ void present_desktop_status(SdlResources& sdl, const bool paused,
     if (replaying) status = status.empty() ? "REPLAYING" : status + "  PLAY";
     if (status.empty()) return;
     const auto width = std::clamp(12.0F + static_cast<float>(status.size()) * 8.0F,
-                                  48.0F, 152.0F);
+                                  48.0F,
+#ifdef _WIN32
+                                  152.0F
+#else
+                                  108.0F
+#endif
+    );
     const SDL_FRect panel{160.0F - width - 3.0F, 3.0F, width, 15.0F};
     static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 8, 15, 22, 245));
     static_cast<void>(SDL_RenderFillRect(sdl.renderer, &panel));
@@ -1347,12 +1353,18 @@ void present_dashboard(SdlResources& sdl,
     static_cast<void>(SDL_RenderDebugText(sdl.renderer, 13, 5,
                                           "GO BIGGER BOY"));
     static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 177, 192, 208, 255));
-    const auto filter_label = filter.empty()
-                                  ? std::string{"GAME LIBRARY / TYPE TO FILTER"}
-                                  : std::string{"FILTER: "} +
-                                        dashboard_text(filter, 20);
+    const auto filter_label = std::string{"FILTER: "} +
+                              (filter.empty()
+                                   ? std::string{"type..."}
+                                   : dashboard_text(filter, 12));
     static_cast<void>(SDL_RenderDebugText(sdl.renderer, 13, 18,
                                           dashboard_text(filter_label, 18).c_str()));
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 69, 207, 238, 255));
+    const auto cursor_x = 13.0F +
+                          static_cast<float>(std::min<std::size_t>(filter.size(), 12)) *
+                              8.0F + 64.0F;
+    const SDL_FRect filter_cursor{cursor_x, 17.0F, 1.0F, 10.0F};
+    static_cast<void>(SDL_RenderFillRect(sdl.renderer, &filter_cursor));
 
     for (std::size_t row = 0; row < visible; ++row) {
         const auto index = first + row;
@@ -1383,8 +1395,8 @@ void present_dashboard(SdlResources& sdl,
     }
     static_cast<void>(SDL_RenderDebugText(
         sdl.renderer, 13, 134,
-        filter.empty() ? "ENTER OPEN  F1 HELP"
-                       : "ENTER OPEN  BACKSPACE CLEAR"));
+        filter.empty() ? "ENTER OPEN  TYPE"
+                       : "ENTER OPEN  CLEAR"));
 }
 #endif
 

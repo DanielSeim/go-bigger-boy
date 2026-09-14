@@ -540,9 +540,9 @@ void present_desktop_notification(SDL_Renderer* renderer, SDL_Window* window) {
     const auto lines = wrap_dialog_message(
         found->second.message,
         static_cast<std::size_t>(std::max(24.0F, (panel_width - 48.0F) / 8.0F)));
+    const auto visible_lines = std::min<std::size_t>(4, lines.size());
     const auto panel_height = std::min(
-        108.0F, 54.0F + static_cast<float>(std::min<std::size_t>(2, lines.size())) *
-                          20.0F);
+        148.0F, 54.0F + static_cast<float>(visible_lines) * 20.0F);
     const SDL_FRect panel{
         (static_cast<float>(width) - panel_width) * 0.5F,
         static_cast<float>(height) - panel_height - 28.0F,
@@ -559,10 +559,11 @@ void present_desktop_notification(SDL_Renderer* renderer, SDL_Window* window) {
     static_cast<void>(SDL_RenderRect(renderer, &panel));
     render_tool_text(renderer, panel.x + 18.0F, panel.y + 12.0F,
                      found->second.warning ? "CHECK" : "DONE");
-    for (std::size_t index = 0; index < 2 && index < lines.size(); ++index) {
+    for (std::size_t index = 0; index < visible_lines; ++index) {
+        const auto clipped = index + 1 == visible_lines && lines.size() > visible_lines;
         render_tool_text(renderer, panel.x + 18.0F,
                          panel.y + 34.0F + static_cast<float>(index) * 20.0F,
-                         lines[index].c_str());
+                         clipped ? "..." : lines[index].c_str());
     }
     static_cast<void>(SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE));
 }
