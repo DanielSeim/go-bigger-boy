@@ -38,7 +38,7 @@ void test_unsigned_tile_map_and_scroll() {
     bus.write8(0xFF42, 23);
     bus.write8(0xFF43, 197);
     bus.debug_write_vram(0, 0x1800, 0);
-    bus.debug_write_vram(0, 0x0000, 0x01); // Tile 0: first pixel is color 1.
+    bus.debug_write_vram(0, 0x0000, 0x80); // Tile 0: first pixel is color 1.
 
     std::uint32_t expected_center_pixel{};
     {
@@ -68,7 +68,7 @@ void test_signed_tile_map_and_flips() {
     bus.write8(0xFF40, 0x81); // LCD on, BG on, signed tile data, $9800 map.
     bus.write8(0xFF47, 0xE4);
     bus.debug_write_vram(0, 0x1800, 0xFF); // Signed tile number -1.
-    bus.debug_write_vram(0, 0x0FF0, 0x01);
+    bus.debug_write_vram(0, 0x0FF0, 0x80);
     bus.debug_write_vram(0, 0x0FF0 + 1, 0x00);
 
     const auto map = std::make_unique<gbb::sdl::DesktopBackgroundMap>(
@@ -93,8 +93,8 @@ void test_signed_tile_map_and_flips() {
     const auto flipped = std::make_unique<gbb::sdl::DesktopBackgroundMap>(
         gbb::sdl::render_desktop_background_map(
             cgb_bus, gameboy::display_palettes[0]));
-    check(flipped->pixels[7 * 256] == 0xFFFF0000 &&
-              flipped->pixels[7 * 256 + 7] != 0xFFFF0000,
+    check(flipped->pixels[7 * 256 + 7] == 0xFFFF0000 &&
+              flipped->pixels[7 * 256] != 0xFFFF0000,
           "honors horizontal and vertical tilemap flips when reconstructing the map");
 }
 
