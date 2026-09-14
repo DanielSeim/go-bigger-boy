@@ -514,6 +514,9 @@ if(GAMEBOY_BUILD_TESTS)
         add_test(NAME gameboy_external_suite_harness
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/external_suite_tests.py)
+        add_test(NAME gameboy_differential_test_harness
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/differential_test_tests.py)
     endif()
     add_executable(gameboy_tests tests/core_tests.cpp)
     target_link_libraries(gameboy_tests PRIVATE gbb_core_api)

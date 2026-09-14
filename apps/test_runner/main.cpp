@@ -31,6 +31,8 @@ struct Options {
     gameboy::HardwareModel model = gameboy::HardwareModel::automatic;
     std::uint64_t frames{};
     std::filesystem::path frame_output;
+    std::filesystem::path apu_trace_output;
+    std::filesystem::path ppu_trace_output;
     bool dmg_compatibility_colors{};
     bool frame_on_ld_bb{};
 };
@@ -41,6 +43,7 @@ void usage() {
                  "mooneye-wilbertpol|serial|blargg|gbmicrotest] "
                  "[--model auto|dmg0|dmg|mgb|sgb|sgb2|cgb0|cgb-c|cgb-e] "
                  "[--frames N --frame-output capture.ppm] "
+                 "[--trace-apu PATH] [--trace-ppu PATH] "
                  "[--frame-on-ld-bb --frame-output capture.ppm] "
                  "[--dmg-compatibility-colors]\n";
 }
@@ -94,6 +97,10 @@ Options parse_options(const int argc, char** argv) {
             options.frames = parse_cycles(argv[++index]);
         } else if (argument == "--frame-output" && index + 1 < argc) {
             options.frame_output = argv[++index];
+        } else if (argument == "--trace-apu" && index + 1 < argc) {
+            options.apu_trace_output = argv[++index];
+        } else if (argument == "--trace-ppu" && index + 1 < argc) {
+            options.ppu_trace_output = argv[++index];
         } else if (argument == "--dmg-compatibility-colors") {
             options.dmg_compatibility_colors = true;
         } else if (argument == "--frame-on-ld-bb") {
@@ -160,6 +167,25 @@ void print_state(const gameboy::Cpu& cpu) {
               << " HL=" << std::setw(2) << static_cast<unsigned>(r.h)
               << std::setw(2) << static_cast<unsigned>(r.l)
               << std::dec << " cycles=" << cpu.total_cycles() << '\n';
+}
+
+void print_result_diagnostics(const gameboy::Cpu& cpu,
+                              const gameboy::MemoryBus& bus) {
+    const auto& r = cpu.registers();
+    std::cerr << "RESULT expected_registers=B=03,C=05,D=08,E=0d,H=15,L=22 "
+              << "observed_registers=B=" << std::hex << std::setw(2)
+              << static_cast<unsigned>(r.b) << ",C=" << std::setw(2)
+              << static_cast<unsigned>(r.c) << ",D=" << std::setw(2)
+              << static_cast<unsigned>(r.d) << ",E=" << std::setw(2)
+              << static_cast<unsigned>(r.e) << ",H=" << std::setw(2)
+              << static_cast<unsigned>(r.h) << ",L=" << std::setw(2)
+              << static_cast<unsigned>(r.l) << std::dec << '\n';
+    std::cerr << "RESULT wram_c000=" << std::hex << std::setfill('0');
+    for (std::uint16_t address = 0xC000; address < 0xC020; ++address) {
+        std::cerr << std::setw(2)
+                  << static_cast<unsigned>(bus.read8(address));
+    }
+    std::cerr << std::dec << '\n';
 }
 
 void print_recent_pcs(const std::array<std::uint16_t, 64>& pcs,
@@ -236,6 +262,40 @@ void print_audio_diagnostics(const gameboy::MemoryBus& bus) {
               << static_cast<unsigned>(bus.read8(0xFF77)) << std::dec << '\n';
 }
 
+void write_apu_trace(std::ofstream& output, const gameboy::Cpu& cpu,
+                     const gameboy::MemoryBus& bus) {
+    const auto& r = cpu.registers();
+    output << "cycle=" << cpu.total_cycles() << " pc=" << std::hex
+           << std::setw(4) << std::setfill('0') << r.pc
+           << " div=" << std::setw(2) << static_cast<unsigned>(bus.read8(0xFF04))
+           << " nr10_26=";
+    for (std::uint16_t address = 0xFF10; address <= 0xFF26; ++address) {
+        output << std::setw(2) << static_cast<unsigned>(bus.read8(address));
+    }
+    output << " pcm12=" << std::setw(2)
+           << static_cast<unsigned>(bus.read8(0xFF76))
+           << " pcm34=" << std::setw(2)
+           << static_cast<unsigned>(bus.read8(0xFF77)) << std::dec << '\n';
+}
+
+void write_ppu_trace(std::ofstream& output, const gameboy::Cpu& cpu,
+                     const gameboy::MemoryBus& bus) {
+    const auto& r = cpu.registers();
+    output << "cycle=" << cpu.total_cycles() << " pc=" << std::hex
+           << std::setw(4) << std::setfill('0') << r.pc
+           << " lcdc=" << std::setw(2) << static_cast<unsigned>(bus.read8(0xFF40))
+           << " stat=" << std::setw(2) << static_cast<unsigned>(bus.read8(0xFF41))
+           << " ly=" << std::setw(2) << static_cast<unsigned>(bus.read8(0xFF44))
+           << " lyc=" << std::setw(2) << static_cast<unsigned>(bus.read8(0xFF45))
+           << " scy=" << std::setw(2) << static_cast<unsigned>(bus.read8(0xFF42))
+           << " scx=" << std::setw(2) << static_cast<unsigned>(bus.read8(0xFF43))
+           << " wy=" << std::setw(2) << static_cast<unsigned>(bus.read8(0xFF4A))
+           << " wx=" << std::setw(2) << static_cast<unsigned>(bus.read8(0xFF4B))
+           << " vbk=" << std::setw(2) << static_cast<unsigned>(bus.read8(0xFF4F))
+           << " if=" << std::setw(2) << static_cast<unsigned>(bus.read8(0xFF0F))
+           << std::dec << '\n';
+}
+
 bool contains_failure(const std::string& output) {
     return output.find("Failed") != std::string::npos ||
            output.find("FAILED") != std::string::npos ||
@@ -284,6 +344,30 @@ int main(int argc, char** argv) {
         // pass without executing the test.
         auto emulator = gameboy::Emulator{
             gameboy::Cartridge{std::move(rom)}, options.model};
+        std::ofstream apu_trace;
+        std::ofstream ppu_trace;
+        if (!options.apu_trace_output.empty()) {
+            if (options.apu_trace_output.has_parent_path()) {
+                std::filesystem::create_directories(
+                    options.apu_trace_output.parent_path());
+            }
+            apu_trace.open(options.apu_trace_output,
+                           std::ios::out | std::ios::trunc);
+            if (!apu_trace) throw std::runtime_error(
+                "could not open APU trace: " + options.apu_trace_output.string());
+            apu_trace << "trace_version=1 kind=apu\n";
+        }
+        if (!options.ppu_trace_output.empty()) {
+            if (options.ppu_trace_output.has_parent_path()) {
+                std::filesystem::create_directories(
+                    options.ppu_trace_output.parent_path());
+            }
+            ppu_trace.open(options.ppu_trace_output,
+                           std::ios::out | std::ios::trunc);
+            if (!ppu_trace) throw std::runtime_error(
+                "could not open PPU trace: " + options.ppu_trace_output.string());
+            ppu_trace << "trace_version=1 kind=ppu\n";
+        }
         emulator.set_dmg_compatibility_colors(options.dmg_compatibility_colors);
         std::string serial_output;
         std::string memory_output;
@@ -364,6 +448,7 @@ int main(int argc, char** argv) {
                     std::cerr << "Last low ROM PC=" << std::hex
                               << last_low_rom_pc << std::dec << '\n';
                     print_hram_head(emulator.bus());
+                    print_result_diagnostics(emulator.cpu(), emulator.bus());
                     print_video_diagnostics(emulator.bus());
                     print_audio_diagnostics(emulator.bus());
                     return EXIT_FAILURE;
@@ -376,6 +461,10 @@ int main(int argc, char** argv) {
             recent_pc_count = std::min(recent_pc_count + 1,
                                        recent_pcs.size());
             static_cast<void>(emulator.step());
+            if (apu_trace) write_apu_trace(apu_trace, emulator.cpu(),
+                                           emulator.bus());
+            if (ppu_trace) write_ppu_trace(ppu_trace, emulator.cpu(),
+                                           emulator.bus());
             if (captures_frame && emulator.frame_ready()) {
                 ++completed_frames;
                 if (completed_frames == options.frames) {
@@ -414,6 +503,7 @@ int main(int argc, char** argv) {
                 print_state(emulator.cpu());
                 print_recent_pcs(recent_pcs, recent_pc_next, recent_pc_count);
                 print_hram_head(emulator.bus());
+                print_result_diagnostics(emulator.cpu(), emulator.bus());
                 print_video_diagnostics(emulator.bus());
                 print_audio_diagnostics(emulator.bus());
                 return EXIT_FAILURE;
@@ -444,6 +534,7 @@ int main(int argc, char** argv) {
         // this exposes their last observed value instead of leaving a timeout
         // indistinguishable from a harness hang.
         print_hram_head(emulator.bus());
+        print_result_diagnostics(emulator.cpu(), emulator.bus());
         print_video_diagnostics(emulator.bus());
         print_audio_diagnostics(emulator.bus());
         return 2;

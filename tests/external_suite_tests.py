@@ -86,6 +86,14 @@ class ExternalSuiteDiscoveryTests(unittest.TestCase):
             "TIMEOUT after reaching the cycle limit",
         )
 
+    def test_runner_summary_includes_structured_result_state(self) -> None:
+        output = ("FAIL (Mooneye result registers)\n"
+                  "RESULT expected_registers=B=03,C=05,D=08,E=0d,H=15,L=22 "
+                  "observed_registers=B=42,C=42,D=42,E=42,H=42,L=42\n")
+        summary = MODULE.summarize_runner_output(output, 1)
+        self.assertIn("expected_registers=B=03", summary)
+        self.assertIn("observed_registers=B=42", summary)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -386,6 +386,19 @@ selects the actionable result line for the summary table. This makes timing
 failures distinguishable from timeouts and preserves the register/video/audio
 state printed by the runner for the next accuracy investigation.
 
+For a focused timing investigation, the runner can emit one record after each
+CPU step. `--trace-apu PATH` records the APU registers, divider, PCM12/PCM34,
+and program counter; `--trace-ppu PATH` records LCDC/STAT, LY/LYC, scroll and
+window positions, VRAM bank, IF, and the program counter. The same ROM can be
+run through `scripts/differential_test.py` with two runner-compatible
+executables to compare result status, traces, or `--frame` output and produce
+a PPM difference image.
+
+Machine-test failures also include a structured `RESULT` record with the
+expected and observed Mooneye registers plus the first result-buffer bytes.
+This is especially useful for AGE ROMs, whose detailed observations are left
+in memory rather than sent over serial.
+
 Window comparator positions are normalized at the visible left edge for
 `WX<7`, including writes made while the current window tile is still queued.
 The core suite now exercises every `WX=1..6` value with a distinct first-tile

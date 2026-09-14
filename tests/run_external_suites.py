@@ -208,11 +208,20 @@ def discover_cases(
 def summarize_runner_output(output: str, returncode: int) -> str:
     """Keep the actionable result line in the table and full output in a log."""
     lines = [line.strip() for line in output.splitlines() if line.strip()]
+    result_lines = [line for line in lines if line.startswith("RESULT ")]
+    summary = ""
     for marker in ("PASS (", "FAIL (", "TIMEOUT", "Error:"):
         for line in lines:
             if marker in line:
-                return line[line.index(marker):][:180]
-    return lines[-1][:180] if lines else f"exit code {returncode}"
+                summary = line[line.index(marker):][:180]
+                break
+        if summary:
+            break
+    if not summary:
+        summary = lines[-1][:180] if lines else f"exit code {returncode}"
+    if result_lines and not summary.startswith("PASS ("):
+        summary = f"{summary} | {'; '.join(result_lines)}"
+    return summary[:500]
 
 
 def run_case(case: Case, runner: Path, output_dir: Path) -> Case:
@@ -248,6 +257,8 @@ def run_case(case: Case, runner: Path, output_dir: Path) -> Case:
         partial = ""
         if isinstance(error.stdout, str):
             partial = error.stdout
+        elif isinstance(error.stdout, bytes):
+            partial = error.stdout.decode(errors="replace")
         log_path.write_text(partial, encoding="utf-8")
         return Case(**{**case.__dict__, "status": "timeout",
                        "detail": f"TIMEOUT (log: {log_path.name})"})
