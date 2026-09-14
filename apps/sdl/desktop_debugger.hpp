@@ -6,6 +6,7 @@
 #include "gameboy/emulator.hpp"
 #include "gameboy/ppu.hpp"
 #include "desktop_breakpoints.hpp"
+#include "desktop_disassembler.hpp"
 #include "input_movie.hpp"
 #include "tool_window_support.hpp"
 #include "window_event.hpp"
@@ -94,10 +95,10 @@ public:
             close();
             return;
         }
-        window_ = SDL_CreateWindow("Go Bigger Boy - Debugger", 920, 760,
+        window_ = SDL_CreateWindow("Go Bigger Boy - Debugger", 1280, 900,
                                    SDL_WINDOW_RESIZABLE);
         if (window_ == nullptr) throw_sdl_error("Could not create debugger window");
-        static_cast<void>(SDL_SetWindowMinimumSize(window_, 920, 720));
+        static_cast<void>(SDL_SetWindowMinimumSize(window_, 1180, 820));
         renderer_ = SDL_CreateRenderer(window_, nullptr);
         if (renderer_ == nullptr) {
             close();
@@ -168,6 +169,24 @@ public:
                     const auto maximum = register_width(*editing_);
                     if (edit_value_.size() < maximum) edit_value_ += *digit;
                 }
+            } else if (event.key.key == SDLK_UP || event.key.key == SDLK_DOWN ||
+                       event.key.key == SDLK_PAGEUP ||
+                       event.key.key == SDLK_PAGEDOWN) {
+                disassembly_follow_pc_ = false;
+                const auto count = event.key.key == SDLK_PAGEUP ||
+                                           event.key.key == SDLK_PAGEDOWN
+                                       ? 10U
+                                       : 1U;
+                for (unsigned index = 0; index < count; ++index) {
+                    if (event.key.key == SDLK_UP ||
+                        event.key.key == SDLK_PAGEUP) {
+                        disassembly_start_ = previous_instruction_address(
+                            emulator, disassembly_start_);
+                    } else {
+                        disassembly_start_ = next_instruction_address(
+                            emulator, disassembly_start_);
+                    }
+                }
             } else if (event.key.key == SDLK_TAB) {
                 focus_index_ = cycle_tool_focus(
                     focus_index_, 10, (event.key.mod & SDL_KMOD_SHIFT) != 0);
@@ -200,6 +219,31 @@ public:
             } else if (event.key.key == SDLK_F9) {
                 sprite_requested_ = true;
             }
+        } else if (event.type == SDL_EVENT_MOUSE_WHEEL) {
+            float mouse_x = 0.0F;
+            float mouse_y = 0.0F;
+            static_cast<void>(SDL_GetMouseState(&mouse_x, &mouse_y));
+            int width = 0;
+            int height = 0;
+            static_cast<void>(SDL_GetWindowSize(window_, &width, &height));
+            const auto panel = disassembly_panel(width, height);
+            if (mouse_x >= panel.x && mouse_x <= panel.x + panel.w &&
+                mouse_y >= panel.y && mouse_y <= panel.y + panel.h) {
+                disassembly_follow_pc_ = false;
+                const auto steps = event.wheel.y > 0 ? 4 : -4;
+                if (emulator != nullptr) {
+                    for (int index = 0;
+                         index < (steps > 0 ? steps : -steps); ++index) {
+                        disassembly_start_ =
+                            steps > 0
+                                ? previous_instruction_address(
+                                      emulator, disassembly_start_)
+                                : next_instruction_address(
+                                      emulator, disassembly_start_);
+                    }
+                }
+                return true;
+            }
         } else if (event.type == SDL_EVENT_MOUSE_BUTTON_UP &&
                    event.button.button == SDL_BUTTON_LEFT) {
             int width = 0;
@@ -215,8 +259,30 @@ public:
             const auto movie_y = static_cast<float>(height - 106);
             const auto breakpoint_y = static_cast<float>(height - 154);
             const auto x = event.button.x;
-            const auto register_x =
-                std::max(530.0F, static_cast<float>(width) - 350.0F);
+            const auto register_x = register_panel_x(width);
+            const auto panel = disassembly_panel(width, height);
+            if (emulator != nullptr &&
+                event.button.x >= panel.x &&
+                event.button.x <= panel.x + panel.w &&
+                event.button.y >= panel.y + 34.0F &&
+                event.button.y < panel.y + 34.0F +
+                                     disassembly_line_count * disassembly_line_height) {
+                const auto disassembly = disassemble(
+                    emulator->bus(),
+                    disassembly_follow_pc_
+                        ? emulator->cpu().registers().pc
+                        : disassembly_start_,
+                    disassembly_line_count);
+                const auto index = static_cast<std::size_t>(
+                    (event.button.y - panel.y - 34.0F) /
+                    disassembly_line_height);
+                if (index < disassembly.size()) {
+                    disassembly_follow_pc_ = false;
+                    disassembly_start_ = disassembly[index].address;
+                    static_cast<void>(toggle_breakpoint(disassembly[index].address));
+                    return true;
+                }
+            }
             if (emulator != nullptr && execution_paused_) {
                 if (const auto selected = register_at(
                         event.button.x, event.button.y, register_x)) {
@@ -336,7 +402,7 @@ public:
             static_cast<void>(SDL_SetRenderDrawColor(renderer_, 230, 249, 255, 255));
             render_tool_text(renderer_, x, y, value.c_str());
         };
-        const auto register_x = std::max(530.0F, static_cast<float>(width) - 350.0F);
+        const auto register_x = register_panel_x(width);
         text(register_x, 72, "CPU REGISTERS");
         text(register_x, 86, execution_paused_
                                  ? "CLICK A VALUE TO EDIT"
@@ -407,6 +473,53 @@ public:
         text(register_x, 574,
              "IF   " + hex8(bus.read8(0xFF0F)) +
                  "  IE   " + hex8(bus.read8(0xFFFF)));
+        const auto disassembly_panel_rect = disassembly_panel(width, height);
+        static_cast<void>(SDL_SetRenderDrawColor(renderer_, 12, 20, 30, 255));
+        static_cast<void>(SDL_RenderFillRect(renderer_, &disassembly_panel_rect));
+        static_cast<void>(SDL_SetRenderDrawColor(renderer_, 34, 91, 111, 255));
+        static_cast<void>(SDL_RenderRect(renderer_, &disassembly_panel_rect));
+        text(disassembly_panel_rect.x + 12.0F,
+             disassembly_panel_rect.y + 10.0F, "DISASSEMBLY");
+        text(disassembly_panel_rect.x + 12.0F,
+             disassembly_panel_rect.y + 24.0F,
+             disassembly_follow_pc_ ? "FOLLOWING PC  (ARROWS TO SCROLL)"
+                                    : "SCROLLED  (CLICK ROW FOR BREAKPOINT)");
+        const auto start_address = disassembly_follow_pc_
+                                       ? r.pc
+                                       : disassembly_start_;
+        const auto lines = disassemble(bus, start_address,
+                                       disassembly_line_count);
+        for (std::size_t index = 0; index < lines.size(); ++index) {
+            const auto& line = lines[index];
+            const auto row_y = disassembly_panel_rect.y + 34.0F +
+                               static_cast<float>(index) *
+                                   disassembly_line_height;
+            const SDL_FRect row{disassembly_panel_rect.x + 4.0F, row_y,
+                                disassembly_panel_rect.w - 8.0F,
+                                disassembly_line_height - 2.0F};
+            if (line.address == r.pc) {
+                static_cast<void>(SDL_SetRenderDrawColor(renderer_, 20, 77, 101, 255));
+                static_cast<void>(SDL_RenderFillRect(renderer_, &row));
+            }
+            if (breakpoint_at(line.address)) {
+                static_cast<void>(SDL_SetRenderDrawColor(renderer_, 238, 100, 110, 255));
+                const SDL_FRect marker{row.x, row.y, 3.0F, row.h};
+                static_cast<void>(SDL_RenderFillRect(renderer_, &marker));
+            }
+            text(disassembly_panel_rect.x + 12.0F, row_y + 4.0F,
+                 hex16(line.address));
+            text(disassembly_panel_rect.x + 66.0F, row_y + 4.0F,
+                 disassembly_bytes(line));
+            auto instruction_text = line.text;
+            const auto available = static_cast<std::size_t>(
+                std::max(12.0F, (disassembly_panel_rect.w - 150.0F) / 8.0F));
+            if (instruction_text.size() > available) {
+                instruction_text.resize(available - 1);
+                instruction_text += '~';
+            }
+            text(disassembly_panel_rect.x + 150.0F, row_y + 4.0F,
+                 instruction_text);
+        }
         const auto breakpoint_y = static_cast<float>(height - 154);
         text(24, breakpoint_y - 20,
              "BREAKPOINTS " + std::to_string(breakpoint_count()) +
@@ -454,6 +567,43 @@ public:
     }
 
 private:
+    static constexpr std::size_t disassembly_line_count = 20;
+    static constexpr float disassembly_line_height = 24.0F;
+
+    [[nodiscard]] static SDL_FRect disassembly_panel(const int width,
+                                                     const int height) noexcept {
+        const auto x = std::max(760.0F, static_cast<float>(width) - 440.0F);
+        const auto bottom = static_cast<float>(height - 174);
+        return {x, 64.0F, static_cast<float>(width) - x - 24.0F,
+                std::max(120.0F, bottom - 64.0F)};
+    }
+
+    [[nodiscard]] static float register_panel_x(const int width) noexcept {
+        const auto disassembly_x = disassembly_panel(width, 820).x;
+        return std::max(530.0F,
+                        std::min(static_cast<float>(width) - 350.0F,
+                                 disassembly_x - 290.0F));
+    }
+
+    [[nodiscard]] std::uint16_t previous_instruction_address(
+        gameboy::Emulator* emulator, const std::uint16_t address) const noexcept {
+        if (emulator == nullptr || address == 0) return address;
+        const auto& bus = emulator->bus();
+        for (std::uint16_t distance = 1; distance <= 3; ++distance) {
+            const auto candidate = static_cast<std::uint16_t>(address - distance);
+            const auto instruction = disassemble_instruction(bus, candidate);
+            if (instruction.length == distance) return candidate;
+        }
+        return static_cast<std::uint16_t>(address - 1);
+    }
+
+    [[nodiscard]] std::uint16_t next_instruction_address(
+        gameboy::Emulator* emulator, const std::uint16_t address) const noexcept {
+        if (emulator == nullptr) return address;
+        const auto instruction = disassemble_instruction(emulator->bus(), address);
+        return static_cast<std::uint16_t>(address + instruction.length);
+    }
+
     [[nodiscard]] SDL_FRect focused_rect(const int width,
                                           const int height) const noexcept {
         if (focus_index_ == 0) return tool_close_button_rect(width);
@@ -622,6 +772,8 @@ private:
     bool sprite_requested_{};
     int focus_index_{6};
     DesktopBreakpoints breakpoints_;
+    std::uint16_t disassembly_start_{0x0100};
+    bool disassembly_follow_pc_{true};
     std::optional<RegisterTarget> editing_;
     std::string edit_value_;
     bool replace_on_type_{true};
