@@ -73,6 +73,8 @@ constexpr int id_link_lan_discovery = 125;
 constexpr int id_link_bluetooth_address = 126;
 constexpr int id_link_bluetooth_uuid = 127;
 constexpr int id_link_diagnostics = 128;
+constexpr int id_settings_apply = 129;
+constexpr int id_settings_cancel = 132;
 constexpr int id_binding_first = 200;
 constexpr int id_action_first = 220;
 constexpr UINT artwork_ready = WM_APP + 1;
@@ -177,6 +179,9 @@ struct State {
     HWND remove{};
     HWND palette{};
     HWND settings_heading{};
+    HWND settings_status{};
+    HWND settings_apply{};
+    HWND settings_cancel{};
     HWND palette_label{};
     HWND video_label{};
     HWND video{};
@@ -240,6 +245,7 @@ struct State {
     std::wstring plugin_status_text;
     std::uint64_t voxel_fingerprint{};
     gbb::VoxelProfile voxel_profile{};
+    gbb::VoxelProfile initial_voxel_profile{};
     DashboardLinkSettings initial_link_settings;
     std::thread artwork_worker;
     std::atomic_bool closing{};
@@ -247,6 +253,7 @@ struct State {
     std::atomic_size_t artwork_completed{};
     std::atomic_size_t artwork_failed{};
     std::size_t artwork_total{};
+    DashboardResult initial_result;
     std::wstring library_filter;
     int library_sort_column{4};
     bool library_sort_descending{true};
@@ -989,6 +996,9 @@ void show_page(State& state, const State::Page page) {
     ShowWindow(state.remove, library ? SW_SHOW : SW_HIDE);
     ShowWindow(state.resume, library && state.can_resume ? SW_SHOW : SW_HIDE);
     ShowWindow(state.settings_heading, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.settings_status, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.settings_apply, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.settings_cancel, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.palette_label, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.palette, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.video_label, settings ? SW_SHOW : SW_HIDE);
@@ -1251,6 +1261,9 @@ void layout_dashboard(State& state) {
     SetScrollInfo(state.window, SB_VERT, &scroll, TRUE);
     const auto offset = state.settings_scroll;
     place_child(state.settings_heading, 32, 200, 360, 30, offset);
+    place_child(state.settings_status, 510, 112, 440, 20, 0);
+    place_child(state.settings_apply, 650, 140, 140, 40, 0);
+    place_child(state.settings_cancel, 802, 140, 126, 40, 0);
     place_child(state.palette_label, 32, 245, 110, 26, offset);
     place_child(state.palette, 154, 240, 290, 26, offset);
     place_child(state.video_label, 32, 275, 110, 26, offset);
@@ -1343,8 +1356,10 @@ void scroll_settings(State& state, const int wheel_delta) {
 }
 
 void finish(State& state, const DashboardResultAction action,
-            const std::string& path = {}) {
-    if (state.link_transport != nullptr) collect_link_settings(state);
+            const std::string& path = {}, const bool collect_settings = true) {
+    if (collect_settings && state.link_transport != nullptr) {
+        collect_link_settings(state);
+    }
     save_window_position(state);
     state.result.action = action;
     state.result.rom_path = path;
@@ -1354,6 +1369,23 @@ void finish(State& state, const DashboardResultAction action,
     state.done = true;
     if (state.window != nullptr) KillTimer(state.window, update_poll_timer);
     DestroyWindow(state.window);
+}
+
+void cancel_settings(State& state) {
+    const auto restore_voxel = state.result.voxel_profile_changed;
+    if (restore_voxel && state.voxel_available && state.voxel_fingerprint != 0 &&
+        !gbb::save_voxel_profile(state.voxel_profile_path,
+                                 state.voxel_fingerprint,
+                                 state.initial_voxel_profile)) {
+        MessageBoxW(state.window, L"Could not restore the previous voxel profile.",
+                    L"Cancel settings", MB_OK | MB_ICONERROR);
+        return;
+    }
+    state.result = state.initial_result;
+    state.voxel_profile = state.initial_voxel_profile;
+    finish(state, state.can_resume ? DashboardResultAction::resume
+                                   : DashboardResultAction::quit,
+           {}, false);
 }
 
 void play_selection(State& state) {
@@ -1749,6 +1781,13 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                 return 0;
             }
             state->result.voxel_profile_changed = true;
+            return 0;
+        case id_settings_apply:
+            finish(*state, state->can_resume ? DashboardResultAction::resume
+                                              : DashboardResultAction::quit);
+            return 0;
+        case id_settings_cancel:
+            cancel_settings(*state);
             return 0;
         default: break;
         }
@@ -2347,6 +2386,7 @@ DashboardResult show_windows_dashboard(
                                    : preference_directory / "voxel-profiles.ini";
     state.voxel_profile = gbb::load_voxel_profile(state.voxel_profile_path,
                                                    current_fingerprint);
+    state.initial_voxel_profile = state.voxel_profile;
     state.result.palette = palette;
     state.result.video_mode = video_mode;
     state.result.hardware_model = hardware_model;
@@ -2361,6 +2401,7 @@ DashboardResult show_windows_dashboard(
         plugin_options.require_capability_allowlist;
     state.plugin_options = plugin_options;
     state.plugin_status_text = plugin_status_text(plugin_options, plugin_catalog);
+    state.initial_result = state.result;
     state.preference_directory = preference_directory;
     state.poll_update = poll_update;
     const auto saved_position = load_window_position(preference_directory);
@@ -2423,6 +2464,15 @@ DashboardResult show_windows_dashboard(
     state.shortcuts_tab = control(state, L"BUTTON", L"Shortcuts",
                                   WS_VISIBLE | BS_PUSHBUTTON,
                                   316, 140, 126, 40, id_shortcuts);
+    state.settings_status = control(
+        state, L"STATIC", L"Settings apply when you click Apply & Close.",
+        WS_VISIBLE, 510, 112, 440, 20, 0);
+    state.settings_apply = control(
+        state, L"BUTTON", L"Apply & Close", BS_DEFPUSHBUTTON,
+        650, 140, 140, 40, id_settings_apply);
+    state.settings_cancel = control(
+        state, L"BUTTON", L"Cancel", BS_PUSHBUTTON,
+        802, 140, 126, 40, id_settings_cancel);
     state.artwork_status = control(
         state, L"STATIC", L"Artwork: loading...", WS_VISIBLE,
         32, 180, 916, 20, 0);

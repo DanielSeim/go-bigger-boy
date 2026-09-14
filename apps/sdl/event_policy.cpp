@@ -67,6 +67,7 @@ void process_events(SdlEventContext& context) {
         [&](const SDL_Event& event) {
 #ifndef __ANDROID__
         if (handle_desktop_dialog_event(event)) return;
+        if (handle_desktop_notification_event(event)) return;
 #endif
 #ifndef __ANDROID__
         if (handle_desktop_tool_event(event, context)) return;

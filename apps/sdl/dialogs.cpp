@@ -159,6 +159,28 @@ SDL_FRect dialog_choice_rect(const DialogGeometry& geometry,
             geometry.y + geometry.height - 62.0F, width, 38.0F};
 }
 
+SDL_FRect dialog_close_rect(const DialogGeometry& geometry) {
+    return {geometry.x + geometry.width - 126.0F,
+            geometry.y + geometry.height - 56.0F, 102.0F, 34.0F};
+}
+
+SDL_FRect notification_rect(SDL_Window* window, const std::string& message) {
+    int width = 0;
+    int height = 0;
+    static_cast<void>(SDL_GetWindowSize(window, &width, &height));
+    const auto panel_width = std::min(680.0F,
+                                      std::max(320.0F, width - 48.0F));
+    const auto lines = wrap_dialog_message(
+        message,
+        static_cast<std::size_t>(std::max(24.0F, (panel_width - 48.0F) / 8.0F)));
+    const auto visible_lines = std::min<std::size_t>(4, lines.size());
+    const auto panel_height = std::min(
+        180.0F, 74.0F + static_cast<float>(visible_lines) * 20.0F);
+    return {(static_cast<float>(width) - panel_width) * 0.5F,
+            static_cast<float>(height) - panel_height - 28.0F,
+            panel_width, panel_height};
+}
+
 #endif
 
 [[nodiscard]] std::string rom_filename_for_title(const std::string& path) {
@@ -509,7 +531,7 @@ void show_desktop_notification(SDL_Window* window, std::string message,
                                const bool warning) {
     if (window == nullptr || message.empty()) return;
     desktop_notifications()[window] = {
-        std::move(message), SDL_GetTicks() + 4000, warning};
+        std::move(message), SDL_GetTicks() + 6000, warning};
 }
 
 bool desktop_notification_visible(SDL_Window* window) noexcept {
@@ -532,21 +554,12 @@ void present_desktop_notification(SDL_Renderer* renderer, SDL_Window* window) {
         notifications.erase(found);
         return;
     }
-    int width = 0;
-    int height = 0;
-    static_cast<void>(SDL_GetWindowSize(window, &width, &height));
-    const auto panel_width = std::min(680.0F,
-                                      std::max(320.0F, width - 48.0F));
+    const auto panel = notification_rect(window, found->second.message);
+    const auto panel_width = panel.w;
     const auto lines = wrap_dialog_message(
         found->second.message,
         static_cast<std::size_t>(std::max(24.0F, (panel_width - 48.0F) / 8.0F)));
     const auto visible_lines = std::min<std::size_t>(4, lines.size());
-    const auto panel_height = std::min(
-        148.0F, 54.0F + static_cast<float>(visible_lines) * 20.0F);
-    const SDL_FRect panel{
-        (static_cast<float>(width) - panel_width) * 0.5F,
-        static_cast<float>(height) - panel_height - 28.0F,
-        panel_width, panel_height};
     static_cast<void>(SDL_SetRenderLogicalPresentation(
         renderer, 0, 0, SDL_LOGICAL_PRESENTATION_DISABLED));
     static_cast<void>(SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND));
@@ -565,7 +578,41 @@ void present_desktop_notification(SDL_Renderer* renderer, SDL_Window* window) {
                          panel.y + 34.0F + static_cast<float>(index) * 20.0F,
                          clipped ? "..." : lines[index].c_str());
     }
+    const SDL_FRect details{panel.x + panel.w - 96.0F,
+                            panel.y + panel.h - 34.0F, 78.0F, 24.0F};
+    static_cast<void>(SDL_SetRenderDrawColor(renderer, 20, 77, 101, 255));
+    static_cast<void>(SDL_RenderFillRect(renderer, &details));
+    static_cast<void>(SDL_SetRenderDrawColor(renderer, 69, 207, 238, 255));
+    static_cast<void>(SDL_RenderRect(renderer, &details));
+    static_cast<void>(SDL_SetRenderDrawColor(renderer, 177, 192, 208, 255));
+    render_tool_text(renderer, details.x + 12.0F, details.y + 7.0F, "DETAILS");
     static_cast<void>(SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE));
+}
+
+bool handle_desktop_notification_event(const SDL_Event& event) {
+    SDL_Window* window = nullptr;
+    for (const auto& [candidate, unused] : desktop_notifications()) {
+        if (event_window_id(event) == SDL_GetWindowID(candidate)) {
+            window = candidate;
+            break;
+        }
+    }
+    if (window == nullptr || event.type != SDL_EVENT_MOUSE_BUTTON_UP ||
+        event.button.button != SDL_BUTTON_LEFT) {
+        return false;
+    }
+    auto& notifications = desktop_notifications();
+    const auto found = notifications.find(window);
+    if (found == notifications.end()) return false;
+    const auto panel = notification_rect(window, found->second.message);
+    if (event.button.x < panel.x || event.button.x > panel.x + panel.w ||
+        event.button.y < panel.y || event.button.y > panel.y + panel.h) {
+        return false;
+    }
+    auto message = found->second.message;
+    notifications.erase(found);
+    open_desktop_text_dialog(window, "Notification details", std::move(message));
+    return true;
 }
 
 bool desktop_dialog_visible(SDL_Window* window) noexcept {
@@ -639,10 +686,18 @@ bool handle_desktop_dialog_event(const SDL_Event& event) {
         return true;
     }
     if (event.type == SDL_EVENT_MOUSE_BUTTON_UP &&
-        event.button.button == SDL_BUTTON_LEFT && !dialog.choices.empty()) {
+        event.button.button == SDL_BUTTON_LEFT) {
         const auto geometry = dialog_geometry(window);
         const auto x = event.button.x;
         const auto y = event.button.y;
+        if (dialog.choices.empty()) {
+            const auto close_rect = dialog_close_rect(geometry);
+            if (x >= close_rect.x && x <= close_rect.x + close_rect.w &&
+                y >= close_rect.y && y <= close_rect.y + close_rect.h) {
+                close();
+            }
+            return true;
+        }
         for (std::size_t index = 0; index < dialog.choices.size(); ++index) {
             const auto rect = dialog_choice_rect(geometry, index,
                                                  dialog.choices.size());
@@ -687,7 +742,7 @@ void present_desktop_dialog(SDL_Renderer* renderer, SDL_Window* window) {
     const auto lines = wrap_dialog_message(dialog.message, maximum);
     const auto content_top = geometry.y + 58.0F;
     const auto content_bottom = dialog.choices.empty()
-                                    ? geometry.y + geometry.height - 52.0F
+                                    ? geometry.y + geometry.height - 96.0F
                                     : geometry.y + geometry.height - 82.0F;
     const auto visible_lines = static_cast<std::size_t>(std::max(
         1.0F, (content_bottom - content_top) / 20.0F));
@@ -719,6 +774,14 @@ void present_desktop_dialog(SDL_Renderer* renderer, SDL_Window* window) {
             render_tool_text(renderer, rect.x + 10, rect.y + 10,
                              dialog.choices[index].c_str());
         }
+    } else {
+        const auto close = dialog_close_rect(geometry);
+        static_cast<void>(SDL_SetRenderDrawColor(renderer, 20, 77, 101, 255));
+        static_cast<void>(SDL_RenderFillRect(renderer, &close));
+        static_cast<void>(SDL_SetRenderDrawColor(renderer, 69, 207, 238, 255));
+        static_cast<void>(SDL_RenderRect(renderer, &close));
+        static_cast<void>(SDL_SetRenderDrawColor(renderer, 177, 192, 208, 255));
+        render_tool_text(renderer, close.x + 28, close.y + 10, "CLOSE");
     }
     static_cast<void>(SDL_SetRenderDrawColor(renderer, 137, 160, 183, 255));
     const auto footer = dialog.choices.empty()

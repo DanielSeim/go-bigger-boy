@@ -64,6 +64,12 @@ int main() {
         return 1;
     }
     input = active_input();
+    input.desktop_dialog_active = true;
+    if (!expect(input, EmulationMode::idle, 1)) {
+        std::cerr << "desktop dialog gate regression\n";
+        return 1;
+    }
+    input = active_input();
     input.configuring = true;
     if (!expect(input, EmulationMode::idle, 1)) {
         std::cerr << "binding configuration gate regression\n";

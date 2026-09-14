@@ -38,6 +38,7 @@ void show_lan_hosts(SDL_Window* window, const std::vector<gameboy::LanPeer>& pee
 void show_desktop_notification(SDL_Window* window, std::string message,
                                bool warning = false);
 [[nodiscard]] bool desktop_notification_visible(SDL_Window* window) noexcept;
+bool handle_desktop_notification_event(const SDL_Event& event);
 void present_desktop_notification(SDL_Renderer* renderer, SDL_Window* window);
 void open_desktop_controls_dialog(
     SDL_Window* window, const InputBindings& bindings,

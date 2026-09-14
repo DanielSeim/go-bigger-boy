@@ -29,6 +29,7 @@ struct EmulationPolicyInput final {
     bool cheat_visible{};
     bool cheat_fetching{};
     bool dialog_active{};
+    bool desktop_dialog_active{};
     bool rewind_requested{};
     bool local_link_active{};
     bool remote_transport_connected{};
@@ -53,7 +54,8 @@ struct EmulationPlan final {
     const EmulationPolicyInput& input) noexcept {
     if (!input.core_loaded || input.debugger_stepped || input.paused ||
         input.debugger_paused || input.dashboard_visible || input.configuring ||
-        input.cheat_visible || input.cheat_fetching || input.dialog_active) {
+        input.cheat_visible || input.cheat_fetching || input.dialog_active ||
+        input.desktop_dialog_active) {
         return {};
     }
 

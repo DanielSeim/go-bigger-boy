@@ -140,6 +140,9 @@ using gbb::sdl::present_link_status;
 using gbb::sdl::present_remote_link_status;
 using gbb::sdl::colorize_frame;
 using gbb::sdl::DialogState;
+#ifndef __ANDROID__
+using gbb::sdl::desktop_dialog_visible;
+#endif
 using gbb::sdl::confirm_discard_changes;
 using gbb::sdl::draw_tool_button_background;
 using gbb::sdl::button_order;
@@ -1394,9 +1397,9 @@ void present_dashboard(SdlResources& sdl,
         static_cast<void>(SDL_RenderDebugText(sdl.renderer, 153, 111, "v"));
     }
     static_cast<void>(SDL_RenderDebugText(
-        sdl.renderer, 13, 134,
-        filter.empty() ? "ENTER F1 HELP ESC"
-                       : "ENTER ESC CLEAR"));
+        sdl.renderer, 3, 134,
+        filter.empty() ? "ENTER O OPEN F1 ESC"
+                       : "ESC CLEAR O OPEN"));
 }
 #endif
 
@@ -2312,6 +2315,11 @@ int main(int argc, char** argv) {
                 cheat_visible,
                 cheat_fetching,
                 dialog_active(dialog),
+#ifndef __ANDROID__
+                desktop_dialog_visible(sdl.window),
+#else
+                false,
+#endif
                 rewind,
                 link_emulator != nullptr && link_session != nullptr,
                 remote_transport_connected,

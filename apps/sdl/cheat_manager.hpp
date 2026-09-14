@@ -322,10 +322,16 @@ public:
                 status += " " + std::to_string(percent) + "%";
             }
         }
-        text(24, 64, status, 177, 192, 208);
+        text(24, 64,
+             shortened(status, static_cast<std::size_t>(std::max(
+                 24, (width - 48) / 8))),
+             177, 192, 208);
         text(26, 82, "ON", 238, 249, 255);
         text(62, 82, "DESCRIPTION", 238, 249, 255);
-        text(static_cast<float>(width - 210), 82, "SOURCE", 238, 249, 255);
+        const auto source_x = width - 210;
+        const auto description_max = static_cast<std::size_t>(std::max(
+            12, (source_x - 74) / 8));
+        text(static_cast<float>(source_x), 82, "SOURCE", 238, 249, 255);
         for (std::size_t row = 0; row < visible_rows_; ++row) {
             const auto index = scroll_ + row;
             if (index >= cheats_.size()) break;
@@ -340,9 +346,10 @@ public:
                  cheats_[index].enabled ? 69 : 177,
                  cheats_[index].enabled ? 207 : 192,
                  cheats_[index].enabled ? 238 : 208);
-            text(62, y + 9, shortened(cheats_[index].description, 64),
+            text(62, y + 9,
+                 shortened(cheats_[index].description, description_max),
                  238, 249, 255);
-            text(static_cast<float>(width - 210), y + 9,
+            text(static_cast<float>(source_x), y + 9,
                  cheats_[index].from_archive ? "LIBRETRO" : "MANUAL",
                  177, 192, 208);
         }
