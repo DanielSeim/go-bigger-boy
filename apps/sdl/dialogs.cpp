@@ -436,6 +436,9 @@ void show_help(SDL_Window* window, const InputBindings& bindings) {
         "F11: Toggle fullscreen\n"
         "F1: Show this help\n"
         "Escape: Quit\n\n"
+        "Shortcut notes: F11 toggles fullscreen in the game window but steps "
+        "one frame in the debugger. F12 opens the debugger in the game window "
+        "and closes it inside the debugger.\n\n"
         "Game Boy Printer pages are saved automatically as BMP images.\n"
         "Game Boy Camera cartridges use the first available webcam.\n"
         "Rumble cartridges vibrate the connected gamepad when supported.";

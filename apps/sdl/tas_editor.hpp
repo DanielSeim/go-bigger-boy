@@ -242,6 +242,14 @@ class TasEditor {
             int width = 0;
             int height = 0;
             static_cast<void>(SDL_GetWindowSize(window_, &width, &height));
+            if (tool_close_button_hit(width, height, event.button.x,
+                                      event.button.y)) {
+                if (!has_unsaved_changes() ||
+                    confirm_discard_changes(window_, "Discard unsaved TAS changes?")) {
+                    close();
+                }
+                return true;
+            }
             if (event.button.x < 144.0F &&
                 select_row(event.button.y, height)) {
                 return true;
@@ -303,6 +311,7 @@ class TasEditor {
         static_cast<void>(SDL_RenderClear(renderer_));
         static_cast<void>(SDL_SetRenderDrawColor(renderer_, 69, 207, 238, 255));
         render_tool_text(renderer_, 24, 18, "TAS FRAME INPUT EDITOR");
+        draw_tool_close_button(renderer_, window_, width);
         const auto title = std::string("Go Bigger Boy - TAS Input Editor") +
                            (has_unsaved_changes() ? " *" : "");
         static_cast<void>(SDL_SetWindowTitle(window_, title.c_str()));

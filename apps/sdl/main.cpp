@@ -1356,10 +1356,12 @@ void present_dashboard(SdlResources& sdl,
     static_cast<void>(SDL_RenderDebugText(sdl.renderer, 13, 5,
                                           "GO BIGGER BOY"));
     static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 177, 192, 208, 255));
-    const auto filter_label = std::string{"FILTER: "} +
-                              (filter.empty()
-                                   ? std::string{"type..."}
-                                   : dashboard_text(filter, 12));
+    const auto filter_label = !can_resume && recent.empty()
+                                  ? std::string{"START: O OPEN ROM"}
+                                  : std::string{"FILTER: "} +
+                                        (filter.empty()
+                                             ? std::string{"type..."}
+                                             : dashboard_text(filter, 12));
     static_cast<void>(SDL_RenderDebugText(sdl.renderer, 13, 18,
                                           dashboard_text(filter_label, 18).c_str()));
     static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 69, 207, 238, 255));
@@ -1397,8 +1399,8 @@ void present_dashboard(SdlResources& sdl,
         static_cast<void>(SDL_RenderDebugText(sdl.renderer, 153, 111, "v"));
     }
     static_cast<void>(SDL_RenderDebugText(
-        sdl.renderer, 3, 134,
-        filter.empty() ? "ENTER O OPEN F1 ESC"
+        sdl.renderer, 0, 134,
+        filter.empty() ? "ENTER SELECT  O OPEN"
                        : "ESC CLEAR O OPEN"));
 }
 #endif

@@ -254,6 +254,7 @@ struct State {
     std::atomic_size_t artwork_failed{};
     std::size_t artwork_total{};
     DashboardResult initial_result;
+    bool settings_dirty{};
     std::wstring library_filter;
     int library_sort_column{4};
     bool library_sort_descending{true};
@@ -383,6 +384,14 @@ void collect_link_settings(State& state) {
         state.result.link_settings, state.initial_link_settings);
 }
 
+void mark_settings_dirty(State& state) {
+    state.settings_dirty = true;
+    if (state.settings_status != nullptr) {
+        SetWindowTextW(state.settings_status,
+                       L"Unsaved changes. Click Apply & Close to keep them.");
+    }
+}
+
 void update_link_control_state(State& state) {
     const auto bluetooth = SendMessageW(
         state.link_transport, CB_GETCURSEL, 0, 0) == 1;
@@ -440,8 +449,8 @@ std::wstring shortcuts_text(const State& state) {
         L"Ctrl+P: Choose the display palette\r\n"
         L"Ctrl+G: Open the GameShark cheat manager\r\n"
         L"Ctrl+1 through Ctrl+9: Open a recent ROM\r\n"
-        L"F11: Toggle fullscreen\r\n"
-        L"F12: Open or close the debugger\r\n"
+        L"F11: Toggle fullscreen in the game window\r\n"
+        L"F12: Open or close the debugger from the game window\r\n"
         L"Escape: Close with confirmation\r\n"
         L"\r\nDEBUGGER\r\n"
         L"F5: Run or pause\r\n"
@@ -450,7 +459,7 @@ std::wstring shortcuts_text(const State& state) {
         L"F8: Open the TAS frame editor\r\n"
         L"F9: Open the live sprite editor\r\n"
         L"F10: Step one CPU instruction\r\n"
-        L"F11: Step one frame\r\n"
+        L"F11: Step one frame (debugger only)\r\n"
         L"F12 or Escape: Close the debugger\r\n"
         L"Click a CPU register: Edit its hexadecimal value\r\n"
         L"\r\nTAS FRAME EDITOR\r\n"
@@ -729,6 +738,7 @@ void assign_captured_binding(State& state, const SDL_Keycode key) {
         state.result.keyboard_bindings_changed = true;
     }
     state.capturing_binding.reset();
+    mark_settings_dirty(state);
     SetWindowTextW(state.controls_instruction,
                    L"Click a binding, then press a key. Delete clears a binding.");
     refresh_binding_buttons(state);
@@ -1559,6 +1569,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                 state->controls_instruction,
                 L"Binding removed. Click another binding to continue.");
             refresh_binding_buttons(*state);
+            mark_settings_dirty(*state);
             return 0;
         }
         const auto key = keycode_from_windows(wparam, lparam);
@@ -1603,6 +1614,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
             const auto editing = index == 7 ? notification == BN_CLICKED
                                             : notification == EN_CHANGE;
             if (editing && read_voxel_profile_controls(*state)) {
+                mark_settings_dirty(*state);
                 invalidate_voxel_preview(*state);
             }
             return 0;
@@ -1652,6 +1664,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                 state->result.keyboard_bindings_changed = true;
                 state->result.action_bindings_changed = true;
                 state->capturing_binding.reset();
+                mark_settings_dirty(*state);
                 SetWindowTextW(state->controls_instruction,
                                L"All controls and shortcuts restored to defaults.");
                 refresh_binding_buttons(*state);
@@ -1664,6 +1677,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                 if (selected >= 0) {
                     state->result.palette = static_cast<std::size_t>(selected);
                     state->result.palette_changed = true;
+                    mark_settings_dirty(*state);
                 }
             }
             return 0;
@@ -1676,6 +1690,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                     state->result.video_mode = gameboy::video_modes[
                         static_cast<std::size_t>(selected)].mode;
                     state->result.video_mode_changed = true;
+                    mark_settings_dirty(*state);
                 }
             }
             return 0;
@@ -1692,6 +1707,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                     if (model != state->result.hardware_model) {
                         state->result.hardware_model = model;
                         state->result.hardware_model_changed = true;
+                        mark_settings_dirty(*state);
                         MessageBoxW(
                             state->window,
                             L"Hardware model changed. Restart the ROM to apply it.",
@@ -1706,11 +1722,13 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                     SendMessageW(state->audio_enabled, BM_GETCHECK, 0, 0) ==
                     BST_CHECKED;
                 state->result.audio_enabled_changed = true;
+                mark_settings_dirty(*state);
             }
             return 0;
         case id_link_transport:
             if (HIWORD(wparam) == CBN_SELCHANGE) {
                 update_link_control_state(*state);
+                mark_settings_dirty(*state);
             }
             return 0;
         case id_plugin_discovery:
@@ -1719,6 +1737,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                     SendMessageW(state->plugin_discovery, BM_GETCHECK, 0, 0) ==
                     BST_CHECKED;
                 state->result.plugin_settings_changed = true;
+                mark_settings_dirty(*state);
                 SetWindowTextW(
                     state->plugin_status,
                     L"Plugin setting changed. Restart the emulator to reload plugins.");
@@ -1730,6 +1749,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                     SendMessageW(state->plugin_require_allowlist, BM_GETCHECK,
                                  0, 0) == BST_CHECKED;
                 state->result.plugin_settings_changed = true;
+                mark_settings_dirty(*state);
                 SetWindowTextW(
                     state->plugin_status,
                     L"Plugin trust policy changed. Restart the emulator to reload plugins.");
@@ -1741,6 +1761,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                     SendMessageW(state->plugin_require_capability_allowlist,
                                  BM_GETCHECK, 0, 0) == BST_CHECKED;
                 state->result.plugin_settings_changed = true;
+                mark_settings_dirty(*state);
                 SetWindowTextW(
                     state->plugin_status,
                     L"Plugin capability policy changed. Restart the emulator to reload plugins.");
@@ -1764,6 +1785,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                 return 0;
             }
             state->result.voxel_profile_changed = true;
+            mark_settings_dirty(*state);
             SetWindowTextW(state->voxel_fingerprint_label,
                            L"Voxel profile saved. Return to the game to preview it.");
             return 0;
@@ -1781,6 +1803,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                 return 0;
             }
             state->result.voxel_profile_changed = true;
+            mark_settings_dirty(*state);
             return 0;
         case id_settings_apply:
             finish(*state, state->can_resume ? DashboardResultAction::resume
@@ -2402,6 +2425,7 @@ DashboardResult show_windows_dashboard(
     state.plugin_options = plugin_options;
     state.plugin_status_text = plugin_status_text(plugin_options, plugin_catalog);
     state.initial_result = state.result;
+    state.settings_dirty = false;
     state.preference_directory = preference_directory;
     state.poll_update = poll_update;
     const auto saved_position = load_window_position(preference_directory);
@@ -2481,7 +2505,7 @@ DashboardResult show_windows_dashboard(
         32, 200, 916, 350, id_list);
     state.library_empty = control(
         state, L"STATIC",
-        L"No games yet.\n\nChoose Open ROM... to add a game to your library.",
+        L"Welcome to Go Bigger Boy.\n\nChoose Open ROM... to add your first game to the library.",
         WS_VISIBLE | SS_CENTER,
         32, 300, 916, 100, 0);
     SetWindowSubclass(ListView_GetHeader(state.list), table_header_subclass, 1,

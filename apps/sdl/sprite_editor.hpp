@@ -117,6 +117,21 @@ public:
         }
         if (emulator == nullptr) return true;
         if (!emulator->bus().cgb_mode()) bank_ = 0;
+        if (event.type == SDL_EVENT_MOUSE_BUTTON_UP &&
+            event.button.button == SDL_BUTTON_LEFT) {
+            int width = 0;
+            int height = 0;
+            static_cast<void>(SDL_GetWindowSize(window_, &width, &height));
+            if (tool_close_button_hit(width, height, event.button.x,
+                                      event.button.y)) {
+                if (!has_unsaved_changes(*emulator) ||
+                    confirm_discard_changes(window_,
+                                            "Discard unsaved sprite changes?")) {
+                    close();
+                }
+                return true;
+            }
+        }
         if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
             if (event.key.key == SDLK_ESCAPE || event.key.key == SDLK_F9) {
                 if (!has_unsaved_changes(*emulator) ||
@@ -189,6 +204,7 @@ public:
         static_cast<void>(SDL_SetRenderDrawColor(renderer_, 69, 207, 238, 255));
         render_tool_text(renderer_, 24, 18,
                          "LIVE VRAM SPRITE / TILE EDITOR");
+        draw_tool_close_button(renderer_, window_, window_width);
         static_cast<void>(SDL_SetRenderDrawColor(renderer_, 177, 192, 208, 255));
         render_tool_text(renderer_, 24, 38,
                          "SELECT A TILE, THEN PAINT ITS 2-BIT COLOR INDICES");

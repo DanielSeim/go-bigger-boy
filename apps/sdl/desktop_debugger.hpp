@@ -198,6 +198,11 @@ public:
             int width = 0;
             int height = 0;
             static_cast<void>(SDL_GetWindowSize(window_, &width, &height));
+            if (tool_close_button_hit(width, height, event.button.x,
+                                      event.button.y)) {
+                close();
+                return true;
+            }
             const auto y = static_cast<float>(height - 58);
             const auto movie_y = static_cast<float>(height - 106);
             const auto breakpoint_y = static_cast<float>(height - 154);
@@ -385,9 +390,12 @@ public:
         text(register_x, 574,
              "IF   " + hex8(bus.read8(0xFF0F)) +
                  "  IE   " + hex8(bus.read8(0xFFFF)));
-        text(24, 592, "BREAKPOINTS  " + std::to_string(breakpoint_count()));
+        const auto breakpoint_y = static_cast<float>(height - 154);
+        text(24, breakpoint_y - 20,
+             "BREAKPOINTS " + std::to_string(breakpoint_count()) +
+                 "  F2 TOGGLE  F3 CLEAR");
         if (breakpoints_.empty()) {
-            text(24, 608, "F2 TOGGLE AT CURRENT PC");
+            text(24, breakpoint_y - 6, "AT CURRENT PC");
         } else {
             std::string addresses = "PC ";
             for (std::size_t index = 0; index < breakpoints_.addresses().size();
@@ -395,7 +403,7 @@ public:
                 if (index != 0) addresses += ", ";
                 addresses += hex16(breakpoints_.addresses()[index]);
             }
-            text(24, 608, addresses);
+            text(24, breakpoint_y - 6, addresses.substr(0, 104));
         }
 
         const auto button = [this](const SDL_FRect& rect,
@@ -406,7 +414,6 @@ public:
         };
         const auto button_y = static_cast<float>(height - 58);
         const auto movie_y = static_cast<float>(height - 106);
-        const auto breakpoint_y = static_cast<float>(height - 154);
         button({24, breakpoint_y, 250, 36}, "F2 TOGGLE PC BREAKPOINT");
         button({288, breakpoint_y, 200, 36}, "F3 CLEAR BREAKPOINTS");
         button({24, movie_y, 170, 36},
@@ -421,10 +428,10 @@ public:
                        : "INPUT MOVIE IDLE");
         button({734, movie_y, 150, 36}, "F8 TAS EDITOR");
         button({24, button_y, 150, 36}, execution_paused_ ? "F5  RUN" : "F5  PAUSE");
-        button({188, button_y, 170, 36}, "F10 STEP INSTRUCTION");
+        button({188, button_y, 170, 36}, "F10 STEP CPU");
         button({372, button_y, 150, 36}, "F11 STEP FRAME");
         button({536, button_y, 150, 36}, "F9 SPRITE EDITOR");
-        text(static_cast<float>(width) - 170.0F, button_y + 14, "F12 CLOSE");
+        draw_tool_close_button(renderer_, window_, width);
         static_cast<void>(SDL_RenderPresent(renderer_));
     }
 

@@ -139,7 +139,21 @@ void render_tool_text(SDL_Renderer* renderer, const float x, const float y,
     }
 #endif
     if (renderer != nullptr && value != nullptr) {
-        static_cast<void>(SDL_RenderDebugText(renderer, x, y, value));
+        // SDL's built-in debug font is only 8px high. Keep it as a dependency-
+        // free fallback, but enlarge it slightly so tool windows remain
+        // legible when SDL_ttf is unavailable.
+        constexpr float fallback_scale = 1.15F;
+        float old_scale_x = 1.0F;
+        float old_scale_y = 1.0F;
+        static_cast<void>(SDL_GetRenderScale(renderer, &old_scale_x,
+                                             &old_scale_y));
+        static_cast<void>(SDL_SetRenderScale(
+            renderer, old_scale_x * fallback_scale,
+            old_scale_y * fallback_scale));
+        static_cast<void>(SDL_RenderDebugText(renderer, x / fallback_scale,
+                                              y / fallback_scale, value));
+        static_cast<void>(SDL_SetRenderScale(renderer, old_scale_x,
+                                             old_scale_y));
     }
 }
 
@@ -169,6 +183,26 @@ void draw_tool_button_background(SDL_Renderer* renderer, SDL_Window* window,
         renderer, hovered ? 120 : 69, hovered ? 232 : 207,
         hovered ? 250 : 238, 255));
     static_cast<void>(SDL_RenderRect(renderer, &rect));
+}
+
+SDL_FRect tool_close_button_rect(const int width) noexcept {
+    return {static_cast<float>(std::max(24, width - 150)), 12.0F, 126.0F,
+            36.0F};
+}
+
+bool tool_close_button_hit(const int width, const int height, const float x,
+                           const float y) noexcept {
+    const auto rect = tool_close_button_rect(width);
+    return x >= rect.x && x <= rect.x + rect.w && y >= rect.y &&
+           y <= rect.y + rect.h && height >= 64;
+}
+
+void draw_tool_close_button(SDL_Renderer* renderer, SDL_Window* window,
+                            const int width) {
+    const auto rect = tool_close_button_rect(width);
+    draw_tool_button_background(renderer, window, rect);
+    static_cast<void>(SDL_SetRenderDrawColor(renderer, 238, 249, 255, 255));
+    render_tool_text(renderer, rect.x + 28.0F, rect.y + 13.0F, "CLOSE");
 }
 
 bool confirm_discard_changes(SDL_Window* window, const char* message) {
