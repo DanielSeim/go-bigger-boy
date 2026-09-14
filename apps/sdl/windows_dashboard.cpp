@@ -75,6 +75,8 @@ constexpr int id_link_bluetooth_uuid = 127;
 constexpr int id_link_diagnostics = 128;
 constexpr int id_settings_apply = 129;
 constexpr int id_settings_cancel = 132;
+constexpr int id_search_clear = 133;
+constexpr int id_artwork_retry = 134;
 constexpr int id_binding_first = 200;
 constexpr int id_action_first = 220;
 constexpr UINT artwork_ready = WM_APP + 1;
@@ -172,6 +174,8 @@ struct State {
     HWND list{};
     HWND search_label{};
     HWND search{};
+    HWND search_summary{};
+    HWND search_clear{};
     HWND library_empty{};
     HWND play{};
     HWND open{};
@@ -230,6 +234,7 @@ struct State {
     HWND settings_tab{};
     HWND shortcuts_tab{};
     HWND artwork_status{};
+    HWND artwork_retry{};
     HWND shortcuts_heading{};
     HWND shortcuts_text{};
     HWND logo{};
@@ -348,6 +353,8 @@ bool equal_link_settings(const DashboardLinkSettings& left,
            left.diagnostics == right.diagnostics;
 }
 
+void mark_settings_dirty(State& state);
+
 DashboardLinkSettings read_link_settings(State& state) {
     auto settings = state.initial_link_settings;
     const auto selected = SendMessageW(state.link_transport, CB_GETCURSEL, 0, 0);
@@ -376,6 +383,30 @@ DashboardLinkSettings read_link_settings(State& state) {
     settings.diagnostics = SendMessageW(
         state.link_diagnostics, BM_GETCHECK, 0, 0) == BST_CHECKED;
     return settings;
+}
+
+bool link_port_valid(const State& state) {
+    if (SendMessageW(state.link_transport, CB_GETCURSEL, 0, 0) == 1) {
+        return true;
+    }
+    const auto text = narrow(edit_value(state.link_remote_port));
+    if (text.empty()) return false;
+    try {
+        std::size_t consumed = 0;
+        const auto parsed = std::stoul(text, &consumed);
+        return consumed == text.size() && parsed > 0 && parsed <= 65535;
+    } catch (...) {
+        return false;
+    }
+}
+
+void show_link_port_validation(State& state) {
+    if (!link_port_valid(state)) {
+        SetWindowTextW(state.settings_status,
+                       L"TCP port must be a number from 1 to 65535.");
+    } else {
+        mark_settings_dirty(state);
+    }
 }
 
 void collect_link_settings(State& state) {
@@ -983,6 +1014,8 @@ LRESULT CALLBACK table_header_subclass(
 void refresh_library_actions(State& state);
 void refresh_library_list(State& state);
 void layout_dashboard(State& state);
+void update_artwork_retry_visibility(State& state);
+void start_artwork_resolution(State& state);
 
 void show_page(State& state, const State::Page page) {
     state.page = page;
@@ -996,7 +1029,14 @@ void show_page(State& state, const State::Page page) {
     ShowWindow(state.list, library ? SW_SHOW : SW_HIDE);
     ShowWindow(state.search_label, library ? SW_SHOW : SW_HIDE);
     ShowWindow(state.search, library ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.search_summary, library ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.search_clear,
+               library && !state.library_filter.empty() ? SW_SHOW : SW_HIDE);
     ShowWindow(state.artwork_status, library ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.artwork_retry,
+               library && state.artwork_failed.load(std::memory_order_relaxed) != 0
+                   ? SW_SHOW
+                   : SW_HIDE);
     if (state.library_empty != nullptr) {
         const auto empty = library && ListView_GetItemCount(state.list) == 0;
         ShowWindow(state.library_empty, empty ? SW_SHOW : SW_HIDE);
@@ -1222,9 +1262,22 @@ void refresh_library_list(State& state) {
         SetWindowTextW(
             state.library_empty,
             state.library_filter.empty()
-                ? L"No games yet.\n\nChoose Open ROM... to add a game to your library."
+                ? L"Welcome to Go Bigger Boy.\n\nChoose Open ROM... to add your first game to the library."
                 : L"No games match this filter.\n\nTry another title or clear the search field.");
         ShowWindow(state.library_empty, empty ? SW_SHOW : SW_HIDE);
+    }
+    if (state.search_summary != nullptr) {
+        const auto count = std::to_wstring(indices.size());
+        const auto summary = count + (indices.size() == 1 ? L" game" : L" games") +
+                             (state.library_filter.empty() ? L"" : L" match");
+        SetWindowTextW(state.search_summary, summary.c_str());
+    }
+    if (state.search_clear != nullptr) {
+        ShowWindow(state.search_clear,
+                   state.page == State::Page::library &&
+                           !state.library_filter.empty()
+                       ? SW_SHOW
+                       : SW_HIDE);
     }
     refresh_library_actions(state);
 }
@@ -1247,14 +1300,18 @@ void layout_dashboard(State& state) {
     const auto list_height = std::max(180L, height - 340L);
     place_child(state.search_label, 32, 180, 110, 26, 0);
     place_child(state.search, 154, 176, 400, 28, 0);
+    place_child(state.search_summary, 570, 180, 250, 26, 0);
+    place_child(state.search_clear, 830, 176, 118, 28, 0);
     place_child(state.list, 32, static_cast<int>(list_top),
                 static_cast<int>(content_width),
                 static_cast<int>(list_height), 0);
     place_child(state.library_empty, 32, static_cast<int>(list_top + 100),
                 static_cast<int>(content_width),
                 100, 0);
-    place_child(state.artwork_status, 32, 212, static_cast<int>(content_width),
-                20, 0);
+    place_child(state.artwork_status, 32, 212,
+                static_cast<int>(content_width) - 130, 20, 0);
+    place_child(state.artwork_retry, static_cast<int>(content_width) - 98, 208,
+                98, 28, 0);
     const auto actions_y = list_top + list_height + 20L;
     place_child(state.open, 32, static_cast<int>(actions_y), 150, 44, 0);
     place_child(state.play, 202, static_cast<int>(actions_y), 160, 44, 0);
@@ -1381,7 +1438,7 @@ void finish(State& state, const DashboardResultAction action,
     DestroyWindow(state.window);
 }
 
-void cancel_settings(State& state) {
+void cancel_settings(State& state, const DashboardResultAction action) {
     const auto restore_voxel = state.result.voxel_profile_changed;
     if (restore_voxel && state.voxel_available && state.voxel_fingerprint != 0 &&
         !gbb::save_voxel_profile(state.voxel_profile_path,
@@ -1393,9 +1450,7 @@ void cancel_settings(State& state) {
     }
     state.result = state.initial_result;
     state.voxel_profile = state.initial_voxel_profile;
-    finish(state, state.can_resume ? DashboardResultAction::resume
-                                   : DashboardResultAction::quit,
-           {}, false);
+    finish(state, action, {}, false);
 }
 
 void play_selection(State& state) {
@@ -1472,9 +1527,10 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                                   ? std::wstring{L"Artwork: ready"}
                                   : L"Artwork: ready (" +
                                         std::to_wstring(failed) +
-                                        L" unavailable)";
+                                        L" unavailable). Click Retry artwork to try again.";
             SetWindowTextW(state->artwork_status, text.c_str());
             KillTimer(window, 1);
+            update_artwork_retry_visibility(*state);
         } else {
             const auto text = L"Artwork: loading " +
                               std::to_wstring(completed) + L" of " +
@@ -1596,7 +1652,19 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
 
     if ((message == WM_KEYDOWN || message == WM_SYSKEYDOWN) &&
         wparam == VK_ESCAPE) {
-        if (confirm_exit(window)) finish(*state, DashboardResultAction::quit);
+        if (state->settings_dirty) {
+            if (MessageBoxW(
+                    window,
+                    L"Discard your unsaved settings changes?",
+                    L"Unsaved settings",
+                    MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) == IDYES) {
+                cancel_settings(*state, state->can_resume
+                                           ? DashboardResultAction::resume
+                                           : DashboardResultAction::quit);
+            }
+        } else if (confirm_exit(window)) {
+            finish(*state, DashboardResultAction::quit);
+        }
         return 0;
     }
 
@@ -1604,6 +1672,12 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
         const auto command = LOWORD(wparam);
         if (command == id_search && HIWORD(wparam) == EN_CHANGE) {
             refresh_library_list(*state);
+            return 0;
+        }
+        if (command == id_search_clear && HIWORD(wparam) == BN_CLICKED) {
+            SetWindowTextW(state->search, L"");
+            refresh_library_list(*state);
+            SetFocus(state->search);
             return 0;
         }
         if (command >= id_voxel_first_edit &&
@@ -1731,6 +1805,21 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                 mark_settings_dirty(*state);
             }
             return 0;
+        case id_link_remote_host:
+        case id_link_remote_bind:
+        case id_link_bluetooth_address:
+        case id_link_bluetooth_uuid:
+            if (HIWORD(wparam) == EN_CHANGE) mark_settings_dirty(*state);
+            return 0;
+        case id_link_remote_port:
+            if (HIWORD(wparam) == EN_CHANGE) {
+                show_link_port_validation(*state);
+            }
+            return 0;
+        case id_link_lan_discovery:
+        case id_link_diagnostics:
+            if (HIWORD(wparam) == BN_CLICKED) mark_settings_dirty(*state);
+            return 0;
         case id_plugin_discovery:
             if (HIWORD(wparam) == BN_CLICKED) {
                 state->result.plugin_discovery =
@@ -1806,11 +1895,23 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
             mark_settings_dirty(*state);
             return 0;
         case id_settings_apply:
+            if (!link_port_valid(*state)) {
+                show_link_port_validation(*state);
+                SetFocus(state->link_remote_port);
+                return 0;
+            }
             finish(*state, state->can_resume ? DashboardResultAction::resume
                                               : DashboardResultAction::quit);
             return 0;
         case id_settings_cancel:
-            cancel_settings(*state);
+            cancel_settings(*state, state->can_resume
+                                         ? DashboardResultAction::resume
+                                         : DashboardResultAction::quit);
+            return 0;
+        case id_artwork_retry:
+            if (HIWORD(wparam) == BN_CLICKED) {
+                start_artwork_resolution(*state);
+            }
             return 0;
         default: break;
         }
@@ -1947,7 +2048,15 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
         }
         return 0;
     } else if (message == WM_CLOSE) {
-        if (confirm_exit(window)) {
+        if (state->settings_dirty) {
+            if (MessageBoxW(
+                    window,
+                    L"Discard your unsaved settings changes?",
+                    L"Unsaved settings",
+                    MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) == IDYES) {
+                cancel_settings(*state, DashboardResultAction::quit);
+            }
+        } else if (confirm_exit(window)) {
             finish(*state, DashboardResultAction::quit);
         }
         return 0;
@@ -2284,6 +2393,36 @@ void resolve_artwork(State& state) {
     }
 }
 
+void update_artwork_retry_visibility(State& state) {
+    if (state.artwork_retry == nullptr) return;
+    const auto ready = state.artwork_completed.load(std::memory_order_relaxed) >=
+                       state.artwork_total;
+    const auto failed = state.artwork_failed.load(std::memory_order_relaxed) != 0;
+    ShowWindow(state.artwork_retry,
+               state.page == State::Page::library && ready && failed
+                   ? SW_SHOW
+                   : SW_HIDE);
+}
+
+void start_artwork_resolution(State& state) {
+    if (state.artwork_worker.joinable()) state.artwork_worker.join();
+    state.artwork_completed = 0;
+    state.artwork_failed = 0;
+    state.artwork_download.cancel_requested.store(false,
+                                                   std::memory_order_relaxed);
+    state.artwork_total = state.library->entries().size();
+    SetWindowTextW(state.artwork_status,
+                   state.artwork_total == 0 ? L"Artwork: ready"
+                                            : L"Artwork: loading...");
+    if (state.artwork_total == 0) {
+        KillTimer(state.window, 1);
+    } else {
+        SetTimer(state.window, 1, 100, nullptr);
+        state.artwork_worker = std::thread([&state] { resolve_artwork(state); });
+    }
+    update_artwork_retry_visibility(state);
+}
+
 HWND control(State& state, const wchar_t* type, const wchar_t* text,
              DWORD style, int x, int y, int width, int height, int id) {
     if (std::wstring_view(type) == L"BUTTON" &&
@@ -2500,6 +2639,9 @@ DashboardResult show_windows_dashboard(
     state.artwork_status = control(
         state, L"STATIC", L"Artwork: loading...", WS_VISIBLE,
         32, 180, 916, 20, 0);
+    state.artwork_retry = control(
+        state, L"BUTTON", L"Retry artwork", BS_PUSHBUTTON,
+        850, 176, 98, 28, id_artwork_retry);
     state.list = control(state, WC_LISTVIEWW, L"",
         WS_VISIBLE | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS,
         32, 200, 916, 350, id_list);
@@ -2553,6 +2695,12 @@ DashboardResult show_windows_dashboard(
     state.search = control(state, L"EDIT", L"",
                            WS_BORDER | ES_AUTOHSCROLL | ES_LEFT,
                            154, 176, 400, 28, id_search);
+    state.search_summary = control(
+        state, L"STATIC", L"0 games", SS_RIGHT,
+        570, 180, 250, 26, 0);
+    state.search_clear = control(
+        state, L"BUTTON", L"Clear search", BS_PUSHBUTTON,
+        830, 176, 118, 28, id_search_clear);
     refresh_library_list(state);
     state.open = control(state, L"BUTTON", L"Open ROM...",
         WS_VISIBLE | BS_PUSHBUTTON, 32, 575, 150, 44, id_open);
@@ -2834,15 +2982,7 @@ DashboardResult show_windows_dashboard(
     if (owner != nullptr) EnableWindow(owner, FALSE);
     ShowWindow(state.window, SW_SHOW);
     UpdateWindow(state.window);
-    state.artwork_total = library.entries().size();
-    state.artwork_completed = 0;
-    state.artwork_failed = 0;
-    if (state.artwork_total == 0) {
-        SetWindowTextW(state.artwork_status, L"Artwork: ready");
-    } else {
-        SetTimer(state.window, 1, 100, nullptr);
-    }
-    state.artwork_worker = std::thread([&state] { resolve_artwork(state); });
+    start_artwork_resolution(state);
     if (state.poll_update) {
         // GetMessageW blocks when the dashboard is idle. A timer keeps the
         // background updater observable without spinning the UI thread.

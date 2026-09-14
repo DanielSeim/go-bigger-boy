@@ -175,13 +175,19 @@ void clear_tool_text_cache(SDL_Renderer* renderer) noexcept {
 void draw_tool_button_background(SDL_Renderer* renderer, SDL_Window* window,
                                  const SDL_FRect& rect) {
     const auto hovered = tool_button_hovered(window, rect);
+    float mouse_x = 0.0F;
+    float mouse_y = 0.0F;
+    const auto mouse_buttons = SDL_GetMouseState(&mouse_x, &mouse_y);
+    const auto pressed = hovered && (mouse_buttons & SDL_BUTTON_LMASK) != 0;
     static_cast<void>(SDL_SetRenderDrawColor(
-        renderer, hovered ? 40 : 28, hovered ? 74 : 47,
-        hovered ? 98 : 68, 255));
+        renderer, pressed ? 24 : (hovered ? 40 : 28),
+        pressed ? 58 : (hovered ? 74 : 47),
+        pressed ? 80 : (hovered ? 98 : 68), 255));
     static_cast<void>(SDL_RenderFillRect(renderer, &rect));
     static_cast<void>(SDL_SetRenderDrawColor(
-        renderer, hovered ? 120 : 69, hovered ? 232 : 207,
-        hovered ? 250 : 238, 255));
+        renderer, pressed ? 93 : (hovered ? 120 : 69),
+        pressed ? 207 : (hovered ? 232 : 207),
+        pressed ? 230 : (hovered ? 250 : 238), 255));
     static_cast<void>(SDL_RenderRect(renderer, &rect));
 }
 

@@ -98,7 +98,7 @@ public:
             auto text = fetch_future_.get();
             import_archive(text);
         } catch (const std::exception& error) {
-            status_ = "No exact archive match. Manual codes are still available.";
+            status_ = "Fetch failed. Click FETCH FOR ROM to retry, or enter a code manually.";
             fetch_error_ = error.what();
         }
         fetch_in_progress_ = false;
