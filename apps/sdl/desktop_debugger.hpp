@@ -7,6 +7,7 @@
 #include "gameboy/ppu.hpp"
 #include "desktop_breakpoints.hpp"
 #include "desktop_disassembler.hpp"
+#include "desktop_viewport.hpp"
 #include "input_movie.hpp"
 #include "tool_window_support.hpp"
 #include "window_event.hpp"
@@ -113,6 +114,16 @@ public:
             throw_sdl_error("Could not create debugger framebuffer texture");
         }
         static_cast<void>(SDL_SetTextureScaleMode(texture_, SDL_SCALEMODE_NEAREST));
+        background_texture_ = SDL_CreateTexture(
+            renderer_, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
+            static_cast<int>(DesktopBackgroundMap::width),
+            static_cast<int>(DesktopBackgroundMap::height));
+        if (background_texture_ == nullptr) {
+            close();
+            throw_sdl_error("Could not create debugger background map texture");
+        }
+        static_cast<void>(SDL_SetTextureScaleMode(background_texture_,
+                                                   SDL_SCALEMODE_NEAREST));
         execution_paused_ = true;
         if (parent != nullptr) {
             int x = 0;
@@ -124,10 +135,12 @@ public:
 
     void close() noexcept {
         if (texture_ != nullptr) SDL_DestroyTexture(texture_);
+        if (background_texture_ != nullptr) SDL_DestroyTexture(background_texture_);
         clear_tool_text_cache(renderer_);
         if (renderer_ != nullptr) SDL_DestroyRenderer(renderer_);
         if (window_ != nullptr) SDL_DestroyWindow(window_);
         texture_ = nullptr;
+        background_texture_ = nullptr;
         renderer_ = nullptr;
         window_ = nullptr;
         execution_paused_ = true;
@@ -348,11 +361,11 @@ public:
         render_tool_text(renderer_, 24, 20, "GO BIGGER BOY / DEBUGGER");
         static_cast<void>(SDL_SetRenderDrawColor(renderer_, 177, 192, 208, 255));
 
-        constexpr float scale = 3.0F;
-        constexpr float preview_x = 24.0F;
-        constexpr float preview_y = 72.0F;
-        constexpr float preview_width = gameboy::Ppu::screen_width * scale;
-        constexpr float preview_height = gameboy::Ppu::screen_height * scale;
+        constexpr float map_scale = 2.0F;
+        constexpr float map_x = 24.0F;
+        constexpr float map_y = 72.0F;
+        constexpr float map_width = DesktopBackgroundMap::width * map_scale;
+        constexpr float map_height = DesktopBackgroundMap::height * map_scale;
         gameboy::Ppu::Framebuffer pixels{};
         const auto& source = emulator.framebuffer();
         const auto native = emulator.bus().cgb_mode() || palette.cgb_compatibility;
@@ -364,16 +377,41 @@ public:
         static_cast<void>(SDL_UpdateTexture(
             texture_, nullptr, pixels.data(),
             static_cast<int>(gameboy::Ppu::screen_width * sizeof(std::uint32_t))));
-        const SDL_FRect preview{preview_x, preview_y, preview_width,
-                                preview_height};
-        static_cast<void>(SDL_RenderTexture(renderer_, texture_, nullptr, &preview));
+        const auto map = render_desktop_background_map(emulator.bus(), palette);
+        static_cast<void>(SDL_UpdateTexture(
+            background_texture_, nullptr, map.pixels.data(),
+            static_cast<int>(DesktopBackgroundMap::width * sizeof(std::uint32_t))));
+        const SDL_FRect background_map{map_x, map_y, map_width, map_height};
+        static_cast<void>(SDL_RenderTexture(renderer_, background_texture_, nullptr,
+                                            &background_map));
         static_cast<void>(SDL_SetRenderDrawColor(renderer_, 69, 207, 238, 255));
-        static_cast<void>(SDL_RenderRect(renderer_, &preview));
-        const SDL_FRect outer{preview_x - 3, preview_y - 3,
-                              preview_width + 6, preview_height + 6};
+        static_cast<void>(SDL_RenderRect(renderer_, &background_map));
+        const SDL_FRect outer{map_x - 3, map_y - 3, map_width + 6,
+                              map_height + 6};
         static_cast<void>(SDL_RenderRect(renderer_, &outer));
-        render_tool_text(renderer_, preview_x, preview_y + preview_height + 10,
-                         "VISIBLE VIEWPORT 160 x 144");
+        render_tool_text(renderer_, map_x, map_y + map_height + 10,
+                         "BACKGROUND MAP 256 x 256  /  VISIBLE 160 x 144");
+        render_visible_viewport_overlay(renderer_, map_x, map_y, map_scale,
+                                        map.scroll_x, map.scroll_y);
+
+        // Keep the actual rasterized output visible as a small diagnostic
+        // inset. The expanded map is reconstructed from VRAM; this inset is
+        // the emulator's authoritative composition, including window/OBJ.
+        constexpr float live_width = gameboy::Ppu::screen_width;
+        constexpr float live_height = gameboy::Ppu::screen_height;
+        const SDL_FRect live_frame{map_x + map_width - live_width - 12.0F,
+                                   map_y + map_height - live_height - 12.0F,
+                                   live_width, live_height};
+        const SDL_FRect live_outer{live_frame.x - 3.0F, live_frame.y - 3.0F,
+                                   live_frame.w + 6.0F, live_frame.h + 6.0F};
+        static_cast<void>(SDL_SetRenderDrawColor(renderer_, 8, 12, 20, 255));
+        static_cast<void>(SDL_RenderFillRect(renderer_, &live_outer));
+        static_cast<void>(SDL_RenderTexture(renderer_, texture_, nullptr,
+                                            &live_frame));
+        static_cast<void>(SDL_SetRenderDrawColor(renderer_, 230, 249, 255, 255));
+        static_cast<void>(SDL_RenderRect(renderer_, &live_outer));
+        render_tool_text(renderer_, live_frame.x, live_frame.y - 16.0F,
+                         "LIVE OUTPUT");
 
         const auto& r = emulator.cpu().registers();
         const auto pair = [](const std::uint8_t high, const std::uint8_t low) {
@@ -578,6 +616,36 @@ private:
                 std::max(120.0F, bottom - 64.0F)};
     }
 
+    static void render_visible_viewport_overlay(SDL_Renderer* renderer,
+                                                const float map_x,
+                                                const float map_y,
+                                                const float scale,
+                                                const std::uint8_t scroll_x,
+                                                const std::uint8_t scroll_y) {
+        static_cast<void>(SDL_SetRenderDrawColor(renderer, 69, 207, 238, 255));
+        const auto segments = [](const unsigned scroll, const unsigned length) {
+            const auto first = std::min(length, 256U - scroll);
+            using SegmentList = std::array<std::pair<unsigned, unsigned>, 2>;
+            return std::make_pair(
+                SegmentList{{{scroll, first}, {0, length - first}}},
+                length - first > 0U ? 2U : 1U);
+        };
+        const auto horizontal = segments(scroll_x, gameboy::Ppu::screen_width);
+        const auto vertical = segments(scroll_y, gameboy::Ppu::screen_height);
+        for (unsigned x_index = 0; x_index < horizontal.second; ++x_index) {
+            for (unsigned y_index = 0; y_index < vertical.second; ++y_index) {
+                const auto [x, width] = horizontal.first[x_index];
+                const auto [y, height] = vertical.first[y_index];
+                const SDL_FRect visible{
+                    map_x + static_cast<float>(x) * scale,
+                    map_y + static_cast<float>(y) * scale,
+                    static_cast<float>(width) * scale,
+                    static_cast<float>(height) * scale};
+                static_cast<void>(SDL_RenderRect(renderer, &visible));
+            }
+        }
+    }
+
     [[nodiscard]] static float register_panel_x(const int width) noexcept {
         const auto disassembly_x = disassembly_panel(width, 820).x;
         return std::max(530.0F,
@@ -763,6 +831,7 @@ private:
     SDL_Window* window_{};
     SDL_Renderer* renderer_{};
     SDL_Texture* texture_{};
+    SDL_Texture* background_texture_{};
     bool execution_paused_{true};
     bool step_instruction_{};
     bool step_frame_{};
