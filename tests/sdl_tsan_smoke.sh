@@ -103,7 +103,10 @@ TSAN_OPTIONS="$tsan_options" timeout --signal=INT --kill-after=5s \
                 exit 11
             fi
             send_input windowsize --sync "$debugger" 960 700
-            sleep 0.5
+            # SDL applies the resize asynchronously. Give the debugger one
+            # complete render turn at the compact size before changing modes;
+            # otherwise slower runners can miss the normal 960x700 capture.
+            sleep 1
             # F4 is a visible header button as well as a keyboard shortcut.
             send_input click --window "$debugger" 490 30
             sleep 0.3

@@ -943,6 +943,20 @@ void test_packet_retransmission_after_dropped_frames() {
         host_endpoint.poll();
         join_endpoint.poll();
     }
+    // The fixed poll count is normally enough on a fast host, but release
+    // runners with a coarse clock can still have the digest acknowledgement
+    // in flight when the first guest transfer is armed.  Starting a transfer
+    // at that boundary makes the retry assertions depend on scheduler timing
+    // instead of the link contract.
+    for (unsigned attempt = 0;
+         attempt < 100 &&
+         (!host_endpoint.peer_ready_for_link() ||
+          !join_endpoint.state_digest_valid());
+         ++attempt) {
+        host_endpoint.poll();
+        join_endpoint.poll();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
 
     host.write8(0xFF01, 0xA5);
     join.write8(0xFF01, 0x3C);
@@ -994,6 +1008,15 @@ void test_packet_fault_recovery_and_reconnect() {
     for (unsigned attempt = 0; attempt < 20; ++attempt) {
         host_endpoint.poll();
         join_endpoint.poll();
+    }
+    for (unsigned attempt = 0;
+         attempt < 100 &&
+         (!host_endpoint.peer_ready_for_link() ||
+          !join_endpoint.state_digest_valid());
+         ++attempt) {
+        host_endpoint.poll();
+        join_endpoint.poll();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
     host_channel.duplicate_next_send();
@@ -1106,6 +1129,15 @@ void test_packet_epoch_commit_and_reset_ordering() {
         host_endpoint.poll();
         join_endpoint.poll();
     }
+    for (unsigned attempt = 0;
+         attempt < 100 &&
+         (!host_endpoint.peer_ready_for_link() ||
+          !join_endpoint.state_digest_valid());
+         ++attempt) {
+        host_endpoint.poll();
+        join_endpoint.poll();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
 
     const auto exchange = [&](const std::uint8_t host_value,
                               const std::uint8_t join_value) {
@@ -1180,6 +1212,15 @@ void test_packet_sustained_transfer_soak() {
     for (unsigned attempt = 0; attempt < 20; ++attempt) {
         host_endpoint.poll();
         join_endpoint.poll();
+    }
+    for (unsigned attempt = 0;
+         attempt < 100 &&
+         (!host_endpoint.peer_ready_for_link() ||
+          !join_endpoint.state_digest_valid());
+         ++attempt) {
+        host_endpoint.poll();
+        join_endpoint.poll();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
     constexpr unsigned transfers = 128;
