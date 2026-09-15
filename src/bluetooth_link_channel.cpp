@@ -29,6 +29,15 @@ extern "C" std::size_t gbb_android_bluetooth_receive(
 namespace gameboy {
 namespace {
 
+std::string platform_error_text(const int error) {
+#if defined(_WIN32)
+    return "WSA error " + std::to_string(error);
+#else
+    static_cast<void>(error);
+    return {};
+#endif
+}
+
 #if defined(_WIN32)
 using Socket = SOCKET;
 constexpr Socket invalid_socket = INVALID_SOCKET;
@@ -144,14 +153,24 @@ BluetoothLinkChannel::~BluetoothLinkChannel() { close(); }
 bool BluetoothLinkChannel::listen(const std::string& service_uuid) noexcept {
 #if defined(_WIN32)
     close();
-    if (!sockets_ready()) return false;
+    if (!sockets_ready()) {
+        error_ = "Bluetooth initialization failed";
+        state_ = State::failed;
+        return false;
+    }
     GUID uuid{};
     if (!parse_uuid(service_uuid, uuid)) {
+        error_ = "Invalid Bluetooth service UUID";
         state_ = State::failed;
         return false;
     }
     const auto socket = ::socket(AF_BTH, SOCK_STREAM, BTHPROTO_RFCOMM);
     if (socket == invalid_socket || !set_nonblocking(socket)) {
+        error_ = socket == invalid_socket
+                      ? "Could not create the Bluetooth socket (" +
+                            platform_error_text(socket_error()) + ")"
+                      : "Could not make the Bluetooth socket non-blocking (" +
+                            platform_error_text(socket_error()) + ")";
         if (socket != invalid_socket) close_socket(socket);
         state_ = State::failed;
         return false;
@@ -165,6 +184,8 @@ bool BluetoothLinkChannel::listen(const std::string& service_uuid) noexcept {
                               static_cast<int>(sizeof(address))) == 0 &&
                        ::listen(socket, 1) == 0;
     if (!valid || !register_service(uuid, socket, false)) {
+        error_ = "Could not register the Bluetooth service (" +
+                 platform_error_text(socket_error()) + ")";
         close_socket(socket);
         state_ = State::failed;
         return false;
@@ -177,6 +198,7 @@ bool BluetoothLinkChannel::listen(const std::string& service_uuid) noexcept {
     close();
     if (service_uuid.empty() ||
         !gbb_android_bluetooth_start_host(service_uuid.c_str())) {
+        error_ = "Android Bluetooth host could not be started";
         state_ = State::failed;
         return false;
     }
@@ -194,16 +216,28 @@ bool BluetoothLinkChannel::connect(const std::string& address_text,
                                    const std::string& service_uuid) noexcept {
 #if defined(_WIN32)
     close();
-    if (!sockets_ready()) return false;
+    if (!sockets_ready()) {
+        error_ = "Bluetooth initialization failed";
+        state_ = State::failed;
+        return false;
+    }
     GUID uuid{};
     BTH_ADDR address_value{};
-    if (!parse_uuid(service_uuid, uuid) ||
-        !parse_address(address_text, address_value)) {
+    const auto valid_uuid = parse_uuid(service_uuid, uuid);
+    const auto valid_address = parse_address(address_text, address_value);
+    if (!valid_uuid || !valid_address) {
+        error_ = valid_uuid ? "Invalid Bluetooth device address"
+                            : "Invalid Bluetooth service UUID";
         state_ = State::failed;
         return false;
     }
     const auto socket = ::socket(AF_BTH, SOCK_STREAM, BTHPROTO_RFCOMM);
     if (socket == invalid_socket || !set_nonblocking(socket)) {
+        error_ = socket == invalid_socket
+                      ? "Could not create the Bluetooth socket (" +
+                            platform_error_text(socket_error()) + ")"
+                      : "Could not make the Bluetooth socket non-blocking (" +
+                            platform_error_text(socket_error()) + ")";
         if (socket != invalid_socket) close_socket(socket);
         state_ = State::failed;
         return false;
@@ -217,6 +251,8 @@ bool BluetoothLinkChannel::connect(const std::string& address_text,
                                   static_cast<int>(sizeof(address)));
     const auto error = result == 0 ? 0 : socket_error();
     if (result != 0 && !would_block(error)) {
+        error_ = "Could not connect to the Bluetooth device (" +
+                 platform_error_text(error) + ")";
         close_socket(socket);
         state_ = State::failed;
         return false;
@@ -229,6 +265,7 @@ bool BluetoothLinkChannel::connect(const std::string& address_text,
     if (address_text.empty() || service_uuid.empty() ||
         !gbb_android_bluetooth_start_join(address_text.c_str(),
                                           service_uuid.c_str())) {
+        error_ = "Android Bluetooth connection could not be started";
         state_ = State::failed;
         return false;
     }
@@ -253,6 +290,8 @@ void BluetoothLinkChannel::poll() noexcept {
                 peer_ = as_handle(accepted);
                 state_ = State::connected;
             }
+        } else if (!would_block(socket_error())) {
+            fail(socket_error());
         }
     }
     if (state_ == State::connecting && peer_ != -1) {
@@ -261,19 +300,24 @@ void BluetoothLinkChannel::poll() noexcept {
         if (getsockopt(as_socket(peer_), SOL_SOCKET, SO_ERROR,
                        reinterpret_cast<char*>(&error), &length) == 0) {
             if (error == 0) state_ = State::connected;
-            else if (!would_block(error)) fail();
+            else if (!would_block(error)) fail(error);
         }
     }
     if (state_ != State::connected || peer_ == -1) return;
     flush_send_queue();
     receive_available();
 #elif defined(__ANDROID__)
+    const auto previous_state = state_;
     switch (gbb_android_bluetooth_state()) {
     case 1: state_ = State::listening; break;
     case 2: state_ = State::connecting; break;
     case 3: state_ = State::connected; break;
     case 4: state_ = State::failed; break;
     default: state_ = State::disconnected; break;
+    }
+    if (state_ == State::failed && previous_state != State::failed &&
+        error_.empty()) {
+        error_ = "Android Bluetooth connection failed";
     }
     if (state_ != State::connected) return;
     flush_send_queue();
@@ -303,6 +347,7 @@ void BluetoothLinkChannel::close() noexcept {
     receive_buffer_.clear();
     packets_.clear();
     malformed_packets_ = 0;
+    error_.clear();
     state_ = State::disconnected;
 }
 
@@ -347,7 +392,10 @@ void BluetoothLinkChannel::flush_send_queue() noexcept {
         const auto count = ::send(as_socket(peer_), reinterpret_cast<const char*>(data),
                                   static_cast<int>(chunk), 0);
         if (count > 0) send_offset_ += static_cast<std::size_t>(count);
-        else if (count == 0 || !would_block(socket_error())) { fail(); break; }
+        else if (count == 0 || !would_block(socket_error())) {
+            fail(count == 0 ? 0 : socket_error());
+            break;
+        }
         else break;
     }
     if (send_offset_ == send_buffer_.size()) {
@@ -380,7 +428,9 @@ void BluetoothLinkChannel::receive_available() noexcept {
                 return;
             }
         } else {
-            if (count == 0 || !would_block(socket_error())) fail();
+            if (count == 0 || !would_block(socket_error())) {
+                fail(count == 0 ? 0 : socket_error());
+            }
             break;
         }
     }
@@ -401,7 +451,7 @@ void BluetoothLinkChannel::receive_available() noexcept {
 #endif
 }
 
-void BluetoothLinkChannel::fail() noexcept {
+void BluetoothLinkChannel::fail(const int platform_error) noexcept {
 #if defined(_WIN32)
     if (peer_ != -1) close_socket(as_socket(peer_));
 #elif defined(__ANDROID__)
@@ -412,6 +462,10 @@ void BluetoothLinkChannel::fail() noexcept {
     send_offset_ = 0;
     receive_buffer_.clear();
     packets_.clear();
+    error_ = platform_error == 0
+                 ? "Bluetooth connection closed"
+                 : "Bluetooth connection failed (" +
+                       platform_error_text(platform_error) + ")";
     state_ = State::failed;
 }
 

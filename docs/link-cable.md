@@ -282,10 +282,18 @@ serial-edge watchdog as TCP, but replaces the LAN socket with a Bluetooth
 Classic RFCOMM stream. Set `link.Transport = bluetooth` and keep the shared
 `link.BluetoothServiceUuid` (the default application UUID is already suitable).
 Pair the Windows computer and phone in the operating-system Bluetooth settings
-first. The joiner sets `link.BluetoothAddress` to the host adapter's address;
-the host does not need an address. Start **Host link** on one side and **Join
-link** on the other. LAN discovery is intentionally disabled for Bluetooth;
-device and service discovery happen through Bluetooth pairing/SDP instead.
+first. On Windows, open **Settings → Remote link cable** and use **Choose paired
+device** to select the host computer or phone; this fills the Bluetooth address
+without requiring manual MAC-address entry. The joiner sets
+`link.BluetoothAddress` to the host adapter's address; the host does not need an
+address. Start **Host link** on one side and **Join link** on the other. LAN
+discovery is intentionally disabled for Bluetooth; device and service discovery
+happen through Bluetooth pairing/SDP instead.
+
+If a manually entered address is malformed or the connection is rejected by
+Windows, the link error includes the validation result or the Windows socket
+error code. This makes pairing, radio, and service-registration failures
+actionable instead of silently appearing as a failed link.
 
 On Android 12 and newer, the app requests nearby-device permissions the first
 time Bluetooth is used. Grant them and retry the action. RFCOMM setup and stream

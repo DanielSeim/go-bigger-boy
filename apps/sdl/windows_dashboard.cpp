@@ -14,6 +14,7 @@
 
 #include <commctrl.h>
 #include <commdlg.h>
+#include <bluetoothapis.h>
 #include <wincodec.h>
 
 #include <algorithm>
@@ -73,6 +74,7 @@ constexpr int id_link_lan_discovery = 125;
 constexpr int id_link_bluetooth_address = 126;
 constexpr int id_link_bluetooth_uuid = 127;
 constexpr int id_link_diagnostics = 128;
+constexpr int id_link_bluetooth_choose = 135;
 constexpr int id_settings_apply = 129;
 constexpr int id_settings_cancel = 132;
 constexpr int id_search_clear = 133;
@@ -227,6 +229,7 @@ struct State {
     HWND link_lan_discovery{};
     HWND link_bluetooth_address_label{};
     HWND link_bluetooth_address{};
+    HWND link_bluetooth_choose{};
     HWND link_bluetooth_uuid_label{};
     HWND link_bluetooth_uuid{};
     HWND link_diagnostics{};
@@ -341,6 +344,65 @@ std::wstring edit_value(const HWND control) {
     return value;
 }
 
+std::wstring bluetooth_address_text(const BLUETOOTH_ADDRESS& address) {
+    std::wostringstream compact;
+    compact << std::uppercase << std::hex << std::setfill(L'0')
+            << std::setw(12) << address.ullLong;
+    const auto value = compact.str();
+    std::wstring formatted;
+    formatted.reserve(17);
+    for (std::size_t index = 0; index < value.size(); index += 2) {
+        if (index != 0) formatted.push_back(L':');
+        formatted.append(value, index, 2);
+    }
+    return formatted;
+}
+
+bool choose_bluetooth_device(State& state) {
+    // The Windows SDK exposes these functions through Bthprops.lib, but the
+    // MinGW toolchain used for local Windows builds does not ship that import
+    // library. Resolve the stable system DLL entry points at runtime so the
+    // picker remains available on Windows without making the cross-build
+    // depend on an SDK-specific import library.
+    const auto module = LoadLibraryW(L"bthprops.cpl");
+    if (module == nullptr) return false;
+    using SelectDevices = BOOL(WINAPI *)(BLUETOOTH_SELECT_DEVICE_PARAMS*);
+    using FreeDevices = BOOL(WINAPI *)(BLUETOOTH_SELECT_DEVICE_PARAMS*);
+    const auto select_devices = reinterpret_cast<SelectDevices>(
+        GetProcAddress(module, "BluetoothSelectDevices"));
+    const auto free_devices = reinterpret_cast<FreeDevices>(
+        GetProcAddress(module, "BluetoothSelectDevicesFree"));
+    if (select_devices == nullptr || free_devices == nullptr) {
+        FreeLibrary(module);
+        return false;
+    }
+
+    BLUETOOTH_SELECT_DEVICE_PARAMS params{};
+    params.dwSize = sizeof(params);
+    params.hwndParent = state.window;
+    params.fShowAuthenticated = TRUE;
+    params.fShowRemembered = TRUE;
+    params.fShowUnknown = FALSE;
+    params.fAddNewDeviceWizard = FALSE;
+    params.fSkipServicesPage = TRUE;
+    params.cNumDevices = 1;
+    if (!select_devices(&params)) {
+        FreeLibrary(module);
+        return false;
+    }
+
+    bool selected = params.pDevices != nullptr && params.cNumDevices > 0 &&
+                    (params.pDevices[0].fAuthenticated ||
+                     params.pDevices[0].fRemembered);
+    if (selected) {
+        SetWindowTextW(state.link_bluetooth_address,
+                       bluetooth_address_text(params.pDevices[0].Address).c_str());
+    }
+    free_devices(&params);
+    FreeLibrary(module);
+    return selected;
+}
+
 bool equal_link_settings(const DashboardLinkSettings& left,
                          const DashboardLinkSettings& right) {
     return left.transport == right.transport &&
@@ -441,6 +503,7 @@ void update_link_control_state(State& state) {
     set_enabled(state.link_lan_discovery, false);
     set_enabled(state.link_bluetooth_address_label, true);
     set_enabled(state.link_bluetooth_address, true);
+    set_enabled(state.link_bluetooth_choose, true);
     set_enabled(state.link_bluetooth_uuid_label, true);
     set_enabled(state.link_bluetooth_uuid, true);
 }
@@ -1111,6 +1174,7 @@ void show_page(State& state, const State::Page page) {
     ShowWindow(state.link_bluetooth_address_label,
                settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.link_bluetooth_address, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.link_bluetooth_choose, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.link_bluetooth_uuid_label, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.link_bluetooth_uuid, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.link_diagnostics, settings ? SW_SHOW : SW_HIDE);
@@ -1413,9 +1477,10 @@ void layout_dashboard(State& state) {
     place_child(state.link_bluetooth_address_label, 32, 1390, 180, 26,
                 offset);
     place_child(state.link_bluetooth_address, 218, 1385, 220, 26, offset);
+    place_child(state.link_bluetooth_choose, 218, 1418, 220, 28, offset);
     place_child(state.link_bluetooth_uuid_label, 460, 1390, 180, 26, offset);
     place_child(state.link_bluetooth_uuid, 646, 1385, 302, 26, offset);
-    place_child(state.link_diagnostics, 32, 1430, 330, 28, offset);
+    place_child(state.link_diagnostics, 32, 1460, 330, 28, offset);
 }
 
 void scroll_settings(State& state, const int wheel_delta) {
@@ -1818,6 +1883,12 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
         case id_link_bluetooth_address:
         case id_link_bluetooth_uuid:
             if (HIWORD(wparam) == EN_CHANGE) mark_settings_dirty(*state);
+            return 0;
+        case id_link_bluetooth_choose:
+            if (HIWORD(wparam) == BN_CLICKED &&
+                choose_bluetooth_device(*state)) {
+                mark_settings_dirty(*state);
+            }
             return 0;
         case id_link_remote_port:
             if (HIWORD(wparam) == EN_CHANGE) {
@@ -2943,6 +3014,9 @@ DashboardResult show_windows_dashboard(
         state, L"EDIT", widen(link_settings.bluetooth_address).c_str(),
         WS_BORDER | ES_AUTOHSCROLL, 218, 1385, 220, 26,
         id_link_bluetooth_address);
+    state.link_bluetooth_choose = control(
+        state, L"BUTTON", L"Choose paired device", BS_PUSHBUTTON,
+        218, 1418, 220, 28, id_link_bluetooth_choose);
     state.link_bluetooth_uuid_label = control(
         state, L"STATIC", L"Service UUID", 0, 460, 1390, 180, 26, 0);
     state.link_bluetooth_uuid = control(
@@ -2951,7 +3025,7 @@ DashboardResult show_windows_dashboard(
         id_link_bluetooth_uuid);
     state.link_diagnostics = control(
         state, L"BUTTON", L"Write link diagnostics trace", BS_AUTOCHECKBOX,
-        32, 1430, 330, 28, id_link_diagnostics);
+        32, 1460, 330, 28, id_link_diagnostics);
     SendMessageW(state.link_diagnostics, BM_SETCHECK,
                  link_settings.diagnostics ? BST_CHECKED : BST_UNCHECKED, 0);
     update_link_control_state(state);

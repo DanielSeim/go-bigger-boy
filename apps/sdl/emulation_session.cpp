@@ -39,6 +39,13 @@ std::string effective_tcp_bind_address(const RemoteLinkOptions& options) {
     return options.bind_address;
 }
 
+std::string bluetooth_error_suffix(const RemoteLinkSession& remote) {
+    if (!remote.bluetooth || remote.bluetooth_channel.error().empty()) {
+        return {};
+    }
+    return " " + remote.bluetooth_channel.error() + ".";
+}
+
 } // namespace
 
 bool configure_video_pipeline(SdlResources& sdl,
@@ -774,13 +781,14 @@ void start_remote_link_session(gameboy::Emulator& emulator,
                                                            options.port));
     if (!ready) {
         emulator.bus().connect_printer(true);
-        throw std::runtime_error(
-            hosting ? (remote.bluetooth
-                           ? "Could not host Bluetooth link. Pairing or the Bluetooth adapter may be unavailable."
-                           : "Could not host TCP link on the configured address.")
-                    : (remote.bluetooth
-                           ? "Could not connect to the Bluetooth link device. Check pairing and the device address."
-                           : "Could not connect to the configured TCP link host."));
+        const auto message = hosting
+                                 ? (remote.bluetooth
+                                        ? "Could not host Bluetooth link."
+                                        : "Could not host TCP link on the configured address.")
+                                 : (remote.bluetooth
+                                        ? "Could not connect to the Bluetooth link device."
+                                        : "Could not connect to the configured TCP link host.");
+        throw std::runtime_error(message + bluetooth_error_suffix(remote));
     }
     remote.hosting = hosting;
     remote.diagnostics = link_diagnostics;
@@ -900,9 +908,10 @@ void retry_remote_link_session(gameboy::Emulator& emulator,
         remote.endpoint.attach(emulator.bus().serial_port(), channel,
                                emulator.link_compatibility_id(),
                                emulator.link_compatibility_profile());
-        throw std::runtime_error(remote.bluetooth
-                                     ? "Could not retry the Bluetooth link session."
-                                     : "Could not retry the TCP link session.");
+        const auto message = remote.bluetooth
+                                 ? "Could not retry the Bluetooth link session."
+                                 : "Could not retry the TCP link session.";
+        throw std::runtime_error(message + bluetooth_error_suffix(remote));
     }
     remote.next_pending_poll = {};
     if (remote.hosting && options.lan_discovery && !remote.bluetooth &&

@@ -35,6 +35,10 @@ public:
     [[nodiscard]] bool send(const LinkPacket& packet) noexcept override;
     [[nodiscard]] std::optional<LinkPacket> receive() noexcept override;
     [[nodiscard]] State state() const noexcept override { return state_; }
+    // A human-readable platform error for the most recent failed operation.
+    // The frontend uses this to turn an otherwise opaque RFCOMM failure into
+    // an actionable connection message.
+    [[nodiscard]] const std::string& error() const noexcept { return error_; }
     [[nodiscard]] std::size_t queued_packets() const noexcept override {
         return packets_.size();
     }
@@ -49,7 +53,7 @@ public:
 private:
     void flush_send_queue() noexcept;
     void receive_available() noexcept;
-    void fail() noexcept;
+    void fail(int platform_error = 0) noexcept;
 
     std::intptr_t listener_{-1};
     std::intptr_t peer_{-1};
@@ -60,6 +64,7 @@ private:
     std::vector<std::uint8_t> receive_buffer_;
     std::deque<LinkPacket> packets_;
     std::uint64_t malformed_packets_{};
+    std::string error_;
 };
 
 } // namespace gameboy
