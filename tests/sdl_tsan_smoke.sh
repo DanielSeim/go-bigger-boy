@@ -70,7 +70,16 @@ TSAN_OPTIONS="$tsan_options" timeout --signal=INT --kill-after=5s \
                 echo "xdotool input failed: $*" >>"$output/xdotool.log"
             fi
         }
+        click_at() {
+            send_input mousemove --window "$1" "$2" "$3"
+            send_input click --window "$1" 1
+        }
 
+        # A window manager is intentionally absent in Xvfb. Explicitly focus
+        # the SDL window and send a harmless click so SDL accepts the targeted
+        # keyboard event even when _NET_ACTIVE_WINDOW is unavailable.
+        send_input windowfocus "$window"
+        click_at "$window" 400 300
         # Xvfb does not provide a window manager on every runner. Targeted
         # xdotool events work without activation, so treat activation as a
         # best-effort convenience rather than a smoke-test prerequisite.
@@ -88,7 +97,7 @@ TSAN_OPTIONS="$tsan_options" timeout --signal=INT --kill-after=5s \
         if [[ -n "$rom" ]]; then
             # Exercise the debugger at both the normal and compact supported
             # sizes. The same window geometry drives rendering and hit tests.
-            send_input key --window "$window" F12
+            send_input key --window "$window" --clearmodifiers F12
             debugger=""
             for attempt in $(seq 1 100); do
                 debugger=$(xdotool search --name "Go Bigger Boy - Debugger" \
@@ -108,11 +117,11 @@ TSAN_OPTIONS="$tsan_options" timeout --signal=INT --kill-after=5s \
             # otherwise slower runners can miss the normal 960x700 capture.
             sleep 1
             # F4 is a visible header button as well as a keyboard shortcut.
-            send_input click --window "$debugger" 490 30
+            click_at "$debugger" 490 30
             sleep 0.3
             # F1 opens the separate video viewer, whose three modes are also
             # reachable by visible buttons.
-            send_input click --window "$debugger" 320 30
+            click_at "$debugger" 320 30
             viewer=""
             for attempt in $(seq 1 100); do
                 viewer=$(xdotool search --name "Go Bigger Boy - Video Viewers" \
@@ -126,8 +135,8 @@ TSAN_OPTIONS="$tsan_options" timeout --signal=INT --kill-after=5s \
                 wait "$pid" || true
                 exit 12
             fi
-            send_input click --window "$viewer" 260 66
-            send_input click --window "$viewer" 400 66
+            click_at "$viewer" 260 66
+            click_at "$viewer" 400 66
             send_input key --window "$viewer" F12
             sleep 0.3
             send_input mousemove --window "$debugger" 700 250
