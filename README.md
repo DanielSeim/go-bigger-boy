@@ -478,14 +478,14 @@ preferences directory. Desktop keyboard/gamepad bindings and the display palette
 are stored in the human-readable `settings.ini` at the data root. Each
 Game Boy button accepts up to two space-separated keyboard keys (for example,
 `keyboard.B = Z Y`). Copy the file to another GBB installation to share the
-same setup. On Windows, the native Settings page presents primary and secondary
-buttons over a Game Boy control illustration: click a slot and press its new
-key, press Delete while capturing a secondary slot to clear it, or reset every
-keyboard control and emulator shortcut at once. The same page also exposes
-Fast Forward, Rewind, Save State, and Load State shortcut buttons. Reusing a
-key automatically removes its earlier assignment. The Ctrl+K dialog can also
-rebind keyboard or gamepad input; Space skips an optional secondary key and
-Escape cancels an in-progress setup. GBB
+same setup. On Windows, the native Settings page is organized into General,
+Controls, Link cable, and Advanced sections. The Controls section presents a
+clear primary/secondary binding table: click a slot and press its new key, or
+press Delete to clear it. Duplicate keys move from their previous action, and
+the complete change set is staged until Apply. The same page also exposes Fast
+Forward, Rewind, Save State, and Load State shortcut buttons. The Ctrl+K dialog
+can also rebind keyboard or gamepad input; Space skips an optional secondary
+key and Escape cancels an in-progress setup. GBB
 generates a complete default
 `settings.ini` at startup whenever it is missing and appends defaults for any
 recognized entries omitted from an existing file. Older `controls.txt` and
@@ -593,8 +593,9 @@ user settings.
 On Windows, the Settings page exposes these fields for the currently running
 ROM and shows its fingerprint. A live preview updates as valid values change;
 the framebuffer-facade option is a clear toggle for comparing the 2D front
-panel with the voxel mesh. Save profile applies the values when you return to
-the game, while Reset profile restores the defaults.
+panel with the voxel mesh. The values are staged with the other settings and
+saved when you Apply and return; Reset to defaults restores the built-in
+profile before applying.
 
 The default action bindings are `keyboard.FastForward = Tab` (hold for up to
 4× speed), `keyboard.Rewind = Left Shift` (hold to step backward through the last three

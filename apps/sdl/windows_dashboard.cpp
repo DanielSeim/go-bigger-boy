@@ -79,6 +79,7 @@ constexpr int id_settings_apply = 129;
 constexpr int id_settings_cancel = 132;
 constexpr int id_search_clear = 133;
 constexpr int id_artwork_retry = 134;
+constexpr int id_settings_section_first = 136;
 constexpr int id_binding_first = 200;
 constexpr int id_action_first = 220;
 constexpr UINT artwork_ready = WM_APP + 1;
@@ -87,7 +88,7 @@ constexpr int dashboard_width = 980;
 // Keep the initial dashboard usable on 1080p displays after non-client
 // chrome, while the settings page remains fully accessible through scrolling.
 constexpr int dashboard_height = 900;
-constexpr long settings_content_bottom = 1510;
+constexpr long settings_content_bottom = 860;
 
 struct MetadataRecord {
     std::string name;
@@ -167,6 +168,8 @@ std::wstring formatted_last_played(const std::int64_t timestamp) {
 }
 
 struct State {
+    enum class SettingsSection { general, controls, link, advanced };
+
     const gameboy::RomLibrary* library{};
     DashboardResult result;
     bool can_resume{};
@@ -188,6 +191,8 @@ struct State {
     HWND settings_status{};
     HWND settings_apply{};
     HWND settings_cancel{};
+    HWND settings_section_description{};
+    std::array<HWND, 4> settings_sections{};
     HWND palette_label{};
     HWND video_label{};
     HWND video{};
@@ -263,6 +268,7 @@ struct State {
     std::size_t artwork_total{};
     DashboardResult initial_result;
     bool settings_dirty{};
+    SettingsSection settings_section{SettingsSection::general};
     std::wstring library_filter;
     int library_sort_column{4};
     bool library_sort_descending{true};
@@ -481,11 +487,14 @@ void mark_settings_dirty(State& state) {
     state.settings_dirty = true;
     if (state.settings_status != nullptr) {
         SetWindowTextW(state.settings_status,
-                       L"Unsaved changes. Click Apply & Close to keep them.");
+                       L"Unsaved changes. Apply to keep them, or discard them.");
     }
 }
 
 void update_link_control_state(State& state) {
+    const auto link_section =
+        state.page == State::Page::settings &&
+        state.settings_section == State::SettingsSection::link;
     const auto bluetooth = SendMessageW(
         state.link_transport, CB_GETCURSEL, 0, 0) == 1;
     const auto set_enabled = [bluetooth](const HWND control, const bool bt) {
@@ -506,10 +515,128 @@ void update_link_control_state(State& state) {
     set_enabled(state.link_bluetooth_choose, true);
     set_enabled(state.link_bluetooth_uuid_label, true);
     set_enabled(state.link_bluetooth_uuid, true);
+
+    const auto set_visible = [link_section](const HWND control,
+                                             const bool visible) {
+        if (control != nullptr) {
+            ShowWindow(control, link_section && visible ? SW_SHOW : SW_HIDE);
+        }
+    };
+    set_visible(state.link_remote_host_label, !bluetooth);
+    set_visible(state.link_remote_host, !bluetooth);
+    set_visible(state.link_remote_bind_label, !bluetooth);
+    set_visible(state.link_remote_bind, !bluetooth);
+    set_visible(state.link_remote_port_label, !bluetooth);
+    set_visible(state.link_remote_port, !bluetooth);
+    set_visible(state.link_lan_discovery, !bluetooth);
+    set_visible(state.link_bluetooth_address_label, bluetooth);
+    set_visible(state.link_bluetooth_address, bluetooth);
+    set_visible(state.link_bluetooth_choose, bluetooth);
+    set_visible(state.link_bluetooth_uuid_label, bluetooth);
+    set_visible(state.link_bluetooth_uuid, bluetooth);
+    set_visible(state.link_diagnostics, true);
+}
+
+void show_settings_section(State& state) {
+    const auto settings = state.page == State::Page::settings;
+    const auto section = state.settings_section;
+    constexpr std::array<const wchar_t*, 4> descriptions{{
+        L"Display palette, video mode, audio generation, and hardware model. Hardware changes apply to the next game.",
+        L"Click a slot, press a key, or press Delete to clear it. Duplicate keys are moved from their previous action.",
+        L"Choose TCP for a LAN connection or Bluetooth Classic for paired devices. Only relevant fields are shown.",
+        L"Advanced tools are optional. Voxel profiles are per-ROM; plug-in policy changes require a restart."}};
+    const auto index = static_cast<std::size_t>(section);
+    if (state.settings_section_description != nullptr) {
+        SetWindowTextW(state.settings_section_description,
+                       descriptions[index]);
+        ShowWindow(state.settings_section_description,
+                   settings ? SW_SHOW : SW_HIDE);
+    }
+    for (std::size_t position = 0; position < state.settings_sections.size();
+         ++position) {
+        ShowWindow(state.settings_sections[position],
+                   settings ? SW_SHOW : SW_HIDE);
+        InvalidateRect(state.settings_sections[position], nullptr, TRUE);
+    }
+    const auto show = [settings, section](const HWND control,
+                                           const State::SettingsSection target) {
+        if (control != nullptr) {
+            ShowWindow(control, settings && section == target ? SW_SHOW
+                                                               : SW_HIDE);
+        }
+    };
+    show(state.palette_label, State::SettingsSection::general);
+    show(state.palette, State::SettingsSection::general);
+    show(state.video_label, State::SettingsSection::general);
+    show(state.video, State::SettingsSection::general);
+    show(state.hardware_model_label, State::SettingsSection::general);
+    show(state.hardware_model, State::SettingsSection::general);
+    show(state.audio_enabled, State::SettingsSection::general);
+
+    show(state.controls_label, State::SettingsSection::controls);
+    show(state.controls_instruction, State::SettingsSection::controls);
+    ShowWindow(state.gameboy_background, SW_HIDE);
+    show(state.actions_label, State::SettingsSection::controls);
+    show(state.reset_controls, State::SettingsSection::controls);
+    for (const auto heading : state.primary_headings) {
+        show(heading, State::SettingsSection::controls);
+    }
+    for (const auto heading : state.secondary_headings) {
+        show(heading, State::SettingsSection::controls);
+    }
+    for (const auto label : state.binding_labels) {
+        show(label, State::SettingsSection::controls);
+    }
+    for (const auto& buttons : state.binding_buttons) {
+        for (const auto button : buttons) {
+            show(button, State::SettingsSection::controls);
+        }
+    }
+    for (const auto label : state.action_labels) {
+        show(label, State::SettingsSection::controls);
+    }
+    for (const auto button : state.action_buttons) {
+        show(button, State::SettingsSection::controls);
+    }
+
+    show(state.link_heading, State::SettingsSection::link);
+    show(state.link_transport_label, State::SettingsSection::link);
+    show(state.link_transport, State::SettingsSection::link);
+
+    show(state.voxel_heading, State::SettingsSection::advanced);
+    show(state.voxel_fingerprint_label, State::SettingsSection::advanced);
+    show(state.voxel_preview, State::SettingsSection::advanced);
+    for (const auto label : state.voxel_labels) {
+        show(label, State::SettingsSection::advanced);
+    }
+    for (const auto edit : state.voxel_edits) {
+        show(edit, State::SettingsSection::advanced);
+    }
+    show(state.voxel_save, State::SettingsSection::advanced);
+    show(state.voxel_reset, State::SettingsSection::advanced);
+    // Voxel edits are committed with the page-level Apply action; keep the
+    // old per-profile save control out of the new staged-settings flow.
+    ShowWindow(state.voxel_save, SW_HIDE);
+    if (!state.voxel_available) {
+        ShowWindow(state.voxel_heading, SW_HIDE);
+        ShowWindow(state.voxel_fingerprint_label, SW_HIDE);
+        ShowWindow(state.voxel_preview, SW_HIDE);
+        for (const auto label : state.voxel_labels) ShowWindow(label, SW_HIDE);
+        for (const auto edit : state.voxel_edits) ShowWindow(edit, SW_HIDE);
+        ShowWindow(state.voxel_save, SW_HIDE);
+        ShowWindow(state.voxel_reset, SW_HIDE);
+    }
+    show(state.plugin_heading, State::SettingsSection::advanced);
+    show(state.plugin_status, State::SettingsSection::advanced);
+    show(state.plugin_discovery, State::SettingsSection::advanced);
+    show(state.plugin_require_allowlist, State::SettingsSection::advanced);
+    show(state.plugin_require_capability_allowlist,
+         State::SettingsSection::advanced);
+    update_link_control_state(state);
 }
 
 std::wstring binding_name(const std::int64_t value) {
-    if (value == SDLK_UNKNOWN) return L"None";
+    if (value == SDLK_UNKNOWN) return L"Unassigned";
     if (value == SDLK_LSHIFT) return L"Left Shift";
     if (value == SDLK_GRAVE) return L"Grave";
     return widen(SDL_GetKeyName(static_cast<SDL_Keycode>(value)));
@@ -834,7 +961,7 @@ void assign_captured_binding(State& state, const SDL_Keycode key) {
     state.capturing_binding.reset();
     mark_settings_dirty(state);
     SetWindowTextW(state.controls_instruction,
-                   L"Click a binding, then press a key. Delete clears a binding.");
+                   L"Click a slot, press a key, or press Delete to clear it.");
     refresh_binding_buttons(state);
 }
 
@@ -1180,12 +1307,12 @@ void show_page(State& state, const State::Page page) {
     ShowWindow(state.link_diagnostics, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.shortcuts_heading, shortcuts ? SW_SHOW : SW_HIDE);
     ShowWindow(state.shortcuts_text, shortcuts ? SW_SHOW : SW_HIDE);
-    ShowScrollBar(state.window, SB_VERT, settings ? TRUE : FALSE);
+    show_settings_section(state);
     layout_dashboard(state);
     if (library) refresh_library_actions(state);
     if (settings) {
-        // The owner-drawn Game Boy artwork overlaps these controls. Keep the
-        // bindings above it and repaint them immediately when opening Settings.
+        // Refresh the native binding buttons immediately when entering the
+        // controls section so their staged values are always visible.
         for (const auto& buttons : state.binding_buttons) {
             for (const auto button : buttons) {
                 SetWindowPos(button, HWND_TOP, 0, 0, 0, 0,
@@ -1398,89 +1525,114 @@ void layout_dashboard(State& state) {
                       0, static_cast<int>(content_bottom),
                       static_cast<UINT>(height), state.settings_scroll, 0};
     SetScrollInfo(state.window, SB_VERT, &scroll, TRUE);
+    ShowScrollBar(state.window, SB_VERT,
+                  state.page == State::Page::settings && max_scroll > 0
+                      ? TRUE
+                      : FALSE);
     const auto offset = state.settings_scroll;
-    place_child(state.settings_heading, 32, 200, 360, 30, offset);
+    place_child(state.settings_heading, 32, 200, 260, 30, 0);
+    constexpr std::array<int, 4> section_x{{32, 258, 484, 710}};
+    constexpr std::array<int, 4> section_width{{210, 210, 210, 238}};
+    for (std::size_t index = 0; index < state.settings_sections.size();
+         ++index) {
+        place_child(state.settings_sections[index], section_x[index], 235,
+                    section_width[index], 34, 0);
+    }
+    place_child(state.settings_section_description, 32, 280, 916, 38, 0);
+
+    // General settings stay deliberately small and understandable: one
+    // choice per row, with the technical controls kept out of the way.
     place_child(state.settings_status, 510, 112, 440, 20, 0);
     place_child(state.settings_apply, 650, 140, 140, 40, 0);
     place_child(state.settings_cancel, 802, 140, 126, 40, 0);
-    place_child(state.palette_label, 32, 245, 110, 26, offset);
-    place_child(state.palette, 154, 240, 290, 26, offset);
-    place_child(state.video_label, 32, 275, 110, 26, offset);
-    place_child(state.video, 154, 270, 290, 26, offset);
-    place_child(state.hardware_model_label, 32, 305, 110, 26, offset);
-    place_child(state.hardware_model, 154, 300, 290, 26, offset);
-    place_child(state.audio_enabled, 510, 270, 300, 34, offset);
-    place_child(state.controls_label, 510, 200, 240, 30, offset);
-    place_child(state.controls_instruction, 510, 238, 420, 26, offset);
-    place_child(state.gameboy_background, 32, 310, 916, 268, offset);
+    place_child(state.palette_label, 32, 350, 150, 26, offset);
+    place_child(state.palette, 200, 345, 320, 28, offset);
+    place_child(state.video_label, 32, 395, 150, 26, offset);
+    place_child(state.video, 200, 390, 320, 28, offset);
+    place_child(state.hardware_model_label, 32, 440, 150, 26, offset);
+    place_child(state.hardware_model, 200, 435, 320, 28, offset);
+    place_child(state.audio_enabled, 32, 490, 360, 34, offset);
+
+    // Controls use a literal table instead of placing buttons over a
+    // decorative controller illustration.
+    place_child(state.controls_label, 32, 330, 300, 28, offset);
+    place_child(state.controls_instruction, 32, 365, 916, 26, offset);
     for (int column = 0; column < 2; ++column) {
-        const auto base_x = column == 0 ? 72 : 520;
+        const auto base_x = column == 0 ? 32 : 510;
         place_child(state.primary_headings[static_cast<std::size_t>(column)],
-                    base_x + 78, 316, 120, 24, offset);
+                    base_x + 135, 390, 145, 24, offset);
         place_child(state.secondary_headings[static_cast<std::size_t>(column)],
-                    base_x + 214, 316, 120, 24, offset);
+                    base_x + 285, 390, 145, 24, offset);
     }
     constexpr std::array<std::size_t, 8> order{{2, 1, 0, 3, 4, 5, 6, 7}};
     for (std::size_t position = 0; position < order.size(); ++position) {
         const auto index = order[position];
         const auto column = position < 4 ? 0 : 1;
         const auto row = static_cast<int>(position % 4);
-        const auto base_x = column == 0 ? 72 : 520;
-        const auto y = 350 + row * 48;
-        place_child(state.binding_labels[index], base_x, y + 8, 64, 26, offset);
+        const auto base_x = column == 0 ? 32 : 510;
+        const auto y = 420 + row * 48;
+        place_child(state.binding_labels[index], base_x, y + 8, 125, 26, offset);
         for (std::size_t slot = 0; slot < 2; ++slot) {
             place_child(state.binding_buttons[index][slot],
-                        base_x + 78 + static_cast<int>(slot) * 136, y, 120, 38,
+                        base_x + 135 + static_cast<int>(slot) * 150, y, 140, 38,
                         offset);
         }
     }
-    place_child(state.actions_label, 32, 610, 260, 28, offset);
+    place_child(state.actions_label, 32, 650, 300, 28, offset);
     for (std::size_t index = 0; index < state.action_labels.size(); ++index) {
         const auto column = index % 2;
         const auto row = index / 2;
-        const auto base_x = column == 0 ? 72 : 520;
-        const auto y = 650 + static_cast<int>(row) * 50;
-        place_child(state.action_labels[index], base_x, y + 8, 130, 26, offset);
-        place_child(state.action_buttons[index], base_x + 145, y, 150, 38,
+        const auto base_x = column == 0 ? 32 : 510;
+        const auto y = 690 + static_cast<int>(row) * 50;
+        place_child(state.action_labels[index], base_x, y + 8, 135, 26, offset);
+        place_child(state.action_buttons[index], base_x + 150, y, 180, 38,
                     offset);
     }
-    place_child(state.reset_controls, 32, 775, 230, 40, offset);
-    place_child(state.voxel_heading, 32, 825, 320, 28, offset);
-    place_child(state.voxel_fingerprint_label, 360, 827, 580, 24, offset);
-    place_child(state.voxel_preview, 300, 850, 180, 150, offset);
+    place_child(state.reset_controls, 32, 790, 230, 40, offset);
+
+    // Advanced settings use the same compact grid, with plug-ins below the
+    // optional per-ROM voxel profile.
+    const auto advanced_plugin_y = state.voxel_available ? 620 : 350;
+    place_child(state.voxel_heading, 32, 330, 300, 28, offset);
+    place_child(state.voxel_fingerprint_label, 350, 333, 598, 24, offset);
+    place_child(state.voxel_preview, 300, 380, 180, 150, offset);
     constexpr std::array<int, 8> profile_x{{32, 32, 32, 32, 510, 510, 510, 510}};
-    constexpr std::array<int, 8> profile_y{{850, 890, 930, 970, 850, 890, 930, 970}};
+    constexpr std::array<int, 8> profile_y{{380, 420, 460, 500, 380, 420, 460, 500}};
     for (std::size_t index = 0; index < state.voxel_labels.size(); ++index) {
         place_child(state.voxel_labels[index], profile_x[index], profile_y[index],
                     120, 24, offset);
         place_child(state.voxel_edits[index], profile_x[index] + 130,
                     profile_y[index] - 2, 130, 28, offset);
     }
-    place_child(state.voxel_save, 680, 1020, 120, 38, offset);
-    place_child(state.voxel_reset, 810, 1020, 120, 38, offset);
-    place_child(state.plugin_heading, 32, 1080, 320, 28, offset);
-    place_child(state.plugin_status, 32, 1115, 916, 72, offset);
-    place_child(state.plugin_discovery, 32, 1195, 260, 28, offset);
-    place_child(state.plugin_require_allowlist, 320, 1195, 320, 28, offset);
-    place_child(state.plugin_require_capability_allowlist, 660, 1195, 290, 28,
+    place_child(state.voxel_save, 680, 545, 120, 38, offset);
+    place_child(state.voxel_reset, 680, 545, 268, 38, offset);
+    place_child(state.plugin_heading, 32, advanced_plugin_y, 320, 28, offset);
+    place_child(state.plugin_status, 32, advanced_plugin_y + 35, 916, 72,
                 offset);
-    place_child(state.link_heading, 32, 1270, 420, 28, offset);
-    place_child(state.link_transport_label, 32, 1310, 120, 26, offset);
-    place_child(state.link_transport, 154, 1305, 220, 26, offset);
-    place_child(state.link_remote_host_label, 400, 1310, 120, 26, offset);
-    place_child(state.link_remote_host, 522, 1305, 190, 26, offset);
-    place_child(state.link_remote_bind_label, 730, 1310, 100, 26, offset);
-    place_child(state.link_remote_bind, 832, 1305, 116, 26, offset);
-    place_child(state.link_remote_port_label, 32, 1350, 120, 26, offset);
-    place_child(state.link_remote_port, 154, 1345, 100, 26, offset);
-    place_child(state.link_lan_discovery, 280, 1345, 250, 28, offset);
-    place_child(state.link_bluetooth_address_label, 32, 1390, 180, 26,
+    place_child(state.plugin_discovery, 32, advanced_plugin_y + 115, 260, 28,
                 offset);
-    place_child(state.link_bluetooth_address, 218, 1385, 220, 26, offset);
-    place_child(state.link_bluetooth_choose, 218, 1418, 220, 28, offset);
-    place_child(state.link_bluetooth_uuid_label, 460, 1390, 180, 26, offset);
-    place_child(state.link_bluetooth_uuid, 646, 1385, 302, 26, offset);
-    place_child(state.link_diagnostics, 32, 1460, 330, 28, offset);
+    place_child(state.plugin_require_allowlist, 320, advanced_plugin_y + 115,
+                320, 28, offset);
+    place_child(state.plugin_require_capability_allowlist, 660,
+                advanced_plugin_y + 115, 290, 28,
+                offset);
+    place_child(state.link_heading, 32, 330, 420, 28, offset);
+    place_child(state.link_transport_label, 32, 350, 150, 26, offset);
+    place_child(state.link_transport, 200, 345, 320, 28, offset);
+    place_child(state.link_remote_host_label, 32, 405, 150, 26, offset);
+    place_child(state.link_remote_host, 200, 400, 300, 28, offset);
+    place_child(state.link_remote_bind_label, 530, 405, 120, 26, offset);
+    place_child(state.link_remote_bind, 665, 400, 283, 28, offset);
+    place_child(state.link_remote_port_label, 32, 450, 150, 26, offset);
+    place_child(state.link_remote_port, 200, 445, 120, 28, offset);
+    place_child(state.link_lan_discovery, 350, 445, 300, 28, offset);
+    place_child(state.link_bluetooth_address_label, 32, 405, 170, 26,
+                offset);
+    place_child(state.link_bluetooth_address, 218, 400, 300, 28, offset);
+    place_child(state.link_bluetooth_choose, 218, 435, 300, 28, offset);
+    place_child(state.link_bluetooth_uuid_label, 530, 405, 120, 26, offset);
+    place_child(state.link_bluetooth_uuid, 665, 400, 283, 28, offset);
+    place_child(state.link_diagnostics, 32, 500, 330, 28, offset);
 }
 
 void scroll_settings(State& state, const int wheel_delta) {
@@ -1500,6 +1652,15 @@ void finish(State& state, const DashboardResultAction action,
     if (collect_settings && state.link_transport != nullptr) {
         collect_link_settings(state);
     }
+    if (collect_settings && state.result.voxel_profile_changed &&
+        state.voxel_available && state.voxel_fingerprint != 0 &&
+        !gbb::save_voxel_profile(state.voxel_profile_path,
+                                 state.voxel_fingerprint,
+                                 state.voxel_profile)) {
+        MessageBoxW(state.window, L"Could not save voxel-profiles.ini.",
+                    L"Apply settings", MB_OK | MB_ICONERROR);
+        return;
+    }
     save_window_position(state);
     state.result.action = action;
     state.result.rom_path = path;
@@ -1512,15 +1673,6 @@ void finish(State& state, const DashboardResultAction action,
 }
 
 void cancel_settings(State& state, const DashboardResultAction action) {
-    const auto restore_voxel = state.result.voxel_profile_changed;
-    if (restore_voxel && state.voxel_available && state.voxel_fingerprint != 0 &&
-        !gbb::save_voxel_profile(state.voxel_profile_path,
-                                 state.voxel_fingerprint,
-                                 state.initial_voxel_profile)) {
-        MessageBoxW(state.window, L"Could not restore the previous voxel profile.",
-                    L"Cancel settings", MB_OK | MB_ICONERROR);
-        return;
-    }
     state.result = state.initial_result;
     state.voxel_profile = state.initial_voxel_profile;
     finish(state, action, {}, false);
@@ -1678,13 +1830,12 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
             state->capturing_binding.reset();
             SetWindowTextW(
                 state->controls_instruction,
-                L"Click a binding, then press a key. Delete clears a binding.");
+                L"Click a slot, press a key, or press Delete to clear it.");
             refresh_binding_buttons(*state);
             return 0;
         }
         const auto capture = *state->capturing_binding;
-        if (wparam == VK_DELETE &&
-            (capture.action || capture.slot == 1)) {
+        if (wparam == VK_DELETE) {
             if (capture.action) {
                 state->result.action_bindings[capture.index] = SDLK_UNKNOWN;
                 state->result.action_bindings_changed = true;
@@ -1761,6 +1912,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
             const auto editing = index == 7 ? notification == BN_CLICKED
                                             : notification == EN_CHANGE;
             if (editing && read_voxel_profile_controls(*state)) {
+                state->result.voxel_profile_changed = true;
                 mark_settings_dirty(*state);
                 invalidate_voxel_preview(*state);
             }
@@ -1790,6 +1942,20 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                 L"Press a key for the shortcut (Escape cancels, Delete clears it).");
             refresh_binding_buttons(*state);
             SetFocus(state->window);
+            return 0;
+        }
+        if (command >= id_settings_section_first &&
+            command < id_settings_section_first + 4 &&
+            HIWORD(wparam) == BN_CLICKED) {
+            if (state->capturing_binding) {
+                state->capturing_binding.reset();
+                refresh_binding_buttons(*state);
+            }
+            state->settings_scroll = 0;
+            state->settings_section = static_cast<State::SettingsSection>(
+                command - id_settings_section_first);
+            show_settings_section(*state);
+            layout_dashboard(*state);
             return 0;
         }
         switch (LOWORD(wparam)) {
@@ -1855,10 +2021,9 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                         state->result.hardware_model = model;
                         state->result.hardware_model_changed = true;
                         mark_settings_dirty(*state);
-                        MessageBoxW(
-                            state->window,
-                            L"Hardware model changed. Restart the ROM to apply it.",
-                            L"Hardware model", MB_OK | MB_ICONINFORMATION);
+                        SetWindowTextW(
+                            state->settings_status,
+                            L"Hardware model changed. It will apply to the next game.");
                     }
                 }
             }
@@ -1955,7 +2120,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
             state->result.voxel_profile_changed = true;
             mark_settings_dirty(*state);
             SetWindowTextW(state->voxel_fingerprint_label,
-                           L"Voxel profile saved. Return to the game to preview it.");
+                           L"Voxel profile staged. Apply settings to save it.");
             return 0;
         case id_voxel_reset:
             if (!state->voxel_available || state->voxel_fingerprint == 0) {
@@ -1972,6 +2137,8 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
             }
             state->result.voxel_profile_changed = true;
             mark_settings_dirty(*state);
+            SetWindowTextW(state->voxel_fingerprint_label,
+                           L"Default voxel profile staged. Apply settings to save it.");
             return 0;
         case id_settings_apply:
             if (!link_port_valid(*state)) {
@@ -2544,9 +2711,16 @@ void draw_dashboard_button(const DRAWITEMSTRUCT& item, const State& state) {
         (id == id_settings && state.page == State::Page::settings) ||
         (id == id_library && state.page == State::Page::library) ||
         (id == id_shortcuts && state.page == State::Page::shortcuts);
+    const auto section = id >= id_settings_section_first &&
+                         id < id_settings_section_first + 4;
+    const auto active_section =
+        section && state.page == State::Page::settings &&
+        id - id_settings_section_first ==
+            static_cast<int>(state.settings_section);
     const auto fill = disabled
                           ? RGB(28, 34, 45)
-                          : active_tab || pressed ? RGB(0, 145, 190)
+                          : active_tab || active_section || pressed
+                                ? RGB(0, 145, 190)
                                                    : RGB(44, 65, 88);
     const auto text = disabled ? RGB(104, 117, 132) : RGB(238, 246, 252);
     const auto brush = CreateSolidBrush(fill);
@@ -2707,14 +2881,27 @@ DashboardResult show_windows_dashboard(
                                   WS_VISIBLE | BS_PUSHBUTTON,
                                   316, 140, 126, 40, id_shortcuts);
     state.settings_status = control(
-        state, L"STATIC", L"Settings apply when you click Apply & Close.",
+        state, L"STATIC", L"Changes are staged until you apply or discard them.",
         WS_VISIBLE, 510, 112, 440, 20, 0);
     state.settings_apply = control(
-        state, L"BUTTON", L"Apply & Close", BS_DEFPUSHBUTTON,
+        state, L"BUTTON", L"Apply and return", BS_DEFPUSHBUTTON,
         650, 140, 140, 40, id_settings_apply);
     state.settings_cancel = control(
-        state, L"BUTTON", L"Cancel", BS_PUSHBUTTON,
+        state, L"BUTTON", L"Discard", BS_PUSHBUTTON,
         802, 140, 126, 40, id_settings_cancel);
+    state.settings_section_description = control(
+        state, L"STATIC",
+        L"Choose the display, audio, and hardware behavior used when games run.",
+        WS_VISIBLE, 32, 280, 916, 38, 0);
+    constexpr std::array<const wchar_t*, 4> settings_section_names{{
+        L"General", L"Controls", L"Link cable", L"Advanced"}};
+    for (std::size_t index = 0; index < settings_section_names.size(); ++index) {
+        state.settings_sections[index] = control(
+            state, L"BUTTON", settings_section_names[index], BS_PUSHBUTTON,
+            32 + static_cast<int>(index) * 226, 235,
+            index == settings_section_names.size() - 1 ? 238 : 210, 34,
+            id_settings_section_first + static_cast<int>(index));
+    }
     state.artwork_status = control(
         state, L"STATIC", L"Artwork: loading...", WS_VISIBLE,
         32, 180, 916, 20, 0);
@@ -2790,11 +2977,11 @@ DashboardResult show_windows_dashboard(
     state.resume = control(state, L"BUTTON", L"Resume game",
         (can_resume ? WS_VISIBLE : 0) | BS_PUSHBUTTON,
         572, 575, 150, 44, id_resume);
-    state.settings_heading = control(state, L"STATIC", L"Display and controls",
+    state.settings_heading = control(state, L"STATIC", L"Settings",
         0, 32, 200, 360, 30, 0);
     SendMessageW(state.settings_heading, WM_SETFONT,
                  reinterpret_cast<WPARAM>(state.title_font), TRUE);
-    state.palette_label = control(state, L"STATIC", L"Color palette",
+    state.palette_label = control(state, L"STATIC", L"Display palette",
         0, 32, 245, 110, 26, 0);
     state.palette = control(state, L"COMBOBOX", L"",
         CBS_DROPDOWNLIST | WS_VSCROLL, 154, 240, 290, 200, id_palette);
@@ -2807,7 +2994,7 @@ DashboardResult show_windows_dashboard(
     }
     SendMessageW(state.palette, CB_SETCURSEL,
                  static_cast<WPARAM>(palette), 0);
-    state.video_label = control(state, L"STATIC", L"Video pipeline",
+    state.video_label = control(state, L"STATIC", L"Video mode",
         0, 32, 275, 110, 26, 0);
     state.video = control(state, L"COMBOBOX", L"",
         CBS_DROPDOWNLIST | WS_VSCROLL, 154, 270, 290, 26, id_video);
@@ -2857,7 +3044,7 @@ DashboardResult show_windows_dashboard(
                  reinterpret_cast<WPARAM>(state.title_font), TRUE);
     state.controls_instruction = control(
         state, L"STATIC",
-        L"Click a binding, then press a key. Delete clears a binding.",
+        L"Click a slot, press a key, or press Delete to clear it. Duplicate keys are moved from their previous action.",
         0, 510, 238, 420, 26, 0);
     state.gameboy_background = control(
         state, L"STATIC", L"", SS_OWNERDRAW | WS_CLIPSIBLINGS,
@@ -2867,10 +3054,10 @@ DashboardResult show_windows_dashboard(
     for (int column = 0; column < 2; ++column) {
         const auto base_x = column == 0 ? 72 : 520;
         state.primary_headings[static_cast<std::size_t>(column)] = control(
-            state, L"STATIC", L"Primary", 0,
+            state, L"STATIC", L"Primary key", 0,
             base_x + 78, 316, 120, 24, 0);
         state.secondary_headings[static_cast<std::size_t>(column)] = control(
-            state, L"STATIC", L"Secondary", 0,
+            state, L"STATIC", L"Secondary key", 0,
             base_x + 214, 316, 120, 24, 0);
     }
     constexpr std::array<std::size_t, 8> control_order{{
@@ -2936,10 +3123,10 @@ DashboardResult show_windows_dashboard(
                       x + 130, y - 2, 130, 28,
                       id_voxel_first_edit + static_cast<int>(index));
     }
-    state.voxel_save = control(state, L"BUTTON", L"Save profile",
+    state.voxel_save = control(state, L"BUTTON", L"Stage profile",
                                BS_PUSHBUTTON, 680, 1020, 120, 38,
                                id_voxel_save);
-    state.voxel_reset = control(state, L"BUTTON", L"Reset profile",
+    state.voxel_reset = control(state, L"BUTTON", L"Reset to defaults",
                                 BS_PUSHBUTTON, 810, 1020, 120, 38,
                                 id_voxel_reset);
     state.plugin_heading = control(state, L"STATIC", L"Native plug-ins",
