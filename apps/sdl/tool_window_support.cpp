@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstring>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -86,7 +87,9 @@ bool tool_button_hovered(SDL_Window* window, const SDL_FRect& rect) {
 } // namespace
 
 void render_tool_text(SDL_Renderer* renderer, const float x, const float y,
-                      const char* value) {
+                      const char* value, const float max_width,
+                      const float scale) {
+    const auto requested_scale = std::max(0.05F, scale);
 #ifdef GBB_HAS_SDL_TTF
     static std::once_flag initialized;
     std::call_once(initialized, [] {
@@ -128,9 +131,17 @@ void render_tool_text(SDL_Renderer* renderer, const float x, const float y,
             }
         }
         if (cached != entries.end()) {
+            auto destination_width =
+                static_cast<float>(cached->second.width) * requested_scale;
+            auto destination_height =
+                static_cast<float>(cached->second.height) * requested_scale;
+            if (max_width > 0.0F && destination_width > max_width) {
+                const auto scale = max_width / destination_width;
+                destination_width = max_width;
+                destination_height *= scale;
+            }
             const SDL_FRect destination{
-                x, y, static_cast<float>(cached->second.width),
-                static_cast<float>(cached->second.height)};
+                x, y, destination_width, destination_height};
             static_cast<void>(SDL_RenderTexture(renderer,
                                                  cached->second.texture,
                                                  nullptr, &destination));
@@ -160,15 +171,22 @@ void render_tool_text(SDL_Renderer* renderer, const float x, const float y,
                     1.15F, 1.5F);
             }
         }
+        auto text_scale = fallback_scale * requested_scale;
+        if (max_width > 0.0F && *value != '\0') {
+            const auto natural_width =
+                8.0F * text_scale * static_cast<float>(std::strlen(value));
+            if (natural_width > max_width) {
+                text_scale *= max_width / natural_width;
+            }
+        }
         float old_scale_x = 1.0F;
         float old_scale_y = 1.0F;
         static_cast<void>(SDL_GetRenderScale(renderer, &old_scale_x,
                                              &old_scale_y));
         static_cast<void>(SDL_SetRenderScale(
-            renderer, old_scale_x * fallback_scale,
-            old_scale_y * fallback_scale));
-        static_cast<void>(SDL_RenderDebugText(renderer, x / fallback_scale,
-                                              y / fallback_scale, value));
+            renderer, old_scale_x * text_scale, old_scale_y * text_scale));
+        static_cast<void>(SDL_RenderDebugText(renderer, x / text_scale,
+                                              y / text_scale, value));
         static_cast<void>(SDL_SetRenderScale(renderer, old_scale_x,
                                              old_scale_y));
     }

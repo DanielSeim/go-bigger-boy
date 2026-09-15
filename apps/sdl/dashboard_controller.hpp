@@ -20,6 +20,7 @@ struct DashboardItem {
     gbb::desktop::DashboardAction action{};
     std::size_t recent_index{};
     std::string label;
+    std::string path;
 };
 
 constexpr std::size_t dashboard_visible_rows = 5;

@@ -124,7 +124,11 @@ std::vector<DashboardItem> dashboard_items(
             label = "Exit GBB";
             break;
         }
-        items.push_back({item.action, item.recent_index, std::move(label)});
+        auto path = item.action == gbb::desktop::DashboardAction::recent_rom
+                        ? visible_recent[item.recent_index]
+                        : std::string{};
+        items.push_back({item.action, item.recent_index, std::move(label),
+                         std::move(path)});
     }
     return items;
 }

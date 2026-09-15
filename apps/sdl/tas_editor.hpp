@@ -390,7 +390,8 @@ class TasEditor {
         }
         const auto button = [this](const SDL_FRect& rect, const char* label) {
             draw_tool_button_background(renderer_, window_, rect);
-            render_tool_text(renderer_, rect.x + 10, rect.y + 14, label);
+            render_tool_text(renderer_, rect.x + 10, rect.y + 14, label,
+                             rect.w - 20.0F);
         };
         const auto bottom_y = static_cast<float>(height - 55);
         button({24, bottom_y, 130, 36}, "INSERT FRAME");

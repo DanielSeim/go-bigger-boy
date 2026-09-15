@@ -609,7 +609,7 @@ public:
                                    const std::string& label) {
             draw_tool_button_background(renderer_, window_, rect);
             render_tool_text(renderer_, rect.x + 12, rect.y + 14,
-                             label.c_str());
+                             label.c_str(), rect.w - 24.0F);
         };
         const auto button_y = static_cast<float>(height - 58);
         const auto movie_y = static_cast<float>(height - 106);

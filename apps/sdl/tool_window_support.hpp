@@ -4,10 +4,13 @@
 
 namespace gbb::sdl {
 
-// Render desktop-tool text at a readable size while retaining SDL's built-in
-// debug font as a fallback for builds without SDL_ttf.
+// Render text, optionally fitting it into max_width pixels. A positive
+// max_width scales the text down when necessary so labels stay inside their
+// controls while retaining SDL's built-in debug font as a fallback for builds
+// without SDL_ttf.
 void render_tool_text(SDL_Renderer* renderer, float x, float y,
-                      const char* value);
+                      const char* value, float max_width = 0.0F,
+                      float scale = 1.0F);
 void clear_tool_text_cache(SDL_Renderer* renderer) noexcept;
 
 void draw_tool_button_background(SDL_Renderer* renderer, SDL_Window* window,

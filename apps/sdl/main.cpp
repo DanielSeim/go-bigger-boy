@@ -119,6 +119,7 @@ using gbb::sdl::activate_dashboard_selection;
 using gbb::sdl::dashboard_visible_rows;
 using gbb::sdl::dashboard_first_row_y;
 using gbb::sdl::dashboard_row_height;
+using gbb::sdl::render_tool_text;
 #ifndef __ANDROID__
 using InputMovie = gbb::sdl::InputMovie;
 using gbb::sdl::trace_link_frame;
@@ -748,7 +749,7 @@ void present_menu_button(SdlResources& sdl) {
     static_cast<void>(SDL_RenderFillRect(sdl.renderer, &help_button));
     static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 8, 175, 244, 230));
     static_cast<void>(SDL_RenderRect(sdl.renderer, &help_button));
-    static_cast<void>(SDL_RenderDebugText(sdl.renderer, 32.0F, 7.0F, "?"));
+    render_tool_text(sdl.renderer, 32.0F, 7.0F, "?", 10.0F, 0.57F);
     float mouse_x = 0.0F;
     float mouse_y = 0.0F;
     static_cast<void>(SDL_GetMouseState(&mouse_x, &mouse_y));
@@ -767,7 +768,7 @@ void present_menu_button(SdlResources& sdl) {
         static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 8, 175, 244, 230));
         static_cast<void>(SDL_RenderRect(sdl.renderer, &tooltip_panel));
         static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 248, 252, 255, 255));
-        static_cast<void>(SDL_RenderDebugText(sdl.renderer, 8.0F, 23.0F, tooltip));
+        render_tool_text(sdl.renderer, 8.0F, 23.0F, tooltip, 60.0F, 0.57F);
     }
 #endif
     static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
@@ -841,9 +842,9 @@ void present_desktop_status(SdlResources& sdl, const bool paused,
     static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 8, 175, 244, 230));
     static_cast<void>(SDL_RenderRect(sdl.renderer, &panel));
     static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 248, 252, 255, 255));
-    static_cast<void>(SDL_RenderDebugText(
-        sdl.renderer, panel.x + 6.0F, panel.y + 4.0F,
-        dashboard_text(status, 18).c_str()));
+    render_tool_text(sdl.renderer, panel.x + 6.0F, panel.y + 4.0F,
+                     dashboard_text(status, 18).c_str(), panel.w - 12.0F,
+                     0.57F);
 }
 #endif
 
@@ -1353,8 +1354,7 @@ void present_dashboard(SdlResources& sdl,
     static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 69, 207, 238, 255));
     const SDL_FRect accent{9, 31, 142, 2};
     static_cast<void>(SDL_RenderFillRect(sdl.renderer, &accent));
-    static_cast<void>(SDL_RenderDebugText(sdl.renderer, 13, 5,
-                                          "GO BIGGER BOY"));
+    render_tool_text(sdl.renderer, 13, 5, "GO BIGGER BOY", 134.0F, 0.57F);
     static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 177, 192, 208, 255));
     const auto filter_label = !can_resume && recent.empty()
                                   ? std::string{"START: O OPEN ROM"}
@@ -1362,8 +1362,8 @@ void present_dashboard(SdlResources& sdl,
                                         (filter.empty()
                                              ? std::string{"type..."}
                                              : dashboard_text(filter, 5));
-    static_cast<void>(SDL_RenderDebugText(sdl.renderer, 13, 18,
-                                          dashboard_text(filter_label, 18).c_str()));
+    render_tool_text(sdl.renderer, 13, 18,
+                     dashboard_text(filter_label, 18).c_str(), 134.0F, 0.57F);
     if (!filter.empty()) {
         const SDL_FRect clear_filter{125, 16, 32, 14};
         static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 20, 77, 101, 255));
@@ -1371,7 +1371,7 @@ void present_dashboard(SdlResources& sdl,
         static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 69, 207, 238, 255));
         static_cast<void>(SDL_RenderRect(sdl.renderer, &clear_filter));
         static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 238, 249, 255, 255));
-        static_cast<void>(SDL_RenderDebugText(sdl.renderer, 129, 19, "CLR"));
+        render_tool_text(sdl.renderer, 129, 19, "CLR", 26.0F, 0.57F);
     }
     static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 69, 207, 238, 255));
     if (filter.empty()) {
@@ -1395,21 +1395,41 @@ void present_dashboard(SdlResources& sdl,
         static_cast<void>(SDL_RenderRect(sdl.renderer, &card));
         const auto label = std::string(selected ? "> " : "  ") +
                            dashboard_text(items[index].label, 14);
-        static_cast<void>(SDL_RenderDebugText(sdl.renderer, 13, y + 3,
-                                              label.c_str()));
+        render_tool_text(sdl.renderer, 13, y + 3, label.c_str(), 136.0F, 0.57F);
     }
 
     static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 137, 160, 183, 255));
     if (first > 0) {
-        static_cast<void>(SDL_RenderDebugText(sdl.renderer, 153, 39, "^"));
+        render_tool_text(sdl.renderer, 153, 39, "^", 5.0F, 0.57F);
     }
     if (first + visible < items.size()) {
-        static_cast<void>(SDL_RenderDebugText(sdl.renderer, 153, 111, "v"));
+        render_tool_text(sdl.renderer, 153, 111, "v", 5.0F, 0.57F);
     }
-    static_cast<void>(SDL_RenderDebugText(
-        sdl.renderer, 0, 134,
-        filter.empty() ? "ENTER SELECT  O OPEN"
-                       : "ESC CLEAR O OPEN"));
+    const auto& selected_item = items[selection];
+    if (!selected_item.path.empty()) {
+        const auto path = dashboard_text(selected_item.path, 512);
+        constexpr std::size_t path_window = 13;
+        std::string visible_path;
+        if (path.size() <= path_window) {
+            visible_path = path;
+        } else {
+            const auto cycle = path.size() + path_window;
+            const auto offset = static_cast<std::size_t>(
+                (SDL_GetTicks() / 450U) % cycle);
+            visible_path = offset < path.size()
+                               ? path.substr(offset, path_window)
+                               : path.substr(0, path_window);
+        }
+        static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 177, 192, 208, 255));
+        render_tool_text(sdl.renderer, 9, 123, "PATH:", 36.0F, 0.57F);
+        render_tool_text(sdl.renderer, 49, 123,
+                         dashboard_text(visible_path, path_window).c_str(),
+                         102.0F, 0.57F);
+    }
+    render_tool_text(sdl.renderer, 0, 134,
+                     filter.empty() ? "ENTER SELECT  O OPEN"
+                                    : "ESC CLEAR O OPEN",
+                     160.0F, 0.57F);
 }
 #endif
 

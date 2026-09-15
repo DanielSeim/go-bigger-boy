@@ -1174,7 +1174,8 @@ void refresh_library_list(State& state) {
         const auto& entry = state.library->entries()[index];
         const auto title = widen(entry.metadata.title);
         const auto filename = entry.path.filename().wstring();
-        const auto searchable = lowercase(title + L" " + filename);
+        const auto path = entry.path.wstring();
+        const auto searchable = lowercase(title + L" " + filename + L" " + path);
         if (!state.library_filter.empty() &&
             searchable.find(state.library_filter) == std::wstring::npos) {
             continue;
@@ -1206,6 +1207,7 @@ void refresh_library_list(State& state) {
                 case 2: return widen(gameboy::platform_name(entry.metadata.platform));
                 case 3: return widen(entry.metadata.language);
                 case 4: return formatted_last_played(entry.last_played);
+                case 5: return entry.path.wstring();
                 default: return std::wstring{};
                 }
             };
@@ -1252,6 +1254,12 @@ void refresh_library_list(State& state) {
         auto last_played = formatted_last_played(entry.last_played);
         subitem.iSubItem = 4;
         subitem.pszText = const_cast<wchar_t*>(last_played.c_str());
+        SendMessageW(state.list, LVM_SETITEMTEXTW,
+                     static_cast<WPARAM>(row),
+                     reinterpret_cast<LPARAM>(&subitem));
+        auto path = entry.path.wstring();
+        subitem.iSubItem = 5;
+        subitem.pszText = const_cast<wchar_t*>(path.c_str());
         SendMessageW(state.list, LVM_SETITEMTEXTW,
                      static_cast<WPARAM>(row),
                      reinterpret_cast<LPARAM>(&subitem));
@@ -2678,9 +2686,9 @@ DashboardResult show_windows_dashboard(
         }
         ListView_SetImageList(state.list, state.covers, LVSIL_SMALL);
     }
-    constexpr std::array<std::pair<const wchar_t*, int>, 5> columns{{
-        {L"Cover", 62}, {L"Game", 290}, {L"Platform", 150},
-        {L"Language", 150}, {L"Last played", 220}}};
+    constexpr std::array<std::pair<const wchar_t*, int>, 6> columns{{
+        {L"Cover", 62}, {L"Game", 260}, {L"Platform", 125},
+        {L"Language", 125}, {L"Last played", 170}, {L"ROM path", 420}}};
     for (std::size_t index = 0; index < columns.size(); ++index) {
         LVCOLUMNW column{};
         column.mask = LVCF_TEXT | LVCF_WIDTH;

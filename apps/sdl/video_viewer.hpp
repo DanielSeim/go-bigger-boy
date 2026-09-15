@@ -243,7 +243,8 @@ private:
             static_cast<void>(SDL_RenderRect(renderer_, &rect));
         }
         static_cast<void>(SDL_SetRenderDrawColor(renderer_, 230, 249, 255, 255));
-        render_tool_text(renderer_, rect.x + 10, rect.y + 13, label);
+        render_tool_text(renderer_, rect.x + 10, rect.y + 13, label,
+                         rect.w - 20.0F);
     }
 
     void info_text(const float x, const float y, const std::string& value,

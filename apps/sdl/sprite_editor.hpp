@@ -755,7 +755,8 @@ public:
 
     void draw_button(const SDL_FRect& rect, const char* label) {
         draw_tool_button_background(renderer_, window_, rect);
-        render_tool_text(renderer_, rect.x + 9, rect.y + 14, label);
+        render_tool_text(renderer_, rect.x + 9, rect.y + 14, label,
+                         rect.w - 18.0F);
     }
 
     [[nodiscard]] std::string hex_address() const {

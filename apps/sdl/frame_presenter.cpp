@@ -1,4 +1,5 @@
 #include "frame_presenter.hpp"
+#include "tool_window_support.hpp"
 
 #include <sstream>
 
@@ -84,8 +85,13 @@ bool present_link_status(FrameRenderContext& context,
     std::ostringstream text;
     text << "LINK " << link_state_label(session.state())
          << "  XFER " << session.transfers_completed();
+#ifndef __ANDROID__
+    render_tool_text(context.renderer, 3, 2, text.str().c_str(), 314.0F,
+                     0.57F);
+#else
     static_cast<void>(SDL_RenderDebugText(context.renderer, 3, 2,
                                           text.str().c_str()));
+#endif
     static_cast<void>(SDL_SetRenderDrawBlendMode(context.renderer,
                                                  SDL_BLENDMODE_NONE));
     return true;
@@ -147,7 +153,11 @@ bool present_remote_link_status(FrameRenderContext& context,
            << compact_count(remote.endpoint.responses_received()) << " X"
            << compact_count(remote.endpoint.transfers_completed());
     const auto text = status.str();
+#ifndef __ANDROID__
+    render_tool_text(context.renderer, 3, 2, text.c_str(), 154.0F, 0.57F);
+#else
     static_cast<void>(SDL_RenderDebugText(context.renderer, 3, 2, text.c_str()));
+#endif
     static_cast<void>(SDL_SetRenderDrawBlendMode(context.renderer,
                                                  SDL_BLENDMODE_NONE));
     return true;

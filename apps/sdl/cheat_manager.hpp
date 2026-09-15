@@ -506,7 +506,9 @@ private:
 
     void button(const SDL_FRect& rect, const char* label) const {
         draw_tool_button_background(renderer_, window_, rect);
-        text(rect.x + 10, rect.y + 14, label, 238, 249, 255);
+        static_cast<void>(SDL_SetRenderDrawColor(renderer_, 238, 249, 255, 255));
+        render_tool_text(renderer_, rect.x + 10, rect.y + 14, label,
+                         rect.w - 20.0F);
     }
 
     void field(const SDL_FRect& rect, const std::string& value,
