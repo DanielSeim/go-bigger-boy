@@ -268,9 +268,10 @@ LAN hosts**, **Retry link**, or **Stop link**. LAN discovery is available only
 for TCP; Bluetooth uses paired-device selection and RFCOMM service discovery.
 The Android menu also provides a direct return to the library. TCP peers must be
 on the same LAN, and Android's `INTERNET` plus nearby-device permissions are
-declared by the application manifest. While an Android LAN link is active, the
-app briefly acquires a Wi-Fi multicast lock so the discovery broadcast is not
-filtered by the Wi-Fi stack; it is released when the link stops. On Android 16
+declared by the application manifest. While Android LAN discovery or a LAN link
+is active, the app briefly acquires a Wi-Fi multicast lock so discovery traffic
+is not filtered by the Wi-Fi stack; it is released when the scan or link stops.
+On Android 16
 devices with local-network protection enabled, grant the app the **Nearby
 devices** permission when prompted, then retry hosting or discovery.
 

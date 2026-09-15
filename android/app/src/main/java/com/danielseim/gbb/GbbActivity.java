@@ -369,9 +369,9 @@ public final class GbbActivity extends SDLActivity {
     /**
      * Enables reception of LAN discovery broadcasts for the native UDP
      * socket. Android Wi-Fi normally filters multicast/broadcast traffic;
-     * keeping this lock scoped to an active link session avoids a permanent
-     * battery cost. Android 16's opt-in local-network protection also maps
-     * raw LAN sockets to the Nearby devices permission.
+     * keeping this lock scoped to an active discovery scan or link session
+     * avoids a permanent battery cost. Android 16's opt-in local-network
+     * protection also maps raw LAN sockets to the Nearby devices permission.
      */
     public boolean startLanDiscovery() {
         if (Build.VERSION.SDK_INT >= 36 &&

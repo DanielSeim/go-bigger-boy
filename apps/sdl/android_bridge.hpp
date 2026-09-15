@@ -25,9 +25,10 @@ void open_android_link_settings() noexcept;
 void open_android_link_diagnostics() noexcept;
 [[nodiscard]] bool take_android_link_settings_changed() noexcept;
 [[nodiscard]] bool android_link_is_suspended() noexcept;
-// Enables Wi-Fi multicast/broadcast reception while LAN discovery is active.
-// The implementation is Android-only; callers must release it when the
-// discovery socket is stopped so the radio can return to its normal filter.
+// Enables Wi-Fi multicast/broadcast reception while LAN discovery is active,
+// whether scanning or hosting. The implementation is Android-only; callers
+// must release it when the discovery socket is stopped so the radio can
+// return to its normal filter.
 [[nodiscard]] bool start_android_lan_discovery() noexcept;
 void stop_android_lan_discovery() noexcept;
 

@@ -19,6 +19,28 @@
 
 namespace gbb::sdl {
 
+namespace {
+
+std::string effective_tcp_bind_address(const RemoteLinkOptions& options) {
+    // Android's historical default is loopback, which is valid for two local
+    // desktop instances but makes a phone-hosted LAN link unreachable. The
+    // settings UI already presents 0.0.0.0 for this value; enforce the same
+    // behavior at the socket boundary so stale settings cannot break manual
+    // hosting. Desktop LAN discovery keeps its existing migration behavior.
+    if (options.bind_address == "127.0.0.1" &&
+#ifdef __ANDROID__
+        true
+#else
+        options.lan_discovery
+#endif
+    ) {
+        return "0.0.0.0";
+    }
+    return options.bind_address;
+}
+
+} // namespace
+
 bool configure_video_pipeline(SdlResources& sdl,
                               const gameboy::VideoMode mode) {
     const auto presentation = mode == gameboy::VideoMode::integer
@@ -737,6 +759,7 @@ void start_remote_link_session(gameboy::Emulator& emulator,
     release_all_buttons(emulator);
     remote.bluetooth = options.transport == "bluetooth";
     auto& channel = remote.active_channel();
+    const auto bind_address = effective_tcp_bind_address(options);
     const auto ready = remote.bluetooth
                            ? (hosting
                                   ? remote.bluetooth_channel.listen(
@@ -746,7 +769,7 @@ void start_remote_link_session(gameboy::Emulator& emulator,
                                         options.bluetooth_service_uuid))
                            : (hosting
                                   ? remote.channel.listen(options.port,
-                                                          options.bind_address)
+                                                          bind_address)
                                   : remote.channel.connect(options.host,
                                                            options.port));
     if (!ready) {
@@ -860,6 +883,7 @@ void retry_remote_link_session(gameboy::Emulator& emulator,
     if (is_pokemon_gen1(emulator)) reset_pokemon_link_handshake(emulator);
     release_all_buttons(emulator);
     auto& channel = remote.active_channel();
+    const auto bind_address = effective_tcp_bind_address(options);
     const auto ready = remote.bluetooth
                            ? (remote.hosting
                                   ? remote.bluetooth_channel.listen(
@@ -869,7 +893,7 @@ void retry_remote_link_session(gameboy::Emulator& emulator,
                                         options.bluetooth_service_uuid))
                            : (remote.hosting
                                   ? remote.channel.listen(options.port,
-                                                          options.bind_address)
+                                                          bind_address)
                                   : remote.channel.connect(options.host,
                                                            options.port));
     if (!ready) {

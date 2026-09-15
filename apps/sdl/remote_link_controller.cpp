@@ -4,11 +4,27 @@
 #include "emulation_session.hpp"
 #include "gbb/frontend_logging.hpp"
 
+#ifdef __ANDROID__
+#include "android_bridge.hpp"
+#endif
+
 #include <algorithm>
 #include <chrono>
 #include <exception>
 
 namespace gbb::sdl {
+
+namespace {
+
+void stop_remote_discovery(RemoteLinkSession& remote) noexcept {
+    remote.discovery.stop();
+    remote.scanning = false;
+#ifdef __ANDROID__
+    stop_android_lan_discovery();
+#endif
+}
+
+} // namespace
 
 void process_remote_link_requests(RemoteLinkControlContext context) {
     const auto now = std::chrono::steady_clock::now();
@@ -17,8 +33,7 @@ void process_remote_link_requests(RemoteLinkControlContext context) {
         context.remote_link.discovery.poll();
         if (now >= context.remote_link.scan_deadline) {
             const auto peers = context.remote_link.discovery.take_peers();
-            context.remote_link.discovery.stop();
-            context.remote_link.scanning = false;
+            stop_remote_discovery(context.remote_link);
             if (peers.empty()) {
                 show_error(
                     context.sdl.window,
@@ -99,10 +114,25 @@ void process_remote_link_requests(RemoteLinkControlContext context) {
                        "LAN discovery is available only for TCP links. "
                        "Choose a paired Bluetooth device in Link settings.");
         } else if (!context.remote_link.scanning) {
+#ifdef __ANDROID__
+            // Android filters multicast and broadcast packets unless the
+            // Wi-Fi multicast lock is held. Acquire it before opening the
+            // scanner socket so replies are receivable for the full bounded
+            // scan, not just while hosting a session.
+            if (!start_android_lan_discovery()) {
+                show_error(
+                    context.sdl.window,
+                    "Could not enable Android LAN discovery. Allow Nearby devices "
+                    "and retry the link action.");
+            } else
+#endif
             if (!context.remote_link.discovery.start_scan(
                     context.emulator->link_compatibility_id(),
                     context.emulator->rom_fingerprint(),
                     context.emulator->link_compatibility_profile())) {
+#ifdef __ANDROID__
+                stop_android_lan_discovery();
+#endif
                 show_error(context.sdl.window,
                            "Could not start LAN link discovery.");
             } else {
@@ -132,8 +162,7 @@ void process_remote_link_requests(RemoteLinkControlContext context) {
         } else {
             try {
                 if (context.remote_link.scanning) {
-                    context.remote_link.discovery.stop();
-                    context.remote_link.scanning = false;
+                    stop_remote_discovery(context.remote_link);
                 }
                 if (context.remote_link.active()) {
                     stop_remote_link_session(*context.emulator,
