@@ -1,6 +1,8 @@
 #include "frame_presenter.hpp"
 #include "tool_window_support.hpp"
 
+#include <algorithm>
+#include <cstddef>
 #include <sstream>
 
 namespace gbb::sdl {
@@ -113,10 +115,12 @@ bool present_remote_link_status(FrameRenderContext& context,
                                 const RemoteLinkSession& remote) {
     static_cast<void>(SDL_SetRenderDrawBlendMode(context.renderer,
                                                  SDL_BLENDMODE_BLEND));
+#ifndef __ANDROID__
     static_cast<void>(SDL_SetRenderDrawColor(context.renderer, 0, 0, 0, 170));
     const SDL_FRect bar{0, 0, 160, 11};
     static_cast<void>(SDL_RenderFillRect(context.renderer, &bar));
     static_cast<void>(SDL_SetRenderDrawColor(context.renderer, 235, 245, 235, 255));
+#endif
     const auto role = remote.hosting ? "H" : "J";
     const auto state = [&]() {
         switch (remote.active_channel().state()) {
@@ -161,7 +165,52 @@ bool present_remote_link_status(FrameRenderContext& context,
 #ifndef __ANDROID__
     render_tool_text(context.renderer, 3, 2, text.c_str(), 154.0F, 0.57F);
 #else
-    static_cast<void>(SDL_RenderDebugText(context.renderer, 3, 2, text.c_str()));
+    // Portrait gameplay is rendered with logical presentation disabled so the
+    // framebuffer can occupy its calculated phone viewport. Scale the status
+    // strip independently; otherwise SDL's 8 px debug font remains at raw
+    // screen pixels and is effectively unreadable on a high-density phone.
+    int window_width = 1;
+    int window_height = 1;
+    auto* window = SDL_GetRenderWindow(context.renderer);
+    if (window != nullptr) {
+        static_cast<void>(SDL_GetWindowSize(window, &window_width,
+                                            &window_height));
+    }
+    float old_scale_x = 1.0F;
+    float old_scale_y = 1.0F;
+    static_cast<void>(SDL_GetRenderScale(context.renderer, &old_scale_x,
+                                         &old_scale_y));
+    const auto portrait = window_height > window_width;
+    const auto logical_status_width = std::max(
+        160.0F, static_cast<float>(text.size() * 8U + 6U));
+    const auto status_scale = portrait
+                                  ? std::min(
+                                        2.5F,
+                                        std::max(1.0F,
+                                                 (static_cast<float>(window_width) -
+                                                  6.0F) /
+                                                     logical_status_width))
+                                  : 1.0F;
+    if (portrait) {
+        static_cast<void>(SDL_SetRenderScale(
+            context.renderer, old_scale_x * status_scale,
+            old_scale_y * status_scale));
+    }
+    const auto effective_scale_x = old_scale_x * status_scale;
+    const auto effective_scale_y = old_scale_y * status_scale;
+    const SDL_FRect bar{0.0F, 0.0F, logical_status_width,
+                        11.0F};
+    static_cast<void>(SDL_SetRenderDrawColor(context.renderer, 0, 0, 0, 170));
+    static_cast<void>(SDL_RenderFillRect(context.renderer, &bar));
+    static_cast<void>(SDL_SetRenderDrawColor(context.renderer, 235, 245, 235,
+                                              255));
+    static_cast<void>(SDL_RenderDebugText(
+        context.renderer, 3.0F / effective_scale_x,
+        2.0F / effective_scale_y, text.c_str()));
+    if (portrait) {
+        static_cast<void>(SDL_SetRenderScale(context.renderer, old_scale_x,
+                                             old_scale_y));
+    }
 #endif
     static_cast<void>(SDL_SetRenderDrawBlendMode(context.renderer,
                                                  SDL_BLENDMODE_NONE));

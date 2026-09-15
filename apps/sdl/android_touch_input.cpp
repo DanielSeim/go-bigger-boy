@@ -92,8 +92,14 @@ SDL_FRect android_menu_button_rect(const SdlResources& sdl) {
     // The game framebuffer is normally rendered through a 160x144 logical
     // viewport. The menu is an Android overlay, however, so size and position
     // it in full-window pixels after disabling logical presentation.
-    const auto size = std::clamp(touch_game_scale(sdl) * 16.0F, 56.0F,
-                                 96.0F);
+    // These controls belong to the full Android window, not to the ROM
+    // viewport. In portrait, deriving their size from core_video_width makes
+    // them shrink when an SGB/bordered viewport is selected.
+    const auto size = touch_is_landscape(sdl)
+                          ? std::clamp(touch_game_scale(sdl) * 16.0F, 56.0F,
+                                       96.0F)
+                          : std::clamp(static_cast<float>(width) * 0.08F,
+                                       64.0F, 96.0F);
     const auto button_height = size * 0.82F;
     const auto margin = std::max(12.0F, size * 0.18F);
     const auto x = sdl.touch_settings.menu_top_right
