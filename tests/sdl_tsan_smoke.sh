@@ -117,7 +117,9 @@ TSAN_OPTIONS="$tsan_options" timeout --signal=INT --kill-after=5s \
             # otherwise slower runners can miss the normal 960x700 capture.
             sleep 1
             # F4 is a visible header button as well as a keyboard shortcut.
-            click_at "$debugger" 490 30
+            # Use the shortcut here because SDL can receive it without a
+            # window manager synthesizing a coordinate click.
+            send_input key --window "$debugger" --clearmodifiers F4
             sleep 0.3
             # F1 opens the separate video viewer, whose three modes are also
             # reachable by visible buttons.
