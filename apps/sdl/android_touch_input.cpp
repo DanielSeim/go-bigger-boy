@@ -101,7 +101,10 @@ SDL_FRect android_menu_button_rect(const SdlResources& sdl) {
                           : std::clamp(static_cast<float>(width) * 0.08F,
                                        64.0F, 96.0F);
     const auto button_height = size * 0.82F;
-    const auto margin = std::max(12.0F, size * 0.18F);
+    // Keep the controls comfortably inside the rounded display corners. The
+    // previous inset left them visually pinned to the edge on modern phones,
+    // especially when the menu and link buttons were rendered as a pair.
+    const auto margin = std::max(20.0F, size * 0.28F);
     const auto x = sdl.touch_settings.menu_top_right
                        ? std::max(margin, static_cast<float>(width) - size - margin)
                        : margin;

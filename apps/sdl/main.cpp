@@ -2006,6 +2006,9 @@ int main(int argc, char** argv) {
                 , [&]() {
                     if (core) release_all_buttons(*core);
 #ifdef __ANDROID__
+                    clear_touch_buttons(core.get(), sdl);
+                    sdl.android_menu_visible = false;
+                    sdl.android_link_menu_visible = false;
                     open_android_library(true, current_rom);
 #else
 #ifdef _WIN32
