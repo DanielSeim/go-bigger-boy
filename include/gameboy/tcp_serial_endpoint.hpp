@@ -36,7 +36,7 @@ public:
         return connected() && peer_hello_seen_ && peer_compatible_ &&
                (arbitration_priority_ || peer_request_seen_) &&
                !reset_waiting_for_ack_ && state_digest_valid_ &&
-               state_digest_acknowledged_;
+               state_digest_acknowledged_ && !commit_waiting_for_ack_;
     }
     [[nodiscard]] bool waiting_for_peer() const noexcept {
         return pending_sequence_.has_value() && !response_.has_value() &&
@@ -51,6 +51,7 @@ public:
                (!peer_hello_seen_ || waiting_for_peer() ||
                 deferred_request_.has_value() ||
                 reset_waiting_for_ack_ ||
+                commit_waiting_for_ack_ ||
                 !state_digest_valid_ ||
                 (compatibility_profile_.known() && !peer_profile_seen_ &&
                  profile_wait_polls_ < profile_wait_limit) ||
@@ -202,6 +203,24 @@ public:
     [[nodiscard]] std::uint64_t rtt_samples() const noexcept {
         return rtt_samples_;
     }
+    [[nodiscard]] std::uint64_t commits_sent() const noexcept {
+        return commits_sent_;
+    }
+    [[nodiscard]] std::uint64_t commits_received() const noexcept {
+        return commits_received_;
+    }
+    [[nodiscard]] std::uint64_t commit_retries() const noexcept {
+        return commit_retries_;
+    }
+    [[nodiscard]] bool commit_waiting_for_ack() const noexcept {
+        return commit_waiting_for_ack_;
+    }
+    [[nodiscard]] bool failure_during_transfer() const noexcept {
+        return failure_during_transfer_;
+    }
+    [[nodiscard]] std::uint32_t serial_state_signature() const noexcept {
+        return port_ == nullptr ? 0 : port_->link_state_signature();
+    }
     [[nodiscard]] std::uint64_t transfers_completed() const noexcept {
         return port_ == nullptr ? 0 : port_->transfers_completed();
     }
@@ -225,6 +244,8 @@ private:
     static constexpr std::uint8_t reset_ack_flag = 0x40;
     static constexpr std::uint8_t heartbeat_ack_flag = 0x20;
     static constexpr std::uint8_t state_digest_ack_flag = 0x10;
+    static constexpr std::uint8_t commit_flag = 0x20;
+    static constexpr std::uint8_t commit_ack_flag = 0x10;
     // A request may legitimately arrive a few frames before the peer arms
     // its receiver. Do not retain it forever when the peer has left serial.
     static constexpr unsigned deferred_request_poll_limit = 240;
@@ -258,6 +279,12 @@ private:
     std::chrono::steady_clock::time_point reset_retry_deadline_{};
     std::chrono::steady_clock::time_point pending_sent_at_{};
     std::chrono::milliseconds retry_timeout_{initial_retry_timeout};
+    std::optional<std::uint32_t> last_completed_sequence_;
+    std::optional<LinkPacket> commit_packet_;
+    std::optional<std::uint32_t> commit_sequence_;
+    bool commit_waiting_for_ack_{};
+    unsigned commit_retry_count_{};
+    std::chrono::steady_clock::time_point commit_retry_deadline_{};
     std::optional<std::uint32_t> last_peer_request_sequence_;
     std::optional<LinkPacket> last_peer_request_response_;
     unsigned request_backoff_{};
@@ -285,9 +312,11 @@ private:
     bool state_digest_sent_{};
     bool state_digest_valid_{};
     bool state_digest_acknowledged_{};
+    std::uint32_t initial_serial_state_signature_{};
     std::chrono::steady_clock::time_point next_hello_retry_{};
     std::chrono::steady_clock::time_point next_state_digest_retry_{};
     std::optional<std::uint32_t> reset_sequence_;
+    std::optional<std::uint32_t> last_peer_reset_sequence_;
     bool reset_waiting_for_ack_{};
     std::chrono::steady_clock::time_point last_peer_activity_{};
     std::chrono::steady_clock::time_point last_heartbeat_sent_{};
@@ -317,6 +346,10 @@ private:
     std::uint64_t smoothed_rtt_ms_{};
     std::uint64_t rtt_jitter_ms_{};
     std::uint64_t rtt_samples_{};
+    std::uint64_t commits_sent_{};
+    std::uint64_t commits_received_{};
+    std::uint64_t commit_retries_{};
+    bool failure_during_transfer_{};
     std::uint64_t diagnostic_session_{};
 
     [[nodiscard]] bool send_packet(LinkPacket packet) noexcept;
@@ -324,6 +357,8 @@ private:
     [[nodiscard]] std::chrono::milliseconds retry_delay(
         unsigned retry_count) const noexcept;
     void record_rtt(std::chrono::steady_clock::duration elapsed) noexcept;
+    [[nodiscard]] static bool is_newer_sequence(std::uint32_t previous,
+                                                 std::uint32_t next) noexcept;
     void protocol_fault(const char* message) noexcept;
     [[nodiscard]] static bool is_next_sequence(std::uint32_t previous,
                                                 std::uint32_t next) noexcept;

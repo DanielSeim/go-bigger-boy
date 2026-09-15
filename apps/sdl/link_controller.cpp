@@ -41,6 +41,7 @@ void process_link_requests(LinkControlContext context) {
         const auto state = context.remote_link.active_channel().state();
         if ((state == gameboy::LinkPacketChannel::State::failed ||
              state == gameboy::LinkPacketChannel::State::disconnected) &&
+            !context.remote_link.endpoint.failure_during_transfer() &&
             context.remote_link.automatic_retry_attempts < 3) {
             const auto now = std::chrono::steady_clock::now();
             if (context.remote_link.next_automatic_retry ==

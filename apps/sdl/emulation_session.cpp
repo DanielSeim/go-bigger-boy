@@ -557,6 +557,11 @@ void trace_remote_frame(gameboy::Emulator& emulator,
                << " rtts=" << remote.endpoint.rtt_samples()
                << " cq=" << remote.active_channel().queued_packets()
                << " cb=" << remote.active_channel().buffered_bytes()
+               << " cs=" << remote.endpoint.commits_sent()
+               << " cr=" << remote.endpoint.commits_received()
+               << " cx=" << remote.endpoint.commit_retries()
+               << " cw=" << remote.endpoint.commit_waiting_for_ack()
+               << " ss=" << remote.endpoint.serial_state_signature()
                << " phase=" << std::dec << serial.phase();
     append_trace_cpu(output, emulator);
     append_trace_pokemon(output, emulator);

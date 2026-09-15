@@ -44,6 +44,9 @@ std::uint32_t LinkSerialEndpoint::state_digest() const noexcept {
         for (unsigned byte = 0; byte < 8; ++byte)
             mix(static_cast<std::uint8_t>(value >> (byte * 8U)));
     }
+    for (unsigned byte = 0; byte < 4; ++byte)
+        mix(static_cast<std::uint8_t>(initial_serial_state_signature_ >>
+                                     (byte * 8U)));
     return digest;
 }
 
@@ -84,6 +87,12 @@ bool LinkSerialEndpoint::is_next_sequence(const std::uint32_t previous,
     return next == previous + 1U;
 }
 
+bool LinkSerialEndpoint::is_newer_sequence(const std::uint32_t previous,
+                                            const std::uint32_t next) noexcept {
+    const auto distance = next - previous;
+    return distance != 0 && distance < UINT32_C(0x80000000);
+}
+
 void LinkSerialEndpoint::reset_transfer_state() noexcept {
     pending_sequence_.reset();
     pending_type_.reset();
@@ -103,9 +112,15 @@ void LinkSerialEndpoint::reset_transfer_state() noexcept {
     peer_clock_busy_ = false;
     peer_byte_released_ = false;
     peer_request_seen_ = false;
+    commit_packet_.reset();
+    commit_sequence_.reset();
+    commit_waiting_for_ack_ = false;
+    commit_retry_count_ = 0;
+    commit_retry_deadline_ = {};
 }
 
 void LinkSerialEndpoint::protocol_fault(const char* message) noexcept {
+    failure_during_transfer_ = port_ != nullptr && port_->transfer_active();
     ++protocol_errors_;
     gbb::Logger::instance().write(gbb::LogLevel::warning,
                                   gbb::LogCategory::link, message,
@@ -127,6 +142,7 @@ void LinkSerialEndpoint::attach(SerialPort& port,
     state_digest_sent_ = false;
     state_digest_valid_ = false;
     state_digest_acknowledged_ = false;
+    initial_serial_state_signature_ = 0;
     next_hello_retry_ = {};
     next_state_digest_retry_ = {};
     next_sequence_ = 0;
@@ -146,6 +162,12 @@ void LinkSerialEndpoint::attach(SerialPort& port,
     reset_retry_polls_ = 0;
     reset_retry_count_ = 0;
     reset_retry_deadline_ = {};
+    last_completed_sequence_.reset();
+    commit_packet_.reset();
+    commit_sequence_.reset();
+    commit_waiting_for_ack_ = false;
+    commit_retry_count_ = 0;
+    commit_retry_deadline_ = {};
     last_peer_request_sequence_.reset();
     last_peer_request_response_.reset();
     request_backoff_ = 0;
@@ -166,6 +188,7 @@ void LinkSerialEndpoint::attach(SerialPort& port,
     peer_byte_transfer_ = false;
     peer_clock_busy_ = false;
     reset_sequence_.reset();
+    last_peer_reset_sequence_.reset();
     reset_waiting_for_ack_ = false;
     const auto now = std::chrono::steady_clock::now();
     last_peer_activity_ = now;
@@ -197,9 +220,14 @@ void LinkSerialEndpoint::attach(SerialPort& port,
     rtt_jitter_ms_ = 0;
     rtt_samples_ = 0;
     retry_timeout_ = initial_retry_timeout;
+    commits_sent_ = 0;
+    commits_received_ = 0;
+    commit_retries_ = 0;
+    failure_during_transfer_ = false;
     diagnostic_session_ =
         next_diagnostic_session.fetch_add(1, std::memory_order_relaxed);
     port_->set_endpoint(this);
+    initial_serial_state_signature_ = port_->link_boundary_signature();
     gbb::Logger::instance().write(gbb::LogLevel::info,
                                   gbb::LogCategory::link,
                                   "packet serial endpoint attached",
@@ -223,6 +251,7 @@ void LinkSerialEndpoint::detach() noexcept {
     state_digest_sent_ = false;
     state_digest_valid_ = false;
     state_digest_acknowledged_ = false;
+    initial_serial_state_signature_ = 0;
     next_hello_retry_ = {};
     next_state_digest_retry_ = {};
     next_control_sequence_ = 0;
@@ -241,6 +270,12 @@ void LinkSerialEndpoint::detach() noexcept {
     reset_retry_polls_ = 0;
     reset_retry_count_ = 0;
     reset_retry_deadline_ = {};
+    last_completed_sequence_.reset();
+    commit_packet_.reset();
+    commit_sequence_.reset();
+    commit_waiting_for_ack_ = false;
+    commit_retry_count_ = 0;
+    commit_retry_deadline_ = {};
     last_peer_request_sequence_.reset();
     last_peer_request_response_.reset();
     request_backoff_ = 0;
@@ -261,6 +296,7 @@ void LinkSerialEndpoint::detach() noexcept {
     peer_byte_transfer_ = false;
     peer_clock_busy_ = false;
     reset_sequence_.reset();
+    last_peer_reset_sequence_.reset();
     reset_waiting_for_ack_ = false;
     last_peer_activity_ = {};
     last_heartbeat_sent_ = {};
@@ -284,6 +320,10 @@ void LinkSerialEndpoint::detach() noexcept {
     rtt_jitter_ms_ = 0;
     rtt_samples_ = 0;
     retry_timeout_ = initial_retry_timeout;
+    commits_sent_ = 0;
+    commits_received_ = 0;
+    commit_retries_ = 0;
+    failure_during_transfer_ = false;
     diagnostic_session_ = 0;
     if (was_attached) {
         gbb::Logger::instance().write(gbb::LogLevel::info,
@@ -351,6 +391,7 @@ bool LinkSerialEndpoint::exchange_bit(const bool /*outgoing*/) noexcept {
         if (byte_bits_consumed_ == 8) {
             byte_response_.reset();
             byte_bits_consumed_ = 0;
+            last_completed_sequence_ = pending_sequence_;
             if (pending_sent_at_ != std::chrono::steady_clock::time_point{})
                 record_rtt(std::chrono::steady_clock::now() - pending_sent_at_);
             pending_sequence_.reset();
@@ -368,6 +409,7 @@ bool LinkSerialEndpoint::exchange_bit(const bool /*outgoing*/) noexcept {
     if (pending_sent_at_ != std::chrono::steady_clock::time_point{})
         record_rtt(std::chrono::steady_clock::now() - pending_sent_at_);
     response_.reset();
+    last_completed_sequence_ = pending_sequence_;
     pending_sequence_.reset();
     pending_type_.reset();
     pending_packet_.reset();
@@ -417,9 +459,24 @@ void LinkSerialEndpoint::release_internal_clock(SerialPort& port) noexcept {
     // release once that edge finishes.
     if (response_ready && port.transfer_active()) return;
     if (channel_ == nullptr || !connected()) return;
-    // A completed byte and an aborted/reprogrammed transfer both release the
-    // current owner, but only a completed byte grants the join side permission
-    // to become the next clock owner during initial negotiation.
+    // A completed transfer is committed explicitly. The peer acknowledges
+    // this marker before the owner can issue the next request, making the
+    // transfer sequence an epoch rather than an implicit timing assumption.
+    if (!port.transfer_active() && last_completed_sequence_.has_value()) {
+        const auto sequence = *last_completed_sequence_;
+        const LinkPacket commit{LinkPacketType::clock_release, sequence, 1,
+                                 commit_flag};
+        commit_sequence_ = sequence;
+        commit_packet_ = commit;
+        commit_retry_count_ = 0;
+        commit_waiting_for_ack_ = send_packet(commit);
+        commit_retry_deadline_ = std::chrono::steady_clock::now() +
+                                 retry_delay(0);
+        if (commit_waiting_for_ack_) ++commits_sent_;
+        else commit_packet_.reset();
+        last_completed_sequence_.reset();
+        return;
+    }
     const LinkPacket release{LinkPacketType::clock_release, 0,
                              static_cast<std::uint8_t>(
                                  port.transfer_active() ? 0U : 1U),
@@ -449,6 +506,7 @@ void LinkSerialEndpoint::cancel_internal_clock(SerialPort& /*port*/) noexcept {
         }
     }
     reset_transfer_state();
+    last_completed_sequence_.reset();
 }
 
 void LinkSerialEndpoint::poll() noexcept {
@@ -462,6 +520,7 @@ void LinkSerialEndpoint::poll() noexcept {
         if ((state == LinkPacketChannel::State::failed ||
              state == LinkPacketChannel::State::disconnected) &&
             port_ != nullptr) {
+            failure_during_transfer_ = port_->transfer_active();
             port_->reset_link();
         }
         return;
@@ -725,6 +784,29 @@ void LinkSerialEndpoint::poll() noexcept {
             continue;
         }
         if (packet->type == LinkPacketType::clock_release) {
+            if ((packet->flags & commit_flag) != 0) {
+                if ((packet->flags & commit_ack_flag) != 0) {
+                    if (commit_waiting_for_ack_ && commit_sequence_.has_value() &&
+                        packet->sequence == *commit_sequence_) {
+                        commit_waiting_for_ack_ = false;
+                        commit_packet_.reset();
+                        commit_sequence_.reset();
+                        commit_retry_count_ = 0;
+                        commit_retry_deadline_ = {};
+                    }
+                    continue;
+                }
+                ++commits_received_;
+                peer_clock_busy_ = false;
+                peer_byte_released_ = true;
+                const LinkPacket acknowledgement{LinkPacketType::clock_release,
+                                                 packet->sequence, 1,
+                                                 static_cast<std::uint8_t>(
+                                                     commit_flag |
+                                                     commit_ack_flag)};
+                static_cast<void>(send_packet(acknowledgement));
+                continue;
+            }
             if ((packet->flags & reset_flag) != 0) {
                 if ((packet->flags & reset_ack_flag) != 0) {
                     if (reset_waiting_for_ack_ && reset_sequence_.has_value() &&
@@ -738,14 +820,18 @@ void LinkSerialEndpoint::poll() noexcept {
                     }
                     continue;
                 }
-                // A peer can reset just after this side has started a fresh
-                // request. Do not let an older reset marker cancel that
-                // newer request; markers carry the sender's next sequence
-                // number for this ordering check.
-                if (pending_sequence_.has_value() &&
-                    packet->sequence < *pending_sequence_) {
+                if (last_peer_reset_sequence_.has_value() &&
+                    !is_newer_sequence(*last_peer_reset_sequence_,
+                                       packet->sequence)) {
+                    const LinkPacket acknowledgement{LinkPacketType::clock_release,
+                                                     packet->sequence, 0,
+                                                     static_cast<std::uint8_t>(
+                                                         reset_flag |
+                                                         reset_ack_flag)};
+                    static_cast<void>(send_packet(acknowledgement));
                     continue;
                 }
+                last_peer_reset_sequence_ = packet->sequence;
                 reset_transfer_state();
                 const LinkPacket acknowledgement{LinkPacketType::clock_release,
                                                  packet->sequence, 0,
@@ -901,6 +987,16 @@ void LinkSerialEndpoint::poll() noexcept {
             reset_retry_polls_ = 0;
         }
         reset_retry_deadline_ = now + retry_delay(reset_retry_count_);
+    }
+    if (commit_waiting_for_ack_ && commit_packet_ &&
+        now >= commit_retry_deadline_) {
+        if (commit_retry_count_ >= maximum_request_retries) {
+            protocol_fault("transfer commit acknowledgement timed out");
+            return;
+        }
+        ++commit_retry_count_;
+        if (send_packet(*commit_packet_)) ++commit_retries_;
+        commit_retry_deadline_ = now + retry_delay(commit_retry_count_);
     }
     if (now - last_peer_activity_ >= heartbeat_timeout) {
         ++heartbeat_timeouts_;

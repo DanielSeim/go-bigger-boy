@@ -87,6 +87,38 @@ public:
     [[nodiscard]] std::uint8_t last_received() const noexcept {
         return last_received_;
     }
+    // A compact, guest-independent fingerprint of the serial boundary. It
+    // intentionally excludes SB because games may leave different probe bytes
+    // there while still being at the same idle cable boundary.
+    [[nodiscard]] std::uint32_t link_state_signature() const noexcept {
+        std::uint32_t signature = 2166136261U;
+        const auto mix = [&signature](const std::uint8_t value) {
+            signature ^= value;
+            signature *= 16777619U;
+        };
+        for (unsigned byte = 0; byte < 4; ++byte)
+            mix(static_cast<std::uint8_t>(phase_ >> (byte * 8U)));
+        mix(bits_shifted_);
+        mix(active_ ? 1U : 0U);
+        mix(internal_clock_ ? 1U : 0U);
+        mix(fast_clock_ ? 1U : 0U);
+        return signature;
+    }
+    // The phase-independent portion is safe to include in the link handshake:
+    // two independently running consoles may attach between different divider
+    // edges, but they should agree on whether a serial transfer is in flight.
+    [[nodiscard]] std::uint32_t link_boundary_signature() const noexcept {
+        std::uint32_t signature = 2166136261U;
+        const auto mix = [&signature](const std::uint8_t value) {
+            signature ^= value;
+            signature *= 16777619U;
+        };
+        mix(bits_shifted_);
+        mix(active_ ? 1U : 0U);
+        mix(internal_clock_ ? 1U : 0U);
+        mix(fast_clock_ ? 1U : 0U);
+        return signature;
+    }
 
     // Diagnostics are intentionally separate from the emulated serial state.
     // A frontend can clear them when beginning a new link session without

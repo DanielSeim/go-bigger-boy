@@ -81,6 +81,18 @@ depending on frontend poll frequency. A transient remote disconnect gets up
 to three bounded automatic reconnect attempts; after that, the failed state
 remains visible for manual recovery.
 
+Diagnostics also expose a compact serial-boundary fingerprint captured when
+the endpoint attaches and reported at runtime. It covers the divider phase,
+shift count, and clock mode while excluding SB probe data, which games may
+legitimately leave different on the two consoles. The handshake validates the
+phase-independent portion of that fingerprint, so an in-flight transfer cannot
+be mistaken for an idle cable while independently running consoles remain free
+to attach on different divider phases. Completed transfers use their data
+sequence as an epoch commit: the next internal-clock edge waits for the peer's
+commit acknowledgement, and duplicate commit markers are acknowledged
+without touching guest state. Reset ordering uses a dedicated control sequence
+and is never compared with serial request sequence numbers.
+
 New endpoints negotiate a byte-level fast path in the hello arbitration flags.
 When both peers advertise it, one packet carries all eight outgoing serial
 bits and the response carries the eight incoming bits. The local serial port
@@ -210,6 +222,18 @@ bytes. These values distinguish a slow peer, a congested transport, and a
 guest that has not started its next serial operation. The link contract tests
 exercise dropped, duplicated, delayed, and reordered frames, reconnect fencing,
 and a sustained alternating-transfer soak.
+
+If a transport fails during an active serial transfer, automatic reconnect is
+not attempted because reconnecting the cable alone cannot prove that the two
+guest machines are at the same gameplay boundary. The failed session remains
+available for an explicit retry after the user has confirmed both games are
+ready to re-enter the link operation.
+
+Completed serial transfers also carry an explicit epoch commit and
+acknowledgement. The next internal-clock edge is held until that acknowledgement
+arrives, and reset markers are ordered in their own control sequence space.
+Automatic reconnect is suppressed while a serial transfer is active; a failed
+session is reset before reconnecting so an in-flight edge cannot be replayed.
 
 On desktop, **Emulation → Host Remote Link** (`Ctrl+Shift+H`) and **Join Remote
 Link** (`Ctrl+Shift+J`) use the configured transport. With TCP, the host listens
