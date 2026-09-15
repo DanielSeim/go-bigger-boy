@@ -1041,6 +1041,15 @@ if(GAMEBOY_BUILD_TESTS)
         target_link_libraries(gameboy_sdl_event_dispatch_tests PRIVATE SDL3::SDL3)
         add_test(NAME gameboy_sdl_event_dispatch
                  COMMAND gameboy_sdl_event_dispatch_tests)
+
+        add_executable(gameboy_desktop_debugger_layout_contract_tests
+            tests/desktop_debugger_layout_contract_tests.cpp)
+        target_include_directories(gameboy_desktop_debugger_layout_contract_tests
+            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/apps/sdl)
+        target_link_libraries(gameboy_desktop_debugger_layout_contract_tests
+            PRIVATE SDL3::SDL3)
+        add_test(NAME gameboy_desktop_debugger_layout_contract
+                 COMMAND gameboy_desktop_debugger_layout_contract_tests)
     endif()
     if(TARGET gameboy_sdl)
         add_test(NAME gameboy_sdl_version COMMAND gameboy_sdl --version)

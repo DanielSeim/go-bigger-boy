@@ -7,6 +7,7 @@
 #include "gameboy/ppu.hpp"
 #include "desktop_breakpoints.hpp"
 #include "desktop_disassembler.hpp"
+#include "desktop_debugger_layout.hpp"
 #include "desktop_memory_view.hpp"
 #include "desktop_viewport.hpp"
 #include "input_movie.hpp"
@@ -106,7 +107,9 @@ public:
         window_ = SDL_CreateWindow("Go Bigger Boy - Debugger", 1280, 900,
                                    SDL_WINDOW_RESIZABLE);
         if (window_ == nullptr) throw_sdl_error("Could not create debugger window");
-        static_cast<void>(SDL_SetWindowMinimumSize(window_, 1180, 820));
+        static_cast<void>(SDL_SetWindowMinimumSize(
+            window_, desktop_debugger_minimum_width,
+            desktop_debugger_minimum_height));
         renderer_ = SDL_CreateRenderer(window_, nullptr);
         if (renderer_ == nullptr) {
             close();
@@ -232,7 +235,7 @@ public:
                 }
             } else if (event.key.key == SDLK_TAB) {
                 focus_index_ = cycle_tool_focus(
-                    focus_index_, 10, (event.key.mod & SDL_KMOD_SHIFT) != 0);
+                    focus_index_, 12, (event.key.mod & SDL_KMOD_SHIFT) != 0);
             } else if (event.key.key == SDLK_F4) {
                 inspector_mode_ = !inspector_mode_;
             } else if (event.key.key == SDLK_F1) {
@@ -273,11 +276,11 @@ public:
             int width = 0;
             int height = 0;
             static_cast<void>(SDL_GetWindowSize(window_, &width, &height));
-            const auto panel = disassembly_panel(width, height);
+            const auto geometry = desktop_debugger_layout(width, height);
+            const auto& panel = geometry.disassembly;
             if (inspector_mode_) {
-                const auto memory = inspector_memory_panel(width, height);
-                if (mouse_x >= memory.x && mouse_x <= memory.x + memory.w &&
-                    mouse_y >= memory.y && mouse_y <= memory.y + memory.h) {
+                const auto& memory = geometry.memory;
+                if (desktop_debugger_rect_contains(memory, mouse_x, mouse_y)) {
                     memory_start_ = scroll_desktop_memory(
                         memory_start_, event.wheel.y > 0 ? -1 : 1);
                     return true;
@@ -311,24 +314,23 @@ public:
                 close();
                 return true;
             }
-            const auto y = static_cast<float>(height - 58);
-            const auto movie_y = static_cast<float>(height - 106);
-            const auto breakpoint_y = static_cast<float>(height - 154);
             const auto x = event.button.x;
-            const auto register_x = register_panel_x(width);
-            const auto panel = disassembly_panel(width, height);
+            const auto geometry = desktop_debugger_layout(width, height);
+            const auto register_x = geometry.register_area.x;
+            const auto& panel = geometry.disassembly;
+            const auto line_count = desktop_debugger_line_count(panel);
             if (emulator != nullptr &&
                 event.button.x >= panel.x &&
                 event.button.x <= panel.x + panel.w &&
                 event.button.y >= panel.y + 34.0F &&
                 event.button.y < panel.y + 34.0F +
-                                     disassembly_line_count * disassembly_line_height) {
+                                     line_count * disassembly_line_height) {
                 const auto disassembly = disassemble(
                     emulator->bus(),
                     disassembly_follow_pc_
                         ? emulator->cpu().registers().pc
                         : disassembly_start_,
-                    disassembly_line_count);
+                    line_count);
                 const auto index = static_cast<std::size_t>(
                     (event.button.y - panel.y - 34.0F) /
                     disassembly_line_height);
@@ -347,45 +349,56 @@ public:
                 }
             }
             cancel_edit();
-            if (event.button.y >= movie_y &&
-                event.button.y <= movie_y + 36.0F) {
-                if (x >= 24.0F && x <= 194.0F) {
-                    focus_index_ = 3;
-                    toggle_recording_ = true;
-                } else if (x >= 208.0F && x <= 378.0F) {
-                    focus_index_ = 4;
-                    replay_requested_ = true;
-                } else if (x >= 734.0F && x <= 884.0F) {
-                    focus_index_ = 5;
-                    tas_requested_ = true;
-                }
-            } else if (event.button.y >= breakpoint_y &&
-                       event.button.y <= breakpoint_y + 36.0F) {
-                if (x >= 24.0F && x <= 274.0F && emulator != nullptr) {
+            if (desktop_debugger_rect_contains(geometry.video_viewers, x,
+                                               event.button.y)) {
+                focus_index_ = 10;
+                video_viewer_requested_ = true;
+            } else if (desktop_debugger_rect_contains(geometry.hardware_inspector,
+                                                      x, event.button.y)) {
+                focus_index_ = 11;
+                inspector_mode_ = !inspector_mode_;
+            } else if (desktop_debugger_rect_contains(geometry.record, x,
+                                                      event.button.y)) {
+                focus_index_ = 3;
+                toggle_recording_ = true;
+            } else if (desktop_debugger_rect_contains(geometry.replay, x,
+                                                      event.button.y)) {
+                focus_index_ = 4;
+                replay_requested_ = true;
+            } else if (desktop_debugger_rect_contains(geometry.tas, x,
+                                                      event.button.y)) {
+                focus_index_ = 5;
+                tas_requested_ = true;
+            } else if (desktop_debugger_rect_contains(geometry.breakpoint_toggle,
+                                                      x, event.button.y)) {
+                if (emulator != nullptr) {
                     focus_index_ = 1;
                     static_cast<void>(toggle_breakpoint(
                         emulator->cpu().registers().pc));
-                } else if (x >= 288.0F && x <= 488.0F) {
-                    focus_index_ = 2;
-                    clear_breakpoints();
                 }
-            } else if (event.button.y >= y && event.button.y <= y + 36.0F) {
-                if (x >= 24.0F && x <= 174.0F) {
-                    focus_index_ = 6;
-                    if (execution_paused_) run();
-                    else pause();
-                } else if (x >= 188.0F && x <= 358.0F) {
-                    focus_index_ = 7;
-                    execution_paused_ = true;
-                    step_instruction_ = true;
-                } else if (x >= 372.0F && x <= 522.0F) {
-                    focus_index_ = 8;
-                    execution_paused_ = true;
-                    step_frame_ = true;
-                } else if (x >= 536.0F && x <= 686.0F) {
-                    focus_index_ = 9;
-                    sprite_requested_ = true;
-                }
+            } else if (desktop_debugger_rect_contains(geometry.breakpoint_clear,
+                                                      x, event.button.y)) {
+                focus_index_ = 2;
+                clear_breakpoints();
+            } else if (desktop_debugger_rect_contains(geometry.run_pause, x,
+                                                      event.button.y)) {
+                focus_index_ = 6;
+                if (execution_paused_) run();
+                else pause();
+            } else if (desktop_debugger_rect_contains(geometry.step_cpu, x,
+                                                      event.button.y)) {
+                focus_index_ = 7;
+                execution_paused_ = true;
+                step_instruction_ = true;
+            } else if (desktop_debugger_rect_contains(geometry.step_frame, x,
+                                                      event.button.y)) {
+                focus_index_ = 8;
+                execution_paused_ = true;
+                step_frame_ = true;
+            } else if (desktop_debugger_rect_contains(geometry.sprite_editor, x,
+                                                      event.button.y)) {
+                focus_index_ = 9;
+                sprite_requested_ = true;
             }
         }
         return true;
@@ -398,21 +411,29 @@ public:
         int width = 0;
         int height = 0;
         static_cast<void>(SDL_GetWindowSize(window_, &width, &height));
+        const auto geometry = desktop_debugger_layout(width, height);
         static_cast<void>(SDL_SetRenderDrawColor(renderer_, 8, 12, 20, 255));
         static_cast<void>(SDL_RenderClear(renderer_));
         static_cast<void>(SDL_SetRenderDrawColor(renderer_, 69, 207, 238, 255));
         render_tool_text(renderer_, 24, 20, "GO BIGGER BOY / DEBUGGER");
-        render_tool_text(renderer_, 250, 20,
-                         inspector_mode_ ? "F4: MAP VIEW"
-                                         : "F4: HARDWARE INSPECTOR");
-        render_tool_text(renderer_, 500, 20, "F1: VIDEO VIEWERS");
+        const auto nav_button = [this](const SDL_FRect& rect,
+                                       const char* label,
+                                       const bool selected) {
+            draw_tool_button_background(renderer_, window_, rect);
+            if (selected) {
+                static_cast<void>(SDL_SetRenderDrawColor(
+                    renderer_, 69, 207, 238, 255));
+                static_cast<void>(SDL_RenderRect(renderer_, &rect));
+            }
+            render_tool_text(renderer_, rect.x + 10.0F, rect.y + 13.0F,
+                             label, rect.w - 20.0F);
+        };
+        nav_button(geometry.video_viewers, "F1  VIDEO VIEWERS", false);
+        nav_button(geometry.hardware_inspector,
+                   inspector_mode_ ? "F4  MAP VIEW" : "F4  INSPECTOR",
+                   inspector_mode_);
         static_cast<void>(SDL_SetRenderDrawColor(renderer_, 177, 192, 208, 255));
 
-        constexpr float map_scale = 2.0F;
-        constexpr float map_x = 24.0F;
-        constexpr float map_y = 72.0F;
-        constexpr float map_width = DesktopBackgroundMap::width * map_scale;
-        constexpr float map_height = DesktopBackgroundMap::height * map_scale;
         gameboy::Ppu::Framebuffer pixels{};
         const auto& source = emulator.framebuffer();
         const auto native = emulator.bus().cgb_mode() || palette.cgb_compatibility;
@@ -428,18 +449,20 @@ public:
         static_cast<void>(SDL_UpdateTexture(
             background_texture_, nullptr, map.pixels.data(),
             static_cast<int>(DesktopBackgroundMap::width * sizeof(std::uint32_t))));
-        const SDL_FRect background_map{map_x, map_y, map_width, map_height};
+        const auto background_map = geometry.map;
         static_cast<void>(SDL_RenderTexture(renderer_, background_texture_, nullptr,
                                             &background_map));
         static_cast<void>(SDL_SetRenderDrawColor(renderer_, 69, 207, 238, 255));
         static_cast<void>(SDL_RenderRect(renderer_, &background_map));
-        const SDL_FRect outer{map_x - 3, map_y - 3, map_width + 6,
-                              map_height + 6};
+        const SDL_FRect outer{background_map.x - 3, background_map.y - 3,
+                              background_map.w + 6, background_map.h + 6};
         static_cast<void>(SDL_RenderRect(renderer_, &outer));
-        render_tool_text(renderer_, map_x, map_y + map_height + 10,
-                         "CALCULATED VIEW 256 x 256  /  VISIBLE WINDOW 160 x 144");
-        render_visible_viewport_overlay(renderer_, texture_, map_x, map_y,
-                                        map_scale);
+        render_tool_text(renderer_, background_map.x,
+                         background_map.y + background_map.h + 10,
+                         "CALCULATED VIEW 256 x 256  /  VISIBLE WINDOW 160 x 144",
+                         geometry.map.w);
+        render_visible_viewport_overlay(renderer_, texture_, background_map.x,
+                                        background_map.y, geometry.map_scale);
 
         const auto& r = emulator.cpu().registers();
         const auto pair = [](const std::uint8_t high, const std::uint8_t low) {
@@ -468,7 +491,7 @@ public:
             static_cast<void>(SDL_SetRenderDrawColor(renderer_, 230, 249, 255, 255));
             render_tool_text(renderer_, x, y, value.c_str());
         };
-        const auto register_x = register_panel_x(width);
+        const auto register_x = geometry.register_area.x;
         text(register_x, 72, "CPU REGISTERS");
         text(register_x, 86, execution_paused_
                                  ? "CLICK A VALUE TO EDIT"
@@ -542,7 +565,7 @@ public:
         if (inspector_mode_) {
             render_hardware_inspector(emulator, width, height);
         }
-        const auto disassembly_panel_rect = disassembly_panel(width, height);
+        const auto& disassembly_panel_rect = geometry.disassembly;
         static_cast<void>(SDL_SetRenderDrawColor(renderer_, 12, 20, 30, 255));
         static_cast<void>(SDL_RenderFillRect(renderer_, &disassembly_panel_rect));
         static_cast<void>(SDL_SetRenderDrawColor(renderer_, 34, 91, 111, 255));
@@ -556,8 +579,8 @@ public:
         const auto start_address = disassembly_follow_pc_
                                        ? r.pc
                                        : disassembly_start_;
-        const auto lines = disassemble(bus, start_address,
-                                       disassembly_line_count);
+        const auto lines = disassemble(
+            bus, start_address, desktop_debugger_line_count(disassembly_panel_rect));
         for (std::size_t index = 0; index < lines.size(); ++index) {
             const auto& line = lines[index];
             const auto row_y = disassembly_panel_rect.y + 34.0F +
@@ -575,10 +598,11 @@ public:
                 const SDL_FRect marker{row.x, row.y, 3.0F, row.h};
                 static_cast<void>(SDL_RenderFillRect(renderer_, &marker));
             }
-            text(disassembly_panel_rect.x + 12.0F, row_y + 4.0F,
-                 hex16(line.address));
-            text(disassembly_panel_rect.x + 66.0F, row_y + 4.0F,
-                 disassembly_bytes(line));
+            render_tool_text(renderer_, disassembly_panel_rect.x + 12.0F,
+                             row_y + 4.0F, hex16(line.address).c_str(), 42.0F);
+            const auto bytes = disassembly_bytes(line);
+            render_tool_text(renderer_, disassembly_panel_rect.x + 66.0F,
+                             row_y + 4.0F, bytes.c_str(), 78.0F);
             auto instruction_text = line.text;
             const auto available = static_cast<std::size_t>(
                 std::max(12.0F, (disassembly_panel_rect.w - 150.0F) / 8.0F));
@@ -586,15 +610,15 @@ public:
                 instruction_text.resize(available - 1);
                 instruction_text += '~';
             }
-            text(disassembly_panel_rect.x + 150.0F, row_y + 4.0F,
-                 instruction_text);
+            render_tool_text(renderer_, disassembly_panel_rect.x + 150.0F,
+                             row_y + 4.0F, instruction_text.c_str(),
+                             disassembly_panel_rect.w - 162.0F);
         }
-        const auto breakpoint_y = static_cast<float>(height - 154);
-        text(24, breakpoint_y - 28,
+        text(24, geometry.breakpoint_toggle.y - 28,
              "BREAKPOINTS " + std::to_string(breakpoint_count()) +
                  "  F2 TOGGLE  F3 CLEAR");
         if (breakpoints_.empty()) {
-            text(24, breakpoint_y - 14, "AT CURRENT PC");
+            text(24, geometry.breakpoint_toggle.y - 14, "AT CURRENT PC");
         } else {
             std::string addresses = "PC ";
             for (std::size_t index = 0; index < breakpoints_.addresses().size();
@@ -602,7 +626,7 @@ public:
                 if (index != 0) addresses += ", ";
                 addresses += hex16(breakpoints_.addresses()[index]);
             }
-            text(24, breakpoint_y - 14, addresses.substr(0, 104));
+            text(24, geometry.breakpoint_toggle.y - 14, addresses.substr(0, 104));
         }
 
         const auto button = [this](const SDL_FRect& rect,
@@ -611,55 +635,45 @@ public:
             render_tool_text(renderer_, rect.x + 12, rect.y + 14,
                              label.c_str(), rect.w - 24.0F);
         };
-        const auto button_y = static_cast<float>(height - 58);
-        const auto movie_y = static_cast<float>(height - 106);
-        button({24, breakpoint_y, 250, 36}, "F2 TOGGLE PC BREAKPOINT");
-        button({288, breakpoint_y, 200, 36}, "F3 CLEAR BREAKPOINTS");
-        button({24, movie_y, 170, 36},
+        button(geometry.breakpoint_toggle, "F2 TOGGLE PC BREAKPOINT");
+        button(geometry.breakpoint_clear, "F3 CLEAR BREAKPOINTS");
+        button(geometry.record,
                movie.recording() ? "F6 STOP + SAVE" : "F6 START RECORDING");
-        button({208, movie_y, 170, 36}, "F7 REPLAY LAST");
-        text(398, movie_y + 14,
+        button(geometry.replay, "F7 REPLAY LAST");
+        text(geometry.record.x + geometry.record.w + 20.0F,
+             geometry.record.y + 14,
              movie.replaying()
                  ? "REPLAYING"
                  : movie.recording()
                        ? "RECORDING  EVENTS " +
                              std::to_string(movie.event_count())
                        : "INPUT MOVIE IDLE");
-        button({734, movie_y, 150, 36}, "F8 TAS EDITOR");
-        button({24, button_y, 150, 36}, execution_paused_ ? "F5  RUN" : "F5  PAUSE");
-        button({188, button_y, 170, 36}, "F10 STEP CPU");
-        button({372, button_y, 150, 36}, "F11 STEP FRAME");
-        button({536, button_y, 150, 36}, "F9 SPRITE EDITOR");
+        button(geometry.tas, "F8 TAS EDITOR");
+        button(geometry.run_pause, execution_paused_ ? "F5  RUN" : "F5  PAUSE");
+        button(geometry.step_cpu, "F10 STEP CPU");
+        button(geometry.step_frame, "F11 STEP FRAME");
+        button(geometry.sprite_editor, "F9 SPRITE EDITOR");
         draw_tool_close_button(renderer_, window_, width);
         draw_tool_focus_outline(renderer_, focused_rect(width, height));
         static_cast<void>(SDL_RenderPresent(renderer_));
     }
 
 private:
-    static constexpr std::size_t disassembly_line_count = 20;
     static constexpr float disassembly_line_height = 24.0F;
 
     [[nodiscard]] static SDL_FRect disassembly_panel(const int width,
                                                      const int height) noexcept {
-        const auto x = std::max(760.0F, static_cast<float>(width) - 440.0F);
-        const auto bottom = static_cast<float>(height - 174);
-        return {x, 64.0F, static_cast<float>(width) - x - 24.0F,
-                std::max(120.0F, bottom - 64.0F)};
+        return desktop_debugger_layout(width, height).disassembly;
     }
 
     [[nodiscard]] static SDL_FRect inspector_panel(const int width,
                                                    const int height) noexcept {
-        const auto disassembly_x = disassembly_panel(width, height).x;
-        const auto bottom = static_cast<float>(height - 174);
-        return {24.0F, 64.0F, disassembly_x - 36.0F,
-                std::max(120.0F, bottom - 64.0F)};
+        return desktop_debugger_layout(width, height).inspector;
     }
 
     [[nodiscard]] static SDL_FRect inspector_memory_panel(
         const int width, const int height) noexcept {
-        const auto panel = inspector_panel(width, height);
-        return {panel.x + 8.0F, panel.y + 302.0F, panel.w - 16.0F,
-                panel.h - 310.0F};
+        return desktop_debugger_layout(width, height).memory;
     }
 
     void render_hardware_inspector(const gameboy::Emulator& emulator,
@@ -705,10 +719,14 @@ private:
             static_cast<void>(SDL_RenderRect(renderer_, &rect));
             static_cast<void>(SDL_SetRenderDrawColor(renderer_, 238, 196, 100,
                                                       255));
-            render_tool_text(renderer_, x + 10.0F, y + 8.0F, title.c_str());
+            render_tool_text(renderer_, x + 10.0F, y + 8.0F, title.c_str(),
+                             w - 20.0F);
             for (std::size_t index = 0; index < lines.size(); ++index) {
-                text(x + 10.0F, y + 24.0F + static_cast<float>(index) * 14.0F,
-                     lines[index]);
+                static_cast<void>(SDL_SetRenderDrawColor(renderer_, 230, 249,
+                                                          255, 255));
+                render_tool_text(renderer_, x + 10.0F,
+                                 y + 24.0F + static_cast<float>(index) * 14.0F,
+                                 lines[index].c_str(), w - 20.0F);
             }
         };
 
@@ -837,16 +855,17 @@ private:
         static_cast<void>(SDL_RenderFillRect(renderer_, &memory));
         static_cast<void>(SDL_SetRenderDrawColor(renderer_, 34, 91, 111, 255));
         static_cast<void>(SDL_RenderRect(renderer_, &memory));
+        const auto memory_rows = desktop_debugger_memory_row_count(memory);
         const auto last_address = static_cast<std::uint16_t>(
             static_cast<unsigned>(memory_start_) +
-            desktop_memory_view_rows * desktop_memory_view_bytes_per_row - 1);
+            memory_rows * desktop_memory_view_bytes_per_row - 1);
         static_cast<void>(SDL_SetRenderDrawColor(renderer_, 238, 196, 100, 255));
         const auto memory_title =
             "MEMORY " + hex16(memory_start_) + "-" + hex16(last_address) +
             "  (CPU BUS)";
         render_tool_text(renderer_, memory.x + 10.0F, memory.y + 8.0F,
                          memory_title.c_str());
-        for (std::size_t row = 0; row < desktop_memory_view_rows; ++row) {
+        for (std::size_t row = 0; row < memory_rows; ++row) {
             const auto address = static_cast<std::uint16_t>(
                 memory_start_ + row * desktop_memory_view_bytes_per_row);
             std::array<std::uint8_t, desktop_memory_view_bytes_per_row> bytes{};
@@ -896,10 +915,8 @@ private:
     }
 
     [[nodiscard]] static float register_panel_x(const int width) noexcept {
-        const auto disassembly_x = disassembly_panel(width, 820).x;
-        return std::max(530.0F,
-                        std::min(static_cast<float>(width) - 350.0F,
-                                 disassembly_x - 290.0F));
+        return desktop_debugger_layout(width, desktop_debugger_minimum_height)
+            .register_area.x;
     }
 
     [[nodiscard]] std::uint16_t previous_instruction_address(
@@ -924,19 +941,19 @@ private:
     [[nodiscard]] SDL_FRect focused_rect(const int width,
                                           const int height) const noexcept {
         if (focus_index_ == 0) return tool_close_button_rect(width);
-        const auto breakpoint_y = static_cast<float>(height - 154);
-        const auto movie_y = static_cast<float>(height - 106);
-        const auto button_y = static_cast<float>(height - 58);
+        const auto geometry = desktop_debugger_layout(width, height);
         switch (focus_index_) {
-        case 1: return {24, breakpoint_y, 250, 36};
-        case 2: return {288, breakpoint_y, 200, 36};
-        case 3: return {24, movie_y, 170, 36};
-        case 4: return {208, movie_y, 170, 36};
-        case 5: return {734, movie_y, 150, 36};
-        case 6: return {24, button_y, 150, 36};
-        case 7: return {188, button_y, 170, 36};
-        case 8: return {372, button_y, 150, 36};
-        case 9: return {536, button_y, 150, 36};
+        case 1: return geometry.breakpoint_toggle;
+        case 2: return geometry.breakpoint_clear;
+        case 3: return geometry.record;
+        case 4: return geometry.replay;
+        case 5: return geometry.tas;
+        case 6: return geometry.run_pause;
+        case 7: return geometry.step_cpu;
+        case 8: return geometry.step_frame;
+        case 9: return geometry.sprite_editor;
+        case 10: return geometry.video_viewers;
+        case 11: return geometry.hardware_inspector;
         default: return tool_close_button_rect(width);
         }
     }
@@ -961,6 +978,8 @@ private:
         case 7: execution_paused_ = true; step_instruction_ = true; return true;
         case 8: execution_paused_ = true; step_frame_ = true; return true;
         case 9: sprite_requested_ = true; return true;
+        case 10: video_viewer_requested_ = true; return true;
+        case 11: inspector_mode_ = !inspector_mode_; return true;
         default: return false;
         }
     }

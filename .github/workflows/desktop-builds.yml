@@ -239,14 +239,33 @@ jobs:
       - name: Install X11 input driver for GUI smoke
         run: sudo apt-get update && sudo apt-get install --no-install-recommends -y xdotool
 
-      - name: Run bounded SDL dashboard smoke under Xvfb
+      - name: Prepare debugger smoke ROM
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          rom = bytearray(0x8000)
+          # A tiny ROM-only cartridge that loops after the post-boot entry
+          # point. It is sufficient to exercise the desktop debugger without
+          # committing copyrighted test artwork to the repository.
+          rom[0x100:0x104] = b"\x00\xC3\x00\x01"
+          rom[0x147] = 0x00
+          rom[0x148] = 0x00
+          rom[0x149] = 0x00
+          Path("tsan-gui-artifacts/smoke.gb").parent.mkdir(parents=True,
+                                                             exist_ok=True)
+          Path("tsan-gui-artifacts/smoke.gb").write_bytes(rom)
+          PY
+
+      - name: Run bounded SDL frontend and debugger smoke under Xvfb
         env:
           SDL_AUDIODRIVER: dummy
           SDL_VIDEODRIVER: x11
           SDL_RENDER_DRIVER: software
           WAYLAND_DISPLAY: ""
           TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1:history_size=7
-        run: bash tests/sdl_tsan_smoke.sh ./build-tsan/gbb
+        run: bash tests/sdl_tsan_smoke.sh ./build-tsan/gbb \
+          tsan-gui-artifacts/smoke.gb
 
       - name: Upload interactive SDL TSan artifacts
         if: always()
