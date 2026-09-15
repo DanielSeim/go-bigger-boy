@@ -1261,6 +1261,120 @@ void test_tcp_serial_endpoint_disconnect_mid_transfer() {
     second_endpoint.detach();
 }
 
+void test_tcp_serial_endpoint_simultaneous_disconnect_and_reconnect() {
+    gameboy::TcpLinkChannel server;
+    gameboy::TcpLinkChannel client;
+    if (!server.listen(0) || server.local_port() == 0) return;
+    if (!client.connect("127.0.0.1", server.local_port())) return;
+    const auto wait_for_connection = [&] {
+        for (unsigned attempt = 0;
+             attempt < 100 &&
+             (server.state() != gameboy::TcpLinkChannel::State::connected ||
+              client.state() != gameboy::TcpLinkChannel::State::connected);
+             ++attempt) {
+            server.poll();
+            client.poll();
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        return server.state() == gameboy::TcpLinkChannel::State::connected &&
+               client.state() == gameboy::TcpLinkChannel::State::connected;
+    };
+    if (!wait_for_connection()) return;
+
+    gameboy::MemoryBus first{gameboy::Cartridge{test_rom()}};
+    gameboy::MemoryBus second{gameboy::Cartridge{test_rom()}};
+    gameboy::TcpSerialEndpoint first_endpoint;
+    gameboy::TcpSerialEndpoint second_endpoint;
+    first_endpoint.set_arbitration_priority(true);
+    second_endpoint.set_arbitration_priority(false);
+    constexpr std::uint64_t rom_fingerprint = UINT64_C(0xD15C0);
+    first_endpoint.attach(first.serial_port(), client, rom_fingerprint);
+    second_endpoint.attach(second.serial_port(), server, rom_fingerprint);
+    for (unsigned attempt = 0; attempt < 100; ++attempt) {
+        first_endpoint.poll();
+        second_endpoint.poll();
+        if (first_endpoint.peer_ready_for_link()) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    check(first_endpoint.peer_ready_for_link() &&
+              second_endpoint.peer_ready_for_link(),
+          "both TCP peers complete the initial fenced handshake");
+
+    first.write8(0xFF01, 0xA5);
+    second.write8(0xFF01, 0x5A);
+    second.write8(0xFF02, 0x80);
+    first.write8(0xFF02, 0x81);
+    first.tick(512);
+    const auto first_session = first_endpoint.session_id();
+    const auto second_session = second_endpoint.session_id();
+    check(first.serial_port().transfer_active() &&
+              second.serial_port().transfer_active(),
+          "both TCP peers are active when the shared transport fails");
+
+    // Closing both directions before either endpoint polls models a Wi-Fi
+    // route disappearing for both devices in the same frame. Each endpoint
+    // must abort its local transfer rather than waiting for a peer response.
+    client.close();
+    server.close();
+    first_endpoint.poll();
+    second_endpoint.poll();
+    check(!first.serial_port().transfer_active() &&
+              !second.serial_port().transfer_active() &&
+              first_endpoint.failure_during_transfer() &&
+              second_endpoint.failure_during_transfer(),
+          "simultaneous TCP loss aborts both active transfers symmetrically");
+
+    first_endpoint.detach();
+    second_endpoint.detach();
+
+    // Recreate both socket directions at once. Reattaching the endpoints must
+    // fence the old session tokens so an earlier transfer cannot bleed into
+    // the new handshake.
+    gameboy::TcpLinkChannel reconnected_server;
+    gameboy::TcpLinkChannel reconnected_client;
+    if (!reconnected_server.listen(0) || reconnected_server.local_port() == 0 ||
+        !reconnected_client.connect("127.0.0.1", reconnected_server.local_port()) ||
+        ![&] {
+            for (unsigned attempt = 0;
+                 attempt < 100 &&
+                 (reconnected_server.state() !=
+                      gameboy::TcpLinkChannel::State::connected ||
+                  reconnected_client.state() !=
+                      gameboy::TcpLinkChannel::State::connected);
+                 ++attempt) {
+                reconnected_server.poll();
+                reconnected_client.poll();
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            return reconnected_server.state() ==
+                       gameboy::TcpLinkChannel::State::connected &&
+                   reconnected_client.state() ==
+                       gameboy::TcpLinkChannel::State::connected;
+        }()) {
+        return;
+    }
+    first_endpoint.attach(first.serial_port(), reconnected_client,
+                          rom_fingerprint);
+    second_endpoint.attach(second.serial_port(), reconnected_server,
+                           rom_fingerprint);
+    for (unsigned attempt = 0; attempt < 100; ++attempt) {
+        first_endpoint.poll();
+        second_endpoint.poll();
+        if (first_endpoint.peer_ready_for_link() &&
+            second_endpoint.peer_ready_for_link()) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    check(first_endpoint.peer_ready_for_link() &&
+              second_endpoint.peer_ready_for_link() &&
+              first_endpoint.session_id() != first_session &&
+              second_endpoint.session_id() != second_session &&
+              first_endpoint.failure_during_transfer() == false &&
+              second_endpoint.failure_during_transfer() == false,
+          "simultaneous reconnect establishes fresh synchronized sessions");
+    first_endpoint.detach();
+    second_endpoint.detach();
+}
+
 void test_tcp_serial_endpoint_loopback() {
     gameboy::TcpLinkChannel server;
     gameboy::TcpLinkChannel client;
@@ -1614,6 +1728,7 @@ int main() {
     test_packet_channel_rejects_profile_mismatch();
     test_tcp_link_channel_loopback();
     test_tcp_serial_endpoint_disconnect_mid_transfer();
+    test_tcp_serial_endpoint_simultaneous_disconnect_and_reconnect();
     test_tcp_serial_endpoint_loopback();
     test_tcp_serial_endpoint_rejects_mismatched_rom();
     return failures == 0 ? 0 : 1;

@@ -238,8 +238,9 @@ acknowledgement. The next internal-clock edge is held until that acknowledgement
 arrives, and reset markers are ordered in their own control sequence space.
 Automatic reconnect is suppressed while a serial transfer is active; a failed
 session is reset before reconnecting so an in-flight edge cannot be replayed.
-The tests also force a real TCP disconnect during an active request, repeat
-fresh TCP reconnects, and reject incompatible packet protocol versions.
+The tests also force a real TCP disconnect during an active request, drop both
+directions simultaneously, reconnect both peers into fresh fenced sessions,
+repeat fresh TCP reconnects, and reject incompatible packet protocol versions.
 
 On desktop, **Emulation → Host Remote Link** (`Ctrl+Shift+H`) and **Join Remote
 Link** (`Ctrl+Shift+J`) use the configured transport. With TCP, the host listens
