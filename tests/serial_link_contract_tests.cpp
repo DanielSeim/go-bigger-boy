@@ -1214,6 +1214,53 @@ void test_packet_sustained_transfer_soak() {
     join_endpoint.detach();
 }
 
+void test_tcp_serial_endpoint_disconnect_mid_transfer() {
+    gameboy::TcpLinkChannel server;
+    gameboy::TcpLinkChannel client;
+    if (!server.listen(0) || server.local_port() == 0) return;
+    if (!client.connect("127.0.0.1", server.local_port())) return;
+    for (unsigned attempt = 0;
+         attempt < 100 &&
+         (server.state() != gameboy::TcpLinkChannel::State::connected ||
+          client.state() != gameboy::TcpLinkChannel::State::connected);
+         ++attempt) {
+        server.poll();
+        client.poll();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    if (server.state() != gameboy::TcpLinkChannel::State::connected ||
+        client.state() != gameboy::TcpLinkChannel::State::connected) return;
+
+    gameboy::MemoryBus first{gameboy::Cartridge{test_rom()}};
+    gameboy::MemoryBus second{gameboy::Cartridge{test_rom()}};
+    gameboy::TcpSerialEndpoint first_endpoint;
+    gameboy::TcpSerialEndpoint second_endpoint;
+    first_endpoint.set_arbitration_priority(true);
+    second_endpoint.set_arbitration_priority(false);
+    first_endpoint.attach(first.serial_port(), client, UINT64_C(0xD15C0));
+    second_endpoint.attach(second.serial_port(), server, UINT64_C(0xD15C0));
+    for (unsigned attempt = 0; attempt < 100; ++attempt) {
+        first_endpoint.poll();
+        second_endpoint.poll();
+        if (first_endpoint.peer_ready_for_link()) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    first.write8(0xFF01, 0xA5);
+    second.write8(0xFF01, 0x5A);
+    second.write8(0xFF02, 0x80);
+    first.write8(0xFF02, 0x81);
+    first.tick(512);
+    check(first.serial_port().transfer_active() && first_endpoint.waiting_for_peer(),
+          "real TCP transport has an in-flight serial request before failure");
+    client.close();
+    first_endpoint.poll();
+    check(!first.serial_port().transfer_active() &&
+              first_endpoint.failure_during_transfer(),
+          "real TCP disconnect aborts the active transfer and requires recovery");
+    first_endpoint.detach();
+    second_endpoint.detach();
+}
+
 void test_tcp_serial_endpoint_loopback() {
     gameboy::TcpLinkChannel server;
     gameboy::TcpLinkChannel client;
@@ -1373,7 +1420,7 @@ void test_tcp_serial_endpoint_loopback() {
     // run catches ownership drift that only appears after many battle bytes;
     // the owner changes every byte and the network is still polled only once
     // per 64 CPU cycles.
-    for (unsigned byte = 0; byte < 64; ++byte) {
+    for (unsigned byte = 0; byte < 256; ++byte) {
         // The previous owner's completion callback queues clock_release on
         // its TCP channel. Give both endpoints a normal idle polling window
         // before arming the next byte. The join side now safely keeps an
@@ -1566,6 +1613,7 @@ int main() {
     test_packet_sustained_transfer_soak();
     test_packet_channel_rejects_profile_mismatch();
     test_tcp_link_channel_loopback();
+    test_tcp_serial_endpoint_disconnect_mid_transfer();
     test_tcp_serial_endpoint_loopback();
     test_tcp_serial_endpoint_rejects_mismatched_rom();
     return failures == 0 ? 0 : 1;

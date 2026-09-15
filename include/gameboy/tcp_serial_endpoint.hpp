@@ -25,6 +25,8 @@ public:
                 LinkCompatibilityProfile compatibility_profile = {}) noexcept;
     void detach() noexcept;
     void poll() noexcept;
+    void set_suspended(bool suspended) noexcept { suspended_ = suspended; }
+    [[nodiscard]] bool suspended() const noexcept { return suspended_; }
     void set_arbitration_priority(bool priority) noexcept {
         arbitration_priority_ = priority;
     }
@@ -36,7 +38,8 @@ public:
         return connected() && peer_hello_seen_ && peer_compatible_ &&
                (arbitration_priority_ || peer_request_seen_) &&
                !reset_waiting_for_ack_ && state_digest_valid_ &&
-               state_digest_acknowledged_ && !commit_waiting_for_ack_;
+               state_digest_acknowledged_ && !commit_waiting_for_ack_ &&
+               !suspended_;
     }
     [[nodiscard]] bool waiting_for_peer() const noexcept {
         return pending_sequence_.has_value() && !response_.has_value() &&
@@ -47,7 +50,7 @@ public:
     // poll is still required while the hello exchange or a serial transfer is
     // active, including when this side is receiving the peer's clock.
     [[nodiscard]] bool needs_poll() const noexcept {
-        return channel_ != nullptr &&
+        return channel_ != nullptr && !suspended_ &&
                (!peer_hello_seen_ || waiting_for_peer() ||
                 deferred_request_.has_value() ||
                 reset_waiting_for_ack_ ||
@@ -228,7 +231,8 @@ public:
     void prepare_bit(bool outgoing) noexcept override;
     [[nodiscard]] bool exchange_bit(bool outgoing) noexcept override;
     [[nodiscard]] bool peer_ready() const noexcept override {
-        return response_.has_value() || byte_response_.has_value();
+        return !suspended_ &&
+               (response_.has_value() || byte_response_.has_value());
     }
     [[nodiscard]] bool request_internal_clock(
         SerialPort& /*port*/) noexcept override;
@@ -350,6 +354,7 @@ private:
     std::uint64_t commits_received_{};
     std::uint64_t commit_retries_{};
     bool failure_during_transfer_{};
+    bool suspended_{};
     std::uint64_t diagnostic_session_{};
 
     [[nodiscard]] bool send_packet(LinkPacket packet) noexcept;

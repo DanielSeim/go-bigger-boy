@@ -2278,6 +2278,10 @@ int main(int argc, char** argv) {
 
             sdl.camera.update(
                 services.get(gbb::CoreCapability::camera));
+#ifdef __ANDROID__
+            remote_link.endpoint.set_suspended(
+                gbb::sdl::android_link_is_suspended());
+#endif
             remote_link.poll();
             // Starting a remote host puts the channel into a listening state. It
             // is still an active session for the UI, but until a peer is

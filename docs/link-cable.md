@@ -221,19 +221,25 @@ RTT jitter, RTT sample count, queued packet count, and total channel-buffered
 bytes. These values distinguish a slow peer, a congested transport, and a
 guest that has not started its next serial operation. The link contract tests
 exercise dropped, duplicated, delayed, and reordered frames, reconnect fencing,
-and a sustained alternating-transfer soak.
+and a sustained alternating-transfer soak over the real TCP loopback channel.
 
 If a transport fails during an active serial transfer, automatic reconnect is
 not attempted because reconnecting the cable alone cannot prove that the two
 guest machines are at the same gameplay boundary. The failed session remains
 available for an explicit retry after the user has confirmed both games are
-ready to re-enter the link operation.
+ready to re-enter the link operation, and the status indicator marks the
+session as interrupted. Android suspends link polling and serial edges while
+the activity is backgrounded, preventing a normal screen or Wi-Fi sleep from
+being mistaken for a protocol timeout; disconnects are checked when the
+activity resumes.
 
 Completed serial transfers also carry an explicit epoch commit and
 acknowledgement. The next internal-clock edge is held until that acknowledgement
 arrives, and reset markers are ordered in their own control sequence space.
 Automatic reconnect is suppressed while a serial transfer is active; a failed
 session is reset before reconnecting so an in-flight edge cannot be replayed.
+The tests also force a real TCP disconnect during an active request, repeat
+fresh TCP reconnects, and reject incompatible packet protocol versions.
 
 On desktop, **Emulation → Host Remote Link** (`Ctrl+Shift+H`) and **Join Remote
 Link** (`Ctrl+Shift+J`) use the configured transport. With TCP, the host listens

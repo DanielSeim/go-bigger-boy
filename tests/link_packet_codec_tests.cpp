@@ -117,6 +117,12 @@ int main() {
     check(!gameboy::LinkPacketCodec::decode(invalid_type.data(), invalid_type.size()),
           "unknown packet type is rejected even with a valid checksum");
 
+    auto invalid_version = wire;
+    invalid_version[2] = 1;
+    check(!gameboy::LinkPacketCodec::decode(invalid_version.data(),
+                                            invalid_version.size()),
+          "older link protocol versions are rejected before session negotiation");
+
     test_deterministic_round_trips();
     test_stream_resynchronizes_after_corruption();
 

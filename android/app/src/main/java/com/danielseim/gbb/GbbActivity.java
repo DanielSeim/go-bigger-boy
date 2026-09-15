@@ -107,6 +107,7 @@ public final class GbbActivity extends SDLActivity {
     private static native void nativeOpenRom(String rom, String displayName);
     private static native void nativeAndroidBackPressed();
     private static native void nativeAndroidLinkSettingsChanged();
+    private static native void nativeAndroidLinkLifecycleChanged(boolean resumed);
     private static native byte[] nativeLinkDiagnostics(String directory);
 
     /**
@@ -690,6 +691,7 @@ public final class GbbActivity extends SDLActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        nativeAndroidLinkLifecycleChanged(true);
         hideSystemBars();
         if (cameraOrientationListener != null &&
                 cameraOrientationListener.canDetectOrientation()) {
@@ -726,6 +728,7 @@ public final class GbbActivity extends SDLActivity {
 
     @Override
     protected void onPause() {
+        nativeAndroidLinkLifecycleChanged(false);
         if (updateManager != null) updateManager.onPause();
         if (cameraOrientationListener != null) cameraOrientationListener.disable();
         super.onPause();

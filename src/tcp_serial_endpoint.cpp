@@ -224,6 +224,7 @@ void LinkSerialEndpoint::attach(SerialPort& port,
     commits_received_ = 0;
     commit_retries_ = 0;
     failure_during_transfer_ = false;
+    suspended_ = false;
     diagnostic_session_ =
         next_diagnostic_session.fetch_add(1, std::memory_order_relaxed);
     port_->set_endpoint(this);
@@ -324,6 +325,7 @@ void LinkSerialEndpoint::detach() noexcept {
     commits_received_ = 0;
     commit_retries_ = 0;
     failure_during_transfer_ = false;
+    suspended_ = false;
     diagnostic_session_ = 0;
     if (was_attached) {
         gbb::Logger::instance().write(gbb::LogLevel::info,
@@ -339,7 +341,7 @@ bool LinkSerialEndpoint::connected() const noexcept {
 }
 
 void LinkSerialEndpoint::prepare_bit(const bool outgoing) noexcept {
-    if (pending_sequence_.has_value() || !connected()) return;
+    if (suspended_ || pending_sequence_.has_value() || !connected()) return;
     // The transport connection can come up before the peer has attached its serial
     // endpoint. Hold the first edge until the transport handshake is complete;
     // the serial port will retain its phase at this boundary.
@@ -428,7 +430,7 @@ bool LinkSerialEndpoint::request_internal_clock(
     // current host byte is still in flight, accept the arm and let
     // prepare_bit() hold the first edge until release rather than demoting
     // the guest to an external receiver.
-    if (!connected()) return false;
+    if (suspended_ || !connected()) return false;
     if (!arbitration_priority_ && !peer_request_seen_) {
         return false;
     }
@@ -510,7 +512,7 @@ void LinkSerialEndpoint::cancel_internal_clock(SerialPort& /*port*/) noexcept {
 }
 
 void LinkSerialEndpoint::poll() noexcept {
-    if (channel_ == nullptr) return;
+    if (channel_ == nullptr || suspended_) return;
     channel_->poll();
     if (!connected()) {
         // A socket can fail after the guest has armed its internal clock. Do

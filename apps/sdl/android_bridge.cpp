@@ -12,6 +12,7 @@
 
 #include <array>
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <filesystem>
 #include <iomanip>
@@ -33,6 +34,7 @@ std::mutex android_runtime_context_mutex;
 gbb::LogContext android_runtime_context{};
 std::mutex android_link_settings_mutex;
 bool android_link_settings_changed{};
+std::atomic<bool> android_link_suspended{};
 
 bool context_is_empty(const gbb::LogContext context) noexcept {
     return context.session == 0 && context.frame == 0 &&
@@ -117,6 +119,10 @@ bool take_android_link_settings_changed() noexcept {
     const auto changed = android_link_settings_changed;
     android_link_settings_changed = false;
     return changed;
+}
+
+bool android_link_is_suspended() noexcept {
+    return android_link_suspended.load(std::memory_order_acquire);
 }
 
 bool start_android_lan_discovery() noexcept {
@@ -607,6 +613,13 @@ Java_com_danielseim_gbb_GbbActivity_nativeAndroidLinkSettingsChanged(
     JNIEnv*, jclass) {
     std::lock_guard<std::mutex> lock(gbb::sdl::android_link_settings_mutex);
     gbb::sdl::android_link_settings_changed = true;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_danielseim_gbb_GbbActivity_nativeAndroidLinkLifecycleChanged(
+    JNIEnv*, jclass, const jboolean resumed) {
+    gbb::sdl::android_link_suspended.store(resumed == JNI_FALSE,
+                                            std::memory_order_release);
 }
 
 extern "C" JNIEXPORT jbyteArray JNICALL

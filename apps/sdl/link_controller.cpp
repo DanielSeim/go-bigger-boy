@@ -29,9 +29,14 @@ void process_link_requests(LinkControlContext context) {
         context.remote_link.failure_reported = true;
         gbb::log_frontend_warning(
             "Remote link lost; serial state was reset and retry is available");
-        show_error(context.sdl.window,
-                   "The remote link was lost. The serial transfer was reset. "
-                   "Choose Emulation > Retry Link Handshake to reconnect.");
+        show_error(
+            context.sdl.window,
+            context.remote_link.endpoint.failure_during_transfer()
+                ? "The remote link was interrupted during a serial transfer. "
+                  "Automatic reconnect is disabled to prevent desync. Confirm "
+                  "both games are ready, then choose Emulation > Retry Link Handshake."
+                : "The remote link was lost. The serial transfer was reset. "
+                  "Choose Emulation > Retry Link Handshake to reconnect.");
     }
 
     // Recover a short transport outage without forcing the user to leave the
