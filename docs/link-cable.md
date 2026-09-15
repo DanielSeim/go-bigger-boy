@@ -32,8 +32,12 @@ Handshake** (or `Ctrl+Shift+R`) performs that recovery.
 `gameboy::LinkTransport` is the seam for additional transports. The shipped
 `LocalLinkTransport` wraps `SerialCable`; transport implementations must queue
 network I/O outside the serial edge callback and present only ready edges to
-the emulation thread. `LinkPacketCodec` defines the fixed `GB`/versioned,
-checksummed frame used by the TCP endpoint and future transports.
+the emulation thread. `LinkPacketCodec` defines the fixed `GB`/versioned frame
+used by the TCP endpoint and future transports. Current frames are 20 bytes:
+they carry a per-attachment session ID and a CRC-16/CCITT integrity check. A
+peer ignores frames from another session, so a reconnect cannot consume an old
+queued edge; CRC validation rejects corrupted frames before they reach serial
+state.
 
 The Web frontend does not expose link sessions yet. Its single-player browser
 runtime has no transport endpoint, and the native end-to-end test is excluded
@@ -54,7 +58,15 @@ clocking the local external port from `poll()`. This keeps socket latency out
 of CPU execution; a host UI can now compose one endpoint, one channel, and one
 emulator for a remote session. While a TCP bit is in flight, the endpoint also
 preserves the partial shift register across Pokémon's repeated SB/SC probe
-rewrites; an explicit link reset remains the cancellation boundary.
+rewrites; an explicit link reset remains the cancellation boundary. Reset is
+a two-way barrier: the endpoint waits for the peer's reset acknowledgement
+before arming a new edge. Request sequence numbers are strictly monotonic per
+session; a duplicate request is answered from the cached response without
+clocking the guest a second time, while an out-of-order request tears down the
+session instead of allowing the two emulators to diverge. The endpoint sends
+transport heartbeats and expires a peer that has not produced valid traffic
+within five seconds. Serial edges are never caught up after a missed poll; the
+next edge remains held until its matching response arrives.
 
 New endpoints negotiate a byte-level fast path in the hello arbitration flags.
 When both peers advertise it, one packet carries all eight outgoing serial
@@ -63,8 +75,9 @@ still shifts those bits at normal Game Boy timing, while the peer clocks its
 external receiver as one complete byte. This removes seven network round
 trips per byte, which is important on Wi-Fi and prevents a long sequence of
 bit-sized waits from starving a desktop frame loop. Peers that do not advertise
-the capability continue to use the original bit packets automatically, so a
-new build remains compatible with older releases.
+the capability continue to use the original bit packets automatically. The
+session-ID/CRC frame is a versioned protocol boundary, so both endpoints must
+be from a build that supports the current framing.
 
 For a byte-capable remote receiver, the SDL frontend uses a deliberately
 coarse polling cadence while the guest is passively waiting, then switches to

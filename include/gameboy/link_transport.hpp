@@ -54,6 +54,9 @@ enum class LinkPacketType : std::uint8_t {
     // request/response pair. Older peers do not advertise this capability,
     // so endpoints automatically fall back to bit packets.
     byte = 5,
+    // Transport heartbeat; it is acknowledged without touching guest serial
+    // state and gives remote endpoints a wall-clock liveness signal.
+    heartbeat = 6,
 };
 
 struct LinkPacket {
@@ -61,6 +64,9 @@ struct LinkPacket {
     std::uint32_t sequence{};
     std::uint8_t value{};
     std::uint8_t flags{};
+    // A fresh value is generated for every endpoint attachment. It fences
+    // packets from an earlier connection from the current serial session.
+    std::uint64_t session_id{};
 };
 
 // Fixed-size framing shared by future TCP/UDP transports. It includes a
@@ -68,7 +74,8 @@ struct LinkPacket {
 // rejected before they can affect serial state.
 class LinkPacketCodec final {
 public:
-    static constexpr std::size_t wire_size = 11;
+    static constexpr std::size_t wire_size = 20;
+    static constexpr std::uint8_t protocol_version = 2;
 
     [[nodiscard]] static std::array<std::uint8_t, wire_size> encode(
         const LinkPacket& packet) noexcept;

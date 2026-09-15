@@ -29,10 +29,12 @@ void test_deterministic_round_trips() {
     for (unsigned index = 0; index < 128; ++index) {
         const auto random = next_value(state);
         const auto type = static_cast<gameboy::LinkPacketType>(
-            1U + (random % 5U));
+            1U + (random % 6U));
         const gameboy::LinkPacket packet{type, next_value(state),
                                          static_cast<std::uint8_t>(next_value(state)),
-                                         static_cast<std::uint8_t>(next_value(state))};
+                                         static_cast<std::uint8_t>(next_value(state)),
+                                         (static_cast<std::uint64_t>(next_value(state)) << 32U) |
+                                             next_value(state)};
         const auto wire = gameboy::LinkPacketCodec::encode(packet);
         const auto decoded = gameboy::LinkPacketCodec::decode(wire.data(),
                                                                wire.size());
@@ -41,7 +43,8 @@ void test_deterministic_round_trips() {
             check(decoded->type == packet.type &&
                       decoded->sequence == packet.sequence &&
                       decoded->value == packet.value &&
-                      decoded->flags == packet.flags,
+                      decoded->flags == packet.flags &&
+                      decoded->session_id == packet.session_id,
                   "generated packet fields survive round-trip");
         }
     }
@@ -51,7 +54,8 @@ void test_deterministic_round_trips() {
 
 int main() {
     const gameboy::LinkPacket original{
-        gameboy::LinkPacketType::clock_release, 0xDEADBEEFU, 0xA5, 0x18};
+        gameboy::LinkPacketType::clock_release, 0xDEADBEEFU, 0xA5, 0x18,
+        UINT64_C(0x0123456789ABCDEF)};
     const auto wire = gameboy::LinkPacketCodec::encode(original);
     const auto decoded = gameboy::LinkPacketCodec::decode(wire.data(), wire.size());
     check(decoded.has_value(), "valid link packet decodes");
@@ -59,7 +63,8 @@ int main() {
         check(decoded->type == original.type &&
                   decoded->sequence == original.sequence &&
                   decoded->value == original.value &&
-                  decoded->flags == original.flags,
+                  decoded->flags == original.flags &&
+                  decoded->session_id == original.session_id,
               "packet fields survive encode/decode");
     }
 
@@ -81,11 +86,8 @@ int main() {
 
     auto invalid_type = wire;
     invalid_type[3] = 0;
-    std::uint8_t checksum = 0;
-    for (std::size_t index = 0; index < invalid_type.size() - 1; ++index) {
-        checksum = static_cast<std::uint8_t>(checksum ^ invalid_type[index]);
-    }
-    invalid_type.back() = checksum;
+    invalid_type[18] = 0;
+    invalid_type[19] = 0;
     check(!gameboy::LinkPacketCodec::decode(invalid_type.data(), invalid_type.size()),
           "unknown packet type is rejected even with a valid checksum");
 

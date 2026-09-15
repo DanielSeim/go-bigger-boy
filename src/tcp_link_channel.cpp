@@ -4,6 +4,7 @@
 #include <array>
 #include <cerrno>
 #include <cstring>
+#include <limits>
 
 #if defined(_WIN32)
 #ifndef NOMINMAX
@@ -214,10 +215,17 @@ void TcpLinkChannel::close() noexcept {
 
 bool TcpLinkChannel::send(const LinkPacket& packet) noexcept {
     if (state_ != State::connected) return false;
+    flush_send_queue();
+    if (state_ != State::connected ||
+        send_buffer_.size() - send_offset_ >
+            LinkPacketChannel::maximum_buffered_bytes -
+                LinkPacketCodec::wire_size) {
+        return false;
+    }
     const auto wire = LinkPacketCodec::encode(packet);
     send_buffer_.insert(send_buffer_.end(), wire.begin(), wire.end());
     flush_send_queue();
-    return true;
+    return state_ == State::connected;
 }
 
 std::optional<LinkPacket> TcpLinkChannel::receive() noexcept {
@@ -246,9 +254,11 @@ void TcpLinkChannel::flush_send_queue() noexcept {
     while (send_offset_ < send_buffer_.size() && peer_ != -1) {
         const auto* data = send_buffer_.data() + send_offset_;
         const auto remaining = send_buffer_.size() - send_offset_;
+        const auto chunk = std::min<std::size_t>(
+            remaining, static_cast<std::size_t>(std::numeric_limits<int>::max()));
         const auto count = ::send(as_socket(peer_),
                                   reinterpret_cast<const char*>(data),
-                                  static_cast<int>(remaining), 0);
+                                  static_cast<int>(chunk), 0);
         if (count > 0) {
             send_offset_ += static_cast<std::size_t>(count);
             continue;
@@ -280,6 +290,10 @@ void TcpLinkChannel::receive_available() noexcept {
         if (count > 0) {
             receive_buffer_.insert(receive_buffer_.end(), buffer.begin(),
                                     buffer.begin() + count);
+            if (receive_buffer_.size() > LinkPacketChannel::maximum_buffered_bytes) {
+                fail();
+                return;
+            }
             while (receive_buffer_.size() >= LinkPacketCodec::wire_size) {
                 const auto packet = LinkPacketCodec::decode(
                     receive_buffer_.data(), LinkPacketCodec::wire_size);
@@ -288,6 +302,11 @@ void TcpLinkChannel::receive_available() noexcept {
                     receive_buffer_.begin() +
                         static_cast<std::ptrdiff_t>(LinkPacketCodec::wire_size));
                 if (packet) {
+                    if (packets_.size() >=
+                        LinkPacketChannel::maximum_queued_packets) {
+                        fail();
+                        return;
+                    }
                     packets_.push_back(*packet);
                 } else {
                     ++malformed_packets_;

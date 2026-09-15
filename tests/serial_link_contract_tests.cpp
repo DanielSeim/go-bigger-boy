@@ -62,6 +62,7 @@ public:
     }
     void poll() noexcept override {}
     void close() noexcept override { state_ = State::disconnected; }
+    void fail() noexcept { state_ = State::failed; }
     [[nodiscard]] bool send(const gameboy::LinkPacket& packet) noexcept override {
         if (peer_ == nullptr || state_ != State::connected) return false;
         peer_->packets_.push_back(packet);
@@ -206,6 +207,17 @@ void test_serial_link_cable() {
     check(first.serial_port().transfers_completed() == 1 &&
               second.serial_port().transfers_completed() == 1,
           "linked serial diagnostics count completed transfers");
+    first.write8(0xFF01, 0xA5);
+    second.write8(0xFF01, 0x5A);
+    first.write8(0xFF02, 0x81);
+    second.write8(0xFF02, 0x80);
+    cable.disconnect();
+    check(!first.serial_port().transfer_active() &&
+              !second.serial_port().transfer_active() &&
+              !first.serial_port().has_endpoint() &&
+              !second.serial_port().has_endpoint(),
+          "disconnecting a local cable resets both active serial ports");
+    cable.connect(first.serial_port(), second.serial_port());
     first.serial_port().reset_diagnostics();
     second.serial_port().reset_diagnostics();
     check(first.serial_port().transfers_completed() == 0 &&
@@ -818,6 +830,50 @@ void test_tcp_link_channel_loopback() {
           "TCP link channel delivers framed packets over loopback");
 }
 
+void test_packet_session_and_request_ordering() {
+    QueuePacketChannel host_channel;
+    QueuePacketChannel join_channel;
+    host_channel.connect_to(join_channel);
+    join_channel.connect_to(host_channel);
+    gameboy::MemoryBus host{gameboy::Cartridge{test_rom()}};
+    gameboy::MemoryBus join{gameboy::Cartridge{test_rom()}};
+    gameboy::TcpSerialEndpoint host_endpoint;
+    gameboy::TcpSerialEndpoint join_endpoint;
+    host_endpoint.set_arbitration_priority(true);
+    join_endpoint.set_arbitration_priority(false);
+    host_endpoint.attach(host.serial_port(), host_channel, 0xA5);
+    join_endpoint.attach(join.serial_port(), join_channel, 0xA5);
+    for (unsigned attempt = 0; attempt < 12; ++attempt) {
+        host_endpoint.poll();
+        join_endpoint.poll();
+    }
+    check(host_endpoint.session_id() != 0 && join_endpoint.session_id() != 0 &&
+              host_endpoint.session_id() != join_endpoint.session_id() &&
+              host_endpoint.peer_session_id() == join_endpoint.session_id() &&
+              join_endpoint.peer_session_id() == host_endpoint.session_id(),
+          "link handshake fences each endpoint with a distinct session ID");
+
+    const gameboy::LinkPacket stale{gameboy::LinkPacketType::heartbeat, 99, 0,
+                                    0, host_endpoint.session_id() + 1};
+    static_cast<void>(host_channel.send(stale));
+    join_endpoint.poll();
+    check(join_endpoint.stale_session_packets() == 1 &&
+              join_channel.state() == gameboy::LinkPacketChannel::State::connected,
+          "stale-session packets are ignored without changing link state");
+
+    const gameboy::LinkPacket request{gameboy::LinkPacketType::bit, 100, 1,
+                                      0x01, host_endpoint.session_id()};
+    static_cast<void>(host_channel.send(request));
+    join_endpoint.poll();
+    static_cast<void>(host_channel.send(request));
+    join_endpoint.poll();
+    check(join_endpoint.duplicate_requests() == 1 &&
+              join_endpoint.requests_received() == 1,
+          "duplicate serial requests do not apply a second guest edge");
+    host_endpoint.detach();
+    join_endpoint.detach();
+}
+
 void test_tcp_serial_endpoint_loopback() {
     gameboy::TcpLinkChannel server;
     gameboy::TcpLinkChannel client;
@@ -891,6 +947,9 @@ void test_tcp_serial_endpoint_loopback() {
         second_endpoint.poll();
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
+    check(first_endpoint.reset_acknowledgements() != 0 &&
+              second_endpoint.reset_acknowledgements() != 0,
+          "serial reset waits for both endpoints to acknowledge an idle link");
 
     first.write8(0xFF01, 0xA5);
     second.write8(0xFF01, 0x5A);
@@ -1062,6 +1121,44 @@ void test_packet_channel_deferred_request_timeout() {
     join_endpoint.detach();
 }
 
+void test_packet_endpoint_disconnect_resets_serial() {
+    QueuePacketChannel channel;
+    QueuePacketChannel peer;
+    channel.connect_to(peer);
+    peer.connect_to(channel);
+    gameboy::MemoryBus bus{gameboy::Cartridge{test_rom()}};
+    gameboy::TcpSerialEndpoint endpoint;
+    endpoint.set_arbitration_priority(true);
+    endpoint.attach(bus.serial_port(), channel, UINT64_C(0x1234));
+    bus.write8(0xFF01, 0xA5);
+    bus.write8(0xFF02, 0x81);
+    check(bus.serial_port().transfer_active(),
+          "remote serial endpoint can have an active transfer before disconnect");
+    endpoint.detach();
+    check(!bus.serial_port().transfer_active() &&
+              !bus.serial_port().internal_clock() &&
+              !bus.serial_port().has_endpoint(),
+          "detaching a remote endpoint resets the emulated serial port");
+
+    QueuePacketChannel failed_channel;
+    QueuePacketChannel failed_peer;
+    failed_channel.connect_to(failed_peer);
+    failed_peer.connect_to(failed_channel);
+    gameboy::MemoryBus failed_bus{gameboy::Cartridge{test_rom()}};
+    gameboy::TcpSerialEndpoint failed_endpoint;
+    failed_endpoint.set_arbitration_priority(true);
+    failed_endpoint.attach(failed_bus.serial_port(), failed_channel,
+                           UINT64_C(0x5678));
+    failed_bus.write8(0xFF01, 0x5A);
+    failed_bus.write8(0xFF02, 0x81);
+    failed_channel.fail();
+    failed_endpoint.poll();
+    check(!failed_bus.serial_port().transfer_active() &&
+              !failed_endpoint.waiting_for_peer(),
+          "a failed transport aborts an in-flight serial transfer");
+    failed_endpoint.detach();
+}
+
 void test_tcp_serial_endpoint_rejects_mismatched_rom() {
     gameboy::TcpLinkChannel server;
     gameboy::TcpLinkChannel client;
@@ -1121,6 +1218,8 @@ int main() {
     test_packet_channel_endpoint_contract();
     test_packet_channel_handoff_race();
     test_packet_channel_deferred_request_timeout();
+    test_packet_endpoint_disconnect_resets_serial();
+    test_packet_session_and_request_ordering();
     test_packet_channel_rejects_profile_mismatch();
     test_tcp_link_channel_loopback();
     test_tcp_serial_endpoint_loopback();

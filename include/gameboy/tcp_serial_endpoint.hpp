@@ -4,6 +4,7 @@
 #include "gameboy/link_packet_channel.hpp"
 #include "gameboy/link_compatibility.hpp"
 
+#include <chrono>
 #include <cstdint>
 #include <optional>
 
@@ -33,7 +34,8 @@ public:
     }
     [[nodiscard]] bool peer_ready_for_link() const noexcept {
         return connected() && peer_hello_seen_ && peer_compatible_ &&
-               (arbitration_priority_ || peer_request_seen_);
+               (arbitration_priority_ || peer_request_seen_) &&
+               !reset_waiting_for_ack_;
     }
     [[nodiscard]] bool waiting_for_peer() const noexcept {
         return pending_sequence_.has_value() && !response_.has_value() &&
@@ -47,8 +49,14 @@ public:
         return channel_ != nullptr &&
                (!peer_hello_seen_ || waiting_for_peer() ||
                 deferred_request_.has_value() ||
+                reset_waiting_for_ack_ ||
                 (compatibility_profile_.known() && !peer_profile_seen_ &&
                  profile_wait_polls_ < profile_wait_limit) ||
+                (connected() &&
+                 (std::chrono::steady_clock::now() - last_heartbeat_sent_ >=
+                      heartbeat_interval ||
+                  std::chrono::steady_clock::now() - last_peer_activity_ >=
+                      heartbeat_timeout)) ||
                 (port_ != nullptr && port_->transfer_active()));
     }
 
@@ -67,6 +75,12 @@ public:
     }
     [[nodiscard]] std::uint64_t peer_compatibility_id() const noexcept {
         return peer_compatibility_id_;
+    }
+    [[nodiscard]] std::uint64_t session_id() const noexcept {
+        return session_id_;
+    }
+    [[nodiscard]] std::uint64_t peer_session_id() const noexcept {
+        return peer_session_id_.value_or(0);
     }
     [[nodiscard]] LinkCompatibilityProfile compatibility_profile() const noexcept {
         return compatibility_profile_;
@@ -132,6 +146,33 @@ public:
     [[nodiscard]] std::uint64_t byte_packets_received() const noexcept {
         return byte_packets_received_;
     }
+    [[nodiscard]] std::uint64_t stale_session_packets() const noexcept {
+        return stale_session_packets_;
+    }
+    [[nodiscard]] std::uint64_t out_of_order_requests() const noexcept {
+        return out_of_order_requests_;
+    }
+    [[nodiscard]] std::uint64_t duplicate_requests() const noexcept {
+        return duplicate_requests_;
+    }
+    [[nodiscard]] std::uint64_t protocol_errors() const noexcept {
+        return protocol_errors_;
+    }
+    [[nodiscard]] std::uint64_t heartbeats_sent() const noexcept {
+        return heartbeats_sent_;
+    }
+    [[nodiscard]] std::uint64_t heartbeats_received() const noexcept {
+        return heartbeats_received_;
+    }
+    [[nodiscard]] std::uint64_t heartbeat_timeouts() const noexcept {
+        return heartbeat_timeouts_;
+    }
+    [[nodiscard]] std::uint64_t reset_requests_sent() const noexcept {
+        return reset_requests_sent_;
+    }
+    [[nodiscard]] std::uint64_t reset_acknowledgements() const noexcept {
+        return reset_acknowledgements_;
+    }
     [[nodiscard]] std::uint64_t transfers_completed() const noexcept {
         return port_ == nullptr ? 0 : port_->transfers_completed();
     }
@@ -152,19 +193,28 @@ private:
     static constexpr std::uint8_t denied_flag = 0x04;
     static constexpr std::uint8_t not_ready_flag = 0x08;
     static constexpr std::uint8_t reset_flag = 0x80;
+    static constexpr std::uint8_t reset_ack_flag = 0x40;
+    static constexpr std::uint8_t heartbeat_ack_flag = 0x20;
     // A request may legitimately arrive a few frames before the peer arms
     // its receiver. Do not retain it forever when the peer has left serial.
     static constexpr unsigned deferred_request_poll_limit = 240;
     static constexpr std::uint8_t byte_transfer_capability = 0x10;
+    static constexpr unsigned reset_ack_wait_poll_limit = 240;
+    static constexpr auto heartbeat_interval = std::chrono::seconds(1);
+    static constexpr auto heartbeat_timeout = std::chrono::seconds(5);
 
     SerialPort* port_{};
     LinkPacketChannel* channel_{};
     std::uint32_t next_sequence_{};
+    std::uint32_t next_control_sequence_{};
     std::optional<std::uint32_t> pending_sequence_;
+    std::optional<LinkPacketType> pending_type_;
     std::optional<bool> response_;
     std::optional<std::uint8_t> byte_response_;
     std::uint8_t byte_bits_consumed_{};
     std::optional<LinkPacket> deferred_request_;
+    std::optional<std::uint32_t> last_peer_request_sequence_;
+    std::optional<LinkPacket> last_peer_request_response_;
     unsigned request_backoff_{};
     unsigned deferred_request_polls_{};
     bool arbitration_priority_{};
@@ -184,6 +234,13 @@ private:
     bool peer_byte_released_{};
     bool peer_byte_transfer_{};
     bool peer_clock_busy_{};
+    std::uint64_t session_id_{};
+    std::optional<std::uint64_t> peer_session_id_;
+    std::optional<std::uint32_t> reset_sequence_;
+    bool reset_waiting_for_ack_{};
+    unsigned reset_ack_wait_polls_{};
+    std::chrono::steady_clock::time_point last_peer_activity_{};
+    std::chrono::steady_clock::time_point last_heartbeat_sent_{};
     std::uint64_t requests_sent_{};
     std::uint64_t requests_received_{};
     std::uint64_t responses_sent_{};
@@ -193,7 +250,22 @@ private:
     std::uint64_t responses_unmatched_{};
     std::uint64_t byte_packets_sent_{};
     std::uint64_t byte_packets_received_{};
+    std::uint64_t stale_session_packets_{};
+    std::uint64_t out_of_order_requests_{};
+    std::uint64_t duplicate_requests_{};
+    std::uint64_t protocol_errors_{};
+    std::uint64_t heartbeats_sent_{};
+    std::uint64_t heartbeats_received_{};
+    std::uint64_t heartbeat_timeouts_{};
+    std::uint64_t reset_requests_sent_{};
+    std::uint64_t reset_acknowledgements_{};
     std::uint64_t diagnostic_session_{};
+
+    [[nodiscard]] bool send_packet(LinkPacket packet) noexcept;
+    void protocol_fault(const char* message) noexcept;
+    [[nodiscard]] static bool is_next_sequence(std::uint32_t previous,
+                                                std::uint32_t next) noexcept;
+    void reset_transfer_state() noexcept;
 };
 
 // Source compatibility for callers that adopted the original TCP-only name.

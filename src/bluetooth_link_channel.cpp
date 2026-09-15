@@ -4,6 +4,7 @@
 #include <array>
 #include <charconv>
 #include <cctype>
+#include <limits>
 #include <string_view>
 
 #if defined(_WIN32)
@@ -308,10 +309,17 @@ void BluetoothLinkChannel::close() noexcept {
 bool BluetoothLinkChannel::send(const LinkPacket& packet) noexcept {
 #if defined(_WIN32)
     if (state_ != State::connected) return false;
+    flush_send_queue();
+    if (state_ != State::connected ||
+        send_buffer_.size() - send_offset_ >
+            LinkPacketChannel::maximum_buffered_bytes -
+                LinkPacketCodec::wire_size) {
+        return false;
+    }
     const auto wire = LinkPacketCodec::encode(packet);
     send_buffer_.insert(send_buffer_.end(), wire.begin(), wire.end());
     flush_send_queue();
-    return true;
+    return state_ == State::connected;
 #elif defined(__ANDROID__)
     if (state_ != State::connected) return false;
     const auto wire = LinkPacketCodec::encode(packet);
@@ -334,8 +342,10 @@ void BluetoothLinkChannel::flush_send_queue() noexcept {
     while (send_offset_ < send_buffer_.size() && peer_ != -1) {
         const auto* data = send_buffer_.data() + send_offset_;
         const auto remaining = send_buffer_.size() - send_offset_;
+        const auto chunk = std::min<std::size_t>(
+            remaining, static_cast<std::size_t>(std::numeric_limits<int>::max()));
         const auto count = ::send(as_socket(peer_), reinterpret_cast<const char*>(data),
-                                  static_cast<int>(remaining), 0);
+                                  static_cast<int>(chunk), 0);
         if (count > 0) send_offset_ += static_cast<std::size_t>(count);
         else if (count == 0 || !would_block(socket_error())) { fail(); break; }
         else break;
@@ -359,12 +369,22 @@ void BluetoothLinkChannel::receive_available() noexcept {
                                   static_cast<int>(buffer.size()), 0);
         if (count > 0) {
             receive_buffer_.insert(receive_buffer_.end(), buffer.begin(), buffer.begin() + count);
+            if (receive_buffer_.size() > LinkPacketChannel::maximum_buffered_bytes) {
+                fail();
+                return;
+            }
             while (receive_buffer_.size() >= LinkPacketCodec::wire_size) {
                 const auto packet = LinkPacketCodec::decode(receive_buffer_.data(),
                                                              LinkPacketCodec::wire_size);
                 receive_buffer_.erase(receive_buffer_.begin(),
                                       receive_buffer_.begin() + static_cast<std::ptrdiff_t>(LinkPacketCodec::wire_size));
-                if (packet) packets_.push_back(*packet);
+                if (packet) {
+                    if (packets_.size() >= LinkPacketChannel::maximum_queued_packets) {
+                        fail();
+                        return;
+                    }
+                    packets_.push_back(*packet);
+                }
                 else ++malformed_packets_;
             }
         } else {
@@ -376,8 +396,15 @@ void BluetoothLinkChannel::receive_available() noexcept {
     std::array<std::uint8_t, LinkPacketCodec::wire_size> packet{};
     while (gbb_android_bluetooth_receive(packet.data(), packet.size()) != 0) {
         const auto decoded = LinkPacketCodec::decode(packet.data(), packet.size());
-        if (decoded) packets_.push_back(*decoded);
-        else ++malformed_packets_;
+        if (decoded) {
+            if (packets_.size() >= LinkPacketChannel::maximum_queued_packets) {
+                fail();
+                return;
+            }
+            packets_.push_back(*decoded);
+        } else {
+            ++malformed_packets_;
+        }
     }
 #endif
 }

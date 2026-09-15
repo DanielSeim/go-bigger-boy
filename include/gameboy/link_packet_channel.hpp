@@ -13,6 +13,12 @@ namespace gameboy {
 class LinkPacketChannel {
 public:
     enum class State { disconnected, listening, connecting, connected, failed };
+    // Link frames are tiny and the endpoint normally consumes them on every
+    // poll. Keep a stalled or hostile peer from turning the transport into an
+    // unbounded allocation source.
+    static constexpr std::size_t maximum_queued_packets = 256;
+    static constexpr std::size_t maximum_buffered_bytes =
+        maximum_queued_packets * LinkPacketCodec::wire_size;
 
     virtual ~LinkPacketChannel() = default;
     LinkPacketChannel(const LinkPacketChannel&) = delete;

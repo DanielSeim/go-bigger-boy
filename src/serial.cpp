@@ -245,6 +245,11 @@ void SerialCable::connect(SerialPort& first, SerialPort& second) noexcept {
 }
 
 void SerialCable::disconnect() noexcept {
+    // Disconnecting a cable must not leave either guest's SC transfer active
+    // with no endpoint to complete it. Reset first while the cable endpoint is
+    // still attached, then remove the endpoint pointers.
+    if (first_ != nullptr) first_->reset_link();
+    if (second_ != nullptr) second_->reset_link();
     if (first_ != nullptr) first_->set_endpoint(nullptr);
     if (second_ != nullptr) second_->set_endpoint(nullptr);
     first_endpoint_.set_peer(nullptr);

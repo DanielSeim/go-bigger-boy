@@ -3,13 +3,59 @@
 #include "gbb/log.hpp"
 
 #include <atomic>
+#include <chrono>
 
 namespace gameboy {
 namespace {
 
 std::atomic<std::uint64_t> next_diagnostic_session{1};
 
+std::uint64_t next_packet_session() noexcept {
+    static std::atomic<std::uint64_t> counter{1};
+    const auto serial = counter.fetch_add(1, std::memory_order_relaxed);
+    const auto clock = static_cast<std::uint64_t>(
+        std::chrono::steady_clock::now().time_since_epoch().count());
+    const auto value = clock ^ (serial + UINT64_C(0x9E3779B97F4A7C15));
+    return value == 0 ? serial : value;
+}
+
 } // namespace
+
+bool LinkSerialEndpoint::send_packet(LinkPacket packet) noexcept {
+    if (channel_ == nullptr || session_id_ == 0) return false;
+    packet.session_id = session_id_;
+    return channel_->send(packet);
+}
+
+bool LinkSerialEndpoint::is_next_sequence(const std::uint32_t previous,
+                                           const std::uint32_t next) noexcept {
+    return next == previous + 1U;
+}
+
+void LinkSerialEndpoint::reset_transfer_state() noexcept {
+    pending_sequence_.reset();
+    pending_type_.reset();
+    response_.reset();
+    byte_response_.reset();
+    byte_bits_consumed_ = 0;
+    deferred_request_.reset();
+    last_peer_request_sequence_.reset();
+    last_peer_request_response_.reset();
+    request_backoff_ = 0;
+    deferred_request_polls_ = 0;
+    peer_clock_busy_ = false;
+    peer_byte_released_ = false;
+    peer_request_seen_ = false;
+}
+
+void LinkSerialEndpoint::protocol_fault(const char* message) noexcept {
+    ++protocol_errors_;
+    gbb::Logger::instance().write(gbb::LogLevel::warning,
+                                  gbb::LogCategory::link, message,
+                                  {diagnostic_session_, protocol_errors_, 0});
+    if (channel_ != nullptr && connected()) channel_->close();
+    if (port_ != nullptr) port_->reset_link();
+}
 
 void LinkSerialEndpoint::attach(SerialPort& port,
                                 LinkPacketChannel& channel,
@@ -18,12 +64,18 @@ void LinkSerialEndpoint::attach(SerialPort& port,
     detach();
     port_ = &port;
     channel_ = &channel;
+    session_id_ = next_packet_session();
+    peer_session_id_.reset();
     next_sequence_ = 0;
+    next_control_sequence_ = 0;
     pending_sequence_.reset();
+    pending_type_.reset();
     response_.reset();
     byte_response_.reset();
     byte_bits_consumed_ = 0;
     deferred_request_.reset();
+    last_peer_request_sequence_.reset();
+    last_peer_request_response_.reset();
     request_backoff_ = 0;
     deferred_request_polls_ = 0;
     hello_sent_ = false;
@@ -41,6 +93,12 @@ void LinkSerialEndpoint::attach(SerialPort& port,
     peer_byte_released_ = false;
     peer_byte_transfer_ = false;
     peer_clock_busy_ = false;
+    reset_sequence_.reset();
+    reset_waiting_for_ack_ = false;
+    reset_ack_wait_polls_ = 0;
+    const auto now = std::chrono::steady_clock::now();
+    last_peer_activity_ = now;
+    last_heartbeat_sent_ = now;
     requests_sent_ = 0;
     requests_received_ = 0;
     responses_sent_ = 0;
@@ -50,6 +108,15 @@ void LinkSerialEndpoint::attach(SerialPort& port,
     responses_unmatched_ = 0;
     byte_packets_sent_ = 0;
     byte_packets_received_ = 0;
+    stale_session_packets_ = 0;
+    out_of_order_requests_ = 0;
+    duplicate_requests_ = 0;
+    protocol_errors_ = 0;
+    heartbeats_sent_ = 0;
+    heartbeats_received_ = 0;
+    heartbeat_timeouts_ = 0;
+    reset_requests_sent_ = 0;
+    reset_acknowledgements_ = 0;
     diagnostic_session_ =
         next_diagnostic_session.fetch_add(1, std::memory_order_relaxed);
     port_->set_endpoint(this);
@@ -62,14 +129,25 @@ void LinkSerialEndpoint::attach(SerialPort& port,
 void LinkSerialEndpoint::detach() noexcept {
     const auto was_attached = port_ != nullptr || channel_ != nullptr;
     const auto diagnostic_session = diagnostic_session_;
+    // A frontend may stop a remote session while the guest is waiting for a
+    // network response. Reset before removing the endpoint, otherwise the
+    // emulated SC transfer remains active forever with no cable to complete
+    // it.
+    if (port_ != nullptr) port_->reset_link();
     if (port_ != nullptr) port_->set_endpoint(nullptr);
     port_ = nullptr;
     channel_ = nullptr;
+    session_id_ = 0;
+    peer_session_id_.reset();
+    next_control_sequence_ = 0;
     pending_sequence_.reset();
+    pending_type_.reset();
     response_.reset();
     byte_response_.reset();
     byte_bits_consumed_ = 0;
     deferred_request_.reset();
+    last_peer_request_sequence_.reset();
+    last_peer_request_response_.reset();
     request_backoff_ = 0;
     deferred_request_polls_ = 0;
     hello_sent_ = false;
@@ -87,8 +165,22 @@ void LinkSerialEndpoint::detach() noexcept {
     peer_byte_released_ = false;
     peer_byte_transfer_ = false;
     peer_clock_busy_ = false;
+    reset_sequence_.reset();
+    reset_waiting_for_ack_ = false;
+    reset_ack_wait_polls_ = 0;
+    last_peer_activity_ = {};
+    last_heartbeat_sent_ = {};
     byte_packets_sent_ = 0;
     byte_packets_received_ = 0;
+    stale_session_packets_ = 0;
+    out_of_order_requests_ = 0;
+    duplicate_requests_ = 0;
+    protocol_errors_ = 0;
+    heartbeats_sent_ = 0;
+    heartbeats_received_ = 0;
+    heartbeat_timeouts_ = 0;
+    reset_requests_sent_ = 0;
+    reset_acknowledgements_ = 0;
     diagnostic_session_ = 0;
     if (was_attached) {
         gbb::Logger::instance().write(gbb::LogLevel::info,
@@ -134,8 +226,9 @@ void LinkSerialEndpoint::prepare_bit(const bool outgoing) noexcept {
         use_byte_transfer ? port_->read_data()
                           : static_cast<std::uint8_t>(outgoing ? 1U : 0U),
         request_flag};
-    if (channel_->send(packet)) {
+    if (send_packet(packet)) {
         pending_sequence_ = sequence;
+        pending_type_ = packet.type;
         ++requests_sent_;
         if (use_byte_transfer) ++byte_packets_sent_;
     }
@@ -150,6 +243,7 @@ bool LinkSerialEndpoint::exchange_bit(const bool /*outgoing*/) noexcept {
             byte_response_.reset();
             byte_bits_consumed_ = 0;
             pending_sequence_.reset();
+            pending_type_.reset();
         }
         return incoming;
     }
@@ -157,6 +251,7 @@ bool LinkSerialEndpoint::exchange_bit(const bool /*outgoing*/) noexcept {
     const auto incoming = *response_;
     response_.reset();
     pending_sequence_.reset();
+    pending_type_.reset();
     return incoming;
 }
 
@@ -186,6 +281,7 @@ void LinkSerialEndpoint::release_internal_clock(SerialPort& port) noexcept {
                                 byte_response_.has_value();
     if (!response_ready && !port.transfer_active()) {
         pending_sequence_.reset();
+        pending_type_.reset();
         request_backoff_ = 0;
     }
     // A response that is already ready belongs to the next edge and must not
@@ -200,7 +296,7 @@ void LinkSerialEndpoint::release_internal_clock(SerialPort& port) noexcept {
                              static_cast<std::uint8_t>(
                                  port.transfer_active() ? 0U : 1U),
                              0};
-    static_cast<void>(channel_->send(release));
+    static_cast<void>(send_packet(release));
 }
 
 void LinkSerialEndpoint::cancel_internal_clock(SerialPort& /*port*/) noexcept {
@@ -208,24 +304,37 @@ void LinkSerialEndpoint::cancel_internal_clock(SerialPort& /*port*/) noexcept {
     // socket. Send an ordered reset marker so the peer drops any deferred
     // request from the abandoned transfer before the next guest arms SC.
     if (channel_ != nullptr && connected()) {
-        const LinkPacket reset{LinkPacketType::clock_release, next_sequence_, 0,
+        const auto sequence = next_control_sequence_++;
+        const LinkPacket reset{LinkPacketType::clock_release, sequence, 0,
                                reset_flag};
-        static_cast<void>(channel_->send(reset));
+        reset_sequence_ = sequence;
+        reset_waiting_for_ack_ = send_packet(reset);
+        reset_ack_wait_polls_ = 0;
+        if (reset_waiting_for_ack_) ++reset_requests_sent_;
     }
-    pending_sequence_.reset();
-    response_.reset();
-    byte_response_.reset();
-    byte_bits_consumed_ = 0;
-    deferred_request_.reset();
-    request_backoff_ = 0;
-    deferred_request_polls_ = 0;
-    peer_clock_busy_ = false;
+    reset_transfer_state();
 }
 
 void LinkSerialEndpoint::poll() noexcept {
     if (channel_ == nullptr) return;
     channel_->poll();
-    if (!connected()) return;
+    if (!connected()) {
+        // A socket can fail after the guest has armed its internal clock. Do
+        // the same local cleanup as an explicit retry so the game can return
+        // to its own timeout/recovery path instead of freezing at SC=80.
+        const auto state = channel_->state();
+        if ((state == LinkPacketChannel::State::failed ||
+             state == LinkPacketChannel::State::disconnected) &&
+            port_ != nullptr) {
+            port_->reset_link();
+        }
+        return;
+    }
+    if (reset_waiting_for_ack_ &&
+        ++reset_ack_wait_polls_ >= reset_ack_wait_poll_limit) {
+        protocol_fault("link reset acknowledgement timed out");
+        return;
+    }
     if (compatibility_profile_.known() && peer_hello_seen_ &&
         !peer_profile_seen_ && profile_wait_polls_ < profile_wait_limit) {
         ++profile_wait_polls_;
@@ -255,7 +364,7 @@ void LinkSerialEndpoint::poll() noexcept {
                 (compatibility_profile_.modes & 0x0fU) |
                 ((compatibility_profile_.version & 0x0fU) << 4U));
         }
-        if (channel_->send(hello)) {
+        if (send_packet(hello)) {
             ++hello_parts_sent_;
             hello_sent_ = compatibility_id_ == 0
                               ? hello_parts_sent_ >= 1
@@ -284,9 +393,10 @@ void LinkSerialEndpoint::poll() noexcept {
                                         packet.sequence, 1,
                                         static_cast<std::uint8_t>(
                                             response_flag | denied_flag)};
-                if (channel_->send(denied)) {
+                if (send_packet(denied)) {
                     ++responses_sent_;
                     ++denials_sent_;
+                    last_peer_request_response_ = denied;
                 }
                 // A denied request has been fully handled. Do not leave the
                 // host blocked behind a stale peer_clock_busy_ flag while
@@ -299,6 +409,7 @@ void LinkSerialEndpoint::poll() noexcept {
             port_->write_control(static_cast<std::uint8_t>(
                 port_->read_control() & ~0x01U));
             pending_sequence_.reset();
+            pending_type_.reset();
             response_.reset();
         }
         if (!port_->transfer_active() || port_->internal_clock()) {
@@ -319,13 +430,34 @@ void LinkSerialEndpoint::poll() noexcept {
         }
         const LinkPacket response{packet.type, packet.sequence, incoming_byte,
                                   response_flag};
-        if (channel_->send(response)) {
+        if (send_packet(response)) {
             ++responses_sent_;
+            last_peer_request_response_ = response;
             if (byte_request) ++byte_packets_sent_;
         }
     };
 
     while (const auto packet = channel_->receive()) {
+        if (packet->session_id == 0) {
+            ++stale_session_packets_;
+            continue;
+        }
+        if (!peer_session_id_.has_value()) {
+            if (packet->type != LinkPacketType::hello) {
+                protocol_fault("link packet arrived before session hello");
+                return;
+            }
+            peer_session_id_ = packet->session_id;
+        } else if (packet->session_id != *peer_session_id_) {
+            ++stale_session_packets_;
+            gbb::Logger::instance().write(
+                gbb::LogLevel::warning, gbb::LogCategory::link,
+                "link packet belongs to a different session",
+                {diagnostic_session_, packet->session_id,
+                 *peer_session_id_});
+            continue;
+        }
+        last_peer_activity_ = std::chrono::steady_clock::now();
         if (packet->type == LinkPacketType::hello) {
             if (packet->sequence == 0) {
                 peer_byte_transfer_ =
@@ -397,8 +529,30 @@ void LinkSerialEndpoint::poll() noexcept {
             }
             continue;
         }
+        if (packet->type == LinkPacketType::heartbeat) {
+            ++heartbeats_received_;
+            const LinkPacket acknowledgement{LinkPacketType::acknowledgement,
+                                             packet->sequence, 0,
+                                             heartbeat_ack_flag};
+            static_cast<void>(send_packet(acknowledgement));
+            continue;
+        }
+        if (packet->type == LinkPacketType::acknowledgement) {
+            if ((packet->flags & heartbeat_ack_flag) != 0)
+                ++heartbeats_received_;
+            continue;
+        }
         if (packet->type == LinkPacketType::clock_release) {
             if ((packet->flags & reset_flag) != 0) {
+                if ((packet->flags & reset_ack_flag) != 0) {
+                    if (reset_waiting_for_ack_ && reset_sequence_.has_value() &&
+                        packet->sequence == *reset_sequence_) {
+                        reset_waiting_for_ack_ = false;
+                        reset_ack_wait_polls_ = 0;
+                        ++reset_acknowledgements_;
+                    }
+                    continue;
+                }
                 // A peer can reset just after this side has started a fresh
                 // request. Do not let an older reset marker cancel that
                 // newer request; markers carry the sender's next sequence
@@ -407,16 +561,13 @@ void LinkSerialEndpoint::poll() noexcept {
                     packet->sequence < *pending_sequence_) {
                     continue;
                 }
-                pending_sequence_.reset();
-                response_.reset();
-                byte_response_.reset();
-                byte_bits_consumed_ = 0;
-                deferred_request_.reset();
-                request_backoff_ = 0;
-                deferred_request_polls_ = 0;
-                peer_clock_busy_ = false;
-                peer_byte_released_ = false;
-                peer_request_seen_ = false;
+                reset_transfer_state();
+                const LinkPacket acknowledgement{LinkPacketType::clock_release,
+                                                 packet->sequence, 0,
+                                                 static_cast<std::uint8_t>(
+                                                     reset_flag |
+                                                     reset_ack_flag)};
+                static_cast<void>(send_packet(acknowledgement));
                 continue;
             }
             peer_clock_busy_ = false;
@@ -428,6 +579,33 @@ void LinkSerialEndpoint::poll() noexcept {
             continue;
         if (packet->type == LinkPacketType::byte) ++byte_packets_received_;
         if ((packet->flags & request_flag) != 0) {
+            if ((packet->flags & response_flag) != 0) {
+                protocol_fault("link packet marked as request and response");
+                return;
+            }
+            if (last_peer_request_sequence_.has_value()) {
+                if (packet->sequence == *last_peer_request_sequence_) {
+                    ++duplicate_requests_;
+                    if (last_peer_request_response_.has_value())
+                        static_cast<void>(send_packet(
+                            *last_peer_request_response_));
+                    continue;
+                }
+                if (!is_next_sequence(*last_peer_request_sequence_,
+                                       packet->sequence)) {
+                    ++out_of_order_requests_;
+                    protocol_fault("out-of-order link request");
+                    return;
+                }
+            }
+            if (deferred_request_.has_value() &&
+                packet->sequence != deferred_request_->sequence) {
+                ++out_of_order_requests_;
+                protocol_fault("multiple link requests are in flight");
+                return;
+            }
+            last_peer_request_sequence_ = packet->sequence;
+            last_peer_request_response_.reset();
             ++requests_received_;
             peer_request_seen_ = true;
             peer_clock_busy_ = true;
@@ -446,6 +624,11 @@ void LinkSerialEndpoint::poll() noexcept {
                     {diagnostic_session_, 0, 0});
                 continue;
             }
+            if (!pending_type_.has_value() ||
+                packet->type != *pending_type_) {
+                protocol_fault("link response type does not match request");
+                return;
+            }
             if ((packet->flags & denied_flag) != 0) {
                 ++denials_received_;
                 gbb::Logger::instance().write(
@@ -458,6 +641,7 @@ void LinkSerialEndpoint::poll() noexcept {
                         port_->read_control() & ~0x01U));
                 }
                 pending_sequence_.reset();
+                pending_type_.reset();
                 response_.reset();
                 byte_response_.reset();
                 byte_bits_consumed_ = 0;
@@ -474,6 +658,7 @@ void LinkSerialEndpoint::poll() noexcept {
                     "link peer is not ready; backing off before retry",
                     {diagnostic_session_, 0, 0});
                 pending_sequence_.reset();
+                pending_type_.reset();
                 response_.reset();
                 request_backoff_ = 64;
             } else {
@@ -484,6 +669,24 @@ void LinkSerialEndpoint::poll() noexcept {
                     response_ = packet->value != 0;
                 }
             }
+        } else {
+            protocol_fault("link data packet has no request or response flag");
+            return;
+        }
+    }
+    const auto now = std::chrono::steady_clock::now();
+    if (now - last_peer_activity_ >= heartbeat_timeout) {
+        ++heartbeat_timeouts_;
+        protocol_fault("link peer heartbeat timed out");
+        return;
+    }
+    if (now - last_heartbeat_sent_ >= heartbeat_interval) {
+        const LinkPacket heartbeat{LinkPacketType::heartbeat,
+                                   next_control_sequence_++,
+                                   0, 0};
+        if (send_packet(heartbeat)) {
+            last_heartbeat_sent_ = now;
+            ++heartbeats_sent_;
         }
     }
     if (deferred_request_.has_value()) {
@@ -511,7 +714,10 @@ void LinkSerialEndpoint::poll() noexcept {
                 const LinkPacket not_ready{request.type, request.sequence, 0,
                                            static_cast<std::uint8_t>(
                                                response_flag | not_ready_flag)};
-                if (channel_->send(not_ready)) ++responses_sent_;
+                if (send_packet(not_ready)) {
+                    ++responses_sent_;
+                    last_peer_request_response_ = not_ready;
+                }
             }
         }
     }

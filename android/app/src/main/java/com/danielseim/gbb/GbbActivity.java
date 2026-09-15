@@ -37,7 +37,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.UUID;
 import java.util.Locale;
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ArrayBlockingQueue;
 import android.window.OnBackInvokedCallback;
 import android.window.OnBackInvokedDispatcher;
 
@@ -50,6 +50,10 @@ public final class GbbActivity extends SDLActivity {
     static final String ACTION_INSTALL_RESULT =
             "com.danielseim.gbb.INSTALL_UPDATE_RESULT";
     private static final int LINK_DIAGNOSTICS_EXPORT_REQUEST = 49;
+    private static final int BLUETOOTH_MAX_QUEUED_FRAMES = 256;
+    private static final int BLUETOOTH_FRAME_SIZE = 20;
+    private static final int BLUETOOTH_MAX_PENDING_BYTES =
+            BLUETOOTH_MAX_QUEUED_FRAMES * BLUETOOTH_FRAME_SIZE;
 
     private AndroidUpdateManager updateManager;
     private volatile int cameraOrientationDegrees;
@@ -59,11 +63,11 @@ public final class GbbActivity extends SDLActivity {
 
     // Bluetooth Classic RFCOMM data path. The worker owns all blocking socket
     // operations; native code only observes the state and exchanges complete
-    // 11-byte protocol frames through these queues.
-    private final ConcurrentLinkedQueue<byte[]> bluetoothIncoming =
-            new ConcurrentLinkedQueue<>();
-    private final ConcurrentLinkedQueue<byte[]> bluetoothOutgoing =
-            new ConcurrentLinkedQueue<>();
+    // 20-byte protocol frames through these queues.
+    private final ArrayBlockingQueue<byte[]> bluetoothIncoming =
+            new ArrayBlockingQueue<>(BLUETOOTH_MAX_QUEUED_FRAMES);
+    private final ArrayBlockingQueue<byte[]> bluetoothOutgoing =
+            new ArrayBlockingQueue<>(BLUETOOTH_MAX_QUEUED_FRAMES);
     private volatile BluetoothServerSocket bluetoothServer;
     private volatile BluetoothSocket bluetoothSocket;
     private volatile Thread bluetoothThread;
@@ -462,8 +466,7 @@ public final class GbbActivity extends SDLActivity {
 
     public boolean bluetoothSend(byte[] bytes) {
         if (bytes == null || bluetoothLinkState != 3) return false;
-        bluetoothOutgoing.offer(bytes.clone());
-        return true;
+        return bluetoothOutgoing.offer(bytes.clone());
     }
 
     public byte[] bluetoothReceive() { return bluetoothIncoming.poll(); }
@@ -550,14 +553,20 @@ public final class GbbActivity extends SDLActivity {
                     final int count = input.read(readBuffer, 0,
                             Math.min(available, readBuffer.length));
                     if (count < 0) break;
+                    if (pending.size() > BLUETOOTH_MAX_PENDING_BYTES - count) {
+                        throw new IOException("Bluetooth link receive buffer is full");
+                    }
                     pending.write(readBuffer, 0, count);
                     final byte[] bytes = pending.toByteArray();
                     int offset = 0;
-                    while (bytes.length - offset >= 11) {
-                        final byte[] frame = new byte[11];
-                        System.arraycopy(bytes, offset, frame, 0, 11);
-                        bluetoothIncoming.offer(frame);
-                        offset += 11;
+                    while (bytes.length - offset >= BLUETOOTH_FRAME_SIZE) {
+                        final byte[] frame = new byte[BLUETOOTH_FRAME_SIZE];
+                        System.arraycopy(bytes, offset, frame, 0,
+                                BLUETOOTH_FRAME_SIZE);
+                        if (!bluetoothIncoming.offer(frame)) {
+                            throw new IOException("Bluetooth link receive queue is full");
+                        }
+                        offset += BLUETOOTH_FRAME_SIZE;
                     }
                     pending.reset();
                     if (offset < bytes.length) pending.write(bytes, offset,
