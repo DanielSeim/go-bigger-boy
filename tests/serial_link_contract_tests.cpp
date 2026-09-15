@@ -1297,7 +1297,9 @@ void test_tcp_serial_endpoint_simultaneous_disconnect_and_reconnect() {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     check(first_endpoint.peer_ready_for_link() &&
-              second_endpoint.peer_ready_for_link(),
+              first_endpoint.state_digest_valid() &&
+              second_endpoint.peer_hello_seen() &&
+              second_endpoint.state_digest_valid(),
           "both TCP peers complete the initial fenced handshake");
 
     first.write8(0xFF01, 0xA5);
@@ -1365,7 +1367,9 @@ void test_tcp_serial_endpoint_simultaneous_disconnect_and_reconnect() {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     check(first_endpoint.peer_ready_for_link() &&
-              second_endpoint.peer_ready_for_link() &&
+              first_endpoint.state_digest_valid() &&
+              second_endpoint.peer_hello_seen() &&
+              second_endpoint.state_digest_valid() &&
               first_endpoint.session_id() != first_session &&
               second_endpoint.session_id() != second_session &&
               first_endpoint.failure_during_transfer() == false &&
