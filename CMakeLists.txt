@@ -148,6 +148,7 @@ add_library(gbb_core_api
     src/video.cpp
     src/rom_library.cpp
     src/scene_json.cpp
+    src/save_sync.cpp
     src/settings.cpp
     src/trace_parser.cpp
     src/voxel_profile.cpp
@@ -882,6 +883,12 @@ if(GAMEBOY_BUILD_TESTS)
     target_link_libraries(gameboy_save_state_format_tests PRIVATE gameboy_core)
     add_test(NAME gameboy_save_state_format
              COMMAND gameboy_save_state_format_tests)
+
+    add_executable(gameboy_save_sync_contract_tests
+        tests/save_sync_contract_tests.cpp)
+    target_link_libraries(gameboy_save_sync_contract_tests PRIVATE gbb_core_api)
+    add_test(NAME gameboy_save_sync_contract
+             COMMAND gameboy_save_sync_contract_tests)
 
     add_executable(gameboy_save_state_contract_tests
         tests/save_state_contract_tests.cpp)

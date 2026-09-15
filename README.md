@@ -822,6 +822,10 @@ consume this boundary; the SDL shell migration is tracked explicitly. See the
 [multi-core architecture](docs/architecture.md) for the boundary and extension
 steps.
 
+The [cloud-save synchronization contract](docs/cloud-save-sync.md) describes
+the provider-neutral manifest and conflict policy planned for optional
+cross-device saves.
+
 ```text
 include/gbb/      System-neutral frontend/core, scene, and registry APIs
 include/gameboy/  GB/GBC core API
