@@ -268,6 +268,11 @@ jobs:
           bash tests/sdl_tsan_smoke.sh ./build-tsan/gbb \
             tsan-gui-artifacts/smoke.gb
 
+      - name: Validate debugger visual captures
+        run: |
+          python3 tests/check_desktop_debugger_captures.py \
+            tsan-gui-artifacts/debugger-captures
+
       - name: Upload interactive SDL TSan artifacts
         if: always()
         uses: actions/upload-artifact@v7

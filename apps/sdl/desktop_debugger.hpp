@@ -20,6 +20,9 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <optional>
 #include <sstream>
@@ -162,6 +165,8 @@ public:
         sprite_requested_ = false;
         video_viewer_requested_ = false;
         cancel_edit();
+        capture_directory_.clear();
+        last_capture_key_.clear();
     }
 
     bool handle_event(const SDL_Event& event, gameboy::Emulator* emulator) {
@@ -654,6 +659,7 @@ public:
         button(geometry.sprite_editor, "F9 SPRITE EDITOR");
         draw_tool_close_button(renderer_, window_, width);
         draw_tool_focus_outline(renderer_, focused_rect(width, height));
+        capture_debugger_frame(inspector_mode_ ? "inspector" : "normal");
         static_cast<void>(SDL_RenderPresent(renderer_));
     }
 
@@ -913,6 +919,50 @@ private:
         static_cast<void>(SDL_RenderRect(renderer, &inner));
     }
 
+    void capture_debugger_frame(const char* mode) {
+        if (capture_directory_.empty()) {
+            if (const auto* const value = std::getenv(
+                    "GBB_DEBUGGER_CAPTURE_DIR");
+                value != nullptr && *value != '\0') {
+                capture_directory_ = value;
+            }
+        }
+        if (capture_directory_.empty()) return;
+
+        auto* const surface = SDL_RenderReadPixels(renderer_, nullptr);
+        if (surface == nullptr) return;
+        const auto key = std::string(mode) + "-" +
+                         std::to_string(surface->w) + "x" +
+                         std::to_string(surface->h);
+        if (key == last_capture_key_) {
+            SDL_DestroySurface(surface);
+            return;
+        }
+        auto* const rgb = SDL_ConvertSurface(surface, SDL_PIXELFORMAT_RGB24);
+        SDL_DestroySurface(surface);
+        if (rgb == nullptr) return;
+
+        std::error_code error;
+        std::filesystem::create_directories(capture_directory_, error);
+        if (!error) {
+            const auto path = std::filesystem::path(capture_directory_) /
+                              ("debugger-" + key + ".ppm");
+            std::ofstream output(path, std::ios::binary | std::ios::trunc);
+            if (output) {
+                output << "P6\n" << rgb->w << ' ' << rgb->h << "\n255\n";
+                const auto* const pixels =
+                    static_cast<const std::uint8_t*>(rgb->pixels);
+                for (int y = 0; y < rgb->h; ++y) {
+                    output.write(
+                        reinterpret_cast<const char*>(pixels + y * rgb->pitch),
+                        static_cast<std::streamsize>(rgb->w * 3));
+                }
+                if (output) last_capture_key_ = key;
+            }
+        }
+        SDL_DestroySurface(rgb);
+    }
+
     [[nodiscard]] static float register_panel_x(const int width) noexcept {
         return desktop_debugger_layout(width, desktop_debugger_minimum_height)
             .register_area.x;
@@ -1116,6 +1166,8 @@ private:
     std::optional<RegisterTarget> editing_;
     std::string edit_value_;
     bool replace_on_type_{true};
+    std::string capture_directory_;
+    std::string last_capture_key_;
 };
 
 } // namespace gbb::sdl

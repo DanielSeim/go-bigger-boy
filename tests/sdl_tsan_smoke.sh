@@ -30,6 +30,8 @@ for command in timeout xvfb-run xdotool; do
 done
 
 mkdir -p "$ARTIFACT_DIR"
+export GBB_DEBUGGER_CAPTURE_DIR="${GBB_DEBUGGER_CAPTURE_DIR:-$ARTIFACT_DIR/debugger-captures}"
+mkdir -p "$GBB_DEBUGGER_CAPTURE_DIR"
 
 tsan_options="${TSAN_OPTIONS:-halt_on_error=1:second_deadlock_stack=1:history_size=7}"
 if [[ "$tsan_options" != *log_path=* ]]; then
