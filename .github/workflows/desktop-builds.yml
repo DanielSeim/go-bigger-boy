@@ -264,8 +264,9 @@ jobs:
           SDL_RENDER_DRIVER: software
           WAYLAND_DISPLAY: ""
           TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1:history_size=7
-        run: bash tests/sdl_tsan_smoke.sh ./build-tsan/gbb \
-          tsan-gui-artifacts/smoke.gb
+        run: |
+          bash tests/sdl_tsan_smoke.sh ./build-tsan/gbb \
+            tsan-gui-artifacts/smoke.gb
 
       - name: Upload interactive SDL TSan artifacts
         if: always()
