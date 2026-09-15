@@ -128,18 +128,11 @@ void SDLCALL file_dialog_callback(void* userdata,
 } // namespace
 
 std::filesystem::path preference_directory() {
-#ifdef _WIN32
-    const auto* raw_path = SDL_GetBasePath();
-    if (raw_path == nullptr) return {};
-    const auto path = std::filesystem::u8path(raw_path);
-    return path.lexically_normal();
-#else
     char* raw_path = SDL_GetPrefPath("Go Bigger Boy", "GBB");
     if (raw_path == nullptr) return {};
     const auto path = std::filesystem::u8path(raw_path);
     SDL_free(raw_path);
     return path;
-#endif
 }
 
 void restore_game_window_geometry(

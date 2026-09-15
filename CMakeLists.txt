@@ -487,6 +487,31 @@ if(GAMEBOY_BUILD_SDL)
                             $<TARGET_SONAME_FILE:SDL3::SDL3-shared>
                             DESTINATION ${CMAKE_INSTALL_LIBDIR})
                 endif()
+                if(WIN32 AND MINGW)
+                    # MinGW-linked Windows builds depend on the compiler
+                    # runtimes at launch. Keep the release archive
+                    # self-contained instead of requiring users to install
+                    # the MinGW toolchain separately.
+                    foreach(runtime_name IN ITEMS
+                            libgcc_s_seh-1.dll
+                            libstdc++-6.dll
+                            libwinpthread-1.dll)
+                        execute_process(
+                            COMMAND ${CMAKE_CXX_COMPILER}
+                                    -print-file-name=${runtime_name}
+                            OUTPUT_VARIABLE runtime_path
+                            OUTPUT_STRIP_TRAILING_WHITESPACE
+                            ERROR_QUIET)
+                        if(EXISTS "${runtime_path}")
+                            add_custom_command(TARGET gameboy_sdl POST_BUILD
+                                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                                        "${runtime_path}"
+                                        $<TARGET_FILE_DIR:gameboy_sdl>
+                                VERBATIM)
+                            install(FILES "${runtime_path}" DESTINATION .)
+                        endif()
+                    endforeach()
+                endif()
                 if(UNIX AND NOT APPLE)
                     install(FILES packaging/linux/go-bigger-boy.desktop
                             DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)

@@ -385,10 +385,10 @@ bool parse_bool_setting(const std::string& value, const bool fallback) {
 std::filesystem::path portable_settings_path(
     const std::filesystem::path& preference_directory) {
 #ifdef GBB_SETTINGS_PERSISTENCE_TEST_PATH
-    // The desktop app keeps settings beside its executable; the contract test
-    // uses a temporary directory so it cannot modify the checkout's settings.
+    // The contract test uses a temporary directory so it cannot modify the
+    // checkout's settings.
     return preference_directory / "settings.ini";
-#elif defined(__ANDROID__)
+#elif defined(__ANDROID__) || defined(_WIN32)
     return preference_directory / "settings.ini";
 #else
     const auto* raw_base = SDL_GetBasePath();
