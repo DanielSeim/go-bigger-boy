@@ -743,9 +743,10 @@ void present_desktop_dialog(SDL_Renderer* renderer, SDL_Window* window) {
     static_cast<void>(SDL_RenderFillRect(renderer, &panel));
     static_cast<void>(SDL_SetRenderDrawColor(renderer, 69, 207, 238, 255));
     static_cast<void>(SDL_RenderRect(renderer, &panel));
+    const auto content_width = geometry.width - 48.0F;
     static_cast<void>(SDL_SetRenderDrawColor(renderer, 230, 249, 255, 255));
     render_tool_text(renderer, geometry.x + 24, geometry.y + 20,
-                     dialog.title.c_str());
+                     dialog.title.c_str(), content_width);
     const auto maximum = static_cast<std::size_t>(std::max(
         24.0F, (geometry.width - 48.0F) / 8.0F));
     const auto lines = wrap_dialog_message(dialog.message, maximum);
@@ -764,7 +765,7 @@ void present_desktop_dialog(SDL_Renderer* renderer, SDL_Window* window) {
          ++index) {
         render_tool_text(renderer, geometry.x + 24,
                          content_top + static_cast<float>(index) * 20.0F,
-                         lines[first + index].c_str());
+                         lines[first + index].c_str(), content_width);
     }
     if (!dialog.choices.empty()) {
         for (std::size_t index = 0; index < dialog.choices.size(); ++index) {
@@ -781,7 +782,7 @@ void present_desktop_dialog(SDL_Renderer* renderer, SDL_Window* window) {
                 index == dialog.selected ? 238 : 183, 255));
             static_cast<void>(SDL_RenderRect(renderer, &rect));
             render_tool_text(renderer, rect.x + 10, rect.y + 10,
-                             dialog.choices[index].c_str());
+                             dialog.choices[index].c_str(), rect.w - 20.0F);
         }
     } else {
         const auto close = dialog_close_rect(geometry);
@@ -790,14 +791,15 @@ void present_desktop_dialog(SDL_Renderer* renderer, SDL_Window* window) {
         static_cast<void>(SDL_SetRenderDrawColor(renderer, 69, 207, 238, 255));
         static_cast<void>(SDL_RenderRect(renderer, &close));
         static_cast<void>(SDL_SetRenderDrawColor(renderer, 177, 192, 208, 255));
-        render_tool_text(renderer, close.x + 28, close.y + 10, "CLOSE");
+        render_tool_text(renderer, close.x + 28, close.y + 10, "CLOSE",
+                         close.w - 56.0F);
     }
     static_cast<void>(SDL_SetRenderDrawColor(renderer, 137, 160, 183, 255));
     const auto footer = dialog.choices.empty()
                             ? "UP/DOWN SCROLL  PAGE UP/DOWN  ESC CLOSE"
                             : "LEFT/RIGHT CHOOSE  ENTER SELECT  ESC CANCEL";
     render_tool_text(renderer, geometry.x + 24, geometry.y + geometry.height - 30,
-                     footer);
+                     footer, content_width);
     static_cast<void>(SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE));
 }
 #endif
