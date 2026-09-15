@@ -780,6 +780,7 @@ void start_remote_link_session(gameboy::Emulator& emulator,
 #endif
     }
     remote.enabled = true;
+    remote.failure_reported = false;
     remote.next_pending_poll = {};
     if (link_diagnostics) {
         start_link_trace(preference_path, hosting ? "host" : "join",
@@ -821,6 +822,7 @@ void stop_remote_link_session(gameboy::Emulator& emulator,
     remote.channel.close();
     remote.bluetooth_channel.close();
     remote.enabled = false;
+    remote.failure_reported = false;
     remote.next_pending_poll = {};
     remote.diagnostics = false;
     emulator.bus().connect_printer(true);
@@ -883,6 +885,7 @@ void retry_remote_link_session(gameboy::Emulator& emulator,
     remote.endpoint.attach(emulator.bus().serial_port(), channel,
                            emulator.link_compatibility_id(),
                            emulator.link_compatibility_profile());
+    remote.failure_reported = false;
 }
 
 

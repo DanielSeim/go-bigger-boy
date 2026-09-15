@@ -55,6 +55,30 @@ public final class GbbActivity extends SDLActivity {
     private static final int BLUETOOTH_MAX_PENDING_BYTES =
             BLUETOOTH_MAX_QUEUED_FRAMES * BLUETOOTH_FRAME_SIZE;
 
+    private static int bluetoothCrc16(byte[] bytes, int offset, int length) {
+        int crc = 0xffff;
+        for (int index = 0; index < length; ++index) {
+            crc ^= (bytes[offset + index] & 0xff) << 8;
+            for (int bit = 0; bit < 8; ++bit) {
+                crc = (crc & 0x8000) != 0
+                        ? ((crc << 1) ^ 0x1021) & 0xffff
+                        : (crc << 1) & 0xffff;
+            }
+        }
+        return crc;
+    }
+
+    private static boolean bluetoothFrameValid(byte[] bytes, int offset) {
+        if (bytes[offset] != 'G' || bytes[offset + 1] != 'B' ||
+                (bytes[offset + 2] & 0xff) != 2 ||
+                (bytes[offset + 3] & 0xff) < 1 ||
+                (bytes[offset + 3] & 0xff) > 7) return false;
+        final int expected = bluetoothCrc16(bytes, offset, BLUETOOTH_FRAME_SIZE - 2);
+        final int actual = (bytes[offset + 18] & 0xff) |
+                ((bytes[offset + 19] & 0xff) << 8);
+        return expected == actual;
+    }
+
     private AndroidUpdateManager updateManager;
     private volatile int cameraOrientationDegrees;
     private OrientationEventListener cameraOrientationListener;
@@ -559,7 +583,24 @@ public final class GbbActivity extends SDLActivity {
                     pending.write(readBuffer, 0, count);
                     final byte[] bytes = pending.toByteArray();
                     int offset = 0;
-                    while (bytes.length - offset >= BLUETOOTH_FRAME_SIZE) {
+                    while (bytes.length - offset >= 2) {
+                        int header = offset;
+                        while (header + 1 < bytes.length &&
+                                !(bytes[header] == 'G' && bytes[header + 1] == 'B')) {
+                            ++header;
+                        }
+                        if (header + 1 >= bytes.length) {
+                            offset = bytes.length > 0 &&
+                                    bytes[bytes.length - 1] == 'G'
+                                    ? bytes.length - 1 : bytes.length;
+                            break;
+                        }
+                        offset = header;
+                        if (bytes.length - offset < BLUETOOTH_FRAME_SIZE) break;
+                        if (!bluetoothFrameValid(bytes, offset)) {
+                            ++offset;
+                            continue;
+                        }
                         final byte[] frame = new byte[BLUETOOTH_FRAME_SIZE];
                         System.arraycopy(bytes, offset, frame, 0,
                                 BLUETOOTH_FRAME_SIZE);

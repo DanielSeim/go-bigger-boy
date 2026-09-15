@@ -20,6 +20,18 @@ void process_link_requests(LinkControlContext context) {
                    "The remote link was rejected because the ROM versions are not compatible.");
     }
 
+    if (context.emulator != nullptr && context.remote_link.active() &&
+        context.remote_link.active_channel().state() ==
+            gameboy::LinkPacketChannel::State::failed &&
+        !context.remote_link.failure_reported) {
+        context.remote_link.failure_reported = true;
+        gbb::log_frontend_warning(
+            "Remote link lost; serial state was reset and retry is available");
+        show_error(context.sdl.window,
+                   "The remote link was lost. The serial transfer was reset. "
+                   "Choose Emulation > Retry Link Handshake to reconnect.");
+    }
+
     if (context.remote_discover_requested) {
         context.remote_discover_requested = false;
         if (context.emulator == nullptr) {

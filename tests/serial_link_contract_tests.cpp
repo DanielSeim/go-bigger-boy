@@ -63,8 +63,13 @@ public:
     void poll() noexcept override {}
     void close() noexcept override { state_ = State::disconnected; }
     void fail() noexcept { state_ = State::failed; }
+    void drop_next_send() noexcept { dropped_sends_ = 1; }
     [[nodiscard]] bool send(const gameboy::LinkPacket& packet) noexcept override {
         if (peer_ == nullptr || state_ != State::connected) return false;
+        if (dropped_sends_ != 0) {
+            --dropped_sends_;
+            return true;
+        }
         peer_->packets_.push_back(packet);
         return true;
     }
@@ -80,6 +85,7 @@ private:
     QueuePacketChannel* peer_{};
     State state_{State::disconnected};
     std::deque<gameboy::LinkPacket> packets_;
+    unsigned dropped_sends_{};
 };
 
 std::vector<std::uint8_t> test_rom(
@@ -852,6 +858,8 @@ void test_packet_session_and_request_ordering() {
               host_endpoint.peer_session_id() == join_endpoint.session_id() &&
               join_endpoint.peer_session_id() == host_endpoint.session_id(),
           "link handshake fences each endpoint with a distinct session ID");
+    check(host_endpoint.state_digest_valid() && join_endpoint.state_digest_valid(),
+          "serial traffic waits for a matching post-hello state digest");
 
     const gameboy::LinkPacket stale{gameboy::LinkPacketType::heartbeat, 99, 0,
                                     0, host_endpoint.session_id() + 1};
@@ -870,6 +878,56 @@ void test_packet_session_and_request_ordering() {
     check(join_endpoint.duplicate_requests() == 1 &&
               join_endpoint.requests_received() == 1,
           "duplicate serial requests do not apply a second guest edge");
+    host_endpoint.detach();
+    join_endpoint.detach();
+}
+
+void test_packet_retransmission_after_dropped_frames() {
+    QueuePacketChannel host_channel;
+    QueuePacketChannel join_channel;
+    host_channel.connect_to(join_channel);
+    join_channel.connect_to(host_channel);
+    gameboy::MemoryBus host{gameboy::Cartridge{test_rom()}};
+    gameboy::MemoryBus join{gameboy::Cartridge{test_rom()}};
+    gameboy::TcpSerialEndpoint host_endpoint;
+    gameboy::TcpSerialEndpoint join_endpoint;
+    host_endpoint.set_arbitration_priority(true);
+    join_endpoint.set_arbitration_priority(false);
+    host_endpoint.attach(host.serial_port(), host_channel, 0xB6);
+    join_endpoint.attach(join.serial_port(), join_channel, 0xB6);
+    for (unsigned attempt = 0; attempt < 16; ++attempt) {
+        host_endpoint.poll();
+        join_endpoint.poll();
+    }
+
+    host.write8(0xFF01, 0xA5);
+    join.write8(0xFF01, 0x3C);
+    join.write8(0xFF02, 0x80);
+    host_channel.drop_next_send();
+    host.write8(0xFF02, 0x81);
+    for (unsigned cycle = 0; cycle < 3000; ++cycle) {
+        host.tick(4);
+        join.tick(4);
+        host_endpoint.poll();
+        join_endpoint.poll();
+        if (!host.serial_port().transfer_active() &&
+            !join.serial_port().transfer_active()) break;
+    }
+    check(host_endpoint.request_retries() != 0 &&
+              host.read8(0xFF01) == 0x3C && join.read8(0xFF01) == 0xA5 &&
+              !host.serial_port().transfer_active() &&
+              !join.serial_port().transfer_active(),
+          "dropped serial requests are retransmitted without losing an edge");
+
+    join_channel.drop_next_send();
+    host.serial_port().reset_link();
+    for (unsigned attempt = 0; attempt < 40; ++attempt) {
+        host_endpoint.poll();
+        join_endpoint.poll();
+    }
+    check(host_endpoint.reset_retries() != 0 &&
+              host_endpoint.reset_acknowledgements() != 0,
+          "dropped reset acknowledgements are retried before resuming");
     host_endpoint.detach();
     join_endpoint.detach();
 }
@@ -1220,6 +1278,7 @@ int main() {
     test_packet_channel_deferred_request_timeout();
     test_packet_endpoint_disconnect_resets_serial();
     test_packet_session_and_request_ordering();
+    test_packet_retransmission_after_dropped_frames();
     test_packet_channel_rejects_profile_mismatch();
     test_tcp_link_channel_loopback();
     test_tcp_serial_endpoint_loopback();

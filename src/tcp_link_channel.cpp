@@ -294,23 +294,11 @@ void TcpLinkChannel::receive_available() noexcept {
                 fail();
                 return;
             }
-            while (receive_buffer_.size() >= LinkPacketCodec::wire_size) {
-                const auto packet = LinkPacketCodec::decode(
-                    receive_buffer_.data(), LinkPacketCodec::wire_size);
-                receive_buffer_.erase(
-                    receive_buffer_.begin(),
-                    receive_buffer_.begin() +
-                        static_cast<std::ptrdiff_t>(LinkPacketCodec::wire_size));
-                if (packet) {
-                    if (packets_.size() >=
-                        LinkPacketChannel::maximum_queued_packets) {
-                        fail();
-                        return;
-                    }
-                    packets_.push_back(*packet);
-                } else {
-                    ++malformed_packets_;
-                }
+            if (!LinkPacketCodec::decode_stream(
+                    receive_buffer_, packets_, malformed_packets_,
+                    LinkPacketChannel::maximum_queued_packets)) {
+                fail();
+                return;
             }
             continue;
         }

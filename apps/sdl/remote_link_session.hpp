@@ -36,6 +36,7 @@ struct RemoteLinkSession {
     gameboy::LanDiscovery discovery;
     bool enabled{};
     bool hosting{};
+    bool failure_reported{};
     bool diagnostics{};
     bool scanning{};
     std::chrono::steady_clock::time_point scan_deadline{};

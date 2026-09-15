@@ -2,7 +2,9 @@
 
 #include <array>
 #include <cstdint>
+#include <deque>
 #include <iostream>
+#include <vector>
 
 namespace {
 
@@ -29,7 +31,7 @@ void test_deterministic_round_trips() {
     for (unsigned index = 0; index < 128; ++index) {
         const auto random = next_value(state);
         const auto type = static_cast<gameboy::LinkPacketType>(
-            1U + (random % 6U));
+            1U + (random % 7U));
         const gameboy::LinkPacket packet{type, next_value(state),
                                          static_cast<std::uint8_t>(next_value(state)),
                                          static_cast<std::uint8_t>(next_value(state)),
@@ -48,6 +50,30 @@ void test_deterministic_round_trips() {
                   "generated packet fields survive round-trip");
         }
     }
+}
+
+void test_stream_resynchronizes_after_corruption() {
+    const gameboy::LinkPacket damaged{gameboy::LinkPacketType::bit, 4, 0x11,
+                                      0x01, UINT64_C(0x1111222233334444)};
+    const gameboy::LinkPacket valid{gameboy::LinkPacketType::heartbeat, 5, 0,
+                                    0, UINT64_C(0x1111222233334444)};
+    const auto damaged_wire = gameboy::LinkPacketCodec::encode(damaged);
+    const auto valid_wire = gameboy::LinkPacketCodec::encode(valid);
+    auto corrupted_wire = damaged_wire;
+    corrupted_wire[8] ^= 0x01;
+    std::vector<std::uint8_t> stream{0x00, 0x7F};
+    stream.insert(stream.end(), corrupted_wire.begin(), corrupted_wire.end());
+    stream.push_back(0x42); // Noise between two complete frames.
+    stream.insert(stream.end(), valid_wire.begin(), valid_wire.end());
+
+    std::deque<gameboy::LinkPacket> packets;
+    std::uint64_t malformed = 0;
+    check(gameboy::LinkPacketCodec::decode_stream(stream, packets, malformed),
+          "stream decoder accepts recoverable framing noise");
+    check((malformed != 0 || stream.empty()) && packets.size() == 1 &&
+              packets.front().type == valid.type &&
+              packets.front().sequence == valid.sequence,
+          "stream decoder resynchronizes on the next valid frame");
 }
 
 } // namespace
@@ -92,6 +118,7 @@ int main() {
           "unknown packet type is rejected even with a valid checksum");
 
     test_deterministic_round_trips();
+    test_stream_resynchronizes_after_corruption();
 
     return failures == 0 ? 0 : 1;
 }

@@ -37,7 +37,9 @@ used by the TCP endpoint and future transports. Current frames are 20 bytes:
 they carry a per-attachment session ID and a CRC-16/CCITT integrity check. A
 peer ignores frames from another session, so a reconnect cannot consume an old
 queued edge; CRC validation rejects corrupted frames before they reach serial
-state.
+state. Stream adapters resynchronize on the next valid `GB` header after
+discarding corrupt or inserted bytes, rather than treating the rest of a TCP
+or RFCOMM connection as permanently misaligned.
 
 The Web frontend does not expose link sessions yet. Its single-player browser
 runtime has no transport endpoint, and the native end-to-end test is excluded
@@ -66,7 +68,12 @@ clocking the guest a second time, while an out-of-order request tears down the
 session instead of allowing the two emulators to diverge. The endpoint sends
 transport heartbeats and expires a peer that has not produced valid traffic
 within five seconds. Serial edges are never caught up after a missed poll; the
-next edge remains held until its matching response arrives.
+next edge remains held until its matching response arrives. Requests and reset
+barriers are retransmitted with bounded backoff; a receiver caches the last
+response so a retry cannot clock the same guest edge twice. Once a transport
+fails, the desktop keeps the failed status visible, resets the local serial
+port, and leaves **Retry Link Handshake** available so recovery does not
+require restarting either emulator.
 
 New endpoints negotiate a byte-level fast path in the hello arbitration flags.
 When both peers advertise it, one packet carries all eight outgoing serial

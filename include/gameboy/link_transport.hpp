@@ -5,7 +5,9 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <optional>
+#include <vector>
 
 namespace gameboy {
 
@@ -57,6 +59,9 @@ enum class LinkPacketType : std::uint8_t {
     // Transport heartbeat; it is acknowledged without touching guest serial
     // state and gives remote endpoints a wall-clock liveness signal.
     heartbeat = 6,
+    // A post-hello digest barrier confirms both endpoints joined the same
+    // ROM/session context before a serial edge can be issued.
+    state_digest = 7,
 };
 
 struct LinkPacket {
@@ -76,11 +81,19 @@ class LinkPacketCodec final {
 public:
     static constexpr std::size_t wire_size = 20;
     static constexpr std::uint8_t protocol_version = 2;
+    static constexpr std::size_t maximum_stream_packets = 256;
 
     [[nodiscard]] static std::array<std::uint8_t, wire_size> encode(
         const LinkPacket& packet) noexcept;
     [[nodiscard]] static std::optional<LinkPacket> decode(
         const std::uint8_t* bytes, std::size_t size) noexcept;
+    // Consume as many complete frames as possible. Invalid bytes are dropped
+    // one at a time until the next GB header, allowing a stream to recover
+    // from insertion/deletion/corruption without a reconnect.
+    [[nodiscard]] static bool decode_stream(
+        std::vector<std::uint8_t>& buffer, std::deque<LinkPacket>& packets,
+        std::uint64_t& malformed_packets,
+        std::size_t maximum_packets = maximum_stream_packets) noexcept;
 };
 
 } // namespace gameboy

@@ -35,7 +35,7 @@ public:
     [[nodiscard]] bool peer_ready_for_link() const noexcept {
         return connected() && peer_hello_seen_ && peer_compatible_ &&
                (arbitration_priority_ || peer_request_seen_) &&
-               !reset_waiting_for_ack_;
+               !reset_waiting_for_ack_ && state_digest_valid_;
     }
     [[nodiscard]] bool waiting_for_peer() const noexcept {
         return pending_sequence_.has_value() && !response_.has_value() &&
@@ -50,6 +50,7 @@ public:
                (!peer_hello_seen_ || waiting_for_peer() ||
                 deferred_request_.has_value() ||
                 reset_waiting_for_ack_ ||
+                !state_digest_valid_ ||
                 (compatibility_profile_.known() && !peer_profile_seen_ &&
                  profile_wait_polls_ < profile_wait_limit) ||
                 (connected() &&
@@ -173,6 +174,18 @@ public:
     [[nodiscard]] std::uint64_t reset_acknowledgements() const noexcept {
         return reset_acknowledgements_;
     }
+    [[nodiscard]] std::uint64_t request_retries() const noexcept {
+        return request_retries_;
+    }
+    [[nodiscard]] std::uint64_t reset_retries() const noexcept {
+        return reset_retries_;
+    }
+    [[nodiscard]] bool state_digest_valid() const noexcept {
+        return state_digest_valid_;
+    }
+    [[nodiscard]] std::uint64_t state_digest_mismatches() const noexcept {
+        return state_digest_mismatches_;
+    }
     [[nodiscard]] std::uint64_t transfers_completed() const noexcept {
         return port_ == nullptr ? 0 : port_->transfers_completed();
     }
@@ -200,6 +213,8 @@ private:
     static constexpr unsigned deferred_request_poll_limit = 240;
     static constexpr std::uint8_t byte_transfer_capability = 0x10;
     static constexpr unsigned reset_ack_wait_poll_limit = 240;
+    static constexpr unsigned retry_interval_polls = 8;
+    static constexpr unsigned maximum_request_retries = 32;
     static constexpr auto heartbeat_interval = std::chrono::seconds(1);
     static constexpr auto heartbeat_timeout = std::chrono::seconds(5);
 
@@ -213,6 +228,12 @@ private:
     std::optional<std::uint8_t> byte_response_;
     std::uint8_t byte_bits_consumed_{};
     std::optional<LinkPacket> deferred_request_;
+    std::optional<LinkPacket> pending_packet_;
+    unsigned pending_retry_polls_{};
+    unsigned pending_retry_count_{};
+    std::optional<LinkPacket> reset_packet_;
+    unsigned reset_retry_polls_{};
+    unsigned reset_retry_count_{};
     std::optional<std::uint32_t> last_peer_request_sequence_;
     std::optional<LinkPacket> last_peer_request_response_;
     unsigned request_backoff_{};
@@ -236,6 +257,9 @@ private:
     bool peer_clock_busy_{};
     std::uint64_t session_id_{};
     std::optional<std::uint64_t> peer_session_id_;
+    std::optional<std::uint32_t> peer_state_digest_;
+    bool state_digest_sent_{};
+    bool state_digest_valid_{};
     std::optional<std::uint32_t> reset_sequence_;
     bool reset_waiting_for_ack_{};
     unsigned reset_ack_wait_polls_{};
@@ -259,9 +283,13 @@ private:
     std::uint64_t heartbeat_timeouts_{};
     std::uint64_t reset_requests_sent_{};
     std::uint64_t reset_acknowledgements_{};
+    std::uint64_t request_retries_{};
+    std::uint64_t reset_retries_{};
+    std::uint64_t state_digest_mismatches_{};
     std::uint64_t diagnostic_session_{};
 
     [[nodiscard]] bool send_packet(LinkPacket packet) noexcept;
+    [[nodiscard]] std::uint32_t state_digest() const noexcept;
     void protocol_fault(const char* message) noexcept;
     [[nodiscard]] static bool is_next_sequence(std::uint32_t previous,
                                                 std::uint32_t next) noexcept;

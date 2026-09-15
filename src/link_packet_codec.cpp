@@ -51,7 +51,7 @@ std::optional<LinkPacket> LinkPacketCodec::decode(const std::uint8_t* bytes,
     if (bytes == nullptr || size != wire_size || bytes[0] != 'G' ||
         bytes[1] != 'B' || bytes[2] != protocol_version ||
         (bytes[3] < static_cast<std::uint8_t>(LinkPacketType::hello) ||
-         bytes[3] > static_cast<std::uint8_t>(LinkPacketType::heartbeat))) {
+         bytes[3] > static_cast<std::uint8_t>(LinkPacketType::state_digest))) {
         return std::nullopt;
     }
     const auto checksum = crc16(bytes, wire_size - 2);
@@ -69,6 +69,42 @@ std::optional<LinkPacket> LinkPacketCodec::decode(const std::uint8_t* bytes,
     }
     return LinkPacket{static_cast<LinkPacketType>(bytes[3]), sequence, bytes[8],
                       bytes[9], session_id};
+}
+
+bool LinkPacketCodec::decode_stream(std::vector<std::uint8_t>& buffer,
+                                    std::deque<LinkPacket>& packets,
+                                    std::uint64_t& malformed_packets,
+                                    const std::size_t maximum_packets) noexcept {
+    while (buffer.size() >= 2) {
+        std::size_t header = 0;
+        while (header + 1 < buffer.size() &&
+               !(buffer[header] == 'G' && buffer[header + 1] == 'B')) {
+            ++header;
+        }
+        if (header + 1 >= buffer.size()) {
+            // Preserve a trailing G because it may be the first byte of a
+            // split header on the next socket read.
+            if (!buffer.empty() && buffer.back() == 'G') {
+                buffer.erase(buffer.begin(), buffer.end() - 1);
+            } else {
+                buffer.clear();
+            }
+            return true;
+        }
+        if (header != 0) buffer.erase(buffer.begin(), buffer.begin() + header);
+        if (buffer.size() < wire_size) return true;
+
+        const auto packet = decode(buffer.data(), wire_size);
+        if (!packet) {
+            ++malformed_packets;
+            buffer.erase(buffer.begin());
+            continue;
+        }
+        if (packets.size() >= maximum_packets) return false;
+        packets.push_back(*packet);
+        buffer.erase(buffer.begin(), buffer.begin() + wire_size);
+    }
+    return true;
 }
 
 } // namespace gameboy
