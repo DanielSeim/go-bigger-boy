@@ -4,6 +4,7 @@
 #include "emulation_session.hpp"
 #include "gbb/frontend_logging.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <exception>
 
@@ -51,6 +52,35 @@ void process_remote_link_requests(RemoteLinkControlContext context) {
         show_error(context.sdl.window,
                    "The remote link was lost. The serial transfer was reset. "
                    "Choose Emulation > Retry Link Handshake to reconnect.");
+    }
+
+    if (context.emulator != nullptr && context.remote_link.active()) {
+        const auto state = context.remote_link.active_channel().state();
+        if ((state == gameboy::LinkPacketChannel::State::failed ||
+             state == gameboy::LinkPacketChannel::State::disconnected) &&
+            context.remote_link.automatic_retry_attempts < 3) {
+            if (context.remote_link.next_automatic_retry ==
+                std::chrono::steady_clock::time_point{}) {
+                context.remote_link.next_automatic_retry =
+                    now + std::chrono::seconds(1);
+            } else if (now >= context.remote_link.next_automatic_retry) {
+                ++context.remote_link.automatic_retry_attempts;
+                const auto delay = 1U << std::min(
+                    context.remote_link.automatic_retry_attempts, 2U);
+                context.remote_link.next_automatic_retry =
+                    now + std::chrono::seconds(delay);
+                try {
+                    retry_remote_link_session(*context.emulator,
+                                              context.remote_link,
+                                              context.remote_options);
+                    gbb::log_frontend_info("Remote link automatically reconnected");
+                } catch (const std::exception& error) {
+                    gbb::log_frontend_warning(
+                        std::string("Automatic remote link retry failed: ") +
+                        error.what());
+                }
+            }
+        }
     }
 
     if (context.remote_discover_requested) {
@@ -125,6 +155,8 @@ void process_remote_link_requests(RemoteLinkControlContext context) {
         context.link_retry_requested = false;
         if (context.emulator != nullptr && context.remote_link.active()) {
             try {
+                context.remote_link.automatic_retry_attempts = 0;
+                context.remote_link.next_automatic_retry = {};
                 retry_remote_link_session(*context.emulator,
                                           context.remote_link,
                                           context.remote_options);

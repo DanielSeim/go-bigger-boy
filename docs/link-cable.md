@@ -73,7 +73,13 @@ barriers are retransmitted with bounded backoff; a receiver caches the last
 response so a retry cannot clock the same guest edge twice. Once a transport
 fails, the desktop keeps the failed status visible, resets the local serial
 port, and leaves **Retry Link Handshake** available so recovery does not
-require restarting either emulator.
+require restarting either emulator. Hello parts and the post-hello state
+digest are retransmitted until both peers confirm receipt, so one lost setup
+frame cannot leave connected peers waiting forever. Serial retry deadlines use
+monotonic time and adapt to measured round-trip time and jitter rather than
+depending on frontend poll frequency. A transient remote disconnect gets up
+to three bounded automatic reconnect attempts; after that, the failed state
+remains visible for manual recovery.
 
 New endpoints negotiate a byte-level fast path in the hello arbitration flags.
 When both peers advertise it, one packet carries all eight outgoing serial
@@ -197,6 +203,13 @@ also reports `game_ui=waiting` or `game_ui=trade_completed` when it recognizes
 the corresponding localized message in VRAM; `game_ui=other` covers all other
 screens. Matching transitions are emitted as `event=pokemon_state` with the
 same UI label.
+
+Remote traces additionally record handshake and digest retries, smoothed RTT,
+RTT jitter, RTT sample count, queued packet count, and total channel-buffered
+bytes. These values distinguish a slow peer, a congested transport, and a
+guest that has not started its next serial operation. The link contract tests
+exercise dropped, duplicated, delayed, and reordered frames, reconnect fencing,
+and a sustained alternating-transfer soak.
 
 On desktop, **Emulation → Host Remote Link** (`Ctrl+Shift+H`) and **Join Remote
 Link** (`Ctrl+Shift+J`) use the configured transport. With TCP, the host listens

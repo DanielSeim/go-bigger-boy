@@ -2,6 +2,7 @@
 
 #include "gbb/log.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 
@@ -46,6 +47,38 @@ std::uint32_t LinkSerialEndpoint::state_digest() const noexcept {
     return digest;
 }
 
+std::chrono::milliseconds LinkSerialEndpoint::retry_delay(
+    const unsigned retry_count) const noexcept {
+    auto base = retry_timeout_;
+    const auto multiplier = 1U << std::min(retry_count, 4U);
+    const auto delayed = base * static_cast<int>(multiplier);
+    return std::min(delayed, maximum_retry_timeout);
+}
+
+void LinkSerialEndpoint::record_rtt(
+    const std::chrono::steady_clock::duration elapsed) noexcept {
+    const auto sample = static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count());
+    if (sample == 0) return;
+    if (rtt_samples_ == 0) {
+        smoothed_rtt_ms_ = sample;
+        rtt_jitter_ms_ = 0;
+    } else {
+        const auto difference = smoothed_rtt_ms_ > sample
+                                    ? smoothed_rtt_ms_ - sample
+                                    : sample - smoothed_rtt_ms_;
+        rtt_jitter_ms_ = (rtt_jitter_ms_ * 3U + difference) / 4U;
+        smoothed_rtt_ms_ = (smoothed_rtt_ms_ * 7U + sample) / 8U;
+    }
+    ++rtt_samples_;
+    const auto target = std::clamp(smoothed_rtt_ms_ + rtt_jitter_ms_ * 4U,
+                                   static_cast<std::uint64_t>(
+                                       initial_retry_timeout.count()),
+                                   static_cast<std::uint64_t>(
+                                       maximum_retry_timeout.count()));
+    retry_timeout_ = std::chrono::milliseconds(target);
+}
+
 bool LinkSerialEndpoint::is_next_sequence(const std::uint32_t previous,
                                            const std::uint32_t next) noexcept {
     return next == previous + 1U;
@@ -57,6 +90,8 @@ void LinkSerialEndpoint::reset_transfer_state() noexcept {
     pending_packet_.reset();
     pending_retry_polls_ = 0;
     pending_retry_count_ = 0;
+    pending_retry_deadline_ = {};
+    pending_sent_at_ = {};
     response_.reset();
     byte_response_.reset();
     byte_bits_consumed_ = 0;
@@ -91,6 +126,9 @@ void LinkSerialEndpoint::attach(SerialPort& port,
     peer_state_digest_.reset();
     state_digest_sent_ = false;
     state_digest_valid_ = false;
+    state_digest_acknowledged_ = false;
+    next_hello_retry_ = {};
+    next_state_digest_retry_ = {};
     next_sequence_ = 0;
     next_control_sequence_ = 0;
     pending_sequence_.reset();
@@ -98,6 +136,8 @@ void LinkSerialEndpoint::attach(SerialPort& port,
     pending_packet_.reset();
     pending_retry_polls_ = 0;
     pending_retry_count_ = 0;
+    pending_retry_deadline_ = {};
+    pending_sent_at_ = {};
     response_.reset();
     byte_response_.reset();
     byte_bits_consumed_ = 0;
@@ -105,6 +145,7 @@ void LinkSerialEndpoint::attach(SerialPort& port,
     reset_packet_.reset();
     reset_retry_polls_ = 0;
     reset_retry_count_ = 0;
+    reset_retry_deadline_ = {};
     last_peer_request_sequence_.reset();
     last_peer_request_response_.reset();
     request_backoff_ = 0;
@@ -126,7 +167,6 @@ void LinkSerialEndpoint::attach(SerialPort& port,
     peer_clock_busy_ = false;
     reset_sequence_.reset();
     reset_waiting_for_ack_ = false;
-    reset_ack_wait_polls_ = 0;
     const auto now = std::chrono::steady_clock::now();
     last_peer_activity_ = now;
     last_heartbeat_sent_ = now;
@@ -151,6 +191,12 @@ void LinkSerialEndpoint::attach(SerialPort& port,
     request_retries_ = 0;
     reset_retries_ = 0;
     state_digest_mismatches_ = 0;
+    handshake_retries_ = 0;
+    state_digest_retries_ = 0;
+    smoothed_rtt_ms_ = 0;
+    rtt_jitter_ms_ = 0;
+    rtt_samples_ = 0;
+    retry_timeout_ = initial_retry_timeout;
     diagnostic_session_ =
         next_diagnostic_session.fetch_add(1, std::memory_order_relaxed);
     port_->set_endpoint(this);
@@ -176,12 +222,17 @@ void LinkSerialEndpoint::detach() noexcept {
     peer_state_digest_.reset();
     state_digest_sent_ = false;
     state_digest_valid_ = false;
+    state_digest_acknowledged_ = false;
+    next_hello_retry_ = {};
+    next_state_digest_retry_ = {};
     next_control_sequence_ = 0;
     pending_sequence_.reset();
     pending_type_.reset();
     pending_packet_.reset();
     pending_retry_polls_ = 0;
     pending_retry_count_ = 0;
+    pending_retry_deadline_ = {};
+    pending_sent_at_ = {};
     response_.reset();
     byte_response_.reset();
     byte_bits_consumed_ = 0;
@@ -189,6 +240,7 @@ void LinkSerialEndpoint::detach() noexcept {
     reset_packet_.reset();
     reset_retry_polls_ = 0;
     reset_retry_count_ = 0;
+    reset_retry_deadline_ = {};
     last_peer_request_sequence_.reset();
     last_peer_request_response_.reset();
     request_backoff_ = 0;
@@ -210,7 +262,6 @@ void LinkSerialEndpoint::detach() noexcept {
     peer_clock_busy_ = false;
     reset_sequence_.reset();
     reset_waiting_for_ack_ = false;
-    reset_ack_wait_polls_ = 0;
     last_peer_activity_ = {};
     last_heartbeat_sent_ = {};
     byte_packets_sent_ = 0;
@@ -227,6 +278,12 @@ void LinkSerialEndpoint::detach() noexcept {
     request_retries_ = 0;
     reset_retries_ = 0;
     state_digest_mismatches_ = 0;
+    handshake_retries_ = 0;
+    state_digest_retries_ = 0;
+    smoothed_rtt_ms_ = 0;
+    rtt_jitter_ms_ = 0;
+    rtt_samples_ = 0;
+    retry_timeout_ = initial_retry_timeout;
     diagnostic_session_ = 0;
     if (was_attached) {
         gbb::Logger::instance().write(gbb::LogLevel::info,
@@ -273,11 +330,14 @@ void LinkSerialEndpoint::prepare_bit(const bool outgoing) noexcept {
                           : static_cast<std::uint8_t>(outgoing ? 1U : 0U),
         request_flag};
     if (send_packet(packet)) {
+        const auto now = std::chrono::steady_clock::now();
         pending_sequence_ = sequence;
         pending_type_ = packet.type;
         pending_packet_ = packet;
         pending_retry_polls_ = 0;
         pending_retry_count_ = 0;
+        pending_sent_at_ = now;
+        pending_retry_deadline_ = now + retry_delay(0);
         ++requests_sent_;
         if (use_byte_transfer) ++byte_packets_sent_;
     }
@@ -291,22 +351,30 @@ bool LinkSerialEndpoint::exchange_bit(const bool /*outgoing*/) noexcept {
         if (byte_bits_consumed_ == 8) {
             byte_response_.reset();
             byte_bits_consumed_ = 0;
+            if (pending_sent_at_ != std::chrono::steady_clock::time_point{})
+                record_rtt(std::chrono::steady_clock::now() - pending_sent_at_);
             pending_sequence_.reset();
             pending_type_.reset();
             pending_packet_.reset();
             pending_retry_polls_ = 0;
             pending_retry_count_ = 0;
+            pending_retry_deadline_ = {};
+            pending_sent_at_ = {};
         }
         return incoming;
     }
     if (!response_.has_value()) return true;
     const auto incoming = *response_;
+    if (pending_sent_at_ != std::chrono::steady_clock::time_point{})
+        record_rtt(std::chrono::steady_clock::now() - pending_sent_at_);
     response_.reset();
     pending_sequence_.reset();
     pending_type_.reset();
     pending_packet_.reset();
     pending_retry_polls_ = 0;
     pending_retry_count_ = 0;
+    pending_retry_deadline_ = {};
+    pending_sent_at_ = {};
     return incoming;
 }
 
@@ -340,6 +408,8 @@ void LinkSerialEndpoint::release_internal_clock(SerialPort& port) noexcept {
         pending_packet_.reset();
         pending_retry_polls_ = 0;
         pending_retry_count_ = 0;
+        pending_retry_deadline_ = {};
+        pending_sent_at_ = {};
         request_backoff_ = 0;
     }
     // A response that is already ready belongs to the next edge and must not
@@ -368,11 +438,15 @@ void LinkSerialEndpoint::cancel_internal_clock(SerialPort& /*port*/) noexcept {
         reset_sequence_ = sequence;
         reset_packet_ = reset;
         reset_waiting_for_ack_ = send_packet(reset);
-        reset_ack_wait_polls_ = 0;
         reset_retry_polls_ = 0;
         reset_retry_count_ = 0;
+        reset_retry_deadline_ = std::chrono::steady_clock::now() +
+                                retry_delay(0);
         if (reset_waiting_for_ack_) ++reset_requests_sent_;
-        else reset_packet_.reset();
+        else {
+            reset_packet_.reset();
+            reset_retry_deadline_ = {};
+        }
     }
     reset_transfer_state();
 }
@@ -392,14 +466,25 @@ void LinkSerialEndpoint::poll() noexcept {
         }
         return;
     }
-    if (reset_waiting_for_ack_ &&
-        ++reset_ack_wait_polls_ >= reset_ack_wait_poll_limit) {
+    const auto now = std::chrono::steady_clock::now();
+    if (reset_waiting_for_ack_ && now >= reset_retry_deadline_ &&
+        reset_retry_count_ >= maximum_request_retries) {
         protocol_fault("link reset acknowledgement timed out");
         return;
     }
     if (compatibility_profile_.known() && peer_hello_seen_ &&
         !peer_profile_seen_ && profile_wait_polls_ < profile_wait_limit) {
         ++profile_wait_polls_;
+    }
+    if (hello_sent_ && !state_digest_acknowledged_ &&
+        now >= next_hello_retry_) {
+        if (handshake_retries_ >= maximum_handshake_retries) {
+            protocol_fault("link handshake retry limit exceeded");
+            return;
+        }
+        hello_sent_ = false;
+        hello_parts_sent_ = 0;
+        ++handshake_retries_;
     }
     if (!hello_sent_) {
         const auto part = hello_parts_sent_;
@@ -432,6 +517,8 @@ void LinkSerialEndpoint::poll() noexcept {
                               ? hello_parts_sent_ >= 1
                               : hello_parts_sent_ >=
                                     (compatibility_profile_.known() ? 6 : 5);
+            if (hello_sent_)
+                next_hello_retry_ = now + handshake_retry_interval;
             gbb::Logger::instance().write(
                 gbb::LogLevel::debug, gbb::LogCategory::link,
                 hello_sent_ ? "link hello sent" : "link hello part sent",
@@ -440,10 +527,15 @@ void LinkSerialEndpoint::poll() noexcept {
     }
 
     if (peer_hello_seen_ && peer_session_id_.has_value() &&
-        !state_digest_sent_) {
+        (!state_digest_sent_ || !state_digest_acknowledged_) &&
+        now >= next_state_digest_retry_) {
         const LinkPacket digest{LinkPacketType::state_digest, state_digest(),
                                 0, 0};
-        if (send_packet(digest)) state_digest_sent_ = true;
+        if (send_packet(digest)) {
+            if (state_digest_sent_) ++state_digest_retries_;
+            state_digest_sent_ = true;
+            next_state_digest_retry_ = now + state_digest_retry_interval;
+        }
     }
 
     const auto service_request = [this](const LinkPacket& packet) {
@@ -607,6 +699,13 @@ void LinkSerialEndpoint::poll() noexcept {
             continue;
         }
         if (packet->type == LinkPacketType::state_digest) {
+            if ((packet->flags & state_digest_ack_flag) != 0) {
+                if (packet->sequence == state_digest()) {
+                    state_digest_acknowledged_ = true;
+                    next_hello_retry_ = {};
+                }
+                continue;
+            }
             peer_state_digest_ = packet->sequence;
             if (packet->sequence != state_digest()) {
                 ++state_digest_mismatches_;
@@ -614,6 +713,10 @@ void LinkSerialEndpoint::poll() noexcept {
                 return;
             }
             state_digest_valid_ = true;
+            const LinkPacket acknowledgement{LinkPacketType::state_digest,
+                                             packet->sequence, 0,
+                                             state_digest_ack_flag};
+            static_cast<void>(send_packet(acknowledgement));
             continue;
         }
         if (packet->type == LinkPacketType::acknowledgement) {
@@ -630,7 +733,7 @@ void LinkSerialEndpoint::poll() noexcept {
                         reset_packet_.reset();
                         reset_retry_polls_ = 0;
                         reset_retry_count_ = 0;
-                        reset_ack_wait_polls_ = 0;
+                        reset_retry_deadline_ = {};
                         ++reset_acknowledgements_;
                     }
                     continue;
@@ -711,6 +814,10 @@ void LinkSerialEndpoint::poll() noexcept {
                 protocol_fault("link response type does not match request");
                 return;
             }
+            if (pending_sent_at_ != std::chrono::steady_clock::time_point{}) {
+                record_rtt(now - pending_sent_at_);
+                pending_sent_at_ = {};
+            }
             if ((packet->flags & denied_flag) != 0) {
                 ++denials_received_;
                 gbb::Logger::instance().write(
@@ -727,6 +834,8 @@ void LinkSerialEndpoint::poll() noexcept {
                 pending_packet_.reset();
                 pending_retry_polls_ = 0;
                 pending_retry_count_ = 0;
+                pending_retry_deadline_ = {};
+                pending_sent_at_ = {};
                 response_.reset();
                 byte_response_.reset();
                 byte_bits_consumed_ = 0;
@@ -747,9 +856,12 @@ void LinkSerialEndpoint::poll() noexcept {
                 pending_packet_.reset();
                 pending_retry_polls_ = 0;
                 pending_retry_count_ = 0;
+                pending_retry_deadline_ = {};
+                pending_sent_at_ = {};
                 response_.reset();
                 request_backoff_ = 64;
             } else {
+                pending_retry_deadline_ = {};
                 if (packet->type == LinkPacketType::byte) {
                     byte_response_ = packet->value;
                     byte_bits_consumed_ = 0;
@@ -764,30 +876,32 @@ void LinkSerialEndpoint::poll() noexcept {
     }
     if (pending_packet_.has_value() && pending_sequence_.has_value() &&
         !response_.has_value() && !byte_response_.has_value() &&
-        ++pending_retry_polls_ >= retry_interval_polls) {
+        now >= pending_retry_deadline_) {
         if (pending_retry_count_ >= maximum_request_retries) {
             protocol_fault("serial request acknowledgement timed out");
             return;
         }
+        ++pending_retry_count_;
         if (send_packet(*pending_packet_)) {
-            ++pending_retry_count_;
             ++request_retries_;
             pending_retry_polls_ = 0;
+            pending_sent_at_ = now;
         }
+        pending_retry_deadline_ = now + retry_delay(pending_retry_count_);
     }
     if (reset_waiting_for_ack_ && reset_packet_ &&
-        ++reset_retry_polls_ >= retry_interval_polls) {
+        now >= reset_retry_deadline_) {
         if (reset_retry_count_ >= maximum_request_retries) {
             protocol_fault("serial reset retry limit exceeded");
             return;
         }
+        ++reset_retry_count_;
         if (send_packet(*reset_packet_)) {
-            ++reset_retry_count_;
             ++reset_retries_;
             reset_retry_polls_ = 0;
         }
+        reset_retry_deadline_ = now + retry_delay(reset_retry_count_);
     }
-    const auto now = std::chrono::steady_clock::now();
     if (now - last_peer_activity_ >= heartbeat_timeout) {
         ++heartbeat_timeouts_;
         protocol_fault("link peer heartbeat timed out");

@@ -38,6 +38,8 @@ struct RemoteLinkSession {
     bool hosting{};
     bool failure_reported{};
     bool diagnostics{};
+    unsigned automatic_retry_attempts{};
+    std::chrono::steady_clock::time_point next_automatic_retry{};
     bool scanning{};
     std::chrono::steady_clock::time_point scan_deadline{};
     std::chrono::steady_clock::time_point next_pending_poll{};

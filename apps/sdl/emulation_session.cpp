@@ -550,6 +550,13 @@ void trace_remote_frame(gameboy::Emulator& emulator,
                << " pc=" << remote.endpoint.peer_clock_busy()
                << " bo=" << remote.endpoint.request_backoff()
                << " m=" << remote.active_channel().malformed_packets()
+               << " hr=" << remote.endpoint.handshake_retries()
+               << " dr=" << remote.endpoint.state_digest_retries()
+               << " rtt=" << remote.endpoint.smoothed_rtt_ms()
+               << " jit=" << remote.endpoint.rtt_jitter_ms()
+               << " rtts=" << remote.endpoint.rtt_samples()
+               << " cq=" << remote.active_channel().queued_packets()
+               << " cb=" << remote.active_channel().buffered_bytes()
                << " phase=" << std::dec << serial.phase();
     append_trace_cpu(output, emulator);
     append_trace_pokemon(output, emulator);
@@ -781,6 +788,8 @@ void start_remote_link_session(gameboy::Emulator& emulator,
     }
     remote.enabled = true;
     remote.failure_reported = false;
+    remote.automatic_retry_attempts = 0;
+    remote.next_automatic_retry = {};
     remote.next_pending_poll = {};
     if (link_diagnostics) {
         start_link_trace(preference_path, hosting ? "host" : "join",
@@ -823,6 +832,8 @@ void stop_remote_link_session(gameboy::Emulator& emulator,
     remote.bluetooth_channel.close();
     remote.enabled = false;
     remote.failure_reported = false;
+    remote.automatic_retry_attempts = 0;
+    remote.next_automatic_retry = {};
     remote.next_pending_poll = {};
     remote.diagnostics = false;
     emulator.bus().connect_printer(true);
@@ -886,6 +897,8 @@ void retry_remote_link_session(gameboy::Emulator& emulator,
                            emulator.link_compatibility_id(),
                            emulator.link_compatibility_profile());
     remote.failure_reported = false;
+    remote.automatic_retry_attempts = 0;
+    remote.next_automatic_retry = {};
 }
 
 

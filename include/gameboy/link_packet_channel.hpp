@@ -30,6 +30,12 @@ public:
     [[nodiscard]] virtual std::optional<LinkPacket> receive() noexcept = 0;
     [[nodiscard]] virtual State state() const noexcept = 0;
     [[nodiscard]] virtual std::uint16_t local_port() const noexcept { return 0; }
+    [[nodiscard]] virtual std::size_t queued_packets() const noexcept {
+        return 0;
+    }
+    [[nodiscard]] virtual std::size_t buffered_bytes() const noexcept {
+        return 0;
+    }
     [[nodiscard]] virtual std::uint64_t malformed_packets() const noexcept {
         return 0;
     }

@@ -64,6 +64,22 @@ public:
     void close() noexcept override { state_ = State::disconnected; }
     void fail() noexcept { state_ = State::failed; }
     void drop_next_send() noexcept { dropped_sends_ = 1; }
+    void duplicate_next_send() noexcept { duplicated_sends_ = 1; }
+    void delay_next_send() noexcept { delayed_sends_ = 1; }
+    void release_delayed_send() noexcept {
+        if (delayed_packet_.has_value() && peer_ != nullptr &&
+            state_ == State::connected) {
+            peer_->packets_.push_back(*delayed_packet_);
+            delayed_packet_.reset();
+        }
+    }
+    void inject(const gameboy::LinkPacket& packet) noexcept {
+        packets_.push_back(packet);
+    }
+    void clear() noexcept {
+        packets_.clear();
+        delayed_packet_.reset();
+    }
     [[nodiscard]] bool send(const gameboy::LinkPacket& packet) noexcept override {
         if (peer_ == nullptr || state_ != State::connected) return false;
         if (dropped_sends_ != 0) {
@@ -71,6 +87,16 @@ public:
             return true;
         }
         peer_->packets_.push_back(packet);
+        if (delayed_sends_ != 0) {
+            --delayed_sends_;
+            delayed_packet_ = packet;
+            peer_->packets_.pop_back();
+            return true;
+        }
+        if (duplicated_sends_ != 0) {
+            --duplicated_sends_;
+            peer_->packets_.push_back(packet);
+        }
         return true;
     }
     [[nodiscard]] std::optional<gameboy::LinkPacket> receive() noexcept override {
@@ -86,6 +112,9 @@ private:
     State state_{State::disconnected};
     std::deque<gameboy::LinkPacket> packets_;
     unsigned dropped_sends_{};
+    unsigned duplicated_sends_{};
+    unsigned delayed_sends_{};
+    std::optional<gameboy::LinkPacket> delayed_packet_;
 };
 
 std::vector<std::uint8_t> test_rom(
@@ -912,6 +941,7 @@ void test_packet_retransmission_after_dropped_frames() {
         join_endpoint.poll();
         if (!host.serial_port().transfer_active() &&
             !join.serial_port().transfer_active()) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
     check(host_endpoint.request_retries() != 0 &&
               host.read8(0xFF01) == 0x3C && join.read8(0xFF01) == 0xA5 &&
@@ -924,10 +954,149 @@ void test_packet_retransmission_after_dropped_frames() {
     for (unsigned attempt = 0; attempt < 40; ++attempt) {
         host_endpoint.poll();
         join_endpoint.poll();
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
     check(host_endpoint.reset_retries() != 0 &&
               host_endpoint.reset_acknowledgements() != 0,
           "dropped reset acknowledgements are retried before resuming");
+    host_endpoint.detach();
+    join_endpoint.detach();
+}
+
+void test_packet_fault_recovery_and_reconnect() {
+    QueuePacketChannel host_channel;
+    QueuePacketChannel join_channel;
+    host_channel.connect_to(join_channel);
+    join_channel.connect_to(host_channel);
+    gameboy::MemoryBus host{gameboy::Cartridge{test_rom()}};
+    gameboy::MemoryBus join{gameboy::Cartridge{test_rom()}};
+    gameboy::TcpSerialEndpoint host_endpoint;
+    gameboy::TcpSerialEndpoint join_endpoint;
+    host_endpoint.set_arbitration_priority(true);
+    join_endpoint.set_arbitration_priority(false);
+    host_endpoint.attach(host.serial_port(), host_channel, 0xCAFE);
+    join_endpoint.attach(join.serial_port(), join_channel, 0xCAFE);
+    for (unsigned attempt = 0; attempt < 20; ++attempt) {
+        host_endpoint.poll();
+        join_endpoint.poll();
+    }
+
+    host_channel.duplicate_next_send();
+    host.write8(0xFF01, 0x12);
+    join.write8(0xFF01, 0x34);
+    join.write8(0xFF02, 0x80);
+    host.write8(0xFF02, 0x81);
+    for (unsigned cycle = 0; cycle < 2000; ++cycle) {
+        host.tick(4);
+        join.tick(4);
+        host_endpoint.poll();
+        join_endpoint.poll();
+        if (!host.serial_port().transfer_active() &&
+            !join.serial_port().transfer_active()) break;
+    }
+    check(join_endpoint.duplicate_requests() != 0 &&
+              host.read8(0xFF01) == 0x34 && join.read8(0xFF01) == 0x12 &&
+              host_channel.state() == gameboy::LinkPacketChannel::State::connected,
+          "duplicated serial requests remain at-most-once and recover");
+
+    join_channel.delay_next_send();
+    host.write8(0xFF01, 0x56);
+    join.write8(0xFF01, 0x78);
+    join.write8(0xFF02, 0x80);
+    host.write8(0xFF02, 0x81);
+    for (unsigned cycle = 0; cycle < 2000; ++cycle) {
+        host.tick(4);
+        join.tick(4);
+        host_endpoint.poll();
+        join_endpoint.poll();
+        if (!host.serial_port().transfer_active() &&
+            !join.serial_port().transfer_active()) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    join_channel.release_delayed_send();
+    host_endpoint.poll();
+    check(host_endpoint.request_retries() != 0 &&
+              host.read8(0xFF01) == 0x78 && join.read8(0xFF01) == 0x56 &&
+              host_channel.state() == gameboy::LinkPacketChannel::State::connected,
+          "delayed responses trigger timed retry without desynchronizing");
+
+    const auto old_join_session = join_endpoint.session_id();
+    host_channel.inject({gameboy::LinkPacketType::bit, 40, 1, 0x01,
+                         old_join_session});
+    host_channel.inject({gameboy::LinkPacketType::bit, 42, 1, 0x01,
+                         old_join_session});
+    host_endpoint.poll();
+    check((host_channel.state() == gameboy::LinkPacketChannel::State::failed ||
+           host_channel.state() == gameboy::LinkPacketChannel::State::disconnected) &&
+              host_endpoint.protocol_errors() != 0,
+          "reordered serial requests fail closed instead of drifting state");
+
+    host_endpoint.detach();
+    join_endpoint.detach();
+    host_channel.clear();
+    join_channel.clear();
+    host_channel.connect_to(join_channel);
+    join_channel.connect_to(host_channel);
+    host_endpoint.attach(host.serial_port(), host_channel, 0xCAFE);
+    join_endpoint.attach(join.serial_port(), join_channel, 0xCAFE);
+    for (unsigned attempt = 0; attempt < 20; ++attempt) {
+        host_endpoint.poll();
+        join_endpoint.poll();
+    }
+    check(host_endpoint.session_id() != old_join_session &&
+              host_endpoint.peer_ready_for_link() &&
+              join_endpoint.state_digest_valid(),
+          "reconnect establishes a fresh fenced session after a protocol fault");
+    host_endpoint.detach();
+    join_endpoint.detach();
+}
+
+void test_packet_sustained_transfer_soak() {
+    QueuePacketChannel host_channel;
+    QueuePacketChannel join_channel;
+    host_channel.connect_to(join_channel);
+    join_channel.connect_to(host_channel);
+    gameboy::MemoryBus host{gameboy::Cartridge{test_rom()}};
+    gameboy::MemoryBus join{gameboy::Cartridge{test_rom()}};
+    gameboy::TcpSerialEndpoint host_endpoint;
+    gameboy::TcpSerialEndpoint join_endpoint;
+    host_endpoint.set_arbitration_priority(true);
+    join_endpoint.set_arbitration_priority(false);
+    host_endpoint.attach(host.serial_port(), host_channel, 0x5150);
+    join_endpoint.attach(join.serial_port(), join_channel, 0x5150);
+    for (unsigned attempt = 0; attempt < 20; ++attempt) {
+        host_endpoint.poll();
+        join_endpoint.poll();
+    }
+
+    constexpr unsigned transfers = 128;
+    for (unsigned transfer = 0; transfer < transfers; ++transfer) {
+        const auto host_value = static_cast<std::uint8_t>(transfer ^ 0x5A);
+        const auto join_value = static_cast<std::uint8_t>(transfer ^ 0xA5);
+        host.write8(0xFF01, host_value);
+        join.write8(0xFF01, join_value);
+        join.write8(0xFF02, 0x80);
+        host.write8(0xFF02, 0x81);
+        for (unsigned cycle = 0; cycle < 2000; ++cycle) {
+            host.tick(4);
+            join.tick(4);
+            host_endpoint.poll();
+            join_endpoint.poll();
+            if (!host.serial_port().transfer_active() &&
+                !join.serial_port().transfer_active()) break;
+        }
+        check(!host.serial_port().transfer_active() &&
+                  !join.serial_port().transfer_active() &&
+                  host.read8(0xFF01) == join_value &&
+                  join.read8(0xFF01) == host_value,
+              "sustained serial transfer remains synchronized");
+        if (failures != 0) break;
+    }
+    check(host.serial_port().transfers_completed() == transfers &&
+              join.serial_port().transfers_completed() == transfers &&
+              host_endpoint.protocol_errors() == 0 &&
+              join_endpoint.protocol_errors() == 0,
+          "sustained link soak completes without protocol drift");
     host_endpoint.detach();
     join_endpoint.detach();
 }
@@ -1279,6 +1448,8 @@ int main() {
     test_packet_endpoint_disconnect_resets_serial();
     test_packet_session_and_request_ordering();
     test_packet_retransmission_after_dropped_frames();
+    test_packet_fault_recovery_and_reconnect();
+    test_packet_sustained_transfer_soak();
     test_packet_channel_rejects_profile_mismatch();
     test_tcp_link_channel_loopback();
     test_tcp_serial_endpoint_loopback();

@@ -37,6 +37,13 @@ public:
     [[nodiscard]] bool send(const LinkPacket& packet) noexcept override;
     [[nodiscard]] std::optional<LinkPacket> receive() noexcept override;
     [[nodiscard]] State state() const noexcept override { return state_; }
+    [[nodiscard]] std::size_t queued_packets() const noexcept override {
+        return packets_.size();
+    }
+    [[nodiscard]] std::size_t buffered_bytes() const noexcept override {
+        return (send_buffer_.size() - send_offset_) + receive_buffer_.size() +
+               packets_.size() * LinkPacketCodec::wire_size;
+    }
     [[nodiscard]] std::uint16_t local_port() const noexcept override;
     // Number of complete frames rejected by LinkPacketCodec since the last
     // connection reset. Kept separate from socket failures for diagnostics.

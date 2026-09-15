@@ -35,7 +35,8 @@ public:
     [[nodiscard]] bool peer_ready_for_link() const noexcept {
         return connected() && peer_hello_seen_ && peer_compatible_ &&
                (arbitration_priority_ || peer_request_seen_) &&
-               !reset_waiting_for_ack_ && state_digest_valid_;
+               !reset_waiting_for_ack_ && state_digest_valid_ &&
+               state_digest_acknowledged_;
     }
     [[nodiscard]] bool waiting_for_peer() const noexcept {
         return pending_sequence_.has_value() && !response_.has_value() &&
@@ -186,6 +187,21 @@ public:
     [[nodiscard]] std::uint64_t state_digest_mismatches() const noexcept {
         return state_digest_mismatches_;
     }
+    [[nodiscard]] std::uint64_t handshake_retries() const noexcept {
+        return handshake_retries_;
+    }
+    [[nodiscard]] std::uint64_t state_digest_retries() const noexcept {
+        return state_digest_retries_;
+    }
+    [[nodiscard]] std::uint64_t smoothed_rtt_ms() const noexcept {
+        return smoothed_rtt_ms_;
+    }
+    [[nodiscard]] std::uint64_t rtt_jitter_ms() const noexcept {
+        return rtt_jitter_ms_;
+    }
+    [[nodiscard]] std::uint64_t rtt_samples() const noexcept {
+        return rtt_samples_;
+    }
     [[nodiscard]] std::uint64_t transfers_completed() const noexcept {
         return port_ == nullptr ? 0 : port_->transfers_completed();
     }
@@ -208,13 +224,17 @@ private:
     static constexpr std::uint8_t reset_flag = 0x80;
     static constexpr std::uint8_t reset_ack_flag = 0x40;
     static constexpr std::uint8_t heartbeat_ack_flag = 0x20;
+    static constexpr std::uint8_t state_digest_ack_flag = 0x10;
     // A request may legitimately arrive a few frames before the peer arms
     // its receiver. Do not retain it forever when the peer has left serial.
     static constexpr unsigned deferred_request_poll_limit = 240;
     static constexpr std::uint8_t byte_transfer_capability = 0x10;
-    static constexpr unsigned reset_ack_wait_poll_limit = 240;
-    static constexpr unsigned retry_interval_polls = 8;
     static constexpr unsigned maximum_request_retries = 32;
+    static constexpr unsigned maximum_handshake_retries = 24;
+    static constexpr auto initial_retry_timeout = std::chrono::milliseconds(80);
+    static constexpr auto maximum_retry_timeout = std::chrono::milliseconds(1200);
+    static constexpr auto handshake_retry_interval = std::chrono::milliseconds(250);
+    static constexpr auto state_digest_retry_interval = std::chrono::milliseconds(250);
     static constexpr auto heartbeat_interval = std::chrono::seconds(1);
     static constexpr auto heartbeat_timeout = std::chrono::seconds(5);
 
@@ -234,6 +254,10 @@ private:
     std::optional<LinkPacket> reset_packet_;
     unsigned reset_retry_polls_{};
     unsigned reset_retry_count_{};
+    std::chrono::steady_clock::time_point pending_retry_deadline_{};
+    std::chrono::steady_clock::time_point reset_retry_deadline_{};
+    std::chrono::steady_clock::time_point pending_sent_at_{};
+    std::chrono::milliseconds retry_timeout_{initial_retry_timeout};
     std::optional<std::uint32_t> last_peer_request_sequence_;
     std::optional<LinkPacket> last_peer_request_response_;
     unsigned request_backoff_{};
@@ -260,9 +284,11 @@ private:
     std::optional<std::uint32_t> peer_state_digest_;
     bool state_digest_sent_{};
     bool state_digest_valid_{};
+    bool state_digest_acknowledged_{};
+    std::chrono::steady_clock::time_point next_hello_retry_{};
+    std::chrono::steady_clock::time_point next_state_digest_retry_{};
     std::optional<std::uint32_t> reset_sequence_;
     bool reset_waiting_for_ack_{};
-    unsigned reset_ack_wait_polls_{};
     std::chrono::steady_clock::time_point last_peer_activity_{};
     std::chrono::steady_clock::time_point last_heartbeat_sent_{};
     std::uint64_t requests_sent_{};
@@ -286,10 +312,18 @@ private:
     std::uint64_t request_retries_{};
     std::uint64_t reset_retries_{};
     std::uint64_t state_digest_mismatches_{};
+    std::uint64_t handshake_retries_{};
+    std::uint64_t state_digest_retries_{};
+    std::uint64_t smoothed_rtt_ms_{};
+    std::uint64_t rtt_jitter_ms_{};
+    std::uint64_t rtt_samples_{};
     std::uint64_t diagnostic_session_{};
 
     [[nodiscard]] bool send_packet(LinkPacket packet) noexcept;
     [[nodiscard]] std::uint32_t state_digest() const noexcept;
+    [[nodiscard]] std::chrono::milliseconds retry_delay(
+        unsigned retry_count) const noexcept;
+    void record_rtt(std::chrono::steady_clock::duration elapsed) noexcept;
     void protocol_fault(const char* message) noexcept;
     [[nodiscard]] static bool is_next_sequence(std::uint32_t previous,
                                                 std::uint32_t next) noexcept;
