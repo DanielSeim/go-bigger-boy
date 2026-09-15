@@ -21,6 +21,33 @@ struct DesktopBackgroundMap {
     std::uint8_t scroll_y{};
 };
 
+struct DesktopViewportRect {
+    float x{};
+    float y{};
+    float width{};
+    float height{};
+};
+
+// Keep the map-to-screen transform in one place. The background map wraps at
+// 256 pixels, while the live LCD window is an inset 160x144 rectangle. Having
+// this transform shared by rendering and its contract tests prevents camera
+// offsets from drifting when the debugger is resized or the scroll registers
+// wrap around.
+[[nodiscard]] constexpr unsigned desktop_viewport_map_coordinate(
+    const unsigned scroll, const unsigned map_coordinate,
+    const unsigned visible_origin) noexcept {
+    return (scroll + map_coordinate + DesktopBackgroundMap::width -
+            visible_origin) & 0xFFU;
+}
+
+[[nodiscard]] constexpr DesktopViewportRect desktop_viewport_visible_rect(
+    const float map_x, const float map_y, const float scale) noexcept {
+    return {map_x + DesktopBackgroundMap::visible_origin_x * scale,
+            map_y + DesktopBackgroundMap::visible_origin_y * scale,
+            gameboy::Ppu::screen_width * scale,
+            gameboy::Ppu::screen_height * scale};
+}
+
 namespace detail {
 
 [[nodiscard]] inline std::uint32_t rgb555_color(const std::uint8_t low,
@@ -119,12 +146,10 @@ namespace detail {
     result.scroll_y = raw.scroll_y;
     for (unsigned y = 0; y < DesktopBackgroundMap::height; ++y) {
         for (unsigned x = 0; x < DesktopBackgroundMap::width; ++x) {
-            const auto source_x =
-                (static_cast<unsigned>(raw.scroll_x) + x + 256U -
-                 DesktopBackgroundMap::visible_origin_x) & 0xFFU;
-            const auto source_y =
-                (static_cast<unsigned>(raw.scroll_y) + y + 256U -
-                 DesktopBackgroundMap::visible_origin_y) & 0xFFU;
+            const auto source_x = desktop_viewport_map_coordinate(
+                raw.scroll_x, x, DesktopBackgroundMap::visible_origin_x);
+            const auto source_y = desktop_viewport_map_coordinate(
+                raw.scroll_y, y, DesktopBackgroundMap::visible_origin_y);
             result.pixels[static_cast<std::size_t>(y) *
                               DesktopBackgroundMap::width + x] =
                 raw.pixels[static_cast<std::size_t>(source_y) *

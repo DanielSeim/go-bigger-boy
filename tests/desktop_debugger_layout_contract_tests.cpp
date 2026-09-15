@@ -57,7 +57,7 @@ void test_layout_is_stable_at_supported_sizes() {
         const std::array buttons{
             layout.video_viewers, layout.hardware_inspector,
             layout.breakpoint_toggle, layout.breakpoint_clear, layout.record,
-            layout.replay, layout.tas, layout.run_pause, layout.step_cpu,
+            layout.replay, layout.movie_status, layout.tas, layout.run_pause, layout.step_cpu,
             layout.step_frame, layout.sprite_editor};
         for (const auto& button : buttons) {
             check(inside(button, effective_width, effective_height),
@@ -69,6 +69,9 @@ void test_layout_is_stable_at_supported_sizes() {
         check(gbb::sdl::desktop_debugger_memory_row_count(layout.memory) >= 1 &&
                   gbb::sdl::desktop_debugger_memory_row_count(layout.memory) <= 16,
               "memory row count is bounded by the panel");
+        check(disjoint(layout.replay, layout.movie_status) &&
+                  disjoint(layout.movie_status, layout.tas),
+              "input movie status does not overlap adjacent controls");
     }
 }
 

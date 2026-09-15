@@ -22,6 +22,7 @@ struct DesktopDebuggerLayout {
     SDL_FRect breakpoint_clear{};
     SDL_FRect record{};
     SDL_FRect replay{};
+    SDL_FRect movie_status{};
     SDL_FRect tas{};
     SDL_FRect run_pause{};
     SDL_FRect step_cpu{};
@@ -88,6 +89,8 @@ inline constexpr int desktop_debugger_minimum_height = 700;
     layout.record = {margin, movie_y, 170.0F, 36.0F};
     layout.replay = {208.0F, movie_y, 170.0F, 36.0F};
     layout.tas = {734.0F, movie_y, 150.0F, 36.0F};
+    layout.movie_status = {402.0F, movie_y,
+                           std::max(120.0F, layout.tas.x - 422.0F), 36.0F};
     layout.run_pause = {margin, button_y, 150.0F, 36.0F};
     layout.step_cpu = {188.0F, button_y, 170.0F, 36.0F};
     layout.step_frame = {372.0F, button_y, 150.0F, 36.0F};

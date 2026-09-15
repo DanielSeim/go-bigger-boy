@@ -640,8 +640,7 @@ public:
         button(geometry.record,
                movie.recording() ? "F6 STOP + SAVE" : "F6 START RECORDING");
         button(geometry.replay, "F7 REPLAY LAST");
-        text(geometry.record.x + geometry.record.w + 20.0F,
-             geometry.record.y + 14,
+        text(geometry.movie_status.x, geometry.movie_status.y + 14,
              movie.replaying()
                  ? "REPLAYING"
                  : movie.recording()
@@ -895,11 +894,11 @@ private:
                                                 const float map_y,
                                                 const float scale) {
         static_cast<void>(SDL_SetRenderDrawColor(renderer, 69, 207, 238, 255));
-        const SDL_FRect visible{
-            map_x + DesktopBackgroundMap::visible_origin_x * scale,
-            map_y + DesktopBackgroundMap::visible_origin_y * scale,
-            gameboy::Ppu::screen_width * scale,
-            gameboy::Ppu::screen_height * scale};
+        const auto visible_geometry =
+            desktop_viewport_visible_rect(map_x, map_y, scale);
+        const SDL_FRect visible{visible_geometry.x, visible_geometry.y,
+                                visible_geometry.width,
+                                visible_geometry.height};
         // The calculated map is useful for inspecting scrollable background
         // data, but it cannot represent the live window layer or sprites
         // outside the reconstructed background. Composite the authoritative

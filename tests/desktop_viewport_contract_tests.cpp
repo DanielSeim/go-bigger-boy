@@ -62,6 +62,24 @@ void test_unsigned_tile_map_and_scroll() {
           "centers the calculated view on the live scroll position");
 }
 
+void test_viewport_transform_wraps_at_map_edges() {
+    check(gbb::sdl::desktop_viewport_map_coordinate(
+              0, 0, gbb::sdl::DesktopBackgroundMap::visible_origin_x) == 208,
+          "viewport transform positions the top-left LCD pixel");
+    check(gbb::sdl::desktop_viewport_map_coordinate(
+              255, 0, gbb::sdl::DesktopBackgroundMap::visible_origin_x) == 207,
+          "viewport transform wraps horizontal scroll at 256 pixels");
+    check(gbb::sdl::desktop_viewport_map_coordinate(
+              255, 255, gbb::sdl::DesktopBackgroundMap::visible_origin_y) == 198,
+          "viewport transform wraps vertical scroll at 256 pixels");
+
+    const auto visible = gbb::sdl::desktop_viewport_visible_rect(24.0F, 72.0F,
+                                                                   2.0F);
+    check(visible.x == 120.0F && visible.y == 184.0F &&
+              visible.width == 320.0F && visible.height == 288.0F,
+          "live viewport overlay uses the native 160 by 144 dimensions");
+}
+
 void test_signed_tile_map_and_flips() {
     auto bus = test_bus();
     bus.initialize_post_boot();
@@ -102,6 +120,7 @@ void test_signed_tile_map_and_flips() {
 
 int main() {
     test_unsigned_tile_map_and_scroll();
+    test_viewport_transform_wraps_at_map_edges();
     test_signed_tile_map_and_flips();
     return failures == 0 ? 0 : 1;
 }

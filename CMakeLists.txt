@@ -923,7 +923,8 @@ if(GAMEBOY_BUILD_TESTS)
     if(NOT ANDROID)
         add_executable(gameboy_input_movie_contract_tests
             tests/input_movie_contract_tests.cpp
-            apps/sdl/input_movie.cpp)
+            apps/sdl/input_movie.cpp
+            src/core_runtime.cpp)
         target_include_directories(gameboy_input_movie_contract_tests
             PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/apps/sdl)
         target_link_libraries(gameboy_input_movie_contract_tests PRIVATE gameboy_core)
