@@ -2138,6 +2138,23 @@ int main(int argc, char** argv) {
                     continue;
                 }
 #endif
+                const auto handle_rom_load_error = [&](const std::string& message) {
+#ifndef __ANDROID__
+                    if (!emulator) {
+#ifdef _WIN32
+                        SDL_ShowWindow(sdl.window);
+                        SDL_RaiseWindow(sdl.window);
+#endif
+                        dashboard_visible = true;
+                        dashboard_selection = 0;
+                        dashboard_filter.clear();
+                    }
+                    show_error(sdl.window, message);
+#else
+                    show_error(sdl.window, message);
+                    if (!emulator) open_android_library(true, current_rom);
+#endif
+                };
                 try {
                     if (remote_link.active() && emulator != nullptr) {
                         stop_remote_link_session(*emulator, remote_link);
@@ -2215,17 +2232,11 @@ int main(int argc, char** argv) {
                     update_window_title(sdl.window, current_rom, paused,
                                         configuring);
                 } catch (const std::exception& error) {
-                    show_error(sdl.window, error.what());
-                    if (!emulator) {
-#ifdef _WIN32
-                        SDL_HideWindow(sdl.window);
-#endif
-                        dashboard_visible = false;
-                        dashboard_selection = 0;
-#ifdef __ANDROID__
-                        open_android_library(true, current_rom);
-#endif
-                    }
+                    handle_rom_load_error(error.what());
+                } catch (...) {
+                    handle_rom_load_error(
+                        "The selected ROM could not be loaded because an "
+                        "unexpected error occurred.");
                 }
                 pending_rom.reset();
                 pending_rom_from_dashboard = false;
