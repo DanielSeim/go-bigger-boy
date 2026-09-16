@@ -1152,6 +1152,7 @@ int run_emulation(int argc, char** argv) {
                 }
                 if (result.voxel_profile_changed) {
                     sdl.voxel_profile_loaded = false;
+                    sdl.voxel_scene_cached = false;
                 }
                 if (result.link_settings_changed) {
                     const auto& updated = result.link_settings;

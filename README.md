@@ -578,7 +578,10 @@ Per-ROM depth and camera tuning can be supplied in `voxel-profiles.ini` beside
 `sprite_depth`, `lighting`, `background_depth_far`,
 `background_depth_near`, `background_transparent_depth`, `window_depth_far`,
 `window_depth_near`, `sprite_depth_far`, `sprite_depth_near`, and
-`framebuffer_facade` keys. The default layer ranges are background `100` → `20`
+`popup_parallax`, `popup_object_height`, `popup_sprite_height`,
+`popup_card_thickness`, `popup_sprite_thickness`, and `framebuffer_facade` keys.
+The popup values control page parallax, cut-out height and extrusion without
+requiring a renderer rebuild. The default layer ranges are background `100` → `20`
 with transparent pixels at `95`, window `90` → `50`, and sprites/objects
 `45` → `25`; each range is normalized into a guaranteed background → window →
 sprite ordering (larger depth values are farther from the viewer). Set

@@ -875,3 +875,37 @@ The voxel comparison prototypes are available as selectable video pipelines:
   feet grounded on the page. Small isolated texture pixels stay on the page.
 
 All three modes share the current camera controls, ROM profiles and layer ordering, so they can be switched from the desktop video menu or the web video selector while a ROM is running. The shape-aware and pop-up modes are intentionally conservative: they are visual comparison tools and not yet replacements for profile-driven metasprite/terrain extraction. The pop-up mode now has an automatic connected-component object mask; future work can replace that heuristic with cached, profile-authored metasprite/terrain masks as described above.
+
+### Current visual iteration safeguards
+
+The SDL and web renderers now cache the provenance-built `VoxelScene`. The cache
+key includes visible tile provenance, scroll/window registers and visible OAM
+entries, but deliberately excludes emulation cycle counters and framebuffer
+pixels. A frame that only advances timing therefore reuses the same object
+classification, while a real map, scroll or sprite change invalidates it.
+Sprite ownership is kept in front of background-object ownership, and popup
+object masks skip sprite-covered pixels so a scenery card cannot occlude a
+character.
+
+Structural discovery accepts bounded 2×2 through 4×4 map-aligned footprints,
+including rectangular 4×2/2×4 and 3×4/4×3 metatiles. Each accepted footprint
+still needs repeated tile signatures and contrasting boundaries, so enlarging
+the merge window does not turn broad terrain strips into cards. The profile
+exposes `popup_parallax`, `popup_object_height`, `popup_sprite_height`,
+`popup_card_thickness` and `popup_sprite_thickness` for visual tuning.
+
+For representative device or desktop captures, compare the complete render
+with the dependency-free regression helper:
+
+```sh
+python3 scripts/compare_voxel_screenshots.py \
+  --reference tests/visual/voxel-popup-reference.png \
+  --actual /path/to/capture.ppm \
+  --output /tmp/voxel-popup-comparison.json
+```
+
+The report includes dimensions, mismatch count, mismatch fraction and the
+first differing pixel. This makes viewport drift and control/object overlap
+visible instead of silently accepting a partial crop. The scene cache and
+full-map object-count contract tests provide deterministic CI coverage without
+using a wall-clock threshold, which would be noisy across runners.

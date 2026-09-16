@@ -38,6 +38,14 @@ struct VoxelProfile {
     float window_depth_near{50.0F};
     float sprite_depth_far{45.0F};
     float sprite_depth_near{25.0F};
+    // Pop-up book presentation tuning. These values are intentionally kept
+    // in the ROM profile so visual iteration does not require a renderer
+    // rebuild.
+    float popup_parallax{0.86F};
+    float popup_object_height{0.28F};
+    float popup_sprite_height{0.86F};
+    float popup_card_thickness{4.5F};
+    float popup_sprite_thickness{1.65F};
     // Enable the conservative provenance-based background object detector by
     // default. It only accepts bounded, map-aligned structures; ambiguous
     // artwork remains on the page.

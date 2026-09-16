@@ -463,7 +463,9 @@ VoxelScene build_voxel_scene(const SceneSnapshot& snapshot,
     // diversity; this prevents a long strip of terrain or a flat sky from
     // becoming one giant floating card.
     const auto structural_dimensions =
-        std::array<std::pair<int, int>, 4>{{{3, 3}, {2, 3}, {3, 2}, {2, 2}}};
+        std::array<std::pair<int, int>, 9>{{
+            {4, 4}, {4, 3}, {3, 4}, {4, 2}, {2, 4},
+            {3, 3}, {2, 3}, {3, 2}, {2, 2}}};
     for (const auto [width, height] : structural_dimensions) {
         for (const auto& [position, _] : positions) {
             std::vector<std::size_t> matched;
@@ -554,6 +556,48 @@ VoxelScene build_voxel_scene(const SceneSnapshot& snapshot,
             scene.candidates.push_back(object);
     }
     return scene;
+}
+
+std::uint64_t voxel_scene_signature(const SceneSnapshot& snapshot) noexcept {
+    std::uint64_t hash = UINT64_C(14695981039346656037);
+    const auto mix = [&hash](const std::uint64_t value) {
+        hash ^= value;
+        hash *= UINT64_C(1099511628211);
+    };
+    const auto mix_byte = [&mix](const std::uint8_t value) { mix(value); };
+    mix(snapshot.width);
+    mix(snapshot.height);
+    mix_byte(snapshot.lcdc);
+    mix_byte(snapshot.scx);
+    mix_byte(snapshot.scy);
+    mix_byte(snapshot.wx);
+    mix_byte(snapshot.wy);
+    for (const auto& cell : snapshot.visible_tile_cells) {
+        mix_byte(static_cast<std::uint8_t>(cell.source));
+        mix(static_cast<std::uint16_t>(cell.screen_x));
+        mix(static_cast<std::uint16_t>(cell.screen_y));
+        mix_byte(cell.visible_width);
+        mix_byte(cell.visible_height);
+        mix_byte(cell.map_x);
+        mix_byte(cell.map_y);
+        mix(cell.map_address);
+        mix_byte(cell.tile_id);
+        mix_byte(cell.attributes);
+        mix(cell.tile_data_index);
+        mix_byte(cell.tile_bank);
+        mix_byte(cell.palette);
+        for (const auto row : cell.opaque_mask) mix_byte(row);
+    }
+    for (const auto& sprite : snapshot.sprites) {
+        mix_byte(sprite.oam_y);
+        mix_byte(sprite.oam_x);
+        mix_byte(sprite.tile);
+        mix_byte(sprite.attributes);
+        mix(static_cast<std::uint16_t>(sprite.screen_x));
+        mix(static_cast<std::uint16_t>(sprite.screen_y));
+        mix_byte(sprite.visible ? 1 : 0);
+    }
+    return hash;
 }
 
 } // namespace gbb

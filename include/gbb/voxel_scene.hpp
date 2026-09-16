@@ -62,4 +62,11 @@ struct VoxelSceneBuildOptions {
     const SceneSnapshot& snapshot,
     const VoxelSceneBuildOptions& options = {});
 
+// Return a stable key for the scene inputs that affect object classification.
+// Emulation cycle counters and framebuffer pixels are intentionally excluded;
+// callers can use this to avoid rebuilding the same provenance scene every
+// render frame.
+[[nodiscard]] std::uint64_t voxel_scene_signature(
+    const SceneSnapshot& snapshot) noexcept;
+
 } // namespace gbb

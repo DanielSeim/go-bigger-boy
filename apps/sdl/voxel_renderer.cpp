@@ -56,22 +56,24 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
     // Pop-up book geometry is tuned separately from generic voxel relief so
     // raised scenery reads as a paper card without floating away from its
     // page hinge.
-    constexpr float popup_parallax = 0.86F;
-    constexpr float popup_object_height = 0.28F;
-    constexpr float popup_sprite_height = 0.86F;
-    constexpr float popup_card_thickness = 4.5F;
-    constexpr float popup_sprite_thickness = 1.65F;
-    const auto voxel_scene = gbb::build_voxel_scene(
-        context.scene_snapshot,
-        gbb::VoxelSceneBuildOptions{
-            true,
-            popup_book && profile.background_object_detection &&
-                context.scene_snapshot.width == gameboy::Ppu::screen_width &&
-                context.scene_snapshot.height == gameboy::Ppu::screen_height,
-            profile.background_object_min_cells,
-            profile.background_object_max_fraction,
-            profile.background_object_confidence,
-            &profile.background_object_templates});
+    const auto scene_key = gbb::voxel_scene_signature(context.scene_snapshot);
+    if (!context.voxel_scene_cached ||
+        context.voxel_scene_signature != scene_key) {
+        context.voxel_scene = gbb::build_voxel_scene(
+            context.scene_snapshot,
+            gbb::VoxelSceneBuildOptions{
+                true,
+                popup_book && profile.background_object_detection &&
+                    context.scene_snapshot.width == gameboy::Ppu::screen_width &&
+                    context.scene_snapshot.height == gameboy::Ppu::screen_height,
+                profile.background_object_min_cells,
+                profile.background_object_max_fraction,
+                profile.background_object_confidence,
+                &profile.background_object_templates});
+        context.voxel_scene_signature = scene_key;
+        context.voxel_scene_cached = true;
+    }
+    const auto& voxel_scene = context.voxel_scene;
     // Reserve a recessed plane for the complete framebuffer. Sprites and
     // window overlays are then elevated relative to this plane, giving the
     // diorama a clear far/middle/foreground separation.
@@ -168,7 +170,7 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
             // vertical lift above that page.  This is the pop-up-book layout:
             // distant background tiles lie flat, while windows and sprites
             // stand up from the page as independent objects.
-            const auto page_depth = popup_book ? -centered_y * popup_parallax
+            const auto page_depth = popup_book ? -centered_y * profile.popup_parallax
                                                : centered_y * 0.82F;
             const auto world_height = base_depth - z;
             const auto yaw_x = centered_x * yaw_cos - page_depth * yaw_sin;
@@ -378,6 +380,7 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
              ++pixel) {
             const auto owner = voxel_scene.object_owner[pixel];
             if (owner < 0 ||
+                sprite_mask[pixel] ||
                 static_cast<std::size_t>(owner) >= voxel_scene.objects.size() ||
                 voxel_scene.objects[static_cast<std::size_t>(owner)].kind !=
                     gbb::VoxelObjectKind::background_object)
@@ -449,6 +452,7 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
                 if (pending.size() < 6U) continue;
                 const auto anchor_y = max_y + 1;
                 for (const auto index : pending) {
+                    if (sprite_mask[index]) continue;
                     popup_object_mask[index] = true;
                     popup_object_anchor_y[index] = anchor_y;
                 }
@@ -612,8 +616,8 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
                                                 : static_cast<int>(y) + sprite_height;
                 // Sprite pixels are taller than static cut-outs so a player
                 // reads as a distinct foreground character.
-                const auto pixel_height = has_sprite ? popup_sprite_height
-                                                     : popup_object_height;
+                const auto pixel_height = has_sprite ? profile.popup_sprite_height
+                                                     : profile.popup_object_height;
                 const auto pixel_bottom = std::max(
                     0.0F, static_cast<float>(anchor_y) -
                                static_cast<float>(cell_y * cell_size + 1U)) *
@@ -622,7 +626,7 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
             }
             const auto centered_y = y + cell_size * 0.5F - 72.0F;
             const auto centered_x = x + cell_size * 0.5F - 80.0F;
-            const auto page_depth = popup_book ? -centered_y * popup_parallax
+            const auto page_depth = popup_book ? -centered_y * profile.popup_parallax
                                                : centered_y * 0.82F;
             const auto world_height = base_depth - depth;
             const auto rotated_y = popup_book
@@ -705,14 +709,16 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
                 // anchored at each shape's feet, while source rows become
                 // vertical height. Static cut-outs use a shallower voxel
                 // height; OAM sprites retain a taller, readable silhouette.
-                const auto sprite_pixel_height =
-                    column.sprite ? popup_sprite_height : popup_object_height;
+                const auto sprite_pixel_height = column.sprite
+                                                     ? profile.popup_sprite_height
+                                                     : profile.popup_object_height;
                 const auto pixel_bottom = std::max(
                     0.0F, static_cast<float>(anchor_y) - (y + 1.0F)) *
                            sprite_pixel_height;
                 const auto pixel_top = pixel_bottom + sprite_pixel_height;
-                const auto extrusion = column.sprite ? popup_sprite_thickness
-                                                     : popup_card_thickness;
+                const auto extrusion = column.sprite
+                                           ? profile.popup_sprite_thickness
+                                           : profile.popup_card_thickness;
                 const auto front_page = static_cast<float>(anchor_y) -
                                         extrusion * 0.5F;
                 const auto back_page = static_cast<float>(anchor_y) +

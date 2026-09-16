@@ -7,6 +7,7 @@
 #include "gbb/scene.hpp"
 #include "gbb/video.hpp"
 #include "gbb/voxel_profile.hpp"
+#include "gbb/voxel_scene.hpp"
 
 #include <SDL3/SDL.h>
 
@@ -28,6 +29,9 @@ struct VoxelRenderContext {
     gbb::VoxelProfile& voxel_profile;
     std::uint64_t& voxel_profile_fingerprint;
     bool& voxel_profile_loaded;
+    gbb::VoxelScene& voxel_scene;
+    std::uint64_t& voxel_scene_signature;
+    bool& voxel_scene_cached;
     std::vector<SDL_Vertex>& voxel_vertices;
     std::vector<int>& voxel_indices;
     float& voxel_camera_pitch_offset;
@@ -44,4 +48,3 @@ struct VoxelRenderContext {
                                          bool popup_book = false);
 
 } // namespace gbb::sdl
-

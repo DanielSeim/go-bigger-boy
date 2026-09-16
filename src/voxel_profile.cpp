@@ -34,6 +34,11 @@ constexpr std::string_view super_mario_land_profile =
     "window_depth_near=50\n"
     "sprite_depth_far=45\n"
     "sprite_depth_near=25\n"
+    "popup_parallax=0.86\n"
+    "popup_object_height=0.28\n"
+    "popup_sprite_height=0.86\n"
+    "popup_card_thickness=4.5\n"
+    "popup_sprite_thickness=1.65\n"
     "background_object_detection=1\n"
     "background_object_min_cells=4\n"
     "background_object_max_fraction=0.55\n"
@@ -132,6 +137,11 @@ void parse_key(VoxelProfile& profile, const std::string& key,
     else if (key == "window_depth_near") parse_float(value, profile.window_depth_near);
     else if (key == "sprite_depth_far") parse_float(value, profile.sprite_depth_far);
     else if (key == "sprite_depth_near") parse_float(value, profile.sprite_depth_near);
+    else if (key == "popup_parallax") parse_float(value, profile.popup_parallax);
+    else if (key == "popup_object_height") parse_float(value, profile.popup_object_height);
+    else if (key == "popup_sprite_height") parse_float(value, profile.popup_sprite_height);
+    else if (key == "popup_card_thickness") parse_float(value, profile.popup_card_thickness);
+    else if (key == "popup_sprite_thickness") parse_float(value, profile.popup_sprite_thickness);
     else if (key == "background_object_detection") parse_bool(value, profile.background_object_detection);
     else if (key == "background_object_min_cells") {
         float parsed = 0.0F;
@@ -169,6 +179,11 @@ void clamp_profile(VoxelProfile& profile) {
     profile.window_depth_near = std::clamp(profile.window_depth_near, 0.0F, profile.window_depth_far - 0.01F);
     profile.sprite_depth_far = std::clamp(profile.sprite_depth_far, 0.0F, 1000.0F);
     profile.sprite_depth_near = std::clamp(profile.sprite_depth_near, 0.0F, profile.sprite_depth_far - 0.01F);
+    profile.popup_parallax = std::clamp(profile.popup_parallax, 0.20F, 1.50F);
+    profile.popup_object_height = std::clamp(profile.popup_object_height, 0.05F, 1.50F);
+    profile.popup_sprite_height = std::clamp(profile.popup_sprite_height, 0.10F, 2.50F);
+    profile.popup_card_thickness = std::clamp(profile.popup_card_thickness, 0.50F, 16.0F);
+    profile.popup_sprite_thickness = std::clamp(profile.popup_sprite_thickness, 0.25F, 8.0F);
     profile.background_object_min_cells = std::clamp(profile.background_object_min_cells,
                                                       std::uint32_t{2},
                                                       std::uint32_t{64});
@@ -284,6 +299,11 @@ bool save_voxel_profile(const std::filesystem::path& path,
             << "window_depth_near=" << clamped.window_depth_near << '\n'
             << "sprite_depth_far=" << clamped.sprite_depth_far << '\n'
             << "sprite_depth_near=" << clamped.sprite_depth_near << '\n'
+            << "popup_parallax=" << clamped.popup_parallax << '\n'
+            << "popup_object_height=" << clamped.popup_object_height << '\n'
+            << "popup_sprite_height=" << clamped.popup_sprite_height << '\n'
+            << "popup_card_thickness=" << clamped.popup_card_thickness << '\n'
+            << "popup_sprite_thickness=" << clamped.popup_sprite_thickness << '\n'
             << "background_object_detection=" << (clamped.background_object_detection ? 1 : 0) << '\n'
             << "background_object_min_cells=" << clamped.background_object_min_cells << '\n'
             << "background_object_max_fraction=" << clamped.background_object_max_fraction << '\n'
@@ -405,6 +425,11 @@ void ensure_voxel_profile_file(const std::filesystem::path& path) {
               "window_depth_near=50\n"
               "sprite_depth_far=45\n"
               "sprite_depth_near=25\n"
+              "popup_parallax=0.86\n"
+              "popup_object_height=0.28\n"
+              "popup_sprite_height=0.86\n"
+              "popup_card_thickness=4.5\n"
+              "popup_sprite_thickness=1.65\n"
               "background_object_detection=1\n"
               "background_object_min_cells=4\n"
               "background_object_max_fraction=0.55\n"

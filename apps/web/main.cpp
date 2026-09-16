@@ -69,6 +69,9 @@ struct WebApp {
     std::vector<std::uint32_t> display_pixels;
     std::vector<SDL_Vertex> voxel_vertices;
     std::vector<int> voxel_indices;
+    gbb::VoxelScene voxel_scene{};
+    std::uint64_t voxel_scene_signature{};
+    bool voxel_scene_cached{};
     float voxel_camera_pitch_offset{};
     float voxel_camera_yaw_offset{};
     std::chrono::steady_clock::time_point previous_time{
@@ -148,24 +151,25 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
     const auto camera_yaw = profile.camera_yaw;
     const auto sprite_depth = profile.sprite_depth;
     const auto lighting = profile.lighting;
-    constexpr float popup_parallax = 0.86F;
-    constexpr float popup_object_height = 0.28F;
-    constexpr float popup_sprite_height = 0.86F;
-    constexpr float popup_card_thickness = 4.5F;
-    constexpr float popup_sprite_thickness = 1.65F;
     constexpr float voxel_ambient = 0.055F;
     const auto& scene = app.emulator->scene_snapshot();
-    const auto voxel_scene = gbb::build_voxel_scene(
-        scene,
-        gbb::VoxelSceneBuildOptions{
-            true,
-            popup_book && profile.background_object_detection &&
-                scene.width == gameboy::Ppu::screen_width &&
-                scene.height == gameboy::Ppu::screen_height,
-            profile.background_object_min_cells,
-            profile.background_object_max_fraction,
-            profile.background_object_confidence,
-            &profile.background_object_templates});
+    const auto scene_key = gbb::voxel_scene_signature(scene);
+    if (!app.voxel_scene_cached || app.voxel_scene_signature != scene_key) {
+        app.voxel_scene = gbb::build_voxel_scene(
+            scene,
+            gbb::VoxelSceneBuildOptions{
+                true,
+                popup_book && profile.background_object_detection &&
+                    scene.width == gameboy::Ppu::screen_width &&
+                    scene.height == gameboy::Ppu::screen_height,
+                profile.background_object_min_cells,
+                profile.background_object_max_fraction,
+                profile.background_object_confidence,
+                &profile.background_object_templates});
+        app.voxel_scene_signature = scene_key;
+        app.voxel_scene_cached = true;
+    }
+    const auto& voxel_scene = app.voxel_scene;
     const auto yaw = (camera_yaw + app.voxel_camera_yaw_offset) *
                      0.01745329251994329577F;
     const auto pitch = (popup_book
@@ -184,7 +188,7 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
             // Source Y becomes page depth; the renderer's Z value is the
             // vertical lift above that page. This keeps the background flat
             // like a book page while windows and sprites stand above it.
-            const auto page_depth = popup_book ? -centered_y * popup_parallax
+            const auto page_depth = popup_book ? -centered_y * profile.popup_parallax
                                                : centered_y * 0.82F;
             const auto world_height = base_depth - z;
             const auto yaw_x = centered_x * yaw_cos - page_depth * yaw_sin;
@@ -338,6 +342,7 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
              ++pixel) {
             const auto owner = voxel_scene.object_owner[pixel];
             if (owner < 0 ||
+                sprite_mask[pixel] ||
                 static_cast<std::size_t>(owner) >= voxel_scene.objects.size() ||
                 voxel_scene.objects[static_cast<std::size_t>(owner)].kind !=
                     gbb::VoxelObjectKind::background_object)
@@ -393,6 +398,7 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
                 if (pending.size() < 6U) continue;
                 const auto anchor_y = max_y + 1;
                 for (const auto index : pending) {
+                    if (sprite_mask[index]) continue;
                     popup_object_mask[index] = true;
                     popup_object_anchor_y[index] = anchor_y;
                 }
@@ -597,8 +603,8 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
                                           : popup_object_anchor_y[source_index] >= 0
                                                 ? popup_object_anchor_y[source_index]
                                                 : static_cast<int>(cell_y) + sprite_height;
-                const auto pixel_height = has_sprite ? popup_sprite_height
-                                                     : popup_object_height;
+                const auto pixel_height = has_sprite ? profile.popup_sprite_height
+                                                     : profile.popup_object_height;
                 const auto pixel_bottom = std::max(
                     0.0F, static_cast<float>(anchor_y) -
                                static_cast<float>(cell_y + 1U)) *
@@ -609,7 +615,7 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
             const auto y = static_cast<float>(source_y);
             const auto centered_x = x + cell_size * 0.5F - 80.0F;
             const auto centered_y = y + cell_size * 0.5F - 72.0F;
-            const auto page_depth = popup_book ? -centered_y * popup_parallax
+            const auto page_depth = popup_book ? -centered_y * profile.popup_parallax
                                                : centered_y * 0.82F;
             const auto world_height = base_depth - depth;
             const auto rotated_y = popup_book
@@ -667,21 +673,23 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
             const auto source_index = static_cast<std::size_t>(column.y) *
                                           160U +
                                       static_cast<std::size_t>(column.x);
-                const auto anchor_y = column.sprite && sprite_anchor_y[source_index] >= 0
-                                          ? sprite_anchor_y[source_index]
-                                          : popup_object_anchor_y[source_index] >= 0
-                                                ? popup_object_anchor_y[source_index]
-                                                : static_cast<int>(column.y) +
-                                                      sprite_height;
-                {
-                    const auto sprite_pixel_height =
-                        column.sprite ? popup_sprite_height : popup_object_height;
+            const auto anchor_y = column.sprite && sprite_anchor_y[source_index] >= 0
+                                      ? sprite_anchor_y[source_index]
+                                      : popup_object_anchor_y[source_index] >= 0
+                                            ? popup_object_anchor_y[source_index]
+                                            : static_cast<int>(column.y) +
+                                                  sprite_height;
+            {
+                const auto sprite_pixel_height =
+                    column.sprite ? profile.popup_sprite_height
+                                  : profile.popup_object_height;
                 const auto pixel_bottom = std::max(
                     0.0F, static_cast<float>(anchor_y) -
                                (column.y + 1.0F)) * sprite_pixel_height;
                 const auto pixel_top = pixel_bottom + sprite_pixel_height;
-                const auto extrusion = column.sprite ? popup_sprite_thickness
-                                                     : popup_card_thickness;
+                const auto extrusion =
+                    column.sprite ? profile.popup_sprite_thickness
+                                  : profile.popup_card_thickness;
                 const auto front_page = static_cast<float>(anchor_y) -
                                         extrusion * 0.5F;
                 const auto back_page = static_cast<float>(anchor_y) +

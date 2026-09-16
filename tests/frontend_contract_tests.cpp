@@ -448,6 +448,11 @@ void test_voxel_profiles() {
     auto profile = gbb::load_voxel_profile(path, fingerprint);
     check(profile.depth_scale == 1.0F && profile.camera_pitch == 24.0F &&
               profile.zoom == 0.72F && profile.sprite_depth == 8.0F &&
+              profile.popup_parallax == 0.86F &&
+              profile.popup_object_height == 0.28F &&
+              profile.popup_sprite_height == 0.86F &&
+              profile.popup_card_thickness == 4.5F &&
+              profile.popup_sprite_thickness == 1.65F &&
               profile.background_object_detection &&
               !profile.framebuffer_facade,
           "voxel profile defaults are loaded");
@@ -465,6 +470,11 @@ void test_voxel_profiles() {
     profile.background_depth_near = 18.0F;
     profile.window_depth_near = 48.0F;
     profile.sprite_depth_near = 22.0F;
+    profile.popup_parallax = 0.93F;
+    profile.popup_object_height = 0.34F;
+    profile.popup_sprite_height = 0.91F;
+    profile.popup_card_thickness = 5.25F;
+    profile.popup_sprite_thickness = 1.9F;
     profile.background_object_detection = true;
     profile.background_object_min_cells = 6;
     profile.background_object_max_fraction = 0.42F;
@@ -480,6 +490,11 @@ void test_voxel_profiles() {
               loaded.background_depth_near == 18.0F &&
               loaded.window_depth_near == 48.0F &&
               loaded.sprite_depth_near == 22.0F &&
+              loaded.popup_parallax == 0.93F &&
+              loaded.popup_object_height == 0.34F &&
+              loaded.popup_sprite_height == 0.91F &&
+              loaded.popup_card_thickness == 5.25F &&
+              loaded.popup_sprite_thickness == 1.9F &&
               loaded.background_object_detection &&
               loaded.background_object_min_cells == 6 &&
               loaded.background_object_max_fraction == 0.42F &&
@@ -600,6 +615,39 @@ void test_voxel_scene_builder() {
                                  object.confidence == 1.0F;
                       }),
           "voxel scene builder resolves an authored multi-tile template");
+
+    const auto stable_key = gbb::voxel_scene_signature(snapshot);
+    snapshot.emulation_cycles = 123456U;
+    check(gbb::voxel_scene_signature(snapshot) == stable_key,
+          "voxel scene cache key ignores animation cycle counters");
+    snapshot.scx = 1;
+    check(gbb::voxel_scene_signature(snapshot) != stable_key,
+          "voxel scene cache key invalidates when scroll changes");
+
+    // The renderer's scene cache is also a bounded-work guard: a full
+    // provenance snapshot must not produce more accepted objects than source
+    // cells plus visible OAM entries.
+    gbb::SceneSnapshot full_snapshot;
+    full_snapshot.width = 160;
+    full_snapshot.height = 144;
+    full_snapshot.visible_tile_cells.resize(20U * 18U);
+    for (std::size_t index = 0; index < full_snapshot.visible_tile_cells.size();
+         ++index) {
+        auto& cell = full_snapshot.visible_tile_cells[index];
+        cell.source = gbb::SceneTileSource::background;
+        cell.screen_x = static_cast<std::int16_t>((index % 20U) * 8U);
+        cell.screen_y = static_cast<std::int16_t>((index / 20U) * 8U);
+        cell.visible_width = 8;
+        cell.visible_height = 8;
+        cell.tile_id = static_cast<std::uint8_t>(index % 32U);
+        cell.opaque_mask.fill(0xFF);
+    }
+    const auto bounded_scene = gbb::build_voxel_scene(full_snapshot, options);
+    check(bounded_scene.object_owner.size() == 160U * 144U &&
+              bounded_scene.objects.size() <=
+                  full_snapshot.visible_tile_cells.size() +
+                      full_snapshot.sprites.size(),
+          "voxel scene work remains bounded for a complete background map");
 }
 
 void test_audio_helpers() {

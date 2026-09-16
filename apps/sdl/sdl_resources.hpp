@@ -8,6 +8,7 @@
 #include "gbb/video.hpp"
 #include "gbb/scene.hpp"
 #include "gbb/voxel_profile.hpp"
+#include "gbb/voxel_scene.hpp"
 
 #include <SDL3/SDL.h>
 
@@ -43,6 +44,9 @@ class SdlResources {
     gbb::VoxelProfile voxel_profile{};
     std::uint64_t voxel_profile_fingerprint{};
     bool voxel_profile_loaded{};
+    gbb::VoxelScene voxel_scene{};
+    std::uint64_t voxel_scene_signature{};
+    bool voxel_scene_cached{};
     SDL_Gamepad* gamepad{};
     AudioOutput audio;
     CameraCapture camera;
