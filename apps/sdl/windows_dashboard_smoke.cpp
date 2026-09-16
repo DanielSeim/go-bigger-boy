@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
@@ -227,7 +228,15 @@ bool check_rendered_dashboard(HWND dashboard) {
         return false;
     }
     const auto previous = SelectObject(memory_dc, bitmap);
-    const auto painted = PrintWindow(dashboard, memory_dc, PW_CLIENTONLY);
+    auto painted = PrintWindow(dashboard, memory_dc, PW_CLIENTONLY);
+    if (!painted) {
+        // PrintWindow is not implemented by every Windows runner/session.
+        // Ask the dashboard to paint the same client area directly before
+        // treating the render probe as unavailable.
+        painted = SendMessageW(
+                      dashboard, WM_PRINT, reinterpret_cast<WPARAM>(memory_dc),
+                      PRF_CLIENT | PRF_CHILDREN | PRF_ERASEBKGND) != 0;
+    }
     SelectObject(memory_dc, previous);
     BITMAPINFO info{};
     info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
@@ -265,6 +274,8 @@ DashboardResult invoke_dashboard(const bool can_resume,
 
 bool run_dashboard_case(const bool can_resume, const bool discard,
                         const bool inspect_controls) {
+    std::fprintf(stderr, "dashboard smoke: case resume=%d discard=%d inspect=%d\n",
+                 can_resume, discard, inspect_controls);
     DashboardInvocation invocation;
     std::thread worker([&] {
         const auto result = invoke_dashboard(can_resume, invocation);
@@ -279,6 +290,7 @@ bool run_dashboard_case(const bool can_resume, const bool discard,
         return dashboard != nullptr;
     });
     if (!opened) {
+        std::fprintf(stderr, "dashboard smoke: dashboard did not open\n");
         worker.join();
         return false;
     }
@@ -291,6 +303,10 @@ bool run_dashboard_case(const bool can_resume, const bool discard,
     if (passed && inspect_controls) {
         passed = check_native_controls_and_layout(dashboard) &&
                  check_rendered_dashboard(dashboard);
+        if (!passed) {
+            std::fprintf(stderr,
+                         "dashboard smoke: native control or render probe failed\n");
+        }
     }
     if (passed && discard) {
         passed = click_child(dashboard, L"Generate audio");
@@ -309,7 +325,14 @@ bool run_dashboard_case(const bool can_resume, const bool discard,
     std::lock_guard lock{invocation.mutex};
     const auto expected = can_resume ? DashboardResultAction::resume
                                      : DashboardResultAction::library;
-    return passed && invocation.result.action == expected;
+    const auto result_matches = invocation.result.action == expected;
+    if (!passed || !result_matches) {
+        std::fprintf(stderr,
+                     "dashboard smoke: case failed passed=%d result=%d expected=%d\n",
+                     passed, static_cast<int>(invocation.result.action),
+                     static_cast<int>(expected));
+    }
+    return passed && result_matches;
 }
 
 bool check_unreachable_rom_error() {

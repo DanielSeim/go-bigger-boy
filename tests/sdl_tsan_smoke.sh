@@ -123,6 +123,18 @@ TSAN_OPTIONS="$tsan_options" timeout --signal=INT --kill-after=5s \
             # complete render turn at the compact size before changing modes;
             # otherwise slower runners can miss the normal 960x700 capture.
             sleep 1
+            # A resize can recreate the native window on some X11 setups.
+            # Reacquire the handle before sending the inspector shortcut so a
+            # stale handle cannot silently drop the only inspector capture.
+            debugger=$(xdotool search --name "Go Bigger Boy - Debugger" \
+                2>/dev/null | tail -n 1)
+            if [[ -z "$debugger" ]]; then
+                echo "debugger window disappeared after resize" >&2
+                kill -TERM "$pid" 2>/dev/null || true
+                wait "$pid" || true
+                exit 13
+            fi
+            send_input windowfocus "$debugger"
             # F4 is a visible header button as well as a keyboard shortcut.
             # Use the shortcut here because SDL can receive it without a
             # window manager synthesizing a coordinate click.
