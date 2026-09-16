@@ -448,6 +448,7 @@ void test_voxel_profiles() {
     auto profile = gbb::load_voxel_profile(path, fingerprint);
     check(profile.depth_scale == 1.0F && profile.camera_pitch == 24.0F &&
               profile.zoom == 0.72F && profile.sprite_depth == 8.0F &&
+              profile.background_object_detection &&
               !profile.framebuffer_facade,
           "voxel profile defaults are loaded");
     const auto super_mario_land =
@@ -545,6 +546,38 @@ void test_voxel_scene_builder() {
                                  object.anchor_y == 24;
                       }),
           "voxel scene builder resolves a compact background object with a hinge");
+
+    auto structural_snapshot = snapshot;
+    structural_snapshot.visible_tile_cells[5].tile_id = 7;
+    structural_snapshot.visible_tile_cells[6].tile_id = 7;
+    structural_snapshot.visible_tile_cells[9].tile_id = 8;
+    structural_snapshot.visible_tile_cells[10].tile_id = 8;
+    structural_snapshot.visible_tile_cells[5].opaque_mask.fill(0x3C);
+    structural_snapshot.visible_tile_cells[6].opaque_mask.fill(0x3C);
+    structural_snapshot.visible_tile_cells[9].opaque_mask.fill(0x18);
+    structural_snapshot.visible_tile_cells[10].opaque_mask.fill(0x18);
+    const auto structural_scene =
+        gbb::build_voxel_scene(structural_snapshot, options);
+    check(std::any_of(structural_scene.objects.begin(), structural_scene.objects.end(),
+                      [](const gbb::VoxelObject& object) {
+                          return object.id.compare(0, 18, "structural-object-") == 0 &&
+                                 object.source_cells.size() == 4 &&
+                                 object.anchor_y == 24;
+                      }),
+          "voxel scene builder groups a mixed-tile structural footprint");
+
+    structural_snapshot.sprites.resize(1);
+    structural_snapshot.sprites.front().visible = true;
+    structural_snapshot.sprites.front().screen_x = 8;
+    structural_snapshot.sprites.front().screen_y = 8;
+    structural_snapshot.sprites.front().tile = 7;
+    const auto sprite_scene =
+        gbb::build_voxel_scene(structural_snapshot, options);
+    check(!sprite_scene.object_owner.empty() &&
+              sprite_scene.object_owner[8U * structural_snapshot.width + 8U] == 0 &&
+              sprite_scene.objects.front().kind == gbb::VoxelObjectKind::sprite,
+          "voxel scene builder keeps OAM ownership in front of tile objects");
+
     const auto flat = gbb::build_voxel_scene(snapshot);
     check(std::none_of(flat.objects.begin(), flat.objects.end(),
                        [](const gbb::VoxelObject& object) {

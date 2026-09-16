@@ -198,6 +198,7 @@ bool section_matches(const std::string& section, const std::uint64_t fingerprint
 
 VoxelProfile built_in_voxel_profile(const std::uint64_t fingerprint) {
     VoxelProfile profile;
+    profile.background_object_detection = true;
     if (fingerprint == UINT64_C(0x7eafc0023b31d850)) {
         profile.depth_scale = 1.25F;
         profile.camera_pitch = 24.0F;
@@ -404,7 +405,7 @@ void ensure_voxel_profile_file(const std::filesystem::path& path) {
               "window_depth_near=50\n"
               "sprite_depth_far=45\n"
               "sprite_depth_near=25\n"
-              "background_object_detection=0\n"
+              "background_object_detection=1\n"
               "background_object_min_cells=4\n"
               "background_object_max_fraction=0.55\n"
               "background_object_confidence=0.72\n"

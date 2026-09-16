@@ -86,6 +86,7 @@ struct CandidateFeatures {
     float boundary{};
     float ground_contact{};
     float aspect{};
+    float density_variation{};
 };
 
 CandidateFeatures features_for(
@@ -99,6 +100,8 @@ CandidateFeatures features_for(
     std::map<std::tuple<std::uint8_t, std::uint8_t, std::uint8_t>, std::size_t>
         signatures;
     std::map<std::pair<int, int>, bool> occupied;
+    unsigned minimum_density = 64;
+    unsigned maximum_density = 0;
     for (const auto index : component) {
         const auto& cell = cells[index];
         const auto x = static_cast<int>(cell.screen_x);
@@ -114,6 +117,9 @@ CandidateFeatures features_for(
             max_y = std::max(max_y, y);
         }
         occupied[{x, y}] = true;
+        const auto density = static_cast<unsigned>(opaque_pixels(cell));
+        minimum_density = std::min(minimum_density, density);
+        maximum_density = std::max(maximum_density, density);
         ++signatures[{cell.tile_id, static_cast<std::uint8_t>(cell.attributes & 0x78U),
                       cell.palette}];
     }
@@ -154,6 +160,7 @@ CandidateFeatures features_for(
         std::min(1.0F, static_cast<float>(ground_cells) /
                            std::max(1.0F, area / 3.0F)),
         std::exp(-std::abs(std::log(std::max(0.25F, aspect)))),
+        static_cast<float>(maximum_density - minimum_density) / 64.0F,
     };
 }
 
@@ -215,9 +222,13 @@ void add_sprite_objects(const SceneSnapshot& snapshot, VoxelScene& scene) {
                 const auto y = static_cast<int>(sprite.screen_y) + local_y;
                 if (x < 0 || y < 0 || x >= static_cast<int>(snapshot.width) ||
                     y >= static_cast<int>(snapshot.height)) continue;
-                scene.object_owner[static_cast<std::size_t>(y) * snapshot.width +
-                                   static_cast<std::size_t>(x)] =
-                    static_cast<std::int32_t>(object_index);
+                // OAM is the authoritative foreground layer. A sprite can
+                // share a source pixel with a later tile-map object, but its
+                // ownership must remain visible to the renderer.
+                auto& owner = scene.object_owner[
+                    static_cast<std::size_t>(y) * snapshot.width +
+                    static_cast<std::size_t>(x)];
+                if (owner < 0) owner = static_cast<std::int32_t>(object_index);
             }
         }
     }
@@ -303,9 +314,14 @@ VoxelScene build_voxel_scene(const SceneSnapshot& snapshot,
                     if ((cell.opaque_mask[static_cast<std::size_t>(source_y)] &
                          (1U << source_x)) == 0)
                         continue;
-                    scene.object_owner[static_cast<std::size_t>(y) * scene.width +
-                                       static_cast<std::size_t>(x)] =
-                        static_cast<std::int32_t>(object_index);
+                    // OAM is the authoritative foreground layer. A tile-map
+                    // object may occupy the same source pixel, but it must
+                    // never hide a sprite from the renderer's depth and
+                    // occlusion decisions.
+                    auto& owner = scene.object_owner[
+                        static_cast<std::size_t>(y) * scene.width +
+                        static_cast<std::size_t>(x)];
+                    if (owner < 0) owner = static_cast<std::int32_t>(object_index);
                 }
             }
         }
@@ -316,6 +332,73 @@ VoxelScene build_voxel_scene(const SceneSnapshot& snapshot,
         const auto object_index = scene.objects.size();
         scene.objects.push_back(std::move(object));
         paint_object(component, object_index);
+    };
+
+    const auto boundary_contrast = [&](const std::vector<std::size_t>& component) {
+        const auto same_signature = [](const SceneVisibleTileCell& left,
+                                       const SceneVisibleTileCell& right) {
+            return left.tile_id == right.tile_id &&
+                   (left.attributes & 0x78U) == (right.attributes & 0x78U) &&
+                   left.tile_bank == right.tile_bank &&
+                   left.palette == right.palette;
+        };
+        std::map<std::pair<int, int>, std::size_t> component_positions;
+        for (const auto index : component) {
+            component_positions[{cells[index].screen_x, cells[index].screen_y}] =
+                index;
+        }
+        std::size_t exposed = 0;
+        std::size_t contrasting = 0;
+        for (const auto index : component) {
+            const auto x = static_cast<int>(cells[index].screen_x);
+            const auto y = static_cast<int>(cells[index].screen_y);
+            for (const auto [dx, dy] :
+                 std::array<std::pair<int, int>, 4>{{{-tile_size, 0},
+                                                      {tile_size, 0},
+                                                      {0, -tile_size},
+                                                      {0, tile_size}}}) {
+                if (component_positions.find({x + dx, y + dy}) !=
+                    component_positions.end())
+                    continue;
+                const auto outside = positions.find({x + dx, y + dy});
+                if (outside == positions.end()) continue;
+                ++exposed;
+                if (!same_signature(cells[index], cells[outside->second]))
+                    ++contrasting;
+            }
+        }
+        return static_cast<float>(contrasting) /
+               static_cast<float>(std::max<std::size_t>(1, exposed));
+    };
+    const auto side_contrast = [&](const std::vector<std::size_t>& component,
+                                   const int side_dx, const int side_dy) {
+        const auto same_signature = [](const SceneVisibleTileCell& left,
+                                       const SceneVisibleTileCell& right) {
+            return left.tile_id == right.tile_id &&
+                   (left.attributes & 0x78U) == (right.attributes & 0x78U) &&
+                   left.tile_bank == right.tile_bank &&
+                   left.palette == right.palette;
+        };
+        std::map<std::pair<int, int>, std::size_t> component_positions;
+        for (const auto index : component)
+            component_positions[{cells[index].screen_x, cells[index].screen_y}] =
+                index;
+        std::size_t exposed = 0;
+        std::size_t contrasting = 0;
+        for (const auto index : component) {
+            const auto x = static_cast<int>(cells[index].screen_x) + side_dx;
+            const auto y = static_cast<int>(cells[index].screen_y) + side_dy;
+            if (component_positions.find({x, y}) != component_positions.end())
+                continue;
+            const auto outside = positions.find({x, y});
+            if (outside == positions.end()) continue;
+            ++exposed;
+            if (!same_signature(cells[index], cells[outside->second])) ++contrasting;
+        }
+        return exposed == 0
+                   ? 0.0F
+                   : static_cast<float>(contrasting) /
+                         static_cast<float>(exposed);
     };
 
     // Authored templates are checked before generic graph components. This
@@ -370,6 +453,69 @@ VoxelScene build_voxel_scene(const SceneSnapshot& snapshot,
                 accept_object(matched,
                               make_object(matched, 1.0F, id));
             }
+        }
+    }
+
+    // Buildings and other metatile-sized scenery often use a different tile
+    // ID for every quadrant, so the same-tile graph below cannot discover
+    // them. Look for small, complete, map-aligned footprints with a strong
+    // tile boundary. The footprint is deliberately capped and requires tile
+    // diversity; this prevents a long strip of terrain or a flat sky from
+    // becoming one giant floating card.
+    const auto structural_dimensions =
+        std::array<std::pair<int, int>, 4>{{{3, 3}, {2, 3}, {3, 2}, {2, 2}}};
+    for (const auto [width, height] : structural_dimensions) {
+        for (const auto& [position, _] : positions) {
+            std::vector<std::size_t> matched;
+            matched.reserve(static_cast<std::size_t>(width * height));
+            std::map<std::uint16_t, std::size_t> tile_signatures;
+            bool matches = true;
+            for (int row = 0; row < height && matches; ++row) {
+                for (int column = 0; column < width; ++column) {
+                    const auto found = positions.find({
+                        position.first + column * tile_size,
+                        position.second + row * tile_size});
+                    if (found == positions.end() || claimed[found->second] ||
+                        cells[found->second].visible_width != 8 ||
+                        cells[found->second].visible_height != 8) {
+                        matches = false;
+                        break;
+                    }
+                    const auto& cell = cells[found->second];
+                    ++tile_signatures[
+                        static_cast<std::uint16_t>(cell.tile_id) |
+                        (static_cast<std::uint16_t>(cell.attributes & 0x78U) << 8U)];
+                    matched.push_back(found->second);
+                }
+            }
+            if (!matches || tile_signatures.size() < 2 ||
+                !std::all_of(tile_signatures.begin(), tile_signatures.end(),
+                             [](const auto& entry) { return entry.second >= 2; }) ||
+                matched.size() < options.minimum_background_cells ||
+                static_cast<float>(matched.size()) /
+                        static_cast<float>(cells.size()) >
+                    options.maximum_background_fraction)
+                continue;
+            const auto features = features_for(matched, cells);
+            if (boundary_contrast(matched) < 0.75F ||
+                side_contrast(matched, -tile_size, 0) < 0.50F ||
+                side_contrast(matched, tile_size, 0) < 0.50F ||
+                side_contrast(matched, 0, -tile_size) < 0.50F ||
+                side_contrast(matched, 0, tile_size) < 0.50F ||
+                features.density_variation < 0.05F)
+                continue;
+
+            const auto confidence = std::min(
+                1.0F, 0.45F * features.compactness +
+                           0.25F * boundary_contrast(matched) +
+                           0.15F * features.repetition +
+                           0.15F * features.aspect);
+            if (confidence < options.accepted_confidence) continue;
+            for (const auto index : matched) claimed[index] = true;
+            accept_object(matched,
+                          make_object(matched, confidence,
+                                      "structural-object-" +
+                                          std::to_string(scene.objects.size())));
         }
     }
 

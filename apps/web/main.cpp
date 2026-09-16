@@ -14,6 +14,7 @@
 #include "gbb/log.hpp"
 #include "gbb/gameboy_core.hpp"
 #include "gbb/scene_json.hpp"
+#include "gbb/voxel_scene.hpp"
 #include "gbb/voxel_profile.hpp"
 #include "gbb/audio.hpp"
 #include "gbb/video.hpp"
@@ -147,8 +148,24 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
     const auto camera_yaw = profile.camera_yaw;
     const auto sprite_depth = profile.sprite_depth;
     const auto lighting = profile.lighting;
+    constexpr float popup_parallax = 0.86F;
+    constexpr float popup_object_height = 0.28F;
+    constexpr float popup_sprite_height = 0.86F;
+    constexpr float popup_card_thickness = 4.5F;
+    constexpr float popup_sprite_thickness = 1.65F;
     constexpr float voxel_ambient = 0.055F;
     const auto& scene = app.emulator->scene_snapshot();
+    const auto voxel_scene = gbb::build_voxel_scene(
+        scene,
+        gbb::VoxelSceneBuildOptions{
+            true,
+            popup_book && profile.background_object_detection &&
+                scene.width == gameboy::Ppu::screen_width &&
+                scene.height == gameboy::Ppu::screen_height,
+            profile.background_object_min_cells,
+            profile.background_object_max_fraction,
+            profile.background_object_confidence,
+            &profile.background_object_templates});
     const auto yaw = (camera_yaw + app.voxel_camera_yaw_offset) *
                      0.01745329251994329577F;
     const auto pitch = (popup_book
@@ -167,7 +184,7 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
             // Source Y becomes page depth; the renderer's Z value is the
             // vertical lift above that page. This keeps the background flat
             // like a book page while windows and sprites stand above it.
-            const auto page_depth = popup_book ? -centered_y * 0.82F
+            const auto page_depth = popup_book ? -centered_y * popup_parallax
                                                : centered_y * 0.82F;
             const auto world_height = base_depth - z;
             const auto yaw_x = centered_x * yaw_cos - page_depth * yaw_sin;
@@ -314,7 +331,22 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
             }
         }
     }
-    if (popup_book) {
+    if (popup_book && profile.background_object_detection &&
+        scene.width == gameboy::Ppu::screen_width &&
+        scene.height == gameboy::Ppu::screen_height) {
+        for (std::size_t pixel = 0; pixel < voxel_scene.object_owner.size();
+             ++pixel) {
+            const auto owner = voxel_scene.object_owner[pixel];
+            if (owner < 0 ||
+                static_cast<std::size_t>(owner) >= voxel_scene.objects.size() ||
+                voxel_scene.objects[static_cast<std::size_t>(owner)].kind !=
+                    gbb::VoxelObjectKind::background_object)
+                continue;
+            popup_object_mask[pixel] = true;
+            popup_object_anchor_y[pixel] =
+                voxel_scene.objects[static_cast<std::size_t>(owner)].anchor_y;
+        }
+    } else if (popup_book && scene.visible_tile_cells.empty()) {
         // Tile-layer artwork in overhead games (buildings, trees, signs and
         // terrain edges) is not represented by OAM. Split non-backdrop
         // pixels into connected shapes so substantial shapes become upright
@@ -461,7 +493,7 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
             float local_luminance = 0.0F;
             bool has_sprite = false;
             bool has_window = false;
-            bool has_object = false;
+            bool has_artwork = false;
             for (unsigned y = 0; y < cell_size; ++y) {
                 for (unsigned x = 0; x < cell_size; ++x) {
                     const auto sample_x = source_x + x;
@@ -474,7 +506,7 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
                     local_luminance += luminance(sample);
                     has_sprite = has_sprite || sprite_mask[sample_index];
                     has_window = has_window || window_mask[sample_index];
-                    has_object = has_object ||
+                    has_artwork = has_artwork ||
                                  backdrop_key(sample) != backdrop_color_key;
                 }
             }
@@ -484,11 +516,12 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
                                ((green / sample_count) << 8) |
                                (blue / sample_count);
             local_luminance /= static_cast<float>(sample_count);
-            const auto window_layer = has_window && has_object && !has_sprite;
+            const auto window_layer = has_window && has_artwork && !has_sprite;
             const auto object_index = static_cast<std::size_t>(source_y) * 160U +
                                       static_cast<std::size_t>(source_x);
             const auto object_layer = has_sprite ||
                                       (popup_book && popup_object_mask[object_index]);
+            const auto raised_artwork = object_layer;
             float neighborhood_min = 1.0F;
             float neighborhood_max = 0.0F;
             for (int offset_y = -1; offset_y <= 1; ++offset_y) {
@@ -523,9 +556,10 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
                                                far_depth - near_depth),
                                   0.0F, 1.0F);
             };
-            const auto background_position = has_object
-                                                 ? 1.0F
-                                                 : normalized_band(
+            const auto background_position =
+                ((!popup_book && has_artwork) || raised_artwork)
+                    ? 1.0F
+                    : normalized_band(
                                                        profile.background_transparent_depth,
                                                        profile.background_depth_far,
                                                        profile.background_depth_near);
@@ -547,7 +581,9 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
                                                       background_position;
             // Pull non-backdrop artwork toward the viewer in shape-aware mode
             // while keeping the dominant backdrop plane recessed.
-            const auto shape_depth_boost = shape_aware && has_object
+            const auto shape_depth_boost = shape_aware &&
+                                                   (popup_book ? raised_artwork
+                                                               : has_artwork)
                                                ? 0.45F
                                                : 0.0F;
             auto depth = base_depth - depth_scale *
@@ -561,7 +597,8 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
                                           : popup_object_anchor_y[source_index] >= 0
                                                 ? popup_object_anchor_y[source_index]
                                                 : static_cast<int>(cell_y) + sprite_height;
-                const auto pixel_height = has_sprite ? 0.72F : 0.20F;
+                const auto pixel_height = has_sprite ? popup_sprite_height
+                                                     : popup_object_height;
                 const auto pixel_bottom = std::max(
                     0.0F, static_cast<float>(anchor_y) -
                                static_cast<float>(cell_y + 1U)) *
@@ -572,7 +609,7 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
             const auto y = static_cast<float>(source_y);
             const auto centered_x = x + cell_size * 0.5F - 80.0F;
             const auto centered_y = y + cell_size * 0.5F - 72.0F;
-            const auto page_depth = popup_book ? -centered_y * 0.82F
+            const auto page_depth = popup_book ? -centered_y * popup_parallax
                                                : centered_y * 0.82F;
             const auto world_height = base_depth - depth;
             const auto rotated_y = popup_book
@@ -637,12 +674,14 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
                                                 : static_cast<int>(column.y) +
                                                       sprite_height;
                 {
-                    const auto sprite_pixel_height = column.sprite ? 0.72F : 0.20F;
+                    const auto sprite_pixel_height =
+                        column.sprite ? popup_sprite_height : popup_object_height;
                 const auto pixel_bottom = std::max(
                     0.0F, static_cast<float>(anchor_y) -
                                (column.y + 1.0F)) * sprite_pixel_height;
                 const auto pixel_top = pixel_bottom + sprite_pixel_height;
-                const auto extrusion = column.sprite ? 1.35F : 4.0F;
+                const auto extrusion = column.sprite ? popup_sprite_thickness
+                                                     : popup_card_thickness;
                 const auto front_page = static_cast<float>(anchor_y) -
                                         extrusion * 0.5F;
                 const auto back_page = static_cast<float>(anchor_y) +

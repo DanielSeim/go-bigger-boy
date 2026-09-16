@@ -38,10 +38,10 @@ struct VoxelProfile {
     float window_depth_near{50.0F};
     float sprite_depth_far{45.0F};
     float sprite_depth_near{25.0F};
-    // Enable the conservative provenance-based background object detector for
-    // profiles that have been visually reviewed. Unknown ROMs remain on the
-    // legacy heuristic path until a profile opts in.
-    bool background_object_detection{false};
+    // Enable the conservative provenance-based background object detector by
+    // default. It only accepts bounded, map-aligned structures; ambiguous
+    // artwork remains on the page.
+    bool background_object_detection{true};
     std::uint32_t background_object_min_cells{4};
     float background_object_max_fraction{0.55F};
     float background_object_confidence{0.72F};
