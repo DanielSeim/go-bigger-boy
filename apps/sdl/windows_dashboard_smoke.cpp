@@ -435,6 +435,12 @@ bool run_dashboard_case(const bool can_resume, const bool discard,
             // Apply is owner-drawn. Sending its command directly avoids the
             // runner-dependent BM_CLICK behavior used for native controls.
             constexpr WORD apply_command_id = 129;
+            // The link controls are off the initial settings viewport. Seed
+            // the valid default explicitly so applying settings cannot depend
+            // on whether the runner initialized the hidden edit control.
+            if (const auto port = GetDlgItem(dashboard, 124); port != nullptr) {
+                SetWindowTextW(port, L"8765");
+            }
             std::fprintf(stderr, "dashboard smoke: applying settings\n");
             SendMessageW(
                 dashboard, WM_COMMAND,
