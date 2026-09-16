@@ -250,12 +250,33 @@ bool check_rendered_dashboard(HWND dashboard) {
     const auto copied = GetDIBits(memory_dc, bitmap, 0,
                                   static_cast<UINT>(height), pixels.data(),
                                   &info, DIB_RGB_COLORS);
+    auto rendered = painted && copied == static_cast<UINT>(height) &&
+                    std::any_of(pixels.begin(), pixels.end(),
+                                [](const std::uint8_t value) {
+                                    return value != 0;
+                                });
+    if (!rendered) {
+        // A minimized or compositor-backed window may decline both print
+        // messages while still exposing its client pixels through its DC.
+        const auto selected = SelectObject(memory_dc, bitmap);
+        const auto blitted = BitBlt(memory_dc, 0, 0, width, height, window_dc,
+                                    0, 0, SRCCOPY);
+        SelectObject(memory_dc, selected);
+        if (blitted) {
+            const auto fallback_copied = GetDIBits(
+                memory_dc, bitmap, 0, static_cast<UINT>(height), pixels.data(),
+                &info, DIB_RGB_COLORS);
+            rendered = fallback_copied == static_cast<UINT>(height) &&
+                       std::any_of(pixels.begin(), pixels.end(),
+                                   [](const std::uint8_t value) {
+                                       return value != 0;
+                                   });
+        }
+    }
     DeleteObject(bitmap);
     DeleteDC(memory_dc);
     ReleaseDC(dashboard, window_dc);
-    if (!painted || copied != static_cast<UINT>(height)) return false;
-    return std::any_of(pixels.begin(), pixels.end(),
-                       [](const std::uint8_t value) { return value != 0; });
+    return rendered;
 }
 
 DashboardResult invoke_dashboard(const bool can_resume,
@@ -301,11 +322,13 @@ bool run_dashboard_case(const bool can_resume, const bool discard,
                              nullptr;
                   });
     if (passed && inspect_controls) {
-        passed = check_native_controls_and_layout(dashboard) &&
-                 check_rendered_dashboard(dashboard);
+        const auto controls_ok = check_native_controls_and_layout(dashboard);
+        const auto render_ok = check_rendered_dashboard(dashboard);
+        passed = controls_ok && render_ok;
         if (!passed) {
             std::fprintf(stderr,
-                         "dashboard smoke: native control or render probe failed\n");
+                         "dashboard smoke: controls=%d render=%d\n",
+                         controls_ok, render_ok);
         }
     }
     if (passed && discard) {
