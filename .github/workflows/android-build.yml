@@ -116,18 +116,19 @@ jobs:
                 sleep 10
               fi
             done
-            adb devices -l > android-ci-diagnostics/adb-devices.txt 2>&1 || true
-            adb logcat -d -v threadtime > android-ci-diagnostics/logcat.txt 2>&1 || true
+            timeout 10s adb devices -l > android-ci-diagnostics/adb-devices.txt 2>&1 || true
+            timeout 15s adb logcat -d -v threadtime > android-ci-diagnostics/logcat.txt 2>&1 || true
             exit "$test_status"
 
       - name: Collect Android diagnostics
         if: always()
         run: |
           mkdir -p android-ci-diagnostics
-          adb devices -l > android-ci-diagnostics/adb-devices-final.txt 2>&1 || true
-          adb logcat -d -v threadtime > android-ci-diagnostics/logcat-final.txt 2>&1 || true
-          find android/app/build -type f \( -name '*.xml' -o -name '*.log' \) \
-            -print 2>/dev/null | sort > android-ci-diagnostics/build-files.txt || true
+          timeout 10s adb devices -l > android-ci-diagnostics/adb-devices-final.txt 2>&1 || true
+          timeout 15s adb logcat -d -v threadtime > android-ci-diagnostics/logcat-final.txt 2>&1 || true
+          find android/app/build -maxdepth 6 -type f \
+            \( -name '*.xml' -o -name '*.log' \) -print 2>/dev/null | \
+            sort | head -n 200 > android-ci-diagnostics/build-files.txt || true
 
       - name: Upload Android diagnostics
         if: always()
