@@ -328,11 +328,30 @@ bool run_dashboard_case(const bool can_resume, const bool discard,
         return false;
     }
 
-    bool passed = click_child(dashboard, L"Settings") &&
-                  wait_for([&] {
-                      return child_by_text(dashboard, L"Apply and return") !=
-                             nullptr;
-                  });
+    auto settings = child_by_text(dashboard, L"Settings");
+    bool passed = settings != nullptr;
+    if (passed) {
+        SendMessageW(settings, BM_CLICK, 0, 0);
+        const auto settings_id = GetDlgCtrlID(settings);
+        passed = wait_for([&] {
+            const auto apply = child_by_text(dashboard, L"Apply and return");
+            return apply != nullptr && IsWindowVisible(apply) != FALSE;
+        }, std::chrono::milliseconds{250});
+        if (!passed && settings_id != 0) {
+            // Owner-drawn buttons on some Windows runners ignore BM_CLICK.
+            // Deliver the same notification directly to the dashboard and
+            // then wait for the page's visible state.
+            SendMessageW(
+                dashboard, WM_COMMAND,
+                MAKEWPARAM(static_cast<WORD>(settings_id), BN_CLICKED),
+                reinterpret_cast<LPARAM>(settings));
+            passed = wait_for([&] {
+                const auto apply =
+                    child_by_text(dashboard, L"Apply and return");
+                return apply != nullptr && IsWindowVisible(apply) != FALSE;
+            });
+        }
+    }
     if (passed && inspect_controls) {
         const auto controls_ok = check_native_controls_and_layout(dashboard);
         const auto render_ok = check_rendered_dashboard(dashboard);
