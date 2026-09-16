@@ -435,14 +435,19 @@ bool run_dashboard_case(const bool can_resume, const bool discard,
             // Apply is owner-drawn. Sending its command directly avoids the
             // runner-dependent BM_CLICK behavior used for native controls.
             constexpr WORD apply_command_id = 129;
+            std::fprintf(stderr, "dashboard smoke: applying settings\n");
             SendMessageW(
                 dashboard, WM_COMMAND,
                 MAKEWPARAM(apply_command_id, BN_CLICKED),
                 reinterpret_cast<LPARAM>(apply));
+            std::fprintf(stderr, "dashboard smoke: apply command returned\n");
         }
     }
     if (!passed) close_dashboard(dashboard);
-    if (!wait_for([&] { return dashboard_completed(invocation); })) {
+    const auto completed =
+        wait_for([&] { return dashboard_completed(invocation); });
+    std::fprintf(stderr, "dashboard smoke: dashboard completed=%d\n", completed);
+    if (!completed) {
         close_dashboard(dashboard_window());
     }
     worker.join();
