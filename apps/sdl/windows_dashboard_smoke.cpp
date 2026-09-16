@@ -216,8 +216,39 @@ bool check_native_controls_and_layout(HWND dashboard) {
              second < collection.controls.size(); ++second) {
             if (rectangles_overlap(collection.controls[first].rect,
                                    collection.controls[second].rect)) {
+                const auto& first_control = collection.controls[first];
+                const auto& second_control = collection.controls[second];
+                std::fprintf(
+                    stderr,
+                    "dashboard smoke: overlapping controls %ls "
+                    "[%ld,%ld,%ld,%ld] and %ls [%ld,%ld,%ld,%ld]\n",
+                    first_control.class_name.c_str(), first_control.rect.left,
+                    first_control.rect.top, first_control.rect.right,
+                    first_control.rect.bottom, second_control.class_name.c_str(),
+                    second_control.rect.left, second_control.rect.top,
+                    second_control.rect.right, second_control.rect.bottom);
                 return false;
             }
+        }
+    }
+    if (!has_owner_drawn_checkbox || !has_owner_drawn_combo) {
+        std::fprintf(stderr,
+                     "dashboard smoke: interactive controls=%zu "
+                     "owner-checkbox=%d owner-combo=%d\n",
+                     collection.controls.size(), has_owner_drawn_checkbox,
+                     has_owner_drawn_combo);
+        for (const auto& control : collection.controls) {
+            wchar_t text[256]{};
+            GetWindowTextW(control.window, text,
+                           static_cast<int>(std::size(text)));
+            std::fprintf(stderr,
+                         "dashboard smoke: control class=%ls text=%ls "
+                         "style=%llx rect=[%ld,%ld,%ld,%ld]\n",
+                         control.class_name.c_str(), text,
+                         static_cast<unsigned long long>(
+                             GetWindowLongPtrW(control.window, GWL_STYLE)),
+                         control.rect.left, control.rect.top, control.rect.right,
+                         control.rect.bottom);
         }
     }
     return has_owner_drawn_checkbox && has_owner_drawn_combo;
@@ -344,6 +375,22 @@ bool run_dashboard_case(const bool can_resume, const bool discard,
             SendMessageW(
                 dashboard, WM_COMMAND,
                 MAKEWPARAM(static_cast<WORD>(settings_id), BN_CLICKED),
+                reinterpret_cast<LPARAM>(settings));
+            passed = wait_for([&] {
+                const auto apply =
+                    child_by_text(dashboard, L"Apply and return");
+                return apply != nullptr && IsWindowVisible(apply) != FALSE;
+            });
+        }
+        if (!passed) {
+            // The Settings control has a stable dashboard command ID. Use it
+            // as a final fallback when a runner reports no child dialog ID.
+            constexpr WORD settings_command_id = 101;
+            SendMessageW(
+                dashboard, WM_COMMAND,
+                MAKEWPARAM(settings_id == 0 ? settings_command_id
+                                            : static_cast<WORD>(settings_id),
+                            BN_CLICKED),
                 reinterpret_cast<LPARAM>(settings));
             passed = wait_for([&] {
                 const auto apply =
