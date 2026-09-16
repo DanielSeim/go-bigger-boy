@@ -154,11 +154,11 @@ BOOL CALLBACK collect_visible_controls(HWND child, LPARAM data) {
     wchar_t class_name[64]{};
     GetClassNameW(child, class_name,
                   static_cast<int>(std::size(class_name)));
-    // Native controls are created with a nonzero dialog ID. This avoids
-    // relying on the system class spelling, which differs between Win32
-    // implementations and test runners, while excluding decorative STATIC
-    // labels that are allowed to share a row visually.
-    if (GetDlgCtrlID(child) == 0) {
+    // The dashboard explicitly gives every interactive control a tab stop.
+    // Use that stable behavior rather than depending on runner-specific
+    // Win32 class names or dialog-ID propagation through child hierarchies.
+    const auto style = GetWindowLongPtrW(child, GWL_STYLE);
+    if ((style & WS_TABSTOP) == 0) {
         return TRUE;
     }
     RECT screen_rect{};
