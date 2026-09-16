@@ -5,6 +5,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 permissions:
   contents: read
 
@@ -12,15 +16,16 @@ jobs:
   accuracy:
     name: Accuracy test ROMs
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     env:
       TEST_ROMS_URL: https://github.com/c-sp/game-boy-test-roms/releases/download/v7.0/game-boy-test-roms-v7.0.zip
       TEST_ROMS_SHA256: b9a9d7a1075aa35a3d07c07c34974048672d8520dca9e07a50178f5860c3832c
     steps:
       - name: Check out source
-        uses: actions/checkout@v6
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
 
       - name: Download pinned test ROM bundle
-        run: curl --fail --location --retry 3 "$TEST_ROMS_URL" --output test-roms.zip
+        run: curl --fail --location --retry 5 --retry-all-errors --retry-delay 2 --retry-max-time 120 --connect-timeout 20 --max-time 300 "$TEST_ROMS_URL" --output test-roms.zip
 
       - name: Verify test ROM bundle
         run: echo "$TEST_ROMS_SHA256  test-roms.zip" | sha256sum --check -
@@ -45,6 +50,7 @@ jobs:
           --label-regex conformance
           --output-on-failure
           --parallel 2
+          --output-junit accuracy-ctest.xml
 
       - name: Run external DMG/CGB audio reference gate
         if: ${{ hashFiles('tests/fixtures/audio-external/*.txt') != '' }}
@@ -55,28 +61,33 @@ jobs:
           ctest --test-dir build-accuracy -C Release
           --tests-regex gameboy_apu_waveform_contract
           --output-on-failure
+          --output-junit audio-ctest.xml
 
       - name: Upload visual test captures
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: accuracy-visual-results
-          path: build-accuracy/visual-results
+          path: |
+            build-accuracy/visual-results
+            accuracy-ctest.xml
+            audio-ctest.xml
           if-no-files-found: ignore
           retention-days: 14
 
   external-suites:
     name: AGE and SameSuite research suites
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     env:
       TEST_ROMS_URL: https://github.com/c-sp/game-boy-test-roms/releases/download/v7.0/game-boy-test-roms-v7.0.zip
       TEST_ROMS_SHA256: b9a9d7a1075aa35a3d07c07c34974048672d8520dca9e07a50178f5860c3832c
     steps:
       - name: Check out source
-        uses: actions/checkout@v6
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
 
       - name: Download pinned test ROM bundle
-        run: curl --fail --location --retry 3 "$TEST_ROMS_URL" --output test-roms.zip
+        run: curl --fail --location --retry 5 --retry-all-errors --retry-delay 2 --retry-max-time 120 --connect-timeout 20 --max-time 300 "$TEST_ROMS_URL" --output test-roms.zip
 
       - name: Verify test ROM bundle
         run: echo "$TEST_ROMS_SHA256  test-roms.zip" | sha256sum --check -
@@ -101,21 +112,24 @@ jobs:
           ctest --test-dir build-external-suites -C Release
           --label-regex external-suites
           --output-on-failure
+          --output-junit external-ctest.xml
 
       - name: Upload external suite report
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: external-suite-results
           path: |
             build-external-suites/external-suite-report.md
             build-external-suites/external-suite-captures
+            external-ctest.xml
           if-no-files-found: ignore
           retention-days: 14
 
   plugin-abi:
     name: Plugin ABI (${{ matrix.name }})
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -128,7 +142,7 @@ jobs:
             cxx: clang++
     steps:
       - name: Check out source
-        uses: actions/checkout@v6
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
 
       - name: Configure plugin ABI contracts
         env:
@@ -162,6 +176,16 @@ jobs:
           ctest --test-dir build-plugin-abi
           --output-on-failure
           --tests-regex 'gameboy_plugin_(abi|loader)'
+          --output-junit plugin-abi-ctest.xml
+
+      - name: Upload plugin ABI diagnostics
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: plugin-abi-results-${{ matrix.name }}
+          path: plugin-abi-ctest.xml
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Build Clang fixture against GCC host
         if: matrix.name == 'gcc'
@@ -182,9 +206,10 @@ jobs:
   sanitizers:
     name: ASan and UBSan contracts
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - name: Check out source
-        uses: actions/checkout@v6
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
 
       - name: Configure sanitizer build
         run: >-
@@ -201,17 +226,38 @@ jobs:
         env:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:strict_string_checks=1
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
-        run: ctest --test-dir build-sanitize --output-on-failure --parallel 2
+        run: ctest --test-dir build-sanitize --output-on-failure --parallel 2 --output-junit sanitizer-ctest.xml
+
+      - name: Upload sanitizer diagnostics
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: sanitizer-results
+          path: sanitizer-ctest.xml
+          if-no-files-found: ignore
+          retention-days: 14
 
   thread-sanitizer:
     name: ThreadSanitizer contracts
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - name: Check out source
-        uses: actions/checkout@v6
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
 
       - name: Set up SDL3
         id: sdl
+        continue-on-error: true
+        uses: libsdl-org/setup-sdl@afd98199e97f9c2aa739474be7e0886d149a5e47
+        with:
+          version: 3.4.2
+          build-type: Release
+          install-linux-dependencies: true
+          add-to-environment: true
+
+      - name: Retry SDL3 setup
+        id: sdl_retry
+        if: steps.sdl.outcome == 'failure'
         uses: libsdl-org/setup-sdl@afd98199e97f9c2aa739474be7e0886d149a5e47
         with:
           version: 3.4.2
@@ -225,7 +271,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
           -DGAMEBOY_BUILD_TESTS=ON
           -DGAMEBOY_BUILD_SDL=ON
-          "-DCMAKE_PREFIX_PATH=${{ steps.sdl.outputs.prefix }}"
+          "-DCMAKE_PREFIX_PATH=${{ steps.sdl_retry.outputs.prefix || steps.sdl.outputs.prefix }}"
           -DGAMEBOY_ENABLE_THREAD_SANITIZER=ON
 
       - name: Build ThreadSanitizer contracts
@@ -234,7 +280,7 @@ jobs:
       - name: Run ThreadSanitizer contracts
         env:
           TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1:history_size=7
-        run: ctest --test-dir build-tsan --output-on-failure --parallel 2
+        run: ctest --test-dir build-tsan --output-on-failure --parallel 2 --output-junit tsan-ctest.xml
 
       - name: Install X11 input driver for GUI smoke
         run: sudo apt-get update && sudo apt-get install --no-install-recommends -y xdotool
@@ -275,19 +321,22 @@ jobs:
 
       - name: Upload interactive SDL TSan artifacts
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: tsan-gui-artifacts
-          path: tsan-gui-artifacts
+          path: |
+            tsan-gui-artifacts
+            tsan-ctest.xml
           if-no-files-found: ignore
           retention-days: 14
 
   fuzzers:
     name: libFuzzer parser smoke
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - name: Check out source
-        uses: actions/checkout@v6
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
 
       - name: Configure libFuzzer target
         run: >-
@@ -330,7 +379,7 @@ jobs:
 
       - name: Upload fuzz artifacts
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: parser-fuzz-artifacts
           path: fuzz-artifacts
@@ -340,6 +389,7 @@ jobs:
   build:
     name: ${{ matrix.artifact }}
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -359,10 +409,21 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v6
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
 
       - name: Set up SDL3
         id: sdl
+        continue-on-error: true
+        uses: libsdl-org/setup-sdl@afd98199e97f9c2aa739474be7e0886d149a5e47
+        with:
+          version: 3.4.2
+          build-type: Release
+          install-linux-dependencies: true
+          add-to-environment: true
+
+      - name: Retry SDL3 setup
+        id: sdl_retry
+        if: steps.sdl.outcome == 'failure'
         uses: libsdl-org/setup-sdl@afd98199e97f9c2aa739474be7e0886d149a5e47
         with:
           version: 3.4.2
@@ -376,18 +437,27 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           -DGAMEBOY_BUILD_TESTS=ON
           -DGAMEBOY_BUILD_SDL=ON
-          "-DCMAKE_PREFIX_PATH=${{ steps.sdl.outputs.prefix }}"
+          "-DCMAKE_PREFIX_PATH=${{ steps.sdl_retry.outputs.prefix || steps.sdl.outputs.prefix }}"
 
       - name: Build
         run: cmake --build build --config Release --parallel
 
       - name: Test (Linux)
         if: runner.os == 'Linux'
-        run: ctest --test-dir build -C Release --output-on-failure
+        run: ctest --test-dir build -C Release --output-on-failure --output-junit ctest-results.xml
 
       - name: Test (Windows and macOS)
         if: runner.os != 'Linux'
-        run: ctest --test-dir build -C Release --output-on-failure --exclude-regex '^gameboy_serial_link_contract$'
+        run: ctest --test-dir build -C Release --output-on-failure --exclude-regex '^gameboy_serial_link_contract$' --output-junit ctest-results.xml
+
+      - name: Upload desktop test diagnostics
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: desktop-test-results-${{ matrix.artifact }}
+          path: ctest-results.xml
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Stage package
         run: cmake --install build --config Release --prefix package
@@ -438,51 +508,9 @@ jobs:
         run: tar -czf "${{ matrix.archive }}" -C package .
 
       - name: Upload executable
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.archive }}
           if-no-files-found: error
           retention-days: 14
-
-  release:
-    name: Publish GitHub Release
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [accuracy, build]
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v6
-
-      - name: Download platform archives
-        uses: actions/download-artifact@v8
-        with:
-          pattern: go-bigger-boy-*
-          path: release-assets
-          merge-multiple: true
-
-      - name: Publish release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          tag="${{ github.ref_name }}"
-          repo="${{ github.repository }}"
-          if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
-            echo "Release $tag already exists; refreshing its assets."
-            gh release upload "$tag" release-assets/* --repo "$repo" --clobber
-          else
-            if gh release create "$tag" release-assets/* \
-                --repo "$repo" \
-                --verify-tag \
-                --generate-notes \
-                --title "Go Bigger Boy $tag"; then
-              echo "Created release $tag."
-            else
-              # A concurrent retry may have created the release after the
-              # existence check. Refreshing is safe and keeps reruns idempotent.
-              echo "Release creation failed; retrying as an asset refresh."
-              gh release upload "$tag" release-assets/* --repo "$repo" --clobber
-            fi
-          fi

@@ -10,25 +10,38 @@ permissions:
   contents: read
 
 concurrency:
-  group: pages-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
   build:
     name: Build WebAssembly frontend
     runs-on: ubuntu-24.04
+    timeout-minutes: 25
     steps:
       - name: Check out source
-        uses: actions/checkout@v6
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
 
       - name: Set up Emscripten
-        uses: emscripten-core/setup-emsdk@v15
+        uses: emscripten-core/setup-emsdk@667eb33f24e84e7f362c16d8d7fff0629a73e15e # v15
         with:
           version: 4.0.15
           actions-cache-folder: emsdk-cache
 
       - name: Set up SDL3 for WebAssembly
         id: sdl
+        continue-on-error: true
+        uses: libsdl-org/setup-sdl@afd98199e97f9c2aa739474be7e0886d149a5e47
+        with:
+          version: 3.4.2
+          build-type: Release
+          cmake-toolchain-file: ${{ env.EMSDK }}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake
+          cmake-arguments: -DSDL_SHARED=OFF -DSDL_STATIC=ON
+          discriminator: emscripten-4.0.15
+
+      - name: Retry SDL3 WebAssembly setup
+        id: sdl_retry
+        if: steps.sdl.outcome == 'failure'
         uses: libsdl-org/setup-sdl@afd98199e97f9c2aa739474be7e0886d149a5e47
         with:
           version: 3.4.2
@@ -39,7 +52,7 @@ jobs:
 
       - name: Build
         env:
-          SDL3_DIR: ${{ steps.sdl.outputs.prefix }}/lib/cmake/SDL3
+          SDL3_DIR: ${{ steps.sdl_retry.outputs.prefix || steps.sdl.outputs.prefix }}/lib/cmake/SDL3
         run: scripts/build-web.sh
 
       - name: Stage site
@@ -57,13 +70,16 @@ jobs:
           test -s build-web/web/go_bigger_boy_logo.png
 
       - name: Set up Node.js for browser smoke
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: '22'
 
       - name: Install Chromium for browser smoke
         run: |
-          npm install --no-save --no-package-lock @playwright/test@1.52.0
+          npm install --no-save --no-package-lock \
+            --fetch-retries=5 --fetch-retry-factor=2 \
+            --fetch-retry-mintimeout=1000 --fetch-retry-maxtimeout=30000 \
+            @playwright/test@1.52.0
           npx playwright install --with-deps chromium
 
       - name: Run Web frontend browser smoke
@@ -74,7 +90,7 @@ jobs:
           trap 'kill "$server_pid" 2>/dev/null || true' EXIT
           ready=0
           for attempt in $(seq 1 30); do
-            if curl --fail --silent http://127.0.0.1:8765/ >/dev/null; then
+            if curl --fail --silent --connect-timeout 1 --max-time 2 http://127.0.0.1:8765/ >/dev/null; then
               ready=1
               break
             fi
@@ -86,10 +102,10 @@ jobs:
 
       - name: Configure GitHub Pages
         if: github.event_name != 'pull_request'
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v4
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
         with:
           path: build-web/web
 
@@ -98,6 +114,7 @@ jobs:
     if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       pages: write
       id-token: write
@@ -107,4 +124,4 @@ jobs:
     steps:
       - name: Deploy
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4

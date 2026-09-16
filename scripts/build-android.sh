@@ -67,7 +67,16 @@ fi
 
 (
     cd "${android_directory}"
-    ./gradlew --no-daemon "${tasks[@]}"
+    for attempt in 1 2 3; do
+        if ./gradlew --no-daemon --stacktrace "${tasks[@]}"; then
+            exit 0
+        fi
+        if [[ "${attempt}" -lt 3 ]]; then
+            echo "Gradle ${variant} build attempt ${attempt} failed; retrying." >&2
+            sleep $((attempt * 10))
+        fi
+    done
+    exit 1
 )
 
 echo "Android ${variant} build completed: ${output}"

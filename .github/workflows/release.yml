@@ -1,0 +1,154 @@
+name: Publish release
+
+on:
+  workflow_run:
+    workflows:
+      - Desktop builds
+      - Android build
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish tagged desktop and Android artifacts
+    if: >-
+      github.event.workflow_run.event == 'push' &&
+      startsWith(github.event.workflow_run.head_branch, 'v') &&
+      contains(github.event.workflow_run.head_branch, '.')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      TAG: ${{ github.event.workflow_run.head_branch }}
+      TAG_SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - name: Wait for both platform workflows
+        id: workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          find_run() {
+            local workflow="$1"
+            local response
+            for retry in 1 2 3; do
+              if response="$(gh run list \
+                  --workflow "$workflow" \
+                  --limit 100 \
+                  --json databaseId,status,conclusion,headBranch,headSha,url)"; then
+                printf '%s' "$response" | python3 -c '
+          import json
+          import sys
+
+          tag, sha = sys.argv[1:]
+          runs = json.load(sys.stdin)
+          matches = [
+              run for run in runs
+              if run.get("headBranch") == tag and run.get("headSha") == sha
+          ]
+          matches.sort(key=lambda run: run.get("databaseId", 0), reverse=True)
+          if matches:
+              run = matches[0]
+              print("|".join(str(run.get(key, "")) for key in
+                              ("databaseId", "status", "conclusion", "url")))
+          ' "$TAG" "$TAG_SHA"
+                return 0
+              fi
+              echo "GitHub API lookup for $workflow failed; retry $retry/3." >&2
+              sleep $((retry * 5))
+            done
+            return 1
+          }
+
+          for attempt in $(seq 1 90); do
+            desktop="$(find_run 'Desktop builds' || true)"
+            android="$(find_run 'Android build' || true)"
+            if [[ -z "$desktop" || -z "$android" ]]; then
+              echo "Waiting for Desktop builds and Android build for $TAG ($attempt/90)."
+              sleep 20
+              continue
+            fi
+
+            IFS='|' read -r desktop_id desktop_status desktop_conclusion desktop_url <<< "$desktop"
+            IFS='|' read -r android_id android_status android_conclusion android_url <<< "$android"
+            if [[ "$desktop_status" == completed && "$desktop_conclusion" != success ]]; then
+              echo "Desktop workflow failed: $desktop_url" >&2
+              exit 1
+            fi
+            if [[ "$android_status" == completed && "$android_conclusion" != success ]]; then
+              echo "Android workflow failed: $android_url" >&2
+              exit 1
+            fi
+            if [[ "$desktop_status" == completed && "$android_status" == completed ]]; then
+              echo "desktop_run=$desktop_id" >> "$GITHUB_OUTPUT"
+              echo "android_run=$android_id" >> "$GITHUB_OUTPUT"
+              echo "Both platform workflows succeeded for $TAG."
+              exit 0
+            fi
+            echo "Desktop: $desktop_status; Android: $android_status ($attempt/90)."
+            sleep 20
+          done
+          echo "Timed out waiting for both platform workflows for $TAG." >&2
+          exit 1
+
+      - name: Download release artifacts
+        shell: bash
+        env:
+          DESKTOP_RUN: ${{ steps.workflows.outputs.desktop_run }}
+          ANDROID_RUN: ${{ steps.workflows.outputs.android_run }}
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            rm -rf release-assets
+            mkdir -p release-assets/desktop release-assets/android
+            if gh run download "$DESKTOP_RUN" \
+                --repo "$REPOSITORY" \
+                --pattern 'go-bigger-boy-*' \
+                --dir release-assets/desktop \
+              && gh run download "$ANDROID_RUN" \
+                --repo "$REPOSITORY" \
+                --name go-bigger-boy-android \
+                --dir release-assets/android \
+              && find release-assets -type f -print -quit | grep -q .; then
+              exit 0
+            fi
+            echo "Artifact download attempt $attempt failed; retrying." >&2
+            sleep $((attempt * 10))
+          done
+          echo "Unable to download release artifacts." >&2
+          exit 1
+
+      - name: Publish release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -d '' assets < <(find release-assets -type f -print0 | sort -z)
+          if [[ "${#assets[@]}" -eq 0 ]]; then
+            echo "No release assets were downloaded." >&2
+            exit 1
+          fi
+
+          for attempt in 1 2 3; do
+            if gh release view "$TAG" --repo "$REPOSITORY" >/dev/null 2>&1; then
+              gh release upload "$TAG" "${assets[@]}" \
+                --repo "$REPOSITORY" --clobber && exit 0
+            elif gh release create "$TAG" "${assets[@]}" \
+                --repo "$REPOSITORY" \
+                --verify-tag \
+                --generate-notes \
+                --title "Go Bigger Boy $TAG"; then
+              exit 0
+            fi
+            echo "Release publication attempt $attempt failed; retrying." >&2
+            sleep $((attempt * 10))
+          done
+          echo "Unable to publish release $TAG." >&2
+          exit 1

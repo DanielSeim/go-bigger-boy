@@ -9,7 +9,8 @@ destination="${script_directory}/app/libs"
 temporary_directory="$(mktemp -d)"
 trap 'rm -rf -- "${temporary_directory}"' EXIT
 
-curl --fail --location --retry 3 \
+curl --fail --location --retry 5 --retry-all-errors --retry-delay 2 \
+    --retry-max-time 120 --connect-timeout 20 --max-time 300 \
     "https://github.com/libsdl-org/SDL/releases/download/release-${sdl_version}/${archive}" \
     --output "${temporary_directory}/${archive}"
 echo "${expected_sha256}  ${temporary_directory}/${archive}" | sha256sum --check -

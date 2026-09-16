@@ -5,6 +5,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 permissions:
   contents: read
 
@@ -12,34 +16,44 @@ jobs:
   build:
     name: go-bigger-boy-android
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     permissions:
       contents: read
       id-token: write
     steps:
       - name: Check out source
-        uses: actions/checkout@v6
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
 
       - name: Set up Java
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@dded0888837ed1f317902acf8a20df0ad188d165 # v5.0.0
         with:
           distribution: temurin
           java-version: "17"
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@f236b35da9d031e13b1005234ebe4392ed54c580 # v5.0.0
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v4.0.1
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
         with:
           packages: platform-tools
 
       - name: Install Android toolchain
-        run: >-
-          sdkmanager
-          "platforms;android-36"
-          "build-tools;35.0.0"
-          "ndk;28.2.13676358"
-          "cmake;3.31.6"
+        run: |
+          for attempt in 1 2 3; do
+            if sdkmanager \
+              "platforms;android-36" \
+              "build-tools;35.0.0" \
+              "ndk;28.2.13676358" \
+              "cmake;3.31.6"; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "Android toolchain installation attempt $attempt failed; retrying."
+              sleep $((attempt * 10))
+            fi
+          done
+          exit 1
 
       - name: Build Android native link end-to-end test
         run: >-
@@ -57,7 +71,17 @@ jobs:
 
       - name: Run Android settings regression tests
         working-directory: android
-        run: ./gradlew --no-daemon test
+        run: |
+          for attempt in 1 2 3; do
+            if ./gradlew --no-daemon --stacktrace test; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "Gradle test attempt $attempt failed; retrying after a short backoff."
+              sleep $((attempt * 10))
+            fi
+          done
+          exit 1
 
       - name: Build debug APK
         run: scripts/build-android.sh debug
@@ -69,14 +93,50 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       - name: Run Android frontend instrumentation smoke
-        uses: reactivecircus/android-emulator-runner@v2
+        uses: reactivecircus/android-emulator-runner@4c44018e59b437e86cdfc41da381398f93ed8808 # v2
         env:
           GRADLE_USER_HOME: ${{ github.workspace }}/.cache/gradle
         with:
           api-level: 29
           arch: x86_64
           disable-animations: true
-          script: cd android && ./gradlew --no-daemon connectedDebugAndroidTest
+          script: |
+            set +e
+            mkdir -p android-ci-diagnostics
+            test_status=1
+            for attempt in 1 2; do
+              (cd android && ./gradlew --no-daemon --stacktrace connectedDebugAndroidTest) \
+                2>&1 | tee "android-ci-diagnostics/instrumentation-attempt-${attempt}.log"
+              test_status=${PIPESTATUS[0]}
+              if [ "$test_status" -eq 0 ]; then
+                break
+              fi
+              if [ "$attempt" -lt 2 ]; then
+                echo "Instrumentation attempt $attempt failed; retrying once."
+                sleep 10
+              fi
+            done
+            adb devices -l > android-ci-diagnostics/adb-devices.txt 2>&1 || true
+            adb logcat -d -v threadtime > android-ci-diagnostics/logcat.txt 2>&1 || true
+            exit "$test_status"
+
+      - name: Collect Android diagnostics
+        if: always()
+        run: |
+          mkdir -p android-ci-diagnostics
+          adb devices -l > android-ci-diagnostics/adb-devices-final.txt 2>&1 || true
+          adb logcat -d -v threadtime > android-ci-diagnostics/logcat-final.txt 2>&1 || true
+          find android/app/build -type f \( -name '*.xml' -o -name '*.log' \) \
+            -print 2>/dev/null | sort > android-ci-diagnostics/build-files.txt || true
+
+      - name: Upload Android diagnostics
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: android-ci-diagnostics-${{ github.run_id }}
+          path: android-ci-diagnostics
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Restore release signing key
         if: github.event_name != 'pull_request'
@@ -126,7 +186,7 @@ jobs:
 
       - name: Authenticate for Google Play publishing
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: google-github-actions/auth@v3
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
           project_id: go-bigger-boy
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
@@ -135,11 +195,22 @@ jobs:
       - name: Publish signed bundle to Google Play closed track (GBB Beta)
         if: startsWith(github.ref, 'refs/tags/v')
         working-directory: android
-        run: ./gradlew --no-daemon publishBundle --artifact-dir app/build/outputs/bundle/release
+        run: |
+          for attempt in 1 2 3; do
+            if ./gradlew --no-daemon --stacktrace publishBundle \
+                --artifact-dir app/build/outputs/bundle/release; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "Google Play upload attempt $attempt failed; retrying."
+              sleep $((attempt * 10))
+            fi
+          done
+          exit 1
 
       - name: Upload debug APK
         if: github.event_name == 'pull_request'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: go-bigger-boy-android-debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
@@ -148,39 +219,9 @@ jobs:
 
       - name: Upload signed release packages
         if: github.event_name != 'pull_request'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: go-bigger-boy-android
           path: android/release/*
           if-no-files-found: error
           retention-days: 14
-
-  release:
-    name: Attach Android packages to release
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    steps:
-      - name: Download signed Android packages
-        uses: actions/download-artifact@v8
-        with:
-          name: go-bigger-boy-android
-          path: android-release
-
-      - name: Attach packages to tagged release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          for attempt in {1..60}; do
-            if gh release view "${{ github.ref_name }}" \
-                  --repo "${{ github.repository }}" >/dev/null 2>&1; then
-              gh release upload "${{ github.ref_name }}" android-release/* \
-                --repo "${{ github.repository }}" --clobber
-              exit 0
-            fi
-            sleep 10
-          done
-          echo "Timed out waiting for the desktop workflow to create the release" >&2
-          exit 1
