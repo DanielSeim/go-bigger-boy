@@ -1,0 +1,350 @@
+#include "windows_dashboard_smoke.hpp"
+
+#ifdef _WIN32
+
+#include "windows_dashboard.hpp"
+
+#include "gbb/core_registry.hpp"
+
+#include <windows.h>
+
+#include <algorithm>
+#include <chrono>
+#include <cstdint>
+#include <cstring>
+#include <filesystem>
+#include <functional>
+#include <iterator>
+#include <mutex>
+#include <string>
+#include <string_view>
+#include <system_error>
+#include <thread>
+#include <vector>
+
+namespace gbb_desktop {
+namespace {
+
+using Clock = std::chrono::steady_clock;
+
+struct DashboardInvocation {
+    gameboy::RomLibrary library;
+    DashboardResult result;
+    std::mutex mutex;
+    bool completed{};
+};
+
+bool wait_for(const std::function<bool()>& predicate,
+              const std::chrono::milliseconds timeout =
+                  std::chrono::milliseconds{5000}) {
+    const auto deadline = Clock::now() + timeout;
+    while (Clock::now() < deadline) {
+        if (predicate()) return true;
+        Sleep(10);
+    }
+    return predicate();
+}
+
+BOOL CALLBACK find_dashboard_window(HWND window, LPARAM data) {
+    wchar_t class_name[64]{};
+    GetClassNameW(window, class_name, static_cast<int>(std::size(class_name)));
+    if (std::wstring_view{class_name} == L"GoBiggerBoyDashboard") {
+        *reinterpret_cast<HWND*>(data) = window;
+        return FALSE;
+    }
+    return TRUE;
+}
+
+HWND dashboard_window() {
+    HWND result = nullptr;
+    EnumWindows(find_dashboard_window, reinterpret_cast<LPARAM>(&result));
+    return result;
+}
+
+struct TextSearch {
+    std::wstring text;
+    std::wstring class_name;
+    HWND result{};
+};
+
+BOOL CALLBACK find_child_by_text(HWND child, LPARAM data) {
+    auto& search = *reinterpret_cast<TextSearch*>(data);
+    wchar_t child_class[64]{};
+    GetClassNameW(child, child_class,
+                  static_cast<int>(std::size(child_class)));
+    if (!search.class_name.empty() &&
+        std::wstring_view{child_class} != search.class_name) {
+        return TRUE;
+    }
+    wchar_t text[256]{};
+    GetWindowTextW(child, text, static_cast<int>(std::size(text)));
+    if (std::wstring_view{text} == search.text) {
+        search.result = child;
+        return FALSE;
+    }
+    return TRUE;
+}
+
+HWND child_by_text(HWND window, const wchar_t* text,
+                   const wchar_t* class_name = nullptr) {
+    TextSearch search{std::wstring{text},
+                      class_name == nullptr ? std::wstring{}
+                                             : std::wstring{class_name},
+                      nullptr};
+    EnumChildWindows(window, find_child_by_text,
+                     reinterpret_cast<LPARAM>(&search));
+    return search.result;
+}
+
+bool click_child(HWND window, const wchar_t* text,
+                 const wchar_t* class_name = L"BUTTON") {
+    const auto child = child_by_text(window, text, class_name);
+    if (child == nullptr) return false;
+    SendMessageW(child, BM_CLICK, 0, 0);
+    return true;
+}
+
+bool dashboard_completed(DashboardInvocation& invocation) {
+    std::lock_guard lock{invocation.mutex};
+    return invocation.completed;
+}
+
+void confirm_message_box(const wchar_t* title, const UINT command) {
+    HWND dialog = nullptr;
+    if (!wait_for([&] {
+            dialog = FindWindowW(L"#32770", title);
+            return dialog != nullptr;
+        })) {
+        return;
+    }
+    PostMessageW(dialog, WM_COMMAND, command, 0);
+}
+
+void close_dashboard(HWND window) {
+    if (window == nullptr) return;
+    PostMessageW(window, WM_CLOSE, 0, 0);
+    // WM_CLOSE is intentionally confirmation-protected in the real UI. Use
+    // the dialog's semantic command instead of relying on localized button
+    // captions or coordinates.
+    confirm_message_box(L"Exit Go Bigger Boy?", IDYES);
+}
+
+struct VisibleControl {
+    HWND window{};
+    std::wstring class_name;
+    RECT rect{};
+};
+
+struct ControlCollection {
+    HWND dashboard{};
+    std::vector<VisibleControl> controls;
+};
+
+BOOL CALLBACK collect_visible_controls(HWND child, LPARAM data) {
+    auto& collection = *reinterpret_cast<ControlCollection*>(data);
+    if (!IsWindowVisible(child)) return TRUE;
+    wchar_t class_name[64]{};
+    GetClassNameW(child, class_name,
+                  static_cast<int>(std::size(class_name)));
+    const std::wstring_view type{class_name};
+    if (type != L"BUTTON" && type != L"COMBOBOX" && type != L"EDIT" &&
+        type != L"SysListView32") {
+        return TRUE;
+    }
+    RECT screen_rect{};
+    if (!GetWindowRect(child, &screen_rect)) return TRUE;
+    POINT origin{screen_rect.left, screen_rect.top};
+    MapWindowPoints(nullptr, collection.dashboard, &origin, 1);
+    collection.controls.push_back(
+        {child, std::wstring{class_name},
+         {origin.x, origin.y, origin.x + screen_rect.right - screen_rect.left,
+          origin.y + screen_rect.bottom - screen_rect.top}});
+    return TRUE;
+}
+
+bool rectangles_overlap(const RECT& first, const RECT& second) {
+    RECT intersection{};
+    return IntersectRect(&intersection, &first, &second) != FALSE;
+}
+
+bool check_native_controls_and_layout(HWND dashboard) {
+    ControlCollection collection{dashboard};
+    EnumChildWindows(dashboard, collect_visible_controls,
+                     reinterpret_cast<LPARAM>(&collection));
+    RECT client{};
+    if (!GetClientRect(dashboard, &client)) return false;
+
+    bool has_owner_drawn_checkbox = false;
+    bool has_owner_drawn_combo = false;
+    for (const auto& control : collection.controls) {
+        if (control.rect.left < client.left || control.rect.top < client.top ||
+            control.rect.right > client.right ||
+            control.rect.bottom > client.bottom ||
+            control.rect.right <= control.rect.left ||
+            control.rect.bottom <= control.rect.top) {
+            return false;
+        }
+        const auto style = GetWindowLongPtrW(control.window, GWL_STYLE);
+        if (control.class_name == L"COMBOBOX" &&
+            (style & CBS_OWNERDRAWFIXED) != 0) {
+            has_owner_drawn_combo = true;
+        }
+        if (control.class_name == L"BUTTON") {
+            wchar_t text[256]{};
+            GetWindowTextW(control.window, text,
+                           static_cast<int>(std::size(text)));
+            const auto type = style & BS_TYPEMASK;
+            if (type == BS_OWNERDRAW && std::wstring_view{text} ==
+                                            L"Generate audio") {
+                has_owner_drawn_checkbox = true;
+            }
+        }
+    }
+
+    for (std::size_t first = 0; first < collection.controls.size(); ++first) {
+        for (std::size_t second = first + 1;
+             second < collection.controls.size(); ++second) {
+            if (rectangles_overlap(collection.controls[first].rect,
+                                   collection.controls[second].rect)) {
+                return false;
+            }
+        }
+    }
+    return has_owner_drawn_checkbox && has_owner_drawn_combo;
+}
+
+bool check_rendered_dashboard(HWND dashboard) {
+    RECT client{};
+    if (!GetClientRect(dashboard, &client)) return false;
+    const auto width = client.right - client.left;
+    const auto height = client.bottom - client.top;
+    if (width <= 0 || height <= 0) return false;
+    const auto window_dc = GetDC(dashboard);
+    if (window_dc == nullptr) return false;
+    const auto memory_dc = CreateCompatibleDC(window_dc);
+    const auto bitmap = CreateCompatibleBitmap(window_dc, width, height);
+    if (memory_dc == nullptr || bitmap == nullptr) {
+        if (bitmap != nullptr) DeleteObject(bitmap);
+        if (memory_dc != nullptr) DeleteDC(memory_dc);
+        ReleaseDC(dashboard, window_dc);
+        return false;
+    }
+    const auto previous = SelectObject(memory_dc, bitmap);
+    const auto painted = PrintWindow(dashboard, memory_dc, PW_CLIENTONLY);
+    SelectObject(memory_dc, previous);
+    BITMAPINFO info{};
+    info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    info.bmiHeader.biWidth = width;
+    info.bmiHeader.biHeight = -height;
+    info.bmiHeader.biPlanes = 1;
+    info.bmiHeader.biBitCount = 32;
+    info.bmiHeader.biCompression = BI_RGB;
+    std::vector<std::uint8_t> pixels(static_cast<std::size_t>(width) *
+                                     static_cast<std::size_t>(height) * 4U);
+    const auto copied = GetDIBits(memory_dc, bitmap, 0,
+                                  static_cast<UINT>(height), pixels.data(),
+                                  &info, DIB_RGB_COLORS);
+    DeleteObject(bitmap);
+    DeleteDC(memory_dc);
+    ReleaseDC(dashboard, window_dc);
+    if (!painted || copied != static_cast<UINT>(height)) return false;
+    return std::any_of(pixels.begin(), pixels.end(),
+                       [](const std::uint8_t value) { return value != 0; });
+}
+
+DashboardResult invoke_dashboard(const bool can_resume,
+                                 DashboardInvocation& invocation) {
+    KeyboardBindings keyboard{};
+    ActionBindings actions{};
+    DashboardLinkSettings link_settings;
+    gbb::PluginDiscoveryOptions plugin_options;
+    gbb::PluginCatalog plugin_catalog;
+    return show_windows_dashboard(
+        nullptr, invocation.library, can_resume, 0,
+        gbb::CoreCapability::none, 0, gameboy::default_video_mode,
+        gameboy::HardwareModel::automatic, true, keyboard, actions,
+        link_settings, plugin_options, plugin_catalog, {}, {});
+}
+
+bool run_dashboard_case(const bool can_resume, const bool discard,
+                        const bool inspect_controls) {
+    DashboardInvocation invocation;
+    std::thread worker([&] {
+        const auto result = invoke_dashboard(can_resume, invocation);
+        std::lock_guard lock{invocation.mutex};
+        invocation.result = result;
+        invocation.completed = true;
+    });
+
+    auto dashboard = HWND{};
+    const auto opened = wait_for([&] {
+        dashboard = dashboard_window();
+        return dashboard != nullptr;
+    });
+    if (!opened) {
+        worker.join();
+        return false;
+    }
+
+    bool passed = click_child(dashboard, L"Settings") &&
+                  wait_for([&] {
+                      return child_by_text(dashboard, L"Apply and return") !=
+                             nullptr;
+                  });
+    if (passed && inspect_controls) {
+        passed = check_native_controls_and_layout(dashboard) &&
+                 check_rendered_dashboard(dashboard);
+    }
+    if (passed && discard) {
+        passed = click_child(dashboard, L"Generate audio");
+        if (passed) {
+            PostMessageW(dashboard, WM_KEYDOWN, VK_ESCAPE, 0);
+            confirm_message_box(L"Unsaved settings", IDYES);
+        }
+    } else if (passed) {
+        passed = click_child(dashboard, L"Apply and return");
+    }
+    if (!passed) close_dashboard(dashboard);
+    if (!wait_for([&] { return dashboard_completed(invocation); })) {
+        close_dashboard(dashboard_window());
+    }
+    worker.join();
+    std::lock_guard lock{invocation.mutex};
+    const auto expected = can_resume ? DashboardResultAction::resume
+                                     : DashboardResultAction::library;
+    return passed && invocation.result.action == expected;
+}
+
+bool check_unreachable_rom_error() {
+    const auto path = std::filesystem::temp_directory_path() /
+                      "gbb-dashboard-smoke-missing-rom.gb";
+    std::error_code error;
+    std::filesystem::remove(path, error);
+    try {
+        static_cast<void>(gbb::built_in_core_registry().create_from_file(path));
+    } catch (const std::exception& exception) {
+        return std::strlen(exception.what()) != 0;
+    } catch (...) {
+        return true;
+    }
+    return false;
+}
+
+} // namespace
+
+int run_windows_dashboard_smoke() {
+    if (!check_unreachable_rom_error()) return 1;
+    if (settings_return_action(true) != DashboardResultAction::resume ||
+        settings_return_action(false) != DashboardResultAction::library) {
+        return 2;
+    }
+    if (!run_dashboard_case(false, false, true)) return 3;
+    if (!run_dashboard_case(false, true, false)) return 4;
+    if (!run_dashboard_case(true, false, false)) return 5;
+    if (!run_dashboard_case(true, true, false)) return 6;
+    return 0;
+}
+
+} // namespace gbb_desktop
+
+#endif

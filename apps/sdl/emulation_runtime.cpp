@@ -54,6 +54,9 @@
 #ifndef __ANDROID__
 #include "update_checker.hpp"
 #endif
+#ifdef _WIN32
+#include "windows_dashboard_smoke.hpp"
+#endif
 
 #include <SDL3/SDL.h>
 #include <algorithm>
@@ -777,6 +780,12 @@ int run_emulation(int argc, char** argv) {
             std::cout << "Go Bigger Boy " GBB_VERSION << '\n';
             return EXIT_SUCCESS;
         }
+#ifdef _WIN32
+        if (argc == 2 &&
+            std::string_view(argv[1]) == "--windows-dashboard-smoke") {
+            return gbb_desktop::run_windows_dashboard_smoke();
+        }
+#endif
         DialogState dialog;
 #ifdef _WIN32
         const auto start_with_library = argc != 2;

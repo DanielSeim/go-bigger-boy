@@ -1571,11 +1571,6 @@ void finish(State& state, const DashboardResultAction action,
     DestroyWindow(state.window);
 }
 
-DashboardResultAction settings_return_action(const State& state) {
-    return state.can_resume ? DashboardResultAction::resume
-                            : DashboardResultAction::library;
-}
-
 void cancel_settings(State& state, const DashboardResultAction action) {
     state.result = state.initial_result;
     state.voxel_profile = state.initial_voxel_profile;
@@ -1788,7 +1783,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                     L"Discard your unsaved settings changes?",
                     L"Unsaved settings",
                     MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) == IDYES) {
-                cancel_settings(*state, settings_return_action(*state));
+                cancel_settings(*state, settings_return_action(state->can_resume));
             }
         } else if (confirm_exit(window)) {
             finish(*state, DashboardResultAction::quit);
@@ -2050,10 +2045,10 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                 SetFocus(state->link_remote_port);
                 return 0;
             }
-            finish(*state, settings_return_action(*state));
+            finish(*state, settings_return_action(state->can_resume));
             return 0;
         case id_settings_cancel:
-            cancel_settings(*state, settings_return_action(*state));
+            cancel_settings(*state, settings_return_action(state->can_resume));
             return 0;
         case id_artwork_retry:
             if (HIWORD(wparam) == BN_CLICKED) {
@@ -2213,7 +2208,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                     L"Discard your unsaved settings changes?",
                     L"Unsaved settings",
                     MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) == IDYES) {
-                cancel_settings(*state, settings_return_action(*state));
+                cancel_settings(*state, settings_return_action(state->can_resume));
             }
         } else if (confirm_exit(window)) {
             finish(*state, DashboardResultAction::quit);

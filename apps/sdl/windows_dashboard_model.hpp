@@ -23,6 +23,16 @@ enum class DashboardResultAction {
     update_available,
 };
 
+// Settings are modal to the dashboard. Returning from settings should keep a
+// running emulator visible, while the startup dashboard must remain available
+// when there is no emulator to resume. Keeping this decision in the value-only
+// model makes the Win32 message-loop behavior independently testable.
+[[nodiscard]] constexpr DashboardResultAction settings_return_action(
+    const bool can_resume) noexcept {
+    return can_resume ? DashboardResultAction::resume
+                      : DashboardResultAction::library;
+}
+
 using KeyboardBindings = std::array<std::array<std::int64_t, 2>, 8>;
 using ActionBindings = std::array<std::int64_t, 4>;
 

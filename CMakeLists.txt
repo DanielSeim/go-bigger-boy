@@ -342,6 +342,7 @@ if(GAMEBOY_BUILD_SDL)
                 apps/sdl/dashboard_controller.cpp
                 apps/sdl/windows_dashboard.cpp
                 apps/sdl/windows_dashboard_artwork.cpp
+                apps/sdl/windows_dashboard_smoke.cpp
                 apps/sdl/windows_menu_bar.cpp
                 apps/sdl/update_checker.cpp
                 packaging/windows/go-bigger-boy.rc
@@ -603,6 +604,14 @@ if(GAMEBOY_BUILD_TESTS)
     target_link_libraries(gameboy_frontend_contract_tests PRIVATE gbb_core_api)
     add_test(NAME gameboy_frontend_contract
              COMMAND gameboy_frontend_contract_tests)
+
+    add_executable(gameboy_windows_dashboard_contract_tests
+        tests/windows_dashboard_contract_tests.cpp)
+    target_include_directories(gameboy_windows_dashboard_contract_tests
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/apps/sdl
+                ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    add_test(NAME gameboy_windows_dashboard_contract
+             COMMAND gameboy_windows_dashboard_contract_tests)
 
     add_executable(gameboy_desktop_breakpoint_contract_tests
         tests/desktop_breakpoint_contract_tests.cpp)
@@ -1089,6 +1098,16 @@ if(GAMEBOY_BUILD_TESTS)
     endif()
     if(TARGET gameboy_sdl)
         add_test(NAME gameboy_sdl_version COMMAND gameboy_sdl --version)
+        if(WIN32)
+            # This launches the real native dashboard in an isolated smoke
+            # mode. The test drives the Win32 controls and message boxes, so
+            # regressions in modal lifecycle, owner-draw controls, layout
+            # bounds, rendering, or missing-ROM diagnostics fail in CI.
+            add_test(NAME gameboy_windows_dashboard_smoke
+                     COMMAND gameboy_sdl --windows-dashboard-smoke)
+            set_tests_properties(gameboy_windows_dashboard_smoke
+                                 PROPERTIES TIMEOUT 45)
+        endif()
     endif()
 
     if(GAMEBOY_TEST_ROM_DIR OR GAMEBOY_SAMESUITE_DIR OR
