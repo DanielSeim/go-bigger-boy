@@ -603,11 +603,14 @@ public:
                 const SDL_FRect marker{row.x, row.y, 3.0F, row.h};
                 static_cast<void>(SDL_RenderFillRect(renderer_, &marker));
             }
+            constexpr SDL_Color disassembly_text{230, 249, 255, 255};
             render_tool_text(renderer_, disassembly_panel_rect.x + 12.0F,
-                             row_y + 4.0F, hex16(line.address).c_str(), 42.0F);
+                             row_y + 4.0F, hex16(line.address).c_str(),
+                             disassembly_text, 42.0F);
             const auto bytes = disassembly_bytes(line);
             render_tool_text(renderer_, disassembly_panel_rect.x + 66.0F,
-                             row_y + 4.0F, bytes.c_str(), 78.0F);
+                             row_y + 4.0F, bytes.c_str(), disassembly_text,
+                             78.0F);
             auto instruction_text = line.text;
             const auto available = static_cast<std::size_t>(
                 std::max(12.0F, (disassembly_panel_rect.w - 150.0F) / 8.0F));
@@ -617,6 +620,7 @@ public:
             }
             render_tool_text(renderer_, disassembly_panel_rect.x + 150.0F,
                              row_y + 4.0F, instruction_text.c_str(),
+                             disassembly_text,
                              disassembly_panel_rect.w - 162.0F);
         }
         text(24, geometry.breakpoint_toggle.y - 28,

@@ -291,7 +291,7 @@ public:
             static_cast<void>(SDL_RenderRect(renderer_, &swatch));
             const auto label = std::to_string(color + 1);
             render_tool_text(renderer_, swatch.x + 24, swatch.y + 62,
-                             label.c_str());
+                             label.c_str(), SDL_Color{238, 249, 255, 255});
         }
         const auto action_y = action_origin_y(window_height);
         draw_button({editor_x, action_y, 120, 36}, "CTRL+Z UNDO");

@@ -11,6 +11,9 @@ namespace gbb::sdl {
 void render_tool_text(SDL_Renderer* renderer, float x, float y,
                       const char* value, float max_width = 0.0F,
                       float scale = 1.0F);
+void render_tool_text(SDL_Renderer* renderer, float x, float y,
+                      const char* value, SDL_Color color,
+                      float max_width = 0.0F, float scale = 1.0F);
 void clear_tool_text_cache(SDL_Renderer* renderer) noexcept;
 
 void draw_tool_button_background(SDL_Renderer* renderer, SDL_Window* window,

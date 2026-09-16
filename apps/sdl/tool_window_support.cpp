@@ -192,6 +192,23 @@ void render_tool_text(SDL_Renderer* renderer, const float x, const float y,
     }
 }
 
+void render_tool_text(SDL_Renderer* renderer, const float x, const float y,
+                      const char* value, const SDL_Color color,
+                      const float max_width, const float scale) {
+    if (renderer == nullptr) return;
+    Uint8 old_r = 0;
+    Uint8 old_g = 0;
+    Uint8 old_b = 0;
+    Uint8 old_a = 0;
+    static_cast<void>(SDL_GetRenderDrawColor(renderer, &old_r, &old_g,
+                                              &old_b, &old_a));
+    static_cast<void>(SDL_SetRenderDrawColor(renderer, color.r, color.g,
+                                             color.b, color.a));
+    render_tool_text(renderer, x, y, value, max_width, scale);
+    static_cast<void>(SDL_SetRenderDrawColor(renderer, old_r, old_g, old_b,
+                                             old_a));
+}
+
 void clear_tool_text_cache(SDL_Renderer* renderer) noexcept {
 #ifdef GBB_HAS_SDL_TTF
     if (renderer == nullptr) return;

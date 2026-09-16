@@ -1616,6 +1616,8 @@ void open_rom(State& state) {
 
 bool confirm_exit(HWND window);
 void draw_dashboard_button(const DRAWITEMSTRUCT& item, const State& state);
+void draw_dashboard_checkbox(const DRAWITEMSTRUCT& item);
+void draw_dashboard_combo(const DRAWITEMSTRUCT& item);
 
 LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                              LPARAM lparam) {
@@ -1705,7 +1707,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
         return 0;
     }
     if (message == WM_CTLCOLORSTATIC || message == WM_CTLCOLORLISTBOX ||
-        message == WM_CTLCOLOREDIT) {
+        message == WM_CTLCOLOREDIT || message == WM_CTLCOLORBTN) {
         const auto dc = reinterpret_cast<HDC>(wparam);
         SetTextColor(dc, RGB(224, 235, 244));
         SetBkColor(dc, RGB(13, 18, 27));
@@ -2060,9 +2062,21 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
             return 0;
         default: break;
         }
+    } else if (message == WM_MEASUREITEM) {
+        const auto* measure = reinterpret_cast<const MEASUREITEMSTRUCT*>(lparam);
+        if (measure != nullptr && measure->CtlType == ODT_COMBOBOX) {
+            auto* mutable_measure = reinterpret_cast<MEASUREITEMSTRUCT*>(lparam);
+            mutable_measure->itemHeight = 26;
+            return TRUE;
+        }
     } else if (message == WM_DRAWITEM) {
         const auto& item = *reinterpret_cast<const DRAWITEMSTRUCT*>(lparam);
-        if (wparam == id_voxel_preview) {
+        if (item.CtlType == ODT_COMBOBOX) {
+            draw_dashboard_combo(item);
+        } else if ((GetWindowLongPtrW(item.hwndItem, GWL_STYLE) &
+                    BS_AUTOCHECKBOX) != 0) {
+            draw_dashboard_checkbox(item);
+        } else if (wparam == id_voxel_preview) {
             draw_voxel_preview(item, *state);
         } else if (wparam == id_gameboy_background) {
             draw_gameboy_background(item);
@@ -2433,11 +2447,11 @@ void start_artwork_resolution(State& state) {
 
 HWND control(State& state, const wchar_t* type, const wchar_t* text,
              DWORD style, int x, int y, int width, int height, int id) {
-    if (std::wstring_view(type) == L"BUTTON" &&
-        (style & BS_AUTOCHECKBOX) == 0) {
-        style |= BS_OWNERDRAW;
-    }
     const auto control_type = std::wstring_view(type);
+    if (control_type == L"BUTTON") style |= BS_OWNERDRAW;
+    if (control_type == L"COMBOBOX") {
+        style |= CBS_OWNERDRAWFIXED | CBS_HASSTRINGS;
+    }
     const auto extended_style = control_type == L"STATIC" ? WS_EX_TRANSPARENT : 0;
     // Win32 does not add tab stops to owner-drawn buttons automatically.
     // Keep the complete dashboard keyboard-accessible.
@@ -2502,6 +2516,135 @@ void draw_dashboard_button(const DRAWITEMSTRUCT& item, const State& state) {
     if ((item.itemState & ODS_FOCUS) != 0) {
         auto focus_rect = item.rcItem;
         InflateRect(&focus_rect, -3, -3);
+        const auto focus_pen = CreatePen(PS_DOT, 1, RGB(238, 246, 252));
+        const auto old_pen = SelectObject(item.hDC, focus_pen);
+        const auto old_brush = SelectObject(item.hDC, GetStockObject(HOLLOW_BRUSH));
+        Rectangle(item.hDC, focus_rect.left, focus_rect.top,
+                  focus_rect.right, focus_rect.bottom);
+        SelectObject(item.hDC, old_brush);
+        SelectObject(item.hDC, old_pen);
+        DeleteObject(focus_pen);
+    }
+    if (old_font != nullptr) SelectObject(item.hDC, old_font);
+}
+
+void draw_dashboard_checkbox(const DRAWITEMSTRUCT& item) {
+    const auto disabled = (item.itemState & ODS_DISABLED) != 0;
+    const auto pressed = (item.itemState & ODS_SELECTED) != 0;
+    const auto checked = SendMessageW(item.hwndItem, BM_GETCHECK, 0, 0) ==
+                         BST_CHECKED;
+    const auto background = CreateSolidBrush(
+        pressed ? RGB(20, 77, 101) : RGB(13, 18, 27));
+    FillRect(item.hDC, &item.rcItem, background);
+    DeleteObject(background);
+
+    RECT box{item.rcItem.left + 2,
+             item.rcItem.top + (item.rcItem.bottom - item.rcItem.top - 18) / 2,
+             item.rcItem.left + 20,
+             item.rcItem.top + (item.rcItem.bottom - item.rcItem.top - 18) / 2 +
+                 18};
+    const auto box_fill = CreateSolidBrush(
+        disabled ? RGB(28, 34, 45) : checked ? RGB(0, 104, 141)
+                                            : RGB(20, 27, 38));
+    FillRect(item.hDC, &box, box_fill);
+    DeleteObject(box_fill);
+    const auto box_border = CreateSolidBrush(
+        disabled ? RGB(104, 117, 132) : RGB(69, 207, 238));
+    FrameRect(item.hDC, &box, box_border);
+    DeleteObject(box_border);
+
+    if (checked && !disabled) {
+        const auto check_pen = CreatePen(PS_SOLID, 2, RGB(238, 249, 255));
+        const auto old_pen = SelectObject(item.hDC, check_pen);
+        MoveToEx(item.hDC, box.left + 4, box.top + 9, nullptr);
+        LineTo(item.hDC, box.left + 8, box.bottom - 4);
+        LineTo(item.hDC, box.right - 3, box.top + 4);
+        SelectObject(item.hDC, old_pen);
+        DeleteObject(check_pen);
+    }
+
+    SetBkMode(item.hDC, TRANSPARENT);
+    SetTextColor(item.hDC, disabled ? RGB(104, 117, 132)
+                                    : RGB(238, 246, 252));
+    const auto font = reinterpret_cast<HFONT>(SendMessageW(
+        item.hwndItem, WM_GETFONT, 0, 0));
+    HGDIOBJ old_font = nullptr;
+    if (font != nullptr) old_font = SelectObject(item.hDC, font);
+    wchar_t label[256]{};
+    GetWindowTextW(item.hwndItem, label, static_cast<int>(std::size(label)));
+    auto text_rect = item.rcItem;
+    text_rect.left = box.right + 8;
+    DrawTextW(item.hDC, label, -1, &text_rect,
+              DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX |
+                  DT_END_ELLIPSIS);
+    if ((item.itemState & ODS_FOCUS) != 0) {
+        auto focus_rect = item.rcItem;
+        InflateRect(&focus_rect, -1, -1);
+        const auto focus_pen = CreatePen(PS_DOT, 1, RGB(238, 246, 252));
+        const auto old_pen = SelectObject(item.hDC, focus_pen);
+        const auto old_brush = SelectObject(item.hDC, GetStockObject(HOLLOW_BRUSH));
+        Rectangle(item.hDC, focus_rect.left, focus_rect.top,
+                  focus_rect.right, focus_rect.bottom);
+        SelectObject(item.hDC, old_brush);
+        SelectObject(item.hDC, old_pen);
+        DeleteObject(focus_pen);
+    }
+    if (old_font != nullptr) SelectObject(item.hDC, old_font);
+}
+
+void draw_dashboard_combo(const DRAWITEMSTRUCT& item) {
+    const auto disabled = (item.itemState & ODS_DISABLED) != 0;
+    const auto closed = item.itemID == static_cast<UINT>(-1);
+    const auto current = SendMessageW(item.hwndItem, CB_GETCURSEL, 0, 0);
+    const auto index = closed ? current : static_cast<LRESULT>(item.itemID);
+    const auto selected = !closed &&
+                          (item.itemState & ODS_SELECTED) != 0;
+    const auto background = CreateSolidBrush(
+        disabled ? RGB(28, 34, 45)
+                 : selected ? RGB(0, 104, 141) : RGB(20, 27, 38));
+    FillRect(item.hDC, &item.rcItem, background);
+    DeleteObject(background);
+    const auto border = CreateSolidBrush(
+        disabled ? RGB(104, 117, 132) : RGB(69, 207, 238));
+    FrameRect(item.hDC, &item.rcItem, border);
+    DeleteObject(border);
+
+    wchar_t label[256]{};
+    if (index >= 0) {
+        SendMessageW(item.hwndItem, CB_GETLBTEXT,
+                     static_cast<WPARAM>(index),
+                     reinterpret_cast<LPARAM>(label));
+    }
+    SetBkMode(item.hDC, TRANSPARENT);
+    SetTextColor(item.hDC, disabled ? RGB(104, 117, 132)
+                                    : RGB(238, 246, 252));
+    const auto font = reinterpret_cast<HFONT>(SendMessageW(
+        item.hwndItem, WM_GETFONT, 0, 0));
+    HGDIOBJ old_font = nullptr;
+    if (font != nullptr) old_font = SelectObject(item.hDC, font);
+    auto text_rect = item.rcItem;
+    text_rect.left += 9;
+    text_rect.right -= 24;
+    DrawTextW(item.hDC, label, -1, &text_rect,
+              DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX |
+                  DT_END_ELLIPSIS);
+    if (closed) {
+        const auto arrow_brush = CreateSolidBrush(
+            disabled ? RGB(104, 117, 132) : RGB(185, 216, 232));
+        const auto old_brush = SelectObject(item.hDC, arrow_brush);
+        const auto center_x = item.rcItem.right - 13;
+        const auto center_y = (item.rcItem.top + item.rcItem.bottom) / 2;
+        const std::array<POINT, 3> arrow{
+            POINT{center_x - 5, center_y - 2},
+            POINT{center_x + 5, center_y - 2},
+            POINT{center_x, center_y + 4}};
+        Polygon(item.hDC, arrow.data(), static_cast<int>(arrow.size()));
+        SelectObject(item.hDC, old_brush);
+        DeleteObject(arrow_brush);
+    }
+    if ((item.itemState & ODS_FOCUS) != 0) {
+        auto focus_rect = item.rcItem;
+        InflateRect(&focus_rect, -1, -1);
         const auto focus_pen = CreatePen(PS_DOT, 1, RGB(238, 246, 252));
         const auto old_pen = SelectObject(item.hDC, focus_pen);
         const auto old_brush = SelectObject(item.hDC, GetStockObject(HOLLOW_BRUSH));
