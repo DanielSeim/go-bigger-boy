@@ -52,12 +52,37 @@ TSAN_OPTIONS="$tsan_options" timeout --signal=INT --kill-after=5s \
             "$executable" >"$output/stdout-stderr.log" 2>&1 &
         fi
         pid=$!
-        window=""
-        for attempt in $(seq 1 100); do
-            window=$(xdotool search --name "Go Bigger Boy" 2>/dev/null | tail -n 1)
-            [[ -n "$window" ]] && break
-            sleep 0.1
-        done
+        find_live_main_window() {
+            local candidate name
+            while read -r candidate; do
+                [[ -z "$candidate" ]] && continue
+                if ! name=$(xdotool getwindowname "$candidate" 2>/dev/null); then
+                    continue
+                fi
+                case "$name" in
+                    *" - Debugger"|*" - Video Viewers") continue ;;
+                esac
+                if xdotool getwindowgeometry "$candidate" >/dev/null 2>&1; then
+                    printf '%s\n' "$candidate"
+                    return 0
+                fi
+            done < <(xdotool search --onlyvisible --name "Go Bigger Boy" 2>/dev/null)
+            return 1
+        }
+        wait_for_stable_main_window() {
+            local previous="" candidate
+            for attempt in $(seq 1 100); do
+                candidate=$(find_live_main_window || true)
+                if [[ -n "$candidate" && "$candidate" == "$previous" ]]; then
+                    printf '%s\n' "$candidate"
+                    return 0
+                fi
+                previous="$candidate"
+                sleep 0.1
+            done
+            return 1
+        }
+        window=$(wait_for_stable_main_window || true)
         if [[ -z "$window" ]]; then
             echo "SDL window did not appear" >&2
             kill -TERM "$pid" 2>/dev/null
@@ -107,6 +132,8 @@ TSAN_OPTIONS="$tsan_options" timeout --signal=INT --kill-after=5s \
                     2>/dev/null | tail -n 1)
                 [[ -n "$debugger" ]] && break
                 if ((attempt == 1 || attempt % 5 == 0)); then
+                    window=$(find_live_main_window || true)
+                    [[ -z "$window" ]] && continue
                     send_input windowfocus "$window"
                     send_input key --window "$window" --clearmodifiers F12
                 fi
