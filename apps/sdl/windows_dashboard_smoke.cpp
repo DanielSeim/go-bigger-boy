@@ -363,18 +363,18 @@ bool run_dashboard_case(const bool can_resume, const bool discard,
     bool passed = settings != nullptr;
     if (passed) {
         SendMessageW(settings, BM_CLICK, 0, 0);
-        const auto settings_id = GetDlgCtrlID(settings);
         passed = wait_for([&] {
             const auto apply = child_by_text(dashboard, L"Apply and return");
             return apply != nullptr && IsWindowVisible(apply) != FALSE;
         }, std::chrono::milliseconds{250});
-        if (!passed && settings_id != 0) {
+        if (!passed) {
             // Owner-drawn buttons on some Windows runners ignore BM_CLICK.
             // Deliver the same notification directly to the dashboard and
             // then wait for the page's visible state.
+            constexpr WORD settings_command_id = 101;
             SendMessageW(
                 dashboard, WM_COMMAND,
-                MAKEWPARAM(static_cast<WORD>(settings_id), BN_CLICKED),
+                MAKEWPARAM(settings_command_id, BN_CLICKED),
                 reinterpret_cast<LPARAM>(settings));
             passed = wait_for([&] {
                 const auto apply =
@@ -383,20 +383,16 @@ bool run_dashboard_case(const bool can_resume, const bool discard,
             });
         }
         if (!passed) {
-            // The Settings control has a stable dashboard command ID. Use it
-            // as a final fallback when a runner reports no child dialog ID.
-            constexpr WORD settings_command_id = 101;
-            SendMessageW(
-                dashboard, WM_COMMAND,
-                MAKEWPARAM(settings_id == 0 ? settings_command_id
-                                            : static_cast<WORD>(settings_id),
-                            BN_CLICKED),
-                reinterpret_cast<LPARAM>(settings));
-            passed = wait_for([&] {
-                const auto apply =
-                    child_by_text(dashboard, L"Apply and return");
-                return apply != nullptr && IsWindowVisible(apply) != FALSE;
-            });
+            std::fprintf(stderr,
+                         "dashboard smoke: Settings=%p visible=%d "
+                         "Apply=%p visible=%d\n",
+                         static_cast<void*>(settings),
+                         settings != nullptr && IsWindowVisible(settings),
+                         static_cast<void*>(child_by_text(
+                             dashboard, L"Apply and return")),
+                         child_by_text(dashboard, L"Apply and return") != nullptr &&
+                             IsWindowVisible(child_by_text(
+                                 dashboard, L"Apply and return")));
         }
     }
     if (passed && inspect_controls) {
