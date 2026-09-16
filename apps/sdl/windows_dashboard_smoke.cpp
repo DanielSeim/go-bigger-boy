@@ -192,6 +192,17 @@ bool check_native_controls_and_layout(HWND dashboard) {
             control.rect.bottom > client.bottom ||
             control.rect.right <= control.rect.left ||
             control.rect.bottom <= control.rect.top) {
+            wchar_t text[256]{};
+            GetWindowTextW(control.window, text,
+                           static_cast<int>(std::size(text)));
+            std::fprintf(stderr,
+                         "dashboard smoke: control outside client class=%ls "
+                         "text=%ls client=[%ld,%ld,%ld,%ld] "
+                         "rect=[%ld,%ld,%ld,%ld]\n",
+                         control.class_name.c_str(), text, client.left,
+                         client.top, client.right, client.bottom,
+                         control.rect.left, control.rect.top, control.rect.right,
+                         control.rect.bottom);
             return false;
         }
         const auto style = GetWindowLongPtrW(control.window, GWL_STYLE);
