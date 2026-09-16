@@ -32,6 +32,7 @@ struct VoxelRenderContext {
     gbb::VoxelScene& voxel_scene;
     std::uint64_t& voxel_scene_signature;
     bool& voxel_scene_cached;
+    gbb::VoxelRenderStats& voxel_stats;
     std::vector<SDL_Vertex>& voxel_vertices;
     std::vector<int>& voxel_indices;
     float& voxel_camera_pitch_offset;

@@ -90,7 +90,7 @@ constexpr int dashboard_width = 980;
 // Keep the initial dashboard usable on 1080p displays after non-client
 // chrome, while the settings page remains fully accessible through scrolling.
 constexpr int dashboard_height = 900;
-constexpr long settings_content_bottom = 860;
+constexpr long settings_content_bottom = 1280;
 
 HBITMAP load_file_bitmap(const std::filesystem::path& path, UINT width,
                          UINT height);
@@ -615,9 +615,11 @@ void refresh_binding_buttons(State& state) {
     }
 }
 
-constexpr std::array<const wchar_t*, 8> voxel_profile_names{{
+constexpr std::array<const wchar_t*, 15> voxel_profile_names{{
     L"Depth scale", L"Camera pitch", L"Camera yaw", L"Zoom",
-    L"Perspective", L"Sprite depth", L"Lighting",
+    L"Perspective", L"Sprite depth", L"Lighting", L"Popup parallax",
+    L"Popup object height", L"Popup sprite height", L"Popup card thickness",
+    L"Popup sprite thickness", L"Popup HUD top rows", L"Popup HUD bottom rows",
     L"Framebuffer facade"}};
 
 std::wstring voxel_float_text(const float value) {
@@ -670,14 +672,20 @@ void refresh_voxel_profile_controls(State& state) {
     for (const auto edit : state.voxel_edits) EnableWindow(edit, TRUE);
     EnableWindow(state.voxel_save, TRUE);
     EnableWindow(state.voxel_reset, TRUE);
-    const std::array<float, 8> values{{
+    const std::array<float, 15> values{{
         state.voxel_profile.depth_scale, state.voxel_profile.camera_pitch,
         state.voxel_profile.camera_yaw, state.voxel_profile.zoom,
         state.voxel_profile.perspective, state.voxel_profile.sprite_depth,
-        state.voxel_profile.lighting,
+        state.voxel_profile.lighting, state.voxel_profile.popup_parallax,
+        state.voxel_profile.popup_object_height,
+        state.voxel_profile.popup_sprite_height,
+        state.voxel_profile.popup_card_thickness,
+        state.voxel_profile.popup_sprite_thickness,
+        static_cast<float>(state.voxel_profile.popup_hud_top_rows),
+        static_cast<float>(state.voxel_profile.popup_hud_bottom_rows),
         state.voxel_profile.framebuffer_facade ? 1.0F : 0.0F}};
     for (std::size_t index = 0; index < values.size(); ++index) {
-        if (index == 7) {
+        if (index == 14) {
             SendMessageW(state.voxel_edits[index], BM_SETCHECK,
                          values[index] >= 0.5F ? BST_CHECKED : BST_UNCHECKED, 0);
         } else {
@@ -689,14 +697,20 @@ void refresh_voxel_profile_controls(State& state) {
 }
 
 bool read_voxel_profile_controls(State& state) {
-    std::array<float, 8> values{{
+    std::array<float, 15> values{{
         state.voxel_profile.depth_scale, state.voxel_profile.camera_pitch,
         state.voxel_profile.camera_yaw, state.voxel_profile.zoom,
         state.voxel_profile.perspective, state.voxel_profile.sprite_depth,
-        state.voxel_profile.lighting,
+        state.voxel_profile.lighting, state.voxel_profile.popup_parallax,
+        state.voxel_profile.popup_object_height,
+        state.voxel_profile.popup_sprite_height,
+        state.voxel_profile.popup_card_thickness,
+        state.voxel_profile.popup_sprite_thickness,
+        static_cast<float>(state.voxel_profile.popup_hud_top_rows),
+        static_cast<float>(state.voxel_profile.popup_hud_bottom_rows),
         state.voxel_profile.framebuffer_facade ? 1.0F : 0.0F}};
     for (std::size_t index = 0; index < values.size(); ++index) {
-        if (index == 7) {
+        if (index == 14) {
             values[index] = SendMessageW(state.voxel_edits[index], BM_GETCHECK,
                                          0, 0) == BST_CHECKED ? 1.0F : 0.0F;
         } else if (!parse_voxel_edit(state.voxel_edits[index], values[index])) {
@@ -710,7 +724,16 @@ bool read_voxel_profile_controls(State& state) {
     state.voxel_profile.perspective = values[4];
     state.voxel_profile.sprite_depth = values[5];
     state.voxel_profile.lighting = values[6];
-    state.voxel_profile.framebuffer_facade = values[7] >= 0.5F;
+    state.voxel_profile.popup_parallax = values[7];
+    state.voxel_profile.popup_object_height = values[8];
+    state.voxel_profile.popup_sprite_height = values[9];
+    state.voxel_profile.popup_card_thickness = values[10];
+    state.voxel_profile.popup_sprite_thickness = values[11];
+    state.voxel_profile.popup_hud_top_rows = static_cast<std::uint32_t>(
+        std::max(0.0F, values[12]));
+    state.voxel_profile.popup_hud_bottom_rows = static_cast<std::uint32_t>(
+        std::max(0.0F, values[13]));
+    state.voxel_profile.framebuffer_facade = values[14] >= 0.5F;
     return true;
 }
 
@@ -1468,25 +1491,29 @@ void layout_dashboard(State& state) {
     place_child(state.voxel_heading, 32, 330, 300, 28, offset);
     place_child(state.voxel_fingerprint_label, 350, 333, 598, 24, offset);
     place_child(state.voxel_preview, 300, 380, 180, 150, offset);
-    constexpr std::array<int, 8> profile_x{{32, 32, 32, 32, 510, 510, 510, 510}};
-    constexpr std::array<int, 8> profile_y{{380, 420, 460, 500, 380, 420, 460, 500}};
+    constexpr std::array<int, 15> profile_x{{
+        32, 32, 32, 32, 32, 32, 32,
+        510, 510, 510, 510, 510, 510, 510, 510}};
+    constexpr std::array<int, 15> profile_y{{
+        380, 420, 460, 500, 540, 580, 620,
+        380, 420, 460, 500, 540, 580, 620, 660}};
     for (std::size_t index = 0; index < state.voxel_labels.size(); ++index) {
         place_child(state.voxel_labels[index], profile_x[index], profile_y[index],
                     120, 24, offset);
         place_child(state.voxel_edits[index], profile_x[index] + 130,
                     profile_y[index] - 2, 130, 28, offset);
     }
-    place_child(state.voxel_save, 680, 545, 120, 38, offset);
-    place_child(state.voxel_reset, 680, 545, 268, 38, offset);
-    place_child(state.plugin_heading, 32, advanced_plugin_y, 320, 28, offset);
-    place_child(state.plugin_status, 32, advanced_plugin_y + 35, 916, 72,
+    place_child(state.voxel_save, 680, 705, 120, 38, offset);
+    place_child(state.voxel_reset, 810, 705, 138, 38, offset);
+    place_child(state.plugin_heading, 32, advanced_plugin_y + 120, 320, 28, offset);
+    place_child(state.plugin_status, 32, advanced_plugin_y + 155, 916, 72,
                 offset);
-    place_child(state.plugin_discovery, 32, advanced_plugin_y + 115, 260, 28,
+    place_child(state.plugin_discovery, 32, advanced_plugin_y + 235, 260, 28,
                 offset);
-    place_child(state.plugin_require_allowlist, 320, advanced_plugin_y + 115,
+    place_child(state.plugin_require_allowlist, 320, advanced_plugin_y + 235,
                 320, 28, offset);
     place_child(state.plugin_require_capability_allowlist, 660,
-                advanced_plugin_y + 115, 290, 28,
+                advanced_plugin_y + 235, 290, 28,
                 offset);
     place_child(state.link_heading, 32, 330, 420, 28, offset);
     place_child(state.link_transport_label, 32, 350, 150, 26, offset);
@@ -1777,11 +1804,11 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
             return 0;
         }
         if (command >= id_voxel_first_edit &&
-            command < id_voxel_first_edit + 8 && state->voxel_available) {
+            command < id_voxel_first_edit + 15 && state->voxel_available) {
             const auto index = static_cast<std::size_t>(
                 command - id_voxel_first_edit);
             const auto notification = HIWORD(wparam);
-            const auto editing = index == 7 ? notification == BN_CLICKED
+            const auto editing = index == 14 ? notification == BN_CLICKED
                                             : notification == EN_CHANGE;
             if (editing && read_voxel_profile_controls(*state)) {
                 state->result.voxel_profile_changed = true;
@@ -2840,17 +2867,19 @@ DashboardResult show_windows_dashboard(
     state.voxel_preview = control(
         state, L"STATIC", L"", SS_OWNERDRAW | WS_BORDER,
         300, 850, 180, 150, id_voxel_preview);
-    const auto profile_columns = std::array<int, 8>{{32, 32, 32, 32,
-                                                       510, 510, 510, 510}};
-    const auto profile_rows = std::array<int, 8>{{850, 890, 930, 970,
-                                                   850, 890, 930, 970}};
+    const auto profile_columns = std::array<int, 15>{{
+        32, 32, 32, 32, 32, 32, 32,
+        510, 510, 510, 510, 510, 510, 510, 510}};
+    const auto profile_rows = std::array<int, 15>{{
+        850, 890, 930, 970, 1010, 1050, 1090,
+        850, 890, 930, 970, 1010, 1050, 1090, 1130}};
     for (std::size_t index = 0; index < voxel_profile_names.size(); ++index) {
         const auto x = profile_columns[index];
         const auto y = profile_rows[index];
         state.voxel_labels[index] = control(
             state, L"STATIC", voxel_profile_names[index], 0,
             x, y, 120, 24, 0);
-        state.voxel_edits[index] = index == 7
+        state.voxel_edits[index] = index == 14
             ? control(state, L"BUTTON", L"Enabled", BS_AUTOCHECKBOX,
                       x + 130, y - 2, 130, 28,
                       id_voxel_first_edit + static_cast<int>(index))
@@ -2859,10 +2888,10 @@ DashboardResult show_windows_dashboard(
                       id_voxel_first_edit + static_cast<int>(index));
     }
     state.voxel_save = control(state, L"BUTTON", L"Stage profile",
-                               BS_PUSHBUTTON, 680, 1020, 120, 38,
+                               BS_PUSHBUTTON, 680, 1170, 120, 38,
                                id_voxel_save);
     state.voxel_reset = control(state, L"BUTTON", L"Reset to defaults",
-                                BS_PUSHBUTTON, 810, 1020, 120, 38,
+                                BS_PUSHBUTTON, 810, 1170, 138, 38,
                                 id_voxel_reset);
     state.plugin_heading = control(state, L"STATIC", L"Native plug-ins",
                                    0, 32, 1080, 320, 28, 0);

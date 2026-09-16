@@ -579,7 +579,8 @@ Per-ROM depth and camera tuning can be supplied in `voxel-profiles.ini` beside
 `background_depth_near`, `background_transparent_depth`, `window_depth_far`,
 `window_depth_near`, `sprite_depth_far`, `sprite_depth_near`, and
 `popup_parallax`, `popup_object_height`, `popup_sprite_height`,
-`popup_card_thickness`, `popup_sprite_thickness`, and `framebuffer_facade` keys.
+`popup_card_thickness`, `popup_sprite_thickness`, `popup_hud_top_rows`,
+`popup_hud_bottom_rows`, and `framebuffer_facade` keys.
 The popup values control page parallax, cut-out height and extrusion without
 requiring a renderer rebuild. The default layer ranges are background `100` → `20`
 with transparent pixels at `95`, window `90` → `50`, and sprites/objects
@@ -589,6 +590,9 @@ sprite ordering (larger depth values are farther from the viewer). Set
 normal framebuffer as a front-facing reference facade. The default mesh camera is centered and
 slightly zoomed out so the scene remains inside the viewport. GBB creates this file with documented
 defaults on first startup, so it can be copied alongside a portable install.
+Set `background_debug_overlay=1` while tuning to draw candidate bounds and
+write accepted-object, candidate, vertex and index counts to the frontend
+diagnostic log.
 The supplied Super Mario Land dump (`0x7eafc0023b31d850`) receives a built-in
 profile tuned for its flat sky, layered platforms, and sparse foreground
 sprites; the profile is added to existing installations without overwriting

@@ -67,6 +67,7 @@ void present_frame(const PresentationContext& context) {
                 sdl.voxel_scene,
                 sdl.voxel_scene_signature,
                 sdl.voxel_scene_cached,
+                sdl.voxel_stats,
                 sdl.voxel_vertices,
                 sdl.voxel_indices,
                 sdl.voxel_camera_pitch_offset,

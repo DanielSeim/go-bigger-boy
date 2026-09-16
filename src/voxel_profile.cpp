@@ -39,6 +39,8 @@ constexpr std::string_view super_mario_land_profile =
     "popup_sprite_height=0.86\n"
     "popup_card_thickness=4.5\n"
     "popup_sprite_thickness=1.65\n"
+    "popup_hud_top_rows=16\n"
+    "popup_hud_bottom_rows=12\n"
     "background_object_detection=1\n"
     "background_object_min_cells=4\n"
     "background_object_max_fraction=0.55\n"
@@ -142,6 +144,16 @@ void parse_key(VoxelProfile& profile, const std::string& key,
     else if (key == "popup_sprite_height") parse_float(value, profile.popup_sprite_height);
     else if (key == "popup_card_thickness") parse_float(value, profile.popup_card_thickness);
     else if (key == "popup_sprite_thickness") parse_float(value, profile.popup_sprite_thickness);
+    else if (key == "popup_hud_top_rows") {
+        float parsed = 0.0F;
+        if (parse_float(value, parsed) && parsed >= 0.0F)
+            profile.popup_hud_top_rows = static_cast<std::uint32_t>(parsed);
+    }
+    else if (key == "popup_hud_bottom_rows") {
+        float parsed = 0.0F;
+        if (parse_float(value, parsed) && parsed >= 0.0F)
+            profile.popup_hud_bottom_rows = static_cast<std::uint32_t>(parsed);
+    }
     else if (key == "background_object_detection") parse_bool(value, profile.background_object_detection);
     else if (key == "background_object_min_cells") {
         float parsed = 0.0F;
@@ -184,6 +196,12 @@ void clamp_profile(VoxelProfile& profile) {
     profile.popup_sprite_height = std::clamp(profile.popup_sprite_height, 0.10F, 2.50F);
     profile.popup_card_thickness = std::clamp(profile.popup_card_thickness, 0.50F, 16.0F);
     profile.popup_sprite_thickness = std::clamp(profile.popup_sprite_thickness, 0.25F, 8.0F);
+    profile.popup_hud_top_rows = std::clamp(profile.popup_hud_top_rows,
+                                             std::uint32_t{0},
+                                             std::uint32_t{48});
+    profile.popup_hud_bottom_rows = std::clamp(profile.popup_hud_bottom_rows,
+                                                std::uint32_t{0},
+                                                std::uint32_t{48});
     profile.background_object_min_cells = std::clamp(profile.background_object_min_cells,
                                                       std::uint32_t{2},
                                                       std::uint32_t{64});
@@ -304,6 +322,8 @@ bool save_voxel_profile(const std::filesystem::path& path,
             << "popup_sprite_height=" << clamped.popup_sprite_height << '\n'
             << "popup_card_thickness=" << clamped.popup_card_thickness << '\n'
             << "popup_sprite_thickness=" << clamped.popup_sprite_thickness << '\n'
+            << "popup_hud_top_rows=" << clamped.popup_hud_top_rows << '\n'
+            << "popup_hud_bottom_rows=" << clamped.popup_hud_bottom_rows << '\n'
             << "background_object_detection=" << (clamped.background_object_detection ? 1 : 0) << '\n'
             << "background_object_min_cells=" << clamped.background_object_min_cells << '\n'
             << "background_object_max_fraction=" << clamped.background_object_max_fraction << '\n'
@@ -430,6 +450,8 @@ void ensure_voxel_profile_file(const std::filesystem::path& path) {
               "popup_sprite_height=0.86\n"
               "popup_card_thickness=4.5\n"
               "popup_sprite_thickness=1.65\n"
+              "popup_hud_top_rows=16\n"
+              "popup_hud_bottom_rows=12\n"
               "background_object_detection=1\n"
               "background_object_min_cells=4\n"
               "background_object_max_fraction=0.55\n"

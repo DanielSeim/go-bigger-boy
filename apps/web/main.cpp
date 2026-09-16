@@ -72,6 +72,7 @@ struct WebApp {
     gbb::VoxelScene voxel_scene{};
     std::uint64_t voxel_scene_signature{};
     bool voxel_scene_cached{};
+    gbb::VoxelRenderStats voxel_stats{};
     float voxel_camera_pitch_offset{};
     float voxel_camera_yaw_offset{};
     std::chrono::steady_clock::time_point previous_time{
@@ -151,9 +152,11 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
     const auto camera_yaw = profile.camera_yaw;
     const auto sprite_depth = profile.sprite_depth;
     const auto lighting = profile.lighting;
+    ++app.voxel_stats.rendered_frames;
     constexpr float voxel_ambient = 0.055F;
     const auto& scene = app.emulator->scene_snapshot();
     const auto scene_key = gbb::voxel_scene_signature(scene);
+    bool scene_rebuilt = false;
     if (!app.voxel_scene_cached || app.voxel_scene_signature != scene_key) {
         app.voxel_scene = gbb::build_voxel_scene(
             scene,
@@ -168,8 +171,12 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
                 &profile.background_object_templates});
         app.voxel_scene_signature = scene_key;
         app.voxel_scene_cached = true;
+        ++app.voxel_stats.scene_rebuilds;
+        scene_rebuilt = true;
     }
     const auto& voxel_scene = app.voxel_scene;
+    app.voxel_stats.accepted_objects = voxel_scene.objects.size();
+    app.voxel_stats.candidate_objects = voxel_scene.candidates.size();
     const auto yaw = (camera_yaw + app.voxel_camera_yaw_offset) *
                      0.01745329251994329577F;
     const auto pitch = (popup_book
@@ -290,6 +297,13 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
     std::vector<int> sprite_anchor_y(160U * 144U, -1);
     std::vector<bool> popup_object_mask(160U * 144U);
     std::vector<int> popup_object_anchor_y(160U * 144U, -1);
+    const auto popup_hud_pixel = [&](const std::size_t pixel) {
+        const auto y = pixel / 160U;
+        return y < profile.popup_hud_top_rows ||
+               y >= 144U -
+                        std::min<std::size_t>(profile.popup_hud_bottom_rows,
+                                              144U);
+    };
     std::vector<bool> window_mask(160U * 144U);
     const auto sprite_height = (scene.lcdc & 0x04U) != 0 ? 16 : 8;
     const auto sprite_pixel_opaque = [&](const gbb::SceneSprite& sprite,
@@ -343,6 +357,7 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
             const auto owner = voxel_scene.object_owner[pixel];
             if (owner < 0 ||
                 sprite_mask[pixel] ||
+                popup_hud_pixel(pixel) ||
                 static_cast<std::size_t>(owner) >= voxel_scene.objects.size() ||
                 voxel_scene.objects[static_cast<std::size_t>(owner)].kind !=
                     gbb::VoxelObjectKind::background_object)
@@ -365,6 +380,7 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
                 const auto start = static_cast<std::size_t>(start_y) * 160U +
                                    static_cast<std::size_t>(start_x);
                 if (visited[start] || sprite_mask[start] ||
+                    popup_hud_pixel(start) ||
                     backdrop_key(pixels[start]) == backdrop_color_key) {
                     visited[start] = true;
                     continue;
@@ -388,6 +404,7 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
                         const auto neighbour = static_cast<std::size_t>(ny) * 160U +
                                                static_cast<std::size_t>(nx);
                         if (visited[neighbour] || sprite_mask[neighbour] ||
+                            popup_hud_pixel(neighbour) ||
                             backdrop_key(pixels[neighbour]) == backdrop_color_key) {
                             continue;
                         }
@@ -398,7 +415,7 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
                 if (pending.size() < 6U) continue;
                 const auto anchor_y = max_y + 1;
                 for (const auto index : pending) {
-                    if (sprite_mask[index]) continue;
+                    if (sprite_mask[index] || popup_hud_pixel(index)) continue;
                     popup_object_mask[index] = true;
                     popup_object_anchor_y[index] = anchor_y;
                 }
@@ -857,6 +874,16 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
         gbb::log_frontend_error(
             std::string("Could not render browser voxel diorama: ") +
             SDL_GetError());
+    }
+    app.voxel_stats.mesh_vertices = vertices.size();
+    app.voxel_stats.mesh_indices = indices.size();
+    if (scene_rebuilt && profile.background_debug_overlay) {
+        std::ostringstream message;
+        message << "Voxel popup stats: objects=" << app.voxel_stats.accepted_objects
+                << " candidates=" << app.voxel_stats.candidate_objects
+                << " vertices=" << app.voxel_stats.mesh_vertices
+                << " indices=" << app.voxel_stats.mesh_indices;
+        gbb::log_frontend_info(message.str());
     }
 }
 

@@ -1,5 +1,6 @@
 #include "voxel_renderer.hpp"
 
+#include "gbb/frontend_logging.hpp"
 #include "gbb/gameboy_scene.hpp"
 #include "gbb/voxel_scene.hpp"
 
@@ -9,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <sstream>
 #include <unordered_map>
 #include <utility>
 
@@ -49,6 +51,7 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
         context.voxel_camera_yaw_offset = 0.0F;
     }
     auto profile = context.voxel_profile;
+    ++context.voxel_stats.rendered_frames;
     profile.camera_pitch = std::clamp(
         profile.camera_pitch + context.voxel_camera_pitch_offset, -75.0F, 75.0F);
     profile.camera_yaw = std::clamp(
@@ -57,6 +60,7 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
     // raised scenery reads as a paper card without floating away from its
     // page hinge.
     const auto scene_key = gbb::voxel_scene_signature(context.scene_snapshot);
+    bool scene_rebuilt = false;
     if (!context.voxel_scene_cached ||
         context.voxel_scene_signature != scene_key) {
         context.voxel_scene = gbb::build_voxel_scene(
@@ -72,8 +76,12 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
                 &profile.background_object_templates});
         context.voxel_scene_signature = scene_key;
         context.voxel_scene_cached = true;
+        ++context.voxel_stats.scene_rebuilds;
+        scene_rebuilt = true;
     }
     const auto& voxel_scene = context.voxel_scene;
+    context.voxel_stats.accepted_objects = voxel_scene.objects.size();
+    context.voxel_stats.candidate_objects = voxel_scene.candidates.size();
     // Reserve a recessed plane for the complete framebuffer. Sprites and
     // window overlays are then elevated relative to this plane, giving the
     // diorama a clear far/middle/foreground separation.
@@ -238,6 +246,13 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
                                          gameboy::Ppu::screen_height);
     std::vector<int> popup_object_anchor_y(gameboy::Ppu::screen_width *
                                                gameboy::Ppu::screen_height, -1);
+    const auto popup_hud_pixel = [&](const std::size_t pixel) {
+        const auto y = pixel / gameboy::Ppu::screen_width;
+        return y < profile.popup_hud_top_rows ||
+               y >= gameboy::Ppu::screen_height -
+                        std::min<std::size_t>(profile.popup_hud_bottom_rows,
+                                              gameboy::Ppu::screen_height);
+    };
     std::vector<bool> window_mask(gameboy::Ppu::screen_width *
                                       gameboy::Ppu::screen_height);
     const auto sprite_height = (scene.lcdc & 0x04U) != 0 ? 16 : 8;
@@ -381,6 +396,7 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
             const auto owner = voxel_scene.object_owner[pixel];
             if (owner < 0 ||
                 sprite_mask[pixel] ||
+                popup_hud_pixel(pixel) ||
                 static_cast<std::size_t>(owner) >= voxel_scene.objects.size() ||
                 voxel_scene.objects[static_cast<std::size_t>(owner)].kind !=
                     gbb::VoxelObjectKind::background_object)
@@ -409,6 +425,7 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
                                        gameboy::Ppu::screen_width +
                                    static_cast<std::size_t>(start_x);
                 if (visited[start] || sprite_mask[start] ||
+                    popup_hud_pixel(start) ||
                     backdrop_key(colored_pixels[start]) == backdrop_color_key) {
                     visited[start] = true;
                     continue;
@@ -439,6 +456,7 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
                                                    gameboy::Ppu::screen_width +
                                                static_cast<std::size_t>(nx);
                         if (visited[neighbour] || sprite_mask[neighbour] ||
+                            popup_hud_pixel(neighbour) ||
                             backdrop_key(colored_pixels[neighbour]) ==
                                 backdrop_color_key) {
                             continue;
@@ -452,7 +470,7 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
                 if (pending.size() < 6U) continue;
                 const auto anchor_y = max_y + 1;
                 for (const auto index : pending) {
-                    if (sprite_mask[index]) continue;
+                    if (sprite_mask[index] || popup_hud_pixel(index)) continue;
                     popup_object_mask[index] = true;
                     popup_object_anchor_y[index] = anchor_y;
                 }
@@ -892,6 +910,17 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
                                  static_cast<int>(vertices.size()), indices.data(),
                                  static_cast<int>(indices.size()))) {
         return false;
+    }
+    context.voxel_stats.mesh_vertices = vertices.size();
+    context.voxel_stats.mesh_indices = indices.size();
+    if (scene_rebuilt && profile.background_debug_overlay) {
+        std::ostringstream message;
+        message << "Voxel popup stats: objects="
+                << context.voxel_stats.accepted_objects
+                << " candidates=" << context.voxel_stats.candidate_objects
+                << " vertices=" << context.voxel_stats.mesh_vertices
+                << " indices=" << context.voxel_stats.mesh_indices;
+        gbb::log_frontend_info(message.str());
     }
     if (profile.framebuffer_facade) {
         if (!SDL_UpdateTexture(context.texture, nullptr, colored_pixels.data(),

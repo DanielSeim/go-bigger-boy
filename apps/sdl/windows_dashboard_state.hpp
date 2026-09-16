@@ -85,8 +85,8 @@ struct DashboardState {
     HWND voxel_heading{};
     HWND voxel_fingerprint_label{};
     HWND voxel_preview{};
-    std::array<HWND, 8> voxel_labels{};
-    std::array<HWND, 8> voxel_edits{};
+    std::array<HWND, 15> voxel_labels{};
+    std::array<HWND, 15> voxel_edits{};
     HWND voxel_save{};
     HWND voxel_reset{};
     HWND plugin_heading{};

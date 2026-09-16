@@ -893,6 +893,12 @@ still needs repeated tile signatures and contrasting boundaries, so enlarging
 the merge window does not turn broad terrain strips into cards. The profile
 exposes `popup_parallax`, `popup_object_height`, `popup_sprite_height`,
 `popup_card_thickness` and `popup_sprite_thickness` for visual tuning.
+`popup_hud_top_rows` and `popup_hud_bottom_rows` reserve fixed screen-space
+bands for HUD/status text, preventing those regions from becoming raised
+scenery while leaving the middle of the playfield eligible for discovery.
+With `background_debug_overlay=1`, the renderers also report accepted objects,
+rejected candidates and mesh vertex/index counts once per scene rebuild; this
+gives profile tuning a concrete geometry budget.
 
 For representative device or desktop captures, compare the complete render
 with the dependency-free regression helper:

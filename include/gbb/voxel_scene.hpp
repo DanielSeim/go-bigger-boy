@@ -46,6 +46,18 @@ struct VoxelScene {
     std::vector<VoxelObject> candidates;
 };
 
+// Lightweight diagnostics shared by desktop and web renderers. Counters are
+// presentation-only and make it possible to tune a profile against geometry
+// and cache behavior without adding timing-dependent assertions to the core.
+struct VoxelRenderStats {
+    std::uint64_t rendered_frames{};
+    std::uint64_t scene_rebuilds{};
+    std::size_t accepted_objects{};
+    std::size_t candidate_objects{};
+    std::size_t mesh_vertices{};
+    std::size_t mesh_indices{};
+};
+
 struct VoxelSceneBuildOptions {
     bool include_sprites{true};
     bool detect_background_objects{false};

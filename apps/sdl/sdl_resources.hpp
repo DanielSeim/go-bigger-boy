@@ -47,6 +47,7 @@ class SdlResources {
     gbb::VoxelScene voxel_scene{};
     std::uint64_t voxel_scene_signature{};
     bool voxel_scene_cached{};
+    gbb::VoxelRenderStats voxel_stats{};
     SDL_Gamepad* gamepad{};
     AudioOutput audio;
     CameraCapture camera;

@@ -46,6 +46,8 @@ struct VoxelProfile {
     float popup_sprite_height{0.86F};
     float popup_card_thickness{4.5F};
     float popup_sprite_thickness{1.65F};
+    std::uint32_t popup_hud_top_rows{16};
+    std::uint32_t popup_hud_bottom_rows{12};
     // Enable the conservative provenance-based background object detector by
     // default. It only accepts bounded, map-aligned structures; ambiguous
     // artwork remains on the page.

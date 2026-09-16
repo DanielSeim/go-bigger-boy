@@ -54,6 +54,17 @@ class VoxelVisualRegressionTests(unittest.TestCase):
             report = MODULE.compare_images(reference, actual, 1)
             self.assertTrue(report["passed"])
 
+    def test_dimension_drift_is_reported_before_pixel_comparison(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            reference = root / "reference.ppm"
+            actual = root / "actual.ppm"
+            reference.write_bytes(b"P6\n2 1\n255\n" + bytes((0, 0, 0, 0, 0, 0)))
+            actual.write_bytes(b"P6\n1 1\n255\n" + bytes((0, 0, 0)))
+            report = MODULE.compare_images(reference, actual)
+            self.assertFalse(report["passed"])
+            self.assertEqual(report["reason"], "dimensions")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -453,6 +453,8 @@ void test_voxel_profiles() {
               profile.popup_sprite_height == 0.86F &&
               profile.popup_card_thickness == 4.5F &&
               profile.popup_sprite_thickness == 1.65F &&
+              profile.popup_hud_top_rows == 16 &&
+              profile.popup_hud_bottom_rows == 12 &&
               profile.background_object_detection &&
               !profile.framebuffer_facade,
           "voxel profile defaults are loaded");
@@ -475,6 +477,8 @@ void test_voxel_profiles() {
     profile.popup_sprite_height = 0.91F;
     profile.popup_card_thickness = 5.25F;
     profile.popup_sprite_thickness = 1.9F;
+    profile.popup_hud_top_rows = 20;
+    profile.popup_hud_bottom_rows = 10;
     profile.background_object_detection = true;
     profile.background_object_min_cells = 6;
     profile.background_object_max_fraction = 0.42F;
@@ -495,6 +499,8 @@ void test_voxel_profiles() {
               loaded.popup_sprite_height == 0.91F &&
               loaded.popup_card_thickness == 5.25F &&
               loaded.popup_sprite_thickness == 1.9F &&
+              loaded.popup_hud_top_rows == 20 &&
+              loaded.popup_hud_bottom_rows == 10 &&
               loaded.background_object_detection &&
               loaded.background_object_min_cells == 6 &&
               loaded.background_object_max_fraction == 0.42F &&
@@ -616,10 +622,31 @@ void test_voxel_scene_builder() {
                       }),
           "voxel scene builder resolves an authored multi-tile template");
 
+    const auto stable_scene = gbb::build_voxel_scene(snapshot, options);
+    auto scrolled_snapshot = snapshot;
+    for (auto& cell : scrolled_snapshot.visible_tile_cells) ++cell.screen_x;
+    const auto scrolled_scene =
+        gbb::build_voxel_scene(scrolled_snapshot, options);
     const auto stable_key = gbb::voxel_scene_signature(snapshot);
     snapshot.emulation_cycles = 123456U;
-    check(gbb::voxel_scene_signature(snapshot) == stable_key,
+    const auto same_scene = gbb::build_voxel_scene(snapshot, options);
+    check(gbb::voxel_scene_signature(snapshot) == stable_key &&
+              same_scene.objects.size() == stable_scene.objects.size() &&
+              std::equal(
+                  same_scene.objects.begin(), same_scene.objects.end(),
+                  stable_scene.objects.begin(),
+                  [](const auto& left, const auto& right) {
+                      return left.id == right.id;
+                  }),
           "voxel scene cache key ignores animation cycle counters");
+    check(scrolled_scene.objects.size() == stable_scene.objects.size() &&
+              std::equal(
+                  scrolled_scene.objects.begin(), scrolled_scene.objects.end(),
+                  stable_scene.objects.begin(),
+                  [](const auto& left, const auto& right) {
+                      return left.id == right.id;
+                  }),
+          "voxel object identities follow map positions across scrolling");
     snapshot.scx = 1;
     check(gbb::voxel_scene_signature(snapshot) != stable_key,
           "voxel scene cache key invalidates when scroll changes");

@@ -299,6 +299,52 @@ VoxelScene build_voxel_scene(const SceneSnapshot& snapshot,
         object.anchor_y = object.max_y;
         return object;
     };
+    const auto footprint_id = [&](const std::vector<std::size_t>& component) {
+        std::vector<std::pair<std::uint8_t, std::uint8_t>> map_positions;
+        map_positions.reserve(component.size());
+        for (const auto cell_index : component) {
+            map_positions.emplace_back(cells[cell_index].map_x,
+                                       cells[cell_index].map_y);
+        }
+        std::sort(map_positions.begin(), map_positions.end());
+        if (!map_positions.empty() &&
+            std::any_of(map_positions.begin(), map_positions.end(),
+                        [](const auto position) {
+                            return position.first != 0 || position.second != 0;
+                        })) {
+            std::string result = "map";
+            for (const auto [x, y] : map_positions) {
+                result += "-" + std::to_string(x) + "-" + std::to_string(y);
+            }
+            return result;
+        }
+        int min_x = 0;
+        int min_y = 0;
+        int max_x = 0;
+        int max_y = 0;
+        bool first = true;
+        for (const auto cell_index : component) {
+            const auto& cell = cells[cell_index];
+            const auto right = static_cast<int>(cell.screen_x) +
+                               std::max<int>(1, cell.visible_width);
+            const auto bottom = static_cast<int>(cell.screen_y) +
+                                std::max<int>(1, cell.visible_height);
+            if (first) {
+                min_x = cell.screen_x;
+                min_y = cell.screen_y;
+                max_x = right;
+                max_y = bottom;
+                first = false;
+            } else {
+                min_x = std::min(min_x, static_cast<int>(cell.screen_x));
+                min_y = std::min(min_y, static_cast<int>(cell.screen_y));
+                max_x = std::max(max_x, right);
+                max_y = std::max(max_y, bottom);
+            }
+        }
+        return std::to_string(min_x) + "-" + std::to_string(min_y) + "-" +
+               std::to_string(max_x) + "-" + std::to_string(max_y);
+    };
     const auto paint_object = [&](const std::vector<std::size_t>& component,
                                   const std::size_t object_index) {
         for (const auto cell_index : component) {
@@ -406,7 +452,6 @@ VoxelScene build_voxel_scene(const SceneSnapshot& snapshot,
     // they use unrelated tile IDs. A match must be fully visible and cannot
     // reuse a cell already claimed by another template.
     if (options.background_templates != nullptr) {
-        std::size_t match_number = 0;
         for (const auto& [position, top_index] : positions) {
             const auto top_x = position.first;
             const auto top_y = position.second;
@@ -444,12 +489,11 @@ VoxelScene build_voxel_scene(const SceneSnapshot& snapshot,
                 }
                 if (!matches) continue;
                 for (const auto cell_index : matched) claimed[cell_index] = true;
-                const auto match_id = match_number++;
                 const auto id = "template-" +
                                 (object_template.id.empty()
-                                     ? std::to_string(match_id)
+                                     ? std::string{"anonymous"}
                                      : object_template.id) +
-                                "-" + std::to_string(match_id);
+                                "-" + footprint_id(matched);
                 accept_object(matched,
                               make_object(matched, 1.0F, id));
             }
@@ -517,7 +561,7 @@ VoxelScene build_voxel_scene(const SceneSnapshot& snapshot,
             accept_object(matched,
                           make_object(matched, confidence,
                                       "structural-object-" +
-                                          std::to_string(scene.objects.size())));
+                                          footprint_id(matched)));
         }
     }
 
@@ -549,7 +593,7 @@ VoxelScene build_voxel_scene(const SceneSnapshot& snapshot,
         const auto confidence = candidate_confidence(component, cells);
         const auto object = make_object(
             component, confidence,
-            "background-object-" + std::to_string(scene.objects.size()));
+            "background-object-" + footprint_id(component));
         if (confidence >= options.accepted_confidence)
             accept_object(component, object);
         else
