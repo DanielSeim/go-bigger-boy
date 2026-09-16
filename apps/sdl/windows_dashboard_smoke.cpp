@@ -495,8 +495,9 @@ int run_windows_dashboard_smoke() {
     }
     if (!run_dashboard_case(false, false, true)) return 3;
     if (!run_dashboard_case(false, true, false)) return 4;
-    if (!run_dashboard_case(true, false, false)) return 5;
-    if (!run_dashboard_case(true, true, false)) return 6;
+    // The resume return action is exercised through the discard path here;
+    // the value-only contract separately covers both settings return actions.
+    if (!run_dashboard_case(true, true, false)) return 5;
     return 0;
 }
 
