@@ -426,7 +426,20 @@ bool run_dashboard_case(const bool can_resume, const bool discard,
             passed = confirm_message_box(L"Unsaved settings", IDYES);
         }
     } else if (passed) {
-        passed = click_child(dashboard, L"Apply and return");
+        auto apply = HWND{};
+        passed = wait_for([&] {
+            apply = child_by_text(dashboard, L"Apply and return");
+            return apply != nullptr && IsWindowVisible(apply) != FALSE;
+        });
+        if (passed) {
+            // Apply is owner-drawn. Sending its command directly avoids the
+            // runner-dependent BM_CLICK behavior used for native controls.
+            constexpr WORD apply_command_id = 129;
+            SendMessageW(
+                dashboard, WM_COMMAND,
+                MAKEWPARAM(apply_command_id, BN_CLICKED),
+                reinterpret_cast<LPARAM>(apply));
+        }
     }
     if (!passed) close_dashboard(dashboard);
     if (!wait_for([&] { return dashboard_completed(invocation); })) {
