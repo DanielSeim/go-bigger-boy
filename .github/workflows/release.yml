@@ -41,6 +41,7 @@ jobs:
             local response
             for retry in 1 2 3; do
               if response="$(gh run list \
+                  --repo "$REPOSITORY" \
                   --workflow "$workflow" \
                   --limit 100 \
                   --json databaseId,status,conclusion,headBranch,headSha,url)"; then
