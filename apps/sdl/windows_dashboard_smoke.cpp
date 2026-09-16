@@ -144,15 +144,20 @@ struct ControlCollection {
     std::vector<VisibleControl> controls;
 };
 
+bool class_name_is(const wchar_t* actual, const wchar_t* expected) {
+    return _wcsicmp(actual, expected) == 0;
+}
+
 BOOL CALLBACK collect_visible_controls(HWND child, LPARAM data) {
     auto& collection = *reinterpret_cast<ControlCollection*>(data);
     if (!IsWindowVisible(child)) return TRUE;
     wchar_t class_name[64]{};
     GetClassNameW(child, class_name,
                   static_cast<int>(std::size(class_name)));
-    const std::wstring_view type{class_name};
-    if (type != L"Button" && type != L"ComboBox" && type != L"Edit" &&
-        type != L"SysListView32") {
+    if (!class_name_is(class_name, L"BUTTON") &&
+        !class_name_is(class_name, L"COMBOBOX") &&
+        !class_name_is(class_name, L"EDIT") &&
+        !class_name_is(class_name, L"SYSLISTVIEW32")) {
         return TRUE;
     }
     RECT screen_rect{};
@@ -189,11 +194,11 @@ bool check_native_controls_and_layout(HWND dashboard) {
             return false;
         }
         const auto style = GetWindowLongPtrW(control.window, GWL_STYLE);
-        if (control.class_name == L"ComboBox" &&
+        if (class_name_is(control.class_name.c_str(), L"COMBOBOX") &&
             (style & CBS_OWNERDRAWFIXED) != 0) {
             has_owner_drawn_combo = true;
         }
-        if (control.class_name == L"Button") {
+        if (class_name_is(control.class_name.c_str(), L"BUTTON")) {
             wchar_t text[256]{};
             GetWindowTextW(control.window, text,
                            static_cast<int>(std::size(text)));
