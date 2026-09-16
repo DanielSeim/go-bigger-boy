@@ -1431,8 +1431,12 @@ void layout_dashboard(State& state) {
     constexpr std::array<int, 4> section_width{{210, 210, 210, 238}};
     for (std::size_t index = 0; index < state.settings_sections.size();
          ++index) {
+        const auto available_width =
+            std::max(1L, width - section_x[index]);
         place_child(state.settings_sections[index], section_x[index], 235,
-                    section_width[index], 34, 0);
+                    static_cast<int>(std::min<long>(
+                        section_width[index], available_width)),
+                    34, 0);
     }
     place_child(state.settings_section_description, 32, 280, 916, 38, 0);
 
