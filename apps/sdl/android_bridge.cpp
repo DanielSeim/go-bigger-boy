@@ -720,6 +720,30 @@ extern "C" int gbb_android_bluetooth_state() noexcept {
     return value;
 }
 
+extern "C" std::string gbb_android_bluetooth_error() noexcept {
+    auto* environment = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
+    auto activity = static_cast<jobject>(SDL_GetAndroidActivity());
+    if (environment == nullptr || activity == nullptr) return {};
+    const auto klass = environment->GetObjectClass(activity);
+    const auto method = klass == nullptr ? nullptr : environment->GetMethodID(
+        klass, "bluetoothError", "()Ljava/lang/String;");
+    auto value = method == nullptr ? nullptr : static_cast<jstring>(
+        environment->CallObjectMethod(activity, method));
+    std::string result;
+    if (value != nullptr) {
+        const auto* raw = environment->GetStringUTFChars(value, nullptr);
+        if (raw != nullptr) {
+            result = raw;
+            environment->ReleaseStringUTFChars(value, raw);
+        }
+        environment->DeleteLocalRef(value);
+    }
+    if (environment->ExceptionCheck()) environment->ExceptionClear();
+    if (klass != nullptr) environment->DeleteLocalRef(klass);
+    environment->DeleteLocalRef(activity);
+    return result;
+}
+
 extern "C" void gbb_android_bluetooth_stop() noexcept {
     auto* environment = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
     auto activity = static_cast<jobject>(SDL_GetAndroidActivity());

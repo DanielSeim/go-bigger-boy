@@ -54,6 +54,8 @@ public final class GbbActivity extends SDLActivity {
     private static final int BLUETOOTH_FRAME_SIZE = 20;
     private static final int BLUETOOTH_MAX_PENDING_BYTES =
             BLUETOOTH_MAX_QUEUED_FRAMES * BLUETOOTH_FRAME_SIZE;
+    private static final int BLUETOOTH_CONNECT_ATTEMPTS = 3;
+    private static final long BLUETOOTH_CONNECT_RETRY_DELAY_MS = 300;
 
     private static int bluetoothCrc16(byte[] bytes, int offset, int length) {
         int crc = 0xffff;
@@ -97,6 +99,7 @@ public final class GbbActivity extends SDLActivity {
     private volatile Thread bluetoothThread;
     private volatile boolean bluetoothStopping;
     private volatile int bluetoothLinkState;
+    private String bluetoothLinkError = "";
     private final Object bluetoothLifecycleLock = new Object();
     private long bluetoothGeneration;
     private static final int BLUETOOTH_PERMISSION_REQUEST = 47;
@@ -352,6 +355,8 @@ public final class GbbActivity extends SDLActivity {
     private boolean ensureBluetoothPermissions(boolean host) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true;
         final java.util.ArrayList<String> missing = new java.util.ArrayList<>();
+        if (!bluetoothPermission(android.Manifest.permission.BLUETOOTH_SCAN))
+            missing.add(android.Manifest.permission.BLUETOOTH_SCAN);
         if (!bluetoothPermission(android.Manifest.permission.BLUETOOTH_CONNECT))
             missing.add(android.Manifest.permission.BLUETOOTH_CONNECT);
         if (host && !bluetoothPermission(android.Manifest.permission.BLUETOOTH_ADVERTISE))
@@ -456,6 +461,7 @@ public final class GbbActivity extends SDLActivity {
         synchronized (bluetoothLifecycleLock) {
             bluetoothStopping = false;
             final long generation = ++bluetoothGeneration;
+            bluetoothLinkError = "";
             bluetoothLinkState = 1;
             bluetoothThread = new Thread(() -> bluetoothWorker(
                     adapter, true, null, serviceUuid, generation),
@@ -477,6 +483,7 @@ public final class GbbActivity extends SDLActivity {
         synchronized (bluetoothLifecycleLock) {
             bluetoothStopping = false;
             final long generation = ++bluetoothGeneration;
+            bluetoothLinkError = "";
             bluetoothLinkState = 2;
             bluetoothThread = new Thread(() -> bluetoothWorker(
                     adapter, false, address, serviceUuid, generation),
@@ -488,6 +495,12 @@ public final class GbbActivity extends SDLActivity {
     }
 
     public int bluetoothState() { return bluetoothLinkState; }
+
+    public String bluetoothError() {
+        synchronized (bluetoothLifecycleLock) {
+            return bluetoothLinkError;
+        }
+    }
 
     public boolean bluetoothSend(byte[] bytes) {
         if (bytes == null || bluetoothLinkState != 3) return false;
@@ -531,6 +544,7 @@ public final class GbbActivity extends SDLActivity {
         try {
             final UUID uuid = UUID.fromString(serviceUuid);
             if (host) {
+                adapter.cancelDiscovery();
                 final BluetoothServerSocket server =
                         adapter.listenUsingRfcommWithServiceRecord(
                                 "Go Bigger Boy Link", uuid);
@@ -549,16 +563,59 @@ public final class GbbActivity extends SDLActivity {
                 }
             } else {
                 final BluetoothDevice device = adapter.getRemoteDevice(address);
-                socket = device.createRfcommSocketToServiceRecord(uuid);
-                synchronized (bluetoothLifecycleLock) {
-                    if (!bluetoothSessionCurrent(generation)) {
-                        socket.close();
-                        return;
+                IOException lastConnectError = null;
+                for (int attempt = 0; attempt < BLUETOOTH_CONNECT_ATTEMPTS;
+                        ++attempt) {
+                    if (!bluetoothSessionCurrent(generation)) return;
+                    // Android keeps device discovery active independently of
+                    // the settings picker. Discovery heavily contends with
+                    // RFCOMM setup and is a common cause of immediate connect
+                    // failures, especially when the peer is a Windows host.
+                    try {
+                        adapter.cancelDiscovery();
+                        // The final attempt permits an unencrypted RFCOMM
+                        // session. Pairing is still required, but this avoids
+                        // an Android/Windows authentication-mode mismatch.
+                        socket = attempt + 1 == BLUETOOTH_CONNECT_ATTEMPTS
+                                ? device.createInsecureRfcommSocketToServiceRecord(uuid)
+                                : device.createRfcommSocketToServiceRecord(uuid);
+                        synchronized (bluetoothLifecycleLock) {
+                            if (!bluetoothSessionCurrent(generation)) {
+                                socket.close();
+                                return;
+                            }
+                            bluetoothSocket = socket;
+                            bluetoothLinkState = 2;
+                        }
+                        socket.connect();
+                        lastConnectError = null;
+                        break;
+                    } catch (IOException error) {
+                        lastConnectError = error;
+                        try {
+                            if (socket != null) socket.close();
+                        } catch (IOException ignored) { }
+                        socket = null;
+                        synchronized (bluetoothLifecycleLock) {
+                            if (bluetoothGeneration == generation) {
+                                bluetoothSocket = null;
+                                bluetoothLinkState = 2;
+                            }
+                        }
+                        if (attempt + 1 < BLUETOOTH_CONNECT_ATTEMPTS) {
+                            try {
+                                Thread.sleep(BLUETOOTH_CONNECT_RETRY_DELAY_MS);
+                            } catch (InterruptedException interrupted) {
+                                Thread.currentThread().interrupt();
+                                return;
+                            }
+                        }
                     }
-                    bluetoothSocket = socket;
-                    bluetoothLinkState = 2;
                 }
-                socket.connect();
+                if (socket == null) {
+                    if (lastConnectError != null) throw lastConnectError;
+                    throw new IOException("Bluetooth RFCOMM connection failed");
+                }
             }
             synchronized (bluetoothLifecycleLock) {
                 if (!bluetoothSessionCurrent(generation)) {
@@ -622,7 +679,16 @@ public final class GbbActivity extends SDLActivity {
                 Thread.sleep(2);
             }
         } catch (Exception error) {
-            if (bluetoothSessionCurrent(generation)) bluetoothLinkState = 4;
+            if (bluetoothSessionCurrent(generation)) {
+                synchronized (bluetoothLifecycleLock) {
+                    if (bluetoothGeneration == generation) {
+                        bluetoothLinkError = error.getClass().getSimpleName() + ": " +
+                                (error.getMessage() == null ? "no details" :
+                                 error.getMessage());
+                        bluetoothLinkState = 4;
+                    }
+                }
+            }
         } finally {
             try { if (socket != null) socket.close(); } catch (IOException ignored) { }
             synchronized (bluetoothLifecycleLock) {
@@ -630,7 +696,10 @@ public final class GbbActivity extends SDLActivity {
                     bluetoothSocket = null;
                     bluetoothThread = null;
                     if (bluetoothStopping) bluetoothLinkState = 0;
-                    else if (bluetoothLinkState == 3) bluetoothLinkState = 4;
+                    else if (bluetoothLinkState == 3) {
+                        bluetoothLinkError = "Bluetooth peer closed the connection";
+                        bluetoothLinkState = 4;
+                    }
                 }
             }
         }

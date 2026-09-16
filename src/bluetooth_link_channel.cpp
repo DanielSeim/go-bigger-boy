@@ -19,6 +19,7 @@ extern "C" bool gbb_android_bluetooth_start_host(const char* uuid) noexcept;
 extern "C" bool gbb_android_bluetooth_start_join(const char* address,
                                                   const char* uuid) noexcept;
 extern "C" int gbb_android_bluetooth_state() noexcept;
+extern "C" std::string gbb_android_bluetooth_error() noexcept;
 extern "C" void gbb_android_bluetooth_stop() noexcept;
 extern "C" bool gbb_android_bluetooth_send(const std::uint8_t* bytes,
                                              std::size_t size) noexcept;
@@ -317,7 +318,10 @@ void BluetoothLinkChannel::poll() noexcept {
     }
     if (state_ == State::failed && previous_state != State::failed &&
         error_.empty()) {
-        error_ = "Android Bluetooth connection failed";
+        const auto detail = gbb_android_bluetooth_error();
+        error_ = detail.empty() ? "Android Bluetooth connection failed"
+                                : "Android Bluetooth connection failed (" +
+                                      detail + ")";
     }
     if (state_ != State::connected) return;
     flush_send_queue();
