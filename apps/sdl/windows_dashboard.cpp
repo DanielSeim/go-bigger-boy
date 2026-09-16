@@ -1405,26 +1405,25 @@ void clip_settings_content_children(State& state, const int client_height) {
             static_cast<int>(corners[1].y - corners[0].y);
         if (child_width <= 0 || child_height <= 0) continue;
 
-        const auto top = std::clamp(
-            settings_content_top - static_cast<int>(corners[0].y), 0,
-            child_height);
-        const auto bottom = std::clamp(
-            client_height - static_cast<int>(corners[0].y), 0, child_height);
-        if (top == 0 && bottom == child_height) {
-            // Remove a previous partial region when scrolling back into view.
+        const auto child_top = static_cast<int>(corners[0].y);
+        const auto child_bottom = static_cast<int>(corners[1].y);
+        const auto fully_visible = child_top >= settings_content_top &&
+                                   child_bottom <= client_height;
+        if (fully_visible) {
+            // Remove a previous clipping region when scrolling back into view.
             SetWindowRgn(child, nullptr, TRUE);
             continue;
         }
 
-        // The region is in the child window's local coordinates. An empty
-        // region is intentional for controls hidden behind the fixed header
-        // or below the client area.
-        const auto region = bottom <= top
-                                ? CreateRectRgn(0, 0, 0, 0)
-                                : CreateRectRgn(0, top, child_width, bottom);
-        if (region != nullptr && SetWindowRgn(child, region, TRUE) == FALSE) {
-            DeleteObject(region);
-        }
+        // Win32 child controls do not consistently repaint old pixels when
+        // their owner-drawn content is partially clipped. Collapse controls
+        // at either viewport edge until the complete control is visible. The
+        // next layout pass restores its original size and position.
+        SetWindowRgn(child, nullptr, TRUE);
+        const auto safe_top = std::clamp(child_top, settings_content_top,
+                                         client_height);
+        SetWindowPos(child, nullptr, static_cast<int>(corners[0].x), safe_top,
+                     child_width, 0, SWP_NOZORDER | SWP_NOACTIVATE);
     }
 }
 
@@ -1590,6 +1589,8 @@ void layout_dashboard(State& state) {
     place_child(state.link_bluetooth_uuid, 665, 400, 283, 28, offset);
     place_child(state.link_diagnostics, 32, 500, 330, 28, offset);
     clip_settings_content_children(state, static_cast<int>(height));
+    RedrawWindow(state.window, nullptr, nullptr,
+                 RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
 }
 
 void scroll_settings(State& state, const int wheel_delta) {
@@ -2815,7 +2816,7 @@ DashboardResult show_windows_dashboard(
     state.window = CreateWindowExW(
         WS_EX_APPWINDOW, class_name, window_title.c_str(),
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX |
-            WS_MAXIMIZEBOX | WS_THICKFRAME | WS_VSCROLL,
+            WS_MAXIMIZEBOX | WS_THICKFRAME | WS_VSCROLL | WS_CLIPCHILDREN,
         saved_position ? saved_position->x : CW_USEDEFAULT,
         saved_position ? saved_position->y : CW_USEDEFAULT,
         dashboard_width, initial_height, owner, nullptr, instance, &state);

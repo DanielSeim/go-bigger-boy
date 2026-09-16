@@ -177,6 +177,26 @@ bool rectangles_overlap(const RECT& first, const RECT& second) {
     return IntersectRect(&intersection, &first, &second) != FALSE;
 }
 
+bool check_scrolled_settings_clipping(HWND dashboard) {
+    const auto generate_audio = child_by_text(dashboard, L"Generate audio");
+    if (generate_audio == nullptr) return false;
+
+    SendMessageW(dashboard, WM_VSCROLL, MAKEWPARAM(SB_BOTTOM, 0), 0);
+    RECT screen_rect{};
+    const auto got_rect = GetWindowRect(generate_audio, &screen_rect) != FALSE;
+    POINT origin{screen_rect.left, screen_rect.top};
+    if (got_rect) MapWindowPoints(nullptr, dashboard, &origin, 1);
+    const auto width = got_rect ? screen_rect.right - screen_rect.left : 0L;
+    const auto height = got_rect ? screen_rect.bottom - screen_rect.top : 0L;
+    const auto leaked_into_header = IsWindowVisible(generate_audio) != FALSE &&
+                                    origin.y < 320 && height > 0 && width > 0;
+
+    // Leave the dashboard at the top so later smoke steps interact with the
+    // same controls as a newly opened settings page.
+    SendMessageW(dashboard, WM_VSCROLL, MAKEWPARAM(SB_TOP, 0), 0);
+    return got_rect && !leaked_into_header;
+}
+
 bool check_native_controls_and_layout(HWND dashboard) {
     ControlCollection collection{dashboard};
     EnumChildWindows(dashboard, collect_visible_controls,
@@ -262,7 +282,8 @@ bool check_native_controls_and_layout(HWND dashboard) {
                          control.rect.bottom);
         }
     }
-    return has_owner_drawn_checkbox && has_owner_drawn_combo;
+    return has_owner_drawn_checkbox && has_owner_drawn_combo &&
+           check_scrolled_settings_clipping(dashboard);
 }
 
 bool check_rendered_dashboard(HWND dashboard) {
