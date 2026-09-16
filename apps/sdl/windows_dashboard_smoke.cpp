@@ -359,8 +359,11 @@ bool run_dashboard_case(const bool can_resume, const bool discard,
         return false;
     }
 
-    auto settings = child_by_text(dashboard, L"Settings");
-    bool passed = settings != nullptr;
+    auto settings = HWND{};
+    bool passed = wait_for([&] {
+        settings = child_by_text(dashboard, L"Settings");
+        return settings != nullptr;
+    });
     if (passed) {
         SendMessageW(settings, BM_CLICK, 0, 0);
         passed = wait_for([&] {
