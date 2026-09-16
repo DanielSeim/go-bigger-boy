@@ -97,12 +97,19 @@ TSAN_OPTIONS="$tsan_options" timeout --signal=INT --kill-after=5s \
         if [[ -n "$rom" ]]; then
             # Exercise the debugger at both the normal and compact supported
             # sizes. The same window geometry drives rendering and hit tests.
-            send_input key --window "$window" --clearmodifiers F12
             debugger=""
-            for attempt in $(seq 1 100); do
+            # The SDL window can be created before the ROM has finished
+            # loading and before the debugger capability is available. Wait
+            # for that startup boundary and retry the shortcut instead of
+            # treating a missed first key event as a product failure.
+            for attempt in $(seq 1 200); do
                 debugger=$(xdotool search --name "Go Bigger Boy - Debugger" \
                     2>/dev/null | tail -n 1)
                 [[ -n "$debugger" ]] && break
+                if ((attempt == 1 || attempt % 5 == 0)); then
+                    send_input windowfocus "$window"
+                    send_input key --window "$window" --clearmodifiers F12
+                fi
                 sleep 0.1
             done
             if [[ -z "$debugger" ]]; then
