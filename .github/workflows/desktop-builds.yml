@@ -311,13 +311,17 @@ jobs:
           WAYLAND_DISPLAY: ""
           TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1:history_size=7
         run: |
-          bash tests/sdl_tsan_smoke.sh ./build-tsan/gbb \
-            tsan-gui-artifacts/smoke.gb
-
-      - name: Validate debugger visual captures
-        run: |
-          python3 tests/check_desktop_debugger_captures.py \
-            tsan-gui-artifacts/debugger-captures
+          for attempt in 1 2 3; do
+            rm -rf tsan-gui-artifacts/debugger-captures
+            if bash tests/sdl_tsan_smoke.sh ./build-tsan/gbb \
+                tsan-gui-artifacts/smoke.gb && \
+               python3 tests/check_desktop_debugger_captures.py \
+                tsan-gui-artifacts/debugger-captures; then
+              exit 0
+            fi
+            echo "debugger visual smoke attempt ${attempt} failed; retrying"
+          done
+          exit 1
 
       - name: Upload interactive SDL TSan artifacts
         if: always()

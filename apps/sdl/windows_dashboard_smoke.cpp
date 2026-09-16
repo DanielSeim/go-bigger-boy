@@ -99,8 +99,13 @@ HWND child_by_text(HWND window, const wchar_t* text,
 
 bool click_child(HWND window, const wchar_t* text,
                  const wchar_t* class_name = L"BUTTON") {
-    const auto child = child_by_text(window, text, class_name);
-    if (child == nullptr) return false;
+    auto child = HWND{};
+    if (!wait_for([&] {
+            child = child_by_text(window, text, class_name);
+            return child != nullptr;
+        })) {
+        return false;
+    }
     SendMessageW(child, BM_CLICK, 0, 0);
     return true;
 }
