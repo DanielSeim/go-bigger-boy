@@ -6,6 +6,7 @@
 
 #include "windows_dashboard.hpp"
 #include "windows_dashboard_artwork.hpp"
+#include "windows_dashboard_smoke.hpp"
 #include "windows_dashboard_state.hpp"
 #include "resource.h"
 #include "update_checker.hpp"
@@ -1631,6 +1632,13 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                           reinterpret_cast<LONG_PTR>(state));
     }
     if (state == nullptr) return DefWindowProcW(window, message, wparam, lparam);
+
+    if (message == windows_dashboard_smoke_close) {
+        // The smoke runner must be able to tear down a failed case without
+        // getting stuck behind the production confirmation dialog.
+        finish(*state, DashboardResultAction::quit);
+        return 0;
+    }
 
     if (message == WM_ERASEBKGND) {
         RECT client{};

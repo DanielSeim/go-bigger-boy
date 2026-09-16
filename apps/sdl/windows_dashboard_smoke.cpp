@@ -109,24 +109,21 @@ bool dashboard_completed(DashboardInvocation& invocation) {
     return invocation.completed;
 }
 
-void confirm_message_box(const wchar_t* title, const UINT command) {
+bool confirm_message_box(const wchar_t* title, const UINT command) {
     HWND dialog = nullptr;
     if (!wait_for([&] {
             dialog = FindWindowW(L"#32770", title);
             return dialog != nullptr;
         })) {
-        return;
+        return false;
     }
     PostMessageW(dialog, WM_COMMAND, command, 0);
+    return true;
 }
 
 void close_dashboard(HWND window) {
     if (window == nullptr) return;
-    PostMessageW(window, WM_CLOSE, 0, 0);
-    // WM_CLOSE is intentionally confirmation-protected in the real UI. Use
-    // the dialog's semantic command instead of relying on localized button
-    // captions or coordinates.
-    confirm_message_box(L"Exit Go Bigger Boy?", IDYES);
+    PostMessageW(window, windows_dashboard_smoke_close, 0, 0);
 }
 
 struct VisibleControl {
@@ -299,7 +296,7 @@ bool run_dashboard_case(const bool can_resume, const bool discard,
         passed = click_child(dashboard, L"Generate audio");
         if (passed) {
             PostMessageW(dashboard, WM_KEYDOWN, VK_ESCAPE, 0);
-            confirm_message_box(L"Unsaved settings", IDYES);
+            passed = confirm_message_box(L"Unsaved settings", IDYES);
         }
     } else if (passed) {
         passed = click_child(dashboard, L"Apply and return");
