@@ -12,6 +12,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdint>
+#include <cwchar>
 #include <cstring>
 #include <filesystem>
 #include <functional>
@@ -74,7 +75,7 @@ BOOL CALLBACK find_child_by_text(HWND child, LPARAM data) {
     GetClassNameW(child, child_class,
                   static_cast<int>(std::size(child_class)));
     if (!search.class_name.empty() &&
-        std::wstring_view{child_class} != search.class_name) {
+        _wcsicmp(child_class, search.class_name.c_str()) != 0) {
         return TRUE;
     }
     wchar_t text[256]{};
@@ -150,7 +151,7 @@ BOOL CALLBACK collect_visible_controls(HWND child, LPARAM data) {
     GetClassNameW(child, class_name,
                   static_cast<int>(std::size(class_name)));
     const std::wstring_view type{class_name};
-    if (type != L"BUTTON" && type != L"COMBOBOX" && type != L"EDIT" &&
+    if (type != L"Button" && type != L"ComboBox" && type != L"Edit" &&
         type != L"SysListView32") {
         return TRUE;
     }
@@ -188,11 +189,11 @@ bool check_native_controls_and_layout(HWND dashboard) {
             return false;
         }
         const auto style = GetWindowLongPtrW(control.window, GWL_STYLE);
-        if (control.class_name == L"COMBOBOX" &&
+        if (control.class_name == L"ComboBox" &&
             (style & CBS_OWNERDRAWFIXED) != 0) {
             has_owner_drawn_combo = true;
         }
-        if (control.class_name == L"BUTTON") {
+        if (control.class_name == L"Button") {
             wchar_t text[256]{};
             GetWindowTextW(control.window, text,
                            static_cast<int>(std::size(text)));
