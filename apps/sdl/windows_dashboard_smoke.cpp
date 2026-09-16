@@ -154,10 +154,11 @@ BOOL CALLBACK collect_visible_controls(HWND child, LPARAM data) {
     wchar_t class_name[64]{};
     GetClassNameW(child, class_name,
                   static_cast<int>(std::size(class_name)));
-    if (!class_name_is(class_name, L"BUTTON") &&
-        !class_name_is(class_name, L"COMBOBOX") &&
-        !class_name_is(class_name, L"EDIT") &&
-        !class_name_is(class_name, L"SYSLISTVIEW32")) {
+    // Native controls are created with a nonzero dialog ID. This avoids
+    // relying on the system class spelling, which differs between Win32
+    // implementations and test runners, while excluding decorative STATIC
+    // labels that are allowed to share a row visually.
+    if (GetDlgCtrlID(child) == 0) {
         return TRUE;
     }
     RECT screen_rect{};
