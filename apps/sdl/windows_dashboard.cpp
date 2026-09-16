@@ -1415,6 +1415,14 @@ void layout_dashboard(State& state) {
 
     const auto content_bottom = settings_content_bottom;
     const auto max_scroll = std::max(0L, content_bottom - height + 24L);
+    // Showing the settings scrollbar reduces the client width after the
+    // initial layout measurement. Reserve that width up front so the rightmost
+    // section button and other fixed-width controls stay inside the final
+    // client area.
+    const auto layout_width = std::max(
+        720L, width - (state.page == State::Page::settings && max_scroll > 0
+                           ? GetSystemMetrics(SM_CXVSCROLL)
+                           : 0L));
     state.settings_scroll = std::clamp(state.settings_scroll, 0,
                                        static_cast<int>(max_scroll));
     SCROLLINFO scroll{sizeof(scroll), SIF_RANGE | SIF_PAGE | SIF_POS,
@@ -1430,9 +1438,9 @@ void layout_dashboard(State& state) {
     constexpr std::array<int, 4> section_x{{32, 258, 484, 710}};
     constexpr std::array<int, 4> section_width{{210, 210, 210, 238}};
     for (std::size_t index = 0; index < state.settings_sections.size();
-         ++index) {
+        ++index) {
         const auto available_width =
-            std::max(1L, width - section_x[index]);
+            std::max(1L, layout_width - section_x[index]);
         place_child(state.settings_sections[index], section_x[index], 235,
                     static_cast<int>(std::min<long>(
                         section_width[index], available_width)),
