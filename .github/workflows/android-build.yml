@@ -100,25 +100,7 @@ jobs:
           api-level: 29
           arch: x86_64
           disable-animations: true
-          script: |
-            set +e
-            mkdir -p android-ci-diagnostics
-            test_status=1
-            for attempt in 1 2; do
-              (cd android && ./gradlew --no-daemon --stacktrace connectedDebugAndroidTest) \
-                2>&1 | tee "android-ci-diagnostics/instrumentation-attempt-${attempt}.log"
-              test_status=${PIPESTATUS[0]}
-              if [ "$test_status" -eq 0 ]; then
-                break
-              fi
-              if [ "$attempt" -lt 2 ]; then
-                echo "Instrumentation attempt $attempt failed; retrying once."
-                sleep 10
-              fi
-            done
-            timeout 10s adb devices -l > android-ci-diagnostics/adb-devices.txt 2>&1 || true
-            timeout 15s adb logcat -d -v threadtime > android-ci-diagnostics/logcat.txt 2>&1 || true
-            exit "$test_status"
+          script: bash scripts/run_android_instrumentation.sh
 
       - name: Collect Android diagnostics
         if: always()
