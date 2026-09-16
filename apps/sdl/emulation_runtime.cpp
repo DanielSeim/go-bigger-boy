@@ -1225,6 +1225,12 @@ int run_emulation(int argc, char** argv) {
                     dashboard_visible = false;
                     reveal_sdl_after_present = true;
                     break;
+                case gbb_desktop::DashboardResultAction::library:
+                    // Settings were applied without an active game. Reopen
+                    // the native dashboard at its library page instead of
+                    // interpreting the return as an application quit.
+                    dashboard_visible = true;
+                    break;
                 case gbb_desktop::DashboardResultAction::quit:
                     running = false;
                     break;

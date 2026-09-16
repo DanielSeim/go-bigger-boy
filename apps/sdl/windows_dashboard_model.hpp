@@ -15,7 +15,13 @@
 
 namespace gbb_desktop {
 
-enum class DashboardResultAction { resume, open_rom, quit, update_available };
+enum class DashboardResultAction {
+    resume,
+    library,
+    open_rom,
+    quit,
+    update_available,
+};
 
 using KeyboardBindings = std::array<std::array<std::int64_t, 2>, 8>;
 using ActionBindings = std::array<std::int64_t, 4>;
