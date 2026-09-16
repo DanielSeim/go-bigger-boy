@@ -6,6 +6,16 @@ on:
       - Desktop builds
       - Android build
     types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Validated version tag to publish"
+        required: true
+        type: string
+      sha:
+        description: "Exact commit SHA used by the tagged platform builds"
+        required: true
+        type: string
 
 permissions:
   actions: read
@@ -19,16 +29,20 @@ jobs:
   publish:
     name: Publish tagged desktop and Android artifacts
     if: >-
-      github.event.workflow_run.event == 'push' &&
-      startsWith(github.event.workflow_run.head_branch, 'v') &&
-      contains(github.event.workflow_run.head_branch, '.')
+      (github.event_name == 'workflow_dispatch' &&
+       startsWith(inputs.tag, 'v') && contains(inputs.tag, '.') &&
+       inputs.sha != '') ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.event == 'push' &&
+       startsWith(github.event.workflow_run.head_branch, 'v') &&
+       contains(github.event.workflow_run.head_branch, '.'))
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:
       GH_TOKEN: ${{ github.token }}
       REPOSITORY: ${{ github.repository }}
-      TAG: ${{ github.event.workflow_run.head_branch }}
-      TAG_SHA: ${{ github.event.workflow_run.head_sha }}
+      TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.workflow_run.head_branch }}
+      TAG_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.sha || github.event.workflow_run.head_sha }}
     steps:
       - name: Wait for both platform workflows
         id: workflows
