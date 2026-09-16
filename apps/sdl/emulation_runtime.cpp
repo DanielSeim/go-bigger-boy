@@ -1,0 +1,2115 @@
+#include "gameboy/emulator.hpp"
+#include "gameboy/gameboy_link_endpoint.hpp"
+#include "gameboy/display_palette.hpp"
+#include "gameboy/gameshark.hpp"
+#include "gameboy/link_session.hpp"
+#include "gameboy/rom_library.hpp"
+#include "gameboy/tcp_link_channel.hpp"
+#include "gameboy/tcp_serial_endpoint.hpp"
+#include "gameboy/video_pipeline.hpp"
+#include "gbb/core_runtime.hpp"
+#include "gbb/gameboy_core.hpp"
+#include "gbb/frontend_logging.hpp"
+#include "gbb/dashboard_navigation.hpp"
+#include "gbb/gameboy_scene.hpp"
+#include "gbb/settings.hpp"
+#include "gbb/touch_control.hpp"
+#include "gbb/video.hpp"
+#include "gbb/voxel_profile.hpp"
+#include "voxel_renderer.hpp"
+#include "frame_presenter.hpp"
+#include "frame_pacer.hpp"
+#include "frame_timing_trace.hpp"
+#ifdef __ANDROID__
+#include "android_lifecycle.hpp"
+#include "android_touch_renderer.hpp"
+#endif
+#include "emulation_policy.hpp"
+#include "event_dispatch.hpp"
+#include "event_policy.hpp"
+#include "emulation_session.hpp"
+#include "dialogs.hpp"
+#include "dashboard_controller.hpp"
+#include "sdl_resources.hpp"
+#include "desktop_storage.hpp"
+#include "window_event.hpp"
+#include "tool_window_support.hpp"
+#include "input_mapping.hpp"
+#include "android_touch_input.hpp"
+#include "input_configuration.hpp"
+#include "input_lifecycle.hpp"
+#include "core_capability.hpp"
+#ifndef __ANDROID__
+#include "advanced_tools.hpp"
+#include "link_controller.hpp"
+#endif
+#include "presentation.hpp"
+#ifdef __ANDROID__
+#include "android_bridge.hpp"
+#endif
+#include "remote_link_session.hpp"
+#include "remote_link_controller.hpp"
+#include "settings_model.hpp"
+#include "settings_persistence.hpp"
+#ifndef __ANDROID__
+#include "update_checker.hpp"
+#endif
+
+#include <SDL3/SDL.h>
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <cctype>
+#include <cmath>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <deque>
+#include <exception>
+#include <filesystem>
+#include <fstream>
+#include <functional>
+#include <future>
+#include <iomanip>
+#include <iostream>
+#include <iterator>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <system_error>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include "resource.h"
+#include "windows_dashboard.hpp"
+#include "windows_menu_bar.hpp"
+#endif
+
+#ifdef __ANDROID__
+#include <jni.h>
+#endif
+
+namespace {
+
+using RemoteLinkSession = gbb::sdl::RemoteLinkSession;
+using RemoteLinkOptions = gbb::sdl::RemoteLinkOptions;
+using gbb::sdl::process_events;
+using gbb::sdl::configure_video_pipeline;
+using gbb::sdl::restore_video_presentation;
+using gbb::sdl::load_rom;
+using gbb::sdl::update_window_title;
+using gbb::sdl::choose_video_mode;
+using gbb::sdl::choose_display_palette;
+using gbb::sdl::confirm_exit;
+using gbb::sdl::show_help;
+using gbb::sdl::show_about;
+using gbb::sdl::show_error;
+using gbb::sdl::dashboard_text;
+using gbb::sdl::dashboard_items;
+using gbb::sdl::dashboard_first_visible;
+using gbb::sdl::dashboard_row_at;
+using gbb::sdl::activate_dashboard_selection;
+using gbb::sdl::dashboard_visible_rows;
+using gbb::sdl::dashboard_first_row_y;
+using gbb::sdl::dashboard_row_height;
+using gbb::sdl::render_tool_text;
+#ifndef __ANDROID__
+using InputMovie = gbb::sdl::InputMovie;
+using gbb::sdl::trace_link_frame;
+using gbb::sdl::start_local_link_session;
+using gbb::sdl::stop_local_link_session;
+using gbb::sdl::retry_local_link_session;
+#endif
+using gbb::sdl::start_link_trace;
+using gbb::sdl::stop_link_trace;
+using gbb::sdl::trace_remote_frame;
+using gbb::sdl::start_remote_link_session;
+using gbb::sdl::stop_remote_link_session;
+using gbb::sdl::retry_remote_link_session;
+using gbb::sdl::VoxelRenderContext;
+using gbb::sdl::render_voxel_diorama;
+using gbb::sdl::FrameRenderContext;
+using gbb::sdl::FrameTimingTrace;
+using gbb::sdl::frame_timing_trace_enabled;
+using gbb::sdl::microseconds_between;
+using gbb::sdl::present_link_frames;
+using gbb::sdl::present_link_status;
+using gbb::sdl::present_remote_link_status;
+using gbb::sdl::colorize_frame;
+using gbb::sdl::DialogState;
+#ifndef __ANDROID__
+using gbb::sdl::desktop_dialog_visible;
+#endif
+using gbb::sdl::confirm_discard_changes;
+using gbb::sdl::draw_tool_button_background;
+using gbb::sdl::button_order;
+using gbb::sdl::gamepad_button;
+using gbb::sdl::keyboard_button;
+using gbb::sdl::local_link_keyboard_button;
+using gbb::sdl::release_all_buttons;
+using gbb::sdl::reserved_gameplay_key;
+using gbb::sdl::shortcut_pressed;
+using gbb::sdl::BindingConfiguration;
+using gbb::sdl::BindingDevice;
+using gbb::sdl::ControlsAction;
+using gbb::sdl::begin_binding_configuration;
+using gbb::sdl::show_controls_dialog;
+using gbb::sdl::flush_battery_safely;
+using gbb::sdl::stop_rumble;
+using gbb::sdl::update_rumble;
+#ifdef __ANDROID__
+using gbb::sdl::android_link_menu_max_width;
+using gbb::sdl::android_link_menu_min_row_height;
+using gbb::sdl::android_touch_action_diameter;
+using gbb::sdl::android_touch_dpad_dimension;
+using gbb::sdl::android_touch_system_height;
+using gbb::sdl::android_touch_system_width;
+using gbb::sdl::android_menu_button_hit;
+using gbb::sdl::android_menu_touch_hit;
+using gbb::sdl::android_link_button_rect;
+using gbb::sdl::android_link_touch_hit;
+using gbb::sdl::android_portrait_game_rect;
+using gbb::sdl::clear_touch_buttons;
+using gbb::sdl::logical_touch_position;
+using gbb::sdl::refresh_touch_buttons;
+using gbb::sdl::refresh_touch_settings;
+using gbb::sdl::refresh_touch_settings_if_changed;
+using gbb::sdl::touch_button_index;
+using gbb::sdl::touch_control_pixel_position;
+using gbb::sdl::touch_control_scale;
+using gbb::sdl::touch_is_landscape;
+using gbb::sdl::voxel_mode_enabled;
+using gbb::sdl::window_touch_position;
+#endif
+#ifndef __ANDROID__
+using gbb::sdl::TasEditor;
+using gbb::sdl::SpriteEditor;
+using gbb::sdl::CheatManager;
+using gbb::sdl::DesktopDebugger;
+#endif
+using gbb::sdl::load_rom_library;
+using gbb::sdl::load_quick_state;
+using gbb::sdl::preference_directory;
+using gbb::sdl::quick_state_path;
+using gbb::sdl::recent_paths;
+using gbb::sdl::restore_game_window_geometry;
+using gbb::sdl::save_completed_prints;
+using gbb::sdl::save_game_window_geometry;
+using gbb::sdl::save_quick_state;
+using gbb::sdl::pump_events;
+using gbb::sdl::SdlEventContext;
+using gbb::sdl::handle_gamepad_device_event;
+using gbb::sdl::handle_gamepad_event;
+using gbb::sdl::handle_window_lifecycle_event;
+using gbb::sdl::handle_mouse_event;
+using gbb::sdl::handle_dashboard_key_event;
+using gbb::sdl::handle_keyboard_binding_event;
+using gbb::sdl::handle_gameplay_key_event;
+using gbb::sdl::present_frame;
+#ifndef __ANDROID__
+using gbb::sdl::process_advanced_tool_requests;
+using gbb::sdl::process_link_requests;
+using gbb::sdl::handle_desktop_tool_event;
+using gbb::sdl::handle_desktop_voxel_mouse_event;
+#endif
+using gbb::sdl::process_remote_link_requests;
+#ifdef _WIN32
+using gbb::sdl::handle_desktop_menu_event;
+#endif
+
+#ifndef GBB_VERSION
+#define GBB_VERSION "0.0.0-dev"
+#endif
+
+[[noreturn]] void sdl_error(const std::string& action) {
+    throw std::runtime_error(action + ": " + SDL_GetError());
+}
+
+using SdlResources = gbb::sdl::SdlResources;
+
+/*
+    Resource construction and teardown live in sdl_resources.cpp.  Keeping
+    this alias lets the event loop retain its small, readable `sdl.foo`
+    access pattern while the ownership boundary stays in one module.
+*/
+
+constexpr std::size_t maximum_rewind_frames = 180;
+#ifdef __ANDROID__
+// Android has no rewind control in its native UI. Avoid serializing and
+// retaining a full machine snapshot every few frames on the emulation thread;
+// the resulting allocation burst is audible on slower devices after the
+// history fills. Desktop keeps the existing rewind history behavior.
+constexpr bool automatic_rewind_capture = false;
+#else
+constexpr bool automatic_rewind_capture = true;
+#endif
+// Serializing a complete machine is intentionally amortized across four
+// frames. This keeps rewind responsive while leaving enough CPU headroom for
+// cores/toolchains whose save-state codec is more expensive (notably MSVC).
+// The history still retains 180 snapshots, so the available rewind window is
+// longer; only the rewind step granularity changes from one frame to four.
+constexpr unsigned rewind_capture_interval = 4;
+// Leave enough headroom for the snapshot itself. On slower devices a frame
+// can already consume the whole deadline; taking a snapshot there would turn
+// a small timing overrun into a visible hitch, so that capture is deferred to
+// the next eligible frame instead.
+constexpr auto rewind_capture_guard = std::chrono::milliseconds(6);
+// TCP serial responses are serviced from the emulation thread. Legacy bit
+// packets retain a tight cadence because every edge is a network round trip.
+// A 512-cycle cadence stays below 0.13 ms at the Game Boy clock while halving
+// the non-blocking socket calls that were producing visible Windows jitter.
+// Negotiated byte packets need far fewer polls: 4096 cycles is still under a
+// millisecond while avoiding redundant socket syscalls during the long
+// passive receive waits used by the Cable Club.
+constexpr unsigned remote_bit_poll_cycle_interval = 512;
+constexpr unsigned remote_byte_poll_cycle_interval = 4096;
+// An internal clock owner cannot advance its next byte until the peer's
+// response arrives. Keep the active wait below 0.13 ms at the normal CGB/DMG
+// clock, but do not pay that syscall rate before a request has been queued.
+constexpr unsigned remote_byte_internal_poll_cycle_interval = 512;
+// CGB fast mode has a 16-cycle serial bit period. The network round trip is
+// still the dominant cost, but a shorter polling slice prevents avoidable
+// scheduling delay when a fast-mode battle is already waiting for a response.
+constexpr unsigned remote_byte_fast_internal_poll_cycle_interval = 256;
+// A passive byte-capable receiver does not have a response deadline of its
+// own: it only needs to notice the host's next request. Polling it at the
+// host-clock cadence causes roughly 17 non-blocking socket calls per video
+// frame on Windows, even while the guest is waiting in a Cable Club loop.
+// Keep the idle receiver cadence at roughly four milliseconds, then switch
+// to the tighter active cadence as soon as a peer request is observed. This
+// bounds handshake latency without making every passive frame pay the full
+// socket syscall rate.
+#if defined(__ANDROID__)
+// Android can suspend or coalesce the SDL thread for longer scheduler
+// intervals than desktop builds. Keep passive byte receivers responsive
+// enough that Pokémon's battle link waits cannot observe a stale external
+// byte while retaining the lower-syscall cadence used to smooth Windows.
+constexpr unsigned remote_byte_receive_poll_cycle_interval = 2048;
+#else
+constexpr unsigned remote_byte_receive_poll_cycle_interval = 16384;
+#endif
+// Once a request is in flight, keep release/next-request visibility below a
+// millisecond without returning to the old all-frame polling rate.
+constexpr unsigned remote_byte_busy_poll_cycle_interval = 4096;
+// When a connected peer is idle, there is no serial response deadline to
+// service. Use a larger bounded slice so an established-but-unused link does
+// not add active-transfer polling overhead to every video frame. If a
+// transfer starts inside the slice, it is serviced at that boundary and the
+// active interval is used from the following slice onward.
+constexpr unsigned remote_idle_poll_cycle_interval = 16384;
+
+using RewindHistory = std::deque<std::vector<std::uint8_t>>;
+
+
+
+#ifdef __ANDROID__
+void refresh_video_mode_if_changed(
+    SdlResources& sdl, const std::filesystem::path& preference_path) {
+    std::error_code error;
+    const auto settings_path = portable_settings_path(preference_path);
+    const auto write_time = std::filesystem::last_write_time(settings_path,
+                                                               error);
+    if (error) return;
+    if (sdl.video_settings_write_time_valid &&
+        write_time == sdl.video_settings_write_time) {
+        return;
+    }
+
+    const auto mode = load_video_mode(preference_path);
+    if (mode != sdl.video_mode && !configure_video_pipeline(sdl, mode)) {
+        sdl_error("Could not apply the selected video pipeline");
+        return;
+    }
+    sdl.video_settings_write_time = write_time;
+    sdl.video_settings_write_time_valid = true;
+}
+
+void refresh_display_palette_if_changed(
+    gbb::EmulatorCore* core, gameboy::Emulator* link_emulator,
+    SdlResources& sdl, const std::filesystem::path& preference_path,
+    std::size_t& display_palette) {
+    std::error_code error;
+    const auto settings_path = portable_settings_path(preference_path);
+    const auto write_time = std::filesystem::last_write_time(settings_path,
+                                                               error);
+    if (error) return;
+    const auto apply_palette = [&]() {
+        const auto compatibility =
+            gameboy::display_palettes[display_palette].cgb_compatibility;
+        if (core && gbb::sdl::supports(
+                        core, gbb::CoreCapability::compatibility_palette)) {
+            core->set_compatibility_colors(compatibility);
+        }
+        if (link_emulator) {
+            link_emulator->set_dmg_compatibility_colors(compatibility);
+        }
+    };
+    if (sdl.palette_settings_write_time_valid &&
+        write_time == sdl.palette_settings_write_time) {
+        // Save-state loads restore PPU timing and registers but intentionally
+        // do not serialize the presentation palette. Reapply the selected
+        // palette even when settings.ini itself has not changed.
+        apply_palette();
+        return;
+    }
+
+    const auto palette = load_display_palette(preference_path);
+    if (palette < gameboy::display_palettes.size() &&
+        palette != display_palette) {
+        display_palette = palette;
+    }
+    apply_palette();
+    sdl.palette_settings_write_time = write_time;
+    sdl.palette_settings_write_time_valid = true;
+}
+
+
+#endif
+#ifdef __ANDROID__
+using gbb::sdl::leave_android_game;
+using gbb::sdl::open_android_library;
+using gbb::sdl::persist_android_rom;
+using gbb::sdl::present_touch_controls;
+#endif
+
+
+
+#ifndef __ANDROID__
+bool offer_update(const gbb_desktop::UpdateInfo& update,
+                  gameboy::Emulator* emulator, SdlResources& sdl) {
+    stop_rumble(sdl);
+    if (emulator != nullptr) release_all_buttons(*emulator);
+    const auto message =
+        std::string("Go Bigger Boy ") + update.version +
+        " is available.\n\nYou are running version " GBB_VERSION
+        ". Would you like GBB to install the update and restart?\n\n"
+        "You can keep playing while the verified archive downloads.";
+    constexpr std::array<SDL_MessageBoxButtonData, 2> buttons{{
+        {SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, 1, "Update now"},
+        {SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, "Later"},
+    }};
+    // The native Windows library dashboard starts with the SDL window hidden.
+    // Passing that hidden window as the message-box owner can make SDL briefly
+    // show and activate it before displaying the update prompt. A top-level
+    // message box is still modal and foregrounded without a hidden owner.
+    auto* const parent = sdl.window != nullptr &&
+                                 (SDL_GetWindowFlags(sdl.window) &
+                                  SDL_WINDOW_HIDDEN) == 0
+                             ? sdl.window
+                             : nullptr;
+    const SDL_MessageBoxData box{
+        SDL_MESSAGEBOX_INFORMATION,
+        parent,
+        "Go Bigger Boy update available",
+        message.c_str(),
+        static_cast<int>(buttons.size()),
+        buttons.data(),
+        nullptr,
+    };
+    auto selection = 0;
+    return SDL_ShowMessageBox(&box, &selection) && selection == 1;
+}
+
+std::pair<std::filesystem::path, std::filesystem::path> installation_paths() {
+    const auto* base = SDL_GetBasePath();
+    if (base == nullptr) throw std::runtime_error(SDL_GetError());
+    auto executable_directory = std::filesystem::u8path(base).lexically_normal();
+#ifdef _WIN32
+    const auto executable = executable_directory / "gbb.exe";
+    return {executable_directory, executable};
+#elif defined(__APPLE__)
+    const auto bundle = executable_directory.parent_path().parent_path();
+    const auto executable = bundle / "Contents" / "MacOS" /
+                            "Go Bigger Boy";
+    return {bundle.parent_path(), executable};
+#else
+    const auto executable = executable_directory / "gbb";
+    const auto root = executable_directory.filename() == "bin"
+                          ? executable_directory.parent_path()
+                          : executable_directory;
+    return {root, executable};
+#endif
+}
+
+bool installation_is_writable(const std::filesystem::path& root) {
+    const auto probe = root / ".gbb-update-write-test";
+    std::ofstream output(probe, std::ios::trunc);
+    if (!output) return false;
+    output << "write test";
+    output.close();
+    std::error_code ignored;
+    std::filesystem::remove(probe, ignored);
+    return !ignored;
+}
+#endif
+
+
+void present_menu_button(SdlResources& sdl) {
+#ifdef __ANDROID__
+    // Unlike the Game Boy framebuffer and touch controls, this overlay belongs
+    // to the full Android window. Draw it after temporarily disabling SDL's
+    // logical 160x144 presentation so either corner remains reachable.
+    if (!SDL_SetRenderLogicalPresentation(
+            sdl.renderer, 0, 0, SDL_LOGICAL_PRESENTATION_DISABLED)) {
+        sdl_error("Could not prepare Android menu button");
+    }
+    const auto button_rect = android_menu_button_rect(sdl);
+    const auto button_x = button_rect.x;
+    const auto button_y = button_rect.y;
+    const auto button_width = button_rect.w;
+    const auto button_height = button_rect.h;
+    const auto link_button_rect = android_link_button_rect(sdl);
+
+    if (sdl.android_menu_visible || sdl.android_link_menu_visible) {
+        int width = 1;
+        int height = 1;
+        static_cast<void>(SDL_GetWindowSize(sdl.window, &width, &height));
+        const auto panel_width = std::min(
+            static_cast<float>(width) * 0.86F,
+            android_link_menu_max_width);
+        const auto panel_x = (static_cast<float>(width) - panel_width) * 0.5F;
+        const auto row_height = std::max(
+            android_link_menu_min_row_height, touch_game_scale(sdl) * 18.0F);
+        const auto panel_y = std::max(24.0F, static_cast<float>(height) * 0.12F);
+        // SDL_RenderDebugText is an intentionally tiny built-in bitmap font.
+        // Scale the renderer while drawing this full-window Android overlay so
+        // labels remain readable on high-density phones without adding a font
+        // dependency to the native library.
+        const auto text_scale = panel_width >= 420.0F ? 2.0F : 1.5F;
+        static_cast<void>(SDL_SetRenderScale(sdl.renderer, text_scale,
+                                             text_scale));
+        const auto render_x = panel_x / text_scale;
+        const auto render_y = panel_y / text_scale;
+        const auto render_width = panel_width / text_scale;
+        const auto render_row_height = row_height / text_scale;
+        const SDL_FRect panel{render_x, render_y, render_width,
+                              render_row_height * 8.0F};
+        static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
+                                                     SDL_BLENDMODE_BLEND));
+        static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 8, 15, 22, 245));
+        static_cast<void>(SDL_RenderFillRect(sdl.renderer, &panel));
+        static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 8, 175, 244, 230));
+        static_cast<void>(SDL_RenderRect(sdl.renderer, &panel));
+        constexpr std::array<const char*, 8> general_labels{{
+            "Host link", "Join link", "Discover LAN hosts",
+            "Retry link", "Stop link", "Open library", "Save diagnostics",
+            "Close menu"}};
+        constexpr std::array<const char*, 8> link_labels{{
+            "Host link", "Join link", "Discover LAN hosts",
+            "Link settings", "Retry link", "Stop link", "Save diagnostics",
+            "Close menu"}};
+        const auto& labels = sdl.android_link_menu_visible ? link_labels
+                                                            : general_labels;
+        for (std::size_t index = 0; index < labels.size(); ++index) {
+            const auto y = render_y +
+                           render_row_height * static_cast<float>(index);
+            if (index != 0) {
+                static_cast<void>(SDL_SetRenderDrawColor(
+                    sdl.renderer, 20, 60, 80, 220));
+                const SDL_FRect divider{render_x, y, render_width,
+                                        1.0F / text_scale};
+                static_cast<void>(SDL_RenderFillRect(sdl.renderer, &divider));
+            }
+            static_cast<void>(SDL_SetRenderDrawColor(
+                sdl.renderer, 248, 252, 255, 255));
+            static_cast<void>(SDL_RenderDebugText(
+                sdl.renderer, render_x + 14.0F / text_scale,
+                y + std::max(10.0F / text_scale,
+                             (render_row_height - 8.0F / text_scale) * 0.5F),
+                labels[index]));
+        }
+        static_cast<void>(SDL_SetRenderScale(sdl.renderer, 1.0F, 1.0F));
+        static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
+                                                     SDL_BLENDMODE_NONE));
+    }
+#else
+    const auto button_x = 3.0F;
+    const auto button_y = 3.0F;
+    const auto button_width = 20.0F;
+    const auto button_height = 15.0F;
+#endif
+    static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
+                                                 SDL_BLENDMODE_BLEND));
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 8, 15, 22, 235));
+    const SDL_FRect button{button_x, button_y, button_width, button_height};
+    static_cast<void>(SDL_RenderFillRect(sdl.renderer, &button));
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 8, 175, 244, 230));
+    static_cast<void>(SDL_RenderRect(sdl.renderer, &button));
+    const std::array<SDL_FRect, 3> menu_lines{{
+        {button_x + button_width * 0.2F,
+         button_y + button_height * 0.2F,
+         button_width * 0.6F, button_height * 0.10F},
+        {button_x + button_width * 0.2F,
+         button_y + button_height * 0.47F,
+         button_width * 0.6F, button_height * 0.10F},
+        {button_x + button_width * 0.2F,
+         button_y + button_height * 0.74F,
+         button_width * 0.6F, button_height * 0.10F}}};
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 8, 175, 244, 230));
+    for (const auto& line : menu_lines) {
+        static_cast<void>(SDL_RenderFillRect(sdl.renderer, &line));
+    }
+#ifndef __ANDROID__
+    // Keep help discoverable on SDL desktop builds where there is no native
+    // menu bar. This action sits beside the library button in the letterboxed
+    // viewport and does not change the Game Boy framebuffer dimensions.
+    const SDL_FRect help_button{25.0F, 3.0F, 20.0F, 15.0F};
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 8, 15, 22, 235));
+    static_cast<void>(SDL_RenderFillRect(sdl.renderer, &help_button));
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 8, 175, 244, 230));
+    static_cast<void>(SDL_RenderRect(sdl.renderer, &help_button));
+    render_tool_text(sdl.renderer, 32.0F, 7.0F, "?", 10.0F, 0.57F);
+    float mouse_x = 0.0F;
+    float mouse_y = 0.0F;
+    static_cast<void>(SDL_GetMouseState(&mouse_x, &mouse_y));
+    static_cast<void>(SDL_RenderCoordinatesFromWindow(
+        sdl.renderer, mouse_x, mouse_y, &mouse_x, &mouse_y));
+    const char* tooltip = nullptr;
+    if (mouse_x >= 3.0F && mouse_x < 23.0F && mouse_y < 18.0F) {
+        tooltip = "LIBRARY";
+    } else if (mouse_x >= 25.0F && mouse_x < 45.0F && mouse_y < 18.0F) {
+        tooltip = "HELP";
+    }
+    if (tooltip != nullptr) {
+        const SDL_FRect tooltip_panel{3.0F, 20.0F, 70.0F, 14.0F};
+        static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 8, 15, 22, 245));
+        static_cast<void>(SDL_RenderFillRect(sdl.renderer, &tooltip_panel));
+        static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 8, 175, 244, 230));
+        static_cast<void>(SDL_RenderRect(sdl.renderer, &tooltip_panel));
+        static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 248, 252, 255, 255));
+        render_tool_text(sdl.renderer, 8.0F, 23.0F, tooltip, 60.0F, 0.57F);
+    }
+#endif
+    static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
+                                                 SDL_BLENDMODE_NONE));
+#ifdef __ANDROID__
+    // Keep remote-link access discoverable without opening the general menu. The
+    // chain-style glyph is drawn from lines so it remains crisp at any phone
+    // density and does not depend on a font being available.
+    static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
+                                                 SDL_BLENDMODE_BLEND));
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 8, 15, 22, 235));
+    const SDL_FRect link_button{link_button_rect.x, link_button_rect.y,
+                                link_button_rect.w, link_button_rect.h};
+    static_cast<void>(SDL_RenderFillRect(sdl.renderer, &link_button));
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 8, 175, 244, 230));
+    static_cast<void>(SDL_RenderRect(sdl.renderer, &link_button));
+    const auto link_center_y = link_button_rect.y + link_button_rect.h * 0.5F;
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 8, 175, 244, 230));
+    static_cast<void>(SDL_RenderLine(
+        sdl.renderer, link_button_rect.x + link_button_rect.w * 0.22F,
+        link_center_y, link_button_rect.x + link_button_rect.w * 0.78F,
+        link_center_y));
+    static_cast<void>(SDL_RenderLine(
+        sdl.renderer, link_button_rect.x + link_button_rect.w * 0.22F,
+        link_center_y, link_button_rect.x + link_button_rect.w * 0.38F,
+        link_center_y - link_button_rect.h * 0.2F));
+    static_cast<void>(SDL_RenderLine(
+        sdl.renderer, link_button_rect.x + link_button_rect.w * 0.22F,
+        link_center_y, link_button_rect.x + link_button_rect.w * 0.38F,
+        link_center_y + link_button_rect.h * 0.2F));
+    static_cast<void>(SDL_RenderLine(
+        sdl.renderer, link_button_rect.x + link_button_rect.w * 0.78F,
+        link_center_y, link_button_rect.x + link_button_rect.w * 0.62F,
+        link_center_y - link_button_rect.h * 0.2F));
+    static_cast<void>(SDL_RenderLine(
+        sdl.renderer, link_button_rect.x + link_button_rect.w * 0.78F,
+        link_center_y, link_button_rect.x + link_button_rect.w * 0.62F,
+        link_center_y + link_button_rect.h * 0.2F));
+    static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
+                                                 SDL_BLENDMODE_NONE));
+    if (!restore_video_presentation(sdl)) {
+        sdl_error("Could not restore game presentation after menu button");
+    }
+#endif
+}
+
+#ifndef __ANDROID__
+void present_desktop_status(SdlResources& sdl, const bool paused,
+                            const bool fast_forward, const bool rewind,
+                            const bool configuring, const bool recording,
+                            const bool replaying) {
+    std::string status;
+    if (configuring) status = "CONFIGURE";
+    if (paused) status = status.empty() ? "PAUSED" : status + "  PAUSED";
+    if (fast_forward) status = status.empty() ? "FAST FORWARD" : status + "  FAST";
+    if (rewind) status = status.empty() ? "REWIND" : status + "  REWIND";
+    if (recording) status = status.empty() ? "RECORDING" : status + "  REC";
+    if (replaying) status = status.empty() ? "REPLAYING" : status + "  PLAY";
+    if (status.empty()) return;
+    const auto width = std::clamp(12.0F + static_cast<float>(status.size()) * 8.0F,
+                                  48.0F,
+#ifdef _WIN32
+                                  152.0F
+#else
+                                  108.0F
+#endif
+    );
+    const SDL_FRect panel{160.0F - width - 3.0F, 3.0F, width, 15.0F};
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 8, 15, 22, 245));
+    static_cast<void>(SDL_RenderFillRect(sdl.renderer, &panel));
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 8, 175, 244, 230));
+    static_cast<void>(SDL_RenderRect(sdl.renderer, &panel));
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 248, 252, 255, 255));
+    render_tool_text(sdl.renderer, panel.x + 6.0F, panel.y + 4.0F,
+                     dashboard_text(status, 18).c_str(), panel.w - 12.0F,
+                     0.57F);
+}
+#endif
+
+#if !defined(_WIN32) && !defined(__ANDROID__)
+void present_dashboard(SdlResources& sdl,
+                       const std::vector<std::string>& recent,
+                       const gameboy::RomLibrary& library,
+                       const bool can_resume, std::size_t& selection,
+                       const std::string& filter) {
+    const auto items = dashboard_items(can_resume, recent, filter, &library);
+    selection = std::min(selection, items.size() - 1);
+    const auto first = dashboard_first_visible(selection, items.size());
+    const auto visible = std::min(dashboard_visible_rows, items.size() - first);
+
+    // Keep the SDL dashboard visually aligned with the native desktop
+    // dashboard: a deep navy canvas, bright cyan accents, and high-contrast
+    // cards.  The logical 160x144 layout is intentionally compact so it
+    // scales cleanly on small windows and on the Android renderer too.
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 8, 12, 20, 255));
+    const SDL_FRect canvas{0, 0, 160, 144};
+    static_cast<void>(SDL_RenderFillRect(sdl.renderer, &canvas));
+    const SDL_FRect header{0, 0, 160, 34};
+    static_cast<void>(SDL_RenderFillRect(sdl.renderer, &header));
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 69, 207, 238, 255));
+    const SDL_FRect accent{9, 31, 142, 2};
+    static_cast<void>(SDL_RenderFillRect(sdl.renderer, &accent));
+    render_tool_text(sdl.renderer, 13, 5, "GO BIGGER BOY", 134.0F, 0.57F);
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 177, 192, 208, 255));
+    const auto filter_label = !can_resume && recent.empty()
+                                  ? std::string{"START: O OPEN ROM"}
+                                  : std::string{"FILTER: "} +
+                                        (filter.empty()
+                                             ? std::string{"type..."}
+                                             : dashboard_text(filter, 5));
+    render_tool_text(sdl.renderer, 13, 18,
+                     dashboard_text(filter_label, 18).c_str(), 134.0F, 0.57F);
+    if (!filter.empty()) {
+        const SDL_FRect clear_filter{125, 16, 32, 14};
+        static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 20, 77, 101, 255));
+        static_cast<void>(SDL_RenderFillRect(sdl.renderer, &clear_filter));
+        static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 69, 207, 238, 255));
+        static_cast<void>(SDL_RenderRect(sdl.renderer, &clear_filter));
+        static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 238, 249, 255, 255));
+        render_tool_text(sdl.renderer, 129, 19, "CLR", 26.0F, 0.57F);
+    }
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 69, 207, 238, 255));
+    if (filter.empty()) {
+        const SDL_FRect filter_cursor{77, 17, 1, 10};
+        static_cast<void>(SDL_RenderFillRect(sdl.renderer, &filter_cursor));
+    }
+
+    for (std::size_t row = 0; row < visible; ++row) {
+        const auto index = first + row;
+        const auto selected = index == selection;
+        const auto y = dashboard_first_row_y +
+                       static_cast<float>(row) * dashboard_row_height;
+        const SDL_FRect card{9, y, 142, 15};
+        static_cast<void>(SDL_SetRenderDrawColor(
+            sdl.renderer, selected ? 20 : 20, selected ? 77 : 29,
+            selected ? 101 : 42, 255));
+        static_cast<void>(SDL_RenderFillRect(sdl.renderer, &card));
+        static_cast<void>(SDL_SetRenderDrawColor(
+            sdl.renderer, selected ? 230 : 137, selected ? 249 : 160,
+            selected ? 255 : 183, 255));
+        static_cast<void>(SDL_RenderRect(sdl.renderer, &card));
+        const auto label = std::string(selected ? "> " : "  ") +
+                           dashboard_text(items[index].label, 14);
+        render_tool_text(sdl.renderer, 13, y + 3, label.c_str(), 136.0F, 0.57F);
+    }
+
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 137, 160, 183, 255));
+    if (first > 0) {
+        render_tool_text(sdl.renderer, 153, 39, "^", 5.0F, 0.57F);
+    }
+    if (first + visible < items.size()) {
+        render_tool_text(sdl.renderer, 153, 111, "v", 5.0F, 0.57F);
+    }
+    const auto& selected_item = items[selection];
+    if (!selected_item.path.empty()) {
+        const auto path = dashboard_text(selected_item.path, 512);
+        constexpr std::size_t path_window = 13;
+        std::string visible_path;
+        if (path.size() <= path_window) {
+            visible_path = path;
+        } else {
+            const auto cycle = path.size() + path_window;
+            const auto offset = static_cast<std::size_t>(
+                (SDL_GetTicks() / 450U) % cycle);
+            visible_path = offset < path.size()
+                               ? path.substr(offset, path_window)
+                               : path.substr(0, path_window);
+        }
+        static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 177, 192, 208, 255));
+        render_tool_text(sdl.renderer, 9, 123, "PATH:", 36.0F, 0.57F);
+        render_tool_text(sdl.renderer, 49, 123,
+                         dashboard_text(visible_path, path_window).c_str(),
+                         102.0F, 0.57F);
+    }
+    render_tool_text(sdl.renderer, 0, 134,
+                     filter.empty() ? "ENTER SELECT  O OPEN"
+                                    : "ESC CLEAR O OPEN",
+                     160.0F, 0.57F);
+}
+#endif
+
+} // namespace
+int run_emulation(int argc, char** argv) {
+    try {
+        if (argc == 2 && std::string_view(argv[1]) == "--version") {
+            std::cout << "Go Bigger Boy " GBB_VERSION << '\n';
+            return EXIT_SUCCESS;
+        }
+        DialogState dialog;
+#ifdef _WIN32
+        const auto start_with_library = argc != 2;
+#else
+        constexpr auto start_with_library = false;
+#endif
+        SdlResources sdl(GBB_VERSION, start_with_library);
+#ifdef _WIN32
+        DesktopMenuBar desktop_menu;
+        desktop_menu.attach(sdl.window);
+#endif
+        const auto preference_path = preference_directory();
+        const auto frame_timing_enabled = frame_timing_trace_enabled();
+        FrameTimingTrace frame_timing_trace(frame_timing_enabled);
+        if (frame_timing_enabled) {
+            const auto* renderer_name = SDL_GetRendererName(sdl.renderer);
+            frame_timing_trace.write(
+                std::string("renderer=") +
+                (renderer_name == nullptr ? "unknown" : renderer_name));
+            frame_timing_trace.write(
+                std::string("build=") +
+#ifdef NDEBUG
+                "release"
+#else
+                "debug"
+#endif
+#ifdef _ITERATOR_DEBUG_LEVEL
+                " iterator_debug=" +
+                std::to_string(_ITERATOR_DEBUG_LEVEL)
+#else
+                " iterator_debug=unknown"
+#endif
+            );
+            if (!frame_timing_trace.enabled()) {
+                gbb::log_frontend_warning(
+                    std::string("Could not open frame timing trace: ") +
+                    frame_timing_trace.path().string());
+            }
+        }
+        const auto app_settings = load_app_settings(preference_path);
+        auto hardware_model = app_settings.hardware_model;
+        RemoteLinkOptions remote_link_options;
+        remote_link_options.transport = app_settings.link_transport;
+        remote_link_options.host = app_settings.link_remote_host;
+        remote_link_options.bind_address = app_settings.link_remote_bind;
+        remote_link_options.port = app_settings.link_remote_port;
+        remote_link_options.lan_discovery = app_settings.link_lan_discovery;
+        remote_link_options.bluetooth_address =
+            app_settings.link_bluetooth_address;
+        remote_link_options.bluetooth_service_uuid =
+            app_settings.link_bluetooth_service_uuid;
+        // LAN discovery is useful only when the corresponding TCP listener is
+        // reachable from another device. Migrate the historical loopback
+        // default whenever LAN advertisement is enabled, while preserving an
+        // explicit bind address for users who need a particular interface.
+        if (remote_link_options.lan_discovery &&
+            remote_link_options.bind_address == "127.0.0.1") {
+            remote_link_options.bind_address = "0.0.0.0";
+        }
+        const auto plugin_options =
+            load_plugin_discovery_options(preference_path);
+        auto plugin_catalog = gbb::PluginCatalog::discover(plugin_options);
+        const auto& core_registry = plugin_catalog.registry();
+        std::size_t plugin_rejections = 0;
+        for (const auto& diagnostic : plugin_catalog.diagnostics()) {
+            if (!diagnostic.loaded) {
+                ++plugin_rejections;
+                gbb::log_frontend_warning(
+                    std::string("Plugin discovery: ") + diagnostic.message);
+            }
+        }
+        if (plugin_options.enabled) {
+            gbb::log_frontend_info(
+                std::string("Plugin discovery complete: loaded=") +
+                std::to_string(plugin_catalog.loaded_count()) +
+                " rejected=" + std::to_string(plugin_rejections) +
+                (plugin_options.require_allowlist ? " allowlist=required"
+                                                   : " allowlist=optional"));
+        }
+        sdl.voxel_profile_path = preference_path.empty()
+                                    ? std::filesystem::path{}
+                                    : preference_path / "voxel-profiles.ini";
+        gbb::ensure_voxel_profile_file(sdl.voxel_profile_path);
+        restore_game_window_geometry(sdl.window, preference_path);
+        auto rom_library = load_rom_library(preference_path);
+        auto recent_roms = recent_paths(rom_library);
+        auto bindings = load_bindings(preference_path);
+        auto configuration_backup = bindings;
+        auto display_palette = load_display_palette(preference_path);
+        auto audio_enabled = app_settings.audio_enabled;
+        auto link_diagnostics = load_link_diagnostics(preference_path);
+        auto video_mode = load_video_mode(preference_path);
+        if (!configure_video_pipeline(sdl, video_mode)) {
+            sdl_error("Could not configure video pipeline");
+        }
+#ifdef __ANDROID__
+        const auto touch_settings = load_touch_control_settings(preference_path);
+        sdl.touch_settings = touch_settings;
+#endif
+        std::unique_ptr<gbb::EmulatorCore> core;
+        gameboy::Emulator* emulator = nullptr;
+        std::unique_ptr<gameboy::Emulator> link_emulator;
+        std::unique_ptr<gameboy::LinkSession> link_session;
+        std::unique_ptr<gameboy::GameBoyLinkEndpoint> link_first_endpoint;
+        std::unique_ptr<gameboy::GameBoyLinkEndpoint> link_second_endpoint;
+        RemoteLinkSession remote_link;
+        std::string current_rom;
+        std::string dashboard_filter;
+        std::optional<std::string> pending_rom;
+#ifdef __ANDROID__
+        std::string pending_rom_name;
+#endif
+        std::optional<BindingConfiguration> configuring;
+#ifndef __ANDROID__
+        gbb_desktop::UpdateChecker update_checker{GBB_VERSION};
+        std::optional<gbb_desktop::UpdateInfo> available_update;
+        std::unique_ptr<gbb_desktop::UpdateDownload> update_download;
+        bool update_cancel_requested = false;
+        bool update_check_complete = false;
+        std::optional<bool> cheat_pause_restore;
+        const auto poll_update_checker = [&] {
+            if (update_check_complete) return;
+            std::string update_error;
+            std::optional<gbb_desktop::UpdateInfo> update_result;
+            gbb::LogContext update_context{};
+            if (update_checker.take_result(update_result, update_error,
+                                           &update_context)) {
+                auto callback_context =
+                    gbb::LogContextScope::exact(update_context);
+                update_check_complete = true;
+                if (!update_error.empty()) {
+                    gbb::log_frontend_warning(
+                        std::string("Update check unavailable: ") +
+                        update_error);
+                }
+                available_update = std::move(update_result);
+            }
+        };
+#endif
+#ifdef _WIN32
+        bool reveal_sdl_after_present = false;
+#endif
+        auto paused = false;
+        auto fullscreen = false;
+        auto fast_forward = false;
+        auto rewind = false;
+        auto reset_requested = false;
+        auto link_toggle_requested = false;
+        auto link_retry_requested = false;
+        auto automatic_local_retry_used = false;
+        auto remote_host_requested = false;
+        auto remote_join_requested = false;
+        auto remote_discover_requested = false;
+        auto remote_stop_requested = false;
+        auto running = true;
+#ifdef __ANDROID__
+        // The native Android LibraryActivity owns the dashboard. The SDL
+        // surface must never render the legacy pixel-art dashboard.
+        auto dashboard_visible = false;
+#else
+        auto dashboard_visible = argc != 2;
+#endif
+#ifdef _WIN32
+        if (dashboard_visible) SDL_HideWindow(sdl.window);
+#endif
+        std::size_t dashboard_selection = 0;
+        // ROMs selected in the native dashboard wait for the update check to
+        // finish so an available update can be offered before the ROM boots.
+        bool pending_rom_from_dashboard = false;
+        std::uint64_t print_sequence = 0;
+        RewindHistory rewind_history;
+        unsigned rewind_capture_phase = 0;
+#ifndef __ANDROID__
+        DesktopDebugger debugger;
+        InputMovie input_movie;
+        TasEditor tas_editor;
+        SpriteEditor sprite_editor;
+        gbb::sdl::VideoViewer video_viewer;
+        CheatManager cheat_manager;
+        const auto movie_path = preference_path / "replays" /
+                                "last-input.gbbmovie";
+        const auto tas_movie_path = preference_path / "replays" /
+                                    "last-tas.gbbmovie";
+        const auto sprite_patch_path = preference_path / "sprite-patches" /
+                                       "last-sprite-edit.gbbtiles";
+        const auto sprite_ips_path = preference_path / "sprite-patches" /
+                                     "last-sprite-edit.ips";
+#endif
+
+#ifdef __ANDROID__
+        if (argc >= 2) {
+            pending_rom = argv[1];
+            if (argc >= 3) pending_rom_name = argv[2];
+        } else {
+#else
+        if (argc == 2) {
+            pending_rom = argv[1];
+        } else {
+            if (argc > 2) {
+                show_error(sdl.window, "Only one ROM can be opened at a time.");
+            }
+#endif
+            static_cast<void>(SDL_SetWindowTitle(
+                sdl.window, "Go Bigger Boy (GBB) - Game Library"));
+        }
+        auto cycles_per_frame = 70224U;
+        gbb::sdl::FramePacer frame_pacer(cycles_per_frame);
+        std::uint64_t frontend_frame = 0;
+        std::uint64_t rewind_capture_count = 0;
+        std::uint64_t rewind_capture_total_us = 0;
+        std::uint64_t rewind_capture_max_us = 0;
+        std::size_t rewind_capture_bytes = 0;
+        std::uint64_t core_step_count = 0;
+        std::uint64_t core_step_total_us = 0;
+        std::uint64_t core_step_max_us = 0;
+
+        while (running) {
+            const auto frame_started = std::chrono::steady_clock::now();
+            // Make the current presentation frame available to every nested
+            // diagnostic without threading context through each SDL helper.
+            gbb::LogContextScope frame_log_context(
+                {0, frontend_frame, 0,
+                 core ? core->rom_fingerprint() : 0});
+            gbb::sdl::CoreServices services{core.get(), emulator};
+#ifdef __ANDROID__
+            gbb::sdl::publish_android_log_context(
+                gbb::current_log_context());
+            // Settings are edited by the native Android activity while this
+            // SDL activity may stay alive underneath it. Poll before event
+            // handling and rendering so the video pipeline, menu placement,
+            // and voxel orbit preferences take effect immediately, even
+            // without a touch.
+            refresh_video_mode_if_changed(sdl, preference_path);
+            refresh_display_palette_if_changed(
+                core.get(), link_emulator.get(), sdl, preference_path,
+                display_palette);
+            refresh_touch_settings_if_changed(sdl, preference_path);
+#endif
+#ifndef __ANDROID__
+            poll_update_checker();
+#endif
+#ifndef __ANDROID__
+            // Offer updates before entering the native dashboard. The
+            // dashboard has its own modal message loop, so handling this
+            // first ensures a startup update is not deferred until a ROM is
+            // selected.
+            if (available_update && !dialog_active(dialog) && !configuring) {
+                if (pending_rom_from_dashboard) {
+                    SDL_ShowWindow(sdl.window);
+                    SDL_RaiseWindow(sdl.window);
+                }
+                if (offer_update(*available_update, emulator, sdl)) {
+                    try {
+                        const auto [root, executable] = installation_paths();
+                        if (!installation_is_writable(root)) {
+                            throw std::runtime_error(
+                                "The installation directory is not writable. "
+                                "Install GBB in a user-writable folder to use "
+                                "automatic updates.");
+                        }
+                        const auto directory =
+                            (preference_path.empty()
+                                 ? std::filesystem::temp_directory_path() /
+                                       "go-bigger-boy"
+                                 : preference_path) /
+                            "updates" / available_update->version;
+                        update_download =
+                            std::make_unique<gbb_desktop::UpdateDownload>(
+                                *available_update, directory);
+                        SDL_ShowWindow(sdl.window);
+                        SDL_RaiseWindow(sdl.window);
+                        static_cast<void>(SDL_SetWindowTitle(
+                            sdl.window,
+                            "Go Bigger Boy (GBB) - Downloading update..."));
+                    } catch (const std::exception& error) {
+                        show_error(sdl.window, error.what());
+                    }
+                }
+                available_update.reset();
+                frame_pacer.reset();
+            }
+#endif
+#ifdef _WIN32
+            if (dashboard_visible && !update_download) {
+                save_game_window_geometry(sdl.window, preference_path);
+                SDL_HideWindow(sdl.window);
+                gbb_desktop::KeyboardBindings dashboard_bindings{};
+                for (std::size_t index = 0; index < bindings.keys.size();
+                     ++index) {
+                    for (std::size_t slot = 0;
+                         slot < bindings.keys[index].size(); ++slot) {
+                        dashboard_bindings[index][slot] =
+                            static_cast<std::int64_t>(bindings.keys[index][slot]);
+                    }
+                }
+                gbb_desktop::ActionBindings dashboard_actions{};
+                for (std::size_t index = 0; index < dashboard_actions.size();
+                     ++index) {
+                    dashboard_actions[index] = static_cast<std::int64_t>(
+                        bindings.shortcuts[index]);
+                }
+                gbb_desktop::DashboardLinkSettings dashboard_link_settings;
+                dashboard_link_settings.transport =
+                    remote_link_options.transport;
+                dashboard_link_settings.remote_host = remote_link_options.host;
+                dashboard_link_settings.remote_bind =
+                    remote_link_options.bind_address;
+                dashboard_link_settings.remote_port = remote_link_options.port;
+                dashboard_link_settings.lan_discovery =
+                    remote_link_options.lan_discovery;
+                dashboard_link_settings.bluetooth_address =
+                    remote_link_options.bluetooth_address;
+                dashboard_link_settings.bluetooth_service_uuid =
+                    remote_link_options.bluetooth_service_uuid;
+                dashboard_link_settings.diagnostics = link_diagnostics;
+                const auto result = gbb_desktop::show_windows_dashboard(
+                    nullptr, rom_library, core != nullptr,
+                    core ? core->rom_fingerprint() : 0,
+                    core ? core->descriptor().capabilities
+                         : gbb::CoreCapability::none,
+                    display_palette,
+                    sdl.video_mode,
+                    hardware_model,
+                    audio_enabled,
+                    dashboard_bindings, dashboard_actions,
+                    dashboard_link_settings,
+                    plugin_options, plugin_catalog,
+                    preference_path,
+                    [&] {
+                        poll_update_checker();
+                        return available_update.has_value();
+                    });
+                if (!result.removed_fingerprints.empty()) {
+                    for (const auto fingerprint : result.removed_fingerprints) {
+                        static_cast<void>(rom_library.remove(fingerprint));
+                    }
+                    rom_library.save(preference_path);
+                    recent_roms = recent_paths(rom_library);
+                }
+                if (result.palette_changed &&
+                    result.palette < gameboy::display_palettes.size()) {
+                    display_palette = result.palette;
+                    save_display_palette(preference_path, display_palette);
+                    if (core && gbb::sdl::supports(
+                                   core.get(),
+                                   gbb::CoreCapability::compatibility_palette)) {
+                        core->set_compatibility_colors(
+                            gameboy::display_palettes[display_palette]
+                                .cgb_compatibility);
+                    }
+                }
+                if (result.video_mode_changed) {
+                    sdl.video_mode = result.video_mode;
+                    save_video_mode(preference_path, sdl.video_mode);
+                    if (!configure_video_pipeline(sdl, sdl.video_mode)) {
+                        show_error(sdl.window,
+                                   "Could not configure the selected video pipeline.");
+                    }
+                }
+                if (result.audio_enabled_changed) {
+                    audio_enabled = result.audio_enabled;
+                    auto settings = load_app_settings(preference_path);
+                    settings.audio_enabled = audio_enabled;
+                    write_portable_settings(preference_path, settings);
+                    if (emulator) emulator->set_audio_enabled(audio_enabled);
+                    sdl.audio.set_enabled(audio_enabled);
+                }
+                if (result.hardware_model_changed) {
+                    hardware_model = result.hardware_model;
+                    auto settings = load_app_settings(preference_path);
+                    settings.hardware_model = hardware_model;
+                    write_portable_settings(preference_path, settings);
+                }
+                if (result.voxel_profile_changed) {
+                    sdl.voxel_profile_loaded = false;
+                }
+                if (result.link_settings_changed) {
+                    const auto& updated = result.link_settings;
+                    remote_link_options.transport = updated.transport;
+                    remote_link_options.host = updated.remote_host;
+                    remote_link_options.bind_address = updated.remote_bind;
+                    remote_link_options.port = updated.remote_port;
+                    remote_link_options.lan_discovery = updated.lan_discovery;
+                    remote_link_options.bluetooth_address =
+                        updated.bluetooth_address;
+                    remote_link_options.bluetooth_service_uuid =
+                        updated.bluetooth_service_uuid;
+                    link_diagnostics = updated.diagnostics;
+                    if (remote_link_options.lan_discovery &&
+                        remote_link_options.bind_address == "127.0.0.1") {
+                        remote_link_options.bind_address = "0.0.0.0";
+                    }
+                    auto settings = load_app_settings(preference_path);
+                    settings.link_transport = updated.transport;
+                    settings.link_remote_host = updated.remote_host;
+                    settings.link_remote_bind = updated.remote_bind;
+                    settings.link_remote_port = updated.remote_port;
+                    settings.link_lan_discovery = updated.lan_discovery;
+                    settings.link_bluetooth_address =
+                        updated.bluetooth_address;
+                    settings.link_bluetooth_service_uuid =
+                        updated.bluetooth_service_uuid;
+                    settings.link_diagnostics = updated.diagnostics;
+                    write_portable_settings(preference_path, settings);
+                }
+                if (result.keyboard_bindings_changed) {
+                    for (std::size_t index = 0; index < bindings.keys.size();
+                         ++index) {
+                        for (std::size_t slot = 0;
+                             slot < bindings.keys[index].size(); ++slot) {
+                            bindings.keys[index][slot] =
+                                static_cast<SDL_Keycode>(
+                                    result.keyboard_bindings[index][slot]);
+                        }
+                    }
+                    save_bindings(preference_path, bindings);
+                }
+                if (result.action_bindings_changed) {
+                    for (std::size_t index = 0;
+                         index < bindings.shortcuts.size(); ++index) {
+                        bindings.shortcuts[index] = static_cast<SDL_Keycode>(
+                            result.action_bindings[index]);
+                    }
+                    save_bindings(preference_path, bindings);
+                }
+                if (result.plugin_settings_changed) {
+                    auto settings = load_app_settings(preference_path);
+                    settings.plugin_discovery = result.plugin_discovery;
+                    settings.plugin_require_allowlist =
+                        result.plugin_require_allowlist;
+                    settings.plugin_require_capability_allowlist =
+                        result.plugin_require_capability_allowlist;
+                    write_portable_settings(preference_path, settings);
+                    show_error(
+                        sdl.window,
+                        "Plugin settings saved. Restart Go Bigger Boy to reload native plugins.");
+                }
+                switch (result.action) {
+                case gbb_desktop::DashboardResultAction::open_rom:
+                    pending_rom = result.rom_path;
+                    pending_rom_from_dashboard = true;
+                    dashboard_visible = false;
+                    break;
+                case gbb_desktop::DashboardResultAction::resume:
+                    dashboard_visible = false;
+                    reveal_sdl_after_present = true;
+                    break;
+                case gbb_desktop::DashboardResultAction::quit:
+                    running = false;
+                    break;
+                case gbb_desktop::DashboardResultAction::update_available:
+                    // The dashboard closes itself when its timer observes an
+                    // available update. Keep it selected so the update offer
+                    // above can run, then reopen it if the user declines.
+                    dashboard_visible = true;
+                    break;
+                }
+                if (!running) break;
+            }
+#endif
+#ifdef __ANDROID__
+            if (auto requested = gbb::sdl::take_android_rom_request()) {
+                auto callback_context =
+                    gbb::LogContextScope::exact(requested->log_context);
+                pending_rom = std::move(requested->path);
+                pending_rom_name = std::move(requested->display_name);
+                gbb::log_frontend_info("Android ROM open request accepted");
+            }
+            if (gbb::sdl::take_android_link_settings_changed()) {
+                const auto updated = load_app_settings(preference_path);
+                remote_link_options.host = updated.link_remote_host;
+                remote_link_options.bind_address = updated.link_remote_bind;
+                remote_link_options.port = updated.link_remote_port;
+                remote_link_options.lan_discovery = updated.link_lan_discovery;
+                remote_link_options.transport = updated.link_transport;
+                remote_link_options.bluetooth_address =
+                    updated.link_bluetooth_address;
+                remote_link_options.bluetooth_service_uuid =
+                    updated.link_bluetooth_service_uuid;
+                // Link diagnostics is edited from Android while the SDL
+                // activity remains alive. Refresh the runtime flag as well;
+                // otherwise a newly enabled trace would not start until the
+                // entire emulator process was restarted.
+                link_diagnostics = updated.link_diagnostics;
+                audio_enabled = updated.audio_enabled;
+                if (emulator) emulator->set_audio_enabled(audio_enabled);
+                sdl.audio.set_enabled(audio_enabled);
+            }
+#endif
+            SdlEventContext event_context{
+                core,
+                emulator,
+                link_emulator.get(),
+                sdl,
+                dialog,
+                preference_path,
+                bindings,
+                configuration_backup,
+                recent_roms,
+                current_rom,
+                configuring,
+                pending_rom,
+                display_palette,
+                dashboard_visible,
+                dashboard_selection,
+                dashboard_filter,
+                paused,
+                fullscreen,
+                fast_forward,
+                rewind,
+                rewind_history,
+                reset_requested,
+                link_toggle_requested,
+                link_retry_requested,
+                remote_host_requested,
+                remote_join_requested,
+                remote_discover_requested,
+                remote_stop_requested,
+                remote_link.active(),
+                running
+#ifndef __ANDROID__
+                , update_download != nullptr,
+                update_cancel_requested,
+                cheat_pause_restore,
+                debugger,
+                input_movie,
+                tas_editor,
+                sprite_editor,
+                video_viewer,
+                cheat_manager
+#ifdef _WIN32
+                , desktop_menu
+#endif
+#endif
+                , [&]() {
+                    return dashboard_items(core != nullptr, recent_roms,
+                                           dashboard_filter, &rom_library).size();
+                }
+                , [&](const float x, const float y) {
+                    return dashboard_row_at(
+                        x, y, dashboard_selection,
+                        dashboard_items(core != nullptr, recent_roms,
+                                        dashboard_filter,
+                                        &rom_library).size());
+                }
+                , [&](const std::size_t selection) {
+                    activate_dashboard_selection(
+                        selection, recent_roms, bindings, core.get(), dialog,
+                        sdl, preference_path, pending_rom, dashboard_visible,
+                        display_palette, running, dashboard_filter,
+                        &rom_library);
+                }
+#ifdef __ANDROID__
+                , [&]() {
+                    gbb::sdl::open_android_link_settings();
+                }
+                , [&]() {
+                    gbb::sdl::open_android_link_diagnostics();
+                }
+#else
+                , std::function<void()>{}
+                , std::function<void()>{}
+#endif
+                , [&]() {
+                    if (core) release_all_buttons(*core);
+#ifdef __ANDROID__
+                    clear_touch_buttons(core.get(), sdl);
+                    sdl.android_menu_visible = false;
+                    sdl.android_link_menu_visible = false;
+                    open_android_library(true, current_rom);
+#else
+#ifdef _WIN32
+                    SDL_HideWindow(sdl.window);
+#endif
+                    dashboard_visible = true;
+                    dashboard_selection = 0;
+                    dashboard_filter.clear();
+#endif
+                }
+                , [&]() { show_help(sdl.window, bindings); }
+                , [&]() { show_rom_dialog(dialog, sdl.window); }
+                , [&]() {
+                    choose_display_palette(core.get(), sdl, preference_path,
+                                           display_palette);
+                }
+                , [&]() { return confirm_exit(sdl.window); }
+                , [&](const std::string& message) { show_error(sdl.window, message); }
+                , [&]() {
+                    update_window_title(sdl.window, current_rom, paused,
+                                        configuring);
+                }
+                , [&]() { show_about(sdl.window); }
+                , [&]() {
+#ifdef __ANDROID__
+                    if (remote_link.active() && emulator != nullptr) {
+                        stop_remote_link_session(*emulator, remote_link);
+                    }
+                    leave_android_game(core, emulator, sdl, dashboard_visible,
+                                       paused, fast_forward, rewind,
+                                       rewind_history, running);
+#endif
+                }
+            };
+#ifndef __ANDROID__
+            if (dashboard_visible) {
+                static_cast<void>(SDL_StartTextInput(sdl.window));
+            } else {
+                static_cast<void>(SDL_StopTextInput(sdl.window));
+            }
+#endif
+            process_events(event_context);
+            const auto events_finished = std::chrono::steady_clock::now();
+            // Event callbacks may close the current core (for example when
+            // Android returns to the native library). Refresh the non-owning
+            // service view before any lifecycle or presentation work below.
+            services = {core.get(), emulator};
+
+#ifndef __ANDROID__
+            if (update_cancel_requested) {
+                update_cancel_requested = false;
+                if (update_download) update_download->cancel();
+            }
+            if (cheat_pause_restore && !cheat_manager.visible()) {
+                paused = *cheat_pause_restore;
+                cheat_pause_restore.reset();
+                update_window_title(sdl.window, current_rom, paused,
+                                    configuring);
+            }
+            process_link_requests({
+                services, emulator, link_emulator, link_session,
+                link_first_endpoint, link_second_endpoint, remote_link,
+                remote_link_options, sdl,
+                current_rom, gameboy::display_palettes[display_palette],
+                preference_path, link_diagnostics, rewind_history,
+                remote_stop_requested, remote_host_requested,
+                remote_join_requested, remote_discover_requested,
+                link_retry_requested,
+                link_toggle_requested, automatic_local_retry_used, rewind});
+#else
+            process_remote_link_requests({
+                services, emulator, remote_link, remote_link_options, sdl,
+                preference_path, link_diagnostics, remote_stop_requested,
+                remote_host_requested, remote_join_requested,
+                remote_discover_requested, link_retry_requested, rewind,
+                rewind_history});
+#endif
+
+            std::optional<std::string> dialog_error;
+            collect_dialog_result(dialog, pending_rom, dialog_error);
+            if (dialog_error) show_error(sdl.window, *dialog_error);
+
+            if (reset_requested) {
+                if (!current_rom.empty()) pending_rom = current_rom;
+                reset_requested = false;
+}
+
+#ifndef __ANDROID__
+            if (update_download) {
+                const auto downloaded_bytes = update_download->downloaded_bytes();
+                const auto total_bytes = update_download->total_bytes();
+                std::string title = "Go Bigger Boy (GBB) - Downloading update";
+                if (total_bytes > 0) {
+                    const auto percent = std::min<std::uintmax_t>(
+                        100, downloaded_bytes * 100 / total_bytes);
+                    title += " (" + std::to_string(percent) + "%)";
+                } else {
+                    title += "...";
+                }
+                title += " - press Escape to cancel";
+                static_cast<void>(SDL_SetWindowTitle(sdl.window, title.c_str()));
+                std::optional<gbb_desktop::DownloadedUpdate> downloaded;
+                std::string download_error;
+                gbb::LogContext update_context{};
+                if (update_download->take_result(downloaded, download_error,
+                                                 &update_context)) {
+                    auto callback_context =
+                        gbb::LogContextScope::exact(update_context);
+                    const auto was_cancelled = update_download->cancelled();
+                    update_download.reset();
+                    if (!download_error.empty() || !downloaded) {
+                        if (!was_cancelled) {
+                            show_error(sdl.window,
+                                       download_error.empty()
+                                           ? "The update download failed."
+                                           : download_error);
+                        }
+                        update_window_title(sdl.window, current_rom, paused,
+                                            configuring);
+                    } else {
+                        try {
+                            const auto [root, executable] = installation_paths();
+                            std::string installer_error;
+                            if (!gbb_desktop::launch_update_installer(
+                                    *downloaded, root, executable,
+                                    installer_error)) {
+                                throw std::runtime_error(installer_error);
+                            }
+                            running = false;
+                        } catch (const std::exception& error) {
+                            show_error(sdl.window, error.what());
+                        }
+                    }
+                }
+            }
+#endif
+
+            if (pending_rom &&
+#ifndef __ANDROID__
+                (!pending_rom_from_dashboard || update_check_complete) &&
+                !update_download &&
+#endif
+                running) {
+#ifndef __ANDROID__
+                if (tas_editor.visible() &&
+                    !tas_editor.close_with_confirmation()) {
+                    pending_rom.reset();
+                    pending_rom_from_dashboard = false;
+                    frame_pacer.reset();
+                    continue;
+                }
+#endif
+                const auto handle_rom_load_error = [&](const std::string& message) {
+#ifndef __ANDROID__
+                    if (!emulator) {
+#ifdef _WIN32
+                        SDL_ShowWindow(sdl.window);
+                        SDL_RaiseWindow(sdl.window);
+#endif
+                        dashboard_visible = true;
+                        dashboard_selection = 0;
+                        dashboard_filter.clear();
+                    }
+                    show_error(sdl.window, message);
+#else
+                    show_error(sdl.window, message);
+                    if (!emulator) open_android_library(true, current_rom);
+#endif
+                };
+                try {
+                    if (remote_link.active() && emulator != nullptr) {
+                        stop_remote_link_session(*emulator, remote_link);
+                    }
+#ifndef __ANDROID__
+                    if (link_emulator != nullptr) {
+                        stop_local_link_session(*emulator, link_emulator,
+                                                link_session, link_first_endpoint,
+                                                link_second_endpoint, sdl);
+                    }
+                    input_movie.stop(emulator);
+                    tas_editor.close();
+                    sprite_editor.reset_session();
+                    if (cheat_pause_restore) {
+                        paused = *cheat_pause_restore;
+                        cheat_pause_restore.reset();
+                    }
+                    cheat_manager.close();
+#endif
+                    auto requested_rom = *pending_rom;
+#ifdef __ANDROID__
+                    requested_rom =
+                        persist_android_rom(requested_rom, preference_path,
+                                            pending_rom_name);
+#endif
+                    const bool reopening_current =
+                        emulator && requested_rom == current_rom;
+                    // Settings can be changed from the native Android
+                    // dashboard while the SDL loop is paused. Read the
+                    // selected profile at the actual construction boundary
+                    // so the next ROM launch always uses the latest choice.
+                    hardware_model = load_hardware_model(preference_path);
+                    load_rom(requested_rom, core,
+                             core_registry,
+                             gameboy::display_palettes[display_palette], sdl,
+                             preference_path,
+                             std::string{gameboy::hardware_model_id(hardware_model)});
+                    emulator = gbb::gameboy_emulator(core.get());
+                    audio_enabled = load_app_settings(preference_path).audio_enabled;
+                    if (emulator) emulator->set_audio_enabled(audio_enabled);
+                    sdl.audio.set_enabled(audio_enabled);
+                    services = {core.get(), emulator};
+                    sdl.camera.close();
+                    if (const auto* camera_emulator =
+                            services.get(gbb::CoreCapability::camera)) {
+                        sdl.camera.configure(*camera_emulator);
+                    }
+                    cycles_per_frame = core->descriptor().nominal_cycles_per_frame;
+                    frame_pacer.set_timing(cycles_per_frame,
+                                           core->descriptor().clock_rate);
+                    sdl.audio.clear();
+                    current_rom = requested_rom;
+#ifndef __ANDROID__
+                    // Breakpoints are addresses in the current ROM's address
+                    // space. Never carry them into a different session.
+                    debugger.clear_breakpoints();
+#endif
+                    if (!reopening_current) paused = false;
+                    fast_forward = false;
+                    rewind = false;
+                    rewind_history.clear();
+                    rewind_capture_phase = 0;
+                    dashboard_visible = false;
+#ifdef _WIN32
+                    reveal_sdl_after_present = true;
+#endif
+                    rom_library.remember(
+                        current_rom, gameboy::inspect_rom_file(current_rom));
+#ifndef __ANDROID__
+                    cheat_manager.load(preference_path,
+                                       gameboy::inspect_rom_file(current_rom));
+#endif
+                    rom_library.save(preference_path);
+                    recent_roms = recent_paths(rom_library);
+                    update_window_title(sdl.window, current_rom, paused,
+                                        configuring);
+                } catch (const std::exception& error) {
+                    handle_rom_load_error(error.what());
+                } catch (...) {
+                    handle_rom_load_error(
+                        "The selected ROM could not be loaded because an "
+                        "unexpected error occurred.");
+                }
+                pending_rom.reset();
+                pending_rom_from_dashboard = false;
+#ifdef __ANDROID__
+                pending_rom_name.clear();
+#endif
+                frame_pacer.reset();
+            }
+
+#ifndef __ANDROID__
+            process_advanced_tool_requests({
+                services, sdl, debugger, input_movie, tas_editor,
+                sprite_editor, video_viewer, cheat_manager, movie_path,
+                tas_movie_path,
+                sprite_patch_path,
+                sprite_ips_path, current_rom, rewind_history, paused,
+                fast_forward, rewind});
+#endif
+
+            sdl.camera.update(
+                services.get(gbb::CoreCapability::camera));
+#ifdef __ANDROID__
+            remote_link.endpoint.set_suspended(
+                gbb::sdl::android_link_is_suspended());
+#endif
+            remote_link.poll();
+            // Starting a remote host puts the channel into a listening state. It
+            // is still an active session for the UI, but until a peer is
+            // connected it should follow the efficient ordinary core path.
+            // Only a connected transport needs instruction-level polling.
+            const auto remote_transport_connected =
+                remote_link.transport_connected();
+#ifndef __ANDROID__
+            if (input_movie.replaying()) {
+                fast_forward = false;
+                rewind = false;
+            }
+#endif
+
+            bool debugger_stepped = false;
+            bool replay_ended = false;
+            const auto step_emulator = [&]() {
+#ifndef __ANDROID__
+                if (input_movie.update_replay(*emulator)) {
+                    replay_ended = true;
+                    return cycles_per_frame;
+                }
+#endif
+                return emulator->step();
+            };
+#ifndef __ANDROID__
+            const auto advance_debuggable_frame = [&](const unsigned budget) {
+                gbb::FrameAdvanceResult result{0, emulator->frame_ready()};
+                while (running && !result.frame_ready && result.cycles < budget) {
+                    if (debugger.check_breakpoint(
+                            emulator->cpu().registers().pc)) {
+                        break;
+                    }
+                    const auto stepped = step_emulator();
+                    if (stepped == 0) break;
+                    result.cycles += stepped;
+                    result.frame_ready = emulator->frame_ready();
+                }
+                return result;
+            };
+#endif
+#ifndef __ANDROID__
+            if (services.debugger() != nullptr &&
+                debugger.take_instruction_step()) {
+                static_cast<void>(step_emulator());
+                if (emulator->frame_ready()) emulator->consume_frame();
+                rewind_history.clear();
+                debugger_stepped = true;
+            } else if (services.debugger() != nullptr &&
+                       debugger.take_frame_step()) {
+                if (emulator->frame_ready()) emulator->consume_frame();
+                cheat_manager.apply(*emulator);
+                unsigned cycles = 0;
+                while (cycles < cycles_per_frame * 2U &&
+                       !emulator->frame_ready()) {
+                    cycles += step_emulator();
+                }
+                if (emulator->frame_ready()) emulator->consume_frame();
+                rewind_history.clear();
+                debugger_stepped = true;
+            }
+            const auto debugger_paused = debugger.execution_paused();
+#else
+            constexpr auto debugger_paused = false;
+#endif
+            bool cheat_visible = false;
+            bool cheat_fetching = false;
+#ifndef __ANDROID__
+            cheat_visible = cheat_manager.visible();
+            cheat_fetching = cheat_manager.fetching();
+#endif
+            const auto execution_plan = gbb::sdl::plan_emulation({
+                core != nullptr,
+                debugger_stepped,
+                paused,
+                debugger_paused,
+                dashboard_visible,
+                configuring.has_value(),
+                cheat_visible,
+                cheat_fetching,
+                dialog_active(dialog),
+#ifndef __ANDROID__
+                desktop_dialog_visible(sdl.window),
+#else
+                false,
+#endif
+                rewind,
+                link_emulator != nullptr && link_session != nullptr,
+                remote_transport_connected,
+#ifndef __ANDROID__
+                input_movie.replaying(),
+#else
+                false,
+#endif
+                fast_forward});
+            auto emulated_frame_batch_factor = 1U;
+            if (execution_plan.should_run()) {
+                if (execution_plan.restores_rewind_state()) {
+                    if (!rewind_history.empty()) {
+                        auto state = std::move(rewind_history.back());
+                        rewind_history.pop_back();
+                        core->load_state(state);
+                        release_all_buttons(*core);
+                        sdl.audio.clear();
+                    }
+                } else {
+                    // Rewind states describe one complete machine. During a
+                    // linked session there are two machines and the history
+                    // would be both incomplete and expensive to serialize;
+                    // keep normal-speed multiplayer responsive by disabling
+                    // rewind state capture for that session. Fast-forward
+                    // also suppresses snapshots because it already executes
+                    // multiple frames per presentation.
+                    emulated_frame_batch_factor =
+                        execution_plan.frame_batch_factor;
+                    const auto frames = emulated_frame_batch_factor;
+                    for (auto frame = 0U; frame < frames && running; ++frame) {
+#ifndef __ANDROID__
+                        if (services.cheats() != nullptr) {
+                            cheat_manager.apply(*emulator);
+                        }
+#endif
+                        const auto core_step_started =
+                            std::chrono::steady_clock::now();
+                        if (execution_plan.mode ==
+                            gbb::sdl::EmulationMode::local_link) {
+                            // The session owns the cable and keeps both CPU
+                            // timelines balanced so serial interrupts cannot
+                            // be starved by frontend scheduling.
+                            link_session->advance(cycles_per_frame);
+                        } else if (execution_plan.mode ==
+                                   gbb::sdl::EmulationMode::ordinary) {
+                            // Keep the ordinary single-console path on the
+                            // shared runtime contract. Use the concrete
+                            // emulator adapter when available so the built-in
+                            // core does not pay an extra virtual dispatch for
+                            // every CPU instruction (especially noticeable
+                            // during fast-forward). Plug-in cores continue to
+                            // use the generic contract.
+                            if (emulator != nullptr) {
+#ifndef __ANDROID__
+                                // Replays must advance instruction-by-
+                                // instruction so update_replay() can inject
+                                // each recorded transition at its cycle. The
+                                // generic frame helper bypasses that hook.
+                                if (input_movie.replaying() ||
+                                    (debugger.visible() &&
+                                     debugger.has_breakpoints())) {
+                                    static_cast<void>(advance_debuggable_frame(
+                                        cycles_per_frame));
+                                } else {
+                                    static_cast<void>(gbb::advance_to_frame(
+                                        *emulator, cycles_per_frame));
+                                }
+#else
+                                static_cast<void>(gbb::advance_to_frame(
+                                    *emulator, cycles_per_frame));
+#endif
+                            } else {
+                                static_cast<void>(gbb::advance_to_frame(
+                                    *core, cycles_per_frame));
+                            }
+                        } else {
+                            unsigned cycles = 0;
+                            unsigned remote_poll_cycles = 0;
+                            const auto byte_transfer =
+                                remote_link.endpoint.peer_byte_transfer();
+                            while (running && cycles < cycles_per_frame &&
+                                   !emulator->frame_ready()) {
+                                // Run the core in bounded slices instead of
+                                // checking the remote endpoint after every
+                                // instruction. A transfer can begin anywhere
+                                // in a slice; the next boundary remains below
+                                // the selected serial-poll interval and the
+                                // endpoint never blocks the emulation thread.
+                                const auto remaining =
+                                    cycles_per_frame - cycles;
+                                const auto polling_required =
+                                    remote_link.endpoint.needs_poll();
+                                // SC can change from external to internal
+                                // while a Pokémon link byte is in flight.
+                                // Re-evaluate the direction at each boundary
+                                // so a newly elected clock owner immediately
+                                // receives the low-latency cadence.
+                                const auto internal_clock =
+                                    emulator->bus().serial_port().internal_clock();
+                                const auto remote_poll_cycle_interval =
+                                    !byte_transfer
+                                        ? remote_bit_poll_cycle_interval
+                                        : (!internal_clock
+                                               ? remote_byte_receive_poll_cycle_interval
+                                               : remote_byte_poll_cycle_interval);
+                                const auto active_poll_interval =
+                                    byte_transfer && internal_clock &&
+                                            remote_link.endpoint.waiting_for_peer()
+                                        ? (emulator->bus().serial_port().fast_clock()
+                                               ? remote_byte_fast_internal_poll_cycle_interval
+                                               : remote_byte_internal_poll_cycle_interval)
+                                        : (byte_transfer && !internal_clock &&
+                                                   remote_link.endpoint.peer_clock_busy()
+                                               ? remote_byte_busy_poll_cycle_interval
+                                               : remote_poll_cycle_interval);
+                                const auto slice_interval = polling_required
+                                                               ? active_poll_interval
+                                                               : remote_idle_poll_cycle_interval;
+                                const auto slice_budget = std::min(
+                                    remaining, slice_interval);
+                                const auto advanced = gbb::advance_to_frame(
+                                    *emulator, slice_budget);
+                                if (advanced.cycles == 0) break;
+                                cycles += advanced.cycles;
+                                remote_poll_cycles += advanced.cycles;
+                                if (remote_transport_connected &&
+                                    (remote_poll_cycles >=
+                                         slice_interval ||
+                                     advanced.frame_ready)) {
+                                    if (remote_link.endpoint.needs_poll()) {
+                                        remote_link.endpoint.poll();
+                                    }
+                                    remote_poll_cycles = 0;
+                                }
+                            }
+                            if (remote_transport_connected) {
+                                remote_link.endpoint.poll();
+                            }
+                        }
+                        const auto core_step_us =
+                            static_cast<std::uint64_t>(microseconds_between(
+                                core_step_started,
+                                std::chrono::steady_clock::now()));
+                        ++core_step_count;
+                        core_step_total_us += core_step_us;
+                        core_step_max_us =
+                            std::max(core_step_max_us, core_step_us);
+                        if (core->frame_ready()) core->consume_frame();
+                        if (link_emulator != nullptr &&
+                            link_emulator->frame_ready()) {
+                            link_emulator->consume_frame();
+                        }
+#ifndef __ANDROID__
+                        if (link_emulator != nullptr) {
+                            const auto audio_queued_bytes = sdl.audio.queued_bytes();
+                            trace_link_frame(*emulator, *link_emulator,
+                                             audio_queued_bytes);
+                        }
+#endif
+                        if (link_emulator == nullptr && remote_transport_connected) {
+                            const auto audio_queued_bytes = sdl.audio.queued_bytes();
+                            trace_remote_frame(*emulator, remote_link,
+                                               audio_queued_bytes);
+                        }
+                    }
+                }
+            }
+#ifndef __ANDROID__
+            if (replay_ended) debugger.pause();
+#endif
+            const auto audio_started = std::chrono::steady_clock::now();
+            update_rumble(core.get(), sdl,
+                          !paused && !debugger_paused && !rewind &&
+                              !dashboard_visible &&
+                              !configuring &&
+                              !dialog_active(dialog));
+            // Keep accelerated audio aligned with the number of frames
+            // actually emulated in this presentation tick. Adaptive batches
+            // must not use a fixed divisor or playback would become quiet or
+            // slow whenever the batch is reduced.
+            sdl.audio.submit(core.get(), fast_forward,
+                             emulated_frame_batch_factor,
+                             link_emulator != nullptr || remote_transport_connected);
+            if (link_emulator != nullptr) {
+                // Player two currently shares the primary audio device. Drain
+                // its mixer buffer so it cannot grow stale and add latency or
+                // memory pressure during long link sessions.
+                static_cast<void>(link_emulator->take_audio_samples());
+            }
+            const auto audio_finished = std::chrono::steady_clock::now();
+            try {
+                save_completed_prints(core.get(), sdl.window,
+                                      preference_path, current_rom,
+                                      print_sequence);
+            } catch (const std::exception& error) {
+                show_error(sdl.window, error.what());
+            }
+            std::function<void()> dashboard_overlay;
+            std::function<void()> touch_overlay;
+            std::function<void()> menu_overlay;
+#if !defined(_WIN32) && !defined(__ANDROID__)
+            dashboard_overlay = [&]() {
+                present_dashboard(sdl, recent_roms, rom_library,
+                                  core != nullptr, dashboard_selection,
+                                  dashboard_filter);
+            };
+#endif
+#ifdef __ANDROID__
+            touch_overlay = [&]() { present_touch_controls(sdl); };
+#endif
+#ifndef __ANDROID__
+            menu_overlay = [&]() {
+#ifndef _WIN32
+                present_menu_button(sdl);
+#endif
+                present_desktop_status(
+                    sdl, paused, fast_forward, rewind,
+                    configuring.has_value(), input_movie.recording(),
+                    input_movie.replaying());
+            };
+#else
+            menu_overlay = [&]() { present_menu_button(sdl); };
+#endif
+            const auto presentation_started = std::chrono::steady_clock::now();
+            present_frame({
+                core.get(), emulator, link_emulator.get(), sdl,
+                link_session.get(),
+                remote_link.active() ? &remote_link : nullptr,
+                gameboy::display_palettes[display_palette], dashboard_visible,
+                std::move(dashboard_overlay), std::move(touch_overlay),
+                std::move(menu_overlay)});
+            const auto presentation_finished = std::chrono::steady_clock::now();
+#ifndef __ANDROID__
+            if (emulator) {
+                debugger.present(*emulator,
+                                 gameboy::display_palettes[display_palette],
+                                 input_movie);
+            }
+            tas_editor.present();
+            sprite_editor.present(emulator);
+            video_viewer.present(emulator,
+                                 gameboy::display_palettes[display_palette]);
+            cheat_manager.present();
+#endif
+#ifdef _WIN32
+            if (reveal_sdl_after_present && !dashboard_visible) {
+                SDL_ShowWindow(sdl.window);
+                reveal_sdl_after_present = false;
+            }
+#endif
+
+            // Advance the deadline before capturing rewind state. Save-state
+            // serialization can take several milliseconds on Windows/MSVC;
+            // placing it in the interval that the pacer would otherwise spend
+            // waiting keeps that work off the visible emulation boundary.
+            frame_pacer.advance();
+            if (automatic_rewind_capture && execution_plan.should_run() &&
+                !execution_plan.restores_rewind_state() &&
+                link_emulator == nullptr && !remote_transport_connected &&
+                !fast_forward && core != nullptr &&
+                emulated_frame_batch_factor == 1) {
+                const auto pacing_remaining =
+                    frame_pacer.deadline() - std::chrono::steady_clock::now();
+                const bool capture_rewind_state =
+                    rewind_capture_phase == 0 &&
+                    pacing_remaining > rewind_capture_guard;
+                rewind_capture_phase =
+                    (rewind_capture_phase + 1) % rewind_capture_interval;
+                if (capture_rewind_state) {
+                    const auto rewind_save_started =
+                        std::chrono::steady_clock::now();
+                    auto rewind_state = core->save_state();
+                    const auto rewind_save_us = static_cast<std::uint64_t>(
+                        microseconds_between(
+                            rewind_save_started,
+                            std::chrono::steady_clock::now()));
+                    rewind_capture_bytes = rewind_state.size();
+                    rewind_history.push_back(std::move(rewind_state));
+                    ++rewind_capture_count;
+                    rewind_capture_total_us += rewind_save_us;
+                    rewind_capture_max_us = std::max(
+                        rewind_capture_max_us, rewind_save_us);
+                }
+                while (rewind_history.size() > maximum_rewind_frames) {
+                    rewind_history.pop_front();
+                }
+            }
+
+            const auto pacing_started = std::chrono::steady_clock::now();
+            ++frontend_frame;
+            if (fast_forward) {
+                // Fast-forward is intentionally uncapped by the normal video
+                // deadline. The adaptive batch still limits work per tick,
+                // while resetting the deadline prevents a large pacing debt
+                // from delaying the first frame after the key is released.
+                frame_pacer.reset();
+            } else if (remote_transport_connected) {
+                // A byte-capable peer is serviced by the emulation-clock
+                // cadence above. Polling it again every 1 ms while the guest
+                // is passively waiting for the host clock adds a steady
+                // stream of Windows socket calls and visible frame jitter.
+                // Legacy bit peers still need the fine-grained pacing poll to
+                // keep each individual edge below a video frame of latency.
+                if (remote_link.endpoint.peer_byte_transfer()) {
+                    frame_pacer.wait();
+                } else {
+                    frame_pacer.wait([&] {
+                        if (remote_link.endpoint.needs_poll()) {
+                            remote_link.endpoint.poll();
+                        }
+                    });
+                }
+            } else {
+                frame_pacer.wait();
+            }
+            const auto pacing_finished = std::chrono::steady_clock::now();
+            if (frame_timing_enabled && frontend_frame % 60U == 0U) {
+                frame_timing_trace.write(
+                    std::string("frame_timing frame=") +
+                    std::to_string(frontend_frame) +
+                    " work_us=" +
+                    std::to_string(microseconds_between(
+                        frame_started, presentation_started)) +
+                    " events_us=" +
+                    std::to_string(microseconds_between(
+                        frame_started, events_finished)) +
+                    " emulation_us=" +
+                    std::to_string(microseconds_between(
+                        events_finished, audio_started)) +
+                    " rewind_captures=" +
+                    std::to_string(rewind_capture_count) +
+                    " rewind_capture_avg_us=" +
+                    std::to_string(rewind_capture_count == 0
+                                       ? 0
+                                       : rewind_capture_total_us /
+                                             rewind_capture_count) +
+                    " rewind_capture_max_us=" +
+                    std::to_string(rewind_capture_max_us) +
+                    " rewind_capture_bytes=" +
+                    std::to_string(rewind_capture_bytes) +
+                    " core_steps=" + std::to_string(core_step_count) +
+                    " core_step_avg_us=" +
+                    std::to_string(core_step_count == 0
+                                       ? 0
+                                       : core_step_total_us / core_step_count) +
+                    " core_step_max_us=" +
+                    std::to_string(core_step_max_us) +
+                    " fast_forward_factor=" +
+                    std::to_string(emulated_frame_batch_factor) +
+                    " audio_us=" +
+                    std::to_string(microseconds_between(
+                        audio_started, audio_finished)) +
+                    " present_us=" +
+                    std::to_string(microseconds_between(
+                        presentation_started, presentation_finished)) +
+                    " wait_us=" +
+                    std::to_string(microseconds_between(
+                        pacing_started, pacing_finished)) +
+                    " total_us=" +
+                    std::to_string(microseconds_between(
+                        frame_started, pacing_finished)));
+                rewind_capture_count = 0;
+                rewind_capture_total_us = 0;
+                rewind_capture_max_us = 0;
+                rewind_capture_bytes = 0;
+                core_step_count = 0;
+                core_step_total_us = 0;
+                core_step_max_us = 0;
+            }
+        }
+#ifndef __ANDROID__
+        if (emulator && input_movie.recording()) {
+            try {
+                input_movie.stop_and_save(movie_path, *emulator);
+            } catch (const std::exception& error) {
+                gbb::log_frontend_warning(
+                    std::string("Could not save input recording: ") +
+                    error.what());
+            }
+        }
+#endif
+        save_game_window_geometry(sdl.window, preference_path);
+#ifndef __ANDROID__
+        if (emulator != nullptr && link_emulator != nullptr) {
+            stop_local_link_session(*emulator, link_emulator, link_session,
+                                    link_first_endpoint, link_second_endpoint,
+                                    sdl);
+        }
+#endif
+        if (emulator != nullptr && remote_link.active()) {
+            stop_remote_link_session(*emulator, remote_link);
+        }
+        flush_battery_safely(core.get());
+    } catch (const std::exception& error) {
+        gbb::log_frontend_error(std::string("SDL frontend error: ") +
+                                error.what());
+#ifdef _WIN32
+        MessageBoxA(nullptr, error.what(), "Go Bigger Boy (GBB)",
+                    MB_OK | MB_ICONERROR | MB_SETFOREGROUND);
+#endif
+        return EXIT_FAILURE;
+    }
+    return EXIT_SUCCESS;
+}

@@ -269,14 +269,19 @@ if(GAMEBOY_BUILD_SDL)
         elseif(ANDROID)
             add_library(gameboy_sdl SHARED
                 apps/sdl/main.cpp
+                apps/sdl/emulation_runtime.cpp
                 apps/sdl/presentation.cpp
                 apps/sdl/frame_pacer.cpp
+                apps/sdl/frame_timing_trace.cpp
                 apps/sdl/emulation_session.cpp
                 apps/sdl/remote_link_controller.cpp
                 apps/sdl/event_dispatch.cpp
                 apps/sdl/event_policy.cpp
                 apps/sdl/event_lifecycle.cpp
                 apps/sdl/android_bridge.cpp
+                apps/sdl/android_link_bridge.cpp
+                apps/sdl/android_lifecycle.cpp
+                apps/sdl/android_touch_renderer.cpp
                 apps/sdl/sdl_resources.cpp
                 apps/sdl/desktop_storage.cpp
                 apps/sdl/window_event.cpp
@@ -302,10 +307,17 @@ if(GAMEBOY_BUILD_SDL)
             enable_language(RC)
             add_executable(gameboy_sdl WIN32
                 apps/sdl/main.cpp
+                apps/sdl/emulation_runtime.cpp
+                apps/sdl/desktop_debugger.cpp
+                apps/sdl/sprite_editor.cpp
+                apps/sdl/video_viewer.cpp
+                apps/sdl/tas_editor.cpp
+                apps/sdl/cheat_manager.cpp
                 apps/sdl/advanced_tools.cpp
                 apps/sdl/link_controller.cpp
                 apps/sdl/presentation.cpp
                 apps/sdl/frame_pacer.cpp
+                apps/sdl/frame_timing_trace.cpp
                 apps/sdl/emulation_session.cpp
                 apps/sdl/event_dispatch.cpp
                 apps/sdl/event_policy.cpp
@@ -329,6 +341,7 @@ if(GAMEBOY_BUILD_SDL)
                 apps/sdl/dialogs.cpp
                 apps/sdl/dashboard_controller.cpp
                 apps/sdl/windows_dashboard.cpp
+                apps/sdl/windows_dashboard_artwork.cpp
                 apps/sdl/windows_menu_bar.cpp
                 apps/sdl/update_checker.cpp
                 packaging/windows/go-bigger-boy.rc
@@ -345,10 +358,17 @@ if(GAMEBOY_BUILD_SDL)
         elseif(APPLE)
             add_executable(gameboy_sdl MACOSX_BUNDLE
                 apps/sdl/main.cpp
+                apps/sdl/emulation_runtime.cpp
+                apps/sdl/desktop_debugger.cpp
+                apps/sdl/sprite_editor.cpp
+                apps/sdl/video_viewer.cpp
+                apps/sdl/tas_editor.cpp
+                apps/sdl/cheat_manager.cpp
                 apps/sdl/advanced_tools.cpp
                 apps/sdl/link_controller.cpp
                 apps/sdl/presentation.cpp
                 apps/sdl/frame_pacer.cpp
+                apps/sdl/frame_timing_trace.cpp
                 apps/sdl/emulation_session.cpp
                 apps/sdl/event_dispatch.cpp
                 apps/sdl/event_policy.cpp
@@ -381,10 +401,17 @@ if(GAMEBOY_BUILD_SDL)
         else()
             add_executable(gameboy_sdl
                 apps/sdl/main.cpp
+                apps/sdl/emulation_runtime.cpp
+                apps/sdl/desktop_debugger.cpp
+                apps/sdl/sprite_editor.cpp
+                apps/sdl/video_viewer.cpp
+                apps/sdl/tas_editor.cpp
+                apps/sdl/cheat_manager.cpp
                 apps/sdl/advanced_tools.cpp
                 apps/sdl/link_controller.cpp
                 apps/sdl/presentation.cpp
                 apps/sdl/frame_pacer.cpp
+                apps/sdl/frame_timing_trace.cpp
                 apps/sdl/emulation_session.cpp
                 apps/sdl/event_dispatch.cpp
                 apps/sdl/event_policy.cpp

@@ -5,6 +5,8 @@
 #endif
 
 #include "windows_dashboard.hpp"
+#include "windows_dashboard_artwork.hpp"
+#include "windows_dashboard_state.hpp"
 #include "resource.h"
 #include "update_checker.hpp"
 
@@ -90,18 +92,6 @@ constexpr int dashboard_width = 980;
 constexpr int dashboard_height = 900;
 constexpr long settings_content_bottom = 860;
 
-struct MetadataRecord {
-    std::string name;
-    std::string language;
-};
-
-struct ArtworkUpdate {
-    std::size_t index{};
-    std::string title;
-    std::string language;
-    std::filesystem::path cover;
-};
-
 HBITMAP load_file_bitmap(const std::filesystem::path& path, UINT width,
                          UINT height);
 
@@ -167,125 +157,7 @@ std::wstring formatted_last_played(const std::int64_t timestamp) {
                : std::wstring{result.data()};
 }
 
-struct State {
-    enum class SettingsSection { general, controls, link, advanced };
-
-    const gameboy::RomLibrary* library{};
-    DashboardResult result;
-    bool can_resume{};
-    bool voxel_available{};
-    bool done{};
-    HWND window{};
-    HWND list{};
-    HWND search_label{};
-    HWND search{};
-    HWND search_summary{};
-    HWND search_clear{};
-    HWND library_empty{};
-    HWND play{};
-    HWND open{};
-    HWND resume{};
-    HWND remove{};
-    HWND palette{};
-    HWND settings_heading{};
-    HWND settings_status{};
-    HWND settings_apply{};
-    HWND settings_cancel{};
-    HWND settings_section_description{};
-    std::array<HWND, 4> settings_sections{};
-    HWND palette_label{};
-    HWND video_label{};
-    HWND video{};
-    HWND hardware_model{};
-    HWND hardware_model_label{};
-    HWND audio_enabled{};
-    HWND controls_label{};
-    HWND controls_instruction{};
-    HWND actions_label{};
-    HWND gameboy_background{};
-    std::array<HWND, 8> binding_labels{};
-    std::array<HWND, 2> primary_headings{};
-    std::array<HWND, 2> secondary_headings{};
-    std::array<std::array<HWND, 2>, 8> binding_buttons{};
-    std::array<HWND, 4> action_labels{};
-    std::array<HWND, 4> action_buttons{};
-    HWND reset_controls{};
-    HWND voxel_heading{};
-    HWND voxel_fingerprint_label{};
-    HWND voxel_preview{};
-    std::array<HWND, 8> voxel_labels{};
-    std::array<HWND, 8> voxel_edits{};
-    HWND voxel_save{};
-    HWND voxel_reset{};
-    HWND plugin_heading{};
-    HWND plugin_status{};
-    HWND plugin_discovery{};
-    HWND plugin_require_allowlist{};
-    HWND plugin_require_capability_allowlist{};
-    HWND link_heading{};
-    HWND link_transport_label{};
-    HWND link_transport{};
-    HWND link_remote_host_label{};
-    HWND link_remote_host{};
-    HWND link_remote_bind_label{};
-    HWND link_remote_bind{};
-    HWND link_remote_port_label{};
-    HWND link_remote_port{};
-    HWND link_lan_discovery{};
-    HWND link_bluetooth_address_label{};
-    HWND link_bluetooth_address{};
-    HWND link_bluetooth_choose{};
-    HWND link_bluetooth_uuid_label{};
-    HWND link_bluetooth_uuid{};
-    HWND link_diagnostics{};
-    HWND library_tab{};
-    HWND settings_tab{};
-    HWND shortcuts_tab{};
-    HWND artwork_status{};
-    HWND artwork_retry{};
-    HWND shortcuts_heading{};
-    HWND shortcuts_text{};
-    HWND logo{};
-    HBITMAP logo_bitmap{};
-    HIMAGELIST covers{};
-    HBRUSH background_brush{};
-    HFONT ui_font{};
-    enum class Page { library, settings, shortcuts } page{Page::library};
-    std::filesystem::path preference_directory;
-    std::function<bool()> poll_update;
-    std::filesystem::path voxel_profile_path;
-    gbb::PluginDiscoveryOptions plugin_options;
-    std::wstring plugin_status_text;
-    std::uint64_t voxel_fingerprint{};
-    gbb::VoxelProfile voxel_profile{};
-    gbb::VoxelProfile initial_voxel_profile{};
-    DashboardLinkSettings initial_link_settings;
-    std::thread artwork_worker;
-    std::atomic_bool closing{};
-    DownloadProgress artwork_download;
-    std::atomic_size_t artwork_completed{};
-    std::atomic_size_t artwork_failed{};
-    std::size_t artwork_total{};
-    DashboardResult initial_result;
-    bool settings_dirty{};
-    SettingsSection settings_section{SettingsSection::general};
-    std::wstring library_filter;
-    int library_sort_column{4};
-    bool library_sort_descending{true};
-    int settings_scroll{};
-    HFONT title_font{};
-    struct CapturingBinding {
-        bool action{};
-        std::size_t index{};
-        std::size_t slot{};
-        friend constexpr bool operator==(const CapturingBinding& left,
-                                        const CapturingBinding& right) {
-            return left.action == right.action && left.index == right.index &&
-                   left.slot == right.slot;
-        }
-    };
-    std::optional<CapturingBinding> capturing_binding;
-};
+using State = DashboardState;
 
 std::optional<POINT> load_window_position(
     const std::filesystem::path& preference_directory) {
@@ -2444,146 +2316,9 @@ HBITMAP load_file_bitmap(const std::filesystem::path& path, const UINT width,
     return bitmap;
 }
 
-std::string trimmed(std::string value) {
-    const auto first = value.find_first_not_of(" \t\r\n");
-    if (first == std::string::npos) return {};
-    value.erase(0, first);
-    const auto last = value.find_last_not_of(" \t\r\n");
-    value.resize(last + 1);
-    return value;
-}
-
-std::string quoted_value(const std::string& line) {
-    const auto first = line.find('"');
-    const auto last = line.rfind('"');
-    return first != std::string::npos && last > first
-               ? line.substr(first + 1, last - first - 1)
-               : std::string{};
-}
-
-std::string lowercase(std::string value) {
-    for (auto& character : value) {
-        character = static_cast<char>(
-            std::tolower(static_cast<unsigned char>(character)));
-    }
-    return value;
-}
-
-std::string metadata_language(const std::string& name,
-                              const std::string& region) {
-    const auto lower_name = lowercase(name);
-    constexpr std::array<std::pair<std::string_view, std::string_view>, 14>
-        tags{{{"(de", "German"}, {",de", "German"},
-              {"(en", "English"}, {",en", "English"},
-              {"(fr", "French"}, {",fr", "French"},
-              {"(es", "Spanish"}, {",es", "Spanish"},
-              {"(it", "Italian"}, {",it", "Italian"},
-              {"(nl", "Dutch"}, {",nl", "Dutch"},
-              {"(ja", "Japanese"}, {",ja", "Japanese"}}};
-    for (const auto& [tag, language] : tags) {
-        if (lower_name.find(tag) != std::string::npos) {
-            return std::string{language};
-        }
-    }
-    const auto lower_region = lowercase(region);
-    constexpr std::array<std::pair<std::string_view, std::string_view>, 10>
-        regions{{{"germany", "German"}, {"france", "French"},
-                 {"spain", "Spanish"}, {"italy", "Italian"},
-                 {"netherlands", "Dutch"}, {"japan", "Japanese"},
-                 {"usa", "English"}, {"europe", "English"},
-                 {"australia", "English"}, {"canada", "English"}}};
-    for (const auto& [country, language] : regions) {
-        if (lower_region.find(country) != std::string::npos) {
-            return std::string{language};
-        }
-    }
-    return "International";
-}
-
-std::unordered_map<std::uint32_t, MetadataRecord> parse_database(
-    const std::filesystem::path& path) {
-    std::unordered_map<std::uint32_t, MetadataRecord> records;
-    std::ifstream input(path);
-    std::string line;
-    std::string name;
-    std::string region;
-    while (std::getline(input, line)) {
-        line = trimmed(std::move(line));
-        if (line == "game (") {
-            name.clear();
-            region.clear();
-        } else if (line.rfind("name \"", 0) == 0 && name.empty()) {
-            name = quoted_value(line);
-        } else if (line.rfind("region \"", 0) == 0) {
-            region = quoted_value(line);
-        } else if (line.rfind("rom (", 0) == 0 && !name.empty()) {
-            const auto marker = line.find(" crc ");
-            if (marker == std::string::npos || marker + 13 > line.size()) {
-                continue;
-            }
-            std::uint32_t crc{};
-            std::istringstream value(line.substr(marker + 5, 8));
-            if (value >> std::hex >> crc) {
-                records.emplace(crc,
-                    MetadataRecord{name, metadata_language(name, region)});
-            }
-        }
-    }
-    return records;
-}
-
-std::string url_component(const std::string& value) {
-    std::ostringstream encoded;
-    encoded << std::uppercase << std::hex;
-    for (const auto character : value) {
-        const auto byte = static_cast<unsigned char>(character);
-        if (std::isalnum(byte) || character == '-' || character == '_' ||
-            character == '.' || character == '~') {
-            encoded << character;
-        } else {
-            encoded << '%' << std::setw(2) << std::setfill('0')
-                    << static_cast<unsigned>(byte);
-        }
-    }
-    return encoded.str();
-}
-
-std::string thumbnail_name(std::string name) {
-    constexpr std::string_view replaced = "&*/:`<>?\\|";
-    for (auto& character : name) {
-        if (replaced.find(character) != std::string_view::npos) character = '_';
-    }
-    return name;
-}
-
-std::string display_title(const std::string& canonical_name) {
-    const auto tags = canonical_name.find(" (");
-    return tags == std::string::npos ? canonical_name
-                                     : canonical_name.substr(0, tags);
-}
-
-std::unordered_map<std::uint32_t, MetadataRecord> load_database(
-    const std::filesystem::path& directory, const std::string& system,
-    DownloadProgress* progress) {
-    auto filename = system;
-    for (auto& character : filename) {
-        if (!std::isalnum(static_cast<unsigned char>(character))) character = '-';
-    }
-    const auto path = directory / "metadata" / (filename + ".dat");
-    if (!std::filesystem::is_regular_file(path)) {
-        std::string error;
-        const auto url =
-            "https://raw.githubusercontent.com/libretro/libretro-database/"
-            "master/metadat/no-intro/" + url_component(system + ".dat");
-        static_cast<void>(download_public_file(url, path, 3 * 1024 * 1024,
-                                               error, progress));
-    }
-    return parse_database(path);
-}
-
 void resolve_artwork(State& state) {
     std::unordered_map<std::string,
-        std::unordered_map<std::uint32_t, MetadataRecord>> databases;
+        std::unordered_map<std::uint32_t, artwork::MetadataRecord>> databases;
     for (std::size_t index = 0; index < state.library->entries().size(); ++index) {
         if (state.closing) return;
         const auto& entry = state.library->entries()[index];
@@ -2596,8 +2331,8 @@ void resolve_artwork(State& state) {
         auto found_database = databases.find(system);
         if (found_database == databases.end()) {
             found_database = databases.emplace(
-                system, load_database(state.preference_directory, system,
-                                      &state.artwork_download)).first;
+                system, artwork::load_database(state.preference_directory, system,
+                                                &state.artwork_download)).first;
         }
         auto title = metadata.title;
         auto language = metadata.language;
@@ -2605,7 +2340,7 @@ void resolve_artwork(State& state) {
         if (const auto record = found_database->second.find(metadata.crc32);
             record != found_database->second.end()) {
             canonical = record->second.name;
-            title = display_title(canonical);
+            title = artwork::display_title(canonical);
             language = record->second.language;
         }
 
@@ -2617,8 +2352,8 @@ void resolve_artwork(State& state) {
         if (!std::filesystem::is_regular_file(cover)) {
             std::string error;
             const auto url = "https://thumbnails.libretro.com/" +
-                url_component(system) + "/Named_Boxarts/" +
-                url_component(thumbnail_name(canonical)) + ".png";
+                artwork::url_component(system) + "/Named_Boxarts/" +
+                artwork::url_component(artwork::thumbnail_name(canonical)) + ".png";
             static_cast<void>(download_public_file(
                 url, cover, 5 * 1024 * 1024, error, &state.artwork_download));
         }
