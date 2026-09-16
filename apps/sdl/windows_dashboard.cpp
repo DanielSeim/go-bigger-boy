@@ -91,6 +91,9 @@ constexpr int dashboard_width = 980;
 // Keep the initial dashboard usable on 1080p displays after non-client
 // chrome, while the settings page remains fully accessible through scrolling.
 constexpr int dashboard_height = 900;
+// Navigation, section tabs, and the description remain fixed while the
+// selected settings page scrolls below them.
+constexpr int settings_content_top = 320;
 constexpr long settings_content_bottom = 1280;
 
 HBITMAP load_file_bitmap(const std::filesystem::path& path, UINT width,
@@ -1384,6 +1387,47 @@ void place_child(HWND child, int x, int y, int width, int height,
                  SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
+void clip_settings_content_children(State& state, const int client_height) {
+    for (const auto child : state.settings_content_controls) {
+        if (child == nullptr) continue;
+        if (state.page != State::Page::settings) {
+            SetWindowRgn(child, nullptr, TRUE);
+            continue;
+        }
+
+        RECT screen_rect{};
+        if (!GetWindowRect(child, &screen_rect)) continue;
+        POINT corners[2]{{screen_rect.left, screen_rect.top},
+                         {screen_rect.right, screen_rect.bottom}};
+        MapWindowPoints(nullptr, state.window, corners, 2);
+        const auto child_width = static_cast<int>(corners[1].x - corners[0].x);
+        const auto child_height =
+            static_cast<int>(corners[1].y - corners[0].y);
+        if (child_width <= 0 || child_height <= 0) continue;
+
+        const auto top = std::clamp(
+            settings_content_top - static_cast<int>(corners[0].y), 0,
+            child_height);
+        const auto bottom = std::clamp(
+            client_height - static_cast<int>(corners[0].y), 0, child_height);
+        if (top == 0 && bottom == child_height) {
+            // Remove a previous partial region when scrolling back into view.
+            SetWindowRgn(child, nullptr, TRUE);
+            continue;
+        }
+
+        // The region is in the child window's local coordinates. An empty
+        // region is intentional for controls hidden behind the fixed header
+        // or below the client area.
+        const auto region = bottom <= top
+                                ? CreateRectRgn(0, 0, 0, 0)
+                                : CreateRectRgn(0, top, child_width, bottom);
+        if (region != nullptr && SetWindowRgn(child, region, TRUE) == FALSE) {
+            DeleteObject(region);
+        }
+    }
+}
+
 void layout_dashboard(State& state) {
     if (state.window == nullptr) return;
     RECT client{};
@@ -1545,6 +1589,7 @@ void layout_dashboard(State& state) {
     place_child(state.link_bluetooth_uuid_label, 530, 405, 120, 26, offset);
     place_child(state.link_bluetooth_uuid, 665, 400, 283, 28, offset);
     place_child(state.link_diagnostics, 32, 500, 330, 28, offset);
+    clip_settings_content_children(state, static_cast<int>(height));
 }
 
 void scroll_settings(State& state, const int wheel_delta) {
@@ -1803,7 +1848,8 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                     L"Discard your unsaved settings changes?",
                     L"Unsaved settings",
                     MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) == IDYES) {
-                cancel_settings(*state, settings_return_action(state->can_resume));
+                cancel_settings(*state,
+                                settings_return_action(state->can_resume));
             }
         } else if (confirm_exit(window)) {
             finish(*state, DashboardResultAction::quit);
@@ -2088,8 +2134,8 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
         const auto& item = *reinterpret_cast<const DRAWITEMSTRUCT*>(lparam);
         if (item.CtlType == ODT_COMBOBOX) {
             draw_dashboard_combo(item);
-        } else if ((GetWindowLongPtrW(item.hwndItem, GWL_STYLE) &
-                    BS_AUTOCHECKBOX) != 0) {
+        } else if (GetPropW(item.hwndItem, L"GBB_DASHBOARD_CHECKBOX") !=
+                   nullptr) {
             draw_dashboard_checkbox(item);
         } else if (wparam == id_voxel_preview) {
             draw_voxel_preview(item, *state);
@@ -2228,7 +2274,11 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                     L"Discard your unsaved settings changes?",
                     L"Unsaved settings",
                     MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) == IDYES) {
-                cancel_settings(*state, settings_return_action(state->can_resume));
+                // Closing the dashboard is an application-exit request. Do
+                // not use the settings return action here: when a game is
+                // active that action is resume, which would reopen the
+                // dashboard from the runtime after the user confirmed exit.
+                cancel_settings(*state, DashboardResultAction::quit);
             }
         } else if (confirm_exit(window)) {
             finish(*state, DashboardResultAction::quit);
@@ -2463,6 +2513,8 @@ void start_artwork_resolution(State& state) {
 HWND control(State& state, const wchar_t* type, const wchar_t* text,
              DWORD style, int x, int y, int width, int height, int id) {
     const auto control_type = std::wstring_view(type);
+    const auto checkbox = control_type == L"BUTTON" &&
+                          (style & BS_TYPEMASK) == BS_AUTOCHECKBOX;
     if (control_type == L"BUTTON") style |= BS_OWNERDRAW;
     if (control_type == L"COMBOBOX") {
         style |= CBS_OWNERDRAWFIXED | CBS_HASSTRINGS;
@@ -2478,6 +2530,12 @@ HWND control(State& state, const wchar_t* type, const wchar_t* text,
         WS_CHILD | style, x, y, width, height, state.window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
         GetModuleHandleW(nullptr), nullptr);
+    if (checkbox && result != nullptr) {
+        // BS_OWNERDRAW replaces the button type bits, so preserve the
+        // semantic type explicitly for WM_DRAWITEM.
+        SetPropW(result, L"GBB_DASHBOARD_CHECKBOX",
+                 reinterpret_cast<HANDLE>(static_cast<INT_PTR>(1)));
+    }
     const auto font = state.ui_font != nullptr
                           ? state.ui_font
                           : reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
@@ -3149,6 +3207,70 @@ DashboardResult show_windows_dashboard(
         state, L"EDIT", shortcut_reference.c_str(),
         ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL,
         32, 240, 916, 565, 0);
+    state.settings_content_controls = {
+        state.palette_label,
+        state.palette,
+        state.video_label,
+        state.video,
+        state.hardware_model_label,
+        state.hardware_model,
+        state.audio_enabled,
+        state.controls_label,
+        state.controls_instruction,
+        state.actions_label,
+        state.reset_controls,
+        state.voxel_heading,
+        state.voxel_fingerprint_label,
+        state.voxel_preview,
+        state.voxel_save,
+        state.voxel_reset,
+        state.plugin_heading,
+        state.plugin_status,
+        state.plugin_discovery,
+        state.plugin_require_allowlist,
+        state.plugin_require_capability_allowlist,
+        state.link_heading,
+        state.link_transport_label,
+        state.link_transport,
+        state.link_remote_host_label,
+        state.link_remote_host,
+        state.link_remote_bind_label,
+        state.link_remote_bind,
+        state.link_remote_port_label,
+        state.link_remote_port,
+        state.link_lan_discovery,
+        state.link_bluetooth_address_label,
+        state.link_bluetooth_address,
+        state.link_bluetooth_choose,
+        state.link_bluetooth_uuid_label,
+        state.link_bluetooth_uuid,
+        state.link_diagnostics};
+    for (const auto heading : state.primary_headings) {
+        state.settings_content_controls.push_back(heading);
+    }
+    for (const auto heading : state.secondary_headings) {
+        state.settings_content_controls.push_back(heading);
+    }
+    for (const auto label : state.binding_labels) {
+        state.settings_content_controls.push_back(label);
+    }
+    for (const auto& buttons : state.binding_buttons) {
+        for (const auto button : buttons) {
+            state.settings_content_controls.push_back(button);
+        }
+    }
+    for (const auto label : state.action_labels) {
+        state.settings_content_controls.push_back(label);
+    }
+    for (const auto button : state.action_buttons) {
+        state.settings_content_controls.push_back(button);
+    }
+    for (const auto label : state.voxel_labels) {
+        state.settings_content_controls.push_back(label);
+    }
+    for (const auto edit : state.voxel_edits) {
+        state.settings_content_controls.push_back(edit);
+    }
     // The owner-drawn controller illustration is created before the settings
     // widgets and covers their rectangle. Keep the model selector above it so
     // it remains clickable on the settings page.

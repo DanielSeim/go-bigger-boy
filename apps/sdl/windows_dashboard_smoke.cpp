@@ -348,9 +348,12 @@ DashboardResult invoke_dashboard(const bool can_resume,
 }
 
 bool run_dashboard_case(const bool can_resume, const bool discard,
-                        const bool inspect_controls) {
-    std::fprintf(stderr, "dashboard smoke: case resume=%d discard=%d inspect=%d\n",
-                 can_resume, discard, inspect_controls);
+                        const bool inspect_controls,
+                        const bool close_window = false) {
+    std::fprintf(stderr,
+                 "dashboard smoke: case resume=%d discard=%d inspect=%d "
+                 "close=%d\n",
+                 can_resume, discard, inspect_controls, close_window);
     DashboardInvocation invocation;
     std::thread worker([&] {
         const auto result = invoke_dashboard(can_resume, invocation);
@@ -422,7 +425,11 @@ bool run_dashboard_case(const bool can_resume, const bool discard,
     if (passed && discard) {
         passed = click_child(dashboard, L"Generate audio");
         if (passed) {
-            PostMessageW(dashboard, WM_KEYDOWN, VK_ESCAPE, 0);
+            if (close_window) {
+                PostMessageW(dashboard, WM_CLOSE, 0, 0);
+            } else {
+                PostMessageW(dashboard, WM_KEYDOWN, VK_ESCAPE, 0);
+            }
             passed = confirm_message_box(L"Unsaved settings", IDYES);
         }
     } else if (passed) {
@@ -458,8 +465,10 @@ bool run_dashboard_case(const bool can_resume, const bool discard,
     }
     worker.join();
     std::lock_guard lock{invocation.mutex};
-    const auto expected = can_resume ? DashboardResultAction::resume
-                                     : DashboardResultAction::library;
+    const auto expected = close_window
+                              ? DashboardResultAction::quit
+                              : can_resume ? DashboardResultAction::resume
+                                            : DashboardResultAction::library;
     const auto result_matches = invocation.result.action == expected;
     if (!passed || !result_matches) {
         std::fprintf(stderr,
@@ -498,6 +507,9 @@ int run_windows_dashboard_smoke() {
     // The resume return action is exercised through the discard path here;
     // the value-only contract separately covers both settings return actions.
     if (!run_dashboard_case(true, true, false)) return 5;
+    // Closing the dashboard with dirty settings must terminate the app rather
+    // than return to the active game and reopen the dashboard indefinitely.
+    if (!run_dashboard_case(true, true, false, true)) return 6;
     return 0;
 }
 

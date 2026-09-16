@@ -145,6 +145,7 @@ struct DashboardState {
     int library_sort_column{4};
     bool library_sort_descending{true};
     int settings_scroll{};
+    std::vector<HWND> settings_content_controls;
     HFONT title_font{};
     struct CapturingBinding {
         bool action{};
