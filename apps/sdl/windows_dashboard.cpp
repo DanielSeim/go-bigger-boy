@@ -94,7 +94,8 @@ constexpr int dashboard_height = 900;
 // Navigation, section tabs, and the description remain fixed while the
 // selected settings page scrolls below them.
 constexpr int settings_content_top = 320;
-constexpr long settings_content_bottom = 1280;
+constexpr auto dashboard_content_clip_property =
+    L"GBB_DASHBOARD_CONTENT_CLIPPED";
 
 HBITMAP load_file_bitmap(const std::filesystem::path& path, UINT width,
                          UINT height);
@@ -162,6 +163,22 @@ std::wstring formatted_last_played(const std::int64_t timestamp) {
 }
 
 using State = DashboardState;
+
+long settings_content_bottom(const State& state) {
+    switch (state.settings_section) {
+    case State::SettingsSection::general:
+        return 548;
+    case State::SettingsSection::controls:
+        return 854;
+    case State::SettingsSection::link:
+        return 572;
+    case State::SettingsSection::advanced:
+        // The plug-in controls are the last visible controls in this
+        // section. Voxel controls move them down when a ROM is active.
+        return (state.voxel_available ? 620L : 350L) + 287L;
+    }
+    return 548;
+}
 
 std::optional<POINT> load_window_position(
     const std::filesystem::path& preference_directory) {
@@ -299,6 +316,29 @@ bool equal_link_settings(const DashboardLinkSettings& left,
 
 void mark_settings_dirty(State& state);
 
+constexpr auto dashboard_checkbox_state_property =
+    L"GBB_DASHBOARD_CHECKBOX_STATE";
+
+bool dashboard_checkbox_checked(HWND checkbox) {
+    const auto state = GetPropW(checkbox, dashboard_checkbox_state_property);
+    if (state != nullptr) {
+        return reinterpret_cast<INT_PTR>(state) == 2;
+    }
+    return SendMessageW(checkbox, BM_GETCHECK, 0, 0) == BST_CHECKED;
+}
+
+void set_dashboard_checkbox_checked(HWND checkbox, const bool checked) {
+    if (checkbox == nullptr) return;
+    SetPropW(checkbox, dashboard_checkbox_state_property,
+             reinterpret_cast<HANDLE>(static_cast<INT_PTR>(checked ? 2 : 1)));
+    InvalidateRect(checkbox, nullptr, TRUE);
+}
+
+void toggle_dashboard_checkbox(HWND checkbox) {
+    set_dashboard_checkbox_checked(checkbox,
+                                   !dashboard_checkbox_checked(checkbox));
+}
+
 DashboardLinkSettings read_link_settings(State& state) {
     auto settings = state.initial_link_settings;
     const auto selected = SendMessageW(state.link_transport, CB_GETCURSEL, 0, 0);
@@ -322,10 +362,9 @@ DashboardLinkSettings read_link_settings(State& state) {
     } catch (...) {
         // Preserve the last valid port until the user enters a valid value.
     }
-    settings.lan_discovery = SendMessageW(
-        state.link_lan_discovery, BM_GETCHECK, 0, 0) == BST_CHECKED;
-    settings.diagnostics = SendMessageW(
-        state.link_diagnostics, BM_GETCHECK, 0, 0) == BST_CHECKED;
+    settings.lan_discovery = dashboard_checkbox_checked(
+        state.link_lan_discovery);
+    settings.diagnostics = dashboard_checkbox_checked(state.link_diagnostics);
     return settings;
 }
 
@@ -690,8 +729,8 @@ void refresh_voxel_profile_controls(State& state) {
         state.voxel_profile.framebuffer_facade ? 1.0F : 0.0F}};
     for (std::size_t index = 0; index < values.size(); ++index) {
         if (index == 14) {
-            SendMessageW(state.voxel_edits[index], BM_SETCHECK,
-                         values[index] >= 0.5F ? BST_CHECKED : BST_UNCHECKED, 0);
+            set_dashboard_checkbox_checked(
+                state.voxel_edits[index], values[index] >= 0.5F);
         } else {
             SetWindowTextW(state.voxel_edits[index],
                            voxel_float_text(values[index]).c_str());
@@ -715,8 +754,10 @@ bool read_voxel_profile_controls(State& state) {
         state.voxel_profile.framebuffer_facade ? 1.0F : 0.0F}};
     for (std::size_t index = 0; index < values.size(); ++index) {
         if (index == 14) {
-            values[index] = SendMessageW(state.voxel_edits[index], BM_GETCHECK,
-                                         0, 0) == BST_CHECKED ? 1.0F : 0.0F;
+            values[index] = dashboard_checkbox_checked(
+                                state.voxel_edits[index])
+                                ? 1.0F
+                                : 0.0F;
         } else if (!parse_voxel_edit(state.voxel_edits[index], values[index])) {
             return false;
         }
@@ -1391,7 +1432,10 @@ void clip_settings_content_children(State& state, const int client_height) {
     for (const auto child : state.settings_content_controls) {
         if (child == nullptr) continue;
         if (state.page != State::Page::settings) {
-            SetWindowRgn(child, nullptr, TRUE);
+            if (GetPropW(child, dashboard_content_clip_property) != nullptr) {
+                SetWindowRgn(child, nullptr, TRUE);
+                RemovePropW(child, dashboard_content_clip_property);
+            }
             continue;
         }
 
@@ -1411,19 +1455,28 @@ void clip_settings_content_children(State& state, const int client_height) {
                                    child_bottom <= client_height;
         if (fully_visible) {
             // Remove a previous clipping region when scrolling back into view.
-            SetWindowRgn(child, nullptr, TRUE);
+            if (GetPropW(child, dashboard_content_clip_property) != nullptr) {
+                SetWindowRgn(child, nullptr, TRUE);
+                RemovePropW(child, dashboard_content_clip_property);
+            }
             continue;
         }
 
-        // Win32 child controls do not consistently repaint old pixels when
-        // their owner-drawn content is partially clipped. Collapse controls
-        // at either viewport edge until the complete control is visible. The
-        // next layout pass restores its original size and position.
-        SetWindowRgn(child, nullptr, TRUE);
-        const auto safe_top = std::clamp(child_top, settings_content_top,
-                                         client_height);
-        SetWindowPos(child, nullptr, static_cast<int>(corners[0].x), safe_top,
-                     child_width, 0, SWP_NOZORDER | SWP_NOACTIVATE);
+        // Keep the child at its real position and size while clipping only
+        // the part outside the scrolling viewport. Resizing controls to zero
+        // height here causes a visible destroy/recreate-like flash on Windows
+        // while the scroll position changes.
+        const auto visible_top = std::max(settings_content_top, child_top);
+        const auto visible_bottom = std::min(client_height, child_bottom);
+        const auto local_top = std::clamp(visible_top - child_top, 0,
+                                          child_height);
+        const auto local_bottom = std::clamp(visible_bottom - child_top, 0,
+                                             child_height);
+        const auto region = CreateRectRgn(0, local_top, child_width,
+                                          std::max(local_top, local_bottom));
+        SetWindowRgn(child, region, TRUE);
+        SetPropW(child, dashboard_content_clip_property,
+                 reinterpret_cast<HANDLE>(static_cast<INT_PTR>(1)));
     }
 }
 
@@ -1456,7 +1509,7 @@ void layout_dashboard(State& state) {
     place_child(state.remove, 382, static_cast<int>(actions_y), 170, 44, 0);
     place_child(state.resume, 572, static_cast<int>(actions_y), 150, 44, 0);
 
-    const auto content_bottom = settings_content_bottom;
+    const auto content_bottom = settings_content_bottom(state);
     const auto max_scroll = std::max(0L, content_bottom - height + 24L);
     // Showing the settings scrollbar reduces the client width after the
     // initial layout measurement. Reserve that width up front so the rightmost
@@ -1572,37 +1625,47 @@ void layout_dashboard(State& state) {
                 advanced_plugin_y + 235, 290, 28,
                 offset);
     place_child(state.link_heading, 32, 330, 420, 28, offset);
-    place_child(state.link_transport_label, 32, 350, 150, 26, offset);
-    place_child(state.link_transport, 200, 345, 320, 28, offset);
-    place_child(state.link_remote_host_label, 32, 405, 150, 26, offset);
-    place_child(state.link_remote_host, 200, 400, 300, 28, offset);
-    place_child(state.link_remote_bind_label, 530, 405, 120, 26, offset);
-    place_child(state.link_remote_bind, 665, 400, 283, 28, offset);
-    place_child(state.link_remote_port_label, 32, 450, 150, 26, offset);
-    place_child(state.link_remote_port, 200, 445, 120, 28, offset);
-    place_child(state.link_lan_discovery, 350, 445, 300, 28, offset);
-    place_child(state.link_bluetooth_address_label, 32, 405, 170, 26,
+    place_child(state.link_transport_label, 32, 365, 150, 26, offset);
+    place_child(state.link_transport, 200, 360, 320, 28, offset);
+    place_child(state.link_remote_host_label, 32, 420, 150, 26, offset);
+    place_child(state.link_remote_host, 200, 415, 300, 28, offset);
+    place_child(state.link_remote_bind_label, 530, 420, 120, 26, offset);
+    place_child(state.link_remote_bind, 665, 415, 283, 28, offset);
+    place_child(state.link_remote_port_label, 32, 465, 150, 26, offset);
+    place_child(state.link_remote_port, 200, 460, 120, 28, offset);
+    place_child(state.link_lan_discovery, 350, 460, 300, 28, offset);
+    place_child(state.link_bluetooth_address_label, 32, 420, 170, 26,
                 offset);
-    place_child(state.link_bluetooth_address, 218, 400, 300, 28, offset);
-    place_child(state.link_bluetooth_choose, 218, 435, 300, 28, offset);
-    place_child(state.link_bluetooth_uuid_label, 530, 405, 120, 26, offset);
-    place_child(state.link_bluetooth_uuid, 665, 400, 283, 28, offset);
-    place_child(state.link_diagnostics, 32, 500, 330, 28, offset);
+    place_child(state.link_bluetooth_address, 218, 415, 300, 28, offset);
+    place_child(state.link_bluetooth_choose, 218, 450, 300, 28, offset);
+    place_child(state.link_bluetooth_uuid_label, 530, 420, 120, 26, offset);
+    place_child(state.link_bluetooth_uuid, 665, 415, 283, 28, offset);
+    place_child(state.link_diagnostics, 32, 515, 330, 28, offset);
     clip_settings_content_children(state, static_cast<int>(height));
-    RedrawWindow(state.window, nullptr, nullptr,
-                 RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
+    RECT content_rect{0, settings_content_top, static_cast<LONG>(width),
+                      static_cast<LONG>(height)};
+    InvalidateRect(state.window, &content_rect, FALSE);
 }
 
-void scroll_settings(State& state, const int wheel_delta) {
+void set_settings_scroll(State& state, int target) {
     RECT client{};
     GetClientRect(state.window, &client);
     const auto height = std::max(520L, client.bottom - client.top);
     const auto max_scroll = std::max(
-        0L, settings_content_bottom - height + 24L);
-    const auto direction = wheel_delta > 0 ? -64 : 64;
-    state.settings_scroll = std::clamp(
-        state.settings_scroll + direction, 0, static_cast<int>(max_scroll));
+        0L, settings_content_bottom(state) - height + 24L);
+    target = std::clamp(target, 0, static_cast<int>(max_scroll));
+    const auto delta = target - state.settings_scroll;
+    if (delta == 0) return;
+    RECT viewport{0, settings_content_top, client.right, client.bottom};
+    ScrollWindowEx(state.window, 0, -delta, &viewport, nullptr, nullptr,
+                   nullptr, SW_SCROLLCHILDREN | SW_INVALIDATE);
+    state.settings_scroll = target;
     layout_dashboard(state);
+}
+
+void scroll_settings(State& state, const int wheel_delta) {
+    const auto direction = wheel_delta > 0 ? -64 : 64;
+    set_settings_scroll(state, state.settings_scroll + direction);
 }
 
 void finish(State& state, const DashboardResultAction action,
@@ -1750,7 +1813,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
         RECT client{};
         GetClientRect(window, &client);
         const auto max_scroll = std::max(
-            0L, settings_content_bottom -
+            0L, settings_content_bottom(*state) -
                     static_cast<long>(client.bottom - client.top) + 24L);
         auto next = state->settings_scroll;
         switch (LOWORD(wparam)) {
@@ -1764,8 +1827,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
         case SB_BOTTOM: next = static_cast<int>(max_scroll); break;
         default: break;
         }
-        state->settings_scroll = std::clamp(next, 0, static_cast<int>(max_scroll));
-        layout_dashboard(*state);
+        set_settings_scroll(*state, next);
         return 0;
     }
     if (message == WM_MOUSEWHEEL && state->page == State::Page::settings) {
@@ -1877,6 +1939,9 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
             const auto notification = HIWORD(wparam);
             const auto editing = index == 14 ? notification == BN_CLICKED
                                             : notification == EN_CHANGE;
+            if (index == 14 && notification == BN_CLICKED) {
+                toggle_dashboard_checkbox(state->voxel_edits[index]);
+            }
             if (editing && read_voxel_profile_controls(*state)) {
                 state->result.voxel_profile_changed = true;
                 mark_settings_dirty(*state);
@@ -1996,9 +2061,9 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
             return 0;
         case id_audio_enabled:
             if (HIWORD(wparam) == BN_CLICKED) {
+                toggle_dashboard_checkbox(state->audio_enabled);
                 state->result.audio_enabled =
-                    SendMessageW(state->audio_enabled, BM_GETCHECK, 0, 0) ==
-                    BST_CHECKED;
+                    dashboard_checkbox_checked(state->audio_enabled);
                 state->result.audio_enabled_changed = true;
                 mark_settings_dirty(*state);
             }
@@ -2028,13 +2093,19 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
             return 0;
         case id_link_lan_discovery:
         case id_link_diagnostics:
-            if (HIWORD(wparam) == BN_CLICKED) mark_settings_dirty(*state);
+            if (HIWORD(wparam) == BN_CLICKED) {
+                toggle_dashboard_checkbox(
+                    command == id_link_lan_discovery
+                        ? state->link_lan_discovery
+                        : state->link_diagnostics);
+                mark_settings_dirty(*state);
+            }
             return 0;
         case id_plugin_discovery:
             if (HIWORD(wparam) == BN_CLICKED) {
+                toggle_dashboard_checkbox(state->plugin_discovery);
                 state->result.plugin_discovery =
-                    SendMessageW(state->plugin_discovery, BM_GETCHECK, 0, 0) ==
-                    BST_CHECKED;
+                    dashboard_checkbox_checked(state->plugin_discovery);
                 state->result.plugin_settings_changed = true;
                 mark_settings_dirty(*state);
                 SetWindowTextW(
@@ -2044,9 +2115,9 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
             return 0;
         case id_plugin_require_allowlist:
             if (HIWORD(wparam) == BN_CLICKED) {
+                toggle_dashboard_checkbox(state->plugin_require_allowlist);
                 state->result.plugin_require_allowlist =
-                    SendMessageW(state->plugin_require_allowlist, BM_GETCHECK,
-                                 0, 0) == BST_CHECKED;
+                    dashboard_checkbox_checked(state->plugin_require_allowlist);
                 state->result.plugin_settings_changed = true;
                 mark_settings_dirty(*state);
                 SetWindowTextW(
@@ -2056,9 +2127,11 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
             return 0;
         case id_plugin_require_capability_allowlist:
             if (HIWORD(wparam) == BN_CLICKED) {
+                toggle_dashboard_checkbox(
+                    state->plugin_require_capability_allowlist);
                 state->result.plugin_require_capability_allowlist =
-                    SendMessageW(state->plugin_require_capability_allowlist,
-                                 BM_GETCHECK, 0, 0) == BST_CHECKED;
+                    dashboard_checkbox_checked(
+                        state->plugin_require_capability_allowlist);
                 state->result.plugin_settings_changed = true;
                 mark_settings_dirty(*state);
                 SetWindowTextW(
@@ -2536,6 +2609,7 @@ HWND control(State& state, const wchar_t* type, const wchar_t* text,
         // semantic type explicitly for WM_DRAWITEM.
         SetPropW(result, L"GBB_DASHBOARD_CHECKBOX",
                  reinterpret_cast<HANDLE>(static_cast<INT_PTR>(1)));
+        set_dashboard_checkbox_checked(result, false);
     }
     const auto font = state.ui_font != nullptr
                           ? state.ui_font
@@ -2605,8 +2679,7 @@ void draw_dashboard_button(const DRAWITEMSTRUCT& item, const State& state) {
 void draw_dashboard_checkbox(const DRAWITEMSTRUCT& item) {
     const auto disabled = (item.itemState & ODS_DISABLED) != 0;
     const auto pressed = (item.itemState & ODS_SELECTED) != 0;
-    const auto checked = SendMessageW(item.hwndItem, BM_GETCHECK, 0, 0) ==
-                         BST_CHECKED;
+    const auto checked = dashboard_checkbox_checked(item.hwndItem);
     const auto background = CreateSolidBrush(
         pressed ? RGB(20, 77, 101) : RGB(13, 18, 27));
     FillRect(item.hDC, &item.rcItem, background);
@@ -3015,8 +3088,7 @@ DashboardResult show_windows_dashboard(
     state.audio_enabled = control(
         state, L"BUTTON", L"Generate audio",
         WS_TABSTOP | BS_AUTOCHECKBOX, 510, 270, 300, 34, id_audio_enabled);
-    SendMessageW(state.audio_enabled, BM_SETCHECK,
-                 audio_enabled ? BST_CHECKED : BST_UNCHECKED, 0);
+    set_dashboard_checkbox_checked(state.audio_enabled, audio_enabled);
     state.controls_label = control(state, L"STATIC", L"Keyboard controls",
         0, 510, 200, 240, 30, 0);
     SendMessageW(state.controls_label, WM_SETFONT,
@@ -3128,16 +3200,13 @@ DashboardResult show_windows_dashboard(
     state.plugin_require_capability_allowlist = control(
         state, L"BUTTON", L"Require capability allowlist", BS_AUTOCHECKBOX,
         660, 1195, 290, 28, id_plugin_require_capability_allowlist);
-    SendMessageW(state.plugin_discovery, BM_SETCHECK,
-                 plugin_options.enabled ? BST_CHECKED : BST_UNCHECKED, 0);
-    SendMessageW(state.plugin_require_allowlist, BM_SETCHECK,
-                 plugin_options.require_allowlist ? BST_CHECKED
-                                                   : BST_UNCHECKED,
-                 0);
-    SendMessageW(state.plugin_require_capability_allowlist, BM_SETCHECK,
-                 plugin_options.require_capability_allowlist ? BST_CHECKED
-                                                              : BST_UNCHECKED,
-                 0);
+    set_dashboard_checkbox_checked(state.plugin_discovery,
+                                   plugin_options.enabled);
+    set_dashboard_checkbox_checked(state.plugin_require_allowlist,
+                                   plugin_options.require_allowlist);
+    set_dashboard_checkbox_checked(
+        state.plugin_require_capability_allowlist,
+        plugin_options.require_capability_allowlist);
     state.link_heading = control(state, L"STATIC", L"Remote link cable",
                                  0, 32, 1270, 420, 28, 0);
     SendMessageW(state.link_heading, WM_SETFONT,
@@ -3174,8 +3243,8 @@ DashboardResult show_windows_dashboard(
     state.link_lan_discovery = control(
         state, L"BUTTON", L"Advertise for LAN discovery", BS_AUTOCHECKBOX,
         280, 1345, 250, 28, id_link_lan_discovery);
-    SendMessageW(state.link_lan_discovery, BM_SETCHECK,
-                 link_settings.lan_discovery ? BST_CHECKED : BST_UNCHECKED, 0);
+    set_dashboard_checkbox_checked(state.link_lan_discovery,
+                                   link_settings.lan_discovery);
     state.link_bluetooth_address_label = control(
         state, L"STATIC", L"Bluetooth address", 0, 32, 1390, 180, 26, 0);
     state.link_bluetooth_address = control(
@@ -3194,8 +3263,8 @@ DashboardResult show_windows_dashboard(
     state.link_diagnostics = control(
         state, L"BUTTON", L"Write link diagnostics trace", BS_AUTOCHECKBOX,
         32, 1460, 330, 28, id_link_diagnostics);
-    SendMessageW(state.link_diagnostics, BM_SETCHECK,
-                 link_settings.diagnostics ? BST_CHECKED : BST_UNCHECKED, 0);
+    set_dashboard_checkbox_checked(state.link_diagnostics,
+                                   link_settings.diagnostics);
     update_link_control_state(state);
     refresh_voxel_profile_controls(state);
     state.shortcuts_heading = control(
@@ -3292,6 +3361,14 @@ DashboardResult show_windows_dashboard(
         SetFocus(state.open);
     }
     refresh_library_actions(state);
+
+    // Creating and populating child controls can emit change notifications.
+    // Those are initialization traffic, not user edits, so an untouched
+    // dashboard must close without an unsaved-settings prompt.
+    state.settings_dirty = false;
+    SetWindowTextW(
+        state.settings_status,
+        L"Changes are staged until you apply or discard them.");
 
     if (owner != nullptr) EnableWindow(owner, FALSE);
     ShowWindow(state.window, SW_SHOW);
