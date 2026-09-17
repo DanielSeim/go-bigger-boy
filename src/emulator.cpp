@@ -4,8 +4,9 @@
 
 namespace gameboy {
 
-Emulator::Emulator(Cartridge cartridge, const HardwareModel model)
-    : bus_(std::move(cartridge)) {
+Emulator::Emulator(Cartridge cartridge, const HardwareModel model,
+                   const BootRomMode boot_rom_mode)
+    : bus_(std::move(cartridge)), boot_rom_mode_(boot_rom_mode) {
     hardware_model_ = model == HardwareModel::automatic
                           ? (bus_.cgb_mode()
                                  ? HardwareModel::cgb
@@ -15,17 +16,29 @@ Emulator::Emulator(Cartridge cartridge, const HardwareModel model)
                           : model;
     automatic_dmg_palette_ = cgb_compatibility_palette(
         bus_.cartridge().cgb_compatibility_palette_id());
-    cpu_.reset(hardware_model_);
     bus_.initialize_post_boot(hardware_model_);
+    if (boot_rom_mode_ == BootRomMode::diagnostic) {
+        bus_.install_boot_rom(diagnostic_boot_rom(hardware_model_));
+        cpu_.reset_boot();
+    } else {
+        cpu_.reset(hardware_model_);
+    }
 }
 
 Emulator Emulator::from_file(const std::filesystem::path& path,
-                             const HardwareModel model) {
-    return Emulator(Cartridge::from_file(path), model);
+                             const HardwareModel model,
+                             const BootRomMode boot_rom_mode) {
+    return Emulator(Cartridge::from_file(path), model, boot_rom_mode);
 }
 
 void Emulator::reset() noexcept {
-    cpu_.reset(hardware_model_);
+    if (boot_rom_mode_ == BootRomMode::diagnostic) {
+        bus_.initialize_post_boot(hardware_model_);
+        bus_.install_boot_rom(diagnostic_boot_rom(hardware_model_));
+        cpu_.reset_boot();
+    } else {
+        cpu_.reset(hardware_model_);
+    }
 }
 
 unsigned Emulator::step() {

@@ -95,6 +95,7 @@ endif()
 
 add_library(gameboy_core
     src/apu.cpp
+    src/boot_rom.cpp
     src/cartridge.cpp
     src/cartridge_persistence.cpp
     src/cpu.cpp

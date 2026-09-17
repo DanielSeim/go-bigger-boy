@@ -23,6 +23,18 @@ mutually exclusive boot-ROM expectations run under explicit DMG0, DMG/MGB,
 SGB, SGB2, CGB0, CGB-C, or CGB-E post-boot hardware profiles. Mooneye's two AGB-only
 misc ROMs are excluded because GBB does not emulate Game Boy Advance hardware.
 
+### Diagnostic boot path
+
+GBB normally starts cartridges from the established post-boot hardware profile.
+The test runner's `--diagnostic-boot` option enables an original, in-tree 256-byte
+diagnostic boot ROM instead. It sets the model-specific CPU handoff registers,
+writes the `GBB` marker and model ID to HRAM (`FF80`–`FF84`), disables the mapped
+ROM through `FF50`, and hands control to the cartridge at `0100`. This path is
+intentionally opt-in and does not replace the production startup path. It is a
+boot-ROM mapping and handoff harness, not a claim of compatibility with
+Nintendo's proprietary boot ROM; hardware initialization remains provided by the
+existing model profile until a complete boot-ROM implementation is validated.
+
 ### Additional pinned-bundle suites
 
 The v7.0 archive is also treated as a source of matrix cases rather than only a

@@ -35,6 +35,7 @@ public:
 
     void reset(bool cgb_mode = false) noexcept;
     void reset(HardwareModel model) noexcept;
+    void reset_boot() noexcept;
     void load_registers(CpuRegisters registers) noexcept;
     [[nodiscard]] unsigned step(MemoryBus& bus);
     [[nodiscard]] const CpuRegisters& registers() const noexcept;

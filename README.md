@@ -218,6 +218,10 @@ opcode via `--protocol mooneye-wilbertpol`. Use `--protocol mooneye`,
 detection. Model-specific post-boot tests can select
 `--model dmg0`, `dmg`, `mgb`, `sgb`, `sgb2`, `cgb0`, `cgb-c`, or `cgb-e`.
 The historical `cgb` spelling remains accepted as the late CGB-E profile.
+For boot-path diagnostics, add `--diagnostic-boot`; this runs GBB's original
+diagnostic boot ROM, records a handoff marker in HRAM, validates the CPU
+handoff state, and then continues at the cartridge entry point. Normal
+emulator construction continues to use the existing post-boot path.
 
 The APU passes all 12 upstream Blargg `dmg_sound` tests and all 12 `cgb_sound`
 tests, including model-specific power behavior, active wave-RAM access, and the

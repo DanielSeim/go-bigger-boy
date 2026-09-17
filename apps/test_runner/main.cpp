@@ -36,6 +36,7 @@ struct Options {
     std::filesystem::path io_trace_output;
     bool dmg_compatibility_colors{};
     bool frame_on_ld_bb{};
+    bool diagnostic_boot{};
 };
 
 void usage() {
@@ -46,7 +47,7 @@ void usage() {
                  "[--frames N --frame-output capture.ppm] "
                  "[--trace-apu PATH] [--trace-ppu PATH] [--trace-io PATH] "
                  "[--frame-on-ld-bb --frame-output capture.ppm] "
-                 "[--dmg-compatibility-colors]\n";
+                 "[--dmg-compatibility-colors] [--diagnostic-boot]\n";
 }
 
 gameboy::HardwareModel parse_model(const std::string& value) {
@@ -108,6 +109,8 @@ Options parse_options(const int argc, char** argv) {
             options.dmg_compatibility_colors = true;
         } else if (argument == "--frame-on-ld-bb") {
             options.frame_on_ld_bb = true;
+        } else if (argument == "--diagnostic-boot") {
+            options.diagnostic_boot = true;
         } else {
             throw std::invalid_argument("unknown or incomplete option: " + argument);
         }
@@ -362,7 +365,9 @@ int main(int argc, char** argv) {
         // fixtures: prior results would otherwise make a later run appear to
         // pass without executing the test.
         auto emulator = gameboy::Emulator{
-            gameboy::Cartridge{std::move(rom)}, options.model};
+            gameboy::Cartridge{std::move(rom)}, options.model,
+            options.diagnostic_boot ? gameboy::BootRomMode::diagnostic
+                                    : gameboy::BootRomMode::post_boot};
         std::ofstream apu_trace;
         std::ofstream ppu_trace;
         std::ofstream io_trace;

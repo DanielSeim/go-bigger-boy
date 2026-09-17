@@ -72,7 +72,17 @@ void MemoryBus::initialize_post_boot(const HardwareModel model) noexcept {
     ppu_.initialize_post_boot_phase(model);
 }
 
+void MemoryBus::install_boot_rom(const DiagnosticBootRom& rom) noexcept {
+    boot_rom_ = rom;
+    boot_rom_enabled_ = true;
+}
+
+bool MemoryBus::boot_rom_enabled() const noexcept { return boot_rom_enabled_; }
+
 std::uint8_t MemoryBus::read8(const std::uint16_t address) const noexcept {
+    if (boot_rom_enabled_ && address < boot_rom_.size()) {
+        return boot_rom_[address];
+    }
     if (address <= 0x7FFF || (address >= 0xA000 && address <= 0xBFFF)) {
         return cartridge_.read(address);
     }
@@ -100,6 +110,7 @@ std::uint8_t MemoryBus::read8(const std::uint16_t address) const noexcept {
     case 0xFF07: return timer_.control();
     case 0xFF0F: return static_cast<std::uint8_t>(0xE0 | io_[0x0F]);
     case 0xFF46: return io_[0x46];
+    case 0xFF50: return boot_rom_enabled_ ? 0x00 : 0xFF;
     case 0xFF4D:
         return cgb_mode_
                    ? static_cast<std::uint8_t>(
@@ -251,6 +262,9 @@ void MemoryBus::write8(const std::uint16_t address, const std::uint8_t value) no
         oam_dma_pending_source_ =
             static_cast<std::uint16_t>(source_page << 8);
         oam_dma_start_delay_ = oam_dma_start_cycles;
+    } else if (address == 0xFF50 && boot_rom_enabled_) {
+        io_[0x50] = value;
+        if (value != 0) boot_rom_enabled_ = false;
     } else if (address == 0xFF4D) {
         if (cgb_mode_) speed_switch_requested_ = (value & 0x01) != 0;
     } else if (address >= 0xFF51 && address <= 0xFF55) {

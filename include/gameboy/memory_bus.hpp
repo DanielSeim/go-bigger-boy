@@ -1,6 +1,7 @@
 #pragma once
 
 #include "gameboy/apu.hpp"
+#include "gameboy/boot_rom.hpp"
 #include "gameboy/cartridge.hpp"
 #include "gameboy/hardware_model.hpp"
 #include "gameboy/joypad.hpp"
@@ -34,6 +35,8 @@ public:
 
     explicit MemoryBus(Cartridge cartridge);
     void initialize_post_boot(HardwareModel model = HardwareModel::dmg) noexcept;
+    void install_boot_rom(const DiagnosticBootRom& rom) noexcept;
+    [[nodiscard]] bool boot_rom_enabled() const noexcept;
 
     [[nodiscard]] std::uint8_t read8(std::uint16_t address) const noexcept;
     [[nodiscard]] std::uint16_t read16(std::uint16_t address) const noexcept;
@@ -100,6 +103,8 @@ private:
                                 std::uint8_t received) noexcept;
 
     Cartridge cartridge_;
+    DiagnosticBootRom boot_rom_{};
+    bool boot_rom_enabled_{};
     std::array<std::uint8_t, 0x2000> wram_{};
     std::unique_ptr<std::array<std::uint8_t, 0x6000>> cgb_wram_;
     std::array<std::uint8_t, 0x80> io_{};

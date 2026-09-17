@@ -63,6 +63,17 @@ void Cpu::reset(const HardwareModel model) noexcept {
     total_cycles_ = 0;
 }
 
+void Cpu::reset_boot() noexcept {
+    registers_ = {};
+    ime_ = false;
+    halted_ = false;
+    stopped_ = false;
+    halt_bug_ = false;
+    ime_enable_delay_ = 0;
+    step_cycles_ = 0;
+    total_cycles_ = 0;
+}
+
 void Cpu::load_registers(CpuRegisters registers) noexcept {
     registers.f &= 0xF0;
     registers_ = registers;

@@ -532,6 +532,7 @@ void SaveStateBusCodec::read(save_state_format::Reader& reader,
     } else {
         bus.ppu_.sgb_border_loading_ = false;
     }
+    bus.boot_rom_enabled_ = version >= 30 ? reader.boolean() : false;
     if (bus.printer_connected_) bus.printer_.reset();
 }
 

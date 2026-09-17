@@ -287,6 +287,63 @@ void test_memory_map() {
 
     bus.write8(0xFEA0, 0x12);
     check(bus.read8(0xFEA0) == 0xFF, "unusable memory reads as FF");
+
+    check(bus.read8(0xFF50) == 0xFF,
+          "the default post-boot path retains FF50 open-bus behavior");
+    bus.write8(0xFF50, 0x01);
+    check(bus.read8(0xFF50) == 0xFF,
+          "FF50 writes do not alter the default post-boot path");
+}
+
+void test_diagnostic_boot_rom() {
+    auto run_boot = [](const gameboy::HardwareModel model) {
+        auto rom = test_rom();
+        rom[0x0100] = 0x76; // HALT after the BIOS hands off to the cartridge.
+        gameboy::Emulator emulator{
+            gameboy::Cartridge{std::move(rom)}, model,
+            gameboy::BootRomMode::diagnostic};
+        check(emulator.bus().boot_rom_enabled(),
+              "diagnostic boot ROM is mapped at reset");
+        check(emulator.bus().read8(0x0000) == 0x31,
+              "diagnostic boot ROM is visible before handoff");
+        for (unsigned steps = 0; steps < 128 &&
+                                  emulator.bus().boot_rom_enabled(); ++steps) {
+            static_cast<void>(emulator.step());
+        }
+        check(!emulator.bus().boot_rom_enabled(),
+              "diagnostic boot ROM disables itself at FF50");
+        check(emulator.cpu().registers().pc == 0x0100,
+              "diagnostic boot ROM hands control to cartridge entry point");
+        check(emulator.cpu().registers().sp == 0xFFFE,
+              "diagnostic boot ROM establishes the stack pointer");
+        const auto& registers = emulator.cpu().registers();
+        if (model == gameboy::HardwareModel::dmg) {
+            check(registers.a == 0x01 && registers.f == 0xB0 &&
+                      registers.b == 0x00 && registers.c == 0x13 &&
+                      registers.d == 0x00 && registers.e == 0xD8 &&
+                      registers.h == 0x01 && registers.l == 0x4D,
+                  "diagnostic DMG BIOS reproduces the CPU handoff registers");
+        } else {
+            check(registers.a == 0x11 && registers.f == 0x80 &&
+                      registers.b == 0x00 && registers.c == 0x00 &&
+                      registers.d == 0x00 && registers.e == 0x08 &&
+                      registers.h == 0x00 && registers.l == 0x7C,
+                  "diagnostic CGB BIOS reproduces the CPU handoff registers");
+        }
+        check(emulator.bus().read8(0xFF80) == 'G' &&
+                  emulator.bus().read8(0xFF81) == 'B' &&
+                  emulator.bus().read8(0xFF82) == 'B',
+              "diagnostic boot ROM writes its HRAM handoff marker");
+        check(emulator.bus().read8(0xFF50) == 0xFF,
+              "normal cartridge mapping is restored after handoff");
+        const auto state = emulator.save_state();
+        emulator.load_state(state);
+        check(!emulator.bus().boot_rom_enabled(),
+              "save states preserve a completed diagnostic handoff");
+    };
+
+    run_boot(gameboy::HardwareModel::dmg);
+    run_boot(gameboy::HardwareModel::cgb_e);
 }
 
 } // namespace
@@ -302,6 +359,7 @@ int main(const int argc, char** argv) {
         test_cartridge_header();
         test_gameboy_camera();
         test_memory_map();
+        test_diagnostic_boot_rom();
     } catch (const std::exception& error) {
         std::cerr << "Unexpected exception: " << error.what() << '\n';
         return 1;
