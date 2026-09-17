@@ -461,6 +461,14 @@ The installed desktop entry accepts `.gb` and `.gbc` files from Linux file
 managers. The native ROM picker uses SDL's portal-backed file dialog on
 Wayland and supported X11 desktops.
 
+Release builds for Linux are distributed as an x86_64 AppImage. Download it,
+make it executable, and launch it directly:
+
+```sh
+chmod +x go-bigger-boy-*.AppImage
+./go-bigger-boy-*.AppImage
+```
+
 Keyboard controls are arrows for the D-pad, X for A, Z for B, Enter for
 Start, Backspace for Select, and Escape to quit. Standard gamepads are also
 supported. Desktop shortcuts are Space to pause, Ctrl+R to reset, F11 for
@@ -802,11 +810,11 @@ Release artifacts for:
 
 Open a workflow run's **Artifacts** section to download the archive for your
 platform. The Windows and macOS archives include the SDL3 runtime. The Linux
-archive includes SDL3 alongside the executable plus the desktop launcher and
+artifact is a self-contained AppImage with SDL3, the desktop launcher, and the
 icon. ROM files are never included in CI artifacts.
 
 Pushing a version tag such as `v0.10.0` waits for every platform build to pass,
-then automatically creates a GitHub Release with all four archives and
+then automatically creates a GitHub Release with all four platform artifacts and
 generated release notes. Tagged builds derive their displayed version from the
 tag so the startup update comparison remains accurate. A failed platform build
 prevents the release.

@@ -25,10 +25,11 @@ Use this short smoke test for releases that include local link-cable changes.
       `ctest --test-dir build-sdl --output-on-failure`.
 - [ ] Build the native Windows target and verify the packaged archive contains
       `gbb.exe` and the required SDL3 runtime files.
+- [ ] Build the Linux AppImage and verify it launches with `--version`.
 - [ ] Push the version tag and wait for Desktop, Android, and Web/Pages
       workflows to complete successfully.
-- [ ] Verify the GitHub Release contains Windows, Linux, macOS, APK, and AAB
-      artifacts before announcing the release.
+- [ ] Verify the GitHub Release contains Windows, Linux AppImage, macOS, APK,
+      and AAB artifacts before announcing the release.
 - [ ] For Google Play testing, upload the AAB to the closed-testing track
       `GBB Beta`,
       install it from Play, and verify updates are offered by Play Store

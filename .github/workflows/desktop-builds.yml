@@ -400,7 +400,7 @@ jobs:
         include:
           - runner: ubuntu-24.04
             artifact: go-bigger-boy-linux-x64
-            archive: go-bigger-boy-linux-x64.tar.gz
+            archive: go-bigger-boy-linux-x64.AppImage
           - runner: windows-2025
             artifact: go-bigger-boy-windows-x64
             archive: go-bigger-boy-windows-x64.zip
@@ -463,7 +463,15 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+      - name: Stage Linux AppDir
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          rm -rf package
+          DESTDIR="$PWD/package" cmake --install build --config Release --prefix /usr
+
       - name: Stage package
+        if: runner.os != 'Linux'
         run: cmake --install build --config Release --prefix package
 
       - name: Sign Windows executable
@@ -506,8 +514,13 @@ jobs:
         shell: pwsh
         run: Compress-Archive -Path package\* -DestinationPath ${{ matrix.archive }}
 
-      - name: Package Unix artifact
-        if: runner.os != 'Windows'
+      - name: Package Linux AppImage
+        if: runner.os == 'Linux'
+        shell: bash
+        run: bash scripts/build-appimage.sh package "${{ matrix.archive }}"
+
+      - name: Package macOS artifact
+        if: runner.os == 'macOS'
         shell: bash
         run: tar -czf "${{ matrix.archive }}" -C package .
 
