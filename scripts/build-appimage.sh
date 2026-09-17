@@ -26,5 +26,10 @@ export APPIMAGE_EXTRACT_AND_RUN=1
     -i "$appdir/usr/share/icons/hicolor/512x512/apps/go-bigger-boy.png" \
     --output appimage
 
-test -x "$output"
-APPIMAGE_EXTRACT_AND_RUN=1 "$output" --version
+if [[ "$output" == */* ]]; then
+    output_command="$output"
+else
+    output_command="./$output"
+fi
+test -x "$output_command"
+APPIMAGE_EXTRACT_AND_RUN=1 "$output_command" --version
