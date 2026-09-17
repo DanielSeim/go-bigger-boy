@@ -52,7 +52,8 @@ void process_remote_link_requests(RemoteLinkControlContext context) {
         !context.remote_link.endpoint.peer_compatible()) {
         gbb::log_frontend_warning(
             "Remote link rejected: peer compatibility profile does not match");
-        stop_remote_link_session(*context.emulator, context.remote_link);
+        stop_remote_link_session(*context.emulator, context.remote_link,
+                                 context.preference_path);
         show_error(context.sdl.window,
                    "The remote link was rejected because the ROM versions are not compatible.");
     }
@@ -148,7 +149,8 @@ void process_remote_link_requests(RemoteLinkControlContext context) {
         context.remote_stop_requested = false;
         if (context.emulator != nullptr && context.remote_link.active()) {
             gbb::log_frontend_info("Link request: stop remote session");
-            stop_remote_link_session(*context.emulator, context.remote_link);
+            stop_remote_link_session(*context.emulator, context.remote_link,
+                                     context.preference_path);
         }
     }
 
@@ -166,7 +168,8 @@ void process_remote_link_requests(RemoteLinkControlContext context) {
                 }
                 if (context.remote_link.active()) {
                     stop_remote_link_session(*context.emulator,
-                                             context.remote_link);
+                                             context.remote_link,
+                                             context.preference_path);
                 }
                 start_remote_link_session(
                     *context.emulator, context.remote_link, context.remote_options,

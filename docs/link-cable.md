@@ -352,6 +352,15 @@ frame. Pokémon state events include the elapsed/frame distance from the prior
 state and the fields that changed. The session header identifies the transport
 and role, so host and join logs can be compared directly.
 
+When diagnostics are enabled, stopping a desktop link also writes a companion
+`gbb-link-diagnostics-*.log` bundle under the application's `diagnostics`
+directory. It includes the trace, final CPU/serial state for each console,
+remote transport counters, and the most recent structured log records. The
+bundle path is reported through the frontend log; if the preferences directory
+cannot be written, the temporary directory is used instead. For deeper
+accuracy investigations, set `GBB_LOG_LEVEL=trace` (and optionally
+`GBB_LOG_FILE`) before starting the app so PPU timing records are included.
+
 On Android, after enabling diagnostics in **Link settings**, open the in-game
 menu and choose **Save diagnostics**. The native trace is flushed
 and passed to Android's system document picker, where it can be saved to

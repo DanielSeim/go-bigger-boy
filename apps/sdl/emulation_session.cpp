@@ -7,19 +7,26 @@
 #include "input_mapping.hpp"
 #include "link_trace_file.hpp"
 #include "pokemon_link_diagnostics.hpp"
+#include "gbb/frontend_logging.hpp"
 
 #ifdef __ANDROID__
 #include "android_bridge.hpp"
 #endif
 
+#include <array>
+#include <atomic>
+#include <fstream>
 #include <iomanip>
 #include <stdexcept>
 #include <sstream>
+#include <system_error>
 #include <vector>
 
 namespace gbb::sdl {
 
 namespace {
+
+gbb::sdl::LinkTraceFile link_trace;
 
 std::string effective_tcp_bind_address(const RemoteLinkOptions& options) {
     // Android's historical default is loopback, which is valid for two local
@@ -44,6 +51,294 @@ std::string bluetooth_error_suffix(const RemoteLinkSession& remote) {
         return {};
     }
     return " " + remote.bluetooth_channel.error() + ".";
+}
+
+const char* link_session_state_name(const gameboy::LinkSession::State state) {
+    switch (state) {
+    case gameboy::LinkSession::State::disconnected: return "disconnected";
+    case gameboy::LinkSession::State::starting: return "starting";
+    case gameboy::LinkSession::State::connected: return "connected";
+    case gameboy::LinkSession::State::transferring: return "transferring";
+    case gameboy::LinkSession::State::timed_out: return "timed_out";
+    }
+    return "unknown";
+}
+
+const char* link_channel_state_name(
+    const gameboy::LinkPacketChannel::State state) {
+    switch (state) {
+    case gameboy::LinkPacketChannel::State::disconnected:
+        return "disconnected";
+    case gameboy::LinkPacketChannel::State::listening: return "listening";
+    case gameboy::LinkPacketChannel::State::connecting: return "connecting";
+    case gameboy::LinkPacketChannel::State::connected: return "connected";
+    case gameboy::LinkPacketChannel::State::failed: return "failed";
+    }
+    return "unknown";
+}
+
+void write_emulator_diagnostics(std::ostream& output,
+                                const char* name,
+                                const gameboy::Emulator* emulator) {
+    if (emulator == nullptr) return;
+    const auto& cpu = emulator->cpu();
+    const auto& registers = cpu.registers();
+    const auto& serial = emulator->bus().serial_port();
+    const auto profile = emulator->link_compatibility_profile();
+    output << "[emulator " << name << "]\n"
+           << "rom_fingerprint=0x" << std::hex << emulator->rom_fingerprint()
+           << " hardware_model=" << gameboy::hardware_model_id(
+                                         emulator->hardware_model())
+           << " link_compatibility_id=0x" << emulator->link_compatibility_id()
+           << "\n"
+           << "link_profile_version=" << std::dec
+           << static_cast<unsigned>(profile.version)
+           << " link_generation="
+           << static_cast<unsigned>(profile.generation)
+           << " link_region=" << static_cast<unsigned>(profile.region)
+           << " link_modes=" << static_cast<unsigned>(profile.modes) << "\n"
+           << "cpu_cycles=" << cpu.total_cycles()
+           << " pc=0x" << std::hex << registers.pc
+           << " sp=0x" << registers.sp
+           << " af=0x" << ((static_cast<unsigned>(registers.a) << 8U) |
+                            registers.f)
+           << " bc=0x" << ((static_cast<unsigned>(registers.b) << 8U) |
+                            registers.c)
+           << " de=0x" << ((static_cast<unsigned>(registers.d) << 8U) |
+                            registers.e)
+           << " hl=0x" << ((static_cast<unsigned>(registers.h) << 8U) |
+                            registers.l)
+           << " halted=" << std::dec << cpu.halted()
+           << " stopped=" << cpu.stopped()
+           << " ime=" << cpu.interrupts_enabled() << "\n"
+           << "serial_sb=0x" << std::hex
+           << static_cast<unsigned>(serial.read_data())
+           << " serial_sc=0x" << static_cast<unsigned>(serial.read_control())
+           << " serial_active=" << std::dec << serial.transfer_active()
+           << " serial_internal_clock=" << serial.internal_clock()
+           << " serial_fast_clock=" << serial.fast_clock()
+           << " serial_bits_shifted="
+           << static_cast<unsigned>(serial.bits_shifted())
+           << " serial_transfer_byte=0x" << std::hex
+           << static_cast<unsigned>(serial.transfer_byte())
+           << " serial_last_tx=0x" << static_cast<unsigned>(serial.last_transmitted())
+           << " serial_last_rx=0x" << static_cast<unsigned>(serial.last_received())
+           << " serial_phase=" << std::dec << serial.phase()
+           << " serial_transfers_completed=" << serial.transfers_completed()
+           << " serial_signature=" << serial.link_state_signature()
+           << " serial_boundary_signature=" << serial.link_boundary_signature()
+           << " io_hr=0x" << std::hex
+           << static_cast<unsigned>(emulator->bus().read8(0xFFAA))
+           << " io_if=0x" << static_cast<unsigned>(emulator->bus().read8(0xFF0F))
+           << " io_ie=0x" << static_cast<unsigned>(emulator->bus().read8(0xFFFF))
+           << std::dec << "\n";
+    try {
+        const auto state = emulator->save_state();
+        std::uint64_t digest = UINT64_C(14695981039346656037);
+        for (const auto byte : state) {
+            digest ^= byte;
+            digest *= UINT64_C(1099511628211);
+        }
+        output << "state_snapshot_bytes=" << state.size()
+               << " state_snapshot_digest=0x" << std::hex << digest
+               << std::dec << "\n";
+    } catch (...) {
+        output << "state_snapshot=unavailable\n";
+    }
+}
+
+void write_remote_diagnostics(std::ostream& output,
+                              const RemoteLinkSession* remote) {
+    if (remote == nullptr) return;
+    const auto& channel = remote->active_channel();
+    const auto& endpoint = remote->endpoint;
+    output << "[remote_link]\n"
+           << "enabled=" << remote->enabled << " hosting=" << remote->hosting
+           << " transport=" << (remote->bluetooth ? "bluetooth" : "tcp")
+           << " channel_state=" << link_channel_state_name(channel.state())
+           << " local_port=" << channel.local_port()
+           << " queued_packets=" << channel.queued_packets()
+           << " buffered_bytes=" << channel.buffered_bytes()
+           << " malformed_packets=" << channel.malformed_packets() << "\n"
+           << "peer_hello_seen=" << endpoint.peer_hello_seen()
+           << " peer_compatible=" << endpoint.peer_compatible()
+           << " peer_compatibility_id=0x" << std::hex
+           << endpoint.peer_compatibility_id() << std::dec
+           << " session_id=" << endpoint.session_id()
+           << " peer_session_id=" << endpoint.peer_session_id()
+           << " profile_version="
+           << static_cast<unsigned>(endpoint.compatibility_profile().version)
+           << " peer_profile_version="
+           << static_cast<unsigned>(endpoint.peer_compatibility_profile().version)
+           << " profile_generation="
+           << static_cast<unsigned>(endpoint.compatibility_profile().generation)
+           << " peer_profile_generation="
+           << static_cast<unsigned>(endpoint.peer_compatibility_profile().generation)
+           << " profile_region="
+           << static_cast<unsigned>(endpoint.compatibility_profile().region)
+           << " peer_profile_region="
+           << static_cast<unsigned>(endpoint.peer_compatibility_profile().region)
+           << " profile_modes="
+           << static_cast<unsigned>(endpoint.compatibility_profile().modes)
+           << " peer_profile_modes="
+           << static_cast<unsigned>(endpoint.peer_compatibility_profile().modes)
+           << " peer_request_seen=" << endpoint.peer_request_seen()
+           << " peer_byte_released=" << endpoint.peer_byte_released()
+           << " peer_byte_transfer=" << endpoint.peer_byte_transfer()
+           << " peer_clock_busy=" << endpoint.peer_clock_busy() << "\n"
+           << "requests_sent=" << endpoint.requests_sent()
+           << " requests_received=" << endpoint.requests_received()
+           << " responses_sent=" << endpoint.responses_sent()
+           << " responses_received=" << endpoint.responses_received()
+           << " denials_sent=" << endpoint.denials_sent()
+           << " denials_received=" << endpoint.denials_received()
+           << " responses_unmatched=" << endpoint.responses_unmatched() << "\n"
+           << "byte_packets_sent=" << endpoint.byte_packets_sent()
+           << " byte_packets_received=" << endpoint.byte_packets_received()
+           << " stale_session_packets=" << endpoint.stale_session_packets()
+           << " out_of_order_requests=" << endpoint.out_of_order_requests()
+           << " duplicate_requests=" << endpoint.duplicate_requests()
+           << " protocol_errors=" << endpoint.protocol_errors() << "\n"
+           << "heartbeats_sent=" << endpoint.heartbeats_sent()
+           << " heartbeats_received=" << endpoint.heartbeats_received()
+           << " heartbeat_timeouts=" << endpoint.heartbeat_timeouts()
+           << " reset_requests_sent=" << endpoint.reset_requests_sent()
+           << " reset_acknowledgements=" << endpoint.reset_acknowledgements()
+           << " request_retries=" << endpoint.request_retries()
+           << " reset_retries=" << endpoint.reset_retries() << "\n"
+           << "state_digest_valid=" << endpoint.state_digest_valid()
+           << " state_digest_mismatches=" << endpoint.state_digest_mismatches()
+           << " state_digest_retries=" << endpoint.state_digest_retries()
+           << " handshake_retries=" << endpoint.handshake_retries()
+           << " smoothed_rtt_ms=" << endpoint.smoothed_rtt_ms()
+           << " rtt_jitter_ms=" << endpoint.rtt_jitter_ms()
+           << " rtt_samples=" << endpoint.rtt_samples() << "\n"
+           << "commits_sent=" << endpoint.commits_sent()
+           << " commits_received=" << endpoint.commits_received()
+           << " commit_retries=" << endpoint.commit_retries()
+           << " commit_waiting_for_ack=" << endpoint.commit_waiting_for_ack()
+           << " failure_during_transfer=" << endpoint.failure_during_transfer()
+           << " serial_state_signature=" << endpoint.serial_state_signature()
+           << " transfers_completed=" << endpoint.transfers_completed() << "\n";
+}
+
+void write_local_diagnostics(std::ostream& output,
+                            const gameboy::LinkSession* session) {
+    if (session == nullptr) return;
+    output << "[local_link]\n"
+           << "state=" << link_session_state_name(session->state())
+           << " active=" << session->active()
+           << " transfers_completed=" << session->transfers_completed()
+           << "\n";
+}
+
+void save_link_diagnostic_bundle(
+    const std::filesystem::path& preference_path, const std::string_view reason,
+    const gameboy::Emulator* first, const gameboy::Emulator* second,
+    const gameboy::LinkSession* local_session,
+    const RemoteLinkSession* remote_session) noexcept {
+    try {
+        std::vector<std::uint8_t> trace;
+        std::filesystem::path trace_path;
+        std::string transport;
+        std::string role;
+        std::uint64_t session{};
+        std::uint64_t frame{};
+        std::uint64_t elapsed_ms{};
+        {
+            std::lock_guard<std::recursive_mutex> lock(link_trace.mutex());
+            if (!link_trace.is_open()) return;
+            trace = link_trace.snapshot();
+            trace_path = link_trace.path();
+            transport = std::string(link_trace.transport());
+            role = std::string(link_trace.role());
+            session = link_trace.session();
+            frame = link_trace.frame();
+            elapsed_ms = link_trace.elapsed_ms();
+        }
+
+        static std::atomic<std::uint64_t> next_bundle{0};
+        const auto bundle_id = ++next_bundle;
+        const auto file_name = std::string{"gbb-link-diagnostics-"} +
+                               std::to_string(session) + "-" +
+                               std::to_string(bundle_id) + ".log";
+        std::error_code temp_error;
+        const auto temporary_directory =
+            std::filesystem::temp_directory_path(temp_error);
+        const auto bundle_base = preference_path.empty()
+                                     ? trace_path.parent_path()
+                                     : preference_path;
+        const auto preference_directory = bundle_base / "diagnostics";
+        const std::array<std::filesystem::path, 3> candidates{{
+            bundle_base.empty() ? std::filesystem::path{}
+                                    : preference_directory / file_name,
+            temp_error ? std::filesystem::path{}
+                       : temporary_directory / file_name,
+            std::filesystem::current_path() / file_name}};
+
+        std::ofstream output;
+        std::filesystem::path bundle_path;
+        for (const auto& candidate : candidates) {
+            if (candidate.empty()) continue;
+            std::error_code error;
+            std::filesystem::create_directories(candidate.parent_path(), error);
+            output.clear();
+            output.open(candidate, std::ios::binary | std::ios::trunc);
+            if (!output.is_open()) continue;
+            bundle_path = candidate;
+            break;
+        }
+        if (!output.is_open()) {
+            gbb::log_frontend_warning("Could not create link diagnostic bundle");
+            return;
+        }
+
+        output << "GBB link diagnostic bundle\n"
+               << "format_version=1\n"
+#ifdef GBB_VERSION
+               << "app_version=" << GBB_VERSION << "\n"
+#else
+               << "app_version=unknown\n"
+#endif
+               << "reason=" << reason << "\n"
+               << "trace_session=" << session << "\n"
+               << "trace_frame=" << frame << "\n"
+               << "trace_elapsed_ms=" << elapsed_ms << "\n"
+               << "trace_transport=" << transport << "\n"
+               << "trace_role=" << role << "\n"
+               << "trace_path_present=" << (!trace_path.empty()) << "\n"
+               << "trace_bytes=" << trace.size() << "\n\n";
+        output << "[logging]\n"
+               << "minimum_level="
+               << gbb::log_level_name(gbb::Logger::instance().level())
+               << "\n";
+        write_local_diagnostics(output, local_session);
+        write_remote_diagnostics(output, remote_session);
+        write_emulator_diagnostics(output, "primary", first);
+        write_emulator_diagnostics(output, "secondary", second);
+
+        output << "[recent_logs]\n";
+        const auto recent_logs = gbb::Logger::instance().recent_records();
+        for (const auto& record : recent_logs) output << record << '\n';
+        output << "\n[link_trace]\n";
+        if (!trace.empty()) {
+            output.write(reinterpret_cast<const char*>(trace.data()),
+                         static_cast<std::streamsize>(trace.size()));
+            if (trace.back() != '\n') output << '\n';
+        } else {
+            output << "trace_unavailable=1\n";
+        }
+        output.flush();
+        if (!output.good()) {
+            gbb::log_frontend_warning("Link diagnostic bundle was incomplete");
+            return;
+        }
+        gbb::log_frontend_info("Link diagnostic bundle: " +
+                               bundle_path.string());
+    } catch (...) {
+        // Diagnostics must never prevent a link session from shutting down.
+        gbb::log_frontend_warning("Could not write link diagnostic bundle");
+    }
 }
 
 } // namespace
@@ -180,12 +475,6 @@ std::unique_ptr<gameboy::Emulator> load_link_player(
     return player;
 }
 #endif
-
-// A failed Pokémon Cable Club negotiation is otherwise indistinguishable
-// from a game-side timeout. Keep a compact trace of the two serial ports so a
-// user can reproduce one attempt and we can tell whether any bytes crossed
-// the emulated cable. The file is deliberately outside the ROM/save data.
-gbb::sdl::LinkTraceFile link_trace;
 
 std::uint64_t link_trace_elapsed_ms() { return link_trace.elapsed_ms(); }
 
@@ -718,7 +1007,15 @@ void stop_local_link_session(gameboy::Emulator& first,
                                  first_endpoint,
                              std::unique_ptr<gameboy::GameBoyLinkEndpoint>&
                                  second_endpoint,
-                             SdlResources& sdl) noexcept {
+                             SdlResources& sdl,
+                             const std::filesystem::path& preference_path) noexcept {
+    const auto reason = session != nullptr &&
+                                session->state() ==
+                                    gameboy::LinkSession::State::timed_out
+                            ? "timeout"
+                            : "session_stop";
+    save_link_diagnostic_bundle(preference_path, reason,
+                                &first, second.get(), session.get(), nullptr);
     stop_link_trace();
     session.reset();
     first_endpoint.reset();
@@ -856,7 +1153,12 @@ void start_remote_link_session(gameboy::Emulator& emulator,
 }
 
 void stop_remote_link_session(gameboy::Emulator& emulator,
-                              RemoteLinkSession& remote) noexcept {
+                              RemoteLinkSession& remote,
+                              const std::filesystem::path& preference_path) noexcept {
+    save_link_diagnostic_bundle(
+        preference_path,
+        remote.failure_reported ? "failure" : "session_stop", &emulator,
+        nullptr, nullptr, &remote);
     stop_link_trace();
 #ifdef __ANDROID__
     stop_android_lan_discovery();

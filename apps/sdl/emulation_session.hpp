@@ -66,7 +66,8 @@ void stop_local_link_session(
     std::unique_ptr<gameboy::LinkSession>& session,
     std::unique_ptr<gameboy::GameBoyLinkEndpoint>& first_endpoint,
     std::unique_ptr<gameboy::GameBoyLinkEndpoint>& second_endpoint,
-    SdlResources& sdl) noexcept;
+    SdlResources& sdl,
+    const std::filesystem::path& preference_path = {}) noexcept;
 
 void retry_local_link_session(gameboy::Emulator& first,
                               gameboy::Emulator& second,
@@ -81,7 +82,8 @@ void start_remote_link_session(gameboy::Emulator& emulator,
                                bool link_diagnostics,
                                SDL_Window* window);
 void stop_remote_link_session(gameboy::Emulator& emulator,
-                              RemoteLinkSession& remote) noexcept;
+                              RemoteLinkSession& remote,
+                              const std::filesystem::path& preference_path = {}) noexcept;
 void retry_remote_link_session(gameboy::Emulator& emulator,
                                RemoteLinkSession& remote,
                                const RemoteLinkOptions& options);

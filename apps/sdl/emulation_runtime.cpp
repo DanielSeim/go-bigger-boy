@@ -793,6 +793,11 @@ int run_emulation(int argc, char** argv) {
         constexpr auto start_with_library = false;
 #endif
         SdlResources sdl(GBB_VERSION, start_with_library);
+        // Keep the last few structured records available for a diagnostic
+        // bundle even when file logging was not enabled before a link failed.
+        // The sink is bounded and only stores records that pass the selected
+        // log level, so normal runs have negligible memory overhead.
+        gbb::Logger::instance().set_memory_capacity(512);
 #ifdef _WIN32
         DesktopMenuBar desktop_menu;
         desktop_menu.attach(sdl.window);
@@ -1388,7 +1393,8 @@ int run_emulation(int argc, char** argv) {
                 , [&]() {
 #ifdef __ANDROID__
                     if (remote_link.active() && emulator != nullptr) {
-                        stop_remote_link_session(*emulator, remote_link);
+                        stop_remote_link_session(*emulator, remote_link,
+                                                 preference_path);
                     }
                     leave_android_game(core, emulator, sdl, dashboard_visible,
                                        paused, fast_forward, rewind,
@@ -1533,13 +1539,15 @@ int run_emulation(int argc, char** argv) {
                 };
                 try {
                     if (remote_link.active() && emulator != nullptr) {
-                        stop_remote_link_session(*emulator, remote_link);
+                        stop_remote_link_session(*emulator, remote_link,
+                                                 preference_path);
                     }
 #ifndef __ANDROID__
                     if (link_emulator != nullptr) {
                         stop_local_link_session(*emulator, link_emulator,
                                                 link_session, link_first_endpoint,
-                                                link_second_endpoint, sdl);
+                                                link_second_endpoint, sdl,
+                                                preference_path);
                     }
                     input_movie.stop(emulator);
                     tas_editor.close();
@@ -2111,11 +2119,11 @@ int run_emulation(int argc, char** argv) {
         if (emulator != nullptr && link_emulator != nullptr) {
             stop_local_link_session(*emulator, link_emulator, link_session,
                                     link_first_endpoint, link_second_endpoint,
-                                    sdl);
+                                    sdl, preference_path);
         }
 #endif
         if (emulator != nullptr && remote_link.active()) {
-            stop_remote_link_session(*emulator, remote_link);
+            stop_remote_link_session(*emulator, remote_link, preference_path);
         }
         flush_battery_safely(core.get());
     } catch (const std::exception& error) {

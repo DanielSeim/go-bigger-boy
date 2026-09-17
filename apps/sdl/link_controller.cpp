@@ -17,7 +17,8 @@ void process_link_requests(LinkControlContext context) {
         !context.remote_link.endpoint.peer_compatible()) {
         gbb::log_frontend_warning(
             "Remote link rejected: peer compatibility profile does not match");
-        stop_remote_link_session(*context.emulator, context.remote_link);
+        stop_remote_link_session(*context.emulator, context.remote_link,
+                                 context.preference_path);
         show_error(context.sdl.window,
                    "The remote link was rejected because the ROM versions are not compatible.");
     }
@@ -116,7 +117,8 @@ void process_link_requests(LinkControlContext context) {
         context.remote_stop_requested = false;
         gbb::log_frontend_info("Link request: stop remote session");
         if (context.emulator != nullptr && context.remote_link.active()) {
-            stop_remote_link_session(*context.emulator, context.remote_link);
+            stop_remote_link_session(*context.emulator, context.remote_link,
+                                     context.preference_path);
         }
     }
 
@@ -132,11 +134,13 @@ void process_link_requests(LinkControlContext context) {
                 stop_local_link_session(
                     *context.emulator, context.link_emulator,
                     context.link_session, context.link_first_endpoint,
-                    context.link_second_endpoint, context.sdl);
+                    context.link_second_endpoint, context.sdl,
+                    context.preference_path);
             }
             if (context.remote_link.active()) {
                 stop_remote_link_session(*context.emulator,
-                                         context.remote_link);
+                                         context.remote_link,
+                                         context.preference_path);
             }
             auto* const link_emulator =
                 context.services.link_cable();
@@ -207,12 +211,14 @@ void process_link_requests(LinkControlContext context) {
         try {
             if (context.remote_link.active()) {
                 stop_remote_link_session(*context.emulator,
-                                         context.remote_link);
+                                         context.remote_link,
+                                         context.preference_path);
             } else if (context.link_emulator != nullptr) {
                 stop_local_link_session(
                     *context.emulator, context.link_emulator,
                     context.link_session, context.link_first_endpoint,
-                    context.link_second_endpoint, context.sdl);
+                    context.link_second_endpoint, context.sdl,
+                    context.preference_path);
             } else if (context.services.link_cable() != nullptr) {
                 start_local_link_session(
                     context.current_rom, *context.emulator,
