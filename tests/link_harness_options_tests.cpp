@@ -59,6 +59,18 @@ int main() {
     check(options.state1 == "one.gbbs" && options.state2 == "two.gbbs",
           "paired state paths are retained");
 
+    const auto fault_options = parse({
+        "gbb_link_harness", "--rom", "game.gb", "--save1", "one.sav",
+        "--save2", "two.sav", "--fault", "drop"});
+    check(fault_options.fault.has_value() &&
+              *fault_options.fault == gbb::link_harness::FaultKind::drop,
+          "fault scenarios are parsed");
+    const auto replay_options = parse({
+        "gbb_link_harness", "--rom", "game.gb", "--save1", "one.sav",
+        "--save2", "two.sav", "--fault-replay", "capture.log"});
+    check(replay_options.fault_replay == "capture.log",
+          "fault replay path is retained");
+
     expects_invalid(
         [] { parse({"gbb_link_harness", "--rom", "game.gb"}); },
         "required save paths are validated");
@@ -80,6 +92,20 @@ int main() {
                    "one.sav", "--save2", "two.sav", "--transport", "udp"});
         },
         "transport names are validated");
+    expects_invalid(
+        [] {
+            parse({"gbb_link_harness", "--rom", "game.gb", "--save1",
+                   "one.sav", "--save2", "two.sav", "--fault", "drop",
+                   "--fault-replay", "capture.log"});
+        },
+        "fault plan and replay are mutually exclusive");
+    expects_invalid(
+        [] {
+            parse({"gbb_link_harness", "--rom", "game.gb", "--save1",
+                   "one.sav", "--save2", "two.sav", "--transport", "local",
+                   "--fault", "drop"});
+        },
+        "fault injection requires TCP transport");
 
     return failures == 0 ? 0 : 1;
 }

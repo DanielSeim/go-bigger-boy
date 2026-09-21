@@ -1,4 +1,5 @@
 #include "scenario_trace.hpp"
+#include "fault_channel.hpp"
 #include "pokemon_state.hpp"
 #include "gbb/trace_format.hpp"
 
@@ -68,6 +69,23 @@ int main() {
               trace_contents.rfind("trace_end frames=30"),
           "trace writer terminates the trace exactly once");
 
+    const auto fault_trace_path = std::filesystem::temp_directory_path() /
+                                  "gbb-link-harness-fault-replay-test.log";
+    {
+        std::ofstream fault_trace(fault_trace_path);
+        gbb::write_trace_session_start(fault_trace, 7, "tcp", "harness",
+                                       "trade");
+        gbb::write_trace_event_prefix(fault_trace, "fault_injected", 7, 2, 4,
+                                      "tcp", "harness");
+        fault_trace << " direction=host_to_join action=drop packet=byte"
+                       " sequence=12\n";
+        gbb::write_trace_session_end(fault_trace, 7, 2, 4);
+    }
+    const auto replay_plan =
+        gbb::link_harness::FaultPlan::from_trace(fault_trace_path);
+    check(!replay_plan.empty(),
+          "fault plan reconstructs a replay rule from a canonical trace");
+
     const auto checkpoint_path = std::filesystem::temp_directory_path() /
                                  "gbb-link-harness-battle-checkpoint-test.log";
     std::vector<std::uint8_t> rom(0x8000, 0);
@@ -103,6 +121,7 @@ int main() {
     check(checkpoint_contents.find("p2_generation=2") != std::string::npos,
           "battle trace identifies the Gen II probe generation");
     std::error_code cleanup_error;
+    std::filesystem::remove(fault_trace_path, cleanup_error);
     std::filesystem::remove(trace_path, cleanup_error);
     std::filesystem::remove(checkpoint_path, cleanup_error);
     return failures == 0 ? 0 : 1;

@@ -357,6 +357,25 @@ void ScenarioTrace::write_trade_phase_event(
     writer_.flush();
 }
 
+void ScenarioTrace::write_fault_event(const std::string_view direction,
+                                      const std::string_view action,
+                                      const std::string_view packet,
+                                      const std::uint32_t sequence,
+                                      const unsigned delay_polls) {
+    if (!writer_.enabled()) return;
+    auto& output = writer_.stream();
+    gbb::write_trace_event_prefix(output, "fault_injected", writer_.session(),
+                                  writer_.frame(), writer_.elapsed_ms(),
+                                  writer_.transport(), writer_.role());
+    output << " direction=" << direction
+           << " action=" << action
+           << " packet=" << packet
+           << " sequence=" << sequence;
+    if (delay_polls != 0) output << " delay_polls=" << delay_polls;
+    output << '\n';
+    writer_.flush();
+}
+
 void update_serial_progress_watchdog(
     ScenarioTrace& trace, const std::uint64_t frame,
     gameboy::Emulator& first, gameboy::Emulator& second,

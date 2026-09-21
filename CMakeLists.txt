@@ -216,6 +216,7 @@ if(NOT ANDROID)
     add_executable(gameboy_link_harness
                 apps/link_harness/main.cpp
         apps/link_harness/harness_io.cpp
+        apps/link_harness/fault_channel.cpp
         apps/link_harness/options.cpp
         apps/link_harness/pokemon_automation.cpp
         apps/link_harness/pokemon_state.cpp
@@ -225,7 +226,7 @@ if(NOT ANDROID)
         apps/link_harness/scenario_trace.cpp
         apps/link_harness/scenario_trace_writer.cpp
     )
-    target_link_libraries(gameboy_link_harness PRIVATE gameboy_core)
+    target_link_libraries(gameboy_link_harness PRIVATE gbb_core_api)
     set_target_properties(gameboy_link_harness PROPERTIES OUTPUT_NAME gbb_link_harness)
 endif()
 
@@ -1001,6 +1002,9 @@ if(GAMEBOY_BUILD_TESTS)
 
         add_executable(gameboy_link_harness_trace_tests
             tests/link_harness_trace_tests.cpp
+            apps/link_harness/fault_channel.cpp
+            apps/link_harness/harness_io.cpp
+            apps/link_harness/options.cpp
             apps/link_harness/scenario_trace_writer.cpp
             apps/link_harness/scenario_trace.cpp
             apps/link_harness/pokemon_state.cpp
@@ -1008,7 +1012,7 @@ if(GAMEBOY_BUILD_TESTS)
         target_include_directories(gameboy_link_harness_trace_tests
             PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/apps/link_harness
                     ${CMAKE_CURRENT_SOURCE_DIR}/include)
-        target_link_libraries(gameboy_link_harness_trace_tests PRIVATE gameboy_core)
+        target_link_libraries(gameboy_link_harness_trace_tests PRIVATE gbb_core_api)
         add_test(NAME gameboy_link_harness_trace
                  COMMAND gameboy_link_harness_trace_tests)
 

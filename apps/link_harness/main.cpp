@@ -3,6 +3,7 @@
 #include "gameboy/link_session.hpp"
 #include "gameboy/tcp_link_channel.hpp"
 #include "gameboy/tcp_serial_endpoint.hpp"
+#include "fault_channel.hpp"
 #include "harness_io.hpp"
 #include "options.hpp"
 #include "pokemon_automation.hpp"
@@ -18,6 +19,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <thread>
@@ -245,6 +247,13 @@ int main(int argc, char** argv) {
             WramBank1Guard second_bank(second);
             return at_ready_link_choice(first) && at_ready_link_choice(second);
         }();
+        FaultPlan fault_plan;
+        if (options.fault.has_value()) {
+            fault_plan.add(FaultDirection::host_to_join, *options.fault,
+                           gameboy::LinkPacketType::byte);
+        } else if (!options.fault_replay.empty()) {
+            fault_plan = FaultPlan::from_trace(options.fault_replay);
+        }
         if (options.local) {
             if (options.scenario != Scenario::none) {
                 release_auto_buttons(first);
@@ -356,6 +365,7 @@ int main(int argc, char** argv) {
             throw std::runtime_error("could not start TCP link harness client");
         }
 
+        ScenarioTrace trace(options.trace, "tcp", options.scenario);
         gameboy::TcpSerialEndpoint first_endpoint;
         gameboy::TcpSerialEndpoint second_endpoint;
         first_endpoint.set_arbitration_priority(true);
@@ -369,10 +379,22 @@ int main(int argc, char** argv) {
             first.bus().serial_port().reset_link();
             second.bus().serial_port().reset_link();
         }
-        first_endpoint.attach(first.bus().serial_port(), client,
+        std::unique_ptr<FaultPacketChannel> host_fault_channel;
+        std::unique_ptr<FaultPacketChannel> join_fault_channel;
+        gameboy::LinkPacketChannel* host_channel = &client;
+        gameboy::LinkPacketChannel* join_channel = &server;
+        if (!fault_plan.empty()) {
+            host_fault_channel = std::make_unique<FaultPacketChannel>(
+                client, FaultDirection::host_to_join, fault_plan, trace);
+            join_fault_channel = std::make_unique<FaultPacketChannel>(
+                server, FaultDirection::join_to_host, fault_plan, trace);
+            host_channel = host_fault_channel.get();
+            join_channel = join_fault_channel.get();
+        }
+        first_endpoint.attach(first.bus().serial_port(), *host_channel,
                               first.link_compatibility_id(),
                               first.link_compatibility_profile());
-        second_endpoint.attach(second.bus().serial_port(), server,
+        second_endpoint.attach(second.bus().serial_port(), *join_channel,
                                second.link_compatibility_id(),
                                second.link_compatibility_profile());
 
@@ -386,7 +408,6 @@ int main(int argc, char** argv) {
         }
 
         AutoInputState input_state;
-        ScenarioTrace trace(options.trace, "tcp", options.scenario);
         SerialProgressWatchdog serial_watchdog;
         if (options.scenario != Scenario::none) {
             release_auto_buttons(first);
@@ -439,6 +460,12 @@ int main(int argc, char** argv) {
                << "tcp_port=" << server.local_port() << '\n'
                << "trace=" << (options.trace.empty() ? "none" : options.trace.string())
                << '\n'
+               << "fault_plan="
+               << (options.fault.has_value()
+                       ? fault_kind_name(*options.fault)
+                       : (!options.fault_replay.empty() ? "replay" : "none"))
+               << '\n'
+               << "fault_events_applied=" << fault_plan.used_count() << '\n'
                << "host_requests_sent=" << first_endpoint.requests_sent() << '\n'
                << "host_requests_received=" << first_endpoint.requests_received() << '\n'
                << "host_responses_sent=" << first_endpoint.responses_sent() << '\n'

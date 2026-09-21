@@ -26,7 +26,28 @@ void usage() {
            "[--state1 STATE --state2 STATE] "
            "[--transport tcp|local] [--frames N] [--port N] "
            "[--auto-confirm] [--scenario trade|battle] "
-           "[--expect trade|battle] [--report PATH] [--trace PATH]\n";
+           "[--expect trade|battle] [--report PATH] [--trace PATH] "
+           "[--fault drop|delay|duplicate|disconnect] "
+           "[--fault-replay TRACE]\n";
+}
+
+const char* fault_kind_name(const FaultKind fault) noexcept {
+    switch (fault) {
+    case FaultKind::drop: return "drop";
+    case FaultKind::delay: return "delay";
+    case FaultKind::duplicate: return "duplicate";
+    case FaultKind::disconnect: return "disconnect";
+    }
+    return "unknown";
+}
+
+std::optional<FaultKind> parse_fault_kind(
+    const std::string_view value) noexcept {
+    for (const auto fault : {FaultKind::drop, FaultKind::delay,
+                             FaultKind::duplicate, FaultKind::disconnect}) {
+        if (value == fault_kind_name(fault)) return fault;
+    }
+    return std::nullopt;
 }
 
 Options parse_options(const int argc, char** argv) {
@@ -96,6 +117,14 @@ Options parse_options(const int argc, char** argv) {
             options.report = require_value("--report");
         } else if (argument == "--trace") {
             options.trace = require_value("--trace");
+        } else if (argument == "--fault") {
+            const auto value = require_value("--fault");
+            options.fault = parse_fault_kind(value);
+            if (!options.fault.has_value()) {
+                throw std::invalid_argument("unknown fault: " + value);
+            }
+        } else if (argument == "--fault-replay") {
+            options.fault_replay = require_value("--fault-replay");
         } else if (argument == "--capture-dir") {
             options.capture_dir = require_value("--capture-dir");
         } else if (argument == "--help" || argument == "-h") {
@@ -121,6 +150,15 @@ Options parse_options(const int argc, char** argv) {
     if (options.scenario != Scenario::none && options.state1.empty()) {
         throw std::invalid_argument(
             "--scenario requires --state1 and --state2 for reproducible input");
+    }
+    if (options.fault.has_value() && !options.fault_replay.empty()) {
+        throw std::invalid_argument(
+            "--fault and --fault-replay are mutually exclusive");
+    }
+    if ((options.fault.has_value() || !options.fault_replay.empty()) &&
+        options.local) {
+        throw std::invalid_argument(
+            "fault injection is supported only with --transport tcp");
     }
     return options;
 }

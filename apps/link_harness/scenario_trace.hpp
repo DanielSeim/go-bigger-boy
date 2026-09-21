@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <iosfwd>
+#include <string_view>
 
 namespace gbb::link_harness {
 
@@ -75,6 +76,12 @@ class ScenarioTrace {
     void write_battle_checkpoint(std::uint64_t frame,
                                  gameboy::Emulator& first,
                                  gameboy::Emulator& second);
+
+    void write_fault_event(std::string_view direction,
+                           std::string_view action,
+                           std::string_view packet,
+                           std::uint32_t sequence,
+                           unsigned delay_polls = 0);
 
     [[nodiscard]] const std::filesystem::path& path() const noexcept {
         return writer_.path();

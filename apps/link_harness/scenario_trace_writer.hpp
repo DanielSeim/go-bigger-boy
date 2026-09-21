@@ -32,6 +32,7 @@ class ScenarioTraceWriter {
     [[nodiscard]] std::string_view role() const noexcept { return "harness"; }
     [[nodiscard]] std::uint64_t session() const noexcept { return session_; }
     [[nodiscard]] std::uint64_t elapsed_ms() const noexcept;
+    [[nodiscard]] std::uint64_t frame() const noexcept { return frame_; }
 
     // Marks a frame as the most recent one and periodically checkpoints the
     // buffered stream.  Flushing every frame can perturb serial timing.

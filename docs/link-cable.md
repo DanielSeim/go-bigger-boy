@@ -454,6 +454,27 @@ Use `--transport local` to run the same ROM/save pair through the deterministic
 in-process cable when the host operating system blocks loopback sockets. Use
 `--transport tcp` (the default) on a native desktop to exercise host/join TCP.
 
+The TCP harness can inject one deterministic transport fault into the first
+matching byte packet while running the real ROM and save-state pair. Use
+`--fault drop|delay|duplicate|disconnect` to create a reproducible capture,
+then use `--fault-replay TRACE` with the same inputs to repeat the exact
+packet direction, type, and sequence:
+
+```sh
+./build/gbb_link_harness \
+  --rom roms/pokemon-blue.gb \
+  --save1 roms/player1.sav --save2 roms/player2.sav \
+  --state1 roms/player1.gbbs --state2 roms/player2.gbbs \
+  --frames 1200 --fault drop --trace /tmp/gbb-drop.log
+
+./build/gbb_link_harness \
+  --rom roms/pokemon-blue.gb \
+  --save1 roms/player1.sav --save2 roms/player2.sav \
+  --state1 roms/player1.gbbs --state2 roms/player2.gbbs \
+  --frames 1200 --fault-replay /tmp/gbb-drop.log \
+  --trace /tmp/gbb-drop-replay.log
+```
+
 The harness can also assert the game-level result, rather than treating serial
 traffic alone as success. Add `--expect trade` for a trade run or
 `--expect battle` for a battle run. A trade is accepted only when both parties'
