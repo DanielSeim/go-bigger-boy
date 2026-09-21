@@ -146,7 +146,7 @@ def run_matrix(executable: pathlib.Path, root: pathlib.Path) -> None:
         "--transport",
         "tcp",
         "--frames",
-        "8",
+        "64",
     ]
     for fault, expect_transfer in (
         ("drop", True),
