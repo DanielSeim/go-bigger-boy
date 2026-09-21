@@ -1574,9 +1574,9 @@ void layout_dashboard(State& state) {
     for (int column = 0; column < 2; ++column) {
         const auto base_x = column == 0 ? 32 : 510;
         place_child(state.primary_headings[static_cast<std::size_t>(column)],
-                    base_x + 135, 390, 145, 24, offset);
+                    base_x + 135, 395, 145, 24, offset);
         place_child(state.secondary_headings[static_cast<std::size_t>(column)],
-                    base_x + 285, 390, 145, 24, offset);
+                    base_x + 285, 395, 145, 24, offset);
     }
     constexpr std::array<std::size_t, 8> order{{2, 1, 0, 3, 4, 5, 6, 7}};
     for (std::size_t position = 0; position < order.size(); ++position) {
