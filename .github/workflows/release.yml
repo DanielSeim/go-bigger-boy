@@ -44,7 +44,12 @@ jobs:
       TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.workflow_run.head_branch }}
       TAG_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.sha || github.event.workflow_run.head_sha }}
     steps:
-      - name: Wait for both platform workflows
+      - name: Check out validated source
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ env.TAG_SHA }}
+
+      - name: Wait for platform workflows
         id: workflows
         shell: bash
         run: |
@@ -86,14 +91,16 @@ jobs:
           for attempt in $(seq 1 90); do
             desktop="$(find_run 'Desktop builds' || true)"
             android="$(find_run 'Android build' || true)"
-            if [[ -z "$desktop" || -z "$android" ]]; then
-              echo "Waiting for Desktop builds and Android build for $TAG ($attempt/90)."
+            web="$(find_run 'Web build and Pages' || true)"
+            if [[ -z "$desktop" || -z "$android" || -z "$web" ]]; then
+              echo "Waiting for Desktop, Android, and Web builds for $TAG ($attempt/90)."
               sleep 20
               continue
             fi
 
             IFS='|' read -r desktop_id desktop_status desktop_conclusion desktop_url <<< "$desktop"
             IFS='|' read -r android_id android_status android_conclusion android_url <<< "$android"
+            IFS='|' read -r web_id web_status web_conclusion web_url <<< "$web"
             if [[ "$desktop_status" == completed && "$desktop_conclusion" != success ]]; then
               echo "Desktop workflow failed: $desktop_url" >&2
               exit 1
@@ -102,16 +109,22 @@ jobs:
               echo "Android workflow failed: $android_url" >&2
               exit 1
             fi
-            if [[ "$desktop_status" == completed && "$android_status" == completed ]]; then
+            if [[ "$web_status" == completed && "$web_conclusion" != success ]]; then
+              echo "Web workflow failed: $web_url" >&2
+              exit 1
+            fi
+            if [[ "$desktop_status" == completed && "$android_status" == completed &&
+                  "$web_status" == completed ]]; then
               echo "desktop_run=$desktop_id" >> "$GITHUB_OUTPUT"
               echo "android_run=$android_id" >> "$GITHUB_OUTPUT"
-              echo "Both platform workflows succeeded for $TAG."
+              echo "web_run=$web_id" >> "$GITHUB_OUTPUT"
+              echo "Desktop, Android, and Web workflows succeeded for $TAG."
               exit 0
             fi
-            echo "Desktop: $desktop_status; Android: $android_status ($attempt/90)."
+            echo "Desktop: $desktop_status; Android: $android_status; Web: $web_status ($attempt/90)."
             sleep 20
           done
-          echo "Timed out waiting for both platform workflows for $TAG." >&2
+          echo "Timed out waiting for Desktop, Android, and Web workflows for $TAG." >&2
           exit 1
 
       - name: Download release artifacts
@@ -119,11 +132,12 @@ jobs:
         env:
           DESKTOP_RUN: ${{ steps.workflows.outputs.desktop_run }}
           ANDROID_RUN: ${{ steps.workflows.outputs.android_run }}
+          WEB_RUN: ${{ steps.workflows.outputs.web_run }}
         run: |
           set -euo pipefail
           for attempt in 1 2 3; do
             rm -rf release-assets
-            mkdir -p release-assets/desktop release-assets/android
+            mkdir -p release-assets/desktop release-assets/android release-assets/web
             if gh run download "$DESKTOP_RUN" \
                 --repo "$REPOSITORY" \
                 --pattern 'go-bigger-boy-*' \
@@ -132,6 +146,10 @@ jobs:
                 --repo "$REPOSITORY" \
                 --name go-bigger-boy-android \
                 --dir release-assets/android \
+              && gh run download "$WEB_RUN" \
+                --repo "$REPOSITORY" \
+                --name go-bigger-boy-web \
+                --dir release-assets/web \
               && find release-assets -type f -print -quit | grep -q .; then
               exit 0
             fi
@@ -140,6 +158,9 @@ jobs:
           done
           echo "Unable to download release artifacts." >&2
           exit 1
+
+      - name: Run release asset preflight
+        run: bash scripts/verify-release-assets.sh release-assets
 
       - name: Publish release assets
         shell: bash

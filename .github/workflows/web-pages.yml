@@ -3,6 +3,7 @@ name: Web build and Pages
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -109,9 +110,18 @@ jobs:
         with:
           path: build-web/web
 
+      - name: Upload Web release artifact
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: go-bigger-boy-web
+          path: build-web/web
+          if-no-files-found: error
+          retention-days: 14
+
   deploy:
     name: Deploy GitHub Pages
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 10
