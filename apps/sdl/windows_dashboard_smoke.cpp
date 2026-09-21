@@ -231,18 +231,30 @@ bool check_settings_sections(HWND dashboard) {
     for (const auto section : sections) {
         passed &= send_dashboard_command(dashboard, section);
         const auto expected = static_cast<std::size_t>(section - 136);
-        passed &= wait_for([&] {
+        const auto section_ready = wait_for([&] {
             return visible_child(dashboard, section_titles[expected]);
         });
+        passed &= section_ready;
 
         const auto general = visible_child(dashboard, L"Display palette");
         const auto controls = visible_child(dashboard, L"Keyboard controls");
         const auto link = visible_child(dashboard, L"Remote link cable");
         const auto advanced = visible_child(dashboard, L"Native plug-ins");
-        passed &= general == (expected == 0);
-        passed &= controls == (expected == 1);
-        passed &= link == (expected == 2);
-        passed &= advanced == (expected == 3);
+        const auto visibility_ok = general == (expected == 0) &&
+                                   controls == (expected == 1) &&
+                                   link == (expected == 2) &&
+                                   advanced == (expected == 3);
+        passed &= visibility_ok;
+        const auto scrollbar = vertical_scrollbar_visible(dashboard);
+        const auto scrollbar_ok = expected == 1 || !scrollbar;
+        passed &= scrollbar_ok;
+        if (!section_ready || !visibility_ok || !scrollbar_ok) {
+            std::fprintf(stderr,
+                         "dashboard smoke: section %u ready=%d expected=%zu "
+                         "visible={%d,%d,%d,%d} scrollbar=%d\n",
+                         static_cast<unsigned>(section), section_ready, expected,
+                         general, controls, link, advanced, scrollbar);
+        }
 
         ControlCollection collection{dashboard};
         EnumChildWindows(dashboard, collect_visible_controls,
@@ -264,7 +276,6 @@ bool check_settings_sections(HWND dashboard) {
         }
         // The controls page may need scrolling on a short display. The other
         // sections fit in the fixed viewport and must not create a scrollbar.
-        if (expected != 1) passed &= !vertical_scrollbar_visible(dashboard);
     }
     return passed;
 }
