@@ -70,7 +70,13 @@ def run_harness(executable: pathlib.Path, arguments: list[str]) -> None:
         )
 
 
-def check_run(report_path: pathlib.Path, trace_path: pathlib.Path, plan: str) -> None:
+def check_run(
+    report_path: pathlib.Path,
+    trace_path: pathlib.Path,
+    plan: str,
+    fault: str,
+    expect_transfer: bool,
+) -> None:
     report = parse_report(report_path)
     if report.get("fault_plan") != plan:
         raise AssertionError(f"expected fault_plan={plan!r}, got {report.get('fault_plan')!r}")
@@ -82,8 +88,17 @@ def check_run(report_path: pathlib.Path, trace_path: pathlib.Path, plan: str) ->
     trace = trace_path.read_text(encoding="utf-8")
     if "event=fault_injected" not in trace:
         raise AssertionError("harness trace does not contain fault_injected")
-    if "action=drop" not in trace or "packet=byte" not in trace:
-        raise AssertionError("harness trace does not identify the dropped byte")
+    if f"action={fault}" not in trace or "packet=byte" not in trace:
+        raise AssertionError(
+            f"harness trace does not identify the {fault} byte fault"
+        )
+    if expect_transfer and (
+        int(report.get("host_transfers_completed", "0")) < 1
+        or int(report.get("join_transfers_completed", "0")) < 1
+    ):
+        raise AssertionError(
+            f"{fault} fault did not recover the transfer: {report}"
+        )
 
 
 def main() -> int:
@@ -102,8 +117,6 @@ def main() -> int:
             save1.write_bytes(bytes(0x2000))
             save2.write_bytes(bytes(0x2000))
 
-            original_trace = root / "original.trace"
-            original_report = root / "original.report"
             common = [
                 "--rom",
                 str(rom),
@@ -116,35 +129,55 @@ def main() -> int:
                 "--frames",
                 "8",
             ]
-            run_harness(
-                executable,
-                [
-                    *common,
-                    "--fault",
-                    "drop",
-                    "--trace",
-                    str(original_trace),
-                    "--report",
-                    str(original_report),
-                ],
-            )
-            check_run(original_report, original_trace, "drop")
+            for fault, expect_transfer in (
+                ("drop", True),
+                ("delay", True),
+                ("duplicate", True),
+                ("disconnect", False),
+            ):
+                original_trace = root / f"{fault}-original.trace"
+                original_report = root / f"{fault}-original.report"
+                run_harness(
+                    executable,
+                    [
+                        *common,
+                        "--fault",
+                        fault,
+                        "--trace",
+                        str(original_trace),
+                        "--report",
+                        str(original_report),
+                    ],
+                )
+                check_run(
+                    original_report,
+                    original_trace,
+                    fault,
+                    fault,
+                    expect_transfer,
+                )
 
-            replay_trace = root / "replay.trace"
-            replay_report = root / "replay.report"
-            run_harness(
-                executable,
-                [
-                    *common,
-                    "--fault-replay",
-                    str(original_trace),
-                    "--trace",
-                    str(replay_trace),
-                    "--report",
-                    str(replay_report),
-                ],
-            )
-            check_run(replay_report, replay_trace, "replay")
+                replay_trace = root / f"{fault}-replay.trace"
+                replay_report = root / f"{fault}-replay.report"
+                run_harness(
+                    executable,
+                    [
+                        *common,
+                        "--fault-replay",
+                        str(original_trace),
+                        "--trace",
+                        str(replay_trace),
+                        "--report",
+                        str(replay_report),
+                    ],
+                )
+                check_run(
+                    replay_report,
+                    replay_trace,
+                    "replay",
+                    fault,
+                    expect_transfer,
+                )
     except TcpUnavailable as error:
         print(f"SKIP: TCP loopback is unavailable in this environment: {error}")
         return 77
