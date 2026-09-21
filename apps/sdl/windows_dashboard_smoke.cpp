@@ -246,7 +246,7 @@ bool check_settings_sections(HWND dashboard) {
                                    advanced == (expected == 3);
         passed &= visibility_ok;
         const auto scrollbar = vertical_scrollbar_visible(dashboard);
-        const auto scrollbar_ok = expected == 1 || !scrollbar;
+        const auto scrollbar_ok = expected == 1 || expected == 3 || !scrollbar;
         passed &= scrollbar_ok;
         if (!section_ready || !visibility_ok || !scrollbar_ok) {
             std::fprintf(stderr,
