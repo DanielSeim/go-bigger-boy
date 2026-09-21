@@ -12,8 +12,10 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <optional>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -151,6 +153,8 @@ public:
                 return rule.used;
             }));
     }
+
+    [[nodiscard]] std::size_t size() const noexcept { return rules_.size(); }
 
 private:
     std::vector<FaultRule> rules_;
@@ -425,9 +429,147 @@ void test_disconnect_aborts_transfer() {
           "disconnect aborts the active transfer and fails both peers");
 }
 
+void print_cli_usage() {
+    std::cout
+        << "Usage: gbb_link_fault_harness --scenario "
+           "drop|delay|duplicate|disconnect [--trace PATH]\n"
+           "       gbb_link_fault_harness --replay TRACE_PATH [--trace PATH]\n"
+           "\n"
+           "With no arguments, runs the CTest contract suite. The replay mode\n"
+           "reuses fault_injected events from a canonical diagnostic trace.\n";
+}
+
+struct CliOptions {
+    std::optional<FaultKind> scenario;
+    std::filesystem::path replay;
+    std::filesystem::path trace;
+};
+
+CliOptions parse_cli_options(const int argc, char** argv) {
+    CliOptions options;
+    for (int index = 1; index < argc; ++index) {
+        const std::string argument = argv[index];
+        const auto require_value = [&](const char* name) -> std::string {
+            if (index + 1 >= argc) {
+                throw std::invalid_argument(std::string{name} +
+                                            " requires a value");
+            }
+            return argv[++index];
+        };
+        if (argument == "--scenario") {
+            const auto value = require_value("--scenario");
+            const auto fault = parse_fault(value);
+            if (!fault.has_value()) {
+                throw std::invalid_argument("unknown fault scenario: " + value);
+            }
+            options.scenario = *fault;
+        } else if (argument == "--replay") {
+            options.replay = require_value("--replay");
+        } else if (argument == "--trace") {
+            options.trace = require_value("--trace");
+        } else if (argument == "--help" || argument == "-h") {
+            print_cli_usage();
+            std::exit(EXIT_SUCCESS);
+        } else {
+            throw std::invalid_argument("unknown option: " + argument);
+        }
+    }
+    if (options.scenario.has_value() && !options.replay.empty()) {
+        throw std::invalid_argument("--scenario and --replay are mutually exclusive");
+    }
+    if (!options.scenario.has_value() && options.replay.empty()) {
+        throw std::invalid_argument("one of --scenario or --replay is required");
+    }
+    return options;
+}
+
+std::string read_text_file(const std::filesystem::path& path) {
+    std::ifstream input(path, std::ios::binary);
+    if (!input) throw std::invalid_argument("could not open trace: " + path.string());
+    return {std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
+}
+
+void write_text_file(const std::filesystem::path& path,
+                     const std::string_view contents) {
+    if (path.has_parent_path()) {
+        std::error_code error;
+        std::filesystem::create_directories(path.parent_path(), error);
+        if (error) throw std::runtime_error("could not create trace directory: " +
+                                            error.message());
+    }
+    std::ofstream output(path, std::ios::binary);
+    if (!output) throw std::runtime_error("could not write trace: " + path.string());
+    output << contents;
+}
+
+std::optional<bool> trace_completed(const gbb::TraceReport& report) {
+    for (const auto& record : report.records) {
+        if (record.event != "scenario_result") continue;
+        const auto value = record.uint64_field("completed");
+        if (value.has_value()) return *value != 0;
+    }
+    return std::nullopt;
+}
+
+int run_cli(const int argc, char** argv) {
+    const auto options = parse_cli_options(argc, argv);
+    FaultScript script;
+    std::optional<bool> expected_completed;
+    std::string scenario_name_for_output;
+    if (options.scenario.has_value()) {
+        script.add(Direction::host_to_join, *options.scenario,
+                   gameboy::LinkPacketType::byte);
+        scenario_name_for_output = std::string{fault_name(*options.scenario)};
+        expected_completed = *options.scenario != FaultKind::disconnect;
+    } else {
+        const auto report = gbb::parse_trace(read_text_file(options.replay));
+        if (!report.valid()) {
+            for (const auto& error : report.errors) std::cerr << "error=" << error << '\n';
+            return 2;
+        }
+        script = replay_script(report);
+        if (script.size() == 0) {
+            std::cerr << "error=trace contains no replayable fault_injected event\n";
+            return 2;
+        }
+        expected_completed = trace_completed(report);
+        scenario_name_for_output = "replay";
+    }
+
+    const auto result = run_scenario(script, scenario_name_for_output);
+    if (!options.trace.empty()) {
+        write_text_file(options.trace, result.trace);
+    }
+    std::cout << "scenario=" << scenario_name_for_output
+              << " completed=" << (result.completed ? "yes" : "no")
+              << " fault_applied=" << (result.fault_applied ? "yes" : "no")
+              << " retries=" << result.retries
+              << " duplicate_requests=" << result.duplicate_requests;
+    if (!options.trace.empty()) std::cout << " trace=" << options.trace.string();
+    std::cout << '\n';
+    if (options.trace.empty()) std::cout << result.trace;
+
+    if (!result.fault_applied ||
+        (expected_completed.has_value() &&
+         result.completed != *expected_completed)) {
+        std::cerr << "error=fault scenario outcome did not match expectation\n";
+        return 1;
+    }
+    return 0;
+}
+
 } // namespace
 
-int main() {
+int main(const int argc, char** argv) {
+    if (argc > 1) {
+        try {
+            return run_cli(argc, argv);
+        } catch (const std::exception& error) {
+            std::cerr << "error=" << error.what() << '\n';
+            print_cli_usage();
+            return 2;
+        }
+    }
     test_drop_is_replayable();
     test_delay_and_duplicate_faults();
     test_disconnect_aborts_transfer();

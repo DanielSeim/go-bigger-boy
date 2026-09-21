@@ -847,8 +847,16 @@ if(GAMEBOY_BUILD_TESTS)
     add_executable(gameboy_link_fault_harness_tests
         tests/link_fault_harness_tests.cpp)
     target_link_libraries(gameboy_link_fault_harness_tests PRIVATE gbb_core_api)
+    set_target_properties(gameboy_link_fault_harness_tests
+                          PROPERTIES OUTPUT_NAME gbb_link_fault_harness)
     add_test(NAME gameboy_link_fault_harness
              COMMAND gameboy_link_fault_harness_tests)
+    if(WIN32)
+        install(TARGETS gameboy_link_fault_harness_tests RUNTIME DESTINATION .)
+    elseif(NOT EMSCRIPTEN AND NOT ANDROID)
+        install(TARGETS gameboy_link_fault_harness_tests
+                RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    endif()
 
     if(NOT EMSCRIPTEN)
         add_executable(gameboy_link_end_to_end_tests

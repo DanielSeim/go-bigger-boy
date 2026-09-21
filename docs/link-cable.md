@@ -366,7 +366,15 @@ deterministic in-memory link with packet drops, delays, duplicates, and
 disconnects, writes each injected fault as a canonical trace event, and
 replays the recorded drop scenario through the same endpoint code. Set
 `GBB_LINK_FAULT_TRACE_DIR` when running CTest to retain the generated traces
-as CI artifacts.
+as CI artifacts. The installed developer tool accepts
+`--scenario drop|delay|duplicate|disconnect` and `--trace PATH`; use
+`--replay TRACE_PATH` to reproduce the injected faults from a prior capture.
+For example:
+
+```sh
+gbb_link_fault_harness --scenario drop --trace /tmp/gbb-drop.log
+gbb_link_fault_harness --replay /tmp/gbb-drop.log
+```
 
 On Android, after enabling diagnostics in **Link settings**, open the in-game
 menu and choose **Save diagnostics**. The native trace is flushed
