@@ -448,18 +448,29 @@ jobs:
 
       - name: Test (Linux)
         if: runner.os == 'Linux'
-        run: ctest --test-dir build -C Release --output-on-failure --output-junit ctest-results.xml
+        env:
+          GBB_LINK_FAULT_TRACE_DIR: ${{ github.workspace }}/build/link-fault-traces
+        run: >-
+          ctest --test-dir build -C Release --output-on-failure
+          --output-junit ctest-results.xml
 
       - name: Test (Windows and macOS)
         if: runner.os != 'Linux'
-        run: ctest --test-dir build -C Release --output-on-failure --exclude-regex '^gameboy_serial_link_contract$' --output-junit ctest-results.xml
+        env:
+          GBB_LINK_FAULT_TRACE_DIR: ${{ github.workspace }}/build/link-fault-traces
+        run: >-
+          ctest --test-dir build -C Release --output-on-failure
+          --exclude-regex '^gameboy_serial_link_contract$'
+          --output-junit ctest-results.xml
 
       - name: Upload desktop test diagnostics
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: desktop-test-results-${{ matrix.artifact }}
-          path: ctest-results.xml
+          path: |
+            ctest-results.xml
+            build/link-fault-traces
           if-no-files-found: ignore
           retention-days: 14
 

@@ -361,6 +361,13 @@ cannot be written, the temporary directory is used instead. For deeper
 accuracy investigations, set `GBB_LOG_LEVEL=trace` (and optionally
 `GBB_LOG_FILE`) before starting the app so PPU timing records are included.
 
+The native test suite also includes `gameboy_link_fault_harness`. It runs a
+deterministic in-memory link with packet drops, delays, duplicates, and
+disconnects, writes each injected fault as a canonical trace event, and
+replays the recorded drop scenario through the same endpoint code. Set
+`GBB_LINK_FAULT_TRACE_DIR` when running CTest to retain the generated traces
+as CI artifacts.
+
 On Android, after enabling diagnostics in **Link settings**, open the in-game
 menu and choose **Save diagnostics**. The native trace is flushed
 and passed to Android's system document picker, where it can be saved to

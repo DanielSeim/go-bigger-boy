@@ -844,6 +844,12 @@ if(GAMEBOY_BUILD_TESTS)
     add_test(NAME gameboy_serial_link_contract
              COMMAND gameboy_serial_link_contract_tests)
 
+    add_executable(gameboy_link_fault_harness_tests
+        tests/link_fault_harness_tests.cpp)
+    target_link_libraries(gameboy_link_fault_harness_tests PRIVATE gbb_core_api)
+    add_test(NAME gameboy_link_fault_harness
+             COMMAND gameboy_link_fault_harness_tests)
+
     if(NOT EMSCRIPTEN)
         add_executable(gameboy_link_end_to_end_tests
             tests/link_end_to_end_tests.cpp)
