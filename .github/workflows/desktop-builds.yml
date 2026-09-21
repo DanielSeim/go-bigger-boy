@@ -227,6 +227,7 @@ jobs:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:strict_string_checks=1
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
           GBB_LINK_FAULT_TRACE_DIR: ${{ github.workspace }}/build-sanitize/link-fault-traces
+          GBB_REAL_LINK_ARTIFACT_DIR: ${{ github.workspace }}/build-sanitize/real-link-harness-results
         run: >-
           ctest --test-dir build-sanitize --output-on-failure --parallel 2
           --output-junit sanitizer-ctest.xml
@@ -239,6 +240,7 @@ jobs:
           path: |
             sanitizer-ctest.xml
             build-sanitize/link-fault-traces
+            build-sanitize/real-link-harness-results
           if-no-files-found: ignore
           retention-days: 14
 
@@ -455,6 +457,7 @@ jobs:
         if: runner.os == 'Linux'
         env:
           GBB_LINK_FAULT_TRACE_DIR: ${{ github.workspace }}/build/link-fault-traces
+          GBB_REAL_LINK_ARTIFACT_DIR: ${{ github.workspace }}/build/real-link-harness-results
         run: >-
           ctest --test-dir build -C Release --output-on-failure
           --output-junit ctest-results.xml
@@ -463,6 +466,7 @@ jobs:
         if: runner.os != 'Linux'
         env:
           GBB_LINK_FAULT_TRACE_DIR: ${{ github.workspace }}/build/link-fault-traces
+          GBB_REAL_LINK_ARTIFACT_DIR: ${{ github.workspace }}/build/real-link-harness-results
         run: >-
           ctest --test-dir build -C Release --output-on-failure
           --exclude-regex '^gameboy_serial_link_contract$'
@@ -476,6 +480,7 @@ jobs:
           path: |
             ctest-results.xml
             build/link-fault-traces
+            build/real-link-harness-results
           if-no-files-found: ignore
           retention-days: 14
 
