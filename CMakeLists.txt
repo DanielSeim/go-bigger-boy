@@ -1016,7 +1016,11 @@ if(GAMEBOY_BUILD_TESTS)
         add_test(NAME gameboy_link_harness_trace
                  COMMAND gameboy_link_harness_trace_tests)
 
-        if(Python3_Interpreter_FOUND AND TARGET gameboy_link_harness)
+        # The process-level matrix is intentionally covered by normal desktop
+        # and ASan/UBSan builds. Under TSan, eight instrumented harness runs
+        # exceed the integration test timeout without adding useful coverage.
+        if(Python3_Interpreter_FOUND AND TARGET gameboy_link_harness AND
+           NOT GAMEBOY_ENABLE_THREAD_SANITIZER)
             add_test(NAME gameboy_real_link_harness_tcp
                      COMMAND ${Python3_EXECUTABLE}
                              ${CMAKE_CURRENT_SOURCE_DIR}/tests/real_link_harness_tcp_test.py
