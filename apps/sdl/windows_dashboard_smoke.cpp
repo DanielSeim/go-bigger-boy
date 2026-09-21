@@ -225,15 +225,20 @@ bool check_settings_sections(HWND dashboard) {
     bool passed = send_dashboard_command(dashboard, 101);
     passed &= wait_for([&] { return visible_child(dashboard, L"General"); });
     constexpr std::array<WORD, 4> sections{{136, 137, 138, 139}};
+    constexpr std::array<const wchar_t*, 4> section_titles{
+        {L"Display palette", L"Keyboard controls", L"Remote link cable",
+         L"Native plug-ins"}};
     for (const auto section : sections) {
         passed &= send_dashboard_command(dashboard, section);
-        passed &= wait_for([&] { return visible_child(dashboard, L"General"); });
+        const auto expected = static_cast<std::size_t>(section - 136);
+        passed &= wait_for([&] {
+            return visible_child(dashboard, section_titles[expected]);
+        });
 
         const auto general = visible_child(dashboard, L"Display palette");
         const auto controls = visible_child(dashboard, L"Keyboard controls");
         const auto link = visible_child(dashboard, L"Remote link cable");
         const auto advanced = visible_child(dashboard, L"Native plug-ins");
-        const auto expected = static_cast<std::size_t>(section - 136);
         passed &= general == (expected == 0);
         passed &= controls == (expected == 1);
         passed &= link == (expected == 2);
