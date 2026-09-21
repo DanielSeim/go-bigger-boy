@@ -169,7 +169,10 @@ long settings_content_bottom(const State& state) {
     case State::SettingsSection::general:
         return 548;
     case State::SettingsSection::controls:
-        return 854;
+        // The last control in this section ends at y=830. Keep the small
+        // bottom margin out of the scroll range so a normal-sized dashboard
+        // does not acquire a scrollbar just to expose empty space.
+        return 830;
     case State::SettingsSection::link:
         return 572;
     case State::SettingsSection::advanced:
@@ -1148,6 +1151,11 @@ void update_artwork_retry_visibility(State& state);
 void start_artwork_resolution(State& state);
 
 void show_page(State& state, const State::Page page) {
+    // Page transitions touch many native children. Keep Windows from
+    // painting the intermediate state where the old page and the new page
+    // are both visible; that transient state was the source of the apparent
+    // z-fighting/flashing reported when switching tabs.
+    SendMessageW(state.window, WM_SETREDRAW, FALSE, 0);
     state.page = page;
     const auto library = page == State::Page::library;
     const auto settings = page == State::Page::settings;
@@ -1256,14 +1264,16 @@ void show_page(State& state, const State::Page page) {
         for (const auto& buttons : state.binding_buttons) {
             for (const auto button : buttons) {
                 SetWindowPos(button, HWND_TOP, 0, 0, 0, 0,
-                             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+                             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE |
+                                 SWP_NOREDRAW);
                 InvalidateRect(button, nullptr, TRUE);
-                UpdateWindow(button);
             }
         }
-        RedrawWindow(state.window, nullptr, nullptr,
-                     RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_UPDATENOW);
     }
+    SendMessageW(state.window, WM_SETREDRAW, TRUE, 0);
+    RedrawWindow(state.window, nullptr, nullptr,
+                 RDW_ERASE | RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_FRAME |
+                     RDW_UPDATENOW);
 }
 
 std::optional<std::size_t> selected_entry_index(const State& state) {
@@ -1768,6 +1778,13 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                  state->background_brush);
         return 1;
     }
+    if (message == WM_PAINT) {
+        PAINTSTRUCT paint{};
+        const auto dc = BeginPaint(window, &paint);
+        FillRect(dc, &paint.rcPaint, state->background_brush);
+        EndPaint(window, &paint);
+        return 0;
+    }
     if (message == WM_SIZE) {
         layout_dashboard(*state);
         return 0;
@@ -1978,6 +1995,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
         if (command >= id_settings_section_first &&
             command < id_settings_section_first + 4 &&
             HIWORD(wparam) == BN_CLICKED) {
+            SendMessageW(state->window, WM_SETREDRAW, FALSE, 0);
             if (state->capturing_binding) {
                 state->capturing_binding.reset();
                 refresh_binding_buttons(*state);
@@ -1987,6 +2005,10 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                 command - id_settings_section_first);
             show_settings_section(*state);
             layout_dashboard(*state);
+            SendMessageW(state->window, WM_SETREDRAW, TRUE, 0);
+            RedrawWindow(state->window, nullptr, nullptr,
+                         RDW_ERASE | RDW_INVALIDATE | RDW_ALLCHILDREN |
+                             RDW_FRAME | RDW_UPDATENOW);
             return 0;
         }
         switch (LOWORD(wparam)) {

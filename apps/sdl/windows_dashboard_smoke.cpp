@@ -9,6 +9,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdio>
 #include <cstdint>
@@ -151,16 +152,13 @@ bool class_name_is(const wchar_t* actual, const wchar_t* expected) {
 BOOL CALLBACK collect_visible_controls(HWND child, LPARAM data) {
     auto& collection = *reinterpret_cast<ControlCollection*>(data);
     if (!IsWindowVisible(child)) return TRUE;
+    // Only inspect the dashboard's direct children. Recursive enumeration
+    // also finds list-view headers and other implementation-owned children,
+    // which would make their parent rectangles look like false overlaps.
+    if (GetParent(child) != collection.dashboard) return TRUE;
     wchar_t class_name[64]{};
     GetClassNameW(child, class_name,
                   static_cast<int>(std::size(class_name)));
-    // The dashboard explicitly gives every interactive control a tab stop.
-    // Use that stable behavior rather than depending on runner-specific
-    // Win32 class names or dialog-ID propagation through child hierarchies.
-    const auto style = GetWindowLongPtrW(child, GWL_STYLE);
-    if ((style & WS_TABSTOP) == 0) {
-        return TRUE;
-    }
     RECT screen_rect{};
     if (!GetWindowRect(child, &screen_rect)) return TRUE;
     POINT origin{screen_rect.left, screen_rect.top};
@@ -170,6 +168,100 @@ BOOL CALLBACK collect_visible_controls(HWND child, LPARAM data) {
          {origin.x, origin.y, origin.x + screen_rect.right - screen_rect.left,
           origin.y + screen_rect.bottom - screen_rect.top}});
     return TRUE;
+}
+
+bool visible_child(HWND dashboard, const wchar_t* text,
+                   const wchar_t* class_name = nullptr) {
+    const auto child = child_by_text(dashboard, text, class_name);
+    return child != nullptr && IsWindowVisible(child) != FALSE;
+}
+
+bool vertical_scrollbar_visible(HWND dashboard) {
+    SCROLLBARINFO info{sizeof(info)};
+    if (!GetScrollBarInfo(dashboard, OBJID_VSCROLL, &info)) return false;
+    return (info.rgstate[0] & STATE_SYSTEM_INVISIBLE) == 0;
+}
+
+bool rectangles_overlap(const RECT& first, const RECT& second);
+
+bool send_dashboard_command(HWND dashboard, const WORD command) {
+    SendMessageW(dashboard, WM_COMMAND,
+                 MAKEWPARAM(command, BN_CLICKED), 0);
+    return true;
+}
+
+bool check_page_isolation(HWND dashboard) {
+    bool passed = true;
+    passed &= send_dashboard_command(dashboard, 100);
+    passed &= wait_for([&] { return visible_child(dashboard, L"Filter games"); });
+    passed &= visible_child(dashboard, L"Open ROM...");
+    passed &= !visible_child(dashboard, L"Settings", L"STATIC");
+    passed &= !visible_child(dashboard, L"Apply and return");
+    passed &= !visible_child(dashboard, L"Keyboard shortcuts");
+    passed &= !vertical_scrollbar_visible(dashboard);
+
+    passed &= send_dashboard_command(dashboard, 101);
+    passed &= wait_for([&] {
+        return visible_child(dashboard, L"Settings", L"STATIC");
+    });
+    passed &= visible_child(dashboard, L"Apply and return");
+    passed &= visible_child(dashboard, L"General");
+    passed &= visible_child(dashboard, L"Display palette");
+    passed &= !visible_child(dashboard, L"Filter games");
+    passed &= !visible_child(dashboard, L"Keyboard shortcuts");
+
+    passed &= send_dashboard_command(dashboard, 112);
+    passed &= wait_for([&] {
+        return visible_child(dashboard, L"Keyboard shortcuts");
+    });
+    passed &= !visible_child(dashboard, L"Settings", L"STATIC");
+    passed &= !visible_child(dashboard, L"Apply and return");
+    passed &= !visible_child(dashboard, L"Filter games");
+    passed &= !vertical_scrollbar_visible(dashboard);
+    return passed;
+}
+
+bool check_settings_sections(HWND dashboard) {
+    bool passed = send_dashboard_command(dashboard, 101);
+    passed &= wait_for([&] { return visible_child(dashboard, L"General"); });
+    constexpr std::array<WORD, 4> sections{{136, 137, 138, 139}};
+    for (const auto section : sections) {
+        passed &= send_dashboard_command(dashboard, section);
+        passed &= wait_for([&] { return visible_child(dashboard, L"General"); });
+
+        const auto general = visible_child(dashboard, L"Display palette");
+        const auto controls = visible_child(dashboard, L"Keyboard controls");
+        const auto link = visible_child(dashboard, L"Remote link cable");
+        const auto advanced = visible_child(dashboard, L"Native plug-ins");
+        const auto expected = static_cast<std::size_t>(section - 136);
+        passed &= general == (expected == 0);
+        passed &= controls == (expected == 1);
+        passed &= link == (expected == 2);
+        passed &= advanced == (expected == 3);
+
+        ControlCollection collection{dashboard};
+        EnumChildWindows(dashboard, collect_visible_controls,
+                         reinterpret_cast<LPARAM>(&collection));
+        for (std::size_t first = 0; first < collection.controls.size(); ++first) {
+            for (std::size_t second = first + 1;
+                 second < collection.controls.size(); ++second) {
+                if (rectangles_overlap(collection.controls[first].rect,
+                                       collection.controls[second].rect)) {
+                    std::fprintf(stderr,
+                                 "dashboard smoke: section %u overlap between "
+                                 "%ls and %ls\n",
+                                 static_cast<unsigned>(section),
+                                 collection.controls[first].class_name.c_str(),
+                                 collection.controls[second].class_name.c_str());
+                    passed = false;
+                }
+            }
+        }
+        // The controls page may need scrolling on a short display. The other
+        // sections fit in the fixed viewport and must not create a scrollbar.
+        if (expected != 1) passed &= !vertical_scrollbar_visible(dashboard);
+    }
+    return passed;
 }
 
 bool rectangles_overlap(const RECT& first, const RECT& second) {
@@ -434,13 +526,20 @@ bool run_dashboard_case(const bool can_resume, const bool discard,
         }
     }
     if (passed && inspect_controls) {
-        const auto controls_ok = check_native_controls_and_layout(dashboard);
+        const auto pages_ok = check_page_isolation(dashboard);
+        const auto sections_ok = pages_ok && check_settings_sections(dashboard);
+        // The detailed control and clipping checks use the general settings
+        // section as their stable baseline.
+        if (sections_ok) send_dashboard_command(dashboard, 136);
+        const auto controls_ok = sections_ok &&
+                                 check_native_controls_and_layout(dashboard);
         const auto render_ok = check_rendered_dashboard(dashboard);
-        passed = controls_ok && render_ok;
+        passed = pages_ok && sections_ok && controls_ok && render_ok;
         if (!passed) {
             std::fprintf(stderr,
-                         "dashboard smoke: controls=%d render=%d\n",
-                         controls_ok, render_ok);
+                         "dashboard smoke: pages=%d sections=%d controls=%d "
+                         "render=%d\n",
+                         pages_ok, sections_ok, controls_ok, render_ok);
         }
     }
     if (passed && discard) {
