@@ -1016,6 +1016,15 @@ if(GAMEBOY_BUILD_TESTS)
         add_test(NAME gameboy_link_harness_trace
                  COMMAND gameboy_link_harness_trace_tests)
 
+        if(Python3_Interpreter_FOUND AND TARGET gameboy_link_harness)
+            add_test(NAME gameboy_real_link_harness_tcp
+                     COMMAND ${Python3_EXECUTABLE}
+                             ${CMAKE_CURRENT_SOURCE_DIR}/tests/real_link_harness_tcp_test.py
+                             $<TARGET_FILE:gameboy_link_harness>)
+            set_tests_properties(gameboy_real_link_harness_tcp
+                                 PROPERTIES TIMEOUT 75 SKIP_RETURN_CODE 77)
+        endif()
+
         add_executable(gameboy_sdl_link_trace_file_tests
             tests/link_trace_file_tests.cpp
             apps/sdl/link_trace_file.cpp)
