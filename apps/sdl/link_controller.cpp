@@ -15,6 +15,8 @@ void process_link_requests(LinkControlContext context) {
     if (context.emulator != nullptr && context.remote_link.active() &&
         context.remote_link.endpoint.peer_hello_seen() &&
         !context.remote_link.endpoint.peer_compatible()) {
+        trace_link_event("handshake_rejected",
+                         "reason=compatibility_mismatch");
         gbb::log_frontend_warning(
             "Remote link rejected: peer compatibility profile does not match");
         stop_remote_link_session(*context.emulator, context.remote_link,
@@ -28,6 +30,11 @@ void process_link_requests(LinkControlContext context) {
             gameboy::LinkPacketChannel::State::failed &&
         !context.remote_link.failure_reported) {
         context.remote_link.failure_reported = true;
+        trace_link_event(
+            "transport_failed",
+            std::string{"during_transfer="} +
+                (context.remote_link.endpoint.failure_during_transfer() ? "1"
+                                                                         : "0"));
         gbb::log_frontend_warning(
             "Remote link lost; serial state was reset and retry is available");
         show_error(
@@ -61,11 +68,13 @@ void process_link_requests(LinkControlContext context) {
                 context.remote_link.next_automatic_retry =
                     now + std::chrono::seconds(delay);
                 try {
+                    trace_link_event("retry_requested", "automatic=1");
                     retry_remote_link_session(*context.emulator,
                                               context.remote_link,
                                               context.remote_options);
                     gbb::log_frontend_info("Remote link automatically reconnected");
                 } catch (const std::exception& error) {
+                    trace_link_event("retry_failed", "automatic=1");
                     gbb::log_frontend_warning(
                         std::string("Automatic remote link retry failed: ") +
                         error.what());
@@ -101,6 +110,10 @@ void process_link_requests(LinkControlContext context) {
                 scanner.poll();
                 const auto peers = scanner.take_peers();
                 scanner.stop();
+                trace_link_event(
+                    "discovery_result",
+                    std::string{"transport=tcp peers="} +
+                        std::to_string(peers.size()));
                 if (!peers.empty()) {
                     // Keep the discovery flow one step: the next Join
                     // command uses the first matching peer without requiring
@@ -169,6 +182,7 @@ void process_link_requests(LinkControlContext context) {
                 gbb::log_frontend_info("Link retry: remote transport");
                 context.remote_link.automatic_retry_attempts = 0;
                 context.remote_link.next_automatic_retry = {};
+                trace_link_event("retry_requested", "automatic=0");
                 retry_remote_link_session(*context.emulator,
                                           context.remote_link,
                                           context.remote_options);
@@ -176,6 +190,7 @@ void process_link_requests(LinkControlContext context) {
                        context.link_emulator != nullptr &&
                        context.link_session != nullptr) {
                 gbb::log_frontend_info("Link retry: local cable");
+                trace_link_event("retry_requested", "automatic=0 mode=local");
                 retry_local_link_session(*context.emulator,
                                          *context.link_emulator,
                                          *context.link_session);
@@ -194,6 +209,7 @@ void process_link_requests(LinkControlContext context) {
         !context.automatic_local_retry_used) {
         gbb::log_frontend_warning(
             "Link session timed out; attempting one automatic retry");
+        trace_link_event("transport_timeout", "mode=local automatic_retry=1");
         try {
             retry_local_link_session(*context.emulator,
                                      *context.link_emulator,
@@ -207,6 +223,7 @@ void process_link_requests(LinkControlContext context) {
 
     if (context.link_toggle_requested) {
         context.link_toggle_requested = false;
+        trace_link_event("session_toggle", "requested=1");
         gbb::log_frontend_info("Link request: toggle local/remote session");
         try {
             if (context.remote_link.active()) {

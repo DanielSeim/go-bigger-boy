@@ -734,6 +734,11 @@ void stop_link_trace() noexcept {
     link_trace_previous = {};
 }
 
+void trace_link_event(const std::string_view event,
+                      const std::string_view fields) noexcept {
+    link_trace.write_event(event, fields);
+}
+
 std::vector<std::uint8_t> read_link_trace() noexcept {
     return link_trace.snapshot();
 }
@@ -976,6 +981,7 @@ void start_local_link_session(
     first_endpoint = std::move(replacement_first_endpoint);
     second_endpoint = std::move(replacement_second_endpoint);
     if (link_diagnostics) start_link_trace(preference_path);
+    trace_link_event("session_ready", "mode=local state=connected");
     if (link_trace.is_open()) {
         const auto message = "Link trace is being written to:\n" +
                              link_trace.path().string();
@@ -1014,6 +1020,7 @@ void stop_local_link_session(gameboy::Emulator& first,
                                     gameboy::LinkSession::State::timed_out
                             ? "timeout"
                             : "session_stop";
+    trace_link_event("session_stop", std::string{"reason="} + reason);
     save_link_diagnostic_bundle(preference_path, reason,
                                 &first, second.get(), session.get(), nullptr);
     stop_link_trace();
@@ -1032,6 +1039,7 @@ void stop_local_link_session(gameboy::Emulator& first,
 void retry_local_link_session(gameboy::Emulator& first,
                                gameboy::Emulator& second,
                                gameboy::LinkSession& session) noexcept {
+    trace_link_event("retry_start", "mode=local");
     session.retry();
     if (is_pokemon_gen1(first)) {
         reset_pokemon_link_handshake(first);
@@ -1044,6 +1052,7 @@ void retry_local_link_session(gameboy::Emulator& first,
     second.bus().serial_port().reset_diagnostics();
     release_all_buttons(first);
     release_all_buttons(second);
+    trace_link_event("retry_complete", "mode=local state=connected");
 }
 
 #endif // __ANDROID__
@@ -1142,6 +1151,12 @@ void start_remote_link_session(gameboy::Emulator& emulator,
         }
 #endif
     }
+    trace_link_event(
+        "session_ready",
+        std::string{"mode=remote transport="} +
+            (remote.bluetooth ? "bluetooth" : "tcp") +
+            " hosting=" + (hosting ? "1" : "0") +
+            " channel_state=" + link_channel_state_name(channel.state()));
 #ifdef __ANDROID__
     // Android does not expose the desktop trace-file dialog. The transport
     // remains fully functional and the trace is available from the in-game
@@ -1155,6 +1170,9 @@ void start_remote_link_session(gameboy::Emulator& emulator,
 void stop_remote_link_session(gameboy::Emulator& emulator,
                               RemoteLinkSession& remote,
                               const std::filesystem::path& preference_path) noexcept {
+    trace_link_event("session_stop",
+                     remote.failure_reported ? "reason=failure"
+                                              : "reason=session_stop");
     save_link_diagnostic_bundle(
         preference_path,
         remote.failure_reported ? "failure" : "session_stop", &emulator,
@@ -1181,6 +1199,11 @@ void retry_remote_link_session(gameboy::Emulator& emulator,
                                RemoteLinkSession& remote,
                                const RemoteLinkOptions& options) {
     if (!remote.enabled) return;
+    trace_link_event(
+        "retry_start",
+        std::string{"mode=remote transport="} +
+            (remote.bluetooth ? "bluetooth" : "tcp") +
+            " hosting=" + (remote.hosting ? "1" : "0"));
     remote.endpoint.detach();
 #ifdef __ANDROID__
     stop_android_lan_discovery();
@@ -1239,6 +1262,7 @@ void retry_remote_link_session(gameboy::Emulator& emulator,
     remote.failure_reported = false;
     remote.automatic_retry_attempts = 0;
     remote.next_automatic_retry = {};
+    trace_link_event("retry_complete", "mode=remote state=connecting");
 }
 
 

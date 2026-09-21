@@ -34,6 +34,10 @@ void process_remote_link_requests(RemoteLinkControlContext context) {
         if (now >= context.remote_link.scan_deadline) {
             const auto peers = context.remote_link.discovery.take_peers();
             stop_remote_discovery(context.remote_link);
+            trace_link_event(
+                "discovery_result",
+                std::string{"transport=tcp peers="} +
+                    std::to_string(peers.size()));
             if (peers.empty()) {
                 show_error(
                     context.sdl.window,
@@ -50,6 +54,8 @@ void process_remote_link_requests(RemoteLinkControlContext context) {
     if (context.emulator != nullptr && context.remote_link.active() &&
         context.remote_link.endpoint.peer_hello_seen() &&
         !context.remote_link.endpoint.peer_compatible()) {
+        trace_link_event("handshake_rejected",
+                         "reason=compatibility_mismatch");
         gbb::log_frontend_warning(
             "Remote link rejected: peer compatibility profile does not match");
         stop_remote_link_session(*context.emulator, context.remote_link,
@@ -63,6 +69,11 @@ void process_remote_link_requests(RemoteLinkControlContext context) {
             gameboy::LinkPacketChannel::State::failed &&
         !context.remote_link.failure_reported) {
         context.remote_link.failure_reported = true;
+        trace_link_event(
+            "transport_failed",
+            std::string{"during_transfer="} +
+                (context.remote_link.endpoint.failure_during_transfer() ? "1"
+                                                                         : "0"));
         gbb::log_frontend_warning(
             "Remote link lost; serial state was reset and retry is available");
         show_error(
@@ -92,11 +103,13 @@ void process_remote_link_requests(RemoteLinkControlContext context) {
                 context.remote_link.next_automatic_retry =
                     now + std::chrono::seconds(delay);
                 try {
+                    trace_link_event("retry_requested", "automatic=1");
                     retry_remote_link_session(*context.emulator,
                                               context.remote_link,
                                               context.remote_options);
                     gbb::log_frontend_info("Remote link automatically reconnected");
                 } catch (const std::exception& error) {
+                    trace_link_event("retry_failed", "automatic=1");
                     gbb::log_frontend_warning(
                         std::string("Automatic remote link retry failed: ") +
                         error.what());
@@ -140,6 +153,7 @@ void process_remote_link_requests(RemoteLinkControlContext context) {
                 context.remote_link.scanning = true;
                 context.remote_link.scan_deadline =
                     now + std::chrono::milliseconds(2000);
+                trace_link_event("discovery_start", "transport=tcp");
                 gbb::log_frontend_info("LAN link discovery started");
             }
         }
@@ -195,10 +209,12 @@ void process_remote_link_requests(RemoteLinkControlContext context) {
             try {
                 context.remote_link.automatic_retry_attempts = 0;
                 context.remote_link.next_automatic_retry = {};
+                trace_link_event("retry_requested", "automatic=0");
                 retry_remote_link_session(*context.emulator,
                                           context.remote_link,
                                           context.remote_options);
             } catch (const std::exception& error) {
+                trace_link_event("retry_failed", "automatic=0");
                 show_error(context.sdl.window, error.what());
             }
         }

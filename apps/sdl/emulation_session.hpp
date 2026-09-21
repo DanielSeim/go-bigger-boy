@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace gbb::sdl {
@@ -33,6 +34,12 @@ void start_link_trace(const std::filesystem::path& preference_path,
                       const char* role_suffix = nullptr,
                       const char* transport = nullptr);
 void stop_link_trace() noexcept;
+
+// Append a structured lifecycle event to the active link trace. This is a
+// no-op when diagnostics are disabled, so callers can instrument failure
+// paths without threading trace ownership through the emulation loop.
+void trace_link_event(std::string_view event,
+                      std::string_view fields = {}) noexcept;
 
 // Android exports the active or most recently completed trace through the
 // system file picker. The snapshot is empty when diagnostics were disabled or

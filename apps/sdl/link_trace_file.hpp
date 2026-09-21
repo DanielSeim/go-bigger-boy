@@ -48,6 +48,13 @@ public:
     // line when Android requests an export from its UI thread.
     [[nodiscard]] std::recursive_mutex& mutex() noexcept { return mutex_; }
 
+    // Append a canonical lifecycle or transport event to the active trace.
+    // Fields must be preformatted as `key=value` pairs and must not contain
+    // newlines. Important events flush immediately so a crash or forced stop
+    // does not erase the transition that explains the failure.
+    void write_event(std::string_view event,
+                     std::string_view fields = {}) noexcept;
+
     void advance_frame() noexcept {
         ++frame_;
         if ((frame_ % gbb::trace_flush_interval_frames) == 0) {

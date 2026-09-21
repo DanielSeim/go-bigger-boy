@@ -21,6 +21,17 @@ std::uint64_t LinkTraceFile::elapsed_ms() const noexcept {
                                    started_at_).count());
 }
 
+void LinkTraceFile::write_event(const std::string_view event,
+                                const std::string_view fields) noexcept {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    if (!stream_.is_open() || event.empty()) return;
+    gbb::write_trace_event_prefix(stream_, event, session_, frame_, elapsed_ms(),
+                                  transport_, role_);
+    if (!fields.empty()) stream_ << ' ' << fields;
+    stream_ << '\n';
+    stream_.flush();
+}
+
 void LinkTraceFile::start(const std::filesystem::path& preference_path,
                           const char* role_suffix, const char* transport) {
     std::lock_guard<std::recursive_mutex> lock(mutex_);

@@ -123,6 +123,38 @@ void test_local_session() {
     session.stop();
 }
 
+void test_local_failure_lifecycle() {
+    auto first = make_emulator(0xA5, true);
+    auto second = make_emulator(0x3C, false);
+    gameboy::GameBoyLinkEndpoint first_endpoint{first};
+    gameboy::GameBoyLinkEndpoint second_endpoint{second};
+    gameboy::LinkSession session;
+
+    session.start(first_endpoint, second_endpoint);
+    check(session.state() == gameboy::LinkSession::State::connected &&
+              first.bus().serial_port().has_endpoint() &&
+              second.bus().serial_port().has_endpoint(),
+          "local lifecycle connects both emulators");
+
+    first.bus().write8(0xFF01, 0xA5);
+    first.bus().write8(0xFF02, 0x81);
+    session.mark_timeout();
+    check(session.state() == gameboy::LinkSession::State::timed_out &&
+              !session.active(),
+          "local lifecycle records a stalled transfer timeout");
+
+    session.retry();
+    check(session.state() == gameboy::LinkSession::State::connected &&
+              session.active(),
+          "local lifecycle retries after timeout");
+
+    session.stop();
+    check(session.state() == gameboy::LinkSession::State::disconnected &&
+              !first.bus().serial_port().has_endpoint() &&
+              !second.bus().serial_port().has_endpoint(),
+          "local lifecycle cleanly disconnects both emulators");
+}
+
 #if defined(__ANDROID__)
 
 bool test_tcp_session() {
@@ -231,7 +263,10 @@ int main(const int argc, char** argv) {
         std::cerr << "Usage: gameboy_link_end_to_end_tests [all|local|tcp]\n";
         return 2;
     }
-    if (mode != "tcp") test_local_session();
+    if (mode != "tcp") {
+        test_local_session();
+        test_local_failure_lifecycle();
+    }
     const auto tcp_ran = mode == "local" ? true : test_tcp_session();
     if (!tcp_ran && failures == 0) return 77;
     return failures == 0 ? 0 : 1;
