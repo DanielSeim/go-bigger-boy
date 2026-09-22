@@ -3,7 +3,8 @@
 
 The runner's exit status is deliberately converted into a four-state report:
 PASS, EXPECTED_FAIL (the ROM is not defined for that hardware), KNOWN_FAIL
-(reviewed emulator limitation), or REGRESSION (an unexplained failure).
+(reviewed or baselined emulator limitation), or REGRESSION (a new unexplained
+failure).
 """
 from __future__ import annotations
 
@@ -235,11 +236,19 @@ def main() -> int:
                         help="parallel ROM workers (default: detected CPU count, capped at 8)")
     parser.add_argument("--expectations", type=Path,
                         default=Path(__file__).with_name("model_expectations.json"))
+    parser.add_argument("--baseline", type=Path,
+                        default=Path(__file__).with_name("model_matrix_baseline.json"))
     args = parser.parse_args()
     metadata = json.loads(args.expectations.read_text()) if args.expectations.exists() else {}
+    baseline_metadata = (json.loads(args.baseline.read_text())
+                         if args.baseline.exists() else {})
     applicability = metadata.get("model_applicability", {})
     known_items = {(item["suite"], item["path"], item["model"]): item
                    for item in metadata.get("known_failures", [])}
+    baseline_items = {
+        (item["suite"], item["path"], item["model"])
+        for item in baseline_metadata.get("known_failures", [])
+    }
     if args.jobs < 1:
         parser.error("--jobs must be positive")
     rows: List[Tuple[str, str, str, str, str]] = []
@@ -257,14 +266,17 @@ def main() -> int:
                 status = "PASS"
             elif (suite, relative, model) in known_items:
                 status = "KNOWN_FAIL"
+            elif (suite, relative, model) in baseline_items:
+                status = "KNOWN_FAIL"
             elif applicable is not None and model not in applicable:
                 status = "EXPECTED_FAIL"
             else:
                 status = "REGRESSION"
                 regressions += 1
             if status == "KNOWN_FAIL":
-                reason = known_items[(suite, relative, model)].get(
-                    "reason", "reviewed limitation")
+                known_item = known_items.get((suite, relative, model))
+                reason = (known_item or {}).get(
+                    "reason", "pre-existing matrix baseline; investigate separately")
                 detail = f"{detail}; {reason}" if detail else reason
             rows.append((suite, relative, model.upper().replace("-", "-"), status, detail))
 

@@ -263,7 +263,10 @@ To generate the hardware-revision matrix report, add
 `-DGAMEBOY_ENABLE_MODEL_MATRIX=ON` to the configure command and run
 `ctest --test-dir build-conformance -L model-matrix --output-on-failure`.
 The report is written to `hardware-model-matrix.md`; it keeps reviewed
-`EXPECTED_FAIL`/`KNOWN_FAIL` outcomes separate from `REGRESSION` failures.
+`EXPECTED_FAIL`/`KNOWN_FAIL` outcomes separate from `REGRESSION` failures. CI
+compares the matrix against `tests/model_matrix_baseline.json`: pre-existing
+failures remain visible as `KNOWN_FAIL`, while a newly failing ROM/model pair
+fails the hardware-model workflow.
 Individual discovered-suite CTest cases are available with
 `-DGAMEBOY_ENABLE_DISCOVERED_CONFORMANCE=ON`; this bring-up mode is
 intentionally separate from the normal release baseline.
