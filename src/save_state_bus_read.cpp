@@ -535,6 +535,18 @@ void SaveStateBusCodec::read(save_state_format::Reader& reader,
     }
     bus.boot_rom_enabled_ = version >= 30 ? reader.boolean() : false;
     bus.ppu_.lcd_restart_pending_ = version >= 31 ? reader.boolean() : false;
+    bus.ppu_.scx_mode3_delay_ = version >= 32 ? reader.u8() : 0;
+    if (bus.ppu_.scx_mode3_delay_ > 72) {
+        throw SaveStateError("Save state contains invalid SCX timing state");
+    }
+    bus.ppu_.scx_hblank_request_early_ = version >= 33 ? reader.boolean() : false;
+    bus.ppu_.scx_if_read_race_ = version >= 35 ? reader.boolean() : false;
+    bus.last_ppu_requests_ = version >= 35
+                                 ? reader.u8()
+                                 : (version >= 34 ? reader.u8() : 0);
+    if (bus.last_ppu_requests_ > 0x0F) {
+        throw SaveStateError("Save state contains invalid PPU request state");
+    }
     if (bus.printer_connected_) bus.printer_.reset();
 }
 

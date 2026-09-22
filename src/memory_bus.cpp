@@ -346,6 +346,7 @@ void MemoryBus::tick(const unsigned cycles) noexcept {
             transfer_hdma_block();
         }
     }
+    last_ppu_requests_ = ppu_requests;
     if ((ppu_requests & 0x01) != 0) {
         request_interrupt(0);
     }

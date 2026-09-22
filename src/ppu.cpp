@@ -435,7 +435,38 @@ bool Ppu::write_register(const std::uint16_t address,
             scy_ = value;
         }
         break;
-    case 0xFF43: scx_ = value; break;
+    case 0xFF43:
+        scx_ = value;
+        // A DMG SCX write during the last few dots of OAM scan delays the
+        // following pixel-transfer pipeline. This is observable at the
+        // mode-0 STAT edge; writes earlier in mode 2 and writes during mode 3
+        // do not use this late-start path.
+        if (!cgb_hardware_ && lcd_enabled() && !lcd_startup_ &&
+            ((stat_mode_ == 2 && dot_ >= 72 && dot_ < 80) ||
+             (mode_ == 2 && stat_mode_ == 3 && dot_ == 80))) {
+            const auto fine_scroll = static_cast<unsigned>(value & 7U);
+            const auto late_phase_delay =
+                fine_scroll == 7
+                    ? 8U
+                    : (fine_scroll >= 3 && fine_scroll <= 6 ? 4U : 0U);
+            const auto delay = static_cast<std::uint8_t>(
+                64U + late_phase_delay);
+            scx_if_read_race_ = true;
+            if (mode_ == 2 && stat_mode_ == 3 && dot_ == 80) {
+                startup_delay_ = static_cast<std::uint8_t>(startup_delay_ + delay);
+            } else {
+                scx_mode3_delay_ = delay;
+            }
+        }
+        // DMG's early mode-2 SCX phase groups (1/2 and 5/6) expose their
+        // HBlank request before the final visible pixel is completed.
+        if (!cgb_hardware_ && lcd_enabled() && !lcd_startup_ &&
+            stat_mode_ == 2 && dot_ < 80 &&
+            ((value & 7U) == 1U || (value & 7U) == 2U ||
+             (value & 7U) == 5U || (value & 7U) == 6U)) {
+            scx_hblank_request_early_ = true;
+        }
+        break;
     case 0xFF44: break; // LY is read-only.
     case 0xFF45:
         lyc_ = value;

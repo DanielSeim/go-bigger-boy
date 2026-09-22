@@ -136,6 +136,7 @@ private:
     bool hdma_active_{};
     bool double_speed_{};
     bool speed_switch_requested_{};
+    std::uint8_t last_ppu_requests_{};
     std::uint64_t debug_bus_cycles_{};
     bool debug_io_trace_enabled_{};
     std::vector<IoTraceEvent> debug_io_trace_{};

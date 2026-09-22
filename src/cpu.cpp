@@ -622,6 +622,17 @@ void Cpu::idle(MemoryBus& bus, const unsigned cycles) noexcept {
 }
 
 std::uint8_t Cpu::read8(MemoryBus& bus, const std::uint16_t address) noexcept {
+    // IF is sampled before the final T-cycle's STAT edge. Preserve the normal
+    // final-cycle value for ordinary reads, but retain the pre-edge value when
+    // a STAT request was raised by that final cycle.
+    if (address == 0xFF0F) {
+        idle(bus, 3);
+        const auto value = bus.cpu_read8(address);
+        idle(bus, 1);
+        return (bus.last_ppu_requests_ & 0x08) != 0
+                   ? value
+                   : bus.cpu_read8(address);
+    }
     idle(bus, 4);
     return bus.cpu_read8(address);
 }

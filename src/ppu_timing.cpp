@@ -63,6 +63,19 @@ std::uint8_t Ppu::tick(const unsigned cycles) noexcept {
 
             if (stat_mode_ == 3) trace_window_state("dot");
 
+            // Early mode-2 SCX writes have a fine-scroll-dependent HBlank
+            // request phase. Raise the STAT edge before the final pixels so
+            // the CPU observes the same interrupt boundary as the hardware.
+            const auto early_hblank_pixels =
+                (scx_ & 7U) == 1U || (scx_ & 7U) == 5U ? 2U : 4U;
+            if (!lcd_startup_ && scx_hblank_request_early_ &&
+                (stat_select_ & 0x08) != 0 && !stat_line_ &&
+                output_x_ == screen_width - early_hblank_pixels) {
+                stat_line_ = true;
+                requests |= 0x02;
+                if (scx_if_read_race_) requests |= 0x08;
+            }
+
             if (dot_ == mode3_end_dot_) {
                 stat_mode_ = 0;
                 // A comparator can start a window handoff that is cancelled
@@ -78,7 +91,10 @@ std::uint8_t Ppu::tick(const unsigned cycles) noexcept {
                     mode_ = 0;
                     requests |= 0x04;
                 }
-                if (update_stat_line()) requests |= 0x02;
+                if (update_stat_line()) {
+                    requests |= 0x02;
+                    if (scx_if_read_race_) requests |= 0x08;
+                }
             } else if (!lcd_startup_ && dot_ == mode3_end_dot_ + 1) {
                 mode_ = 0;
                 requests |= 0x04;
@@ -166,6 +182,8 @@ bool Ppu::window_active_on_line() const noexcept {
 }
 
 void Ppu::begin_visible_line() noexcept {
+    scx_hblank_request_early_ = false;
+    scx_if_read_race_ = false;
     window_rendered_this_line_ = false;
     if (ly_ == window_y_) {
         window_y_triggered_ = true;
@@ -173,6 +191,8 @@ void Ppu::begin_visible_line() noexcept {
 }
 
 void Ppu::begin_mode3() noexcept {
+    const auto mode3_delay = scx_mode3_delay_;
+    scx_mode3_delay_ = 0;
     mode3_end_dot_ = 369;
     background_fifo_size_ = 0;
     fetcher_phase_ = 0;
@@ -182,7 +202,14 @@ void Ppu::begin_mode3() noexcept {
     // LCD startup and ordinary visible lines share the established fetch
     // startup delay. Keep this timing uniform; line-specific differences are
     // represented by the fetcher and window state below.
-    startup_delay_ = 12;
+    const auto fine_scroll = static_cast<unsigned>(scx_ & 7U);
+    const auto phase_correction =
+        scx_hblank_request_early_ &&
+                (fine_scroll == 1U || fine_scroll == 5U)
+            ? 4U
+            : 0U;
+    startup_delay_ = static_cast<std::uint8_t>(
+        12U - phase_correction + mode3_delay);
     scroll_discard_ = static_cast<std::uint8_t>(scx_ & 7);
     window_delay_ = 0;
     sprite_delay_ = 0;

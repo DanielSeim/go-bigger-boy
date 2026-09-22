@@ -191,6 +191,10 @@ void SaveStateBusCodec::write(save_state_format::Writer& writer,
     writer.boolean(bus.ppu_.sgb_border_loading_);
     writer.boolean(bus.boot_rom_enabled_);
     writer.boolean(bus.ppu_.lcd_restart_pending_);
+    writer.u8(bus.ppu_.scx_mode3_delay_);
+    writer.boolean(bus.ppu_.scx_hblank_request_early_);
+    writer.boolean(bus.ppu_.scx_if_read_race_);
+    writer.u8(bus.last_ppu_requests_);
 }
 
 } // namespace gameboy

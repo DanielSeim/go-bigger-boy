@@ -199,6 +199,9 @@ private:
     bool lcd_startup_{};
     bool lcd_restart_pending_{};
     bool stat_line_{};
+    std::uint8_t scx_mode3_delay_{};
+    bool scx_hblank_request_early_{};
+    bool scx_if_read_race_{};
     bool frame_ready_{};
 
     // SGB supplies four 4-color RGB555 palettes and a 20x18 tile attribute
