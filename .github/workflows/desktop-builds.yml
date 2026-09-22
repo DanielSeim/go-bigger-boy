@@ -63,6 +63,23 @@ jobs:
           --output-on-failure
           --output-junit audio-ctest.xml
 
+      - name: Build accuracy regression report
+        if: always()
+        run: >-
+          python3 tests/ci_regression_report.py
+          --ctest-junit accuracy-ctest.xml
+          --ctest-junit audio-ctest.xml
+          --output accuracy-regression-report.md
+          --json-output accuracy-regression-report.json
+
+      - name: Add accuracy report to job summary
+        if: always()
+        shell: bash
+        run: |
+          if [ -f accuracy-regression-report.md ]; then
+            cat accuracy-regression-report.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Upload visual test captures
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
@@ -72,6 +89,8 @@ jobs:
             build-accuracy/visual-results
             accuracy-ctest.xml
             audio-ctest.xml
+            accuracy-regression-report.md
+            accuracy-regression-report.json
           if-no-files-found: ignore
           retention-days: 14
 
@@ -472,6 +491,23 @@ jobs:
           --exclude-regex '^gameboy_serial_link_contract$'
           --output-junit ctest-results.xml
 
+      - name: Build desktop regression report
+        if: always()
+        run: >-
+          python tests/ci_regression_report.py
+          --ctest-junit ctest-results.xml
+          --link-diagnostics build/real-link-harness-results
+          --output desktop-regression-report.md
+          --json-output desktop-regression-report.json
+
+      - name: Add desktop report to job summary
+        if: always()
+        shell: bash
+        run: |
+          if [ -f desktop-regression-report.md ]; then
+            cat desktop-regression-report.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Upload desktop test diagnostics
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
@@ -479,6 +515,8 @@ jobs:
           name: desktop-test-results-${{ matrix.artifact }}
           path: |
             ctest-results.xml
+            desktop-regression-report.md
+            desktop-regression-report.json
             build/link-fault-traces
             build/real-link-harness-results
           if-no-files-found: ignore

@@ -46,9 +46,8 @@ jobs:
       - name: Build matrix runner
         run: cmake --build build-model-matrix --target gameboy_test_runner --parallel
 
-      - name: Run hardware model matrix (informational)
+      - name: Run hardware model matrix regression gate
         id: model-matrix
-        continue-on-error: true
         shell: bash
         run: |
           set +e
@@ -59,7 +58,7 @@ jobs:
           status=$?
           echo "exit_code=$status" >> "$GITHUB_OUTPUT"
           if [ "$status" -ne 0 ]; then
-            echo "::warning::Hardware model matrix is informational and reported failures (exit $status)."
+            echo "::error::Hardware model matrix reported an unexpected regression (exit $status)."
           fi
           exit "$status"
 
@@ -75,7 +74,8 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
           fi
           echo >> "$GITHUB_STEP_SUMMARY"
-          echo "The hardware model matrix is informational; ctest exit code: ${{ steps.model-matrix.outputs.exit_code || 'not recorded' }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Unexpected regressions fail this job; expected and reviewed known failures remain classified in the report." >> "$GITHUB_STEP_SUMMARY"
+          echo "Matrix ctest exit code: ${{ steps.model-matrix.outputs.exit_code || 'not recorded' }}" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload hardware model matrix report
         if: always()
