@@ -2,1292 +2,1292 @@
   "known_failures": [
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/halt_op_dupe_delay.gb",
+      "path": "gbmicrotest/halt_op_dupe_delay.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/hblank_int_if_a.gb",
+      "path": "gbmicrotest/hblank_int_if_a.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/hblank_int_l0.gb",
+      "path": "gbmicrotest/hblank_int_l0.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/hblank_int_scx0_if_a.gb",
+      "path": "gbmicrotest/hblank_int_scx0_if_a.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/hblank_int_scx0_if_b.gb",
+      "path": "gbmicrotest/hblank_int_scx0_if_b.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/hblank_int_scx0_if_c.gb",
+      "path": "gbmicrotest/hblank_int_scx0_if_c.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/hblank_int_scx1.gb",
+      "path": "gbmicrotest/hblank_int_scx1.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/hblank_int_scx1_if_a.gb",
+      "path": "gbmicrotest/hblank_int_scx1_if_a.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/hblank_int_scx1_if_b.gb",
+      "path": "gbmicrotest/hblank_int_scx1_if_b.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/hblank_int_scx1_if_c.gb",
+      "path": "gbmicrotest/hblank_int_scx1_if_c.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/hblank_int_scx1_nops_b.gb",
+      "path": "gbmicrotest/hblank_int_scx1_nops_b.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/hblank_int_scx2.gb",
+      "path": "gbmicrotest/hblank_int_scx2.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/hblank_int_scx2_if_a.gb",
+      "path": "gbmicrotest/hblank_int_scx2_if_a.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/hblank_int_scx2_if_b.gb",
+      "path": "gbmicrotest/hblank_int_scx2_if_b.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/hblank_int_scx2_if_c.gb",
+      "path": "gbmicrotest/hblank_int_scx2_if_c.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/hblank_int_scx2_nops_b.gb",
+      "path": "gbmicrotest/hblank_int_scx2_nops_b.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/hblank_int_scx3_if_a.gb",
+      "path": "gbmicrotest/hblank_int_scx3_if_a.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/hblank_int_scx3_if_b.gb",
+      "path": "gbmicrotest/hblank_int_scx3_if_b.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/hblank_int_scx3_if_c.gb",
+      "path": "gbmicrotest/hblank_int_scx3_if_c.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/hblank_int_scx3_nops_b.gb",
+      "path": "gbmicrotest/hblank_int_scx3_nops_b.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/hblank_int_scx4_if_a.gb",
+      "path": "gbmicrotest/hblank_int_scx4_if_a.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/hblank_int_scx4_if_b.gb",
+      "path": "gbmicrotest/hblank_int_scx4_if_b.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/hblank_int_scx4_if_c.gb",
+      "path": "gbmicrotest/hblank_int_scx4_if_c.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/hblank_int_scx4_nops_b.gb",
+      "path": "gbmicrotest/hblank_int_scx4_nops_b.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/hblank_int_scx5.gb",
+      "path": "gbmicrotest/hblank_int_scx5.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/hblank_int_scx5_if_a.gb",
+      "path": "gbmicrotest/hblank_int_scx5_if_a.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/hblank_int_scx5_if_b.gb",
+      "path": "gbmicrotest/hblank_int_scx5_if_b.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/hblank_int_scx5_if_c.gb",
+      "path": "gbmicrotest/hblank_int_scx5_if_c.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/hblank_int_scx5_nops_b.gb",
+      "path": "gbmicrotest/hblank_int_scx5_nops_b.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/hblank_int_scx6.gb",
+      "path": "gbmicrotest/hblank_int_scx6.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/hblank_int_scx6_if_a.gb",
+      "path": "gbmicrotest/hblank_int_scx6_if_a.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/hblank_int_scx6_if_b.gb",
+      "path": "gbmicrotest/hblank_int_scx6_if_b.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/hblank_int_scx6_if_c.gb",
+      "path": "gbmicrotest/hblank_int_scx6_if_c.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/hblank_int_scx6_nops_b.gb",
+      "path": "gbmicrotest/hblank_int_scx6_nops_b.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/hblank_int_scx7_if_a.gb",
+      "path": "gbmicrotest/hblank_int_scx7_if_a.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/hblank_int_scx7_if_b.gb",
+      "path": "gbmicrotest/hblank_int_scx7_if_b.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/hblank_int_scx7_if_c.gb",
+      "path": "gbmicrotest/hblank_int_scx7_if_c.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/hblank_int_scx7_nops_b.gb",
+      "path": "gbmicrotest/hblank_int_scx7_nops_b.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/hblank_scx3_if_b.gb",
+      "path": "gbmicrotest/hblank_scx3_if_b.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/int_hblank_halt_scx0.gb",
+      "path": "gbmicrotest/int_hblank_halt_scx0.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/int_hblank_halt_scx1.gb",
+      "path": "gbmicrotest/int_hblank_halt_scx1.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/int_hblank_halt_scx2.gb",
+      "path": "gbmicrotest/int_hblank_halt_scx2.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/int_hblank_halt_scx3.gb",
+      "path": "gbmicrotest/int_hblank_halt_scx3.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/int_hblank_halt_scx4.gb",
+      "path": "gbmicrotest/int_hblank_halt_scx4.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/int_hblank_halt_scx5.gb",
+      "path": "gbmicrotest/int_hblank_halt_scx5.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/int_hblank_halt_scx6.gb",
+      "path": "gbmicrotest/int_hblank_halt_scx6.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/int_hblank_halt_scx7.gb",
+      "path": "gbmicrotest/int_hblank_halt_scx7.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/int_hblank_incs_scx0.gb",
+      "path": "gbmicrotest/int_hblank_incs_scx0.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/int_hblank_incs_scx1.gb",
+      "path": "gbmicrotest/int_hblank_incs_scx1.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/int_hblank_incs_scx2.gb",
+      "path": "gbmicrotest/int_hblank_incs_scx2.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/int_hblank_incs_scx3.gb",
+      "path": "gbmicrotest/int_hblank_incs_scx3.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/int_hblank_incs_scx4.gb",
+      "path": "gbmicrotest/int_hblank_incs_scx4.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/int_hblank_incs_scx5.gb",
+      "path": "gbmicrotest/int_hblank_incs_scx5.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/int_hblank_incs_scx6.gb",
+      "path": "gbmicrotest/int_hblank_incs_scx6.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/int_hblank_incs_scx7.gb",
+      "path": "gbmicrotest/int_hblank_incs_scx7.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/int_hblank_nops_scx0.gb",
+      "path": "gbmicrotest/int_hblank_nops_scx0.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/int_hblank_nops_scx1.gb",
+      "path": "gbmicrotest/int_hblank_nops_scx1.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/int_hblank_nops_scx2.gb",
+      "path": "gbmicrotest/int_hblank_nops_scx2.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/int_hblank_nops_scx3.gb",
+      "path": "gbmicrotest/int_hblank_nops_scx3.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/int_hblank_nops_scx4.gb",
+      "path": "gbmicrotest/int_hblank_nops_scx4.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/int_hblank_nops_scx5.gb",
+      "path": "gbmicrotest/int_hblank_nops_scx5.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/int_hblank_nops_scx6.gb",
+      "path": "gbmicrotest/int_hblank_nops_scx6.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/int_hblank_nops_scx7.gb",
+      "path": "gbmicrotest/int_hblank_nops_scx7.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/int_lyc_halt.gb",
+      "path": "gbmicrotest/int_lyc_halt.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/int_lyc_incs.gb",
+      "path": "gbmicrotest/int_lyc_incs.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/int_lyc_nops.gb",
+      "path": "gbmicrotest/int_lyc_nops.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/int_oam_incs.gb",
+      "path": "gbmicrotest/int_oam_incs.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/int_oam_nops.gb",
+      "path": "gbmicrotest/int_oam_nops.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/int_timer_incs.gb",
+      "path": "gbmicrotest/int_timer_incs.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/int_timer_nops.gb",
+      "path": "gbmicrotest/int_timer_nops.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/int_timer_nops_div_a.gb",
+      "path": "gbmicrotest/int_timer_nops_div_a.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/lcdon_to_lyc1_int.gb",
+      "path": "gbmicrotest/lcdon_to_lyc1_int.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/lcdon_to_lyc2_int.gb",
+      "path": "gbmicrotest/lcdon_to_lyc2_int.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/lcdon_to_lyc3_int.gb",
+      "path": "gbmicrotest/lcdon_to_lyc3_int.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/lcdon_to_oam_int_l0.gb",
+      "path": "gbmicrotest/lcdon_to_oam_int_l0.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/lcdon_to_oam_int_l1.gb",
+      "path": "gbmicrotest/lcdon_to_oam_int_l1.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/lcdon_to_oam_int_l2.gb",
+      "path": "gbmicrotest/lcdon_to_oam_int_l2.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/lcdon_to_stat1_a.gb",
+      "path": "gbmicrotest/lcdon_to_stat1_a.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/lcdon_to_stat1_c.gb",
+      "path": "gbmicrotest/lcdon_to_stat1_c.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/line_144_oam_int_b.gb",
+      "path": "gbmicrotest/line_144_oam_int_b.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/line_144_oam_int_c.gb",
+      "path": "gbmicrotest/line_144_oam_int_c.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/line_144_oam_int_d.gb",
+      "path": "gbmicrotest/line_144_oam_int_d.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/line_153_ly_c.gb",
+      "path": "gbmicrotest/line_153_ly_c.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/line_153_ly_d.gb",
+      "path": "gbmicrotest/line_153_ly_d.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/line_153_lyc0_int_inc_sled.gb",
+      "path": "gbmicrotest/line_153_lyc0_int_inc_sled.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/line_153_lyc0_stat_timing_d.gb",
+      "path": "gbmicrotest/line_153_lyc0_stat_timing_d.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/line_153_lyc0_stat_timing_e.gb",
+      "path": "gbmicrotest/line_153_lyc0_stat_timing_e.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/line_153_lyc153_stat_timing_b.gb",
+      "path": "gbmicrotest/line_153_lyc153_stat_timing_b.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/line_153_lyc_b.gb",
+      "path": "gbmicrotest/line_153_lyc_b.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/line_153_lyc_int_a.gb",
+      "path": "gbmicrotest/line_153_lyc_int_a.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/line_65_ly.gb",
+      "path": "gbmicrotest/line_65_ly.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/lyc1_int_halt_a.gb",
+      "path": "gbmicrotest/lyc1_int_halt_a.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/lyc1_int_nops_a.gb",
+      "path": "gbmicrotest/lyc1_int_nops_a.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/lyc2_int_halt_a.gb",
+      "path": "gbmicrotest/lyc2_int_halt_a.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/lyc_int_halt_a.gb",
+      "path": "gbmicrotest/lyc_int_halt_a.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/mbc1_rom_banks.gb",
+      "path": "gbmicrotest/mbc1_rom_banks.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/oam_int_halt_a.gb",
+      "path": "gbmicrotest/oam_int_halt_a.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/oam_int_halt_b.gb",
+      "path": "gbmicrotest/oam_int_halt_b.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/oam_int_if_level_d.gb",
+      "path": "gbmicrotest/oam_int_if_level_d.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/oam_int_inc_sled.gb",
+      "path": "gbmicrotest/oam_int_inc_sled.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/oam_int_nops_a.gb",
+      "path": "gbmicrotest/oam_int_nops_a.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/oam_int_nops_b.gb",
+      "path": "gbmicrotest/oam_int_nops_b.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/stat_write_glitch_l0_a.gb",
+      "path": "gbmicrotest/stat_write_glitch_l0_a.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/stat_write_glitch_l0_b.gb",
+      "path": "gbmicrotest/stat_write_glitch_l0_b.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/stat_write_glitch_l143_b.gb",
+      "path": "gbmicrotest/stat_write_glitch_l143_b.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/stat_write_glitch_l143_c.gb",
+      "path": "gbmicrotest/stat_write_glitch_l143_c.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/stat_write_glitch_l143_d.gb",
+      "path": "gbmicrotest/stat_write_glitch_l143_d.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/stat_write_glitch_l154_a.gb",
+      "path": "gbmicrotest/stat_write_glitch_l154_a.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/stat_write_glitch_l154_b.gb",
+      "path": "gbmicrotest/stat_write_glitch_l154_b.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/stat_write_glitch_l154_d.gb",
+      "path": "gbmicrotest/stat_write_glitch_l154_d.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/stat_write_glitch_l1_b.gb",
+      "path": "gbmicrotest/stat_write_glitch_l1_b.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/stat_write_glitch_l1_c.gb",
+      "path": "gbmicrotest/stat_write_glitch_l1_c.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/vblank2_int_if_a.gb",
+      "path": "gbmicrotest/vblank2_int_if_a.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/vblank2_int_if_c.gb",
+      "path": "gbmicrotest/vblank2_int_if_c.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/vblank_int_if_a.gb",
+      "path": "gbmicrotest/vblank_int_if_a.gb",
       "model": "dmg"
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/gbmicrotest/vblank_int_if_c.gb",
+      "path": "gbmicrotest/vblank_int_if_c.gb",
       "model": "dmg"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/hblank_ly_scx_timing-C.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/hblank_ly_scx_timing-C.gb",
       "model": "cgb-c"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/hblank_ly_scx_timing-C.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/hblank_ly_scx_timing-C.gb",
       "model": "cgb-e"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/hblank_ly_scx_timing-C.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/hblank_ly_scx_timing-C.gb",
       "model": "cgb0"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/hblank_ly_scx_timing_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/hblank_ly_scx_timing_nops.gb",
       "model": "cgb-c"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/hblank_ly_scx_timing_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/hblank_ly_scx_timing_nops.gb",
       "model": "cgb-e"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/hblank_ly_scx_timing_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/hblank_ly_scx_timing_nops.gb",
       "model": "cgb0"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/hblank_ly_scx_timing_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/hblank_ly_scx_timing_nops.gb",
       "model": "mgb"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/hblank_ly_scx_timing_variant_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/hblank_ly_scx_timing_variant_nops.gb",
       "model": "cgb-c"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/hblank_ly_scx_timing_variant_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/hblank_ly_scx_timing_variant_nops.gb",
       "model": "cgb-e"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/hblank_ly_scx_timing_variant_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/hblank_ly_scx_timing_variant_nops.gb",
       "model": "cgb0"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/hblank_ly_scx_timing_variant_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/hblank_ly_scx_timing_variant_nops.gb",
       "model": "mgb"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_0_timing.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_0_timing.gb",
       "model": "cgb-c"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_0_timing.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_0_timing.gb",
       "model": "cgb-e"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_0_timing.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_0_timing.gb",
       "model": "cgb0"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_0_timing.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_0_timing.gb",
       "model": "mgb"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_1_timing.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_1_timing.gb",
       "model": "cgb-c"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_1_timing.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_1_timing.gb",
       "model": "cgb-e"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_1_timing.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_1_timing.gb",
       "model": "cgb0"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_1_timing.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_1_timing.gb",
       "model": "mgb"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx1_timing_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx1_timing_nops.gb",
       "model": "cgb-c"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx1_timing_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx1_timing_nops.gb",
       "model": "cgb-e"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx1_timing_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx1_timing_nops.gb",
       "model": "cgb0"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx1_timing_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx1_timing_nops.gb",
       "model": "mgb"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx2_timing_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx2_timing_nops.gb",
       "model": "cgb-c"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx2_timing_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx2_timing_nops.gb",
       "model": "cgb-e"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx2_timing_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx2_timing_nops.gb",
       "model": "cgb0"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx2_timing_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx2_timing_nops.gb",
       "model": "mgb"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx3_timing_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx3_timing_nops.gb",
       "model": "cgb-c"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx3_timing_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx3_timing_nops.gb",
       "model": "cgb-e"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx3_timing_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx3_timing_nops.gb",
       "model": "cgb0"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx3_timing_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx3_timing_nops.gb",
       "model": "mgb"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx4_timing_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx4_timing_nops.gb",
       "model": "cgb-c"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx4_timing_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx4_timing_nops.gb",
       "model": "cgb-e"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx4_timing_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx4_timing_nops.gb",
       "model": "cgb0"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx4_timing_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx4_timing_nops.gb",
       "model": "mgb"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx5_timing_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx5_timing_nops.gb",
       "model": "cgb-c"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx5_timing_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx5_timing_nops.gb",
       "model": "cgb-e"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx5_timing_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx5_timing_nops.gb",
       "model": "cgb0"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx5_timing_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx5_timing_nops.gb",
       "model": "mgb"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx6_timing_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx6_timing_nops.gb",
       "model": "cgb-c"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx6_timing_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx6_timing_nops.gb",
       "model": "cgb-e"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx6_timing_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx6_timing_nops.gb",
       "model": "cgb0"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx6_timing_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx6_timing_nops.gb",
       "model": "mgb"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx7_timing_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx7_timing_nops.gb",
       "model": "cgb-c"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx7_timing_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx7_timing_nops.gb",
       "model": "cgb-e"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx7_timing_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx7_timing_nops.gb",
       "model": "cgb0"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx7_timing_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx7_timing_nops.gb",
       "model": "mgb"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx8_timing_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx8_timing_nops.gb",
       "model": "cgb-c"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx8_timing_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx8_timing_nops.gb",
       "model": "cgb-e"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx8_timing_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx8_timing_nops.gb",
       "model": "cgb0"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx8_timing_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_scx8_timing_nops.gb",
       "model": "mgb"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_nops.gb",
       "model": "cgb-c"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_nops.gb",
       "model": "cgb-e"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_nops.gb",
       "model": "cgb0"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_nops.gb",
       "model": "dmg"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_nops.gb",
       "model": "mgb"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_nops.gb",
       "model": "sgb"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_nops.gb",
       "model": "sgb2"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx1_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx1_nops.gb",
       "model": "cgb-c"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx1_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx1_nops.gb",
       "model": "cgb-e"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx1_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx1_nops.gb",
       "model": "cgb0"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx1_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx1_nops.gb",
       "model": "dmg"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx1_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx1_nops.gb",
       "model": "mgb"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx1_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx1_nops.gb",
       "model": "sgb"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx1_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx1_nops.gb",
       "model": "sgb2"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx2_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx2_nops.gb",
       "model": "cgb-c"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx2_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx2_nops.gb",
       "model": "cgb-e"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx2_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx2_nops.gb",
       "model": "cgb0"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx2_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx2_nops.gb",
       "model": "dmg"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx2_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx2_nops.gb",
       "model": "mgb"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx2_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx2_nops.gb",
       "model": "sgb"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx2_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx2_nops.gb",
       "model": "sgb2"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx3_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx3_nops.gb",
       "model": "cgb-c"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx3_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx3_nops.gb",
       "model": "cgb-e"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx3_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx3_nops.gb",
       "model": "cgb0"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx3_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx3_nops.gb",
       "model": "dmg"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx3_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx3_nops.gb",
       "model": "mgb"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx3_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx3_nops.gb",
       "model": "sgb"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx3_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx3_nops.gb",
       "model": "sgb2"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx4_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx4_nops.gb",
       "model": "cgb-c"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx4_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx4_nops.gb",
       "model": "cgb-e"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx4_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx4_nops.gb",
       "model": "cgb0"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx4_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx4_nops.gb",
       "model": "dmg"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx4_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx4_nops.gb",
       "model": "mgb"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx4_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx4_nops.gb",
       "model": "sgb"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx4_nops.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_mode0_timing_sprites_scx4_nops.gb",
       "model": "sgb2"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_timing.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_timing.gb",
       "model": "cgb-c"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_timing.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_timing.gb",
       "model": "cgb-e"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_timing.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_timing.gb",
       "model": "cgb0"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_timing.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/intr_2_timing.gb",
       "model": "mgb"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly00_mode1_0-GS.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly00_mode1_0-GS.gb",
       "model": "cgb-c"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly00_mode1_0-GS.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly00_mode1_0-GS.gb",
       "model": "cgb-e"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly00_mode1_0-GS.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly00_mode1_0-GS.gb",
       "model": "cgb0"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly00_mode1_2-C.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly00_mode1_2-C.gb",
       "model": "cgb-c"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly00_mode1_2-C.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly00_mode1_2-C.gb",
       "model": "cgb-e"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly00_mode1_2-C.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly00_mode1_2-C.gb",
       "model": "cgb0"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly143_144_mode0_1.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly143_144_mode0_1.gb",
       "model": "cgb-c"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly143_144_mode0_1.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly143_144_mode0_1.gb",
       "model": "cgb-e"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly143_144_mode0_1.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly143_144_mode0_1.gb",
       "model": "cgb0"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly143_144_mode0_1.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly143_144_mode0_1.gb",
       "model": "mgb"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly143_144_mode3_0.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly143_144_mode3_0.gb",
       "model": "cgb-c"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly143_144_mode3_0.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly143_144_mode3_0.gb",
       "model": "cgb-e"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly143_144_mode3_0.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly143_144_mode3_0.gb",
       "model": "cgb0"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly143_144_mode3_0.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly143_144_mode3_0.gb",
       "model": "mgb"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc-C.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc-C.gb",
       "model": "cgb-c"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc-C.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc-C.gb",
       "model": "cgb-e"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc-C.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc-C.gb",
       "model": "cgb0"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_0-C.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_0-C.gb",
       "model": "cgb-c"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_0-C.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_0-C.gb",
       "model": "cgb-e"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_0-C.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_0-C.gb",
       "model": "cgb0"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_0-GS.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_0-GS.gb",
       "model": "mgb"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_0_write-C.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_0_write-C.gb",
       "model": "cgb-c"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_0_write-C.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_0_write-C.gb",
       "model": "cgb-e"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_0_write-C.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_0_write-C.gb",
       "model": "cgb0"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_0_write-GS.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_0_write-GS.gb",
       "model": "mgb"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_144-C.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_144-C.gb",
       "model": "cgb-c"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_144-C.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_144-C.gb",
       "model": "cgb-e"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_144-C.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_144-C.gb",
       "model": "cgb0"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_144-GS.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_144-GS.gb",
       "model": "mgb"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_153-C.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_153-C.gb",
       "model": "cgb-c"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_153-C.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_153-C.gb",
       "model": "cgb-e"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_153-C.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_153-C.gb",
       "model": "cgb0"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_153-GS.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_153-GS.gb",
       "model": "mgb"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_153_write-C.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_153_write-C.gb",
       "model": "cgb-c"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_153_write-C.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_153_write-C.gb",
       "model": "cgb-e"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_153_write-C.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_153_write-C.gb",
       "model": "cgb0"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_153_write-GS.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_153_write-GS.gb",
       "model": "mgb"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_write-C.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_write-C.gb",
       "model": "cgb-c"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_write-C.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_write-C.gb",
       "model": "cgb-e"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_write-C.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_lyc_write-C.gb",
       "model": "cgb0"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly_new_frame-C.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_new_frame-C.gb",
       "model": "cgb-c"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly_new_frame-C.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_new_frame-C.gb",
       "model": "cgb-e"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly_new_frame-C.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_new_frame-C.gb",
       "model": "cgb0"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/ly_new_frame-GS.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/ly_new_frame-GS.gb",
       "model": "mgb"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/stat_write_if-C.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/stat_write_if-C.gb",
       "model": "cgb-c"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/stat_write_if-C.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/stat_write_if-C.gb",
       "model": "cgb-e"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/stat_write_if-C.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/stat_write_if-C.gb",
       "model": "cgb0"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/stat_write_if-GS.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/stat_write_if-GS.gb",
       "model": "mgb"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/vblank_if_timing.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/vblank_if_timing.gb",
       "model": "cgb-c"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/vblank_if_timing.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/vblank_if_timing.gb",
       "model": "cgb-e"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/vblank_if_timing.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/vblank_if_timing.gb",
       "model": "cgb0"
     },
     {
       "suite": "mooneye-wilbertpol",
-      "path": "mooneye-wilbertpol/mooneye-test-suite-wilbertpol/acceptance/gpu/vblank_if_timing.gb",
+      "path": "mooneye-test-suite-wilbertpol/acceptance/gpu/vblank_if_timing.gb",
       "model": "mgb"
     }
   ]
