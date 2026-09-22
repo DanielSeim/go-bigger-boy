@@ -308,8 +308,14 @@ RunResult run_scenario(FaultScript& script, const std::string_view scenario) {
         join.tick(4);
         host_endpoint.poll();
         join_endpoint.poll();
+        // A delayed packet can leave the local serial transfer inactive while
+        // its link endpoint still owns an outstanding request. Keep polling
+        // until both layers have settled; otherwise a fast Windows scheduler
+        // can observe the intermediate state and report a false failure.
         if (!host.serial_port().transfer_active() &&
-            !join.serial_port().transfer_active()) {
+            !join.serial_port().transfer_active() &&
+            !host_endpoint.waiting_for_peer() &&
+            !join_endpoint.waiting_for_peer()) {
             break;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
