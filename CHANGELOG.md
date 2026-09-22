@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+## [0.35.21] - 2026-09-22
+
+### Link diagnostics and reliability
+
+- Add structured link diagnostics, persisted diagnostic bundles, and a
+  replayable TCP fault harness for drop, delay, duplicate, and disconnect
+  scenarios.
+- Exercise the real link harness across desktop platforms and retain failure
+  traces and artifacts for investigation.
+
+### Desktop UI and packaging
+
+- Stabilize Windows dashboard repaint transitions and settings scrolling.
+- Package Linux desktop releases as self-contained AppImages.
+- Add release asset preflight validation for Linux, Windows, macOS, Android,
+  and Web artifacts.
+
+### Testing and release automation
+
+- Expand accuracy, sanitizer, ABI, fuzz, hardware-model, and platform smoke
+  coverage.
+- Add a manually runnable release preflight workflow that validates artifacts
+  without publishing a release.
+
 ## [0.34.2] - 2026-09-13
 
 ### Android
