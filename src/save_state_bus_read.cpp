@@ -91,6 +91,7 @@ void SaveStateBusCodec::read(save_state_format::Reader& reader,
     } else {
         bus.ppu_.stat_mode_ = bus.ppu_.mode_;
         bus.ppu_.lcd_startup_ = false;
+        bus.ppu_.lcd_restart_pending_ = false;
         bus.timer_.reload_happened_ = false;
         bus.serial_clock_ = 0;
     }
@@ -533,6 +534,7 @@ void SaveStateBusCodec::read(save_state_format::Reader& reader,
         bus.ppu_.sgb_border_loading_ = false;
     }
     bus.boot_rom_enabled_ = version >= 30 ? reader.boolean() : false;
+    bus.ppu_.lcd_restart_pending_ = version >= 31 ? reader.boolean() : false;
     if (bus.printer_connected_) bus.printer_.reset();
 }
 

@@ -197,6 +197,7 @@ private:
     bool sgb_mode_{};
     bool coincidence_{};
     bool lcd_startup_{};
+    bool lcd_restart_pending_{};
     bool stat_line_{};
     bool frame_ready_{};
 

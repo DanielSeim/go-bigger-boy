@@ -162,7 +162,8 @@ void test_save_state_round_trip_and_validation() {
     // Version 27 appends the explicit SGB PCT transfer latch. Version 28
     // appends the in-flight SGB transfer destination and countdown. Version
     // 29 appends the custom-border loading latch. Version 30 appends the
-    // diagnostic boot-ROM mapping state.
+    // diagnostic boot-ROM mapping state. Version 31 appends the LCD restart
+    // edge-latch state.
     // Strip all newer blocks when constructing
     // the legacy fixtures below, just like the earlier version deltas.
     constexpr std::size_t version_twenty_two_sgb_size = 237 + 393;
@@ -176,12 +177,14 @@ void test_save_state_round_trip_and_validation() {
     constexpr std::size_t version_twenty_eight_sgb_transfer_size = 2;
     constexpr std::size_t version_twenty_nine_sgb_loading_size = 1;
     constexpr std::size_t version_thirty_boot_rom_size = 1;
+    constexpr std::size_t version_thirty_one_lcd_restart_size = 1;
     constexpr std::size_t version_nine_fetcher_size =
         737 + version_ten_window_latch_size + version_eleven_fetcher_size +
         version_twelve_sprite_size + version_thirteen_sprite_fetch_size +
         version_fourteen_sprite_deadline_size + version_fifteen_sprite_render_size;
     auto legacy_saved = saved;
     legacy_saved.resize(legacy_saved.size() -
+                        version_thirty_one_lcd_restart_size -
                         version_thirty_boot_rom_size -
                         version_twenty_nine_sgb_loading_size -
                         version_twenty_eight_sgb_transfer_size -
@@ -507,6 +510,7 @@ void test_save_state_round_trip_and_validation() {
 
     auto version_twenty_three = saved;
     version_twenty_three.resize(version_twenty_three.size() -
+                                version_thirty_one_lcd_restart_size -
                                 version_thirty_boot_rom_size -
                                 version_twenty_nine_sgb_loading_size -
                                 version_twenty_eight_sgb_transfer_size -
@@ -554,6 +558,7 @@ void test_save_state_round_trip_and_validation() {
 
     auto version_sixteen = saved;
     version_sixteen.resize(version_sixteen.size() -
+                           version_thirty_one_lcd_restart_size -
                            version_thirty_boot_rom_size -
                            version_twenty_nine_sgb_loading_size -
                            version_twenty_eight_sgb_transfer_size -
@@ -585,6 +590,7 @@ void test_save_state_round_trip_and_validation() {
 
     auto version_seventeen = saved;
     version_seventeen.resize(version_seventeen.size() -
+                             version_thirty_one_lcd_restart_size -
                              version_thirty_boot_rom_size -
                              version_twenty_nine_sgb_loading_size -
                              version_twenty_eight_sgb_transfer_size -
@@ -614,7 +620,7 @@ void test_save_state_round_trip_and_validation() {
           "version 17 save states remain loadable after adding object deadlines");
 
     auto future_version = saved;
-    future_version[8] = 31;
+    future_version[8] = 32;
     auto rejected_version = false;
     try {
         emulator.load_state(future_version);

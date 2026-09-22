@@ -382,6 +382,7 @@ bool Ppu::write_register(const std::uint16_t address,
             ly_ = 0;
             mode_ = 0;
             stat_mode_ = 0;
+            lcd_restart_pending_ = true;
             mode3_end_dot_ = 252;
             window_line_ = 0;
             window_y_triggered_ = false;
@@ -400,15 +401,25 @@ bool Ppu::write_register(const std::uint16_t address,
             return false;
         }
         if (!was_enabled && lcd_enabled()) {
+            const auto restarting_lcd = lcd_restart_pending_;
             dot_ = 0;
             ly_ = 0;
             mode_ = 0;
             stat_mode_ = 0;
+            lcd_restart_pending_ = false;
             window_line_ = 0;
             window_rendered_this_line_ = false;
             coincidence_ = ly_ == lyc_;
             lcd_startup_ = true;
             begin_visible_line();
+            // LCD startup reports mode 0 through the CPU-visible STAT bits,
+            // but that state is not a real HBlank period. A HBlank-only
+            // source must wait for the startup transfer to finish; other
+            // STAT sources retain the normal edge behavior.
+            if (restarting_lcd && (stat_select_ & 0x78) == 0x08) {
+                stat_line_ = false;
+                return false;
+            }
         }
         break;
     }

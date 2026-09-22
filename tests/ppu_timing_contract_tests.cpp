@@ -193,6 +193,22 @@ void test_ppu_stat_interrupts() {
     modes.tick(200);
     check((modes.read8(0xFF0F) & 0x02) == 0,
           "adjacent enabled STAT sources block a second interrupt edge");
+
+    gameboy::MemoryBus restarted_hblank{gameboy::Cartridge{test_rom()}};
+    restarted_hblank.write8(0xFF41, 0x08); // Mode 0 STAT source.
+    restarted_hblank.write8(0xFF40, 0x80);
+    restarted_hblank.write8(0xFF0F, 0);
+    restarted_hblank.write8(0xFF40, 0);
+    restarted_hblank.write8(0xFF0F, 0);
+    restarted_hblank.write8(0xFF40, 0x80);
+    check((restarted_hblank.read8(0xFF0F) & 0x02) == 0,
+          "restarting LCD does not treat startup mode 0 as HBlank");
+    restarted_hblank.tick(251);
+    check((restarted_hblank.read8(0xFF0F) & 0x02) == 0,
+          "restarted LCD keeps HBlank STAT low through startup mode 3");
+    restarted_hblank.tick(1);
+    check((restarted_hblank.read8(0xFF0F) & 0x02) != 0,
+          "restarted LCD raises HBlank STAT at the startup boundary");
 }
 
 void test_ppu_vblank_and_frame_publication() {

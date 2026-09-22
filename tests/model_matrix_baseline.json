@@ -7,11 +7,6 @@
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/hblank_int_if_a.gb",
-      "model": "dmg"
-    },
-    {
-      "suite": "gbmicrotest",
       "path": "gbmicrotest/hblank_int_l0.gb",
       "model": "dmg"
     },
