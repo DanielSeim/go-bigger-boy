@@ -577,6 +577,9 @@ if(GAMEBOY_BUILD_TESTS)
         add_test(NAME gameboy_ci_regression_report
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/ci_regression_report_tests.py)
+        add_test(NAME gameboy_model_matrix_contract
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/model_matrix_contract_tests.py)
     endif()
     add_executable(gameboy_tests tests/core_tests.cpp)
     target_link_libraries(gameboy_tests PRIVATE gbb_core_api)

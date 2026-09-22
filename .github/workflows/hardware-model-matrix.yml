@@ -84,6 +84,7 @@ jobs:
           name: hardware-model-matrix
           path: |
             build-model-matrix/hardware-model-matrix.md
+            build-model-matrix/matrix-diagnostics
             model-matrix-ctest.xml
           if-no-files-found: warn
           retention-days: 14

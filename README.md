@@ -267,6 +267,10 @@ The report is written to `hardware-model-matrix.md`; it keeps reviewed
 compares the matrix against `tests/model_matrix_baseline.json`: pre-existing
 failures remain visible as `KNOWN_FAIL`, while a newly failing ROM/model pair
 fails the hardware-model workflow.
+Unexpected failures also receive a compact diagnostic bundle under
+`matrix-diagnostics/`. Each bundle contains the runner log plus bounded CPU,
+PPU, I/O, and APU traces, making interrupt, divider, and rendering timing
+failures reproducible from the CI artifact without rerunning the entire matrix.
 Individual discovered-suite CTest cases are available with
 `-DGAMEBOY_ENABLE_DISCOVERED_CONFORMANCE=ON`; this bring-up mode is
 intentionally separate from the normal release baseline.

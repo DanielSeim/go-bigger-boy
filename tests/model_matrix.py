@@ -141,6 +141,62 @@ def has_gbmicrotest_result_marker(rom: Path) -> bool:
     return b"\xe0\x82" in data or b"\xea\x82\xff" in data
 
 
+def diagnostic_name(suite: str, relative: str, model: str) -> str:
+    """Return a stable, filesystem-safe name for one failed matrix case."""
+    value = f"{suite}__{relative}__{model}"
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", value)
+
+
+def summarize_runner_output(output: str) -> str:
+    """Keep the useful failure context in the Markdown matrix report."""
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    if not lines:
+        return ""
+    failure = next((line for line in reversed(lines)
+                    if line.startswith("FAIL (") or line.startswith("TIMEOUT")),
+                   lines[-1])
+    state = next((line for line in lines if line.startswith("PC=")), "")
+    if state and state != failure:
+        return f"{failure}; {state}"
+    return failure
+
+
+def collect_case_diagnostics(
+        command: List[str], cycles: int, diagnostics_root: Path,
+        suite: str, relative: str, model: str) -> str:
+    """Rerun one failure with bounded traces and return its report path."""
+    case_name = diagnostic_name(suite, relative, model)
+    case_directory = diagnostics_root / case_name
+    case_directory.mkdir(parents=True, exist_ok=True)
+    diagnostic_cycles = min(cycles, 5_000_000)
+    diagnostic_command = command[:]
+    diagnostic_command[diagnostic_command.index("--max-cycles") + 1] = str(
+        diagnostic_cycles)
+    diagnostic_command.extend([
+        "--trace-limit", "4096",
+        "--trace-cpu", str(case_directory / "cpu.trace"),
+        "--trace-ppu", str(case_directory / "ppu.trace"),
+        "--trace-io", str(case_directory / "io.trace"),
+        "--trace-apu", str(case_directory / "apu.trace"),
+    ])
+    with (case_directory / "runner.log").open(
+            "w", encoding="utf-8") as diagnostic_log:
+        try:
+            subprocess.run(
+                diagnostic_command,
+                stdout=diagnostic_log,
+                stderr=subprocess.STDOUT,
+                text=True,
+                timeout=max(30, diagnostic_cycles // 1_000_000 * 8),
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            diagnostic_log.write(
+                "diagnostic trace timed out after "
+                f"{diagnostic_cycles} cycles\n")
+    return f"diagnostics={diagnostics_root.name}/{case_name}"
+
+
 def discover(rom_root: Path) -> List[Tuple[str, Path, str, int]]:
     # Keep this list limited to the deterministic model matrix. AGE and
     # SameSuite are covered by tests/run_external_suites.py, which applies
@@ -203,9 +259,9 @@ def discover(rom_root: Path) -> List[Tuple[str, Path, str, int]]:
 
 
 def run_case_command(
-        task: Tuple[Path, Path, Path, str, str, int, str]
+        task: Tuple[Path, Path, Path, str, str, int, str, Optional[Path]]
 ) -> Tuple[str, str, str, bool, str]:
-    runner, rom_root, rom, suite, protocol, cycles, model = task
+    runner, rom_root, rom, suite, protocol, cycles, model, diagnostics_root = task
     relative = rom.relative_to(rom_root).as_posix()
     command = [str(runner), str(rom), "--max-cycles", str(cycles),
                "--protocol", protocol, "--model", model]
@@ -213,15 +269,24 @@ def run_case_command(
         result = subprocess.run(command, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, text=True,
                                 timeout=max(30, cycles // 1_000_000 * 8))
-        detail = result.stdout.splitlines()[-1] if result.stdout else ""
+        detail = summarize_runner_output(result.stdout)
         # A few diagnostic ROMs leave raw bytes in the runner's combined
         # stream. Keep the artifact valid UTF-8/plain text instead of writing
         # NUL/control characters into Markdown, while preserving useful tabs.
         detail = "".join(char if char.isprintable() or char == "\t" else "?"
                           for char in detail)
+        if result.returncode != 0 and diagnostics_root is not None:
+            diagnostic_detail = collect_case_diagnostics(
+                command, cycles, diagnostics_root, suite, relative, model)
+            detail = (f"{detail}; " if detail else "") + \
+                diagnostic_detail
         return suite, relative, model, result.returncode == 0, detail
     except subprocess.TimeoutExpired:
-        return suite, relative, model, False, "timeout"
+        detail = "timeout"
+        if diagnostics_root is not None:
+            detail += "; " + collect_case_diagnostics(
+                command, cycles, diagnostics_root, suite, relative, model)
+        return suite, relative, model, False, detail
 
 
 def main() -> int:
@@ -238,6 +303,9 @@ def main() -> int:
                         default=Path(__file__).with_name("model_expectations.json"))
     parser.add_argument("--baseline", type=Path,
                         default=Path(__file__).with_name("model_matrix_baseline.json"))
+    parser.add_argument(
+        "--diagnostics-output", type=Path,
+        help="write compact CPU/PPU/I/O/APU traces for unexpected failures")
     args = parser.parse_args()
     metadata = json.loads(args.expectations.read_text()) if args.expectations.exists() else {}
     baseline_metadata = (json.loads(args.baseline.read_text())
@@ -256,8 +324,15 @@ def main() -> int:
     tasks = []
     for suite, rom, protocol, cycles in discover(args.rom_root):
         for model in args.models:
+            key = (suite, rom.relative_to(args.rom_root).as_posix(), model)
+            applicable = expected_models(suite, key[1], applicability)
+            reviewed = key in known_items or key in baseline_items
+            collect_diagnostics = (
+                args.diagnostics_output is not None and not reviewed and
+                (applicable is None or model in applicable))
             tasks.append((args.runner, args.rom_root, rom, suite, protocol,
-                          cycles, model))
+                          cycles, model,
+                          args.diagnostics_output if collect_diagnostics else None))
     with ThreadPoolExecutor(max_workers=args.jobs) as executor:
         results = executor.map(run_case_command, tasks)
         for suite, relative, model, passed, detail in results:

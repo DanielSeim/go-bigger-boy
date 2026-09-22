@@ -450,6 +450,26 @@ void test_interrupt_and_low_power_states() {
     static_cast<void>(bug_cpu.step(bug_bus));
     check(bug_cpu.registers().pc == 0x0102,
           "execution resumes normally after the HALT bug fetch");
+    check(bug_cpu.total_cycles() == 12,
+          "HALT bug duplicate fetch consumes exactly one extra machine cycle");
+
+    gameboy::MemoryBus halt_div_bus{gameboy::Cartridge{test_rom({
+        0x3E, 0x00,       // LD A,0
+        0xE0, 0x04,       // LDH (DIV),A
+        0x76,             // HALT with IF&IE already pending
+        0x00,             // duplicated NOP fetch
+        0xF0, 0x04,       // LD A,(DIV)
+    })}};
+    halt_div_bus.write8(0xFFFF, 1);
+    halt_div_bus.write8(0xFF0F, 1);
+    gameboy::Cpu halt_div_cpu;
+    halt_div_cpu.load_registers(initial_registers());
+    for (unsigned step = 0; step < 6; ++step) {
+        static_cast<void>(halt_div_cpu.step(halt_div_bus));
+    }
+    check(halt_div_cpu.registers().a == 0 &&
+              halt_div_cpu.total_cycles() == 44,
+          "HALT bug timing keeps DIV at zero across the duplicated NOP fetch");
 
     gameboy::MemoryBus ei_halt_bus{
         gameboy::Cartridge{test_rom({0xFB, 0x76, 0x00})}};

@@ -34,6 +34,8 @@ struct Options {
     std::filesystem::path apu_trace_output;
     std::filesystem::path ppu_trace_output;
     std::filesystem::path io_trace_output;
+    std::filesystem::path cpu_trace_output;
+    std::uint64_t trace_limit{};
     bool dmg_compatibility_colors{};
     bool frame_on_ld_bb{};
     bool diagnostic_boot{};
@@ -46,6 +48,7 @@ void usage() {
                  "[--model auto|dmg0|dmg|mgb|sgb|sgb2|cgb0|cgb-c|cgb-e] "
                  "[--frames N --frame-output capture.ppm] "
                  "[--trace-apu PATH] [--trace-ppu PATH] [--trace-io PATH] "
+                 "[--trace-cpu PATH] [--trace-limit N] "
                  "[--frame-on-ld-bb --frame-output capture.ppm] "
                  "[--dmg-compatibility-colors] [--diagnostic-boot]\n";
 }
@@ -105,6 +108,10 @@ Options parse_options(const int argc, char** argv) {
             options.ppu_trace_output = argv[++index];
         } else if (argument == "--trace-io" && index + 1 < argc) {
             options.io_trace_output = argv[++index];
+        } else if (argument == "--trace-cpu" && index + 1 < argc) {
+            options.cpu_trace_output = argv[++index];
+        } else if (argument == "--trace-limit" && index + 1 < argc) {
+            options.trace_limit = parse_cycles(argv[++index]);
         } else if (argument == "--dmg-compatibility-colors") {
             options.dmg_compatibility_colors = true;
         } else if (argument == "--frame-on-ld-bb") {
@@ -318,6 +325,42 @@ void write_io_trace(
     }
 }
 
+void write_cpu_trace(std::ofstream& output, const gameboy::Cpu& cpu,
+                     const gameboy::MemoryBus& bus, const std::uint64_t cycle,
+                     const std::uint16_t pc, const std::uint8_t opcode,
+                     const unsigned cycles) {
+    const auto& r = cpu.registers();
+    output << "cycle=" << cycle << " duration=" << cycles << " pc="
+           << std::hex << std::setw(4) << std::setfill('0') << pc
+           << " opcode=" << std::setw(2) << static_cast<unsigned>(opcode)
+           << " next_pc=" << std::setw(4) << r.pc
+           << " af=" << std::setw(4)
+           << static_cast<unsigned>((static_cast<unsigned>(r.a) << 8) | r.f)
+           << " bc=" << std::setw(4)
+           << static_cast<unsigned>((static_cast<unsigned>(r.b) << 8) | r.c)
+           << " de=" << std::setw(4)
+           << static_cast<unsigned>((static_cast<unsigned>(r.d) << 8) | r.e)
+           << " hl=" << std::setw(4)
+           << static_cast<unsigned>((static_cast<unsigned>(r.h) << 8) | r.l)
+           << " sp=" << std::setw(4) << r.sp
+           << " div=" << std::setw(2)
+           << static_cast<unsigned>(bus.read8(0xFF04))
+           << " tima=" << std::setw(2)
+           << static_cast<unsigned>(bus.read8(0xFF05))
+           << " tac=" << std::setw(2)
+           << static_cast<unsigned>(bus.read8(0xFF07))
+           << " if=" << std::setw(2)
+           << static_cast<unsigned>(bus.read8(0xFF0F))
+           << " ie=" << std::setw(2)
+           << static_cast<unsigned>(bus.read8(0xFFFF))
+           << " stat=" << std::setw(2)
+           << static_cast<unsigned>(bus.read8(0xFF41))
+           << " ly=" << std::setw(2)
+           << static_cast<unsigned>(bus.read8(0xFF44))
+           << " halted=" << (cpu.halted() ? 1 : 0)
+           << " stopped=" << (cpu.stopped() ? 1 : 0) << std::dec << '\n';
+}
+
 bool contains_failure(const std::string& output) {
     return output.find("Failed") != std::string::npos ||
            output.find("FAILED") != std::string::npos ||
@@ -371,6 +414,7 @@ int main(int argc, char** argv) {
         std::ofstream apu_trace;
         std::ofstream ppu_trace;
         std::ofstream io_trace;
+        std::ofstream cpu_trace;
         if (!options.apu_trace_output.empty()) {
             if (options.apu_trace_output.has_parent_path()) {
                 std::filesystem::create_directories(
@@ -405,6 +449,17 @@ int main(int argc, char** argv) {
             io_trace << "trace_version=1 kind=io\n";
             emulator.bus().debug_enable_io_trace(true);
         }
+        if (!options.cpu_trace_output.empty()) {
+            if (options.cpu_trace_output.has_parent_path()) {
+                std::filesystem::create_directories(
+                    options.cpu_trace_output.parent_path());
+            }
+            cpu_trace.open(options.cpu_trace_output,
+                           std::ios::out | std::ios::trunc);
+            if (!cpu_trace) throw std::runtime_error(
+                "could not open CPU trace: " + options.cpu_trace_output.string());
+            cpu_trace << "trace_version=1 kind=cpu\n";
+        }
         emulator.set_dmg_compatibility_colors(options.dmg_compatibility_colors);
         std::string serial_output;
         std::string memory_output;
@@ -414,6 +469,7 @@ int main(int argc, char** argv) {
         std::size_t recent_pc_count = 0;
         std::uint16_t last_low_rom_pc = 0x0100;
         std::uint64_t completed_frames = 0;
+        std::uint64_t trace_records = 0;
         const bool captures_frame = options.frames != 0 ||
                                     options.frame_on_ld_bb;
 
@@ -497,13 +553,28 @@ int main(int argc, char** argv) {
             recent_pc_next = (recent_pc_next + 1) % recent_pcs.size();
             recent_pc_count = std::min(recent_pc_count + 1,
                                        recent_pcs.size());
-            static_cast<void>(emulator.step());
-            if (apu_trace) write_apu_trace(apu_trace, emulator.cpu(),
-                                           emulator.bus());
-            if (ppu_trace) write_ppu_trace(ppu_trace, emulator.cpu(),
-                                           emulator.bus());
-            if (io_trace) write_io_trace(
-                io_trace, emulator.bus().debug_take_io_trace());
+            const auto trace_cycle = emulator.cpu().total_cycles();
+            const auto trace_pc = registers.pc;
+            const auto trace_opcode = cpu_trace
+                                          ? emulator.bus().read8(trace_pc)
+                                          : std::uint8_t{};
+            const auto stepped_cycles = emulator.step();
+            const auto tracing = options.trace_limit == 0 ||
+                                 trace_records < options.trace_limit;
+            if (tracing) {
+                if (apu_trace) write_apu_trace(apu_trace, emulator.cpu(),
+                                               emulator.bus());
+                if (ppu_trace) write_ppu_trace(ppu_trace, emulator.cpu(),
+                                               emulator.bus());
+                if (io_trace) write_io_trace(
+                    io_trace, emulator.bus().debug_take_io_trace());
+                if (cpu_trace) write_cpu_trace(
+                    cpu_trace, emulator.cpu(), emulator.bus(), trace_cycle,
+                    trace_pc, trace_opcode, stepped_cycles);
+                ++trace_records;
+            } else if (io_trace) {
+                static_cast<void>(emulator.bus().debug_take_io_trace());
+            }
             if (captures_frame && emulator.frame_ready()) {
                 ++completed_frames;
                 if (completed_frames == options.frames) {

@@ -490,7 +490,9 @@ if(GAMEBOY_TEST_ROM_DIR AND GAMEBOY_ENABLE_MODEL_MATRIX)
                      "${CMAKE_CURRENT_SOURCE_DIR}/tests/model_matrix.py"
                      --runner $<TARGET_FILE:gameboy_test_runner>
                      --rom-root "${GAMEBOY_TEST_ROM_DIR}"
-                     --output "${CMAKE_CURRENT_BINARY_DIR}/hardware-model-matrix.md")
+                     --output "${CMAKE_CURRENT_BINARY_DIR}/hardware-model-matrix.md"
+                     --diagnostics-output
+                     "${CMAKE_CURRENT_BINARY_DIR}/matrix-diagnostics")
     set_tests_properties(hardware_model_matrix_report PROPERTIES
                          LABELS "conformance;model-matrix"
                          TIMEOUT 7200)
