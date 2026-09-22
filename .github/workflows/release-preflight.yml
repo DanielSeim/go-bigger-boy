@@ -1,0 +1,111 @@
+name: Release preflight
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Commit SHA to validate (defaults to the selected ref)"
+        required: false
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: release-preflight-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate release artifacts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      TARGET_SHA: ${{ inputs.sha || github.sha }}
+    steps:
+      - name: Check out validated source
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ inputs.sha || github.sha }}
+
+      - name: Resolve successful platform workflows
+        id: workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          find_successful_run() {
+            local workflow="$1"
+            gh run list \
+              --repo "$REPOSITORY" \
+              --workflow "$workflow" \
+              --limit 100 \
+              --json databaseId,status,conclusion,headSha,url |
+              python3 -c '
+          import json
+          import sys
+
+          target_sha = sys.argv[1]
+          runs = json.load(sys.stdin)
+          matches = [
+              run for run in runs
+              if run.get("headSha") == target_sha
+              and run.get("status") == "completed"
+              and run.get("conclusion") == "success"
+          ]
+          matches.sort(key=lambda run: run.get("databaseId", 0), reverse=True)
+          if matches:
+              run = matches[0]
+              print("|".join(str(run.get(key, "")) for key in
+                              ("databaseId", "url")))
+          ' "$TARGET_SHA"
+          }
+
+          desktop="$(find_successful_run 'Desktop builds')"
+          android="$(find_successful_run 'Android build')"
+          web="$(find_successful_run 'Web build and Pages')"
+
+          if [[ -z "$desktop" || -z "$android" || -z "$web" ]]; then
+            echo "Successful Desktop, Android, and Web runs were not all found for $TARGET_SHA." >&2
+            echo "Run the platform workflows for this commit before starting the preflight." >&2
+            exit 1
+          fi
+
+          IFS='|' read -r desktop_id desktop_url <<< "$desktop"
+          IFS='|' read -r android_id android_url <<< "$android"
+          IFS='|' read -r web_id web_url <<< "$web"
+          {
+            echo "desktop_run=$desktop_id"
+            echo "android_run=$android_id"
+            echo "web_run=$web_id"
+          } >> "$GITHUB_OUTPUT"
+          echo "Desktop: $desktop_url"
+          echo "Android: $android_url"
+          echo "Web: $web_url"
+
+      - name: Download platform artifacts
+        env:
+          DESKTOP_RUN: ${{ steps.workflows.outputs.desktop_run }}
+          ANDROID_RUN: ${{ steps.workflows.outputs.android_run }}
+          WEB_RUN: ${{ steps.workflows.outputs.web_run }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets/desktop release-assets/android release-assets/web
+          gh run download "$DESKTOP_RUN" \
+            --repo "$REPOSITORY" \
+            --pattern 'go-bigger-boy-*' \
+            --dir release-assets/desktop
+          gh run download "$ANDROID_RUN" \
+            --repo "$REPOSITORY" \
+            --name go-bigger-boy-android \
+            --dir release-assets/android
+          gh run download "$WEB_RUN" \
+            --repo "$REPOSITORY" \
+            --name go-bigger-boy-web \
+            --dir release-assets/web
+
+      - name: Run release asset preflight
+        run: bash scripts/verify-release-assets.sh release-assets

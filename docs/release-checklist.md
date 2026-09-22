@@ -31,6 +31,8 @@ Use this short smoke test for releases that include local link-cable changes.
 - [ ] Verify the GitHub Release contains Windows, Linux AppImage, macOS, APK,
       and AAB artifacts before announcing the release.
 - [ ] Confirm the automated release asset preflight passed before publishing.
+- [ ] Run **Release preflight** manually against the release commit before
+      creating its version tag.
 - [ ] For Google Play testing, upload the AAB to the closed-testing track
       `GBB Beta`,
       install it from Play, and verify updates are offered by Play Store
