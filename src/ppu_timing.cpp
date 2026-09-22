@@ -68,7 +68,7 @@ std::uint8_t Ppu::tick(const unsigned cycles) noexcept {
             // the CPU observes the same interrupt boundary as the hardware.
             const auto early_hblank_pixels =
                 (scx_ & 7U) == 1U || (scx_ & 7U) == 5U ? 2U : 4U;
-            if (!lcd_startup_ && scx_hblank_request_early_ &&
+            if (!cgb_hardware_ && scx_hblank_request_early_ &&
                 (stat_select_ & 0x08) != 0 && !stat_line_ &&
                 output_x_ == screen_width - early_hblank_pixels) {
                 stat_line_ = true;
@@ -182,7 +182,7 @@ bool Ppu::window_active_on_line() const noexcept {
 }
 
 void Ppu::begin_visible_line() noexcept {
-    scx_hblank_request_early_ = false;
+    if (!lcd_startup_) scx_hblank_request_early_ = false;
     scx_if_read_race_ = false;
     window_rendered_this_line_ = false;
     if (ly_ == window_y_) {
@@ -204,7 +204,7 @@ void Ppu::begin_mode3() noexcept {
     // represented by the fetcher and window state below.
     const auto fine_scroll = static_cast<unsigned>(scx_ & 7U);
     const auto phase_correction =
-        scx_hblank_request_early_ &&
+        !lcd_startup_ && scx_hblank_request_early_ &&
                 (fine_scroll == 1U || fine_scroll == 5U)
             ? 4U
             : 0U;

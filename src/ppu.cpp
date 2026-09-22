@@ -85,6 +85,10 @@ void Ppu::set_dmg_palette(const DmgPalette& palette) noexcept {
 }
 
 void Ppu::initialize_post_boot_phase(const HardwareModel model) noexcept {
+    // The post-boot register image writes SCX while the LCD is still off,
+    // but that initialization write must not look like a cartridge's
+    // deliberate pre-startup SCX timing probe.
+    scx_hblank_request_early_ = false;
     set_sgb_mode(model == HardwareModel::sgb || model == HardwareModel::sgb2);
     if (model == HardwareModel::dmg || model == HardwareModel::mgb ||
         model == HardwareModel::sgb || model == HardwareModel::sgb2) {
@@ -437,6 +441,7 @@ bool Ppu::write_register(const std::uint16_t address,
         break;
     case 0xFF43:
         scx_ = value;
+        if (!lcd_enabled()) scx_hblank_request_early_ = true;
         // A DMG SCX write during the last few dots of OAM scan delays the
         // following pixel-transfer pipeline. This is observable at the
         // mode-0 STAT edge; writes earlier in mode 2 and writes during mode 3

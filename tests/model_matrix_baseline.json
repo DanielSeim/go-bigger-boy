@@ -22,16 +22,6 @@
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/int_hblank_halt_scx1.gb",
-      "model": "dmg"
-    },
-    {
-      "suite": "gbmicrotest",
-      "path": "gbmicrotest/int_hblank_halt_scx2.gb",
-      "model": "dmg"
-    },
-    {
-      "suite": "gbmicrotest",
       "path": "gbmicrotest/int_hblank_halt_scx3.gb",
       "model": "dmg"
     },
@@ -42,97 +32,7 @@
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/int_hblank_halt_scx5.gb",
-      "model": "dmg"
-    },
-    {
-      "suite": "gbmicrotest",
-      "path": "gbmicrotest/int_hblank_halt_scx6.gb",
-      "model": "dmg"
-    },
-    {
-      "suite": "gbmicrotest",
       "path": "gbmicrotest/int_hblank_halt_scx7.gb",
-      "model": "dmg"
-    },
-    {
-      "suite": "gbmicrotest",
-      "path": "gbmicrotest/int_hblank_incs_scx0.gb",
-      "model": "dmg"
-    },
-    {
-      "suite": "gbmicrotest",
-      "path": "gbmicrotest/int_hblank_incs_scx1.gb",
-      "model": "dmg"
-    },
-    {
-      "suite": "gbmicrotest",
-      "path": "gbmicrotest/int_hblank_incs_scx2.gb",
-      "model": "dmg"
-    },
-    {
-      "suite": "gbmicrotest",
-      "path": "gbmicrotest/int_hblank_incs_scx3.gb",
-      "model": "dmg"
-    },
-    {
-      "suite": "gbmicrotest",
-      "path": "gbmicrotest/int_hblank_incs_scx4.gb",
-      "model": "dmg"
-    },
-    {
-      "suite": "gbmicrotest",
-      "path": "gbmicrotest/int_hblank_incs_scx5.gb",
-      "model": "dmg"
-    },
-    {
-      "suite": "gbmicrotest",
-      "path": "gbmicrotest/int_hblank_incs_scx6.gb",
-      "model": "dmg"
-    },
-    {
-      "suite": "gbmicrotest",
-      "path": "gbmicrotest/int_hblank_incs_scx7.gb",
-      "model": "dmg"
-    },
-    {
-      "suite": "gbmicrotest",
-      "path": "gbmicrotest/int_hblank_nops_scx0.gb",
-      "model": "dmg"
-    },
-    {
-      "suite": "gbmicrotest",
-      "path": "gbmicrotest/int_hblank_nops_scx1.gb",
-      "model": "dmg"
-    },
-    {
-      "suite": "gbmicrotest",
-      "path": "gbmicrotest/int_hblank_nops_scx2.gb",
-      "model": "dmg"
-    },
-    {
-      "suite": "gbmicrotest",
-      "path": "gbmicrotest/int_hblank_nops_scx3.gb",
-      "model": "dmg"
-    },
-    {
-      "suite": "gbmicrotest",
-      "path": "gbmicrotest/int_hblank_nops_scx4.gb",
-      "model": "dmg"
-    },
-    {
-      "suite": "gbmicrotest",
-      "path": "gbmicrotest/int_hblank_nops_scx5.gb",
-      "model": "dmg"
-    },
-    {
-      "suite": "gbmicrotest",
-      "path": "gbmicrotest/int_hblank_nops_scx6.gb",
-      "model": "dmg"
-    },
-    {
-      "suite": "gbmicrotest",
-      "path": "gbmicrotest/int_hblank_nops_scx7.gb",
       "model": "dmg"
     },
     {
