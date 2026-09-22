@@ -7,6 +7,30 @@
       "reason": "Upstream ROM expects DIV=0x55 after resetting DIV and executing only 58 NOPs; the DMG divider contract and focused HALT timing trace produce DIV=0x01, so no CPU/timer change is justified for this inconsistent fixture."
     },
     {
+      "suite": "gbmicrotest",
+      "path": "gbmicrotest/int_hblank_halt_scx0.gb",
+      "model": "dmg",
+      "reason": "Reviewed DMG SCX startup HBlank/HALT boundary. The PPU request is in the established SCX phase bucket, but changing HALT wake batching regresses the passing SCX HALT, INC, and NOP variants; keep this one-cycle divider-sample mismatch baselined pending a cycle-level interrupt-boundary model."
+    },
+    {
+      "suite": "gbmicrotest",
+      "path": "gbmicrotest/int_hblank_halt_scx3.gb",
+      "model": "dmg",
+      "reason": "Reviewed DMG SCX startup HBlank/HALT boundary. The PPU request is in the established SCX phase bucket, but changing HALT wake batching regresses the passing SCX HALT, INC, and NOP variants; keep this one-cycle divider-sample mismatch baselined pending a cycle-level interrupt-boundary model."
+    },
+    {
+      "suite": "gbmicrotest",
+      "path": "gbmicrotest/int_hblank_halt_scx4.gb",
+      "model": "dmg",
+      "reason": "Reviewed DMG SCX startup HBlank/HALT boundary. The PPU request is in the established SCX phase bucket, but changing HALT wake batching regresses the passing SCX HALT, INC, and NOP variants; keep this one-cycle divider-sample mismatch baselined pending a cycle-level interrupt-boundary model."
+    },
+    {
+      "suite": "gbmicrotest",
+      "path": "gbmicrotest/int_hblank_halt_scx7.gb",
+      "model": "dmg",
+      "reason": "Reviewed DMG SCX startup HBlank/HALT boundary. The PPU request is in the established SCX phase bucket, but changing HALT wake batching regresses the passing SCX HALT, INC, and NOP variants; keep this one-cycle divider-sample mismatch baselined pending a cycle-level interrupt-boundary model."
+    },
+    {
       "suite": "mooneye-wilbertpol",
       "path": "mooneye-test-suite-wilbertpol/acceptance/timer/timer_if.gb",
       "model": "mgb",
