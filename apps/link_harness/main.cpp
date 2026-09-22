@@ -50,6 +50,7 @@ using namespace gbb::link_harness;
 
 constexpr std::uint64_t cycles_per_frame = 70'224;
 constexpr std::uint64_t poll_interval_cycles = 1'024;
+constexpr unsigned tcp_handshake_poll_attempts = 10'000;
 
 
 SemanticSample capture_semantic_sample(gameboy::Emulator& first,
@@ -398,8 +399,13 @@ int main(int argc, char** argv) {
                                second.link_compatibility_id(),
                                second.link_compatibility_profile());
 
+        // A loaded macOS runner can spend several seconds scheduling the
+        // loopback accept/connect pair, especially after repeated fault
+        // replay subprocesses. Keep the handshake bounded, but do not turn
+        // that platform scheduling delay into a false transport failure.
         for (unsigned attempt = 0;
-             attempt < 500 && !first_endpoint.peer_ready_for_link(); ++attempt) {
+             attempt < tcp_handshake_poll_attempts &&
+             !first_endpoint.peer_ready_for_link(); ++attempt) {
             poll_pair(first_endpoint, second_endpoint);
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
