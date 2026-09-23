@@ -40,9 +40,14 @@ diff tool:
 gbb_sgb_trace_diff desktop.trace android.trace
 ```
 
-An exit status of `0` means the traces match. Exit status `1` identifies the
-first differing write, checkpoint, diagnostic counter, or decoded command;
-exit status `2` indicates that one of the trace files could not be parsed.
+An exit status of `0` means the traces match. The comparator ignores the
+headless runner's synthetic startup checkpoint (`cycle=0`, `frame=0`) and its
+synthetic final boundary checkpoint (`frame=0` after a positive frame count),
+so captures from the desktop runner and Android lifecycle can be compared
+directly. All JOYP writes and real frame checkpoints remain strict. Exit status
+`1` identifies the first differing write, checkpoint, diagnostic counter, or
+decoded command; exit status `2` indicates that one of the trace files could
+not be parsed.
 
 Replay advances the bus to each recorded cycle, reapplies the JOYP writes, and
 reports the first framebuffer, state, diagnostic, or decoded-command mismatch.

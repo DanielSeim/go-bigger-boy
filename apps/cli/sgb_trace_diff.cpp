@@ -37,7 +37,7 @@ int main(int argc, char** argv) {
         if (result.equal) {
             std::cout << "SGB traces match: " << left->writes.size()
                       << " writes, " << left->checkpoints.size()
-                      << " checkpoints\n";
+                      << " checkpoints (runner boundary checkpoints ignored)\n";
             return 0;
         }
         std::cout << "SGB traces differ at index " << result.index << ": "

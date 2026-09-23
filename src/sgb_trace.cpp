@@ -569,6 +569,29 @@ SgbTrace::DiffResult SgbTrace::diff(const Trace& left, const Trace& right) {
                              const std::string& description) {
         return DiffResult{false, index, description};
     };
+    const auto checkpoint_range = [](const Trace& trace) {
+        std::size_t begin = 0;
+        std::size_t end = trace.checkpoints.size();
+
+        // The headless runner records an initial checkpoint before stepping
+        // the CPU. Android capture starts after that lifecycle boundary, so
+        // this record is not part of the cross-frontend emulation stream.
+        if (end > begin + 1 && trace.checkpoints[begin].cycle == 0 &&
+            trace.checkpoints[begin].frame == 0) {
+            ++begin;
+        }
+
+        // The headless runner also records a final boundary checkpoint with
+        // frame zero after the last real frame. Only trim it when it follows
+        // a positive frame count; a normal frame-zero checkpoint is kept.
+        if (end > begin + 1 && trace.checkpoints[end - 1].frame == 0 &&
+            trace.checkpoints[end - 2].frame > 0 &&
+            trace.checkpoints[end - 1].cycle >=
+                trace.checkpoints[end - 2].cycle) {
+            --end;
+        }
+        return std::pair{begin, end};
+    };
     if (left.version != right.version) {
         return mismatch(0, "metadata: trace versions differ");
     }
@@ -590,13 +613,17 @@ SgbTrace::DiffResult SgbTrace::diff(const Trace& left, const Trace& right) {
             return mismatch(index, "writes: JOYP value differs");
         }
     }
-    if (left.checkpoints.size() != right.checkpoints.size()) {
-        return mismatch(std::min(left.checkpoints.size(), right.checkpoints.size()),
+    const auto left_checkpoints = checkpoint_range(left);
+    const auto right_checkpoints = checkpoint_range(right);
+    const auto left_checkpoint_count = left_checkpoints.second - left_checkpoints.first;
+    const auto right_checkpoint_count = right_checkpoints.second - right_checkpoints.first;
+    if (left_checkpoint_count != right_checkpoint_count) {
+        return mismatch(std::min(left_checkpoint_count, right_checkpoint_count),
                         "checkpoints: event counts differ");
     }
-    for (std::size_t index = 0; index < left.checkpoints.size(); ++index) {
-        const auto& lhs = left.checkpoints[index];
-        const auto& rhs = right.checkpoints[index];
+    for (std::size_t index = 0; index < left_checkpoint_count; ++index) {
+        const auto& lhs = left.checkpoints[left_checkpoints.first + index];
+        const auto& rhs = right.checkpoints[right_checkpoints.first + index];
         if (lhs.cycle != rhs.cycle) {
             return mismatch(index, "checkpoints: cycle differs");
         }

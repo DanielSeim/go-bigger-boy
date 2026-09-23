@@ -132,11 +132,27 @@ void test_trace_diff_reports_first_difference() {
           "SGB trace diff identifies the first state mismatch");
 }
 
+void test_trace_diff_ignores_runner_boundary_checkpoints() {
+    gameboy::SgbTrace::Trace desktop;
+    desktop.rom_fingerprint = 7;
+    desktop.writes.push_back({4, 0x30});
+    desktop.checkpoints.push_back({0, 0, 1, 2, {}, {}});
+    desktop.checkpoints.push_back({10, 1, 3, 4, {}, {}});
+    desktop.checkpoints.push_back({20, 0, 5, 6, {}, {}});
+
+    gameboy::SgbTrace::Trace android = desktop;
+    android.checkpoints = {desktop.checkpoints[1]};
+
+    check(gameboy::SgbTrace::diff(desktop, android).equal,
+          "SGB trace diff ignores desktop runner boundary checkpoints");
+}
+
 } // namespace
 
 int main() {
     test_trace_round_trip_and_replay();
     test_trace_detects_divergence_and_rejects_bad_input();
     test_trace_diff_reports_first_difference();
+    test_trace_diff_ignores_runner_boundary_checkpoints();
     return failures == 0 ? 0 : 1;
 }
