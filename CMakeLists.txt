@@ -593,6 +593,17 @@ if(GAMEBOY_BUILD_TESTS)
         add_test(NAME gameboy_model_matrix_contract
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/model_matrix_contract_tests.py)
+        if(NOT ANDROID)
+            add_test(NAME gameboy_sgb_trace_fixture
+                     COMMAND ${Python3_EXECUTABLE}
+                             ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_trace_fixture_test.py
+                             $<TARGET_FILE:gameboy_test_runner>
+                             $<TARGET_FILE:gameboy_sgb_trace_diff>
+                             ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/sgb/trace_fixture.hex
+                             ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/sgb/trace_fixture.trace)
+            set_tests_properties(gameboy_sgb_trace_fixture
+                                 PROPERTIES LABELS "sgb;trace")
+        endif()
     endif()
     add_executable(gameboy_tests tests/core_tests.cpp)
     target_link_libraries(gameboy_tests PRIVATE gbb_core_api)

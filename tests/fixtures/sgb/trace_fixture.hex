@@ -1,0 +1,9 @@
+# Minimal clean-room SGB trace fixture. Lines are: ROM offset: byte values.
+# The program sends one MLT_REQ packet, then halts.
+0100: 3e 00 e0 00 3e 30 e0 00 21 50 01 06 10 56 0e 08
+0110: 3e 30 e0 00 cb 42 28 04 3e 10 18 02 3e 20 e0 00
+0120: cb 3a 0d 20 eb 23 05 20 e4 3e 30 e0 00 3e 20 e0
+0130: 00 76
+0134: 53 47 42 20 54 52 41 43 45 20 46 49 58 54 55 52
+0146: 03 00 00 00
+0150: 89 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00
