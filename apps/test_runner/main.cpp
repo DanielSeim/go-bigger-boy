@@ -296,6 +296,11 @@ void write_ppu_trace(std::ofstream& output, const gameboy::Cpu& cpu,
     const auto& r = cpu.registers();
     output << "cycle=" << cpu.total_cycles() << " pc=" << std::hex
            << std::setw(4) << std::setfill('0') << r.pc
+           << " dot=" << std::setw(3) << bus.debug_ppu_dot()
+           << " mode=" << static_cast<unsigned>(bus.debug_ppu_mode())
+           << " m3end=" << std::setw(3) << bus.debug_ppu_mode3_end_dot()
+           << " requests=" << std::setw(2)
+           << static_cast<unsigned>(bus.debug_last_ppu_requests())
            << " lcdc=" << std::setw(2) << static_cast<unsigned>(bus.read8(0xFF40))
            << " stat=" << std::setw(2) << static_cast<unsigned>(bus.read8(0xFF41))
            << " ly=" << std::setw(2) << static_cast<unsigned>(bus.read8(0xFF44))

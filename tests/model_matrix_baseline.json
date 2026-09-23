@@ -7,36 +7,6 @@
     },
     {
       "suite": "gbmicrotest",
-      "path": "gbmicrotest/hblank_int_l0.gb",
-      "model": "dmg"
-    },
-    {
-      "suite": "gbmicrotest",
-      "path": "gbmicrotest/hblank_scx3_if_b.gb",
-      "model": "dmg"
-    },
-    {
-      "suite": "gbmicrotest",
-      "path": "gbmicrotest/int_hblank_halt_scx0.gb",
-      "model": "dmg"
-    },
-    {
-      "suite": "gbmicrotest",
-      "path": "gbmicrotest/int_hblank_halt_scx3.gb",
-      "model": "dmg"
-    },
-    {
-      "suite": "gbmicrotest",
-      "path": "gbmicrotest/int_hblank_halt_scx4.gb",
-      "model": "dmg"
-    },
-    {
-      "suite": "gbmicrotest",
-      "path": "gbmicrotest/int_hblank_halt_scx7.gb",
-      "model": "dmg"
-    },
-    {
-      "suite": "gbmicrotest",
       "path": "gbmicrotest/int_lyc_halt.gb",
       "model": "dmg"
     },

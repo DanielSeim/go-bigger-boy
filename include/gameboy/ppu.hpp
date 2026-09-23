@@ -34,6 +34,9 @@ public:
     void set_sgb_mode(bool enabled) noexcept;
     [[nodiscard]] bool cgb_mode() const noexcept;
     [[nodiscard]] unsigned debug_dot() const noexcept { return dot_; }
+    [[nodiscard]] unsigned debug_mode3_end_dot() const noexcept {
+        return mode3_end_dot_;
+    }
     [[nodiscard]] std::uint8_t debug_mode() const noexcept { return mode_; }
     // HBlank DMA may begin immediately only while the LCD is off or the
     // visible PPU is already in mode 0. LCD startup is deliberately excluded.
@@ -202,6 +205,7 @@ private:
     std::uint8_t scx_mode3_delay_{};
     bool scx_hblank_request_early_{};
     bool scx_if_read_race_{};
+    bool startup_scx_if_read_race_{};
     bool frame_ready_{};
 
     // SGB supplies four 4-color RGB555 palettes and a 20x18 tile attribute

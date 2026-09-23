@@ -346,11 +346,19 @@ void MemoryBus::tick(const unsigned cycles) noexcept {
             transfer_hdma_block();
         }
     }
-    last_ppu_requests_ = ppu_requests;
+    // Keep the SCX-specific IF sampling marker alive for the complete
+    // FF0F read. The STAT edge can occur during the read's third T-cycle,
+    // while Cpu::read8 performs its final bus tick afterward.
+    last_ppu_requests_ = static_cast<std::uint8_t>(
+        (ppu_requests & 0x27) | (last_ppu_requests_ & 0x08) |
+        (ppu_requests & 0x08));
     if ((ppu_requests & 0x01) != 0) {
         request_interrupt(0);
     }
     if ((ppu_requests & 0x02) != 0) {
+        request_interrupt(1);
+    }
+    if ((ppu_requests & 0x10) != 0 && (interrupt_enable_ & 0x02) != 0) {
         request_interrupt(1);
     }
 }
@@ -473,6 +481,10 @@ unsigned MemoryBus::debug_ppu_dot() const noexcept { return ppu_.debug_dot(); }
 
 std::uint8_t MemoryBus::debug_ppu_mode() const noexcept {
     return ppu_.debug_mode();
+}
+
+unsigned MemoryBus::debug_ppu_mode3_end_dot() const noexcept {
+    return ppu_.debug_mode3_end_dot();
 }
 
 bool MemoryBus::double_speed() const noexcept { return double_speed_; }

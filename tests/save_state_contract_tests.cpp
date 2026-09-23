@@ -166,7 +166,8 @@ void test_save_state_round_trip_and_validation() {
     // edge-latch state. Version 32 appends the pending late-SCX timing state.
     // Version 33 appends the early-SCX HBlank request latch. Version 34
     // appends the last PPU request mask used by the IF read race. Version 35
-    // appends the SCX-specific IF race latch.
+    // appends the SCX-specific IF race latch. Version 36 appends the pending
+    // startup-SCX race latch.
     // Strip all newer blocks when constructing
     // the legacy fixtures below, just like the earlier version deltas.
     constexpr std::size_t version_twenty_two_sgb_size = 237 + 393;
@@ -185,12 +186,14 @@ void test_save_state_round_trip_and_validation() {
     constexpr std::size_t version_thirty_three_scx_hblank_size = 1;
     constexpr std::size_t version_thirty_four_ppu_request_size = 1;
     constexpr std::size_t version_thirty_five_scx_if_size = 1;
+    constexpr std::size_t version_thirty_six_startup_scx_if_size = 1;
     constexpr std::size_t version_nine_fetcher_size =
         737 + version_ten_window_latch_size + version_eleven_fetcher_size +
         version_twelve_sprite_size + version_thirteen_sprite_fetch_size +
         version_fourteen_sprite_deadline_size + version_fifteen_sprite_render_size;
     auto legacy_saved = saved;
     legacy_saved.resize(legacy_saved.size() -
+                        version_thirty_six_startup_scx_if_size -
                         version_thirty_five_scx_if_size -
                         version_thirty_four_ppu_request_size -
                         version_thirty_three_scx_hblank_size -
@@ -521,6 +524,7 @@ void test_save_state_round_trip_and_validation() {
 
     auto version_twenty_three = saved;
     version_twenty_three.resize(version_twenty_three.size() -
+                                version_thirty_six_startup_scx_if_size -
                                 version_thirty_five_scx_if_size -
                                 version_thirty_four_ppu_request_size -
                                 version_thirty_three_scx_hblank_size -
@@ -573,6 +577,7 @@ void test_save_state_round_trip_and_validation() {
 
     auto version_sixteen = saved;
     version_sixteen.resize(version_sixteen.size() -
+                           version_thirty_six_startup_scx_if_size -
                            version_thirty_five_scx_if_size -
                            version_thirty_four_ppu_request_size -
                            version_thirty_three_scx_hblank_size -
@@ -609,6 +614,7 @@ void test_save_state_round_trip_and_validation() {
 
     auto version_seventeen = saved;
     version_seventeen.resize(version_seventeen.size() -
+                             version_thirty_six_startup_scx_if_size -
                              version_thirty_five_scx_if_size -
                              version_thirty_four_ppu_request_size -
                              version_thirty_three_scx_hblank_size -
@@ -643,7 +649,7 @@ void test_save_state_round_trip_and_validation() {
           "version 17 save states remain loadable after adding object deadlines");
 
     auto future_version = saved;
-    future_version[8] = 36;
+    future_version[8] = 37;
     auto rejected_version = false;
     try {
         emulator.load_state(future_version);

@@ -74,6 +74,22 @@ std::uint8_t Ppu::tick(const unsigned cycles) noexcept {
                 stat_line_ = true;
                 requests |= 0x02;
                 if (scx_if_read_race_) requests |= 0x08;
+                const auto fine_scroll = static_cast<unsigned>(scx_ & 7U);
+                if (lcd_startup_ &&
+                    (fine_scroll == 0 || fine_scroll == 3 ||
+                     fine_scroll == 4 || fine_scroll == 7)) {
+                    requests |= 0x20;
+                }
+            }
+
+            // When no SCX write was made while the LCD was off, the DMG's
+            // startup HBlank interrupt is sampled one machine cycle before
+            // the mode bits switch to mode 0. This is an internal CPU timing
+            // notification (bit 0x10); it must not make IF/STAT appear early
+            // to software that is only reading the PPU registers.
+            if (lcd_startup_ && !scx_hblank_request_early_ && dot_ == 248 &&
+                (stat_select_ & 0x08) != 0 && !stat_line_) {
+                requests |= 0x10;
             }
 
             if (dot_ == mode3_end_dot_) {
@@ -182,8 +198,13 @@ bool Ppu::window_active_on_line() const noexcept {
 }
 
 void Ppu::begin_visible_line() noexcept {
-    if (!lcd_startup_) scx_hblank_request_early_ = false;
-    scx_if_read_race_ = false;
+    if (!lcd_startup_) {
+        scx_hblank_request_early_ = false;
+        scx_if_read_race_ = startup_scx_if_read_race_;
+        startup_scx_if_read_race_ = false;
+    } else {
+        scx_if_read_race_ = false;
+    }
     window_rendered_this_line_ = false;
     if (ly_ == window_y_) {
         window_y_triggered_ = true;

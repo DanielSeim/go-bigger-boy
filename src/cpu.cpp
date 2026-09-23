@@ -88,6 +88,18 @@ unsigned Cpu::step(MemoryBus& bus) {
             total_cycles_ += 4;
             return 4;
         }
+        if (halted_ && (pending & 0x02) != 0 &&
+            (bus.last_ppu_requests_ & 0x20) != 0) {
+            // A subset of DMG startup HBlank phases wakes HALT on the next
+            // four-cycle sample rather than dispatching on the first sample.
+            // The PPU marks this transient boundary; keep HALT active while
+            // consuming that sample so normal STAT reads and non-HALT code
+            // retain the ordinary request timing.
+            bus.last_ppu_requests_ &= static_cast<std::uint8_t>(~0x20U);
+            idle(bus, 4);
+            total_cycles_ += 4;
+            return 4;
+        }
         halted_ = false;
         stopped_ = false;
     }
@@ -626,11 +638,12 @@ std::uint8_t Cpu::read8(MemoryBus& bus, const std::uint16_t address) noexcept {
     // final-cycle value for ordinary reads, but retain the pre-edge value when
     // a STAT request was raised by that final cycle.
     if (address == 0xFF0F) {
+        bus.last_ppu_requests_ &= static_cast<std::uint8_t>(~0x08U);
         idle(bus, 3);
         const auto value = bus.cpu_read8(address);
         idle(bus, 1);
         return (bus.last_ppu_requests_ & 0x08) != 0
-                   ? value
+                   ? static_cast<std::uint8_t>(value & ~0x02U)
                    : bus.cpu_read8(address);
     }
     idle(bus, 4);

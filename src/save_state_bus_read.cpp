@@ -544,7 +544,9 @@ void SaveStateBusCodec::read(save_state_format::Reader& reader,
     bus.last_ppu_requests_ = version >= 35
                                  ? reader.u8()
                                  : (version >= 34 ? reader.u8() : 0);
-    if (bus.last_ppu_requests_ > 0x0F) {
+    bus.ppu_.startup_scx_if_read_race_ =
+        version >= 36 ? reader.boolean() : false;
+    if ((bus.last_ppu_requests_ & ~0x2FU) != 0) {
         throw SaveStateError("Save state contains invalid PPU request state");
     }
     if (bus.printer_connected_) bus.printer_.reset();

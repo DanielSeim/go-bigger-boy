@@ -51,6 +51,10 @@ public:
     [[nodiscard]] bool cgb_mode() const noexcept;
     [[nodiscard]] unsigned debug_ppu_dot() const noexcept;
     [[nodiscard]] std::uint8_t debug_ppu_mode() const noexcept;
+    [[nodiscard]] unsigned debug_ppu_mode3_end_dot() const noexcept;
+    [[nodiscard]] std::uint8_t debug_last_ppu_requests() const noexcept {
+        return last_ppu_requests_;
+    }
     [[nodiscard]] bool double_speed() const noexcept;
     // Diagnostic view of the CGB APU's 1 MHz phase.  The phase advances only
     // while the CPU is in double-speed mode; normal-speed APU clocks already
