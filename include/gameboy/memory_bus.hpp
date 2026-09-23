@@ -80,6 +80,7 @@ public:
     [[nodiscard]] const SgbAdapter::Diagnostics& debug_sgb_diagnostics() const noexcept {
         return sgb_adapter_.diagnostics();
     }
+    [[nodiscard]] std::uint64_t debug_sgb_state_hash() const noexcept;
     [[nodiscard]] const SgbAdapter& debug_sgb_adapter() const noexcept {
         return sgb_adapter_;
     }

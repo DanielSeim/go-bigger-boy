@@ -65,7 +65,8 @@ What works well:
 - MBC5 rumble output through compatible SDL3 gamepads on desktop
 - Versioned, ROM-validated save states with configurable save/load, fast-forward,
   and rewind controls
-- Opt-in logging, link traces, CPU/PPU/APU traces, and model-matrix diagnostics
+- Opt-in logging, link traces, CPU/PPU/APU traces, model-matrix diagnostics,
+  and deterministic SGB trace capture/replay ([details](docs/sgb-traces.md))
 - Contract and conformance tests that run without proprietary ROMs in the repository
 
 Known limitations:

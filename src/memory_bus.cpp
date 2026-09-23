@@ -7,6 +7,21 @@ namespace {
 constexpr unsigned oam_dma_byte_cycles = 4;
 constexpr unsigned oam_dma_size = 0xA0;
 constexpr unsigned oam_dma_start_cycles = 8;
+
+std::uint64_t sgb_hash_append(const std::uint64_t hash,
+                              const std::uint8_t value) noexcept {
+    return (hash ^ value) * UINT64_C(1099511628211);
+}
+
+template <typename T>
+std::uint64_t sgb_hash_append_integer(std::uint64_t hash,
+                                      const T value) noexcept {
+    for (std::size_t index = 0; index < sizeof(T); ++index) {
+        hash = sgb_hash_append(
+            hash, static_cast<std::uint8_t>(value >> (index * 8)));
+    }
+    return hash;
+}
 }
 
 MemoryBus::MemoryBus(Cartridge cartridge)
@@ -17,6 +32,55 @@ MemoryBus::MemoryBus(Cartridge cartridge)
     ppu_.set_cgb_mode(cgb_mode_);
     serial_ = SerialPort{cgb_mode_};
     serial_.set_completion_callback(this, &MemoryBus::serial_transfer_complete);
+}
+
+std::uint64_t MemoryBus::debug_sgb_state_hash() const noexcept {
+    auto hash = UINT64_C(14695981039346656037);
+    for (const auto pixel : ppu_.sgb_framebuffer()) {
+        hash = sgb_hash_append_integer(hash, pixel);
+    }
+    for (std::uint16_t index = 0; index < 0x2000; ++index) {
+        hash = sgb_hash_append(hash, ppu_.debug_read_sgb_border_tile(index));
+    }
+    for (std::uint16_t index = 0; index < 0x1000; ++index) {
+        hash = sgb_hash_append(hash, ppu_.debug_read_sgb_border_pct(index));
+    }
+    for (std::uint16_t index = 0; index < 0x800; ++index) {
+        hash = sgb_hash_append_integer(hash, ppu_.debug_read_sgb_palette(index));
+    }
+    for (std::uint8_t index = 0; index < 16; ++index) {
+        hash = sgb_hash_append_integer(
+            hash, ppu_.debug_read_sgb_active_palette(index));
+    }
+    for (std::uint8_t y = 0; y < 18; ++y) {
+        for (std::uint8_t x = 0; x < 20; ++x) {
+            hash = sgb_hash_append(hash, ppu_.debug_read_sgb_attribute(x, y));
+        }
+    }
+    hash = sgb_hash_append(hash, ppu_.sgb_mask_mode());
+    const auto& diagnostics = sgb_adapter_.diagnostics();
+    hash = sgb_hash_append(hash, diagnostics.enabled ? 1 : 0);
+    hash = sgb_hash_append_integer(hash, diagnostics.packets_completed);
+    hash = sgb_hash_append_integer(hash, diagnostics.commands_applied);
+    hash = sgb_hash_append_integer(hash, diagnostics.malformed_packets);
+    hash = sgb_hash_append(hash, diagnostics.last_command);
+    hash = sgb_hash_append(hash, diagnostics.last_packet_bytes);
+    hash = sgb_hash_append(hash, diagnostics.player_count);
+    hash = sgb_hash_append(hash, diagnostics.current_player);
+    const auto& history = sgb_adapter_.command_history();
+    for (std::size_t index = 0; index < sgb_adapter_.command_history_size(); ++index) {
+        const auto history_index =
+            (sgb_adapter_.command_history_oldest() + index) %
+            SgbAdapter::command_history_capacity;
+        const auto& record = history[history_index];
+        hash = sgb_hash_append_integer(hash, record.sequence);
+        hash = sgb_hash_append(hash, record.command);
+        hash = sgb_hash_append(hash, record.packet_bytes);
+        for (std::size_t byte = 0; byte < record.packet_bytes; ++byte) {
+            hash = sgb_hash_append(hash, record.packet[byte]);
+        }
+    }
+    return hash;
 }
 
 void MemoryBus::initialize_post_boot(const HardwareModel model) noexcept {

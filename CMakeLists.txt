@@ -105,6 +105,7 @@ add_library(gameboy_core
     src/gameshark.cpp
     src/joypad.cpp
     src/sgb_adapter.cpp
+    src/sgb_trace.cpp
     src/link_packet_codec.cpp
     src/link_session.cpp
     src/link_scheduler.cpp
@@ -974,6 +975,12 @@ if(GAMEBOY_BUILD_TESTS)
     target_link_libraries(gameboy_ppu_sgb_contract_tests PRIVATE gameboy_core)
     add_test(NAME gameboy_ppu_sgb_contract
              COMMAND gameboy_ppu_sgb_contract_tests)
+
+    add_executable(gameboy_sgb_trace_contract_tests
+        tests/sgb_trace_contract_tests.cpp)
+    target_link_libraries(gameboy_sgb_trace_contract_tests PRIVATE gameboy_core)
+    add_test(NAME gameboy_sgb_trace_contract
+             COMMAND gameboy_sgb_trace_contract_tests)
 
     add_executable(gameboy_logging_contract_tests
         tests/logging_contract_tests.cpp)
