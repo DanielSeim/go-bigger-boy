@@ -121,6 +121,39 @@ void test_timer_write_edges() {
           "changing TAC across a timer-input falling edge increments TIMA");
 }
 
+void test_normal_timer_interrupt_vector_boundary() {
+    // The timer_if fixture reaches the normal timer vector with the timer
+    // input high and its falling edge exactly in the final four cycles of
+    // interrupt entry. Those CPU-visible cycles must still advance the other
+    // peripherals, but must not advance the timer itself.
+    for (const auto model : gameboy::concrete_hardware_models) {
+        gameboy::MemoryBus bus{
+            gameboy::Cartridge{test_rom({0xFB, 0x00})}};
+        bus.initialize_post_boot(model);
+        gameboy::Cpu cpu;
+        cpu.reset(model);
+
+        check(cpu.step(bus) == 4 && !cpu.interrupts_enabled(),
+              "timer boundary setup keeps EI delayed");
+        check(cpu.step(bus) == 4 && cpu.interrupts_enabled(),
+              "timer boundary setup enables interrupts after the next opcode");
+
+        bus.write8(0xFF04, 0);
+        bus.write8(0xFF05, 0xFF);
+        bus.write8(0xFF06, 0xFE);
+        bus.write8(0xFF07, 0x07);
+        bus.tick(236);
+        bus.write8(0xFFFF, 0x04);
+        bus.write8(0xFF0F, 0x04);
+
+        check(cpu.step(bus) == 20 && cpu.registers().pc == 0x0050,
+              "normal timer interrupt dispatch keeps its twenty-cycle contract");
+        check(bus.read8(0xFF05) == 0xFF &&
+                  (bus.read8(0xFF0F) & 0x04) == 0,
+              "normal timer vector entry does not advance TIMA on its final cycle");
+    }
+}
+
 void test_emulator_timer_integration() {
     gameboy::Emulator emulator{
         gameboy::Cartridge{test_rom({0x00, 0x00, 0x00, 0x00})}};
@@ -169,6 +202,7 @@ int main() {
     test_divider_and_timer_frequencies();
     test_timer_overflow_pipeline();
     test_timer_write_edges();
+    test_normal_timer_interrupt_vector_boundary();
     test_emulator_timer_integration();
     return failures == 0 ? 0 : 1;
 }
