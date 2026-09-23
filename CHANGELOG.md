@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [0.35.23] - 2026-09-23
+
+### Super Game Boy diagnostics
+
+- Add Android SGB trace capture and replay support, including a trace
+  comparison tool for investigating hardware-specific behavior.
+- Normalize trace boundary checkpoints and accept CRLF-delimited traces so
+  captures remain comparable across platforms.
+- Add deterministic SGB trace regression coverage.
+
+### Link cable testing
+
+- Make the replayable link fault harness wait for a valid host-led handshake
+  and drain pending injected packets before declaring a scenario settled,
+  preventing timing-sensitive failures on slower runners.
+
 ## [0.35.22] - 2026-09-23
 
 ### Link cable
