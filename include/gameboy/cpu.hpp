@@ -57,9 +57,10 @@ private:
     [[nodiscard]] unsigned execute_cb(MemoryBus& bus);
     [[nodiscard]] std::uint8_t pending_interrupts(const MemoryBus& bus) const noexcept;
     [[nodiscard]] unsigned service_interrupt(MemoryBus& bus,
-                                             std::uint8_t pending) noexcept;
+                                             bool from_halt) noexcept;
     [[nodiscard]] bool condition(unsigned index) const noexcept;
     void idle(MemoryBus& bus, unsigned cycles) noexcept;
+    void idle_without_timer(MemoryBus& bus, unsigned cycles) noexcept;
     [[nodiscard]] std::uint8_t read8(MemoryBus& bus,
                                      std::uint16_t address) noexcept;
     void write8(MemoryBus& bus, std::uint16_t address,

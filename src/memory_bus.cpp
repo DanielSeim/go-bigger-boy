@@ -326,7 +326,9 @@ void MemoryBus::tick(const unsigned cycles) noexcept {
             if (apu_cycle_phase_) apu_.tick(1);
             apu_cycle_phase_ = !apu_cycle_phase_;
         }
-        timer_interrupt = timer_.tick(1) || timer_interrupt;
+        if (!timer_paused_) {
+            timer_interrupt = timer_.tick(1) || timer_interrupt;
+        }
         for (auto ticks = timer_.take_apu_ticks(); ticks > 0; --ticks) {
             apu_.clock_frame_sequencer();
         }
@@ -361,6 +363,16 @@ void MemoryBus::tick(const unsigned cycles) noexcept {
     if ((ppu_requests & 0x10) != 0 && (interrupt_enable_ & 0x02) != 0) {
         request_interrupt(1);
     }
+}
+
+void MemoryBus::tick_without_timer(const unsigned cycles) noexcept {
+    // CPU interrupt entry uses this only for the timer-specific internal
+    // vector cycle.  PPU, APU, serial, DMA, and the debug clock must still
+    // advance normally during that cycle.
+    const auto previous = timer_paused_;
+    timer_paused_ = true;
+    tick(cycles);
+    timer_paused_ = previous;
 }
 
 void MemoryBus::write_hdma_register(const std::uint16_t address,

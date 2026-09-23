@@ -118,14 +118,10 @@ write mismatch; channel alignment, PCM register visibility, and noise LFSR
 startup remain covered by shared contracts until a reproducible revision-only
 mismatch is measured.
 
-The Wilbert `acceptance/timer/timer_if.gb` fixture is a documented exception:
-upstream reports results only for MGB, CGB, and AGS. The matrix therefore marks
-DMG and SGB profiles as `EXPECTED_FAIL` (outside the fixture's tested set), while
-the currently reproducible MGB/CGB one-M-cycle normal-interrupt TIMA boundary is
-listed as `KNOWN_FAIL` in `tests/model_expectations.json`. The core retains the
-verified 20-cycle interrupt dispatch contract and the complete timer unit suite;
-this narrow boundary remains an explicit accuracy target rather than a release
-gate regression.
+The Wilbert `acceptance/timer/timer_if.gb` fixture now passes across the exposed
+post-boot profiles. Its normal timer-interrupt vector boundary is covered by the
+same 20-cycle CPU dispatch contract and by the complete timer unit suite; the
+matrix no longer carries a known-failure exception for this fixture.
 
 The same expectations file records the per-ROM `Verified results` scopes from
 the pinned Wilbert source for the reviewed GPU timing fixtures. A fixture marked

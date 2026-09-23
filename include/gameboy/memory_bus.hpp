@@ -105,6 +105,7 @@ private:
                                          std::uint8_t) noexcept;
     void handle_serial_transfer(std::uint8_t transmitted,
                                 std::uint8_t received) noexcept;
+    void tick_without_timer(unsigned cycles) noexcept;
 
     Cartridge cartridge_;
     DiagnosticBootRom boot_rom_{};
@@ -143,6 +144,7 @@ private:
     std::uint8_t last_ppu_requests_{};
     std::uint64_t debug_bus_cycles_{};
     bool debug_io_trace_enabled_{};
+    bool timer_paused_{};
     std::vector<IoTraceEvent> debug_io_trace_{};
     std::array<std::uint8_t, Joypad::sgb_packet_size * Joypad::sgb_max_packets>
         sgb_packet_{};

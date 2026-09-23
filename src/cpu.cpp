@@ -82,6 +82,7 @@ void Cpu::load_registers(CpuRegisters registers) noexcept {
 unsigned Cpu::step(MemoryBus& bus) {
     step_cycles_ = 0;
     const auto pending = pending_interrupts(bus);
+    const auto was_halted = halted_;
     if (halted_ || stopped_) {
         if (pending == 0) {
             if (halted_) idle(bus, 4);
@@ -105,7 +106,7 @@ unsigned Cpu::step(MemoryBus& bus) {
     }
 
     if (ime_ && pending != 0) {
-        const auto cycles = service_interrupt(bus, pending);
+        const auto cycles = service_interrupt(bus, was_halted);
         if (step_cycles_ < cycles) idle(bus, cycles - step_cycles_);
         total_cycles_ += cycles;
         return cycles;
@@ -584,8 +585,7 @@ std::uint8_t Cpu::pending_interrupts(const MemoryBus& bus) const noexcept {
 }
 
 unsigned Cpu::service_interrupt(MemoryBus& bus,
-                                const std::uint8_t pending) noexcept {
-    (void)pending;
+                                const bool from_halt) noexcept {
     ime_ = false;
     ime_enable_delay_ = 0;
     halted_ = false;
@@ -612,7 +612,16 @@ unsigned Cpu::service_interrupt(MemoryBus& bus,
         bus.write8(0xFF0F,
                    static_cast<std::uint8_t>(bus.read8(0xFF0F) & ~mask));
     }
-    idle(bus, 4);
+    // A normal timer dispatch has one internal vector-entry cycle during
+    // which the CPU-visible interrupt timing advances but the timer input
+    // does not.  This is the boundary exercised by Wilbert's 45/46-NOP
+    // timer_if fixture.  HALT dispatch and every other interrupt source keep
+    // the ordinary peripheral timing path.
+    if (from_halt || (dispatched & 0x04U) == 0) {
+        idle(bus, 4);
+    } else {
+        idle_without_timer(bus, 4);
+    }
     registers_.pc = dispatched == 0
                         ? 0
                         : static_cast<std::uint16_t>(0x0040 + interrupt * 8);
@@ -630,6 +639,11 @@ bool Cpu::condition(const unsigned index) const noexcept {
 
 void Cpu::idle(MemoryBus& bus, const unsigned cycles) noexcept {
     bus.tick(cycles);
+    step_cycles_ += cycles;
+}
+
+void Cpu::idle_without_timer(MemoryBus& bus, const unsigned cycles) noexcept {
+    bus.tick_without_timer(cycles);
     step_cycles_ += cycles;
 }
 

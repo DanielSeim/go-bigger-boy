@@ -5,30 +5,6 @@
       "path": "gbmicrotest/halt_op_dupe_delay.gb",
       "model": "dmg",
       "reason": "Upstream ROM expects DIV=0x55 after resetting DIV and executing only 58 NOPs; the DMG divider contract and focused HALT timing trace produce DIV=0x01, so no CPU/timer change is justified for this inconsistent fixture."
-    },
-    {
-      "suite": "mooneye-wilbertpol",
-      "path": "mooneye-test-suite-wilbertpol/acceptance/timer/timer_if.gb",
-      "model": "mgb",
-      "reason": "Reviewed one-M-cycle normal-interrupt TIMA boundary mismatch; CPU interrupt timing contract remains correct."
-    },
-    {
-      "suite": "mooneye-wilbertpol",
-      "path": "mooneye-test-suite-wilbertpol/acceptance/timer/timer_if.gb",
-      "model": "cgb0",
-      "reason": "Reviewed one-M-cycle normal-interrupt TIMA boundary mismatch; CPU interrupt timing contract remains correct."
-    },
-    {
-      "suite": "mooneye-wilbertpol",
-      "path": "mooneye-test-suite-wilbertpol/acceptance/timer/timer_if.gb",
-      "model": "cgb-c",
-      "reason": "Reviewed one-M-cycle normal-interrupt TIMA boundary mismatch; CPU interrupt timing contract remains correct."
-    },
-    {
-      "suite": "mooneye-wilbertpol",
-      "path": "mooneye-test-suite-wilbertpol/acceptance/timer/timer_if.gb",
-      "model": "cgb-e",
-      "reason": "Reviewed one-M-cycle normal-interrupt TIMA boundary mismatch; CPU interrupt timing contract remains correct."
     }
   ],
   "model_applicability": {
