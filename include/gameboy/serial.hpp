@@ -31,6 +31,12 @@ public:
     [[nodiscard]] virtual bool preserve_active_transfer() const noexcept {
         return false;
     }
+    // A packet transport may have already captured the outgoing byte while
+    // the guest-visible serial port has not shifted its first bit yet. In
+    // that window SB must remain stable until the response is consumed.
+    [[nodiscard]] virtual bool preserve_data_write() const noexcept {
+        return false;
+    }
     // Explicit cancellation used by reset_link(). A normal SC rewrite is
     // deliberately not treated as cancellation: a TCP response can still be
     // in flight and must remain consumable by the re-armed transfer.
@@ -51,11 +57,11 @@ public:
         // transfer may still have a byte in flight while that polling loop
         // runs, so do not replace the shift register until that transfer has
         // completed (or reset_link() explicitly cancels it).
-        // Before the first edge the guest may still be replacing its probe
-        // byte (the Cable Club writes SB=02, then SB=01). Once at least one
-        // linked edge has shifted, keep the in-flight byte intact.
-        if (endpoint_ != nullptr && active_ && bits_shifted_ != 0 &&
-            endpoint_->preserve_active_transfer()) return;
+        // Before a remote request is queued the guest may still be replacing
+        // its probe byte (the Cable Club writes SB=02, then SB=01). Once a
+        // packet has captured the byte, keep the in-flight value intact.
+        if (endpoint_ != nullptr && active_ &&
+            (bits_shifted_ != 0 || endpoint_->preserve_data_write())) return;
         data_ = value;
     }
     void write_control(std::uint8_t value) noexcept;

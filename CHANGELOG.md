@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.35.22] - 2026-09-23
+
+### Link cable
+
+- Preserve the outgoing serial byte after a remote link packet is queued,
+  preventing Pokémon's probe-byte rewrites from corrupting TCP link handshakes.
+- Add regression coverage for delayed remote responses before the first serial
+  edge.
+
 ## [0.35.21] - 2026-09-22
 
 ### Link diagnostics and reliability

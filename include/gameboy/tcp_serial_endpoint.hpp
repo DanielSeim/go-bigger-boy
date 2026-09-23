@@ -34,6 +34,9 @@ public:
     [[nodiscard]] bool preserve_active_transfer() const noexcept override {
         return true;
     }
+    [[nodiscard]] bool preserve_data_write() const noexcept override {
+        return pending_sequence_.has_value();
+    }
     [[nodiscard]] bool peer_ready_for_link() const noexcept {
         return connected() && peer_hello_seen_ && peer_compatible_ &&
                (arbitration_priority_ || peer_request_seen_) &&

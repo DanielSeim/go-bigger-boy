@@ -713,6 +713,13 @@ void test_packet_channel_endpoint_contract() {
     second.write8(0xFF01, 0x3C);
     first.write8(0xFF02, 0x81);  // Player one supplies the clock.
     second.write8(0xFF02, 0x80); // Player two uses the external clock.
+    // The packet can be queued before the first emulated serial edge. Pokémon
+    // then rewrites SB while probing; that must not mutate the byte already
+    // captured by the remote transport.
+    first.tick(512);
+    first.write8(0xFF01, 0x01);
+    check(first.serial_port().read_data() == 0xA5,
+          "queued remote serial request freezes SB before its first edge");
     for (unsigned cycle = 0; cycle < 2000; ++cycle) {
         first.tick(4);
         second.tick(4);
