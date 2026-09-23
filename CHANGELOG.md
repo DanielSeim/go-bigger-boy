@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.35.24] - 2026-09-23
+
+### Voxel diorama rendering
+
+- Preserve native source-pixel detail in all desktop and web diorama modes,
+  including the regular and shape-aware renderers.
+- Batch the recessed framebuffer into a textured plane and generate 3D geometry
+  only for columns with actual relief, reducing the per-frame geometry cost
+  without introducing the visual artifacts caused by coarse 2×2 cells.
+
 ## [0.35.23] - 2026-09-23
 
 ### Super Game Boy diagnostics

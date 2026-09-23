@@ -643,10 +643,10 @@ scale factors, and `lcd` applies a lightweight LCD mask with scanlines. The
 setting is stored as `video.Mode` in
 `settings.ini`; the web selector remembers its choice in browser storage.
 Desktop, Android, and web builds also expose three experimental voxel modes. `voxel` is the
-original one-source-pixel relief renderer. `voxel_shape` (shown as “Voxel
-diorama (shape-aware)”) keeps the source-pixel silhouette intact, then applies
-edge-aware depth and stronger per-layer volume so sprites read as compact 3D
-forms without the chunky blobs caused by coarse 2×2 grouping. Desktop and web
+native source-pixel relief renderer with a batched textured background. `voxel_shape` (shown as “Voxel
+diorama (shape-aware)”) keeps the source-pixel silhouette, then applies edge-aware
+depth and stronger per-layer volume so sprites read as compact 3D forms. Its flat
+framebuffer is batched as a textured plane to keep native detail responsive. Desktop and web
 provide camera controls; all voxel modes share profiles, layer ordering, and the
 optional framebuffer facade, and can be switched while a ROM is running.
 Android currently uses the configured profile defaults. `voxel_popup` (shown as “Voxel

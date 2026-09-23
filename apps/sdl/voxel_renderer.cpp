@@ -141,14 +141,11 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
     auto& indices = context.voxel_indices;
     vertices.clear();
     indices.clear();
-    // Both modes keep the native one-pixel silhouette. The shape-aware path
-    // deliberately
-    // An earlier prototype grouped the framebuffer into 2x2 blocks; that made
-    // thin outlines, text and small sprites merge into large rectangular blobs.
-    // Shape-aware geometry now uses one source pixel per column and spends its
-    // extra detail budget on depth/layer separation instead of spatial
-    // downsampling. Both modes share the same layer/depth rules so they can be
-    // compared live from the video menu.
+    // All three diorama modes use one source pixel per column. The flat
+    // framebuffer is batched as a textured plane below, while only columns
+    // with actual relief emit 3D geometry. Shape-aware depth and layer
+    // treatment therefore add volume without spatially downsampling the
+    // framebuffer, preserving thin outlines, text and small sprites.
     vertices.reserve(120000);
     indices.reserve(180000);
     // Keep outline pixels charcoal rather than absolute black.  This is
@@ -218,8 +215,8 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
     // Build a relief from the *visible framebuffer* rather than averaging an
     // entire background tile into one block. Tile averages erase the
     // silhouettes and text that make a Game Boy scene readable. One-pixel
-    // cells retain native pixel-art shapes while layer depth supplies the
-    // diorama separation.
+    // Shape-aware cells receive stronger edge relief while layer depth
+    // supplies the diorama separation.
     struct VoxelColumn {
         float x{};
         float y{};
@@ -231,9 +228,13 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
         bool sprite{};
         bool window{};
         bool object{};
+        bool relief{};
     };
     std::vector<VoxelColumn> columns;
-    const unsigned cell_size = 1U;
+    // All diorama modes retain native source-pixel geometry. The flat
+    // framebuffer is drawn as one textured plane below, so it does not need
+    // one background quad per source pixel.
+    constexpr unsigned cell_size = 1U;
     const unsigned cells_x = gameboy::Ppu::screen_width / cell_size;
     const unsigned cells_y = gameboy::Ppu::screen_height / cell_size;
     columns.reserve(cells_x * cells_y);
@@ -661,26 +662,34 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
             columns.push_back({x, y, static_cast<float>(cell_size),
                                static_cast<float>(cell_size), depth,
                                sort_depth,
-                               color, has_sprite, window_layer, object_layer});
+                               color, has_sprite, window_layer, object_layer,
+                               has_artwork || window_layer || object_layer});
         }
     }
-    // First draw a continuous, front-facing color plane. It is the fallback
-    // image underneath the raised details and keeps every source pixel visible.
-    for (const auto& column : columns) {
-        const auto x = column.x;
-        const auto y = column.y;
-        const auto width = column.width;
-        const auto extent_y = column.extent_y;
-        const auto pixel_index = static_cast<std::size_t>(y) *
-                                     gameboy::Ppu::screen_width +
-                                 static_cast<std::size_t>(x);
-        add_quad(project(x, y, base_depth),
-                 project(x + width, y, base_depth),
-                 project(x + width, y + extent_y, base_depth),
-                 project(x, y + extent_y, base_depth),
-                 voxel_color(background_pixels[pixel_index],
-                             0.90F * profile.lighting,
-                             voxel_ambient * profile.lighting));
+    // The recessed framebuffer is flat geometry. Upload it once as a texture
+    // instead of emitting one color quad per source cell; this removes the
+    // dominant per-frame cost while preserving the exact source-pixel image.
+    if (!SDL_UpdateTexture(context.texture, nullptr, background_pixels.data(),
+                           static_cast<int>(gameboy::Ppu::screen_width *
+                                            sizeof(std::uint32_t)))) {
+        return false;
+    }
+    const std::array<SDL_Vertex, 4> background_vertices{{
+        {project(0.0F, 0.0F, base_depth), {1.0F, 1.0F, 1.0F, 1.0F}, {0.0F, 0.0F}},
+        {project(static_cast<float>(gameboy::Ppu::screen_width), 0.0F,
+                 base_depth), {1.0F, 1.0F, 1.0F, 1.0F}, {1.0F, 0.0F}},
+        {project(static_cast<float>(gameboy::Ppu::screen_width),
+                 static_cast<float>(gameboy::Ppu::screen_height), base_depth),
+         {1.0F, 1.0F, 1.0F, 1.0F}, {1.0F, 1.0F}},
+        {project(0.0F, static_cast<float>(gameboy::Ppu::screen_height),
+                 base_depth), {1.0F, 1.0F, 1.0F, 1.0F}, {0.0F, 1.0F}}}};
+    constexpr std::array<int, 6> background_indices{{0, 1, 2, 0, 2, 3}};
+    if (!SDL_RenderGeometry(context.renderer, context.texture,
+                             background_vertices.data(),
+                             static_cast<int>(background_vertices.size()),
+                             background_indices.data(),
+                             static_cast<int>(background_indices.size()))) {
+        return false;
     }
     // SDL geometry has no portable depth buffer. Painter ordering gives us
     // deterministic opaque occlusion on software, OpenGL, D3D, Metal and
@@ -707,7 +716,7 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
                               static_cast<std::size_t>(cell_x)];
     };
     for (const auto& column : columns) {
-        if (column.height >= base_depth - 0.15F) continue;
+        if (!column.relief || column.height >= base_depth - 0.15F) continue;
         const auto x = column.x;
         const auto y = column.y;
         const auto depth = column.height;

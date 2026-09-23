@@ -270,12 +270,10 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
         }
     }
 
-    // Both modes keep native pixel silhouettes. The first shape-aware
-    // prototype grouped pixels into 2x2 cells, which made thin
-    // outlines, text and small sprites merge into chunky blobs.  The refined
-    // mode uses one source pixel per column and expresses its shape through
-    // layer-aware depth instead of framebuffer downsampling.
-    const unsigned cell_size = 1U;
+    // All diorama modes retain native source-pixel geometry. The flat
+    // framebuffer is drawn as one textured plane below, so it does not need
+    // one background quad per source pixel.
+    constexpr unsigned cell_size = 1U;
     const unsigned cells_x = 160U / cell_size;
     const unsigned cells_y = 144U / cell_size;
     struct VoxelColumn {
@@ -289,6 +287,7 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
         bool sprite{};
         bool window{};
         bool object{};
+        bool relief{};
     };
     std::vector<VoxelColumn> columns;
     columns.reserve(cells_x * cells_y);
@@ -649,20 +648,35 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
             columns.push_back({x, y, static_cast<float>(cell_size),
                                static_cast<float>(cell_size), depth,
                                sort_depth,
-                               color, has_sprite, window_layer, object_layer});
+                               color, has_sprite, window_layer, object_layer,
+                               has_artwork || window_layer || object_layer});
         }
     }
-    for (const auto& column : columns) {
-        const auto pixel_index = static_cast<std::size_t>(column.y) * 160U +
-                                 static_cast<std::size_t>(column.x);
-        add_quad(project(column.x, column.y, base_depth),
-                 project(column.x + column.width, column.y, base_depth),
-                 project(column.x + column.width,
-                         column.y + column.extent_y, base_depth),
-                 project(column.x, column.y + column.extent_y, base_depth),
-                 voxel_color(background_pixels[pixel_index],
-                             0.90F * lighting,
-                             voxel_ambient * lighting));
+    // Draw the recessed framebuffer as one textured plane rather than one
+    // color quad per source cell. This preserves the image while removing the
+    // dominant per-frame geometry cost in both WebGL and native SDL backends.
+    if (!SDL_UpdateTexture(app.texture, nullptr, background_pixels.data(),
+                           static_cast<int>(160U * sizeof(std::uint32_t)))) {
+        gbb::log_frontend_error(
+            std::string("Could not update browser voxel background: ") +
+            SDL_GetError());
+        return;
+    }
+    const std::array<SDL_Vertex, 4> background_vertices{{
+        {project(0.0F, 0.0F, base_depth), {1.0F, 1.0F, 1.0F, 1.0F}, {0.0F, 0.0F}},
+        {project(160.0F, 0.0F, base_depth), {1.0F, 1.0F, 1.0F, 1.0F}, {1.0F, 0.0F}},
+        {project(160.0F, 144.0F, base_depth), {1.0F, 1.0F, 1.0F, 1.0F}, {1.0F, 1.0F}},
+        {project(0.0F, 144.0F, base_depth), {1.0F, 1.0F, 1.0F, 1.0F}, {0.0F, 1.0F}}}};
+    constexpr std::array<int, 6> background_indices{{0, 1, 2, 0, 2, 3}};
+    if (!SDL_RenderGeometry(app.renderer, app.texture,
+                             background_vertices.data(),
+                             static_cast<int>(background_vertices.size()),
+                             background_indices.data(),
+                             static_cast<int>(background_indices.size()))) {
+        gbb::log_frontend_error(
+            std::string("Could not render browser voxel background: ") +
+            SDL_GetError());
+        return;
     }
     std::stable_sort(columns.begin(), columns.end(),
                      [](const VoxelColumn& left, const VoxelColumn& right) {
@@ -685,7 +699,7 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
                               static_cast<std::size_t>(cell_x)];
     };
     for (const auto& column : columns) {
-        if (column.height >= base_depth - 0.15F) continue;
+        if (!column.relief || column.height >= base_depth - 0.15F) continue;
         if (popup_book && column.object) {
             const auto source_index = static_cast<std::size_t>(column.y) *
                                           160U +
