@@ -252,6 +252,63 @@ std::vector<std::uint8_t> test_rom() {
     return rom;
 }
 
+const char* channel_state_name(
+    const gameboy::LinkPacketChannel::State state) noexcept {
+    switch (state) {
+    case gameboy::LinkPacketChannel::State::disconnected: return "disconnected";
+    case gameboy::LinkPacketChannel::State::listening: return "listening";
+    case gameboy::LinkPacketChannel::State::connecting: return "connecting";
+    case gameboy::LinkPacketChannel::State::connected: return "connected";
+    case gameboy::LinkPacketChannel::State::failed: return "failed";
+    }
+    return "unknown";
+}
+
+std::string endpoint_diagnostic_fields(
+    const std::string_view prefix, const gameboy::TcpSerialEndpoint& endpoint,
+    const gameboy::SerialPort& port) {
+    std::ostringstream fields;
+    fields << prefix << "_connected=" << (endpoint.connected() ? 1 : 0)
+           << ' ' << prefix << "_peer_ready="
+           << (endpoint.peer_ready_for_link() ? 1 : 0)
+           << ' ' << prefix << "_peer_hello="
+           << (endpoint.peer_hello_seen() ? 1 : 0)
+           << ' ' << prefix << "_peer_compatible="
+           << (endpoint.peer_compatible() ? 1 : 0)
+           << ' ' << prefix << "_state_digest_valid="
+           << (endpoint.state_digest_valid() ? 1 : 0)
+           << ' ' << prefix << "_peer_request_seen="
+           << (endpoint.peer_request_seen() ? 1 : 0)
+           << ' ' << prefix << "_transfer_active="
+           << (port.transfer_active() ? 1 : 0)
+           << ' ' << prefix << "_waiting_for_peer="
+           << (endpoint.waiting_for_peer() ? 1 : 0)
+           << ' ' << prefix << "_requests_sent=" << endpoint.requests_sent()
+           << ' ' << prefix << "_requests_received="
+           << endpoint.requests_received()
+           << ' ' << prefix << "_responses_sent=" << endpoint.responses_sent()
+           << ' ' << prefix << "_responses_received="
+           << endpoint.responses_received()
+           << ' ' << prefix << "_request_retries="
+           << endpoint.request_retries()
+           << ' ' << prefix << "_duplicate_requests="
+           << endpoint.duplicate_requests()
+           << ' ' << prefix << "_protocol_errors="
+           << endpoint.protocol_errors()
+           << ' ' << prefix << "_transfers_completed="
+           << endpoint.transfers_completed();
+    return fields.str();
+}
+
+std::string channel_diagnostic_fields(const std::string_view prefix,
+                                      const FaultPacketChannel& channel) {
+    std::ostringstream fields;
+    fields << prefix << "_state=" << channel_state_name(channel.state())
+           << ' ' << prefix << "_pending_work="
+           << (channel.has_pending_work() ? 1 : 0);
+    return fields.str();
+}
+
 struct RunResult {
     bool completed{};
     bool transfer_aborted{};
@@ -320,8 +377,17 @@ RunResult run_scenario(FaultScript& script, const std::string_view scenario) {
                                            gameboy::LinkPacketChannel::State::connected &&
                                        join_channel.state() ==
                                            gameboy::LinkPacketChannel::State::connected;
+        trace.event(
+            "link_diagnostic",
+            std::string{"kind=handshake_timeout "} +
+                endpoint_diagnostic_fields("host", host_endpoint,
+                                           host.serial_port()) +
+                ' ' + endpoint_diagnostic_fields("join", join_endpoint,
+                                                 join.serial_port()) +
+                ' ' + channel_diagnostic_fields("host_channel", host_channel) +
+                ' ' + channel_diagnostic_fields("join_channel", join_channel));
         trace.event("scenario_result",
-                    "completed=0 aborted=0 handshake_ready=0 retries=0");
+                    "completed=0 aborted=0 handshake_ready=0 settled=0 retries=0");
         result.trace = trace.finish();
         save_trace_if_requested(scenario, result.trace);
         host_endpoint.detach();
@@ -333,6 +399,15 @@ RunResult run_scenario(FaultScript& script, const std::string_view scenario) {
     join.write8(0xFF01, 0x3C);
     join.write8(0xFF02, 0x80);
     host.write8(0xFF02, 0x81);
+    trace.event(
+        "link_phase",
+        std::string{"phase=handshake_ready "} +
+            endpoint_diagnostic_fields("host", host_endpoint,
+                                       host.serial_port()) +
+            ' ' + endpoint_diagnostic_fields("join", join_endpoint,
+                                             join.serial_port()));
+    trace.event("link_phase", "phase=transfer_started");
+    bool transfer_settled = false;
     for (unsigned cycle = 0; cycle < 2500; ++cycle) {
         host.tick(4);
         join.tick(4);
@@ -348,6 +423,7 @@ RunResult run_scenario(FaultScript& script, const std::string_view scenario) {
             !join_endpoint.waiting_for_peer() &&
             !host_channel.has_pending_work() &&
             !join_channel.has_pending_work()) {
+            transfer_settled = true;
             break;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -375,10 +451,30 @@ RunResult run_scenario(FaultScript& script, const std::string_view scenario) {
     result.host_received = host.read8(0xFF01);
     result.join_received = join.read8(0xFF01);
 
+    if (!result.completed) {
+        trace.event(
+            "link_diagnostic",
+            std::string{"kind=terminal_incomplete reason="} +
+                (transfer_settled ? "settled_without_completion"
+                                  : "transfer_timeout") +
+                ' ' + endpoint_diagnostic_fields("host", host_endpoint,
+                                                 host.serial_port()) +
+                ' ' + endpoint_diagnostic_fields("join", join_endpoint,
+                                                 join.serial_port()) +
+                ' ' + channel_diagnostic_fields("host_channel", host_channel) +
+                ' ' + channel_diagnostic_fields("join_channel", join_channel));
+    }
+
     std::ostringstream outcome;
     outcome << "completed=" << (result.completed ? 1 : 0)
             << " aborted=" << (result.transfer_aborted ? 1 : 0)
-            << " retries=" << result.retries;
+            << " handshake_ready=1"
+            << " settled=" << (transfer_settled ? 1 : 0)
+            << " retries=" << result.retries
+            << " host_protocol_errors=" << host_endpoint.protocol_errors()
+            << " join_protocol_errors=" << join_endpoint.protocol_errors()
+            << " host_pending_work=" << (host_channel.has_pending_work() ? 1 : 0)
+            << " join_pending_work=" << (join_channel.has_pending_work() ? 1 : 0);
     trace.event("scenario_result", outcome.str());
     result.trace = trace.finish();
     save_trace_if_requested(scenario, result.trace);
@@ -420,8 +516,11 @@ void test_drop_is_replayable() {
     const auto report = gbb::parse_trace(original.trace);
     check(report.valid(), "drop scenario emits a valid canonical trace");
     check(report.has_event("fault_injected") &&
+              report.has_event("link_phase") &&
               report.has_event("scenario_result"),
-          "drop scenario records both the injected fault and outcome");
+          "drop scenario records the fault, phases, and outcome");
+    check(report.has_event("link_diagnostic") == false,
+          "successful drop scenario does not emit a terminal failure diagnostic");
     check(original.fault_applied && original.completed && original.retries != 0,
           "dropped byte is retransmitted and the transfer completes");
 
@@ -444,6 +543,9 @@ void test_delay_and_duplicate_faults() {
           "delayed packet is released and the transfer completes");
     check(delayed_report.has_event("fault_injected"),
           "delayed packet is recorded in the trace");
+    check(delayed_report.has_event("link_phase") &&
+              delayed_report.has_event("scenario_result"),
+          "delayed scenario records transfer phases and outcome");
 
     FaultScript duplicate_script;
     duplicate_script.add(Direction::host_to_join, FaultKind::duplicate,
@@ -462,6 +564,10 @@ void test_disconnect_aborts_transfer() {
     const auto report = gbb::parse_trace(result.trace);
     check(report.valid() && result.fault_applied,
           "disconnect scenario emits a valid fault trace");
+    check(report.has_event("link_phase") &&
+              report.has_event("link_diagnostic") &&
+              report.has_event("scenario_result"),
+          "disconnect trace records phases, terminal diagnostics, and outcome");
     check(!result.completed && result.transfer_aborted &&
               !result.peer_stayed_connected,
           "disconnect aborts the active transfer and fails both peers");
