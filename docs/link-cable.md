@@ -400,6 +400,14 @@ either side means that the peer fell back to the bit protocol (or is an older
 build). `bt` reports whether the peer advertised the byte-transfer capability,
 even before the first serial byte is exchanged.
 
+Remote frame records also include scheduler counters: `remote_slices`,
+`remote_endpoint_polls`, `remote_polling_cycles`, and the selected minimum and
+maximum poll intervals. On Android these make a frame-rate drop measurable
+instead of anecdotal, and show whether the emulation thread is spending time
+servicing the link or advancing the guest. Pokémon battle entry additionally
+emits `event=pokemon_battle` with the previous and current battle markers and
+the frame/time delta between transitions.
+
 WebRTC, Bluetooth, and USB transports can reuse the same packet and serial-edge
 seams; each should preserve the non-blocking poll boundary and add its own
 capability and security review before being exposed by a frontend.

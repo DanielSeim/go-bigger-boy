@@ -107,6 +107,7 @@ namespace {
 
 using RemoteLinkSession = gbb::sdl::RemoteLinkSession;
 using RemoteLinkOptions = gbb::sdl::RemoteLinkOptions;
+using RemoteFrameMetrics = gbb::sdl::RemoteFrameMetrics;
 using gbb::sdl::process_events;
 using gbb::sdl::configure_video_pipeline;
 using gbb::sdl::restore_video_presentation;
@@ -278,13 +279,24 @@ constexpr auto rewind_capture_guard = std::chrono::milliseconds(6);
 constexpr unsigned remote_bit_poll_cycle_interval = 512;
 constexpr unsigned remote_byte_poll_cycle_interval = 4096;
 // An internal clock owner cannot advance its next byte until the peer's
-// response arrives. Keep the active wait below 0.13 ms at the normal CGB/DMG
-// clock, but do not pay that syscall rate before a request has been queued.
+// response arrives. Android devices were paying for roughly 137 emulation
+// slices and endpoint checks per video frame at 512 cycles. A 2048-cycle
+// bound is still below 0.5 ms at the Game Boy clock, while leaving the CPU
+// and socket layers enough work per slice to avoid a visible battle-entry FPS
+// collapse. Do not pay this cadence before a request has been queued.
+#if defined(__ANDROID__)
+constexpr unsigned remote_byte_internal_poll_cycle_interval = 2048;
+#else
 constexpr unsigned remote_byte_internal_poll_cycle_interval = 512;
-// CGB fast mode has a 16-cycle serial bit period. The network round trip is
-// still the dominant cost, but a shorter polling slice prevents avoidable
-// scheduling delay when a fast-mode battle is already waiting for a response.
+#endif
+// CGB fast mode has a 16-cycle serial bit period. Keep Android's fast-mode
+// bound at 512 cycles; byte packets carry the complete byte, so the frontend
+// does not need to poll at the individual 16-cycle edge rate.
+#if defined(__ANDROID__)
+constexpr unsigned remote_byte_fast_internal_poll_cycle_interval = 512;
+#else
 constexpr unsigned remote_byte_fast_internal_poll_cycle_interval = 256;
+#endif
 // A passive byte-capable receiver does not have a response deadline of its
 // own: it only needs to notice the host's next request. Polling it at the
 // host-clock cadence causes roughly 17 non-blocking socket calls per video
@@ -298,7 +310,7 @@ constexpr unsigned remote_byte_fast_internal_poll_cycle_interval = 256;
 // intervals than desktop builds. Keep passive byte receivers responsive
 // enough that Pokémon's battle link waits cannot observe a stale external
 // byte while retaining the lower-syscall cadence used to smooth Windows.
-constexpr unsigned remote_byte_receive_poll_cycle_interval = 2048;
+constexpr unsigned remote_byte_receive_poll_cycle_interval = 4096;
 #else
 constexpr unsigned remote_byte_receive_poll_cycle_interval = 16384;
 #endif
@@ -1006,6 +1018,11 @@ int run_emulation(int argc, char** argv) {
         std::uint64_t core_step_count = 0;
         std::uint64_t core_step_total_us = 0;
         std::uint64_t core_step_max_us = 0;
+        std::uint64_t remote_poll_count = 0;
+        std::uint64_t remote_slice_count = 0;
+        std::uint64_t remote_polling_slice_count = 0;
+        std::uint64_t remote_idle_slice_count = 0;
+        std::uint64_t remote_polling_cycles = 0;
 
         while (running) {
             const auto frame_started = std::chrono::steady_clock::now();
@@ -1763,6 +1780,7 @@ int run_emulation(int argc, char** argv) {
                         execution_plan.frame_batch_factor;
                     const auto frames = emulated_frame_batch_factor;
                     for (auto frame = 0U; frame < frames && running; ++frame) {
+                        RemoteFrameMetrics remote_frame_metrics;
 #ifndef __ANDROID__
                         if (services.cheats() != nullptr) {
                             cheat_manager.apply(*emulator);
@@ -1813,6 +1831,10 @@ int run_emulation(int argc, char** argv) {
                             unsigned remote_poll_cycles = 0;
                             const auto byte_transfer =
                                 remote_link.endpoint.peer_byte_transfer();
+                            const auto poll_endpoint = [&] {
+                                ++remote_frame_metrics.endpoint_polls;
+                                remote_link.endpoint.poll();
+                            };
                             while (running && cycles < cycles_per_frame &&
                                    !emulator->frame_ready()) {
                                 // Run the core in bounded slices instead of
@@ -1853,9 +1875,29 @@ int run_emulation(int argc, char** argv) {
                                                                : remote_idle_poll_cycle_interval;
                                 const auto slice_budget = std::min(
                                     remaining, slice_interval);
+                                ++remote_frame_metrics.slices;
+                                if (polling_required) {
+                                    ++remote_frame_metrics.polling_slices;
+                                } else {
+                                    ++remote_frame_metrics.idle_slices;
+                                }
+                                if (remote_frame_metrics.minimum_interval == 0 ||
+                                    slice_interval <
+                                        remote_frame_metrics.minimum_interval) {
+                                    remote_frame_metrics.minimum_interval =
+                                        slice_interval;
+                                }
+                                remote_frame_metrics.maximum_interval =
+                                    std::max(remote_frame_metrics.maximum_interval,
+                                             slice_interval);
                                 const auto advanced = gbb::advance_to_frame(
                                     *emulator, slice_budget);
                                 if (advanced.cycles == 0) break;
+                                remote_frame_metrics.emulated_cycles +=
+                                    advanced.cycles;
+                                if (polling_required)
+                                    remote_frame_metrics.polling_cycles +=
+                                        advanced.cycles;
                                 cycles += advanced.cycles;
                                 remote_poll_cycles += advanced.cycles;
                                 if (remote_transport_connected &&
@@ -1863,15 +1905,22 @@ int run_emulation(int argc, char** argv) {
                                          slice_interval ||
                                      advanced.frame_ready)) {
                                     if (remote_link.endpoint.needs_poll()) {
-                                        remote_link.endpoint.poll();
+                                        poll_endpoint();
                                     }
                                     remote_poll_cycles = 0;
                                 }
                             }
                             if (remote_transport_connected) {
-                                remote_link.endpoint.poll();
+                                poll_endpoint();
                             }
                         }
+                        remote_poll_count += remote_frame_metrics.endpoint_polls;
+                        remote_slice_count += remote_frame_metrics.slices;
+                        remote_polling_slice_count +=
+                            remote_frame_metrics.polling_slices;
+                        remote_idle_slice_count += remote_frame_metrics.idle_slices;
+                        remote_polling_cycles +=
+                            remote_frame_metrics.polling_cycles;
                         const auto core_step_us =
                             static_cast<std::uint64_t>(microseconds_between(
                                 core_step_started,
@@ -1895,7 +1944,8 @@ int run_emulation(int argc, char** argv) {
                         if (link_emulator == nullptr && remote_transport_connected) {
                             const auto audio_queued_bytes = sdl.audio.queued_bytes();
                             trace_remote_frame(*emulator, remote_link,
-                                               audio_queued_bytes);
+                                               audio_queued_bytes,
+                                               remote_frame_metrics);
                         }
                     }
                 }
@@ -2080,6 +2130,16 @@ int run_emulation(int argc, char** argv) {
                                        : core_step_total_us / core_step_count) +
                     " core_step_max_us=" +
                     std::to_string(core_step_max_us) +
+                    " remote_poll_calls=" +
+                    std::to_string(remote_poll_count) +
+                    " remote_slices=" +
+                    std::to_string(remote_slice_count) +
+                    " remote_polling_slices=" +
+                    std::to_string(remote_polling_slice_count) +
+                    " remote_idle_slices=" +
+                    std::to_string(remote_idle_slice_count) +
+                    " remote_polling_cycles=" +
+                    std::to_string(remote_polling_cycles) +
                     " fast_forward_factor=" +
                     std::to_string(emulated_frame_batch_factor) +
                     " audio_us=" +
@@ -2101,6 +2161,11 @@ int run_emulation(int argc, char** argv) {
                 core_step_count = 0;
                 core_step_total_us = 0;
                 core_step_max_us = 0;
+                remote_poll_count = 0;
+                remote_slice_count = 0;
+                remote_polling_slice_count = 0;
+                remote_idle_slice_count = 0;
+                remote_polling_cycles = 0;
             }
         }
 #ifndef __ANDROID__

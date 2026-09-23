@@ -52,9 +52,23 @@ void trace_link_frame(gameboy::Emulator& first,
                       int audio_queued_bytes);
 #endif
 
+// Scheduler facts for one remote-link video frame. These are emitted only in
+// an enabled link trace, so collecting them does not add normal-run I/O.
+struct RemoteFrameMetrics {
+    std::uint32_t slices{};
+    std::uint32_t polling_slices{};
+    std::uint32_t idle_slices{};
+    std::uint32_t endpoint_polls{};
+    std::uint64_t emulated_cycles{};
+    std::uint64_t polling_cycles{};
+    std::uint32_t minimum_interval{};
+    std::uint32_t maximum_interval{};
+};
+
 void trace_remote_frame(gameboy::Emulator& emulator,
                         const RemoteLinkSession& remote,
-                        int audio_queued_bytes);
+                        int audio_queued_bytes,
+                        const RemoteFrameMetrics& metrics = {});
 
 #ifndef __ANDROID__
 void start_local_link_session(

@@ -720,6 +720,27 @@ void append_trace_pokemon_transition(
         }
         output << '\n';
     }
+    if (!previous.initialized || battle_changed || battle_type_changed) {
+        gbb::write_trace_event_prefix(output, "pokemon_battle",
+                                      link_trace.session(), frame, elapsed_ms,
+                                      link_trace.transport(), link_trace.role());
+        output << " player=" << player
+               << " previous_battle=" << std::dec
+               << (previous.initialized ? static_cast<unsigned>(previous.battle)
+                                        : 0U)
+               << " battle=" << static_cast<unsigned>(current.battle)
+               << " previous_battle_type="
+               << (previous.initialized
+                       ? static_cast<unsigned>(previous.battle_type)
+                       : 0U)
+               << " battle_type="
+               << static_cast<unsigned>(current.battle_type)
+               << " delta_frame="
+               << (previous.initialized ? frame - previous.frame : 0)
+               << " delta_ms="
+               << (previous.initialized ? elapsed_ms - previous.elapsed_ms : 0)
+               << '\n';
+    }
     previous = current;
 }
 
@@ -812,7 +833,8 @@ void trace_link_frame(gameboy::Emulator& first,
 
 void trace_remote_frame(gameboy::Emulator& emulator,
                         const RemoteLinkSession& remote,
-                        const int audio_queued_bytes) {
+                        const int audio_queued_bytes,
+                        const RemoteFrameMetrics& metrics) {
     std::lock_guard<std::recursive_mutex> lock(link_trace.mutex());
     if (!link_trace.is_open()) return;
     const auto& serial = emulator.bus().serial_port();
@@ -885,6 +907,14 @@ void trace_remote_frame(gameboy::Emulator& emulator,
                << " cx=" << remote.endpoint.commit_retries()
                << " cw=" << remote.endpoint.commit_waiting_for_ack()
                << " ss=" << remote.endpoint.serial_state_signature()
+               << " remote_slices=" << metrics.slices
+               << " remote_polling_slices=" << metrics.polling_slices
+               << " remote_idle_slices=" << metrics.idle_slices
+               << " remote_endpoint_polls=" << metrics.endpoint_polls
+               << " remote_emulated_cycles=" << metrics.emulated_cycles
+               << " remote_polling_cycles=" << metrics.polling_cycles
+               << " remote_min_interval=" << metrics.minimum_interval
+               << " remote_max_interval=" << metrics.maximum_interval
                << " phase=" << std::dec << serial.phase();
     append_trace_cpu(output, emulator);
     append_trace_pokemon(output, emulator);
