@@ -230,6 +230,10 @@ public:
 
     [[nodiscard]] State state() const noexcept override { return state_; }
 
+    [[nodiscard]] bool has_pending_work() const noexcept {
+        return !packets_.empty() || delayed_packet_.has_value();
+    }
+
 private:
     Direction direction_;
     FaultScript& script_;
@@ -289,14 +293,40 @@ RunResult run_scenario(FaultScript& script, const std::string_view scenario) {
     host_endpoint.attach(host.serial_port(), host_channel, compatibility_id);
     join_endpoint.attach(join.serial_port(), join_channel, compatibility_id);
 
-    for (unsigned attempt = 0; attempt < 300; ++attempt) {
+    bool handshake_ready = false;
+    // The compatibility handshake intentionally retries on a wall-clock
+    // interval. Do not start a transfer after a fixed 300 ms window: that
+    // races slower CI runners and makes the fault scenarios scheduler
+    // dependent.
+    for (unsigned attempt = 0; attempt < 3000; ++attempt) {
         host_endpoint.poll();
         join_endpoint.poll();
+        // The join endpoint deliberately stays "not ready" until it sees
+        // the host's first request, so waiting for peer_ready_for_link() on
+        // both sides would deadlock before the transfer starts.
         if (host_endpoint.peer_ready_for_link() &&
-            join_endpoint.peer_ready_for_link()) {
+            join_endpoint.peer_hello_seen() &&
+            join_endpoint.peer_compatible()) {
+            handshake_ready = true;
             break;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    if (!handshake_ready) {
+        RunResult result;
+        result.fault_applied = script.used_count() != 0;
+        result.peer_stayed_connected = host_channel.state() ==
+                                           gameboy::LinkPacketChannel::State::connected &&
+                                       join_channel.state() ==
+                                           gameboy::LinkPacketChannel::State::connected;
+        trace.event("scenario_result",
+                    "completed=0 aborted=0 handshake_ready=0 retries=0");
+        result.trace = trace.finish();
+        save_trace_if_requested(scenario, result.trace);
+        host_endpoint.detach();
+        join_endpoint.detach();
+        return result;
     }
 
     host.write8(0xFF01, 0xA5);
@@ -315,7 +345,9 @@ RunResult run_scenario(FaultScript& script, const std::string_view scenario) {
         if (!host.serial_port().transfer_active() &&
             !join.serial_port().transfer_active() &&
             !host_endpoint.waiting_for_peer() &&
-            !join_endpoint.waiting_for_peer()) {
+            !join_endpoint.waiting_for_peer() &&
+            !host_channel.has_pending_work() &&
+            !join_channel.has_pending_work()) {
             break;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
