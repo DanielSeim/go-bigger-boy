@@ -64,6 +64,12 @@ public:
         std::string error;
     };
 
+    struct DiffResult {
+        bool equal{};
+        std::size_t index{};
+        std::string description;
+    };
+
     class Recorder final {
     public:
         Recorder(std::uint64_t rom_fingerprint, HardwareModel model) noexcept;
@@ -89,6 +95,8 @@ public:
         std::string_view text, std::string* error = nullptr);
     [[nodiscard]] static ReplayResult replay(const Trace& trace,
                                              Emulator& emulator);
+    [[nodiscard]] static DiffResult diff(const Trace& left,
+                                         const Trace& right);
 };
 
 } // namespace gameboy

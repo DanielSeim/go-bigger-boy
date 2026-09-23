@@ -211,6 +211,17 @@ if(NOT ANDROID)
         install(TARGETS gameboy_trace_report RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
     endif()
 
+    add_executable(gameboy_sgb_trace_diff apps/cli/sgb_trace_diff.cpp)
+    target_link_libraries(gameboy_sgb_trace_diff PRIVATE gameboy_core)
+    set_target_properties(gameboy_sgb_trace_diff PROPERTIES
+                          OUTPUT_NAME gbb_sgb_trace_diff)
+    if(WIN32)
+        install(TARGETS gameboy_sgb_trace_diff RUNTIME DESTINATION .)
+    else()
+        install(TARGETS gameboy_sgb_trace_diff
+                RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    endif()
+
     add_executable(gameboy_test_runner apps/test_runner/main.cpp)
     target_link_libraries(gameboy_test_runner PRIVATE gbb_core_api)
     set_target_properties(gameboy_test_runner PROPERTIES OUTPUT_NAME gbb_test_runner)

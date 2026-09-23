@@ -26,6 +26,17 @@ Capture writes the trace when the run passes, fails, or reaches its cycle
 limit. It is deliberately opt-in and enables the existing bounded I/O trace
 buffer only while capture is active.
 
+To compare two captures from different builds or devices, use the standalone
+diff tool:
+
+```sh
+gbb_sgb_trace_diff desktop.trace android.trace
+```
+
+An exit status of `0` means the traces match. Exit status `1` identifies the
+first differing write, checkpoint, diagnostic counter, or decoded command;
+exit status `2` indicates that one of the trace files could not be parsed.
+
 Replay advances the bus to each recorded cycle, reapplies the JOYP writes, and
 reports the first framebuffer, state, diagnostic, or decoded-command mismatch.
 The parser and replay path have bounded write, checkpoint, line, and file sizes;

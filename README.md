@@ -341,6 +341,15 @@ The capture file is written on pass, failure, or timeout. Replay advances the
 bus using the recorded cycle positions and stops at the first state or command
 checkpoint mismatch; see [SGB trace and replay](docs/sgb-traces.md).
 
+Compare captures from two builds or devices without rerunning the ROM:
+
+```sh
+./build/gbb_sgb_trace_diff desktop.trace android.trace
+```
+
+The command reports the first differing write, checkpoint hash, diagnostic
+counter, or decoded command packet.
+
 When SDL3 is installed, CMake also builds the desktop frontend. Launching it
 without arguments opens the game library dashboard:
 

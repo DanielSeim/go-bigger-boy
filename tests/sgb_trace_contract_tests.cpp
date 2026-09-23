@@ -111,10 +111,32 @@ void test_trace_detects_divergence_and_rejects_bad_input() {
     check(!error.empty(), "SGB trace reports malformed input details");
 }
 
+void test_trace_diff_reports_first_difference() {
+    gameboy::SgbTrace::Trace left;
+    left.rom_fingerprint = 7;
+    left.writes.push_back({4, 0x30});
+    left.checkpoints.push_back({0, 0, 1, 2, {}, {}});
+    auto right = left;
+    check(gameboy::SgbTrace::diff(left, right).equal,
+          "identical SGB traces compare equal");
+    right.writes[0].value = 0x20;
+    const auto write_diff = gameboy::SgbTrace::diff(left, right);
+    check(!write_diff.equal && write_diff.index == 0 &&
+              write_diff.description.find("JOYP") != std::string::npos,
+          "SGB trace diff identifies the first JOYP mismatch");
+    right = left;
+    right.checkpoints[0].state_hash = 3;
+    const auto checkpoint_diff = gameboy::SgbTrace::diff(left, right);
+    check(!checkpoint_diff.equal &&
+              checkpoint_diff.description.find("state hash") != std::string::npos,
+          "SGB trace diff identifies the first state mismatch");
+}
+
 } // namespace
 
 int main() {
     test_trace_round_trip_and_replay();
     test_trace_detects_divergence_and_rejects_bad_input();
+    test_trace_diff_reports_first_difference();
     return failures == 0 ? 0 : 1;
 }

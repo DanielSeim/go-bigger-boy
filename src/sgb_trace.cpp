@@ -140,6 +140,18 @@ bool diagnostics_match(const SgbAdapter::Diagnostics& expected,
            expected.current_player == actual.current_player;
 }
 
+bool commands_equal(const SgbTrace::Command& left,
+                    const SgbTrace::Command& right) noexcept {
+    if (left.packet_bytes > left.packet.size() ||
+        right.packet_bytes > right.packet.size()) {
+        return false;
+    }
+    return left.sequence == right.sequence && left.command == right.command &&
+           left.packet_bytes == right.packet_bytes &&
+           std::equal(left.packet.begin(), left.packet.begin() + left.packet_bytes,
+                      right.packet.begin());
+}
+
 void tick_bus(MemoryBus& bus, std::uint64_t cycles) noexcept {
     while (cycles != 0) {
         const auto chunk = std::min<std::uint64_t>(
@@ -546,6 +558,66 @@ SgbTrace::ReplayResult SgbTrace::replay(const Trace& trace, Emulator& emulator) 
     }
     result.success = true;
     return result;
+}
+
+SgbTrace::DiffResult SgbTrace::diff(const Trace& left, const Trace& right) {
+    const auto mismatch = [](const std::size_t index,
+                             const std::string& description) {
+        return DiffResult{false, index, description};
+    };
+    if (left.version != right.version) {
+        return mismatch(0, "metadata: trace versions differ");
+    }
+    if (left.model != right.model) {
+        return mismatch(0, "metadata: hardware models differ");
+    }
+    if (left.rom_fingerprint != right.rom_fingerprint) {
+        return mismatch(0, "metadata: ROM fingerprints differ");
+    }
+    if (left.writes.size() != right.writes.size()) {
+        return mismatch(std::min(left.writes.size(), right.writes.size()),
+                        "writes: event counts differ");
+    }
+    for (std::size_t index = 0; index < left.writes.size(); ++index) {
+        if (left.writes[index].cycle != right.writes[index].cycle) {
+            return mismatch(index, "writes: cycle differs");
+        }
+        if (left.writes[index].value != right.writes[index].value) {
+            return mismatch(index, "writes: JOYP value differs");
+        }
+    }
+    if (left.checkpoints.size() != right.checkpoints.size()) {
+        return mismatch(std::min(left.checkpoints.size(), right.checkpoints.size()),
+                        "checkpoints: event counts differ");
+    }
+    for (std::size_t index = 0; index < left.checkpoints.size(); ++index) {
+        const auto& lhs = left.checkpoints[index];
+        const auto& rhs = right.checkpoints[index];
+        if (lhs.cycle != rhs.cycle) {
+            return mismatch(index, "checkpoints: cycle differs");
+        }
+        if (lhs.frame != rhs.frame) {
+            return mismatch(index, "checkpoints: frame number differs");
+        }
+        if (lhs.framebuffer_hash != rhs.framebuffer_hash) {
+            return mismatch(index, "checkpoints: framebuffer hash differs");
+        }
+        if (lhs.state_hash != rhs.state_hash) {
+            return mismatch(index, "checkpoints: SGB state hash differs");
+        }
+        if (!diagnostics_match(lhs.diagnostics, rhs.diagnostics)) {
+            return mismatch(index, "checkpoints: diagnostics differ");
+        }
+        if (lhs.commands.size() != rhs.commands.size()) {
+            return mismatch(index, "checkpoints: decoded command counts differ");
+        }
+        for (std::size_t command = 0; command < lhs.commands.size(); ++command) {
+            if (!commands_equal(lhs.commands[command], rhs.commands[command])) {
+                return mismatch(index, "checkpoints: decoded command differs");
+            }
+        }
+    }
+    return DiffResult{true, 0, {}};
 }
 
 } // namespace gameboy
