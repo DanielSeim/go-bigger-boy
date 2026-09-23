@@ -211,6 +211,36 @@ void test_ppu_stat_interrupts() {
           "restarted LCD raises HBlank STAT at the startup boundary");
 }
 
+void test_startup_scx_hblank_phase() {
+    // Keep the startup STAT edge as a direct PPU contract so a future
+    // CPU/HALT experiment cannot silently move it while fixing a
+    // divider-sampling symptom. The direct register setup below intentionally
+    // uses one-dot bus ticks, so these are relative to that setup sequence.
+    constexpr std::array<unsigned, 8> expected_edge_cycles{
+        247, 250, 249, 250, 251, 254, 253, 254,
+    };
+    for (unsigned scx = 0; scx < expected_edge_cycles.size(); ++scx) {
+        gameboy::MemoryBus bus{gameboy::Cartridge{test_rom()}};
+        bus.write8(0xFF40, 0);
+        bus.write8(0xFF43, static_cast<std::uint8_t>(scx));
+        bus.write8(0xFF41, 0x08); // Mode 0 STAT source.
+        bus.write8(0xFF0F, 0);
+        bus.write8(0xFF40, 0x91);
+        bus.write8(0xFF0F, 0);
+
+        unsigned edge_cycle = 0;
+        for (unsigned cycle = 1; cycle <= 300; ++cycle) {
+            bus.tick(1);
+            if ((bus.read8(0xFF0F) & 0x02) != 0) {
+                edge_cycle = cycle;
+                break;
+            }
+        }
+        check(edge_cycle == expected_edge_cycles[scx],
+              "DMG startup SCX keeps its HBlank STAT request phase");
+    }
+}
+
 void test_ppu_vblank_and_frame_publication() {
     constexpr auto startup_visible_cycles = 452U + 456U * 143U;
     gameboy::MemoryBus bus{gameboy::Cartridge{test_rom()}};
@@ -621,6 +651,7 @@ int main() {
     test_cpu_machine_cycle_bus_timing();
     test_ppu_modes_and_memory_access();
     test_ppu_stat_interrupts();
+    test_startup_scx_hblank_phase();
     test_ppu_vblank_and_frame_publication();
     test_ppu_background_window_and_sprites();
     test_io_trace_diagnostics();
