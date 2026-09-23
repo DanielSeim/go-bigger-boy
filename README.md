@@ -13,17 +13,21 @@
   <a href="https://danielseim.github.io/go-bigger-boy/"><strong>Try the latest web build on GitHub Pages</strong></a>
 </p>
 
-A portable, dependency-free C++17 Game Boy emulator. Platform frontends
-(desktop, Android, and Switch) will live outside the core so emulation logic is
-shared everywhere.
+A portable C++17 Game Boy and Game Boy Color emulator core with desktop,
+Android, and Web frontends. The core is shared across those frontends; native
+Switch support is not currently part of the project.
 
 ## Current status
 
-The current automated baseline passes **168/168 fixed tests** (ROM,
-framebuffer, and core contract cases). The pinned external bundle is also
-available to the opt-in per-hardware matrix; it remains separate from the
-release gate until each suite's model contract has been reviewed. See the
-[accuracy report](docs/accuracy.md) for the suite-by-suite breakdown.
+Go Bigger Boy is usable for development, testing, and many real Game Boy and
+Game Boy Color sessions, but it is not yet a claim of complete commercial-game
+compatibility. The checked-in release gate currently passes **168/168 cases**
+covering conformance ROMs, framebuffer comparisons, and core contracts. A full
+local CTest run currently reports **226/226 tests passing**, with three
+network-dependent tests intentionally skipped when no peer is available. See
+the [accuracy report](docs/accuracy.md) for the suite-by-suite breakdown.
+
+What works well:
 
 - Cartridge loading and basic header parsing
 - Initial DMG memory map, including work RAM echo behavior
@@ -49,7 +53,9 @@ release gate until each suite's model contract has been reviewed. See the
 - Table-driven CPU tests for opcode matrices, timing, flags, PC, stack, and memory effects
 - Headless command-line runner
 - Headless Mooneye/serial conformance test runner
-- SDL desktop local link sessions with two synchronized emulator cores
+- SDL desktop local link sessions with two synchronized emulator cores; local
+  and TCP link paths are covered by automated protocol and fault tests, and
+  manual two-instance Pokémon trades and battles have completed successfully
 - Emscripten/WebAssembly browser frontend with IndexedDB cartridge saves
 - Android native library/settings dashboard with SDL3 gameplay and multitouch controls
 - Shared desktop/Android ROM catalog with fingerprint-deduplicated history and metadata
@@ -59,12 +65,50 @@ release gate until each suite's model contract has been reviewed. See the
 - MBC5 rumble output through compatible SDL3 gamepads on desktop
 - Versioned, ROM-validated save states with configurable save/load, fast-forward,
   and rewind controls
-- Dependency-free unit tests
+- Opt-in logging, link traces, CPU/PPU/APU traces, and model-matrix diagnostics
+- Contract and conformance tests that run without proprietary ROMs in the repository
 
-This is an early emulator with incomplete game compatibility. Game Boy Color
-support covers the primary execution and rendering paths, but hardware-edge
-accuracy is still being refined. DMG games can use the automatic Game Boy Color
-compatibility palettes selected from their cartridge headers.
+Known limitations:
+
+- Compatibility is still incomplete, especially for untested commercial games
+  and revision-specific hardware edge cases.
+- The Super Game Boy implementation is deterministic HLE, not a full SNES
+  emulator; SNES audio, boot animation, fade timing, and the complete boot
+  handshake remain out of scope.
+- Web link sessions are not exposed yet. Desktop local/TCP link sessions work,
+  but Pokémon can spend a long time in some trade or battle transition states;
+  improving that wait-state/audio behavior is still planned.
+- The optional hardware-model matrix and AGE/SameSuite research suites expose
+  additional reviewed or exploratory results outside the release gate. One
+  GBMicrotest DMG case remains a documented upstream expectation mismatch.
+- ROMs are not bundled. Only use cartridge dumps and save data you are legally
+  entitled to use.
+
+DMG games can use the automatic Game Boy Color compatibility palettes selected
+from their cartridge headers.
+
+## Nintendo and third-party intellectual property
+
+Go Bigger Boy is an independent, non-Nintendo project. It is not affiliated
+with, endorsed by, sponsored by, or licensed by Nintendo. Nintendo, Game Boy,
+Game Boy Color, Super Game Boy, Pokémon, and related names, logos, systems,
+games, characters, and other content are trademarks and/or copyrighted works
+of Nintendo or their respective owners. See [Nintendo's trademark
+information](https://www.nintendo.com/en-gb/Legal-information/Nintendo-s-Intellectual-Property-Enforcement-Program/IP-Enforcement-and-Legal-Frequently-Asked-Questions/What-are-Trademarks-/What-are-Trademarks-732161.html).
+
+The emulator is developed as an independent clean-room implementation. No
+Nintendo source code, proprietary SDK code, proprietary boot ROM, game ROM,
+artwork, audio, font, or other Nintendo-owned asset was copied into or
+distributed with this repository. Emulator behavior is implemented from
+publicly available technical research, independent testing, and independently
+written code and tests. The repository's diagnostic boot ROM is original
+project code and is not a Nintendo boot ROM.
+
+Users must provide their own legally obtained ROMs and save data. No Nintendo
+software or game content is bundled, downloaded, or distributed by this
+project. This notice describes the project's provenance and is not a guarantee
+of legal status in every jurisdiction; users are responsible for complying
+with applicable law.
 
 ## License
 
@@ -228,7 +272,7 @@ tests, including model-specific power behavior, active wave-RAM access, and the
 original DMG hardware's channel 3 retrigger corruption.
 The current headless CI accuracy gate passes all 75 Mooneye acceptance ROMs,
 all 6 applicable CGB misc ROMs, all 28 emulator-only mapper ROMs, 38 curated
-Blargg ROMs, and 20 exact Acid2/Scribbltests/Mealybug/Gambatte framebuffer
+Blargg ROMs, and 21 exact Acid2/Scribbltests/Mealybug/Gambatte framebuffer
 comparisons. The separate [hardware-model matrix workflow](https://github.com/DanielSeim/go-bigger-boy/actions/workflows/hardware-model-matrix.yml)
 evaluates additional GBMicrotest and Mooneye-wilbertpol cases. The desktop
 workflow also publishes a research report for AGE and SameSuite: it discovers
@@ -824,7 +868,7 @@ platform. The Windows and macOS archives include the SDL3 runtime. The Linux
 artifact is a self-contained AppImage with SDL3, the desktop launcher, and the
 icon. ROM files are never included in CI artifacts.
 
-Pushing a version tag such as `v0.10.0` waits for every platform build to pass,
+Pushing a version tag such as `v0.35.21` waits for every platform build to pass,
 then automatically creates a GitHub Release with all four platform artifacts and
 generated release notes. Tagged builds derive their displayed version from the
 tag so the startup update comparison remains accurate. A failed platform build
