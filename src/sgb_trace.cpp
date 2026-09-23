@@ -311,12 +311,16 @@ bool SgbTrace::serialize(const Trace& trace, std::ostream& output,
 
 std::optional<SgbTrace::Trace> SgbTrace::parse(const std::string_view text,
                                                std::string* error) {
+    const auto strip_carriage_return = [](std::string_view line) {
+        if (!line.empty() && line.back() == '\r') line.remove_suffix(1);
+        return line;
+    };
     if (text.size() > max_trace_bytes) {
         set_error(error, "SGB trace exceeds the 16 MiB limit");
         return std::nullopt;
     }
     const auto first_end = text.find('\n');
-    if (text.substr(0, first_end) != trace_header) {
+    if (strip_carriage_return(text.substr(0, first_end)) != trace_header) {
         set_error(error, "invalid SGB trace header");
         return std::nullopt;
     }
@@ -328,7 +332,8 @@ std::optional<SgbTrace::Trace> SgbTrace::parse(const std::string_view text,
         set_error(error, "SGB trace has no metadata header");
         return std::nullopt;
     }
-    const auto header = text.substr(offset, header_end - offset);
+    const auto header = strip_carriage_return(
+        text.substr(offset, header_end - offset));
     if (!required_integer(header, "trace_version", trace.version, error)) return std::nullopt;
     const auto model_field = field(header, "model");
     const auto fingerprint_field = field(header, "rom_fingerprint");
@@ -354,9 +359,9 @@ std::optional<SgbTrace::Trace> SgbTrace::parse(const std::string_view text,
     std::size_t expected_commands{};
     while (offset <= text.size()) {
         const auto end = text.find('\n', offset);
-        const auto line = text.substr(
+        const auto line = strip_carriage_return(text.substr(
             offset, end == std::string_view::npos ? text.size() - offset
-                                                   : end - offset);
+                                                   : end - offset));
         if (line.size() > max_trace_line_bytes) {
             set_error(error, "SGB trace line exceeds the 1 MiB limit");
             return std::nullopt;

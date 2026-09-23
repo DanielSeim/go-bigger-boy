@@ -47,6 +47,10 @@ def run(command: list[str], expected_returncode: int = 0) -> subprocess.Complete
     return result
 
 
+def normalized_trace(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
 def capture(runner: Path, rom: Path, trace: Path) -> None:
     result = run(
         [
@@ -90,12 +94,12 @@ def main() -> int:
             return 0
         if not args.golden.is_file():
             fail(f"missing SGB trace golden file: {args.golden}")
-        golden = args.golden.read_bytes()
-        if first_trace.read_bytes() != golden:
+        golden = normalized_trace(args.golden)
+        if normalized_trace(first_trace) != golden:
             fail("SGB fixture capture differs from the checked-in golden trace")
 
         capture(args.runner, rom, second_trace)
-        if first_trace.read_bytes() != second_trace.read_bytes():
+        if normalized_trace(first_trace) != normalized_trace(second_trace):
             fail("repeated SGB fixture captures are not deterministic")
 
         replay = run(

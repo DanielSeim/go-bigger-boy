@@ -83,6 +83,16 @@ void test_trace_round_trip_and_replay() {
           "SGB trace parses back with its event counts");
     if (!parsed.has_value()) return;
 
+    auto crlf_serialized = serialized.str();
+    for (std::size_t offset = 0; offset < crlf_serialized.size(); ++offset) {
+        if (crlf_serialized[offset] == '\n') {
+            crlf_serialized.insert(offset, 1, '\r');
+            ++offset;
+        }
+    }
+    const auto crlf_parsed = gameboy::SgbTrace::parse(crlf_serialized, &error);
+    check(crlf_parsed.has_value(), "SGB trace accepts CRLF line endings");
+
     gameboy::Emulator replay{gameboy::Cartridge{test_rom()}, gameboy::HardwareModel::sgb};
     const auto result = gameboy::SgbTrace::replay(*parsed, replay);
     check(result.success && result.writes_applied == trace.writes.size() &&
