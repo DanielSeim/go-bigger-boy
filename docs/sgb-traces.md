@@ -13,6 +13,19 @@ framebuffer hash, complete diagnostic state hash, and adapter counters.
 3. Add checkpoints after packet completion or after a transfer has advanced.
 4. Serialize the trace and replay it against the same user-supplied ROM.
 
+The headless runner exposes the same workflow without writing a frontend:
+
+```sh
+gbb_test_runner path/to/sgb.gb --model sgb --max-cycles 5000000 \
+  --sgb-trace /tmp/sgb.trace
+gbb_test_runner path/to/sgb.gb --model sgb \
+  --replay-sgb-trace /tmp/sgb.trace
+```
+
+Capture writes the trace when the run passes, fails, or reaches its cycle
+limit. It is deliberately opt-in and enables the existing bounded I/O trace
+buffer only while capture is active.
+
 Replay advances the bus to each recorded cycle, reapplies the JOYP writes, and
 reports the first framebuffer, state, diagnostic, or decoded-command mismatch.
 The parser and replay path have bounded write, checkpoint, line, and file sizes;

@@ -140,6 +140,15 @@ bool diagnostics_match(const SgbAdapter::Diagnostics& expected,
            expected.current_player == actual.current_player;
 }
 
+void tick_bus(MemoryBus& bus, std::uint64_t cycles) noexcept {
+    while (cycles != 0) {
+        const auto chunk = std::min<std::uint64_t>(
+            cycles, std::numeric_limits<unsigned>::max());
+        bus.tick(static_cast<unsigned>(chunk));
+        cycles -= chunk;
+    }
+}
+
 } // namespace
 
 SgbTrace::Recorder::Recorder(const std::uint64_t rom_fingerprint,
@@ -149,7 +158,7 @@ SgbTrace::Recorder::Recorder(const std::uint64_t rom_fingerprint,
 }
 
 bool SgbTrace::Recorder::record_joypad_write(const std::uint64_t cycle,
-                                             const std::uint8_t value) noexcept {
+                                             const std::uint8_t value) {
     if (trace_.writes.size() >= SgbTrace::max_writes ||
         (!trace_.writes.empty() && cycle < trace_.writes.back().cycle)) {
         return false;
@@ -160,7 +169,7 @@ bool SgbTrace::Recorder::record_joypad_write(const std::uint64_t cycle,
 
 bool SgbTrace::Recorder::checkpoint(const std::uint64_t cycle,
                                     const std::uint64_t frame,
-                                    const Emulator& emulator) noexcept {
+                                    const Emulator& emulator) {
     if (trace_.checkpoints.size() >= SgbTrace::max_checkpoints ||
         (!trace_.checkpoints.empty() && cycle < trace_.checkpoints.back().cycle)) {
         return false;
@@ -185,14 +194,14 @@ bool SgbTrace::Recorder::checkpoint(const std::uint64_t cycle,
         command.packet_bytes = record.packet_bytes;
         command.packet = record.packet;
         checkpoint.commands.push_back(command);
-        if (checkpoint.commands.size() >= max_commands_per_checkpoint) return false;
+        if (checkpoint.commands.size() > max_commands_per_checkpoint) return false;
     }
     last_command_sequence_ = checkpoint.diagnostics.commands_applied;
     trace_.checkpoints.push_back(std::move(checkpoint));
     return true;
 }
 
-SgbTrace::Trace SgbTrace::Recorder::finish() && noexcept {
+SgbTrace::Trace SgbTrace::Recorder::finish() && {
     return std::move(trace_);
 }
 
@@ -211,6 +220,11 @@ bool SgbTrace::serialize(const Trace& trace, std::ostream& output,
                          std::string* error) {
     if (trace.version != format_version) {
         set_error(error, "unsupported SGB trace version");
+        return false;
+    }
+    if (trace.writes.size() > max_writes ||
+        trace.checkpoints.size() > max_checkpoints) {
+        set_error(error, "SGB trace exceeds the configured event limits");
         return false;
     }
     output << trace_header << '\n'
@@ -471,7 +485,7 @@ SgbTrace::ReplayResult SgbTrace::replay(const Trace& trace, Emulator& emulator) 
             result.error = "SGB trace checkpoint precedes replay cursor";
             return false;
         }
-        emulator.bus().tick(static_cast<unsigned>(checkpoint.cycle - cycle));
+        tick_bus(emulator.bus(), checkpoint.cycle - cycle);
         cycle = checkpoint.cycle;
         if (framebuffer_hash(emulator.sgb_framebuffer()) != checkpoint.framebuffer_hash) {
             result.error = "SGB trace framebuffer checkpoint mismatch";
@@ -517,7 +531,7 @@ SgbTrace::ReplayResult SgbTrace::replay(const Trace& trace, Emulator& emulator) 
             result.error = "SGB trace write precedes replay cursor";
             return result;
         }
-        emulator.bus().tick(static_cast<unsigned>(write.cycle - cycle));
+        tick_bus(emulator.bus(), write.cycle - cycle);
         cycle = write.cycle;
         emulator.bus().write8(0xFF00, write.value);
         ++write_index;

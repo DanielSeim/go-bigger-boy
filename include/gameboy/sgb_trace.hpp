@@ -69,10 +69,10 @@ public:
         Recorder(std::uint64_t rom_fingerprint, HardwareModel model) noexcept;
 
         bool record_joypad_write(std::uint64_t cycle,
-                                 std::uint8_t value) noexcept;
+                                 std::uint8_t value);
         bool checkpoint(std::uint64_t cycle, std::uint64_t frame,
-                        const Emulator& emulator) noexcept;
-        [[nodiscard]] Trace finish() && noexcept;
+                        const Emulator& emulator);
+        [[nodiscard]] Trace finish() &&;
 
     private:
         Trace trace_;

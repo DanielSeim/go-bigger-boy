@@ -1,4 +1,5 @@
 #include "gameboy/emulator.hpp"
+#include "gameboy/sgb_trace.hpp"
 
 #include <array>
 #include <cstdint>
@@ -9,8 +10,10 @@
 #include <iomanip>
 #include <iostream>
 #include <iterator>
+#include <optional>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -35,6 +38,8 @@ struct Options {
     std::filesystem::path ppu_trace_output;
     std::filesystem::path io_trace_output;
     std::filesystem::path cpu_trace_output;
+    std::filesystem::path sgb_trace_output;
+    std::filesystem::path sgb_replay_input;
     std::uint64_t trace_limit{};
     bool dmg_compatibility_colors{};
     bool frame_on_ld_bb{};
@@ -49,6 +54,7 @@ void usage() {
                  "[--frames N --frame-output capture.ppm] "
                  "[--trace-apu PATH] [--trace-ppu PATH] [--trace-io PATH] "
                  "[--trace-cpu PATH] [--trace-limit N] "
+                 "[--sgb-trace PATH] [--replay-sgb-trace PATH] "
                  "[--frame-on-ld-bb --frame-output capture.ppm] "
                  "[--dmg-compatibility-colors] [--diagnostic-boot]\n";
 }
@@ -110,6 +116,10 @@ Options parse_options(const int argc, char** argv) {
             options.io_trace_output = argv[++index];
         } else if (argument == "--trace-cpu" && index + 1 < argc) {
             options.cpu_trace_output = argv[++index];
+        } else if (argument == "--sgb-trace" && index + 1 < argc) {
+            options.sgb_trace_output = argv[++index];
+        } else if (argument == "--replay-sgb-trace" && index + 1 < argc) {
+            options.sgb_replay_input = argv[++index];
         } else if (argument == "--trace-limit" && index + 1 < argc) {
             options.trace_limit = parse_cycles(argv[++index]);
         } else if (argument == "--dmg-compatibility-colors") {
@@ -125,6 +135,10 @@ Options parse_options(const int argc, char** argv) {
     if (options.frames != 0 && options.frame_on_ld_bb) {
         throw std::invalid_argument(
             "--frames and --frame-on-ld-bb are mutually exclusive");
+    }
+    if (!options.sgb_trace_output.empty() && !options.sgb_replay_input.empty()) {
+        throw std::invalid_argument(
+            "--sgb-trace and --replay-sgb-trace are mutually exclusive");
     }
     const auto captures_frame = options.frames != 0 || options.frame_on_ld_bb;
     if (captures_frame && options.frame_output.empty()) {
@@ -330,6 +344,40 @@ void write_io_trace(
     }
 }
 
+bool write_sgb_trace(const std::filesystem::path& path,
+                     std::optional<gameboy::SgbTrace::Recorder>& recorder,
+                     const gameboy::Emulator& emulator,
+                     const std::uint64_t frame, std::string& error) {
+    if (!recorder.has_value()) return true;
+    try {
+        if (!recorder->checkpoint(emulator.cpu().total_cycles(), frame, emulator)) {
+            error = "SGB trace checkpoint limit or ordering was exceeded";
+            return false;
+        }
+        const auto trace = std::move(*recorder).finish();
+        if (path.has_parent_path()) {
+            std::filesystem::create_directories(path.parent_path());
+        }
+        std::ofstream output(path, std::ios::out | std::ios::trunc);
+        if (!output) {
+            error = "could not open SGB trace: " + path.string();
+            return false;
+        }
+        if (!gameboy::SgbTrace::serialize(trace, output, &error)) return false;
+        recorder.reset();
+        return true;
+    } catch (const std::exception& exception) {
+        error = exception.what();
+        return false;
+    }
+}
+
+std::string read_text_file(const std::filesystem::path& path) {
+    std::ifstream input(path, std::ios::in | std::ios::binary);
+    if (!input) throw std::runtime_error("could not open trace: " + path.string());
+    return {std::istreambuf_iterator<char>{input}, {}};
+}
+
 void write_cpu_trace(std::ofstream& output, const gameboy::Cpu& cpu,
                      const gameboy::MemoryBus& bus, const std::uint64_t cycle,
                      const std::uint16_t pc, const std::uint8_t opcode,
@@ -416,10 +464,39 @@ int main(int argc, char** argv) {
             gameboy::Cartridge{std::move(rom)}, options.model,
             options.diagnostic_boot ? gameboy::BootRomMode::diagnostic
                                     : gameboy::BootRomMode::post_boot};
+        if (!options.sgb_replay_input.empty()) {
+            const auto trace_text = read_text_file(options.sgb_replay_input);
+            std::string error;
+            const auto trace = gameboy::SgbTrace::parse(trace_text, &error);
+            if (!trace.has_value()) {
+                throw std::runtime_error("could not parse SGB trace: " + error);
+            }
+            const auto replay = gameboy::SgbTrace::replay(*trace, emulator);
+            if (!replay.success) {
+                std::cerr << "SGB replay failed after " << replay.writes_applied
+                          << " writes and " << replay.checkpoints_checked
+                          << " checkpoints: " << replay.error << '\n';
+                return EXIT_FAILURE;
+            }
+            std::cout << "SGB replay passed: " << replay.writes_applied
+                      << " writes, " << replay.checkpoints_checked
+                      << " checkpoints\n";
+            return EXIT_SUCCESS;
+        }
         std::ofstream apu_trace;
         std::ofstream ppu_trace;
         std::ofstream io_trace;
         std::ofstream cpu_trace;
+        std::optional<gameboy::SgbTrace::Recorder> sgb_recorder;
+        if (!options.sgb_trace_output.empty()) {
+            if (emulator.hardware_model() != gameboy::HardwareModel::sgb &&
+                emulator.hardware_model() != gameboy::HardwareModel::sgb2) {
+                throw std::runtime_error(
+                    "--sgb-trace requires an SGB or SGB2 hardware model");
+            }
+            sgb_recorder.emplace(emulator.rom_fingerprint(),
+                                 emulator.hardware_model());
+        }
         if (!options.apu_trace_output.empty()) {
             if (options.apu_trace_output.has_parent_path()) {
                 std::filesystem::create_directories(
@@ -452,6 +529,8 @@ int main(int argc, char** argv) {
             if (!io_trace) throw std::runtime_error(
                 "could not open I/O trace: " + options.io_trace_output.string());
             io_trace << "trace_version=1 kind=io\n";
+        }
+        if (!options.io_trace_output.empty() || sgb_recorder.has_value()) {
             emulator.bus().debug_enable_io_trace(true);
         }
         if (!options.cpu_trace_output.empty()) {
@@ -474,9 +553,26 @@ int main(int argc, char** argv) {
         std::size_t recent_pc_count = 0;
         std::uint16_t last_low_rom_pc = 0x0100;
         std::uint64_t completed_frames = 0;
+        std::uint64_t sgb_trace_frames = 0;
         std::uint64_t trace_records = 0;
         const bool captures_frame = options.frames != 0 ||
                                     options.frame_on_ld_bb;
+
+        if (sgb_recorder.has_value()) {
+            if (!sgb_recorder->checkpoint(0, 0, emulator)) {
+                throw std::runtime_error("could not record initial SGB checkpoint");
+            }
+        }
+        const auto finish_run = [&](const int status) {
+            if (!sgb_recorder.has_value()) return status;
+            std::string error;
+            if (!write_sgb_trace(options.sgb_trace_output, sgb_recorder,
+                                 emulator, completed_frames, error)) {
+                std::cerr << "Could not write SGB trace: " << error << '\n';
+                return EXIT_FAILURE;
+            }
+            return status;
+        };
 
         while (emulator.cpu().total_cycles() < options.max_cycles) {
             if (options.frame_on_ld_bb &&
@@ -484,7 +580,7 @@ int main(int argc, char** argv) {
                 write_frame(options.frame_output, emulator.framebuffer());
                 std::cout << "Captured LD B,B framebuffer to "
                           << options.frame_output << '\n';
-                return EXIT_SUCCESS;
+                return finish_run(EXIT_SUCCESS);
             }
             const bool watches_blargg =
                 !captures_frame &&
@@ -505,7 +601,7 @@ int main(int argc, char** argv) {
                      contains_failure(memory_output))) {
                     if (status == 0) {
                         std::cout << "\nPASS (Blargg memory)\n";
-                        return EXIT_SUCCESS;
+                        return finish_run(EXIT_SUCCESS);
                     }
                     std::cerr << "\nFAIL (Blargg result code "
                               << static_cast<unsigned>(status) << ")\n";
@@ -514,7 +610,7 @@ int main(int argc, char** argv) {
                                      recent_pc_count);
                     std::cerr << "Last low ROM PC=" << std::hex
                               << last_low_rom_pc << std::dec << '\n';
-                    return EXIT_FAILURE;
+                    return finish_run(EXIT_FAILURE);
                 }
             }
 
@@ -534,7 +630,7 @@ int main(int argc, char** argv) {
                     registers.h == 0x42 && registers.l == 0x42;
                 if (mooneye_success(registers)) {
                     std::cout << "PASS (Mooneye)\n";
-                    return EXIT_SUCCESS;
+                    return finish_run(EXIT_SUCCESS);
                 }
                 if (options.protocol == Protocol::mooneye ||
                     options.protocol == Protocol::mooneye_wilbertpol ||
@@ -549,7 +645,7 @@ int main(int argc, char** argv) {
                     print_result_diagnostics(emulator.cpu(), emulator.bus());
                     print_video_diagnostics(emulator.bus());
                     print_audio_diagnostics(emulator.bus());
-                    return EXIT_FAILURE;
+                    return finish_run(EXIT_FAILURE);
                 }
             }
 
@@ -571,14 +667,34 @@ int main(int argc, char** argv) {
                                                emulator.bus());
                 if (ppu_trace) write_ppu_trace(ppu_trace, emulator.cpu(),
                                                emulator.bus());
-                if (io_trace) write_io_trace(
-                    io_trace, emulator.bus().debug_take_io_trace());
                 if (cpu_trace) write_cpu_trace(
                     cpu_trace, emulator.cpu(), emulator.bus(), trace_cycle,
                     trace_pc, trace_opcode, stepped_cycles);
                 ++trace_records;
-            } else if (io_trace) {
-                static_cast<void>(emulator.bus().debug_take_io_trace());
+            }
+            const auto io_events = emulator.bus().debug_take_io_trace();
+            if (sgb_recorder.has_value()) {
+                for (const auto& event : io_events) {
+                    if (event.address != 0xFF00 ||
+                        !sgb_recorder->record_joypad_write(event.cycle,
+                                                           event.value)) {
+                        if (event.address == 0xFF00) {
+                            throw std::runtime_error(
+                                "SGB trace write limit or ordering was exceeded");
+                        }
+                        continue;
+                    }
+                }
+            }
+            if (io_trace && tracing) write_io_trace(io_trace, io_events);
+            if (sgb_recorder.has_value() && emulator.frame_ready()) {
+                ++sgb_trace_frames;
+                if (!sgb_recorder->checkpoint(emulator.cpu().total_cycles(),
+                                              sgb_trace_frames, emulator)) {
+                    throw std::runtime_error(
+                        "SGB trace checkpoint limit or ordering was exceeded");
+                }
+                if (!captures_frame) emulator.consume_frame();
             }
             if (captures_frame && emulator.frame_ready()) {
                 ++completed_frames;
@@ -586,7 +702,7 @@ int main(int argc, char** argv) {
                     write_frame(options.frame_output, emulator.framebuffer());
                     std::cout << "Captured frame " << completed_frames << " to "
                               << options.frame_output << '\n';
-                    return EXIT_SUCCESS;
+                    return finish_run(EXIT_SUCCESS);
                 }
                 emulator.consume_frame();
             }
@@ -608,7 +724,7 @@ int main(int argc, char** argv) {
                 if (status == 0x01) {
                     std::cout << "PASS (GBMicrotest) result=0x" << std::hex
                               << static_cast<unsigned>(result) << std::dec << '\n';
-                    return EXIT_SUCCESS;
+                    return finish_run(EXIT_SUCCESS);
                 }
                 std::cerr << "FAIL (GBMicrotest status=0x" << std::hex
                           << static_cast<unsigned>(status)
@@ -621,7 +737,7 @@ int main(int argc, char** argv) {
                 print_result_diagnostics(emulator.cpu(), emulator.bus());
                 print_video_diagnostics(emulator.bus());
                 print_audio_diagnostics(emulator.bus());
-                return EXIT_FAILURE;
+                return finish_run(EXIT_FAILURE);
             }
 
             const bool watches_serial =
@@ -630,7 +746,7 @@ int main(int argc, char** argv) {
                  options.protocol == Protocol::automatic);
             if (watches_serial && serial_output.find("Passed") != std::string::npos) {
                 std::cout << "\nPASS (serial)\n";
-                return EXIT_SUCCESS;
+                return finish_run(EXIT_SUCCESS);
             }
             if (watches_serial && contains_failure(serial_output)) {
                 std::cerr << "\nFAIL (serial)\n";
@@ -638,7 +754,7 @@ int main(int argc, char** argv) {
                 print_recent_pcs(recent_pcs, recent_pc_next, recent_pc_count);
                 std::cerr << "Last low ROM PC=" << std::hex << last_low_rom_pc
                           << std::dec << '\n';
-                return EXIT_FAILURE;
+                return finish_run(EXIT_FAILURE);
             }
         }
 
@@ -652,7 +768,7 @@ int main(int argc, char** argv) {
         print_result_diagnostics(emulator.cpu(), emulator.bus());
         print_video_diagnostics(emulator.bus());
         print_audio_diagnostics(emulator.bus());
-        return 2;
+        return finish_run(2);
     } catch (const std::exception& error) {
         usage();
         std::cerr << "Error: " << error.what() << '\n';

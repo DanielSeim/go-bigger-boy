@@ -327,6 +327,20 @@ The headless runner can also capture a deterministic framebuffer without SDL:
   --model dmg --frames 60 --frame-output capture.ppm
 ```
 
+For SGB investigations, capture an opt-in JOYP trace from a bounded real ROM
+run, then replay it against the same legally obtained ROM:
+
+```sh
+./build/gbb_test_runner path/to/sgb.gb --model sgb \
+  --max-cycles 5000000 --sgb-trace /tmp/sgb.trace
+./build/gbb_test_runner path/to/sgb.gb --model sgb \
+  --replay-sgb-trace /tmp/sgb.trace
+```
+
+The capture file is written on pass, failure, or timeout. Replay advances the
+bus using the recorded cycle positions and stops at the first state or command
+checkpoint mismatch; see [SGB trace and replay](docs/sgb-traces.md).
+
 When SDL3 is installed, CMake also builds the desktop frontend. Launching it
 without arguments opens the game library dashboard:
 
