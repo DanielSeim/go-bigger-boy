@@ -34,9 +34,12 @@ void test_audio_round_trip_and_migration() {
           "audio disabled value survives settings round trip");
 
     settings.audio_enabled = true;
+    settings.sgb_trace_capture = true;
     write_portable_settings(directory, settings);
     check(load_app_settings(directory).audio_enabled,
           "audio enabled value survives settings round trip");
+    check(load_app_settings(directory).sgb_trace_capture,
+          "SGB trace capture value survives settings round trip");
 
     const auto path = portable_settings_path(directory);
     {
@@ -46,6 +49,8 @@ void test_audio_round_trip_and_migration() {
     const auto migrated = load_app_settings(directory);
     check(migrated.audio_enabled,
           "settings without audio key retain the safe enabled default");
+    check(!migrated.sgb_trace_capture,
+          "settings without SGB trace key retain the safe disabled default");
     const auto document = gbb::read_settings_file(path);
     bool found_audio = false;
     for (const auto& entry : document.entries) {
@@ -56,6 +61,15 @@ void test_audio_round_trip_and_migration() {
         }
     }
     check(found_audio, "settings migration writes the audio key");
+    bool found_sgb_trace = false;
+    for (const auto& entry : document.entries) {
+        if (entry.key == "sgb.TraceCapture") {
+            found_sgb_trace = true;
+            check(entry.value == "false",
+                  "settings migration appends SGB trace disabled default");
+        }
+    }
+    check(found_sgb_trace, "settings migration writes the SGB trace key");
     std::filesystem::remove_all(directory, error);
 }
 

@@ -35,6 +35,7 @@ public final class LibraryActivity extends Activity {
     private static final int OPEN_BACKUP = 3;
     private static final int CREATE_SAVES = 4;
     private static final int OPEN_SAVE = 5;
+    private static final int CREATE_SGB_TRACE = 6;
     static {
         System.loadLibrary("SDL3");
         System.loadLibrary("main");
@@ -66,6 +67,7 @@ public final class LibraryActivity extends Activity {
     static native int nativeLinkRemotePort(String directory);
     static native boolean nativeLinkLanDiscovery(String directory);
     static native boolean nativeLinkDiagnostics(String directory);
+    static native boolean nativeSgbTraceCapture(String directory);
     static native boolean nativeAudioEnabled(String directory);
     static native void nativeSetAudioEnabled(String directory, boolean enabled);
     static native String nativeLinkTransport(String directory);
@@ -75,6 +77,9 @@ public final class LibraryActivity extends Activity {
             String bind, int port, boolean discovery);
     static native void nativeSetLinkDiagnostics(String directory,
             boolean enabled);
+    static native void nativeSetSgbTraceCapture(String directory,
+            boolean enabled);
+    static native byte[] nativeSgbTrace(String directory);
     static native void nativeSetBluetoothLinkSettings(String directory,
             String transport, String address, String serviceUuid);
 
@@ -87,6 +92,7 @@ public final class LibraryActivity extends Activity {
     private String runningRom;
     private int libraryScrollY;
     private int settingsScrollY;
+    private byte[] pendingSgbTrace;
     private AndroidUpdateManager updateManager;
     private OnBackInvokedCallback backCallback;
 
@@ -341,6 +347,22 @@ public final class LibraryActivity extends Activity {
         startActivityForResult(intent, CREATE_SAVES);
     }
 
+    void exportSgbTrace() {
+        final byte[] trace = nativeSgbTrace(getFilesDir().getAbsolutePath());
+        if (trace == null || trace.length == 0) {
+            Toast.makeText(this,
+                    "No SGB trace available. Enable capture and start an SGB game first.",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        pendingSgbTrace = trace;
+        final Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("text/plain");
+        intent.putExtra(Intent.EXTRA_TITLE, "gbb-sgb-trace.trace");
+        startActivityForResult(intent, CREATE_SGB_TRACE);
+    }
+
     void importSave() {
         final Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
@@ -384,6 +406,24 @@ public final class LibraryActivity extends Activity {
     @SuppressLint("WrongConstant")
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == CREATE_SGB_TRACE) {
+            final byte[] trace = pendingSgbTrace;
+            pendingSgbTrace = null;
+            if (resultCode != RESULT_OK || data == null || data.getData() == null ||
+                    trace == null) return;
+            try (java.io.OutputStream output =
+                         getContentResolver().openOutputStream(data.getData())) {
+                if (output == null) throw new java.io.IOException(
+                        "Could not open destination");
+                output.write(trace);
+                output.flush();
+                Toast.makeText(this, "SGB trace saved", Toast.LENGTH_LONG).show();
+            } catch (java.io.IOException error) {
+                Toast.makeText(this, "Could not save SGB trace",
+                        Toast.LENGTH_LONG).show();
+            }
+            return;
+        }
         if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
         final Uri uri = data.getData();
         if (requestCode == CREATE_BACKUP) {

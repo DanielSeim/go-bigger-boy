@@ -26,6 +26,13 @@ Capture writes the trace when the run passes, fails, or reaches its cycle
 limit. It is deliberately opt-in and enables the existing bounded I/O trace
 buffer only while capture is active.
 
+On Android, enable **Capture SGB diagnostic trace** in Settings → Data and
+saves, then start the SGB/SGB2 ROM again. While the game is running, or after
+it exits, use **Export latest SGB trace** to save the text trace through the
+Android file picker. The recorder is off by default, only attaches to SGB and
+SGB2 hardware, and stores the trace in memory until it is exported; it does
+not upload ROM data or alter ordinary non-SGB runs.
+
 To compare two captures from different builds or devices, use the standalone
 diff tool:
 

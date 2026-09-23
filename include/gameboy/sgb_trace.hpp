@@ -78,6 +78,7 @@ public:
                                  std::uint8_t value);
         bool checkpoint(std::uint64_t cycle, std::uint64_t frame,
                         const Emulator& emulator);
+        [[nodiscard]] Trace snapshot() const;
         [[nodiscard]] Trace finish() &&;
 
     private:

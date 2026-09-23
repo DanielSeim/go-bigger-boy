@@ -108,6 +108,7 @@ void append_missing_portable_settings(
     const std::array<bool, shortcut_names.size()>& has_shortcuts,
     const bool has_video_mode, const bool has_audio_enabled,
     const bool has_link_diagnostics,
+    const bool has_sgb_trace_capture,
     const bool has_touch_scale, const bool has_touch_opacity,
     const bool has_touch_voxel_orbit, const bool has_touch_menu_position,
     const bool has_plugin_discovery,
@@ -125,6 +126,7 @@ void append_missing_portable_settings(
         std::all_of(has_shortcuts.begin(), has_shortcuts.end(),
                     [](const bool value) { return value; }) &&
         has_video_mode && has_audio_enabled && has_link_diagnostics &&
+        has_sgb_trace_capture &&
         has_touch_scale &&
         has_touch_opacity && has_touch_voxel_orbit && has_touch_menu_position &&
         has_plugin_discovery && has_plugin_require_allowlist &&
@@ -159,6 +161,10 @@ void append_missing_portable_settings(
     if (!has_link_diagnostics) {
         output << "link.Diagnostics = "
                << (settings.link_diagnostics ? "true" : "false") << '\n';
+    }
+    if (!has_sgb_trace_capture) {
+        output << "sgb.TraceCapture = "
+               << (settings.sgb_trace_capture ? "true" : "false") << '\n';
     }
     if (!has_plugin_discovery) {
         output << "plugin.Discovery = "
@@ -265,7 +271,9 @@ void write_portable_settings(const std::filesystem::path& preference_directory,
               "integer, lcd, voxel, voxel_shape, or voxel_popup. "
               "Audio.Enabled controls whether the APU generates playback samples. "
               "Link.Diagnostics enables the opt-in link "
-              "serial, CPU, and game-state trace. Plugin.Discovery is opt-in; "
+              "serial, CPU, and game-state trace. "
+              "Sgb.TraceCapture enables the opt-in SGB JOYP/checkpoint trace "
+              "for Android diagnostics. Plugin.Discovery is opt-in; "
               "Plugin.Path may be repeated and is resolved relative to this file. "
               "Plugin.RequireAllowlist and repeated Plugin.AllowCore restrict "
               "which descriptor identities are trusted. Plugin.RequireCapabilityAllowlist "
@@ -282,6 +290,8 @@ void write_portable_settings(const std::filesystem::path& preference_directory,
            << (settings.audio_enabled ? "true" : "false") << "\n"
               "link.Diagnostics = "
            << (settings.link_diagnostics ? "true" : "false") << "\n\n";
+    output << "sgb.TraceCapture = "
+           << (settings.sgb_trace_capture ? "true" : "false") << "\n\n";
     output << "plugin.Discovery = "
            << (settings.plugin_discovery ? "true" : "false") << '\n';
     output << "plugin.RequireAllowlist = "
@@ -498,6 +508,7 @@ AppSettings load_portable_settings(
     bool has_video_mode = false;
     bool has_audio_enabled = false;
     bool has_link_diagnostics = false;
+    bool has_sgb_trace_capture = false;
     bool has_plugin_discovery = false;
     bool has_plugin_require_allowlist = false;
     bool has_plugin_path = false;
@@ -558,6 +569,12 @@ AppSettings load_portable_settings(
             has_link_diagnostics = true;
             settings.link_diagnostics = parse_bool_setting(
                 value, settings.link_diagnostics);
+            continue;
+        }
+        if (key == "sgb.TraceCapture") {
+            has_sgb_trace_capture = true;
+            settings.sgb_trace_capture = parse_bool_setting(
+                value, settings.sgb_trace_capture);
             continue;
         }
         if (key == "plugin.Discovery") {
@@ -822,6 +839,7 @@ AppSettings load_portable_settings(
                                      has_keyboard, has_gamepad, has_shortcuts,
                                      has_video_mode, has_audio_enabled,
                                      has_link_diagnostics,
+                                     has_sgb_trace_capture,
                                      has_touch_scale, has_touch_opacity,
                                      has_touch_voxel_orbit,
                                      has_touch_menu_position,

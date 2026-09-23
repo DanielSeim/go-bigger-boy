@@ -213,6 +213,10 @@ bool SgbTrace::Recorder::checkpoint(const std::uint64_t cycle,
     return true;
 }
 
+SgbTrace::Trace SgbTrace::Recorder::snapshot() const {
+    return trace_;
+}
+
 SgbTrace::Trace SgbTrace::Recorder::finish() && {
     return std::move(trace_);
 }

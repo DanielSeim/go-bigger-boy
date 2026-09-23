@@ -7,6 +7,7 @@
 #include "input_mapping.hpp"
 #include "link_trace_file.hpp"
 #include "pokemon_link_diagnostics.hpp"
+#include "gameboy/sgb_trace.hpp"
 #include "gbb/frontend_logging.hpp"
 
 #ifdef __ANDROID__
@@ -17,6 +18,7 @@
 #include <atomic>
 #include <fstream>
 #include <iomanip>
+#include <mutex>
 #include <stdexcept>
 #include <sstream>
 #include <system_error>
@@ -374,6 +376,113 @@ void save_link_diagnostic_bundle(
 }
 
 } // namespace
+
+namespace {
+
+std::mutex sgb_trace_mutex;
+std::atomic<bool> sgb_trace_active{};
+std::optional<gameboy::SgbTrace::Recorder> sgb_trace_recorder;
+std::optional<gameboy::SgbTrace::Trace> last_sgb_trace;
+std::uint64_t sgb_trace_frame{};
+
+std::vector<std::uint8_t> serialize_sgb_trace(
+    const gameboy::SgbTrace::Trace& trace) {
+    std::ostringstream output;
+    std::string error;
+    if (!gameboy::SgbTrace::serialize(trace, output, &error)) return {};
+    const auto text = output.str();
+    return {text.begin(), text.end()};
+}
+
+} // namespace
+
+void start_sgb_trace_capture(gameboy::Emulator& emulator) noexcept {
+    if (emulator.hardware_model() != gameboy::HardwareModel::sgb &&
+        emulator.hardware_model() != gameboy::HardwareModel::sgb2) {
+        return;
+    }
+    try {
+        std::lock_guard<std::mutex> lock(sgb_trace_mutex);
+        sgb_trace_recorder.emplace(emulator.rom_fingerprint(),
+                                   emulator.hardware_model());
+        last_sgb_trace.reset();
+        sgb_trace_frame = 0;
+        emulator.bus().debug_enable_io_trace(true);
+        sgb_trace_active.store(true, std::memory_order_release);
+    } catch (...) {
+        std::lock_guard<std::mutex> lock(sgb_trace_mutex);
+        sgb_trace_recorder.reset();
+        sgb_trace_active.store(false, std::memory_order_release);
+        gbb::log_frontend_warning("Could not start SGB trace capture");
+    }
+}
+
+void capture_sgb_trace_frame(gameboy::Emulator& emulator) noexcept {
+    if (!sgb_trace_active.load(std::memory_order_acquire)) return;
+    // Drain once per completed video frame so the bounded bus-side queue does
+    // not drop JOYP writes during a long session.
+    auto events = emulator.bus().debug_take_io_trace();
+    std::lock_guard<std::mutex> lock(sgb_trace_mutex);
+    if (!sgb_trace_recorder.has_value()) return;
+    try {
+        for (const auto& event : events) {
+            if (event.address == 0xFF00 &&
+                !sgb_trace_recorder->record_joypad_write(event.cycle,
+                                                         event.value)) {
+                last_sgb_trace = std::move(*sgb_trace_recorder).finish();
+                sgb_trace_recorder.reset();
+                sgb_trace_active.store(false, std::memory_order_release);
+                emulator.bus().debug_enable_io_trace(false);
+                gbb::log_frontend_warning(
+                    "SGB trace capture reached its JOYP write limit");
+                return;
+            }
+        }
+        ++sgb_trace_frame;
+        if (!sgb_trace_recorder->checkpoint(emulator.cpu().total_cycles(),
+                                            sgb_trace_frame, emulator)) {
+            last_sgb_trace = std::move(*sgb_trace_recorder).finish();
+            sgb_trace_recorder.reset();
+            sgb_trace_active.store(false, std::memory_order_release);
+            emulator.bus().debug_enable_io_trace(false);
+            gbb::log_frontend_warning(
+                "SGB trace capture reached its checkpoint limit");
+        }
+    } catch (...) {
+        sgb_trace_recorder.reset();
+        sgb_trace_active.store(false, std::memory_order_release);
+        emulator.bus().debug_enable_io_trace(false);
+        gbb::log_frontend_warning("SGB trace capture stopped unexpectedly");
+    }
+}
+
+void stop_sgb_trace_capture(gameboy::Emulator* emulator) noexcept {
+    sgb_trace_active.store(false, std::memory_order_release);
+    if (emulator != nullptr) emulator->bus().debug_enable_io_trace(false);
+    std::lock_guard<std::mutex> lock(sgb_trace_mutex);
+    if (sgb_trace_recorder.has_value()) {
+        try {
+            last_sgb_trace = std::move(*sgb_trace_recorder).finish();
+        } catch (...) {
+            last_sgb_trace.reset();
+        }
+        sgb_trace_recorder.reset();
+    }
+}
+
+std::vector<std::uint8_t> read_sgb_trace() noexcept {
+    std::lock_guard<std::mutex> lock(sgb_trace_mutex);
+    try {
+        if (sgb_trace_recorder.has_value()) {
+            return serialize_sgb_trace(sgb_trace_recorder->snapshot());
+        }
+        if (last_sgb_trace.has_value()) {
+            return serialize_sgb_trace(*last_sgb_trace);
+        }
+    } catch (...) {
+    }
+    return {};
+}
 
 bool configure_video_pipeline(SdlResources& sdl,
                               const gameboy::VideoMode mode) {

@@ -137,6 +137,9 @@ using gbb::sdl::retry_local_link_session;
 #endif
 using gbb::sdl::start_link_trace;
 using gbb::sdl::stop_link_trace;
+using gbb::sdl::start_sgb_trace_capture;
+using gbb::sdl::capture_sgb_trace_frame;
+using gbb::sdl::stop_sgb_trace_capture;
 using gbb::sdl::trace_remote_frame;
 using gbb::sdl::start_remote_link_session;
 using gbb::sdl::stop_remote_link_session;
@@ -1577,6 +1580,7 @@ int run_emulation(int argc, char** argv) {
 #endif
                     auto requested_rom = *pending_rom;
 #ifdef __ANDROID__
+                    stop_sgb_trace_capture(emulator);
                     requested_rom =
                         persist_android_rom(requested_rom, preference_path,
                                             pending_rom_name);
@@ -1596,6 +1600,12 @@ int run_emulation(int argc, char** argv) {
                     emulator = gbb::gameboy_emulator(core.get());
                     audio_enabled = load_app_settings(preference_path).audio_enabled;
                     if (emulator) emulator->set_audio_enabled(audio_enabled);
+#ifdef __ANDROID__
+                    if (emulator &&
+                        load_app_settings(preference_path).sgb_trace_capture) {
+                        start_sgb_trace_capture(*emulator);
+                    }
+#endif
                     sdl.audio.set_enabled(audio_enabled);
                     services = {core.get(), emulator};
                     sdl.camera.close();
@@ -1929,7 +1939,14 @@ int run_emulation(int argc, char** argv) {
                         core_step_total_us += core_step_us;
                         core_step_max_us =
                             std::max(core_step_max_us, core_step_us);
-                        if (core->frame_ready()) core->consume_frame();
+                        if (core->frame_ready()) {
+#ifdef __ANDROID__
+                            if (emulator != nullptr) {
+                                capture_sgb_trace_frame(*emulator);
+                            }
+#endif
+                            core->consume_frame();
+                        }
                         if (link_emulator != nullptr &&
                             link_emulator->frame_ready()) {
                             link_emulator->consume_frame();
@@ -2180,6 +2197,9 @@ int run_emulation(int argc, char** argv) {
         }
 #endif
         save_game_window_geometry(sdl.window, preference_path);
+#ifdef __ANDROID__
+        stop_sgb_trace_capture(emulator);
+#endif
 #ifndef __ANDROID__
         if (emulator != nullptr && link_emulator != nullptr) {
             stop_local_link_session(*emulator, link_emulator, link_session,

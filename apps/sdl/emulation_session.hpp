@@ -35,6 +35,14 @@ void start_link_trace(const std::filesystem::path& preference_path,
                       const char* transport = nullptr);
 void stop_link_trace() noexcept;
 
+// Opt-in SGB protocol capture used by the Android diagnostics UI. The
+// recorder is attached to the actual emulator loop, so exported traces
+// contain the JOYP writes and frame checkpoints needed for desktop replay.
+void start_sgb_trace_capture(gameboy::Emulator& emulator) noexcept;
+void capture_sgb_trace_frame(gameboy::Emulator& emulator) noexcept;
+void stop_sgb_trace_capture(gameboy::Emulator* emulator) noexcept;
+[[nodiscard]] std::vector<std::uint8_t> read_sgb_trace() noexcept;
+
 // Append a structured lifecycle event to the active link trace. This is a
 // no-op when diagnostics are disabled, so callers can instrument failure
 // paths without threading trace ownership through the emulation loop.

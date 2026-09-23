@@ -350,6 +350,18 @@ Java_com_danielseim_gbb_LibraryActivity_nativeLinkDiagnostics(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
+Java_com_danielseim_gbb_LibraryActivity_nativeSgbTraceCapture(
+    JNIEnv* environment, jclass, jstring directory) {
+    const auto* raw_directory =
+        environment->GetStringUTFChars(directory, nullptr);
+    if (raw_directory == nullptr) return JNI_FALSE;
+    const auto value = load_app_settings(
+        std::filesystem::u8path(raw_directory)).sgb_trace_capture;
+    environment->ReleaseStringUTFChars(directory, raw_directory);
+    return value ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
 Java_com_danielseim_gbb_LibraryActivity_nativeAudioEnabled(
     JNIEnv* environment, jclass, jstring directory) {
     const auto* raw_directory =
@@ -444,6 +456,18 @@ Java_com_danielseim_gbb_LibraryActivity_nativeSetLinkDiagnostics(
     if (raw_directory == nullptr) return;
     auto settings = load_app_settings(std::filesystem::u8path(raw_directory));
     settings.link_diagnostics = enabled == JNI_TRUE;
+    write_portable_settings(std::filesystem::u8path(raw_directory), settings);
+    environment->ReleaseStringUTFChars(directory, raw_directory);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_danielseim_gbb_LibraryActivity_nativeSetSgbTraceCapture(
+    JNIEnv* environment, jclass, jstring directory, const jboolean enabled) {
+    const auto* raw_directory =
+        environment->GetStringUTFChars(directory, nullptr);
+    if (raw_directory == nullptr) return;
+    auto settings = load_app_settings(std::filesystem::u8path(raw_directory));
+    settings.sgb_trace_capture = enabled == JNI_TRUE;
     write_portable_settings(std::filesystem::u8path(raw_directory), settings);
     environment->ReleaseStringUTFChars(directory, raw_directory);
 }
@@ -627,6 +651,28 @@ Java_com_danielseim_gbb_GbbActivity_nativeLinkDiagnostics(
     JNIEnv* environment, jclass, jstring) {
     if (environment == nullptr) return nullptr;
     const auto bytes = gbb::sdl::read_link_trace();
+    if (bytes.empty() ||
+        bytes.size() > static_cast<std::size_t>(std::numeric_limits<jsize>::max())) {
+        return nullptr;
+    }
+    const auto array = environment->NewByteArray(static_cast<jsize>(bytes.size()));
+    if (array == nullptr) return nullptr;
+    environment->SetByteArrayRegion(
+        array, 0, static_cast<jsize>(bytes.size()),
+        reinterpret_cast<const jbyte*>(bytes.data()));
+    if (environment->ExceptionCheck()) {
+        environment->ExceptionClear();
+        environment->DeleteLocalRef(array);
+        return nullptr;
+    }
+    return array;
+}
+
+extern "C" JNIEXPORT jbyteArray JNICALL
+Java_com_danielseim_gbb_LibraryActivity_nativeSgbTrace(
+    JNIEnv* environment, jclass, jstring) {
+    if (environment == nullptr) return nullptr;
+    const auto bytes = gbb::sdl::read_sgb_trace();
     if (bytes.empty() ||
         bytes.size() > static_cast<std::size_t>(std::numeric_limits<jsize>::max())) {
         return nullptr;

@@ -180,6 +180,26 @@ final class SettingsScreen {
                 "fingerprint-based filenames needed to restore them.",
                 15, Color.DKGRAY));
 
+        final Switch sgbTrace = new Switch(activity);
+        sgbTrace.setText("Capture SGB diagnostic trace");
+        sgbTrace.setTextSize(16);
+        sgbTrace.setPadding(0, activity.dp(10), 0, activity.dp(8));
+        sgbTrace.setChecked(LibraryActivity.nativeSgbTraceCapture(
+                settingsDirectory));
+        sgbTrace.setOnCheckedChangeListener((button, enabled) ->
+                LibraryActivity.nativeSetSgbTraceCapture(
+                        settingsDirectory, enabled));
+        dataCard.addView(sgbTrace);
+        dataCard.addView(activity.text(
+                "When enabled, SGB and SGB2 games record JOYP protocol writes " +
+                "and frame checkpoints. Capture starts on the next ROM launch " +
+                "and does not upload ROM contents.", 13, Color.GRAY));
+
+        final Button exportSgbTrace = new Button(activity);
+        exportSgbTrace.setText("Export latest SGB trace");
+        exportSgbTrace.setOnClickListener(view -> activity.exportSgbTrace());
+        dataCard.addView(exportSgbTrace);
+
         final Button exportBackup = new Button(activity);
         exportBackup.setText("Export full backup (ZIP)");
         exportBackup.setOnClickListener(view -> activity.exportBackup());
