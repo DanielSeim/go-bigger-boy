@@ -55,8 +55,8 @@ void MemoryBus::initialize_post_boot(const HardwareModel model) noexcept {
             : 0x00));
     // Do not interpret the post-boot JOYP initialization write as the start
     // of an SGB command packet. Enable the parser only after that write.
-    joypad_.set_sgb_mode(model == HardwareModel::sgb ||
-                         model == HardwareModel::sgb2);
+    sgb_adapter_.set_enabled(model == HardwareModel::sgb ||
+                             model == HardwareModel::sgb2);
     io_[0x0F] = 0xE1;
     static_cast<void>(ppu_.write_register(0xFF42, 0x00));
     static_cast<void>(ppu_.write_register(0xFF43, 0x00));
@@ -99,7 +99,7 @@ std::uint8_t MemoryBus::read8(const std::uint16_t address) const noexcept {
         return 0xFF;
     }
     if (address == 0xFF00) {
-        return joypad_.read();
+        return sgb_adapter_.read_joypad(joypad_);
     }
     switch (address) {
     case 0xFF01: return serial_.read_data();
@@ -227,13 +227,8 @@ void MemoryBus::write8(const std::uint16_t address, const std::uint8_t value) no
     } else if (address <= 0xFEFF) {
         // This region is unusable on Game Boy hardware.
     } else if (address == 0xFF00) {
-        if (joypad_.write(value)) {
+        if (sgb_adapter_.write_joypad(value, joypad_, ppu_)) {
             request_interrupt(4);
-        }
-        std::size_t packet_size = 0;
-        if (joypad_.take_sgb_packet(sgb_packet_, packet_size)) {
-            joypad_.apply_sgb_command(sgb_packet_, packet_size);
-            ppu_.apply_sgb_command(sgb_packet_, packet_size);
         }
     } else if (address == 0xFF01) {
         serial_.write_data(value);

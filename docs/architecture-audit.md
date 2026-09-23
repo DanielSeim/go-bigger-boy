@@ -649,9 +649,11 @@ The first guardrail pass is implemented:
 - The remaining core smoke test file now focuses on basic cartridge, camera,
   memory-map, and emulator behavior; subsystem contracts are covered by
   separate CTest executables for faster failure localization.
-- SGB command decoding now lives in `src/ppu_sgb.cpp`, separating the packet
-  protocol and border/attribute state updates from the main PPU timing and
-  scanline implementation without changing the public PPU API.
+- SGB command framing, controller multiplexing, command dispatch, and bounded
+  diagnostic history now live in `src/sgb_adapter.cpp`. Border and attribute
+  state updates remain in `src/ppu_sgb.cpp`, separating the clean-room host
+  boundary from the main PPU timing and scanline implementation without
+  changing the public PPU API.
 - SGB protocol coverage is now isolated in `tests/ppu_sgb_contract_tests.cpp`;
   transfer guards, mask-mode bounds, PAL01 rendering, and default-palette
   behavior run as a focused CTest target instead of only through the monolithic

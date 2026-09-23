@@ -1,6 +1,7 @@
 #include "gameboy/emulator.hpp"
 #include "gameboy/joypad.hpp"
 #include "gameboy/ppu.hpp"
+#include "gameboy/sgb_adapter.hpp"
 
 #include <array>
 #include <cstdint>
@@ -108,27 +109,29 @@ void test_mask_command_is_bounded() {
 
 void test_multiplayer_request_and_polling() {
     gameboy::Joypad joypad;
-    joypad.set_sgb_mode(true);
-    std::array<std::uint8_t, 16 * 7> packet{};
+    gameboy::Ppu ppu;
+    gameboy::SgbAdapter adapter;
+    adapter.set_enabled(true);
+    gameboy::SgbAdapter::Packet packet{};
     packet[0] = static_cast<std::uint8_t>(0x11 << 3); // MLT_REQ
     packet[1] = 0x01; // two players
-    joypad.apply_sgb_command(packet, packet.size());
-    check(joypad.sgb_player_count() == 2,
+    adapter.apply_command(packet, gameboy::Joypad::sgb_packet_size, ppu);
+    check(adapter.diagnostics().player_count == 2,
           "MLT_REQ enables two-player SGB polling");
-    static_cast<void>(joypad.write(0x30));
-    check((joypad.read() & 0x0F) == 0x0F,
+    static_cast<void>(adapter.write_joypad(0x30, joypad, ppu));
+    check((adapter.read_joypad(joypad) & 0x0F) == 0x0F,
           "SGB multiplayer polling starts with player one ID");
-    static_cast<void>(joypad.write(0x10));
-    static_cast<void>(joypad.write(0x30));
-    check((joypad.read() & 0x0F) == 0x0E,
+    static_cast<void>(adapter.write_joypad(0x10, joypad, ppu));
+    static_cast<void>(adapter.write_joypad(0x30, joypad, ppu));
+    check((adapter.read_joypad(joypad) & 0x0F) == 0x0E,
           "SGB multiplayer polling advances to player two");
     packet[1] = 0x03; // four players
-    joypad.apply_sgb_command(packet, packet.size());
-    check(joypad.sgb_player_count() == 4,
+    adapter.apply_command(packet, gameboy::Joypad::sgb_packet_size, ppu);
+    check(adapter.diagnostics().player_count == 4,
           "MLT_REQ enables four-player SGB polling");
-    static_cast<void>(joypad.write(0x10));
-    static_cast<void>(joypad.write(0x30));
-    check((joypad.read() & 0x0F) == 0x0D,
+    static_cast<void>(adapter.write_joypad(0x10, joypad, ppu));
+    static_cast<void>(adapter.write_joypad(0x30, joypad, ppu));
+    check((adapter.read_joypad(joypad) & 0x0F) == 0x0D,
           "SGB four-player polling advances through controller IDs");
 }
 
@@ -159,30 +162,49 @@ void test_multiplayer_command_reaches_joypad() {
 
 void test_sgb_first_packet_accepts_start_pulse() {
     gameboy::Joypad joypad;
-    joypad.set_sgb_mode(true);
+    gameboy::Ppu ppu;
+    gameboy::SgbAdapter adapter;
+    adapter.set_enabled(true);
     std::array<std::uint8_t, gameboy::Joypad::sgb_packet_size> command{};
     command[0] = static_cast<std::uint8_t>((0x11U << 3) | 1U);
     command[1] = 0x01; // two players
 
     // A first packet starts directly with 00, unlike subsequent packets
     // which are preceded by the previous packet's 30 finish write.
-    static_cast<void>(joypad.write(0x00));
-    static_cast<void>(joypad.write(0x30));
+    static_cast<void>(adapter.write_joypad(0x00, joypad, ppu));
+    static_cast<void>(adapter.write_joypad(0x30, joypad, ppu));
     for (std::size_t bit = 0; bit < command.size() * 8; ++bit) {
-        static_cast<void>(joypad.write(0x30));
-        static_cast<void>(joypad.write(
-            (command[bit / 8] & (1U << (bit & 7U))) != 0 ? 0x10 : 0x20));
+        static_cast<void>(adapter.write_joypad(0x30, joypad, ppu));
+        static_cast<void>(adapter.write_joypad(
+            (command[bit / 8] & (1U << (bit & 7U))) != 0 ? 0x10 : 0x20,
+            joypad, ppu));
     }
-    static_cast<void>(joypad.write(0x30));
-    static_cast<void>(joypad.write(0x20));
+    static_cast<void>(adapter.write_joypad(0x30, joypad, ppu));
+    static_cast<void>(adapter.write_joypad(0x20, joypad, ppu));
 
-    std::array<std::uint8_t, gameboy::Joypad::sgb_packet_size *
-                                  gameboy::Joypad::sgb_max_packets>
-        packet{};
-    std::size_t size = 0;
-    check(joypad.take_sgb_packet(packet, size) && size == command.size() &&
-              packet[0] == command[0] && packet[1] == command[1],
-          "SGB parser accepts the first packet's direct start pulse");
+    check(adapter.diagnostics().packets_completed == 1 &&
+              adapter.diagnostics().last_command == 0x11 &&
+              adapter.diagnostics().last_packet_bytes == 16,
+          "SGB adapter accepts the first packet's direct start pulse");
+    check(adapter.diagnostics().player_count == 2,
+          "SGB adapter applies the first packet after framing");
+}
+
+void test_sgb_adapter_command_validation_and_diagnostics() {
+    gameboy::Ppu ppu;
+    gameboy::SgbAdapter adapter;
+    adapter.set_enabled(true);
+    gameboy::SgbAdapter::Packet packet{};
+    packet[0] = static_cast<std::uint8_t>((0x11U << 3) | 1U);
+    packet[1] = 0x01;
+    adapter.apply_command(packet, 15, ppu);
+    check(adapter.diagnostics().malformed_packets == 1 &&
+              adapter.diagnostics().commands_applied == 0,
+          "SGB adapter rejects truncated command payloads");
+    adapter.apply_command(packet, gameboy::Joypad::sgb_packet_size, ppu);
+    check(adapter.diagnostics().commands_applied == 1 &&
+              adapter.diagnostics().last_command == 0x11,
+          "SGB adapter records the applied command boundary");
 }
 
 void test_malformed_command_matrix_is_bounded() {
@@ -369,6 +391,7 @@ int main() {
     test_multiplayer_request_and_polling();
     test_multiplayer_command_reaches_joypad();
     test_sgb_first_packet_accepts_start_pulse();
+    test_sgb_adapter_command_validation_and_diagnostics();
     test_malformed_command_matrix_is_bounded();
     test_palette_command_reaches_video();
     test_palette_and_attribute_transfer_commands();

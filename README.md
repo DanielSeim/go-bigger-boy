@@ -39,9 +39,9 @@ What works well:
   window's internal line counter and variable Mode 3 fetch timing
 - Game Boy Color mode with banked VRAM/WRAM, RGB555 palettes, tile attributes,
   CGB sprite priority, VRAM DMA, fast serial, and double-speed CPU switching
-- Super Game Boy software detection with HLE JOYP command packets, color
-  palettes, tile attribute mapping, screen-data CHR_TRN/PCT_TRN/PAL_TRN/
-  ATTR_TRN transfer latches, a
+- Super Game Boy software detection with a clean-room SGB adapter, bit-level
+  JOYP command framing, color palettes, tile attribute mapping, screen-data
+  CHR_TRN/PCT_TRN/PAL_TRN/ATTR_TRN transfer latches, a
   deterministic 256×224 SNES border framebuffer, and MASK_EN viewport masking
   (SNES audio and boot animation remain future work)
 - Active-low joypad matrix with keyboard/gamepad input and interrupts
@@ -72,9 +72,9 @@ Known limitations:
 
 - Compatibility is still incomplete, especially for untested commercial games
   and revision-specific hardware edge cases.
-- The Super Game Boy implementation is deterministic HLE, not a full SNES
-  emulator; SNES audio, boot animation, fade timing, and the complete boot
-  handshake remain out of scope.
+- The Super Game Boy implementation is a deterministic clean-room adapter,
+  not a full SNES emulator or Nintendo BIOS replacement; SNES audio, boot
+  animation, fade timing, and the complete boot handshake remain out of scope.
 - Web link sessions are not exposed yet. Desktop local/TCP link sessions work,
   but Pokémon can spend a long time in some trade or battle transition states;
   improving that wait-state/audio behavior is still planned.

@@ -8,6 +8,7 @@
 #include "gameboy/ppu.hpp"
 #include "gameboy/printer.hpp"
 #include "gameboy/serial.hpp"
+#include "gameboy/sgb_adapter.hpp"
 #include "gameboy/timer.hpp"
 
 #include <array>
@@ -76,6 +77,12 @@ public:
     void flush_battery();
     [[nodiscard]] const Ppu::Framebuffer& framebuffer() const noexcept;
     [[nodiscard]] const Ppu::SgbFramebuffer& sgb_framebuffer() const noexcept;
+    [[nodiscard]] const SgbAdapter::Diagnostics& debug_sgb_diagnostics() const noexcept {
+        return sgb_adapter_.diagnostics();
+    }
+    [[nodiscard]] const SgbAdapter& debug_sgb_adapter() const noexcept {
+        return sgb_adapter_;
+    }
     [[nodiscard]] bool frame_ready() const noexcept;
     void consume_frame() noexcept;
     [[nodiscard]] std::vector<std::int16_t> take_audio_samples();
@@ -116,6 +123,7 @@ private:
     std::array<std::uint8_t, 0x7F> hram_{};
     std::uint8_t interrupt_enable_{};
     Joypad joypad_{};
+    SgbAdapter sgb_adapter_{};
     Apu apu_{};
     Ppu ppu_{};
     Timer timer_{};
@@ -146,8 +154,6 @@ private:
     bool debug_io_trace_enabled_{};
     bool timer_paused_{};
     std::vector<IoTraceEvent> debug_io_trace_{};
-    std::array<std::uint8_t, Joypad::sgb_packet_size * Joypad::sgb_max_packets>
-        sgb_packet_{};
 };
 
 } // namespace gameboy

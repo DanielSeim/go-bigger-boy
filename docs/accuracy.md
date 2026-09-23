@@ -156,8 +156,9 @@ automatically for the SGB hardware profile unless they require CGB hardware.
 When SGB/SGB2 is selected explicitly, that profile also overrides a cartridge's
 CGB compatibility flag so dual-mode software sees the DMG-compatible SGB bus
 and can issue its border-transfer commands.
-The SGB path is a deterministic HLE implementation: JOYP command packets are
-decoded at the bit level, `PAL01`/`PAL23`/`PAL03`/`PAL12` set RGB555 palettes,
+The SGB path is a deterministic clean-room adapter: JOYP command packets are
+decoded at the bit level by `gameboy::SgbAdapter`, and
+`PAL01`/`PAL23`/`PAL03`/`PAL12` set RGB555 palettes,
 and `ATTR_BLK`/`ATTR_LIN`/`ATTR_DIV`/`ATTR_CHR` update the 20×18 tile attribute
 map used by the Game Boy viewport. The transfer commands `PAL_TRN`/`PAL_SET`
 and `ATTR_TRN`/`ATTR_SET` retain and apply the SGB palette and attribute-file
@@ -174,7 +175,8 @@ required for the initial multiplayer probe and subsequent border transfers.
 color-zero viewport modes. `MLT_REQ` supports deterministic one-, two-, and
 four-player polling IDs; the current local button state is intentionally shared
 by each emulated controller until a multi-device input backend is added. These
-behaviors are covered by core tests and save states (version 28). SGB VRAM
+behaviors are covered by core tests, adapter diagnostics, and save states
+(version 36). SGB VRAM
 transfer commands retain their payload for the hardware-like five-frame
 transfer latency before the new data becomes visible. This is deliberately not
 a full SNES emulation path: the real adapter relies on SNES-

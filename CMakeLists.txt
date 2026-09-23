@@ -104,6 +104,7 @@ add_library(gameboy_core
     src/gameboy_link_endpoint.cpp
     src/gameshark.cpp
     src/joypad.cpp
+    src/sgb_adapter.cpp
     src/link_packet_codec.cpp
     src/link_session.cpp
     src/link_scheduler.cpp

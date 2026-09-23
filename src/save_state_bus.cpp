@@ -151,17 +151,17 @@ void SaveStateBusCodec::write(save_state_format::Writer& writer,
     writer.boolean(bus.apu_.pulse2_.just_reloaded);
     // SGB state is appended as trailing blocks so older payload offsets stay
     // stable as new transfer and border state is introduced.
-    writer.boolean(bus.joypad_.sgb_mode_);
-    writer.boolean(bus.joypad_.sgb_ready_for_pulse_);
-    writer.boolean(bus.joypad_.sgb_ready_for_write_);
-    writer.boolean(bus.joypad_.sgb_ready_for_stop_);
-    writer.u32(static_cast<std::uint32_t>(bus.joypad_.sgb_bit_count_));
-    write_bytes(writer, bus.joypad_.sgb_command_);
-    write_bytes(writer, bus.joypad_.sgb_packet_);
-    writer.boolean(bus.joypad_.sgb_packet_ready_);
-    writer.u32(static_cast<std::uint32_t>(bus.joypad_.sgb_packet_bytes_));
-    writer.u8(bus.joypad_.sgb_player_count_);
-    writer.u8(bus.joypad_.sgb_current_player_);
+    writer.boolean(bus.sgb_adapter_.enabled_);
+    writer.boolean(bus.sgb_adapter_.ready_for_pulse_);
+    writer.boolean(bus.sgb_adapter_.ready_for_write_);
+    writer.boolean(bus.sgb_adapter_.ready_for_stop_);
+    writer.u32(static_cast<std::uint32_t>(bus.sgb_adapter_.bit_count_));
+    write_bytes(writer, bus.sgb_adapter_.command_);
+    write_bytes(writer, bus.sgb_adapter_.packet_);
+    writer.boolean(bus.sgb_adapter_.packet_ready_);
+    writer.u32(static_cast<std::uint32_t>(bus.sgb_adapter_.packet_bytes_));
+    writer.u8(bus.sgb_adapter_.player_count_);
+    writer.u8(bus.sgb_adapter_.current_player_);
     writer.boolean(bus.ppu_.sgb_mode_);
     for (const auto color : bus.ppu_.sgb_palettes_) writer.u16(color);
     write_bytes(writer, bus.ppu_.sgb_attributes_);

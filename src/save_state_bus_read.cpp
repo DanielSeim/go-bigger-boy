@@ -409,34 +409,34 @@ void SaveStateBusCodec::read(save_state_format::Reader& reader,
         // adds the explicit PCT transfer latch used by the border compositor;
         // version 28 adds an in-flight transfer destination and countdown;
         // version 29 adds the border-loading latch.
-        bus.joypad_.sgb_mode_ = reader.boolean();
-        bus.joypad_.sgb_ready_for_pulse_ = reader.boolean();
-        bus.joypad_.sgb_ready_for_write_ = reader.boolean();
-        bus.joypad_.sgb_ready_for_stop_ = reader.boolean();
-        bus.joypad_.sgb_bit_count_ = reader.u32();
-        read_bytes(reader, bus.joypad_.sgb_command_);
-        read_bytes(reader, bus.joypad_.sgb_packet_);
-        bus.joypad_.sgb_packet_ready_ = reader.boolean();
-        bus.joypad_.sgb_packet_bytes_ = reader.u32();
-        if (bus.joypad_.sgb_bit_count_ >
-                bus.joypad_.sgb_command_.size() * 8 ||
-            bus.joypad_.sgb_packet_bytes_ > bus.joypad_.sgb_packet_.size()) {
+        bus.sgb_adapter_.enabled_ = reader.boolean();
+        bus.sgb_adapter_.ready_for_pulse_ = reader.boolean();
+        bus.sgb_adapter_.ready_for_write_ = reader.boolean();
+        bus.sgb_adapter_.ready_for_stop_ = reader.boolean();
+        bus.sgb_adapter_.bit_count_ = reader.u32();
+        read_bytes(reader, bus.sgb_adapter_.command_);
+        read_bytes(reader, bus.sgb_adapter_.packet_);
+        bus.sgb_adapter_.packet_ready_ = reader.boolean();
+        bus.sgb_adapter_.packet_bytes_ = reader.u32();
+        if (bus.sgb_adapter_.bit_count_ >
+                bus.sgb_adapter_.command_.size() * 8 ||
+            bus.sgb_adapter_.packet_bytes_ > bus.sgb_adapter_.packet_.size()) {
             throw SaveStateError("Save state contains invalid SGB joypad state");
         }
         if (version >= 26) {
-            bus.joypad_.sgb_player_count_ = reader.u8();
-            bus.joypad_.sgb_current_player_ = reader.u8();
-            if (bus.joypad_.sgb_player_count_ != 1 &&
-                bus.joypad_.sgb_player_count_ != 2 &&
-                bus.joypad_.sgb_player_count_ != 4) {
+            bus.sgb_adapter_.player_count_ = reader.u8();
+            bus.sgb_adapter_.current_player_ = reader.u8();
+            if (bus.sgb_adapter_.player_count_ != 1 &&
+                bus.sgb_adapter_.player_count_ != 2 &&
+                bus.sgb_adapter_.player_count_ != 4) {
                 throw SaveStateError("Save state contains invalid SGB player count");
             }
-            bus.joypad_.sgb_current_player_ = static_cast<std::uint8_t>(
-                bus.joypad_.sgb_current_player_ &
-                (bus.joypad_.sgb_player_count_ - 1));
+            bus.sgb_adapter_.current_player_ = static_cast<std::uint8_t>(
+                bus.sgb_adapter_.current_player_ &
+                (bus.sgb_adapter_.player_count_ - 1));
         } else {
-            bus.joypad_.sgb_player_count_ = 1;
-            bus.joypad_.sgb_current_player_ = 0;
+            bus.sgb_adapter_.player_count_ = 1;
+            bus.sgb_adapter_.current_player_ = 0;
         }
         bus.ppu_.sgb_mode_ = reader.boolean();
         for (auto& color : bus.ppu_.sgb_palettes_) color = reader.u16();
@@ -460,13 +460,13 @@ void SaveStateBusCodec::read(save_state_format::Reader& reader,
             bus.ppu_.sgb_border_pct_->fill(0);
         }
     } else {
-        bus.joypad_.sgb_mode_ = false;
-        bus.joypad_.reset_sgb_packet();
-        bus.joypad_.sgb_packet_.fill(0);
-        bus.joypad_.sgb_packet_ready_ = false;
-        bus.joypad_.sgb_packet_bytes_ = 0;
-        bus.joypad_.sgb_player_count_ = 1;
-        bus.joypad_.sgb_current_player_ = 0;
+        bus.sgb_adapter_.enabled_ = false;
+        bus.sgb_adapter_.reset_packet();
+        bus.sgb_adapter_.packet_.fill(0);
+        bus.sgb_adapter_.packet_ready_ = false;
+        bus.sgb_adapter_.packet_bytes_ = 0;
+        bus.sgb_adapter_.player_count_ = 1;
+        bus.sgb_adapter_.current_player_ = 0;
         bus.ppu_.sgb_mode_ = false;
         bus.ppu_.sgb_palettes_.fill(0);
         bus.ppu_.sgb_attributes_.fill(0);
@@ -476,6 +476,10 @@ void SaveStateBusCodec::read(save_state_format::Reader& reader,
         bus.ppu_.sgb_ram_palettes_->fill(0);
         bus.ppu_.sgb_attribute_files_->fill(0);
     }
+    // Diagnostics are session observations rather than emulated state. A
+    // loaded state starts a fresh observation window while preserving the
+    // restored adapter protocol state above.
+    bus.sgb_adapter_.reset_diagnostics();
     if (version >= 24) {
         const auto serial_phase = reader.u32();
         const auto serial_bits = reader.u8();

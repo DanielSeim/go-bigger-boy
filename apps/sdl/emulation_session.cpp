@@ -85,6 +85,7 @@ void write_emulator_diagnostics(std::ostream& output,
     const auto& registers = cpu.registers();
     const auto& serial = emulator->bus().serial_port();
     const auto profile = emulator->link_compatibility_profile();
+    const auto& sgb = emulator->bus().debug_sgb_diagnostics();
     output << "[emulator " << name << "]\n"
            << "rom_fingerprint=0x" << std::hex << emulator->rom_fingerprint()
            << " hardware_model=" << gameboy::hardware_model_id(
@@ -127,11 +128,42 @@ void write_emulator_diagnostics(std::ostream& output,
            << " serial_transfers_completed=" << serial.transfers_completed()
            << " serial_signature=" << serial.link_state_signature()
            << " serial_boundary_signature=" << serial.link_boundary_signature()
+           << " sgb_enabled=" << sgb.enabled
+           << " sgb_packets=" << sgb.packets_completed
+           << " sgb_commands=" << sgb.commands_applied
+           << " sgb_malformed_packets=" << sgb.malformed_packets
+           << " sgb_last_command=0x" << std::hex
+           << static_cast<unsigned>(sgb.last_command)
+           << " sgb_last_packet_bytes=" << std::dec
+           << static_cast<unsigned>(sgb.last_packet_bytes)
+           << " sgb_player_count="
+           << static_cast<unsigned>(sgb.player_count)
+           << " sgb_current_player="
+           << static_cast<unsigned>(sgb.current_player)
            << " io_hr=0x" << std::hex
            << static_cast<unsigned>(emulator->bus().read8(0xFFAA))
            << " io_if=0x" << static_cast<unsigned>(emulator->bus().read8(0xFF0F))
            << " io_ie=0x" << static_cast<unsigned>(emulator->bus().read8(0xFFFF))
            << std::dec << "\n";
+    const auto& sgb_adapter = emulator->bus().debug_sgb_adapter();
+    const auto& history = sgb_adapter.command_history();
+    const auto history_size = sgb_adapter.command_history_size();
+    for (std::size_t index = 0; index < history_size; ++index) {
+        const auto history_index =
+            (sgb_adapter.command_history_oldest() + index) %
+            sgb_adapter.command_history_capacity;
+        const auto& record = history[history_index];
+        output << "sgb_command_history index=" << index
+               << " sequence=" << record.sequence << " command=0x"
+               << std::hex << static_cast<unsigned>(record.command)
+               << " bytes=" << std::dec
+               << static_cast<unsigned>(record.packet_bytes) << " payload=";
+        for (std::size_t byte = 0; byte < record.packet_bytes; ++byte) {
+            output << std::hex << std::setw(2) << std::setfill('0')
+                   << static_cast<unsigned>(record.packet[byte]);
+        }
+        output << std::setfill(' ') << std::dec << '\n';
+    }
     try {
         const auto state = emulator->save_state();
         std::uint64_t digest = UINT64_C(14695981039346656037);
