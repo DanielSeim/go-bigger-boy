@@ -35,7 +35,10 @@ def evaluate_report(
         if mode not in platform_baseline:
             raise ValueError(f"baseline is missing mode {mode}")
         baseline_fps = float(platform_baseline[mode])
-        minimum_fps = baseline_fps * ratio_floor
+        minimum_fps = max(
+            baseline_fps * ratio_floor,
+            float(baseline.get("minimum_fps", 0.0)),
+        )
         passed = float(fps) >= minimum_fps
         results.append(
             {
@@ -54,6 +57,7 @@ def evaluate_report(
         "schema_version": 1,
         "platform": platform,
         "minimum_ratio": ratio_floor,
+        "minimum_fps": float(baseline.get("minimum_fps", 0.0)),
         "status": "pass" if all(x["status"] == "pass" for x in results) else "fail",
         "results": results,
     }
@@ -64,6 +68,7 @@ def markdown_report(evaluation: dict[str, Any]) -> str:
         "# SDL rendering performance report",
         "",
         f"Platform: `{evaluation['platform']}`  ",
+        f"Minimum accepted FPS: `{evaluation['minimum_fps']:.2f}`  ",
         f"Minimum accepted baseline ratio: `{evaluation['minimum_ratio']:.2f}`",
         "",
         "| Mode | FPS | Baseline | Minimum | Ratio | Status |",

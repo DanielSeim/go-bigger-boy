@@ -30,6 +30,7 @@
 #include <cstdint>
 #include <cmath>
 #include <exception>
+#include <functional>
 #include <iomanip>
 #include <memory>
 #include <optional>
@@ -56,6 +57,7 @@ struct WebApp {
         if (gamepad) SDL_CloseGamepad(gamepad);
         if (audio_stream) SDL_DestroyAudioStream(audio_stream);
         if (texture) SDL_DestroyTexture(texture);
+        if (voxel_render_target) SDL_DestroyTexture(voxel_render_target);
         if (renderer) SDL_DestroyRenderer(renderer);
         if (window) SDL_DestroyWindow(window);
     }
@@ -63,6 +65,7 @@ struct WebApp {
     SDL_Window* window{};
     SDL_Renderer* renderer{};
     SDL_Texture* texture{};
+    SDL_Texture* voxel_render_target{};
     SDL_Gamepad* gamepad{};
     SDL_AudioStream* audio_stream{};
     std::unique_ptr<gbb::EmulatorCore> emulator;
@@ -72,6 +75,8 @@ struct WebApp {
     gbb::VoxelScene voxel_scene{};
     std::uint64_t voxel_scene_signature{};
     bool voxel_scene_cached{};
+    std::uint64_t voxel_render_cache_key{};
+    bool voxel_render_cache_valid{};
     gbb::VoxelRenderStats voxel_stats{};
     float voxel_camera_pitch_offset{};
     float voxel_camera_yaw_offset{};
@@ -98,6 +103,10 @@ gameboy::HardwareModel requested_hardware_model{
 std::string scene_snapshot_export;
 
 void set_status(const std::string& message, bool error);
+
+void mix_render_key(std::uint64_t& key, const std::uint64_t value) noexcept {
+    key ^= value + UINT64_C(0x9e3779b97f4a7c15) + (key << 6U) + (key >> 2U);
+}
 
 void set_audio_enabled(WebApp& app, const bool enabled) noexcept {
     app.audio_enabled = enabled;
@@ -230,6 +239,23 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
     const auto& voxel_scene = app.voxel_scene;
     app.voxel_stats.accepted_objects = voxel_scene.objects.size();
     app.voxel_stats.candidate_objects = voxel_scene.candidates.size();
+    std::uint64_t render_key = scene_key ^ app.emulator->rom_fingerprint();
+    mix_render_key(render_key, static_cast<std::uint64_t>(app.video_mode));
+    mix_render_key(render_key, shape_aware ? 1U : 0U);
+    mix_render_key(render_key, popup_book ? 1U : 0U);
+    mix_render_key(render_key, std::hash<float>{}(app.voxel_camera_pitch_offset));
+    mix_render_key(render_key, std::hash<float>{}(app.voxel_camera_yaw_offset));
+    for (const auto pixel : pixels) mix_render_key(render_key, pixel);
+    if (app.voxel_render_target != nullptr && app.voxel_render_cache_valid &&
+        app.voxel_render_cache_key == render_key) {
+        if (!SDL_RenderTexture(app.renderer, app.voxel_render_target, nullptr,
+                               nullptr)) {
+            app.voxel_render_cache_valid = false;
+        } else {
+            ++app.voxel_stats.render_cache_hits;
+            return;
+        }
+    }
     const auto yaw = (camera_yaw + app.voxel_camera_yaw_offset) *
                      0.01745329251994329577F;
     const auto pitch = (popup_book
@@ -280,6 +306,13 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
     const auto add_quad = [&](const SDL_FPoint a, const SDL_FPoint b,
                               const SDL_FPoint c, const SDL_FPoint d,
                               const SDL_FColor color) {
+        const auto all_left = a.x < 0.0F && b.x < 0.0F && c.x < 0.0F && d.x < 0.0F;
+        const auto all_right = a.x > 160.0F && b.x > 160.0F &&
+                               c.x > 160.0F && d.x > 160.0F;
+        const auto all_above = a.y < 0.0F && b.y < 0.0F && c.y < 0.0F && d.y < 0.0F;
+        const auto all_below = a.y > 144.0F && b.y > 144.0F &&
+                               c.y > 144.0F && d.y > 144.0F;
+        if (all_left || all_right || all_above || all_below) return;
         const auto base = static_cast<int>(vertices.size());
         vertices.push_back({a, color, {0.0F, 0.0F}});
         vertices.push_back({b, color, {0.0F, 0.0F}});
@@ -336,6 +369,7 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
         float extent_y{1.0F};
         float height{};
         float sort_depth{};
+        std::size_t order{};
         std::uint32_t color{};
         bool sprite{};
         bool window{};
@@ -700,7 +734,7 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
             column_heights[cell_y * cells_x + cell_x] = depth;
             columns.push_back({x, y, static_cast<float>(cell_size),
                                static_cast<float>(cell_size), depth,
-                               sort_depth,
+                               sort_depth, columns.size(),
                                color, has_sprite, window_layer, object_layer,
                                has_artwork || window_layer || object_layer});
         }
@@ -714,6 +748,23 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
             std::string("Could not update browser voxel background: ") +
             SDL_GetError());
         return;
+    }
+    bool render_target_active = false;
+    bool use_render_target = app.voxel_render_target != nullptr;
+    const auto restore_render_target = [&]() {
+        if (!render_target_active) return true;
+        render_target_active = false;
+        return SDL_SetRenderTarget(app.renderer, nullptr);
+    };
+    if (use_render_target) {
+        if (SDL_SetRenderTarget(app.renderer, app.voxel_render_target) &&
+            SDL_SetRenderDrawColor(app.renderer, 16, 20, 16, 0) &&
+            SDL_RenderClear(app.renderer)) {
+            render_target_active = true;
+        } else {
+            static_cast<void>(SDL_SetRenderTarget(app.renderer, nullptr));
+            use_render_target = false;
+        }
     }
     const std::array<SDL_Vertex, 4> background_vertices{{
         {project(0.0F, 0.0F, base_depth), {1.0F, 1.0F, 1.0F, 1.0F}, {0.0F, 0.0F}},
@@ -729,9 +780,12 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
         gbb::log_frontend_error(
             std::string("Could not render browser voxel background: ") +
             SDL_GetError());
+        static_cast<void>(restore_render_target());
         return;
     }
-    std::stable_sort(columns.begin(), columns.end(),
+    // Keep the exact stable painter order for equal keys without paying for
+    // stable_sort's temporary buffer and merge passes.
+    std::sort(columns.begin(), columns.end(),
                      [](const VoxelColumn& left, const VoxelColumn& right) {
                          const auto layer_rank = [](const VoxelColumn& column) {
                             return column.sprite ? 3 : column.object ? 2 :
@@ -741,7 +795,9 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
                          const auto right_rank = layer_rank(right);
                          if (left_rank != right_rank)
                              return left_rank < right_rank;
-                         return left.sort_depth > right.sort_depth;
+                         if (left.sort_depth != right.sort_depth)
+                             return left.sort_depth > right.sort_depth;
+                         return left.order < right.order;
                      });
     const auto height_at = [&](const int cell_x, const int cell_y) {
         if (cell_x < 0 || cell_y < 0 ||
@@ -951,6 +1007,18 @@ void render_web_voxel(WebApp& app, const std::vector<std::uint32_t>& pixels,
                 << " vertices=" << app.voxel_stats.mesh_vertices
                 << " indices=" << app.voxel_stats.mesh_indices;
         gbb::log_frontend_info(message.str());
+    }
+    if (!restore_render_target()) return;
+    if (use_render_target) {
+        if (!SDL_RenderTexture(app.renderer, app.voxel_render_target, nullptr,
+                               nullptr)) {
+            gbb::log_frontend_error(
+                std::string("Could not present browser voxel render target: ") +
+                SDL_GetError());
+            return;
+        }
+        app.voxel_render_cache_key = render_key;
+        app.voxel_render_cache_valid = true;
     }
 }
 
@@ -1413,6 +1481,20 @@ SDL_AppResult SDL_AppInit(void** appstate, int, char**) {
     if (!app->window) return SDL_APP_FAILURE;
     app->renderer = SDL_CreateRenderer(app->window, nullptr);
     if (!app->renderer) return SDL_APP_FAILURE;
+    app->voxel_render_target = SDL_CreateTexture(
+        app->renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET,
+        static_cast<int>(gameboy::Ppu::screen_width),
+        static_cast<int>(gameboy::Ppu::screen_height));
+    if (!app->voxel_render_target) {
+        gbb::log_frontend_warning(
+            std::string("Browser voxel render cache unavailable: ") +
+            SDL_GetError());
+    } else if (!SDL_SetTextureScaleMode(app->voxel_render_target,
+                                        SDL_SCALEMODE_NEAREST)) {
+        gbb::log_frontend_warning(
+            std::string("Browser voxel render cache filtering unavailable: ") +
+            SDL_GetError());
+    }
     static_cast<void>(SDL_SetRenderVSync(app->renderer, 1));
     app->hardware_model = requested_hardware_model;
     active_app = app.get();

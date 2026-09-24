@@ -23,6 +23,7 @@ namespace gbb::sdl {
 struct VoxelRenderContext {
     SDL_Renderer* renderer{};
     SDL_Texture* texture{};
+    SDL_Texture* render_target{};
     gameboy::VideoMode video_mode{};
     gbb::SceneSnapshot& scene_snapshot;
     std::filesystem::path& voxel_profile_path;
@@ -37,6 +38,8 @@ struct VoxelRenderContext {
     std::vector<int>& voxel_indices;
     float& voxel_camera_pitch_offset;
     float& voxel_camera_yaw_offset;
+    std::uint64_t& voxel_render_cache_key;
+    bool& voxel_render_cache_valid;
 };
 
 [[nodiscard]] SDL_FColor voxel_color(std::uint32_t pixel, float shade,

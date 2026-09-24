@@ -37,6 +37,7 @@ class SdlResources {
     SDL_Renderer* renderer{};
     SDL_Texture* texture{};
     SDL_Texture* link_texture{};
+    SDL_Texture* voxel_render_target{};
     std::size_t core_video_width{160};
     std::size_t core_video_height{144};
     gameboy::VideoMode video_mode{gameboy::default_video_mode};
@@ -60,6 +61,8 @@ class SdlResources {
     std::vector<std::uint32_t> presentation_pixels;
     float voxel_camera_pitch_offset{};
     float voxel_camera_yaw_offset{};
+    std::uint64_t voxel_render_cache_key{};
+    bool voxel_render_cache_valid{};
     bool voxel_camera_dragging{};
     bool split_screen{};
     FrameRateMetrics fps_metrics{};

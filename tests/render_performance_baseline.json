@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "minimum_ratio": 0.65,
+  "minimum_fps": 60.0,
   "platforms": {
     "linux": {
       "nearest": 150.0,

@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstring>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
@@ -20,6 +21,7 @@
 #include <iostream>
 #include <limits>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace {
@@ -35,6 +37,38 @@ void check(const bool condition, const std::string& message) {
         std::cerr << "FAIL: " << message << '\n';
         ++failures;
     }
+}
+
+std::vector<std::uint8_t> read_renderer_pixels(SDL_Renderer* renderer) {
+    auto* surface = SDL_RenderReadPixels(renderer, nullptr);
+    if (surface == nullptr) {
+        check(false, std::string("SDL reads the rendered frame: ") +
+                         SDL_GetError());
+        return {};
+    }
+    const auto bytes = static_cast<std::size_t>(surface->pitch) *
+                       static_cast<std::size_t>(surface->h);
+    std::vector<std::uint8_t> pixels(bytes);
+    std::memcpy(pixels.data(), surface->pixels, bytes);
+    SDL_DestroySurface(surface);
+    return pixels;
+}
+
+bool visible_pixels_match(const std::vector<std::uint8_t>& left,
+                          const std::vector<std::uint8_t>& right) {
+    // SDL's software backend can produce different destination alpha for a
+    // direct draw and an opaque same-size texture blit. The window is cleared
+    // opaquely, so RGB is the visible contract we must keep identical.
+    if (left.size() != right.size() || left.empty() || left.size() % 4U != 0U) {
+        return false;
+    }
+    for (std::size_t index = 0; index < left.size(); index += 4U) {
+        if (left[index] != right[index] || left[index + 1U] != right[index + 1U] ||
+            left[index + 2U] != right[index + 2U]) {
+            return false;
+        }
+    }
+    return true;
 }
 
 std::vector<std::uint8_t> render_test_rom() {
@@ -94,10 +128,10 @@ void seed_scene(gameboy::Emulator& emulator) {
 
 double minimum_render_fps() {
     const auto* value = std::getenv("GBB_RENDER_MIN_FPS");
-    if (value == nullptr || *value == '\0') return 1.0;
+    if (value == nullptr || *value == '\0') return 60.0;
     char* end = nullptr;
     const auto parsed = std::strtod(value, &end);
-    if (end == value || *end != '\0' || parsed < 0.0) return 1.0;
+    if (end == value || *end != '\0' || parsed < 0.0) return 60.0;
     return parsed;
 }
 
@@ -105,9 +139,11 @@ struct RenderResources final {
     SDL_Window* window{};
     SDL_Renderer* renderer{};
     SDL_Texture* texture{};
+    SDL_Texture* render_target{};
 
     ~RenderResources() {
         if (texture != nullptr) SDL_DestroyTexture(texture);
+        if (render_target != nullptr) SDL_DestroyTexture(render_target);
         if (renderer != nullptr) SDL_DestroyRenderer(renderer);
         if (window != nullptr) SDL_DestroyWindow(window);
         SDL_Quit();
@@ -121,6 +157,14 @@ struct ModeResult final {
     unsigned fps_samples{};
     std::size_t mesh_vertices{};
     std::size_t mesh_indices{};
+    double scene_snapshot_us{};
+    double scene_build_us{};
+    double pixel_transform_us{};
+    double geometry_build_us{};
+    double geometry_sort_us{};
+    double geometry_submit_us{};
+    double total_us{};
+    std::uint64_t render_cache_hits{};
 };
 
 ModeResult benchmark_mode(RenderResources& resources,
@@ -135,6 +179,8 @@ ModeResult benchmark_mode(RenderResources& resources,
     gbb::VoxelScene voxel_scene;
     std::uint64_t scene_signature = 0;
     bool scene_cached = false;
+    std::uint64_t render_cache_key = 0;
+    bool render_cache_valid = false;
     gbb::VoxelRenderStats voxel_stats;
     std::vector<SDL_Vertex> vertices;
     std::vector<int> indices;
@@ -145,6 +191,13 @@ ModeResult benchmark_mode(RenderResources& resources,
     unsigned completed_frames = 0;
     std::chrono::steady_clock::time_point render_started_total{};
     std::chrono::steady_clock::time_point render_finished_total{};
+    std::uint64_t scene_snapshot_us = 0;
+    std::uint64_t scene_build_us = 0;
+    std::uint64_t pixel_transform_us = 0;
+    std::uint64_t geometry_build_us = 0;
+    std::uint64_t geometry_sort_us = 0;
+    std::uint64_t geometry_submit_us = 0;
+    std::uint64_t total_us = 0;
 
     for (unsigned frame = 0;
          frame < warmup_frames + measured_frames; ++frame) {
@@ -180,6 +233,7 @@ ModeResult benchmark_mode(RenderResources& resources,
             gbb::sdl::VoxelRenderContext context{
                 resources.renderer,
                 resources.texture,
+                resources.render_target,
                 mode,
                 scene_snapshot,
                 profile_path,
@@ -193,7 +247,9 @@ ModeResult benchmark_mode(RenderResources& resources,
                 vertices,
                 indices,
                 camera_pitch_offset,
-                camera_yaw_offset};
+                camera_yaw_offset,
+                render_cache_key,
+                render_cache_valid};
             rendered = gbb::sdl::render_voxel_diorama(
                 emulator, context, palette,
                 mode == gameboy::VideoMode::voxel_shape,
@@ -205,6 +261,15 @@ ModeResult benchmark_mode(RenderResources& resources,
         const auto render_finished = std::chrono::steady_clock::now();
         if (!warmup && fps_metrics.observe(render_finished).has_value()) {
             ++fps_samples;
+        }
+        if (!warmup) {
+            scene_snapshot_us += voxel_stats.scene_snapshot_us;
+            scene_build_us += voxel_stats.scene_build_us;
+            pixel_transform_us += voxel_stats.pixel_transform_us;
+            geometry_build_us += voxel_stats.geometry_build_us;
+            geometry_sort_us += voxel_stats.geometry_sort_us;
+            geometry_submit_us += voxel_stats.geometry_submit_us;
+            total_us += voxel_stats.total_us;
         }
         emulator.consume_frame();
         if (!warmup) ++completed_frames;
@@ -224,8 +289,17 @@ ModeResult benchmark_mode(RenderResources& resources,
           "render benchmark completes its full frame budget");
     check(fps >= minimum_render_fps(),
           "rendering stays above the configured catastrophic-regression floor");
+    const auto measured = static_cast<double>(std::max(1U, completed_frames));
     return {{}, fps, elapsed * 1000.0, fps_samples,
-            voxel_stats.mesh_vertices, voxel_stats.mesh_indices};
+            voxel_stats.mesh_vertices, voxel_stats.mesh_indices,
+            static_cast<double>(scene_snapshot_us) / measured,
+            static_cast<double>(scene_build_us) / measured,
+            static_cast<double>(pixel_transform_us) / measured,
+            static_cast<double>(geometry_build_us) / measured,
+            static_cast<double>(geometry_sort_us) / measured,
+            static_cast<double>(geometry_submit_us) / measured,
+            static_cast<double>(total_us) / measured,
+            voxel_stats.render_cache_hits};
 }
 
 void write_json(const std::filesystem::path& path,
@@ -250,7 +324,17 @@ void write_json(const std::filesystem::path& path,
                << ", \"elapsed_ms\": " << result.elapsed_ms
                << ", \"fps_samples\": " << result.fps_samples
                << ", \"mesh_vertices\": " << result.mesh_vertices
-               << ", \"mesh_indices\": " << result.mesh_indices << "}";
+               << ", \"mesh_indices\": " << result.mesh_indices
+               << ", \"timings_us\": {\"scene_snapshot\": "
+               << result.scene_snapshot_us
+               << ", \"scene_build\": " << result.scene_build_us
+               << ", \"pixel_transform\": " << result.pixel_transform_us
+               << ", \"geometry_build\": " << result.geometry_build_us
+               << ", \"geometry_sort\": " << result.geometry_sort_us
+               << ", \"geometry_submit\": " << result.geometry_submit_us
+               << ", \"total\": " << result.total_us
+               << ", \"render_cache_hits\": " << result.render_cache_hits
+               << "}}";
         if (index + 1 != results.size()) output << ',';
         output << '\n';
     }
@@ -282,8 +366,26 @@ int main() {
                            : SDL_CreateTexture(
                                  resources.renderer, SDL_PIXELFORMAT_ARGB8888,
                                  SDL_TEXTUREACCESS_STREAMING, 160, 144);
+    const auto* disable_cache = std::getenv("GBB_RENDER_PERF_DISABLE_CACHE");
+    if (disable_cache == nullptr || *disable_cache == '\0' ||
+        std::string_view{disable_cache} == "0") {
+        resources.render_target = resources.renderer == nullptr
+                                      ? nullptr
+                                      : SDL_CreateTexture(
+                                            resources.renderer,
+                                            SDL_PIXELFORMAT_ARGB8888,
+                                            SDL_TEXTUREACCESS_TARGET, 160, 144);
+        if (resources.render_target != nullptr) {
+            check(SDL_SetTextureScaleMode(resources.render_target,
+                                          SDL_SCALEMODE_NEAREST),
+                  "pixel benchmark configures nearest-neighbor cache scaling");
+        }
+    }
     if (resources.window == nullptr || resources.renderer == nullptr ||
-        resources.texture == nullptr) {
+        resources.texture == nullptr ||
+        ((disable_cache == nullptr || *disable_cache == '\0' ||
+          std::string_view{disable_cache} == "0") &&
+         resources.render_target == nullptr)) {
         std::cerr << "SKIP: could not create software render target: "
                   << SDL_GetError() << '\n';
         return 77;
@@ -296,6 +398,86 @@ int main() {
         gameboy::VideoMode::voxel_shape,
         gameboy::VideoMode::voxel_popup,
     };
+    // The render-target cache is intended to be a presentation optimization,
+    // not a second visual implementation. Compare one direct frame against
+    // one cached frame for every voxel mode before running the throughput
+    // benchmark. This catches backend filtering, clear-color, and target
+    // restore regressions that an FPS-only test cannot see.
+    for (const auto mode : {gameboy::VideoMode::voxel_diorama,
+                            gameboy::VideoMode::voxel_shape,
+                            gameboy::VideoMode::voxel_popup}) {
+        gameboy::Emulator emulator{gameboy::Cartridge{render_test_rom()}};
+        seed_scene(emulator);
+        const auto advance =
+            gbb::advance_to_frame(emulator, cycles_per_frame * 2U);
+        check(advance.frame_ready, "pixel comparison reaches a frame");
+        if (!advance.frame_ready) continue;
+
+        gbb::SceneSnapshot scene_snapshot;
+        std::filesystem::path profile_path;
+        gbb::VoxelProfile profile;
+        std::uint64_t profile_fingerprint = 0;
+        bool profile_loaded = false;
+        gbb::VoxelScene voxel_scene;
+        std::uint64_t scene_signature = 0;
+        bool scene_cached = false;
+        std::uint64_t render_cache_key = 0;
+        bool render_cache_valid = false;
+        gbb::VoxelRenderStats voxel_stats;
+        std::vector<SDL_Vertex> vertices;
+        std::vector<int> indices;
+        float camera_pitch_offset = 0.0F;
+        float camera_yaw_offset = 0.0F;
+        auto* cached_target = resources.render_target;
+
+        const auto render_frame = [&](SDL_Texture* render_target) {
+            gbb::sdl::VoxelRenderContext context{
+                resources.renderer,
+                resources.texture,
+                render_target,
+                mode,
+                scene_snapshot,
+                profile_path,
+                profile,
+                profile_fingerprint,
+                profile_loaded,
+                voxel_scene,
+                scene_signature,
+                scene_cached,
+                voxel_stats,
+                vertices,
+                indices,
+                camera_pitch_offset,
+                camera_yaw_offset,
+                render_cache_key,
+                render_cache_valid};
+            return gbb::sdl::render_voxel_diorama(
+                emulator, context, palette,
+                mode == gameboy::VideoMode::voxel_shape,
+                mode == gameboy::VideoMode::voxel_popup);
+        };
+
+        check(SDL_SetRenderDrawColor(resources.renderer, 16, 20, 16, 255) &&
+                  SDL_RenderClear(resources.renderer),
+              "pixel comparison clears the direct frame");
+        resources.render_target = nullptr;
+        check(render_frame(nullptr), "direct voxel frame renders");
+        const auto direct_pixels = read_renderer_pixels(resources.renderer);
+
+        resources.render_target = cached_target;
+        check(cached_target != nullptr,
+              "pixel comparison creates a render target");
+        render_cache_valid = false;
+        check(SDL_SetRenderDrawColor(resources.renderer, 16, 20, 16, 255) &&
+                  SDL_RenderClear(resources.renderer),
+              "pixel comparison clears the cached frame");
+        check(render_frame(resources.render_target), "cached voxel frame renders");
+        const auto cached_pixels = read_renderer_pixels(resources.renderer);
+        check(visible_pixels_match(direct_pixels, cached_pixels),
+              std::string("cached output preserves visible pixels for ") +
+                  std::string(gameboy::video_mode_info(mode).id));
+        resources.render_target = cached_target;
+    }
     std::vector<ModeResult> results;
     for (const auto mode : modes) {
         gameboy::Emulator emulator{gameboy::Cartridge{render_test_rom()}};
@@ -310,7 +492,13 @@ int main() {
                   << " elapsed_ms=" << result.elapsed_ms
                   << " fps_samples=" << result.fps_samples
                   << " mesh_vertices=" << result.mesh_vertices
-                  << " mesh_indices=" << result.mesh_indices << '\n';
+                  << " mesh_indices=" << result.mesh_indices
+                  << " total_us=" << result.total_us
+                  << " geometry_build_us=" << result.geometry_build_us
+                  << " geometry_sort_us=" << result.geometry_sort_us
+                  << " geometry_submit_us=" << result.geometry_submit_us
+                  << " render_cache_hits=" << result.render_cache_hits
+                  << '\n';
     }
     const auto* json_path = std::getenv("GBB_RENDER_PERF_JSON");
     write_json(json_path == nullptr ? std::filesystem::path{}

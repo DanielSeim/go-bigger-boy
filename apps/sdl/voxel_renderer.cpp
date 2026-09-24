@@ -6,9 +6,11 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <sstream>
 #include <unordered_map>
@@ -30,17 +32,32 @@ SDL_FColor voxel_color(const std::uint32_t pixel, const float shade,
     return {component(16), component(8), component(0), 1.0F};
 }
 
+namespace {
+
+void mix_render_key(std::uint64_t& key, const std::uint64_t value) noexcept {
+    key ^= value + UINT64_C(0x9e3779b97f4a7c15) + (key << 6U) + (key >> 2U);
+}
+
+} // namespace
+
 bool render_voxel_diorama(const gameboy::Emulator& emulator,
                           VoxelRenderContext& context,
                           const gameboy::DisplayPalette& palette,
                           const bool shape_aware,
                           const bool popup_book) {
+    const auto frame_started = std::chrono::steady_clock::now();
     // SDL_RenderGeometry is backed by the active SDL GPU renderer (D3D,
     // OpenGL, Metal or Vulkan). We submit a deterministic pixel-relief mesh
     // here and optionally keep the native framebuffer as a textured facade on
     // top of it. This avoids platform-specific shader binaries while keeping
     // the original Game Boy artwork recognizable in the diorama.
+    const auto scene_snapshot_started = std::chrono::steady_clock::now();
     gbb::populate_gameboy_scene_snapshot(emulator, context.scene_snapshot);
+    const auto scene_snapshot_finished = std::chrono::steady_clock::now();
+    context.voxel_stats.scene_snapshot_us = static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            scene_snapshot_finished - scene_snapshot_started)
+            .count());
     const auto& scene = context.scene_snapshot;
     const auto fingerprint = emulator.rom_fingerprint();
     if (!context.voxel_profile_loaded || context.voxel_profile_fingerprint != fingerprint) {
@@ -61,6 +78,7 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
     // page hinge.
     const auto scene_key = gbb::voxel_scene_signature(context.scene_snapshot);
     bool scene_rebuilt = false;
+    const auto scene_build_started = std::chrono::steady_clock::now();
     if (!context.voxel_scene_cached ||
         context.voxel_scene_signature != scene_key) {
         context.voxel_scene = gbb::build_voxel_scene(
@@ -79,6 +97,11 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
         ++context.voxel_stats.scene_rebuilds;
         scene_rebuilt = true;
     }
+    const auto scene_build_finished = std::chrono::steady_clock::now();
+    context.voxel_stats.scene_build_us = static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            scene_build_finished - scene_build_started)
+            .count());
     const auto& voxel_scene = context.voxel_scene;
     context.voxel_stats.accepted_objects = voxel_scene.objects.size();
     context.voxel_stats.candidate_objects = voxel_scene.candidates.size();
@@ -92,10 +115,49 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
     const auto& pixels = emulator.framebuffer();
     const auto native_colors = emulator.bus().cgb_mode() || palette.cgb_compatibility;
     std::vector<std::uint32_t> colored_pixels;
+    const auto pixel_transform_started = std::chrono::steady_clock::now();
     gbb::transform_video_frame(
         pixels.data(), pixels.size(), gameboy::Ppu::screen_width,
         gameboy::Ppu::screen_height, palette, native_colors, context.video_mode,
         colored_pixels);
+    const auto pixel_transform_finished = std::chrono::steady_clock::now();
+    context.voxel_stats.pixel_transform_us = static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            pixel_transform_finished - pixel_transform_started)
+            .count());
+    // A render-target cache avoids submitting the large pop-up mesh again
+    // when the emulated image and camera are unchanged. The cache key uses
+    // the fully transformed pixels and presentation inputs, so it cannot
+    // change the output or hide a visual update.
+    std::uint64_t render_key = scene_key ^ fingerprint;
+    mix_render_key(render_key, static_cast<std::uint64_t>(context.video_mode));
+    mix_render_key(render_key, shape_aware ? 1U : 0U);
+    mix_render_key(render_key, popup_book ? 1U : 0U);
+    mix_render_key(render_key, std::hash<float>{}(context.voxel_camera_pitch_offset));
+    mix_render_key(render_key, std::hash<float>{}(context.voxel_camera_yaw_offset));
+    for (const auto pixel : colored_pixels) mix_render_key(render_key, pixel);
+    if (context.render_target != nullptr && context.voxel_render_cache_valid &&
+        context.voxel_render_cache_key == render_key) {
+        if (!SDL_RenderTexture(context.renderer, context.render_target, nullptr,
+                               nullptr)) {
+            // A renderer may expose target textures but still reject a
+            // particular target operation. In that case invalidate the
+            // optimization and render directly below, preserving the
+            // pre-cache presentation path.
+            context.voxel_render_cache_valid = false;
+        } else {
+            context.voxel_stats.geometry_build_us = 0;
+            context.voxel_stats.geometry_sort_us = 0;
+            context.voxel_stats.geometry_submit_us = 0;
+            ++context.voxel_stats.render_cache_hits;
+            const auto frame_finished = std::chrono::steady_clock::now();
+            context.voxel_stats.total_us = static_cast<std::uint64_t>(
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    frame_finished - frame_started)
+                    .count());
+            return true;
+        }
+    }
     // Establish a coarse backdrop reference for automatic shape extraction.
     // 3dSen-style profiles can override this interpretation per game, but a
     // dominant-color pass gives unsupported ROMs a useful generic baseline:
@@ -204,6 +266,13 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
     const auto add_quad = [&](const SDL_FPoint a, const SDL_FPoint b,
                               const SDL_FPoint c, const SDL_FPoint d,
                               const SDL_FColor color) {
+        const auto all_left = a.x < 0.0F && b.x < 0.0F && c.x < 0.0F && d.x < 0.0F;
+        const auto all_right = a.x > 160.0F && b.x > 160.0F &&
+                               c.x > 160.0F && d.x > 160.0F;
+        const auto all_above = a.y < 0.0F && b.y < 0.0F && c.y < 0.0F && d.y < 0.0F;
+        const auto all_below = a.y > 144.0F && b.y > 144.0F &&
+                               c.y > 144.0F && d.y > 144.0F;
+        if (all_left || all_right || all_above || all_below) return;
         const auto base = static_cast<int>(vertices.size());
         vertices.push_back({a, color, {0.0F, 0.0F}});
         vertices.push_back({b, color, {0.0F, 0.0F}});
@@ -224,6 +293,7 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
         float extent_y{8.0F};
         float height{};
         float sort_depth{};
+        std::size_t order{};
         std::uint32_t color{};
         bool sprite{};
         bool window{};
@@ -497,6 +567,7 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
     // "floating in air" look caused by an overly large inter-layer offset.
     const auto sprite_pullback = std::min(
         3.0F, std::max(0.0F, sprite_gap + sprite_span * 0.60F - 0.25F));
+    const auto geometry_build_started = std::chrono::steady_clock::now();
     for (unsigned cell_y = 0; cell_y < cells_y; ++cell_y) {
         for (unsigned cell_x = 0; cell_x < cells_x; ++cell_x) {
             unsigned red = 0;
@@ -661,11 +732,16 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
             column_heights[cell_y * cells_x + cell_x] = depth;
             columns.push_back({x, y, static_cast<float>(cell_size),
                                static_cast<float>(cell_size), depth,
-                               sort_depth,
+                               sort_depth, columns.size(),
                                color, has_sprite, window_layer, object_layer,
                                has_artwork || window_layer || object_layer});
         }
     }
+    const auto geometry_build_finished = std::chrono::steady_clock::now();
+    context.voxel_stats.geometry_build_us = static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            geometry_build_finished - geometry_build_started)
+            .count());
     // The recessed framebuffer is flat geometry. Upload it once as a texture
     // instead of emitting one color quad per source cell; this removes the
     // dominant per-frame cost while preserving the exact source-pixel image.
@@ -673,6 +749,22 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
                            static_cast<int>(gameboy::Ppu::screen_width *
                                             sizeof(std::uint32_t)))) {
         return false;
+    }
+    bool render_target_active = false;
+    bool use_render_target = context.render_target != nullptr;
+    const auto restore_render_target = [&]() {
+        if (!render_target_active) return true;
+        render_target_active = false;
+        return SDL_SetRenderTarget(context.renderer, nullptr);
+    };
+    if (use_render_target) {
+        if (!SDL_SetRenderTarget(context.renderer, context.render_target) ||
+            !SDL_SetRenderDrawColor(context.renderer, 16, 20, 16, 0) ||
+            !SDL_RenderClear(context.renderer)) {
+            static_cast<void>(SDL_SetRenderTarget(context.renderer, nullptr));
+            use_render_target = false;
+        }
+        if (use_render_target) render_target_active = true;
     }
     const std::array<SDL_Vertex, 4> background_vertices{{
         {project(0.0F, 0.0F, base_depth), {1.0F, 1.0F, 1.0F, 1.0F}, {0.0F, 0.0F}},
@@ -689,12 +781,17 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
                              static_cast<int>(background_vertices.size()),
                              background_indices.data(),
                              static_cast<int>(background_indices.size()))) {
+        static_cast<void>(restore_render_target());
         return false;
     }
     // SDL geometry has no portable depth buffer. Painter ordering gives us
     // deterministic opaque occlusion on software, OpenGL, D3D, Metal and
     // Vulkan renderers alike: farther columns are submitted first.
-    std::stable_sort(columns.begin(), columns.end(),
+    const auto geometry_sort_started = std::chrono::steady_clock::now();
+    // A total-order std::sort preserves stable-sort tie ordering through the
+    // explicit source order while avoiding stable_sort's temporary buffer and
+    // merge passes. The submitted painter order is therefore unchanged.
+    std::sort(columns.begin(), columns.end(),
                      [](const VoxelColumn& left, const VoxelColumn& right) {
                          const auto layer_rank = [](const VoxelColumn& column) {
                             return column.sprite ? 3 : column.object ? 2 :
@@ -704,8 +801,15 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
                          const auto right_rank = layer_rank(right);
                          if (left_rank != right_rank)
                              return left_rank < right_rank;
-                         return left.sort_depth > right.sort_depth;
+                         if (left.sort_depth != right.sort_depth)
+                             return left.sort_depth > right.sort_depth;
+                         return left.order < right.order;
                      });
+    const auto geometry_sort_finished = std::chrono::steady_clock::now();
+    context.voxel_stats.geometry_sort_us = static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            geometry_sort_finished - geometry_sort_started)
+            .count());
     const auto height_at = [&](const int cell_x, const int cell_y) {
         if (cell_x < 0 || cell_y < 0 ||
             cell_x >= static_cast<int>(cells_x) ||
@@ -914,12 +1018,19 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
                              (column.sprite ? 0.98F : 0.96F) * profile.lighting,
                              top_ambient));
     }
+    const auto geometry_submit_started = std::chrono::steady_clock::now();
     if (!indices.empty() && !SDL_RenderGeometry(
                                  context.renderer, nullptr, vertices.data(),
                                  static_cast<int>(vertices.size()), indices.data(),
                                  static_cast<int>(indices.size()))) {
+        static_cast<void>(restore_render_target());
         return false;
     }
+    const auto geometry_submit_finished = std::chrono::steady_clock::now();
+    context.voxel_stats.geometry_submit_us = static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            geometry_submit_finished - geometry_submit_started)
+            .count());
     context.voxel_stats.mesh_vertices = vertices.size();
     context.voxel_stats.mesh_indices = indices.size();
     if (scene_rebuilt && profile.background_debug_overlay) {
@@ -935,6 +1046,7 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
         if (!SDL_UpdateTexture(context.texture, nullptr, colored_pixels.data(),
                                static_cast<int>(160 * sizeof(std::uint32_t))) ||
             !SDL_RenderTexture(context.renderer, context.texture, nullptr, nullptr)) {
+            static_cast<void>(restore_render_target());
             return false;
         }
     }
@@ -985,6 +1097,20 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
         }
         SDL_SetRenderDrawBlendMode(context.renderer, SDL_BLENDMODE_NONE);
     }
+    if (!restore_render_target()) return false;
+    if (use_render_target) {
+        if (!SDL_RenderTexture(context.renderer, context.render_target, nullptr,
+                               nullptr)) {
+            return false;
+        }
+        context.voxel_render_cache_key = render_key;
+        context.voxel_render_cache_valid = true;
+    }
+    const auto frame_finished = std::chrono::steady_clock::now();
+    context.voxel_stats.total_us = static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            frame_finished - frame_started)
+            .count());
     return true;
 }
 

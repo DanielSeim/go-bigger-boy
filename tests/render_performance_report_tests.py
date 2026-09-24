@@ -16,6 +16,7 @@ class RenderPerformanceReportTests(unittest.TestCase):
     def setUp(self):
         self.baseline = {
             "minimum_ratio": 0.65,
+            "minimum_fps": 60,
             "platforms": {
                 "linux": {"nearest": 100, "voxel": 40, "voxel_shape": 40, "voxel_popup": 20}
             },
@@ -25,9 +26,9 @@ class RenderPerformanceReportTests(unittest.TestCase):
         report = {
             "modes": [
                 {"mode": "nearest", "fps": 70},
-                {"mode": "voxel", "fps": 30},
-                {"mode": "voxel_shape", "fps": 30},
-                {"mode": "voxel_popup", "fps": 15},
+                {"mode": "voxel", "fps": 60},
+                {"mode": "voxel_shape", "fps": 60},
+                {"mode": "voxel_popup", "fps": 60},
             ]
         }
         result = MODULE.evaluate_report(report, self.baseline, "linux")
@@ -45,6 +46,19 @@ class RenderPerformanceReportTests(unittest.TestCase):
         result = MODULE.evaluate_report(report, self.baseline, "linux")
         self.assertEqual(result["status"], "fail")
         self.assertEqual(result["results"][1]["status"], "fail")
+
+    def test_enforces_absolute_frame_rate_floor(self):
+        report = {
+            "modes": [
+                {"mode": "nearest", "fps": 65},
+                {"mode": "voxel", "fps": 60},
+                {"mode": "voxel_shape", "fps": 59.99},
+                {"mode": "voxel_popup", "fps": 60},
+            ]
+        }
+        result = MODULE.evaluate_report(report, self.baseline, "linux")
+        self.assertEqual(result["status"], "fail")
+        self.assertEqual(result["results"][2]["minimum_fps"], 60.0)
 
     def test_rejects_unknown_platform(self):
         with self.assertRaises(ValueError):

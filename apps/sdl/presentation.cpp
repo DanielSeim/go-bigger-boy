@@ -108,6 +108,7 @@ void present_frame(const PresentationContext& context) {
             VoxelRenderContext voxel_context{
                 sdl.renderer,
                 sdl.texture,
+                sdl.voxel_render_target,
                 sdl.video_mode,
                 sdl.scene_snapshot,
                 sdl.voxel_profile_path,
@@ -121,7 +122,9 @@ void present_frame(const PresentationContext& context) {
                 sdl.voxel_vertices,
                 sdl.voxel_indices,
                 sdl.voxel_camera_pitch_offset,
-                sdl.voxel_camera_yaw_offset};
+                sdl.voxel_camera_yaw_offset,
+                sdl.voxel_render_cache_key,
+                sdl.voxel_render_cache_valid};
             if (!render_voxel_diorama(
                     *context.emulator, voxel_context, context.palette,
                     sdl.video_mode == gameboy::VideoMode::voxel_shape,

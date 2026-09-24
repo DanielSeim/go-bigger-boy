@@ -63,6 +63,17 @@ SdlResources::SdlResources(const std::string_view version,
         if (link_texture == nullptr) {
             sdl_error("Could not create link framebuffer texture");
         }
+        voxel_render_target = SDL_CreateTexture(
+            renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET,
+            static_cast<int>(gameboy::Ppu::screen_width),
+            static_cast<int>(gameboy::Ppu::screen_height));
+        if (voxel_render_target == nullptr) {
+            sdl_error("Could not create voxel render target");
+        }
+        if (!SDL_SetTextureScaleMode(voxel_render_target,
+                                     SDL_SCALEMODE_NEAREST)) {
+            sdl_error("Could not configure nearest-neighbor voxel render target scaling");
+        }
         if (!SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST)) {
             sdl_error("Could not configure nearest-neighbor scaling");
         }
@@ -92,6 +103,10 @@ void SdlResources::release() noexcept {
     if (link_texture != nullptr) {
         SDL_DestroyTexture(link_texture);
         link_texture = nullptr;
+    }
+    if (voxel_render_target != nullptr) {
+        SDL_DestroyTexture(voxel_render_target);
+        voxel_render_target = nullptr;
     }
     if (renderer != nullptr) {
         clear_tool_text_cache(renderer);

@@ -56,6 +56,17 @@ struct VoxelRenderStats {
     std::size_t candidate_objects{};
     std::size_t mesh_vertices{};
     std::size_t mesh_indices{};
+    // Last-frame stage timings are presentation diagnostics only. They are
+    // deliberately kept out of the rendering decisions so enabling logging
+    // cannot change the image or painter ordering.
+    std::uint64_t scene_snapshot_us{};
+    std::uint64_t scene_build_us{};
+    std::uint64_t pixel_transform_us{};
+    std::uint64_t geometry_build_us{};
+    std::uint64_t geometry_sort_us{};
+    std::uint64_t geometry_submit_us{};
+    std::uint64_t total_us{};
+    std::uint64_t render_cache_hits{};
 };
 
 struct VoxelSceneBuildOptions {

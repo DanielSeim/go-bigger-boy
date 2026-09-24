@@ -2203,7 +2203,23 @@ int run_emulation(int argc, char** argv) {
                                              static_cast<double>(timing_window_us)) +
                     " fps_overlay=" + (show_fps ? "on" : "off") +
                     " video_mode=" +
-                    std::string(gameboy::video_mode_info(sdl.video_mode).id));
+                    std::string(gameboy::video_mode_info(sdl.video_mode).id) +
+                    " voxel_scene_snapshot_us=" +
+                    std::to_string(sdl.voxel_stats.scene_snapshot_us) +
+                    " voxel_scene_build_us=" +
+                    std::to_string(sdl.voxel_stats.scene_build_us) +
+                    " voxel_pixel_transform_us=" +
+                    std::to_string(sdl.voxel_stats.pixel_transform_us) +
+                    " voxel_geometry_build_us=" +
+                    std::to_string(sdl.voxel_stats.geometry_build_us) +
+                    " voxel_geometry_sort_us=" +
+                    std::to_string(sdl.voxel_stats.geometry_sort_us) +
+                    " voxel_geometry_submit_us=" +
+                    std::to_string(sdl.voxel_stats.geometry_submit_us) +
+                    " voxel_total_us=" +
+                    std::to_string(sdl.voxel_stats.total_us) +
+                    " voxel_render_cache_hits=" +
+                    std::to_string(sdl.voxel_stats.render_cache_hits));
                 frame_timing_window_start = pacing_finished;
                 rewind_capture_count = 0;
                 rewind_capture_total_us = 0;
