@@ -364,7 +364,11 @@ DIV/APU edges are dispatched at their timer-cycle boundary rather than being
 queued until the end of a bus batch. The APU also models the hardware rule that
 enabling it while the DIV/APU input is high skips the first falling-edge event;
 the pending phase is retained in save states. This is covered by the core timer
-tests and the corresponding SameSuite DIV-trigger ROMs. On modern CGB starts,
+tests and the corresponding SameSuite DIV-trigger ROMs. A suppressed first edge
+is also treated as a non-length step when NRx4 enables a length counter: the
+one-tick counter receives its extra clock and is reloaded by a simultaneous
+trigger. This matches SameSuite's DMG `div_write_trigger_10` case; the ordinary
+two-tick high-start case remains covered separately. On modern CGB starts,
 inactive square channels also retain the additional long-period alignment
 interval observed by SameSuite's `channel_[12]_volume_div` cases, while active
 restarts keep the established startup timing.

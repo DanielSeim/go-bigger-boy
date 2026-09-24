@@ -727,7 +727,10 @@ void Apu::emit_sample(const float left, const float right) {
 }
 
 bool Apu::next_step_skips_length() const noexcept {
-    return (frame_sequencer_step_ & 1) != 0;
+    // Powering on while DIV/APU is high suppresses the next sequencer edge.
+    // For NRx4's extra-length clock, that edge is a non-length step even
+    // though the sequencer step index has not advanced yet.
+    return skip_frame_sequencer_event_ || (frame_sequencer_step_ & 1) != 0;
 }
 
 bool Apu::any_dac_enabled() const noexcept {

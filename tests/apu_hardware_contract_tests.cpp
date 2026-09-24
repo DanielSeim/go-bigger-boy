@@ -247,7 +247,7 @@ void test_apu_pulse2_samples_and_length() {
     apu_start_phase.write8(0xFF04, 0x00);
     apu_start_phase.tick(4096); // Leave DIV/APU high before re-enabling.
     apu_start_phase.write8(0xFF26, 0x80);
-    apu_start_phase.write8(0xFF16, 0xBF); // One-tick channel-2 length.
+    apu_start_phase.write8(0xFF16, 0xBE); // Two-tick channel-2 length.
     apu_start_phase.write8(0xFF17, 0xF0);
     apu_start_phase.write8(0xFF19, 0xC0);
     apu_start_phase.tick(4096); // The first falling edge is skipped.
@@ -256,6 +256,47 @@ void test_apu_pulse2_samples_and_length() {
     apu_start_phase.tick(8192); // The next falling edge clocks the length.
     check((apu_start_phase.read8(0xFF26) & 0x02) == 0,
           "the skipped APU edge does not shift later frame-sequencer clocks");
+
+    // A length of one is different: enabling length on NRx4 consumes its
+    // extra clock because the pending edge will be suppressed. The trigger
+    // then reloads the zero counter instead of killing the channel. This is
+    // the power-on-high case exercised by SameSuite div_write_trigger_10.
+    struct ChannelSetup {
+        std::uint16_t length_register;
+        std::uint8_t length_value;
+        std::uint16_t dac_register;
+        std::uint8_t dac_value;
+        std::uint16_t trigger_register;
+        std::uint8_t status_bit;
+    };
+    for (const auto model : {gameboy::HardwareModel::dmg,
+                             gameboy::HardwareModel::cgb_e}) {
+        for (const auto channel : {
+                 ChannelSetup{0xFF11, 0xBF, 0xFF12, 0xF0, 0xFF14, 0x01},
+                 ChannelSetup{0xFF16, 0xBF, 0xFF17, 0xF0, 0xFF19, 0x02},
+                 ChannelSetup{0xFF1B, 0xFF, 0xFF1A, 0x80, 0xFF1E, 0x04},
+                 ChannelSetup{0xFF20, 0x3F, 0xFF21, 0xF0, 0xFF23, 0x08},
+             }) {
+            gameboy::MemoryBus high_start{gameboy::Cartridge{cgb_test_rom()}};
+            high_start.initialize_post_boot(model);
+            high_start.set_audio_enabled(false);
+            high_start.write8(0xFF26, 0x00);
+            high_start.write8(0xFF04, 0x00);
+            high_start.tick(4096);
+            high_start.write8(0xFF26, 0x80);
+            high_start.write8(channel.length_register, channel.length_value);
+            high_start.write8(channel.dac_register, channel.dac_value);
+            high_start.write8(channel.trigger_register, 0xC0);
+            for (unsigned edge = 0; edge < 4; ++edge) {
+                high_start.write8(0xFF04, 0x00);
+                high_start.tick(4096);
+            }
+            check((high_start.read8(0xFF26) & channel.status_bit) != 0,
+                  "power-on-high length reload for model " +
+                      std::to_string(static_cast<int>(model)) + " channel bit " +
+                      std::to_string(channel.status_bit));
+        }
+    }
 }
 
 void test_cgb_revision_envelope_write_behavior() {
