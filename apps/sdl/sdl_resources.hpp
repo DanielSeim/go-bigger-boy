@@ -62,6 +62,7 @@ class SdlResources {
     bool split_screen{};
     std::chrono::steady_clock::time_point fps_window_start{};
     std::uint32_t fps_window_frames{};
+    std::uint32_t fps_log_windows{};
     float fps_value{};
 #ifdef __ANDROID__
     struct TouchPoint {

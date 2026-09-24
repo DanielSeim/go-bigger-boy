@@ -86,6 +86,7 @@ struct WebApp {
     bool show_fps{};
     std::chrono::steady_clock::time_point fps_window_start{};
     std::uint32_t fps_window_frames{};
+    std::uint32_t fps_log_windows{};
     float fps_value{};
     bool paused{};
 };
@@ -115,6 +116,7 @@ void present_fps_overlay(WebApp& app) noexcept {
     if (!app.show_fps || !app.emulator) {
         app.fps_window_start = {};
         app.fps_window_frames = 0;
+        app.fps_log_windows = 0;
         app.fps_value = 0.0F;
         return;
     }
@@ -129,6 +131,19 @@ void present_fps_overlay(WebApp& app) noexcept {
         app.fps_value = static_cast<float>(app.fps_window_frames) / elapsed;
         app.fps_window_start = now;
         app.fps_window_frames = 0;
+        ++app.fps_log_windows;
+        if (app.fps_log_windows >= 4U) {
+            if (gbb::Logger::instance().enabled(gbb::LogLevel::debug)) {
+                gbb::log_frontend(
+                    gbb::LogLevel::debug,
+                    std::string("fps_sample fps=") +
+                        std::to_string(app.fps_value) +
+                        " window_ms=" + std::to_string(elapsed * 1000.0F) +
+                        " video_mode=" +
+                        std::string(gameboy::video_mode_info(app.video_mode).id));
+            }
+            app.fps_log_windows = 0;
+        }
     }
     if (app.fps_value <= 0.0F) return;
     static_cast<void>(SDL_SetRenderDrawBlendMode(app.renderer,

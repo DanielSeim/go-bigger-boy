@@ -644,6 +644,11 @@ adds edge-aware smoothing without blanket blur, `integer` uses only whole-number
 scale factors, and `lcd` applies a lightweight LCD mask with scanlines. The
 setting is stored as `video.Mode` in
 `settings.ini`; the web selector remembers its choice in browser storage.
+For performance diagnosis, set `GBB_LOG_LEVEL=debug` to receive a rate-limited
+`fps_sample` record while the FPS counter is enabled. Desktop builds also
+support `GBB_FRAME_TIMING=1` (and optional `GBB_FRAME_TIMING_FILE`) for a
+periodic trace containing measured frontend FPS, emulation, presentation,
+audio, pacing, and link-polling timings.
 Desktop, Android, and web builds also expose three experimental voxel modes. `voxel` is the
 native source-pixel relief renderer with a batched textured background. `voxel_shape` (shown as “Voxel
 diorama (shape-aware)”) keeps the source-pixel silhouette, then applies edge-aware

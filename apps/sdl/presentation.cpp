@@ -1,6 +1,8 @@
 #include "presentation.hpp"
 #include "tool_window_support.hpp"
 
+#include "gbb/frontend_logging.hpp"
+
 #ifndef __ANDROID__
 #include "dialogs.hpp"
 #endif
@@ -27,6 +29,7 @@ void present_fps_overlay(SdlResources& sdl, const bool enabled,
     if (!enabled || dashboard_visible) {
         sdl.fps_window_start = {};
         sdl.fps_window_frames = 0;
+        sdl.fps_log_windows = 0;
         sdl.fps_value = 0.0F;
         return;
     }
@@ -41,6 +44,19 @@ void present_fps_overlay(SdlResources& sdl, const bool enabled,
         sdl.fps_value = static_cast<float>(sdl.fps_window_frames) / elapsed;
         sdl.fps_window_start = now;
         sdl.fps_window_frames = 0;
+        ++sdl.fps_log_windows;
+        if (sdl.fps_log_windows >= 4U) {
+            if (gbb::Logger::instance().enabled(gbb::LogLevel::debug)) {
+                gbb::log_frontend(
+                    gbb::LogLevel::debug,
+                    std::string("fps_sample fps=") +
+                        std::to_string(sdl.fps_value) +
+                        " window_ms=" + std::to_string(elapsed * 1000.0F) +
+                        " video_mode=" +
+                        std::string(gameboy::video_mode_info(sdl.video_mode).id));
+            }
+            sdl.fps_log_windows = 0;
+        }
     }
     if (sdl.fps_value <= 0.0F) return;
 

@@ -1027,6 +1027,7 @@ int run_emulation(int argc, char** argv) {
         std::uint64_t remote_polling_slice_count = 0;
         std::uint64_t remote_idle_slice_count = 0;
         std::uint64_t remote_polling_cycles = 0;
+        auto frame_timing_window_start = std::chrono::steady_clock::now();
 
         while (running) {
             const auto frame_started = std::chrono::steady_clock::now();
@@ -1182,6 +1183,9 @@ int run_emulation(int argc, char** argv) {
                 }
                 if (result.show_fps_changed) {
                     show_fps = result.show_fps;
+                    gbb::log_frontend_info(
+                        std::string("FPS overlay ") +
+                        (show_fps ? "enabled" : "disabled"));
                     auto settings = load_app_settings(preference_path);
                     settings.show_fps = show_fps;
                     write_portable_settings(preference_path, settings);
@@ -1310,6 +1314,12 @@ int run_emulation(int argc, char** argv) {
                 // otherwise a newly enabled trace would not start until the
                 // entire emulator process was restarted.
                 link_diagnostics = updated.link_diagnostics;
+                if (show_fps != updated.show_fps) {
+                    gbb::log_frontend_info(
+                        std::string("FPS overlay ") +
+                        (updated.show_fps ? "enabled" : "disabled") +
+                        " from Android settings");
+                }
                 audio_enabled = updated.audio_enabled;
                 show_fps = updated.show_fps;
                 if (emulator) emulator->set_audio_enabled(audio_enabled);
@@ -2129,6 +2139,9 @@ int run_emulation(int argc, char** argv) {
             }
             const auto pacing_finished = std::chrono::steady_clock::now();
             if (frame_timing_enabled && frontend_frame % 60U == 0U) {
+                const auto timing_window_us = static_cast<std::uint64_t>(
+                    microseconds_between(frame_timing_window_start,
+                                         pacing_finished));
                 frame_timing_trace.write(
                     std::string("frame_timing frame=") +
                     std::to_string(frontend_frame) +
@@ -2182,7 +2195,16 @@ int run_emulation(int argc, char** argv) {
                         pacing_started, pacing_finished)) +
                     " total_us=" +
                     std::to_string(microseconds_between(
-                        frame_started, pacing_finished)));
+                        frame_started, pacing_finished)) +
+                    " frontend_fps=" +
+                    std::to_string(timing_window_us == 0
+                                       ? 0.0
+                                       : 60000000.0 /
+                                             static_cast<double>(timing_window_us)) +
+                    " fps_overlay=" + (show_fps ? "on" : "off") +
+                    " video_mode=" +
+                    std::string(gameboy::video_mode_info(sdl.video_mode).id));
+                frame_timing_window_start = pacing_finished;
                 rewind_capture_count = 0;
                 rewind_capture_total_us = 0;
                 rewind_capture_max_us = 0;
