@@ -1189,6 +1189,26 @@ if(GAMEBOY_BUILD_TESTS)
             PRIVATE SDL3::SDL3)
         add_test(NAME gameboy_desktop_debugger_layout_contract
                  COMMAND gameboy_desktop_debugger_layout_contract_tests)
+
+        if(GAMEBOY_BUILD_PERFORMANCE_TESTS AND NOT EMSCRIPTEN AND
+           NOT ANDROID AND NOT GAMEBOY_ENABLE_SANITIZERS AND
+           NOT GAMEBOY_ENABLE_THREAD_SANITIZER)
+            add_executable(gameboy_sdl_render_performance_tests
+                tests/sdl_render_performance_tests.cpp
+                apps/sdl/voxel_renderer.cpp)
+            target_include_directories(gameboy_sdl_render_performance_tests
+                PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/apps/sdl)
+            target_link_libraries(gameboy_sdl_render_performance_tests
+                PRIVATE gbb_core_api SDL3::SDL3)
+            add_test(NAME gameboy_sdl_render_performance
+                     COMMAND gameboy_sdl_render_performance_tests)
+            set_tests_properties(gameboy_sdl_render_performance
+                                 PROPERTIES LABELS "performance"
+                                            TIMEOUT 90
+                                            SKIP_RETURN_CODE 77
+                                            ENVIRONMENT
+                                            "SDL_AUDIODRIVER=dummy;SDL_VIDEODRIVER=dummy;SDL_RENDER_DRIVER=software;WAYLAND_DISPLAY=")
+        endif()
     endif()
     if(TARGET gameboy_sdl)
         add_test(NAME gameboy_sdl_version COMMAND gameboy_sdl --version)

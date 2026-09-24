@@ -27,6 +27,13 @@ cmake --build build-performance --target \
 ctest --test-dir build-performance -L performance --output-on-failure
 ```
 
+When SDL3 is available, the same label also runs a headless software-renderer
+benchmark over nearest-neighbor 2D, voxel diorama, shape-aware voxel, and
+voxel pop-up modes. It reports one `render_performance_metric` record per
+mode, including presentation FPS, elapsed time, and voxel mesh sizes. Set
+`GBB_RENDER_MIN_FPS` to adjust its conservative catastrophic-regression floor
+when testing on unusually slow or virtualized systems.
+
 The default performance floor is 30 emulated frames per second. Override it
 for a slower or virtualized development machine with
 `GBB_PERF_MIN_FPS=10`; this changes only the threshold, not the workload or
