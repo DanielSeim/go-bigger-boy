@@ -60,6 +60,9 @@ class SdlResources {
     float voxel_camera_yaw_offset{};
     bool voxel_camera_dragging{};
     bool split_screen{};
+    std::chrono::steady_clock::time_point fps_window_start{};
+    std::uint32_t fps_window_frames{};
+    float fps_value{};
 #ifdef __ANDROID__
     struct TouchPoint {
         SDL_FingerID id{};

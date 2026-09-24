@@ -107,6 +107,7 @@ void append_missing_portable_settings(
     const std::array<bool, 8>& has_gamepad,
     const std::array<bool, shortcut_names.size()>& has_shortcuts,
     const bool has_video_mode, const bool has_audio_enabled,
+    const bool has_show_fps,
     const bool has_link_diagnostics,
     const bool has_sgb_trace_capture,
     const bool has_touch_scale, const bool has_touch_opacity,
@@ -125,7 +126,8 @@ void append_missing_portable_settings(
                     [](const bool value) { return value; }) &&
         std::all_of(has_shortcuts.begin(), has_shortcuts.end(),
                     [](const bool value) { return value; }) &&
-        has_video_mode && has_audio_enabled && has_link_diagnostics &&
+        has_video_mode && has_audio_enabled && has_show_fps &&
+        has_link_diagnostics &&
         has_sgb_trace_capture &&
         has_touch_scale &&
         has_touch_opacity && has_touch_voxel_orbit && has_touch_menu_position &&
@@ -157,6 +159,10 @@ void append_missing_portable_settings(
     if (!has_audio_enabled) {
         output << "audio.Enabled = "
                << (settings.audio_enabled ? "true" : "false") << '\n';
+    }
+    if (!has_show_fps) {
+        output << "video.ShowFps = "
+               << (settings.show_fps ? "true" : "false") << '\n';
     }
     if (!has_link_diagnostics) {
         output << "link.Diagnostics = "
@@ -270,6 +276,7 @@ void write_portable_settings(const std::filesystem::path& preference_directory,
               "top-right. Video.Mode accepts nearest, bilinear, sharp, "
               "integer, lcd, voxel, voxel_shape, or voxel_popup. "
               "Audio.Enabled controls whether the APU generates playback samples. "
+              "Video.ShowFps controls the optional frame-rate overlay. "
               "Link.Diagnostics enables the opt-in link "
               "serial, CPU, and game-state trace. "
               "Sgb.TraceCapture enables the opt-in SGB JOYP/checkpoint trace "
@@ -288,6 +295,8 @@ void write_portable_settings(const std::filesystem::path& preference_directory,
            << gameboy::video_mode_info(settings.video_mode).id << "\n"
               "audio.Enabled = "
            << (settings.audio_enabled ? "true" : "false") << "\n"
+              "video.ShowFps = "
+           << (settings.show_fps ? "true" : "false") << "\n"
               "link.Diagnostics = "
            << (settings.link_diagnostics ? "true" : "false") << "\n\n";
     output << "sgb.TraceCapture = "
@@ -507,6 +516,7 @@ AppSettings load_portable_settings(
     bool has_hardware_model = false;
     bool has_video_mode = false;
     bool has_audio_enabled = false;
+    bool has_show_fps = false;
     bool has_link_diagnostics = false;
     bool has_sgb_trace_capture = false;
     bool has_plugin_discovery = false;
@@ -563,6 +573,11 @@ AppSettings load_portable_settings(
             has_audio_enabled = true;
             settings.audio_enabled = parse_bool_setting(
                 value, settings.audio_enabled);
+            continue;
+        }
+        if (key == "video.ShowFps") {
+            has_show_fps = true;
+            settings.show_fps = parse_bool_setting(value, settings.show_fps);
             continue;
         }
         if (key == "link.Diagnostics") {
@@ -838,6 +853,7 @@ AppSettings load_portable_settings(
                                      has_hardware_model,
                                      has_keyboard, has_gamepad, has_shortcuts,
                                      has_video_mode, has_audio_enabled,
+                                     has_show_fps,
                                      has_link_diagnostics,
                                      has_sgb_trace_capture,
                                      has_touch_scale, has_touch_opacity,

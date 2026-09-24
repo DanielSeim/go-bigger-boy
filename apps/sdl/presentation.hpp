@@ -28,6 +28,7 @@ struct PresentationContext final {
     const RemoteLinkSession* remote_link{};
     const gameboy::DisplayPalette& palette;
     bool dashboard_visible{};
+    bool show_fps{};
     std::function<void()> dashboard_overlay;
     std::function<void()> touch_overlay;
     std::function<void()> menu_overlay;

@@ -156,6 +156,18 @@ final class SettingsScreen {
         display.addView(activity.text(AudioSettingModel.DESCRIPTION, 13,
                 Color.GRAY));
 
+        final Switch fps = new Switch(activity);
+        fps.setText("Show FPS counter");
+        fps.setTextSize(16);
+        fps.setPadding(0, activity.dp(10), 0, activity.dp(8));
+        fps.setChecked(LibraryActivity.nativeShowFps(settingsDirectory));
+        fps.setOnCheckedChangeListener((button, enabled) ->
+                LibraryActivity.nativeSetShowFps(settingsDirectory, enabled));
+        display.addView(fps);
+        display.addView(activity.text(
+                "Displays the measured presentation rate over the game screen.",
+                13, Color.GRAY));
+
         final LinearLayout artworkCard = sectionCard("Artwork");
         final Switch artwork = new Switch(activity);
         artwork.setText("Download game cover artwork");

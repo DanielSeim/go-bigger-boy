@@ -16,6 +16,7 @@ DashboardResult show_windows_dashboard(
     std::size_t palette, gameboy::VideoMode video_mode,
     gameboy::HardwareModel hardware_model,
     bool audio_enabled,
+    bool show_fps,
     const KeyboardBindings& keyboard_bindings,
     const ActionBindings& action_bindings,
     const DashboardLinkSettings& link_settings,

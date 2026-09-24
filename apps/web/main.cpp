@@ -83,6 +83,10 @@ struct WebApp {
     gameboy::HardwareModel hardware_model{gameboy::HardwareModel::automatic};
     gameboy::VideoMode video_mode{gameboy::default_video_mode};
     bool audio_enabled{true};
+    bool show_fps{};
+    std::chrono::steady_clock::time_point fps_window_start{};
+    std::uint32_t fps_window_frames{};
+    float fps_value{};
     bool paused{};
 };
 
@@ -105,6 +109,40 @@ void set_audio_enabled(WebApp& app, const bool enabled) noexcept {
         static_cast<void>(SDL_PauseAudioStreamDevice(app.audio_stream));
         static_cast<void>(SDL_ClearAudioStream(app.audio_stream));
     }
+}
+
+void present_fps_overlay(WebApp& app) noexcept {
+    if (!app.show_fps || !app.emulator) {
+        app.fps_window_start = {};
+        app.fps_window_frames = 0;
+        app.fps_value = 0.0F;
+        return;
+    }
+    const auto now = std::chrono::steady_clock::now();
+    if (app.fps_window_start.time_since_epoch().count() == 0) {
+        app.fps_window_start = now;
+    }
+    ++app.fps_window_frames;
+    const auto elapsed = std::chrono::duration<float>(
+        now - app.fps_window_start).count();
+    if (elapsed >= 0.5F) {
+        app.fps_value = static_cast<float>(app.fps_window_frames) / elapsed;
+        app.fps_window_start = now;
+        app.fps_window_frames = 0;
+    }
+    if (app.fps_value <= 0.0F) return;
+    static_cast<void>(SDL_SetRenderDrawBlendMode(app.renderer,
+                                                  SDL_BLENDMODE_BLEND));
+    static_cast<void>(SDL_SetRenderDrawColor(app.renderer, 0, 0, 0, 175));
+    const SDL_FRect bar{0.0F, 0.0F, 49.0F, 11.0F};
+    static_cast<void>(SDL_RenderFillRect(app.renderer, &bar));
+    static_cast<void>(SDL_SetRenderDrawColor(app.renderer, 235, 245, 235, 255));
+    std::ostringstream text;
+    text << "FPS " << std::fixed << std::setprecision(1) << app.fps_value;
+    static_cast<void>(SDL_RenderDebugText(app.renderer, 2.0F, 2.0F,
+                                          text.str().c_str()));
+    static_cast<void>(SDL_SetRenderDrawBlendMode(app.renderer,
+                                                  SDL_BLENDMODE_NONE));
 }
 
 void apply_video_mode(WebApp& app, const unsigned mode) noexcept {
@@ -1053,6 +1091,7 @@ void present(WebApp& app) {
                 app.renderer, app.texture, nullptr, nullptr));
         }
     }
+    present_fps_overlay(app);
     static_cast<void>(SDL_RenderPresent(app.renderer));
 }
 
@@ -1312,6 +1351,11 @@ extern "C" EMSCRIPTEN_KEEPALIVE void gbb_set_hardware_model(
 extern "C" EMSCRIPTEN_KEEPALIVE void gbb_set_audio_enabled(
     const bool enabled) noexcept {
     if (active_app) set_audio_enabled(*active_app, enabled);
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE void gbb_set_show_fps(
+    const bool enabled) noexcept {
+    if (active_app) active_app->show_fps = enabled;
 }
 
 extern "C" EMSCRIPTEN_KEEPALIVE void gbb_set_voxel_camera(

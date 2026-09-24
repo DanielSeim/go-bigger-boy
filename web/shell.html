@@ -18,7 +18,7 @@
     .subtitle { margin: 4px 0 0; color: #a7b9aa; }
     button { border: 0; border-radius: 8px; padding: 11px 16px; font: inherit; font-weight: 700; background: #8bcf69; color: #10200d; cursor: pointer; }
     button:disabled { cursor: wait; opacity: .55; }
-    .actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) auto; align-items: end; flex: 1 1 100%; min-width: 0; gap: 10px; }
+    .actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) repeat(2, auto) auto; align-items: end; flex: 1 1 100%; min-width: 0; gap: 10px; }
     .palette { display: grid; gap: 4px; color: #a7b9aa; font-size: .8rem; font-weight: 700; }
     .audio-toggle { display: flex; align-items: center; align-self: end; gap: 8px; min-height: 41px; color: #a7b9aa; font-size: .8rem; font-weight: 700; white-space: nowrap; cursor: pointer; }
     .audio-toggle input { display: block; width: 18px; height: 18px; margin: 0; accent-color: #8bcf69; }
@@ -85,6 +85,10 @@
           <input id="audio-enabled" type="checkbox" checked>
           <span>Generate audio</span>
         </label>
+        <label class="audio-toggle" for="show-fps">
+          <input id="show-fps" type="checkbox">
+          <span>Show FPS</span>
+        </label>
         <button id="open-rom" type="button" disabled>Choose ROM</button>
       </div>
       <input id="rom-file" type="file" accept=".gb,.gbc,application/octet-stream">
@@ -124,6 +128,7 @@
     const videoPicker = document.getElementById('video-mode');
     const hardwareModelPicker = document.getElementById('hardware-model');
     const audioEnabledPicker = document.getElementById('audio-enabled');
+    const showFpsPicker = document.getElementById('show-fps');
     const savePicker = document.getElementById('save-file');
     const saveActions = document.getElementById('save-actions');
     const importSaveButton = document.getElementById('import-save');
@@ -583,6 +588,11 @@
             localStorage.getItem('gbb-audio-enabled') !== 'false';
         } catch (error) {}
         Module._gbb_set_audio_enabled(audioEnabledPicker.checked);
+        try {
+          showFpsPicker.checked =
+            localStorage.getItem('gbb-show-fps') === 'true';
+        } catch (error) {}
+        Module._gbb_set_show_fps(showFpsPicker.checked);
         Module.gbbSetStatus('Ready. Choose or drop a Game Boy ROM.', false);
       }
     };
@@ -609,6 +619,7 @@
         if (!Module.loadRomWithPalette(
             bytes, Number(palettePicker.value))) return;
         Module._gbb_set_audio_enabled(audioEnabledPicker.checked);
+        Module._gbb_set_show_fps(showFpsPicker.checked);
         loaded = true;
         currentRom = {
           key: Module.romFingerprint(),
@@ -898,6 +909,13 @@
       try {
         localStorage.setItem('gbb-audio-enabled',
           String(audioEnabledPicker.checked));
+      } catch (error) {}
+      canvas.focus();
+    });
+    showFpsPicker.addEventListener('change', () => {
+      Module._gbb_set_show_fps(showFpsPicker.checked);
+      try {
+        localStorage.setItem('gbb-show-fps', String(showFpsPicker.checked));
       } catch (error) {}
       canvas.focus();
     });

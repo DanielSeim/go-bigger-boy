@@ -586,8 +586,10 @@ It also provides a **Generate audio** toggle. Disabling it silences the
 emulator and skips APU mixer/resampler work to reduce CPU use, while channel
 timing and CGB PCM register behavior continue normally. Desktop Settings
 provides the same toggle, persisted as `audio.Enabled`.
-The browser frontend exposes the same control and remembers it in browser
-storage.
+The desktop, Android, and browser frontends also provide an opt-in **Show FPS
+counter** setting. It displays the measured presentation rate over the running
+game and is disabled by default; the desktop and Android values are persisted
+as `video.ShowFps`, while the browser remembers the choice in browser storage.
 Voxel modes also support touch-drag orbiting when `touch.VoxelOrbit` is enabled;
 the Android Settings page provides a toggle for this gesture. The in-game menu
 button can be placed at the top left or top right with `touch.MenuPosition`.

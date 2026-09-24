@@ -29,9 +29,12 @@ void test_audio_round_trip_and_migration() {
 
     AppSettings settings;
     settings.audio_enabled = false;
+    settings.show_fps = true;
     write_portable_settings(directory, settings);
     check(!load_app_settings(directory).audio_enabled,
           "audio disabled value survives settings round trip");
+    check(load_app_settings(directory).show_fps,
+          "FPS overlay value survives settings round trip");
 
     settings.audio_enabled = true;
     settings.sgb_trace_capture = true;
@@ -51,6 +54,8 @@ void test_audio_round_trip_and_migration() {
           "settings without audio key retain the safe enabled default");
     check(!migrated.sgb_trace_capture,
           "settings without SGB trace key retain the safe disabled default");
+    check(!migrated.show_fps,
+          "settings without FPS key retain the safe disabled default");
     const auto document = gbb::read_settings_file(path);
     bool found_audio = false;
     for (const auto& entry : document.entries) {
@@ -70,6 +75,15 @@ void test_audio_round_trip_and_migration() {
         }
     }
     check(found_sgb_trace, "settings migration writes the SGB trace key");
+    bool found_show_fps = false;
+    for (const auto& entry : document.entries) {
+        if (entry.key == "video.ShowFps") {
+            found_show_fps = true;
+            check(entry.value == "false",
+                  "settings migration appends FPS overlay disabled default");
+        }
+    }
+    check(found_show_fps, "settings migration writes the FPS overlay key");
     std::filesystem::remove_all(directory, error);
 }
 

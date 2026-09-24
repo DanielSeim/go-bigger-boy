@@ -59,6 +59,7 @@ constexpr int id_remove = 108;
 constexpr int id_video = 109;
 constexpr int id_hardware_model = 130;
 constexpr int id_audio_enabled = 131;
+constexpr int id_show_fps = 137;
 constexpr int id_gameboy_background = 110;
 constexpr int id_reset_controls = 111;
 constexpr int id_shortcuts = 112;
@@ -490,6 +491,7 @@ void show_settings_section(State& state) {
     show(state.hardware_model_label, State::SettingsSection::general);
     show(state.hardware_model, State::SettingsSection::general);
     show(state.audio_enabled, State::SettingsSection::general);
+    show(state.show_fps, State::SettingsSection::general);
 
     show(state.controls_label, State::SettingsSection::controls);
     show(state.controls_instruction, State::SettingsSection::controls);
@@ -1194,6 +1196,7 @@ void show_page(State& state, const State::Page page) {
     ShowWindow(state.hardware_model_label, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.hardware_model, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.audio_enabled, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.show_fps, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.controls_label, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.controls_instruction, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.actions_label, settings ? SW_SHOW : SW_HIDE);
@@ -1566,6 +1569,7 @@ void layout_dashboard(State& state) {
     place_child(state.hardware_model_label, 32, 440, 150, 26, offset);
     place_child(state.hardware_model, 200, 435, 320, 28, offset);
     place_child(state.audio_enabled, 32, 490, 360, 34, offset);
+    place_child(state.show_fps, 400, 490, 360, 34, offset);
 
     // Controls use a literal table instead of placing buttons over a
     // decorative controller illustration.
@@ -2087,6 +2091,15 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                 state->result.audio_enabled =
                     dashboard_checkbox_checked(state->audio_enabled);
                 state->result.audio_enabled_changed = true;
+                mark_settings_dirty(*state);
+            }
+            return 0;
+        case id_show_fps:
+            if (HIWORD(wparam) == BN_CLICKED) {
+                toggle_dashboard_checkbox(state->show_fps);
+                state->result.show_fps =
+                    dashboard_checkbox_checked(state->show_fps);
+                state->result.show_fps_changed = true;
                 mark_settings_dirty(*state);
             }
             return 0;
@@ -2835,6 +2848,7 @@ DashboardResult show_windows_dashboard(
     const std::size_t palette, const gameboy::VideoMode video_mode,
     const gameboy::HardwareModel hardware_model,
     const bool audio_enabled,
+    const bool show_fps,
     const KeyboardBindings& keyboard_bindings,
     const ActionBindings& action_bindings,
     const DashboardLinkSettings& link_settings,
@@ -2880,6 +2894,7 @@ DashboardResult show_windows_dashboard(
     state.result.video_mode = video_mode;
     state.result.hardware_model = hardware_model;
     state.result.audio_enabled = audio_enabled;
+    state.result.show_fps = show_fps;
     state.result.keyboard_bindings = keyboard_bindings;
     state.result.action_bindings = action_bindings;
     state.result.link_settings = link_settings;
@@ -3111,6 +3126,10 @@ DashboardResult show_windows_dashboard(
         state, L"BUTTON", L"Generate audio",
         WS_TABSTOP | BS_AUTOCHECKBOX, 510, 270, 300, 34, id_audio_enabled);
     set_dashboard_checkbox_checked(state.audio_enabled, audio_enabled);
+    state.show_fps = control(
+        state, L"BUTTON", L"Show FPS counter",
+        WS_TABSTOP | BS_AUTOCHECKBOX, 510, 305, 300, 34, id_show_fps);
+    set_dashboard_checkbox_checked(state.show_fps, show_fps);
     state.controls_label = control(state, L"STATIC", L"Keyboard controls",
         0, 510, 200, 240, 30, 0);
     SendMessageW(state.controls_label, WM_SETFONT,
@@ -3307,6 +3326,7 @@ DashboardResult show_windows_dashboard(
         state.hardware_model_label,
         state.hardware_model,
         state.audio_enabled,
+        state.show_fps,
         state.controls_label,
         state.controls_instruction,
         state.actions_label,

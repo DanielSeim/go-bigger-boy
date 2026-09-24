@@ -472,7 +472,7 @@ DashboardResult invoke_dashboard(const bool can_resume,
     return show_windows_dashboard(
         nullptr, invocation.library, can_resume, 0,
         gbb::CoreCapability::none, 0, gameboy::default_video_mode,
-        gameboy::HardwareModel::automatic, true, keyboard, actions,
+        gameboy::HardwareModel::automatic, true, false, keyboard, actions,
         link_settings, plugin_options, plugin_catalog, {}, {});
 }
 

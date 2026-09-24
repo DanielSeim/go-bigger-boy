@@ -1,4 +1,5 @@
 #include "presentation.hpp"
+#include "tool_window_support.hpp"
 
 #ifndef __ANDROID__
 #include "dialogs.hpp"
@@ -9,6 +10,8 @@
 #endif
 
 #include <stdexcept>
+#include <iomanip>
+#include <sstream>
 #include <string>
 
 namespace gbb::sdl {
@@ -17,6 +20,45 @@ namespace {
 
 [[noreturn]] void presentation_error(const char* action) {
     throw std::runtime_error(std::string{action} + ": " + SDL_GetError());
+}
+
+void present_fps_overlay(SdlResources& sdl, const bool enabled,
+                         const bool dashboard_visible) {
+    if (!enabled || dashboard_visible) {
+        sdl.fps_window_start = {};
+        sdl.fps_window_frames = 0;
+        sdl.fps_value = 0.0F;
+        return;
+    }
+    const auto now = std::chrono::steady_clock::now();
+    if (sdl.fps_window_start.time_since_epoch().count() == 0) {
+        sdl.fps_window_start = now;
+    }
+    ++sdl.fps_window_frames;
+    const auto elapsed = std::chrono::duration<float>(
+        now - sdl.fps_window_start).count();
+    if (elapsed >= 0.5F) {
+        sdl.fps_value = static_cast<float>(sdl.fps_window_frames) / elapsed;
+        sdl.fps_window_start = now;
+        sdl.fps_window_frames = 0;
+    }
+    if (sdl.fps_value <= 0.0F) return;
+
+    const auto logical_width = static_cast<float>(
+        sdl.core_video_width * (sdl.split_screen ? 2U : 1U));
+    constexpr float bar_width = 49.0F;
+    static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
+                                                  SDL_BLENDMODE_BLEND));
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 0, 0, 0, 175));
+    const SDL_FRect bar{logical_width - bar_width, 0.0F, bar_width, 11.0F};
+    static_cast<void>(SDL_RenderFillRect(sdl.renderer, &bar));
+    static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 235, 245, 235, 255));
+    std::ostringstream text;
+    text << "FPS " << std::fixed << std::setprecision(1) << sdl.fps_value;
+    render_tool_text(sdl.renderer, logical_width - bar_width + 2.0F, 2.0F,
+                     text.str().c_str(), bar_width - 3.0F, 0.57F);
+    static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
+                                                  SDL_BLENDMODE_NONE));
 }
 
 } // namespace
@@ -121,6 +163,8 @@ void present_frame(const PresentationContext& context) {
         if (context.touch_overlay) context.touch_overlay();
         if (context.menu_overlay) context.menu_overlay();
     }
+    present_fps_overlay(sdl, context.show_fps && context.core != nullptr,
+                        context.dashboard_visible);
 #ifndef __ANDROID__
     if (desktop_dialog_visible(sdl.window)) {
         present_desktop_dialog(sdl.renderer, sdl.window);

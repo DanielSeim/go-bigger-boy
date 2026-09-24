@@ -71,6 +71,7 @@ struct DashboardState {
     HWND hardware_model{};
     HWND hardware_model_label{};
     HWND audio_enabled{};
+    HWND show_fps{};
     HWND controls_label{};
     HWND controls_instruction{};
     HWND actions_label{};

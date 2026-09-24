@@ -70,6 +70,8 @@ public final class LibraryActivity extends Activity {
     static native boolean nativeSgbTraceCapture(String directory);
     static native boolean nativeAudioEnabled(String directory);
     static native void nativeSetAudioEnabled(String directory, boolean enabled);
+    static native boolean nativeShowFps(String directory);
+    static native void nativeSetShowFps(String directory, boolean enabled);
     static native String nativeLinkTransport(String directory);
     static native String nativeLinkBluetoothAddress(String directory);
     static native String nativeLinkBluetoothServiceUuid(String directory);

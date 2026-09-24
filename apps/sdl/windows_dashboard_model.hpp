@@ -61,6 +61,8 @@ struct DashboardResult {
     bool hardware_model_changed{};
     bool audio_enabled{true};
     bool audio_enabled_changed{};
+    bool show_fps{};
+    bool show_fps_changed{};
     KeyboardBindings keyboard_bindings{};
     bool keyboard_bindings_changed{};
     ActionBindings action_bindings{};
