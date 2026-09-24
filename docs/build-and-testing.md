@@ -34,6 +34,13 @@ mode, including presentation FPS, elapsed time, and voxel mesh sizes. Set
 `GBB_RENDER_MIN_FPS` to adjust its conservative catastrophic-regression floor
 when testing on unusually slow or virtualized systems.
 
+Desktop CI also writes `render-performance.json`, evaluates it against the
+platform baseline in `tests/render_performance_baseline.json`, and uploads the
+raw and summarized reports. A mode must remain at least 65% of its reviewed
+platform baseline; the margin absorbs normal hosted-runner variance while
+still catching substantial regressions. Update the baseline only after
+reviewing several runs on the affected platform.
+
 The default performance floor is 30 emulated frames per second. Override it
 for a slower or virtualized development machine with
 `GBB_PERF_MIN_FPS=10`; this changes only the threshold, not the workload or

@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "minimum_ratio": 0.65,
+  "platforms": {
+    "linux": {
+      "nearest": 150.0,
+      "voxel": 55.0,
+      "voxel_shape": 55.0,
+      "voxel_popup": 35.0
+    },
+    "windows": {
+      "nearest": 120.0,
+      "voxel": 45.0,
+      "voxel_shape": 45.0,
+      "voxel_popup": 28.0
+    },
+    "macos": {
+      "nearest": 120.0,
+      "voxel": 45.0,
+      "voxel_shape": 45.0,
+      "voxel_popup": 28.0
+    }
+  }
+}

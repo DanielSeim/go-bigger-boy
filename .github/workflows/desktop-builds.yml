@@ -427,15 +427,19 @@ jobs:
           - runner: ubuntu-24.04
             artifact: go-bigger-boy-linux-x64
             archive: go-bigger-boy-linux-x64.AppImage
+            performance-platform: linux
           - runner: windows-2025
             artifact: go-bigger-boy-windows-x64
             archive: go-bigger-boy-windows-x64.zip
+            performance-platform: windows
           - runner: macos-15
             artifact: go-bigger-boy-macos-arm64
             archive: go-bigger-boy-macos-arm64.tar.gz
+            performance-platform: macos
           - runner: macos-15-intel
             artifact: go-bigger-boy-macos-x64
             archive: go-bigger-boy-macos-x64.tar.gz
+            performance-platform: macos
 
     steps:
       - name: Check out source
@@ -477,6 +481,7 @@ jobs:
         env:
           GBB_LINK_FAULT_TRACE_DIR: ${{ github.workspace }}/build/link-fault-traces
           GBB_REAL_LINK_ARTIFACT_DIR: ${{ github.workspace }}/build/real-link-harness-results
+          GBB_RENDER_PERF_JSON: ${{ github.workspace }}/render-performance.json
         run: >-
           ctest --test-dir build -C Release --output-on-failure
           --output-junit ctest-results.xml
@@ -486,10 +491,30 @@ jobs:
         env:
           GBB_LINK_FAULT_TRACE_DIR: ${{ github.workspace }}/build/link-fault-traces
           GBB_REAL_LINK_ARTIFACT_DIR: ${{ github.workspace }}/build/real-link-harness-results
+          GBB_RENDER_PERF_JSON: ${{ github.workspace }}/render-performance.json
         run: >-
           ctest --test-dir build -C Release --output-on-failure
           --exclude-regex '^gameboy_serial_link_contract$'
           --output-junit ctest-results.xml
+
+      - name: Build render performance report
+        if: always()
+        run: >-
+          python tests/render_performance_report.py
+          --input render-performance.json
+          --baseline tests/render_performance_baseline.json
+          --platform "${{ matrix.performance-platform }}"
+          --markdown-out render-performance-report.md
+          --json-out render-performance-report.json
+          --allow-missing
+
+      - name: Add render performance report to job summary
+        if: always()
+        shell: bash
+        run: |
+          if [ -f render-performance-report.md ]; then
+            cat render-performance-report.md >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Build desktop regression report
         if: always()
@@ -517,6 +542,9 @@ jobs:
             ctest-results.xml
             desktop-regression-report.md
             desktop-regression-report.json
+            render-performance.json
+            render-performance-report.md
+            render-performance-report.json
             build/link-fault-traces
             build/real-link-harness-results
           if-no-files-found: ignore

@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <limits>
@@ -24,6 +25,7 @@
 namespace {
 
 constexpr unsigned cycles_per_frame = 70224;
+constexpr unsigned warmup_frames = 4;
 constexpr unsigned measured_frames = 24;
 
 int failures = 0;
@@ -113,6 +115,7 @@ struct RenderResources final {
 };
 
 struct ModeResult final {
+    std::string mode;
     double fps{};
     double elapsed_ms{};
     unsigned fps_samples{};
@@ -143,12 +146,14 @@ ModeResult benchmark_mode(RenderResources& resources,
     std::chrono::steady_clock::time_point render_started_total{};
     std::chrono::steady_clock::time_point render_finished_total{};
 
-    for (unsigned frame = 0; frame < measured_frames; ++frame) {
+    for (unsigned frame = 0;
+         frame < warmup_frames + measured_frames; ++frame) {
         const auto advance = gbb::advance_to_frame(emulator, cycles_per_frame * 2U);
         check(advance.frame_ready, "render benchmark reaches every frame");
         if (!advance.frame_ready) break;
 
-        if (completed_frames == 0) {
+        const auto warmup = frame < warmup_frames;
+        if (!warmup && completed_frames == 0) {
             render_started_total = std::chrono::steady_clock::now();
         }
 
@@ -198,9 +203,11 @@ ModeResult benchmark_mode(RenderResources& resources,
         check(SDL_RenderPresent(resources.renderer),
               "SDL presents every benchmark frame");
         const auto render_finished = std::chrono::steady_clock::now();
-        if (fps_metrics.observe(render_finished).has_value()) ++fps_samples;
+        if (!warmup && fps_metrics.observe(render_finished).has_value()) {
+            ++fps_samples;
+        }
         emulator.consume_frame();
-        ++completed_frames;
+        if (!warmup) ++completed_frames;
         render_finished_total = render_finished;
         if (!rendered) break;
     }
@@ -217,8 +224,37 @@ ModeResult benchmark_mode(RenderResources& resources,
           "render benchmark completes its full frame budget");
     check(fps >= minimum_render_fps(),
           "rendering stays above the configured catastrophic-regression floor");
-    return {fps, elapsed * 1000.0, fps_samples, voxel_stats.mesh_vertices,
-            voxel_stats.mesh_indices};
+    return {{}, fps, elapsed * 1000.0, fps_samples,
+            voxel_stats.mesh_vertices, voxel_stats.mesh_indices};
+}
+
+void write_json(const std::filesystem::path& path,
+                const std::vector<ModeResult>& results) {
+    if (path.empty()) return;
+    std::ofstream output(path);
+    if (!output) {
+        std::cerr << "Could not write render performance JSON: "
+                  << path.string() << '\n';
+        ++failures;
+        return;
+    }
+    output << "{\n  \"schema_version\": 1,\n  \"platform\": \""
+           << SDL_GetPlatform() << "\",\n  \"warmup_frames\": "
+           << warmup_frames << ",\n  \"measured_frames\": "
+           << measured_frames << ",\n  \"modes\": [\n";
+    output << std::fixed << std::setprecision(3);
+    for (std::size_t index = 0; index < results.size(); ++index) {
+        const auto& result = results[index];
+        output << "    {\"mode\": \"" << result.mode
+               << "\", \"fps\": " << result.fps
+               << ", \"elapsed_ms\": " << result.elapsed_ms
+               << ", \"fps_samples\": " << result.fps_samples
+               << ", \"mesh_vertices\": " << result.mesh_vertices
+               << ", \"mesh_indices\": " << result.mesh_indices << "}";
+        if (index + 1 != results.size()) output << ',';
+        output << '\n';
+    }
+    output << "  ]\n}\n";
 }
 
 } // namespace
@@ -260,10 +296,13 @@ int main() {
         gameboy::VideoMode::voxel_shape,
         gameboy::VideoMode::voxel_popup,
     };
+    std::vector<ModeResult> results;
     for (const auto mode : modes) {
         gameboy::Emulator emulator{gameboy::Cartridge{render_test_rom()}};
         seed_scene(emulator);
-        const auto result = benchmark_mode(resources, mode, emulator, palette);
+        auto result = benchmark_mode(resources, mode, emulator, palette);
+        result.mode = std::string(gameboy::video_mode_info(mode).id);
+        results.push_back(result);
         std::cout << std::fixed << std::setprecision(2)
                   << "render_performance_metric mode="
                   << gameboy::video_mode_info(mode).id
@@ -273,5 +312,9 @@ int main() {
                   << " mesh_vertices=" << result.mesh_vertices
                   << " mesh_indices=" << result.mesh_indices << '\n';
     }
+    const auto* json_path = std::getenv("GBB_RENDER_PERF_JSON");
+    write_json(json_path == nullptr ? std::filesystem::path{}
+                                   : std::filesystem::u8path(json_path),
+               results);
     return failures == 0 ? 0 : 1;
 }
