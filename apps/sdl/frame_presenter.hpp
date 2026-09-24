@@ -25,18 +25,21 @@ struct FrameRenderContext {
     gameboy::VideoMode video_mode{};
 };
 
-[[nodiscard]] std::vector<std::uint32_t> colorize_frame(
+void colorize_frame(
     const gbb::EmulatorCore& core, FrameRenderContext& context,
-    const gameboy::DisplayPalette& palette);
+    const gameboy::DisplayPalette& palette,
+    std::vector<std::uint32_t>& destination);
 
-[[nodiscard]] std::vector<std::uint32_t> colorize_frame(
+void colorize_frame(
     const gameboy::Emulator& emulator, FrameRenderContext& context,
-    const gameboy::DisplayPalette& palette);
+    const gameboy::DisplayPalette& palette,
+    std::vector<std::uint32_t>& destination);
 
 [[nodiscard]] bool present_link_frames(const gameboy::Emulator& first,
                                         const gameboy::Emulator& second,
                                         FrameRenderContext& context,
-                                        const gameboy::DisplayPalette& palette);
+                                        const gameboy::DisplayPalette& palette,
+                                        std::vector<std::uint32_t>& color_buffer);
 
 [[nodiscard]] bool present_link_status(FrameRenderContext& context,
                                         const gameboy::LinkSession& session);

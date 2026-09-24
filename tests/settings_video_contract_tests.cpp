@@ -124,6 +124,11 @@ void test_video_pipeline() {
               transformed[0] == gameboy::display_palettes[1].colors[0] &&
               transformed[3] == gameboy::display_palettes[1].colors[3],
           "shared video transforms apply the selected palette");
+    gbb::transform_video_frame(
+        frame.data(), frame.size(), 2, 2, gameboy::display_palettes[1], true,
+        gameboy::VideoMode::nearest, transformed);
+    check(transformed == std::vector<std::uint32_t>(frame.begin(), frame.end()),
+          "shared video transforms preserve native-color frames exactly");
     gbb::transform_video_frame(nullptr, 0, 0, 0,
                                gameboy::display_palettes.front(), false,
                                gameboy::VideoMode::nearest, transformed);

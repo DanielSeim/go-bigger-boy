@@ -7,44 +7,41 @@
 
 namespace gbb::sdl {
 
-std::vector<std::uint32_t> colorize_frame(
+void colorize_frame(
     const gbb::EmulatorCore& core, FrameRenderContext& context,
-    const gameboy::DisplayPalette& palette) {
+    const gameboy::DisplayPalette& palette,
+    std::vector<std::uint32_t>& destination) {
     const auto frame = core.video_frame();
     const auto native_colors =
         core.video_frame_native_colors() ||
         core.descriptor().system == gbb::SystemId::game_boy_color ||
         palette.cgb_compatibility;
-    std::vector<std::uint32_t> colored_pixels;
     gbb::transform_video_frame(
         frame.pixels, frame.pixel_count, frame.width, frame.height, palette,
-        native_colors, context.video_mode, colored_pixels);
-    return colored_pixels;
+        native_colors, context.video_mode, destination);
 }
 
-std::vector<std::uint32_t> colorize_frame(
+void colorize_frame(
     const gameboy::Emulator& emulator, FrameRenderContext& context,
-    const gameboy::DisplayPalette& palette) {
+    const gameboy::DisplayPalette& palette,
+    std::vector<std::uint32_t>& destination) {
     const auto& pixels = emulator.framebuffer();
     const auto native_colors =
         emulator.bus().cgb_mode() || palette.cgb_compatibility;
-    std::vector<std::uint32_t> colored_pixels;
     gbb::transform_video_frame(
         pixels.data(), pixels.size(), gameboy::Ppu::screen_width,
         gameboy::Ppu::screen_height, palette, native_colors, context.video_mode,
-        colored_pixels);
-    return colored_pixels;
+        destination);
 }
 
 bool present_link_frames(const gameboy::Emulator& first,
                          const gameboy::Emulator& second,
                          FrameRenderContext& context,
-                         const gameboy::DisplayPalette& palette) {
+                         const gameboy::DisplayPalette& palette,
+                         std::vector<std::uint32_t>& color_buffer) {
     // A local cable session deliberately uses two native 160x144 views. Voxel
     // geometry is a single-camera presentation and is therefore bypassed for
     // the split view; users can switch back to the diorama after disconnecting.
-    const auto first_pixels = colorize_frame(first, context, palette);
-    const auto second_pixels = colorize_frame(second, context, palette);
     constexpr auto pitch = static_cast<int>(gameboy::Ppu::screen_width *
                                              sizeof(std::uint32_t));
     const SDL_FRect left{0, 0, static_cast<float>(gameboy::Ppu::screen_width),
@@ -52,11 +49,16 @@ bool present_link_frames(const gameboy::Emulator& first,
     const SDL_FRect right{static_cast<float>(gameboy::Ppu::screen_width), 0,
                           static_cast<float>(gameboy::Ppu::screen_width),
                           static_cast<float>(gameboy::Ppu::screen_height)};
-    if (!SDL_UpdateTexture(context.texture, nullptr, first_pixels.data(), pitch) ||
-        !SDL_RenderTexture(context.renderer, context.texture, nullptr, &left) ||
-        !SDL_UpdateTexture(context.link_texture, nullptr, second_pixels.data(),
+    colorize_frame(first, context, palette, color_buffer);
+    if (!SDL_UpdateTexture(context.texture, nullptr, color_buffer.data(), pitch) ||
+        !SDL_RenderTexture(context.renderer, context.texture, nullptr, &left)) {
+        return false;
+    }
+    colorize_frame(second, context, palette, color_buffer);
+    if (!SDL_UpdateTexture(context.link_texture, nullptr, color_buffer.data(),
                            pitch) ||
-        !SDL_RenderTexture(context.renderer, context.link_texture, nullptr, &right)) {
+        !SDL_RenderTexture(context.renderer, context.link_texture, nullptr,
+                           &right)) {
         return false;
     }
     return true;

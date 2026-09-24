@@ -57,6 +57,7 @@ class SdlResources {
     std::chrono::steady_clock::time_point rumble_refresh{};
     std::vector<SDL_Vertex> voxel_vertices;
     std::vector<int> voxel_indices;
+    std::vector<std::uint32_t> presentation_pixels;
     float voxel_camera_pitch_offset{};
     float voxel_camera_yaw_offset{};
     bool voxel_camera_dragging{};

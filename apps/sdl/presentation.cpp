@@ -88,7 +88,8 @@ void present_frame(const PresentationContext& context) {
         FrameRenderContext frame_context{
             sdl.renderer, sdl.texture, sdl.link_texture, sdl.video_mode};
         if (!present_link_frames(*context.emulator, *context.link_emulator,
-                                 frame_context, context.palette)) {
+                                 frame_context, context.palette,
+                                 sdl.presentation_pixels)) {
             presentation_error("Could not present linked framebuffers");
         }
         if (context.link_session != nullptr &&
@@ -130,11 +131,11 @@ void present_frame(const PresentationContext& context) {
         } else {
             FrameRenderContext frame_context{
                 sdl.renderer, sdl.texture, sdl.link_texture, sdl.video_mode};
-            const auto colored_pixels =
-                colorize_frame(*context.core, frame_context, context.palette);
+            colorize_frame(*context.core, frame_context, context.palette,
+                           sdl.presentation_pixels);
             const auto frame = context.core->video_frame();
             if (!SDL_UpdateTexture(
-                    sdl.texture, nullptr, colored_pixels.data(),
+                    sdl.texture, nullptr, sdl.presentation_pixels.data(),
                     static_cast<int>(frame.width * sizeof(std::uint32_t)))) {
                 presentation_error("Could not present framebuffer");
             }

@@ -24,6 +24,20 @@ void transform_video_frame(const std::uint32_t* source,
         return native_colors ? source[index]
                              : gameboy::apply_display_palette(source[index], palette);
     };
+    // The common presentation modes only apply palette mapping. Keep this
+    // path linear: the post-processing modes below need coordinates, but
+    // ordinary nearest/integer/bilinear/voxel presentation does not.
+    if (mode != gameboy::VideoMode::sharp_smoothing &&
+        mode != gameboy::VideoMode::lcd_shader) {
+        if (native_colors) {
+            std::copy(source, source + count, destination.begin());
+            return;
+        }
+        for (std::size_t index = 0; index < count; ++index) {
+            destination[index] = color_at(index);
+        }
+        return;
+    }
     for (std::size_t index = 0; index < count; ++index) {
         const auto x = index % width;
         const auto y = index / width;
