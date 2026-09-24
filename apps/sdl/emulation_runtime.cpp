@@ -1025,6 +1025,13 @@ int run_emulation(int argc, char** argv) {
         std::uint64_t core_step_count = 0;
         std::uint64_t core_step_total_us = 0;
         std::uint64_t core_step_max_us = 0;
+#ifdef __ANDROID__
+        std::uint64_t sgb_timing_frames = 0;
+        std::uint64_t sgb_compose_total_us = 0;
+        std::uint64_t sgb_transform_total_us = 0;
+        std::uint64_t sgb_upload_total_us = 0;
+        std::uint64_t sgb_present_total_us = 0;
+#endif
         std::uint64_t remote_poll_count = 0;
         std::uint64_t remote_slice_count = 0;
         std::uint64_t remote_polling_slice_count = 0;
@@ -2057,6 +2064,19 @@ int run_emulation(int argc, char** argv) {
                 std::move(dashboard_overlay), std::move(touch_overlay),
                 std::move(menu_overlay)});
             const auto presentation_finished = std::chrono::steady_clock::now();
+#ifdef __ANDROID__
+            if (emulator != nullptr &&
+                (emulator->hardware_model() == gameboy::HardwareModel::sgb ||
+                 emulator->hardware_model() == gameboy::HardwareModel::sgb2) &&
+                execution_plan.should_run()) {
+                ++sgb_timing_frames;
+                sgb_compose_total_us += sdl.sgb_compose_us;
+                sgb_transform_total_us += sdl.sgb_transform_us;
+                sgb_upload_total_us += sdl.sgb_upload_us;
+                sgb_present_total_us += microseconds_between(
+                    presentation_started, presentation_finished);
+            }
+#endif
 #ifndef __ANDROID__
             if (emulator) {
                 debugger.present(*emulator,
@@ -2234,7 +2254,11 @@ int run_emulation(int argc, char** argv) {
                         "events_us=%llu emulation_us=%llu core_steps=%llu "
                         "core_step_avg_us=%llu core_step_max_us=%llu "
                         "audio_us=%llu present_us=%llu wait_us=%llu "
-                        "voxel_total_us=%llu",
+                        "voxel_total_us=%llu sgb_compose_us=%llu "
+                        "sgb_transform_us=%llu sgb_upload_us=%llu "
+                        "sgb_frames=%llu sgb_compose_avg_us=%llu "
+                        "sgb_transform_avg_us=%llu sgb_upload_avg_us=%llu "
+                        "sgb_present_avg_us=%llu mode=%s",
                         sdl.fps_value,
                         static_cast<unsigned long long>(microseconds_between(
                             frame_started, presentation_started)),
@@ -2255,7 +2279,25 @@ int run_emulation(int argc, char** argv) {
                         static_cast<unsigned long long>(microseconds_between(
                             pacing_started, pacing_finished)),
                         static_cast<unsigned long long>(
-                            voxel_mode ? sdl.voxel_stats.total_us : 0));
+                            voxel_mode ? sdl.voxel_stats.total_us : 0),
+                        static_cast<unsigned long long>(sdl.sgb_compose_us),
+                        static_cast<unsigned long long>(sdl.sgb_transform_us),
+                        static_cast<unsigned long long>(sdl.sgb_upload_us),
+                        static_cast<unsigned long long>(sgb_timing_frames),
+                        static_cast<unsigned long long>(
+                            sgb_timing_frames == 0 ? 0 :
+                            sgb_compose_total_us / sgb_timing_frames),
+                        static_cast<unsigned long long>(
+                            sgb_timing_frames == 0 ? 0 :
+                            sgb_transform_total_us / sgb_timing_frames),
+                        static_cast<unsigned long long>(
+                            sgb_timing_frames == 0 ? 0 :
+                            sgb_upload_total_us / sgb_timing_frames),
+                        static_cast<unsigned long long>(
+                            sgb_timing_frames == 0 ? 0 :
+                            sgb_present_total_us / sgb_timing_frames),
+                        std::string(gameboy::video_mode_info(sdl.video_mode).id)
+                            .c_str());
             }
 #endif
             if (frontend_frame % 60U == 0U) {
@@ -2267,6 +2309,13 @@ int run_emulation(int argc, char** argv) {
                 core_step_count = 0;
                 core_step_total_us = 0;
                 core_step_max_us = 0;
+#ifdef __ANDROID__
+                sgb_timing_frames = 0;
+                sgb_compose_total_us = 0;
+                sgb_transform_total_us = 0;
+                sgb_upload_total_us = 0;
+                sgb_present_total_us = 0;
+#endif
                 remote_poll_count = 0;
                 remote_slice_count = 0;
                 remote_polling_slice_count = 0;

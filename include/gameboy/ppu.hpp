@@ -23,6 +23,8 @@ public:
     static constexpr std::size_t sgb_border_height = 224;
     using SgbFramebuffer =
         std::array<std::uint32_t, sgb_border_width * sgb_border_height>;
+    using SgbViewportMask =
+        std::array<std::uint8_t, screen_width * screen_height>;
 
     Ppu();
 
@@ -91,6 +93,7 @@ public:
 
     [[nodiscard]] const Framebuffer& framebuffer() const noexcept;
     [[nodiscard]] const SgbFramebuffer& sgb_framebuffer() const noexcept;
+    [[nodiscard]] const SgbViewportMask& sgb_border_opaque_mask() const noexcept;
     [[nodiscard]] std::uint64_t debug_sgb_border_revision() const noexcept;
     [[nodiscard]] bool frame_ready() const noexcept;
     void consume_frame() noexcept;
@@ -226,6 +229,11 @@ private:
     // The border is static between SGB transfers. Keep the expensive
     // tilemap/bitplane composition out of the per-frame video path.
     mutable bool sgb_border_cache_valid_{};
+    // Nonzero border pixels can cover the GB window. Cache which of its
+    // pixels belong to the border so only transparent pixels receive the
+    // changing GB image on subsequent frames.
+    mutable std::unique_ptr<SgbViewportMask> sgb_border_opaque_;
+    mutable std::array<bool, screen_height> sgb_border_opaque_rows_{};
     std::uint64_t sgb_border_revision_{};
     // The SGB VRAM transfer commands sample the live, indexed Game Boy image
     // rather than the host-rendered RGB framebuffer. Keep the 2-bit source

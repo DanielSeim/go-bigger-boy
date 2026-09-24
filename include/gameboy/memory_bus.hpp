@@ -77,6 +77,7 @@ public:
     void flush_battery();
     [[nodiscard]] const Ppu::Framebuffer& framebuffer() const noexcept;
     [[nodiscard]] const Ppu::SgbFramebuffer& sgb_framebuffer() const noexcept;
+    [[nodiscard]] const Ppu::SgbViewportMask& sgb_border_opaque_mask() const noexcept;
     [[nodiscard]] std::uint64_t debug_sgb_border_revision() const noexcept;
     [[nodiscard]] const SgbAdapter::Diagnostics& debug_sgb_diagnostics() const noexcept {
         return sgb_adapter_.diagnostics();

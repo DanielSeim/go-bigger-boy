@@ -27,6 +27,7 @@ Ppu::Ppu()
       sgb_border_tiles_(std::make_unique<std::array<std::uint8_t, 0x2000>>()),
       sgb_border_pct_(std::make_unique<std::array<std::uint8_t, 0x1000>>()),
       sgb_framebuffer_(std::make_unique<SgbFramebuffer>()),
+      sgb_border_opaque_(std::make_unique<SgbViewportMask>()),
       sgb_screen_buffer_(
           std::make_unique<std::array<std::uint8_t, screen_width * screen_height>>()) {
     framebuffer_->fill(dmg_colors[0]);

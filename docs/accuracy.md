@@ -165,8 +165,8 @@ and `ATTR_TRN`/`ATTR_SET` retain and apply the SGB palette and attribute-file
 memories, while the `_TRN` commands sample the live indexed Game Boy image and
 encode it into SNES-side transfer latches. The core now exposes a deterministic 256×224 SGB
 border framebuffer: it decodes the SNES 4bpp tile data, tilemap flips, and
-RGB555 border palettes, then overlays the native Game Boy viewport through
-transparent border pixels. Before a cartridge uploads a custom border, the
+RGB555 border palettes. Transparent border pixels expose the live Game Boy
+viewport; opaque border pixels may cover it. Before a cartridge uploads a custom border, the
 core renders a deterministic BIOS-style fallback frame so SGB output does not
 collapse to a black letterbox. The command receiver is armed at adapter startup,
 matching the first direct `00` start pulse used by licensed software; this is
@@ -187,6 +187,9 @@ dimensions from the core descriptor, so desktop, Android, and browser builds
 can display the border without a frontend-specific decoder. SNES audio, fade
 timing, and the complete SGB boot/header handshake remain deferred. These
 limitations do not affect ordinary DMG or CGB emulation.
+The spec-derived SGB reference checks and performance procedures are recorded
+in [SGB validation](sgb-validation.md); they are not a substitute for
+hardware-captured reference frames.
 
 The APU evaluates channel output and the hardware high-pass response on every
 master-clock cycle, then integrates those values over exact 48 kHz sample

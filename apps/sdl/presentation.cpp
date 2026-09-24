@@ -1,4 +1,5 @@
 #include "presentation.hpp"
+#include "sgb_overlay.hpp"
 #include "tool_window_support.hpp"
 
 #include "gbb/frontend_logging.hpp"
@@ -13,6 +14,7 @@
 #endif
 
 #include <stdexcept>
+#include <chrono>
 #include <iomanip>
 #include <sstream>
 #include <string>
@@ -135,6 +137,16 @@ void present_fps_overlay(SdlResources& sdl, const bool enabled,
 void present_frame(const PresentationContext& context) {
     auto& sdl = context.sdl;
 #ifdef __ANDROID__
+    sdl.sgb_compose_us = 0;
+    sdl.sgb_transform_us = 0;
+    sdl.sgb_upload_us = 0;
+    const auto elapsed_us = [](const auto started) {
+        return static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - started).count());
+    };
+#endif
+#ifdef __ANDROID__
     static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 8, 12, 20, 255));
 #else
     static_cast<void>(SDL_SetRenderDrawColor(sdl.renderer, 16, 20, 16, 255));
@@ -215,15 +227,43 @@ void present_frame(const PresentationContext& context) {
                     context.palette);
                 if (!sdl.sgb_border_texture_valid ||
                     sdl.sgb_border_source_key != source_key) {
+#ifdef __ANDROID__
+                    const auto compose_started = std::chrono::steady_clock::now();
+#endif
                     const auto frame = context.core->video_frame();
+#ifdef __ANDROID__
+                    sdl.sgb_compose_us = elapsed_us(compose_started);
+                    const auto transform_started = std::chrono::steady_clock::now();
+#endif
                     colorize_frame(*context.core, frame_context, context.palette,
                                    sdl.presentation_pixels);
+#ifdef __ANDROID__
+                    sdl.sgb_transform_us = elapsed_us(transform_started);
+                    const auto upload_started = std::chrono::steady_clock::now();
+#endif
                     if (!SDL_UpdateTexture(
                             sdl.sgb_border_texture, nullptr,
                             sdl.presentation_pixels.data(),
                             static_cast<int>(frame.width * sizeof(std::uint32_t)))) {
                         presentation_error("Could not present SGB voxel backdrop");
                     }
+                    SgbViewportOverlay overlay{};
+                    const auto& opaque =
+                        context.emulator->bus().sgb_border_opaque_mask();
+                    sdl.sgb_viewport_overlay_visible =
+                        build_sgb_viewport_overlay(sdl.presentation_pixels,
+                                                   opaque, overlay);
+                    if (sdl.sgb_viewport_overlay_visible &&
+                        !SDL_UpdateTexture(
+                            sdl.sgb_viewport_overlay_texture, nullptr,
+                            overlay.data(),
+                            static_cast<int>(gameboy::Ppu::screen_width *
+                                             sizeof(std::uint32_t)))) {
+                        presentation_error("Could not present SGB border overlap");
+                    }
+#ifdef __ANDROID__
+                    sdl.sgb_upload_us = elapsed_us(upload_started);
+#endif
                     sdl.sgb_border_texture_key = source_key;
                     sdl.sgb_border_source_key = source_key;
                     sdl.sgb_border_texture_valid = true;
@@ -307,6 +347,14 @@ void present_frame(const PresentationContext& context) {
                 presentation_error("Could not render voxel diorama");
             }
 #ifdef __ANDROID__
+            if (sgb_gameboy_surface && sdl.sgb_viewport_overlay_visible &&
+                !SDL_RenderTexture(sdl.renderer,
+                                   sdl.sgb_viewport_overlay_texture,
+                                   nullptr, &voxel_output)) {
+                presentation_error("Could not overlay SGB border artwork");
+            }
+#endif
+#ifdef __ANDROID__
             if (!restore_video_presentation(sdl)) {
                 presentation_error("Could not restore voxel presentation");
             }
@@ -314,7 +362,17 @@ void present_frame(const PresentationContext& context) {
         } else {
             FrameRenderContext frame_context{
                 sdl.renderer, sdl.texture, sdl.link_texture, sdl.video_mode};
+#ifdef __ANDROID__
+            const auto compose_started = std::chrono::steady_clock::now();
+#endif
             const auto frame = context.core->video_frame();
+#ifdef __ANDROID__
+            const auto sgb_surface =
+                frame.width == gameboy::Ppu::sgb_border_width &&
+                frame.height == gameboy::Ppu::sgb_border_height;
+            if (sgb_surface) sdl.sgb_compose_us = elapsed_us(compose_started);
+            const auto transform_started = std::chrono::steady_clock::now();
+#endif
             const auto native_colors =
                 context.core->video_frame_native_colors() ||
                 context.core->descriptor().system ==
@@ -324,11 +382,18 @@ void present_frame(const PresentationContext& context) {
                 frame.pixels, frame.pixel_count, frame.width, frame.height,
                 context.palette, native_colors, sdl.video_mode,
                 sdl.presentation_pixels);
+#ifdef __ANDROID__
+            if (sgb_surface) sdl.sgb_transform_us = elapsed_us(transform_started);
+            const auto upload_started = std::chrono::steady_clock::now();
+#endif
             if (!SDL_UpdateTexture(
                     sdl.texture, nullptr, sdl.presentation_pixels.data(),
                     static_cast<int>(frame.width * sizeof(std::uint32_t)))) {
                 presentation_error("Could not present framebuffer");
             }
+#ifdef __ANDROID__
+            if (sgb_surface) sdl.sgb_upload_us = elapsed_us(upload_started);
+#endif
 #ifdef __ANDROID__
             if (!touch_is_landscape(sdl) && !voxel_mode_enabled(sdl)) {
                 const auto game_rect = android_portrait_game_rect(sdl);

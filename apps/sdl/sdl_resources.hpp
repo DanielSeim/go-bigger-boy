@@ -40,6 +40,8 @@ class SdlResources {
     // SGB voxel presentation draws only border slices from this texture, so
     // the live native viewport does not force a full 256x224 upload.
     SDL_Texture* sgb_border_texture{};
+    // Opaque border pixels inside the GB window are drawn over voxel output.
+    SDL_Texture* sgb_viewport_overlay_texture{};
     // Voxel geometry always samples the native 160x144 Game Boy image. Keep
     // this separate from the 256x224 SGB presentation texture.
     SDL_Texture* voxel_texture{};
@@ -74,12 +76,16 @@ class SdlResources {
     std::uint64_t sgb_border_texture_key{};
     std::uint64_t sgb_border_source_key{};
     bool sgb_border_texture_valid{};
+    bool sgb_viewport_overlay_visible{};
     bool voxel_camera_dragging{};
     bool split_screen{};
     FrameRateMetrics fps_metrics{};
     std::uint32_t fps_log_windows{};
     float fps_value{};
 #ifdef __ANDROID__
+    std::uint64_t sgb_compose_us{};
+    std::uint64_t sgb_transform_us{};
+    std::uint64_t sgb_upload_us{};
     struct TouchPoint {
         SDL_FingerID id{};
         float x{};

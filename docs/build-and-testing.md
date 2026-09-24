@@ -24,6 +24,7 @@ audio samples, and FPS measurement windows:
 cmake -S . -B build-performance -DCMAKE_BUILD_TYPE=Release
 cmake --build build-performance --target \
   gameboy_frame_rate_metrics_tests gameboy_emulation_performance_tests
+  gameboy_sgb_performance_tests
 ctest --test-dir build-performance -L performance --output-on-failure
 ```
 
@@ -66,6 +67,12 @@ for a slower or virtualized development machine with
 the deterministic frame-progress checks. Sanitizer builds omit the
 wall-clock performance test because instrumentation changes timing too much;
 their functional and diagnostic coverage remains enabled.
+
+The SGB-specific benchmark measures core emulation and border composition
+separately for DMG, SGB fallback, and transferred-border cases. Its default
+combined-frame floor is 60 FPS; `GBB_SGB_PERF_MIN_FPS` overrides that floor
+for diagnostic runs. For on-device SGB/voxel timing and the Android gate, see
+[SGB validation](sgb-validation.md).
 
 ## Fuzzing
 

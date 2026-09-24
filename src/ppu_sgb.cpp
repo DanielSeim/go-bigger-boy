@@ -243,6 +243,10 @@ void Ppu::apply_sgb_command(
             sgb_palettes_[first * 4 + color] = rgb555(1 + color * 2);
             sgb_palettes_[second * 4 + color] = rgb555(7 + color * 2);
         }
+        // Transparent border pixels outside the GB viewport show the current
+        // SGB screen color zero, so their cached RGB must be refreshed.
+        sgb_border_cache_valid_ = false;
+        ++sgb_border_revision_;
     };
     switch (command) {
     case 0x00: set_palette_pair(0, 1); break; // PAL01
@@ -362,6 +366,8 @@ void Ppu::apply_sgb_command(
             load_sgb_attribute_file(packet[9] & 0x3FU);
         }
         if ((packet[9] & 0x40U) != 0) sgb_mask_mode_ = 0;
+        sgb_border_cache_valid_ = false;
+        ++sgb_border_revision_;
         break;
     }
     case 0x0B: { // PAL_TRN
@@ -505,6 +511,8 @@ const Ppu::SgbFramebuffer& Ppu::sgb_framebuffer() const noexcept {
     constexpr std::size_t viewport_x = (sgb_border_width - screen_width) / 2;
     constexpr std::size_t viewport_y = (sgb_border_height - screen_height) / 2;
     if (!sgb_border_cache_valid_) {
+        sgb_border_opaque_->fill(0);
+        sgb_border_opaque_rows_.fill(false);
         if (!sgb_border_transferred_ && !sgb_border_loading_) {
             // Keep the fallback immutable and shared: frontends request the
             // composed frame every video tick, so regenerating 57,344 border
@@ -571,9 +579,8 @@ const Ppu::SgbFramebuffer& Ppu::sgb_framebuffer() const noexcept {
                     if (color == 0) {
                         if (x >= viewport_x && x < viewport_x + screen_width &&
                             y >= viewport_y && y < viewport_y + screen_height) {
-                            (*sgb_framebuffer_)[y * sgb_border_width + x] =
-                                (*framebuffer_)[(y - viewport_y) * screen_width +
-                                                (x - viewport_x)];
+                            // Filled from the current Game Boy frame below.
+                            (*sgb_framebuffer_)[y * sgb_border_width + x] = black;
                         } else {
                             // Outside the GB viewport, tile colour zero is
                             // the SGB screen colour-zero, matching the SGB
@@ -584,6 +591,13 @@ const Ppu::SgbFramebuffer& Ppu::sgb_framebuffer() const noexcept {
                     } else {
                         (*sgb_framebuffer_)[y * sgb_border_width + x] =
                             border_color(palette, color);
+                        if (x >= viewport_x && x < viewport_x + screen_width &&
+                            y >= viewport_y && y < viewport_y + screen_height) {
+                            const auto inner_y = y - viewport_y;
+                            (*sgb_border_opaque_)[inner_y * screen_width +
+                                                  x - viewport_x] = 1;
+                            sgb_border_opaque_rows_[inner_y] = true;
+                        }
                     }
                 }
             }
@@ -592,15 +606,29 @@ const Ppu::SgbFramebuffer& Ppu::sgb_framebuffer() const noexcept {
         }
         sgb_border_cache_valid_ = true;
     }
-    // The border is cached, but the centered Game Boy viewport changes every
-    // frame. Copy only that 160x144 region instead of rebuilding all 256x224
-    // border pixels.
+    // Most borders leave the entire viewport transparent. Keep that common
+    // path as one row copy; only inspect pixels on rows with border artwork
+    // overlapping the Game Boy window.
     for (std::size_t y = 0; y < screen_height; ++y) {
-        std::copy_n(framebuffer_->begin() + y * screen_width, screen_width,
-                    sgb_framebuffer_->begin() +
-                        (y + viewport_y) * sgb_border_width + viewport_x);
+        const auto source = framebuffer_->begin() + y * screen_width;
+        const auto destination = sgb_framebuffer_->begin() +
+                                 (y + viewport_y) * sgb_border_width + viewport_x;
+        if (!sgb_border_opaque_rows_[y]) {
+            std::copy_n(source, screen_width, destination);
+            continue;
+        }
+        for (std::size_t x = 0; x < screen_width; ++x) {
+            if ((*sgb_border_opaque_)[y * screen_width + x] == 0) {
+                destination[x] = source[x];
+            }
+        }
     }
     return *sgb_framebuffer_;
+}
+
+const Ppu::SgbViewportMask& Ppu::sgb_border_opaque_mask() const noexcept {
+    if (!sgb_border_cache_valid_) static_cast<void>(sgb_framebuffer());
+    return *sgb_border_opaque_;
 }
 
 void Ppu::load_sgb_attribute_file(const std::size_t index) noexcept {

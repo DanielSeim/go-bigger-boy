@@ -649,6 +649,10 @@ const Ppu::SgbFramebuffer& MemoryBus::sgb_framebuffer() const noexcept {
     return ppu_.sgb_framebuffer();
 }
 
+const Ppu::SgbViewportMask& MemoryBus::sgb_border_opaque_mask() const noexcept {
+    return ppu_.sgb_border_opaque_mask();
+}
+
 std::uint64_t MemoryBus::debug_sgb_border_revision() const noexcept {
     return ppu_.debug_sgb_border_revision();
 }

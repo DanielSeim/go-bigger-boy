@@ -599,6 +599,11 @@ if(GAMEBOY_BUILD_TESTS)
         add_test(NAME gameboy_render_performance_report
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/render_performance_report_tests.py)
+        add_test(NAME gameboy_android_sgb_performance_gate
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/android_sgb_performance_gate_tests.py)
+        set_tests_properties(gameboy_android_sgb_performance_gate
+                             PROPERTIES LABELS "performance;sgb")
         add_test(NAME gameboy_voxel_visual_regression
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_visual_regression_tests.py)
@@ -986,6 +991,15 @@ if(GAMEBOY_BUILD_TESTS)
                  COMMAND gameboy_emulation_performance_tests)
         set_tests_properties(gameboy_emulation_performance
                              PROPERTIES LABELS "performance" TIMEOUT 30)
+
+        add_executable(gameboy_sgb_performance_tests
+            tests/sgb_performance_tests.cpp)
+        target_link_libraries(gameboy_sgb_performance_tests
+            PRIVATE gbb_core_api)
+        add_test(NAME gameboy_sgb_performance
+                 COMMAND gameboy_sgb_performance_tests)
+        set_tests_properties(gameboy_sgb_performance
+                             PROPERTIES LABELS "performance;sgb" TIMEOUT 45)
     endif()
 
     add_executable(gameboy_link_packet_codec_tests
@@ -1032,6 +1046,14 @@ if(GAMEBOY_BUILD_TESTS)
     target_link_libraries(gameboy_ppu_sgb_contract_tests PRIVATE gameboy_core)
     add_test(NAME gameboy_ppu_sgb_contract
              COMMAND gameboy_ppu_sgb_contract_tests)
+
+    add_executable(gameboy_sgb_overlay_contract_tests
+        tests/sgb_overlay_contract_tests.cpp)
+    target_include_directories(gameboy_sgb_overlay_contract_tests
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/apps/sdl)
+    target_link_libraries(gameboy_sgb_overlay_contract_tests PRIVATE gameboy_core)
+    add_test(NAME gameboy_sgb_overlay_contract
+             COMMAND gameboy_sgb_overlay_contract_tests)
 
     add_executable(gameboy_sgb_trace_contract_tests
         tests/sgb_trace_contract_tests.cpp)

@@ -75,6 +75,19 @@ SdlResources::SdlResources(const std::string_view version,
         if (sgb_border_texture == nullptr) {
             sdl_error("Could not create SGB border texture");
         }
+#ifdef __ANDROID__
+        sgb_viewport_overlay_texture = SDL_CreateTexture(
+            renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
+            static_cast<int>(gameboy::Ppu::screen_width),
+            static_cast<int>(gameboy::Ppu::screen_height));
+        if (sgb_viewport_overlay_texture == nullptr ||
+            !SDL_SetTextureBlendMode(sgb_viewport_overlay_texture,
+                                     SDL_BLENDMODE_BLEND) ||
+            !SDL_SetTextureScaleMode(sgb_viewport_overlay_texture,
+                                     SDL_SCALEMODE_NEAREST)) {
+            sdl_error("Could not create SGB viewport overlay texture");
+        }
+#endif
         voxel_texture = SDL_CreateTexture(
             renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
             static_cast<int>(gameboy::Ppu::screen_width),
@@ -133,6 +146,10 @@ void SdlResources::release() noexcept {
     if (sgb_border_texture != nullptr) {
         SDL_DestroyTexture(sgb_border_texture);
         sgb_border_texture = nullptr;
+    }
+    if (sgb_viewport_overlay_texture != nullptr) {
+        SDL_DestroyTexture(sgb_viewport_overlay_texture);
+        sgb_viewport_overlay_texture = nullptr;
     }
 #ifdef __ANDROID__
     if (touch_overlay_texture != nullptr) {

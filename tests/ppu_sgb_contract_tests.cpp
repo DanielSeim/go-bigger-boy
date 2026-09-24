@@ -341,6 +341,12 @@ void test_sgb_border_compositor() {
     ppu.apply_sgb_command(packet, packet.size());
     advance_sgb_frames(ppu, 5);
 
+    // Pan Docs: opaque border pixels cover the GB viewport. The PCT entry
+    // for cell (6,5), at byte 332, comes from source screen tile 20 row 6.
+    // Its rightmost color-1 pixel encodes tile index 1, already uploaded by
+    // CHR_TRN. The adjacent cell remains transparent.
+    ppu.debug_write_vram(0, 0x002C, 0x01); // tile 2, row 6
+    ppu.debug_write_vram(0, 0x1820, 0x02); // screen tile 20 uses tile 2
     packet.fill(0);
     packet[0] = static_cast<std::uint8_t>(0x14U << 3); // PCT_TRN
     ppu.apply_sgb_command(packet, packet.size());
@@ -351,8 +357,30 @@ void test_sgb_border_compositor() {
           "SGB compositor decodes tile data and RGB555 border palettes");
     check(border[8] == 0xFFFFFFFF,
           "SGB border colour zero uses the screen colour-zero outside the viewport");
-    check(border[40 * gameboy::Ppu::sgb_border_width + 48] == 0xFFFFFFFF,
+    check(border[40 * gameboy::Ppu::sgb_border_width + 48] == 0xFFFF0000,
+          "opaque SGB border artwork covers the GB viewport");
+    check(border[40 * gameboy::Ppu::sgb_border_width + 56] == 0xFFFFFFFF,
           "SGB compositor overlays transparent border pixels with the GB viewport");
+    check(ppu.sgb_border_opaque_mask()[0] == 1 &&
+              ppu.sgb_border_opaque_mask()[8] == 0,
+          "SGB border mask distinguishes overlaid and transparent viewport pixels");
+    packet.fill(0);
+    packet[0] = static_cast<std::uint8_t>(0x17U << 3); // MASK_EN
+    packet[1] = 2; // blank the Game Boy viewport, not the SNES border
+    ppu.apply_sgb_command(packet, packet.size());
+    advance_sgb_frames(ppu, 1);
+    const auto& masked = ppu.sgb_framebuffer();
+    check(masked[40 * gameboy::Ppu::sgb_border_width + 48] == 0xFFFF0000 &&
+              masked[40 * gameboy::Ppu::sgb_border_width + 56] == 0xFF000000,
+          "MASK_EN changes transparent window pixels without erasing border overlap");
+    const auto revision = ppu.debug_sgb_border_revision();
+    packet.fill(0);
+    packet[0] = 0x00; // PAL01, one packet in the direct PPU command test
+    packet[2] = 0x7C; // shared color zero = RGB555 blue
+    ppu.apply_sgb_command(packet, 16);
+    check(ppu.debug_sgb_border_revision() > revision &&
+              ppu.sgb_framebuffer()[8] == 0xFF0000FF,
+          "changing SGB color zero refreshes transparent border cache pixels");
 
     // A missing transfer still exposes a deterministic centered viewport and
     // the SGB BIOS border instead of collapsing to a black letterbox.
