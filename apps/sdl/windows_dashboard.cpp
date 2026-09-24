@@ -59,7 +59,9 @@ constexpr int id_remove = 108;
 constexpr int id_video = 109;
 constexpr int id_hardware_model = 130;
 constexpr int id_audio_enabled = 131;
-constexpr int id_show_fps = 137;
+// Keep this outside the settings-section command range below. A collision
+// here makes a checkbox click look like a request to switch sections.
+constexpr int id_show_fps = 119;
 constexpr int id_gameboy_background = 110;
 constexpr int id_reset_controls = 111;
 constexpr int id_shortcuts = 112;
@@ -86,6 +88,10 @@ constexpr int id_artwork_retry = 134;
 constexpr int id_settings_section_first = 136;
 constexpr int id_binding_first = 200;
 constexpr int id_action_first = 220;
+
+static_assert(id_show_fps < id_settings_section_first ||
+                  id_show_fps >= id_settings_section_first + 4,
+              "FPS checkbox ID must not overlap settings section IDs");
 constexpr UINT artwork_ready = WM_APP + 1;
 constexpr UINT update_poll_timer = 2;
 constexpr int dashboard_width = 980;

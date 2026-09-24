@@ -233,7 +233,9 @@ ModeResult benchmark_mode(RenderResources& resources,
     std::uint64_t scene_signature = 0;
     bool scene_cached = false;
     std::uint64_t render_cache_key = 0;
+    std::uint64_t render_cache_state_key = 0;
     bool render_cache_valid = false;
+    std::vector<std::uint32_t> render_cache_pixels;
     gbb::VoxelRenderStats voxel_stats;
     std::vector<SDL_Vertex> vertices;
     std::vector<int> indices;
@@ -302,7 +304,9 @@ ModeResult benchmark_mode(RenderResources& resources,
                 camera_pitch_offset,
                 camera_yaw_offset,
                 render_cache_key,
-                render_cache_valid};
+                render_cache_state_key,
+                render_cache_valid,
+                render_cache_pixels};
             rendered = gbb::sdl::render_voxel_diorama(
                 emulator, context, palette,
                 mode == gameboy::VideoMode::voxel_shape,
@@ -488,7 +492,9 @@ int main() {
         std::uint64_t scene_signature = 0;
         bool scene_cached = false;
         std::uint64_t render_cache_key = 0;
+        std::uint64_t render_cache_state_key = 0;
         bool render_cache_valid = false;
+        std::vector<std::uint32_t> render_cache_pixels;
         gbb::VoxelRenderStats voxel_stats;
         std::vector<SDL_Vertex> vertices;
         std::vector<int> indices;
@@ -516,7 +522,9 @@ int main() {
                 camera_pitch_offset,
                 camera_yaw_offset,
                 render_cache_key,
-                render_cache_valid};
+                render_cache_state_key,
+                render_cache_valid,
+                render_cache_pixels};
             return gbb::sdl::render_voxel_diorama(
                 emulator, context, palette,
                 mode == gameboy::VideoMode::voxel_shape,
@@ -542,6 +550,16 @@ int main() {
         check(visible_pixels_match(direct_pixels, cached_pixels),
               std::string("cached output preserves visible pixels for ") +
                   std::string(gameboy::video_mode_info(mode).id));
+        const auto cache_hits_before_repeat = voxel_stats.render_cache_hits;
+        check(SDL_SetRenderDrawColor(resources.renderer, 16, 20, 16, 255) &&
+                  SDL_RenderClear(resources.renderer),
+              "pixel comparison clears before cached repeat");
+        check(render_frame(resources.render_target),
+              "unchanged voxel source uses cached frame");
+        check(voxel_stats.render_cache_hits > cache_hits_before_repeat &&
+                  voxel_stats.scene_snapshot_us == 0 &&
+                  voxel_stats.pixel_transform_us == 0,
+              "exact source cache hit skips scene snapshot and pixel transform");
         resources.render_target = cached_target;
     }
     std::vector<ModeResult> results;

@@ -15,10 +15,18 @@ namespace gbb::sdl {
 #ifdef __ANDROID__
 
 bool touch_is_landscape(const SdlResources& sdl) {
+    const auto [width, height] = android_render_size(sdl);
+    return width >= height;
+}
+
+std::pair<int, int> android_render_size(const SdlResources& sdl) {
     int width = 1;
     int height = 1;
-    static_cast<void>(SDL_GetWindowSize(sdl.window, &width, &height));
-    return width >= height;
+    if (!SDL_GetRenderOutputSize(sdl.renderer, &width, &height) || width <= 0 ||
+        height <= 0) {
+        static_cast<void>(SDL_GetWindowSize(sdl.window, &width, &height));
+    }
+    return {std::max(width, 1), std::max(height, 1)};
 }
 
 std::size_t touch_layout_offset(const SdlResources& sdl) {
@@ -26,9 +34,7 @@ std::size_t touch_layout_offset(const SdlResources& sdl) {
 }
 
 float touch_game_scale(const SdlResources& sdl) {
-    int width = 1;
-    int height = 1;
-    static_cast<void>(SDL_GetWindowSize(sdl.window, &width, &height));
+    const auto [width, height] = android_render_size(sdl);
     return std::min(static_cast<float>(width) /
                         static_cast<float>(sdl.core_video_width),
                     static_cast<float>(height) /
@@ -86,9 +92,7 @@ bool voxel_mode_enabled(const SdlResources& sdl) {
 }
 
 SDL_FRect android_menu_button_rect(const SdlResources& sdl) {
-    int width = 1;
-    int height = 1;
-    static_cast<void>(SDL_GetWindowSize(sdl.window, &width, &height));
+    const auto [width, height] = android_render_size(sdl);
     // The game framebuffer is normally rendered through a 160x144 logical
     // viewport. The menu is an Android overlay, however, so size and position
     // it in full-window pixels after disabling logical presentation.
@@ -121,16 +125,25 @@ SDL_FRect android_link_button_rect(const SdlResources& sdl) {
 }
 
 SDL_Rect android_safe_area(const SdlResources& sdl) {
-    int width = 1;
-    int height = 1;
-    static_cast<void>(SDL_GetWindowSize(sdl.window, &width, &height));
+    const auto [width, height] = android_render_size(sdl);
     SDL_Rect safe{0, 0, width, height};
     SDL_Rect queried{};
     if (SDL_GetWindowSafeArea(sdl.window, &queried) &&
-        queried.x >= 0 && queried.y >= 0 && queried.w > 0 &&
-        queried.h > 0 && queried.x < width && queried.y < height &&
-        queried.x + queried.w <= width && queried.y + queried.h <= height) {
-        safe = queried;
+        queried.w > 0 && queried.h > 0) {
+        int window_width = 1;
+        int window_height = 1;
+        static_cast<void>(SDL_GetWindowSize(sdl.window, &window_width,
+                                             &window_height));
+        if (window_width > 0 && window_height > 0) {
+            safe = {static_cast<int>(std::lround(
+                        static_cast<float>(queried.x) * width / window_width)),
+                    static_cast<int>(std::lround(
+                        static_cast<float>(queried.y) * height / window_height)),
+                    static_cast<int>(std::lround(
+                        static_cast<float>(queried.w) * width / window_width)),
+                    static_cast<int>(std::lround(
+                        static_cast<float>(queried.h) * height / window_height))};
+        }
     }
     safe.x = std::clamp(safe.x, 0, width);
     safe.y = std::clamp(safe.y, 0, height);
@@ -154,9 +167,7 @@ SDL_FRect android_portrait_game_rect(const SdlResources& sdl) {
 
 bool android_menu_touch_hit(const SdlResources& sdl, const float x,
                             const float y) {
-    int width = 1;
-    int height = 1;
-    static_cast<void>(SDL_GetWindowSize(sdl.window, &width, &height));
+    const auto [width, height] = android_render_size(sdl);
     const auto button = android_menu_button_rect(sdl);
     const auto pixel_x = x * static_cast<float>(width);
     const auto pixel_y = y * static_cast<float>(height);
@@ -169,9 +180,7 @@ bool android_menu_touch_hit(const SdlResources& sdl, const float x,
 
 bool android_link_touch_hit(const SdlResources& sdl, const float x,
                             const float y) {
-    int width = 1;
-    int height = 1;
-    static_cast<void>(SDL_GetWindowSize(sdl.window, &width, &height));
+    const auto [width, height] = android_render_size(sdl);
     const auto button = android_link_button_rect(sdl);
     const auto pixel_x = x * static_cast<float>(width);
     const auto pixel_y = y * static_cast<float>(height);
@@ -180,6 +189,49 @@ bool android_link_touch_hit(const SdlResources& sdl, const float x,
            pixel_x <= button.x + button.w + hit_slop &&
            pixel_y >= button.y - hit_slop &&
            pixel_y <= button.y + button.h + hit_slop;
+}
+
+AndroidOverlayButton android_overlay_button_hit(const SdlResources& sdl,
+                                                const float x, const float y) {
+    // Resolve the two overlay buttons as one hit-test domain. Android can
+    // deliver a rounded sample at an edge, so overlapping slop must choose
+    // the nearest visual button rather than whichever test runs first.
+    const auto [width, height] = android_render_size(sdl);
+    const auto pixel_x = x * static_cast<float>(width);
+    const auto pixel_y = y * static_cast<float>(height);
+    const auto menu = android_menu_button_rect(sdl);
+    const auto link = android_link_button_rect(sdl);
+    constexpr float hit_slop = 8.0F;
+    const auto contains_exact = [&](const SDL_FRect& rect) {
+        return pixel_x >= rect.x && pixel_x <= rect.x + rect.w &&
+               pixel_y >= rect.y && pixel_y <= rect.y + rect.h;
+    };
+    // The painted button always wins over the neighboring button's touch
+    // slop. This makes every pixel of the hamburger glyph unambiguously open
+    // the general menu, even when the two enlarged touch targets are close.
+    if (contains_exact(menu)) return AndroidOverlayButton::menu;
+    if (contains_exact(link)) return AndroidOverlayButton::link;
+    const auto contains = [&](const SDL_FRect& rect) {
+        return pixel_x >= rect.x - hit_slop &&
+               pixel_x <= rect.x + rect.w + hit_slop &&
+               pixel_y >= rect.y - hit_slop &&
+               pixel_y <= rect.y + rect.h + hit_slop;
+    };
+    const auto in_menu = contains(menu);
+    const auto in_link = contains(link);
+    if (in_menu && in_link) {
+        const auto menu_dx = pixel_x - (menu.x + menu.w * 0.5F);
+        const auto menu_dy = pixel_y - (menu.y + menu.h * 0.5F);
+        const auto link_dx = pixel_x - (link.x + link.w * 0.5F);
+        const auto link_dy = pixel_y - (link.y + link.h * 0.5F);
+        return menu_dx * menu_dx + menu_dy * menu_dy <=
+                       link_dx * link_dx + link_dy * link_dy
+                   ? AndroidOverlayButton::menu
+                   : AndroidOverlayButton::link;
+    }
+    if (in_menu) return AndroidOverlayButton::menu;
+    if (in_link) return AndroidOverlayButton::link;
+    return AndroidOverlayButton::none;
 }
 
 bool android_menu_button_hit(const SdlResources& sdl, const float x,
@@ -233,9 +285,7 @@ SDL_FPoint touch_control_pixel_position_for_viewport(
 
 std::optional<std::size_t> touch_button_index(const float x, const float y,
                                               const SdlResources& sdl) {
-    int width = 1;
-    int height = 1;
-    static_cast<void>(SDL_GetWindowSize(sdl.window, &width, &height));
+    const auto [width, height] = android_render_size(sdl);
     const auto pixel_x = x * static_cast<float>(width);
     const auto pixel_y = y * static_cast<float>(height);
     const auto density = std::max(1.0F, SDL_GetWindowDisplayScale(sdl.window));
@@ -373,8 +423,9 @@ std::pair<float, float> logical_touch_position(const SDL_TouchFingerEvent& event
     int width = 1;
     int height = 1;
     static_cast<void>(SDL_GetWindowSize(sdl.window, &width, &height));
-    auto x = event.x * static_cast<float>(width);
-    auto y = event.y * static_cast<float>(height);
+    const auto [normalized_x, normalized_y] = window_touch_position(event, sdl);
+    auto x = normalized_x * static_cast<float>(width);
+    auto y = normalized_y * static_cast<float>(height);
     static_cast<void>(
         SDL_RenderCoordinatesFromWindow(sdl.renderer, x, y, &x, &y));
     return {x / static_cast<float>(sdl.core_video_width),
@@ -382,8 +433,43 @@ std::pair<float, float> logical_touch_position(const SDL_TouchFingerEvent& event
 }
 
 std::pair<float, float> window_touch_position(
-    const SDL_TouchFingerEvent& event) {
-    return {event.x, event.y};
+    const SDL_TouchFingerEvent& event, const SdlResources& sdl) {
+    // SDL normally reports normalized window coordinates. When logical
+    // presentation is active, however, SDL reports coordinates relative to
+    // the logical viewport and they can be negative in the letterbox. The
+    // Android menu and touch controls deliberately live outside that viewport,
+    // so invert that transform before doing any hit testing.
+    auto x = event.x;
+    auto y = event.y;
+    if (!std::isfinite(x) || !std::isfinite(y)) return {0.0F, 0.0F};
+    if (x >= 0.0F && x <= 1.0F && y >= 0.0F && y <= 1.0F) {
+        return {x, y};
+    }
+    if ((x < 0.0F || x > 1.0F || y < 0.0F || y > 1.0F) &&
+        (x >= -1.0F && x <= 2.0F && y >= -1.0F && y <= 2.0F)) {
+        SDL_FRect logical_viewport{};
+        const auto [output_width, output_height] = android_render_size(sdl);
+        if (SDL_GetRenderLogicalPresentationRect(sdl.renderer,
+                                                  &logical_viewport) &&
+            logical_viewport.w > 0.0F && logical_viewport.h > 0.0F) {
+            x = (logical_viewport.x + x * logical_viewport.w) /
+                static_cast<float>(output_width);
+            y = (logical_viewport.y + y * logical_viewport.h) /
+                static_cast<float>(output_height);
+            return {std::clamp(x, 0.0F, 1.0F),
+                    std::clamp(y, 0.0F, 1.0F)};
+        }
+    }
+    // Keep compatibility with older Android SDL paths that emitted window
+    // pixels for synthesized touch events.
+    {
+        int width = 1;
+        int height = 1;
+        static_cast<void>(SDL_GetWindowSize(sdl.window, &width, &height));
+        x /= static_cast<float>(std::max(width, 1));
+        y /= static_cast<float>(std::max(height, 1));
+    }
+    return {std::clamp(x, 0.0F, 1.0F), std::clamp(y, 0.0F, 1.0F)};
 }
 
 #endif

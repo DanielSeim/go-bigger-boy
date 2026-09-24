@@ -86,12 +86,22 @@ std::size_t header_ram_size(const std::uint8_t code) {
     default: throw std::invalid_argument("Unsupported RAM size code in cartridge header");
     }
 }
+
+std::uint64_t fingerprint_rom(const std::vector<std::uint8_t>& rom) noexcept {
+    auto hash = UINT64_C(14695981039346656037);
+    for (const auto byte : rom) {
+        hash ^= byte;
+        hash *= UINT64_C(1099511628211);
+    }
+    return hash;
+}
 } // namespace
 
 Cartridge::Cartridge(std::vector<std::uint8_t> rom) : rom_(std::move(rom)) {
     if (rom_.size() < minimum_header_size) {
         throw std::invalid_argument("ROM is too small to contain a Game Boy header");
     }
+    rom_fingerprint_ = fingerprint_rom(rom_);
 
     const auto expected_rom_size = header_rom_size(rom_[0x148]);
     if (rom_.size() < expected_rom_size) {
@@ -283,6 +293,7 @@ Cartridge::~Cartridge() {
 
 Cartridge::Cartridge(Cartridge&& other) noexcept
     : rom_(std::move(other.rom_)),
+      rom_fingerprint_(other.rom_fingerprint_),
       ram_(std::move(other.ram_)),
       save_path_(std::move(other.save_path_)),
       rtc_path_(std::move(other.rtc_path_)),
@@ -569,12 +580,7 @@ void Cartridge::set_camera_frame(const std::uint8_t* grayscale,
 }
 
 std::uint64_t Cartridge::rom_fingerprint() const noexcept {
-    auto hash = UINT64_C(14695981039346656037);
-    for (const auto byte : rom_) {
-        hash ^= byte;
-        hash *= UINT64_C(1099511628211);
-    }
-    return hash;
+    return rom_fingerprint_;
 }
 
 LinkCompatibilityProfile Cartridge::link_compatibility_profile() const noexcept {

@@ -104,6 +104,42 @@ void append_visible_tile_cells(SceneSnapshot& scene,
 
 } // namespace
 
+std::uint64_t gameboy_scene_input_signature(
+    const gameboy::Emulator& emulator,
+    const bool include_tile_provenance) noexcept {
+    // Keep this in sync with the values consumed by
+    // populate_gameboy_scene_snapshot. Hash raw emulated inputs instead of
+    // constructing its vectors of maps, tile bytes and visible cells merely
+    // to discover that the cached render is still current.
+    std::uint64_t hash = UINT64_C(14695981039346656037);
+    const auto mix = [&hash](const std::uint8_t value) {
+        hash ^= value;
+        hash *= UINT64_C(1099511628211);
+    };
+    const auto& bus = emulator.bus();
+    mix(static_cast<std::uint8_t>(emulator.hardware_model()));
+    mix(bus.cgb_mode() ? 1U : 0U);
+    for (const auto address : {0xFF40U, 0xFF43U, 0xFF42U, 0xFF4BU, 0xFF4AU,
+                                0xFF47U, 0xFF48U, 0xFF49U, 0xFF68U, 0xFF6AU}) {
+        mix(bus.read8(static_cast<std::uint16_t>(address)));
+    }
+    if (include_tile_provenance) {
+        for (std::uint8_t bank = 0; bank < (bus.cgb_mode() ? 2U : 1U); ++bank) {
+            for (std::uint16_t offset = 0; offset < 0x2000U; ++offset) {
+                mix(bus.debug_read_vram(bank, offset));
+            }
+        }
+        for (std::uint8_t index = 0; index < 0x40U; ++index) {
+            mix(bus.debug_read_cgb_bg_palette(index));
+            mix(bus.debug_read_cgb_object_palette(index));
+        }
+    }
+    for (std::uint8_t offset = 0; offset < 0xA0U; ++offset) {
+        mix(bus.debug_read_oam(offset));
+    }
+    return hash;
+}
+
 void populate_gameboy_scene_snapshot(const gameboy::Emulator& emulator,
                                      SceneSnapshot& scene) {
     // The adapter refreshes the whole snapshot on demand. Clear optional

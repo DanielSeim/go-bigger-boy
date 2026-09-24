@@ -537,6 +537,8 @@ void SaveStateBusCodec::read(save_state_format::Reader& reader,
     } else {
         bus.ppu_.sgb_border_loading_ = false;
     }
+    bus.ppu_.sgb_border_cache_valid_ = false;
+    ++bus.ppu_.sgb_border_revision_;
     bus.boot_rom_enabled_ = version >= 30 ? reader.boolean() : false;
     bus.ppu_.lcd_restart_pending_ = version >= 31 ? reader.boolean() : false;
     bus.ppu_.scx_mode3_delay_ = version >= 32 ? reader.u8() : 0;

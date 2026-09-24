@@ -91,6 +91,7 @@ public:
 
     [[nodiscard]] const Framebuffer& framebuffer() const noexcept;
     [[nodiscard]] const SgbFramebuffer& sgb_framebuffer() const noexcept;
+    [[nodiscard]] std::uint64_t debug_sgb_border_revision() const noexcept;
     [[nodiscard]] bool frame_ready() const noexcept;
     void consume_frame() noexcept;
 
@@ -222,6 +223,10 @@ private:
     std::unique_ptr<std::array<std::uint8_t, 0x2000>> sgb_border_tiles_;
     std::unique_ptr<std::array<std::uint8_t, 0x1000>> sgb_border_pct_;
     mutable std::unique_ptr<SgbFramebuffer> sgb_framebuffer_;
+    // The border is static between SGB transfers. Keep the expensive
+    // tilemap/bitplane composition out of the per-frame video path.
+    mutable bool sgb_border_cache_valid_{};
+    std::uint64_t sgb_border_revision_{};
     // The SGB VRAM transfer commands sample the live, indexed Game Boy image
     // rather than the host-rendered RGB framebuffer. Keep the 2-bit source
     // pixels so transfers can be encoded into SNES bitplanes deterministically.

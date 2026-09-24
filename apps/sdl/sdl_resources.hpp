@@ -37,6 +37,12 @@ class SdlResources {
     SDL_Renderer* renderer{};
     SDL_Texture* texture{};
     SDL_Texture* link_texture{};
+    // SGB voxel presentation draws only border slices from this texture, so
+    // the live native viewport does not force a full 256x224 upload.
+    SDL_Texture* sgb_border_texture{};
+    // Voxel geometry always samples the native 160x144 Game Boy image. Keep
+    // this separate from the 256x224 SGB presentation texture.
+    SDL_Texture* voxel_texture{};
     SDL_Texture* voxel_render_target{};
     std::size_t core_video_width{160};
     std::size_t core_video_height{144};
@@ -62,7 +68,12 @@ class SdlResources {
     float voxel_camera_pitch_offset{};
     float voxel_camera_yaw_offset{};
     std::uint64_t voxel_render_cache_key{};
+    std::uint64_t voxel_render_cache_state_key{};
     bool voxel_render_cache_valid{};
+    std::vector<std::uint32_t> voxel_render_cache_source_pixels;
+    std::uint64_t sgb_border_texture_key{};
+    std::uint64_t sgb_border_source_key{};
+    bool sgb_border_texture_valid{};
     bool voxel_camera_dragging{};
     bool split_screen{};
     FrameRateMetrics fps_metrics{};
@@ -74,6 +85,10 @@ class SdlResources {
         float x{};
         float y{};
         bool orbit{};
+        // Capture the overlay hit on finger-down. Android can report a
+        // slightly different release coordinate after touch slop, which must
+        // not turn the hamburger button into the adjacent link button.
+        std::uint8_t overlay_button{};
         std::optional<std::size_t> control;
         std::optional<std::size_t> secondary_control;
         std::uint8_t secondary_neutral_motion_count{};
@@ -82,6 +97,11 @@ class SdlResources {
     std::array<bool, 8> touch_buttons{};
     bool android_menu_visible{};
     bool android_link_menu_visible{};
+    SDL_Texture* touch_overlay_texture{};
+    int touch_overlay_width{};
+    int touch_overlay_height{};
+    std::uint64_t touch_overlay_cache_key{};
+    bool touch_overlay_cache_valid{};
     TouchControlSettings touch_settings;
     std::filesystem::file_time_type touch_settings_write_time{};
     bool touch_settings_write_time_valid{};

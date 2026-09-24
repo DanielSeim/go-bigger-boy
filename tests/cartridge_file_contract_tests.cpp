@@ -7,6 +7,7 @@
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -45,9 +46,25 @@ void test_file_loading() {
           "cartridge loader accepts a successfully read ROM file");
 }
 
+void test_rom_fingerprint_is_cached_and_stable_across_move() {
+    const auto rom = test_rom();
+    auto expected = UINT64_C(14695981039346656037);
+    for (const auto byte : rom) {
+        expected ^= byte;
+        expected *= UINT64_C(1099511628211);
+    }
+    gameboy::Cartridge cartridge{rom};
+    check(cartridge.rom_fingerprint() == expected,
+          "ROM fingerprint matches the stable byte hash");
+    gameboy::Cartridge moved{std::move(cartridge)};
+    check(moved.rom_fingerprint() == expected,
+          "cached ROM fingerprint survives cartridge moves");
+}
+
 } // namespace
 
 int main() {
     test_file_loading();
+    test_rom_fingerprint_is_cached_and_stable_across_move();
     return failures == 0 ? 0 : 1;
 }

@@ -45,6 +45,11 @@ SdlResources::SdlResources(const std::string_view version,
         renderer = SDL_CreateRenderer(window, nullptr);
 #endif
         if (renderer == nullptr) sdl_error("Could not create renderer");
+#ifdef __ANDROID__
+        const auto* renderer_name = SDL_GetRendererName(renderer);
+        SDL_Log("GBB renderer backend=%s",
+                renderer_name == nullptr ? "unknown" : renderer_name);
+#endif
         if (!SDL_SetRenderLogicalPresentation(
                 renderer, static_cast<int>(gameboy::Ppu::screen_width),
                 static_cast<int>(gameboy::Ppu::screen_height),
@@ -63,6 +68,20 @@ SdlResources::SdlResources(const std::string_view version,
         if (link_texture == nullptr) {
             sdl_error("Could not create link framebuffer texture");
         }
+        sgb_border_texture = SDL_CreateTexture(
+            renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
+            static_cast<int>(gameboy::Ppu::sgb_border_width),
+            static_cast<int>(gameboy::Ppu::sgb_border_height));
+        if (sgb_border_texture == nullptr) {
+            sdl_error("Could not create SGB border texture");
+        }
+        voxel_texture = SDL_CreateTexture(
+            renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
+            static_cast<int>(gameboy::Ppu::screen_width),
+            static_cast<int>(gameboy::Ppu::screen_height));
+        if (voxel_texture == nullptr) {
+            sdl_error("Could not create native voxel framebuffer texture");
+        }
         voxel_render_target = SDL_CreateTexture(
             renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET,
             static_cast<int>(gameboy::Ppu::screen_width),
@@ -76,6 +95,13 @@ SdlResources::SdlResources(const std::string_view version,
         }
         if (!SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST)) {
             sdl_error("Could not configure nearest-neighbor scaling");
+        }
+        if (!SDL_SetTextureScaleMode(sgb_border_texture,
+                                     SDL_SCALEMODE_NEAREST)) {
+            sdl_error("Could not configure nearest-neighbor SGB border scaling");
+        }
+        if (!SDL_SetTextureScaleMode(voxel_texture, SDL_SCALEMODE_NEAREST)) {
+            sdl_error("Could not configure nearest-neighbor voxel scaling");
         }
         static_cast<void>(SDL_SetRenderDrawColor(renderer, 16, 20, 16, 255));
     } catch (...) {
@@ -103,6 +129,20 @@ void SdlResources::release() noexcept {
     if (link_texture != nullptr) {
         SDL_DestroyTexture(link_texture);
         link_texture = nullptr;
+    }
+    if (sgb_border_texture != nullptr) {
+        SDL_DestroyTexture(sgb_border_texture);
+        sgb_border_texture = nullptr;
+    }
+#ifdef __ANDROID__
+    if (touch_overlay_texture != nullptr) {
+        SDL_DestroyTexture(touch_overlay_texture);
+        touch_overlay_texture = nullptr;
+    }
+#endif
+    if (voxel_texture != nullptr) {
+        SDL_DestroyTexture(voxel_texture);
+        voxel_texture = nullptr;
     }
     if (voxel_render_target != nullptr) {
         SDL_DestroyTexture(voxel_render_target);

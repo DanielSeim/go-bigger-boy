@@ -15,6 +15,7 @@
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <functional>
 #include <stdexcept>
 #include <string>
 
@@ -357,21 +358,111 @@ void draw_branded_touch_system(SDL_Renderer* renderer, const SDL_FPoint center,
                              label);
 }
 
+std::uint64_t touch_overlay_key(const SdlResources& sdl,
+                                const SDL_FRect viewport,
+                                const bool have_viewport,
+                                const int width, const int height) {
+    std::uint64_t key = UINT64_C(1469598103934665603);
+    const auto mix = [&key](const std::uint64_t value) {
+        key ^= value;
+        key *= UINT64_C(1099511628211);
+    };
+    mix(static_cast<std::uint64_t>(width));
+    mix(static_cast<std::uint64_t>(height));
+    mix(static_cast<std::uint64_t>(sdl.core_video_width));
+    mix(static_cast<std::uint64_t>(sdl.core_video_height));
+    mix(static_cast<std::uint64_t>(sdl.video_mode));
+    mix(std::hash<float>{}(sdl.touch_settings.scale));
+    mix(std::hash<float>{}(sdl.touch_settings.opacity));
+    mix(have_viewport ? 1U : 0U);
+    if (have_viewport) {
+        mix(std::hash<float>{}(viewport.x));
+        mix(std::hash<float>{}(viewport.y));
+        mix(std::hash<float>{}(viewport.w));
+        mix(std::hash<float>{}(viewport.h));
+    }
+    for (const auto position : sdl.touch_settings.positions) {
+        mix(std::hash<float>{}(position));
+    }
+    for (const auto pressed : sdl.touch_buttons) mix(pressed ? 1U : 0U);
+    return key;
+}
+
 void present_touch_controls(SdlResources& sdl) {
     const auto opacity = std::clamp(sdl.touch_settings.opacity,
                                     minimum_touch_opacity,
                                     maximum_touch_opacity);
-    static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
-                                                 SDL_BLENDMODE_BLEND));
     const auto size = touch_control_scale(sdl);
     SDL_FRect game_viewport{};
     const auto have_game_viewport =
         touch_is_landscape(sdl) &&
         SDL_GetRenderLogicalPresentationRect(sdl.renderer, &game_viewport);
+    const auto [window_width, window_height] = android_render_size(sdl);
+    const auto cache_key = touch_overlay_key(
+        sdl, game_viewport, have_game_viewport, window_width, window_height);
+    if (sdl.touch_overlay_texture == nullptr ||
+        sdl.touch_overlay_width != window_width ||
+        sdl.touch_overlay_height != window_height) {
+        if (sdl.touch_overlay_texture != nullptr) {
+            SDL_DestroyTexture(sdl.touch_overlay_texture);
+        }
+        sdl.touch_overlay_texture = SDL_CreateTexture(
+            sdl.renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET,
+            window_width, window_height);
+        sdl.touch_overlay_width = window_width;
+        sdl.touch_overlay_height = window_height;
+        sdl.touch_overlay_cache_valid = false;
+        if (sdl.touch_overlay_texture != nullptr) {
+            static_cast<void>(SDL_SetTextureBlendMode(
+                sdl.touch_overlay_texture, SDL_BLENDMODE_BLEND));
+        }
+    }
     if (!SDL_SetRenderLogicalPresentation(
             sdl.renderer, 0, 0, SDL_LOGICAL_PRESENTATION_DISABLED)) {
         sdl_error("Could not prepare touch controls");
     }
+    if (sdl.touch_overlay_texture != nullptr &&
+        sdl.touch_overlay_cache_valid &&
+        sdl.touch_overlay_cache_key == cache_key) {
+        if (!SDL_RenderTexture(sdl.renderer, sdl.touch_overlay_texture,
+                               nullptr, nullptr) ||
+            !restore_video_presentation(sdl)) {
+            sdl_error("Could not present cached touch controls");
+        }
+        return;
+    }
+    auto cache_rendering = sdl.touch_overlay_texture != nullptr;
+    if (cache_rendering) {
+        if (!SDL_SetRenderTarget(sdl.renderer, sdl.touch_overlay_texture) ||
+            !SDL_SetRenderDrawBlendMode(sdl.renderer, SDL_BLENDMODE_NONE) ||
+            !SDL_SetRenderDrawColor(sdl.renderer, 0, 0, 0, 0) ||
+            !SDL_RenderClear(sdl.renderer) ||
+            !SDL_SetRenderDrawBlendMode(sdl.renderer, SDL_BLENDMODE_BLEND)) {
+            static_cast<void>(SDL_SetRenderTarget(sdl.renderer, nullptr));
+            sdl.touch_overlay_cache_valid = false;
+            cache_rendering = false;
+        }
+    }
+    static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
+                                                 SDL_BLENDMODE_BLEND));
+    const auto finish = [&]() {
+        if (cache_rendering) {
+            if (!SDL_SetRenderTarget(sdl.renderer, nullptr)) {
+                sdl_error("Could not finish touch overlay cache");
+            }
+            sdl.touch_overlay_cache_key = cache_key;
+            sdl.touch_overlay_cache_valid = true;
+            if (!SDL_RenderTexture(sdl.renderer, sdl.touch_overlay_texture,
+                                   nullptr, nullptr)) {
+                sdl_error("Could not present touch overlay cache");
+            }
+        }
+        if (!restore_video_presentation(sdl)) {
+            sdl_error("Could not restore game presentation after touch controls");
+        }
+        static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
+                                                      SDL_BLENDMODE_NONE));
+    };
     const auto alpha = static_cast<std::uint8_t>(std::clamp(
         opacity * 255.0F, 0.0F, 255.0F));
     const auto point_for = [&sdl, have_game_viewport,
@@ -414,11 +505,7 @@ void present_touch_controls(SdlResources& sdl) {
         draw_branded_touch_system(sdl.renderer, point_for(4), size, alpha,
                                   sdl.touch_buttons[7], "START");
 
-        if (!restore_video_presentation(sdl)) {
-            sdl_error("Could not restore game presentation");
-        }
-        static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
-                                                     SDL_BLENDMODE_NONE));
+        finish();
         return;
     }
 
@@ -497,11 +584,7 @@ void present_touch_controls(SdlResources& sdl) {
     draw_branded_touch_system(sdl.renderer, point_for(4), size, alpha,
                               sdl.touch_buttons[7], "START");
 
-    if (!restore_video_presentation(sdl)) {
-        sdl_error("Could not restore game presentation");
-    }
-    static_cast<void>(SDL_SetRenderDrawBlendMode(sdl.renderer,
-                                                 SDL_BLENDMODE_NONE));
+    finish();
     return;
 }
 

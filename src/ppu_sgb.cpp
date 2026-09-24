@@ -383,6 +383,8 @@ void Ppu::apply_sgb_command(
     case 0x13: { // CHR_TRN
         sgb_border_transferred_ = false;
         sgb_border_loading_ = true;
+        sgb_border_cache_valid_ = false;
+        ++sgb_border_revision_;
         const auto bank = static_cast<std::size_t>(packet[1] & 1U);
         sgb_transfer_ = bank == 0 ? SgbTransfer::chr_low : SgbTransfer::chr_high;
         sgb_transfer_countdown_ = sgb_transfer_delay_frames;
@@ -391,6 +393,8 @@ void Ppu::apply_sgb_command(
     case 0x14: // PCT_TRN
         sgb_border_transferred_ = false;
         sgb_border_loading_ = true;
+        sgb_border_cache_valid_ = false;
+        ++sgb_border_revision_;
         sgb_transfer_ = SgbTransfer::border;
         sgb_transfer_countdown_ = sgb_transfer_delay_frames;
         break;
@@ -485,6 +489,8 @@ void Ppu::complete_sgb_transfer() noexcept {
         }
         sgb_border_transferred_ = true;
         sgb_border_loading_ = false;
+        sgb_border_cache_valid_ = false;
+        ++sgb_border_revision_;
         break;
     case SgbTransfer::none: break;
     }
@@ -498,51 +504,40 @@ const Ppu::SgbFramebuffer& Ppu::sgb_framebuffer() const noexcept {
     // fallback deterministic when no cartridge border transfer has started.
     constexpr std::size_t viewport_x = (sgb_border_width - screen_width) / 2;
     constexpr std::size_t viewport_y = (sgb_border_height - screen_height) / 2;
-    if (!sgb_border_transferred_ && !sgb_border_loading_) {
-        // Keep the fallback immutable and shared: frontends request the
-        // composed frame every video tick, so regenerating 57,344 border
-        // pixels per frame would needlessly compete with emulation on mobile.
-        static const auto default_border = make_default_sgb_border();
-        *sgb_framebuffer_ = default_border;
-        for (std::size_t y = 0; y < screen_height; ++y) {
-            std::copy_n(framebuffer_->begin() + y * screen_width, screen_width,
-                        sgb_framebuffer_->begin() +
-                            (y + viewport_y) * sgb_border_width + viewport_x);
-        }
-        return *sgb_framebuffer_;
-    }
+    if (!sgb_border_cache_valid_) {
+        if (!sgb_border_transferred_ && !sgb_border_loading_) {
+            // Keep the fallback immutable and shared: frontends request the
+            // composed frame every video tick, so regenerating 57,344 border
+            // pixels per frame would needlessly compete with emulation on
+            // mobile.
+            static const auto default_border = make_default_sgb_border();
+            *sgb_framebuffer_ = default_border;
+        } else if (sgb_border_loading_) {
+            sgb_framebuffer_->fill(black);
+        } else {
+            const auto expand = [](const unsigned component) {
+                return (component << 3) | (component >> 2);
+            };
+            const auto border_color = [&](const unsigned palette,
+                                      const unsigned color) {
+                // PCT border tilemap entries select one of four 16-colour
+                // palettes. The Game Boy viewport uses its separate
+                // four-colour SGB palettes.
+                if (palette > 3) return black;
+                const auto offset = 0x800U + palette * 32U +
+                                    std::min<unsigned>(color, 15U) * 2U;
+                if (offset + 1 >= sgb_border_pct_->size()) return black;
+                const auto rgb555 = static_cast<std::uint16_t>(
+                    (*sgb_border_pct_)[offset] |
+                    (static_cast<std::uint16_t>((*sgb_border_pct_)[offset + 1])
+                     << 8));
+                return UINT32_C(0xFF000000) | (expand(rgb555 & 0x1FU) << 16) |
+                       (expand((rgb555 >> 5) & 0x1FU) << 8) |
+                       expand((rgb555 >> 10) & 0x1FU);
+            };
 
-    sgb_framebuffer_->fill(black);
-    if (sgb_border_loading_) {
-        for (std::size_t y = 0; y < screen_height; ++y) {
-            std::copy_n(framebuffer_->begin() + y * screen_width, screen_width,
-                        sgb_framebuffer_->begin() +
-                            (y + viewport_y) * sgb_border_width + viewport_x);
-        }
-        return *sgb_framebuffer_;
-    }
-
-    const auto expand = [](const unsigned component) {
-        return (component << 3) | (component >> 2);
-    };
-    const auto border_color = [&](const unsigned palette,
-                                  const unsigned color) {
-        // PCT border tilemap entries select one of four 16-colour palettes.
-        // The Game Boy viewport uses its separate four-colour SGB palettes.
-        if (palette > 3) return black;
-        const auto offset = 0x800U + palette * 32U +
-                            std::min<unsigned>(color, 15U) * 2U;
-        if (offset + 1 >= sgb_border_pct_->size()) return black;
-        const auto rgb555 = static_cast<std::uint16_t>(
-            (*sgb_border_pct_)[offset] |
-            (static_cast<std::uint16_t>((*sgb_border_pct_)[offset + 1]) << 8));
-        return UINT32_C(0xFF000000) | (expand(rgb555 & 0x1FU) << 16) |
-               (expand((rgb555 >> 5) & 0x1FU) << 8) |
-               expand((rgb555 >> 10) & 0x1FU);
-    };
-
-    for (std::size_t tile_y = 0; tile_y < 28; ++tile_y) {
-        for (std::size_t tile_x = 0; tile_x < 32; ++tile_x) {
+            for (std::size_t tile_y = 0; tile_y < 28; ++tile_y) {
+                for (std::size_t tile_x = 0; tile_x < 32; ++tile_x) {
             const auto map_offset = (tile_y * 32 + tile_x) * 2;
             const auto map_entry = static_cast<std::uint16_t>(
                 (*sgb_border_pct_)[map_offset] |
@@ -592,7 +587,18 @@ const Ppu::SgbFramebuffer& Ppu::sgb_framebuffer() const noexcept {
                     }
                 }
             }
+                }
+            }
         }
+        sgb_border_cache_valid_ = true;
+    }
+    // The border is cached, but the centered Game Boy viewport changes every
+    // frame. Copy only that 160x144 region instead of rebuilding all 256x224
+    // border pixels.
+    for (std::size_t y = 0; y < screen_height; ++y) {
+        std::copy_n(framebuffer_->begin() + y * screen_width, screen_width,
+                    sgb_framebuffer_->begin() +
+                        (y + viewport_y) * sgb_border_width + viewport_x);
     }
     return *sgb_framebuffer_;
 }

@@ -649,6 +649,10 @@ const Ppu::SgbFramebuffer& MemoryBus::sgb_framebuffer() const noexcept {
     return ppu_.sgb_framebuffer();
 }
 
+std::uint64_t MemoryBus::debug_sgb_border_revision() const noexcept {
+    return ppu_.debug_sgb_border_revision();
+}
+
 bool MemoryBus::frame_ready() const noexcept { return ppu_.frame_ready(); }
 
 void MemoryBus::consume_frame() noexcept { ppu_.consume_frame(); }

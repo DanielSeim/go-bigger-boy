@@ -7,6 +7,7 @@
 #include <SDL3/SDL.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <utility>
@@ -22,6 +23,7 @@ namespace gbb::sdl {
 inline constexpr float android_link_menu_max_width = 500.0F;
 inline constexpr float android_link_menu_min_row_height = 44.0F;
 [[nodiscard]] bool touch_is_landscape(const SdlResources& sdl);
+[[nodiscard]] std::pair<int, int> android_render_size(const SdlResources& sdl);
 [[nodiscard]] std::size_t touch_layout_offset(const SdlResources& sdl);
 [[nodiscard]] float touch_game_scale(const SdlResources& sdl);
 [[nodiscard]] float touch_control_scale(const SdlResources& sdl);
@@ -34,6 +36,9 @@ inline constexpr float android_link_menu_min_row_height = 44.0F;
                                           float y);
 [[nodiscard]] bool android_link_touch_hit(const SdlResources& sdl, float x,
                                           float y);
+enum class AndroidOverlayButton : std::uint8_t { none, menu, link };
+[[nodiscard]] AndroidOverlayButton android_overlay_button_hit(
+    const SdlResources& sdl, float x, float y);
 [[nodiscard]] bool android_menu_button_hit(const SdlResources& sdl, float x,
                                            float y);
 [[nodiscard]] std::pair<float, float> touch_control_position(
@@ -54,7 +59,7 @@ void refresh_touch_settings_if_changed(
 [[nodiscard]] std::pair<float, float> logical_touch_position(
     const SDL_TouchFingerEvent& event, SdlResources& sdl);
 [[nodiscard]] std::pair<float, float> window_touch_position(
-    const SDL_TouchFingerEvent& event);
+    const SDL_TouchFingerEvent& event, const SdlResources& sdl);
 
 #endif
 

@@ -210,6 +210,23 @@ bool check_page_isolation(HWND dashboard) {
     passed &= !visible_child(dashboard, L"Filter games");
     passed &= !visible_child(dashboard, L"Keyboard shortcuts");
 
+    // The FPS checkbox must remain on General. This exercises the actual
+    // control notification path and catches accidental ID collisions with
+    // the Controls section button.
+    const auto show_fps = child_by_text(dashboard, L"Show FPS counter");
+    if (show_fps == nullptr) {
+        passed = false;
+    } else {
+        SendMessageW(dashboard, WM_COMMAND,
+                     MAKEWPARAM(static_cast<WORD>(GetDlgCtrlID(show_fps)),
+                                BN_CLICKED),
+                     reinterpret_cast<LPARAM>(show_fps));
+        passed &= wait_for([&] {
+            return visible_child(dashboard, L"Display palette") &&
+                   !visible_child(dashboard, L"Keyboard controls");
+        });
+    }
+
     passed &= send_dashboard_command(dashboard, 112);
     passed &= wait_for([&] {
         return visible_child(dashboard, L"Keyboard shortcuts");

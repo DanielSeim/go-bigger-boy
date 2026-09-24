@@ -96,6 +96,7 @@ private:
     void capture_camera_image() noexcept;
 
     std::vector<std::uint8_t> rom_;
+    std::uint64_t rom_fingerprint_{};
     std::vector<std::uint8_t> ram_;
     std::filesystem::path save_path_;
     std::filesystem::path rtc_path_;

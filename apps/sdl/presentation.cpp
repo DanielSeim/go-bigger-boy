@@ -9,6 +9,7 @@
 
 #ifdef __ANDROID__
 #include "android_touch_input.hpp"
+#include "emulation_session.hpp"
 #endif
 
 #include <stdexcept>
@@ -19,6 +20,19 @@
 namespace gbb::sdl {
 
 namespace {
+
+std::uint64_t sgb_border_source_key(
+    const std::uint64_t border_revision,
+    const std::uint64_t rom_fingerprint,
+    const gameboy::DisplayPalette& palette) {
+    std::uint64_t key = border_revision ^ rom_fingerprint;
+    for (const auto color : palette.colors) {
+        key ^= color;
+        key *= UINT64_C(1099511628211);
+    }
+    key ^= palette.cgb_compatibility ? UINT64_C(1) : UINT64_C(0);
+    return key;
+}
 
 [[noreturn]] void presentation_error(const char* action) {
     throw std::runtime_error(std::string{action} + ": " + SDL_GetError());
@@ -37,7 +51,7 @@ void present_fps_overlay(SdlResources& sdl, const bool enabled,
         sdl.fps_value = sample->fps;
         ++sdl.fps_log_windows;
         if (sdl.fps_log_windows >= 4U) {
-            if (gbb::Logger::instance().enabled(gbb::LogLevel::debug)) {
+        if (gbb::Logger::instance().enabled(gbb::LogLevel::debug)) {
                 gbb::log_frontend(
                     gbb::LogLevel::debug,
                     std::string("fps_sample fps=") +
@@ -46,6 +60,54 @@ void present_fps_overlay(SdlResources& sdl, const bool enabled,
                         " video_mode=" +
                         std::string(gameboy::video_mode_info(sdl.video_mode).id));
             }
+#ifdef __ANDROID__
+            const auto voxel_mode =
+                sdl.video_mode == gameboy::VideoMode::voxel_diorama ||
+                sdl.video_mode == gameboy::VideoMode::voxel_shape ||
+                sdl.video_mode == gameboy::VideoMode::voxel_popup;
+            if (voxel_mode) {
+                SDL_Log("GBB fps_sample fps=%.2f mode=%s voxel_total_us=%llu "
+                        "scene_us=%llu scene_build_us=%llu pixel_us=%llu "
+                        "geometry_build_us=%llu sort_us=%llu submit_us=%llu "
+                        "rendered_frames=%llu cache_hits=%llu cache_misses=%llu "
+                        "mesh_vertices=%llu mesh_indices=%llu",
+                        sdl.fps_value,
+                        std::string(gameboy::video_mode_info(sdl.video_mode).id)
+                            .c_str(),
+                        static_cast<unsigned long long>(
+                            sdl.voxel_stats.total_us),
+                        static_cast<unsigned long long>(
+                            sdl.voxel_stats.scene_snapshot_us),
+                        static_cast<unsigned long long>(
+                            sdl.voxel_stats.scene_build_us),
+                        static_cast<unsigned long long>(
+                            sdl.voxel_stats.pixel_transform_us),
+                        static_cast<unsigned long long>(
+                            sdl.voxel_stats.geometry_build_us),
+                        static_cast<unsigned long long>(
+                            sdl.voxel_stats.geometry_sort_us),
+                        static_cast<unsigned long long>(
+                            sdl.voxel_stats.geometry_submit_us),
+                        static_cast<unsigned long long>(
+                            sdl.voxel_stats.rendered_frames),
+                        static_cast<unsigned long long>(
+                            sdl.voxel_stats.render_cache_hits),
+                        static_cast<unsigned long long>(
+                            sdl.voxel_stats.rendered_frames >
+                                    sdl.voxel_stats.render_cache_hits
+                                ? sdl.voxel_stats.rendered_frames -
+                                      sdl.voxel_stats.render_cache_hits
+                                : 0),
+                        static_cast<unsigned long long>(
+                            sdl.voxel_stats.mesh_vertices),
+                        static_cast<unsigned long long>(
+                            sdl.voxel_stats.mesh_indices));
+            } else {
+                SDL_Log("GBB fps_sample fps=%.2f mode=%s", sdl.fps_value,
+                        std::string(gameboy::video_mode_info(sdl.video_mode).id)
+                            .c_str());
+            }
+#endif
             sdl.fps_log_windows = 0;
         }
     }
@@ -97,17 +159,126 @@ void present_frame(const PresentationContext& context) {
             presentation_error("Could not present link status");
         }
     } else if (context.core != nullptr) {
+        const auto voxel_mode =
+            sdl.video_mode == gameboy::VideoMode::voxel_diorama ||
+            sdl.video_mode == gameboy::VideoMode::voxel_shape ||
+            sdl.video_mode == gameboy::VideoMode::voxel_popup;
+        const auto native_gameboy_surface =
+            sdl.core_video_width == gameboy::Ppu::screen_width &&
+            sdl.core_video_height == gameboy::Ppu::screen_height;
+#ifdef __ANDROID__
+        const auto sgb_gameboy_surface =
+            sdl.core_video_width == gameboy::Ppu::sgb_border_width &&
+            sdl.core_video_height == gameboy::Ppu::sgb_border_height;
+#else
+        constexpr auto sgb_gameboy_surface = false;
+#endif
         if (context.emulator != nullptr &&
             has_capability(context.core->descriptor().capabilities,
                            CoreCapability::scene_layers) &&
-            sdl.core_video_width == gameboy::Ppu::screen_width &&
-            sdl.core_video_height == gameboy::Ppu::screen_height &&
-            (sdl.video_mode == gameboy::VideoMode::voxel_diorama ||
-             sdl.video_mode == gameboy::VideoMode::voxel_shape ||
-             sdl.video_mode == gameboy::VideoMode::voxel_popup)) {
+            voxel_mode && (native_gameboy_surface || sgb_gameboy_surface)) {
+#ifdef __ANDROID__
+            const auto portrait_voxel = !touch_is_landscape(sdl);
+            SDL_FRect full_output{};
+            if (portrait_voxel) {
+                full_output = android_portrait_game_rect(sdl);
+            } else if (!SDL_GetRenderLogicalPresentationRect(
+                           sdl.renderer, &full_output)) {
+                full_output = SDL_FRect{0.0F, 0.0F,
+                                        static_cast<float>(sdl.core_video_width),
+                                        static_cast<float>(sdl.core_video_height)};
+            }
+            const auto voxel_output = sgb_gameboy_surface
+                                          ? SDL_FRect{
+                                                full_output.x + full_output.w * 48.0F / 256.0F,
+                                                full_output.y + full_output.h * 40.0F / 224.0F,
+                                                full_output.w * 160.0F / 256.0F,
+                                                full_output.h * 144.0F / 224.0F}
+                                          : full_output;
+            // The SGB texture contains the border and the centered 160x144
+            // viewport. Paint that complete surface first; the voxel mesh is
+            // then composited only into the native viewport rectangle.
+            if (!SDL_SetRenderLogicalPresentation(
+                    sdl.renderer, 0, 0,
+                    SDL_LOGICAL_PRESENTATION_DISABLED) ||
+                !SDL_SetRenderScale(sdl.renderer, 1.0F, 1.0F) ||
+                !SDL_SetRenderViewport(sdl.renderer, nullptr)) {
+                presentation_error("Could not prepare voxel presentation");
+            }
+            if (sgb_gameboy_surface) {
+                FrameRenderContext frame_context{
+                    sdl.renderer, sdl.texture, sdl.link_texture, sdl.video_mode};
+                const auto border_revision = context.emulator->bus()
+                                                 .debug_sgb_border_revision();
+                const auto source_key = sgb_border_source_key(
+                    border_revision, context.emulator->rom_fingerprint(),
+                    context.palette);
+                if (!sdl.sgb_border_texture_valid ||
+                    sdl.sgb_border_source_key != source_key) {
+                    const auto frame = context.core->video_frame();
+                    colorize_frame(*context.core, frame_context, context.palette,
+                                   sdl.presentation_pixels);
+                    if (!SDL_UpdateTexture(
+                            sdl.sgb_border_texture, nullptr,
+                            sdl.presentation_pixels.data(),
+                            static_cast<int>(frame.width * sizeof(std::uint32_t)))) {
+                        presentation_error("Could not present SGB voxel backdrop");
+                    }
+                    sdl.sgb_border_texture_key = source_key;
+                    sdl.sgb_border_source_key = source_key;
+                    sdl.sgb_border_texture_valid = true;
+                }
+                // Leave the 160x144 viewport hole empty. The voxel renderer
+                // owns that rectangle; drawing the complete SGB texture here
+                // would leave a second copy of the Game Boy image underneath
+                // it and becomes visible at the voxel edges.
+                const auto draw_sgb_slice = [&](const SDL_FRect& source,
+                                                const SDL_FRect& destination) {
+                    return SDL_RenderTexture(sdl.renderer, sdl.sgb_border_texture,
+                                             &source, &destination);
+                };
+                const SDL_FRect top_source{0.0F, 0.0F, 256.0F, 40.0F};
+                const SDL_FRect bottom_source{0.0F, 184.0F, 256.0F, 40.0F};
+                const SDL_FRect left_source{0.0F, 40.0F, 48.0F, 144.0F};
+                const SDL_FRect right_source{208.0F, 40.0F, 48.0F, 144.0F};
+                const auto inner_x = full_output.x + full_output.w * 48.0F / 256.0F;
+                const auto inner_y = full_output.y + full_output.h * 40.0F / 224.0F;
+                const auto inner_w = full_output.w * 160.0F / 256.0F;
+                const auto inner_h = full_output.h * 144.0F / 224.0F;
+                if (!draw_sgb_slice(
+                        top_source,
+                        SDL_FRect{full_output.x, full_output.y, full_output.w,
+                                  inner_y - full_output.y}) ||
+                    !draw_sgb_slice(
+                        bottom_source,
+                        SDL_FRect{full_output.x, inner_y + inner_h,
+                                  full_output.w,
+                                  full_output.y + full_output.h -
+                                      (inner_y + inner_h)}) ||
+                    !draw_sgb_slice(
+                        left_source,
+                        SDL_FRect{full_output.x, inner_y,
+                                  inner_x - full_output.x, inner_h}) ||
+                    !draw_sgb_slice(
+                        right_source,
+                        SDL_FRect{inner_x + inner_w, inner_y,
+                                  full_output.x + full_output.w -
+                                      (inner_x + inner_w),
+                                  inner_h})) {
+                    presentation_error("Could not present SGB voxel border");
+                }
+            }
+            // Voxel geometry is authored in native 160x144 coordinates.
+            // Render it into its native target, then composite that target
+            // into the same rectangle used by the framebuffer.
+            constexpr auto voxel_output_valid = true;
+#else
+            constexpr auto voxel_output_valid = false;
+            const SDL_FRect voxel_output{};
+#endif
             VoxelRenderContext voxel_context{
                 sdl.renderer,
-                sdl.texture,
+                sdl.voxel_texture != nullptr ? sdl.voxel_texture : sdl.texture,
                 sdl.voxel_render_target,
                 sdl.video_mode,
                 sdl.scene_snapshot,
@@ -124,19 +295,35 @@ void present_frame(const PresentationContext& context) {
                 sdl.voxel_camera_pitch_offset,
                 sdl.voxel_camera_yaw_offset,
                 sdl.voxel_render_cache_key,
-                sdl.voxel_render_cache_valid};
+                sdl.voxel_render_cache_state_key,
+                sdl.voxel_render_cache_valid,
+                sdl.voxel_render_cache_source_pixels,
+                voxel_output,
+                voxel_output_valid};
             if (!render_voxel_diorama(
                     *context.emulator, voxel_context, context.palette,
                     sdl.video_mode == gameboy::VideoMode::voxel_shape,
                     sdl.video_mode == gameboy::VideoMode::voxel_popup)) {
                 presentation_error("Could not render voxel diorama");
             }
+#ifdef __ANDROID__
+            if (!restore_video_presentation(sdl)) {
+                presentation_error("Could not restore voxel presentation");
+            }
+#endif
         } else {
             FrameRenderContext frame_context{
                 sdl.renderer, sdl.texture, sdl.link_texture, sdl.video_mode};
-            colorize_frame(*context.core, frame_context, context.palette,
-                           sdl.presentation_pixels);
             const auto frame = context.core->video_frame();
+            const auto native_colors =
+                context.core->video_frame_native_colors() ||
+                context.core->descriptor().system ==
+                    gbb::SystemId::game_boy_color ||
+                context.palette.cgb_compatibility;
+            gbb::transform_video_frame(
+                frame.pixels, frame.pixel_count, frame.width, frame.height,
+                context.palette, native_colors, sdl.video_mode,
+                sdl.presentation_pixels);
             if (!SDL_UpdateTexture(
                     sdl.texture, nullptr, sdl.presentation_pixels.data(),
                     static_cast<int>(frame.width * sizeof(std::uint32_t)))) {

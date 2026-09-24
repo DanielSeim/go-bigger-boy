@@ -7,7 +7,6 @@
 #include "settings_model.hpp"
 #include "settings_persistence.hpp"
 #include "core_capability.hpp"
-
 #include <algorithm>
 #include <exception>
 
@@ -456,6 +455,16 @@ void handle_desktop_menu_event(SdlEventContext& context) {
 #endif
 
 void handle_mouse_event(const SDL_Event& event, SdlEventContext& context) {
+#ifdef __ANDROID__
+    // SDL may synthesize mouse-button events for a finger tap. Android has a
+    // dedicated touch path below; accepting the synthesized event as well
+    // makes one tap activate both the library and link overlays when their
+    // hit regions overlap in window coordinates.
+    if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
+        event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+        return;
+    }
+#endif
     auto& sdl = context.sdl;
     if (event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
         if (event.button.button != SDL_BUTTON_LEFT) return;
@@ -865,7 +874,7 @@ void handle_gameplay_key_event(const SDL_Event& event,
 void handle_touch_event(const SDL_Event& event, SdlEventContext& context) {
     auto& sdl = context.sdl;
     const auto finger = event.tfinger.fingerID;
-    const auto [touch_x, touch_y] = window_touch_position(event.tfinger);
+    const auto [touch_x, touch_y] = window_touch_position(event.tfinger, sdl);
     if (context.dashboard_visible) {
         if (event.type == SDL_EVENT_FINGER_UP) {
             const auto [logical_x, logical_y] =
@@ -891,9 +900,7 @@ void handle_touch_event(const SDL_Event& event, SdlEventContext& context) {
         if (event.type == SDL_EVENT_FINGER_UP ||
             event.type == SDL_EVENT_FINGER_CANCELED) {
             if (event.type == SDL_EVENT_FINGER_UP) {
-                int width = 1;
-                int height = 1;
-                static_cast<void>(SDL_GetWindowSize(sdl.window, &width, &height));
+                const auto [width, height] = android_render_size(sdl);
                 const auto pixel_x = touch_x * static_cast<float>(width);
                 const auto pixel_y = touch_y * static_cast<float>(height);
                 const auto panel_width = std::min(
@@ -962,12 +969,29 @@ void handle_touch_event(const SDL_Event& event, SdlEventContext& context) {
         [finger](const SdlResources::TouchPoint& point) {
             return point.id == finger;
         });
+    const auto pressed_overlay_button =
+        existing != sdl.touches.end()
+            ? static_cast<AndroidOverlayButton>(existing->overlay_button)
+            : android_overlay_button_hit(sdl, touch_x, touch_y);
+    if (event.type == SDL_EVENT_FINGER_DOWN) {
+        const auto [output_width, output_height] = android_render_size(sdl);
+        const auto menu_hit = android_overlay_button_hit(sdl, touch_x, touch_y);
+        if (menu_hit != AndroidOverlayButton::none) {
+            SDL_Log("GBB android_overlay_touch raw=%.5f,%.5f window=%.5f,%.5f "
+                    "output=%dx%d hit=%s",
+                    event.tfinger.x, event.tfinger.y, touch_x, touch_y,
+                    output_width, output_height,
+                    menu_hit == AndroidOverlayButton::menu ? "menu" : "link");
+        }
+    }
     if (event.type == SDL_EVENT_FINGER_UP ||
         event.type == SDL_EVENT_FINGER_CANCELED) {
         if (existing != sdl.touches.end()) sdl.touches.erase(existing);
     } else if (existing == sdl.touches.end()) {
-        const auto menu_tap = android_menu_touch_hit(sdl, touch_x, touch_y);
-        const auto link_tap = android_link_touch_hit(sdl, touch_x, touch_y);
+        const auto overlay_button =
+            android_overlay_button_hit(sdl, touch_x, touch_y);
+        const auto menu_tap = overlay_button == AndroidOverlayButton::menu;
+        const auto link_tap = overlay_button == AndroidOverlayButton::link;
         const auto control = touch_button_index(touch_x, touch_y, sdl);
         const auto orbit = supports(context.core.get(),
                                     CoreCapability::scene_layers) &&
@@ -975,8 +999,9 @@ void handle_touch_event(const SDL_Event& event, SdlEventContext& context) {
                            voxel_mode_enabled(sdl) &&
                            sdl.touch_settings.voxel_orbit && !control;
         sdl.touches.push_back(
-            {finger, touch_x, touch_y, orbit, orbit ? std::nullopt : control,
-             std::nullopt});
+            {finger, touch_x, touch_y, orbit,
+             static_cast<std::uint8_t>(pressed_overlay_button),
+             orbit ? std::nullopt : control, std::nullopt});
     } else {
         if (event.type == SDL_EVENT_FINGER_MOTION && existing->orbit &&
             supports(context.core.get(), CoreCapability::scene_layers) &&
@@ -1026,12 +1051,18 @@ void handle_touch_event(const SDL_Event& event, SdlEventContext& context) {
     // following FINGER_UP enter the popup handler and close the menu again,
     // so users had to hold the button to keep it visible.
     if (event.type == SDL_EVENT_FINGER_UP &&
-        android_menu_touch_hit(sdl, touch_x, touch_y)) {
+        pressed_overlay_button == AndroidOverlayButton::menu) {
+        SDL_Log("GBB android_overlay_action button=library");
         clear_touch_buttons(context.core.get(), sdl);
-        sdl.android_menu_visible = true;
+        if (context.open_library) {
+            context.open_library();
+        } else {
+            sdl.android_menu_visible = true;
+        }
         sdl.android_link_menu_visible = false;
     } else if (event.type == SDL_EVENT_FINGER_UP &&
-               android_link_touch_hit(sdl, touch_x, touch_y)) {
+               pressed_overlay_button == AndroidOverlayButton::link) {
+        SDL_Log("GBB android_overlay_action button=link");
         clear_touch_buttons(context.core.get(), sdl);
         sdl.android_link_menu_visible = true;
         sdl.android_menu_visible = false;

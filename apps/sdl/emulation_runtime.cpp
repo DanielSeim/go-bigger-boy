@@ -178,6 +178,7 @@ using gbb::sdl::update_rumble;
 #ifdef __ANDROID__
 using gbb::sdl::android_link_menu_max_width;
 using gbb::sdl::android_link_menu_min_row_height;
+using gbb::sdl::android_render_size;
 using gbb::sdl::android_touch_action_diameter;
 using gbb::sdl::android_touch_dpad_dimension;
 using gbb::sdl::android_touch_system_height;
@@ -492,7 +493,9 @@ void present_menu_button(SdlResources& sdl) {
     if (sdl.android_menu_visible || sdl.android_link_menu_visible) {
         int width = 1;
         int height = 1;
-        static_cast<void>(SDL_GetWindowSize(sdl.window, &width, &height));
+        const auto render_size = android_render_size(sdl);
+        width = render_size.first;
+        height = render_size.second;
         const auto panel_width = std::min(
             static_cast<float>(width) * 0.86F,
             android_link_menu_max_width);
@@ -2220,6 +2223,42 @@ int run_emulation(int argc, char** argv) {
                     std::to_string(sdl.voxel_stats.total_us) +
                     " voxel_render_cache_hits=" +
                     std::to_string(sdl.voxel_stats.render_cache_hits));
+            }
+#ifdef __ANDROID__
+            if (show_fps && frontend_frame % 60U == 0U) {
+                const auto voxel_mode =
+                    sdl.video_mode == gameboy::VideoMode::voxel_diorama ||
+                    sdl.video_mode == gameboy::VideoMode::voxel_shape ||
+                    sdl.video_mode == gameboy::VideoMode::voxel_popup;
+                SDL_Log("GBB frame_timing fps=%.2f work_us=%llu "
+                        "events_us=%llu emulation_us=%llu core_steps=%llu "
+                        "core_step_avg_us=%llu core_step_max_us=%llu "
+                        "audio_us=%llu present_us=%llu wait_us=%llu "
+                        "voxel_total_us=%llu",
+                        sdl.fps_value,
+                        static_cast<unsigned long long>(microseconds_between(
+                            frame_started, presentation_started)),
+                        static_cast<unsigned long long>(microseconds_between(
+                            frame_started, events_finished)),
+                        static_cast<unsigned long long>(microseconds_between(
+                            events_finished, audio_started)),
+                        static_cast<unsigned long long>(core_step_count),
+                        static_cast<unsigned long long>(
+                            core_step_count == 0
+                                ? 0
+                                : core_step_total_us / core_step_count),
+                        static_cast<unsigned long long>(core_step_max_us),
+                        static_cast<unsigned long long>(microseconds_between(
+                            audio_started, audio_finished)),
+                        static_cast<unsigned long long>(microseconds_between(
+                            presentation_started, presentation_finished)),
+                        static_cast<unsigned long long>(microseconds_between(
+                            pacing_started, pacing_finished)),
+                        static_cast<unsigned long long>(
+                            voxel_mode ? sdl.voxel_stats.total_us : 0));
+            }
+#endif
+            if (frontend_frame % 60U == 0U) {
                 frame_timing_window_start = pacing_finished;
                 rewind_capture_count = 0;
                 rewind_capture_total_us = 0;

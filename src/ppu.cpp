@@ -54,6 +54,8 @@ void Ppu::set_cgb_late_revision(const bool enabled) noexcept {
 
 void Ppu::set_sgb_mode(const bool enabled) noexcept {
     sgb_mode_ = enabled;
+    sgb_border_cache_valid_ = false;
+    ++sgb_border_revision_;
     if (!enabled) {
         // A transfer command cannot complete after the SGB adapter is
         // detached. Do not let a stale countdown leak into a later state.
@@ -76,6 +78,10 @@ void Ppu::set_sgb_mode(const bool enabled) noexcept {
     sgb_transfer_ = SgbTransfer::none;
     sgb_transfer_countdown_ = 0;
     sgb_mask_mode_ = 0;
+}
+
+std::uint64_t Ppu::debug_sgb_border_revision() const noexcept {
+    return sgb_border_revision_;
 }
 
 bool Ppu::cgb_mode() const noexcept { return cgb_mode_; }

@@ -39,7 +39,14 @@ struct VoxelRenderContext {
     float& voxel_camera_pitch_offset;
     float& voxel_camera_yaw_offset;
     std::uint64_t& voxel_render_cache_key;
+    std::uint64_t& voxel_render_cache_state_key;
     bool& voxel_render_cache_valid;
+    std::vector<std::uint32_t>& voxel_render_cache_source_pixels;
+    // Optional full-window destination used by Android portrait mode. The
+    // voxel mesh remains in native 160x144 coordinates and is composited into
+    // this rectangle after rendering, just like the normal framebuffer path.
+    SDL_FRect output_rect{};
+    bool output_rect_valid{};
 };
 
 [[nodiscard]] SDL_FColor voxel_color(std::uint32_t pixel, float shade,
