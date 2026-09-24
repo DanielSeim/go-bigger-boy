@@ -27,23 +27,14 @@ namespace {
 void present_fps_overlay(SdlResources& sdl, const bool enabled,
                          const bool dashboard_visible) {
     if (!enabled || dashboard_visible) {
-        sdl.fps_window_start = {};
-        sdl.fps_window_frames = 0;
+        sdl.fps_metrics.reset();
         sdl.fps_log_windows = 0;
         sdl.fps_value = 0.0F;
         return;
     }
     const auto now = std::chrono::steady_clock::now();
-    if (sdl.fps_window_start.time_since_epoch().count() == 0) {
-        sdl.fps_window_start = now;
-    }
-    ++sdl.fps_window_frames;
-    const auto elapsed = std::chrono::duration<float>(
-        now - sdl.fps_window_start).count();
-    if (elapsed >= 0.5F) {
-        sdl.fps_value = static_cast<float>(sdl.fps_window_frames) / elapsed;
-        sdl.fps_window_start = now;
-        sdl.fps_window_frames = 0;
+    if (const auto sample = sdl.fps_metrics.observe(now); sample.has_value()) {
+        sdl.fps_value = sample->fps;
         ++sdl.fps_log_windows;
         if (sdl.fps_log_windows >= 4U) {
             if (gbb::Logger::instance().enabled(gbb::LogLevel::debug)) {
@@ -51,7 +42,7 @@ void present_fps_overlay(SdlResources& sdl, const bool enabled,
                     gbb::LogLevel::debug,
                     std::string("fps_sample fps=") +
                         std::to_string(sdl.fps_value) +
-                        " window_ms=" + std::to_string(elapsed * 1000.0F) +
+                        " window_ms=" + std::to_string(sample->window_ms) +
                         " video_mode=" +
                         std::string(gameboy::video_mode_info(sdl.video_mode).id));
             }

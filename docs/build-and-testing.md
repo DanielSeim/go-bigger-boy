@@ -12,6 +12,28 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
+## Performance and load testing
+
+Normal native test builds include a deterministic emulation load test and a
+focused FPS-metrics unit test. The load test runs a synthetic ROM for 600
+frames, exercises CPU, PPU, timer, APU, input, and framebuffer paths, and
+prints structured `performance_metric` records for the emulated FPS, cycles,
+audio samples, and FPS measurement windows:
+
+```sh
+cmake -S . -B build-performance -DCMAKE_BUILD_TYPE=Release
+cmake --build build-performance --target \
+  gameboy_frame_rate_metrics_tests gameboy_emulation_performance_tests
+ctest --test-dir build-performance -L performance --output-on-failure
+```
+
+The default performance floor is 30 emulated frames per second. Override it
+for a slower or virtualized development machine with
+`GBB_PERF_MIN_FPS=10`; this changes only the threshold, not the workload or
+the deterministic frame-progress checks. Sanitizer builds omit the
+wall-clock performance test because instrumentation changes timing too much;
+their functional and diagnostic coverage remains enabled.
+
 ## Fuzzing
 
 Parser/protocol fuzzing is opt-in and requires a Clang toolchain with

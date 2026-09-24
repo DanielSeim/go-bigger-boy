@@ -36,6 +36,9 @@ option(GAMEBOY_ENABLE_THREAD_SANITIZER
 option(GAMEBOY_BUILD_FUZZERS
        "Build opt-in libFuzzer parser and protocol targets"
        OFF)
+option(GAMEBOY_BUILD_PERFORMANCE_TESTS
+       "Build deterministic emulation load and FPS performance tests"
+       ON)
 set(GAMEBOY_TEST_ROM_DIR "" CACHE PATH
     "Optional root of the c-sp Game Boy test ROM bundle")
 set(GAMEBOY_SAMESUITE_DIR "" CACHE PATH
@@ -952,6 +955,29 @@ if(GAMEBOY_BUILD_TESTS)
         PRIVATE gbb_core_api)
     add_test(NAME gameboy_core_runtime_link_scheduler
              COMMAND gameboy_core_runtime_link_scheduler_tests)
+
+    if(GAMEBOY_BUILD_PERFORMANCE_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID AND
+       NOT GAMEBOY_ENABLE_SANITIZERS AND NOT GAMEBOY_ENABLE_THREAD_SANITIZER)
+        add_executable(gameboy_frame_rate_metrics_tests
+            tests/frame_rate_metrics_tests.cpp)
+        target_include_directories(gameboy_frame_rate_metrics_tests
+            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/apps/sdl)
+        add_test(NAME gameboy_frame_rate_metrics
+                 COMMAND gameboy_frame_rate_metrics_tests)
+        set_tests_properties(gameboy_frame_rate_metrics
+                             PROPERTIES LABELS "performance")
+
+        add_executable(gameboy_emulation_performance_tests
+            tests/emulation_performance_tests.cpp)
+        target_include_directories(gameboy_emulation_performance_tests
+            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/apps/sdl)
+        target_link_libraries(gameboy_emulation_performance_tests
+            PRIVATE gbb_core_api)
+        add_test(NAME gameboy_emulation_performance
+                 COMMAND gameboy_emulation_performance_tests)
+        set_tests_properties(gameboy_emulation_performance
+                             PROPERTIES LABELS "performance" TIMEOUT 30)
+    endif()
 
     add_executable(gameboy_link_packet_codec_tests
         tests/link_packet_codec_tests.cpp)

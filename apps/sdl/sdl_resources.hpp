@@ -9,6 +9,7 @@
 #include "gbb/scene.hpp"
 #include "gbb/voxel_profile.hpp"
 #include "gbb/voxel_scene.hpp"
+#include "frame_rate_metrics.hpp"
 
 #include <SDL3/SDL.h>
 
@@ -60,8 +61,7 @@ class SdlResources {
     float voxel_camera_yaw_offset{};
     bool voxel_camera_dragging{};
     bool split_screen{};
-    std::chrono::steady_clock::time_point fps_window_start{};
-    std::uint32_t fps_window_frames{};
+    FrameRateMetrics fps_metrics{};
     std::uint32_t fps_log_windows{};
     float fps_value{};
 #ifdef __ANDROID__
