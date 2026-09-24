@@ -602,6 +602,9 @@ if(GAMEBOY_BUILD_TESTS)
         add_test(NAME gameboy_voxel_visual_regression
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_visual_regression_tests.py)
+        add_test(NAME gameboy_visual_regression_gate
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/visual_regression_gate_tests.py)
         if(NOT ANDROID)
             add_test(NAME gameboy_sgb_trace_fixture
                      COMMAND ${Python3_EXECUTABLE}
@@ -1210,6 +1213,28 @@ if(GAMEBOY_BUILD_TESTS)
                      COMMAND gameboy_sdl_render_performance_tests)
             set_tests_properties(gameboy_sdl_render_performance
                                  PROPERTIES LABELS "performance"
+                                            TIMEOUT 90
+                                            SKIP_RETURN_CODE 77
+                                            ENVIRONMENT
+                                            "SDL_AUDIODRIVER=dummy;SDL_VIDEODRIVER=dummy;SDL_RENDER_DRIVER=software;WAYLAND_DISPLAY=")
+            add_test(NAME gameboy_sdl_visual_regression
+                     COMMAND ${Python3_EXECUTABLE}
+                             ${CMAKE_CURRENT_SOURCE_DIR}/scripts/visual_regression_gate.py
+                             --backend sdl-software
+                             --reference-dir
+                             ${CMAKE_CURRENT_SOURCE_DIR}/tests/visual-baselines/sdl-software
+                             --actual-dir
+                             ${CMAKE_CURRENT_BINARY_DIR}/visual-captures/sdl-software
+                             --report
+                             ${CMAKE_CURRENT_BINARY_DIR}/visual-captures/sdl-software/report.json
+                             --mode nearest
+                             --mode voxel
+                             --mode voxel_shape
+                             --mode voxel_popup
+                             --capture-command
+                             $<TARGET_FILE:gameboy_sdl_render_performance_tests>)
+            set_tests_properties(gameboy_sdl_visual_regression
+                                 PROPERTIES LABELS "visual;performance"
                                             TIMEOUT 90
                                             SKIP_RETURN_CODE 77
                                             ENVIRONMENT

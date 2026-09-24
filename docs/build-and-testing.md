@@ -43,8 +43,11 @@ counts; runtime SDL diagnostics also include these stages when
 Set `GBB_RENDER_PERF_CAPTURE_DIR` when running the SDL benchmark to write
 deterministic `nearest.ppm`, `voxel.ppm`, `voxel_shape.ppm`, and
 `voxel_popup.ppm` captures. Desktop CI stores these captures for every
-platform alongside the performance report. The Web browser smoke test stores
-the corresponding canvas captures as PNG artifacts. Compare a capture with
+platform alongside the performance report. The native CTest gate compares
+them with the `sdl-software` baseline under `tests/visual-baselines/`.
+The Web browser smoke test stores the corresponding canvas captures as PNG
+artifacts and compares them with the separate `webgl` baseline using a small
+one-channel tolerance. Compare a capture with
 `scripts/compare_voxel_screenshots.py` when reviewing a backend-specific
 visual change; the existing benchmark also checks direct versus cached RGB
 output pixel-for-pixel.

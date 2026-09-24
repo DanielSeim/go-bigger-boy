@@ -905,7 +905,7 @@ with the dependency-free regression helper:
 
 ```sh
 python3 scripts/compare_voxel_screenshots.py \
-  --reference tests/visual/voxel-popup-reference.png \
+  --reference tests/visual-baselines/sdl-software/voxel_popup.ppm \
   --actual /path/to/capture.ppm \
   --output /tmp/voxel-popup-comparison.json
 ```

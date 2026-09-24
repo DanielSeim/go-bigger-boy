@@ -103,6 +103,19 @@ jobs:
           npx playwright test --config=tests/web/playwright.config.mjs \
             tests/web/frontend.spec.mjs
 
+      - name: Compare Web visual captures
+        run: >-
+          python3 scripts/visual_regression_gate.py
+          --backend webgl
+          --reference-dir tests/visual-baselines/webgl
+          --actual-dir web-visual-captures
+          --report web-visual-captures/report.json
+          --channel-tolerance 1
+          --max-mismatch-fraction 0.0005
+          --mode voxel
+          --mode voxel_shape
+          --mode voxel_popup
+
       - name: Upload Web visual captures
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
