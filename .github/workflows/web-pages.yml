@@ -84,6 +84,8 @@ jobs:
           npx playwright install --with-deps chromium
 
       - name: Run Web frontend browser smoke
+        env:
+          GBB_WEB_CAPTURE_DIR: ${{ github.workspace }}/web-visual-captures
         run: |
           python3 -m http.server 8765 --directory build-web/web \
             > web-smoke-server.log 2>&1 &
@@ -100,6 +102,15 @@ jobs:
           test "$ready" = 1
           npx playwright test --config=tests/web/playwright.config.mjs \
             tests/web/frontend.spec.mjs
+
+      - name: Upload Web visual captures
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: web-visual-captures
+          path: web-visual-captures
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Configure GitHub Pages
         if: github.event_name != 'pull_request'

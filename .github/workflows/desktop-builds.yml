@@ -482,6 +482,7 @@ jobs:
           GBB_LINK_FAULT_TRACE_DIR: ${{ github.workspace }}/build/link-fault-traces
           GBB_REAL_LINK_ARTIFACT_DIR: ${{ github.workspace }}/build/real-link-harness-results
           GBB_RENDER_PERF_JSON: ${{ github.workspace }}/render-performance.json
+          GBB_RENDER_PERF_CAPTURE_DIR: ${{ github.workspace }}/render-captures
         run: >-
           ctest --test-dir build -C Release --output-on-failure
           --output-junit ctest-results.xml
@@ -492,6 +493,7 @@ jobs:
           GBB_LINK_FAULT_TRACE_DIR: ${{ github.workspace }}/build/link-fault-traces
           GBB_REAL_LINK_ARTIFACT_DIR: ${{ github.workspace }}/build/real-link-harness-results
           GBB_RENDER_PERF_JSON: ${{ github.workspace }}/render-performance.json
+          GBB_RENDER_PERF_CAPTURE_DIR: ${{ github.workspace }}/render-captures
         run: >-
           ctest --test-dir build -C Release --output-on-failure
           --exclude-regex '^gameboy_serial_link_contract$'
@@ -545,6 +547,7 @@ jobs:
             render-performance.json
             render-performance-report.md
             render-performance-report.json
+            render-captures
             build/link-fault-traces
             build/real-link-harness-results
           if-no-files-found: ignore

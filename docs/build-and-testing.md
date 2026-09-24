@@ -40,6 +40,15 @@ path while profiling. The JSON report includes per-stage timings and cache-hit
 counts; runtime SDL diagnostics also include these stages when
 `GBB_FRAME_TIMING=1` is enabled.
 
+Set `GBB_RENDER_PERF_CAPTURE_DIR` when running the SDL benchmark to write
+deterministic `nearest.ppm`, `voxel.ppm`, `voxel_shape.ppm`, and
+`voxel_popup.ppm` captures. Desktop CI stores these captures for every
+platform alongside the performance report. The Web browser smoke test stores
+the corresponding canvas captures as PNG artifacts. Compare a capture with
+`scripts/compare_voxel_screenshots.py` when reviewing a backend-specific
+visual change; the existing benchmark also checks direct versus cached RGB
+output pixel-for-pixel.
+
 Desktop CI also writes `render-performance.json`, evaluates it against the
 platform baseline in `tests/render_performance_baseline.json`, and uploads the
 raw and summarized reports. Every mode must remain at least 60 FPS and at

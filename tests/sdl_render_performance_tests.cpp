@@ -71,6 +71,58 @@ bool visible_pixels_match(const std::vector<std::uint8_t>& left,
     return true;
 }
 
+bool write_renderer_capture(SDL_Renderer* renderer,
+                            const std::filesystem::path& output_path) {
+    auto* surface = SDL_RenderReadPixels(renderer, nullptr);
+    if (surface == nullptr) {
+        check(false, std::string("SDL captures the rendered frame: ") +
+                         SDL_GetError());
+        return false;
+    }
+    const auto* format = SDL_GetPixelFormatDetails(surface->format);
+    if (format == nullptr || format->bytes_per_pixel == 0) {
+        check(false, "SDL capture reports an unknown pixel format");
+        SDL_DestroySurface(surface);
+        return false;
+    }
+    std::error_code directory_error;
+    std::filesystem::create_directories(output_path.parent_path(),
+                                        directory_error);
+    if (directory_error) {
+        check(false, "could not create the voxel capture directory");
+        SDL_DestroySurface(surface);
+        return false;
+    }
+    std::ofstream output(output_path, std::ios::binary);
+    if (!output) {
+        check(false, "could not open the voxel capture output");
+        SDL_DestroySurface(surface);
+        return false;
+    }
+    output << "P6\n" << surface->w << ' ' << surface->h << "\n255\n";
+    std::vector<std::uint8_t> row(static_cast<std::size_t>(surface->w) * 3U);
+    for (int y = 0; y < surface->h; ++y) {
+        const auto* source = static_cast<const std::uint8_t*>(surface->pixels) +
+                             static_cast<std::size_t>(y) * surface->pitch;
+        for (int x = 0; x < surface->w; ++x) {
+            std::uint32_t pixel = 0;
+            std::memcpy(&pixel, source + static_cast<std::size_t>(x) *
+                                      format->bytes_per_pixel,
+                        format->bytes_per_pixel);
+            SDL_GetRGB(pixel, format, nullptr,
+                       &row[static_cast<std::size_t>(x) * 3U],
+                       &row[static_cast<std::size_t>(x) * 3U + 1U],
+                       &row[static_cast<std::size_t>(x) * 3U + 2U]);
+        }
+        output.write(reinterpret_cast<const char*>(row.data()),
+                     static_cast<std::streamsize>(row.size()));
+    }
+    const auto success = output.good();
+    if (!success) check(false, "could not write the voxel capture output");
+    SDL_DestroySurface(surface);
+    return success;
+}
+
 std::vector<std::uint8_t> render_test_rom() {
     std::vector<std::uint8_t> rom(0x8000, 0);
     const std::string title = "GBB SDL PERF";
@@ -170,7 +222,8 @@ struct ModeResult final {
 ModeResult benchmark_mode(RenderResources& resources,
                           const gameboy::VideoMode mode,
                           gameboy::Emulator& emulator,
-                          const gameboy::DisplayPalette& palette) {
+                          const gameboy::DisplayPalette& palette,
+                          const std::filesystem::path& capture_directory) {
     gbb::SceneSnapshot scene_snapshot;
     std::filesystem::path profile_path;
     gbb::VoxelProfile profile;
@@ -256,6 +309,13 @@ ModeResult benchmark_mode(RenderResources& resources,
                 mode == gameboy::VideoMode::voxel_popup);
         }
         check(rendered, "the production renderer accepts every benchmark mode");
+        if (!warmup && frame + 1U == warmup_frames + measured_frames &&
+            !capture_directory.empty()) {
+            static_cast<void>(write_renderer_capture(
+                resources.renderer,
+                capture_directory /
+                    (std::string(gameboy::video_mode_info(mode).id) + ".ppm")));
+        }
         check(SDL_RenderPresent(resources.renderer),
               "SDL presents every benchmark frame");
         const auto render_finished = std::chrono::steady_clock::now();
@@ -398,6 +458,12 @@ int main() {
         gameboy::VideoMode::voxel_shape,
         gameboy::VideoMode::voxel_popup,
     };
+    const auto* capture_directory_value =
+        std::getenv("GBB_RENDER_PERF_CAPTURE_DIR");
+    const auto capture_directory =
+        capture_directory_value == nullptr
+            ? std::filesystem::path{}
+            : std::filesystem::u8path(capture_directory_value);
     // The render-target cache is intended to be a presentation optimization,
     // not a second visual implementation. Compare one direct frame against
     // one cached frame for every voxel mode before running the throughput
@@ -482,7 +548,8 @@ int main() {
     for (const auto mode : modes) {
         gameboy::Emulator emulator{gameboy::Cartridge{render_test_rom()}};
         seed_scene(emulator);
-        auto result = benchmark_mode(resources, mode, emulator, palette);
+        auto result = benchmark_mode(resources, mode, emulator, palette,
+                                     capture_directory);
         result.mode = std::string(gameboy::video_mode_info(mode).id);
         results.push_back(result);
         std::cout << std::fixed << std::setprecision(2)

@@ -599,6 +599,9 @@ if(GAMEBOY_BUILD_TESTS)
         add_test(NAME gameboy_render_performance_report
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/render_performance_report_tests.py)
+        add_test(NAME gameboy_voxel_visual_regression
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_visual_regression_tests.py)
         if(NOT ANDROID)
             add_test(NAME gameboy_sgb_trace_fixture
                      COMMAND ${Python3_EXECUTABLE}

@@ -1,5 +1,7 @@
 import {expect, test} from '@playwright/test';
 import {Buffer} from 'node:buffer';
+import {mkdir} from 'node:fs/promises';
+import path from 'node:path';
 
 function makeLoopingRom() {
   // A valid 32 KiB MBC1 cartridge with battery RAM and a deterministic loop
@@ -7,7 +9,28 @@ function makeLoopingRom() {
   // copyrighted game dump while still exercising the real ROM picker and
   // emulator startup path.
   const rom = new Uint8Array(0x8000);
-  rom.set([0x00, 0xc3, 0x00, 0x01], 0x100); // NOP; JP $0100
+  // Turn the LCD off, draw a deterministic striped tile into VRAM, fill the
+  // background map with it, then turn the LCD back on. This gives the voxel
+  // captures real geometry while remaining a tiny, redistribution-safe ROM.
+  const program = [
+    0xf3, 0xaf, 0xe0, 0x40, // DI; XOR A; LCDC = 0
+    0x21, 0x00, 0x80,        // HL = tile 0
+    0x3e, 0xff, 0x22, 0x3e, 0x00, 0x22,
+    0x3e, 0x00, 0x22, 0x3e, 0xff, 0x22,
+    0x3e, 0xff, 0x22, 0x3e, 0x00, 0x22,
+    0x3e, 0x00, 0x22, 0x3e, 0xff, 0x22,
+    0x3e, 0xff, 0x22, 0x3e, 0x00, 0x22,
+    0x3e, 0x00, 0x22, 0x3e, 0xff, 0x22,
+    0x3e, 0xff, 0x22, 0x3e, 0x00, 0x22,
+    0x3e, 0x00, 0x22, 0x3e, 0xff, 0x22,
+    0x3e, 0xe4, 0xe0, 0x47, // BGP = all four shades
+    0xaf, 0xe0, 0x42, 0xe0, 0x43, // SCY/SCX = 0
+    0x21, 0x00, 0x98, 0x01, 0x00, 0x04,
+    0xaf, 0x22, 0x0b, 0x78, 0xb1, 0x20, 0xf9, // fill 0x400 map bytes with 0
+    0x3e, 0x91, 0xe0, 0x40, // LCDC = BG on, tile data 0x8000
+    0x18, 0xfe, // loop forever
+  ];
+  rom.set(program, 0x100);
   const title = new TextEncoder().encode('GBB E2E');
   rom.set(title, 0x134);
   rom[0x147] = 0x03; // MBC1 + RAM + battery
@@ -62,6 +85,20 @@ test('loads a ROM and persists the primary display settings', async ({page}) => 
   });
   await expect(page.locator('#save-actions')).toBeVisible();
   await expect(page).toHaveTitle(/gbb-browser-e2e\.gb/);
+
+  const captureDirectory = process.env.GBB_WEB_CAPTURE_DIR ||
+    'web-visual-captures';
+  await mkdir(captureDirectory, {recursive: true});
+  for (const [mode, name] of [[5, 'voxel'], [6, 'voxel_shape'],
+                              [7, 'voxel_popup']]) {
+    await page.locator('#video-mode').selectOption(String(mode));
+    await page.waitForTimeout(350);
+    const capture = await page.locator('#canvas').screenshot({
+      path: path.join(captureDirectory, `${name}.png`),
+      animations: 'disabled',
+    });
+    expect(capture.length).toBeGreaterThan(1000);
+  }
 
   expect(pageErrors, pageErrors.map(error => error.stack).join('\n'))
     .toEqual([]);
