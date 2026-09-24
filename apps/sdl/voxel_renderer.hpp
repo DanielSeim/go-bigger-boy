@@ -52,6 +52,11 @@ struct VoxelRenderContext {
 [[nodiscard]] SDL_FColor voxel_color(std::uint32_t pixel, float shade,
                                       float ambient = 0.0F);
 
+// The D3D backend currently has an unverified render-target geometry path,
+// but SDL's software renderer is covered by the cross-platform pixel test.
+[[nodiscard]] bool voxel_render_target_cache_supported(
+    SDL_Renderer* renderer) noexcept;
+
 [[nodiscard]] bool render_voxel_diorama(const gameboy::Emulator& emulator,
                                          VoxelRenderContext& context,
                                          const gameboy::DisplayPalette& palette,

@@ -33,16 +33,6 @@ SDL_FColor voxel_color(const std::uint32_t pixel, const float shade,
 
 namespace {
 
-#ifdef _WIN32
-// The Direct3D renderer currently produces backend-dependent geometry when a
-// 160x144 SDL render target is used with SDL_RenderGeometry. Keep Windows on
-// the direct presentation path until that backend path has its own visual
-// proof; correctness is more important than this optional cache.
-constexpr bool voxel_render_target_cache_supported = false;
-#else
-constexpr bool voxel_render_target_cache_supported = true;
-#endif
-
 void mix_render_key(std::uint64_t& key, const std::uint64_t value) noexcept {
     key ^= value + UINT64_C(0x9e3779b97f4a7c15) + (key << 6U) + (key >> 2U);
 }
@@ -95,6 +85,20 @@ std::uint64_t voxel_profile_signature(const gbb::VoxelProfile& profile) {
 
 } // namespace
 
+bool voxel_render_target_cache_supported(SDL_Renderer* renderer) noexcept {
+    if (renderer == nullptr) return false;
+#ifdef _WIN32
+    // The Direct3D renderer still uses direct presentation until its own
+    // render-target geometry path has visual proof. The software backend is
+    // exercised by the Windows visual regression tests and is safe to cache.
+    const auto* renderer_name = SDL_GetRendererName(renderer);
+    return renderer_name != nullptr &&
+           SDL_strcasecmp(renderer_name, "software") == 0;
+#else
+    return true;
+#endif
+}
+
 bool render_voxel_diorama(const gameboy::Emulator& emulator,
                           VoxelRenderContext& context,
                           const gameboy::DisplayPalette& palette,
@@ -138,7 +142,8 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
         context.voxel_render_cache_source_pixels.size() == source_pixels.size() &&
         std::equal(source_pixels.begin(), source_pixels.end(),
                    context.voxel_render_cache_source_pixels.begin());
-    if (voxel_render_target_cache_supported && context.render_target != nullptr &&
+    if (voxel_render_target_cache_supported(context.renderer) &&
+        context.render_target != nullptr &&
         context.voxel_render_cache_valid &&
         context.voxel_render_cache_key == render_key &&
         context.voxel_render_cache_state_key == source_state_key &&
@@ -899,7 +904,7 @@ bool render_voxel_diorama(const gameboy::Emulator& emulator,
         return false;
     }
     bool render_target_active = false;
-    bool use_render_target = voxel_render_target_cache_supported &&
+    bool use_render_target = voxel_render_target_cache_supported(context.renderer) &&
                              context.render_target != nullptr;
     const auto restore_render_target = [&]() {
         if (!render_target_active) return true;

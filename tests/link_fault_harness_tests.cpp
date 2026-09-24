@@ -184,6 +184,10 @@ public:
         }
         peer_->packets_.push_back(*delayed_packet_);
         delayed_packet_.reset();
+        while (!packets_after_delay_.empty()) {
+            peer_->packets_.push_back(packets_after_delay_.front());
+            packets_after_delay_.pop_front();
+        }
     }
 
     void close() noexcept override { state_ = State::disconnected; }
@@ -217,7 +221,14 @@ public:
                 return false;
             }
         }
-        peer_->packets_.push_back(packet);
+        if (delayed_packet_.has_value()) {
+            // A delayed transport packet must not be overtaken by subsequent
+            // packets from this direction; the production TCP channel is
+            // ordered even while a retry is pending.
+            packets_after_delay_.push_back(packet);
+        } else {
+            peer_->packets_.push_back(packet);
+        }
         return true;
     }
 
@@ -231,7 +242,8 @@ public:
     [[nodiscard]] State state() const noexcept override { return state_; }
 
     [[nodiscard]] bool has_pending_work() const noexcept {
-        return !packets_.empty() || delayed_packet_.has_value();
+        return !packets_.empty() || delayed_packet_.has_value() ||
+               !packets_after_delay_.empty();
     }
 
 private:
@@ -241,6 +253,7 @@ private:
     FaultPacketChannel* peer_{};
     State state_{State::disconnected};
     std::deque<gameboy::LinkPacket> packets_;
+    std::deque<gameboy::LinkPacket> packets_after_delay_;
     std::optional<gameboy::LinkPacket> delayed_packet_;
     unsigned delay_polls_{};
 };
