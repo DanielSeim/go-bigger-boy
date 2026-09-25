@@ -6,7 +6,6 @@
 
 namespace gameboy {
 namespace {
-constexpr unsigned master_clock = 4194304;
 constexpr std::size_t maximum_buffered_samples = Apu::sample_rate * 2;
 // CGB-E's power-cycle startup path has separate delays for an inactive channel
 // and an active retrigger. The inactive path waits four 2-MHz ticks longer;
@@ -37,6 +36,7 @@ constexpr std::array<std::array<std::uint8_t, 8>, 4> duty_patterns{{
 
 void Apu::initialize_post_boot(const HardwareModel model,
                                const bool divider_apu_signal) noexcept {
+    master_clock_hz_ = hardware_clock_rate_hz(model);
     cgb_hardware_ = model == HardwareModel::cgb0 ||
                     model == HardwareModel::cgb ||
                     model == HardwareModel::cgb_c ||
@@ -695,23 +695,23 @@ void Apu::tick_noise() noexcept {
 
 void Apu::integrate_sample(const float left, const float right) noexcept {
     const auto next_accumulator = sample_accumulator_ + sample_rate;
-    if (next_accumulator < master_clock) {
+    if (next_accumulator < master_clock_hz_) {
         sample_integrator_left_ += left * static_cast<float>(sample_rate);
         sample_integrator_right_ += right * static_cast<float>(sample_rate);
         sample_accumulator_ = next_accumulator;
         return;
     }
 
-    // A 48 kHz sample boundary usually falls between two 4.19 MHz master
+    // A 48 kHz sample boundary usually falls between two Game Boy master
     // clock cycles. Split the boundary cycle so both sides are weighted by
     // their exact duration rather than selecting one instantaneous value.
-    const auto before_boundary = master_clock - sample_accumulator_;
+    const auto before_boundary = master_clock_hz_ - sample_accumulator_;
     sample_integrator_left_ += left * static_cast<float>(before_boundary);
     sample_integrator_right_ += right * static_cast<float>(before_boundary);
-    emit_sample(sample_integrator_left_ / static_cast<float>(master_clock),
-                sample_integrator_right_ / static_cast<float>(master_clock));
+    emit_sample(sample_integrator_left_ / static_cast<float>(master_clock_hz_),
+                sample_integrator_right_ / static_cast<float>(master_clock_hz_));
 
-    sample_accumulator_ = next_accumulator - master_clock;
+    sample_accumulator_ = next_accumulator - master_clock_hz_;
     const auto after_boundary = sample_rate - before_boundary;
     sample_integrator_left_ = left * static_cast<float>(after_boundary);
     sample_integrator_right_ = right * static_cast<float>(after_boundary);

@@ -23,6 +23,14 @@ enum class HardwareModel {
     cgb_e = 9,
 };
 
+// NTSC SGB1 derives its Game Boy clock from the SNES master clock / 5.
+// The integer Hz approximation differs from 189/44 MHz by under 0.2 ppm.
+// SGB2 has its own normal-speed crystal.
+[[nodiscard]] constexpr unsigned hardware_clock_rate_hz(
+    const HardwareModel model) noexcept {
+    return model == HardwareModel::sgb ? 4'295'455U : 4'194'304U;
+}
+
 // Concrete machine profiles exposed by the frontends and the conformance
 // matrix.  `automatic` is intentionally not included: it is a cartridge
 // detection policy, not a hardware revision.

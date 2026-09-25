@@ -67,14 +67,45 @@ void handle_gamepad_device_event(const SDL_Event& event,
         if (context.sdl.gamepad == nullptr) {
             context.sdl.gamepad = SDL_OpenGamepad(event.gdevice.which);
             context.sdl.rumble_warning_shown = false;
+        } else {
+            for (auto& extra : context.sdl.extra_gamepads) {
+                if (extra != nullptr) continue;
+                extra = SDL_OpenGamepad(event.gdevice.which);
+                break;
+            }
         }
-    } else if (event.type == SDL_EVENT_GAMEPAD_REMOVED &&
-               context.sdl.gamepad != nullptr &&
-               SDL_GetGamepadID(context.sdl.gamepad) == event.gdevice.which) {
-        SDL_CloseGamepad(context.sdl.gamepad);
-        context.sdl.gamepad = nullptr;
-        context.sdl.rumble_output_active = false;
-        context.sdl.rumble_warning_shown = false;
+    } else if (event.type == SDL_EVENT_GAMEPAD_REMOVED) {
+        if (context.sdl.gamepad != nullptr &&
+            SDL_GetGamepadID(context.sdl.gamepad) == event.gdevice.which) {
+#ifndef GBB_EVENT_DISPATCH_CORE_ONLY
+            if (context.core) {
+                for (const auto button : button_order) {
+                    context.core->set_input(core_input_id(button), false);
+                }
+            }
+#endif
+            SDL_CloseGamepad(context.sdl.gamepad);
+            context.sdl.gamepad = nullptr;
+            context.sdl.rumble_output_active = false;
+            context.sdl.rumble_warning_shown = false;
+            return;
+        }
+        for (std::size_t slot = 0; slot < context.sdl.extra_gamepads.size(); ++slot) {
+            auto& extra = context.sdl.extra_gamepads[slot];
+            if (extra == nullptr ||
+                SDL_GetGamepadID(extra) != event.gdevice.which) continue;
+#ifndef GBB_EVENT_DISPATCH_CORE_ONLY
+            if (context.emulator) {
+                for (const auto button : button_order) {
+                    context.emulator->set_player_button(
+                        static_cast<std::uint8_t>(slot + 1), button, false);
+                }
+            }
+#endif
+            SDL_CloseGamepad(extra);
+            extra = nullptr;
+            break;
+        }
     }
 }
 
@@ -141,6 +172,28 @@ void handle_gamepad_event(const SDL_Event& event, SdlEventContext& context) {
     if (context.core) {
         if (const auto button = gamepad_button(
                 context.bindings, event.gbutton.button)) {
+            std::array<SDL_JoystickID, 4> sources{};
+            if (context.sdl.gamepad != nullptr) {
+                sources[0] = SDL_GetGamepadID(context.sdl.gamepad);
+            }
+            for (std::size_t slot = 0;
+                 slot < context.sdl.extra_gamepads.size(); ++slot) {
+                if (auto* extra = context.sdl.extra_gamepads[slot]) {
+                    sources[slot + 1] = SDL_GetGamepadID(extra);
+                }
+            }
+            const auto sgb_enabled = context.emulator != nullptr &&
+                context.emulator->bus().debug_sgb_diagnostics().enabled;
+            const auto player = sgb_gamepad_player(event.gbutton.which,
+                                                    sources, sgb_enabled);
+            if (!player.has_value()) return;
+            if (*player != 0) {
+                if (context.emulator == nullptr) return;
+                context.emulator->set_player_button(
+                    *player, *button,
+                    event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN);
+                return;
+            }
 #ifndef __ANDROID__
             const CoreServices tools{context.core.get(), context.emulator};
             if (tools.debugger() != nullptr) {
@@ -847,6 +900,18 @@ void handle_gameplay_key_event(const SDL_Event& event,
 #endif
         if (context.confirm_exit && context.confirm_exit()) context.running = false;
     } else if (core && !event.key.repeat) {
+        if (link_emulator == nullptr && emulator != nullptr &&
+            emulator->bus().debug_sgb_diagnostics().enabled) {
+            if (const auto button = local_link_keyboard_button(event.key.key)) {
+                const bool multiplayer = emulator->bus()
+                    .debug_sgb_diagnostics().player_count > 1;
+                if (multiplayer || event.type == SDL_EVENT_KEY_UP) {
+                    emulator->set_player_button(1, *button,
+                                                event.type == SDL_EVENT_KEY_DOWN);
+                }
+                if (multiplayer) return;
+            }
+        }
         if (const auto button = keyboard_button(bindings, event.key.key)) {
 #ifndef __ANDROID__
             if (tools.debugger() != nullptr) {

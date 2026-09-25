@@ -16,6 +16,13 @@ int main() {
     assert(gbb::sdl::gamepad_button(
                bindings, static_cast<Uint8>(SDL_GAMEPAD_BUTTON_START)) ==
            gameboy::Button::start);
+    const std::array<SDL_JoystickID, 4> gamepads{11, 12, 13, 14};
+    assert(gbb::sdl::sgb_gamepad_player(11, gamepads, false) == 0);
+    assert(!gbb::sdl::sgb_gamepad_player(12, gamepads, false));
+    assert(gbb::sdl::sgb_gamepad_player(12, gamepads, true) == 1);
+    assert(gbb::sdl::sgb_gamepad_player(13, gamepads, true) == 2);
+    assert(gbb::sdl::sgb_gamepad_player(14, gamepads, true) == 3);
+    assert(!gbb::sdl::sgb_gamepad_player(15, gamepads, true));
     assert(gbb::sdl::core_input_id(gameboy::Button::right) ==
            gbb::InputId::right);
     assert(gbb::sdl::core_input_id(gameboy::Button::select) ==

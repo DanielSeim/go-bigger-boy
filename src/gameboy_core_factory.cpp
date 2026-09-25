@@ -85,6 +85,10 @@ public:
             descriptor_.video_width = gameboy::Ppu::sgb_border_width;
             descriptor_.video_height = gameboy::Ppu::sgb_border_height;
         }
+        descriptor_.clock_rate = static_cast<double>(
+            gameboy::hardware_clock_rate_hz(emulator_.hardware_model()));
+        descriptor_.refresh_rate =
+            descriptor_.clock_rate / descriptor_.nominal_cycles_per_frame;
         descriptor_.capabilities =
             CoreCapability::compatibility_palette |
             CoreCapability::cheats | CoreCapability::debugger |

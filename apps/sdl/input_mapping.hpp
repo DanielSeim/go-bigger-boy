@@ -23,6 +23,9 @@ keyboard_button(const InputBindings& bindings, SDL_Keycode key) noexcept;
 local_link_keyboard_button(SDL_Keycode key) noexcept;
 [[nodiscard]] std::optional<gameboy::Button>
 gamepad_button(const InputBindings& bindings, Uint8 button) noexcept;
+[[nodiscard]] std::optional<std::uint8_t> sgb_gamepad_player(
+    SDL_JoystickID source, const std::array<SDL_JoystickID, 4>& slots,
+    bool sgb_enabled) noexcept;
 [[nodiscard]] gbb::InputId core_input_id(gameboy::Button button) noexcept;
 [[nodiscard]] bool shortcut_pressed(const InputBindings& bindings,
                                     std::size_t shortcut,

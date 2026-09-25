@@ -604,6 +604,11 @@ if(GAMEBOY_BUILD_TESTS)
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/android_sgb_performance_gate_tests.py)
         set_tests_properties(gameboy_android_sgb_performance_gate
                              PROPERTIES LABELS "performance;sgb")
+        add_test(NAME gameboy_sgb_command_report
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_command_report_tests.py)
+        set_tests_properties(gameboy_sgb_command_report
+                             PROPERTIES LABELS "sgb;trace")
         add_test(NAME gameboy_voxel_visual_regression
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_visual_regression_tests.py)

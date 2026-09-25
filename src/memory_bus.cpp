@@ -529,7 +529,17 @@ void MemoryBus::request_interrupt(const unsigned index) noexcept {
 }
 
 void MemoryBus::set_button(const Button button, const bool pressed) noexcept {
-    if (joypad_.set_button(button, pressed)) {
+    set_player_button(0, button, pressed);
+}
+
+void MemoryBus::set_player_button(const std::uint8_t player,
+                                  const Button button,
+                                  const bool pressed) noexcept {
+    if (player > 3 || (player > 0 && !sgb_adapter_.enabled())) return;
+    const auto active = sgb_adapter_.enabled()
+                            ? sgb_adapter_.diagnostics().current_player
+                            : std::uint8_t{0};
+    if (joypad_.set_button(button, pressed, player) && player == active) {
         request_interrupt(4);
     }
 }

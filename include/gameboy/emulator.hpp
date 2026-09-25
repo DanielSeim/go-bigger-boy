@@ -41,6 +41,8 @@ public:
     void set_audio_enabled(bool enabled) noexcept;
     [[nodiscard]] bool audio_enabled() const noexcept;
     void set_button(Button button, bool pressed) noexcept;
+    void set_player_button(std::uint8_t player, Button button,
+                           bool pressed) noexcept;
     void flush_battery();
     [[nodiscard]] bool has_battery() const noexcept;
     [[nodiscard]] bool has_rtc() const noexcept;

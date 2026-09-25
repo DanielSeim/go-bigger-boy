@@ -58,3 +58,7 @@ The trace stores a ROM fingerprint, not the ROM itself. This keeps diagnostic
 artifacts suitable for sharing while requiring the investigator to provide a
 legally obtained copy of the matching cartridge. The format is intentionally
 text-based so a failing packet sequence can be inspected in a code review.
+To count the decoded commands across one or more opt-in captures, run
+`python3 scripts/report_sgb_commands.py capture-a.trace capture-b.trace`.
+The inventory labels SNES-side commands that the current HLE host cannot
+execute; see [SGB validation](sgb-validation.md) for the triage policy.

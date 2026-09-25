@@ -33,8 +33,10 @@ public:
     [[nodiscard]] std::uint8_t select_lines() const noexcept { return select_; }
 
     // Return true when a selected input line transitions high-to-low.
-    [[nodiscard]] bool write(std::uint8_t value) noexcept;
-    [[nodiscard]] bool set_button(Button button, bool pressed) noexcept;
+    [[nodiscard]] bool write(std::uint8_t value,
+                             std::uint8_t player = 0) noexcept;
+    [[nodiscard]] bool set_button(Button button, bool pressed,
+                                  std::uint8_t player = 0) noexcept;
 
 private:
     friend class SaveStateCodec;
@@ -42,10 +44,12 @@ private:
     friend class SaveStateBusCodec;
     friend class SgbAdapter;
 
-    [[nodiscard]] std::uint8_t input_lines() const noexcept;
+    [[nodiscard]] std::uint8_t input_lines(std::uint8_t player = 0) const noexcept;
     std::uint8_t select_ = 0x30;
     std::uint8_t directions_{};
     std::uint8_t actions_{};
+    std::array<std::uint8_t, 3> extra_directions_{};
+    std::array<std::uint8_t, 3> extra_actions_{};
 };
 
 } // namespace gameboy

@@ -173,10 +173,16 @@ matching the first direct `00` start pulse used by licensed software; this is
 required for the initial multiplayer probe and subsequent border transfers.
 `MASK_EN` implements disabled, freeze, black, and
 color-zero viewport modes. `MLT_REQ` supports deterministic one-, two-, and
-four-player polling IDs; the current local button state is intentionally shared
-by each emulated controller until a multi-device input backend is added. These
-behaviors are covered by core tests, adapter diagnostics, and save states
-(version 36). SGB VRAM
+four-player polling IDs with independent button states. SDL maps keyboard and
+the primary gamepad to player 1, and additional gamepads to players 2-4; a
+second desktop keyboard layout controls player 2 when SGB multiplayer is
+active. These behaviors are covered by core tests, adapter diagnostics, and
+save states (version 37). The NTSC SGB1 profile now uses its approximately
+4.295 MHz Game Boy clock for both frontend pacing and 48 kHz audio resampling;
+SGB2 stays at 4.194304 MHz
+([Pan Docs SGB clock](https://gbdev.io/pandocs/SGB_Functions.html)).
+PAL-host SGB1 clock selection is not modeled.
+SGB VRAM
 transfer commands retain their payload for the hardware-like five-frame
 transfer latency before the new data becomes visible. This is deliberately not
 a full SNES emulation path: the real adapter relies on SNES-
@@ -187,6 +193,8 @@ dimensions from the core descriptor, so desktop, Android, and browser builds
 can display the border without a frontend-specific decoder. SNES audio, fade
 timing, and the complete SGB boot/header handshake remain deferred. These
 limitations do not affect ordinary DMG or CGB emulation.
+The opt-in [SGB command inventory](sgb-validation.md) identifies unimplemented
+SNES-side commands in traces without claiming to emulate their effects.
 The spec-derived SGB reference checks and performance procedures are recorded
 in [SGB validation](sgb-validation.md); they are not a substitute for
 hardware-captured reference frames.

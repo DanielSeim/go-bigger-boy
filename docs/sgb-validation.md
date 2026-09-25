@@ -10,7 +10,8 @@ are red at (48,40) and the Game Boy screen color at (56,40); after `MASK_EN`
 black, only the transparent pixel turns black. A palette color-zero update
 must also refresh transparent border pixels outside the viewport. The
 contract suite additionally covers the JOYP packet receiver, transfer
-payloads, palettes, attributes, and multiplayer IDs.
+payloads, palettes, attributes, independent multiplayer button states, and
+SGB1/SGB2 pacing and audio sample production.
 
 ```sh
 ctest --test-dir build -R 'gameboy_(ppu_sgb_contract|sgb_trace_contract|sgb_trace_fixture|sgb_performance|android_sgb_performance_gate)' --output-on-failure
@@ -49,3 +50,34 @@ Game Boy's nominal 59.73-Hz cadence and normal Android scheduling jitter;
 it is not intended to excuse sustained drops into the 40s or 50s. The gate
 requires a real SGB run and fails if there are too few SGB windows. Record
 the device model and renderer backend with the result.
+
+## Controller sources
+
+When an SGB game enables multiplayer, player 1 retains the normal keyboard,
+touch, and primary-gamepad bindings. SDL assigns additional gamepads to
+players 2, 3, and 4 in connection order. On desktop, player 2 can also use
+`WASD` for directions, `J/K` for A/B, and `Q/E` for Select/Start; this
+secondary keyboard layout takes precedence over any overlapping custom
+player-1 binding while multiplayer is active. Disconnecting a controller or
+losing window focus releases its held buttons. This is SGB `MLT_REQ`
+multiplayer, not Game Boy link-cable multiplayer.
+
+## SNES-side command triage
+
+Capture opt-in traces from legally supplied SGB titles in representative
+scenes, then run `python3 scripts/report_sgb_commands.py title-a.trace
+title-b.trace`. The report counts decoded commands by title and highlights
+unimplemented host-side operations. It neither includes ROM data nor infers
+that a title is fully compatible just because all its commands are recognized.
+The repository's synthetic fixture currently exercises only `MLT_REQ`; it is
+not representative usage data.
+
+Prioritize observed commands by visible or audible impact: `SOUND` and
+`SOU_TRN` require SNES audio behavior; `OBJ_TRN` requires sprite rendering;
+`PAL_PRI`, `ATRC_EN`, `ICON_EN`, and `TEST_EN` mainly affect the host BIOS UI;
+`DATA_SND`, `DATA_TRN`, and `JUMP` can require arbitrary SNES host execution.
+These remain unimplemented until an independent expected result and an
+appropriate host model are available. Treat the command inventory as triage,
+not as an implementation of those commands.
+See [Pan Docs' SGB command summary](https://gbdev.io/pandocs/SGB_Command_Summary.html)
+for the command definitions.

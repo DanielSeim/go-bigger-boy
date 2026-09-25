@@ -42,6 +42,21 @@ std::optional<gameboy::Button> gamepad_button(
     return std::nullopt;
 }
 
+std::optional<std::uint8_t> sgb_gamepad_player(
+    const SDL_JoystickID source,
+    const std::array<SDL_JoystickID, 4>& slots,
+    const bool sgb_enabled) noexcept {
+    if (source == 0) return std::nullopt;
+    for (std::size_t player = 0; player < slots.size(); ++player) {
+        if (slots[player] != source) continue;
+        if (player == 0 || sgb_enabled) {
+            return static_cast<std::uint8_t>(player);
+        }
+        return std::nullopt;
+    }
+    return std::nullopt;
+}
+
 gbb::InputId core_input_id(const gameboy::Button button) noexcept {
     switch (button) {
     case gameboy::Button::right: return gbb::InputId::right;
@@ -78,7 +93,11 @@ bool reserved_gameplay_key(const InputBindings& bindings,
 }
 
 void release_all_buttons(gameboy::Emulator& emulator) noexcept {
-    for (const auto button : button_order) emulator.set_button(button, false);
+    for (const auto button : button_order) {
+        for (std::uint8_t player = 0; player < 4; ++player) {
+            emulator.set_player_button(player, button, false);
+        }
+    }
 }
 
 void release_all_buttons(gbb::EmulatorCore& core) noexcept {

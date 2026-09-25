@@ -134,6 +134,10 @@ void SdlResources::release() noexcept {
         SDL_CloseGamepad(gamepad);
         gamepad = nullptr;
     }
+    for (auto& extra : extra_gamepads) {
+        if (extra != nullptr) SDL_CloseGamepad(extra);
+        extra = nullptr;
+    }
     audio.close();
     if (texture != nullptr) {
         SDL_DestroyTexture(texture);

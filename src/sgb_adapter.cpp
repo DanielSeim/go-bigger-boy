@@ -41,7 +41,7 @@ bool SgbAdapter::write_joypad(const std::uint8_t value, Joypad& joypad,
         current_player_ = static_cast<std::uint8_t>(
             (current_player_ + 1) & (player_count_ - 1));
     }
-    const auto interrupt = joypad.write(value);
+    const auto interrupt = joypad.write(value, current_player_);
     process_write(value);
     if (packet_ready_) {
         apply_command(packet_, packet_bytes_, ppu);

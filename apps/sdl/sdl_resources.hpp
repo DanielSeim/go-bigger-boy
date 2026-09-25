@@ -59,6 +59,9 @@ class SdlResources {
     bool voxel_scene_cached{};
     gbb::VoxelRenderStats voxel_stats{};
     SDL_Gamepad* gamepad{};
+    // Player 1 uses keyboard/touch and the primary gamepad. In SGB
+    // multiplayer, additional gamepads map to players 2-4.
+    std::array<SDL_Gamepad*, 3> extra_gamepads{};
     AudioOutput audio;
     CameraCapture camera;
     bool rumble_output_active{};

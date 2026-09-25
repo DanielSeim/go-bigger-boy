@@ -1,3 +1,4 @@
+#include "gameboy/apu.hpp"
 #include "gameboy/emulator.hpp"
 #include "gameboy/joypad.hpp"
 #include "gameboy/ppu.hpp"
@@ -125,14 +126,37 @@ void test_multiplayer_request_and_polling() {
     static_cast<void>(adapter.write_joypad(0x30, joypad, ppu));
     check((adapter.read_joypad(joypad) & 0x0F) == 0x0E,
           "SGB multiplayer polling advances to player two");
+    static_cast<void>(joypad.set_button(gameboy::Button::right, true, 0));
+    static_cast<void>(joypad.set_button(gameboy::Button::left, true, 1));
+    static_cast<void>(adapter.write_joypad(0x20, joypad, ppu));
+    check((adapter.read_joypad(joypad) & 0x0F) == 0x0D,
+          "player two reads only its independently pressed direction");
+    static_cast<void>(adapter.write_joypad(0x10, joypad, ppu));
+    static_cast<void>(adapter.write_joypad(0x30, joypad, ppu));
+    static_cast<void>(adapter.write_joypad(0x20, joypad, ppu));
+    check((adapter.read_joypad(joypad) & 0x0F) == 0x0E,
+          "player one remains independent after controller cycling");
+    static_cast<void>(adapter.write_joypad(0x30, joypad, ppu));
     packet[1] = 0x03; // four players
     adapter.apply_command(packet, gameboy::Joypad::sgb_packet_size, ppu);
     check(adapter.diagnostics().player_count == 4,
           "MLT_REQ enables four-player SGB polling");
     static_cast<void>(adapter.write_joypad(0x10, joypad, ppu));
     static_cast<void>(adapter.write_joypad(0x30, joypad, ppu));
+    static_cast<void>(adapter.write_joypad(0x10, joypad, ppu));
+    static_cast<void>(adapter.write_joypad(0x30, joypad, ppu));
     check((adapter.read_joypad(joypad) & 0x0F) == 0x0D,
           "SGB four-player polling advances through controller IDs");
+    static_cast<void>(joypad.set_button(gameboy::Button::up, true, 2));
+    static_cast<void>(adapter.write_joypad(0x20, joypad, ppu));
+    check((adapter.read_joypad(joypad) & 0x0F) == 0x0B,
+          "third SGB controller has its own direction state");
+    static_cast<void>(adapter.write_joypad(0x10, joypad, ppu));
+    static_cast<void>(adapter.write_joypad(0x30, joypad, ppu));
+    static_cast<void>(joypad.set_button(gameboy::Button::down, true, 3));
+    static_cast<void>(adapter.write_joypad(0x20, joypad, ppu));
+    check((adapter.read_joypad(joypad) & 0x0F) == 0x07,
+          "fourth SGB controller has its own direction state");
 }
 
 void test_multiplayer_command_reaches_joypad() {
@@ -158,6 +182,21 @@ void test_multiplayer_command_reaches_joypad() {
     emulator.bus().write8(0xFF00, 0x30);
     check((emulator.bus().read8(0xFF00) & 0x0F) == 0x0E,
           "bus joypad polling advances after P15 is released");
+    emulator.set_button(gameboy::Button::a, true);
+    emulator.set_player_button(1, gameboy::Button::b, true);
+    emulator.bus().write8(0xFF00, 0x10);
+    check((emulator.bus().read8(0xFF00) & 0x0F) == 0x0D,
+          "player two reads its own action state through FF00");
+    const auto multiplayer_state = emulator.save_state();
+    emulator.set_player_button(1, gameboy::Button::b, false);
+    emulator.load_state(multiplayer_state);
+    check((emulator.bus().read8(0xFF00) & 0x0F) == 0x0D,
+          "save states restore independent SGB controller input");
+    emulator.bus().write8(0xFF00, 0x30);
+    emulator.bus().write8(0xFF00, 0x20);
+    emulator.bus().write8(0xFF00, 0x10);
+    check((emulator.bus().read8(0xFF00) & 0x0F) == 0x0E,
+          "player one action remains independent after state restore");
 }
 
 void test_sgb_first_packet_accepts_start_pulse() {
@@ -411,6 +450,25 @@ void test_default_palette_uses_display_setting() {
           "SGB default palette honors the configured display colors");
 }
 
+void test_sgb_model_clock_and_audio_resampling() {
+    check(gameboy::hardware_clock_rate_hz(gameboy::HardwareModel::sgb) ==
+              4'295'455 &&
+              gameboy::hardware_clock_rate_hz(gameboy::HardwareModel::sgb2) ==
+                  4'194'304,
+          "SGB1 uses the faster NTSC host clock and SGB2 uses normal speed");
+    gameboy::Apu sgb1;
+    gameboy::Apu sgb2;
+    sgb1.initialize_post_boot(gameboy::HardwareModel::sgb);
+    sgb2.initialize_post_boot(gameboy::HardwareModel::sgb2);
+    sgb1.tick(70'224);
+    sgb2.tick(70'224);
+    const auto sgb1_samples = sgb1.take_samples().size() / 2;
+    const auto sgb2_samples = sgb2.take_samples().size() / 2;
+    check(sgb1_samples >= 784 && sgb1_samples <= 785 &&
+              sgb2_samples >= 803 && sgb2_samples <= 804,
+          "SGB1 audio resamples its faster clock into fixed 48 kHz output");
+}
+
 } // namespace
 
 int main() {
@@ -425,5 +483,6 @@ int main() {
     test_palette_and_attribute_transfer_commands();
     test_sgb_border_compositor();
     test_default_palette_uses_display_setting();
+    test_sgb_model_clock_and_audio_resampling();
     return failures == 0 ? 0 : 1;
 }

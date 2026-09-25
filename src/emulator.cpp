@@ -87,6 +87,12 @@ void Emulator::set_button(const Button button, const bool pressed) noexcept {
     bus_.set_button(button, pressed);
 }
 
+void Emulator::set_player_button(const std::uint8_t player,
+                                  const Button button,
+                                  const bool pressed) noexcept {
+    bus_.set_player_button(player, button, pressed);
+}
+
 void Emulator::flush_battery() { bus_.flush_battery(); }
 
 bool Emulator::has_battery() const noexcept {

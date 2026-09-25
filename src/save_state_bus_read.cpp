@@ -552,6 +552,15 @@ void SaveStateBusCodec::read(save_state_format::Reader& reader,
                                  : (version >= 34 ? reader.u8() : 0);
     bus.ppu_.startup_scx_if_read_race_ =
         version >= 36 ? reader.boolean() : false;
+    if (version >= 37) {
+        read_bytes(reader, bus.joypad_.extra_directions_);
+        read_bytes(reader, bus.joypad_.extra_actions_);
+        for (auto& value : bus.joypad_.extra_directions_) value &= 0x0F;
+        for (auto& value : bus.joypad_.extra_actions_) value &= 0x0F;
+    } else {
+        bus.joypad_.extra_directions_.fill(0);
+        bus.joypad_.extra_actions_.fill(0);
+    }
     if ((bus.last_ppu_requests_ & ~0x2FU) != 0) {
         throw SaveStateError("Save state contains invalid PPU request state");
     }

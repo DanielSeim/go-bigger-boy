@@ -145,6 +145,7 @@ private:
     std::uint8_t frame_sequencer_step_{};
     bool skip_frame_sequencer_event_{};
     unsigned sample_accumulator_{};
+    unsigned master_clock_hz_{4'194'304};
     float left_capacitor_{};
     float right_capacitor_{};
     float sample_integrator_left_{};

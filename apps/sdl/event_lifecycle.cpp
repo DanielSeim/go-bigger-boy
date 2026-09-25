@@ -15,6 +15,7 @@ void handle_window_lifecycle_event(const SDL_Event& event,
 #ifdef __ANDROID__
     if (event.type == SDL_EVENT_WILL_ENTER_BACKGROUND) {
         clear_touch_buttons(context.core.get(), context.sdl);
+        if (context.emulator != nullptr) release_all_buttons(*context.emulator);
         // Android's library and settings activities temporarily cover the SDL
         // surface. These menus are transient UI state and must not survive
         // that hand-off, otherwise the link panel can reappear when the game
@@ -29,6 +30,7 @@ void handle_window_lifecycle_event(const SDL_Event& event,
         context.sdl.android_menu_visible = false;
         context.sdl.android_link_menu_visible = false;
         clear_touch_buttons(context.core.get(), context.sdl);
+        if (context.emulator != nullptr) release_all_buttons(*context.emulator);
         context.display_palette =
             load_display_palette(context.preference_path);
         refresh_touch_settings(context.sdl, context.preference_path);
@@ -45,6 +47,7 @@ void handle_window_lifecycle_event(const SDL_Event& event,
     if (context.emulator) {
 #ifndef __ANDROID__
         context.input_movie.release_all(*context.emulator);
+        release_all_buttons(*context.emulator);
 #else
         release_all_buttons(*context.emulator);
 #endif

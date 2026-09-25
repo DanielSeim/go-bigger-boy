@@ -113,6 +113,22 @@ void test_core_registry_contract() {
               sgb_frame.pitch == 256 * sizeof(std::uint32_t) &&
               sgb_core->video_frame_native_colors(),
           "SGB cores expose the 256x224 border framebuffer contract");
+    check(sgb_core->descriptor().clock_rate == 4'295'455.0 &&
+              sgb_core->descriptor().refresh_rate > 61.0,
+          "SGB1 frontend pacing follows its faster NTSC clock");
+    auto auto_sgb_rom = test_rom();
+    auto_sgb_rom[0x146] = 0x03;
+    auto auto_sgb_core = registry.create(std::move(auto_sgb_rom));
+    check(auto_sgb_core->descriptor().clock_rate == 4'295'455.0,
+          "automatic SGB cartridge selection also uses the faster clock");
+    auto sgb2_options = gbb::CoreLoadOptions{};
+    sgb2_options.hardware_model = "sgb2";
+    auto sgb2_rom = test_rom();
+    sgb2_rom[0x146] = 0x03;
+    auto sgb2_core = registry.create(std::move(sgb2_rom), sgb2_options);
+    check(sgb2_core->descriptor().clock_rate == 4'194'304.0 &&
+              sgb2_core->descriptor().refresh_rate < 60.0,
+          "SGB2 frontend pacing remains at the standard Game Boy clock");
 
     const auto state_before_printer_toggle = core->save_state();
     core->set_printer_enabled(true);

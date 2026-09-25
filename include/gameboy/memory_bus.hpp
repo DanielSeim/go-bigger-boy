@@ -46,6 +46,8 @@ public:
     void tick(unsigned cycles) noexcept;
     void request_interrupt(unsigned index) noexcept;
     void set_button(Button button, bool pressed) noexcept;
+    void set_player_button(std::uint8_t player, Button button,
+                           bool pressed) noexcept;
 
     [[nodiscard]] const Cartridge& cartridge() const noexcept;
     [[nodiscard]] Cartridge& cartridge() noexcept;

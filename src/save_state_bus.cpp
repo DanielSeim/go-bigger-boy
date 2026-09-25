@@ -196,6 +196,10 @@ void SaveStateBusCodec::write(save_state_format::Writer& writer,
     writer.boolean(bus.ppu_.scx_if_read_race_);
     writer.u8(bus.last_ppu_requests_);
     writer.boolean(bus.ppu_.startup_scx_if_read_race_);
+    // Player 1 retains its historical JOYP payload; independent SGB players
+    // are a versioned tail so older save states remain loadable.
+    write_bytes(writer, bus.joypad_.extra_directions_);
+    write_bytes(writer, bus.joypad_.extra_actions_);
 }
 
 } // namespace gameboy
