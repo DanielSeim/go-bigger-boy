@@ -616,6 +616,11 @@ if(GAMEBOY_BUILD_TESTS)
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/visual_regression_gate_tests.py)
         if(NOT ANDROID)
+            add_test(NAME gameboy_sgb_frame_alignment
+                     COMMAND ${Python3_EXECUTABLE}
+                             ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_frame_alignment_tests.py)
+            set_tests_properties(gameboy_sgb_frame_alignment
+                                 PROPERTIES LABELS "sgb;visual")
             add_test(NAME gameboy_sgb_title_validation
                      COMMAND ${Python3_EXECUTABLE}
                              ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_title_validation_tests.py
@@ -1010,7 +1015,8 @@ if(GAMEBOY_BUILD_TESTS)
         add_test(NAME gameboy_sgb_performance
                  COMMAND gameboy_sgb_performance_tests)
         set_tests_properties(gameboy_sgb_performance
-                             PROPERTIES LABELS "performance;sgb" TIMEOUT 45)
+                             PROPERTIES LABELS "performance;sgb" TIMEOUT 45
+                                        RUN_SERIAL TRUE)
     endif()
 
     add_executable(gameboy_link_packet_codec_tests

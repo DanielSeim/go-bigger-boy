@@ -81,8 +81,8 @@ python3 scripts/report_sgb_commands.py /tmp/gbb-sgb-donkey/sgb.trace
 The runner writes a full 256×224 SGB PPM, a command trace, and a JSON report.
 `inventory_only` means the title executed and its command minimums held; it
 does **not** mean its picture or audio is correct. A mismatched ROM hash fails
-before execution. The three supplied manifests were exercised locally at 120
-post-boot frames: Pokémon Blue sent 8 `DATA_SND` plus palette, border,
+before execution. The three supplied manifests were exercised locally at their
+pinned post-boot frames: Pokémon Blue sent 8 `DATA_SND` plus palette, border,
 multiplayer, and mask commands; Donkey Kong sent 1 `SOUND`, 2 `SOU_TRN`, and
 `ICON_EN` plus palette and border commands; Kirby's Dream Land 2 sent 8
 `DATA_SND`, 1 `SOUND`, and `PAL_PRI` plus palette and border commands. These
@@ -118,14 +118,45 @@ That last digest goes into the private manifest's `reference.image_sha256`.
 Its boot ROM SHA-256 in the checked setup was
 `b60d493a7944ccf74c81f1e7b6bf38c2c7029e296648ea0e74cb22b10dd1fcb8`.
 The independent capture starts at power-on while GBB's runner starts
-post-boot: the frame numbers are *not interchangeable*. For the pinned
-Donkey Kong ROM, SameBoy frame 350 and GBB post-boot frame 120 matched all
-57,344 pixels of the full frame exactly (reference PPM SHA-256
-`6fd3917c5224237b675c58edfb78a1202b8abb746243472d6eb0dff57789da37`).
-The reference image and ROM remain
-local; neither is committed. Pokémon Blue and Kirby did not match at that
-same frame pairing, so their visual state remains **unvalidated**; the
-difference must be aligned and investigated, not hidden by a loose tolerance.
+post-boot: the frame numbers are *not interchangeable*, and there is no
+single offset shared by all titles. For a sequence comparison, capture ranges
+without restarting either emulator between frames:
+
+```sh
+gbb_test_runner '/path/to/title.gb' --model sgb --max-cycles 25000000 \
+  --frame-series 100 150 /tmp/title-gbb --sgb-frame
+/tmp/sameboy_sgb_capture '/path/to/title.gb' \
+  /path/to/SameBoy/build/bin/BootROMs/sgb_boot.bin \
+  --series 230 450 /tmp/title-reference sgb
+python3 scripts/align_sgb_frames.py \
+  --target-series '/tmp/title-gbb-*.ppm' \
+  --reference-series '/tmp/title-reference-*.ppm'
+```
+
+The aligner reports exact 256×224 pixel-scene matches by hash, without
+assuming a fixed boot-frame offset. If there is no exact match, provide one
+GBB frame and the independent reference frames as positional arguments to
+rank scenes by palette-independent edges; use `--sort rgb` to rank by literal
+pixel mismatch instead. Edge similarity is only an alignment aid, not proof
+of visual correctness. All images stay local.
+
+With the three hash-pinned ROMs, a pinned SameBoy build, and its independently
+written boot ROM, these full-frame pairs matched with **zero** mismatched
+pixels:
+
+| Title | GBB post-boot frame | SameBoy power-on frame | Reference PPM SHA-256 |
+| --- | ---: | ---: | --- |
+| Donkey Kong | 120 | 350 | `6fd3917c5224237b675c58edfb78a1202b8abb746243472d6eb0dff57789da37` |
+| Pokémon Blue | 143 | 352 | `037fcb06d3c9d40c7de567e467f3dbabc6bfc8cf36b68093526b842a19d80342` |
+| Kirby's Dream Land 2 | 135 | 383 | `9a38107a394798502dc411ad45d618211ec96e885fec1598d6903a9866bfb01d` |
+
+The reference images and ROMs are not committed. These results validate the
+listed scenes only. In the sampled ranges, Pokémon had one unique exact
+scene (held over multiple frames), and Kirby had 14 unique exact scenes.
+The large mismatches at the earlier, unmatched frame-120 comparisons were
+caused by different boot and fade progress; they were not evidence of a
+palette-rendering regression. This does **not** establish that every scene,
+SNES-side command, or SGB audio effect is correct.
 
 Capture other representative scenes before treating any title as broadly
 compatible. The trace reporter counts decoded commands and highlights

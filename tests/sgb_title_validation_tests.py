@@ -151,6 +151,38 @@ class SgbTitleValidationTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("requires an SGB or SGB2", result.stderr)
 
+    def test_sgb_frame_series_matches_single_capture(self) -> None:
+        if RUNNER is None:
+            self.skipTest("runner path not supplied")
+        rom_bytes = load_fixture(Path(__file__).parent /
+                                 "fixtures/sgb/trace_fixture.hex")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            rom = root / "fixture.gb"
+            rom.write_bytes(rom_bytes)
+            common = [str(RUNNER.resolve()), str(rom), "--model", "sgb",
+                      "--max-cycles", "500000", "--sgb-frame"]
+            series = subprocess.run(
+                common + ["--frame-series", "1", "2", str(root / "series")],
+                capture_output=True, text=True, timeout=10, check=False)
+            self.assertEqual(series.returncode, 0, series.stderr)
+            self.assertTrue((root / "series-1.ppm").is_file())
+            single = subprocess.run(
+                common + ["--frames", "2", "--frame-output",
+                          str(root / "single.ppm")],
+                capture_output=True, text=True, timeout=10, check=False)
+            self.assertEqual(single.returncode, 0, single.stderr)
+            self.assertEqual((root / "series-2.ppm").read_bytes(),
+                             (root / "single.ppm").read_bytes())
+            conflicting = subprocess.run(
+                common + ["--frame-series", "1", "2", str(root / "bad"),
+                          "--frames", "2", "--frame-output",
+                          str(root / "bad-single.ppm")],
+                capture_output=True, text=True, timeout=10, check=False)
+            self.assertNotEqual(conflicting.returncode, 0)
+            self.assertIn("mutually exclusive", conflicting.stderr)
+            self.assertFalse((root / "bad-1.ppm").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

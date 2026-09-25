@@ -3,7 +3,7 @@
   "title": "Pokemon Blue (UE) SGB startup",
   "rom_sha256": "2a951313c2640e8c2cb21f25d1db019ae6245d9c7121f754fa61afd7bee6452d",
   "model": "sgb",
-  "frames": 120,
+  "frames": 143,
   "max_cycles": 25000000,
   "command_minimums": {
     "0x0F": 8,

@@ -34,6 +34,9 @@ struct Options {
     gameboy::HardwareModel model = gameboy::HardwareModel::automatic;
     std::uint64_t frames{};
     std::filesystem::path frame_output;
+    std::uint64_t frame_series_first{};
+    std::uint64_t frame_series_last{};
+    std::filesystem::path frame_series_prefix;
     std::filesystem::path apu_trace_output;
     std::filesystem::path ppu_trace_output;
     std::filesystem::path io_trace_output;
@@ -53,6 +56,7 @@ void usage() {
                  "mooneye-wilbertpol|serial|blargg|gbmicrotest] "
                  "[--model auto|dmg0|dmg|mgb|sgb|sgb2|cgb0|cgb-c|cgb-e] "
                  "[--frames N --frame-output capture.ppm [--sgb-frame]] "
+                 "[--frame-series FIRST LAST PREFIX [--sgb-frame]] "
                  "[--trace-apu PATH] [--trace-ppu PATH] [--trace-io PATH] "
                  "[--trace-cpu PATH] [--trace-limit N] "
                  "[--sgb-trace PATH] [--replay-sgb-trace PATH] "
@@ -107,6 +111,10 @@ Options parse_options(const int argc, char** argv) {
             options.model = parse_model(argv[++index]);
         } else if (argument == "--frames" && index + 1 < argc) {
             options.frames = parse_cycles(argv[++index]);
+        } else if (argument == "--frame-series" && index + 3 < argc) {
+            options.frame_series_first = parse_cycles(argv[++index]);
+            options.frame_series_last = parse_cycles(argv[++index]);
+            options.frame_series_prefix = argv[++index];
         } else if (argument == "--frame-output" && index + 1 < argc) {
             options.frame_output = argv[++index];
         } else if (argument == "--trace-apu" && index + 1 < argc) {
@@ -135,19 +143,32 @@ Options parse_options(const int argc, char** argv) {
             throw std::invalid_argument("unknown or incomplete option: " + argument);
         }
     }
-    if (options.frames != 0 && options.frame_on_ld_bb) {
+    if ((options.frames != 0 && options.frame_on_ld_bb) ||
+        (options.frame_series_last != 0 &&
+         (options.frames != 0 || options.frame_on_ld_bb ||
+          !options.frame_output.empty()))) {
         throw std::invalid_argument(
-            "--frames and --frame-on-ld-bb are mutually exclusive");
+            "--frame-series, --frames, and --frame-on-ld-bb are mutually exclusive");
+    }
+    if (options.frame_series_last != 0 &&
+        (options.frame_series_last < options.frame_series_first ||
+         options.frame_series_last - options.frame_series_first > 1000 ||
+         options.frame_series_prefix.empty())) {
+        throw std::invalid_argument(
+            "--frame-series requires a prefix, FIRST <= LAST, and at most 1001 frames");
     }
     if (!options.sgb_trace_output.empty() && !options.sgb_replay_input.empty()) {
         throw std::invalid_argument(
             "--sgb-trace and --replay-sgb-trace are mutually exclusive");
     }
-    const auto captures_frame = options.frames != 0 || options.frame_on_ld_bb;
-    if (captures_frame && options.frame_output.empty()) {
+    const auto captures_single_frame =
+        options.frames != 0 || options.frame_on_ld_bb;
+    const auto captures_frame = captures_single_frame ||
+                                options.frame_series_last != 0;
+    if (captures_single_frame && options.frame_output.empty()) {
         throw std::invalid_argument("frame capture requires --frame-output");
     }
-    if (!captures_frame && !options.frame_output.empty()) {
+    if (!captures_single_frame && !options.frame_output.empty()) {
         throw std::invalid_argument(
             "--frame-output requires --frames or --frame-on-ld-bb");
     }
@@ -584,7 +605,8 @@ int main(int argc, char** argv) {
         std::uint64_t sgb_trace_frames = 0;
         std::uint64_t trace_records = 0;
         const bool captures_frame = options.frames != 0 ||
-                                    options.frame_on_ld_bb;
+                                    options.frame_on_ld_bb ||
+                                    options.frame_series_last != 0;
 
         if (sgb_recorder.has_value()) {
             if (!sgb_recorder->checkpoint(0, 0, emulator)) {
@@ -727,6 +749,18 @@ int main(int argc, char** argv) {
             }
             if (captures_frame && emulator.frame_ready()) {
                 ++completed_frames;
+                if (options.frame_series_last != 0 &&
+                    completed_frames >= options.frame_series_first) {
+                    const auto path = std::filesystem::path{
+                        options.frame_series_prefix.string() + "-" +
+                        std::to_string(completed_frames) + ".ppm"};
+                    write_capture(path, emulator, options.sgb_frame);
+                    if (completed_frames == options.frame_series_last) {
+                        std::cout << "Captured frame series through "
+                                  << completed_frames << '\n';
+                        return finish_run(EXIT_SUCCESS);
+                    }
+                }
                 if (completed_frames == options.frames) {
                     write_capture(options.frame_output, emulator,
                                   options.sgb_frame);
