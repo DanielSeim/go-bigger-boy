@@ -13,6 +13,7 @@
 
 #define GBB_SGB_INPUT_MAX_EVENTS 1024
 #define GBB_SGB_INPUT_MAX_FRAME 100000
+#define GBB_SGB_INPUT_MAX_OFFSET_CHANGES 16
 
 typedef struct {
     unsigned frame;
@@ -23,6 +24,17 @@ typedef struct {
     size_t count;
     gbb_sgb_input_event events[GBB_SGB_INPUT_MAX_EVENTS];
 } gbb_sgb_input_script;
+
+typedef struct {
+    unsigned frame;
+    unsigned offset;
+} gbb_sgb_input_offset_change;
+
+typedef struct {
+    unsigned base_offset;
+    size_t count;
+    gbb_sgb_input_offset_change changes[GBB_SGB_INPUT_MAX_OFFSET_CHANGES];
+} gbb_sgb_input_offset_map;
 
 static int gbb_sgb_input_error(char *error, size_t capacity,
                                unsigned line, const char *message) {
@@ -133,6 +145,48 @@ static int gbb_sgb_input_load(const char *path, gbb_sgb_input_script *script,
                                                "missing header");
     fclose(input);
     return ok;
+}
+
+/* Reference emulators may count boot and LCD-off frames differently. Apply
+ * piecewise offsets to input events, not to captured images, and reject any
+ * mapping that reverses or merges events. */
+static int gbb_sgb_input_schedule(const gbb_sgb_input_script *script,
+                                  const gbb_sgb_input_offset_map *map,
+                                  unsigned scheduled[GBB_SGB_INPUT_MAX_EVENTS],
+                                  char *error, size_t capacity) {
+    if (script->count > GBB_SGB_INPUT_MAX_EVENTS ||
+        map->count > GBB_SGB_INPUT_MAX_OFFSET_CHANGES ||
+        map->base_offset > GBB_SGB_INPUT_MAX_FRAME) {
+        if (capacity) snprintf(error, capacity, "input schedule exceeds limit");
+        return 0;
+    }
+    for (size_t index = 0; index < map->count; ++index) {
+        const gbb_sgb_input_offset_change *change = &map->changes[index];
+        if (change->frame == 0 || change->frame > GBB_SGB_INPUT_MAX_FRAME ||
+            change->offset > GBB_SGB_INPUT_MAX_FRAME ||
+            (index && change->frame <= map->changes[index - 1].frame)) {
+            if (capacity) snprintf(error, capacity,
+                                   "offset changes must have increasing positive frames");
+            return 0;
+        }
+    }
+    size_t next_change = 0;
+    unsigned offset = map->base_offset;
+    for (size_t index = 0; index < script->count; ++index) {
+        const unsigned frame = script->events[index].frame;
+        while (next_change < map->count &&
+               frame >= map->changes[next_change].frame) {
+            offset = map->changes[next_change++].offset;
+        }
+        if (frame > GBB_SGB_INPUT_MAX_FRAME - offset ||
+            (index && frame + offset <= scheduled[index - 1])) {
+            if (capacity) snprintf(error, capacity,
+                                   "mapped input frames must increase and fit the limit");
+            return 0;
+        }
+        scheduled[index] = frame + offset;
+    }
+    return 1;
 }
 
 #endif

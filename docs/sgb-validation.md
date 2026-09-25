@@ -157,10 +157,13 @@ Supported names are `right`, `left`, `up`, `down`, `a`, `b`, `select`, `start`.
 Frame 0 is applied before the first frame. Comments begin with `#`; events
 must have increasing frame numbers. GBB frame numbers start post-boot;
 SameBoy frame numbers start at power-on, so `--input-offset N` on the SameBoy
-driver shifts every script event by N power-on frames. Determine N from a
-later dynamic scene sequence, not one static startup image: the boot-to-game
-offset can vary with SGB pacing and the chosen title. Neither runner changes
-emulation speed to accommodate the script.
+driver shifts every script event by N power-on frames. For a long replay,
+`--input-offset-at SCRIPT_FRAME N` changes that offset from the specified
+script frame onward; repeat it for later phases. The driver rejects schedules
+that merge or reorder events. Establish offsets from dynamic scene and game
+state alignment, not one static startup image: boot and LCD-off periods can
+change the relationship between the two frame counters. Neither runner
+changes emulation speed to accommodate the script.
 
 The ROM-free test in `tests/fixtures/sgb/input_fixture.*` verifies press,
 release, and malformed-script handling. A hash-pinned, opt-in title case in
@@ -193,8 +196,11 @@ settled menu and border scenes. The report lists every checkpoint and the
 not that every intervening frame did. Run it with the same command above,
 substituting that manifest and a different output directory.
 
-For a strict diagnostic of *every* frame, capture both series locally and
-allow at most two frames of capture-boundary drift around the observed offset:
+For a strict diagnostic of *every* frame, capture both series locally. This
+title needs the independently observed reference input phases (133 frames
+before script frame 900, 124 until frame 8300, then 155); one fixed offset
+does not replay the same game state through the long introduction. Allow at
+most two frames of capture-boundary drift around the final observed offset:
 
 ```sh
 gbb_test_runner '/path/to/title.gb' --model sgb --max-cycles 760000000 \
@@ -204,20 +210,23 @@ gbb_test_runner '/path/to/title.gb' --model sgb --max-cycles 760000000 \
   /path/to/SameBoy/build/bin/BootROMs/sgb_boot.bin \
   --series 8645 8935 /tmp/sameboy-moving sgb \
   --input-script tests/fixtures/sgb/titles/pokemon-blue-new-game.script \
-  --input-offset 155
+  --input-offset 133 --input-offset-at 900 124 \
+  --input-offset-at 8300 155
 python3 scripts/align_sgb_frames.py \
   --target-series '/tmp/gbb-moving-*.ppm' \
   --reference-series '/tmp/sameboy-moving-*.ppm' \
   --sequence-offset 155 --window 2
 ```
 
-In the checked run, **289 of 291** GBB frames had an exact independent match
-within that two-frame window. Frames **8622 and 8623** did not: GBB briefly
-showed the menu's `EXIT` text before the other items, a transient not present
-in the SameBoy series. The scanner exits nonzero and reports frame 8622 as the
-first divergence. This remains an accuracy discrepancy to investigate; it is
-not treated as a passing full-sequence test. No reference artwork is checked
-into the repository—only frame hashes and provenance.
+In the checked run, **all 291 GBB frames** had an exact independent match
+within that two-frame window, including menu-construction frames 8622 and
+8623. The earlier two-frame mismatch came from using a fixed 155-frame
+offset for reference button presses throughout the introduction: the two
+runs reached the menu with a different game-controlled update phase. A
+phase-aware input schedule removed that mismatch without changing emulator
+rendering. This verifies this scripted sequence, not every SGB behavior.
+No reference artwork is checked into the repository—only frame hashes and
+provenance.
 
 With the three hash-pinned ROMs, a pinned SameBoy build, and its independently
 written boot ROM, these full-frame pairs matched with **zero** mismatched

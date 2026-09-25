@@ -3,8 +3,10 @@
  * Uses only its public Core API; no ROM or SameBoy code is bundled.
  * Usage: sameboy_sgb_capture ROM BOOT_ROM FRAMES OUTPUT.ppm [sgb|sgb2]
  *        [--input-script PATH --input-offset FRAMES]
+ *        [--input-offset-at SCRIPT_FRAME FRAMES]...
  *    or: sameboy_sgb_capture ROM BOOT_ROM --series FIRST LAST PREFIX [sgb|sgb2]
  *        [--input-script PATH --input-offset FRAMES]
+ *        [--input-offset-at SCRIPT_FRAME FRAMES]...
  */
 #include "Core/gb.h"
 #include "Core/display.h"
@@ -57,7 +59,8 @@ int main(int argc, char **argv) {
     if (argc < positional) {
         fprintf(stderr, "usage: %s ROM BOOT_ROM FRAMES OUTPUT.ppm [sgb|sgb2]\n"
                 "   or: %s ROM BOOT_ROM --series FIRST LAST PREFIX [sgb|sgb2]\n"
-                "   optional: --input-script PATH --input-offset FRAMES\n",
+                "   optional: --input-script PATH --input-offset FRAMES\n"
+                "             [--input-offset-at SCRIPT_FRAME FRAMES]...\n",
                 argv[0], argv[0]);
         return 2;
     }
@@ -74,6 +77,7 @@ int main(int argc, char **argv) {
     const char *input_path = NULL;
     unsigned long input_offset = 0;
     int saw_offset = 0;
+    gbb_sgb_input_offset_map offset_map = {0};
     for (int index = positional; index < argc; ++index) {
         if (!strcmp(argv[index], "sgb") && index == positional) {
             continue;
@@ -95,20 +99,37 @@ int main(int argc, char **argv) {
             saw_offset = 1;
             continue;
         }
+        if (!strcmp(argv[index], "--input-offset-at") && index + 2 < argc &&
+            offset_map.count < GBB_SGB_INPUT_MAX_OFFSET_CHANGES) {
+            const char *frame_text = argv[++index];
+            unsigned long script_frame = strtoul(frame_text, &end, 10);
+            if (end == frame_text || *end || script_frame == 0 ||
+                script_frame > GBB_SGB_INPUT_MAX_FRAME) return 2;
+            const char *offset_text = argv[++index];
+            unsigned long offset = strtoul(offset_text, &end, 10);
+            if (end == offset_text || *end ||
+                offset > GBB_SGB_INPUT_MAX_FRAME) return 2;
+            offset_map.changes[offset_map.count].frame = (unsigned)script_frame;
+            offset_map.changes[offset_map.count].offset = (unsigned)offset;
+            ++offset_map.count;
+            continue;
+        }
         return 2;
     }
-    if (saw_offset && input_path == NULL) return 2;
+    if ((saw_offset || offset_map.count) && input_path == NULL) return 2;
+    offset_map.base_offset = (unsigned)input_offset;
     gbb_sgb_input_script inputs = {0};
+    unsigned scheduled_input_frames[GBB_SGB_INPUT_MAX_EVENTS] = {0};
     if (input_path) {
         char error[128] = {0};
         if (!gbb_sgb_input_load(input_path, &inputs, error, sizeof(error))) {
             fprintf(stderr, "input script: %s\n", error);
             return 2;
         }
-        if (inputs.count &&
-            inputs.events[inputs.count - 1].frame >
-                GBB_SGB_INPUT_MAX_FRAME - input_offset) {
-            fprintf(stderr, "input script exceeds frame limit after offset\n");
+        if (!gbb_sgb_input_schedule(&inputs, &offset_map,
+                                    scheduled_input_frames, error,
+                                    sizeof(error))) {
+            fprintf(stderr, "input schedule: %s\n", error);
             return 2;
         }
     }
@@ -136,7 +157,7 @@ int main(int argc, char **argv) {
     }
     size_t next_input_event = 0;
     uint8_t held_buttons = 0;
-    if (inputs.count && input_offset == 0 && inputs.events[0].frame == 0) {
+    if (inputs.count && scheduled_input_frames[0] == 0) {
         set_held_buttons(gb, held_buttons, inputs.events[0].mask);
         held_buttons = inputs.events[0].mask;
         ++next_input_event;
@@ -156,7 +177,7 @@ int main(int argc, char **argv) {
             if (result) break;
         }
         if (next_input_event < inputs.count &&
-            frame == inputs.events[next_input_event].frame + input_offset) {
+            frame == scheduled_input_frames[next_input_event]) {
             uint8_t mask = inputs.events[next_input_event++].mask;
             set_held_buttons(gb, held_buttons, mask);
             held_buttons = mask;

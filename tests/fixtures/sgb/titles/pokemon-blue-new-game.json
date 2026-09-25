@@ -18,7 +18,7 @@
   },
   "reference": {
     "source": "independent-emulator",
-    "description": "SameBoy v1.0.3 commit 208ba4afabffab9edde416f2dbb8ae459e34adb8, SGB power-on frame 8655, open-source sgb_boot.bin SHA-256 b60d493a7944ccf74c81f1e7b6bf38c2c7029e296648ea0e74cb22b10dd1fcb8, same script with input offset 155",
+    "description": "SameBoy v1.0.3 commit 208ba4afabffab9edde416f2dbb8ae459e34adb8, SGB power-on frame 8655, open-source sgb_boot.bin SHA-256 b60d493a7944ccf74c81f1e7b6bf38c2c7029e296648ea0e74cb22b10dd1fcb8, same script with base input offset 133 and offset changes at script frames 900 to 124 and 8300 to 155",
     "frame_sha256": "7f5c87f1bc96d74a27ba150371ba79385697865a01cd05dbdf08806bf5d2e135"
   }
 }

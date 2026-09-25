@@ -1079,6 +1079,12 @@ if(GAMEBOY_BUILD_TESTS)
     add_test(NAME gameboy_sgb_trace_contract
              COMMAND gameboy_sgb_trace_contract_tests)
 
+    add_executable(gameboy_sgb_input_offset_tests
+        tests/sgb_input_offset_tests.cpp)
+    target_include_directories(gameboy_sgb_input_offset_tests PRIVATE scripts)
+    add_test(NAME gameboy_sgb_input_offset
+             COMMAND gameboy_sgb_input_offset_tests)
+
     add_executable(gameboy_logging_contract_tests
         tests/logging_contract_tests.cpp)
     target_link_libraries(gameboy_logging_contract_tests PRIVATE gbb_core_api)
