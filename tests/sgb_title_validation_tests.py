@@ -270,10 +270,15 @@ class SgbTitleValidationTests(unittest.TestCase):
             common = [str(RUNNER.resolve()), str(rom), "--model", "sgb",
                       "--max-cycles", "500000", "--sgb-frame"]
             series = subprocess.run(
-                common + ["--frame-series", "1", "2", str(root / "series")],
+                common + ["--frame-series", "1", "2", str(root / "series"),
+                          "--frame-state-series", "--watch-wram", "0xC000"],
                 capture_output=True, text=True, timeout=10, check=False)
             self.assertEqual(series.returncode, 0, series.stderr)
             self.assertTrue((root / "series-1.ppm").is_file())
+            self.assertEqual((root / "series-1.state").stat().st_size,
+                             0x2000 + 0xA0)
+            self.assertEqual((root / "series-2.state").stat().st_size,
+                             0x2000 + 0xA0)
             single = subprocess.run(
                 common + ["--frames", "2", "--frame-output",
                           str(root / "single.ppm")],
@@ -289,6 +294,15 @@ class SgbTitleValidationTests(unittest.TestCase):
             self.assertNotEqual(conflicting.returncode, 0)
             self.assertIn("mutually exclusive", conflicting.stderr)
             self.assertFalse((root / "bad-1.ppm").exists())
+            for invalid in (["--frame-state-series"],
+                            ["--watch-wram", "0xBFFF"],
+                            ["--watch-wram", "0xC000"]):
+                rejected = subprocess.run(
+                    common + ["--frames", "1", "--frame-output",
+                              str(root / "invalid.ppm")] + invalid,
+                    capture_output=True, text=True, timeout=10, check=False)
+                self.assertNotEqual(rejected.returncode, 0)
+                self.assertFalse((root / "invalid.ppm").exists())
 
     def test_input_script_changes_and_restores_synthetic_scene(self) -> None:
         if RUNNER is None:

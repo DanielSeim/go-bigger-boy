@@ -46,9 +46,11 @@ struct Options {
     std::filesystem::path sgb_trace_output;
     std::filesystem::path sgb_replay_input;
     std::uint64_t trace_limit{};
+    std::optional<std::uint16_t> watched_wram;
     bool dmg_compatibility_colors{};
     bool frame_on_ld_bb{};
     bool sgb_frame{};
+    bool frame_state_series{};
     bool diagnostic_boot{};
 };
 
@@ -59,6 +61,8 @@ void usage() {
                  "[--model auto|dmg0|dmg|mgb|sgb|sgb2|cgb0|cgb-c|cgb-e] "
                  "[--frames N --frame-output capture.ppm [--sgb-frame]] "
                  "[--frame-series FIRST LAST PREFIX [--sgb-frame]] "
+                 "[--frame-state-series] "
+                 "[--watch-wram 0xC000..0xDFFF] "
                  "[--input-script PATH] "
                  "[--trace-apu PATH] [--trace-ppu PATH] [--trace-io PATH] "
                  "[--trace-cpu PATH] [--trace-limit N] "
@@ -142,6 +146,20 @@ Options parse_options(const int argc, char** argv) {
             options.frame_on_ld_bb = true;
         } else if (argument == "--sgb-frame") {
             options.sgb_frame = true;
+        } else if (argument == "--frame-state-series") {
+            options.frame_state_series = true;
+        } else if (argument == "--watch-wram" && index + 1 < argc) {
+            if (options.watched_wram.has_value()) {
+                throw std::invalid_argument("--watch-wram specified twice");
+            }
+            const auto value = std::string{argv[++index]};
+            std::size_t consumed = 0;
+            const auto parsed = std::stoul(value, &consumed, 0);
+            if (consumed != value.size() || parsed < 0xC000 ||
+                parsed > 0xDFFF) {
+                throw std::invalid_argument("--watch-wram requires a WRAM address");
+            }
+            options.watched_wram = static_cast<std::uint16_t>(parsed);
         } else if (argument == "--diagnostic-boot") {
             options.diagnostic_boot = true;
         } else {
@@ -185,6 +203,13 @@ Options parse_options(const int argc, char** argv) {
         throw std::invalid_argument(
             "--sgb-frame requires --frames or --frame-on-ld-bb");
     }
+    if (options.frame_state_series && options.frame_series_last == 0) {
+        throw std::invalid_argument(
+            "--frame-state-series requires --frame-series");
+    }
+    if (options.watched_wram.has_value() && options.frame_series_last == 0) {
+        throw std::invalid_argument("--watch-wram requires --frame-series");
+    }
     return options;
 }
 
@@ -225,6 +250,21 @@ void write_capture(const std::filesystem::path& path,
         write_frame(path, frame.data(), gameboy::Ppu::screen_width,
                     gameboy::Ppu::screen_height);
     }
+}
+
+void write_frame_state(const std::filesystem::path& path,
+                       const gameboy::Emulator& emulator) {
+    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    if (!output) throw std::runtime_error("could not open frame state: " + path.string());
+    for (std::uint32_t address = 0xC000; address < 0xE000; ++address) {
+        output.put(static_cast<char>(emulator.bus().read8(
+            static_cast<std::uint16_t>(address))));
+    }
+    for (std::uint16_t offset = 0; offset < 0xA0; ++offset) {
+        output.put(static_cast<char>(emulator.bus().debug_read_oam(
+            static_cast<std::uint8_t>(offset))));
+    }
+    if (!output) throw std::runtime_error("could not write frame state: " + path.string());
 }
 
 void set_held_buttons(gameboy::Emulator& emulator, const std::uint8_t previous,
@@ -751,10 +791,25 @@ int main(int argc, char** argv) {
                                        recent_pcs.size());
             const auto trace_cycle = emulator.cpu().total_cycles();
             const auto trace_pc = registers.pc;
+            const bool watching_wram = options.watched_wram.has_value() &&
+                completed_frames >= options.frame_series_first - 1;
+            const auto watched_before = watching_wram
+                ? emulator.bus().read8(*options.watched_wram) : std::uint8_t{};
             const auto trace_opcode = cpu_trace
                                           ? emulator.bus().read8(trace_pc)
                                           : std::uint8_t{};
             const auto stepped_cycles = emulator.step();
+            if (watching_wram) {
+                const auto watched_after = emulator.bus().read8(*options.watched_wram);
+                if (watched_before != watched_after) {
+                    std::cerr << "WRAM watch frame=" << completed_frames
+                              << " cycle=" << trace_cycle << " pc=" << std::hex
+                              << trace_pc << " address=" << *options.watched_wram
+                              << " old=" << static_cast<unsigned>(watched_before)
+                              << " new=" << static_cast<unsigned>(watched_after)
+                              << std::dec << '\n';
+                }
+            }
             const auto tracing = options.trace_limit == 0 ||
                                  trace_records < options.trace_limit;
             if (tracing) {
@@ -799,6 +854,12 @@ int main(int argc, char** argv) {
                             options.frame_series_prefix.string() + "-" +
                             std::to_string(completed_frames) + ".ppm"};
                         write_capture(path, emulator, options.sgb_frame);
+                        if (options.frame_state_series) {
+                            write_frame_state(std::filesystem::path{
+                                options.frame_series_prefix.string() + "-" +
+                                std::to_string(completed_frames) + ".state"},
+                                emulator);
+                        }
                         if (completed_frames == options.frame_series_last) {
                             std::cout << "Captured frame series through "
                                       << completed_frames << '\n';

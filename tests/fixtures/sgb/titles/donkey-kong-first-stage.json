@@ -3,8 +3,8 @@
   "title": "Donkey Kong (JU) v1.1 SGB first-stage gameplay",
   "rom_sha256": "b490c89efe718633b07381def66ce0ed58a5075aabe40c6e644baf2b408a76f4",
   "model": "sgb",
-  "frames": 3048,
-  "max_cycles": 260000000,
+  "frames": 3576,
+  "max_cycles": 320000000,
   "command_minimums": {
     "0x08": 1,
     "0x09": 2,
@@ -20,7 +20,7 @@
   },
   "reference": {
     "source": "independent-emulator",
-    "description": "SameBoy v1.0.3 commit 208ba4afabffab9edde416f2dbb8ae459e34adb8, open-source sgb_boot.bin SHA-256 b60d493a7944ccf74c81f1e7b6bf38c2c7029e296648ea0e74cb22b10dd1fcb8, random seed 1, same input script with base offset 230 and changes at script frames 1600 to 229 and 2800 to 297; first-stage movement and moving objects",
+    "description": "SameBoy v1.0.3 commit 208ba4afabffab9edde416f2dbb8ae459e34adb8, open-source sgb_boot.bin SHA-256 b60d493a7944ccf74c81f1e7b6bf38c2c7029e296648ea0e74cb22b10dd1fcb8, random seed 1, initial WRAM explicitly zeroed to match GBB post-boot, same input script with base offset 230 and changes at script frames 1600 to 229 and 2800 to 297; first-stage movement and moving objects",
     "checkpoints": [
       {"frame": 2800, "reference_frame": 3097, "frame_sha256": "c0c0e6d8c9b831d06f60b210e68674ac346c9e5e4b7801eb83410533c697c3cf"},
       {"frame": 2820, "reference_frame": 3117, "frame_sha256": "b21c8ffc9eb175cdbee3d2f2d9022e9273f01de60ad5404ca77c90b668f49391"},
@@ -32,7 +32,15 @@
       {"frame": 3000, "reference_frame": 3297, "frame_sha256": "ce06571274b95a73702c795b1608cebc0de0e45bcfffd182cda38aaf54f9a57b"},
       {"frame": 3021, "reference_frame": 3318, "frame_sha256": "6cddce05bd09f5241804913b4221c93ed8e340aa6e3270b8e457773f76230405"},
       {"frame": 3035, "reference_frame": 3332, "frame_sha256": "0787e43225734289840855ebb55075a71b297db7e5c6fe68f6a6757003080840"},
-      {"frame": 3048, "reference_frame": 3345, "frame_sha256": "0167b6e0c3415c7b6979883d60aad9ff0bdedd6639768614e93723f5e2c45656"}
+      {"frame": 3048, "reference_frame": 3345, "frame_sha256": "0167b6e0c3415c7b6979883d60aad9ff0bdedd6639768614e93723f5e2c45656"},
+      {"frame": 3049, "reference_frame": 3346, "frame_sha256": "cd9edae1b643d15f7115141e3cdf47c2a99f8b045a23caa72a3b53a8cc01ee9c"},
+      {"frame": 3050, "reference_frame": 3347, "frame_sha256": "71fb4d5e67f19292f82baddced140e7feb7965c985599dc314e58e99775295be"},
+      {"frame": 3100, "reference_frame": 3397, "frame_sha256": "2fa535a0e9cd29fc6ec1df0b97e5f43468d88b3bfde9fed48761ed9db2bb0cfc"},
+      {"frame": 3200, "reference_frame": 3497, "frame_sha256": "93b65b70bfa92326988d714b03cb1b53993347a2eba544d7244946fab43cb4ef"},
+      {"frame": 3300, "reference_frame": 3597, "frame_sha256": "3bc26dbbf83e07892a93c10c92d90bd40105e9ece3c4865b4a92c280f1865637"},
+      {"frame": 3350, "reference_frame": 3647, "frame_sha256": "2c929e074a0e763a37fb0588dfb45f3ab70ea37dff122af700c431a0a6520bca"},
+      {"frame": 3378, "reference_frame": 3675, "frame_sha256": "f56771250291da98a9354aac8c9634d1ad036624324971ae95a8516a188f8fe6"},
+      {"frame": 3576, "reference_frame": 3873, "frame_sha256": "cc747fe1928110b3b3380999c1c5aa35a55c83c578fbc4b16b89e4b86837a662"}
     ]
   }
 }
