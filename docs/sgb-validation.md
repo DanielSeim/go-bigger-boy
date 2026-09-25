@@ -246,6 +246,54 @@ caused by different boot and fade progress; they were not evidence of a
 palette-rendering regression. This does **not** establish that every scene,
 SNES-side command, or SGB audio effect is correct.
 
+### Donkey Kong first-stage gameplay
+
+The opt-in `donkey-kong-first-stage.json` manifest replays the hash-pinned
+Donkey Kong v1.1 ROM from the title screen, chooses a new file, and moves and
+jumps Mario during the first stage. Its 11 independent full-frame checkpoints
+cover GBB frames 2800–3048. In the checked run, **all 249 consecutive frames**
+in that range matched SameBoy exactly, with no frame-timing window or pixel
+tolerance. The matched pictures include the transferred border, first-stage
+colorization, moving barrels, and player movement. Run the pinned case with:
+
+```sh
+python3 scripts/validate_sgb_title.py \
+  --manifest tests/fixtures/sgb/titles/donkey-kong-first-stage.json \
+  --rom '/path/to/Donkey Kong (JU) (V1.1) [S][!].gb' \
+  --runner build/gbb_test_runner \
+  --output-dir /tmp/gbb-sgb-donkey-gameplay
+```
+
+For the strict independent sequence comparison, use the pinned SameBoy build
+and boot ROM described above, then capture the same script with the observed
+phase changes. `--random-seed 1` fixes SameBoy's otherwise time-seeded initial
+RAM; without a pinned seed, this title's moving-object state can differ across
+reference runs even if the first visible frames match. The seed makes the
+comparison reproducible, not hardware-perfect. The ROM and all images stay
+local.
+
+```sh
+/tmp/sameboy_sgb_capture '/path/to/Donkey Kong (JU) (V1.1) [S][!].gb' \
+  /path/to/SameBoy/build/bin/BootROMs/sgb_boot.bin \
+  --series 3097 3345 /tmp/donkey-reference sgb \
+  --input-script tests/fixtures/sgb/titles/donkey-kong-gameplay.script \
+  --input-offset 230 --input-offset-at 1600 229 \
+  --input-offset-at 2800 297 --random-seed 1
+python3 scripts/align_sgb_frames.py \
+  --target-series '/tmp/gbb-sgb-donkey-gameplay/sgb-frame-*.ppm' \
+  --reference-series '/tmp/donkey-reference-*.ppm' \
+  --sequence-offset 297 --window 0
+```
+
+An exploratory extension first diverged at GBB frame 3049, in Pauline's
+animation inside the Game Boy viewport. OAM bytes and the corresponding WRAM
+sprite buffer differ at the same aligned frame, whereas the preceding frame's
+OAM matches. The cause of that game-state/animation phase difference is not
+yet established; changing OAM DMA or the SGB border compositor would not
+address it. The manifest deliberately stops at the last verified frame.
+Donkey Kong's observed `SOUND` and `SOU_TRN` commands still require SNES-side
+audio support, so these visual matches make no audio-accuracy claim.
+
 Capture other representative scenes before treating any title as broadly
 compatible. The trace reporter counts decoded commands and highlights
 unimplemented host-side operations; its synthetic fixture exercises only

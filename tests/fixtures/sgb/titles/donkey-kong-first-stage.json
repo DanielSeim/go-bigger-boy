@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "title": "Donkey Kong (JU) v1.1 SGB first-stage gameplay",
+  "rom_sha256": "b490c89efe718633b07381def66ce0ed58a5075aabe40c6e644baf2b408a76f4",
+  "model": "sgb",
+  "frames": 3048,
+  "max_cycles": 260000000,
+  "command_minimums": {
+    "0x08": 1,
+    "0x09": 2,
+    "0x0A": 1,
+    "0x0E": 1,
+    "0x0F": 1,
+    "0x13": 2,
+    "0x14": 1
+  },
+  "input": {
+    "script": "donkey-kong-gameplay.script",
+    "script_sha256": "a5d37081cc52b8bfe72284f5cd836b0ccea9bfc3ddf25fcc1ac2769b3b2e802b"
+  },
+  "reference": {
+    "source": "independent-emulator",
+    "description": "SameBoy v1.0.3 commit 208ba4afabffab9edde416f2dbb8ae459e34adb8, open-source sgb_boot.bin SHA-256 b60d493a7944ccf74c81f1e7b6bf38c2c7029e296648ea0e74cb22b10dd1fcb8, random seed 1, same input script with base offset 230 and changes at script frames 1600 to 229 and 2800 to 297; first-stage movement and moving objects",
+    "checkpoints": [
+      {"frame": 2800, "reference_frame": 3097, "frame_sha256": "c0c0e6d8c9b831d06f60b210e68674ac346c9e5e4b7801eb83410533c697c3cf"},
+      {"frame": 2820, "reference_frame": 3117, "frame_sha256": "b21c8ffc9eb175cdbee3d2f2d9022e9273f01de60ad5404ca77c90b668f49391"},
+      {"frame": 2840, "reference_frame": 3137, "frame_sha256": "d66c83e834dad2e5c16d1004b36719627c4aae00e67e66db8aefc71d0e5c891f"},
+      {"frame": 2870, "reference_frame": 3167, "frame_sha256": "5f4df52c515f41bfb78ecd0e0af678d7446695cd8f3115a50fe8fd3795ab2785"},
+      {"frame": 2900, "reference_frame": 3197, "frame_sha256": "bac2d7def5de518a5dc7f83218098d2d050cd8f6eacc4a13892a35460f4b3bb9"},
+      {"frame": 2920, "reference_frame": 3217, "frame_sha256": "df8933873231a77b011b81c6b88bbec6904c62a67a586da41f09eb22685bb8e5"},
+      {"frame": 2964, "reference_frame": 3261, "frame_sha256": "cfb953b4fd25a4b4416f2968e698e484a0d9a06037ca69b5512f14a0c792a261"},
+      {"frame": 3000, "reference_frame": 3297, "frame_sha256": "ce06571274b95a73702c795b1608cebc0de0e45bcfffd182cda38aaf54f9a57b"},
+      {"frame": 3021, "reference_frame": 3318, "frame_sha256": "6cddce05bd09f5241804913b4221c93ed8e340aa6e3270b8e457773f76230405"},
+      {"frame": 3035, "reference_frame": 3332, "frame_sha256": "0787e43225734289840855ebb55075a71b297db7e5c6fe68f6a6757003080840"},
+      {"frame": 3048, "reference_frame": 3345, "frame_sha256": "0167b6e0c3415c7b6979883d60aad9ff0bdedd6639768614e93723f5e2c45656"}
+    ]
+  }
+}

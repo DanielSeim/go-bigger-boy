@@ -19,6 +19,20 @@ RUNNER = Path(sys.argv.pop()) if len(sys.argv) > 1 else None
 
 
 class SgbTitleValidationTests(unittest.TestCase):
+    def test_checked_in_title_manifests_pin_existing_input_scripts(self) -> None:
+        title_dir = Path(__file__).parent / "fixtures/sgb/titles"
+        manifests = sorted(title_dir.glob("*.json"))
+        self.assertTrue(manifests)
+        for path in manifests:
+            with self.subTest(manifest=path.name):
+                data = load_manifest(path)
+                input_data = data.get("input")
+                if input_data is not None:
+                    script = title_dir / input_data["script"]
+                    self.assertTrue(script.is_file())
+                    self.assertEqual(hashlib.sha256(script.read_bytes()).hexdigest(),
+                                     input_data["script_sha256"])
+
     def test_fixture_inventory_is_not_mislabeled_as_reference(self) -> None:
         if RUNNER is None:
             self.skipTest("runner path not supplied")

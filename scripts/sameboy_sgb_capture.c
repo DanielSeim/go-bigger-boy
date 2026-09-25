@@ -4,13 +4,16 @@
  * Usage: sameboy_sgb_capture ROM BOOT_ROM FRAMES OUTPUT.ppm [sgb|sgb2]
  *        [--input-script PATH --input-offset FRAMES]
  *        [--input-offset-at SCRIPT_FRAME FRAMES]...
+ *        [--random-seed UNSIGNED_DECIMAL]
  *    or: sameboy_sgb_capture ROM BOOT_ROM --series FIRST LAST PREFIX [sgb|sgb2]
  *        [--input-script PATH --input-offset FRAMES]
  *        [--input-offset-at SCRIPT_FRAME FRAMES]...
+ *        [--random-seed UNSIGNED_DECIMAL]
  */
 #include "Core/gb.h"
 #include "Core/display.h"
 #include "sgb_input_script.h"
+#include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -60,7 +63,8 @@ int main(int argc, char **argv) {
         fprintf(stderr, "usage: %s ROM BOOT_ROM FRAMES OUTPUT.ppm [sgb|sgb2]\n"
                 "   or: %s ROM BOOT_ROM --series FIRST LAST PREFIX [sgb|sgb2]\n"
                 "   optional: --input-script PATH --input-offset FRAMES\n"
-                "             [--input-offset-at SCRIPT_FRAME FRAMES]...\n",
+                "             [--input-offset-at SCRIPT_FRAME FRAMES]...\n"
+                "             [--random-seed UNSIGNED_DECIMAL]\n",
                 argv[0], argv[0]);
         return 2;
     }
@@ -77,6 +81,8 @@ int main(int argc, char **argv) {
     const char *input_path = NULL;
     unsigned long input_offset = 0;
     int saw_offset = 0;
+    uint64_t random_seed = 0;
+    int saw_random_seed = 0;
     gbb_sgb_input_offset_map offset_map = {0};
     for (int index = positional; index < argc; ++index) {
         if (!strcmp(argv[index], "sgb") && index == positional) {
@@ -114,6 +120,17 @@ int main(int argc, char **argv) {
             ++offset_map.count;
             continue;
         }
+        if (!strcmp(argv[index], "--random-seed") && index + 1 < argc &&
+            !saw_random_seed) {
+            const char *value = argv[++index];
+            if (*value < '0' || *value > '9') return 2;
+            errno = 0;
+            unsigned long long parsed = strtoull(value, &end, 10);
+            if (errno == ERANGE || end == value || *end) return 2;
+            random_seed = (uint64_t)parsed;
+            saw_random_seed = 1;
+            continue;
+        }
         return 2;
     }
     if ((saw_offset || offset_map.count) && input_path == NULL) return 2;
@@ -133,6 +150,7 @@ int main(int argc, char **argv) {
             return 2;
         }
     }
+    if (saw_random_seed) GB_random_seed(random_seed);
     GB_gameboy_t *gb = GB_init(GB_alloc(), model);
     if (!gb) return 3;
     if (GB_load_boot_rom(gb, argv[2])) {
