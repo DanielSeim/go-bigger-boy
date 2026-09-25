@@ -7,7 +7,7 @@
   "max_cycles": 730000000,
   "input": {
     "script": "pokemon-blue-new-game.script",
-    "script_sha256": "43915b46b1e5904c98fcd695010d96e1b92e421fd467bfb66f1fa7fffd648d71"
+    "script_sha256": "d80401a9eb94851917435ace6ce9c6478de5e747a1a9ec57199daa08703793fb"
   },
   "command_minimums": {
     "0x0F": 8,

@@ -176,6 +176,57 @@ class SgbTitleValidationTests(unittest.TestCase):
                 validate(manifest, rom, RUNNER, root / "stale")
             self.assertFalse((root / "stale").exists())
 
+    def test_checkpoint_sequence_reports_first_divergent_frame(self) -> None:
+        if RUNNER is None:
+            self.skipTest("runner path not supplied")
+        fixture_dir = Path(__file__).parent / "fixtures/sgb"
+        rom_bytes = load_fixture(fixture_dir / "trace_fixture.hex")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            rom = root / "fixture.gb"
+            rom.write_bytes(rom_bytes)
+            script = fixture_dir / "input_fixture.script"
+            capture = subprocess.run(
+                [str(RUNNER.resolve()), str(rom), "--model", "sgb",
+                 "--sgb-frame", "--max-cycles", "500000",
+                 "--input-script", str(script), "--frame-series", "2", "3",
+                 str(root / "reference")],
+                capture_output=True, text=True, timeout=10, check=False)
+            self.assertEqual(capture.returncode, 0, capture.stderr)
+            checkpoints = [
+                {"frame": frame, "reference_frame": frame + 100,
+                 "frame_sha256": hashlib.sha256(
+                     (root / f"reference-{frame}.ppm").read_bytes()).hexdigest()}
+                for frame in (2, 3)
+            ]
+            data = {
+                "schema": 1, "title": "Synthetic checkpoint plumbing only",
+                "rom_sha256": hashlib.sha256(rom_bytes).hexdigest(),
+                "model": "sgb", "frames": 3, "max_cycles": 500_000,
+                "command_minimums": {"0x11": 1},
+                "input": {"script": str(script),
+                          "script_sha256": hashlib.sha256(script.read_bytes()).hexdigest()},
+                "reference": {"source": "independent-emulator",
+                              "description": "Synthetic comparison plumbing only",
+                              "checkpoints": checkpoints},
+            }
+            manifest = root / "case.json"
+            manifest.write_text(json.dumps(data), encoding="utf-8")
+            report = validate(manifest, rom, RUNNER, root / "matching")
+            self.assertEqual(report["status"], "validated")
+            self.assertEqual(report["reference"]["comparison"]["matched_frames"], 2)
+            self.assertTrue((root / "matching/sgb-frame-2.ppm").is_file())
+            checkpoints[0]["frame_sha256"] = "0" * 64
+            manifest.write_text(json.dumps(data), encoding="utf-8")
+            report = validate(manifest, rom, RUNNER, root / "different")
+            self.assertEqual(report["status"], "failed")
+            self.assertEqual(report["reference"]["comparison"]["first_mismatch"]["frame"], 2)
+            self.assertEqual(report["reference"]["comparison"]["matched_frames"], 1)
+            checkpoints[0]["frame"] = 3
+            manifest.write_text(json.dumps(data), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "must increase"):
+                load_manifest(manifest)
+
     def test_full_sgb_capture_rejects_other_hardware(self) -> None:
         if RUNNER is None:
             self.skipTest("runner path not supplied")

@@ -185,6 +185,40 @@ accuracy claims. The bedroom comparison exposed and helped fix a DMG OBJ
 shade-to-SGB-color mapping error; the isolated SGB PPU contract now checks
 both BGP and OBP mapping. ROM, boot ROM, and captured artwork remain local.
 
+The adjacent `pokemon-blue-bedroom-sequence.json` case replays the same
+script farther: walk in two directions, open and close the in-game menu, and
+walk again. Its 11 hash-pinned checkpoints include moving sprites as well as
+settled menu and border scenes. The report lists every checkpoint and the
+**first divergent checkpoint**; `validated` means those 11 frames matched,
+not that every intervening frame did. Run it with the same command above,
+substituting that manifest and a different output directory.
+
+For a strict diagnostic of *every* frame, capture both series locally and
+allow at most two frames of capture-boundary drift around the observed offset:
+
+```sh
+gbb_test_runner '/path/to/title.gb' --model sgb --max-cycles 760000000 \
+  --input-script tests/fixtures/sgb/titles/pokemon-blue-new-game.script \
+  --frame-series 8490 8780 /tmp/gbb-moving --sgb-frame
+/tmp/sameboy_sgb_capture '/path/to/title.gb' \
+  /path/to/SameBoy/build/bin/BootROMs/sgb_boot.bin \
+  --series 8645 8935 /tmp/sameboy-moving sgb \
+  --input-script tests/fixtures/sgb/titles/pokemon-blue-new-game.script \
+  --input-offset 155
+python3 scripts/align_sgb_frames.py \
+  --target-series '/tmp/gbb-moving-*.ppm' \
+  --reference-series '/tmp/sameboy-moving-*.ppm' \
+  --sequence-offset 155 --window 2
+```
+
+In the checked run, **289 of 291** GBB frames had an exact independent match
+within that two-frame window. Frames **8622 and 8623** did not: GBB briefly
+showed the menu's `EXIT` text before the other items, a transient not present
+in the SameBoy series. The scanner exits nonzero and reports frame 8622 as the
+first divergence. This remains an accuracy discrepancy to investigate; it is
+not treated as a passing full-sequence test. No reference artwork is checked
+into the repository—only frame hashes and provenance.
+
 With the three hash-pinned ROMs, a pinned SameBoy build, and its independently
 written boot ROM, these full-frame pairs matched with **zero** mismatched
 pixels:

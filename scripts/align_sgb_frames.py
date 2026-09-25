@@ -105,6 +105,89 @@ def exact_scenes(targets: list[Path],
     return sorted(matches, key=lambda match: match["target"])
 
 
+def _numbered_frames(paths: list[Path]) -> dict[int, Path]:
+    numbered: dict[int, Path] = {}
+    for path in paths:
+        suffix = path.stem.rsplit("-", 1)[-1]
+        if not suffix.isdigit():
+            raise ValueError(f"{path}: expected a trailing frame number")
+        frame = int(suffix)
+        if frame in numbered:
+            raise ValueError(f"duplicate frame number {frame}")
+        numbered[frame] = path
+    if not numbered:
+        raise ValueError("frame series is empty")
+    return numbered
+
+
+def compare_sequences(targets: list[Path], references: list[Path],
+                      offset: int, window: int) -> dict[str, object]:
+    """Compare every target frame to an independent frame near its offset.
+
+    Bounded scene alignment absorbs a few capture-boundary frames of drift;
+    unmatched frames remain failures rather than being silently skipped.
+    """
+    if not 0 <= window <= 60:
+        raise ValueError("sequence window must be in 0..60")
+    target_frames = _numbered_frames(targets)
+    reference_frames = _numbered_frames(references)
+    target_hashes = {number: hashlib.sha256(read_sgb_image(path)).hexdigest()
+                     for number, path in target_frames.items()}
+    reference_hashes = {number: hashlib.sha256(read_sgb_image(path)).hexdigest()
+                        for number, path in reference_frames.items()}
+    matched = 0
+    mismatches: list[dict[str, object]] = []
+    largest_shift = 0
+    for frame in sorted(target_frames):
+        expected = frame + offset
+        candidates = [number for number in reference_frames
+                      if expected - window <= number <= expected + window]
+        matches = [number for number in candidates
+                   if reference_hashes[number] == target_hashes[frame]]
+        if matches:
+            chosen = min(matches, key=lambda number: (abs(number - expected), number))
+            largest_shift = max(largest_shift, abs(chosen - expected))
+            matched += 1
+        else:
+            mismatch: dict[str, object] = {
+                "frame": frame,
+                "expected_reference_frame": expected,
+                "target_pixel_sha256": target_hashes[frame],
+                "reference_frames_checked": len(candidates),
+            }
+            if candidates:
+                actual = read_sgb_image(target_frames[frame])
+                best = None
+                for candidate in candidates:
+                    reference_pixels = read_sgb_image(reference_frames[candidate])
+                    differing = [index for index in range(0, len(actual), 3)
+                                 if actual[index:index + 3] !=
+                                 reference_pixels[index:index + 3]]
+                    rank = (len(differing), abs(candidate - expected), candidate)
+                    if best is None or rank < best[0]:
+                        best = (rank, differing)
+                assert best is not None
+                mismatch["nearest_reference_frame"] = best[0][2]
+                mismatch["mismatched_pixels"] = best[0][0]
+                mismatch["first_pixel"] = (
+                    [best[1][0] // 3 % WIDTH, best[1][0] // 3 // WIDTH]
+                    if best[1] else None)
+            mismatches.append(mismatch)
+    return {
+        "passed": not mismatches,
+        "target_frames": len(target_frames),
+        "reference_frames": len(reference_frames),
+        "unique_target_scenes": len(set(target_hashes.values())),
+        "matched_frames": matched,
+        "unmatched_frames": len(mismatches),
+        "first_mismatch": mismatches[0] if mismatches else None,
+        "mismatches": mismatches[:20],
+        "offset": offset,
+        "window": window,
+        "largest_matched_shift": largest_shift,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("target", nargs="?", type=Path)
@@ -113,6 +196,10 @@ def main() -> int:
     parser.add_argument("--sort", choices=("edges", "rgb"), default="edges")
     parser.add_argument("--target-series", help="glob for local GBB PPM/PNG frames")
     parser.add_argument("--reference-series", help="glob for independent frames")
+    parser.add_argument("--sequence-offset", type=int,
+                        help="compare every numbered target frame near frame + OFFSET")
+    parser.add_argument("--window", type=int, default=0,
+                        help="maximum independent-frame shift in sequence mode")
     args = parser.parse_args()
     if args.top < 1:
         parser.error("--top must be positive")
@@ -122,6 +209,13 @@ def main() -> int:
                 parser.error("series mode requires both globs and no positional paths")
             targets = [Path(path) for path in glob.glob(args.target_series)]
             references = [Path(path) for path in glob.glob(args.reference_series)]
+            if args.sequence_offset is not None:
+                result = compare_sequences(targets, references,
+                                           args.sequence_offset, args.window)
+                print(json.dumps(result, indent=2))
+                return 0 if result["passed"] else 1
+            if args.window:
+                parser.error("--window requires --sequence-offset")
             matches = exact_scenes(targets, references)
             print(json.dumps({
                 "target_frames": len(targets),
@@ -131,6 +225,8 @@ def main() -> int:
             return 0 if matches else 1
         if args.target is None or not args.references:
             parser.error("a target and at least one reference are required")
+        if args.sequence_offset is not None or args.window:
+            parser.error("sequence options require both series globs")
         results = rank_frames(args.target, args.references, args.sort)
     except (OSError, ValueError, RuntimeError) as error:
         parser.exit(2, f"error: {error}\n")

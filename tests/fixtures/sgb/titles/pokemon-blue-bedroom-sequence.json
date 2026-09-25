@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "title": "Pokemon Blue (UE) SGB bedroom movement and menu checkpoints",
+  "rom_sha256": "2a951313c2640e8c2cb21f25d1db019ae6245d9c7121f754fa61afd7bee6452d",
+  "model": "sgb",
+  "frames": 8760,
+  "max_cycles": 760000000,
+  "input": {
+    "script": "pokemon-blue-new-game.script",
+    "script_sha256": "d80401a9eb94851917435ace6ce9c6478de5e747a1a9ec57199daa08703793fb"
+  },
+  "command_minimums": {
+    "0x0F": 8,
+    "0x11": 2,
+    "0x13": 1,
+    "0x14": 1,
+    "0x17": 2
+  },
+  "reference": {
+    "source": "independent-emulator",
+    "description": "SameBoy v1.0.3 commit 208ba4afabffab9edde416f2dbb8ae459e34adb8, open-source sgb_boot.bin SHA-256 b60d493a7944ccf74c81f1e7b6bf38c2c7029e296648ea0e74cb22b10dd1fcb8, same input script with offset 155; exact matched scenes sampled during movement, menu open/close, and movement again",
+    "checkpoints": [
+      {"frame": 8500, "reference_frame": 8655, "frame_sha256": "7f5c87f1bc96d74a27ba150371ba79385697865a01cd05dbdf08806bf5d2e135"},
+      {"frame": 8525, "reference_frame": 8679, "frame_sha256": "28c7ee1885b1395ce406156240dd06f4141e5b4020b2e8a24796c7e1f35e779e"},
+      {"frame": 8532, "reference_frame": 8686, "frame_sha256": "34685fc84ac744c0e8a0897f22edf9cb6cff1cd49a43c50d297ab10f6514de89"},
+      {"frame": 8565, "reference_frame": 8718, "frame_sha256": "513e7e05d7facc804f6a5186dbf66af0b84cb96d58e389776c0b5e134c7e62c3"},
+      {"frame": 8572, "reference_frame": 8725, "frame_sha256": "7377892f78e6cdbc4cc80bb752aca85eccc094a4abb45e2558a9330e8b3836d9"},
+      {"frame": 8605, "reference_frame": 8760, "frame_sha256": "48154a201ef620f2baa01c9e549789dfd46add7b133980092e9eb382a828b5e7"},
+      {"frame": 8640, "reference_frame": 8795, "frame_sha256": "4bb7ebb787c9a7ddcc67655aace58c67e88e9350298a131840faefdbc3c00981"},
+      {"frame": 8700, "reference_frame": 8855, "frame_sha256": "4bb7ebb787c9a7ddcc67655aace58c67e88e9350298a131840faefdbc3c00981"},
+      {"frame": 8720, "reference_frame": 8875, "frame_sha256": "6964a7d4d62f219e48aed036b92fc6e2dbf90f2dde611c48ed85446b37571963"},
+      {"frame": 8745, "reference_frame": 8900, "frame_sha256": "ef4cf7fd2ae1880ff7bbc027ae788123794bec1c298958b60830de52c00d5f4e"},
+      {"frame": 8760, "reference_frame": 8915, "frame_sha256": "992445ca054ed03c66b3429f704a42f839a73c73400e49bd5a6867ff2450d11e"}
+    ]
+  }
+}

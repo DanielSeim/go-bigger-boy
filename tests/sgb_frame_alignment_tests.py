@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from align_sgb_frames import exact_scenes, rank_frames, read_sgb_image  # noqa: E402
+from align_sgb_frames import (compare_sequences, exact_scenes, rank_frames,
+                              read_sgb_image)  # noqa: E402
 
 
 def frame(path: Path, color: tuple[int, int, int], offset: int = 0) -> None:
@@ -60,6 +63,43 @@ class SgbFrameAlignmentTests(unittest.TestCase):
             path.write_bytes(b"P6\n1 1\n255\n" + bytes(3))
             with self.assertRaisesRegex(ValueError, "256x224"):
                 read_sgb_image(path)
+
+    def test_sequence_reports_first_divergent_frame_after_bounded_alignment(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            targets = [root / f"gbb-{number}.ppm" for number in (10, 11, 12)]
+            references = [root / f"sameboy-{number}.ppm"
+                          for number in (110, 111, 112, 113)]
+            frame(targets[0], (10, 20, 30))
+            frame(targets[1], (40, 50, 60), offset=2)
+            frame(targets[2], (70, 80, 90), offset=4)
+            frame(references[0], (10, 20, 30))
+            frame(references[1], (10, 20, 30))
+            frame(references[2], (40, 50, 60), offset=2)
+            frame(references[3], (1, 2, 3))
+            result = compare_sequences(targets, references, 100, 1)
+            self.assertFalse(result["passed"])
+            self.assertEqual(result["matched_frames"], 2)
+            self.assertEqual(result["first_mismatch"]["frame"], 12)
+            self.assertEqual(result["first_mismatch"]["nearest_reference_frame"], 112)
+            self.assertGreater(result["first_mismatch"]["mismatched_pixels"], 0)
+            self.assertEqual(result["unique_target_scenes"], 3)
+            self.assertEqual(result["largest_matched_shift"], 1)
+            self.assertEqual(compare_sequences(targets[:2], references[:3],
+                                               100, 1)["unmatched_frames"], 0)
+            completed = subprocess.run(
+                [sys.executable,
+                 str(Path(__file__).resolve().parents[1] / "scripts/align_sgb_frames.py"),
+                 "--target-series", str(root / "gbb-*.ppm"),
+                 "--reference-series", str(root / "sameboy-*.ppm"),
+                 "--sequence-offset", "100", "--window", "1"],
+                capture_output=True, text=True, check=False)
+            self.assertEqual(completed.returncode, 1)
+            self.assertEqual(json.loads(completed.stdout)["first_mismatch"]["frame"], 12)
+            with self.assertRaisesRegex(ValueError, "window"):
+                compare_sequences(targets, references, 100, 61)
+            with self.assertRaisesRegex(ValueError, "duplicate frame"):
+                compare_sequences(targets + [targets[0]], references, 100, 1)
 
 
 if __name__ == "__main__":

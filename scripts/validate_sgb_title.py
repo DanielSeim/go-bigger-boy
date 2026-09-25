@@ -64,8 +64,34 @@ def load_manifest(path: Path) -> dict[str, object]:
             raise ValueError("reference source must be hardware or independent-emulator")
         if not isinstance(reference.get("description"), str) or not reference["description"].strip():
             raise ValueError("reference description must identify the capture")
+        sequence = "checkpoints" in reference
         digest_only = "frame_sha256" in reference
-        if digest_only:
+        if sequence:
+            if any(key in reference for key in ("frame_sha256", "image", "image_sha256",
+                                                 "region", "channel_tolerance",
+                                                 "max_mismatched_pixels")):
+                raise ValueError("checkpoint reference cannot include single-image fields")
+            checkpoints = reference["checkpoints"]
+            if not isinstance(checkpoints, list) or not 2 <= len(checkpoints) <= 64:
+                raise ValueError("reference checkpoints must contain 2..64 frames")
+            previous_frame = 0
+            previous_reference_frame = 0
+            for checkpoint in checkpoints:
+                if not isinstance(checkpoint, dict):
+                    raise ValueError("each reference checkpoint must be an object")
+                frame = positive_integer(checkpoint.get("frame"), "checkpoint frame")
+                reference_frame = positive_integer(checkpoint.get("reference_frame"),
+                                                   "checkpoint reference_frame")
+                digest = checkpoint.get("frame_sha256")
+                if not isinstance(digest, str) or not SHA256.fullmatch(digest):
+                    raise ValueError("checkpoint frame_sha256 must be a lowercase SHA-256 digest")
+                if frame <= previous_frame or reference_frame <= previous_reference_frame:
+                    raise ValueError("reference checkpoints must increase by frame")
+                previous_frame = frame
+                previous_reference_frame = reference_frame
+            if previous_frame != manifest["frames"] or previous_frame - checkpoints[0]["frame"] > 1000:
+                raise ValueError("checkpoint span must end at frames and fit 1001 frames")
+        elif digest_only:
             if any(key in reference for key in ("image", "image_sha256", "region",
                                                  "channel_tolerance", "max_mismatched_pixels")):
                 raise ValueError("frame_sha256 reference cannot include image comparison fields")
@@ -78,12 +104,13 @@ def load_manifest(path: Path) -> dict[str, object]:
                 raise ValueError("reference image_sha256 must be a lowercase SHA-256 digest")
             if reference.get("region") not in ("full", "viewport"):
                 raise ValueError("reference region must be full or viewport")
-        tolerance = reference.get("channel_tolerance", 0)
-        allowed = reference.get("max_mismatched_pixels", 0)
-        if type(tolerance) is not int or not 0 <= tolerance <= 255:
-            raise ValueError("channel_tolerance must be in 0..255")
-        if type(allowed) is not int or allowed < 0:
-            raise ValueError("max_mismatched_pixels must be nonnegative")
+        if not sequence:
+            tolerance = reference.get("channel_tolerance", 0)
+            allowed = reference.get("max_mismatched_pixels", 0)
+            if type(tolerance) is not int or not 0 <= tolerance <= 255:
+                raise ValueError("channel_tolerance must be in 0..255")
+            if type(allowed) is not int or allowed < 0:
+                raise ValueError("max_mismatched_pixels must be nonnegative")
     return manifest
 
 
@@ -144,14 +171,22 @@ def validate(manifest_path: Path, rom: Path, runner: Path,
         if file_digest(script_path) != input_data["script_sha256"]:
             raise ValueError("input script SHA-256 does not match the manifest")
     output_dir.mkdir(parents=True, exist_ok=True)
-    frame_path = output_dir / "sgb-frame.ppm"
+    reference = manifest.get("reference")
+    sequence = isinstance(reference, dict) and "checkpoints" in reference
+    prefix = output_dir / "sgb-frame"
+    frame_path = (output_dir / f"sgb-frame-{manifest['frames']}.ppm"
+                  if sequence else output_dir / "sgb-frame.ppm")
     trace_path = output_dir / "sgb.trace"
     command = [str(runner.resolve()), str(rom.resolve()),
                "--model", str(manifest["model"]),
-               "--frames", str(manifest["frames"]),
-               "--max-cycles", str(manifest["max_cycles"]),
-               "--sgb-frame", "--frame-output", str(frame_path),
+               "--max-cycles", str(manifest["max_cycles"]), "--sgb-frame",
                "--sgb-trace", str(trace_path)]
+    if sequence:
+        command.extend(["--frame-series", str(reference["checkpoints"][0]["frame"]),
+                        str(manifest["frames"]), str(prefix)])
+    else:
+        command.extend(["--frames", str(manifest["frames"]),
+                        "--frame-output", str(frame_path)])
     if script_path is not None:
         command.extend(["--input-script", str(script_path)])
     completed = subprocess.run(command, capture_output=True, text=True,
@@ -167,10 +202,34 @@ def validate(manifest_path: Path, rom: Path, runner: Path,
     assert isinstance(minimums, dict)
     missing = {command: minimum for command, minimum in minimums.items()
                if counts[int(command, 16)] < minimum}
-    reference = manifest.get("reference")
     comparison = None
     if isinstance(reference, dict):
-        if "frame_sha256" in reference:
+        if sequence:
+            results = []
+            for checkpoint in reference["checkpoints"]:
+                path = output_dir / f"sgb-frame-{checkpoint['frame']}.ppm"
+                frame_width, frame_height, _ = _load_image(path)
+                if (frame_width, frame_height) != (256, 224):
+                    raise ValueError(f"checkpoint frame {checkpoint['frame']} is not 256x224")
+                actual = file_digest(path)
+                results.append({
+                    "frame": checkpoint["frame"],
+                    "reference_frame": checkpoint["reference_frame"],
+                    "passed": actual == checkpoint["frame_sha256"],
+                    "expected_frame_sha256": checkpoint["frame_sha256"],
+                    "actual_frame_sha256": actual,
+                })
+            first_mismatch = next((result for result in results
+                                   if not result["passed"]), None)
+            comparison = {
+                "passed": first_mismatch is None,
+                "region": "full",
+                "checked_frames": len(results),
+                "matched_frames": sum(result["passed"] for result in results),
+                "first_mismatch": first_mismatch,
+                "frames": results,
+            }
+        elif "frame_sha256" in reference:
             comparison = {
                 "passed": file_digest(frame_path) == reference["frame_sha256"],
                 "region": "full", "exact_frame_digest": True,
@@ -207,7 +266,8 @@ def validate(manifest_path: Path, rom: Path, runner: Path,
             "source": reference["source"],
             "description": reference["description"],
             "comparison": comparison,
-            **({"frame_sha256": reference["frame_sha256"]}
+            **({"checkpoints": reference["checkpoints"]} if sequence else
+               {"frame_sha256": reference["frame_sha256"]}
                if "frame_sha256" in reference else
                {"image_sha256": reference["image_sha256"]}),
         },
