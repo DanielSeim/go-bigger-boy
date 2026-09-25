@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+## [0.35.25] - 2026-09-25
+
+### Super Game Boy
+
+- Correct SGB border layering in the SDL frontend and add SGB visual and
+  performance validation gates.
+- Pace NTSC SGB1 at its faster Game Boy clock while retaining the normal SGB2
+  clock, including model-specific audio resampling.
+- Keep independent input states for up to four SGB controllers, with extra
+  gamepads and a second keyboard layout available through SDL. Preserve those
+  states in save-state format version 37.
+- Add an SGB trace command inventory to identify missing SNES-side features;
+  SNES audio, sprite, and host-control commands are not yet emulated.
+
+### Audio accuracy
+
+- Align APU length-counter clocking with the skipped startup divider edge.
+
 ## [0.35.24] - 2026-09-23
 
 ### Voxel diorama rendering
