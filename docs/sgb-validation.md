@@ -64,13 +64,73 @@ multiplayer, not Game Boy link-cable multiplayer.
 
 ## SNES-side command triage
 
-Capture opt-in traces from legally supplied SGB titles in representative
-scenes, then run `python3 scripts/report_sgb_commands.py title-a.trace
-title-b.trace`. The report counts decoded commands by title and highlights
-unimplemented host-side operations. It neither includes ROM data nor infers
-that a title is fully compatible just because all its commands are recognized.
-The repository's synthetic fixture currently exercises only `MLT_REQ`; it is
-not representative usage data.
+The opt-in title manifests in `tests/fixtures/sgb/titles/` pin ROM SHA-256,
+hardware model, frame count, cycle limit, and minimum command counts. They
+contain no ROM bytes or captured game artwork. For a legally supplied,
+hash-matching ROM, run:
+
+```sh
+python3 scripts/validate_sgb_title.py \
+  --manifest tests/fixtures/sgb/titles/donkey-kong-inventory.json \
+  --rom '/path/to/Donkey Kong (JU) (V1.1) [S][!].gb' \
+  --runner build/gbb_test_runner \
+  --output-dir /tmp/gbb-sgb-donkey
+python3 scripts/report_sgb_commands.py /tmp/gbb-sgb-donkey/sgb.trace
+```
+
+The runner writes a full 256×224 SGB PPM, a command trace, and a JSON report.
+`inventory_only` means the title executed and its command minimums held; it
+does **not** mean its picture or audio is correct. A mismatched ROM hash fails
+before execution. The three supplied manifests were exercised locally at 120
+post-boot frames: Pokémon Blue sent 8 `DATA_SND` plus palette, border,
+multiplayer, and mask commands; Donkey Kong sent 1 `SOUND`, 2 `SOU_TRN`, and
+`ICON_EN` plus palette and border commands; Kirby's Dream Land 2 sent 8
+`DATA_SND`, 1 `SOUND`, and `PAL_PRI` plus palette and border commands. These
+are observed startup commands, not exhaustive title profiles.
+
+For visual validation, make an independent capture of the **same scene** and
+add a `reference` object to a private copy of the manifest. It needs
+`source` (`hardware` or `independent-emulator`), an identifying `description`,
+`image` (PPM/PNG path), lowercase `image_sha256`, and `region` (`full` for
+256×224 or `viewport` for 160×144). Optional `channel_tolerance` and
+`max_mismatched_pixels` default to zero. The validator refuses an unpinned
+or wrong-size image and reports the first mismatching pixel. A `validated`
+result only covers the captured scene and the stated image tolerance; it
+does not validate SNES-side audio, input, or other scenes.
+
+One reproducible independent reference route uses SameBoy v1.0.3 at commit
+`208ba4afabffab9edde416f2dbb8ae459e34adb8`. In a separate checkout,
+build its public core and open-source boot ROM (`make lib bootroms`). From
+the GBB repository, compile the small black-box capture driver using only
+SameBoy's public API:
+
+```sh
+cc -std=c11 -I/path/to/SameBoy scripts/sameboy_sgb_capture.c \
+  /path/to/SameBoy/build/lib/libsameboy.a -lm -ldl \
+  -o /tmp/sameboy_sgb_capture
+/tmp/sameboy_sgb_capture '/path/to/title.gb' \
+  /path/to/SameBoy/build/bin/BootROMs/sgb_boot.bin \
+  350 /tmp/title-sgb-reference.ppm sgb
+sha256sum /tmp/title-sgb-reference.ppm
+```
+
+That last digest goes into the private manifest's `reference.image_sha256`.
+Its boot ROM SHA-256 in the checked setup was
+`b60d493a7944ccf74c81f1e7b6bf38c2c7029e296648ea0e74cb22b10dd1fcb8`.
+The independent capture starts at power-on while GBB's runner starts
+post-boot: the frame numbers are *not interchangeable*. For the pinned
+Donkey Kong ROM, SameBoy frame 350 and GBB post-boot frame 120 matched all
+57,344 pixels of the full frame exactly (reference PPM SHA-256
+`6fd3917c5224237b675c58edfb78a1202b8abb746243472d6eb0dff57789da37`).
+The reference image and ROM remain
+local; neither is committed. Pokémon Blue and Kirby did not match at that
+same frame pairing, so their visual state remains **unvalidated**; the
+difference must be aligned and investigated, not hidden by a loose tolerance.
+
+Capture other representative scenes before treating any title as broadly
+compatible. The trace reporter counts decoded commands and highlights
+unimplemented host-side operations; its synthetic fixture exercises only
+`MLT_REQ` and is not representative usage data.
 
 Prioritize observed commands by visible or audible impact: `SOUND` and
 `SOU_TRN` require SNES audio behavior; `OBJ_TRN` requires sprite rendering;

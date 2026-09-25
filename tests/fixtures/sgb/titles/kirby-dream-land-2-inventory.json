@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "title": "Kirby's Dream Land 2 (U) SGB startup",
+  "rom_sha256": "08ddc36709d551b6c2b768e8280e0213ebe89a5088b34e1cc6c0e14977b8e312",
+  "model": "sgb",
+  "frames": 120,
+  "max_cycles": 25000000,
+  "command_minimums": {
+    "0x08": 1,
+    "0x0F": 8,
+    "0x11": 3,
+    "0x13": 2,
+    "0x19": 1
+  },
+  "reference": null
+}

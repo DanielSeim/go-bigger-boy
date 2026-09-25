@@ -62,3 +62,7 @@ To count the decoded commands across one or more opt-in captures, run
 `python3 scripts/report_sgb_commands.py capture-a.trace capture-b.trace`.
 The inventory labels SNES-side commands that the current HLE host cannot
 execute; see [SGB validation](sgb-validation.md) for the triage policy.
+For a locally supplied title, the SHA-pinned manifest workflow described
+there also captures the full SGB frame and marks whether an independent
+visual reference was actually compared. Command recognition alone is not
+visual or audio validation.

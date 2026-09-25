@@ -43,6 +43,7 @@ struct Options {
     std::uint64_t trace_limit{};
     bool dmg_compatibility_colors{};
     bool frame_on_ld_bb{};
+    bool sgb_frame{};
     bool diagnostic_boot{};
 };
 
@@ -51,7 +52,7 @@ void usage() {
                  "[--max-cycles N] [--protocol auto|mooneye|"
                  "mooneye-wilbertpol|serial|blargg|gbmicrotest] "
                  "[--model auto|dmg0|dmg|mgb|sgb|sgb2|cgb0|cgb-c|cgb-e] "
-                 "[--frames N --frame-output capture.ppm] "
+                 "[--frames N --frame-output capture.ppm [--sgb-frame]] "
                  "[--trace-apu PATH] [--trace-ppu PATH] [--trace-io PATH] "
                  "[--trace-cpu PATH] [--trace-limit N] "
                  "[--sgb-trace PATH] [--replay-sgb-trace PATH] "
@@ -126,6 +127,8 @@ Options parse_options(const int argc, char** argv) {
             options.dmg_compatibility_colors = true;
         } else if (argument == "--frame-on-ld-bb") {
             options.frame_on_ld_bb = true;
+        } else if (argument == "--sgb-frame") {
+            options.sgb_frame = true;
         } else if (argument == "--diagnostic-boot") {
             options.diagnostic_boot = true;
         } else {
@@ -148,11 +151,16 @@ Options parse_options(const int argc, char** argv) {
         throw std::invalid_argument(
             "--frame-output requires --frames or --frame-on-ld-bb");
     }
+    if (options.sgb_frame && !captures_frame) {
+        throw std::invalid_argument(
+            "--sgb-frame requires --frames or --frame-on-ld-bb");
+    }
     return options;
 }
 
 void write_frame(const std::filesystem::path& path,
-                 const gameboy::Ppu::Framebuffer& framebuffer) {
+                 const std::uint32_t* framebuffer,
+                 const std::size_t width, const std::size_t height) {
     if (path.has_parent_path()) {
         std::filesystem::create_directories(path.parent_path());
     }
@@ -160,9 +168,9 @@ void write_frame(const std::filesystem::path& path,
     if (!output) {
         throw std::runtime_error("could not open frame output: " + path.string());
     }
-    output << "P6\n" << gameboy::Ppu::screen_width << ' '
-           << gameboy::Ppu::screen_height << "\n255\n";
-    for (const auto pixel : framebuffer) {
+    output << "P6\n" << width << ' ' << height << "\n255\n";
+    for (std::size_t index = 0; index < width * height; ++index) {
+        const auto pixel = framebuffer[index];
         const std::array<char, 3> rgb{
             static_cast<char>((pixel >> 16) & 0xFF),
             static_cast<char>((pixel >> 8) & 0xFF),
@@ -172,6 +180,20 @@ void write_frame(const std::filesystem::path& path,
     }
     if (!output) {
         throw std::runtime_error("could not write frame output: " + path.string());
+    }
+}
+
+void write_capture(const std::filesystem::path& path,
+                   const gameboy::Emulator& emulator,
+                   const bool sgb_frame) {
+    if (sgb_frame) {
+        const auto& frame = emulator.sgb_framebuffer();
+        write_frame(path, frame.data(), gameboy::Ppu::sgb_border_width,
+                    gameboy::Ppu::sgb_border_height);
+    } else {
+        const auto& frame = emulator.framebuffer();
+        write_frame(path, frame.data(), gameboy::Ppu::screen_width,
+                    gameboy::Ppu::screen_height);
     }
 }
 
@@ -464,6 +486,12 @@ int main(int argc, char** argv) {
             gameboy::Cartridge{std::move(rom)}, options.model,
             options.diagnostic_boot ? gameboy::BootRomMode::diagnostic
                                     : gameboy::BootRomMode::post_boot};
+        if (options.sgb_frame &&
+            emulator.hardware_model() != gameboy::HardwareModel::sgb &&
+            emulator.hardware_model() != gameboy::HardwareModel::sgb2) {
+            throw std::invalid_argument(
+                "--sgb-frame requires an SGB or SGB2 hardware model");
+        }
         if (!options.sgb_replay_input.empty()) {
             const auto trace_text = read_text_file(options.sgb_replay_input);
             std::string error;
@@ -577,7 +605,8 @@ int main(int argc, char** argv) {
         while (emulator.cpu().total_cycles() < options.max_cycles) {
             if (options.frame_on_ld_bb &&
                 emulator.bus().read8(emulator.cpu().registers().pc) == 0x40) {
-                write_frame(options.frame_output, emulator.framebuffer());
+                write_capture(options.frame_output, emulator,
+                              options.sgb_frame);
                 std::cout << "Captured LD B,B framebuffer to "
                           << options.frame_output << '\n';
                 return finish_run(EXIT_SUCCESS);
@@ -699,7 +728,8 @@ int main(int argc, char** argv) {
             if (captures_frame && emulator.frame_ready()) {
                 ++completed_frames;
                 if (completed_frames == options.frames) {
-                    write_frame(options.frame_output, emulator.framebuffer());
+                    write_capture(options.frame_output, emulator,
+                                  options.sgb_frame);
                     std::cout << "Captured frame " << completed_frames << " to "
                               << options.frame_output << '\n';
                     return finish_run(EXIT_SUCCESS);

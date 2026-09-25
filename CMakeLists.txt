@@ -616,6 +616,12 @@ if(GAMEBOY_BUILD_TESTS)
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/visual_regression_gate_tests.py)
         if(NOT ANDROID)
+            add_test(NAME gameboy_sgb_title_validation
+                     COMMAND ${Python3_EXECUTABLE}
+                             ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_title_validation_tests.py
+                             $<TARGET_FILE:gameboy_test_runner>)
+            set_tests_properties(gameboy_sgb_title_validation
+                                 PROPERTIES LABELS "sgb;trace")
             add_test(NAME gameboy_sgb_trace_fixture
                      COMMAND ${Python3_EXECUTABLE}
                              ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_trace_fixture_test.py
