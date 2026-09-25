@@ -98,6 +98,13 @@ or wrong-size image and reports the first mismatching pixel. A `validated`
 result only covers the captured scene and the stated image tolerance; it
 does not validate SNES-side audio, input, or other scenes.
 
+For an **exact full-frame** match without distributing the reference artwork,
+use `reference.frame_sha256` instead of `image`, `image_sha256`, and `region`.
+This is the SHA-256 of the independent 256×224 P6 PPM file, including its
+header. The validator compares that digest to GBB's captured PPM. The source
+and description are still required; a digest without independent provenance
+is not evidence of correctness. Both capture drivers use the same PPM format.
+
 One reproducible independent reference route uses SameBoy v1.0.3 at commit
 `208ba4afabffab9edde416f2dbb8ae459e34adb8`. In a separate checkout,
 build its public core and open-source boot ROM (`make lib bootroms`). From
@@ -139,6 +146,44 @@ GBB frame and the independent reference frames as positional arguments to
 rank scenes by palette-independent edges; use `--sort rgb` to rank by literal
 pixel mismatch instead. Edge similarity is only an alignment aid, not proof
 of visual correctness. All images stay local.
+
+### Deterministic input replay
+
+`--input-script PATH` is available in both `gbb_test_runner` and the optional
+SameBoy capture driver. A script begins with `GBB SGB input v1`; subsequent
+lines are an absolute frame number followed by the **complete set of held
+buttons after that frame**, such as `600 start`, `604 none`, or `6110 down+a`.
+Supported names are `right`, `left`, `up`, `down`, `a`, `b`, `select`, `start`.
+Frame 0 is applied before the first frame. Comments begin with `#`; events
+must have increasing frame numbers. GBB frame numbers start post-boot;
+SameBoy frame numbers start at power-on, so `--input-offset N` on the SameBoy
+driver shifts every script event by N power-on frames. Determine N from a
+later dynamic scene sequence, not one static startup image: the boot-to-game
+offset can vary with SGB pacing and the chosen title. Neither runner changes
+emulation speed to accommodate the script.
+
+The ROM-free test in `tests/fixtures/sgb/input_fixture.*` verifies press,
+release, and malformed-script handling. A hash-pinned, opt-in title case in
+`tests/fixtures/sgb/titles/pokemon-blue-new-game.json` and its adjacent
+script replays Pokémon Blue through New Game into the playable bedroom. Run it
+with a legally supplied ROM:
+
+```sh
+python3 scripts/validate_sgb_title.py \
+  --manifest tests/fixtures/sgb/titles/pokemon-blue-new-game.json \
+  --rom '/path/to/Pokemon - Blue Version (UE) [S][!].gb' \
+  --runner build/gbb_test_runner \
+  --output-dir /tmp/gbb-sgb-bedroom
+```
+
+In the checked setup, GBB post-boot frame 8500 exactly matched independent
+SameBoy SGB power-on frame 8655 using `--input-offset 155`: both full PPM
+files hashed to `7f5c87f1bc96d74a27ba150371ba79385697865a01cd05dbdf08806bf5d2e135`.
+The intermediate New Game introduction also matched at GBB frame 2050 and
+SameBoy frame 2205. These are specific frame checks, not blanket game or SGB
+accuracy claims. The bedroom comparison exposed and helped fix a DMG OBJ
+shade-to-SGB-color mapping error; the isolated SGB PPU contract now checks
+both BGP and OBP mapping. ROM, boot ROM, and captured artwork remain local.
 
 With the three hash-pinned ROMs, a pinned SameBoy build, and its independently
 written boot ROM, these full-frame pairs matched with **zero** mismatched

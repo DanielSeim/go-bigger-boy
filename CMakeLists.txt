@@ -226,6 +226,7 @@ if(NOT ANDROID)
     endif()
 
     add_executable(gameboy_test_runner apps/test_runner/main.cpp)
+    target_include_directories(gameboy_test_runner PRIVATE scripts)
     target_link_libraries(gameboy_test_runner PRIVATE gbb_core_api)
     set_target_properties(gameboy_test_runner PROPERTIES OUTPUT_NAME gbb_test_runner)
 

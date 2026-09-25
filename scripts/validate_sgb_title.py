@@ -51,6 +51,12 @@ def load_manifest(path: Path) -> dict[str, object]:
         if not isinstance(command, str) or not COMMAND_ID.fullmatch(command):
             raise ValueError(f"invalid command ID: {command}")
         positive_integer(minimum, f"minimum for {command}")
+    input_data = manifest.get("input")
+    if input_data is not None:
+        if not isinstance(input_data, dict) or not isinstance(input_data.get("script"), str) or not input_data["script"].strip():
+            raise ValueError("input script path is required")
+        if not isinstance(input_data.get("script_sha256"), str) or not SHA256.fullmatch(input_data["script_sha256"]):
+            raise ValueError("input script_sha256 must be a lowercase SHA-256 digest")
     reference = manifest.get("reference")
     if reference is not None:
         if not isinstance(reference, dict) or reference.get("source") not in (
@@ -58,12 +64,20 @@ def load_manifest(path: Path) -> dict[str, object]:
             raise ValueError("reference source must be hardware or independent-emulator")
         if not isinstance(reference.get("description"), str) or not reference["description"].strip():
             raise ValueError("reference description must identify the capture")
-        if not isinstance(reference.get("image"), str) or not reference["image"].strip():
-            raise ValueError("reference image path is required")
-        if not isinstance(reference.get("image_sha256"), str) or not SHA256.fullmatch(reference["image_sha256"]):
-            raise ValueError("reference image_sha256 must be a lowercase SHA-256 digest")
-        if reference.get("region") not in ("full", "viewport"):
-            raise ValueError("reference region must be full or viewport")
+        digest_only = "frame_sha256" in reference
+        if digest_only:
+            if any(key in reference for key in ("image", "image_sha256", "region",
+                                                 "channel_tolerance", "max_mismatched_pixels")):
+                raise ValueError("frame_sha256 reference cannot include image comparison fields")
+            if not isinstance(reference["frame_sha256"], str) or not SHA256.fullmatch(reference["frame_sha256"]):
+                raise ValueError("reference frame_sha256 must be a lowercase SHA-256 digest")
+        else:
+            if not isinstance(reference.get("image"), str) or not reference["image"].strip():
+                raise ValueError("reference image path is required")
+            if not isinstance(reference.get("image_sha256"), str) or not SHA256.fullmatch(reference["image_sha256"]):
+                raise ValueError("reference image_sha256 must be a lowercase SHA-256 digest")
+            if reference.get("region") not in ("full", "viewport"):
+                raise ValueError("reference region must be full or viewport")
         tolerance = reference.get("channel_tolerance", 0)
         allowed = reference.get("max_mismatched_pixels", 0)
         if type(tolerance) is not int or not 0 <= tolerance <= 255:
@@ -121,6 +135,14 @@ def validate(manifest_path: Path, rom: Path, runner: Path,
     actual_hash = file_digest(rom)
     if actual_hash != manifest["rom_sha256"]:
         raise ValueError("ROM SHA-256 does not match the title manifest")
+    input_data = manifest.get("input")
+    script_path = None
+    if isinstance(input_data, dict):
+        script_path = Path(input_data["script"])
+        if not script_path.is_absolute():
+            script_path = manifest_path.resolve().parent / script_path
+        if file_digest(script_path) != input_data["script_sha256"]:
+            raise ValueError("input script SHA-256 does not match the manifest")
     output_dir.mkdir(parents=True, exist_ok=True)
     frame_path = output_dir / "sgb-frame.ppm"
     trace_path = output_dir / "sgb.trace"
@@ -130,6 +152,8 @@ def validate(manifest_path: Path, rom: Path, runner: Path,
                "--max-cycles", str(manifest["max_cycles"]),
                "--sgb-frame", "--frame-output", str(frame_path),
                "--sgb-trace", str(trace_path)]
+    if script_path is not None:
+        command.extend(["--input-script", str(script_path)])
     completed = subprocess.run(command, capture_output=True, text=True,
                                timeout=180, check=False)
     if completed.returncode != 0:
@@ -146,21 +170,28 @@ def validate(manifest_path: Path, rom: Path, runner: Path,
     reference = manifest.get("reference")
     comparison = None
     if isinstance(reference, dict):
-        image = Path(reference["image"])
-        if not image.is_absolute():
-            image = manifest_path.resolve().parent / image
-        if file_digest(image) != reference["image_sha256"]:
-            raise ValueError("reference image SHA-256 does not match the manifest")
-        comparison = compare_reference(
-            frame_path, image, reference["region"],
-            reference.get("channel_tolerance", 0),
-            reference.get("max_mismatched_pixels", 0))
+        if "frame_sha256" in reference:
+            comparison = {
+                "passed": file_digest(frame_path) == reference["frame_sha256"],
+                "region": "full", "exact_frame_digest": True,
+            }
+        else:
+            image = Path(reference["image"])
+            if not image.is_absolute():
+                image = manifest_path.resolve().parent / image
+            if file_digest(image) != reference["image_sha256"]:
+                raise ValueError("reference image SHA-256 does not match the manifest")
+            comparison = compare_reference(
+                frame_path, image, reference["region"],
+                reference.get("channel_tolerance", 0),
+                reference.get("max_mismatched_pixels", 0))
     passed = not missing and (comparison is None or comparison["passed"])
     report = {
         "schema": "gbb.sgb.title-validation.v1",
         "title": manifest["title"],
         "model": manifest["model"],
         "rom_sha256": actual_hash,
+        "input_script_sha256": None if input_data is None else input_data["script_sha256"],
         "frames": manifest["frames"],
         "status": ("failed" if not passed else
                    "validated" if comparison is not None else "inventory_only"),
@@ -175,8 +206,10 @@ def validate(manifest_path: Path, rom: Path, runner: Path,
         "reference": None if comparison is None else {
             "source": reference["source"],
             "description": reference["description"],
-            "image_sha256": reference["image_sha256"],
             "comparison": comparison,
+            **({"frame_sha256": reference["frame_sha256"]}
+               if "frame_sha256" in reference else
+               {"image_sha256": reference["image_sha256"]}),
         },
         "frame": str(frame_path),
         "frame_sha256": file_digest(frame_path),

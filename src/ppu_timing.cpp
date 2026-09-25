@@ -786,6 +786,9 @@ void Ppu::emit_pixel() noexcept {
     }
 
     if (sgb_mode_) {
+        // Keep the transfer capture in its existing raw 2-bit format. Apply
+        // BGP/OBP to the displayed pixel in compose_pixel below; remapping
+        // this source corrupts our CHR_TRN/PCT_TRN border uploads.
         (*sgb_screen_buffer_)[static_cast<std::size_t>(ly_) * screen_width +
                               output_x_] =
             sgb_source_pixel(output_x_, background);
@@ -874,7 +877,7 @@ std::uint32_t Ppu::compose_pixel(
                                    background.color);
     } else if (use_sgb_palette) {
         result = sgb_palette_color(sgb_attribute_for_pixel(x),
-                                   background.color);
+                                   (bg_palette_ >> (background.color * 2U)) & 3U);
     } else {
         result = palette_color(bg_palette_, background.color,
                                dmg_palette_.background);
@@ -895,7 +898,10 @@ std::uint32_t Ppu::compose_pixel(
             object.color);
     }
     if (use_sgb_palette) {
-        return sgb_palette_color(sgb_attribute_for_pixel(x), object.color);
+        const auto object_palette = (object.attributes & 0x10) != 0
+                                        ? object_palette_1_ : object_palette_0_;
+        return sgb_palette_color(sgb_attribute_for_pixel(x),
+                                 (object_palette >> (object.color * 2U)) & 3U);
     }
     return palette_color(
         (object.attributes & 0x10) != 0 ? object_palette_1_ : object_palette_0_,

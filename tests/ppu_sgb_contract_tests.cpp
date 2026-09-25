@@ -303,6 +303,43 @@ void test_palette_command_reaches_video() {
           "PAL01 updates the rendered SGB palette");
 }
 
+void test_sgb_uses_dmg_shade_registers() {
+    gameboy::Ppu ppu;
+    ppu.set_sgb_mode(true);
+    std::array<std::uint8_t, 16 * 7> command{};
+    command[0] = 0x00; // PAL01
+    command[1] = 0xFF; // Shared color zero: white.
+    command[2] = 0x7F;
+    for (const std::size_t base : {std::size_t{3}, std::size_t{9}}) {
+        command[base] = 0x1F;       // SGB shade 1: red.
+        command[base + 2] = 0xE0;   // SGB shade 2: green.
+        command[base + 3] = 0x03;
+        command[base + 5] = 0x7C;   // SGB shade 3: blue.
+    }
+    ppu.apply_sgb_command(command, command.size());
+    ppu.debug_write_vram(0, 0x0000, 0x80); // BG raw color 1 at x=0.
+    ppu.debug_write_vram(0, 0x0010, 0x80); // OBJ raw color 1 at x=8.
+    ppu.debug_write_oam(0, 16);
+    ppu.debug_write_oam(1, 16);
+    ppu.debug_write_oam(2, 1);
+    ppu.debug_write_oam(3, 0);
+    ppu.debug_write_oam(4, 16);
+    ppu.debug_write_oam(5, 24);
+    ppu.debug_write_oam(6, 1);
+    ppu.debug_write_oam(7, 0x10); // OBJ palette 1.
+    static_cast<void>(ppu.write_register(0xFF47, 0xE8)); // BG 1 -> shade 2.
+    static_cast<void>(ppu.write_register(0xFF48, 0xEC)); // OBJ 1 -> shade 3.
+    static_cast<void>(ppu.write_register(0xFF49, 0xE4)); // OBJ1 1 -> shade 1.
+    static_cast<void>(ppu.write_register(0xFF40, 0x93));
+    static_cast<void>(ppu.tick(300));
+    check(ppu.framebuffer()[0] == 0xFF00FF00,
+          "SGB background maps BGP shade before applying PAL01");
+    check(ppu.framebuffer()[8] == 0xFF0000FF,
+          "SGB object maps OBP0 shade before applying PAL01");
+    check(ppu.framebuffer()[16] == 0xFFFF0000,
+          "SGB object maps OBP1 shade before applying PAL01");
+}
+
 void test_palette_and_attribute_transfer_commands() {
     gameboy::Ppu ppu;
     ppu.set_sgb_mode(true);
@@ -480,6 +517,7 @@ int main() {
     test_sgb_adapter_command_validation_and_diagnostics();
     test_malformed_command_matrix_is_bounded();
     test_palette_command_reaches_video();
+    test_sgb_uses_dmg_shade_registers();
     test_palette_and_attribute_transfer_commands();
     test_sgb_border_compositor();
     test_default_palette_uses_display_setting();

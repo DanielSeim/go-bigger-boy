@@ -1,0 +1,8 @@
+# Original ROM-free test program: fill BG tile zero, then map the A button
+# to BGP so a held input changes the frame and release restores it.
+# Lines are ROM offset: byte values; all unspecified bytes are zero.
+0100: af e0 40 21 00 80 06 10 3e ff 22 05 20 fc 3e e4
+0110: e0 47 3e 91 e0 40 3e 10 e0 00 f0 00 e6 01 20 04
+0120: 3e e4 18 01 af e0 47 18 f1
+0134: 47 42 42 20 49 4e 50 55 54 20 54 45 53 54
+0146: 03 00 00 00

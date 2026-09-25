@@ -1,5 +1,6 @@
 #include "gameboy/emulator.hpp"
 #include "gameboy/sgb_trace.hpp"
+#include "sgb_input_script.h"
 
 #include <array>
 #include <cstdint>
@@ -37,6 +38,7 @@ struct Options {
     std::uint64_t frame_series_first{};
     std::uint64_t frame_series_last{};
     std::filesystem::path frame_series_prefix;
+    std::filesystem::path input_script;
     std::filesystem::path apu_trace_output;
     std::filesystem::path ppu_trace_output;
     std::filesystem::path io_trace_output;
@@ -57,6 +59,7 @@ void usage() {
                  "[--model auto|dmg0|dmg|mgb|sgb|sgb2|cgb0|cgb-c|cgb-e] "
                  "[--frames N --frame-output capture.ppm [--sgb-frame]] "
                  "[--frame-series FIRST LAST PREFIX [--sgb-frame]] "
+                 "[--input-script PATH] "
                  "[--trace-apu PATH] [--trace-ppu PATH] [--trace-io PATH] "
                  "[--trace-cpu PATH] [--trace-limit N] "
                  "[--sgb-trace PATH] [--replay-sgb-trace PATH] "
@@ -117,6 +120,8 @@ Options parse_options(const int argc, char** argv) {
             options.frame_series_prefix = argv[++index];
         } else if (argument == "--frame-output" && index + 1 < argc) {
             options.frame_output = argv[++index];
+        } else if (argument == "--input-script" && index + 1 < argc) {
+            options.input_script = argv[++index];
         } else if (argument == "--trace-apu" && index + 1 < argc) {
             options.apu_trace_output = argv[++index];
         } else if (argument == "--trace-ppu" && index + 1 < argc) {
@@ -160,6 +165,10 @@ Options parse_options(const int argc, char** argv) {
     if (!options.sgb_trace_output.empty() && !options.sgb_replay_input.empty()) {
         throw std::invalid_argument(
             "--sgb-trace and --replay-sgb-trace are mutually exclusive");
+    }
+    if (!options.input_script.empty() && !options.sgb_replay_input.empty()) {
+        throw std::invalid_argument(
+            "--input-script and --replay-sgb-trace are mutually exclusive");
     }
     const auto captures_single_frame =
         options.frames != 0 || options.frame_on_ld_bb;
@@ -215,6 +224,21 @@ void write_capture(const std::filesystem::path& path,
         const auto& frame = emulator.framebuffer();
         write_frame(path, frame.data(), gameboy::Ppu::screen_width,
                     gameboy::Ppu::screen_height);
+    }
+}
+
+void set_held_buttons(gameboy::Emulator& emulator, const std::uint8_t previous,
+                      const std::uint8_t next) {
+    constexpr std::array buttons{
+        gameboy::Button::right, gameboy::Button::left,
+        gameboy::Button::up, gameboy::Button::down,
+        gameboy::Button::a, gameboy::Button::b,
+        gameboy::Button::select, gameboy::Button::start};
+    for (unsigned bit = 0; bit < buttons.size(); ++bit) {
+        const auto flag = static_cast<std::uint8_t>(1U << bit);
+        if ((previous & flag) != (next & flag)) {
+            emulator.set_button(buttons[bit], (next & flag) != 0);
+        }
     }
 }
 
@@ -513,6 +537,25 @@ int main(int argc, char** argv) {
             throw std::invalid_argument(
                 "--sgb-frame requires an SGB or SGB2 hardware model");
         }
+        gbb_sgb_input_script input_script{};
+        if (!options.input_script.empty()) {
+            char error[128]{};
+            if (!gbb_sgb_input_load(options.input_script.string().c_str(),
+                                    &input_script, error, sizeof(error))) {
+                throw std::invalid_argument(std::string{"input script: "} + error);
+            }
+        }
+        std::size_t next_input_event = 0;
+        std::uint8_t held_buttons = 0;
+        const auto apply_input = [&](const std::uint64_t frame) {
+            if (next_input_event < input_script.count &&
+                input_script.events[next_input_event].frame == frame) {
+                const auto mask = input_script.events[next_input_event++].mask;
+                set_held_buttons(emulator, held_buttons, mask);
+                held_buttons = mask;
+            }
+        };
+        apply_input(0);
         if (!options.sgb_replay_input.empty()) {
             const auto trace_text = read_text_file(options.sgb_replay_input);
             std::string error;
@@ -607,6 +650,7 @@ int main(int argc, char** argv) {
         const bool captures_frame = options.frames != 0 ||
                                     options.frame_on_ld_bb ||
                                     options.frame_series_last != 0;
+        const bool tracks_input = !options.input_script.empty();
 
         if (sgb_recorder.has_value()) {
             if (!sgb_recorder->checkpoint(0, 0, emulator)) {
@@ -738,37 +782,41 @@ int main(int argc, char** argv) {
                 }
             }
             if (io_trace && tracing) write_io_trace(io_trace, io_events);
-            if (sgb_recorder.has_value() && emulator.frame_ready()) {
-                ++sgb_trace_frames;
-                if (!sgb_recorder->checkpoint(emulator.cpu().total_cycles(),
-                                              sgb_trace_frames, emulator)) {
-                    throw std::runtime_error(
-                        "SGB trace checkpoint limit or ordering was exceeded");
-                }
-                if (!captures_frame) emulator.consume_frame();
-            }
-            if (captures_frame && emulator.frame_ready()) {
-                ++completed_frames;
-                if (options.frame_series_last != 0 &&
-                    completed_frames >= options.frame_series_first) {
-                    const auto path = std::filesystem::path{
-                        options.frame_series_prefix.string() + "-" +
-                        std::to_string(completed_frames) + ".ppm"};
-                    write_capture(path, emulator, options.sgb_frame);
-                    if (completed_frames == options.frame_series_last) {
-                        std::cout << "Captured frame series through "
-                                  << completed_frames << '\n';
-                        return finish_run(EXIT_SUCCESS);
+            if (emulator.frame_ready()) {
+                if (sgb_recorder.has_value()) {
+                    ++sgb_trace_frames;
+                    if (!sgb_recorder->checkpoint(emulator.cpu().total_cycles(),
+                                                  sgb_trace_frames, emulator)) {
+                        throw std::runtime_error(
+                            "SGB trace checkpoint limit or ordering was exceeded");
                     }
                 }
-                if (completed_frames == options.frames) {
-                    write_capture(options.frame_output, emulator,
-                                  options.sgb_frame);
-                    std::cout << "Captured frame " << completed_frames << " to "
-                              << options.frame_output << '\n';
-                    return finish_run(EXIT_SUCCESS);
+                if (captures_frame || tracks_input) {
+                    ++completed_frames;
+                    if (options.frame_series_last != 0 &&
+                        completed_frames >= options.frame_series_first) {
+                        const auto path = std::filesystem::path{
+                            options.frame_series_prefix.string() + "-" +
+                            std::to_string(completed_frames) + ".ppm"};
+                        write_capture(path, emulator, options.sgb_frame);
+                        if (completed_frames == options.frame_series_last) {
+                            std::cout << "Captured frame series through "
+                                      << completed_frames << '\n';
+                            return finish_run(EXIT_SUCCESS);
+                        }
+                    }
+                    if (completed_frames == options.frames) {
+                        write_capture(options.frame_output, emulator,
+                                      options.sgb_frame);
+                        std::cout << "Captured frame " << completed_frames << " to "
+                                  << options.frame_output << '\n';
+                        return finish_run(EXIT_SUCCESS);
+                    }
+                    emulator.consume_frame();
+                    apply_input(completed_frames);
+                } else if (sgb_recorder.has_value()) {
+                    emulator.consume_frame();
                 }
-                emulator.consume_frame();
             }
             auto bytes = emulator.bus().take_serial_output();
             if (!bytes.empty()) {

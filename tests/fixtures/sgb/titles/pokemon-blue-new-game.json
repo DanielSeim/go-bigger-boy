@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "title": "Pokemon Blue (UE) SGB new-game bedroom",
+  "rom_sha256": "2a951313c2640e8c2cb21f25d1db019ae6245d9c7121f754fa61afd7bee6452d",
+  "model": "sgb",
+  "frames": 8500,
+  "max_cycles": 730000000,
+  "input": {
+    "script": "pokemon-blue-new-game.script",
+    "script_sha256": "43915b46b1e5904c98fcd695010d96e1b92e421fd467bfb66f1fa7fffd648d71"
+  },
+  "command_minimums": {
+    "0x0F": 8,
+    "0x11": 2,
+    "0x13": 1,
+    "0x14": 1,
+    "0x17": 2
+  },
+  "reference": {
+    "source": "independent-emulator",
+    "description": "SameBoy v1.0.3 commit 208ba4afabffab9edde416f2dbb8ae459e34adb8, SGB power-on frame 8655, open-source sgb_boot.bin SHA-256 b60d493a7944ccf74c81f1e7b6bf38c2c7029e296648ea0e74cb22b10dd1fcb8, same script with input offset 155",
+    "frame_sha256": "7f5c87f1bc96d74a27ba150371ba79385697865a01cd05dbdf08806bf5d2e135"
+  }
+}

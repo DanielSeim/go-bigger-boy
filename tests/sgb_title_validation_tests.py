@@ -110,6 +110,19 @@ class SgbTitleValidationTests(unittest.TestCase):
             report = validate(manifest, rom, RUNNER, root / "different")
             self.assertEqual(report["status"], "failed")
             self.assertEqual(report["reference"]["comparison"]["mismatched_pixels"], 1)
+            data["reference"] = {
+                "source": "independent-emulator",
+                "description": "Synthetic test of digest comparison plumbing only",
+                "frame_sha256": inventory["frame_sha256"],
+            }
+            manifest.write_text(json.dumps(data), encoding="utf-8")
+            report = validate(manifest, rom, RUNNER, root / "digest-match")
+            self.assertEqual(report["status"], "validated")
+            self.assertTrue(report["reference"]["comparison"]["exact_frame_digest"])
+            data["reference"]["frame_sha256"] = "0" * 64
+            manifest.write_text(json.dumps(data), encoding="utf-8")
+            self.assertEqual(validate(manifest, rom, RUNNER,
+                                      root / "digest-mismatch")["status"], "failed")
 
     def test_manifest_rejects_unpinned_or_unattributed_results(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -133,6 +146,35 @@ class SgbTitleValidationTests(unittest.TestCase):
                                 encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "schema 1"):
                 load_manifest(manifest)
+
+    def test_manifest_pins_and_replays_input_script(self) -> None:
+        if RUNNER is None:
+            self.skipTest("runner path not supplied")
+        fixture_dir = Path(__file__).parent / "fixtures/sgb"
+        rom_bytes = load_fixture(fixture_dir / "trace_fixture.hex")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            rom = root / "fixture.gb"
+            rom.write_bytes(rom_bytes)
+            script = root / "input.script"
+            script.write_bytes((fixture_dir / "input_fixture.script").read_bytes())
+            manifest = root / "case.json"
+            data = {
+                "schema": 1, "title": "Synthetic scripted inventory",
+                "rom_sha256": hashlib.sha256(rom_bytes).hexdigest(),
+                "model": "sgb", "frames": 5, "max_cycles": 500_000,
+                "command_minimums": {"0x11": 1},
+                "input": {"script": script.name,
+                          "script_sha256": hashlib.sha256(script.read_bytes()).hexdigest()},
+            }
+            manifest.write_text(json.dumps(data), encoding="utf-8")
+            report = validate(manifest, rom, RUNNER, root / "capture")
+            self.assertEqual(report["status"], "inventory_only")
+            self.assertEqual(report["input_script_sha256"], data["input"]["script_sha256"])
+            script.write_text("GBB SGB input v1\n0 start\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "input script SHA-256"):
+                validate(manifest, rom, RUNNER, root / "stale")
+            self.assertFalse((root / "stale").exists())
 
     def test_full_sgb_capture_rejects_other_hardware(self) -> None:
         if RUNNER is None:
@@ -182,6 +224,59 @@ class SgbTitleValidationTests(unittest.TestCase):
             self.assertNotEqual(conflicting.returncode, 0)
             self.assertIn("mutually exclusive", conflicting.stderr)
             self.assertFalse((root / "bad-1.ppm").exists())
+
+    def test_input_script_changes_and_restores_synthetic_scene(self) -> None:
+        if RUNNER is None:
+            self.skipTest("runner path not supplied")
+        fixture_dir = Path(__file__).parent / "fixtures/sgb"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            rom = root / "input.gb"
+            rom.write_bytes(load_fixture(fixture_dir / "input_fixture.hex"))
+            command = [str(RUNNER.resolve()), str(rom), "--model", "sgb",
+                       "--max-cycles", "1000000", "--sgb-frame"]
+            scripted = subprocess.run(
+                command + ["--input-script", str(fixture_dir / "input_fixture.script"),
+                           "--frame-series", "1", "8", str(root / "scripted")],
+                capture_output=True, text=True, timeout=15, check=False)
+            self.assertEqual(scripted.returncode, 0, scripted.stderr)
+            plain = subprocess.run(
+                command + ["--frame-series", "1", "8", str(root / "plain")],
+                capture_output=True, text=True, timeout=15, check=False)
+            self.assertEqual(plain.returncode, 0, plain.stderr)
+            scripted_frames = [(root / f"scripted-{frame}.ppm").read_bytes()
+                               for frame in range(1, 9)]
+            plain_frames = [(root / f"plain-{frame}.ppm").read_bytes()
+                            for frame in range(1, 9)]
+            self.assertEqual(scripted_frames[:2], plain_frames[:2])
+            self.assertTrue(any(a != b for a, b in
+                                zip(scripted_frames[2:5], plain_frames[2:5])))
+            self.assertEqual(scripted_frames[-1], plain_frames[-1])
+
+            before_first = root / "before-first.script"
+            before_first.write_text("GBB SGB input v1\n0 a+start\n1 none\n",
+                                    encoding="utf-8")
+            first = subprocess.run(
+                command + ["--input-script", str(before_first), "--frames", "1",
+                           "--frame-output", str(root / "first.ppm")],
+                capture_output=True, text=True, timeout=10, check=False)
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertNotEqual((root / "first.ppm").read_bytes(), plain_frames[0])
+
+            for malformed, message in [
+                ("bad header\n", "header"),
+                ("GBB SGB input v1\n2 a\n2 none\n", "increase"),
+                ("GBB SGB input v1\n2 fire\n", "unknown"),
+                ("GBB SGB input v1\n2 a+a\n", "duplicate"),
+            ]:
+                script = root / "bad.script"
+                script.write_text(malformed, encoding="utf-8")
+                result = subprocess.run(
+                    command + ["--input-script", str(script), "--frames", "3",
+                               "--frame-output", str(root / "bad.ppm")],
+                    capture_output=True, text=True, timeout=10, check=False)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(message, result.stderr)
 
 
 if __name__ == "__main__":
