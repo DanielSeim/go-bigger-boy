@@ -1,0 +1,5 @@
+# These fixtures are SHA-256 pinned by SGB title manifests. Keep checkout bytes
+# identical on Windows, macOS, and Linux.
+tests/fixtures/sgb/*.script text eol=lf
+tests/fixtures/sgb/titles/*.script text eol=lf
+tests/fixtures/sgb/titles/*.sha256 text eol=lf
