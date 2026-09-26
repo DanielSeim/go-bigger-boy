@@ -436,6 +436,73 @@ These are optional, local debugging outputs, not committed reference data.
 Donkey Kong's observed `SOUND` and `SOU_TRN` commands still require SNES-side
 audio support, so these visual matches make no audio-accuracy claim.
 
+### SGB2 title replays
+
+SGB2 has its own boot and clock profile; the SGB1 title offsets and reference
+hashes must not be reused. Three opt-in SGB2 manifests pin the same legally
+supplied Pokémon Blue and Donkey Kong v1.1 ROMs as above, but compare against
+independent SameBoy v1.0.3 captures booted with a local, unbundled
+`sgb2.boot.rom` (SHA-256
+`fd243c4fb27008986316ce3df29e9cfbcdc0cd52704970555a8bb76edbec3988`).
+The reference boot reached cartridge entry at LY `$00` and DIV `$D8`, with
+AF `$FF00`, BC `$0014`, DE `$0000`, and HL `$C060`. GBB's SGB2 post-boot
+profile uses these register and divider values; the existing model contract
+also checks its 4,194,304-Hz clock and audio sample pacing. This is a
+boot-handoff observation and model-level check, not a cycle-by-cycle hardware
+clock validation.
+
+In the Donkey Kong replay, successive normal VBlanks were 70,224 GBB
+T-cycles and 140,448 SameBoy 8-MHz ticks (also 70,224 T-cycles), while the
+sampled full pictures matched. Their absolute cycle counters start at
+different points because SameBoy executes the boot ROM and GBB starts at
+cartridge handoff.
+
+| Manifest | GBB frames | SameBoy frames | Exact full-frame matches | Distinct scenes |
+| --- | ---: | ---: | ---: | ---: |
+| `sgb2-pokemon-intro.json` | 2000–2070 | 2125–2195 | 71/71 | 4 |
+| `sgb2-pokemon-house.json` | 9200–9300 | 9356–9456 | 101/101 | 49 |
+| `sgb2-donkey-first-stage.json` | 2800–2920 | 3121–3241 | 121/121 | 96 |
+
+Each comparison uses a fixed frame offset, all intervening frames, the entire
+256×224 image including the border, zero pixel tolerance, and no adjacent-frame
+search. The indoor Pokémon and Donkey Kong ranges include moving sprites.
+Run one case with the same validator described above, for example:
+
+```sh
+python3 scripts/validate_sgb_title.py \
+  --manifest tests/fixtures/sgb/titles/sgb2-pokemon-house.json \
+  --rom '/path/to/Pokemon - Blue Version (UE) [S][!].gb' \
+  --runner build/gbb_test_runner \
+  --output-dir /tmp/gbb-sgb2-pokemon-house
+```
+
+To reproduce the independent house reference locally, build the SameBoy
+capture driver as described above and run:
+
+```sh
+/tmp/sameboy_sgb_capture '/path/to/Pokemon Blue.gb' \
+  '/path/to/sgb2.boot.rom' --series 9356 9456 \
+  /tmp/pokemon-sgb2-reference sgb2 \
+  --input-script tests/fixtures/sgb/titles/pokemon-blue-overworld.script \
+  --input-offset 134 --input-offset-at 900 125 \
+  --input-offset-at 8300 156 --watch-entry
+```
+
+For the introduction, use `--series 2125 2195`, the
+`pokemon-blue-new-game.script`, and offsets 134 then 125 at script frame 900.
+For Donkey Kong, use `--series 3121 3241`, the
+`donkey-kong-gameplay.script`, `--random-seed 1 --zero-initial-ram`, and input
+offsets 228, then 253 at script frame 1600 and 321 at frame 2800. The
+zero-filled reference WRAM is a controlled replay condition, not a claim
+about physical SGB2 power-on RAM. Only frame digests and capture provenance
+are stored in the source fixtures; ROMs, boot files, and captured artwork are
+not.
+
+These matches establish only the specified visual replays against one
+independent emulator. They do not establish hardware-exact SGB2 timing,
+SNES-side sound/commands, or all title scenes. In particular, the observed
+Donkey Kong `SOUND` and `SOU_TRN` requests still lack SNES audio emulation.
+
 Capture other representative scenes before treating any title as broadly
 compatible. The trace reporter counts decoded commands and highlights
 unimplemented host-side operations; its synthetic fixture exercises only

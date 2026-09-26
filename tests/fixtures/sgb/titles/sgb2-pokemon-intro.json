@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "title": "Pokemon Blue (UE) SGB2 new-game introduction",
+  "rom_sha256": "2a951313c2640e8c2cb21f25d1db019ae6245d9c7121f754fa61afd7bee6452d",
+  "model": "sgb2",
+  "frames": 2070,
+  "max_cycles": 210000000,
+  "input": {
+    "script": "pokemon-blue-new-game.script",
+    "script_sha256": "d80401a9eb94851917435ace6ce9c6478de5e747a1a9ec57199daa08703793fb"
+  },
+  "command_minimums": {
+    "0x0F": 8,
+    "0x11": 2,
+    "0x13": 1,
+    "0x14": 1,
+    "0x17": 2
+  },
+  "reference": {
+    "source": "independent-emulator",
+    "description": "SameBoy v1.0.3 commit 208ba4afabffab9edde416f2dbb8ae459e34adb8, locally supplied SGB2 boot ROM SHA-256 fd243c4fb27008986316ce3df29e9cfbcdc0cd52704970555a8bb76edbec3988; input offset 134, then 125 at script frame 900; full-frame exact replay through the new-game introduction, no search window",
+    "sequence": {
+      "first_frame": 2000,
+      "reference_first_frame": 2125,
+      "hashes": "sgb2-pokemon-intro-frames.sha256",
+      "hashes_sha256": "e79722885686862ab5b2dca055434265f06d673cd32a5d6c2a7a5de877f773ed"
+    }
+  }
+}

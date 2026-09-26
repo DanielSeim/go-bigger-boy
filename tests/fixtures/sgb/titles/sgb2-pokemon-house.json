@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "title": "Pokemon Blue (UE) SGB2 downstairs movement strict sequence",
+  "rom_sha256": "2a951313c2640e8c2cb21f25d1db019ae6245d9c7121f754fa61afd7bee6452d",
+  "model": "sgb2",
+  "frames": 9300,
+  "max_cycles": 810000000,
+  "input": {
+    "script": "pokemon-blue-overworld.script",
+    "script_sha256": "402052d09f5ae0bb40b3d410a62c8446fdc5c25b0cd2ebfbdf9dfe10ed9ca087"
+  },
+  "command_minimums": {
+    "0x0F": 8,
+    "0x11": 2,
+    "0x13": 1,
+    "0x14": 1,
+    "0x17": 2
+  },
+  "reference": {
+    "source": "independent-emulator",
+    "description": "SameBoy v1.0.3 commit 208ba4afabffab9edde416f2dbb8ae459e34adb8, locally supplied SGB2 boot ROM SHA-256 fd243c4fb27008986316ce3df29e9cfbcdc0cd52704970555a8bb76edbec3988; input offsets 134, then 125 at script frame 900 and 156 at 8300; full-frame exact replay of indoor movement with no frame-search window",
+    "sequence": {
+      "first_frame": 9200,
+      "reference_first_frame": 9356,
+      "hashes": "sgb2-pokemon-house-frames.sha256",
+      "hashes_sha256": "a1e998e1e6f5bdaa99f196180fe789889a94a23085192a75cdb9387d10adf156"
+    }
+  }
+}
