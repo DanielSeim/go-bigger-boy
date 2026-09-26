@@ -126,8 +126,12 @@ is not evidence of correctness. Both capture drivers use the same PPM format.
 For a strict run of consecutive frames, `reference.sequence` supplies the
 first GBB and reference frame numbers plus a SHA-256-pinned text file with one
 independent PPM digest per line. The validator compares every captured GBB
-frame in that interval, reports the first mismatch, and does not search
-adjacent reference frames. The interval is limited to 1,001 frames per run.
+frame in that interval, counts all mismatches and lists the first 20, and
+does not search adjacent reference frames. A sequence can contain up to 2,001
+frames; the runner captures it in chunks of at most 1,001. An optional
+`offset_changes` list of `{ "frame": N, "offset": M }` objects changes the
+reference frame map from GBB frame `N` onward, without skipping any target
+frame or tolerating a mismatch. The digest file remains in target-frame order.
 For diagnosis, `--frame-state-series` also writes per-frame `.state`
 (8 KiB WRAM followed by 160-byte OAM), `.vram` (8 KiB bank 0), and `.meta`
 files from either capture driver. These local binary dumps are not reference
@@ -519,6 +523,53 @@ These matches establish only the specified visual replays against one
 independent emulator. They do not establish hardware-exact SGB2 timing,
 SNES-side sound/commands, or all title scenes. In particular, the observed
 Donkey Kong `SOUND` and `SOU_TRN` requests still lack SNES audio emulation.
+
+The separate `sgb2-donkey-extended.json` diagnostic pins **every** reference
+frame from GBB 2800–4500, including both stage transitions and LCD restarts.
+The validator replays in two runner-sized chunks and checks the full border
+and viewport at the exact mapped reference frame, with no pixel tolerance or
+frame-search window. The observed mapping is:
+
+| GBB frames | SameBoy frame offset |
+| --- | ---: |
+| 2800–3577 | +321 |
+| 3578–3731 | +332 |
+| 3732–4500 | +377 |
+
+The current result is **1,697/1,701 exact frames**, not a validation pass.
+The diagnostic returns a failing status and records all four mismatches in
+`report.json`: GBB 3781/reference 4158 (191 pixels), 3831/4208 (68),
+4027/4404 (115), and 4077/4454 (35). At 3781, GBB repeats the previous
+captured picture, which exactly matches reference frame 4157; reference 4158
+has a transient picture. The later three differences involve moving objects;
+their sampled WRAM/OAM states differ briefly while surrounding full frames
+match. Moving the reference's final scripted input by one frame made many
+more frames diverge, so that is not an acceptable correction. The capture
+APIs also stop at different CPU phases near VBlank. Without an independent
+hardware capture, these four transients do not justify changing the emulator
+to match a potentially different capture phase.
+
+Further checks rule out two simpler explanations. Delaying only the final
+reference button press by 5,000 SameBoy 8-MHz ticks reduced the 3781 pixel
+difference, but made **281 of the next 298 frames** differ, so it is not a
+valid input-phase calibration. Clearing reference WRAM again at cartridge
+entry (after the boot ROM) left the 3781 picture unchanged. At 3831 the
+emulators' captured OAM differs in seven bytes, then agrees again at 3832;
+the four exceptions are not fixed by changing only SGB border composition.
+
+```sh
+python3 scripts/validate_sgb_title.py \
+  --manifest tests/fixtures/sgb/titles/sgb2-donkey-extended.json \
+  --rom '/path/to/Donkey Kong (JU) (V1.1) [S][!].gb' \
+  --runner build/gbb_test_runner \
+  --output-dir /tmp/gbb-sgb2-donkey-extended
+```
+
+To reproduce the independent hashes, capture SameBoy SGB2 frames 3121–4000
+and 4001–4877 in two invocations of the driver above with the same Donkey
+Kong input script, boot ROM, seed, zeroed initial WRAM, and input offsets
+228 / 253 at script frame 1600 / 321 at frame 2800. The digest sidecar and
+manifest contain no ROM, boot, or captured image bytes.
 
 Capture other representative scenes before treating any title as broadly
 compatible. The trace reporter counts decoded commands and highlights

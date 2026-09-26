@@ -23,6 +23,8 @@ from report_sgb_commands import COMMANDS, count_commands
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 COMMAND_ID = re.compile(r"0x[0-9A-F]{2}\Z")
 MAX_ROM_BYTES = 16 * 1024 * 1024
+MAX_SEQUENCE_FRAMES = 2001
+RUNNER_SERIES_FRAMES = 1001
 
 
 def positive_integer(value: object, name: str) -> int:
@@ -78,12 +80,26 @@ def load_manifest(path: Path) -> dict[str, object]:
             first = positive_integer(details.get("first_frame"), "sequence first_frame")
             positive_integer(details.get("reference_first_frame"),
                              "sequence reference_first_frame")
-            if first > manifest["frames"] or manifest["frames"] - first > 1000:
-                raise ValueError("sequence must end at frames and fit 1001 frames")
+            if first > manifest["frames"] or manifest["frames"] - first >= MAX_SEQUENCE_FRAMES:
+                raise ValueError("sequence must end at frames and fit 2001 frames")
             if not isinstance(details.get("hashes"), str) or not details["hashes"].strip():
                 raise ValueError("sequence hashes path is required")
             if not isinstance(details.get("hashes_sha256"), str) or not SHA256.fullmatch(details["hashes_sha256"]):
                 raise ValueError("sequence hashes_sha256 must be a lowercase SHA-256 digest")
+            changes = details.get("offset_changes", [])
+            if not isinstance(changes, list):
+                raise ValueError("sequence offset_changes must be a list")
+            previous_frame = first
+            for change in changes:
+                if not isinstance(change, dict) or set(change) != {"frame", "offset"}:
+                    raise ValueError("each sequence offset change needs frame and offset")
+                frame = positive_integer(change["frame"], "sequence offset change frame")
+                offset = change["offset"]
+                if frame <= previous_frame or frame > manifest["frames"]:
+                    raise ValueError("sequence offset change frames must increase within the sequence")
+                if type(offset) is not int or offset < 0:
+                    raise ValueError("sequence offset must be nonnegative")
+                previous_frame = frame
         if checkpoints:
             if any(key in reference for key in ("frame_sha256", "image", "image_sha256",
                                                  "region", "channel_tolerance",
@@ -140,6 +156,21 @@ def file_digest(path: Path) -> str:
         for block in iter(lambda: input_file.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def capture_chunks(first: int, last: int) -> list[tuple[int, int]]:
+    """The runner can capture at most 1,001 consecutive frames per process."""
+    return [(start, min(start + RUNNER_SERIES_FRAMES - 1, last))
+            for start in range(first, last + 1, RUNNER_SERIES_FRAMES)]
+
+
+def sequence_reference_frame(frame: int, details: dict[str, object]) -> int:
+    offset = details["reference_first_frame"] - details["first_frame"]
+    for change in details.get("offset_changes", []):
+        if frame < change["frame"]:
+            break
+        offset = change["offset"]
+    return frame + offset
 
 
 def compare_reference(actual_path: Path, reference_path: Path,
@@ -214,21 +245,23 @@ def validate(manifest_path: Path, rom: Path, runner: Path,
                "--model", str(manifest["model"]),
                "--max-cycles", str(manifest["max_cycles"]), "--sgb-frame",
                "--sgb-trace", str(trace_path)]
+    if script_path is not None:
+        command.extend(["--input-script", str(script_path)])
     if sequence:
         first_frame = (reference["checkpoints"][0]["frame"] if checkpoints else
                        reference["sequence"]["first_frame"])
-        command.extend(["--frame-series", str(first_frame),
-                        str(manifest["frames"]), str(prefix)])
+        capture_commands = [command + ["--frame-series", str(first), str(last),
+                                       str(prefix)]
+                            for first, last in capture_chunks(first_frame, manifest["frames"])]
     else:
-        command.extend(["--frames", str(manifest["frames"]),
-                        "--frame-output", str(frame_path)])
-    if script_path is not None:
-        command.extend(["--input-script", str(script_path)])
-    completed = subprocess.run(command, capture_output=True, text=True,
-                               timeout=180, check=False)
-    if completed.returncode != 0:
-        raise RuntimeError("SGB capture failed: " +
-                           (completed.stderr or completed.stdout)[-2000:])
+        capture_commands = [command + ["--frames", str(manifest["frames"]),
+                                       "--frame-output", str(frame_path)]]
+    for capture_command in capture_commands:
+        completed = subprocess.run(capture_command, capture_output=True,
+                                   text=True, timeout=180, check=False)
+        if completed.returncode != 0:
+            raise RuntimeError("SGB capture failed: " +
+                               (completed.stderr or completed.stdout)[-2000:])
     width, height, _ = _load_image(frame_path)
     if (width, height) != (256, 224):
         raise ValueError("runner did not capture a 256x224 SGB frame")
@@ -268,6 +301,7 @@ def validate(manifest_path: Path, rom: Path, runner: Path,
             details = reference["sequence"]
             first = details["first_frame"]
             first_mismatch = None
+            mismatches = []
             matched = 0
             for index, expected in enumerate(reference_hashes):
                 frame = first + index
@@ -275,19 +309,25 @@ def validate(manifest_path: Path, rom: Path, runner: Path,
                 actual = file_digest(path)
                 if actual == expected:
                     matched += 1
-                elif first_mismatch is None:
-                    first_mismatch = {
+                else:
+                    mismatch = {
                         "frame": frame,
-                        "reference_frame": details["reference_first_frame"] + index,
+                        "reference_frame": sequence_reference_frame(frame, details),
                         "expected_frame_sha256": expected,
                         "actual_frame_sha256": actual,
                     }
+                    if first_mismatch is None:
+                        first_mismatch = mismatch
+                    if len(mismatches) < 20:
+                        mismatches.append(mismatch)
             comparison = {
                 "passed": first_mismatch is None,
                 "region": "full",
                 "checked_frames": len(reference_hashes),
                 "matched_frames": matched,
+                "unmatched_frames": len(reference_hashes) - matched,
                 "first_mismatch": first_mismatch,
+                "mismatches": mismatches,
                 "window": 0,
             }
         elif "frame_sha256" in reference:

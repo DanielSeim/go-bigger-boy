@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "title": "Donkey Kong (JU) v1.1 SGB2 extended stage-transition diagnostic",
+  "rom_sha256": "b490c89efe718633b07381def66ce0ed58a5075aabe40c6e644baf2b408a76f4",
+  "model": "sgb2",
+  "frames": 4500,
+  "max_cycles": 410000000,
+  "input": {
+    "script": "donkey-kong-gameplay.script",
+    "script_sha256": "a5d37081cc52b8bfe72284f5cd836b0ccea9bfc3ddf25fcc1ac2769b3b2e802b"
+  },
+  "command_minimums": {
+    "0x08": 3,
+    "0x09": 2,
+    "0x0A": 13,
+    "0x13": 2,
+    "0x14": 1
+  },
+  "reference": {
+    "source": "independent-emulator",
+    "description": "SameBoy v1.0.3 commit 208ba4afabffab9edde416f2dbb8ae459e34adb8, locally supplied SGB2 boot ROM SHA-256 fd243c4fb27008986316ce3df29e9cfbcdc0cd52704970555a8bb76edbec3988, random seed 1 and explicitly zeroed initial WRAM; input offsets 228, then 253 at script frame 1600 and 321 at 2800; complete stage-transition diagnostic, not an assertion of a validated title pass",
+    "sequence": {
+      "first_frame": 2800,
+      "reference_first_frame": 3121,
+      "offset_changes": [
+        {"frame": 3578, "offset": 332},
+        {"frame": 3732, "offset": 377}
+      ],
+      "hashes": "sgb2-donkey-extended-frames.sha256",
+      "hashes_sha256": "b20adddb04d1ff8cb62399a83394364b6ec1875e49ae2c506c55c1864a691c2f"
+    }
+  }
+}

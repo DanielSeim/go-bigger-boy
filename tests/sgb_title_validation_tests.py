@@ -11,7 +11,8 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from validate_sgb_title import compare_reference, load_manifest, validate  # noqa: E402
+from validate_sgb_title import (capture_chunks, compare_reference, load_manifest,
+                                sequence_reference_frame, validate)  # noqa: E402
 from sgb_trace_fixture_test import load_fixture  # noqa: E402
 
 
@@ -299,6 +300,18 @@ class SgbTitleValidationTests(unittest.TestCase):
             self.assertEqual(comparison["first_mismatch"]["frame"], 2)
             self.assertEqual(comparison["first_mismatch"]["reference_frame"], 102)
             self.assertEqual(comparison["matched_frames"], 1)
+            self.assertEqual(comparison["unmatched_frames"], 1)
+            self.assertEqual([item["frame"] for item in comparison["mismatches"]], [2])
+            hash_path.write_text("0" * 64 + "\n" + "0" * 64 + "\n", encoding="ascii")
+            details["hashes_sha256"] = hashlib.sha256(hash_path.read_bytes()).hexdigest()
+            details["offset_changes"] = [{"frame": 3, "offset": 101}]
+            manifest.write_text(json.dumps(data), encoding="utf-8")
+            report = validate(manifest, rom, RUNNER, root / "two-differences")
+            comparison = report["reference"]["comparison"]
+            self.assertEqual(comparison["unmatched_frames"], 2)
+            self.assertEqual([(item["frame"], item["reference_frame"])
+                              for item in comparison["mismatches"]],
+                             [(2, 102), (3, 104)])
             hash_path.write_text(hashes[0] + "\n", encoding="ascii")
             details["hashes_sha256"] = hashlib.sha256(hash_path.read_bytes()).hexdigest()
             manifest.write_text(json.dumps(data), encoding="utf-8")
@@ -308,6 +321,36 @@ class SgbTitleValidationTests(unittest.TestCase):
             data["reference"]["checkpoints"] = []
             manifest.write_text(json.dumps(data), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "cannot include"):
+                load_manifest(manifest)
+
+    def test_long_sequence_chunk_plan_and_offset_map(self) -> None:
+        self.assertEqual(capture_chunks(2800, 4500), [(2800, 3800), (3801, 4500)])
+        details = {"first_frame": 2800, "reference_first_frame": 3121,
+                   "offset_changes": [{"frame": 3578, "offset": 332},
+                                      {"frame": 3732, "offset": 377}]}
+        self.assertEqual([sequence_reference_frame(frame, details)
+                          for frame in (3577, 3578, 3731, 3732, 4500)],
+                         [3898, 3910, 4063, 4109, 4877])
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = Path(directory) / "case.json"
+            data = {"schema": 1, "title": "Long sequence schema test",
+                    "model": "sgb2", "rom_sha256": "a" * 64,
+                    "frames": 4500, "max_cycles": 410_000_000,
+                    "command_minimums": {"0x13": 1},
+                    "reference": {"source": "independent-emulator",
+                                  "description": "Synthetic schema test",
+                                  "sequence": {**details, "hashes": "reference.sha256",
+                                               "hashes_sha256": "b" * 64}}}
+            manifest.write_text(json.dumps(data), encoding="utf-8")
+            load_manifest(manifest)
+            details["offset_changes"][1]["frame"] = 3578
+            manifest.write_text(json.dumps(data), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "must increase"):
+                load_manifest(manifest)
+            details["offset_changes"][1]["frame"] = 3732
+            details["offset_changes"][1]["offset"] = True
+            manifest.write_text(json.dumps(data), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "nonnegative"):
                 load_manifest(manifest)
 
     def test_full_sgb_capture_rejects_other_hardware(self) -> None:
