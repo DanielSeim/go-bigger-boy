@@ -583,6 +583,19 @@ void test_sgb_model_clock_and_audio_resampling() {
           "SGB1 audio resamples its faster clock into fixed 48 kHz output");
 }
 
+void test_sgb_post_boot_handoff() {
+    gameboy::Emulator emulator{gameboy::Cartridge{test_rom()},
+                               gameboy::HardwareModel::sgb};
+    const auto& registers = emulator.cpu().registers();
+    check(registers.pc == 0x0100 && registers.sp == 0xFFFE &&
+              registers.a == 0x01 && registers.c == 0x14,
+          "SGB cartridge entry starts with the documented CPU handoff");
+    check(emulator.bus().read8(0xFF44) == 0x00 &&
+              emulator.bus().read8(0xFF04) == 0xD8 &&
+              emulator.bus().read8(0xFF40) == 0x91,
+          "SGB cartridge entry preserves the hardware LY/DIV/LCDC phase");
+}
+
 } // namespace
 
 int main() {
@@ -601,5 +614,6 @@ int main() {
     test_sgb_lcd_restart_holds_last_complete_picture();
     test_sgb_lcd_hold_survives_save_state();
     test_sgb_model_clock_and_audio_resampling();
+    test_sgb_post_boot_handoff();
     return failures == 0 ? 0 : 1;
 }

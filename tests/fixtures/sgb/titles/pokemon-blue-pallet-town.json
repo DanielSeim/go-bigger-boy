@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "title": "Pokemon Blue (UE) SGB Pallet Town moving character checkpoints",
+  "rom_sha256": "2a951313c2640e8c2cb21f25d1db019ae6245d9c7121f754fa61afd7bee6452d",
+  "model": "sgb",
+  "frames": 9910,
+  "max_cycles": 1000000000,
+  "input": {
+    "script": "pokemon-blue-overworld.script",
+    "script_sha256": "402052d09f5ae0bb40b3d410a62c8446fdc5c25b0cd2ebfbdf9dfe10ed9ca087"
+  },
+  "command_minimums": {
+    "0x0F": 8,
+    "0x11": 2,
+    "0x13": 1,
+    "0x14": 1,
+    "0x17": 2
+  },
+  "reference": {
+    "source": "independent-emulator",
+    "description": "SameBoy v1.0.3 commit 208ba4afabffab9edde416f2dbb8ae459e34adb8, locally supplied unbundled sgb.boot.rom SHA-256 0e4ddff32fc9d1eeaae812a157dd246459b00c9e14f2f61751f661f32361e360 with observed LY=00 DIV=D8 cartridge handoff; same input script with base offset 133 and changes at script frames 900 to 124, 8300 to 155, and 9810 to 149; two exact moving-character scenes at GBB frames 9900 and 9910",
+    "checkpoints": [
+      {"frame": 9900, "reference_frame": 10058, "frame_sha256": "f8adc1170cba3d470d7ac61d7c0f529fef53e13e775fde636c578d511c34c38f"},
+      {"frame": 9910, "reference_frame": 10068, "frame_sha256": "31500c906a3d2007012aa81db9a0081a605b9652c3c1f132bc99380e331eb1c7"}
+    ]
+  }
+}

@@ -274,6 +274,16 @@ void write_frame_state(const std::filesystem::path& path,
     if (!output) throw std::runtime_error("could not write frame state: " + path.string());
 }
 
+void write_frame_vram(const std::filesystem::path& path,
+                      const gameboy::Emulator& emulator) {
+    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    if (!output) throw std::runtime_error("could not open frame VRAM: " + path.string());
+    for (std::uint16_t offset = 0; offset < 0x2000; ++offset) {
+        output.put(static_cast<char>(emulator.bus().debug_read_vram(0, offset)));
+    }
+    if (!output) throw std::runtime_error("could not write frame VRAM: " + path.string());
+}
+
 void write_frame_metadata(const std::filesystem::path& path,
                           const gameboy::Emulator& emulator,
                           const std::uint64_t frame) {
@@ -894,6 +904,10 @@ int main(int argc, char** argv) {
                             write_frame_state(std::filesystem::path{
                                 options.frame_series_prefix.string() + "-" +
                                 std::to_string(completed_frames) + ".state"},
+                                emulator);
+                            write_frame_vram(std::filesystem::path{
+                                options.frame_series_prefix.string() + "-" +
+                                std::to_string(completed_frames) + ".vram"},
                                 emulator);
                             write_frame_metadata(std::filesystem::path{
                                 options.frame_series_prefix.string() + "-" +

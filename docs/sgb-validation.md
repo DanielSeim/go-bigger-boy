@@ -81,10 +81,11 @@ python3 scripts/report_sgb_commands.py /tmp/gbb-sgb-donkey/sgb.trace
 The runner writes a full 256×224 SGB PPM, a command trace, and a JSON report.
 `inventory_only` means the title executed and its command minimums held; it
 does **not** mean its picture or audio is correct. A mismatched ROM hash fails
-before execution. The three supplied manifests were exercised locally at their
-pinned post-boot frames: Pokémon Blue sent 8 `DATA_SND` plus palette, border,
-multiplayer, and mask commands; Donkey Kong sent 1 `SOUND`, 2 `SOU_TRN`, and
-`ICON_EN` plus palette and border commands; Kirby's Dream Land 2 sent 8
+before execution. The initial Pokémon, Donkey Kong, and Kirby manifests were
+exercised locally at their pinned post-boot frames: Pokémon Blue sent 8
+`DATA_SND` plus palette, border, multiplayer, and mask commands; Donkey Kong
+sent 1 `SOUND`, 2 `SOU_TRN`, and `ICON_EN` plus palette and border commands;
+Kirby's Dream Land 2 sent 8
 `DATA_SND`, 1 `SOUND`, and `PAL_PRI` plus palette and border commands. These
 are observed startup commands, not exhaustive title profiles.
 
@@ -105,6 +106,16 @@ header. The validator compares that digest to GBB's captured PPM. The source
 and description are still required; a digest without independent provenance
 is not evidence of correctness. Both capture drivers use the same PPM format.
 
+For a strict run of consecutive frames, `reference.sequence` supplies the
+first GBB and reference frame numbers plus a SHA-256-pinned text file with one
+independent PPM digest per line. The validator compares every captured GBB
+frame in that interval, reports the first mismatch, and does not search
+adjacent reference frames. The interval is limited to 1,001 frames per run.
+For diagnosis, `--frame-state-series` also writes per-frame `.state`
+(8 KiB WRAM followed by 160-byte OAM), `.vram` (8 KiB bank 0), and `.meta`
+files from either capture driver. These local binary dumps are not reference
+artwork and are not included in the repository.
+
 One reproducible independent reference route uses SameBoy v1.0.3 at commit
 `208ba4afabffab9edde416f2dbb8ae459e34adb8`. In a separate checkout,
 build its public core and open-source boot ROM (`make lib bootroms`). From
@@ -120,6 +131,13 @@ cc -std=c11 -I/path/to/SameBoy scripts/sameboy_sgb_capture.c \
   350 /tmp/title-sgb-reference.ppm sgb
 sha256sum /tmp/title-sgb-reference.ppm
 ```
+
+For timing-sensitive comparisons, add `--watch-entry` to print the reference
+cartridge-entry CPU registers, LY, DIV, STAT, and LCDC to stderr. The option
+only observes the independent core; it does not alter its state and cannot be
+combined with `--watch-wram`. Record this handoff alongside the capture. An
+exact scene match after boot does not establish that the two runs began at the
+same hardware phase.
 
 That last digest goes into the private manifest's `reference.image_sha256`.
 Its boot ROM SHA-256 in the checked setup was
@@ -196,37 +214,92 @@ settled menu and border scenes. The report lists every checkpoint and the
 not that every intervening frame did. Run it with the same command above,
 substituting that manifest and a different output directory.
 
-For a strict diagnostic of *every* frame, capture both series locally. This
-title needs the independently observed reference input phases (133 frames
-before script frame 900, 124 until frame 8300, then 155); one fixed offset
-does not replay the same game state through the long introduction. Allow at
-most two frames of capture-boundary drift around the final observed offset:
+The `pokemon-blue-house-sequence.json` case extends that script through the
+bedroom stairs and active movement on the first floor. It checks **all 601
+consecutive full SGB frames** from GBB 9200–9800 against a hash-pinned
+independent SameBoy capture at frames 9355–9955. The validator requires the
+same numbered frame every time: no search window, pixel tolerance, or omitted
+intermediate frames. Its report identifies the first divergent frame. Run it
+with the same legally supplied Pokémon Blue ROM:
 
 ```sh
-gbb_test_runner '/path/to/title.gb' --model sgb --max-cycles 760000000 \
-  --input-script tests/fixtures/sgb/titles/pokemon-blue-new-game.script \
-  --frame-series 8490 8780 /tmp/gbb-moving --sgb-frame
+python3 scripts/validate_sgb_title.py \
+  --manifest tests/fixtures/sgb/titles/pokemon-blue-house-sequence.json \
+  --rom '/path/to/Pokemon - Blue Version (UE) [S][!].gb' \
+  --runner build/gbb_test_runner \
+  --output-dir /tmp/gbb-sgb-pokemon-house
+```
+
+The local independent capture can be reproduced with the unbundled, locally
+supplied `sgb.boot.rom` whose hash is listed below. The input phases
+(133 frames before script frame 900, 124 until frame 8300, then 155) were
+observed independently; one fixed input offset does not replay the same game
+state through the long introduction. The frame comparison itself uses a fixed
+155-frame offset and `--window 0`:
+
+```sh
+gbb_test_runner '/path/to/title.gb' --model sgb --max-cycles 980000000 \
+  --input-script tests/fixtures/sgb/titles/pokemon-blue-overworld.script \
+  --frame-series 9200 9800 /tmp/gbb-house --sgb-frame
 /tmp/sameboy_sgb_capture '/path/to/title.gb' \
-  /path/to/SameBoy/build/bin/BootROMs/sgb_boot.bin \
-  --series 8645 8935 /tmp/sameboy-moving sgb \
-  --input-script tests/fixtures/sgb/titles/pokemon-blue-new-game.script \
+  '/path/to/sgb.boot.rom' \
+  --series 9355 9955 /tmp/sameboy-house sgb \
+  --input-script tests/fixtures/sgb/titles/pokemon-blue-overworld.script \
   --input-offset 133 --input-offset-at 900 124 \
   --input-offset-at 8300 155
 python3 scripts/align_sgb_frames.py \
-  --target-series '/tmp/gbb-moving-*.ppm' \
-  --reference-series '/tmp/sameboy-moving-*.ppm' \
-  --sequence-offset 155 --window 2
+  --target-series '/tmp/gbb-house-*.ppm' \
+  --reference-series '/tmp/sameboy-house-*.ppm' \
+  --sequence-offset 155 --window 0
 ```
 
-In the checked run, **all 291 GBB frames** had an exact independent match
-within that two-frame window, including menu-construction frames 8622 and
-8623. The earlier two-frame mismatch came from using a fixed 155-frame
-offset for reference button presses throughout the introduction: the two
-runs reached the menu with a different game-controlled update phase. A
-phase-aware input schedule removed that mismatch without changing emulator
-rendering. This verifies this scripted sequence, not every SGB behavior.
-No reference artwork is checked into the repository—only frame hashes and
-provenance.
+The older bedroom/menu diagnostic still has **14 frames** that do not match
+at a fixed offset with `--window 0` (notably movement and menu construction
+between frames 8565 and 8624). In the original open-source-boot capture,
+all 291 frames found exact matches only with up to a one-frame search shift;
+that is weaker evidence and is not presented as a strict pass. With the
+locally supplied SGB boot ROM, 12 of those 14 frames matched an adjacent
+frame but 2 transient menu-tilemap frames did not. The extended script
+also reaches Pallet Town after frame 9800. With the initial input phase the
+moving outdoor character differed; calibrating the final event independently
+produced exact full-frame matches at GBB 9900 and 9910 / SameBoy 10058 and
+10068. Those two moving-character scenes are pinned by
+`pokemon-blue-pallet-town.json`; the intermediate movement frames do not all
+match. Neither case establishes universal SGB
+timing or audio accuracy. No reference artwork is checked into the repository—
+only frame hashes and provenance.
+
+The open-source reference boot has a timing limitation: `--watch-entry`
+observed **LY=$90, DIV=$BB** at cartridge entry with its `sgb_boot.bin`,
+whereas the [documented SGB hardware
+handoff](https://github.com/nitro2k01/whichboot.gb#super-gameboy) is
+**LY=$00, DIV=$D8** (with a small header-dependent fractional DIV range).
+GBB's post-boot profile has the documented LY and DIV high byte. A locally
+supplied, unbundled SGB boot dump (`sgb.boot.rom`, SHA-256
+`0e4ddff32fc9d1eeaae812a157dd246459b00c9e14f2f61751f661f32361e360`)
+made SameBoy hand over at LY=$00 and DIV=$D8, but **the 14 fixed-offset
+bedroom mismatches remained**. Therefore, blaming them solely on the
+open-source boot ROM would be incorrect. Frame-state diagnostics show equal
+OAM and transiently different BG tilemap bytes during menu construction;
+the settled pictures match exactly. A hardware-faithful boot narrows the
+question but does not by itself establish which emulator's sub-frame timing
+is right. Neither boot ROM is distributed here.
+
+The Pallet Town checkpoints use the locally supplied boot ROM above and the
+same input schedule as the house run through script frame 8300, then changes
+the reference offset to **149 at script frame 9810**. Reproduce the reference
+hashes without copying or committing the boot ROM:
+
+```sh
+/tmp/sameboy_sgb_capture '/path/to/Pokemon Blue.gb' \
+  '/path/to/sgb.boot.rom' --series 10058 10068 \
+  /tmp/pokemon-pallet-reference sgb \
+  --input-script tests/fixtures/sgb/titles/pokemon-blue-overworld.script \
+  --input-offset 133 --input-offset-at 900 124 \
+  --input-offset-at 8300 155 --input-offset-at 9810 149 --watch-entry
+sha256sum /tmp/pokemon-pallet-reference-010058.ppm \
+  /tmp/pokemon-pallet-reference-010068.ppm
+```
 
 With the three hash-pinned ROMs, a pinned SameBoy build, and its independently
 written boot ROM, these full-frame pairs matched with **zero** mismatched

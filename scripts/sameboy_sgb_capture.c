@@ -6,6 +6,7 @@
  *        [--input-offset-at SCRIPT_FRAME FRAMES]...
  *        [--random-seed UNSIGNED_DECIMAL]
  *        [--frame-state-series]
+ *        [--watch-entry]
  *        [--watch-lcdc]
  *        [--watch-wram 0xC000..0xDFFF]
  *        [--watch-wram-from-start]
@@ -15,6 +16,7 @@
  *        [--input-offset-at SCRIPT_FRAME FRAMES]...
  *        [--random-seed UNSIGNED_DECIMAL]
  *        [--frame-state-series]
+ *        [--watch-entry]
  *        [--watch-lcdc]
  *        [--watch-wram 0xC000..0xDFFF]
  *        [--watch-wram-from-start]
@@ -71,6 +73,17 @@ static int write_frame_state(const char *path, GB_gameboy_t *gb) {
     return fclose(out) || !ok ? 4 : 0;
 }
 
+static int write_frame_vram(const char *path, GB_gameboy_t *gb) {
+    size_t vram_size = 0;
+    const uint8_t *vram = GB_get_direct_access(gb, GB_DIRECT_ACCESS_VRAM,
+                                                &vram_size, NULL);
+    if (!vram || vram_size < 0x2000) return 4;
+    FILE *out = fopen(path, "wb");
+    if (!out) return 4;
+    const int ok = fwrite(vram, 1, 0x2000, out) == 0x2000;
+    return fclose(out) || !ok ? 4 : 0;
+}
+
 static GB_vblank_type_t last_vblank_type;
 static int saw_vblank;
 
@@ -121,6 +134,23 @@ static size_t watched_offset;
 static uint8_t watched_value;
 static uint16_t previous_pc;
 static unsigned long watched_frame;
+static int watch_entry;
+static int saw_entry;
+
+static void watch_cartridge_entry(GB_gameboy_t *gb, uint16_t pc,
+                                  uint8_t opcode) {
+    (void)opcode;
+    if (watch_entry && !saw_entry && pc == 0x0100 &&
+        GB_read_memory(gb, 0xFF50) != 0) {
+        const GB_registers_t *r = GB_get_registers(gb);
+        fprintf(stderr, "cartridge entry frame=%lu div=%02x ly=%02x stat=%02x lcdc=%02x pc=%04x sp=%04x af=%04x bc=%04x de=%04x hl=%04x\n",
+                watched_frame, GB_read_memory(gb, 0xFF04),
+                GB_read_memory(gb, 0xFF44), GB_read_memory(gb, 0xFF41),
+                GB_read_memory(gb, 0xFF40), pc, r->sp,
+                r->af, r->bc, r->de, r->hl);
+        saw_entry = 1;
+    }
+}
 
 static void watch_wram(GB_gameboy_t *gb, uint16_t pc, uint8_t opcode) {
     (void)opcode;
@@ -153,7 +183,7 @@ int main(int argc, char **argv) {
                 "   optional: --input-script PATH --input-offset FRAMES\n"
                 "             [--input-offset-at SCRIPT_FRAME FRAMES]...\n"
                 "             [--random-seed UNSIGNED_DECIMAL]"
-                " [--frame-state-series] [--watch-wram ADDRESS]"
+                " [--frame-state-series] [--watch-entry] [--watch-wram ADDRESS]"
                 " [--watch-wram-from-start] [--watch-lcdc]"
                 " [--zero-initial-ram]\n",
                 argv[0], argv[0]);
@@ -232,6 +262,10 @@ int main(int argc, char **argv) {
             frame_state_series = 1;
             continue;
         }
+        if (!strcmp(argv[index], "--watch-entry") && !watch_entry) {
+            watch_entry = 1;
+            continue;
+        }
         if (!strcmp(argv[index], "--watch-wram") && series &&
             index + 1 < argc && !saw_watch_wram) {
             const char *value = argv[++index];
@@ -258,6 +292,7 @@ int main(int argc, char **argv) {
         return 2;
     }
     if ((saw_offset || offset_map.count) && input_path == NULL) return 2;
+    if (watch_entry && saw_watch_wram) return 2;
     if (watch_wram_from_start && !saw_watch_wram) return 2;
     if (saw_watch_lcdc && !frame_state_series) return 2;
     offset_map.base_offset = (unsigned)input_offset;
@@ -311,6 +346,7 @@ int main(int argc, char **argv) {
         GB_set_turbo_mode(gb, true, true);
         GB_set_turbo_cap(gb, 0);
     }
+    if (watch_entry) GB_set_execution_callback(gb, watch_cartridge_entry);
     size_t next_input_event = 0;
     uint8_t held_buttons = 0;
     uint64_t cycles_8mhz = 0;
@@ -363,6 +399,11 @@ int main(int argc, char **argv) {
                     if (snprintf(path, sizeof(path), "%s-%06lu.state", argv[6], frame) >=
                         (int)sizeof(path)) return 4;
                     result = write_frame_state(path, gb);
+                    if (!result) {
+                        if (snprintf(path, sizeof(path), "%s-%06lu.vram", argv[6], frame) >=
+                            (int)sizeof(path)) return 4;
+                        result = write_frame_vram(path, gb);
+                    }
                     if (!result) {
                         if (snprintf(path, sizeof(path), "%s-%06lu.meta", argv[6], frame) >=
                             (int)sizeof(path)) return 4;

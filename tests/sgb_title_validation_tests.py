@@ -32,6 +32,15 @@ class SgbTitleValidationTests(unittest.TestCase):
                     self.assertTrue(script.is_file())
                     self.assertEqual(hashlib.sha256(script.read_bytes()).hexdigest(),
                                      input_data["script_sha256"])
+                reference = data.get("reference")
+                if isinstance(reference, dict) and "sequence" in reference:
+                    sequence = reference["sequence"]
+                    hashes_path = title_dir / sequence["hashes"]
+                    self.assertTrue(hashes_path.is_file())
+                    self.assertEqual(hashlib.sha256(hashes_path.read_bytes()).hexdigest(),
+                                     sequence["hashes_sha256"])
+                    self.assertEqual(len(hashes_path.read_text(encoding="ascii").splitlines()),
+                                     data["frames"] - sequence["first_frame"] + 1)
 
     def test_fixture_inventory_is_not_mislabeled_as_reference(self) -> None:
         if RUNNER is None:
@@ -241,6 +250,66 @@ class SgbTitleValidationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "must increase"):
                 load_manifest(manifest)
 
+    def test_strict_sequence_checks_every_pinned_frame(self) -> None:
+        if RUNNER is None:
+            self.skipTest("runner path not supplied")
+        fixture_dir = Path(__file__).parent / "fixtures/sgb"
+        rom_bytes = load_fixture(fixture_dir / "trace_fixture.hex")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            rom = root / "fixture.gb"
+            rom.write_bytes(rom_bytes)
+            capture = subprocess.run(
+                [str(RUNNER.resolve()), str(rom), "--model", "sgb",
+                 "--sgb-frame", "--max-cycles", "500000",
+                 "--frame-series", "2", "3", str(root / "reference")],
+                capture_output=True, text=True, timeout=10, check=False)
+            self.assertEqual(capture.returncode, 0, capture.stderr)
+            hashes = [hashlib.sha256((root / f"reference-{frame}.ppm").read_bytes()).hexdigest()
+                      for frame in (2, 3)]
+            hash_path = root / "reference.sha256"
+            hash_path.write_text("\n".join(hashes) + "\n", encoding="ascii")
+            details = {"first_frame": 2, "reference_first_frame": 102,
+                       "hashes": hash_path.name,
+                       "hashes_sha256": hashlib.sha256(hash_path.read_bytes()).hexdigest()}
+            data = {
+                "schema": 1, "title": "Synthetic strict sequence plumbing only",
+                "rom_sha256": hashlib.sha256(rom_bytes).hexdigest(),
+                "model": "sgb", "frames": 3, "max_cycles": 500_000,
+                "command_minimums": {"0x11": 1},
+                "reference": {"source": "independent-emulator",
+                              "description": "Synthetic comparison plumbing only",
+                              "sequence": details},
+            }
+            manifest = root / "case.json"
+            manifest.write_text(json.dumps(data), encoding="utf-8")
+            report = validate(manifest, rom, RUNNER, root / "matching")
+            self.assertEqual(report["status"], "validated")
+            self.assertEqual(report["reference"]["comparison"]["matched_frames"], 2)
+            self.assertEqual(report["reference"]["comparison"]["window"], 0)
+            hash_path.write_text("0" * 64 + "\n" + hashes[1] + "\n", encoding="ascii")
+            with self.assertRaisesRegex(ValueError, "sequence hashes SHA-256"):
+                validate(manifest, rom, RUNNER, root / "stale")
+            self.assertFalse((root / "stale").exists())
+            details["hashes_sha256"] = hashlib.sha256(hash_path.read_bytes()).hexdigest()
+            manifest.write_text(json.dumps(data), encoding="utf-8")
+            report = validate(manifest, rom, RUNNER, root / "different")
+            self.assertEqual(report["status"], "failed")
+            comparison = report["reference"]["comparison"]
+            self.assertEqual(comparison["first_mismatch"]["frame"], 2)
+            self.assertEqual(comparison["first_mismatch"]["reference_frame"], 102)
+            self.assertEqual(comparison["matched_frames"], 1)
+            hash_path.write_text(hashes[0] + "\n", encoding="ascii")
+            details["hashes_sha256"] = hashlib.sha256(hash_path.read_bytes()).hexdigest()
+            manifest.write_text(json.dumps(data), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "wrong number"):
+                validate(manifest, rom, RUNNER, root / "short")
+            details["first_frame"] = 1
+            data["reference"]["checkpoints"] = []
+            manifest.write_text(json.dumps(data), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "cannot include"):
+                load_manifest(manifest)
+
     def test_full_sgb_capture_rejects_other_hardware(self) -> None:
         if RUNNER is None:
             self.skipTest("runner path not supplied")
@@ -279,6 +348,8 @@ class SgbTitleValidationTests(unittest.TestCase):
                              0x2000 + 0xA0)
             self.assertEqual((root / "series-2.state").stat().st_size,
                              0x2000 + 0xA0)
+            self.assertEqual((root / "series-1.vram").stat().st_size, 0x2000)
+            self.assertEqual((root / "series-2.vram").stat().st_size, 0x2000)
             for frame in (1, 2):
                 metadata = (root / f"series-{frame}.meta").read_text()
                 self.assertIn(f"frame={frame} cycles=", metadata)

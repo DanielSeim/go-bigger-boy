@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "title": "Pokemon Blue (UE) SGB downstairs movement strict sequence",
+  "rom_sha256": "2a951313c2640e8c2cb21f25d1db019ae6245d9c7121f754fa61afd7bee6452d",
+  "model": "sgb",
+  "frames": 9800,
+  "max_cycles": 980000000,
+  "input": {
+    "script": "pokemon-blue-overworld.script",
+    "script_sha256": "402052d09f5ae0bb40b3d410a62c8446fdc5c25b0cd2ebfbdf9dfe10ed9ca087"
+  },
+  "command_minimums": {
+    "0x0F": 8,
+    "0x11": 2,
+    "0x13": 1,
+    "0x14": 1,
+    "0x17": 2
+  },
+  "reference": {
+    "source": "independent-emulator",
+    "description": "SameBoy v1.0.3 commit 208ba4afabffab9edde416f2dbb8ae459e34adb8, locally supplied unbundled sgb.boot.rom SHA-256 0e4ddff32fc9d1eeaae812a157dd246459b00c9e14f2f61751f661f32361e360 with observed LY=00 DIV=D8 cartridge handoff; same input script with base offset 133 and offset changes at script frames 900 to 124 and 8300 to 155; full PPM frames 9355 through 9955, each compared to GBB frame plus 155 with no frame-search window or pixel tolerance",
+    "sequence": {
+      "first_frame": 9200,
+      "reference_first_frame": 9355,
+      "hashes": "pokemon-blue-house-frames.sha256",
+      "hashes_sha256": "bc883e8354b94772830a012dfd3366cde5f232c568fe54a9b7db361697031960"
+    }
+  }
+}
