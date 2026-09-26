@@ -27,10 +27,12 @@ Ppu::Ppu()
       sgb_border_tiles_(std::make_unique<std::array<std::uint8_t, 0x2000>>()),
       sgb_border_pct_(std::make_unique<std::array<std::uint8_t, 0x1000>>()),
       sgb_framebuffer_(std::make_unique<SgbFramebuffer>()),
+      sgb_last_complete_viewport_(std::make_unique<Framebuffer>()),
       sgb_border_opaque_(std::make_unique<SgbViewportMask>()),
       sgb_screen_buffer_(
           std::make_unique<std::array<std::uint8_t, screen_width * screen_height>>()) {
     framebuffer_->fill(dmg_colors[0]);
+    *sgb_last_complete_viewport_ = *framebuffer_;
     cgb_bg_palette_.fill(0xFF);
     cgb_object_palette_.fill(0xFF);
     object_pixel_active_index_.fill(0xFF);
@@ -55,6 +57,9 @@ void Ppu::set_cgb_late_revision(const bool enabled) noexcept {
 
 void Ppu::set_sgb_mode(const bool enabled) noexcept {
     sgb_mode_ = enabled;
+    sgb_lcd_frozen_ = false;
+    sgb_lcd_restart_frames_ = 0;
+    *sgb_last_complete_viewport_ = *framebuffer_;
     sgb_border_cache_valid_ = false;
     ++sgb_border_revision_;
     if (!enabled) {
@@ -305,6 +310,10 @@ bool Ppu::write_register(const std::uint16_t address,
     switch (address) {
     case 0xFF40: {
         const auto was_enabled = lcd_enabled();
+        if (sgb_mode_ && was_enabled && (value & 0x80U) == 0) {
+            sgb_lcd_frozen_ = true;
+            sgb_lcd_restart_frames_ = 0;
+        }
         const auto window_was_enabled = (lcdc_ & 0x20) != 0;
         const auto object_was_enabled = (lcdc_ & 0x02) != 0;
         if (window_was_enabled && (value & 0x20) == 0) {
@@ -415,6 +424,7 @@ bool Ppu::write_register(const std::uint16_t address,
         }
         if (!was_enabled && lcd_enabled()) {
             const auto restarting_lcd = lcd_restart_pending_;
+            if (sgb_lcd_frozen_) sgb_lcd_restart_frames_ = 0;
             dot_ = 0;
             ly_ = 0;
             mode_ = 0;

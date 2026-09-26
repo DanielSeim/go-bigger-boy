@@ -47,6 +47,7 @@ struct Options {
     std::filesystem::path sgb_replay_input;
     std::uint64_t trace_limit{};
     std::optional<std::uint16_t> watched_wram;
+    bool watch_wram_from_start{};
     bool dmg_compatibility_colors{};
     bool frame_on_ld_bb{};
     bool sgb_frame{};
@@ -63,6 +64,7 @@ void usage() {
                  "[--frame-series FIRST LAST PREFIX [--sgb-frame]] "
                  "[--frame-state-series] "
                  "[--watch-wram 0xC000..0xDFFF] "
+                 "[--watch-wram-from-start] "
                  "[--input-script PATH] "
                  "[--trace-apu PATH] [--trace-ppu PATH] [--trace-io PATH] "
                  "[--trace-cpu PATH] [--trace-limit N] "
@@ -160,6 +162,8 @@ Options parse_options(const int argc, char** argv) {
                 throw std::invalid_argument("--watch-wram requires a WRAM address");
             }
             options.watched_wram = static_cast<std::uint16_t>(parsed);
+        } else if (argument == "--watch-wram-from-start") {
+            options.watch_wram_from_start = true;
         } else if (argument == "--diagnostic-boot") {
             options.diagnostic_boot = true;
         } else {
@@ -209,6 +213,9 @@ Options parse_options(const int argc, char** argv) {
     }
     if (options.watched_wram.has_value() && options.frame_series_last == 0) {
         throw std::invalid_argument("--watch-wram requires --frame-series");
+    }
+    if (options.watch_wram_from_start && !options.watched_wram.has_value()) {
+        throw std::invalid_argument("--watch-wram-from-start requires --watch-wram");
     }
     return options;
 }
@@ -265,6 +272,34 @@ void write_frame_state(const std::filesystem::path& path,
             static_cast<std::uint8_t>(offset))));
     }
     if (!output) throw std::runtime_error("could not write frame state: " + path.string());
+}
+
+void write_frame_metadata(const std::filesystem::path& path,
+                          const gameboy::Emulator& emulator,
+                          const std::uint64_t frame) {
+    std::ofstream output(path, std::ios::out | std::ios::trunc);
+    if (!output) throw std::runtime_error("could not open frame metadata: " + path.string());
+    const auto& r = emulator.cpu().registers();
+    const auto& bus = emulator.bus();
+    output << "frame=" << frame << " cycles=" << emulator.cpu().total_cycles()
+           << std::hex << std::setfill('0')
+           << " pc=" << std::setw(4) << r.pc
+           << " sp=" << std::setw(4) << r.sp
+           << " af=" << std::setw(2) << static_cast<unsigned>(r.a)
+           << std::setw(2) << static_cast<unsigned>(r.f)
+           << " bc=" << std::setw(2) << static_cast<unsigned>(r.b)
+           << std::setw(2) << static_cast<unsigned>(r.c)
+           << " de=" << std::setw(2) << static_cast<unsigned>(r.d)
+           << std::setw(2) << static_cast<unsigned>(r.e)
+           << " hl=" << std::setw(2) << static_cast<unsigned>(r.h)
+           << std::setw(2) << static_cast<unsigned>(r.l);
+    for (const auto address : {0xFF40, 0xFF41, 0xFF44, 0xFF45,
+                               0xFF04, 0xFF0F, 0xFFFF}) {
+        output << ' ' << std::setw(4) << address << '=' << std::setw(2)
+               << static_cast<unsigned>(bus.read8(static_cast<std::uint16_t>(address)));
+    }
+    output << std::dec << '\n';
+    if (!output) throw std::runtime_error("could not write frame metadata: " + path.string());
 }
 
 void set_held_buttons(gameboy::Emulator& emulator, const std::uint8_t previous,
@@ -792,7 +827,8 @@ int main(int argc, char** argv) {
             const auto trace_cycle = emulator.cpu().total_cycles();
             const auto trace_pc = registers.pc;
             const bool watching_wram = options.watched_wram.has_value() &&
-                completed_frames >= options.frame_series_first - 1;
+                (options.watch_wram_from_start ||
+                 completed_frames >= options.frame_series_first - 1);
             const auto watched_before = watching_wram
                 ? emulator.bus().read8(*options.watched_wram) : std::uint8_t{};
             const auto trace_opcode = cpu_trace
@@ -859,6 +895,10 @@ int main(int argc, char** argv) {
                                 options.frame_series_prefix.string() + "-" +
                                 std::to_string(completed_frames) + ".state"},
                                 emulator);
+                            write_frame_metadata(std::filesystem::path{
+                                options.frame_series_prefix.string() + "-" +
+                                std::to_string(completed_frames) + ".meta"},
+                                emulator, completed_frames);
                         }
                         if (completed_frames == options.frame_series_last) {
                             std::cout << "Captured frame series through "

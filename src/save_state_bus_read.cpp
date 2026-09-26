@@ -561,6 +561,24 @@ void SaveStateBusCodec::read(save_state_format::Reader& reader,
         bus.joypad_.extra_directions_.fill(0);
         bus.joypad_.extra_actions_.fill(0);
     }
+    if (version >= 38) {
+        bus.ppu_.sgb_lcd_frozen_ = reader.boolean();
+        bus.ppu_.sgb_lcd_restart_frames_ = reader.u8();
+        if (bus.ppu_.sgb_lcd_restart_frames_ > 2 ||
+            (bus.ppu_.sgb_lcd_frozen_ &&
+             (!bus.ppu_.sgb_mode_ || bus.ppu_.sgb_lcd_restart_frames_ > 1))) {
+            throw SaveStateError("Save state contains invalid SGB LCD hold state");
+        }
+        if (bus.ppu_.sgb_mode_) {
+            for (auto& pixel : *bus.ppu_.sgb_last_complete_viewport_) {
+                pixel = reader.u32();
+            }
+        }
+    } else {
+        bus.ppu_.sgb_lcd_frozen_ = false;
+        bus.ppu_.sgb_lcd_restart_frames_ = 0;
+        *bus.ppu_.sgb_last_complete_viewport_ = *bus.ppu_.framebuffer_;
+    }
     if ((bus.last_ppu_requests_ & ~0x2FU) != 0) {
         throw SaveStateError("Save state contains invalid PPU request state");
     }

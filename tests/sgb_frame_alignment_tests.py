@@ -98,8 +98,45 @@ class SgbFrameAlignmentTests(unittest.TestCase):
             self.assertEqual(json.loads(completed.stdout)["first_mismatch"]["frame"], 12)
             with self.assertRaisesRegex(ValueError, "window"):
                 compare_sequences(targets, references, 100, 61)
-            with self.assertRaisesRegex(ValueError, "duplicate frame"):
-                compare_sequences(targets + [targets[0]], references, 100, 1)
+            self.assertEqual(compare_sequences(targets + [targets[0]],
+                                               references, 100, 1)["target_frames"], 3)
+
+    def test_sequence_phase_changes_and_identical_chunk_overlap(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            targets = [root / f"gbb-a-{number}.ppm" for number in (10, 11)] + [
+                root / "gbb-b-12.ppm"]
+            references = [root / f"ref-a-{number}.ppm" for number in (110, 111)] + [
+                root / "ref-b-212.ppm"]
+            for index, (target, reference) in enumerate(zip(targets, references)):
+                color = (10 + index, 20 + index, 30 + index)
+                frame(target, color)
+                frame(reference, color)
+            overlap = root / "gbb-b-11.ppm"
+            overlap.write_bytes(targets[1].read_bytes())
+            result = compare_sequences(targets + [overlap], references, 100, 0,
+                                       [(12, 200)])
+            self.assertTrue(result["passed"])
+            self.assertEqual(result["target_frames"], 3)
+            self.assertEqual(result["offset_changes"], [{"frame": 12, "offset": 200}])
+            completed = subprocess.run(
+                [sys.executable,
+                 str(Path(__file__).resolve().parents[1] / "scripts/align_sgb_frames.py"),
+                 "--target-series", str(root / "gbb-a-*.ppm"),
+                 "--target-series", str(root / "gbb-b-*.ppm"),
+                 "--reference-series", str(root / "ref-a-*.ppm"),
+                 "--reference-series", str(root / "ref-b-*.ppm"),
+                 "--sequence-offset", "100", "--sequence-offset-at", "12", "200"],
+                capture_output=True, text=True, check=False)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(json.loads(completed.stdout)["matched_frames"], 3)
+            with self.assertRaisesRegex(ValueError, "strictly increasing"):
+                compare_sequences(targets, references, 100, 0,
+                                  [(12, 200), (11, 200)])
+            frame(overlap, (100, 110, 120))
+            with self.assertRaisesRegex(ValueError, "conflicting capture"):
+                compare_sequences(targets + [overlap], references, 100, 0,
+                                  [(12, 200)])
 
 
 if __name__ == "__main__":

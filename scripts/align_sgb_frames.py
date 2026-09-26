@@ -107,13 +107,15 @@ def exact_scenes(targets: list[Path],
 
 def _numbered_frames(paths: list[Path]) -> dict[int, Path]:
     numbered: dict[int, Path] = {}
-    for path in paths:
+    for path in sorted(paths):
         suffix = path.stem.rsplit("-", 1)[-1]
         if not suffix.isdigit():
             raise ValueError(f"{path}: expected a trailing frame number")
         frame = int(suffix)
         if frame in numbered:
-            raise ValueError(f"duplicate frame number {frame}")
+            if path != numbered[frame] and read_sgb_image(path) != read_sgb_image(numbered[frame]):
+                raise ValueError(f"duplicate frame number {frame} with conflicting capture")
+            continue
         numbered[frame] = path
     if not numbered:
         raise ValueError("frame series is empty")
@@ -121,7 +123,8 @@ def _numbered_frames(paths: list[Path]) -> dict[int, Path]:
 
 
 def compare_sequences(targets: list[Path], references: list[Path],
-                      offset: int, window: int) -> dict[str, object]:
+                      offset: int, window: int,
+                      offset_changes: list[tuple[int, int]] | None = None) -> dict[str, object]:
     """Compare every target frame to an independent frame near its offset.
 
     Bounded scene alignment absorbs a few capture-boundary frames of drift;
@@ -129,6 +132,10 @@ def compare_sequences(targets: list[Path], references: list[Path],
     """
     if not 0 <= window <= 60:
         raise ValueError("sequence window must be in 0..60")
+    changes = offset_changes or []
+    if any(frame <= 0 or (index > 0 and frame <= changes[index - 1][0])
+           for index, (frame, _) in enumerate(changes)):
+        raise ValueError("offset change frames must be positive and strictly increasing")
     target_frames = _numbered_frames(targets)
     reference_frames = _numbered_frames(references)
     target_hashes = {number: hashlib.sha256(read_sgb_image(path)).hexdigest()
@@ -138,8 +145,13 @@ def compare_sequences(targets: list[Path], references: list[Path],
     matched = 0
     mismatches: list[dict[str, object]] = []
     largest_shift = 0
+    active_offset = offset
+    next_change = 0
     for frame in sorted(target_frames):
-        expected = frame + offset
+        while next_change < len(changes) and frame >= changes[next_change][0]:
+            active_offset = changes[next_change][1]
+            next_change += 1
+        expected = frame + active_offset
         candidates = [number for number in reference_frames
                       if expected - window <= number <= expected + window]
         matches = [number for number in candidates
@@ -183,6 +195,8 @@ def compare_sequences(targets: list[Path], references: list[Path],
         "first_mismatch": mismatches[0] if mismatches else None,
         "mismatches": mismatches[:20],
         "offset": offset,
+        "offset_changes": [{"frame": frame, "offset": new_offset}
+                           for frame, new_offset in changes],
         "window": window,
         "largest_matched_shift": largest_shift,
     }
@@ -194,10 +208,15 @@ def main() -> int:
     parser.add_argument("references", nargs="*", type=Path)
     parser.add_argument("--top", type=int, default=10)
     parser.add_argument("--sort", choices=("edges", "rgb"), default="edges")
-    parser.add_argument("--target-series", help="glob for local GBB PPM/PNG frames")
-    parser.add_argument("--reference-series", help="glob for independent frames")
+    parser.add_argument("--target-series", action="append",
+                        help="glob for local GBB frames; repeat for capture chunks")
+    parser.add_argument("--reference-series", action="append",
+                        help="glob for independent frames; repeat for capture chunks")
     parser.add_argument("--sequence-offset", type=int,
                         help="compare every numbered target frame near frame + OFFSET")
+    parser.add_argument("--sequence-offset-at", action="append", nargs=2,
+                        type=int, metavar=("FRAME", "OFFSET"),
+                        help="change the reference-frame offset at a target frame")
     parser.add_argument("--window", type=int, default=0,
                         help="maximum independent-frame shift in sequence mode")
     args = parser.parse_args()
@@ -207,15 +226,20 @@ def main() -> int:
         if args.target_series or args.reference_series:
             if not args.target_series or not args.reference_series or args.target or args.references:
                 parser.error("series mode requires both globs and no positional paths")
-            targets = [Path(path) for path in glob.glob(args.target_series)]
-            references = [Path(path) for path in glob.glob(args.reference_series)]
+            targets = [Path(path) for pattern in args.target_series
+                       for path in glob.glob(pattern)]
+            references = [Path(path) for pattern in args.reference_series
+                          for path in glob.glob(pattern)]
             if args.sequence_offset is not None:
                 result = compare_sequences(targets, references,
-                                           args.sequence_offset, args.window)
+                                           args.sequence_offset, args.window,
+                                           args.sequence_offset_at)
                 print(json.dumps(result, indent=2))
                 return 0 if result["passed"] else 1
             if args.window:
                 parser.error("--window requires --sequence-offset")
+            if args.sequence_offset_at:
+                parser.error("--sequence-offset-at requires --sequence-offset")
             matches = exact_scenes(targets, references)
             print(json.dumps({
                 "target_frames": len(targets),
@@ -225,7 +249,7 @@ def main() -> int:
             return 0 if matches else 1
         if args.target is None or not args.references:
             parser.error("a target and at least one reference are required")
-        if args.sequence_offset is not None or args.window:
+        if args.sequence_offset is not None or args.sequence_offset_at or args.window:
             parser.error("sequence options require both series globs")
         results = rank_frames(args.target, args.references, args.sort)
     except (OSError, ValueError, RuntimeError) as error:

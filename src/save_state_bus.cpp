@@ -200,6 +200,13 @@ void SaveStateBusCodec::write(save_state_format::Writer& writer,
     // are a versioned tail so older save states remain loadable.
     write_bytes(writer, bus.joypad_.extra_directions_);
     write_bytes(writer, bus.joypad_.extra_actions_);
+    writer.boolean(bus.ppu_.sgb_lcd_frozen_);
+    writer.u8(bus.ppu_.sgb_lcd_restart_frames_);
+    if (bus.ppu_.sgb_mode_) {
+        for (const auto pixel : *bus.ppu_.sgb_last_complete_viewport_) {
+            writer.u32(pixel);
+        }
+    }
 }
 
 } // namespace gameboy

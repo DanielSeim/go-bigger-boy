@@ -610,7 +610,9 @@ const Ppu::SgbFramebuffer& Ppu::sgb_framebuffer() const noexcept {
     // path as one row copy; only inspect pixels on rows with border artwork
     // overlapping the Game Boy window.
     for (std::size_t y = 0; y < screen_height; ++y) {
-        const auto source = framebuffer_->begin() + y * screen_width;
+        const auto source = (sgb_lcd_frozen_ ? sgb_last_complete_viewport_->begin()
+                                             : framebuffer_->begin()) +
+                            y * screen_width;
         const auto destination = sgb_framebuffer_->begin() +
                                  (y + viewport_y) * sgb_border_width + viewport_x;
         if (!sgb_border_opaque_rows_[y]) {

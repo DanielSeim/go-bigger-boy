@@ -250,59 +250,116 @@ SNES-side command, or SGB audio effect is correct.
 
 The opt-in `donkey-kong-first-stage.json` manifest replays the hash-pinned
 Donkey Kong v1.1 ROM from the title screen, chooses a new file, and moves and
-jumps Mario during the first stage. Its 19 independent full-frame checkpoints
-cover GBB frames 2800–3576. In the checked run, **all 777 consecutive frames**
-in that range matched SameBoy exactly, with no frame-timing window or pixel
-tolerance. The matched pictures include the transferred border, first-stage
-colorization, moving barrels, player movement, and the later static scene.
-Run the pinned case with:
+jumps Mario during the first stage. Its 21 independent full-frame checkpoints
+cover GBB frames 2800–3578, including the first LCD restart. In the checked
+run, **all 779 consecutive frames** in that range matched SameBoy exactly,
+with no frame-search window or pixel tolerance. These pictures include the
+transferred border, first-stage colorization, moving barrels, player movement,
+and the held picture during LCD restart. Run the pinned case with:
 
 ```sh
 python3 scripts/validate_sgb_title.py \
   --manifest tests/fixtures/sgb/titles/donkey-kong-first-stage.json \
   --rom '/path/to/Donkey Kong (JU) (V1.1) [S][!].gb' \
   --runner build/gbb_test_runner \
-  --output-dir /tmp/gbb-sgb-donkey-gameplay
+  --output-dir /tmp/gbb-sgb-donkey-first-stage
 ```
 
-For the strict independent sequence comparison, use the pinned SameBoy build
-and boot ROM described above, then capture the same script with the observed
-phase changes. `--random-seed 1` makes SameBoy's other randomized startup
-state deterministic; `--zero-initial-ram` explicitly fills its 8 KiB WRAM
-with zero before executing the boot ROM, matching GBB's post-boot test-runner
-initial WRAM. This controlled initial state is necessary for a meaningful
-long-running comparison, but is **not** a claim that real SGB hardware powers
-up with zero-filled RAM. The ROM and all images stay local.
+### Donkey Kong second-stage gameplay
+
+The `donkey-kong-second-stage.json` manifest continues the same deterministic
+replay into the next active stage. Its 37 independent checkpoints cover GBB
+frames 3731–4500, including the second LCD restart and the formerly divergent
+sprite frames 4057 and 4157. **All 770 consecutive frames** in that range
+matched SameBoy exactly. Frame 4079 is also pinned because a nearby input
+phase exposed a transient sprite difference there.
+
+```sh
+python3 scripts/validate_sgb_title.py \
+  --manifest tests/fixtures/sgb/titles/donkey-kong-second-stage.json \
+  --rom '/path/to/Donkey Kong (JU) (V1.1) [S][!].gb' \
+  --runner build/gbb_test_runner \
+  --output-dir /tmp/gbb-sgb-donkey-second-stage
+```
+
+The independent reference is SameBoy v1.0.3 at commit
+`208ba4afabffab9edde416f2dbb8ae459e34adb8` with the open-source
+`sgb_boot.bin` hash pinned in the manifests. Both captures use the same
+input script, SameBoy random seed 1, and explicitly zeroed initial reference
+WRAM to match GBB's post-boot test-runner state. The matched WRAM is a
+controlled starting condition, **not** a claim that physical SGB hardware
+powers up with zero-filled RAM. The ROM and captured pictures stay local.
+
+The reference's input events need piecewise frame offsets because it runs its
+boot ROM and counts LCD-off/artificial callbacks differently from GBB's
+post-boot runner. The calibrated SameBoy schedule is base offset 230,
+script-frame 1600 offset 255, and script-frame 2800 offset 323.
+The capture-frame map is separate from that input schedule:
+
+| GBB frames | SameBoy frame offset | Exact frames |
+| --- | ---: | ---: |
+| 2800–3576 | +323 | 777/777 |
+| 3577–3730 | +334 | 154/154 |
+| 3731 | +378 | 1/1 |
+| 3732–4500 | +379 | 769/769 |
+
+The complete GBB 2800–4500 replay therefore has **1,701/1,701 exact
+full-frame matches**, with `--window 0` and no pixel tolerance. Capture the
+reference in two chunks (the driver limits one series to 1,001 frames):
 
 ```sh
 /tmp/sameboy_sgb_capture '/path/to/Donkey Kong (JU) (V1.1) [S][!].gb' \
   /path/to/SameBoy/build/bin/BootROMs/sgb_boot.bin \
-  --series 3097 3873 /tmp/donkey-reference sgb \
+  --series 3123 3999 /tmp/donkey-reference-a sgb \
   --input-script tests/fixtures/sgb/titles/donkey-kong-gameplay.script \
-  --input-offset 230 --input-offset-at 1600 229 \
-  --input-offset-at 2800 297 --random-seed 1 --zero-initial-ram
-python3 scripts/align_sgb_frames.py \
-  --target-series '/tmp/gbb-sgb-donkey-gameplay/sgb-frame-*.ppm' \
-  --reference-series '/tmp/donkey-reference-*.ppm' \
-  --sequence-offset 297 --window 0
+  --input-offset 230 --input-offset-at 1600 255 \
+  --input-offset-at 2800 323 --random-seed 1 --zero-initial-ram
+/tmp/sameboy_sgb_capture '/path/to/Donkey Kong (JU) (V1.1) [S][!].gb' \
+  /path/to/SameBoy/build/bin/BootROMs/sgb_boot.bin \
+  --series 4000 4879 /tmp/donkey-reference-b sgb \
+  --input-script tests/fixtures/sgb/titles/donkey-kong-gameplay.script \
+  --input-offset 230 --input-offset-at 1600 255 \
+  --input-offset-at 2800 323 --random-seed 1 --zero-initial-ram
 ```
 
-The former frame-3049 mismatch was not an SGB renderer or OAM-DMA defect.
-With randomized WRAM in the reference run, Donkey Kong's RNG state at
-`0xDEFE–0xDEFF` differed before the first stage. Both emulators executed the
-same code at PC `0x4994`, but the game generated different animation delays in
-`0xC10B`; the copy at PC `0x2A8C` transferred that difference into the sprite
-buffer and finally OAM. With matched initial WRAM, the RNG state, delay, OAM,
-and full frames match across that point. The next exploratory difference is
-at GBB frame 3577 during a screen transition; its cause is not established,
-so the manifest ends at the last fully verified frame. It is not yet evidence
-of an SGB rendering defect.
+Capture GBB frames in chunks with `--model sgb --sgb-frame
+--input-script tests/fixtures/sgb/titles/donkey-kong-gameplay.script
+--max-cycles 400000000 --frame-series FIRST LAST PREFIX`, using ranges
+2800–3576, 3577–3731, and 3732–4500. Pass those three output globs to
+`scripts/align_sgb_frames.py` with the two reference globs, followed by
+`--sequence-offset 323 --sequence-offset-at 3577 334
+--sequence-offset-at 3731 378 --sequence-offset-at 3732 379 --window 0`.
+The full-series comparison must report 1,701 matches and zero mismatches.
+
+At both LCD restarts, the SGB host retains the last complete Game Boy
+picture while LCDC is off and through the first re-enabled frame. GBB now
+preserves that viewport picture rather than exposing a partially redrawn
+frame. It keeps the current border independent of the held viewport and
+serializes the short-lived hold in save states. Frames 3577 and 3731 now match
+SameBoy's held picture exactly; the adjacent frames match as well.
+
+The former 4057 and 4157 sprite exceptions came from comparing against a
+reference replay whose scripted inputs reached the game at a different
+phase. Both emulators' OAM and game sprite state differed for those frames.
+Trying nearby reference phases moved the transient mismatch to another frame
+(such as 4079); the calibrated phase above matches the **whole** 1,701-frame
+sequence. No title-specific sprite, palette, or timing exception was added to
+the emulator. This is strong evidence for this controlled visual replay, not
+proof of cycle-perfect hardware accuracy, every SGB command, or SGB audio.
 
 For local diagnosis, both capture drivers accept `--frame-state-series` with
 `--frame-series`/`--series`. Each `.state` file contains 8192 raw WRAM bytes
-followed by 160 OAM bytes; `--watch-wram 0xC10B` reports writes to a chosen
-WRAM address. These are optional, local debugging outputs, not committed
-reference data.
+followed by 160 OAM bytes. The adjacent `.meta` file records the capture
+frame, CPU registers, LCDC/STAT/LY/LYC, DIV, IF, and IE; GBB also records
+cumulative CPU T-cycles, while the SameBoy driver records cumulative 8-MHz
+clock ticks from power-on (divide by two for T-cycles) and whether the capture
+followed a normal or artificial VBlank. `--watch-wram 0xC10B` reports writes
+to a chosen WRAM address; `--watch-lcdc` on the SameBoy driver requires
+`--frame-state-series` and logs LCDC transitions with their cycle count.
+Pair `--watch-wram` with `--watch-wram-from-start` to observe writes from
+emulation start instead of only near the requested capture series. The latter
+is useful when a later mismatch may originate in initial game state.
+These are optional, local debugging outputs, not committed reference data.
 Donkey Kong's observed `SOUND` and `SOU_TRN` commands still require SNES-side
 audio support, so these visual matches make no audio-accuracy claim.
 

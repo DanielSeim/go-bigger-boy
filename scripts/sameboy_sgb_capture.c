@@ -6,14 +6,18 @@
  *        [--input-offset-at SCRIPT_FRAME FRAMES]...
  *        [--random-seed UNSIGNED_DECIMAL]
  *        [--frame-state-series]
+ *        [--watch-lcdc]
  *        [--watch-wram 0xC000..0xDFFF]
+ *        [--watch-wram-from-start]
  *        [--zero-initial-ram]
  *    or: sameboy_sgb_capture ROM BOOT_ROM --series FIRST LAST PREFIX [sgb|sgb2]
  *        [--input-script PATH --input-offset FRAMES]
  *        [--input-offset-at SCRIPT_FRAME FRAMES]...
  *        [--random-seed UNSIGNED_DECIMAL]
  *        [--frame-state-series]
+ *        [--watch-lcdc]
  *        [--watch-wram 0xC000..0xDFFF]
+ *        [--watch-wram-from-start]
  *        [--zero-initial-ram]
  */
 #include "Core/gb.h"
@@ -67,6 +71,52 @@ static int write_frame_state(const char *path, GB_gameboy_t *gb) {
     return fclose(out) || !ok ? 4 : 0;
 }
 
+static GB_vblank_type_t last_vblank_type;
+static int saw_vblank;
+
+static void record_vblank_type(GB_gameboy_t *gb, GB_vblank_type_t type) {
+    (void)gb;
+    last_vblank_type = type;
+    saw_vblank = 1;
+}
+
+static const char *vblank_type_name(GB_vblank_type_t type) {
+    switch (type) {
+        case GB_VBLANK_TYPE_NORMAL_FRAME: return "normal";
+        case GB_VBLANK_TYPE_LCD_OFF: return "lcd_off";
+        case GB_VBLANK_TYPE_ARTIFICIAL: return "artificial";
+        case GB_VBLANK_TYPE_REPEAT: return "repeat";
+        case GB_VBLANK_TYPE_SKIPPED_FRAME: return "skipped";
+    }
+    return "unknown";
+}
+
+static int write_frame_metadata(const char *path, GB_gameboy_t *gb,
+                                unsigned long frame, uint64_t cycles_8mhz) {
+    FILE *out = fopen(path, "w");
+    if (!out) return 4;
+    const GB_registers_t *r = GB_get_registers(gb);
+    int ok = fprintf(out,
+                     "frame=%lu cycles_8mhz=%llu vblank=%s pc=%04x sp=%04x af=%04x"
+                     " bc=%04x de=%04x hl=%04x",
+                     frame, (unsigned long long)cycles_8mhz,
+                     vblank_type_name(last_vblank_type), r->pc, r->sp,
+                     r->af, r->bc, r->de, r->hl) >= 0;
+    const uint16_t addresses[] = {0xFF40, 0xFF41, 0xFF44, 0xFF45,
+                                  0xFF04, 0xFF0F, 0xFFFF};
+    for (size_t i = 0; i < sizeof(addresses) / sizeof(addresses[0]); ++i) {
+        if (fprintf(out, " %04x=%02x", addresses[i],
+                    GB_read_memory(gb, addresses[i])) < 0) ok = 0;
+    }
+    if (fprintf(out, " stack=") < 0) ok = 0;
+    for (uint16_t address = r->sp; address < 0xFFFE; ++address) {
+        if (address < 0xFFE0) continue;
+        if (fprintf(out, "%02x", GB_read_memory(gb, address)) < 0) ok = 0;
+    }
+    if (fputc('\n', out) == EOF) ok = 0;
+    return fclose(out) || !ok ? 4 : 0;
+}
+
 static size_t watched_offset;
 static uint8_t watched_value;
 static uint16_t previous_pc;
@@ -104,6 +154,7 @@ int main(int argc, char **argv) {
                 "             [--input-offset-at SCRIPT_FRAME FRAMES]...\n"
                 "             [--random-seed UNSIGNED_DECIMAL]"
                 " [--frame-state-series] [--watch-wram ADDRESS]"
+                " [--watch-wram-from-start] [--watch-lcdc]"
                 " [--zero-initial-ram]\n",
                 argv[0], argv[0]);
         return 2;
@@ -125,6 +176,8 @@ int main(int argc, char **argv) {
     int saw_random_seed = 0;
     int frame_state_series = 0;
     int saw_watch_wram = 0;
+    int watch_wram_from_start = 0;
+    int saw_watch_lcdc = 0;
     int zero_initial_ram = 0;
     gbb_sgb_input_offset_map offset_map = {0};
     for (int index = positional; index < argc; ++index) {
@@ -188,6 +241,16 @@ int main(int argc, char **argv) {
             saw_watch_wram = 1;
             continue;
         }
+        if (!strcmp(argv[index], "--watch-wram-from-start") &&
+            !watch_wram_from_start) {
+            watch_wram_from_start = 1;
+            continue;
+        }
+        if (!strcmp(argv[index], "--watch-lcdc") && series &&
+            !saw_watch_lcdc) {
+            saw_watch_lcdc = 1;
+            continue;
+        }
         if (!strcmp(argv[index], "--zero-initial-ram") && !zero_initial_ram) {
             zero_initial_ram = 1;
             continue;
@@ -195,6 +258,8 @@ int main(int argc, char **argv) {
         return 2;
     }
     if ((saw_offset || offset_map.count) && input_path == NULL) return 2;
+    if (watch_wram_from_start && !saw_watch_wram) return 2;
+    if (saw_watch_lcdc && !frame_state_series) return 2;
     offset_map.base_offset = (unsigned)input_offset;
     gbb_sgb_input_script inputs = {0};
     unsigned scheduled_input_frames[GBB_SGB_INPUT_MAX_EVENTS] = {0};
@@ -241,8 +306,15 @@ int main(int argc, char **argv) {
         if (!ram || ram_size < 0x2000) return 4;
         memset(ram, 0, ram_size);
     }
+    if (frame_state_series) {
+        GB_set_vblank_callback(gb, record_vblank_type);
+        GB_set_turbo_mode(gb, true, true);
+        GB_set_turbo_cap(gb, 0);
+    }
     size_t next_input_event = 0;
     uint8_t held_buttons = 0;
+    uint64_t cycles_8mhz = 0;
+    uint8_t watched_lcdc = 0;
     if (inputs.count && scheduled_input_frames[0] == 0) {
         set_held_buttons(gb, held_buttons, inputs.events[0].mask);
         held_buttons = inputs.events[0].mask;
@@ -250,7 +322,7 @@ int main(int argc, char **argv) {
     }
     int result = 0;
     for (unsigned long frame = 1; frame <= last; ++frame) {
-        if (saw_watch_wram && frame == first) {
+        if (saw_watch_wram && frame == (watch_wram_from_start ? 1 : first)) {
             const uint8_t *ram = GB_get_direct_access(gb, GB_DIRECT_ACCESS_RAM,
                                                        NULL, NULL);
             watched_value = ram[watched_offset];
@@ -259,7 +331,28 @@ int main(int argc, char **argv) {
             GB_set_execution_callback(gb, watch_wram);
         }
         watched_frame = frame;
-        GB_run_frame(gb);
+        if (frame_state_series) {
+            if (saw_watch_lcdc && frame == first) {
+                watched_lcdc = GB_read_memory(gb, 0xFF40);
+            }
+            saw_vblank = 0;
+            while (!saw_vblank) {
+                uint16_t pc = saw_watch_lcdc ? GB_get_registers(gb)->pc : 0;
+                cycles_8mhz += GB_run(gb);
+                if (saw_watch_lcdc && frame >= first) {
+                    uint8_t current_lcdc = GB_read_memory(gb, 0xFF40);
+                    if (current_lcdc != watched_lcdc) {
+                        fprintf(stderr,
+                                "LCDC watch frame=%lu cycles_8mhz=%llu pc=%04x old=%02x new=%02x\n",
+                                frame, (unsigned long long)cycles_8mhz, pc,
+                                watched_lcdc, current_lcdc);
+                        watched_lcdc = current_lcdc;
+                    }
+                }
+            }
+        } else {
+            GB_run_frame(gb);
+        }
         if (frame >= first) {
             if (series) {
                 char path[4096];
@@ -270,6 +363,11 @@ int main(int argc, char **argv) {
                     if (snprintf(path, sizeof(path), "%s-%06lu.state", argv[6], frame) >=
                         (int)sizeof(path)) return 4;
                     result = write_frame_state(path, gb);
+                    if (!result) {
+                        if (snprintf(path, sizeof(path), "%s-%06lu.meta", argv[6], frame) >=
+                            (int)sizeof(path)) return 4;
+                        result = write_frame_metadata(path, gb, frame, cycles_8mhz);
+                    }
                 }
             } else {
                 result = write_ppm(argv[4], pixels, width, height);

@@ -226,6 +226,11 @@ private:
     std::unique_ptr<std::array<std::uint8_t, 0x2000>> sgb_border_tiles_;
     std::unique_ptr<std::array<std::uint8_t, 0x1000>> sgb_border_pct_;
     mutable std::unique_ptr<SgbFramebuffer> sgb_framebuffer_;
+    // The SGB host retains the last *complete* Game Boy picture while LCDC
+    // is off and until a complete post-restart picture has reached it.
+    std::unique_ptr<Framebuffer> sgb_last_complete_viewport_;
+    bool sgb_lcd_frozen_{};
+    std::uint8_t sgb_lcd_restart_frames_{};
     // The border is static between SGB transfers. Keep the expensive
     // tilemap/bitplane composition out of the per-frame video path.
     mutable bool sgb_border_cache_valid_{};

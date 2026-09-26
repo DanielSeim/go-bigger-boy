@@ -487,6 +487,83 @@ void test_default_palette_uses_display_setting() {
           "SGB default palette honors the configured display colors");
 }
 
+void test_sgb_lcd_restart_holds_last_complete_picture() {
+    gameboy::Ppu ppu;
+    ppu.set_sgb_mode(true);
+    constexpr std::size_t viewport_pixel =
+        40 * gameboy::Ppu::sgb_border_width + 48;
+    ppu.debug_write_vram(0, 0x0000, 0x80);
+    ppu.debug_write_vram(0, 0x0001, 0x80);
+    static_cast<void>(ppu.write_register(0xFF47, 0xE4));
+    advance_sgb_frames(ppu, 2);
+    const auto old_pixel = ppu.sgb_framebuffer()[viewport_pixel];
+    check(old_pixel != 0xFFFFFFFF,
+          "SGB LCD hold fixture renders a distinct Game Boy pixel");
+
+    ppu.debug_write_vram(0, 0x0000, 0x00);
+    ppu.debug_write_vram(0, 0x0001, 0x00);
+    static_cast<void>(ppu.tick(1000));
+    check(ppu.framebuffer()[0] == 0xFFFFFFFF,
+          "fixture begins drawing a different, incomplete LCD frame");
+    static_cast<void>(ppu.write_register(0xFF40, 0x00));
+    check(ppu.sgb_framebuffer()[viewport_pixel] == old_pixel,
+          "SGB host keeps the last complete picture, not partial LCD output");
+    advance_sgb_frames(ppu, 1);
+    check(ppu.sgb_framebuffer()[viewport_pixel] == old_pixel,
+          "SGB host does not show the first partially restarted LCD frame");
+    advance_sgb_frames(ppu, 1);
+    check(ppu.sgb_framebuffer()[viewport_pixel] == 0xFFFFFFFF,
+          "SGB host shows the newly completed picture after LCD restart");
+}
+
+void test_sgb_lcd_hold_survives_save_state() {
+    gameboy::Emulator emulator{gameboy::Cartridge{test_rom()}};
+    constexpr std::size_t viewport_pixel =
+        40 * gameboy::Ppu::sgb_border_width + 48;
+    emulator.bus().write8(0x8000, 0x80);
+    emulator.bus().write8(0x8001, 0x80);
+    emulator.bus().write8(0xFF47, 0xE4);
+    emulator.bus().write8(0xFF40, 0x91);
+    emulator.bus().tick(2 * 70224);
+    const auto old_pixel = emulator.sgb_framebuffer()[viewport_pixel];
+    check(old_pixel != 0xFFFFFFFF,
+          "SGB save-state LCD hold fixture renders a distinct pixel");
+    emulator.bus().write8(0xFF40, 0x00);
+    emulator.bus().write8(0x8000, 0x00);
+    emulator.bus().write8(0x8001, 0x00);
+    emulator.bus().write8(0xFF40, 0x91);
+    emulator.bus().tick(70224);
+    check(emulator.sgb_framebuffer()[viewport_pixel] == old_pixel,
+          "SGB LCD picture stays held through the first restarted frame");
+    const auto state = emulator.save_state();
+    emulator.bus().tick(70224);
+    check(emulator.sgb_framebuffer()[viewport_pixel] == 0xFFFFFFFF,
+          "SGB LCD hold releases on the next complete frame");
+    emulator.load_state(state);
+    check(emulator.sgb_framebuffer()[viewport_pixel] == old_pixel,
+          "save state restores the held SGB picture");
+    emulator.bus().tick(70224);
+    check(emulator.sgb_framebuffer()[viewport_pixel] == 0xFFFFFFFF,
+          "restored SGB LCD hold releases on schedule");
+
+    gameboy::Emulator midframe{gameboy::Cartridge{test_rom()}};
+    midframe.bus().write8(0x8000, 0x80);
+    midframe.bus().write8(0x8001, 0x80);
+    midframe.bus().write8(0xFF47, 0xE4);
+    midframe.bus().write8(0xFF40, 0x91);
+    midframe.bus().tick(2 * 70224);
+    const auto complete_pixel = midframe.sgb_framebuffer()[viewport_pixel];
+    midframe.bus().write8(0xFF47, 0x00);
+    midframe.bus().tick(1000);
+    check(midframe.framebuffer()[0] != complete_pixel,
+          "save-state fixture has a partially drawn new frame");
+    const auto midframe_state = midframe.save_state();
+    midframe.load_state(midframe_state);
+    midframe.bus().write8(0xFF40, 0x00);
+    check(midframe.sgb_framebuffer()[viewport_pixel] == complete_pixel,
+          "save state preserves the last complete SGB picture before LCD off");
+}
+
 void test_sgb_model_clock_and_audio_resampling() {
     check(gameboy::hardware_clock_rate_hz(gameboy::HardwareModel::sgb) ==
               4'295'455 &&
@@ -521,6 +598,8 @@ int main() {
     test_palette_and_attribute_transfer_commands();
     test_sgb_border_compositor();
     test_default_palette_uses_display_setting();
+    test_sgb_lcd_restart_holds_last_complete_picture();
+    test_sgb_lcd_hold_survives_save_state();
     test_sgb_model_clock_and_audio_resampling();
     return failures == 0 ? 0 : 1;
 }

@@ -136,6 +136,12 @@ std::uint8_t Ppu::tick(const unsigned cycles) noexcept {
                 mode_ = 1;
                 stat_mode_ = 1;
                 frame_ready_ = true;
+                if (sgb_lcd_frozen_ && ++sgb_lcd_restart_frames_ >= 2) {
+                    sgb_lcd_frozen_ = false;
+                }
+                if (sgb_mode_ && !sgb_lcd_frozen_) {
+                    *sgb_last_complete_viewport_ = *framebuffer_;
+                }
                 complete_sgb_transfer();
                 requests |= 0x01;
             } else if (ly_ > 153) {

@@ -279,6 +279,13 @@ class SgbTitleValidationTests(unittest.TestCase):
                              0x2000 + 0xA0)
             self.assertEqual((root / "series-2.state").stat().st_size,
                              0x2000 + 0xA0)
+            for frame in (1, 2):
+                metadata = (root / f"series-{frame}.meta").read_text()
+                self.assertIn(f"frame={frame} cycles=", metadata)
+                for register in ("pc", "sp", "af", "bc", "de", "hl",
+                                 "ff40", "ff41", "ff44", "ff45", "ff04",
+                                 "ff0f", "ffff"):
+                    self.assertRegex(metadata, rf"\b{register}=[0-9a-f]+\b")
             single = subprocess.run(
                 common + ["--frames", "2", "--frame-output",
                           str(root / "single.ppm")],
@@ -333,14 +340,17 @@ class SgbTitleValidationTests(unittest.TestCase):
             self.assertEqual(scripted_frames[-1], plain_frames[-1])
 
             before_first = root / "before-first.script"
-            before_first.write_text("GBB SGB input v1\n0 a+start\n1 none\n",
+            before_first.write_text("GBB SGB input v1\n0 a+start\n4 none\n",
                                     encoding="utf-8")
             first = subprocess.run(
-                command + ["--input-script", str(before_first), "--frames", "1",
-                           "--frame-output", str(root / "first.ppm")],
+                command + ["--input-script", str(before_first),
+                           "--frame-series", "1", "8", str(root / "early")],
                 capture_output=True, text=True, timeout=10, check=False)
             self.assertEqual(first.returncode, 0, first.stderr)
-            self.assertNotEqual((root / "first.ppm").read_bytes(), plain_frames[0])
+            self.assertTrue(any((root / f"early-{frame}.ppm").read_bytes() !=
+                                plain_frames[frame - 1]
+                                for frame in range(1, 9)),
+                            "startup input must affect a displayed complete frame")
 
             for malformed, message in [
                 ("bad header\n", "header"),
