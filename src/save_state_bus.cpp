@@ -207,6 +207,12 @@ void SaveStateBusCodec::write(save_state_format::Writer& writer,
             writer.u32(pixel);
         }
     }
+    writer.u64(bus.ppu_.sgb_sound_transfer_revision_);
+    if (bus.ppu_.sgb_sound_transfer_revision_ != 0) {
+        write_bytes(writer, *bus.ppu_.sgb_sound_data_);
+    }
+    writer.u64(bus.ppu_.sgb_sound_request_revision_);
+    write_bytes(writer, bus.ppu_.sgb_sound_request_);
 }
 
 } // namespace gameboy

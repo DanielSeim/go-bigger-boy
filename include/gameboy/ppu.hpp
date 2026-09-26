@@ -56,6 +56,15 @@ public:
         std::uint16_t offset) const noexcept;
     [[nodiscard]] std::uint8_t debug_read_sgb_border_pct(
         std::uint16_t offset) const noexcept;
+    [[nodiscard]] std::uint8_t debug_read_sgb_sound_data(
+        std::uint16_t offset) const noexcept;
+    [[nodiscard]] std::uint64_t debug_sgb_sound_transfer_revision() const noexcept;
+    [[nodiscard]] std::array<std::uint8_t, 4> debug_sgb_sound_request() const noexcept {
+        return sgb_sound_request_;
+    }
+    [[nodiscard]] std::uint64_t debug_sgb_sound_request_revision() const noexcept {
+        return sgb_sound_request_revision_;
+    }
     [[nodiscard]] std::uint16_t debug_read_sgb_palette(
         std::uint16_t index) const noexcept;
     [[nodiscard]] std::uint16_t debug_read_sgb_active_palette(
@@ -160,6 +169,7 @@ private:
         chr_low,
         chr_high,
         border,
+        sound,
     };
     // SGB screen-data transfers begin on the frame after the command and
     // complete at the end of the fifth subsequent frame.
@@ -225,6 +235,14 @@ private:
     // SNES map/attribute/palette payload generated from the indexed screen.
     std::unique_ptr<std::array<std::uint8_t, 0x2000>> sgb_border_tiles_;
     std::unique_ptr<std::array<std::uint8_t, 0x1000>> sgb_border_pct_;
+    // SOU_TRN captures a separate 4 KiB indexed-screen payload for the
+    // external SNES sound engine; it must not overwrite border data.
+    std::unique_ptr<std::array<std::uint8_t, 0x1000>> sgb_sound_data_;
+    std::uint64_t sgb_sound_transfer_revision_{};
+    // SOUND is a request to the external SNES audio engine, not GB APU input.
+    // Retain its four fields without inventing audio playback semantics.
+    std::array<std::uint8_t, 4> sgb_sound_request_{};
+    std::uint64_t sgb_sound_request_revision_{};
     mutable std::unique_ptr<SgbFramebuffer> sgb_framebuffer_;
     // The SGB host retains the last *complete* Game Boy picture while LCDC
     // is off and until a complete post-restart picture has reached it.

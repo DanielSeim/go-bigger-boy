@@ -190,11 +190,29 @@ void test_save_state_round_trip_and_validation() {
     constexpr std::size_t version_thirty_six_startup_scx_if_size = 1;
     constexpr std::size_t version_thirty_seven_sgb_inputs_size = 6;
     constexpr std::size_t version_thirty_eight_sgb_freeze_size = 2;
+    constexpr std::size_t version_thirty_nine_sgb_sound_size = 8 + 8 + 4;
     constexpr std::size_t version_nine_fetcher_size =
         737 + version_ten_window_latch_size + version_eleven_fetcher_size +
         version_twelve_sprite_size + version_thirteen_sprite_fetch_size +
         version_fourteen_sprite_deadline_size + version_fifteen_sprite_render_size;
-    auto version_thirty_seven = saved;
+    // No SOU_TRN has completed in this fixture, so version 39 adds two
+    // revisions and the last four-byte SOUND request to the payload.
+    auto version_thirty_eight = saved;
+    version_thirty_eight.resize(version_thirty_eight.size() -
+                               version_thirty_nine_sgb_sound_size);
+    version_thirty_eight[8] = 38;
+    const auto v38_payload_size = static_cast<std::uint32_t>(
+        version_thirty_eight.size() - state_header_size);
+    write_little_u32(version_thirty_eight, 20, v38_payload_size);
+    write_little_u32(version_thirty_eight, 24,
+                     state_crc32(version_thirty_eight.data() + state_header_size,
+                                 v38_payload_size));
+    gameboy::Emulator v38_loader{gameboy::Cartridge{rom}};
+    v38_loader.load_state(version_thirty_eight);
+    check(v38_loader.cpu().registers().pc == saved_pc &&
+              v38_loader.cpu().total_cycles() == saved_cycles,
+          "version 38 states load without an SGB sound transfer");
+    auto version_thirty_seven = version_thirty_eight;
     version_thirty_seven.resize(version_thirty_seven.size() -
                                 version_thirty_eight_sgb_freeze_size);
     version_thirty_seven[8] = 37;
@@ -209,7 +227,7 @@ void test_save_state_round_trip_and_validation() {
     check(v37_loader.cpu().registers().pc == saved_pc &&
               v37_loader.cpu().total_cycles() == saved_cycles,
           "version 37 states load without an SGB LCD hold");
-    auto version_thirty_six = saved;
+    auto version_thirty_six = version_thirty_eight;
     version_thirty_six.resize(version_thirty_six.size() -
                               version_thirty_eight_sgb_freeze_size -
                               version_thirty_seven_sgb_inputs_size);
@@ -225,7 +243,7 @@ void test_save_state_round_trip_and_validation() {
     check(v36_loader.cpu().registers().pc == saved_pc &&
               v36_loader.cpu().total_cycles() == saved_cycles,
           "version 36 states load without independent SGB player input");
-    auto legacy_saved = saved;
+    auto legacy_saved = version_thirty_eight;
     legacy_saved.resize(legacy_saved.size() -
                         version_thirty_eight_sgb_freeze_size -
                         version_thirty_seven_sgb_inputs_size -
@@ -558,7 +576,7 @@ void test_save_state_round_trip_and_validation() {
     check(emulator.save_state() == replay.save_state(),
           "restored emulators continue deterministically");
 
-    auto version_twenty_three = saved;
+    auto version_twenty_three = version_thirty_eight;
     version_twenty_three.resize(version_twenty_three.size() -
                                 version_thirty_eight_sgb_freeze_size -
                                 version_thirty_seven_sgb_inputs_size -
@@ -613,7 +631,7 @@ void test_save_state_round_trip_and_validation() {
     check(rejected_truncation && emulator.save_state() == unchanged,
           "truncated save states are rejected without changing emulator state");
 
-    auto version_sixteen = saved;
+    auto version_sixteen = version_thirty_eight;
     version_sixteen.resize(version_sixteen.size() -
                            version_thirty_eight_sgb_freeze_size -
                            version_thirty_seven_sgb_inputs_size -
@@ -652,7 +670,7 @@ void test_save_state_round_trip_and_validation() {
               version_sixteen_loader.bus().read8(0xA123) == 0x5A,
           "version 16 save states remain loadable after adding PPU background history");
 
-    auto version_seventeen = saved;
+    auto version_seventeen = version_thirty_eight;
     version_seventeen.resize(version_seventeen.size() -
                              version_thirty_eight_sgb_freeze_size -
                              version_thirty_seven_sgb_inputs_size -
@@ -691,7 +709,7 @@ void test_save_state_round_trip_and_validation() {
           "version 17 save states remain loadable after adding object deadlines");
 
     auto future_version = saved;
-    future_version[8] = 39;
+    future_version[8] = 40;
     auto rejected_version = false;
     try {
         emulator.load_state(future_version);

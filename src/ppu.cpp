@@ -26,6 +26,7 @@ Ppu::Ppu()
           std::make_unique<std::array<std::uint8_t, 0x2D * 90>>()),
       sgb_border_tiles_(std::make_unique<std::array<std::uint8_t, 0x2000>>()),
       sgb_border_pct_(std::make_unique<std::array<std::uint8_t, 0x1000>>()),
+      sgb_sound_data_(std::make_unique<std::array<std::uint8_t, 0x1000>>()),
       sgb_framebuffer_(std::make_unique<SgbFramebuffer>()),
       sgb_last_complete_viewport_(std::make_unique<Framebuffer>()),
       sgb_border_opaque_(std::make_unique<SgbViewportMask>()),
@@ -62,6 +63,10 @@ void Ppu::set_sgb_mode(const bool enabled) noexcept {
     *sgb_last_complete_viewport_ = *framebuffer_;
     sgb_border_cache_valid_ = false;
     ++sgb_border_revision_;
+    sgb_sound_data_->fill(0);
+    sgb_sound_transfer_revision_ = 0;
+    sgb_sound_request_.fill(0);
+    sgb_sound_request_revision_ = 0;
     if (!enabled) {
         // A transfer command cannot complete after the SGB adapter is
         // detached. Do not let a stale countdown leak into a later state.
@@ -88,6 +93,15 @@ void Ppu::set_sgb_mode(const bool enabled) noexcept {
 
 std::uint64_t Ppu::debug_sgb_border_revision() const noexcept {
     return sgb_border_revision_;
+}
+
+std::uint8_t Ppu::debug_read_sgb_sound_data(
+    const std::uint16_t offset) const noexcept {
+    return offset < sgb_sound_data_->size() ? (*sgb_sound_data_)[offset] : 0xFF;
+}
+
+std::uint64_t Ppu::debug_sgb_sound_transfer_revision() const noexcept {
+    return sgb_sound_transfer_revision_;
 }
 
 bool Ppu::cgb_mode() const noexcept { return cgb_mode_; }

@@ -81,6 +81,19 @@ public:
     [[nodiscard]] const Ppu::SgbFramebuffer& sgb_framebuffer() const noexcept;
     [[nodiscard]] const Ppu::SgbViewportMask& sgb_border_opaque_mask() const noexcept;
     [[nodiscard]] std::uint64_t debug_sgb_border_revision() const noexcept;
+    [[nodiscard]] std::uint64_t debug_sgb_sound_transfer_revision() const noexcept {
+        return ppu_.debug_sgb_sound_transfer_revision();
+    }
+    [[nodiscard]] std::uint8_t debug_read_sgb_sound_data(
+        const std::uint16_t offset) const noexcept {
+        return ppu_.debug_read_sgb_sound_data(offset);
+    }
+    [[nodiscard]] std::array<std::uint8_t, 4> debug_sgb_sound_request() const noexcept {
+        return ppu_.debug_sgb_sound_request();
+    }
+    [[nodiscard]] std::uint64_t debug_sgb_sound_request_revision() const noexcept {
+        return ppu_.debug_sgb_sound_request_revision();
+    }
     [[nodiscard]] const SgbAdapter::Diagnostics& debug_sgb_diagnostics() const noexcept {
         return sgb_adapter_.diagnostics();
     }

@@ -97,6 +97,107 @@ void test_transfer_commands_and_guards() {
           "PCT_TRN encodes the complete border payload");
 }
 
+void test_sound_transfer_is_delayed_and_separate() {
+    gameboy::Ppu ppu;
+    ppu.set_sgb_mode(true);
+    std::array<std::uint8_t, 16 * 7> packet{};
+    packet[0] = static_cast<std::uint8_t>(0x09U << 3); // SOU_TRN
+    ppu.debug_write_vram(0, 0x0000, 0x01);
+    ppu.apply_sgb_command(packet, 1);
+    advance_sgb_frames(ppu, 5);
+    check(ppu.debug_sgb_sound_transfer_revision() == 0,
+          "truncated SOU_TRN does not schedule a transfer");
+    ppu.apply_sgb_command(packet, 16);
+    advance_sgb_frames(ppu, 4);
+    check(ppu.debug_sgb_sound_transfer_revision() == 0,
+          "SOU_TRN remains pending through the fourth frame");
+    advance_sgb_frames(ppu, 1);
+    check(ppu.debug_sgb_sound_transfer_revision() == 1 &&
+              ppu.debug_read_sgb_sound_data(0) == 0x01 &&
+              ppu.debug_read_sgb_sound_data(1) == 0 &&
+              ppu.debug_read_sgb_sound_data(0x0FFF) == 0,
+          "SOU_TRN latches four kilobytes of indexed screen data");
+    check(ppu.debug_read_sgb_border_tile(0) == 0 &&
+              ppu.debug_read_sgb_border_pct(0) == 0,
+          "SOU_TRN leaves the SGB border latches untouched");
+    packet[0] = static_cast<std::uint8_t>(0x08U << 3); // SOUND
+    packet[1] = 3;
+    packet[2] = 4;
+    packet[3] = 0x0C;
+    packet[4] = 2;
+    ppu.apply_sgb_command(packet, 4);
+    check(ppu.debug_sgb_sound_request_revision() == 0,
+          "truncated SOUND is ignored");
+    ppu.apply_sgb_command(packet, 16);
+    check(ppu.debug_sgb_sound_request_revision() == 1 &&
+              ppu.debug_sgb_sound_request() ==
+                  (std::array<std::uint8_t, 4>{3, 4, 0x0C, 2}),
+          "SOUND retains the requested effects, flags and score");
+    packet[0] = static_cast<std::uint8_t>(0x09U << 3); // SOU_TRN
+    ppu.debug_write_vram(0, 0x0000, 0x80);
+    ppu.apply_sgb_command(packet, 16);
+    advance_sgb_frames(ppu, 5);
+    check(ppu.debug_sgb_sound_transfer_revision() == 2 &&
+              ppu.debug_read_sgb_sound_data(0) == 0x80,
+          "a second SOU_TRN replaces its own payload");
+    ppu.set_sgb_mode(false);
+    check(ppu.debug_sgb_sound_transfer_revision() == 0 &&
+              ppu.debug_read_sgb_sound_data(0) == 0 &&
+              ppu.debug_sgb_sound_request_revision() == 0,
+          "detaching the SGB clears its retained sound requests and transfer");
+}
+
+void test_sound_transfer_survives_save_state() {
+    gameboy::Emulator emulator{gameboy::Cartridge{test_rom()}};
+    emulator.bus().write8(0x8000, 0x01);
+    std::array<std::uint8_t, 16> command{};
+    command[0] = static_cast<std::uint8_t>((0x09U << 3) | 1U);
+    const auto write = [&](const std::uint8_t value) {
+        emulator.bus().write8(0xFF00, value);
+    };
+    const auto send = [&] {
+        write(0x30);
+        write(0x00);
+        for (std::size_t bit = 0; bit < command.size() * 8; ++bit) {
+            write(0x30);
+            write((command[bit / 8] & (1U << (bit & 7U))) != 0 ? 0x10 : 0x20);
+        }
+        write(0x30);
+        write(0x20);
+    };
+    send();
+    emulator.bus().write8(0xFF40, 0x91);
+    emulator.bus().tick(2 * 70224);
+    const auto pending = emulator.save_state();
+    emulator.bus().tick(3 * 70224);
+    check(emulator.bus().debug_sgb_sound_transfer_revision() == 1 &&
+              emulator.bus().debug_read_sgb_sound_data(0) == 1,
+          "SOU_TRN through JOYP reaches the sound transfer latch");
+    const auto completed = emulator.save_state();
+    command[0] = static_cast<std::uint8_t>((0x08U << 3) | 1U);
+    command[1] = 2;
+    send();
+    const auto with_request = emulator.save_state();
+    check(emulator.bus().debug_sgb_sound_request_revision() == 1 &&
+              emulator.bus().debug_sgb_sound_request()[0] == 2,
+          "SOUND through JOYP reaches the request latch");
+    emulator.load_state(pending);
+    check(emulator.bus().debug_sgb_sound_transfer_revision() == 0,
+          "save state restores a pending SOU_TRN countdown");
+    emulator.bus().tick(3 * 70224);
+    check(emulator.bus().debug_sgb_sound_transfer_revision() == 1 &&
+              emulator.bus().debug_read_sgb_sound_data(0) == 1,
+          "pending SOU_TRN completes on schedule after restore");
+    emulator.load_state(completed);
+    check(emulator.bus().debug_sgb_sound_transfer_revision() == 1 &&
+              emulator.bus().debug_read_sgb_sound_data(0) == 1,
+          "save state restores completed SOU_TRN payload");
+    emulator.load_state(with_request);
+    check(emulator.bus().debug_sgb_sound_request_revision() == 1 &&
+              emulator.bus().debug_sgb_sound_request()[0] == 2,
+          "save state restores the last SOUND request");
+}
+
 void test_mask_command_is_bounded() {
     gameboy::Ppu ppu;
     ppu.set_sgb_mode(true);
@@ -600,6 +701,8 @@ void test_sgb_post_boot_handoff() {
 
 int main() {
     test_transfer_commands_and_guards();
+    test_sound_transfer_is_delayed_and_separate();
+    test_sound_transfer_survives_save_state();
     test_mask_command_is_bounded();
     test_multiplayer_request_and_polling();
     test_multiplayer_command_reaches_joypad();

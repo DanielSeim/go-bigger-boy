@@ -519,7 +519,9 @@ void SaveStateBusCodec::read(save_state_format::Reader& reader,
     if (version >= 28) {
         const auto transfer = reader.u8();
         bus.ppu_.sgb_transfer_countdown_ = reader.u8();
-        if (transfer > static_cast<std::uint8_t>(Ppu::SgbTransfer::border) ||
+        if (transfer > static_cast<std::uint8_t>(
+                version >= 39 ? Ppu::SgbTransfer::sound
+                              : Ppu::SgbTransfer::border) ||
             bus.ppu_.sgb_transfer_countdown_ > Ppu::sgb_transfer_delay_frames ||
             (transfer == static_cast<std::uint8_t>(Ppu::SgbTransfer::none) &&
              bus.ppu_.sgb_transfer_countdown_ != 0) ||
@@ -578,6 +580,22 @@ void SaveStateBusCodec::read(save_state_format::Reader& reader,
         bus.ppu_.sgb_lcd_frozen_ = false;
         bus.ppu_.sgb_lcd_restart_frames_ = 0;
         *bus.ppu_.sgb_last_complete_viewport_ = *bus.ppu_.framebuffer_;
+    }
+    bus.ppu_.sgb_sound_transfer_revision_ = version >= 39 ? reader.u64() : 0;
+    bus.ppu_.sgb_sound_data_->fill(0);
+    if (bus.ppu_.sgb_sound_transfer_revision_ != 0) {
+        if (!bus.ppu_.sgb_mode_) {
+            throw SaveStateError("Save state contains SGB sound data without SGB mode");
+        }
+        read_bytes(reader, *bus.ppu_.sgb_sound_data_);
+    }
+    bus.ppu_.sgb_sound_request_revision_ = version >= 39 ? reader.u64() : 0;
+    bus.ppu_.sgb_sound_request_.fill(0);
+    if (version >= 39) {
+        read_bytes(reader, bus.ppu_.sgb_sound_request_);
+        if (!bus.ppu_.sgb_mode_ && bus.ppu_.sgb_sound_request_revision_ != 0) {
+            throw SaveStateError("Save state contains SGB sound request without SGB mode");
+        }
     }
     if ((bus.last_ppu_requests_ & ~0x2FU) != 0) {
         throw SaveStateError("Save state contains invalid PPU request state");

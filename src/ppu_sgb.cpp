@@ -249,6 +249,16 @@ void Ppu::apply_sgb_command(
         ++sgb_border_revision_;
     };
     switch (command) {
+    case 0x08: // SOUND
+        if (size < 5) return;
+        std::copy_n(packet.begin() + 1, sgb_sound_request_.size(),
+                    sgb_sound_request_.begin());
+        ++sgb_sound_request_revision_;
+        break;
+    case 0x09: // SOU_TRN
+        sgb_transfer_ = SgbTransfer::sound;
+        sgb_transfer_countdown_ = sgb_transfer_delay_frames;
+        break;
     case 0x00: set_palette_pair(0, 1); break; // PAL01
     case 0x01: set_palette_pair(2, 3); break; // PAL23
     case 0x02: set_palette_pair(0, 3); break; // PAL03
@@ -419,6 +429,19 @@ void Ppu::complete_sgb_transfer() noexcept {
     if (sgb_transfer_countdown_ != 0) return;
 
     switch (sgb_transfer_) {
+    case SgbTransfer::sound:
+        for (unsigned tile = 0; tile < 0x100; ++tile) {
+            for (unsigned row = 0; row < 8; ++row) {
+                const auto packed =
+                    pack_sgb_transfer_row(*sgb_screen_buffer_, tile, row);
+                const auto offset = (tile * 8U + row) * 2U;
+                (*sgb_sound_data_)[offset] = static_cast<std::uint8_t>(packed);
+                (*sgb_sound_data_)[offset + 1U] =
+                    static_cast<std::uint8_t>(packed >> 8);
+            }
+        }
+        ++sgb_sound_transfer_revision_;
+        break;
     case SgbTransfer::palettes:
         // PAL_TRN samples the indexed Game Boy image in 256 eight-row tiles.
         // Each packed row becomes one little-endian RGB555 palette entry.

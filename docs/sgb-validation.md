@@ -64,6 +64,23 @@ multiplayer, not Game Boy link-cable multiplayer.
 
 ## SNES-side command triage
 
+`SOUND` requests are retained and can be decoded from the opt-in JOYP command trace. `SOU_TRN`
+now latches the 4 KiB indexed-screen payload after the standard five-frame
+transfer delay, separately from border data; this latch and in-flight
+transfer survive version-39 save states. This is input capture, **not SNES
+audio playback**: the external SGB sound engine, its score/effect semantics,
+and its sample output are not yet emulated. The normal Game Boy APU continues
+to produce audio. No proprietary SNES sound samples or firmware are bundled.
+
+```sh
+python3 scripts/report_sgb_commands.py /path/to/local/sgb.trace
+```
+
+The command trace contains JOYP packets, not the 4 KiB screen-transfer
+payload. Keep any locally captured payloads out of the repository; compare
+their hashes and timing against an independently obtained reference before
+adding audible output.
+
 The opt-in title manifests in `tests/fixtures/sgb/titles/` pin ROM SHA-256,
 hardware model, frame count, cycle limit, and minimum command counts. They
 contain no ROM bytes or captured game artwork. For a legally supplied,
