@@ -62,7 +62,7 @@ void SnesDspSampleRing::advance_pitch(const std::uint16_t pitch,
     const auto base = static_cast<std::int32_t>(pitch & 0x3FFFU);
     auto effective = base;
     if (modulate) {
-        const auto previous = std::clamp<int>(previous_output, -16384, 16383);
+        const auto previous = static_cast<std::int32_t>(previous_output);
         effective += floor_div(floor_div(previous, 32) * base, 1024);
     }
     const auto next = static_cast<std::int32_t>(phase_ & 0x3FFFU) + effective;

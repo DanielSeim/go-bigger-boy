@@ -108,6 +108,10 @@ void test_fraction_and_limits() {
     check(ring.phase() == 0x1080,
           "positive previous-voice output raises effective pitch");
     ring.key_on();
+    ring.advance_pitch(0x1000, 2048, true);
+    check(ring.phase() == 0x1100,
+          "modulation uses the full signed 16-bit pre-volume voice output");
+    ring.key_on();
     ring.advance_pitch(0x1000, -1024, true);
     check(ring.phase() == 0x0F80,
           "negative previous-voice output lowers effective pitch");

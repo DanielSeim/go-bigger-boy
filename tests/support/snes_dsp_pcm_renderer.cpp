@@ -31,6 +31,7 @@ void SnesDspPcmRenderer::reset() noexcept {
     keys_.reset(false);
     ends_.reset();
     pending_mix_ = {};
+    noise_ = 0x4000;
     for (auto& voice : voices_) {
         voice.stream.reset();
         voice.ring.reset();
@@ -58,14 +59,19 @@ std::optional<SnesDspPcmRenderer::StereoSample>
 SnesDspPcmRenderer::next_sample() noexcept {
     // The test renderer must fail closed for paths that could produce audio
     // different from a full S-DSP, rather than emit a plausible wrong PCM.
-    if (bus_.dsp_register(0x2D) != 0 || bus_.dsp_register(0x3D) != 0 ||
-        bus_.dsp_register(0x4D) != 0 || bus_.dsp_register(0x2C) != 0 ||
+    if (bus_.dsp_register(0x4D) != 0 || bus_.dsp_register(0x2C) != 0 ||
         bus_.dsp_register(0x3C) != 0 || bus_.dsp_register(0x0D) != 0) {
         return std::nullopt;
     }
 
     rates_.advance();
+    if (rates_.event(bus_.dsp_register(0x6C) & 0x1FU)) {
+        const auto feedback = static_cast<std::uint16_t>(
+            ((noise_ & 1U) ^ ((noise_ >> 1U) & 1U)) << 14U);
+        noise_ = static_cast<std::uint16_t>(feedback ^ (noise_ >> 1U));
+    }
     const auto key_sample = keys_.next_sample();
+    std::array<std::int16_t, 8> voice_output16{};
     std::int16_t main_left = 0;
     std::int16_t main_right = 0;
     for (unsigned index = 0; index < voices_.size(); ++index) {
@@ -86,10 +92,18 @@ SnesDspPcmRenderer::next_sample() noexcept {
         const auto source = voice_register(bus_, index, 4);
         if (step.read_source) voice.stream.key_on(directory, source);
 
+        const auto non = bus_.dsp_register(0x3D);
+        const auto noise_value = noise_;
+        const auto source15 = (non & bit) != 0
+            ? static_cast<std::int16_t>(
+                noise_value >= 0x4000U ? static_cast<int>(noise_value) - 0x8000
+                                        : static_cast<int>(noise_value))
+            : voice.ring.interpolated();
         const auto output15 = step.force_silence ? std::int16_t{0} :
             gameboy::SnesDspVoiceMath::apply_envelope(
-                voice.ring.interpolated(), voice.envelope.value());
+                source15, voice.envelope.value());
         const auto output16 = gameboy::SnesDspVoiceMath::expand_to_16bit(output15);
+        voice_output16[index] = output16;
         const StereoSample voice_output{
             gameboy::SnesDspVoiceMath::apply_channel_volume(
                 output16, voice_register(bus_, index, 0)),
@@ -126,7 +140,10 @@ SnesDspPcmRenderer::next_sample() noexcept {
             const auto pitch = static_cast<std::uint16_t>(
                 voice_register(bus_, index, 2) |
                 (static_cast<unsigned>(voice_register(bus_, index, 3) & 0x3FU) << 8));
-            voice.ring.advance_pitch(pitch);
+            const auto previous_output = index != 0 ? voice_output16[index - 1]
+                                                     : std::int16_t{0};
+            voice.ring.advance_pitch(pitch, previous_output,
+                index != 0 && (bus_.dsp_register(0x2D) & bit) != 0);
         }
         if (accepted_kon) {
             gameboy::SnesDspKeyControl::apply_voice(

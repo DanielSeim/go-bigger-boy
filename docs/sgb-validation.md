@@ -244,12 +244,13 @@ without a group decode, and the S3c/S4/S7 cycle offsets remain unmodeled.
 
 A test-only 32 kHz stereo PCM renderer now connects DSP register writes and
 physical APU RAM to eight BRR streams, key-on prefill, Gaussian interpolation,
-envelopes, per-voice volumes, master volume, mute/reset, and ENDX. Its
+envelopes, noise, pitch modulation, per-voice volumes, master volume,
+mute/reset, and ENDX. Its
 deterministic tests pin the first nonzero PCM sample, two-voice mixing,
 non-looping end, retrigger, KOFF, and rejected unsupported modes. This is a
 synthetic integration harness, **not** an audible SGB implementation. It
-rejects noise, pitch modulation, and echo instead of emitting misleading
-audio, and it lacks SPC700/65C816 execution, the SNES-side SGB command path,
+rejects echo instead of emitting misleading audio, and it lacks
+SPC700/65C816 execution, the SNES-side SGB command path,
 and cycle-level voice scheduling. The existing bsnes captures are 48 kHz
 full-system output with Game Boy audio mixed in; this 32 kHz synthetic DSP
 stimulus cannot be waveform-compared with them yet. The differential fixture
@@ -268,22 +269,17 @@ cmake --build build --target gameboy_snes_dsp_pcm_fixture_runner
 python3 scripts/compare_snes_dsp_pcm.py \
   --gbb build/gameboy_snes_dsp_pcm_fixture_runner \
   --reference-dir /path/to/bsnes/sfc/dsp \
-  tests/fixtures/sgb/dsp/silence.txt \
-  tests/fixtures/sgb/dsp/single_voice.txt \
-  tests/fixtures/sgb/dsp/key_off.txt \
-  tests/fixtures/sgb/dsp/two_voices.txt \
-  tests/fixtures/sgb/dsp/register_writes.txt \
-  tests/fixtures/sgb/dsp/adsr_transition.txt \
-  tests/fixtures/sgb/dsp/brr_loop.txt
+  tests/fixtures/sgb/dsp/*.txt
 ```
 
 The comparator fails on any unequal stereo sample and reports the first
 differences without silently shifting or resampling them. With local
 bsnes-libretro commit `05439f96121d2b9d7ad7a5fc1f29d7eebdcc8c43`, all
-seven fixtures now match exactly: 64 silence, 64 single-voice, 80 key-off,
-64 two-voice, and 96 each for live register writes, ADSR/GAIN transitions,
-and a BRR loop. The latter three full PCM traces are hash-pinned in the
-normal offline contract tests. Correcting the reference phase relationship
+13 fixtures now match exactly, totaling 1,240 native-rate stereo samples.
+They cover silence, active voices, key-off, live register writes, ADSR/GAIN,
+BRR loops, varying BRR samples, noise on voices 0 and 1, pitch modulation,
+and combined noise-driven modulation with live PMON switching. The full PCM traces of the newer cases are
+hash-pinned in normal offline contract tests. Correcting the reference phase relationship
 and the Gaussian interpolator's 16-bit product precision resolved the
 previously measured startup and low-bit differences. This establishes parity
 only for these synthetic, echo/noise/PMON-free stimuli, not live SGB audio. The

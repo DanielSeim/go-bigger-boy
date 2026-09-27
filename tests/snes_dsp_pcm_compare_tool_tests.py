@@ -58,6 +58,12 @@ class PcmCompareToolTests(unittest.TestCase):
             "register_writes.txt": (96, "30dbe2bb58107dd60037bf6b48d8237b321a74d26b68c012d3bf435efe5dc964"),
             "adsr_transition.txt": (96, "73e65a02b8a5a2e68c4a5df3d56c343537739930329a8381d9dad7f67ccb0e06"),
             "brr_loop.txt": (96, "fa80b891cb9b312c12bd0bb21449049824aef7e3f9422d9ea5b69738a1ba66f3"),
+            "noise.txt": (88, "2ee776e8ad72d6f48c98cb9f43b15ea821909b70a7eb42565dff62f5317dbb8c"),
+            "noise_voice1.txt": (80, "076599413df1f83514e6c0b35d7ac76d13306737159ba692979e7f13f46f50e0"),
+            "noise_modulation.txt": (128, "fb62b3e6da91978b31354553318a18d7f7e2dbfc79bc4d35e1d1d82b45f515bf"),
+            "varying_brr.txt": (128, "adb409f348dc28fb1871316dd6a0a483331557f50392ba569fb89c5546cd6de4"),
+            "varying_two_voices.txt": (128, "165ce0395a0ee1c949a0b6cef6f91f2005d0d60dd18c472ef77dd97de45dfff0"),
+            "pitch_modulation.txt": (128, "a6359dea807db086f1a5197e3122d5ec938e8102dc50e195bd04f8f50fbc61ac"),
         }
         for name, (count, expected) in fixtures.items():
             with self.subTest(fixture=name):
@@ -75,7 +81,7 @@ class PcmCompareToolTests(unittest.TestCase):
         self.assertEqual(malformed.returncode, 2)
         self.assertIn(b"fixture line 1", malformed.stderr)
         unsupported = subprocess.run(
-            [str(self.runner)], input=b"reg 0x3d 1\nstep 1\n",
+            [str(self.runner)], input=b"reg 0x4d 1\nstep 1\n",
             capture_output=True, check=False,
         )
         self.assertEqual(unsupported.returncode, 3)

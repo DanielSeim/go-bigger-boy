@@ -90,8 +90,10 @@ void test_two_voice_mix_and_rejection() {
     configure_voice(renderer, 0, 0x7f, 0x40);
     configure_voice(renderer, 1, 0x7f, 0x00);
     renderer.write_dsp(0x3D, 0x01);
-    check(!renderer.next_sample(), "noise mode is rejected rather than misrendered");
+    check(renderer.next_sample().has_value(),
+          "noise mode is supported by the synthetic DSP renderer");
     renderer.write_dsp(0x3D, 0);
+    renderer.reset();
     renderer.write_dsp(0x4C, 0x03);
     for (unsigned i = 0; i < 8; ++i) (void)renderer.next_sample();
     const auto mixed = renderer.next_sample();

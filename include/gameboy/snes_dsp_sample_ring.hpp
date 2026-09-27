@@ -25,8 +25,8 @@ public:
     // Previous, then before-previous sample at the physical BRR write point.
     [[nodiscard]] std::array<std::int16_t, 2> predictor_history() const noexcept;
     [[nodiscard]] std::int16_t interpolated() const noexcept;
-    // The caller enables modulation only for eligible non-noise voices 1-7.
-    // previous_output is the preceding voice's pre-volume output sample.
+    // The caller enables modulation only for voices 1-7. previous_output is
+    // the preceding voice's signed 16-bit, pre-volume DSP output sample.
     void advance_pitch(std::uint16_t pitch, std::int16_t previous_output = 0,
                        bool modulate = false) noexcept;
 
