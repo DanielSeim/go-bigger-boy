@@ -154,7 +154,7 @@ can now execute the IPL upload instruction set. A synthetic, non-proprietary
 IPL test advertises readiness, waits for a host command, and copies a byte
 from host ports into APU RAM through decoded instructions. Unsupported
 opcodes trap rather than silently acting as NOPs; this is not a complete
-SPC700, and no actual IPL ROM or SGB sound program is bundled or run.
+SPC700, and no proprietary IPL or SGB sound program is bundled.
 The remaining implementation must include the SNES-side command/ICD handoff,
 a 65C816 execution path (or an independently validated equivalent), full
 SPC700 execution, and S-DSP synthesis.
@@ -167,14 +167,23 @@ then KOFF through $F2/$F3. The observed write cycles are replayed into the test-
 S-DSP renderer, and its 128-sample PCM trace is pinned in CI and compared
 locally with an independent DSP. The program is not SGB firmware, the PCM is
 not produced by the running emulator, and this test does not make SGB sound
-available. An actual IPL image and substantially more SPC700/65C816 work are
-still required before a real firmware sound-command test is possible.
-For a locally supplied, legally obtained 64-byte S-SMP IPL, the development
-probe can report whether the current interpreter reaches the ready handshake
-or the first unsupported opcode without copying the image into the project:
+available. Substantially more SPC700/65C816 work is still required before a
+real SGB firmware sound-command test is possible.
+The ignored local `roms/spc700.rom` is a 64-byte S-SMP IPL image. The probe
+reaches its ready handshake after 2,404 interpreted cycles, uploads an original
+eight-byte test program via the host ports, enters that program, and observes
+its DSP KON write after 2,702 interpreted cycles. These are local interpreter
+counts, not independently validated hardware timing. The upload follows the
+[documented IPL communication protocol](https://problemkaputt.de/fullsnes.htm#snesapumaincpucommunicationport).
+An opt-in local test replays that observed KON write into the synthetic
+two-voice DSP fixture and matches the 128-sample PCM against an independent
+DSP. It does not run an SGB sound driver or prove audible SGB sound. The CI
+test uses a different synthetic uploader and no firmware bytes. To run
+the local smoke test against a legally obtained IPL without copying it into the
+project, use:
 
 ```sh
-build/gameboy_snes_spc700_ipl_probe /path/to/spc700-ipl.rom
+build/gameboy_snes_spc700_ipl_probe /path/to/spc700-ipl.rom --upload-smoke
 ```
 
 A separate clean-room BRR decoder now handles one nine-byte block at a time,

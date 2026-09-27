@@ -1188,6 +1188,21 @@ if(GAMEBOY_BUILD_TESTS)
     add_executable(gameboy_snes_spc700_ipl_probe
         tests/support/snes_spc700_ipl_probe.cpp)
     target_link_libraries(gameboy_snes_spc700_ipl_probe PRIVATE gameboy_core)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/spc700.rom")
+        add_test(NAME gameboy_snes_spc700_local_ipl_upload
+                 COMMAND gameboy_snes_spc700_ipl_probe
+                         ${CMAKE_CURRENT_SOURCE_DIR}/roms/spc700.rom
+                         --upload-smoke)
+        if(Python3_Interpreter_FOUND)
+            add_test(NAME gameboy_snes_spc700_local_ipl_pcm
+                     COMMAND ${Python3_EXECUTABLE}
+                             ${CMAKE_CURRENT_SOURCE_DIR}/tests/snes_spc700_real_ipl_pcm_tests.py
+                             $<TARGET_FILE:gameboy_snes_spc700_ipl_probe>
+                             ${CMAKE_CURRENT_SOURCE_DIR}/roms/spc700.rom
+                             $<TARGET_FILE:gameboy_snes_spc700_dsp_timeline_tests>
+                             $<TARGET_FILE:gameboy_snes_dsp_pcm_fixture_runner>)
+        endif()
+    endif()
     if(Python3_Interpreter_FOUND)
         add_test(NAME gameboy_snes_spc700_ipl_probe_contract
                  COMMAND ${Python3_EXECUTABLE}
