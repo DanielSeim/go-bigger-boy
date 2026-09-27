@@ -27,9 +27,10 @@ struct DspClockResult {
 template <typename Sink>
 int run_dsp_fixture(Sink& sink) {
 #ifdef _WIN32
-    // The protocol writes raw little-endian PCM to stdout. Windows text mode
-    // expands 0x0a bytes and corrupts both sample counts and PCM hashes.
-    if (_setmode(_fileno(stdout), _O_BINARY) == -1) return 2;
+    // PCM on stdout and ENDX probes on stderr are byte-exact protocol streams.
+    // Windows text mode expands LF bytes and changes their pinned hashes.
+    if (_setmode(_fileno(stdout), _O_BINARY) == -1 ||
+        _setmode(_fileno(stderr), _O_BINARY) == -1) return 2;
 #endif
     std::string line;
     unsigned line_number = 0;
