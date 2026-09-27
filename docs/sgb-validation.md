@@ -197,9 +197,9 @@ three four-sample groups can prefill the physical ring, a crossing of phase
 optional previous-voice pitch modulation is bounded at `$7FFF`. Key-on
 rewinds its pointers without clearing the physical samples. Synthetic tests
 exercise those boundaries and the handoff to Gaussian interpolation. This is
-still **not** a scheduled DSP voice: the five silent key-on samples, BRR
-group-byte read timing, per-voice register polling, and the host audio path
-are not connected to this component.
+still **not** a scheduled DSP voice: the ring itself does not schedule the
+five silent key-on samples, BRR group-byte reads, per-voice register polling,
+or the host audio path.
 
 A second, group-wise BRR walker now reads only the two data bytes needed for
 each four-sample group from physical APU RAM. It shares the BRR prediction
@@ -214,15 +214,25 @@ preceding the next ring write slot. A filtered first group after key-on can
 therefore differ from the older sequential-history diagnostic path. Tests
 exercise both histories across re-keying and compare normal group sequences
 against whole-block decoding. This fixes predictor sourcing at the group
-boundary; it does not add the DSP's key-on delay or cycle-level scheduling.
+boundary; the group walker does not itself add key-on delay or cycle-level
+scheduling.
+
+An isolated key-on sequencer now expresses the first five forced-silent
+output samples after an accepted KON: source lookup, three four-sample BRR
+preloads, then the first envelope update. The sixth sample permits the first
+BRR/Gaussian output and pitch advance. Synthetic tests drive the source
+walker, ring, envelope, and interpolation together through this transition,
+including retrigger and steady-state group requests. It does **not** model
+the final pre-KON decode, every-other-sample KON polling, per-voice register
+read phases, or other voices; none of these components feed live SGB audio.
 
 A separate sample-stepped envelope now models the global 32-rate counter,
 Attack/Decay/Sustain/Release transitions, direct and timed gain modes, and
 11-bit clamping. Synthetic tests cover every rate over a full counter cycle,
 rate switching, phase transitions, and boundary behavior. The rules follow
 [Anomie's S-DSP research notes](https://gist.github.com/nyanpasu64/a0d916ce6924912a7116682bf778e9a0),
-but the component does not yet model register-read interleaving, the five
-silent key-on samples, or a complete eight-voice DSP. It is not connected to
+but the envelope component does not itself model register-read interleaving,
+the five silent key-on samples, or a complete eight-voice DSP. It is not connected to
 live SGB sound, and the tests are not independent audio validation.
 
 The opt-in title manifests in `tests/fixtures/sgb/titles/` pin ROM SHA-256,
