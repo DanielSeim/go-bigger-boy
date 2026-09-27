@@ -321,9 +321,23 @@ A clock-granular fixture then tests master-volume writes just before or
 after the S-DSP's left (phase 26) and right (phase 27) output-volume polls.
 GBB's test renderer latches those two volumes separately; four traces match
 the independent DSP reference exactly, and moving each write changes only
-the expected stereo sample. Normal CI pins all four PCM hashes. Other
-timed register writes and unmodeled SPC700 write instructions fail
-closed; this is not a general cycle-accurate DSP or live SGB sound path.
+the expected stereo sample. Normal CI pins all four PCM hashes. Timed
+writes outside the four output-volume registers, and unmodeled SPC700 write
+instructions, fail closed; this is not a general cycle-accurate DSP or live
+SGB sound path.
+
+The same phase-latch harness now covers the left and right echo-output volume
+registers with a fixed, nonzero echo input and echo writeback disabled. Four
+additional clock-shifted PCM traces match the independent DSP exactly. The
+test keeps echo feedback and other timed writes unsupported rather than
+assigning them an invented poll phase. To run this optional comparison:
+
+```sh
+python3 tests/snes_spc700_dsp_echo_subsample_pcm_tests.py \
+  build/gameboy_snes_spc700_dsp_timeline_tests \
+  build/gameboy_snes_dsp_pcm_fixture_runner \
+  --reference-dir /path/to/bsnes/sfc/dsp
+```
 
 ```sh
 python3 tests/snes_spc700_dsp_subsample_pcm_tests.py \

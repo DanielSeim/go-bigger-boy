@@ -23,13 +23,16 @@ def replace_once(source: bytes, old: bytes, new: bytes) -> bytes:
     return source.replace(old, new, 1)
 
 
-def cases(baseline: bytes) -> dict[str, bytes]:
-    left_late = replace_once(baseline, b"clock 26\nreg 12 127\nclock 33",
-                             b"clock 27\nreg 12 127\nclock 32")
-    right_late = replace_once(baseline, b"clock 33\nreg 28 127\nclock 33",
-                              b"clock 34\nreg 28 127\nclock 32")
-    left_early = replace_once(baseline, b"clock 33\nreg 12 0\nclock 256",
-                              b"clock 31\nreg 12 0\nclock 258")
+def cases(baseline: bytes, left: int = 12, right: int = 28) -> dict[str, bytes]:
+    left_late = replace_once(
+        baseline, f"clock 26\nreg {left} 127\nclock 33".encode(),
+        f"clock 27\nreg {left} 127\nclock 32".encode())
+    right_late = replace_once(
+        baseline, f"clock 33\nreg {right} 127\nclock 33".encode(),
+        f"clock 34\nreg {right} 127\nclock 32".encode())
+    left_early = replace_once(
+        baseline, f"clock 33\nreg {left} 0\nclock 256".encode(),
+        f"clock 31\nreg {left} 0\nclock 258".encode())
     return {"baseline": baseline, "left_late": left_late,
             "right_late": right_late, "left_early": left_early}
 

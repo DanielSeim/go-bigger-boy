@@ -17,7 +17,8 @@ public:
         bus_.spc_write(address, value);
     }
     void reg(const std::uint8_t address, const std::uint8_t value) {
-        if (clock_count_ != 0 && address != 0x0C && address != 0x1C) {
+        if (clock_count_ != 0 && address != 0x0C && address != 0x1C &&
+            address != 0x2C && address != 0x3C) {
             supported_ = false;
         }
         renderer_.write_dsp(address, value);
@@ -36,12 +37,18 @@ public:
     [[nodiscard]] sgb_test::DspClockResult clock() {
         if (!supported_ || stepped_) return {false, {}};
         const auto phase = clock_count_ % 32;
-        if (phase == 26) left_volume_ = bus_.dsp_register(0x0C);
-        if (phase == 27) right_volume_ = bus_.dsp_register(0x1C);
+        if (phase == 26) {
+            left_volume_ = bus_.dsp_register(0x0C);
+            left_echo_volume_ = bus_.dsp_register(0x2C);
+        }
+        if (phase == 27) {
+            right_volume_ = bus_.dsp_register(0x1C);
+            right_echo_volume_ = bus_.dsp_register(0x3C);
+        }
         ++clock_count_;
         if (phase != 27) return {true, {}};
-        const auto sample = renderer_.next_sample_with_master_volume(
-            left_volume_, right_volume_);
+        const auto sample = renderer_.next_sample_with_output_volumes(
+            left_volume_, right_volume_, left_echo_volume_, right_echo_volume_);
         if (!sample) return {false, {}};
         return {true, std::array<std::int16_t, 2>{sample->left, sample->right}};
     }
@@ -52,6 +59,8 @@ private:
     std::uint64_t clock_count_{};
     std::uint8_t left_volume_{};
     std::uint8_t right_volume_{};
+    std::uint8_t left_echo_volume_{};
+    std::uint8_t right_echo_volume_{};
     bool supported_{true};
     bool stepped_{};
 };

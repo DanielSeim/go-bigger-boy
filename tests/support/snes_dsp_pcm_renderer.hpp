@@ -32,11 +32,11 @@ public:
     void reset() noexcept;
     void write_dsp(std::uint8_t address, std::uint8_t value) noexcept;
     [[nodiscard]] std::optional<StereoSample> next_sample() noexcept;
-    // Test-only clock fixture supplies the two master-volume values latched
-    // at their respective DSP output phases. Other registers remain sampled
-    // at the ordinary whole-sample boundary.
-    [[nodiscard]] std::optional<StereoSample> next_sample_with_master_volume(
-        std::uint8_t left, std::uint8_t right) noexcept;
+    // Test-only clock fixture supplies output-volume values latched at their
+    // respective DSP output phases. Other registers remain whole-sample only.
+    [[nodiscard]] std::optional<StereoSample> next_sample_with_output_volumes(
+        std::uint8_t master_left, std::uint8_t master_right,
+        std::uint8_t echo_volume_left, std::uint8_t echo_volume_right) noexcept;
     [[nodiscard]] std::uint8_t endx() const noexcept { return ends_.endx(); }
 
 private:
@@ -57,7 +57,9 @@ private:
     [[nodiscard]] StereoSample mix_echo(StereoSample dac_mix,
                                         StereoSample dac_send,
                                         std::uint8_t master_left,
-                                        std::uint8_t master_right) noexcept;
+                                        std::uint8_t master_right,
+                                        std::uint8_t echo_volume_left,
+                                        std::uint8_t echo_volume_right) noexcept;
     StereoSample pending_mix_{};
     StereoSample pending_echo_send_{};
     std::array<StereoSample, 8> echo_history_{};

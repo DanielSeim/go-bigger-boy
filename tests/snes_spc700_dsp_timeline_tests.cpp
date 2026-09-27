@@ -102,7 +102,7 @@ gameboy::SnesApuBus::IplRom synthetic_program() {
     return image;
 }
 
-gameboy::SnesApuBus::IplRom subsample_program() {
+gameboy::SnesApuBus::IplRom subsample_program(const bool echo = false) {
     gameboy::SnesApuBus::IplRom image{};
     std::size_t cursor = 0;
     const auto write = [&](std::uint8_t address, std::uint8_t value) {
@@ -112,11 +112,12 @@ gameboy::SnesApuBus::IplRom subsample_program() {
         image[cursor++] = 0xf3;
     };
     for (unsigned i = 0; i < 8; ++i) image[cursor++] = 0x00;
-    write(0x0c, 0x7f); // clock 26, before left-volume poll
+    write(echo ? 0x2c : 0x0c, 0x7f); // clock 26, before left poll
     for (unsigned event = 0; event < 2; ++event) {
         image[cursor++] = 0xe4; image[cursor++] = 0x20; // MOV A,$20: 3 clocks
         for (unsigned i = 0; i < 10; ++i) image[cursor++] = 0x00;
-        write(event == 0 ? 0x1c : 0x0c, event == 0 ? 0x7f : 0x00);
+        write(event == 0 ? (echo ? 0x3c : 0x1c) : (echo ? 0x2c : 0x0c),
+              event == 0 ? 0x7f : 0x00);
     }
     return image;
 }
@@ -143,17 +144,20 @@ bool capture_and_check(std::array<Event, 3>& captured) {
     return true;
 }
 
-bool capture_subsample_and_check(std::array<Event, 3>& captured) {
+bool capture_subsample_and_check(std::array<Event, 3>& captured,
+                                 const bool echo = false) {
     gameboy::SnesApuBus bus;
-    bus.install_ipl(subsample_program());
+    bus.install_ipl(subsample_program(echo));
     gameboy::SnesSpc700 cpu(bus);
     Timeline timeline(bus, cpu, true);
     // 10 + 13 + 13 instructions, respectively.
     for (unsigned i = 0; i < 36; ++i) {
         if (timeline.step() != Timeline::Error::none) return false;
     }
-    constexpr std::array<Event, 3> expected{{
-        {26, 0x0c, 0x7f}, {59, 0x1c, 0x7f}, {92, 0x0c, 0x00},
+    const std::array<Event, 3> expected{{
+        {26, static_cast<std::uint8_t>(echo ? 0x2c : 0x0c), 0x7f},
+        {59, static_cast<std::uint8_t>(echo ? 0x3c : 0x1c), 0x7f},
+        {92, static_cast<std::uint8_t>(echo ? 0x2c : 0x0c), 0x00},
     }};
     if (timeline.size() != captured.size()) return false;
     for (std::size_t i = 0; i < captured.size(); ++i) {
@@ -274,13 +278,36 @@ void emit_clock_fixture(const std::array<Event, 3>& events) {
     std::cout << "clock 256\n";
 }
 
+void emit_echo_clock_fixture(const std::array<Event, 3>& events) {
+    // Static echo-only input at ESA=$40, EDL=0, FIR tap 7. Echo writes are
+    // disabled so the same nonzero stereo word is read every sample.
+    std::cout << "# SPC700 echo-output volume writes at clocks 26, 59, 92\n"
+                 "ram 0x4000 0x00\nram 0x4001 0x40\n"
+                 "ram 0x4002 0x00\nram 0x4003 0x20\n"
+                 "reg 0x6c 0x20\nreg 0x6d 0x40\n"
+                 "reg 0x7d 0x00\nreg 0x7f 0x40\n"
+                 "reg 0x0c 0x00\nreg 0x1c 0x00\n"
+                 "reg 0x2c 0x00\nreg 0x3c 0x00\n"
+                 "clock 2048\n";
+    std::uint64_t emitted_clocks = 0;
+    for (const auto& event : events) {
+        std::cout << "clock " << event.completed_cycle - emitted_clocks << '\n'
+                  << "reg " << static_cast<unsigned>(event.address) << ' '
+                  << static_cast<unsigned>(event.value) << '\n';
+        emitted_clocks = event.completed_cycle;
+    }
+    std::cout << "clock 256\n";
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     std::array<Event, 3> events{};
     std::array<Event, 3> subsample_events{};
+    std::array<Event, 3> echo_events{};
     if (!capture_and_check(events) || !rejects_off_boundary() ||
         !capture_subsample_and_check(subsample_events) ||
+        !capture_subsample_and_check(echo_events, true) ||
         !rejects_unsupported_opcode() || !rejects_unknown_write_phase() ||
         !ignores_invalid_dsp_address()) {
         std::cerr << "SPC700 DSP timeline contract failed\n";
@@ -290,6 +317,8 @@ int main(int argc, char** argv) {
         emit_fixture(events);
     } else if (argc == 2 && std::string_view(argv[1]) == "--clock-fixture") {
         emit_clock_fixture(subsample_events);
+    } else if (argc == 2 && std::string_view(argv[1]) == "--echo-clock-fixture") {
+        emit_echo_clock_fixture(echo_events);
     } else if (argc != 1) {
         std::cerr << "usage: snes_spc700_dsp_timeline_tests [--fixture]\n";
         return 2;
