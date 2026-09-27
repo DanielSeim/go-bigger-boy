@@ -293,10 +293,10 @@ A separate development-only SPC700-to-DSP timeline test now executes a
 synthetic 64-byte APU program through GBB's partial SPC700 interpreter. The
 APU bus observes accepted `$F3` DSP-data writes; the test stamps them at
 instruction-completion clocks 32, 64, and 96 and replays the corresponding
-register writes into the 32 kHz PCM fixture runner. It rejects unsupported
-opcodes and writes that are not on a 32-clock sample boundary. It does not
-claim the exact intra-instruction write cycle, nor can it replay multiple
-writes inside one instruction or arbitrary sub-sample timing. Its 128 stereo
+register writes into the 32 kHz PCM fixture runner. This original
+whole-sample path rejects unsupported opcodes and writes that are not on a
+32-clock sample boundary. It cannot replay multiple writes inside one
+instruction. Its 128 stereo
 samples match the independent DSP reference byte-for-byte, and normal CI pins
 their PCM hash without needing that external checkout. To repeat the optional
 local comparison:
@@ -311,8 +311,26 @@ python3 tests/snes_spc700_dsp_timeline_pcm_tests.py \
 ```
 
 This checks a bounded timing bridge, not firmware playback or live SGB
-audio. Accurate SPC700 bus-cycle scheduling and sub-sample DSP write windows
-remain future work.
+audio. General SPC700 bus-cycle scheduling and DSP write windows remain
+future work.
+
+The bridge now also has a bounded **sub-sample** contract: for synthetic
+`MOV dp,#imm` writes to `$F3`, it places the write on that instruction's
+fifth clock, consistent with the [SPC700 bus-cycle timing table](https://www.crazysmart.net.au/kindred/files/spc700_inst_op.pdf).
+A clock-granular fixture then tests master-volume writes just before or
+after the S-DSP's left (phase 26) and right (phase 27) output-volume polls.
+GBB's test renderer latches those two volumes separately; four traces match
+the independent DSP reference exactly, and moving each write changes only
+the expected stereo sample. Normal CI pins all four PCM hashes. Other
+timed register writes and unmodeled SPC700 write instructions fail
+closed; this is not a general cycle-accurate DSP or live SGB sound path.
+
+```sh
+python3 tests/snes_spc700_dsp_subsample_pcm_tests.py \
+  build/gameboy_snes_spc700_dsp_timeline_tests \
+  build/gameboy_snes_dsp_pcm_fixture_runner \
+  --reference-dir /path/to/bsnes/sfc/dsp
+```
 
 A separate sample-stepped envelope now models the global 32-rate counter,
 Attack/Decay/Sustain/Release transitions, direct and timed gain modes, and

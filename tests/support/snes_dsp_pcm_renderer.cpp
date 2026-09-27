@@ -69,7 +69,8 @@ void SnesDspPcmRenderer::reset() noexcept {
 }
 
 SnesDspPcmRenderer::StereoSample SnesDspPcmRenderer::mix_echo(
-    const StereoSample dac_mix, const StereoSample dac_send) noexcept {
+    const StereoSample dac_mix, const StereoSample dac_send,
+    const std::uint8_t master_left, const std::uint8_t master_right) noexcept {
     const auto address = static_cast<std::uint16_t>(
         (static_cast<unsigned>(echo_esa_) << 8U) + echo_offset_);
     const auto read_echo = [&](const unsigned channel) {
@@ -112,9 +113,9 @@ SnesDspPcmRenderer::StereoSample SnesDspPcmRenderer::mix_echo(
         return clamp_16(wrap_16(dry) + wrap_16(wet));
     };
     StereoSample sample{
-        mix_channel(dac_mix.left, filtered.left, bus_.dsp_register(0x0C),
+        mix_channel(dac_mix.left, filtered.left, master_left,
                     bus_.dsp_register(0x2C)),
-        mix_channel(dac_mix.right, filtered.right, bus_.dsp_register(0x1C),
+        mix_channel(dac_mix.right, filtered.right, master_right,
                     bus_.dsp_register(0x3C)),
     };
 
@@ -167,6 +168,14 @@ void SnesDspPcmRenderer::write_dsp(const std::uint8_t address,
 
 std::optional<SnesDspPcmRenderer::StereoSample>
 SnesDspPcmRenderer::next_sample() noexcept {
+    return next_sample_with_master_volume(bus_.dsp_register(0x0C),
+                                          bus_.dsp_register(0x1C));
+}
+
+std::optional<SnesDspPcmRenderer::StereoSample>
+SnesDspPcmRenderer::next_sample_with_master_volume(
+    const std::uint8_t master_left,
+    const std::uint8_t master_right) noexcept {
     // The test renderer must fail closed for paths that could produce audio
     // different from a full S-DSP, rather than emit a plausible wrong PCM.
     rates_.advance();
@@ -268,7 +277,7 @@ SnesDspPcmRenderer::next_sample() noexcept {
     const auto dac_send = pending_echo_send_;
     pending_mix_ = StereoSample{main_left, main_right};
     pending_echo_send_ = StereoSample{echo_left, echo_right};
-    return mix_echo(dac_mix, dac_send);
+    return mix_echo(dac_mix, dac_send, master_left, master_right);
 }
 
 } // namespace sgb_test

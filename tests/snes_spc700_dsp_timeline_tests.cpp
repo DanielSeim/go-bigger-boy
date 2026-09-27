@@ -16,15 +16,17 @@ struct Event {
 
 // Development-only bridge. Writes are stamped at instruction completion,
 // because the current interpreter does not expose intra-instruction bus cycles.
-// Only sample-aligned, single-write instructions can be replayed faithfully by
-// the 32-clock fixture protocol. Everything else fails closed.
+// MOV dp,#imm writes on its fifth/final cycle. Only that known bus-write
+// phase is accepted. The clock fixture can replay its sub-sample volume writes;
+// the older whole-sample fixture still rejects off-boundary events.
 class Timeline final {
 public:
     enum class Error { none, unsupported_opcode, multiple_writes, off_boundary,
-                       overflow };
+                       unknown_write_phase, overflow };
 
-    Timeline(gameboy::SnesApuBus& bus, gameboy::SnesSpc700& cpu) noexcept
-        : bus_(bus), cpu_(cpu) {
+    Timeline(gameboy::SnesApuBus& bus, gameboy::SnesSpc700& cpu,
+             const bool allow_subsample = false) noexcept
+        : bus_(bus), cpu_(cpu), allow_subsample_(allow_subsample) {
         bus_.set_dsp_write_observer(&Timeline::observe, this);
     }
     ~Timeline() { bus_.set_dsp_write_observer(nullptr); }
@@ -41,7 +43,10 @@ public:
         completed_cycles_ += result.cycles;
         if (pending_count_ > 1) return error_ = Error::multiple_writes;
         if (pending_count_ == 0) return Error::none;
-        if (completed_cycles_ % 32 != 0) return error_ = Error::off_boundary;
+        if (result.opcode != 0x8f) return error_ = Error::unknown_write_phase;
+        if (!allow_subsample_ && completed_cycles_ % 32 != 0) {
+            return error_ = Error::off_boundary;
+        }
         if (count_ == events_.size()) return error_ = Error::overflow;
         events_[count_++] = {completed_cycles_, pending_address_, pending_value_};
         return Error::none;
@@ -63,6 +68,7 @@ private:
 
     gameboy::SnesApuBus& bus_;
     gameboy::SnesSpc700& cpu_;
+    bool allow_subsample_{};
     std::array<Event, 16> events_{};
     std::size_t count_{};
     std::uint64_t completed_cycles_{};
@@ -96,6 +102,25 @@ gameboy::SnesApuBus::IplRom synthetic_program() {
     return image;
 }
 
+gameboy::SnesApuBus::IplRom subsample_program() {
+    gameboy::SnesApuBus::IplRom image{};
+    std::size_t cursor = 0;
+    const auto write = [&](std::uint8_t address, std::uint8_t value) {
+        image[cursor++] = 0x8f; image[cursor++] = address;
+        image[cursor++] = 0xf2;
+        image[cursor++] = 0x8f; image[cursor++] = value;
+        image[cursor++] = 0xf3;
+    };
+    for (unsigned i = 0; i < 8; ++i) image[cursor++] = 0x00;
+    write(0x0c, 0x7f); // clock 26, before left-volume poll
+    for (unsigned event = 0; event < 2; ++event) {
+        image[cursor++] = 0xe4; image[cursor++] = 0x20; // MOV A,$20: 3 clocks
+        for (unsigned i = 0; i < 10; ++i) image[cursor++] = 0x00;
+        write(event == 0 ? 0x1c : 0x0c, event == 0 ? 0x7f : 0x00);
+    }
+    return image;
+}
+
 bool capture_and_check(std::array<Event, 3>& captured) {
     gameboy::SnesApuBus bus;
     bus.install_ipl(synthetic_program());
@@ -114,6 +139,28 @@ bool capture_and_check(std::array<Event, 3>& captured) {
             captured[i].address != expected[i].address ||
             captured[i].value != expected[i].value ||
             bus.dsp_register(captured[i].address) != captured[i].value) return false;
+    }
+    return true;
+}
+
+bool capture_subsample_and_check(std::array<Event, 3>& captured) {
+    gameboy::SnesApuBus bus;
+    bus.install_ipl(subsample_program());
+    gameboy::SnesSpc700 cpu(bus);
+    Timeline timeline(bus, cpu, true);
+    // 10 + 13 + 13 instructions, respectively.
+    for (unsigned i = 0; i < 36; ++i) {
+        if (timeline.step() != Timeline::Error::none) return false;
+    }
+    constexpr std::array<Event, 3> expected{{
+        {26, 0x0c, 0x7f}, {59, 0x1c, 0x7f}, {92, 0x0c, 0x00},
+    }};
+    if (timeline.size() != captured.size()) return false;
+    for (std::size_t i = 0; i < captured.size(); ++i) {
+        captured[i] = timeline.event(i);
+        if (captured[i].completed_cycle != expected[i].completed_cycle ||
+            captured[i].address != expected[i].address ||
+            captured[i].value != expected[i].value) return false;
     }
     return true;
 }
@@ -138,6 +185,20 @@ bool rejects_unsupported_opcode() {
     gameboy::SnesSpc700 cpu(bus);
     Timeline timeline(bus, cpu);
     return timeline.step() == Timeline::Error::unsupported_opcode;
+}
+
+bool rejects_unknown_write_phase() {
+    gameboy::SnesApuBus bus;
+    gameboy::SnesApuBus::IplRom image{};
+    image[0] = 0xe8; image[1] = 0x7f; // MOV A,#$7f
+    image[2] = 0x8f; image[3] = 0x0c; image[4] = 0xf2;
+    image[5] = 0xc4; image[6] = 0xf3; // MOV $F3,A: phase not modeled
+    bus.install_ipl(image);
+    gameboy::SnesSpc700 cpu(bus);
+    Timeline timeline(bus, cpu, true);
+    return timeline.step() == Timeline::Error::none &&
+           timeline.step() == Timeline::Error::none &&
+           timeline.step() == Timeline::Error::unknown_write_phase;
 }
 
 bool ignores_invalid_dsp_address() {
@@ -185,17 +246,50 @@ void emit_fixture(const std::array<Event, 3>& events) {
     std::cout << "step " << 128 - emitted_samples << '\n';
 }
 
+void emit_clock_fixture(const std::array<Event, 3>& events) {
+    // Prime an audible looping voice, then replay only SPC700-produced master
+    // volume writes. No real ROM or external source is embedded in this test.
+    std::cout << "# MOV dp,#imm DSP writes at clocks 26, 59, 92\n"
+                 "ram 0x2800 0x00\nram 0x2801 0x80\n"
+                 "ram 0x2802 0x00\nram 0x2803 0x80\n"
+                 "ram 0x8000 0x83\nram 0x8001 0x40\n"
+                 "ram 0x8002 0x00\nram 0x8003 0x44\n"
+                 "ram 0x8004 0x44\nram 0x8005 0x44\n"
+                 "ram 0x8006 0x44\nram 0x8007 0x44\n"
+                 "ram 0x8008 0x44\n"
+                 "reg 0x5d 0x28\nreg 0x6c 0x20\n"
+                 "reg 0x00 0x7f\nreg 0x01 0x7f\n"
+                 "reg 0x02 0x00\nreg 0x03 0x10\n"
+                 "reg 0x04 0x00\nreg 0x05 0x00\n"
+                 "reg 0x07 0x7f\nreg 0x0c 0x00\n"
+                 "reg 0x1c 0x00\nreg 0x4c 0x01\n"
+                 "clock 2048\n";
+    std::uint64_t emitted_clocks = 0;
+    for (const auto& event : events) {
+        std::cout << "clock " << event.completed_cycle - emitted_clocks << '\n'
+                  << "reg " << static_cast<unsigned>(event.address) << ' '
+                  << static_cast<unsigned>(event.value) << '\n';
+        emitted_clocks = event.completed_cycle;
+    }
+    std::cout << "clock 256\n";
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     std::array<Event, 3> events{};
+    std::array<Event, 3> subsample_events{};
     if (!capture_and_check(events) || !rejects_off_boundary() ||
-        !rejects_unsupported_opcode() || !ignores_invalid_dsp_address()) {
+        !capture_subsample_and_check(subsample_events) ||
+        !rejects_unsupported_opcode() || !rejects_unknown_write_phase() ||
+        !ignores_invalid_dsp_address()) {
         std::cerr << "SPC700 DSP timeline contract failed\n";
         return 1;
     }
     if (argc == 2 && std::string_view(argv[1]) == "--fixture") {
         emit_fixture(events);
+    } else if (argc == 2 && std::string_view(argv[1]) == "--clock-fixture") {
+        emit_clock_fixture(subsample_events);
     } else if (argc != 1) {
         std::cerr << "usage: snes_spc700_dsp_timeline_tests [--fixture]\n";
         return 2;

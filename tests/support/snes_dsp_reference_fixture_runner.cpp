@@ -26,6 +26,18 @@ public:
         if (dsp_.sample_count() != 2) return std::nullopt;
         return std::array<std::int16_t, 2>{output[0], output[1]};
     }
+    [[nodiscard]] sgb_test::DspClockResult step_result() {
+        const auto sample = step();
+        return {sample.has_value(), sample};
+    }
+    [[nodiscard]] sgb_test::DspClockResult clock() {
+        std::array<SPC_DSP::sample_t, 4> output{};
+        dsp_.set_output(output.data(), 4);
+        dsp_.run(1);
+        if (dsp_.sample_count() == 0) return {true, {}};
+        if (dsp_.sample_count() != 2) return {false, {}};
+        return {true, std::array<std::int16_t, 2>{output[0], output[1]}};
+    }
 
 private:
     std::array<std::uint8_t, 0x10000> ram_{};
