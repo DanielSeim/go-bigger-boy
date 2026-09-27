@@ -12,6 +12,10 @@ void SnesDspKeyControl::reset(const bool poll_first_sample) noexcept {
     sampled_koff_ = 0;
     soft_reset_ = false;
     poll_next_ = poll_first_sample;
+    timed_new_kon_ = 0;
+    timed_polled_kon_ = 0;
+    timed_sampled_koff_ = 0;
+    timed_poll_next_ = poll_first_sample;
 }
 
 SnesDspKeyControl::Sample SnesDspKeyControl::next_sample() noexcept {
@@ -23,6 +27,21 @@ SnesDspKeyControl::Sample SnesDspKeyControl::next_sample() noexcept {
     }
     poll_next_ = !poll_next_;
     return Sample{key_on, sampled_koff_, soft_reset_};
+}
+
+void SnesDspKeyControl::timed_phase29() noexcept {
+    if (timed_poll_next_) timed_new_kon_ &= ~timed_polled_kon_;
+}
+
+SnesDspKeyControl::Sample SnesDspKeyControl::next_timed_sample() noexcept {
+    std::uint8_t key_on = 0;
+    if (timed_poll_next_) {
+        timed_polled_kon_ = timed_new_kon_;
+        key_on = timed_polled_kon_;
+        timed_sampled_koff_ = koff_register_;
+    }
+    timed_poll_next_ = !timed_poll_next_;
+    return Sample{key_on, timed_sampled_koff_, soft_reset_};
 }
 
 void SnesDspKeyControl::apply_voice(const unsigned voice, const Sample& sample,

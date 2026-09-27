@@ -93,12 +93,12 @@ def main() -> int:
         if reference:
             print("all four clock traces match independent DSP exactly")
 
-    # Mid-sample writes other than master volume have no validated phase model.
+    # FLG still has no validated clock-phase model and must fail closed.
     invalid_cases = {
-        "mid-sample KON": replace_once(baseline, b"clock 26\nreg 12 127",
-                                       b"clock 26\nreg 76 1"),
-        "boundary KON": replace_once(baseline, b"clock 2048\nclock 26",
-                                     b"clock 2048\nreg 76 1\nclock 26"),
+        "mid-sample FLG": replace_once(baseline, b"clock 26\nreg 12 127",
+                                       b"clock 26\nreg 108 32"),
+        "boundary FLG": replace_once(baseline, b"clock 2048\nclock 26",
+                                     b"clock 2048\nreg 108 32\nclock 26"),
         "mixed step/clock": b"clock 32\nstep 1\n",
     }
     for name, invalid in invalid_cases.items():

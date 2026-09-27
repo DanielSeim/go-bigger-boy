@@ -322,9 +322,9 @@ after the S-DSP's left (phase 26) and right (phase 27) output-volume polls.
 GBB's test renderer latches those two volumes separately; four traces match
 the independent DSP reference exactly, and moving each write changes only
 the expected stereo sample. Normal CI pins all four PCM hashes. Timed
-writes outside the four output-volume registers, and unmodeled SPC700 write
-instructions, fail closed; this is not a general cycle-accurate DSP or live
-SGB sound path.
+writes outside the four output-volume and KON/KOFF registers, and unmodeled
+SPC700 write instructions, fail closed; this is not a general cycle-accurate
+DSP or live SGB sound path.
 
 The same phase-latch harness now covers the left and right echo-output volume
 registers with a fixed, nonzero echo input and echo writeback disabled. Four
@@ -334,6 +334,22 @@ assigning them an invented poll phase. To run this optional comparison:
 
 ```sh
 python3 tests/snes_spc700_dsp_echo_subsample_pcm_tests.py \
+  build/gameboy_snes_spc700_dsp_timeline_tests \
+  build/gameboy_snes_dsp_pcm_fixture_runner \
+  --reference-dir /path/to/bsnes/sfc/dsp
+```
+
+Synthetic SPC700 traces now also test writes to KON and KOFF on either side
+of the S-DSP's alternate-sample phase-30 key poll. The test renderer clears
+polled KON bits at phase 29, matching the reference's later KON-latch clear;
+this matters when another KON write arrives between polls. Nine clock-shifted
+traces per register match the independent DSP byte-for-byte, and CI pins
+their stereo PCM hashes. This is limited to a synthetic single-voice BRR
+fixture and does not enable live SGB audio, general register timing, or
+firmware playback. To rerun the optional independent comparison:
+
+```sh
+python3 tests/snes_spc700_dsp_key_subsample_pcm_tests.py \
   build/gameboy_snes_spc700_dsp_timeline_tests \
   build/gameboy_snes_dsp_pcm_fixture_runner \
   --reference-dir /path/to/bsnes/sfc/dsp

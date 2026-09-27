@@ -129,11 +129,74 @@ void test_soft_reset_all_voices() {
           "clearing FLG is visible without waiting for another key poll");
 }
 
+void test_timed_poll_and_kon_clear() {
+    gameboy::SnesDspKeyControl control;
+    control.reset(false);
+    control.write_kon(1);
+    control.timed_phase29();
+    check(control.next_timed_sample().key_on == 0,
+          "first timed sample does not poll KON");
+    control.timed_phase29();
+    check(control.next_timed_sample().key_on == 1,
+          "second timed sample polls KON");
+    control.write_kon(1);
+    control.timed_phase29();
+    check(control.next_timed_sample().key_on == 0,
+          "intermediate sample does not poll a repeated KON");
+    control.timed_phase29();
+    check(control.next_timed_sample().key_on == 0,
+          "phase 29 clears a KON bit from the previous poll");
+
+    control.reset(false);
+    control.write_kon(1);
+    control.timed_phase29();
+    (void)control.next_timed_sample();
+    control.timed_phase29();
+    (void)control.next_timed_sample();
+    control.timed_phase29();
+    (void)control.next_timed_sample();
+    control.timed_phase29(); // clears the previously polled bit
+    control.write_kon(1);   // the same bit, now written after the clear
+    check(control.next_timed_sample().key_on == 1,
+          "KON written after phase-29 clear survives the phase-30 poll");
+
+    control.reset(false);
+    control.write_koff(1);
+    control.timed_phase29();
+    check(control.next_timed_sample().key_off == 0,
+          "KOFF is not sampled on the first timed sample");
+    control.timed_phase29();
+    check(control.next_timed_sample().key_off == 1,
+          "KOFF is sampled on the alternate timed sample");
+    control.write_koff(0);
+    control.timed_phase29();
+    check(control.next_timed_sample().key_off == 1,
+          "sampled KOFF persists between polls");
+    control.timed_phase29();
+    check(control.next_timed_sample().key_off == 0,
+          "next timed poll observes a cleared KOFF register");
+
+    control.reset(false);
+    control.write_kon(1);
+    control.write_koff(1);
+    control.timed_phase29();
+    (void)control.next_timed_sample();
+    control.timed_phase29();
+    const auto simultaneous = control.next_timed_sample();
+    check(simultaneous.key_on == 1 && simultaneous.key_off == 1,
+          "same timed poll samples both KON and KOFF");
+    control.timed_phase29();
+    const auto held = control.next_timed_sample();
+    check(held.key_on == 0 && held.key_off == 1,
+          "held KOFF persists after the timed KON pulse");
+}
+
 } // namespace
 
 int main() {
     test_polling_and_register_writes();
     test_voice_precedence_and_retrigger();
     test_soft_reset_all_voices();
+    test_timed_poll_and_kon_clear();
     return failures == 0 ? 0 : 1;
 }

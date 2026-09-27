@@ -18,7 +18,8 @@ public:
     }
     void reg(const std::uint8_t address, const std::uint8_t value) {
         if (clock_count_ != 0 && address != 0x0C && address != 0x1C &&
-            address != 0x2C && address != 0x3C) {
+            address != 0x2C && address != 0x3C &&
+            address != 0x4C && address != 0x5C) {
             supported_ = false;
         }
         renderer_.write_dsp(address, value);
@@ -46,8 +47,10 @@ public:
             right_echo_volume_ = bus_.dsp_register(0x3C);
         }
         ++clock_count_;
+        if (phase == 29) renderer_.timed_phase29();
+        if (phase == 30) renderer_.advance_timed_sample();
         if (phase != 27) return {true, {}};
-        const auto sample = renderer_.next_sample_with_output_volumes(
+        const auto sample = renderer_.output_timed_sample(
             left_volume_, right_volume_, left_echo_volume_, right_echo_volume_);
         if (!sample) return {false, {}};
         return {true, std::array<std::int16_t, 2>{sample->left, sample->right}};

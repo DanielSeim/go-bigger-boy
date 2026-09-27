@@ -37,6 +37,13 @@ public:
     [[nodiscard]] std::optional<StereoSample> next_sample_with_output_volumes(
         std::uint8_t master_left, std::uint8_t master_right,
         std::uint8_t echo_volume_left, std::uint8_t echo_volume_right) noexcept;
+    // Clock fixture: output at DSP phase 27, clear polled KON at phase 29,
+    // then advance voices/keys at phase 30, once per 32-clock sample.
+    [[nodiscard]] std::optional<StereoSample> output_timed_sample(
+        std::uint8_t master_left, std::uint8_t master_right,
+        std::uint8_t echo_volume_left, std::uint8_t echo_volume_right) noexcept;
+    void timed_phase29() noexcept { keys_.timed_phase29(); }
+    void advance_timed_sample() noexcept;
     [[nodiscard]] std::uint8_t endx() const noexcept { return ends_.endx(); }
 
 private:
@@ -60,6 +67,7 @@ private:
                                         std::uint8_t master_right,
                                         std::uint8_t echo_volume_left,
                                         std::uint8_t echo_volume_right) noexcept;
+    void advance_sample(bool timed) noexcept;
     StereoSample pending_mix_{};
     StereoSample pending_echo_send_{};
     std::array<StereoSample, 8> echo_history_{};

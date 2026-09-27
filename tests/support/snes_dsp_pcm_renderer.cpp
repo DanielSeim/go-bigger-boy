@@ -178,6 +178,27 @@ SnesDspPcmRenderer::next_sample_with_output_volumes(
     const std::uint8_t master_left, const std::uint8_t master_right,
     const std::uint8_t echo_volume_left,
     const std::uint8_t echo_volume_right) noexcept {
+    const auto dac_mix = pending_mix_;
+    const auto dac_send = pending_echo_send_;
+    advance_sample(false);
+    return mix_echo(dac_mix, dac_send, master_left, master_right,
+                    echo_volume_left, echo_volume_right);
+}
+
+std::optional<SnesDspPcmRenderer::StereoSample>
+SnesDspPcmRenderer::output_timed_sample(
+    const std::uint8_t master_left, const std::uint8_t master_right,
+    const std::uint8_t echo_volume_left,
+    const std::uint8_t echo_volume_right) noexcept {
+    return mix_echo(pending_mix_, pending_echo_send_, master_left, master_right,
+                    echo_volume_left, echo_volume_right);
+}
+
+void SnesDspPcmRenderer::advance_timed_sample() noexcept {
+    advance_sample(true);
+}
+
+void SnesDspPcmRenderer::advance_sample(const bool timed) noexcept {
     // The test renderer must fail closed for paths that could produce audio
     // different from a full S-DSP, rather than emit a plausible wrong PCM.
     rates_.advance();
@@ -186,7 +207,8 @@ SnesDspPcmRenderer::next_sample_with_output_volumes(
             ((noise_ & 1U) ^ ((noise_ >> 1U) & 1U)) << 14U);
         noise_ = static_cast<std::uint16_t>(feedback ^ (noise_ >> 1U));
     }
-    const auto key_sample = keys_.next_sample();
+    const auto key_sample = timed ? keys_.next_timed_sample()
+                                  : keys_.next_sample();
     std::array<std::int16_t, 8> voice_output16{};
     std::int16_t main_left = 0;
     std::int16_t main_right = 0;
@@ -275,12 +297,8 @@ SnesDspPcmRenderer::next_sample_with_output_volumes(
         }
         ends_.apply_sample(index, decoded, accepted_kon, voice.envelope);
     }
-    const auto dac_mix = pending_mix_;
-    const auto dac_send = pending_echo_send_;
     pending_mix_ = StereoSample{main_left, main_right};
     pending_echo_send_ = StereoSample{echo_left, echo_right};
-    return mix_echo(dac_mix, dac_send, master_left, master_right,
-                    echo_volume_left, echo_volume_right);
 }
 
 } // namespace sgb_test

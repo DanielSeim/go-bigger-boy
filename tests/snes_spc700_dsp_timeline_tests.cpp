@@ -122,6 +122,25 @@ gameboy::SnesApuBus::IplRom subsample_program(const bool echo = false) {
     return image;
 }
 
+gameboy::SnesApuBus::IplRom key_program(const bool key_off) {
+    gameboy::SnesApuBus::IplRom image{};
+    std::size_t cursor = 0;
+    const auto write = [&](std::uint8_t value) {
+        image[cursor++] = 0x8f; image[cursor++] = key_off ? 0x5c : 0x4c;
+        image[cursor++] = 0xf2;
+        image[cursor++] = 0x8f; image[cursor++] = value;
+        image[cursor++] = 0xf3;
+    };
+    for (unsigned i = 0; i < 8; ++i) image[cursor++] = 0x00;
+    write(1);
+    for (unsigned event = 0; event < 2; ++event) {
+        image[cursor++] = 0xe4; image[cursor++] = 0x20;
+        for (unsigned i = 0; i < 10; ++i) image[cursor++] = 0x00;
+        write(event == 0 ? 0 : 1);
+    }
+    return image;
+}
+
 bool capture_and_check(std::array<Event, 3>& captured) {
     gameboy::SnesApuBus bus;
     bus.install_ipl(synthetic_program());
@@ -158,6 +177,29 @@ bool capture_subsample_and_check(std::array<Event, 3>& captured,
         {26, static_cast<std::uint8_t>(echo ? 0x2c : 0x0c), 0x7f},
         {59, static_cast<std::uint8_t>(echo ? 0x3c : 0x1c), 0x7f},
         {92, static_cast<std::uint8_t>(echo ? 0x2c : 0x0c), 0x00},
+    }};
+    if (timeline.size() != captured.size()) return false;
+    for (std::size_t i = 0; i < captured.size(); ++i) {
+        captured[i] = timeline.event(i);
+        if (captured[i].completed_cycle != expected[i].completed_cycle ||
+            captured[i].address != expected[i].address ||
+            captured[i].value != expected[i].value) return false;
+    }
+    return true;
+}
+
+bool capture_key_and_check(std::array<Event, 3>& captured,
+                           const bool key_off) {
+    gameboy::SnesApuBus bus;
+    bus.install_ipl(key_program(key_off));
+    gameboy::SnesSpc700 cpu(bus);
+    Timeline timeline(bus, cpu, true);
+    for (unsigned i = 0; i < 36; ++i) {
+        if (timeline.step() != Timeline::Error::none) return false;
+    }
+    const auto address = static_cast<std::uint8_t>(key_off ? 0x5c : 0x4c);
+    const std::array<Event, 3> expected{{
+        {26, address, 1}, {59, address, 0}, {92, address, 1},
     }};
     if (timeline.size() != captured.size()) return false;
     for (std::size_t i = 0; i < captured.size(); ++i) {
@@ -299,15 +341,47 @@ void emit_echo_clock_fixture(const std::array<Event, 3>& events) {
     std::cout << "clock 256\n";
 }
 
+void emit_key_clock_fixture(const std::array<Event, 3>& events,
+                             const bool key_off) {
+    std::cout << "# SPC700 KON/KOFF writes at clocks 26, 59, 92\n"
+                 "ram 0x2800 0x00\nram 0x2801 0x80\n"
+                 "ram 0x2802 0x00\nram 0x2803 0x80\n"
+                 "ram 0x8000 0x83\nram 0x8001 0x40\n"
+                 "ram 0x8002 0x00\nram 0x8003 0x44\n"
+                 "ram 0x8004 0x44\nram 0x8005 0x44\n"
+                 "ram 0x8006 0x44\nram 0x8007 0x44\n"
+                 "ram 0x8008 0x44\n"
+                 "reg 0x5d 0x28\nreg 0x6c 0x20\n"
+                 "reg 0x00 0x7f\nreg 0x01 0x7f\n"
+                 "reg 0x02 0x00\nreg 0x03 0x10\n"
+                 "reg 0x04 0x00\nreg 0x05 0x00\n"
+                 "reg 0x07 0x7f\nreg 0x0c 0x7f\n"
+                 "reg 0x1c 0x7f\nreg 0x5c 0x00\n";
+    std::cout << "reg 0x4c " << (key_off ? "0x01" : "0x00") << '\n'
+              << "clock 2048\n";
+    std::uint64_t emitted_clocks = 0;
+    for (const auto& event : events) {
+        std::cout << "clock " << event.completed_cycle - emitted_clocks << '\n'
+                  << "reg " << static_cast<unsigned>(event.address) << ' '
+                  << static_cast<unsigned>(event.value) << '\n';
+        emitted_clocks = event.completed_cycle;
+    }
+    std::cout << "clock 512\n";
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     std::array<Event, 3> events{};
     std::array<Event, 3> subsample_events{};
     std::array<Event, 3> echo_events{};
+    std::array<Event, 3> kon_events{};
+    std::array<Event, 3> koff_events{};
     if (!capture_and_check(events) || !rejects_off_boundary() ||
         !capture_subsample_and_check(subsample_events) ||
         !capture_subsample_and_check(echo_events, true) ||
+        !capture_key_and_check(kon_events, false) ||
+        !capture_key_and_check(koff_events, true) ||
         !rejects_unsupported_opcode() || !rejects_unknown_write_phase() ||
         !ignores_invalid_dsp_address()) {
         std::cerr << "SPC700 DSP timeline contract failed\n";
@@ -319,8 +393,14 @@ int main(int argc, char** argv) {
         emit_clock_fixture(subsample_events);
     } else if (argc == 2 && std::string_view(argv[1]) == "--echo-clock-fixture") {
         emit_echo_clock_fixture(echo_events);
+    } else if (argc == 2 && std::string_view(argv[1]) == "--kon-clock-fixture") {
+        emit_key_clock_fixture(kon_events, false);
+    } else if (argc == 2 && std::string_view(argv[1]) == "--koff-clock-fixture") {
+        emit_key_clock_fixture(koff_events, true);
     } else if (argc != 1) {
-        std::cerr << "usage: snes_spc700_dsp_timeline_tests [--fixture]\n";
+        std::cerr << "usage: snes_spc700_dsp_timeline_tests "
+                     "[--fixture|--clock-fixture|--echo-clock-fixture|"
+                     "--kon-clock-fixture|--koff-clock-fixture]\n";
         return 2;
     }
     return 0;
