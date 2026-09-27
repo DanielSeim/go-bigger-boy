@@ -19,7 +19,7 @@ namespace sgb_test {
 
 // A deliberately test-only 32 kHz PCM path. Register writes must go through
 // write_dsp(); the bus does not notify observers about SPC700 DSP writes.
-// No SPC700/65C816 scheduling or echo is modeled.
+// No SPC700/65C816 scheduling is modeled.
 class SnesDspPcmRenderer final {
 public:
     struct StereoSample {
@@ -49,7 +49,15 @@ private:
     gameboy::SnesDspRateClock rates_;
     gameboy::SnesDspKeyControl keys_;
     gameboy::SnesDspEndState ends_;
+    [[nodiscard]] StereoSample mix_echo(StereoSample dac_mix,
+                                        StereoSample dac_send) noexcept;
     StereoSample pending_mix_{};
+    StereoSample pending_echo_send_{};
+    std::array<StereoSample, 8> echo_history_{};
+    std::uint16_t echo_offset_{};
+    std::uint16_t echo_length_{};
+    std::uint8_t echo_history_position_{};
+    std::uint8_t echo_esa_{};
     std::uint16_t noise_ = 0x4000;
 };
 

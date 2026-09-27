@@ -244,14 +244,13 @@ without a group decode, and the S3c/S4/S7 cycle offsets remain unmodeled.
 
 A test-only 32 kHz stereo PCM renderer now connects DSP register writes and
 physical APU RAM to eight BRR streams, key-on prefill, Gaussian interpolation,
-envelopes, noise, pitch modulation, per-voice volumes, master volume,
-mute/reset, and ENDX. Its
+envelopes, noise, pitch modulation, eight-tap FIR echo and physical echo
+RAM writeback, per-voice volumes, master volume, mute/reset, and ENDX. Its
 deterministic tests pin the first nonzero PCM sample, two-voice mixing,
-non-looping end, retrigger, KOFF, and rejected unsupported modes. This is a
+non-looping end, retrigger, KOFF, and full synthetic PCM traces. This is a
 synthetic integration harness, **not** an audible SGB implementation. It
-rejects echo instead of emitting misleading audio, and it lacks
-SPC700/65C816 execution, the SNES-side SGB command path,
-and cycle-level voice scheduling. The existing bsnes captures are 48 kHz
+lacks SPC700/65C816 execution, the SNES-side SGB command path, and
+cycle-level voice scheduling. The existing bsnes captures are 48 kHz
 full-system output with Game Boy audio mixed in; this 32 kHz synthetic DSP
 stimulus cannot be waveform-compared with them yet. The differential fixture
 path below instead gives both renderers identical register/RAM stimulus at
@@ -275,17 +274,20 @@ python3 scripts/compare_snes_dsp_pcm.py \
 The comparator fails on any unequal stereo sample and reports the first
 differences without silently shifting or resampling them. With local
 bsnes-libretro commit `05439f96121d2b9d7ad7a5fc1f29d7eebdcc8c43`, all
-13 fixtures now match exactly, totaling 1,240 native-rate stereo samples.
+19 fixtures now match exactly, totaling 2,038 native-rate stereo samples.
 They cover silence, active voices, key-off, live register writes, ADSR/GAIN,
 BRR loops, varying BRR samples, noise on voices 0 and 1, pitch modulation,
-and combined noise-driven modulation with live PMON switching. The full PCM traces of the newer cases are
-hash-pinned in normal offline contract tests. Correcting the reference phase relationship
-and the Gaussian interpolator's 16-bit product precision resolved the
-previously measured startup and low-bit differences. This establishes parity
-only for these synthetic, echo/noise/PMON-free stimuli, not live SGB audio. The
-fixture runner is not added to release builds, and only its offline protocol
-tests run in normal CI. The external code is subject to its own license and
-must stay outside the clean-room implementation.
+combined noise-driven modulation with live PMON switching, FIR taps,
+echo send/feedback, FLG write disable, EDL buffer wrap, 64 KiB physical RAM
+address wrap, and live ESA/EDL changes. The newer full PCM traces are
+hash-pinned in normal offline contract tests. Correcting the reference phase
+relationship and the Gaussian interpolator's 16-bit product precision
+resolved the previously measured startup and low-bit differences. This
+establishes parity only for these synthetic stimuli, not live SGB audio. The
+fixture runner is not added to release builds; normal CI runs its offline
+protocol and pinned-PCM tests without compiling the external reference. That
+external code is subject to its own license and stays outside the clean-room
+implementation.
 
 A separate sample-stepped envelope now models the global 32-rate counter,
 Attack/Decay/Sustain/Release transitions, direct and timed gain modes, and

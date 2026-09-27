@@ -64,6 +64,12 @@ class PcmCompareToolTests(unittest.TestCase):
             "varying_brr.txt": (128, "adb409f348dc28fb1871316dd6a0a483331557f50392ba569fb89c5546cd6de4"),
             "varying_two_voices.txt": (128, "165ce0395a0ee1c949a0b6cef6f91f2005d0d60dd18c472ef77dd97de45dfff0"),
             "pitch_modulation.txt": (128, "a6359dea807db086f1a5197e3122d5ec938e8102dc50e195bd04f8f50fbc61ac"),
+            "echo_read_only.txt": (24, "1ba774eab1a1b9ffafe20cbad859eb724d09458b52408d8713d39a16b64efa4c"),
+            "echo_fir_taps.txt": (32, "31c095adb94a168beca128f9eadeeea0de6008606b12169fb192923da27fd39b"),
+            "echo_feedback.txt": (84, "27c79d3d7fcf27a098294bdd0425f46ef20616eac4833cf6a2a411c63f6f2933"),
+            "echo_delay_wrap.txt": (570, "94d584ac22eba9aa0ce7dbcef9c59db1c4e3efb55f19583e7756a63066186f35"),
+            "echo_reconfigure.txt": (20, "8f91a403a648510e98413607dc32c9679f5689ac2490189426cb99d8fd9c2a4a"),
+            "echo_address_wrap.txt": (68, "a262d21aa092e4cbeaf9afdcbbaa4439270b4c7ad01600d9c7b9d97939dcfd80"),
         }
         for name, (count, expected) in fixtures.items():
             with self.subTest(fixture=name):
@@ -73,19 +79,19 @@ class PcmCompareToolTests(unittest.TestCase):
                 pcm = b"".join(struct.pack("<hh", *sample) for sample in samples)
                 self.assertEqual(hashlib.sha256(pcm).hexdigest(), expected)
 
-    def test_rejects_malformed_and_unsupported_stimuli(self) -> None:
+    def test_rejects_malformed_stimuli(self) -> None:
         malformed = subprocess.run(
             [str(self.runner)], input=b"ram 0x10000 1\nstep 1\n",
             capture_output=True, check=False,
         )
         self.assertEqual(malformed.returncode, 2)
         self.assertIn(b"fixture line 1", malformed.stderr)
-        unsupported = subprocess.run(
-            [str(self.runner)], input=b"reg 0x4d 1\nstep 1\n",
+        invalid_register = subprocess.run(
+            [str(self.runner)], input=b"reg 0x80 1\nstep 1\n",
             capture_output=True, check=False,
         )
-        self.assertEqual(unsupported.returncode, 3)
-        self.assertIn(b"unsupported DSP mode", unsupported.stderr)
+        self.assertEqual(invalid_register.returncode, 2)
+        self.assertIn(b"fixture line 1", invalid_register.stderr)
 
     def test_comparison_detects_first_changed_stereo_frame(self) -> None:
         left = [(0, 0), (12, -4), (20, 6)]

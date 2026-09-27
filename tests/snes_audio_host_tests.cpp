@@ -108,6 +108,16 @@ void test_apu_bus() {
     bus.spc_write(0xF3, 0x9A);
     check(bus.dsp_register(0x0C) == 0x9A && bus.spc_read(0xF3) == 0x9A,
           "DSP address/data register window selects one of 128 registers");
+    bus.spc_write(0xF1, 0x80); // re-enable IPL after the earlier port-clear test
+    bus.dsp_write_ram(0xF3, 0x55);
+    bus.dsp_write_ram(0xFFC0, 0x66);
+    check(bus.dsp_read_ram(0xF3) == 0x55 &&
+              bus.dsp_read_ram(0xFFC0) == 0x66,
+          "DSP echo writes update physical RAM beneath I/O and IPL overlays");
+    check(bus.dsp_register(0x0C) == 0x9A && bus.spc_read(0xF3) == 0x9A,
+          "physical echo writes do not change the SPC700 DSP data port");
+    check(bus.spc_read(0xFFC0) == 0xA9,
+          "physical echo writes do not disable or replace the IPL overlay");
 
     bus.spc_write(0xFA, 2);
     bus.spc_write(0xF1, 0x01);

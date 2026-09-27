@@ -54,6 +54,10 @@ public:
     [[nodiscard]] std::uint8_t dsp_read_ram(std::uint16_t address) const noexcept {
         return ram_[address];
     }
+    // Echo writeback uses the same physical RAM, without SPC700 I/O effects.
+    void dsp_write_ram(std::uint16_t address, std::uint8_t value) noexcept {
+        ram_[address] = value;
+    }
 
 private:
     std::array<std::uint8_t, 0x10000> ram_{};

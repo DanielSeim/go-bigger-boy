@@ -100,7 +100,8 @@ void test_two_voice_mix_and_rejection() {
     check(mixed && mixed->left == 357 && mixed->right == 90,
           "two voices mix before master volume, with independent stereo volumes");
     renderer.write_dsp(0x2C, 1);
-    check(!renderer.next_sample(), "echo output is rejected until FIR mixing exists");
+    check(renderer.next_sample().has_value(),
+          "echo output is supported by the synthetic DSP renderer");
 }
 
 void test_brr_end_and_key_retrigger() {
