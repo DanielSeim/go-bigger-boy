@@ -110,6 +110,34 @@ packet report or mixer test for SGB audio support. Archival SPC rips can be
 useful as listening references, but are not timing-calibrated hardware
 captures and must not be bundled in the repository.
 
+An optional development-only reference capture can run a separately installed
+SGB-capable libretro core with *your own* game and SGB program ROMs:
+
+```sh
+python3 scripts/capture_sgb_libretro_audio.py \
+  --core /path/to/bsnes_libretro.so \
+  --game /path/to/game.gb \
+  --sgb-rom /path/to/sgb2.program.rom \
+  --system-dir /path/to/your/firmware-directory \
+  --frames 400 --output /tmp/sgb2-reference.wav
+```
+
+The core and all ROMs stay outside the repository; the WAV is written only
+where requested and an existing file is never overwritten. The tool gives the
+reference core a temporary save directory, not the ROM directory. It discovers
+the core's SGB subsystem, verifies its
+reported sample rate, and captures its stereo PCM. Locally, GPLv3
+[bsnes-libretro](https://github.com/libretro/bsnes-libretro) commit
+`05439f96121d2b9d7ad7a5fc1f29d7eebdcc8c43` produced non-silent 48 kHz
+audio for Donkey Kong v1.1 through frame 400 on both SGB1 and SGB2 (319,200
+stereo sample frames each). This is an **independent emulator reference**, not
+real-hardware calibration or GBB SGB audio. It includes the reference core's
+own Game Boy audio; simply adding it to GBB's output would duplicate audio
+and may drift in timing. Production playback requires connecting GBB's GB
+timing, pixels, JOYP signals and APU output to a SNES ICD/firmware/SPC core,
+then validating the resulting mix and save-state behavior. No proprietary
+ROM or pre-recorded audio may be packaged with that integration.
+
 The opt-in title manifests in `tests/fixtures/sgb/titles/` pin ROM SHA-256,
 hardware model, frame count, cycle limit, and minimum command counts. They
 contain no ROM bytes or captured game artwork. For a legally supplied,
