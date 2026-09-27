@@ -1175,10 +1175,20 @@ if(GAMEBOY_BUILD_TESTS)
         tests/support/snes_dsp_pcm_renderer.cpp)
     target_include_directories(gameboy_snes_dsp_pcm_fixture_runner PRIVATE tests/support)
     target_link_libraries(gameboy_snes_dsp_pcm_fixture_runner PRIVATE gameboy_core)
+    add_executable(gameboy_snes_spc700_dsp_timeline_tests
+        tests/snes_spc700_dsp_timeline_tests.cpp)
+    target_link_libraries(gameboy_snes_spc700_dsp_timeline_tests PRIVATE gameboy_core)
+    add_test(NAME gameboy_snes_spc700_dsp_timeline_contract
+             COMMAND gameboy_snes_spc700_dsp_timeline_tests)
     if(Python3_Interpreter_FOUND)
         add_test(NAME gameboy_snes_dsp_pcm_compare_tool
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/snes_dsp_pcm_compare_tool_tests.py
+                         $<TARGET_FILE:gameboy_snes_dsp_pcm_fixture_runner>)
+        add_test(NAME gameboy_snes_spc700_dsp_timeline_pcm
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/snes_spc700_dsp_timeline_pcm_tests.py
+                         $<TARGET_FILE:gameboy_snes_spc700_dsp_timeline_tests>
                          $<TARGET_FILE:gameboy_snes_dsp_pcm_fixture_runner>)
     endif()
 

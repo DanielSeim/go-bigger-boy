@@ -249,8 +249,8 @@ RAM writeback, per-voice volumes, master volume, mute/reset, and ENDX. Its
 deterministic tests pin the first nonzero PCM sample, two-voice mixing,
 non-looping end, retrigger, KOFF, and full synthetic PCM traces. This is a
 synthetic integration harness, **not** an audible SGB implementation. It
-lacks SPC700/65C816 execution, the SNES-side SGB command path, and
-cycle-level voice scheduling. The existing bsnes captures are 48 kHz
+does not run a complete SPC700/65C816 program, the SNES-side SGB command
+path, or cycle-level voice scheduling. The existing bsnes captures are 48 kHz
 full-system output with Game Boy audio mixed in; this 32 kHz synthetic DSP
 stimulus cannot be waveform-compared with them yet. The differential fixture
 path below instead gives both renderers identical register/RAM stimulus at
@@ -288,6 +288,31 @@ fixture runner is not added to release builds; normal CI runs its offline
 protocol and pinned-PCM tests without compiling the external reference. That
 external code is subject to its own license and stays outside the clean-room
 implementation.
+
+A separate development-only SPC700-to-DSP timeline test now executes a
+synthetic 64-byte APU program through GBB's partial SPC700 interpreter. The
+APU bus observes accepted `$F3` DSP-data writes; the test stamps them at
+instruction-completion clocks 32, 64, and 96 and replays the corresponding
+register writes into the 32 kHz PCM fixture runner. It rejects unsupported
+opcodes and writes that are not on a 32-clock sample boundary. It does not
+claim the exact intra-instruction write cycle, nor can it replay multiple
+writes inside one instruction or arbitrary sub-sample timing. Its 128 stereo
+samples match the independent DSP reference byte-for-byte, and normal CI pins
+their PCM hash without needing that external checkout. To repeat the optional
+local comparison:
+
+```sh
+cmake --build build --target gameboy_snes_spc700_dsp_timeline_tests \
+  gameboy_snes_dsp_pcm_fixture_runner
+python3 tests/snes_spc700_dsp_timeline_pcm_tests.py \
+  build/gameboy_snes_spc700_dsp_timeline_tests \
+  build/gameboy_snes_dsp_pcm_fixture_runner \
+  --reference-dir /path/to/bsnes/sfc/dsp
+```
+
+This checks a bounded timing bridge, not firmware playback or live SGB
+audio. Accurate SPC700 bus-cycle scheduling and sub-sample DSP write windows
+remain future work.
 
 A separate sample-stepped envelope now models the global 32-rate counter,
 Attack/Decay/Sustain/Release transitions, direct and timed gain modes, and

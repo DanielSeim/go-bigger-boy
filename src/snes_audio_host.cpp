@@ -72,6 +72,8 @@ void SnesApuBus::reset() noexcept {
     timer_enabled_ = 0;
     dsp_address_ = 0;
     ipl_enabled_ = true;
+    dsp_write_observer_ = nullptr;
+    dsp_write_context_ = nullptr;
 }
 
 void SnesApuBus::install_ipl(const IplRom& image) noexcept {
@@ -129,7 +131,12 @@ void SnesApuBus::spc_write(const std::uint16_t address,
     } else if (address == 0xF2) {
         dsp_address_ = value;
     } else if (address == 0xF3) {
-        if ((dsp_address_ & 0x80U) == 0) dsp_[dsp_address_] = value;
+        if ((dsp_address_ & 0x80U) == 0) {
+            dsp_[dsp_address_] = value;
+            if (dsp_write_observer_) {
+                dsp_write_observer_(dsp_write_context_, dsp_address_, value);
+            }
+        }
     } else if (address >= 0xFA && address <= 0xFC) {
         timer_target_[address - 0xFA] = value;
     }
