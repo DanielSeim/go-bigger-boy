@@ -1180,7 +1180,25 @@ if(GAMEBOY_BUILD_TESTS)
     target_link_libraries(gameboy_snes_spc700_dsp_timeline_tests PRIVATE gameboy_core)
     add_test(NAME gameboy_snes_spc700_dsp_timeline_contract
              COMMAND gameboy_snes_spc700_dsp_timeline_tests)
+    add_executable(gameboy_snes_spc700_host_sound_tests
+        tests/snes_spc700_host_sound_tests.cpp)
+    target_link_libraries(gameboy_snes_spc700_host_sound_tests PRIVATE gameboy_core)
+    add_test(NAME gameboy_snes_spc700_host_sound_contract
+             COMMAND gameboy_snes_spc700_host_sound_tests)
+    add_executable(gameboy_snes_spc700_ipl_probe
+        tests/support/snes_spc700_ipl_probe.cpp)
+    target_link_libraries(gameboy_snes_spc700_ipl_probe PRIVATE gameboy_core)
     if(Python3_Interpreter_FOUND)
+        add_test(NAME gameboy_snes_spc700_ipl_probe_contract
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/snes_spc700_ipl_probe_tests.py
+                         $<TARGET_FILE:gameboy_snes_spc700_ipl_probe>)
+        add_test(NAME gameboy_snes_spc700_host_sound_pcm
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/snes_spc700_host_sound_pcm_tests.py
+                         $<TARGET_FILE:gameboy_snes_spc700_host_sound_tests>
+                         $<TARGET_FILE:gameboy_snes_spc700_dsp_timeline_tests>
+                         $<TARGET_FILE:gameboy_snes_dsp_pcm_fixture_runner>)
         add_test(NAME gameboy_snes_dsp_pcm_compare_tool
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/snes_dsp_pcm_compare_tool_tests.py

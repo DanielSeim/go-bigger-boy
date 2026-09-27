@@ -146,6 +146,8 @@ The format check is not a proof that an arbitrary LoROM file is authentic SGB
 firmware.
 Synthetic tests check those mappings and timing rules; a local-only test also
 opened the ignored `roms/sgb1.program.rom` and `roms/sgb2.program.rom` files.
+The 256-byte `sgb.boot.rom` and `sgb2.boot.rom` files are Game Boy-side boot
+ROMs, not the S-SMP's 64-byte IPL, so they cannot boot the SNES audio CPU.
 This code neither executes the SNES program ROM nor produces SNES PCM. It is
 not wired into the running emulator yet. An incremental SPC700 interpreter
 can now execute the IPL upload instruction set. A synthetic, non-proprietary
@@ -158,6 +160,22 @@ a 65C816 execution path (or an independently validated equivalent), full
 SPC700 execution, and S-DSP synthesis.
 Until a real sound effect passes an end-to-end comparison, the UI and release
 notes must continue to describe SNES audio as unsupported.
+
+A synthetic host-command handoff now exercises one narrow vertical slice:
+host ports signal a small original SPC700 test program, which writes KON and
+then KOFF through $F2/$F3. The observed write cycles are replayed into the test-only
+S-DSP renderer, and its 128-sample PCM trace is pinned in CI and compared
+locally with an independent DSP. The program is not SGB firmware, the PCM is
+not produced by the running emulator, and this test does not make SGB sound
+available. An actual IPL image and substantially more SPC700/65C816 work are
+still required before a real firmware sound-command test is possible.
+For a locally supplied, legally obtained 64-byte S-SMP IPL, the development
+probe can report whether the current interpreter reaches the ready handshake
+or the first unsupported opcode without copying the image into the project:
+
+```sh
+build/gameboy_snes_spc700_ipl_probe /path/to/spc700-ipl.rom
+```
 
 A separate clean-room BRR decoder now handles one nine-byte block at a time,
 including all four predictor filters, signed nibbles, unusual shift values,
