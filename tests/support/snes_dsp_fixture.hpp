@@ -1,12 +1,18 @@
 #pragma once
 
 #include <array>
+#include <cstdio>
 #include <cstdint>
 #include <iostream>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+#endif
 
 namespace sgb_test {
 
@@ -20,6 +26,11 @@ struct DspClockResult {
 // command advances individual DSP clocks and emits PCM only when available.
 template <typename Sink>
 int run_dsp_fixture(Sink& sink) {
+#ifdef _WIN32
+    // The protocol writes raw little-endian PCM to stdout. Windows text mode
+    // expands 0x0a bytes and corrupts both sample counts and PCM hashes.
+    if (_setmode(_fileno(stdout), _O_BINARY) == -1) return 2;
+#endif
     std::string line;
     unsigned line_number = 0;
     unsigned sample_count = 0;

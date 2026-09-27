@@ -2,9 +2,15 @@
 #include "gameboy/snes_spc700.hpp"
 
 #include <array>
+#include <cstdio>
 #include <cstdint>
 #include <iostream>
 #include <string_view>
+
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+#endif
 
 namespace {
 
@@ -456,6 +462,10 @@ void emit_multi_key_clock_fixture(const std::array<Event, 3>& events) {
 } // namespace
 
 int main(int argc, char** argv) {
+#ifdef _WIN32
+    // Fixture consumers compare exact LF-delimited bytes on every platform.
+    if (_setmode(_fileno(stdout), _O_BINARY) == -1) return 2;
+#endif
     std::array<Event, 3> events{};
     std::array<Event, 3> subsample_events{};
     std::array<Event, 3> echo_events{};
