@@ -186,6 +186,27 @@ project, use:
 build/gameboy_snes_spc700_ipl_probe /path/to/spc700-ipl.rom --upload-smoke
 ```
 
+The next development-only SNES-side probe interprets a deliberately bounded
+subset of 65C816 instructions from a *local* SGB program ROM. It has 128 KiB
+of WRAM, maps the SNES APU communication ports into the independent APU bus,
+and records host writes. Synthetic CI tests check native-mode register widths,
+16-bit direct-page stores, port mapping, and fail-closed unsupported I/O and
+opcodes. With the ignored local program images used for validation, SGB1 clears
+ports 0–3 after 16,628–16,631 interpreted instructions, then stops at its
+first unmodeled PPU status read. SGB2 stops earlier at the dynamic blanking
+status register, before its first APU write. Those **zero-valued clears are
+not an IPL upload**, and the instruction counts are not cycle timings. The
+probe never guesses values for dynamic status registers or ships firmware.
+Run a local diagnostic with:
+
+```sh
+build/gameboy_snes_65c816_apu_trace /path/to/sgb1.program.rom --trace
+```
+
+An actual SGB sound-driver upload still needs SNES PPU/CPU timing and ICD
+behavior, sufficient 65C816 coverage, and a scheduled 65C816–SPC700 bridge.
+This trace does not make SGB sound available in the running emulator.
+
 A separate clean-room BRR decoder now handles one nine-byte block at a time,
 including all four predictor filters, signed nibbles, unusual shift values,
 prediction history, and the end/loop flag bits. Hand-authored tests cover

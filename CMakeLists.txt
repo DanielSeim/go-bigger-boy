@@ -1188,6 +1188,28 @@ if(GAMEBOY_BUILD_TESTS)
     add_executable(gameboy_snes_spc700_ipl_probe
         tests/support/snes_spc700_ipl_probe.cpp)
     target_link_libraries(gameboy_snes_spc700_ipl_probe PRIVATE gameboy_core)
+    add_executable(gameboy_snes_65c816_apu_trace
+        tests/support/snes_65c816_apu_trace.cpp
+        tests/support/snes_65c816_trace_cpu.cpp)
+    target_include_directories(gameboy_snes_65c816_apu_trace PRIVATE tests/support)
+    target_link_libraries(gameboy_snes_65c816_apu_trace PRIVATE gameboy_core)
+    add_executable(gameboy_snes_65c816_trace_tests
+        tests/snes_65c816_trace_tests.cpp
+        tests/support/snes_65c816_trace_cpu.cpp)
+    target_include_directories(gameboy_snes_65c816_trace_tests PRIVATE tests/support)
+    target_link_libraries(gameboy_snes_65c816_trace_tests PRIVATE gameboy_core)
+    add_test(NAME gameboy_snes_65c816_trace_contract
+             COMMAND gameboy_snes_65c816_trace_tests)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb1.program.rom")
+        add_test(NAME gameboy_snes_65c816_local_sgb1_apu_trace
+                 COMMAND gameboy_snes_65c816_trace_tests
+                         --local-sgb1 ${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb1.program.rom)
+    endif()
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.program.rom")
+        add_test(NAME gameboy_snes_65c816_local_sgb2_apu_trace
+                 COMMAND gameboy_snes_65c816_trace_tests
+                         --local-sgb2 ${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.program.rom)
+    endif()
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/spc700.rom")
         add_test(NAME gameboy_snes_spc700_local_ipl_upload
                  COMMAND gameboy_snes_spc700_ipl_probe
