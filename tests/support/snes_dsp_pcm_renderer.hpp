@@ -44,7 +44,12 @@ public:
         std::uint8_t echo_volume_left, std::uint8_t echo_volume_right) noexcept;
     void timed_phase29() noexcept { keys_.timed_phase29(); }
     void advance_timed_sample() noexcept;
-    [[nodiscard]] std::uint8_t endx() const noexcept { return ends_.endx(); }
+    // ENDX is computed during the prior voice step, then exposed at each
+    // voice's staggered V7 phase (voice 0 at 2, voice 1 at 5, etc.).
+    void publish_timed_endx(unsigned voice) noexcept;
+    [[nodiscard]] std::uint8_t endx() const noexcept {
+        return timed_mode_ ? timed_endx_visible_ : ends_.endx();
+    }
 
 private:
     struct Voice {
@@ -61,6 +66,9 @@ private:
     gameboy::SnesDspRateClock rates_;
     gameboy::SnesDspKeyControl keys_;
     gameboy::SnesDspEndState ends_;
+    std::uint8_t timed_endx_pending_{};
+    std::uint8_t timed_endx_visible_{};
+    bool timed_mode_{};
     [[nodiscard]] StereoSample mix_echo(StereoSample dac_mix,
                                         StereoSample dac_send,
                                         std::uint8_t master_left,

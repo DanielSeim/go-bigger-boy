@@ -17,6 +17,7 @@ public:
     void reg(const std::uint8_t address, const std::uint8_t value) {
         dsp_.write(address, value);
     }
+    [[nodiscard]] std::uint8_t endx() const { return dsp_.read(0x7c); }
     [[nodiscard]] std::optional<std::array<std::int16_t, 2>> step() {
         // Leave one stereo slot spare: this implementation redirects its
         // output pointer to an internal buffer when a buffer fills exactly.

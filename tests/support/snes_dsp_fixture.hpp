@@ -30,6 +30,18 @@ int run_dsp_fixture(Sink& sink) {
         std::istringstream fields(line);
         std::string operation;
         if (!(fields >> operation)) continue;
+        if (operation == "endx") {
+            std::string excess;
+            if (fields >> excess) {
+                std::cerr << "fixture line " << line_number
+                          << ": invalid field count\n";
+                return 2;
+            }
+            // Keep binary PCM on stdout; state probes are an ordered trace on
+            // stderr so both test runners can be compared without new framing.
+            std::cerr << "endx " << static_cast<unsigned>(sink.endx()) << '\n';
+            continue;
+        }
         std::string first;
         std::string second;
         std::string excess;

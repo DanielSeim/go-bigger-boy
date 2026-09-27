@@ -29,6 +29,7 @@ public:
         if (!sample) return std::nullopt;
         return std::array<std::int16_t, 2>{sample->left, sample->right};
     }
+    [[nodiscard]] std::uint8_t endx() const noexcept { return renderer_.endx(); }
     [[nodiscard]] sgb_test::DspClockResult step_result() {
         if (!supported_ || clock_count_ != 0) return {false, {}};
         stepped_ = true;
@@ -38,6 +39,10 @@ public:
     [[nodiscard]] sgb_test::DspClockResult clock() {
         if (!supported_ || stepped_) return {false, {}};
         const auto phase = clock_count_ % 32;
+        // The S-DSP publishes voice n's ENDX bit at phase 2 + 3*n.
+        if (phase >= 2 && phase <= 23 && (phase - 2) % 3 == 0) {
+            renderer_.publish_timed_endx(static_cast<unsigned>((phase - 2) / 3));
+        }
         if (phase == 26) {
             left_volume_ = bus_.dsp_register(0x0C);
             left_echo_volume_ = bus_.dsp_register(0x2C);

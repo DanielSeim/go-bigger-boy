@@ -355,6 +355,21 @@ python3 tests/snes_spc700_dsp_key_subsample_pcm_tests.py \
   --reference-dir /path/to/bsnes/sfc/dsp
 ```
 
+A separate two-voice clock fixture exercises overlapping KON/KOFF writes,
+including moving each write across a key-poll boundary. It also probes ENDX
+immediately before and after the two voices' staggered register-publication
+phases. Eight synthetic traces match the independent DSP's PCM and ENDX
+exactly; normal CI pins both hashes and the observed per-voice ENDX changes.
+These tests still do not validate arbitrary voices, DSP register writes, or
+live SGB audio. The optional independent comparison is:
+
+```sh
+python3 tests/snes_spc700_dsp_multi_key_pcm_tests.py \
+  build/gameboy_snes_spc700_dsp_timeline_tests \
+  build/gameboy_snes_dsp_pcm_fixture_runner \
+  --reference-dir /path/to/bsnes/sfc/dsp
+```
+
 ```sh
 python3 tests/snes_spc700_dsp_subsample_pcm_tests.py \
   build/gameboy_snes_spc700_dsp_timeline_tests \

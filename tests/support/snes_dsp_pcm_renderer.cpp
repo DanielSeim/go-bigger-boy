@@ -51,6 +51,9 @@ void SnesDspPcmRenderer::reset() noexcept {
     // following sample after the every-other-sample phase toggles.
     keys_.reset(false);
     ends_.reset();
+    timed_endx_pending_ = 0;
+    timed_endx_visible_ = 0;
+    timed_mode_ = false;
     pending_mix_ = {};
     pending_echo_send_ = {};
     echo_history_.fill({});
@@ -195,7 +198,16 @@ SnesDspPcmRenderer::output_timed_sample(
 }
 
 void SnesDspPcmRenderer::advance_timed_sample() noexcept {
+    timed_mode_ = true;
     advance_sample(true);
+    timed_endx_pending_ = ends_.endx();
+}
+
+void SnesDspPcmRenderer::publish_timed_endx(const unsigned voice) noexcept {
+    if (voice >= 8) return;
+    const auto bit = static_cast<std::uint8_t>(1U << voice);
+    timed_endx_visible_ = static_cast<std::uint8_t>(
+        (timed_endx_visible_ & ~bit) | (timed_endx_pending_ & bit));
 }
 
 void SnesDspPcmRenderer::advance_sample(const bool timed) noexcept {
