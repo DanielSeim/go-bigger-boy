@@ -101,6 +101,7 @@ add_library(gameboy_core
     src/snes_audio_host.cpp
     src/snes_spc700.cpp
     src/snes_brr.cpp
+    src/snes_dsp_brr_stream.cpp
     src/sgb_sound.cpp
     src/boot_rom.cpp
     src/cartridge.cpp
@@ -1098,6 +1099,12 @@ if(GAMEBOY_BUILD_TESTS)
     target_link_libraries(gameboy_snes_brr_tests PRIVATE gameboy_core)
     add_test(NAME gameboy_snes_brr_contract
              COMMAND gameboy_snes_brr_tests)
+
+    add_executable(gameboy_snes_dsp_brr_stream_tests
+        tests/snes_dsp_brr_stream_tests.cpp)
+    target_link_libraries(gameboy_snes_dsp_brr_stream_tests PRIVATE gameboy_core)
+    add_test(NAME gameboy_snes_dsp_brr_stream_contract
+             COMMAND gameboy_snes_dsp_brr_stream_tests)
 
     add_executable(gameboy_sgb_overlay_contract_tests
         tests/sgb_overlay_contract_tests.cpp)

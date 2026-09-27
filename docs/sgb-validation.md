@@ -167,6 +167,15 @@ It is not connected to the SPC700 interpreter or PCM mixer: the DSP still
 needs its voice clocking, interpolation, envelopes, stereo volume, and echo
 before decoded blocks can become representative SGB audio.
 
+The first DSP-side stream stage now reads BRR sample start/loop pointers from
+the `DIR`/`SRCN` table and decodes successive blocks from physical APU RAM,
+bypassing the SPC700's I/O and IPL overlays. Synthetic checks cover 64 KiB
+address wrap, live directory changes at a loop boundary, and end-without-loop
+requesting envelope release while the BRR read position still redirects to
+the loop pointer. This is a block-level diagnostic component, **not** a
+cycle-accurate voice: it does not reproduce the DSP's group scheduling,
+key-on delay, Gaussian interpolation, envelopes, or sample output.
+
 The opt-in title manifests in `tests/fixtures/sgb/titles/` pin ROM SHA-256,
 hardware model, frame count, cycle limit, and minimum command counts. They
 contain no ROM bytes or captured game artwork. For a legally supplied,

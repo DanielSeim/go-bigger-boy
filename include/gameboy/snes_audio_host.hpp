@@ -50,6 +50,10 @@ public:
     [[nodiscard]] std::uint8_t host_read_port(unsigned index) const noexcept;
     void host_write_port(unsigned index, std::uint8_t value) noexcept;
     [[nodiscard]] std::uint8_t dsp_register(std::uint8_t index) const noexcept;
+    // S-DSP accesses physical APU RAM, bypassing SPC700 I/O and IPL overlays.
+    [[nodiscard]] std::uint8_t dsp_read_ram(std::uint16_t address) const noexcept {
+        return ram_[address];
+    }
 
 private:
     std::array<std::uint8_t, 0x10000> ram_{};
