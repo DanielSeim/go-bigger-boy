@@ -51,9 +51,11 @@ void SnesDspPcmRenderer::reset() noexcept {
     // following sample after the every-other-sample phase toggles.
     keys_.reset(false);
     ends_.reset();
-    timed_endx_pending_ = 0;
     timed_endx_visible_ = 0;
     timed_mode_ = false;
+    current_keys_ = {};
+    voice_output16_.fill(0);
+    timed_voice_registers_.fill({});
     pending_mix_ = {};
     pending_echo_send_ = {};
     echo_history_.fill({});
@@ -183,7 +185,7 @@ SnesDspPcmRenderer::next_sample_with_output_volumes(
     const std::uint8_t echo_volume_right) noexcept {
     const auto dac_mix = pending_mix_;
     const auto dac_send = pending_echo_send_;
-    advance_sample(false);
+    advance_sample();
     return mix_echo(dac_mix, dac_send, master_left, master_right,
                     echo_volume_left, echo_volume_right);
 }
@@ -193,24 +195,73 @@ SnesDspPcmRenderer::output_timed_sample(
     const std::uint8_t master_left, const std::uint8_t master_right,
     const std::uint8_t echo_volume_left,
     const std::uint8_t echo_volume_right) noexcept {
-    return mix_echo(pending_mix_, pending_echo_send_, master_left, master_right,
-                    echo_volume_left, echo_volume_right);
+    const auto sample = mix_echo(pending_mix_, pending_echo_send_, master_left,
+                                 master_right, echo_volume_left,
+                                 echo_volume_right);
+    pending_mix_ = {};
+    pending_echo_send_ = {};
+    return sample;
 }
 
 void SnesDspPcmRenderer::advance_timed_sample() noexcept {
     timed_mode_ = true;
-    advance_sample(true);
-    timed_endx_pending_ = ends_.endx();
+    begin_sample(true);
+    advance_voice(0, true);
+}
+
+void SnesDspPcmRenderer::latch_timed_voice_registers(
+    const unsigned phase) noexcept {
+    // S-DSP V1, V2, and V3a reads are staggered; voice 0 crosses the
+    // 32-clock wrap. The external PCM corpus checks every voice's boundary.
+    constexpr std::array<unsigned, 8> source_phase{
+        17, 20, 31, 2, 5, 8, 11, 14};
+    constexpr std::array<unsigned, 8> pitch_low_phase{
+        21, 0, 3, 6, 9, 12, 15, 18};
+    constexpr std::array<unsigned, 8> pitch_high_phase{
+        22, 1, 4, 7, 10, 13, 16, 19};
+    for (unsigned index = 0; index < voices_.size(); ++index) {
+        auto& registers = timed_voice_registers_[index];
+        if (phase == source_phase[index]) {
+            registers.source = voice_register(bus_, index, 4);
+        }
+        if (phase == pitch_low_phase[index]) {
+            registers.pitch_low = voice_register(bus_, index, 2);
+            registers.adsr0 = voice_register(bus_, index, 5);
+        }
+        if (phase == pitch_high_phase[index]) {
+            registers.pitch_high = voice_register(bus_, index, 3);
+        }
+    }
+}
+
+void SnesDspPcmRenderer::advance_timed_voice(const unsigned voice) noexcept {
+    if (voice == 0 || voice >= voices_.size()) return;
+    advance_voice(voice, true);
+}
+
+void SnesDspPcmRenderer::mix_timed_voice_channel(
+    const unsigned voice, const unsigned channel) noexcept {
+    if (voice >= voices_.size() || channel >= 2) return;
+    mix_voice_channel(voice, channel);
 }
 
 void SnesDspPcmRenderer::publish_timed_endx(const unsigned voice) noexcept {
     if (voice >= 8) return;
     const auto bit = static_cast<std::uint8_t>(1U << voice);
     timed_endx_visible_ = static_cast<std::uint8_t>(
-        (timed_endx_visible_ & ~bit) | (timed_endx_pending_ & bit));
+        (timed_endx_visible_ & ~bit) | (ends_.endx() & bit));
 }
 
-void SnesDspPcmRenderer::advance_sample(const bool timed) noexcept {
+void SnesDspPcmRenderer::advance_sample() noexcept {
+    begin_sample(false);
+    pending_mix_ = {};
+    pending_echo_send_ = {};
+    for (unsigned index = 0; index < voices_.size(); ++index) {
+        advance_voice(index, false);
+    }
+}
+
+void SnesDspPcmRenderer::begin_sample(const bool timed) noexcept {
     // The test renderer must fail closed for paths that could produce audio
     // different from a full S-DSP, rather than emit a plausible wrong PCM.
     rates_.advance();
@@ -219,98 +270,100 @@ void SnesDspPcmRenderer::advance_sample(const bool timed) noexcept {
             ((noise_ & 1U) ^ ((noise_ >> 1U) & 1U)) << 14U);
         noise_ = static_cast<std::uint16_t>(feedback ^ (noise_ >> 1U));
     }
-    const auto key_sample = timed ? keys_.next_timed_sample()
-                                  : keys_.next_sample();
-    std::array<std::int16_t, 8> voice_output16{};
-    std::int16_t main_left = 0;
-    std::int16_t main_right = 0;
-    std::int16_t echo_left = 0;
-    std::int16_t echo_right = 0;
-    for (unsigned index = 0; index < voices_.size(); ++index) {
-        auto& voice = voices_[index];
-        const auto bit = static_cast<std::uint8_t>(1U << index);
-        const bool accepted_kon = (key_sample.key_on & bit) != 0;
-        if (!voice.started) {
-            if (accepted_kon) {
-                voice.started = true;
-                gameboy::SnesDspKeyControl::apply_voice(
-                    index, key_sample, voice.ring, voice.envelope, voice.sequence);
-                ends_.apply_sample(index, nullptr, true, voice.envelope);
-            }
-            continue;
-        }
-        const auto step = voice.sequence.next(voice.ring);
-        const auto directory = bus_.dsp_register(0x5D);
-        const auto source = voice_register(bus_, index, 4);
-        if (step.read_source) voice.stream.key_on(directory, source);
+    current_keys_ = timed ? keys_.next_timed_sample() : keys_.next_sample();
+}
 
-        const auto non = bus_.dsp_register(0x3D);
-        const auto noise_value = noise_;
-        const auto source15 = (non & bit) != 0
-            ? static_cast<std::int16_t>(
-                noise_value >= 0x4000U ? static_cast<int>(noise_value) - 0x8000
-                                        : static_cast<int>(noise_value))
-            : voice.ring.interpolated();
-        const auto output15 = step.force_silence ? std::int16_t{0} :
-            gameboy::SnesDspVoiceMath::apply_envelope(
-                source15, voice.envelope.value());
-        const auto output16 = gameboy::SnesDspVoiceMath::expand_to_16bit(output15);
-        voice_output16[index] = output16;
-        const StereoSample voice_output{
-            gameboy::SnesDspVoiceMath::apply_channel_volume(
-                output16, voice_register(bus_, index, 0)),
-            gameboy::SnesDspVoiceMath::apply_channel_volume(
-                output16, voice_register(bus_, index, 1)),
-        };
-        main_left = gameboy::SnesDspVoiceMath::saturating_add(
-            main_left, voice_output.left);
-        main_right = gameboy::SnesDspVoiceMath::saturating_add(
-            main_right, voice_output.right);
-        if ((bus_.dsp_register(0x4D) & bit) != 0) {
-            echo_left = gameboy::SnesDspVoiceMath::saturating_add(
-                echo_left, voice_output.left);
-            echo_right = gameboy::SnesDspVoiceMath::saturating_add(
-                echo_right, voice_output.right);
-        }
-
-        // S3c observes a non-looping end header even without a BRR group
-        // request. This must happen after this sample's output is computed.
-        if (!step.read_source &&
-            (bus_.dsp_read_ram(voice.stream.next_address()) & 3U) == 1U) {
-            voice.envelope.reset();
-        }
-        if (!accepted_kon) {
-            gameboy::SnesDspKeyControl::apply_voice(
-                index, key_sample, voice.ring, voice.envelope, voice.sequence);
-        }
-        if (step.clock_envelope && !accepted_kon) {
-            voice.envelope.clock(rates_, voice_register(bus_, index, 5),
-                                 voice_register(bus_, index, 6),
-                                 voice_register(bus_, index, 7));
-        }
-        const gameboy::SnesDspBrrGroupStream::Result* decoded = nullptr;
-        gameboy::SnesDspBrrGroupStream::Result group{};
-        if (step.decode_group) {
-            group = voice.stream.decode_into_ring(directory, source, voice.ring);
-            decoded = &group;
-        }
-        if (step.advance_pitch && !accepted_kon) {
-            const auto pitch = static_cast<std::uint16_t>(
-                voice_register(bus_, index, 2) |
-                (static_cast<unsigned>(voice_register(bus_, index, 3) & 0x3FU) << 8));
-            const auto previous_output = index != 0 ? voice_output16[index - 1]
-                                                     : std::int16_t{0};
-            voice.ring.advance_pitch(pitch, previous_output,
-                index != 0 && (bus_.dsp_register(0x2D) & bit) != 0);
-        }
-        if (accepted_kon) {
-            gameboy::SnesDspKeyControl::apply_voice(
-                index, key_sample, voice.ring, voice.envelope, voice.sequence);
-        }
-        ends_.apply_sample(index, decoded, accepted_kon, voice.envelope);
+void SnesDspPcmRenderer::mix_voice_channel(const unsigned index,
+                                           const unsigned channel) noexcept {
+    const auto bit = static_cast<std::uint8_t>(1U << index);
+    const auto output = gameboy::SnesDspVoiceMath::apply_channel_volume(
+        voice_output16_[index], voice_register(bus_, index, channel));
+    auto& main = channel == 0 ? pending_mix_.left : pending_mix_.right;
+    main = gameboy::SnesDspVoiceMath::saturating_add(main, output);
+    if ((bus_.dsp_register(0x4D) & bit) != 0) {
+        auto& echo = channel == 0 ? pending_echo_send_.left
+                                  : pending_echo_send_.right;
+        echo = gameboy::SnesDspVoiceMath::saturating_add(echo, output);
     }
-    pending_mix_ = StereoSample{main_left, main_right};
-    pending_echo_send_ = StereoSample{echo_left, echo_right};
+}
+
+void SnesDspPcmRenderer::advance_voice(const unsigned index,
+                                       const bool timed) noexcept {
+    auto& voice = voices_[index];
+    const auto bit = static_cast<std::uint8_t>(1U << index);
+    const bool accepted_kon = (current_keys_.key_on & bit) != 0;
+    voice_output16_[index] = 0;
+    if (!voice.started) {
+        if (accepted_kon) {
+            voice.started = true;
+            gameboy::SnesDspKeyControl::apply_voice(
+                index, current_keys_, voice.ring, voice.envelope, voice.sequence);
+            ends_.apply_sample(index, nullptr, true, voice.envelope);
+        }
+        return;
+    }
+    const auto step = voice.sequence.next(voice.ring);
+    const auto directory = bus_.dsp_register(0x5D);
+    const auto source = timed ? timed_voice_registers_[index].source
+                              : voice_register(bus_, index, 4);
+    if (step.read_source) voice.stream.key_on(directory, source);
+
+    const auto non = bus_.dsp_register(0x3D);
+    const auto noise_value = noise_;
+    const auto source15 = (non & bit) != 0
+        ? static_cast<std::int16_t>(
+            noise_value >= 0x4000U ? static_cast<int>(noise_value) - 0x8000
+                                    : static_cast<int>(noise_value))
+        : voice.ring.interpolated();
+    const auto output15 = step.force_silence ? std::int16_t{0} :
+        gameboy::SnesDspVoiceMath::apply_envelope(
+            source15, voice.envelope.value());
+    const auto output16 = gameboy::SnesDspVoiceMath::expand_to_16bit(output15);
+    voice_output16_[index] = output16;
+    if (!timed) {
+        mix_voice_channel(index, 0);
+        mix_voice_channel(index, 1);
+    }
+
+    // S3c observes a non-looping end header even without a BRR group
+    // request. This must happen after this sample's output is computed.
+    if (!step.read_source &&
+        (bus_.dsp_read_ram(voice.stream.next_address()) & 3U) == 1U) {
+        voice.envelope.reset();
+    }
+    if (!accepted_kon) {
+        gameboy::SnesDspKeyControl::apply_voice(
+            index, current_keys_, voice.ring, voice.envelope, voice.sequence);
+    }
+    if (step.clock_envelope && !accepted_kon) {
+        voice.envelope.clock(rates_, timed ? timed_voice_registers_[index].adsr0
+                                          : voice_register(bus_, index, 5),
+                             voice_register(bus_, index, 6),
+                             voice_register(bus_, index, 7));
+    }
+    const gameboy::SnesDspBrrGroupStream::Result* decoded = nullptr;
+    gameboy::SnesDspBrrGroupStream::Result group{};
+    if (step.decode_group) {
+        group = voice.stream.decode_into_ring(directory, source, voice.ring);
+        decoded = &group;
+    }
+    if (step.advance_pitch && !accepted_kon) {
+        const auto pitch_low = timed ? timed_voice_registers_[index].pitch_low
+                                     : voice_register(bus_, index, 2);
+        const auto pitch_high = timed ? timed_voice_registers_[index].pitch_high
+                                      : voice_register(bus_, index, 3);
+        const auto pitch = static_cast<std::uint16_t>(
+            pitch_low | (static_cast<unsigned>(pitch_high & 0x3FU) << 8));
+        const auto previous_output = index != 0 ? voice_output16_[index - 1]
+                                                 : std::int16_t{0};
+        voice.ring.advance_pitch(pitch, previous_output,
+            index != 0 && (bus_.dsp_register(0x2D) & bit) != 0);
+    }
+    if (accepted_kon) {
+        gameboy::SnesDspKeyControl::apply_voice(
+            index, current_keys_, voice.ring, voice.envelope, voice.sequence);
+    }
+    ends_.apply_sample(index, decoded, accepted_kon, voice.envelope);
 }
 
 } // namespace sgb_test

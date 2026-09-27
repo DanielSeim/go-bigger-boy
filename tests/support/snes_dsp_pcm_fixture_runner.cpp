@@ -19,7 +19,8 @@ public:
     void reg(const std::uint8_t address, const std::uint8_t value) {
         if (clock_count_ != 0 && address != 0x0C && address != 0x1C &&
             address != 0x2C && address != 0x3C &&
-            address != 0x4C && address != 0x5C) {
+            address != 0x4C && address != 0x5C &&
+            (address & 0x0FU) > 7) {
             supported_ = false;
         }
         renderer_.write_dsp(address, value);
@@ -39,6 +40,18 @@ public:
     [[nodiscard]] sgb_test::DspClockResult clock() {
         if (!supported_ || stepped_) return {false, {}};
         const auto phase = clock_count_ % 32;
+        renderer_.latch_timed_voice_registers(static_cast<unsigned>(phase));
+        if (phase == 0) renderer_.mix_timed_voice_channel(0, 1);
+        if (phase == 31) renderer_.mix_timed_voice_channel(0, 0);
+        if (phase >= 1 && phase <= 19 && (phase - 1) % 3 == 0) {
+            renderer_.advance_timed_voice(static_cast<unsigned>((phase + 2) / 3));
+        }
+        if (phase >= 2 && phase <= 20 && (phase - 2) % 3 == 0) {
+            renderer_.mix_timed_voice_channel(static_cast<unsigned>((phase + 1) / 3), 0);
+        }
+        if (phase >= 3 && phase <= 21 && (phase - 3) % 3 == 0) {
+            renderer_.mix_timed_voice_channel(static_cast<unsigned>(phase / 3), 1);
+        }
         // The S-DSP publishes voice n's ENDX bit at phase 2 + 3*n.
         if (phase >= 2 && phase <= 23 && (phase - 2) % 3 == 0) {
             renderer_.publish_timed_endx(static_cast<unsigned>((phase - 2) / 3));

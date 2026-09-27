@@ -322,14 +322,14 @@ after the S-DSP's left (phase 26) and right (phase 27) output-volume polls.
 GBB's test renderer latches those two volumes separately; four traces match
 the independent DSP reference exactly, and moving each write changes only
 the expected stereo sample. Normal CI pins all four PCM hashes. Timed
-writes outside the four output-volume and KON/KOFF registers, and unmodeled
-SPC700 write instructions, fail closed; this is not a general cycle-accurate
-DSP or live SGB sound path.
+writes outside the four output-volume, KON/KOFF, and per-voice `$x0`–`$x7`
+registers, and unmodeled SPC700 write instructions, fail closed; this is not
+a general cycle-accurate DSP or live SGB sound path.
 
 The same phase-latch harness now covers the left and right echo-output volume
 registers with a fixed, nonzero echo input and echo writeback disabled. Four
 additional clock-shifted PCM traces match the independent DSP exactly. The
-test keeps echo feedback and other timed writes unsupported rather than
+test keeps echo feedback and other unmodeled timed writes unsupported rather than
 assigning them an invented poll phase. To run this optional comparison:
 
 ```sh
@@ -360,11 +360,29 @@ including moving each write across a key-poll boundary. It also probes ENDX
 immediately before and after the two voices' staggered register-publication
 phases. Eight synthetic traces match the independent DSP's PCM and ENDX
 exactly; normal CI pins both hashes and the observed per-voice ENDX changes.
-These tests still do not validate arbitrary voices, DSP register writes, or
+This key-only fixture does not itself validate changing voice registers or
 live SGB audio. The optional independent comparison is:
 
 ```sh
 python3 tests/snes_spc700_dsp_multi_key_pcm_tests.py \
+  build/gameboy_snes_spc700_dsp_timeline_tests \
+  build/gameboy_snes_dsp_pcm_fixture_runner \
+  --reference-dir /path/to/bsnes/sfc/dsp
+```
+
+The timed renderer now advances each voice at its staggered DSP phase and
+reads that voice's source number, pitch bytes, ADSR1, ADSR2/GAIN, and left/
+right volume at their respective phases. A synthetic eight-voice corpus moves writes
+across each read boundary. All 130 clock-shifted PCM traces, one
+SPC700-produced three-write trace, and 13 ENDX traces match the independent
+DSP byte-for-byte; normal CI pins their hashes and requires every before/after
+pair to change PCM. Source-number cases use a retrigger so the chosen BRR
+sample is observable. The fixture still rejects timed ENVX,
+OUTX, PMON, EON, and FLG writes. These are bounded synthetic register stimuli,
+not arbitrary SPC700 firmware execution, and none of this enables live SGB audio.
+
+```sh
+python3 tests/snes_spc700_dsp_voice_register_pcm_tests.py \
   build/gameboy_snes_spc700_dsp_timeline_tests \
   build/gameboy_snes_dsp_pcm_fixture_runner \
   --reference-dir /path/to/bsnes/sfc/dsp

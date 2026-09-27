@@ -144,6 +144,26 @@ gameboy::SnesApuBus::IplRom key_program(const bool key_off,
     return image;
 }
 
+gameboy::SnesApuBus::IplRom voice_register_program() {
+    gameboy::SnesApuBus::IplRom image{};
+    constexpr std::array<std::array<std::uint8_t, 2>, 3> writes{{
+        {{0x00, 0x20}}, {{0x13, 0x1b}}, {{0x07, 0x40}},
+    }};
+    std::size_t cursor = 0;
+    for (unsigned i = 0; i < 8; ++i) image[cursor++] = 0x00;
+    for (unsigned event = 0; event < writes.size(); ++event) {
+        if (event != 0) {
+            image[cursor++] = 0xe4; image[cursor++] = 0x20;
+            for (unsigned i = 0; i < 10; ++i) image[cursor++] = 0x00;
+        }
+        image[cursor++] = 0x8f; image[cursor++] = writes[event][0];
+        image[cursor++] = 0xf2;
+        image[cursor++] = 0x8f; image[cursor++] = writes[event][1];
+        image[cursor++] = 0xf3;
+    }
+    return image;
+}
+
 bool capture_and_check(std::array<Event, 3>& captured) {
     gameboy::SnesApuBus bus;
     bus.install_ipl(synthetic_program());
@@ -206,6 +226,27 @@ bool capture_key_and_check(std::array<Event, 3>& captured,
         ? std::array<Event, 3>{{{26, 0x4c, 2}, {59, 0x5c, 1}, {92, 0x4c, 2}}}
         : std::array<Event, 3>{{{26, address, 1}, {59, address, 0},
                                 {92, address, 1}}};
+    if (timeline.size() != captured.size()) return false;
+    for (std::size_t i = 0; i < captured.size(); ++i) {
+        captured[i] = timeline.event(i);
+        if (captured[i].completed_cycle != expected[i].completed_cycle ||
+            captured[i].address != expected[i].address ||
+            captured[i].value != expected[i].value) return false;
+    }
+    return true;
+}
+
+bool capture_voice_register_and_check(std::array<Event, 3>& captured) {
+    gameboy::SnesApuBus bus;
+    bus.install_ipl(voice_register_program());
+    gameboy::SnesSpc700 cpu(bus);
+    Timeline timeline(bus, cpu, true);
+    for (unsigned i = 0; i < 36; ++i) {
+        if (timeline.step() != Timeline::Error::none) return false;
+    }
+    constexpr std::array<Event, 3> expected{{
+        {26, 0x00, 0x20}, {59, 0x13, 0x1b}, {92, 0x07, 0x40},
+    }};
     if (timeline.size() != captured.size()) return false;
     for (std::size_t i = 0; i < captured.size(); ++i) {
         captured[i] = timeline.event(i);
@@ -377,7 +418,7 @@ void emit_key_clock_fixture(const std::array<Event, 3>& events,
 void emit_multi_key_clock_fixture(const std::array<Event, 3>& events) {
     // Two distinct looping BRR voices. All dynamic writes come from the
     // synthetic SPC700 program; the static setup needs no firmware bytes.
-    std::cout << "# SPC700 multi-voice KON/KOFF writes at clocks 26, 59, 92\n"
+    std::cout << "# SPC700 two-voice DSP writes at clocks 26, 59, 92\n"
                  "ram 0x2800 0x00\nram 0x2801 0x80\n"
                  "ram 0x2802 0x00\nram 0x2803 0x80\n"
                  "ram 0x2804 0x00\nram 0x2805 0x81\n"
@@ -421,12 +462,14 @@ int main(int argc, char** argv) {
     std::array<Event, 3> kon_events{};
     std::array<Event, 3> koff_events{};
     std::array<Event, 3> multi_key_events{};
+    std::array<Event, 3> voice_register_events{};
     if (!capture_and_check(events) || !rejects_off_boundary() ||
         !capture_subsample_and_check(subsample_events) ||
         !capture_subsample_and_check(echo_events, true) ||
         !capture_key_and_check(kon_events, false) ||
         !capture_key_and_check(koff_events, true) ||
         !capture_key_and_check(multi_key_events, false, true) ||
+        !capture_voice_register_and_check(voice_register_events) ||
         !rejects_unsupported_opcode() || !rejects_unknown_write_phase() ||
         !ignores_invalid_dsp_address()) {
         std::cerr << "SPC700 DSP timeline contract failed\n";
@@ -444,11 +487,13 @@ int main(int argc, char** argv) {
         emit_key_clock_fixture(koff_events, true);
     } else if (argc == 2 && std::string_view(argv[1]) == "--multi-key-clock-fixture") {
         emit_multi_key_clock_fixture(multi_key_events);
+    } else if (argc == 2 && std::string_view(argv[1]) == "--voice-register-clock-fixture") {
+        emit_multi_key_clock_fixture(voice_register_events);
     } else if (argc != 1) {
         std::cerr << "usage: snes_spc700_dsp_timeline_tests "
                      "[--fixture|--clock-fixture|--echo-clock-fixture|"
                      "--kon-clock-fixture|--koff-clock-fixture|"
-                     "--multi-key-clock-fixture]\n";
+                     "--multi-key-clock-fixture|--voice-register-clock-fixture]\n";
         return 2;
     }
     return 0;
