@@ -33,6 +33,22 @@ class PcmCompareToolTests(unittest.TestCase):
         self.assertEqual(len(first), 64)
         self.assertTrue(any(left or right for left, right in first))
 
+    def test_reference_pinned_startup_samples(self) -> None:
+        fixture_dir = self.fixture.parent
+        for name, count, first_audible in (
+            ("silence.txt", 64, None),
+            ("single_voice.txt", 64, (8, (178, 90))),
+            ("key_off.txt", 80, (8, (1000, 1000))),
+            ("two_voices.txt", 64, (8, (357, 90))),
+        ):
+            with self.subTest(fixture=name):
+                samples = MODULE.run_fixture(self.runner, (fixture_dir / name).read_bytes())
+                self.assertEqual(len(samples), count)
+                audible = next(
+                    ((index, sample) for index, sample in enumerate(samples)
+                     if sample != (0, 0)), None)
+                self.assertEqual(audible, first_audible)
+
     def test_rejects_malformed_and_unsupported_stimuli(self) -> None:
         malformed = subprocess.run(
             [str(self.runner)], input=b"ram 0x10000 1\nstep 1\n",

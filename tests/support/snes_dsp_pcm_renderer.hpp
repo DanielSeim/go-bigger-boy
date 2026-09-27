@@ -49,6 +49,7 @@ private:
     gameboy::SnesDspRateClock rates_;
     gameboy::SnesDspKeyControl keys_;
     gameboy::SnesDspEndState ends_;
+    StereoSample pending_mix_{};
 };
 
 } // namespace sgb_test

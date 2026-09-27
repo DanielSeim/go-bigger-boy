@@ -252,9 +252,9 @@ rejects noise, pitch modulation, and echo instead of emitting misleading
 audio, and it lacks SPC700/65C816 execution, the SNES-side SGB command path,
 and cycle-level voice scheduling. The existing bsnes captures are 48 kHz
 full-system output with Game Boy audio mixed in; this 32 kHz synthetic DSP
-stimulus cannot be waveform-compared with them yet. A meaningful independent
-PCM comparison needs the same register/RAM stimulus and a specified resampling
-and alignment step, or the completed SGB host path.
+stimulus cannot be waveform-compared with them yet. The differential fixture
+path below instead gives both renderers identical register/RAM stimulus at
+their native 32 kHz rate.
 
 A development-only differential harness now supplies identical synthetic RAM
 writes, DSP register writes, and 32 kHz sample steps to GBB's test renderer
@@ -269,16 +269,19 @@ python3 scripts/compare_snes_dsp_pcm.py \
   --gbb build/gameboy_snes_dsp_pcm_fixture_runner \
   --reference-dir /path/to/bsnes/sfc/dsp \
   tests/fixtures/sgb/dsp/silence.txt \
-  tests/fixtures/sgb/dsp/single_voice.txt
+  tests/fixtures/sgb/dsp/single_voice.txt \
+  tests/fixtures/sgb/dsp/key_off.txt \
+  tests/fixtures/sgb/dsp/two_voices.txt
 ```
 
 The comparator fails on any unequal stereo sample and reports the first
 differences without silently shifting or resampling them. With local
-bsnes-libretro commit `05439f96121d2b9d7ad7a5fc1f29d7eebdcc8c43`, the
-64-sample silence fixture matched exactly. The active single-voice fixture
-currently differs on 17 of 64 samples: GBB's first nonzero sample is index 6
-and the reference's is index 8; later steady output also differs slightly.
-This is a *measured accuracy gap*, not a passing audio parity claim. The
+bsnes-libretro commit `05439f96121d2b9d7ad7a5fc1f29d7eebdcc8c43`, all
+four fixtures now match exactly: 64 silence, 64 single-voice, 80 key-off,
+and 64 two-voice stereo samples. Correcting the reference phase relationship
+and the Gaussian interpolator's 16-bit product precision resolved the
+previously measured startup and low-bit differences. This establishes parity
+only for these synthetic, echo/noise/PMON-free stimuli, not live SGB audio. The
 fixture runner is not added to release builds, and only its offline protocol
 tests run in normal CI. The external code is subject to its own license and
 must stay outside the clean-room implementation.

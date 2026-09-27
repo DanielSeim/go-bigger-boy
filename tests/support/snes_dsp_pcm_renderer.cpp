@@ -25,8 +25,12 @@ SnesDspPcmRenderer::SnesDspPcmRenderer(gameboy::SnesApuBus& bus) noexcept
 
 void SnesDspPcmRenderer::reset() noexcept {
     rates_.reset();
-    keys_.reset();
+    // The reference starts at DSP phase 0. Its first DAC output (phase 27)
+    // precedes the first KON/KOFF poll (phase 30), which occurs on the
+    // following sample after the every-other-sample phase toggles.
+    keys_.reset(false);
     ends_.reset();
+    pending_mix_ = {};
     for (auto& voice : voices_) {
         voice.stream.reset();
         voice.ring.reset();
@@ -86,12 +90,16 @@ SnesDspPcmRenderer::next_sample() noexcept {
             gameboy::SnesDspVoiceMath::apply_envelope(
                 voice.ring.interpolated(), voice.envelope.value());
         const auto output16 = gameboy::SnesDspVoiceMath::expand_to_16bit(output15);
+        const StereoSample voice_output{
+            gameboy::SnesDspVoiceMath::apply_channel_volume(
+                output16, voice_register(bus_, index, 0)),
+            gameboy::SnesDspVoiceMath::apply_channel_volume(
+                output16, voice_register(bus_, index, 1)),
+        };
         main_left = gameboy::SnesDspVoiceMath::saturating_add(
-            main_left, gameboy::SnesDspVoiceMath::apply_channel_volume(
-                output16, voice_register(bus_, index, 0)));
+            main_left, voice_output.left);
         main_right = gameboy::SnesDspVoiceMath::saturating_add(
-            main_right, gameboy::SnesDspVoiceMath::apply_channel_volume(
-                output16, voice_register(bus_, index, 1)));
+            main_right, voice_output.right);
 
         // S3c observes a non-looping end header even without a BRR group
         // request. This must happen after this sample's output is computed.
@@ -126,11 +134,13 @@ SnesDspPcmRenderer::next_sample() noexcept {
         }
         ends_.apply_sample(index, decoded, accepted_kon, voice.envelope);
     }
+    const auto dac_mix = pending_mix_;
+    pending_mix_ = StereoSample{main_left, main_right};
     StereoSample sample{
         gameboy::SnesDspVoiceMath::apply_channel_volume(
-            main_left, bus_.dsp_register(0x0C)),
+            dac_mix.left, bus_.dsp_register(0x0C)),
         gameboy::SnesDspVoiceMath::apply_channel_volume(
-            main_right, bus_.dsp_register(0x1C)),
+            dac_mix.right, bus_.dsp_register(0x1C)),
     };
     if ((bus_.dsp_register(0x6C) & 0x40U) != 0) sample = {};
     return sample;

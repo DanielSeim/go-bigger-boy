@@ -59,17 +59,14 @@ void test_one_voice_pcm_and_controls() {
 
     check(sgb_test::SnesDspPcmRenderer::sample_rate == 32000,
           "the test path emits native-rate DSP samples");
-    const auto accepted = renderer.next_sample();
-    check(accepted && accepted->left == 0 && accepted->right == 0,
-          "KON takes effect after the current output sample");
-    for (unsigned i = 0; i < 5; ++i) {
+    for (unsigned i = 0; i < 8; ++i) {
         const auto sample = renderer.next_sample();
         check(sample && sample->left == 0 && sample->right == 0,
-              "KON startup emits five silent stereo samples");
+              "DSP phase and KON startup precede the first audible sample");
     }
-    const auto sixth = renderer.next_sample();
-    check(sixth && sixth->left == 178 && sixth->right == 90,
-          "sixth sample has a pinned BRR/Gaussian/envelope/volume PCM value");
+    const auto first = renderer.next_sample();
+    check(first && first->left == 178 && first->right == 90,
+          "ninth DAC sample has pinned BRR/Gaussian/envelope/volume PCM");
     renderer.write_dsp(0x6C, 0x60);
     const auto muted = renderer.next_sample();
     check(muted && muted->left == 0 && muted->right == 0,
@@ -79,12 +76,10 @@ void test_one_voice_pcm_and_controls() {
     check(unmuted && unmuted->left != 0,
           "unmuting exposes the still-running BRR voice");
     renderer.write_dsp(0x6C, 0xa0);
-    const auto reset = renderer.next_sample();
-    check(reset && reset->left != 0,
-          "soft reset is applied after the already prepared output sample");
+    for (unsigned i = 0; i < 3; ++i) (void)renderer.next_sample();
     const auto after_reset = renderer.next_sample();
     check(after_reset && after_reset->left == 0 && after_reset->right == 0,
-          "soft reset silences subsequent PCM samples");
+          "soft reset silences PCM after the voice pipeline drains");
 }
 
 void test_two_voice_mix_and_rejection() {
@@ -98,10 +93,9 @@ void test_two_voice_mix_and_rejection() {
     check(!renderer.next_sample(), "noise mode is rejected rather than misrendered");
     renderer.write_dsp(0x3D, 0);
     renderer.write_dsp(0x4C, 0x03);
-    (void)renderer.next_sample(); // KON acceptance, before the five silent samples
-    for (unsigned i = 0; i < 5; ++i) (void)renderer.next_sample();
-    const auto sixth = renderer.next_sample();
-    check(sixth && sixth->left == 357 && sixth->right == 90,
+    for (unsigned i = 0; i < 8; ++i) (void)renderer.next_sample();
+    const auto mixed = renderer.next_sample();
+    check(mixed && mixed->left == 357 && mixed->right == 90,
           "two voices mix before master volume, with independent stereo volumes");
     renderer.write_dsp(0x2C, 1);
     check(!renderer.next_sample(), "echo output is rejected until FIR mixing exists");

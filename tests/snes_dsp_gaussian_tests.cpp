@@ -41,9 +41,9 @@ void test_coefficient_order_and_rounding() {
     check(Gaussian::interpolate({1024, 1024, 1024, 1024}, 0) == 1024 &&
               Gaussian::interpolate({1024, 1024, 1024, 1024}, 255) == 1024,
           "constant samples preserve the symmetric endpoint response");
-    check(Gaussian::interpolate({16383, 16383, 16383, 16383}, 0) == -16379 &&
+    check(Gaussian::interpolate({16383, 16383, 16383, 16383}, 0) == -16378 &&
               Gaussian::interpolate({16383, 16383, 16383, 16383}, 255) == 16383,
-          "first-three signed-15-bit wrap precedes the last-term clamp");
+          "first-three signed-16-bit wrap precedes the last-term clamp");
 }
 
 void test_bounds_and_fraction_sweep() {

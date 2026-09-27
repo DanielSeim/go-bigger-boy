@@ -55,12 +55,15 @@ std::int32_t floor_div_2048(const std::int32_t value) noexcept {
 std::int32_t term(const std::int32_t coefficient,
                   const std::int16_t sample) noexcept {
     const auto bounded = std::clamp<int>(sample, -16384, 16383);
-    return floor_div_2048(coefficient * bounded);
+    // BRR samples enter the S-DSP interpolator as signed 16-bit values with
+    // their low bit clear. Each product is shifted before accumulation; doing
+    // the shift on a 15-bit value and doubling later loses one bit of detail.
+    return floor_div_2048(coefficient * bounded * 2);
 }
 
-std::int32_t wrap_15(const std::int32_t value) noexcept {
-    const auto bits = static_cast<std::uint32_t>(value) & 0x7FFFU;
-    return bits >= 0x4000U ? static_cast<std::int32_t>(bits) - 0x8000
+std::int32_t wrap_16(const std::int32_t value) noexcept {
+    const auto bits = static_cast<std::uint32_t>(value) & 0xFFFFU;
+    return bits >= 0x8000U ? static_cast<std::int32_t>(bits) - 0x10000
                            : static_cast<std::int32_t>(bits);
 }
 
@@ -74,9 +77,12 @@ std::int16_t SnesDspGaussian::interpolate(
         term(coefficients[255 - d], samples[0]) +
         term(coefficients[511 - d], samples[1]) +
         term(coefficients[256 + d], samples[2]);
-    const auto final = wrap_15(first_three) +
+    const auto final = wrap_16(first_three) +
                        term(coefficients[d], samples[3]);
-    return static_cast<std::int16_t>(std::clamp(final, -16384, 16383));
+    const auto clamped = std::clamp(final, -32768, 32767);
+    // The hardware clears bit zero before the 16-bit interpolated value is
+    // used. The shared ring exposes the equivalent signed 15-bit value.
+    return static_cast<std::int16_t>((clamped & ~1) / 2);
 }
 
 } // namespace gameboy
