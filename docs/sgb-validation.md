@@ -223,8 +223,16 @@ preloads, then the first envelope update. The sixth sample permits the first
 BRR/Gaussian output and pitch advance. Synthetic tests drive the source
 walker, ring, envelope, and interpolation together through this transition,
 including retrigger and steady-state group requests. It does **not** model
-the final pre-KON decode, every-other-sample KON polling, per-voice register
-read phases, or other voices; none of these components feed live SGB audio.
+the final pre-KON decode or per-voice register-read phases.
+
+A separate sample-level key controller now polls pending KON and persistent
+KOFF every other output sample, while observing FLG soft reset every sample.
+It applies KOFF/FLG before an accepted KON, so a simultaneous KON wins that
+sample but a held KOFF/FLG releases the envelope on the next sample. Tests
+exercise polling phases, replaced writes, retriggers, and the resulting
+sequencer transitions. This does **not** simulate SPC700-cycle write windows,
+the exact initial poll phase, or staggered reads across eight voices. These
+components are still synthetic and do not feed live SGB audio.
 
 A separate sample-stepped envelope now models the global 32-rate counter,
 Attack/Decay/Sustain/Release transitions, direct and timed gain modes, and

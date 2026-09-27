@@ -108,6 +108,7 @@ add_library(gameboy_core
     src/snes_dsp_gaussian.cpp
     src/snes_dsp_sample_ring.cpp
     src/snes_dsp_key_on_sequence.cpp
+    src/snes_dsp_key_control.cpp
     src/sgb_sound.cpp
     src/boot_rom.cpp
     src/cartridge.cpp
@@ -1147,6 +1148,12 @@ if(GAMEBOY_BUILD_TESTS)
     target_link_libraries(gameboy_snes_dsp_key_on_sequence_tests PRIVATE gameboy_core)
     add_test(NAME gameboy_snes_dsp_key_on_sequence_contract
              COMMAND gameboy_snes_dsp_key_on_sequence_tests)
+
+    add_executable(gameboy_snes_dsp_key_control_tests
+        tests/snes_dsp_key_control_tests.cpp)
+    target_link_libraries(gameboy_snes_dsp_key_control_tests PRIVATE gameboy_core)
+    add_test(NAME gameboy_snes_dsp_key_control_contract
+             COMMAND gameboy_snes_dsp_key_control_tests)
 
     add_executable(gameboy_sgb_overlay_contract_tests
         tests/sgb_overlay_contract_tests.cpp)
