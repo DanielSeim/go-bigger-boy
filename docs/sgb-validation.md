@@ -234,6 +234,14 @@ sequencer transitions. This does **not** simulate SPC700-cycle write windows,
 the exact initial poll phase, or staggered reads across eight voices. These
 components are still synthetic and do not feed live SGB audio.
 
+An isolated BRR end-state latch consumes the group walker's end/loop flags.
+A non-looping end immediately zeroes and releases the envelope; an ending
+block latches its voice's ENDX bit when its fourth group finishes. Accepted
+KON clears that voice's ENDX bit, including a same-sample end, and any ENDX
+write clears all bits. Tests use physical APU RAM for looping and non-looping
+blocks. The diagnostic group walker still cannot observe a header on samples
+without a group decode, and the S3c/S4/S7 cycle offsets remain unmodeled.
+
 A separate sample-stepped envelope now models the global 32-rate counter,
 Attack/Decay/Sustain/Release transitions, direct and timed gain modes, and
 11-bit clamping. Synthetic tests cover every rate over a full counter cycle,
