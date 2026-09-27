@@ -98,6 +98,7 @@ endif()
 
 add_library(gameboy_core
     src/apu.cpp
+    src/sgb_sound.cpp
     src/boot_rom.cpp
     src/cartridge.cpp
     src/cartridge_persistence.cpp
@@ -628,6 +629,12 @@ if(GAMEBOY_BUILD_TESTS)
                              $<TARGET_FILE:gameboy_test_runner>)
             set_tests_properties(gameboy_sgb_title_validation
                                  PROPERTIES LABELS "sgb;trace")
+            add_test(NAME gameboy_sgb_sound_report
+                     COMMAND ${Python3_EXECUTABLE}
+                             ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_sound_report_tests.py
+                             $<TARGET_FILE:gameboy_test_runner>)
+            set_tests_properties(gameboy_sgb_sound_report
+                                 PROPERTIES LABELS "sgb;audio;trace")
             add_test(NAME gameboy_sgb_trace_fixture
                      COMMAND ${Python3_EXECUTABLE}
                              ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_trace_fixture_test.py
@@ -1064,6 +1071,12 @@ if(GAMEBOY_BUILD_TESTS)
     target_link_libraries(gameboy_ppu_sgb_contract_tests PRIVATE gameboy_core)
     add_test(NAME gameboy_ppu_sgb_contract
              COMMAND gameboy_ppu_sgb_contract_tests)
+
+    add_executable(gameboy_sgb_sound_contract_tests
+        tests/sgb_sound_contract_tests.cpp)
+    target_link_libraries(gameboy_sgb_sound_contract_tests PRIVATE gameboy_core)
+    add_test(NAME gameboy_sgb_sound_contract
+             COMMAND gameboy_sgb_sound_contract_tests)
 
     add_executable(gameboy_sgb_overlay_contract_tests
         tests/sgb_overlay_contract_tests.cpp)

@@ -9,6 +9,7 @@
 #include "gameboy/printer.hpp"
 #include "gameboy/serial.hpp"
 #include "gameboy/sgb_adapter.hpp"
+#include "gameboy/sgb_sound.hpp"
 #include "gameboy/timer.hpp"
 
 #include <array>
@@ -104,6 +105,10 @@ public:
     [[nodiscard]] bool frame_ready() const noexcept;
     void consume_frame() noexcept;
     [[nodiscard]] std::vector<std::int16_t> take_audio_samples();
+    // Accept output from a separately implemented SNES-side renderer. The
+    // emulator never fabricates sound for SOUND/SOU_TRN by itself.
+    [[nodiscard]] bool submit_sgb_host_audio(
+        const std::vector<std::int16_t>& stereo_samples);
     void set_audio_enabled(bool enabled) noexcept;
     [[nodiscard]] bool audio_enabled() const noexcept;
     [[nodiscard]] std::string take_serial_output();
@@ -143,6 +148,7 @@ private:
     Joypad joypad_{};
     SgbAdapter sgb_adapter_{};
     Apu apu_{};
+    SgbHostAudioMixer sgb_host_audio_{};
     Ppu ppu_{};
     Timer timer_{};
     SerialPort serial_{};

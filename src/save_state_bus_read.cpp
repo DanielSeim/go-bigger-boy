@@ -600,6 +600,9 @@ void SaveStateBusCodec::read(save_state_format::Reader& reader,
     if ((bus.last_ppu_requests_ & ~0x2FU) != 0) {
         throw SaveStateError("Save state contains invalid PPU request state");
     }
+    // Audio queued for presentation cannot be replayed after restoring an
+    // emulation snapshot, just like the Game Boy APU's output queue.
+    bus.sgb_host_audio_.clear();
     if (bus.printer_connected_) bus.printer_.reset();
 }
 

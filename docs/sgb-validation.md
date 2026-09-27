@@ -81,6 +81,35 @@ payload. Keep any locally captured payloads out of the repository; compare
 their hashes and timing against an independently obtained reference before
 adding audible output.
 
+For transfer-format diagnosis, the test runner can write a separate local
+sound report without storing the transferred bytes:
+
+```sh
+build/gbb_test_runner /path/to/your/game.gb --model sgb2 \
+  --frames 400 --frame-output /tmp/sgb-frame.ppm \
+  --sgb-sound-report /tmp/sgb-sound.txt
+```
+
+The report records `SOUND` fields and `SOU_TRN` completion cycles, whole-payload
+FNV-64 digests, and the count/size of bounded SNES APU-RAM packets. The parser
+checks their little-endian length, destination range, and terminating jump
+against the [SGB sound command format](https://gbdev.io/pandocs/SGB_Command_Sound.html).
+A local Donkey Kong v1.1 SGB2 run through frame 400 produced two structurally
+valid transfers (one write of 1,619 bytes, then three writes totalling 3,002
+bytes; both jump to `$0400`). That validates our parser against this ROM's
+packet structure, **not** against physical SGB audio output. The SNES-side
+program ROMs in `roms/` are user-supplied, Git-ignored firmware and are not
+read, copied or embedded by the current sound path.
+
+The core has a bounded 48 kHz stereo PCM mixing boundary for a future SNES
+renderer; synthetic tests verify channel alignment, saturation, mute/reset,
+and save-state queue clearing. There is currently no SNES CPU, SPC700/DSP,
+firmware loader or score/sample renderer connected to it. Consequently
+`SOUND` and `SOU_TRN` still add no audible output. Do not mistake a successful
+packet report or mixer test for SGB audio support. Archival SPC rips can be
+useful as listening references, but are not timing-calibrated hardware
+captures and must not be bundled in the repository.
+
 The opt-in title manifests in `tests/fixtures/sgb/titles/` pin ROM SHA-256,
 hardware model, frame count, cycle limit, and minimum command counts. They
 contain no ROM bytes or captured game artwork. For a legally supplied,

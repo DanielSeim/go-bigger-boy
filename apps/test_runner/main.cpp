@@ -1,5 +1,6 @@
 #include "gameboy/emulator.hpp"
 #include "gameboy/sgb_trace.hpp"
+#include "gameboy/sgb_sound.hpp"
 #include "sgb_input_script.h"
 
 #include <array>
@@ -44,6 +45,7 @@ struct Options {
     std::filesystem::path io_trace_output;
     std::filesystem::path cpu_trace_output;
     std::filesystem::path sgb_trace_output;
+    std::filesystem::path sgb_sound_report_output;
     std::filesystem::path sgb_replay_input;
     std::uint64_t trace_limit{};
     std::optional<std::uint16_t> watched_wram;
@@ -69,6 +71,7 @@ void usage() {
                  "[--trace-apu PATH] [--trace-ppu PATH] [--trace-io PATH] "
                  "[--trace-cpu PATH] [--trace-limit N] "
                  "[--sgb-trace PATH] [--replay-sgb-trace PATH] "
+                 "[--sgb-sound-report PATH] "
                  "[--frame-on-ld-bb --frame-output capture.ppm] "
                  "[--dmg-compatibility-colors] [--diagnostic-boot]\n";
 }
@@ -138,6 +141,8 @@ Options parse_options(const int argc, char** argv) {
             options.cpu_trace_output = argv[++index];
         } else if (argument == "--sgb-trace" && index + 1 < argc) {
             options.sgb_trace_output = argv[++index];
+        } else if (argument == "--sgb-sound-report" && index + 1 < argc) {
+            options.sgb_sound_report_output = argv[++index];
         } else if (argument == "--replay-sgb-trace" && index + 1 < argc) {
             options.sgb_replay_input = argv[++index];
         } else if (argument == "--trace-limit" && index + 1 < argc) {
@@ -664,6 +669,7 @@ int main(int argc, char** argv) {
         std::ofstream ppu_trace;
         std::ofstream io_trace;
         std::ofstream cpu_trace;
+        std::ofstream sound_report;
         std::optional<gameboy::SgbTrace::Recorder> sgb_recorder;
         if (!options.sgb_trace_output.empty()) {
             if (emulator.hardware_model() != gameboy::HardwareModel::sgb &&
@@ -673,6 +679,23 @@ int main(int argc, char** argv) {
             }
             sgb_recorder.emplace(emulator.rom_fingerprint(),
                                  emulator.hardware_model());
+        }
+        if (!options.sgb_sound_report_output.empty()) {
+            if (emulator.hardware_model() != gameboy::HardwareModel::sgb &&
+                emulator.hardware_model() != gameboy::HardwareModel::sgb2) {
+                throw std::runtime_error(
+                    "--sgb-sound-report requires an SGB or SGB2 hardware model");
+            }
+            if (options.sgb_sound_report_output.has_parent_path()) {
+                std::filesystem::create_directories(
+                    options.sgb_sound_report_output.parent_path());
+            }
+            sound_report.open(options.sgb_sound_report_output,
+                              std::ios::out | std::ios::trunc);
+            if (!sound_report) throw std::runtime_error(
+                "could not open SGB sound report: " +
+                options.sgb_sound_report_output.string());
+            sound_report << "GBB SGB sound report v1\n";
         }
         if (!options.apu_trace_output.empty()) {
             if (options.apu_trace_output.has_parent_path()) {
@@ -732,6 +755,8 @@ int main(int argc, char** argv) {
         std::uint64_t completed_frames = 0;
         std::uint64_t sgb_trace_frames = 0;
         std::uint64_t trace_records = 0;
+        std::uint64_t sound_transfer_revision = 0;
+        std::uint64_t sound_request_revision = 0;
         const bool captures_frame = options.frames != 0 ||
                                     options.frame_on_ld_bb ||
                                     options.frame_series_last != 0;
@@ -743,6 +768,13 @@ int main(int argc, char** argv) {
             }
         }
         const auto finish_run = [&](const int status) {
+            if (sound_report.is_open()) {
+                sound_report.flush();
+                if (!sound_report) {
+                    std::cerr << "Could not write SGB sound report\n";
+                    return EXIT_FAILURE;
+                }
+            }
             if (!sgb_recorder.has_value()) return status;
             std::string error;
             if (!write_sgb_trace(options.sgb_trace_output, sgb_recorder,
@@ -845,6 +877,44 @@ int main(int argc, char** argv) {
                                           ? emulator.bus().read8(trace_pc)
                                           : std::uint8_t{};
             const auto stepped_cycles = emulator.step();
+            if (sound_report) {
+                const auto request =
+                    emulator.bus().debug_sgb_sound_request_revision();
+                if (request != sound_request_revision) {
+                    const auto fields = emulator.bus().debug_sgb_sound_request();
+                    sound_report << "sound cycle=" << emulator.cpu().total_cycles()
+                                 << " revision=" << request
+                                 << " effect_a=" << static_cast<unsigned>(fields[0])
+                                 << " effect_b=" << static_cast<unsigned>(fields[1])
+                                 << " attributes=" << static_cast<unsigned>(fields[2])
+                                 << " score=" << static_cast<unsigned>(fields[3])
+                                 << '\n';
+                    sound_request_revision = request;
+                }
+                const auto transfer =
+                    emulator.bus().debug_sgb_sound_transfer_revision();
+                if (transfer != sound_transfer_revision) {
+                    gameboy::SgbSoundTransfer::Payload payload{};
+                    for (std::size_t byte = 0; byte < payload.size(); ++byte) {
+                        payload[byte] = emulator.bus().debug_read_sgb_sound_data(
+                            static_cast<std::uint16_t>(byte));
+                    }
+                    const auto parsed = gameboy::SgbSoundTransfer::parse(payload);
+                    sound_report << "transfer cycle=" << emulator.cpu().total_cycles()
+                                 << " revision=" << transfer
+                                 << " fnv64=" << std::hex << std::setw(16)
+                                 << std::setfill('0')
+                                 << gameboy::SgbSoundTransfer::digest(payload)
+                                 << std::dec << std::setfill(' ')
+                                 << " error=" << gameboy::SgbSoundTransfer::error_name(
+                                        parsed.error)
+                                 << " writes=" << parsed.writes.size()
+                                 << " data_bytes=" << parsed.data_bytes
+                                 << " consumed=" << parsed.consumed_bytes
+                                 << " jump=" << parsed.jump_address << '\n';
+                    sound_transfer_revision = transfer;
+                }
+            }
             if (watching_wram) {
                 const auto watched_after = emulator.bus().read8(*options.watched_wram);
                 if (watched_before != watched_after) {
