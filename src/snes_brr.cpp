@@ -29,12 +29,25 @@ std::int16_t signed_fifteen_bits(const std::int32_t value) noexcept {
 SnesBrrDecoder::DecodedBlock SnesBrrDecoder::decode(
     const EncodedBlock& block) noexcept {
     DecodedBlock decoded;
-    const auto shift = static_cast<unsigned>(block[0] >> 4);
-    const auto filter = static_cast<unsigned>((block[0] >> 2) & 3U);
     decoded.end = (block[0] & 1U) != 0;
     decoded.loop = (block[0] & 2U) != 0;
-    for (unsigned index = 0; index < decoded.samples.size(); ++index) {
-        const auto packed = block[1 + index / 2];
+    for (unsigned group = 0; group < 4; ++group) {
+        const auto samples = decode_group(
+            block[0], {block[1 + group * 2], block[2 + group * 2]});
+        for (unsigned index = 0; index < samples.size(); ++index) {
+            decoded.samples[group * 4 + index] = samples[index];
+        }
+    }
+    return decoded;
+}
+
+SnesBrrDecoder::DecodedGroup SnesBrrDecoder::decode_group(
+    const std::uint8_t header, const EncodedGroup& bytes) noexcept {
+    DecodedGroup decoded{};
+    const auto shift = static_cast<unsigned>(header >> 4);
+    const auto filter = static_cast<unsigned>((header >> 2) & 3U);
+    for (unsigned index = 0; index < decoded.size(); ++index) {
+        const auto packed = bytes[index / 2];
         const auto nibble = static_cast<unsigned>(
             index % 2 == 0 ? packed >> 4 : packed & 0x0FU);
         const auto signed_nibble = static_cast<std::int32_t>(nibble) -
@@ -60,7 +73,7 @@ SnesBrrDecoder::DecodedBlock SnesBrrDecoder::decode(
             break;
         }
         const auto output = signed_fifteen_bits(sample);
-        decoded.samples[index] = output;
+        decoded[index] = output;
         before_previous_ = previous_;
         previous_ = output;
     }

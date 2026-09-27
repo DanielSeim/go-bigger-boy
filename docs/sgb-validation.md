@@ -181,8 +181,8 @@ direct gain (`E = GAIN × 16`), per-sample release (`E -= 8`, saturating at
 zero), the 11-bit envelope multiply, 15-to-16-bit sample expansion, signed
 left/right channel volumes, and saturating addition. These are fixed-point
 primitives with synthetic tests, not a scheduled DSP voice. In particular,
-the physical BRR ring and pitch timing, master/echo mix, and a
-32 kHz-to-host-rate output path remain absent.
+per-voice register polling, master/echo mix, and a 32 kHz-to-host-rate output
+path remain absent.
 
 The standalone Gaussian stage accepts four already-selected signed 15-bit
 BRR samples and a fractional position. It uses the measured 512 coefficients
@@ -200,6 +200,18 @@ exercise those boundaries and the handoff to Gaussian interpolation. This is
 still **not** a scheduled DSP voice: the five silent key-on samples, BRR
 group-byte read timing, per-voice register polling, and the host audio path
 are not connected to this component.
+
+A second, group-wise BRR walker now reads only the two data bytes needed for
+each four-sample group from physical APU RAM. It shares the BRR prediction
+math with the block decoder and can hand each group to the 12-sample ring.
+Synthetic checks cover later RAM edits, filter continuity, 64 KiB wrap, IPL
+overlay bypass, live loop-pointer changes at the block boundary, and
+end-without-loop release notification. It does **not** reproduce the DSP's
+every-sample header polling, voice-step interleaving, or exact first-byte
+read timing; the older whole-block walker remains a diagnostic API.
+On key-on this walker preserves decoder history, but it does not yet recover
+the predictor inputs from the physical ring, which can matter when a new
+sample starts with a filtered BRR block.
 
 A separate sample-stepped envelope now models the global 32-rate counter,
 Attack/Decay/Sustain/Release transitions, direct and timed gain modes, and

@@ -11,6 +11,8 @@ namespace gameboy {
 class SnesBrrDecoder final {
 public:
     using EncodedBlock = std::array<std::uint8_t, 9>;
+    using EncodedGroup = std::array<std::uint8_t, 2>;
+    using DecodedGroup = std::array<std::int16_t, 4>;
 
     struct DecodedBlock {
         std::array<std::int16_t, 16> samples{};
@@ -19,8 +21,13 @@ public:
     };
 
     [[nodiscard]] DecodedBlock decode(const EncodedBlock& block) noexcept;
-    // Power-on/test reset of prediction history. A voice key-on does not
-    // necessarily clear the physical DSP ring buffer's previous samples.
+    // Decode two BRR data bytes using the current header. Prediction history
+    // continues across groups and blocks.
+    [[nodiscard]] DecodedGroup decode_group(std::uint8_t header,
+                                            const EncodedGroup& bytes) noexcept;
+    // Power-on/test reset of sequential prediction history. Real key-on
+    // prediction can read the physical DSP ring instead of these last two
+    // sequential outputs; that scheduling detail is not modeled here.
     void reset() noexcept { previous_ = 0; before_previous_ = 0; }
 
 private:
