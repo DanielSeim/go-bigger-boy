@@ -1162,6 +1162,14 @@ if(GAMEBOY_BUILD_TESTS)
     add_test(NAME gameboy_snes_dsp_end_state_contract
              COMMAND gameboy_snes_dsp_end_state_tests)
 
+    add_executable(gameboy_snes_dsp_pcm_renderer_tests
+        tests/snes_dsp_pcm_renderer_tests.cpp
+        tests/support/snes_dsp_pcm_renderer.cpp)
+    target_include_directories(gameboy_snes_dsp_pcm_renderer_tests PRIVATE tests/support)
+    target_link_libraries(gameboy_snes_dsp_pcm_renderer_tests PRIVATE gameboy_core)
+    add_test(NAME gameboy_snes_dsp_pcm_renderer_contract
+             COMMAND gameboy_snes_dsp_pcm_renderer_tests)
+
     add_executable(gameboy_sgb_overlay_contract_tests
         tests/sgb_overlay_contract_tests.cpp)
     target_include_directories(gameboy_sgb_overlay_contract_tests

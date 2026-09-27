@@ -242,6 +242,20 @@ write clears all bits. Tests use physical APU RAM for looping and non-looping
 blocks. The diagnostic group walker still cannot observe a header on samples
 without a group decode, and the S3c/S4/S7 cycle offsets remain unmodeled.
 
+A test-only 32 kHz stereo PCM renderer now connects DSP register writes and
+physical APU RAM to eight BRR streams, key-on prefill, Gaussian interpolation,
+envelopes, per-voice volumes, master volume, mute/reset, and ENDX. Its
+deterministic tests pin the first nonzero PCM sample, two-voice mixing,
+non-looping end, retrigger, KOFF, and rejected unsupported modes. This is a
+synthetic integration harness, **not** an audible SGB implementation. It
+rejects noise, pitch modulation, and echo instead of emitting misleading
+audio, and it lacks SPC700/65C816 execution, the SNES-side SGB command path,
+and cycle-level voice scheduling. The existing bsnes captures are 48 kHz
+full-system output with Game Boy audio mixed in; this 32 kHz synthetic DSP
+stimulus cannot be waveform-compared with them yet. A meaningful independent
+PCM comparison needs the same register/RAM stimulus and a specified resampling
+and alignment step, or the completed SGB host path.
+
 A separate sample-stepped envelope now models the global 32-rate counter,
 Attack/Decay/Sustain/Release transitions, direct and timed gain modes, and
 11-bit clamping. Synthetic tests cover every rate over a full counter cycle,
