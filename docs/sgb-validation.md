@@ -103,8 +103,8 @@ read, copied or embedded by the current sound path.
 
 The core has a bounded 48 kHz stereo PCM mixing boundary for a future SNES
 renderer; synthetic tests verify channel alignment, saturation, mute/reset,
-and save-state queue clearing. There is currently no SNES CPU, SPC700/DSP,
-firmware loader or score/sample renderer connected to it. Consequently
+and save-state queue clearing. There is currently no SNES-side execution,
+DSP synthesis, firmware loader or score/sample renderer connected to it. Consequently
 `SOUND` and `SOU_TRN` still add no audible output. Do not mistake a successful
 packet report or mixer test for SGB audio support. Archival SPC rips can be
 useful as listening references, but are not timing-calibrated hardware
@@ -164,8 +164,8 @@ including all four predictor filters, signed nibbles, unusual shift values,
 prediction history, and the end/loop flag bits. Hand-authored tests cover
 cross-block prediction and the DSP's 16-bit clamp followed by 15-bit wrap.
 It is not connected to the SPC700 interpreter or PCM mixer: the DSP still
-needs its voice clocking, interpolation, envelopes, stereo volume, and echo
-before decoded blocks can become representative SGB audio.
+needs its scheduled voice clocking, interpolation, and echo before decoded
+blocks can become representative SGB audio.
 
 The first DSP-side stream stage now reads BRR sample start/loop pointers from
 the `DIR`/`SRCN` table and decodes successive blocks from physical APU RAM,
@@ -174,7 +174,24 @@ address wrap, live directory changes at a loop boundary, and end-without-loop
 requesting envelope release while the BRR read position still redirects to
 the loop pointer. This is a block-level diagnostic component, **not** a
 cycle-accurate voice: it does not reproduce the DSP's group scheduling,
-key-on delay, Gaussian interpolation, envelopes, or sample output.
+key-on delay, Gaussian interpolation, or sample output.
+
+The post-interpolation voice arithmetic is now implemented separately for
+direct gain (`E = GAIN × 16`), per-sample release (`E -= 8`, saturating at
+zero), the 11-bit envelope multiply, 15-to-16-bit sample expansion, signed
+left/right channel volumes, and saturating addition. These are fixed-point
+primitives with synthetic tests, not a scheduled DSP voice. In particular,
+the Gaussian coefficient table, interpolation/ring timing, master/echo mix,
+and a 32 kHz-to-host-rate output path remain absent.
+
+A separate sample-stepped envelope now models the global 32-rate counter,
+Attack/Decay/Sustain/Release transitions, direct and timed gain modes, and
+11-bit clamping. Synthetic tests cover every rate over a full counter cycle,
+rate switching, phase transitions, and boundary behavior. The rules follow
+[Anomie's S-DSP research notes](https://gist.github.com/nyanpasu64/a0d916ce6924912a7116682bf778e9a0),
+but the component does not yet model register-read interleaving, the five
+silent key-on samples, or a complete eight-voice DSP. It is not connected to
+live SGB sound, and the tests are not independent audio validation.
 
 The opt-in title manifests in `tests/fixtures/sgb/titles/` pin ROM SHA-256,
 hardware model, frame count, cycle limit, and minimum command counts. They
