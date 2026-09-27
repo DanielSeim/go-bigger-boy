@@ -256,6 +256,33 @@ stimulus cannot be waveform-compared with them yet. A meaningful independent
 PCM comparison needs the same register/RAM stimulus and a specified resampling
 and alignment step, or the completed SGB host path.
 
+A development-only differential harness now supplies identical synthetic RAM
+writes, DSP register writes, and 32 kHz sample steps to GBB's test renderer
+and an independently installed `SPC_DSP.cpp`. It compiles the external DSP
+into a temporary executable; the source, binary, and any proprietary ROMs
+are never included in the repository or release targets. Run it with a local
+bsnes-compatible S-DSP checkout:
+
+```sh
+cmake --build build --target gameboy_snes_dsp_pcm_fixture_runner
+python3 scripts/compare_snes_dsp_pcm.py \
+  --gbb build/gameboy_snes_dsp_pcm_fixture_runner \
+  --reference-dir /path/to/bsnes/sfc/dsp \
+  tests/fixtures/sgb/dsp/silence.txt \
+  tests/fixtures/sgb/dsp/single_voice.txt
+```
+
+The comparator fails on any unequal stereo sample and reports the first
+differences without silently shifting or resampling them. With local
+bsnes-libretro commit `05439f96121d2b9d7ad7a5fc1f29d7eebdcc8c43`, the
+64-sample silence fixture matched exactly. The active single-voice fixture
+currently differs on 17 of 64 samples: GBB's first nonzero sample is index 6
+and the reference's is index 8; later steady output also differs slightly.
+This is a *measured accuracy gap*, not a passing audio parity claim. The
+fixture runner is not added to release builds, and only its offline protocol
+tests run in normal CI. The external code is subject to its own license and
+must stay outside the clean-room implementation.
+
 A separate sample-stepped envelope now models the global 32-rate counter,
 Attack/Decay/Sustain/Release transitions, direct and timed gain modes, and
 11-bit clamping. Synthetic tests cover every rate over a full counter cycle,

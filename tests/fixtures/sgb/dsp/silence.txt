@@ -1,0 +1,2 @@
+# FLG starts muted in the independent DSP. No key-on or RAM data.
+step 64

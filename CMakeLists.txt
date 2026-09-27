@@ -1170,6 +1170,18 @@ if(GAMEBOY_BUILD_TESTS)
     add_test(NAME gameboy_snes_dsp_pcm_renderer_contract
              COMMAND gameboy_snes_dsp_pcm_renderer_tests)
 
+    add_executable(gameboy_snes_dsp_pcm_fixture_runner
+        tests/support/snes_dsp_pcm_fixture_runner.cpp
+        tests/support/snes_dsp_pcm_renderer.cpp)
+    target_include_directories(gameboy_snes_dsp_pcm_fixture_runner PRIVATE tests/support)
+    target_link_libraries(gameboy_snes_dsp_pcm_fixture_runner PRIVATE gameboy_core)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME gameboy_snes_dsp_pcm_compare_tool
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/snes_dsp_pcm_compare_tool_tests.py
+                         $<TARGET_FILE:gameboy_snes_dsp_pcm_fixture_runner>)
+    endif()
+
     add_executable(gameboy_sgb_overlay_contract_tests
         tests/sgb_overlay_contract_tests.cpp)
     target_include_directories(gameboy_sgb_overlay_contract_tests
