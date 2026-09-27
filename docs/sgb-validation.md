@@ -181,8 +181,18 @@ direct gain (`E = GAIN × 16`), per-sample release (`E -= 8`, saturating at
 zero), the 11-bit envelope multiply, 15-to-16-bit sample expansion, signed
 left/right channel volumes, and saturating addition. These are fixed-point
 primitives with synthetic tests, not a scheduled DSP voice. In particular,
-the Gaussian coefficient table, interpolation/ring timing, master/echo mix,
-and a 32 kHz-to-host-rate output path remain absent.
+the physical BRR ring and pitch timing, master/echo mix, and a
+32 kHz-to-host-rate output path remain absent.
+
+The standalone Gaussian stage accepts four already-selected signed 15-bit
+BRR samples and a fractional position. It uses the measured 512 coefficients
+and the DSP's first-three-term wrap followed by final-term clamp. Tests cover
+coefficient ordering at both ends and the midpoint, signed rounding, overflow,
+all fractional positions, and BRR-to-stereo arithmetic. The coefficient data
+and arithmetic were cross-checked against
+[Anomie's S-DSP research notes](https://gist.github.com/nyanpasu64/a0d916ce6924912a7116682bf778e9a0).
+The 12-sample ring, interpolation-index stepping, and scheduled BRR group
+loads are **not** implemented yet; this stage is not connected to live sound.
 
 A separate sample-stepped envelope now models the global 32-rate counter,
 Attack/Decay/Sustain/Release transitions, direct and timed gain modes, and
