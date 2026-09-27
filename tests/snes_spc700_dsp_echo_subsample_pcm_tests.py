@@ -67,14 +67,13 @@ def main() -> int:
         if reference:
             print("all four echo-volume traces match independent DSP exactly")
 
-    # Echo feedback is sampled elsewhere within the DSP cycle and is not yet
-    # modeled by the clock fixture's output-volume latches.
+    # Read-only OUTX still has no validated clock-phase model.
     invalid = replace_once(baseline, b"clock 26\nreg 44 127",
-                           b"clock 26\nreg 13 127")
+                           b"clock 26\nreg 9 127")
     rejected = subprocess.run([str(args.gbb)], input=invalid, capture_output=True,
                               timeout=30)
     if rejected.returncode != 3 or b"unsupported DSP mode" not in rejected.stderr:
-        raise AssertionError("timed echo-feedback write was not rejected")
+        raise AssertionError("timed OUTX write was not rejected")
     return 0
 
 

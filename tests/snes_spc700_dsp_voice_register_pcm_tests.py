@@ -262,7 +262,7 @@ def main() -> int:
             endx_hash.update(ours.stderr)
         if endx_hash.hexdigest() != EXPECTED_ENDX_SHA256:
             raise AssertionError(f"ENDX corpus hash changed: {endx_hash.hexdigest()}")
-        for address in (0x08, 0x09, 0x2D, 0x4D, 0x6C):
+        for address in (0x08, 0x09, 0x1D, 0x7C):
             invalid = static + f"clock 1\nreg {address} 1\nclock 511\n".encode()
             rejected = subprocess.run([str(args.gbb)], input=invalid,
                                       capture_output=True, timeout=30)

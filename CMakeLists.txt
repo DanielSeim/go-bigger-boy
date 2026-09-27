@@ -1215,6 +1215,16 @@ if(GAMEBOY_BUILD_TESTS)
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/snes_spc700_dsp_voice_register_pcm_tests.py
                          $<TARGET_FILE:gameboy_snes_spc700_dsp_timeline_tests>
                          $<TARGET_FILE:gameboy_snes_dsp_pcm_fixture_runner>)
+        add_test(NAME gameboy_snes_spc700_dsp_global_register_pcm
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/snes_spc700_dsp_global_register_pcm_tests.py
+                         $<TARGET_FILE:gameboy_snes_spc700_dsp_timeline_tests>
+                         $<TARGET_FILE:gameboy_snes_dsp_pcm_fixture_runner>)
+        add_test(NAME gameboy_snes_spc700_dsp_remaining_register_pcm
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/snes_spc700_dsp_remaining_register_pcm_tests.py
+                         $<TARGET_FILE:gameboy_snes_spc700_dsp_timeline_tests>
+                         $<TARGET_FILE:gameboy_snes_dsp_pcm_fixture_runner>)
     endif()
 
     add_executable(gameboy_sgb_overlay_contract_tests

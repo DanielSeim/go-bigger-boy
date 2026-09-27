@@ -377,12 +377,46 @@ across each read boundary. All 130 clock-shifted PCM traces, one
 SPC700-produced three-write trace, and 13 ENDX traces match the independent
 DSP byte-for-byte; normal CI pins their hashes and requires every before/after
 pair to change PCM. Source-number cases use a retrigger so the chosen BRR
-sample is observable. The fixture still rejects timed ENVX,
-OUTX, PMON, EON, and FLG writes. These are bounded synthetic register stimuli,
+sample is observable. The fixture still rejects timed writes to read-only
+ENVX/OUTX, ENDX, and reserved register slots.
+These are bounded synthetic register stimuli,
 not arbitrary SPC700 firmware execution, and none of this enables live SGB audio.
 
 ```sh
 python3 tests/snes_spc700_dsp_voice_register_pcm_tests.py \
+  build/gameboy_snes_spc700_dsp_timeline_tests \
+  build/gameboy_snes_dsp_pcm_fixture_runner \
+  --reference-dir /path/to/bsnes/sfc/dsp
+```
+
+The timed fixture now also latches PMON at phase 27 and EON at phase 28.
+FLG mute is observed at phase 27, echo-write disable separately at phases
+28/29 for the left/right RAM writes, and the noise clock at phase 30;
+soft reset is read at each voice's staggered update. Twenty-six synthetic
+PCM traces cross these boundaries and match the independent S-DSP output
+byte-for-byte. Normal CI pins the combined PCM digest and requires each
+before/after pair to differ. This remains test-only, with no SNES firmware
+execution or audible SGB sound.
+
+```sh
+python3 tests/snes_spc700_dsp_global_register_pcm_tests.py \
+  build/gameboy_snes_spc700_dsp_timeline_tests \
+  build/gameboy_snes_dsp_pcm_fixture_runner \
+  --reference-dir /path/to/bsnes/sfc/dsp
+```
+
+The remaining dynamic global-register fixture now latches NON and DIR at
+phase 28, then carries DIR through each voice's earlier V1 directory-pointer
+lookup. Echo feedback is read at phase 26; ESA and EDL are read at phase 29;
+FIR taps are read at phases 22–25 in the DSP's 1/2/3/2 grouping. Thirteen
+before/after pairs (26 PCM traces) cover all of these boundaries, including
+all eight FIR taps, and match the independent S-DSP byte-for-byte. Normal CI
+pins the combined PCM digest and requires each pair to change output.
+Neither this synthetic fixture nor its differential checks run the SGB
+firmware or enable audible SGB sound.
+
+```sh
+python3 tests/snes_spc700_dsp_remaining_register_pcm_tests.py \
   build/gameboy_snes_spc700_dsp_timeline_tests \
   build/gameboy_snes_dsp_pcm_fixture_runner \
   --reference-dir /path/to/bsnes/sfc/dsp

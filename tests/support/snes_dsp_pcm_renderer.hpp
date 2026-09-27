@@ -47,6 +47,12 @@ public:
     void latch_timed_voice_registers(unsigned phase) noexcept;
     void advance_timed_voice(unsigned voice) noexcept;
     void mix_timed_voice_channel(unsigned voice, unsigned channel) noexcept;
+    void latch_timed_fir(unsigned phase) noexcept;
+    void timed_phase26() noexcept;
+    void timed_phase27() noexcept;
+    void timed_phase28() noexcept;
+    void timed_echo_phase29() noexcept;
+    void timed_echo_phase30() noexcept;
     // ENDX is computed during the prior voice step, then exposed at each
     // voice's staggered V7 phase (voice 0 at 2, voice 1 at 5, etc.).
     void publish_timed_endx(unsigned voice) noexcept;
@@ -64,6 +70,7 @@ private:
         bool started{};
     };
     struct TimedVoiceRegisters {
+        std::uint8_t directory{};
         std::uint8_t source{};
         std::uint8_t pitch_low{};
         std::uint8_t pitch_high{};
@@ -76,6 +83,13 @@ private:
     gameboy::SnesDspKeyControl keys_;
     gameboy::SnesDspEndState ends_;
     std::uint8_t timed_endx_visible_{};
+    std::uint8_t timed_pmon_{};
+    std::uint8_t timed_non_{};
+    std::uint8_t timed_eon_{};
+    std::uint8_t timed_dir_{};
+    std::uint8_t timed_feedback_{};
+    std::array<std::uint8_t, 8> timed_fir_{};
+    std::uint8_t timed_echo_enabled_{};
     bool timed_mode_{};
     gameboy::SnesDspKeyControl::Sample current_keys_{};
     std::array<std::int16_t, 8> voice_output16_{};
@@ -85,13 +99,20 @@ private:
                                         std::uint8_t master_left,
                                         std::uint8_t master_right,
                                         std::uint8_t echo_volume_left,
-                                        std::uint8_t echo_volume_right) noexcept;
+                                        std::uint8_t echo_volume_right,
+                                        bool timed) noexcept;
+    void write_echo_channel(std::uint16_t address, unsigned channel,
+                            std::int16_t value) noexcept;
+    void advance_echo_address() noexcept;
     void advance_sample() noexcept;
     void begin_sample(bool timed) noexcept;
     void advance_voice(unsigned index, bool timed) noexcept;
     void mix_voice_channel(unsigned voice, unsigned channel) noexcept;
     StereoSample pending_mix_{};
     StereoSample pending_echo_send_{};
+    StereoSample timed_echo_writeback_{};
+    std::uint16_t timed_echo_address_{};
+    bool timed_echo_write_pending_{};
     std::array<StereoSample, 8> echo_history_{};
     std::uint16_t echo_offset_{};
     std::uint16_t echo_length_{};

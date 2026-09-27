@@ -52,12 +52,22 @@ void SnesDspPcmRenderer::reset() noexcept {
     keys_.reset(false);
     ends_.reset();
     timed_endx_visible_ = 0;
+    timed_pmon_ = 0;
+    timed_non_ = 0;
+    timed_eon_ = 0;
+    timed_dir_ = 0;
+    timed_feedback_ = 0;
+    timed_fir_.fill(0);
+    timed_echo_enabled_ = 0;
     timed_mode_ = false;
     current_keys_ = {};
     voice_output16_.fill(0);
     timed_voice_registers_.fill({});
     pending_mix_ = {};
     pending_echo_send_ = {};
+    timed_echo_writeback_ = {};
+    timed_echo_address_ = 0;
+    timed_echo_write_pending_ = false;
     echo_history_.fill({});
     echo_offset_ = 0;
     echo_length_ = 0;
@@ -77,7 +87,7 @@ SnesDspPcmRenderer::StereoSample SnesDspPcmRenderer::mix_echo(
     const StereoSample dac_mix, const StereoSample dac_send,
     const std::uint8_t master_left, const std::uint8_t master_right,
     const std::uint8_t echo_volume_left,
-    const std::uint8_t echo_volume_right) noexcept {
+    const std::uint8_t echo_volume_right, const bool timed) noexcept {
     const auto address = static_cast<std::uint16_t>(
         (static_cast<unsigned>(echo_esa_) << 8U) + echo_offset_);
     const auto read_echo = [&](const unsigned channel) {
@@ -96,13 +106,14 @@ SnesDspPcmRenderer::StereoSample SnesDspPcmRenderer::mix_echo(
             const auto& entry = echo_history_[
                 (static_cast<unsigned>(echo_history_position_) + 1U + tap) % 8U];
             const auto value = channel == 0 ? entry.left : entry.right;
-            const auto coefficient = signed_register(bus_.dsp_register(
-                static_cast<std::uint8_t>(0x0FU + tap * 0x10U)));
+            const auto coefficient = signed_register(timed ? timed_fir_[tap] :
+                bus_.dsp_register(static_cast<std::uint8_t>(0x0FU + tap * 0x10U)));
             first_seven += floor_div(value * coefficient, 64);
         }
         const auto& newest = echo_history_[echo_history_position_];
         const auto value = channel == 0 ? newest.left : newest.right;
-        const auto coefficient = signed_register(bus_.dsp_register(0x7F));
+        const auto coefficient = signed_register(timed ? timed_fir_[7] :
+                                                  bus_.dsp_register(0x7F));
         const auto last = wrap_16(floor_div(value * coefficient, 64));
         const auto filtered = clamp_16(wrap_16(first_seven) + last);
         return static_cast<std::int16_t>(filtered & ~1);
@@ -124,7 +135,8 @@ SnesDspPcmRenderer::StereoSample SnesDspPcmRenderer::mix_echo(
         mix_channel(dac_mix.right, filtered.right, master_right, echo_volume_right),
     };
 
-    const auto feedback = signed_register(bus_.dsp_register(0x0D));
+    const auto feedback = signed_register(timed ? timed_feedback_ :
+                                                  bus_.dsp_register(0x0D));
     const auto feedback_channel = [&](const std::int16_t send,
                                       const std::int16_t echo) {
         const auto value = clamp_16(send + floor_div(echo * feedback, 128));
@@ -134,18 +146,32 @@ SnesDspPcmRenderer::StereoSample SnesDspPcmRenderer::mix_echo(
         feedback_channel(dac_send.left, filtered.left),
         feedback_channel(dac_send.right, filtered.right),
     };
-    if ((bus_.dsp_register(0x6C) & 0x20U) == 0) {
-        const auto write_echo = [&](const unsigned channel,
-                                    const std::int16_t value) {
-            const auto base = static_cast<std::uint16_t>(address + 2U * channel);
-            const auto bits = static_cast<std::uint16_t>(value);
-            bus_.dsp_write_ram(base, static_cast<std::uint8_t>(bits));
-            bus_.dsp_write_ram(static_cast<std::uint16_t>(base + 1U),
-                               static_cast<std::uint8_t>(bits >> 8U));
-        };
-        write_echo(0, writeback.left);
-        write_echo(1, writeback.right);
+    if (timed) {
+        timed_echo_writeback_ = writeback;
+        timed_echo_address_ = address;
+        timed_echo_write_pending_ = true;
+    } else {
+        if ((bus_.dsp_register(0x6C) & 0x20U) == 0) {
+            write_echo_channel(address, 0, writeback.left);
+            write_echo_channel(address, 1, writeback.right);
+        }
+        advance_echo_address();
     }
+    if ((bus_.dsp_register(0x6C) & 0x40U) != 0) sample = {};
+    return sample;
+}
+
+void SnesDspPcmRenderer::write_echo_channel(const std::uint16_t address,
+                                             const unsigned channel,
+                                             const std::int16_t value) noexcept {
+    const auto base = static_cast<std::uint16_t>(address + 2U * channel);
+    const auto bits = static_cast<std::uint16_t>(value);
+    bus_.dsp_write_ram(base, static_cast<std::uint8_t>(bits));
+    bus_.dsp_write_ram(static_cast<std::uint16_t>(base + 1U),
+                       static_cast<std::uint8_t>(bits >> 8U));
+}
+
+void SnesDspPcmRenderer::advance_echo_address() noexcept {
     if (echo_offset_ == 0) {
         echo_length_ = static_cast<std::uint16_t>(
             (bus_.dsp_register(0x7D) & 0x0FU) * 0x800U);
@@ -153,8 +179,6 @@ SnesDspPcmRenderer::StereoSample SnesDspPcmRenderer::mix_echo(
     echo_offset_ = static_cast<std::uint16_t>(echo_offset_ + 4U);
     if (echo_offset_ >= echo_length_) echo_offset_ = 0;
     echo_esa_ = bus_.dsp_register(0x6D);
-    if ((bus_.dsp_register(0x6C) & 0x40U) != 0) sample = {};
-    return sample;
 }
 
 void SnesDspPcmRenderer::write_dsp(const std::uint8_t address,
@@ -187,7 +211,7 @@ SnesDspPcmRenderer::next_sample_with_output_volumes(
     const auto dac_send = pending_echo_send_;
     advance_sample();
     return mix_echo(dac_mix, dac_send, master_left, master_right,
-                    echo_volume_left, echo_volume_right);
+                    echo_volume_left, echo_volume_right, false);
 }
 
 std::optional<SnesDspPcmRenderer::StereoSample>
@@ -197,7 +221,7 @@ SnesDspPcmRenderer::output_timed_sample(
     const std::uint8_t echo_volume_right) noexcept {
     const auto sample = mix_echo(pending_mix_, pending_echo_send_, master_left,
                                  master_right, echo_volume_left,
-                                 echo_volume_right);
+                                 echo_volume_right, true);
     pending_mix_ = {};
     pending_echo_send_ = {};
     return sample;
@@ -207,6 +231,53 @@ void SnesDspPcmRenderer::advance_timed_sample() noexcept {
     timed_mode_ = true;
     begin_sample(true);
     advance_voice(0, true);
+}
+
+void SnesDspPcmRenderer::latch_timed_fir(const unsigned phase) noexcept {
+    // Echo stages read FIR0 at 22, FIR1/2 at 23, FIR3/4/5 at 24,
+    // and FIR6/7 at 25. Each coefficient is held until phase 27's mix.
+    constexpr std::array<unsigned, 8> read_phase{22, 23, 23, 24, 24, 24, 25, 25};
+    for (unsigned tap = 0; tap < timed_fir_.size(); ++tap) {
+        if (phase == read_phase[tap]) {
+            timed_fir_[tap] = bus_.dsp_register(
+                static_cast<std::uint8_t>(0x0FU + tap * 0x10U));
+        }
+    }
+}
+
+void SnesDspPcmRenderer::timed_phase26() noexcept {
+    timed_feedback_ = bus_.dsp_register(0x0D);
+}
+
+void SnesDspPcmRenderer::timed_phase27() noexcept {
+    // misc_27 reads PMON before the next round of staggered voice updates.
+    timed_pmon_ = static_cast<std::uint8_t>(bus_.dsp_register(0x2D) & 0xFEU);
+}
+
+void SnesDspPcmRenderer::timed_phase28() noexcept {
+    // misc_28 reads NON, EON, and DIR; echo_28 samples FLG for the left write.
+    timed_non_ = bus_.dsp_register(0x3D);
+    timed_eon_ = bus_.dsp_register(0x4D);
+    timed_dir_ = bus_.dsp_register(0x5D);
+    timed_echo_enabled_ = bus_.dsp_register(0x6C);
+}
+
+void SnesDspPcmRenderer::timed_echo_phase29() noexcept {
+    // The two echo RAM channels have distinct FLG read windows.
+    if (timed_echo_write_pending_) {
+        if ((timed_echo_enabled_ & 0x20U) == 0) {
+            write_echo_channel(timed_echo_address_, 0, timed_echo_writeback_.left);
+        }
+        advance_echo_address();
+    }
+    timed_echo_enabled_ = bus_.dsp_register(0x6C);
+}
+
+void SnesDspPcmRenderer::timed_echo_phase30() noexcept {
+    if (timed_echo_write_pending_ && (timed_echo_enabled_ & 0x20U) == 0) {
+        write_echo_channel(timed_echo_address_, 1, timed_echo_writeback_.right);
+    }
+    timed_echo_write_pending_ = false;
 }
 
 void SnesDspPcmRenderer::latch_timed_voice_registers(
@@ -222,6 +293,9 @@ void SnesDspPcmRenderer::latch_timed_voice_registers(
     for (unsigned index = 0; index < voices_.size(); ++index) {
         auto& registers = timed_voice_registers_[index];
         if (phase == source_phase[index]) {
+            // V1 computes the sample-directory address from the global DIR
+            // latch before V3c consumes the resulting pointer.
+            registers.directory = timed_dir_;
             registers.source = voice_register(bus_, index, 4);
         }
         if (phase == pitch_low_phase[index]) {
@@ -280,7 +354,7 @@ void SnesDspPcmRenderer::mix_voice_channel(const unsigned index,
         voice_output16_[index], voice_register(bus_, index, channel));
     auto& main = channel == 0 ? pending_mix_.left : pending_mix_.right;
     main = gameboy::SnesDspVoiceMath::saturating_add(main, output);
-    if ((bus_.dsp_register(0x4D) & bit) != 0) {
+    if (((timed_mode_ ? timed_eon_ : bus_.dsp_register(0x4D)) & bit) != 0) {
         auto& echo = channel == 0 ? pending_echo_send_.left
                                   : pending_echo_send_.right;
         echo = gameboy::SnesDspVoiceMath::saturating_add(echo, output);
@@ -290,25 +364,28 @@ void SnesDspPcmRenderer::mix_voice_channel(const unsigned index,
 void SnesDspPcmRenderer::advance_voice(const unsigned index,
                                        const bool timed) noexcept {
     auto& voice = voices_[index];
+    auto keys = current_keys_;
+    if (timed) keys.soft_reset = (bus_.dsp_register(0x6C) & 0x80U) != 0;
     const auto bit = static_cast<std::uint8_t>(1U << index);
-    const bool accepted_kon = (current_keys_.key_on & bit) != 0;
+    const bool accepted_kon = (keys.key_on & bit) != 0;
     voice_output16_[index] = 0;
     if (!voice.started) {
         if (accepted_kon) {
             voice.started = true;
             gameboy::SnesDspKeyControl::apply_voice(
-                index, current_keys_, voice.ring, voice.envelope, voice.sequence);
+                index, keys, voice.ring, voice.envelope, voice.sequence);
             ends_.apply_sample(index, nullptr, true, voice.envelope);
         }
         return;
     }
     const auto step = voice.sequence.next(voice.ring);
-    const auto directory = bus_.dsp_register(0x5D);
+    const auto directory = timed ? timed_voice_registers_[index].directory
+                                 : bus_.dsp_register(0x5D);
     const auto source = timed ? timed_voice_registers_[index].source
                               : voice_register(bus_, index, 4);
     if (step.read_source) voice.stream.key_on(directory, source);
 
-    const auto non = bus_.dsp_register(0x3D);
+    const auto non = timed ? timed_non_ : bus_.dsp_register(0x3D);
     const auto noise_value = noise_;
     const auto source15 = (non & bit) != 0
         ? static_cast<std::int16_t>(
@@ -333,7 +410,7 @@ void SnesDspPcmRenderer::advance_voice(const unsigned index,
     }
     if (!accepted_kon) {
         gameboy::SnesDspKeyControl::apply_voice(
-            index, current_keys_, voice.ring, voice.envelope, voice.sequence);
+            index, keys, voice.ring, voice.envelope, voice.sequence);
     }
     if (step.clock_envelope && !accepted_kon) {
         voice.envelope.clock(rates_, timed ? timed_voice_registers_[index].adsr0
@@ -357,11 +434,11 @@ void SnesDspPcmRenderer::advance_voice(const unsigned index,
         const auto previous_output = index != 0 ? voice_output16_[index - 1]
                                                  : std::int16_t{0};
         voice.ring.advance_pitch(pitch, previous_output,
-            index != 0 && (bus_.dsp_register(0x2D) & bit) != 0);
+            index != 0 && ((timed ? timed_pmon_ : bus_.dsp_register(0x2D)) & bit) != 0);
     }
     if (accepted_kon) {
         gameboy::SnesDspKeyControl::apply_voice(
-            index, current_keys_, voice.ring, voice.envelope, voice.sequence);
+            index, keys, voice.ring, voice.envelope, voice.sequence);
     }
     ends_.apply_sample(index, decoded, accepted_kon, voice.envelope);
 }
