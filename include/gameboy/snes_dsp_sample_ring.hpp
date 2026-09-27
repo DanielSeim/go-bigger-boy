@@ -22,6 +22,8 @@ public:
     // the three key-on prefill groups before the first audible sample.
     [[nodiscard]] bool group_due() const noexcept { return phase_ >= 0x4000U; }
     [[nodiscard]] Group window() const noexcept;
+    // Previous, then before-previous sample at the physical BRR write point.
+    [[nodiscard]] std::array<std::int16_t, 2> predictor_history() const noexcept;
     [[nodiscard]] std::int16_t interpolated() const noexcept;
     // The caller enables modulation only for eligible non-noise voices 1-7.
     // previous_output is the preceding voice's pre-volume output sample.

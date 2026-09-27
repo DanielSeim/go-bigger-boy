@@ -26,6 +26,14 @@ std::int16_t signed_fifteen_bits(const std::int32_t value) noexcept {
 
 } // namespace
 
+void SnesBrrDecoder::seed_history(const std::int16_t previous,
+                                  const std::int16_t before_previous) noexcept {
+    previous_ = static_cast<std::int16_t>(
+        std::clamp<int>(previous, -16384, 16383));
+    before_previous_ = static_cast<std::int16_t>(
+        std::clamp<int>(before_previous, -16384, 16383));
+}
+
 SnesBrrDecoder::DecodedBlock SnesBrrDecoder::decode(
     const EncodedBlock& block) noexcept {
     DecodedBlock decoded;

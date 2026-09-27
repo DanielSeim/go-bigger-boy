@@ -45,6 +45,12 @@ SnesDspSampleRing::Group SnesDspSampleRing::window() const noexcept {
     return result;
 }
 
+std::array<std::int16_t, 2> SnesDspSampleRing::predictor_history() const noexcept {
+    const auto position = static_cast<unsigned>(write_position_);
+    return {samples_[(position + 11U) % samples_.size()],
+            samples_[(position + 10U) % samples_.size()]};
+}
+
 std::int16_t SnesDspSampleRing::interpolated() const noexcept {
     return SnesDspGaussian::interpolate(
         window(), static_cast<std::uint8_t>((phase_ >> 4) & 0xFFU));

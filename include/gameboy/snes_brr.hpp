@@ -25,6 +25,8 @@ public:
     // continues across groups and blocks.
     [[nodiscard]] DecodedGroup decode_group(std::uint8_t header,
                                             const EncodedGroup& bytes) noexcept;
+    void seed_history(std::int16_t previous,
+                      std::int16_t before_previous) noexcept;
     // Power-on/test reset of sequential prediction history. Real key-on
     // prediction can read the physical DSP ring instead of these last two
     // sequential outputs; that scheduling detail is not modeled here.

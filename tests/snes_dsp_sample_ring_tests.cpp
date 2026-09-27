@@ -28,6 +28,8 @@ void test_prefill_and_pitch() {
     check(ring.write_position() == 0 && ring.phase() == 0 &&
               ring.window() == gameboy::SnesDspSampleRing::Group{0, 1, 2, 3},
           "three key-on prefill groups wrap the ring write pointer to zero");
+    check(ring.predictor_history() == std::array<std::int16_t, 2>{11, 10},
+          "BRR predictor reads the two samples before the next physical write slot");
     for (unsigned position = 1; position <= 4; ++position) {
         ring.advance_pitch(0x1000);
         check(ring.phase() == position * 0x1000 &&
@@ -43,6 +45,8 @@ void test_prefill_and_pitch() {
     ring.load_group({12, 13, 14, 15});
     check(ring.write_position() == 4,
           "next BRR group overwrites the oldest physical group");
+    check(ring.predictor_history() == std::array<std::int16_t, 2>{15, 14},
+          "predictor history follows the most recently written physical group");
     ring.advance_pitch(0x1000);
     check(ring.phase() == 0x1000 && !ring.group_due() &&
               ring.window() == gameboy::SnesDspSampleRing::Group{5, 6, 7, 8},
@@ -66,10 +70,14 @@ void test_ring_wrap_and_key_on_history() {
     check(ring.phase() == 0 && ring.write_position() == 0 &&
               ring.window() == gameboy::SnesDspSampleRing::Group{12, 13, 14, 15},
           "key-on resets ring position without erasing physical sample history");
+    check(ring.predictor_history() == std::array<std::int16_t, 2>{11, 10},
+          "key-on predictor comes from the physical end, not the latest group");
     ring.reset();
     check(ring.phase() == 0 && ring.write_position() == 0 &&
               ring.window() == gameboy::SnesDspSampleRing::Group{},
           "power-on reset clears the physical ring");
+    check(ring.predictor_history() == std::array<std::int16_t, 2>{0, 0},
+          "power-on reset clears the physical predictor history");
 }
 
 void test_fraction_and_limits() {

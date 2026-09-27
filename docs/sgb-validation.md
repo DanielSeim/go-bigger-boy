@@ -209,9 +209,12 @@ overlay bypass, live loop-pointer changes at the block boundary, and
 end-without-loop release notification. It does **not** reproduce the DSP's
 every-sample header polling, voice-step interleaving, or exact first-byte
 read timing; the older whole-block walker remains a diagnostic API.
-On key-on this walker preserves decoder history, but it does not yet recover
-the predictor inputs from the physical ring, which can matter when a new
-sample starts with a filtered BRR block.
+The ring-fed variant now seeds the BRR filter from the two samples physically
+preceding the next ring write slot. A filtered first group after key-on can
+therefore differ from the older sequential-history diagnostic path. Tests
+exercise both histories across re-keying and compare normal group sequences
+against whole-block decoding. This fixes predictor sourcing at the group
+boundary; it does not add the DSP's key-on delay or cycle-level scheduling.
 
 A separate sample-stepped envelope now models the global 32-rate counter,
 Attack/Decay/Sustain/Release transitions, direct and timed gain modes, and

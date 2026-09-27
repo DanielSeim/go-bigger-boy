@@ -7,6 +7,7 @@
 namespace gameboy {
 
 class SnesApuBus;
+class SnesDspSampleRing;
 
 // Diagnostic BRR walker that reads two data bytes and decodes four samples
 // per request, using physical APU RAM. It is not cycle-accurate: the real
@@ -30,6 +31,11 @@ public:
     void key_on(std::uint8_t directory, std::uint8_t source) noexcept;
     [[nodiscard]] Result decode_next_group(std::uint8_t directory,
                                            std::uint8_t source) noexcept;
+    // For the physical-ring path, seed BRR filter history from the next write
+    // point, decode one group, and install it in the ring atomically.
+    [[nodiscard]] Result decode_into_ring(std::uint8_t directory,
+                                          std::uint8_t source,
+                                          SnesDspSampleRing& ring) noexcept;
     [[nodiscard]] std::uint16_t next_address() const noexcept { return block_address_; }
     [[nodiscard]] std::uint8_t next_group_index() const noexcept { return group_index_; }
 

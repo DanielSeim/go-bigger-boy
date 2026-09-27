@@ -137,6 +137,60 @@ void test_physical_ram_under_ipl() {
           "DSP group reads physical APU RAM beneath the SPC700 IPL overlay");
 }
 
+void test_filtered_key_on_uses_physical_ring() {
+    gameboy::SnesApuBus bus;
+    write_word(bus, 0x2600, 0x6000);
+    bus.spc_write(0x6000, 0x18); // shift 1, filter 2
+    gameboy::SnesDspBrrGroupStream stream(bus);
+    gameboy::SnesDspSampleRing ring;
+    ring.load_group({0, 0, 0, 0});
+    ring.load_group({0, 0, 0, 0});
+    ring.load_group({0, 0, -8, 7});
+    stream.key_on(0x26, 0);
+    ring.key_on();
+    const auto first = stream.decode_into_ring(0x26, 0, ring);
+    check(first.samples[0] == 20 && first.samples[1] == 31 &&
+              ring.write_position() == 4,
+          "filtered first group reads the physical ring end and writes its result");
+
+    // The sequential decoder's latest samples now differ from ring[11:10].
+    stream.key_on(0x26, 0);
+    ring.key_on();
+    const auto restarted = stream.decode_into_ring(0x26, 0, ring);
+    check(restarted.samples[0] == 20 && restarted.samples[1] == 31,
+          "re-keying obtains predictor history from ring tail, not last decoded output");
+
+    stream.key_on(0x26, 0);
+    ring.reset();
+    const auto cleared = stream.decode_into_ring(0x26, 0, ring);
+    check(cleared.samples[0] == 0,
+          "cleared physical ring yields a different filtered first group");
+}
+
+void test_ring_path_matches_sequential_groups() {
+    gameboy::SnesApuBus bus;
+    write_word(bus, 0x2700, 0x7000);
+    const gameboy::SnesBrrDecoder::EncodedBlock block{
+        0x18, 0x17, 0x8F, 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC,
+    };
+    for (unsigned i = 0; i < block.size(); ++i) {
+        bus.spc_write(static_cast<std::uint16_t>(0x7000 + i), block[i]);
+    }
+    gameboy::SnesBrrDecoder decoder;
+    const auto expected = decoder.decode(block);
+    gameboy::SnesDspBrrGroupStream stream(bus);
+    gameboy::SnesDspSampleRing ring;
+    stream.key_on(0x27, 0);
+    ring.key_on();
+    for (unsigned group = 0; group < 4; ++group) {
+        const auto decoded = stream.decode_into_ring(0x27, 0, ring);
+        for (unsigned i = 0; i < decoded.samples.size(); ++i) {
+            check(decoded.samples[i] == expected.samples[group * 4 + i],
+                  "ring-fed predictor matches sequential decoding through a BRR block");
+        }
+    }
+}
+
 } // namespace
 
 int main() {
@@ -144,5 +198,7 @@ int main() {
     test_filter_equivalence_and_loop_pointer();
     test_immediate_release_and_wrap();
     test_physical_ram_under_ipl();
+    test_filtered_key_on_uses_physical_ring();
+    test_ring_path_matches_sequential_groups();
     return failures == 0 ? 0 : 1;
 }

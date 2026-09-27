@@ -1,6 +1,7 @@
 #include "gameboy/snes_dsp_brr_group_stream.hpp"
 
 #include "gameboy/snes_audio_host.hpp"
+#include "gameboy/snes_dsp_sample_ring.hpp"
 
 #include <cstdint>
 
@@ -29,8 +30,8 @@ void SnesDspBrrGroupStream::key_on(const std::uint8_t directory,
                                    const std::uint8_t source) noexcept {
     block_address_ = directory_word(directory, source, 0);
     group_index_ = 0;
-    // Preserve sequential prediction history. A scheduled DSP voice must
-    // eventually obtain key-on predictor inputs from its physical ring.
+    // Preserve sequential prediction history for the two-argument diagnostic
+    // path. decode_into_ring() reseeds from the physical ring before decoding.
 }
 
 SnesDspBrrGroupStream::Result SnesDspBrrGroupStream::decode_next_group(
@@ -58,6 +59,16 @@ SnesDspBrrGroupStream::Result SnesDspBrrGroupStream::decode_next_group(
         ++group_index_;
     }
     result.next_address = block_address_;
+    return result;
+}
+
+SnesDspBrrGroupStream::Result SnesDspBrrGroupStream::decode_into_ring(
+    const std::uint8_t directory, const std::uint8_t source,
+    SnesDspSampleRing& ring) noexcept {
+    const auto history = ring.predictor_history();
+    decoder_.seed_history(history[0], history[1]);
+    auto result = decode_next_group(directory, source);
+    ring.load_group(result.samples);
     return result;
 }
 
