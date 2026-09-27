@@ -138,6 +138,21 @@ timing, pixels, JOYP signals and APU output to a SNES ICD/firmware/SPC core,
 then validating the resulting mix and save-state behavior. No proprietary
 ROM or pre-recorded audio may be packaged with that integration.
 
+The in-tree clean-room host foundation now accepts the 256 KiB and 512 KiB
+LoROM layouts used by SGB1 and SGB2 program images, reads their reset vectors, and
+models the SNES sound side's 64 KiB RAM, four bidirectional communication
+ports, optional 64-byte IPL overlay, DSP register window, and three timers.
+The format check is not a proof that an arbitrary LoROM file is authentic SGB
+firmware.
+Synthetic tests check those mappings and timing rules; a local-only test also
+opened the ignored `roms/sgb1.program.rom` and `roms/sgb2.program.rom` files.
+This code neither executes the SNES program ROM nor produces SNES PCM. It is
+not wired into the running emulator yet. The remaining implementation must
+include the SNES-side command/ICD handoff, a 65C816 execution path (or an
+independently validated equivalent), SPC700 execution, and S-DSP synthesis.
+Until a real sound effect passes an end-to-end comparison, the UI and release
+notes must continue to describe SNES audio as unsupported.
+
 The opt-in title manifests in `tests/fixtures/sgb/titles/` pin ROM SHA-256,
 hardware model, frame count, cycle limit, and minimum command counts. They
 contain no ROM bytes or captured game artwork. For a legally supplied,
