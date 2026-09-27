@@ -1,0 +1,148 @@
+#include "gameboy/snes_spc700.hpp"
+
+#include "gameboy/snes_audio_host.hpp"
+
+namespace gameboy {
+namespace {
+constexpr std::uint8_t negative = 0x80;
+constexpr std::uint8_t page = 0x20;
+constexpr std::uint8_t zero = 0x02;
+constexpr std::uint8_t carry = 0x01;
+} // namespace
+
+std::uint8_t SnesSpc700::fetch() noexcept {
+    const auto value = bus_.spc_read(registers_.pc);
+    ++registers_.pc;
+    return value;
+}
+
+std::uint16_t SnesSpc700::direct_address(const std::uint8_t offset) const noexcept {
+    return static_cast<std::uint16_t>(
+        ((registers_.psw & page) != 0 ? 0x100U : 0U) | offset);
+}
+
+std::uint8_t SnesSpc700::read_direct(const std::uint8_t offset) noexcept {
+    return bus_.spc_read(direct_address(offset));
+}
+
+void SnesSpc700::write_direct(const std::uint8_t offset,
+                              const std::uint8_t value) noexcept {
+    bus_.spc_write(direct_address(offset), value);
+}
+
+void SnesSpc700::set_nz8(const std::uint8_t value) noexcept {
+    registers_.psw = static_cast<std::uint8_t>(
+        (registers_.psw & ~(negative | zero)) |
+        (value & negative) | (value == 0 ? zero : 0));
+}
+
+void SnesSpc700::set_nz16(const std::uint16_t value) noexcept {
+    registers_.psw = static_cast<std::uint8_t>(
+        (registers_.psw & ~(negative | zero)) |
+        ((value >> 8) & negative) | (value == 0 ? zero : 0));
+}
+
+void SnesSpc700::compare(const std::uint8_t lhs,
+                         const std::uint8_t rhs) noexcept {
+    set_nz8(static_cast<std::uint8_t>(lhs - rhs));
+    registers_.psw = static_cast<std::uint8_t>(
+        (registers_.psw & ~carry) | (lhs >= rhs ? carry : 0));
+}
+
+unsigned SnesSpc700::branch(const bool take) noexcept {
+    const auto displacement = static_cast<std::int8_t>(fetch());
+    if (take) {
+        registers_.pc = static_cast<std::uint16_t>(registers_.pc + displacement);
+    }
+    return take ? 4U : 2U;
+}
+
+SnesSpc700::StepResult SnesSpc700::step() noexcept {
+    const auto start = registers_.pc;
+    const auto opcode = fetch();
+    unsigned cycles = 0;
+    switch (opcode) {
+    case 0x00: cycles = 2; break; // NOP
+    case 0xCD: registers_.x = fetch(); set_nz8(registers_.x); cycles = 2; break;
+    case 0xBD: registers_.sp = registers_.x; cycles = 2; break;
+    case 0xE8: registers_.a = fetch(); set_nz8(registers_.a); cycles = 2; break;
+    case 0xC6: write_direct(registers_.x, registers_.a); cycles = 4; break;
+    case 0x1D: --registers_.x; set_nz8(registers_.x); cycles = 2; break;
+    case 0xD0: cycles = branch((registers_.psw & zero) == 0); break;
+    case 0x10: cycles = branch((registers_.psw & negative) == 0); break;
+    case 0x2F: cycles = branch(true); break;
+    case 0x8F: {
+        const auto value = fetch();
+        write_direct(fetch(), value);
+        cycles = 5;
+        break;
+    }
+    case 0x78: {
+        const auto value = fetch();
+        compare(read_direct(fetch()), value);
+        cycles = 5;
+        break;
+    }
+    case 0xEB: registers_.y = read_direct(fetch()); set_nz8(registers_.y); cycles = 3; break;
+    case 0x7E: compare(registers_.y, read_direct(fetch())); cycles = 3; break;
+    case 0xE4: registers_.a = read_direct(fetch()); set_nz8(registers_.a); cycles = 3; break;
+    case 0xCB: write_direct(fetch(), registers_.y); cycles = 4; break;
+    case 0xD7: {
+        const auto offset = fetch();
+        const auto lo = read_direct(offset);
+        const auto hi = read_direct(static_cast<std::uint8_t>(offset + 1));
+        const auto address = static_cast<std::uint16_t>(
+            (lo | (static_cast<unsigned>(hi) << 8)) + registers_.y);
+        bus_.spc_write(address, registers_.a);
+        cycles = 7;
+        break;
+    }
+    case 0xFC: ++registers_.y; set_nz8(registers_.y); cycles = 2; break;
+    case 0xAB: {
+        const auto offset = fetch();
+        const auto value = static_cast<std::uint8_t>(read_direct(offset) + 1);
+        write_direct(offset, value);
+        set_nz8(value);
+        cycles = 4;
+        break;
+    }
+    case 0xBA: {
+        const auto offset = fetch();
+        registers_.a = read_direct(offset);
+        registers_.y = read_direct(static_cast<std::uint8_t>(offset + 1));
+        set_nz16(static_cast<std::uint16_t>(
+            registers_.a | (static_cast<unsigned>(registers_.y) << 8)));
+        cycles = 5;
+        break;
+    }
+    case 0xDA: {
+        const auto offset = fetch();
+        write_direct(offset, registers_.a);
+        write_direct(static_cast<std::uint8_t>(offset + 1), registers_.y);
+        cycles = 5;
+        break;
+    }
+    case 0xC4: write_direct(fetch(), registers_.a); cycles = 4; break;
+    case 0xDD: registers_.a = registers_.y; set_nz8(registers_.a); cycles = 2; break;
+    case 0x5D: registers_.x = registers_.a; set_nz8(registers_.x); cycles = 2; break;
+    case 0x1F: {
+        const auto lo = fetch();
+        const auto hi = fetch();
+        const auto address = static_cast<std::uint16_t>(
+            (lo | (static_cast<unsigned>(hi) << 8)) + registers_.x);
+        const auto target_lo = bus_.spc_read(address);
+        const auto target_hi = bus_.spc_read(static_cast<std::uint16_t>(address + 1));
+        registers_.pc = static_cast<std::uint16_t>(
+            target_lo | (static_cast<unsigned>(target_hi) << 8));
+        cycles = 6;
+        break;
+    }
+    default:
+        registers_.pc = start;
+        return {0, opcode, false};
+    }
+    bus_.tick(cycles);
+    return {cycles, opcode, true};
+}
+
+} // namespace gameboy

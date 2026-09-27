@@ -147,11 +147,25 @@ firmware.
 Synthetic tests check those mappings and timing rules; a local-only test also
 opened the ignored `roms/sgb1.program.rom` and `roms/sgb2.program.rom` files.
 This code neither executes the SNES program ROM nor produces SNES PCM. It is
-not wired into the running emulator yet. The remaining implementation must
-include the SNES-side command/ICD handoff, a 65C816 execution path (or an
-independently validated equivalent), SPC700 execution, and S-DSP synthesis.
+not wired into the running emulator yet. An incremental SPC700 interpreter
+can now execute the IPL upload instruction set. A synthetic, non-proprietary
+IPL test advertises readiness, waits for a host command, and copies a byte
+from host ports into APU RAM through decoded instructions. Unsupported
+opcodes trap rather than silently acting as NOPs; this is not a complete
+SPC700, and no actual IPL ROM or SGB sound program is bundled or run.
+The remaining implementation must include the SNES-side command/ICD handoff,
+a 65C816 execution path (or an independently validated equivalent), full
+SPC700 execution, and S-DSP synthesis.
 Until a real sound effect passes an end-to-end comparison, the UI and release
 notes must continue to describe SNES audio as unsupported.
+
+A separate clean-room BRR decoder now handles one nine-byte block at a time,
+including all four predictor filters, signed nibbles, unusual shift values,
+prediction history, and the end/loop flag bits. Hand-authored tests cover
+cross-block prediction and the DSP's 16-bit clamp followed by 15-bit wrap.
+It is not connected to the SPC700 interpreter or PCM mixer: the DSP still
+needs its voice clocking, interpolation, envelopes, stereo volume, and echo
+before decoded blocks can become representative SGB audio.
 
 The opt-in title manifests in `tests/fixtures/sgb/titles/` pin ROM SHA-256,
 hardware model, frame count, cycle limit, and minimum command counts. They
