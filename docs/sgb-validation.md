@@ -271,14 +271,19 @@ python3 scripts/compare_snes_dsp_pcm.py \
   tests/fixtures/sgb/dsp/silence.txt \
   tests/fixtures/sgb/dsp/single_voice.txt \
   tests/fixtures/sgb/dsp/key_off.txt \
-  tests/fixtures/sgb/dsp/two_voices.txt
+  tests/fixtures/sgb/dsp/two_voices.txt \
+  tests/fixtures/sgb/dsp/register_writes.txt \
+  tests/fixtures/sgb/dsp/adsr_transition.txt \
+  tests/fixtures/sgb/dsp/brr_loop.txt
 ```
 
 The comparator fails on any unequal stereo sample and reports the first
 differences without silently shifting or resampling them. With local
 bsnes-libretro commit `05439f96121d2b9d7ad7a5fc1f29d7eebdcc8c43`, all
-four fixtures now match exactly: 64 silence, 64 single-voice, 80 key-off,
-and 64 two-voice stereo samples. Correcting the reference phase relationship
+seven fixtures now match exactly: 64 silence, 64 single-voice, 80 key-off,
+64 two-voice, and 96 each for live register writes, ADSR/GAIN transitions,
+and a BRR loop. The latter three full PCM traces are hash-pinned in the
+normal offline contract tests. Correcting the reference phase relationship
 and the Gaussian interpolator's 16-bit product precision resolved the
 previously measured startup and low-bit differences. This establishes parity
 only for these synthetic, echo/noise/PMON-free stimuli, not live SGB audio. The

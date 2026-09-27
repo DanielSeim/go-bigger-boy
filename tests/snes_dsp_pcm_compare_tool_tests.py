@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 from pathlib import Path
 import subprocess
+import struct
 import sys
 import unittest
 
@@ -48,6 +50,22 @@ class PcmCompareToolTests(unittest.TestCase):
                     ((index, sample) for index, sample in enumerate(samples)
                      if sample != (0, 0)), None)
                 self.assertEqual(audible, first_audible)
+
+    def test_reference_pinned_dynamic_pcm(self) -> None:
+        # SHA-256 covers every native-rate stereo frame, not just startup.
+        # These synthetic traces matched the independent S-DSP byte-for-byte.
+        fixtures = {
+            "register_writes.txt": (96, "30dbe2bb58107dd60037bf6b48d8237b321a74d26b68c012d3bf435efe5dc964"),
+            "adsr_transition.txt": (96, "73e65a02b8a5a2e68c4a5df3d56c343537739930329a8381d9dad7f67ccb0e06"),
+            "brr_loop.txt": (96, "fa80b891cb9b312c12bd0bb21449049824aef7e3f9422d9ea5b69738a1ba66f3"),
+        }
+        for name, (count, expected) in fixtures.items():
+            with self.subTest(fixture=name):
+                stimulus = (self.fixture.parent / name).read_bytes()
+                samples = MODULE.run_fixture(self.runner, stimulus)
+                self.assertEqual(len(samples), count)
+                pcm = b"".join(struct.pack("<hh", *sample) for sample in samples)
+                self.assertEqual(hashlib.sha256(pcm).hexdigest(), expected)
 
     def test_rejects_malformed_and_unsupported_stimuli(self) -> None:
         malformed = subprocess.run(
