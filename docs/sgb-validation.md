@@ -191,8 +191,15 @@ coefficient ordering at both ends and the midpoint, signed rounding, overflow,
 all fractional positions, and BRR-to-stereo arithmetic. The coefficient data
 and arithmetic were cross-checked against
 [Anomie's S-DSP research notes](https://gist.github.com/nyanpasu64/a0d916ce6924912a7116682bf778e9a0).
-The 12-sample ring, interpolation-index stepping, and scheduled BRR group
-loads are **not** implemented yet; this stage is not connected to live sound.
+The 12-sample ring and pitch-position stepping are now modeled separately:
+three four-sample groups can prefill the physical ring, a crossing of phase
+`$4000` requests one replacement group, windows wrap across the ring, and
+optional previous-voice pitch modulation is bounded at `$7FFF`. Key-on
+rewinds its pointers without clearing the physical samples. Synthetic tests
+exercise those boundaries and the handoff to Gaussian interpolation. This is
+still **not** a scheduled DSP voice: the five silent key-on samples, BRR
+group-byte read timing, per-voice register polling, and the host audio path
+are not connected to this component.
 
 A separate sample-stepped envelope now models the global 32-rate counter,
 Attack/Decay/Sustain/Release transitions, direct and timed gain modes, and
