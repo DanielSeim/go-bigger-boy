@@ -192,19 +192,29 @@ maps the SNES APU communication ports into the independent APU bus, and records
 host writes. Its NTSC master-clock/scanline model supplies H/V blanking,
 `$213F` field/latch status, `$4210` NMI status, controller auto-read timing,
 and WRAM refresh stalls. With a local 64-byte SPC700 IPL, it advances the
-independent SPC700 at the nominal APU-to-SNES clock ratio and can verify the
-first nonzero upload block against APU RAM. Synthetic tests cover status
-boundaries and fail-closed unsupported reads/opcodes. The optional local-ROM
-tests check the first upload for both SGB program images. Run:
+independent SPC700 at the nominal APU-to-SNES clock ratio and can verify
+each upload block against APU RAM through the IPL-to-driver handoff. Synthetic
+tests cover status boundaries and fail-closed unsupported reads/opcodes. The
+optional local-ROM tests check the five-block upload and handoff for both SGB
+program images. Run:
 
 ```sh
-build/gameboy_snes_65c816_apu_trace /path/to/sgb1.program.rom /path/to/spc700.rom --upload
+build/gameboy_snes_65c816_apu_trace /path/to/sgb1.program.rom /path/to/spc700.rom --driver-probe
 ```
 
-With the ignored local SGB1 and SGB2 program images, the first completed block
-is 378 bytes at APU RAM `$4C30`, FNV-1a-64
-`5e07f0679df67eb8` in both cases. That is a **first-block diagnostic**, not
-a complete SGB driver boot or audible output. The interpreter models bus
+With the ignored local SGB1 and SGB2 program images, both traces verify the
+same five blocks: 378 bytes at `$4C30`, 24 at `$4C10`, 9,971 at `$0400`, 256
+at `$4B00`, and 41,280 at `$4DB0` (51,909 bytes total). The IPL then transfers
+SPC700 control to `$0400`. The local tests pin the individual FNV-1a-64
+digests, not just the total byte count. A bounded post-handoff SPC700 probe
+then reaches the first uploaded-driver DSP write, `$4D=$00`, on both images.
+It uses independently tested instruction semantics for the encountered startup
+path, but advances the SPC700 alone after handoff: no concurrent SNES-side
+commands or DSP sample clock are modeled there. This is a **driver-upload and
+initialization diagnostic**, not proof that the driver runs to completion or
+produces audible output. The SPC700 opcode and cycle model follows the
+[SPC-700 instruction reference](https://snes.nesdev.org/wiki/SPC-700_instruction_set).
+The interpreter models bus
 access speed and instruction-level timing, but not sub-instruction bus phase,
 DMA transfer side effects, or the full ICD/PPU. APU rendezvous is likewise
 instruction-granular; neither its master-clock totals nor its packet timing

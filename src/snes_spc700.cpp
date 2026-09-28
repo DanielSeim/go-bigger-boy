@@ -57,18 +57,60 @@ unsigned SnesSpc700::branch(const bool take) noexcept {
     return take ? 4U : 2U;
 }
 
+void SnesSpc700::push(const std::uint8_t value) noexcept {
+    bus_.spc_write(static_cast<std::uint16_t>(0x100U | registers_.sp), value);
+    --registers_.sp;
+}
+
+std::uint8_t SnesSpc700::pop() noexcept {
+    return bus_.spc_read(static_cast<std::uint16_t>(0x100U | ++registers_.sp));
+}
+
 SnesSpc700::StepResult SnesSpc700::step() noexcept {
     const auto start = registers_.pc;
     const auto opcode = fetch();
     unsigned cycles = 0;
     switch (opcode) {
     case 0x00: cycles = 2; break; // NOP
+    case 0x20: registers_.psw &= static_cast<std::uint8_t>(~page);
+               cycles = 2; break; // CLRP: select direct page zero
+    case 0x40: registers_.psw |= page;
+               cycles = 2; break; // SETP: select direct page one
     case 0xCD: registers_.x = fetch(); set_nz8(registers_.x); cycles = 2; break;
     case 0xBD: registers_.sp = registers_.x; cycles = 2; break;
     case 0xE8: registers_.a = fetch(); set_nz8(registers_.a); cycles = 2; break;
+    case 0x8D: registers_.y = fetch(); set_nz8(registers_.y); cycles = 2; break;
+    case 0x28: registers_.a &= fetch(); set_nz8(registers_.a);
+               cycles = 2; break; // AND A,#imm
+    case 0x48: registers_.a ^= fetch(); set_nz8(registers_.a);
+               cycles = 2; break; // EOR A,#imm
     case 0xC6: write_direct(registers_.x, registers_.a); cycles = 4; break;
+    case 0xAF: write_direct(registers_.x++, registers_.a); cycles = 4; break;
     case 0x1D: --registers_.x; set_nz8(registers_.x); cycles = 2; break;
+    case 0x3D: ++registers_.x; set_nz8(registers_.x); cycles = 2; break;
+    case 0xBC: ++registers_.a; set_nz8(registers_.a); cycles = 2; break;
+    case 0xC8: compare(registers_.x, fetch()); cycles = 2; break; // CMP X,#imm
+    case 0x3F: { // CALL !abs
+        const auto low = fetch();
+        const auto high = fetch();
+        const auto target = static_cast<std::uint16_t>(
+            low | (static_cast<unsigned>(high) << 8));
+        push(static_cast<std::uint8_t>(registers_.pc >> 8));
+        push(static_cast<std::uint8_t>(registers_.pc));
+        registers_.pc = target;
+        cycles = 8;
+        break;
+    }
+    case 0x6F: { // RET
+        const auto low = pop();
+        const auto high = pop();
+        registers_.pc = static_cast<std::uint16_t>(
+            low | (static_cast<unsigned>(high) << 8));
+        cycles = 5;
+        break;
+    }
     case 0xD0: cycles = branch((registers_.psw & zero) == 0); break;
+    case 0xF0: cycles = branch((registers_.psw & zero) != 0); break;
     case 0x10: cycles = branch((registers_.psw & negative) == 0); break;
     case 0x2F: cycles = branch(true); break;
     case 0x8F: {
@@ -83,9 +125,29 @@ SnesSpc700::StepResult SnesSpc700::step() noexcept {
         cycles = 5;
         break;
     }
+    case 0x64: compare(registers_.a, read_direct(fetch())); cycles = 3; break;
     case 0xEB: registers_.y = read_direct(fetch()); set_nz8(registers_.y); cycles = 3; break;
     case 0x7E: compare(registers_.y, read_direct(fetch())); cycles = 3; break;
     case 0xE4: registers_.a = read_direct(fetch()); set_nz8(registers_.a); cycles = 3; break;
+    case 0xE5: { // MOV A,!abs
+        const auto low = fetch();
+        const auto high = fetch();
+        registers_.a = bus_.spc_read(static_cast<std::uint16_t>(
+            low | (static_cast<unsigned>(high) << 8)));
+        set_nz8(registers_.a);
+        cycles = 4;
+        break;
+    }
+    case 0xF6: { // MOV A,!abs+Y
+        const auto low = fetch();
+        const auto high = fetch();
+        const auto address = static_cast<std::uint16_t>(
+            (low | (static_cast<unsigned>(high) << 8)) + registers_.y);
+        registers_.a = bus_.spc_read(address);
+        set_nz8(registers_.a);
+        cycles = 5;
+        break;
+    }
     case 0xCB: write_direct(fetch(), registers_.y); cycles = 4; break;
     case 0xD7: {
         const auto offset = fetch();
@@ -123,6 +185,40 @@ SnesSpc700::StepResult SnesSpc700::step() noexcept {
         break;
     }
     case 0xC4: write_direct(fetch(), registers_.a); cycles = 4; break;
+    case 0xC7: { // MOV [dp+X],A
+        const auto offset = static_cast<std::uint8_t>(fetch() + registers_.x);
+        const auto low = read_direct(offset);
+        const auto high = read_direct(static_cast<std::uint8_t>(offset + 1));
+        bus_.spc_write(static_cast<std::uint16_t>(
+            low | (static_cast<unsigned>(high) << 8)), registers_.a);
+        cycles = 7;
+        break;
+    }
+    case 0xD5: { // MOV !abs+X,A
+        const auto low = fetch();
+        const auto high = fetch();
+        const auto address = static_cast<std::uint16_t>(
+            (low | (static_cast<unsigned>(high) << 8)) + registers_.x);
+        bus_.spc_write(address, registers_.a);
+        cycles = 6;
+        break;
+    }
+    case 0xCC: { // MOV !abs,Y
+        const auto low = fetch();
+        const auto high = fetch();
+        bus_.spc_write(static_cast<std::uint16_t>(
+            low | (static_cast<unsigned>(high) << 8)), registers_.y);
+        cycles = 5;
+        break;
+    }
+    case 0xC5: { // MOV !abs,A
+        const auto low = fetch();
+        const auto high = fetch();
+        bus_.spc_write(static_cast<std::uint16_t>(
+            low | (static_cast<unsigned>(high) << 8)), registers_.a);
+        cycles = 5;
+        break;
+    }
     case 0xDD: registers_.a = registers_.y; set_nz8(registers_.a); cycles = 2; break;
     case 0x5D: registers_.x = registers_.a; set_nz8(registers_.x); cycles = 2; break;
     case 0x1F: {
@@ -138,6 +234,20 @@ SnesSpc700::StepResult SnesSpc700::step() noexcept {
         break;
     }
     default:
+        if ((opcode & 0x1FU) == 0x03U || (opcode & 0x1FU) == 0x13U) {
+            const auto offset = fetch();
+            const auto value = read_direct(offset);
+            const auto displacement = static_cast<std::int8_t>(fetch());
+            const auto bit = static_cast<std::uint8_t>(1U << (opcode >> 5));
+            const bool bit_set = (value & bit) != 0;
+            const bool take = (opcode & 0x10U) != 0 ? !bit_set : bit_set;
+            if (take) {
+                registers_.pc = static_cast<std::uint16_t>(
+                    registers_.pc + displacement);
+            }
+            cycles = take ? 7U : 5U;
+            break;
+        }
         registers_.pc = start;
         return {0, opcode, false};
     }

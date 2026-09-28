@@ -87,6 +87,7 @@ public:
     [[nodiscard]] ApuWrite apu_write(std::size_t index) const noexcept {
         return index < apu_write_count_ ? apu_writes_[index] : ApuWrite{};
     }
+    void clear_apu_writes() noexcept { apu_write_count_ = 0; }
     [[nodiscard]] std::uint64_t steps() const noexcept { return steps_; }
     [[nodiscard]] const SnesTraceTiming& timing() const noexcept { return timing_; }
     [[nodiscard]] std::uint8_t interrupt_enable() const noexcept {

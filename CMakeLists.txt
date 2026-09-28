@@ -1212,6 +1212,18 @@ if(GAMEBOY_BUILD_TESTS)
                              $<TARGET_FILE:gameboy_snes_65c816_apu_trace>
                              ${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb1.program.rom
                              ${CMAKE_CURRENT_SOURCE_DIR}/roms/spc700.rom)
+            add_test(NAME gameboy_snes_65c816_local_sgb1_upload_boot
+                     COMMAND ${Python3_EXECUTABLE}
+                             ${CMAKE_CURRENT_SOURCE_DIR}/tests/snes_65c816_local_upload_tests.py
+                             $<TARGET_FILE:gameboy_snes_65c816_apu_trace>
+                             ${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb1.program.rom
+                             ${CMAKE_CURRENT_SOURCE_DIR}/roms/spc700.rom --boot)
+            add_test(NAME gameboy_snes_65c816_local_sgb1_driver_dsp
+                     COMMAND ${Python3_EXECUTABLE}
+                             ${CMAKE_CURRENT_SOURCE_DIR}/tests/snes_65c816_local_upload_tests.py
+                             $<TARGET_FILE:gameboy_snes_65c816_apu_trace>
+                             ${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb1.program.rom
+                             ${CMAKE_CURRENT_SOURCE_DIR}/roms/spc700.rom --driver)
         endif()
     endif()
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.program.rom")
@@ -1226,6 +1238,18 @@ if(GAMEBOY_BUILD_TESTS)
                              $<TARGET_FILE:gameboy_snes_65c816_apu_trace>
                              ${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.program.rom
                              ${CMAKE_CURRENT_SOURCE_DIR}/roms/spc700.rom)
+            add_test(NAME gameboy_snes_65c816_local_sgb2_upload_boot
+                     COMMAND ${Python3_EXECUTABLE}
+                             ${CMAKE_CURRENT_SOURCE_DIR}/tests/snes_65c816_local_upload_tests.py
+                             $<TARGET_FILE:gameboy_snes_65c816_apu_trace>
+                             ${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.program.rom
+                             ${CMAKE_CURRENT_SOURCE_DIR}/roms/spc700.rom --boot)
+            add_test(NAME gameboy_snes_65c816_local_sgb2_driver_dsp
+                     COMMAND ${Python3_EXECUTABLE}
+                             ${CMAKE_CURRENT_SOURCE_DIR}/tests/snes_65c816_local_upload_tests.py
+                             $<TARGET_FILE:gameboy_snes_65c816_apu_trace>
+                             ${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.program.rom
+                             ${CMAKE_CURRENT_SOURCE_DIR}/roms/spc700.rom --driver)
         endif()
     endif()
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/spc700.rom")
