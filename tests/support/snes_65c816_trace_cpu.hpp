@@ -89,6 +89,14 @@ public:
     }
     void clear_apu_writes() noexcept { apu_write_count_ = 0; }
     [[nodiscard]] std::uint64_t steps() const noexcept { return steps_; }
+    using SpcStepObserver = void (*)(void*, std::uint64_t, std::uint8_t,
+                                     unsigned) noexcept;
+    void set_spc_step_observer(SpcStepObserver observer,
+                               void* context = nullptr) noexcept {
+        spc_step_observer_ = observer;
+        spc_step_context_ = context;
+    }
+    [[nodiscard]] std::uint64_t spc_cycles() const noexcept { return spc_cycles_; }
     [[nodiscard]] const SnesTraceTiming& timing() const noexcept { return timing_; }
     [[nodiscard]] std::uint8_t interrupt_enable() const noexcept {
         return interrupt_enable_;
@@ -128,6 +136,8 @@ private:
     gameboy::SnesApuBus& apu_;
     gameboy::SnesSpc700* spc_{};
     std::uint64_t spc_cycles_{};
+    SpcStepObserver spc_step_observer_{};
+    void* spc_step_context_{};
     Registers r_{};
     std::array<std::uint8_t, 0x20000> wram_{};
     std::array<ApuWrite, 16384> apu_writes_{};

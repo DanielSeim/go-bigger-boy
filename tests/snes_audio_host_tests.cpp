@@ -152,6 +152,34 @@ void test_apu_bus() {
           "reset clears runtime state without discarding supplied IPL image");
 }
 
+void test_spc_physical_ram_observer() {
+    gameboy::SnesApuBus bus;
+    struct Observation {
+        unsigned count{};
+        std::uint16_t address{};
+        std::uint8_t value{};
+    } seen;
+    bus.set_spc_ram_write_observer(
+        [](void* context, std::uint16_t address, std::uint8_t value) noexcept {
+            auto& observation = *static_cast<Observation*>(context);
+            ++observation.count;
+            observation.address = address;
+            observation.value = value;
+        }, &seen);
+    bus.spc_write(0xFFC0, 0x12);
+    check(seen.count == 1 && seen.address == 0xFFC0 && seen.value == 0x12,
+          "SPC physical RAM observer sees writes beneath IPL overlay");
+    bus.spc_write(0xF4, 0x34);
+    check(seen.count == 2 && seen.address == 0xF4 && seen.value == 0x34,
+          "SPC physical RAM observer sees host-port overlay writes once");
+    bus.dsp_write_ram(0xF4, 0x56);
+    check(seen.count == 2,
+          "DSP echo writeback is separate from SPC physical RAM observation");
+    bus.reset();
+    bus.spc_write(0x1234, 0x78);
+    check(seen.count == 2, "APU reset detaches physical RAM observer");
+}
+
 void test_timer_batching() {
     // Compare the fast bulk advance to a literal single-cycle reference
     // across target changes, enable transitions, and fractional phases.
@@ -209,6 +237,7 @@ void test_local_programs(const int argc, char** argv) {
 int main(const int argc, char** argv) {
     test_program_mapping();
     test_apu_bus();
+    test_spc_physical_ram_observer();
     test_timer_batching();
     test_local_programs(argc, argv);
     return failures == 0 ? 0 : 1;

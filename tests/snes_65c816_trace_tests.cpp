@@ -152,6 +152,25 @@ void test_16_bit_direct_page_store() {
           "16-bit direct-page store preserves both accumulator bytes");
 }
 
+void test_post_upload_arithmetic_and_indexed_clear() {
+    const auto rom = program({
+        0xA2, 0x01,       // LDX #1
+        0x8A,             // TXA
+        0x85, 0x10,       // STA $10
+        0xC6, 0x10,       // DEC $10
+        0x9E, 0x0F, 0x00, // STZ $000F,X -> $0010
+        0xA5, 0x10,       // LDA $10
+    });
+    gameboy::SnesApuBus apu;
+    sgb_test::Snes65c816TraceCpu cpu(rom, apu);
+    for (unsigned i = 0; i < 6; ++i)
+        check(cpu.step().error == sgb_test::Snes65c816TraceCpu::Error::none,
+              "post-upload TXA, DEC dp, and STZ abs,X execute");
+    check(cpu.registers().a == 0 &&
+              (cpu.registers().p & 0x02U) != 0,
+          "indexed clear and decrement preserve zero result");
+}
+
 void test_local_program(const std::filesystem::path& path, const bool sgb2) {
     const auto rom = gameboy::SgbProgramRom::from_file(path);
     gameboy::SnesApuBus apu;
@@ -190,5 +209,6 @@ int main(int argc, char** argv) {
     test_ntsc_status_boundaries();
     test_status_latch_overscan_and_refresh();
     test_16_bit_direct_page_store();
+    test_post_upload_arithmetic_and_indexed_clear();
     return failures == 0 ? 0 : 1;
 }

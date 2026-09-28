@@ -1200,6 +1200,11 @@ if(GAMEBOY_BUILD_TESTS)
     target_link_libraries(gameboy_snes_65c816_trace_tests PRIVATE gameboy_core)
     add_test(NAME gameboy_snes_65c816_trace_contract
              COMMAND gameboy_snes_65c816_trace_tests)
+    add_executable(gameboy_snes_65c816_sgb_sound_sync_tests
+        tests/snes_65c816_sgb_sound_sync_tests.cpp
+        tests/support/snes_65c816_trace_cpu.cpp)
+    target_include_directories(gameboy_snes_65c816_sgb_sound_sync_tests PRIVATE tests/support)
+    target_link_libraries(gameboy_snes_65c816_sgb_sound_sync_tests PRIVATE gameboy_core)
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb1.program.rom")
         add_test(NAME gameboy_snes_65c816_local_sgb1_apu_trace
                  COMMAND gameboy_snes_65c816_trace_tests
@@ -1224,6 +1229,12 @@ if(GAMEBOY_BUILD_TESTS)
                              $<TARGET_FILE:gameboy_snes_65c816_apu_trace>
                              ${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb1.program.rom
                              ${CMAKE_CURRENT_SOURCE_DIR}/roms/spc700.rom --driver)
+            add_test(NAME gameboy_snes_65c816_local_sgb1_sync_probe
+                     COMMAND ${Python3_EXECUTABLE}
+                             ${CMAKE_CURRENT_SOURCE_DIR}/tests/snes_65c816_local_sync_probe_tests.py
+                             $<TARGET_FILE:gameboy_snes_65c816_apu_trace>
+                             ${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb1.program.rom
+                             ${CMAKE_CURRENT_SOURCE_DIR}/roms/spc700.rom sgb1)
         endif()
     endif()
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.program.rom")
@@ -1250,6 +1261,12 @@ if(GAMEBOY_BUILD_TESTS)
                              $<TARGET_FILE:gameboy_snes_65c816_apu_trace>
                              ${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.program.rom
                              ${CMAKE_CURRENT_SOURCE_DIR}/roms/spc700.rom --driver)
+            add_test(NAME gameboy_snes_65c816_local_sgb2_sync_probe
+                     COMMAND ${Python3_EXECUTABLE}
+                             ${CMAKE_CURRENT_SOURCE_DIR}/tests/snes_65c816_local_sync_probe_tests.py
+                             $<TARGET_FILE:gameboy_snes_65c816_apu_trace>
+                             ${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.program.rom
+                             ${CMAKE_CURRENT_SOURCE_DIR}/roms/spc700.rom sgb2)
         endif()
     endif()
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/spc700.rom")
@@ -1276,6 +1293,12 @@ if(GAMEBOY_BUILD_TESTS)
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/snes_spc700_host_sound_pcm_tests.py
                          $<TARGET_FILE:gameboy_snes_spc700_host_sound_tests>
+                         $<TARGET_FILE:gameboy_snes_spc700_dsp_timeline_tests>
+                         $<TARGET_FILE:gameboy_snes_dsp_pcm_fixture_runner>)
+        add_test(NAME gameboy_snes_65c816_sgb_sound_sync_pcm
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/snes_65c816_sgb_sound_sync_pcm_tests.py
+                         $<TARGET_FILE:gameboy_snes_65c816_sgb_sound_sync_tests>
                          $<TARGET_FILE:gameboy_snes_spc700_dsp_timeline_tests>
                          $<TARGET_FILE:gameboy_snes_dsp_pcm_fixture_runner>)
         add_test(NAME gameboy_snes_dsp_pcm_compare_tool

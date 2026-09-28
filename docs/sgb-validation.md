@@ -148,8 +148,10 @@ Synthetic tests check those mappings and timing rules; a local-only test also
 opened the ignored `roms/sgb1.program.rom` and `roms/sgb2.program.rom` files.
 The 256-byte `sgb.boot.rom` and `sgb2.boot.rom` files are Game Boy-side boot
 ROMs, not the S-SMP's 64-byte IPL, so they cannot boot the SNES audio CPU.
-This code neither executes the SNES program ROM nor produces SNES PCM. It is
-not wired into the running emulator yet. An incremental SPC700 interpreter
+The development-only probes below can execute a bounded startup path in the
+SNES program ROM and produce PCM for synthetic host commands; they cannot
+produce game-requested SGB sound and are not wired into the running emulator.
+An incremental SPC700 interpreter
 can now execute the IPL upload instruction set. A synthetic, non-proprietary
 IPL test advertises readiness, waits for a host command, and copies a byte
 from host ports into APU RAM through decoded instructions. Unsupported
@@ -208,13 +210,19 @@ at `$4B00`, and 41,280 at `$4DB0` (51,909 bytes total). The IPL then transfers
 SPC700 control to `$0400`. The local tests pin the individual FNV-1a-64
 digests, not just the total byte count. A bounded post-handoff SPC700 probe
 then reaches the first uploaded-driver DSP write, `$4D=$00`, on both images.
-It uses independently tested instruction semantics for the encountered startup
-path, but advances the SPC700 alone after handoff: no concurrent SNES-side
-commands or DSP sample clock are modeled there. This is a **driver-upload and
-initialization diagnostic**, not proof that the driver runs to completion or
-produces audible output. The SPC700 opcode and cycle model follows the
+That `--driver-probe` mode advances the SPC700 alone after handoff. A separate
+`--sync-probe` mode keeps the SNES CPU and SPC700 synchronized and stamps DSP
+writes and physical SPC700 RAM writes at SPC instruction completion. It reports
+the RAM-write count, first completion cycle, and a trace hash without storing
+the uploaded firmware. On the local SGB1 image it stops at the
+first unmodeled ICD read (`$6000`); on the local SGB2 image it observes six
+initialization writes, then stops at an unsupported SNES opcode. It does not
+invent ICD packet/pixel data or claim exact intra-instruction DSP write phases.
+These are **driver-upload and initialization diagnostics**, not proof that the
+driver handles a real `SOUND` or `SOU_TRN` event. The SPC700 opcode and cycle
+model follows the
 [SPC-700 instruction reference](https://snes.nesdev.org/wiki/SPC-700_instruction_set).
-The interpreter models bus
+The trace models bus
 access speed and instruction-level timing, but not sub-instruction bus phase,
 DMA transfer side effects, or the full ICD/PPU. APU rendezvous is likewise
 instruction-granular; neither its master-clock totals nor its packet timing
@@ -223,6 +231,23 @@ sound available in the running emulator. The timing model follows the
 [SNES timing](https://wiki.superfamicom.org/timing) and
 [memory mapping](https://wiki.superfamicom.org/memory-mapping) references;
 the remaining hardware behavior needs independent validation.
+
+A new fully synthetic SNES program waits, writes a host command to the APU,
+and runs concurrently with an original SPC700 test program. The test stamps
+its KON write at SPC instruction-end cycle 2,304, feeds that event to the
+existing 32 kHz DSP fixture, and pins a nonzero 128-sample stereo PCM hash.
+Locally the same PCM also matches the independent bsnes DSP implementation
+sample-for-sample. This checks the clocked host-to-SPC-to-DSP test pipeline;
+the command is not an SGB game `SOUND` packet, and the PCM is not evidence
+of playable SNES-side SGB audio.
+
+```sh
+python3 tests/snes_65c816_sgb_sound_sync_pcm_tests.py \
+  build/gameboy_snes_65c816_sgb_sound_sync_tests \
+  build/gameboy_snes_spc700_dsp_timeline_tests \
+  build/gameboy_snes_dsp_pcm_fixture_runner \
+  --reference-dir /path/to/bsnes/sfc/dsp
+```
 
 A separate clean-room BRR decoder now handles one nine-byte block at a time,
 including all four predictor filters, signed nibbles, unusual shift values,

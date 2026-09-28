@@ -503,6 +503,50 @@ void test_direct_bit_branches() {
           "BBS0 takes signed backward branch when bit zero is set");
 }
 
+void test_decrement_y_branch() {
+    gameboy::SnesApuBus bus;
+    gameboy::SnesApuBus::IplRom ipl{};
+    ipl[0] = 0x8D; ipl[1] = 2;     // MOV Y,#2
+    ipl[2] = 0xFE; ipl[3] = 0xFE; // DBNZ Y,-2
+    bus.install_ipl(ipl);
+    gameboy::SnesSpc700 cpu(bus);
+    check(cpu.step().cycles == 2 && cpu.registers().y == 2,
+          "MOV Y initializes DBNZ test");
+    const auto flags = cpu.registers().psw;
+    check(cpu.step().cycles == 6 && cpu.registers().y == 1 &&
+              cpu.registers().pc == 0xFFC2 && cpu.registers().psw == flags,
+          "DBNZ Y taken branch costs six clocks and preserves flags");
+    check(cpu.step().cycles == 4 && cpu.registers().y == 0 &&
+              cpu.registers().pc == 0xFFC4 && cpu.registers().psw == flags,
+          "DBNZ Y not-taken branch costs four clocks and preserves flags");
+}
+
+void test_or_a_immediate() {
+    gameboy::SnesApuBus bus;
+    gameboy::SnesApuBus::IplRom ipl{};
+    ipl[0] = 0xE8; ipl[1] = 0x80; // MOV A,#$80
+    ipl[2] = 0x08; ipl[3] = 0x01; // OR A,#$01
+    bus.install_ipl(ipl);
+    gameboy::SnesSpc700 cpu(bus);
+    check(cpu.step().cycles == 2 && cpu.step().cycles == 2 &&
+              cpu.registers().a == 0x81 &&
+              (cpu.registers().psw & 0x82U) == 0x80,
+          "OR A,#imm combines bits and updates N/Z");
+}
+
+void test_asl_a() {
+    gameboy::SnesApuBus bus;
+    gameboy::SnesApuBus::IplRom ipl{};
+    ipl[0] = 0xE8; ipl[1] = 0x80; // MOV A,#$80
+    ipl[2] = 0x1C;                 // ASL A
+    bus.install_ipl(ipl);
+    gameboy::SnesSpc700 cpu(bus);
+    check(cpu.step().cycles == 2 && cpu.step().cycles == 2 &&
+              cpu.registers().a == 0 &&
+              (cpu.registers().psw & 0x83U) == 0x03,
+          "ASL A shifts bit seven to carry and updates N/Z");
+}
+
 } // namespace
 
 int main() {
@@ -528,5 +572,8 @@ int main() {
     test_and_a_immediate();
     test_eor_a_immediate();
     test_direct_bit_branches();
+    test_decrement_y_branch();
+    test_or_a_immediate();
+    test_asl_a();
     return failures == 0 ? 0 : 1;
 }

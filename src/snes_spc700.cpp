@@ -82,8 +82,19 @@ SnesSpc700::StepResult SnesSpc700::step() noexcept {
     case 0x8D: registers_.y = fetch(); set_nz8(registers_.y); cycles = 2; break;
     case 0x28: registers_.a &= fetch(); set_nz8(registers_.a);
                cycles = 2; break; // AND A,#imm
+    case 0x08: registers_.a |= fetch(); set_nz8(registers_.a);
+               cycles = 2; break; // OR A,#imm
     case 0x48: registers_.a ^= fetch(); set_nz8(registers_.a);
                cycles = 2; break; // EOR A,#imm
+    case 0x1C: { // ASL A
+        const auto value = registers_.a;
+        registers_.psw = static_cast<std::uint8_t>(
+            (registers_.psw & ~carry) | ((value & 0x80U) != 0 ? carry : 0));
+        registers_.a = static_cast<std::uint8_t>(value << 1);
+        set_nz8(registers_.a);
+        cycles = 2;
+        break;
+    }
     case 0xC6: write_direct(registers_.x, registers_.a); cycles = 4; break;
     case 0xAF: write_direct(registers_.x++, registers_.a); cycles = 4; break;
     case 0x1D: --registers_.x; set_nz8(registers_.x); cycles = 2; break;
@@ -113,6 +124,17 @@ SnesSpc700::StepResult SnesSpc700::step() noexcept {
     case 0xF0: cycles = branch((registers_.psw & zero) != 0); break;
     case 0x10: cycles = branch((registers_.psw & negative) == 0); break;
     case 0x2F: cycles = branch(true); break;
+    case 0xFE: { // DBNZ Y,rel: flags are unchanged
+        const auto displacement = static_cast<std::int8_t>(fetch());
+        --registers_.y;
+        if (registers_.y != 0) {
+            registers_.pc = static_cast<std::uint16_t>(registers_.pc + displacement);
+            cycles = 6;
+        } else {
+            cycles = 4;
+        }
+        break;
+    }
     case 0x8F: {
         const auto value = fetch();
         write_direct(fetch(), value);

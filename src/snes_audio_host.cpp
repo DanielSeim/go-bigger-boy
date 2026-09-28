@@ -74,6 +74,8 @@ void SnesApuBus::reset() noexcept {
     ipl_enabled_ = true;
     dsp_write_observer_ = nullptr;
     dsp_write_context_ = nullptr;
+    ram_write_observer_ = nullptr;
+    ram_write_context_ = nullptr;
 }
 
 void SnesApuBus::install_ipl(const IplRom& image) noexcept {
@@ -107,6 +109,8 @@ void SnesApuBus::spc_write(const std::uint16_t address,
     if (address >= 0xF4 && address <= 0xF7) {
         spc_to_host_[address - 0xF4] = value;
         ram_[address] = value;
+        if (ram_write_observer_)
+            ram_write_observer_(ram_write_context_, address, value);
         return;
     }
     if (address == 0xF1) {
@@ -142,6 +146,8 @@ void SnesApuBus::spc_write(const std::uint16_t address,
     }
     // Physical RAM remains writable under all I/O and IPL overlays.
     ram_[address] = value;
+    if (ram_write_observer_)
+        ram_write_observer_(ram_write_context_, address, value);
 }
 
 void SnesApuBus::tick(const unsigned spc_cycles) noexcept {

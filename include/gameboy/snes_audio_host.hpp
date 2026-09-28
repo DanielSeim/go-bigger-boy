@@ -40,6 +40,7 @@ class SnesApuBus final {
 public:
     using IplRom = std::array<std::uint8_t, 64>;
     using DspWriteObserver = void (*)(void*, std::uint8_t, std::uint8_t) noexcept;
+    using RamWriteObserver = void (*)(void*, std::uint16_t, std::uint8_t) noexcept;
 
     void reset() noexcept;
     void install_ipl(const IplRom& image) noexcept;
@@ -57,6 +58,14 @@ public:
                                 void* context = nullptr) noexcept {
         dsp_write_observer_ = observer;
         dsp_write_context_ = context;
+    }
+    // Observe physical RAM writes made by the SPC700, including writes under
+    // I/O/IPL overlays. DSP echo writeback has a separate path. Detach before
+    // destroying the callback context.
+    void set_spc_ram_write_observer(RamWriteObserver observer,
+                                     void* context = nullptr) noexcept {
+        ram_write_observer_ = observer;
+        ram_write_context_ = context;
     }
     // S-DSP accesses physical APU RAM, bypassing SPC700 I/O and IPL overlays.
     [[nodiscard]] std::uint8_t dsp_read_ram(std::uint16_t address) const noexcept {
@@ -83,6 +92,8 @@ private:
     bool ipl_enabled_{true};
     DspWriteObserver dsp_write_observer_{};
     void* dsp_write_context_{};
+    RamWriteObserver ram_write_observer_{};
+    void* ram_write_context_{};
 };
 
 } // namespace gameboy

@@ -128,6 +128,9 @@ void Snes65c816TraceCpu::synchronize_apu() noexcept {
             return;
         }
         spc_cycles_ += result.cycles;
+        if (spc_step_observer_ != nullptr)
+            spc_step_observer_(spc_step_context_, spc_cycles_, result.opcode,
+                               result.cycles);
     }
 }
 
@@ -155,7 +158,7 @@ unsigned Snes65c816TraceCpu::instruction_cycles(
     case 0x18: case 0x78: case 0xD8: case 0xFB:
     case 0x9A: case 0xE8: case 0xC8: case 0xCA: case 0x88:
     case 0x0A: case 0x3A: case 0x4A: case 0x98: case 0xA8:
-    case 0xAA: return 2;
+    case 0xAA: case 0x8A: return 2;
     case 0xC2: case 0xE2: return 3;
     case 0xEB: return 3;
     case 0x09: case 0x29: case 0x49: case 0x69: case 0xC9: case 0xA9:
@@ -174,11 +177,11 @@ unsigned Snes65c816TraceCpu::instruction_cycles(
         return 5 + m;
     case 0x2E: return 6 + 2 * m;
     case 0x26: return 5 + 2 * m + dp;
-    case 0x9D: return 5 + m;
+    case 0x9D: case 0x9E: return 5 + m;
     case 0x64: case 0x65: case 0x85: case 0xA5: case 0xC5:
         return 3 + m + dp;
     case 0xA4: return 3 + x + dp;
-    case 0xE6: return 5 + 2 * m + dp;
+    case 0xC6: case 0xE6: return 5 + 2 * m + dp;
     case 0xEE: return 6 + 2 * m;
     case 0x74: return 4 + m + dp;
     case 0x48: return 3 + m;
@@ -292,8 +295,8 @@ void Snes65c816TraceCpu::write8(const std::uint8_t bank,
     }
     if (system_bank && (address == 0x6001 || address == 0x6003 ||
                         (address >= 0x6004 && address <= 0x6007))) {
-        // Write-only ICD control and joypad forwarding. This trace runs only
-        // until the first APU write; GB-side effects are not synthesized.
+        // Write-only ICD control and joypad forwarding. GB-side effects are
+        // not synthesized; reads from this region still fail closed.
         return;
     }
     // PPU/DMA/CPU registers are write-only in this bounded trace. We permit
@@ -672,6 +675,21 @@ Snes65c816TraceCpu::StepResult Snes65c816TraceCpu::step() noexcept {
         }
         break;
     }
+    case 0xC6: { // DEC dp
+        const auto address = static_cast<std::uint16_t>(r_.d + fetch8());
+        if (accumulator_8()) {
+            const auto old = read8(0, address);
+            write8(0, address, old); // RMW dummy write
+            const auto value = static_cast<std::uint8_t>(old - 1);
+            write8(0, address, value);
+            set_nz8(value);
+        } else {
+            const auto value = static_cast<std::uint16_t>(read16(0, address) - 1);
+            write16(0, address, value);
+            set_nz16(value);
+        }
+        break;
+    }
     case 0xEE: { // INC abs
         const auto address = fetch16();
         if (accumulator_8()) {
@@ -689,6 +707,12 @@ Snes65c816TraceCpu::StepResult Snes65c816TraceCpu::step() noexcept {
     }
     case 0x9C: { // STZ abs
         const auto address = fetch16();
+        if (accumulator_8()) write8(r_.db, address, 0);
+        else write16(r_.db, address, 0);
+        break;
+    }
+    case 0x9E: { // STZ abs,X
+        const auto address = static_cast<std::uint16_t>(fetch16() + r_.x);
         if (accumulator_8()) write8(r_.db, address, 0);
         else write16(r_.db, address, 0);
         break;
@@ -899,6 +923,11 @@ Snes65c816TraceCpu::StepResult Snes65c816TraceCpu::step() noexcept {
     case 0xAA: r_.x = index_8() ? static_cast<std::uint8_t>(r_.a) : r_.a;
                if (index_8()) set_nz8(static_cast<std::uint8_t>(r_.x));
                else set_nz16(r_.x); break; // TAX
+    case 0x8A: r_.a = accumulator_8() ?
+                   static_cast<std::uint16_t>((r_.a & 0xFF00U) | (r_.x & 0xFFU)) :
+                   r_.x;
+               if (accumulator_8()) set_nz8(static_cast<std::uint8_t>(r_.a));
+               else set_nz16(r_.a); break; // TXA
     case 0x98: r_.a = accumulator_8() ?
                    static_cast<std::uint16_t>((r_.a & 0xFF00U) | (r_.y & 0xFFU)) :
                    r_.y;
