@@ -547,6 +547,398 @@ void test_asl_a() {
           "ASL A shifts bit seven to carry and updates N/Z");
 }
 
+void test_set_carry() {
+    gameboy::SnesApuBus bus;
+    gameboy::SnesApuBus::IplRom ipl{};
+    ipl[0] = 0x80; // SETC
+    ipl[1] = 0x60; // CLRC
+    ipl[2] = 0xED; // NOTC
+    bus.install_ipl(ipl);
+    gameboy::SnesSpc700 cpu(bus);
+    const auto flags = cpu.registers().psw;
+    check(cpu.step().cycles == 2 &&
+              cpu.registers().psw == (flags | 0x01U),
+          "SETC sets only carry in two SPC cycles");
+    check(cpu.step().cycles == 2 && cpu.registers().psw == flags,
+          "CLRC clears only carry in two SPC cycles");
+    check(cpu.step().cycles == 3 && cpu.registers().psw == (flags | 0x01U),
+          "NOTC toggles only carry in three SPC cycles");
+}
+
+void test_adc_a_immediate() {
+    gameboy::SnesApuBus bus;
+    gameboy::SnesApuBus::IplRom ipl{};
+    ipl[0] = 0xE8; ipl[1] = 0x7F; // MOV A,#$7f
+    ipl[2] = 0x80;                 // SETC
+    ipl[3] = 0x88; ipl[4] = 0x00; // ADC A,#0
+    ipl[5] = 0xE8; ipl[6] = 0xFF; // MOV A,#$ff
+    ipl[7] = 0x80;                 // SETC
+    ipl[8] = 0x88; ipl[9] = 0x00; // ADC A,#0
+    ipl[10] = 0xE8; ipl[11] = 1;   // MOV A,#1
+    ipl[12] = 0x8F; ipl[13] = 2; ipl[14] = 0x20; // MOV $20,#2
+    ipl[15] = 0x60;                // CLRC
+    ipl[16] = 0x84; ipl[17] = 0x20; // ADC A,$20
+    bus.install_ipl(ipl);
+    gameboy::SnesSpc700 cpu(bus);
+    check(cpu.step().supported && cpu.step().supported &&
+              cpu.step().cycles == 2 && cpu.registers().a == 0x80 &&
+              (cpu.registers().psw & 0xCBU) == 0xC8,
+          "ADC immediate sets signed overflow, half carry and negative");
+    check(cpu.step().supported && cpu.step().supported &&
+              cpu.step().cycles == 2 && cpu.registers().a == 0 &&
+              (cpu.registers().psw & 0xCBU) == 0x0B,
+          "ADC immediate wraps and sets carry, half carry and zero");
+    check(cpu.step().supported && cpu.step().supported &&
+              cpu.step().supported && cpu.step().cycles == 3 &&
+              cpu.registers().a == 3 && (cpu.registers().psw & 0xCBU) == 0,
+          "ADC direct page reads source byte and updates arithmetic flags");
+}
+
+void test_absolute_jump() {
+    gameboy::SnesApuBus bus;
+    gameboy::SnesApuBus::IplRom ipl{};
+    ipl[0] = 0x5F; ipl[1] = 0xC5; ipl[2] = 0xFF; // JMP $FFC5
+    ipl[5] = 0x00; // NOP
+    bus.install_ipl(ipl);
+    gameboy::SnesSpc700 cpu(bus);
+    check(cpu.step().cycles == 3 && cpu.registers().pc == 0xFFC5 &&
+              cpu.step().cycles == 2,
+          "JMP absolute changes SPC program counter in three cycles");
+}
+
+void test_set_direct_bit() {
+    gameboy::SnesApuBus bus;
+    gameboy::SnesApuBus::IplRom ipl{};
+    ipl[0] = 0xA2; ipl[1] = 0x20; // SET1 $20.5
+    ipl[2] = 0x02; ipl[3] = 0x20; // SET1 $20.0
+    ipl[4] = 0xB2; ipl[5] = 0x20; // CLR1 $20.5
+    bus.install_ipl(ipl);
+    gameboy::SnesSpc700 cpu(bus);
+    const auto flags = cpu.registers().psw;
+    check(cpu.step().cycles == 4 && bus.spc_read(0x20) == 0x20 &&
+              cpu.registers().psw == flags,
+          "SET1 sets selected direct-page bit without changing flags");
+    check(cpu.step().cycles == 4 && bus.spc_read(0x20) == 0x21,
+          "SET1 preserves other direct-page bits");
+    check(cpu.step().cycles == 4 && bus.spc_read(0x20) == 0x01 &&
+              cpu.registers().psw == flags,
+          "CLR1 clears selected direct-page bit without changing flags");
+}
+
+void test_multiply_ya() {
+    gameboy::SnesApuBus bus;
+    gameboy::SnesApuBus::IplRom ipl{};
+    ipl[0] = 0xE8; ipl[1] = 0x80; // MOV A,#$80
+    ipl[2] = 0x8D; ipl[3] = 0x02; // MOV Y,#2
+    ipl[4] = 0xCF;                // MUL YA -> $0100
+    bus.install_ipl(ipl);
+    gameboy::SnesSpc700 cpu(bus);
+    check(cpu.step().supported && cpu.step().supported &&
+              cpu.step().cycles == 9 && cpu.registers().a == 0 &&
+              cpu.registers().y == 1 && (cpu.registers().psw & 0x82U) == 0,
+          "MUL YA writes both result bytes and bases N/Z on Y");
+}
+
+void test_load_a_absolute_x() {
+    gameboy::SnesApuBus bus;
+    gameboy::SnesApuBus::IplRom ipl{};
+    ipl[0] = 0xCD; ipl[1] = 2; // MOV X,#2
+    ipl[2] = 0xF5; ipl[3] = 0xFE; ipl[4] = 0x1F; // MOV A,$1ffe+X
+    bus.install_ipl(ipl);
+    bus.spc_write(0x2000, 0x81);
+    gameboy::SnesSpc700 cpu(bus);
+    check(cpu.step().supported && cpu.step().cycles == 5 &&
+              cpu.registers().a == 0x81 &&
+              (cpu.registers().psw & 0x82U) == 0x80,
+          "MOV A,absolute+X reads indexed address and sets N/Z");
+}
+
+void test_move_a_to_y() {
+    gameboy::SnesApuBus bus;
+    gameboy::SnesApuBus::IplRom ipl{};
+    ipl[0] = 0xE8; ipl[1] = 0x80; // MOV A,#$80
+    ipl[2] = 0xFD;                 // MOV Y,A
+    bus.install_ipl(ipl);
+    gameboy::SnesSpc700 cpu(bus);
+    check(cpu.step().supported && cpu.step().cycles == 2 &&
+              cpu.registers().y == 0x80 &&
+              (cpu.registers().psw & 0x82U) == 0x80,
+          "MOV Y,A copies accumulator and updates N/Z");
+}
+
+void test_load_x_direct() {
+    gameboy::SnesApuBus bus;
+    gameboy::SnesApuBus::IplRom ipl{};
+    ipl[0] = 0xF8; ipl[1] = 0x30; // MOV X,$30
+    bus.install_ipl(ipl);
+    bus.spc_write(0x30, 0x80);
+    gameboy::SnesSpc700 cpu(bus);
+    check(cpu.step().cycles == 3 && cpu.registers().x == 0x80 &&
+              (cpu.registers().psw & 0x82U) == 0x80,
+          "MOV X,dp reads physical direct page and updates N/Z");
+}
+
+void test_compare_y_immediate() {
+    gameboy::SnesApuBus bus;
+    gameboy::SnesApuBus::IplRom ipl{};
+    ipl[0] = 0x8D; ipl[1] = 1; // MOV Y,#1
+    ipl[2] = 0xAD; ipl[3] = 2; // CMP Y,#2
+    bus.install_ipl(ipl);
+    gameboy::SnesSpc700 cpu(bus);
+    check(cpu.step().supported && cpu.step().cycles == 2 &&
+              cpu.registers().y == 1 &&
+              (cpu.registers().psw & 0x83U) == 0x80,
+          "CMP Y,#imm sets N/Z/C from subtraction without changing Y");
+}
+
+void test_compare_a_immediate() {
+    gameboy::SnesApuBus bus;
+    gameboy::SnesApuBus::IplRom ipl{};
+    ipl[0] = 0xE8; ipl[1] = 0x80; // MOV A,#$80
+    ipl[2] = 0x68; ipl[3] = 0x80; // CMP A,#$80
+    ipl[4] = 0x68; ipl[5] = 0x81; // CMP A,#$81
+    bus.install_ipl(ipl);
+    gameboy::SnesSpc700 cpu(bus);
+    check(cpu.step().cycles == 2 && cpu.step().cycles == 2 &&
+              (cpu.registers().psw & 0x83U) == 0x03 &&
+              cpu.step().cycles == 2 && cpu.registers().a == 0x80 &&
+              (cpu.registers().psw & 0x83U) == 0x80,
+          "CMP A,#imm updates comparison flags and leaves A unchanged");
+}
+
+void test_branch_carry_set() {
+    gameboy::SnesApuBus bus;
+    gameboy::SnesApuBus::IplRom ipl{};
+    ipl[0] = 0xB0; ipl[1] = 2; // BCS +2, initially not taken
+    ipl[2] = 0x80;             // SETC
+    ipl[3] = 0xB0; ipl[4] = 0xFE; // BCS -2, taken
+    bus.install_ipl(ipl);
+    gameboy::SnesSpc700 cpu(bus);
+    check(cpu.step().cycles == 2 && cpu.registers().pc == 0xFFC2 &&
+              cpu.step().cycles == 2 && cpu.step().cycles == 4 &&
+              cpu.registers().pc == 0xFFC3,
+          "BCS uses carry, signed displacement and conditional cycle count");
+}
+
+void test_branch_carry_clear() {
+    gameboy::SnesApuBus bus;
+    gameboy::SnesApuBus::IplRom ipl{};
+    ipl[0] = 0x90; ipl[1] = 2; // BCC +2, initially taken
+    ipl[4] = 0x80;             // SETC
+    ipl[5] = 0x90; ipl[6] = 0xFE; // BCC -2, not taken
+    bus.install_ipl(ipl);
+    gameboy::SnesSpc700 cpu(bus);
+    check(cpu.step().cycles == 4 && cpu.registers().pc == 0xFFC4 &&
+              cpu.step().cycles == 2 && cpu.step().cycles == 2 &&
+              cpu.registers().pc == 0xFFC7,
+          "BCC uses carry and conditional cycle count");
+}
+
+void test_pop_y() {
+    gameboy::SnesApuBus bus;
+    gameboy::SnesApuBus::IplRom ipl{};
+    ipl[0] = 0x8D; ipl[1] = 0x80; // MOV Y,#$80
+    ipl[2] = 0x6D;                 // PUSH Y
+    ipl[3] = 0x8D; ipl[4] = 0;    // MOV Y,#0
+    ipl[5] = 0xEE;                 // POP Y
+    bus.install_ipl(ipl);
+    gameboy::SnesSpc700 cpu(bus);
+    check(cpu.step().cycles == 2 && cpu.step().cycles == 4 &&
+              bus.spc_read(0x100) == 0x80 && cpu.registers().sp == 0xFF &&
+              cpu.step().cycles == 2 && cpu.step().cycles == 4 &&
+              cpu.registers().y == 0x80 && cpu.registers().sp == 0 &&
+              (cpu.registers().psw & 0x82U) == 0x02,
+          "POP Y restores the stack value without changing flags");
+}
+
+void test_load_a_direct_indexed_x() {
+    gameboy::SnesApuBus bus;
+    gameboy::SnesApuBus::IplRom ipl{};
+    ipl[0] = 0xCD; ipl[1] = 0x30; // MOV X,#$30
+    ipl[2] = 0xF4; ipl[3] = 0xF0; // MOV A,$f0+X, wraps to $20
+    bus.install_ipl(ipl);
+    bus.spc_write(0x20, 0x80);
+    gameboy::SnesSpc700 cpu(bus);
+    check(cpu.step().cycles == 2 && cpu.step().cycles == 4 &&
+              cpu.registers().a == 0x80 &&
+              (cpu.registers().psw & 0x82U) == 0x80,
+          "MOV A,dp+X wraps the direct offset and updates N/Z");
+}
+
+void test_shift_direct_left() {
+    gameboy::SnesApuBus bus;
+    gameboy::SnesApuBus::IplRom ipl{};
+    ipl[0] = 0x0B; ipl[1] = 0x30; // ASL $30
+    bus.install_ipl(ipl);
+    bus.spc_write(0x30, 0x80);
+    gameboy::SnesSpc700 cpu(bus);
+    check(cpu.step().cycles == 4 && bus.spc_read(0x30) == 0 &&
+              (cpu.registers().psw & 0x83U) == 0x03,
+          "ASL dp shifts RAM and sets C/Z from the result");
+}
+
+void test_compare_a_absolute_indexed_x() {
+    gameboy::SnesApuBus bus;
+    gameboy::SnesApuBus::IplRom ipl{};
+    ipl[0] = 0xCD; ipl[1] = 0x30; // MOV X,#$30
+    ipl[2] = 0xE8; ipl[3] = 0x80; // MOV A,#$80
+    ipl[4] = 0x75; ipl[5] = 0xF0; ipl[6] = 0x01; // CMP A,$01f0+X
+    bus.install_ipl(ipl);
+    bus.spc_write(0x220, 0x81);
+    gameboy::SnesSpc700 cpu(bus);
+    check(cpu.step().cycles == 2 && cpu.step().cycles == 2 &&
+              cpu.step().cycles == 5 && cpu.registers().a == 0x80 &&
+              (cpu.registers().psw & 0x83U) == 0x80,
+          "CMP A,!abs+X crosses pages without changing A");
+}
+
+void test_compare_y_absolute() {
+    gameboy::SnesApuBus bus;
+    gameboy::SnesApuBus::IplRom ipl{};
+    ipl[0] = 0x8D; ipl[1] = 0x80; // MOV Y,#$80
+    ipl[2] = 0x5E; ipl[3] = 0x20; ipl[4] = 0x02; // CMP Y,$0220
+    bus.install_ipl(ipl);
+    bus.spc_write(0x220, 0x81);
+    gameboy::SnesSpc700 cpu(bus);
+    check(cpu.step().cycles == 2 && cpu.step().cycles == 4 &&
+              cpu.registers().y == 0x80 &&
+              (cpu.registers().psw & 0x83U) == 0x80,
+          "CMP Y,!abs reads 16-bit address without changing Y");
+}
+
+void test_store_x_absolute() {
+    gameboy::SnesApuBus bus;
+    gameboy::SnesApuBus::IplRom ipl{};
+    ipl[0] = 0xCD; ipl[1] = 0x81; // MOV X,#$81
+    ipl[2] = 0xC9; ipl[3] = 0x20; ipl[4] = 0x02; // MOV $0220,X
+    bus.install_ipl(ipl);
+    gameboy::SnesSpc700 cpu(bus);
+    check(cpu.step().cycles == 2 && cpu.step().cycles == 5 &&
+              bus.spc_read(0x220) == 0x81 &&
+              (cpu.registers().psw & 0x82U) == 0x80,
+          "MOV !abs,X stores X without changing flags");
+}
+
+void test_store_a_direct_indexed_x() {
+    gameboy::SnesApuBus bus;
+    gameboy::SnesApuBus::IplRom ipl{};
+    ipl[0] = 0xCD; ipl[1] = 0x30; // MOV X,#$30
+    ipl[2] = 0xE8; ipl[3] = 0x80; // MOV A,#$80
+    ipl[4] = 0xD4; ipl[5] = 0xF0; // MOV $f0+X,A
+    bus.install_ipl(ipl);
+    gameboy::SnesSpc700 cpu(bus);
+    check(cpu.step().cycles == 2 && cpu.step().cycles == 2 &&
+              cpu.step().cycles == 5 && bus.spc_read(0x20) == 0x80 &&
+              cpu.registers().a == 0x80,
+          "MOV dp+X,A wraps direct offset and stores A");
+}
+
+void test_store_x_direct() {
+    gameboy::SnesApuBus bus;
+    gameboy::SnesApuBus::IplRom ipl{};
+    ipl[0] = 0xCD; ipl[1] = 0x81; // MOV X,#$81
+    ipl[2] = 0xD8; ipl[3] = 0x30; // MOV $30,X
+    bus.install_ipl(ipl);
+    gameboy::SnesSpc700 cpu(bus);
+    check(cpu.step().cycles == 2 && cpu.step().cycles == 4 &&
+              bus.spc_read(0x30) == 0x81 &&
+              (cpu.registers().psw & 0x82U) == 0x80,
+          "MOV dp,X stores X without changing flags");
+}
+
+void test_load_a_indirect_x() {
+    gameboy::SnesApuBus bus;
+    gameboy::SnesApuBus::IplRom ipl{};
+    ipl[0] = 0xCD; ipl[1] = 0x30; // MOV X,#$30
+    ipl[2] = 0xE6;                 // MOV A,(X)
+    bus.install_ipl(ipl);
+    bus.spc_write(0x30, 0x80);
+    gameboy::SnesSpc700 cpu(bus);
+    check(cpu.step().supported && cpu.step().cycles == 3 &&
+              cpu.registers().a == 0x80 &&
+              (cpu.registers().psw & 0x82U) == 0x80,
+          "MOV A,(X) uses selected direct page and updates N/Z");
+}
+
+void test_compare_direct_to_direct() {
+    gameboy::SnesApuBus bus;
+    gameboy::SnesApuBus::IplRom ipl{};
+    ipl[0] = 0x69; ipl[1] = 0x20; ipl[2] = 0x21;
+    bus.install_ipl(ipl);
+    bus.spc_write(0x20, 1);
+    bus.spc_write(0x21, 2);
+    gameboy::SnesSpc700 cpu(bus);
+    check(cpu.step().cycles == 6 &&
+              (cpu.registers().psw & 0x83U) == 0x01 &&
+              bus.spc_read(0x20) == 1 && bus.spc_read(0x21) == 2,
+          "CMP dp,dp encodes source then destination and only changes flags");
+}
+
+void test_eor_a_direct() {
+    gameboy::SnesApuBus bus;
+    gameboy::SnesApuBus::IplRom ipl{};
+    ipl[0] = 0xE8; ipl[1] = 0xFF; // MOV A,#$ff
+    ipl[2] = 0x44; ipl[3] = 0x20; // EOR A,$20
+    bus.install_ipl(ipl);
+    bus.spc_write(0x20, 0x7F);
+    gameboy::SnesSpc700 cpu(bus);
+    check(cpu.step().supported && cpu.step().cycles == 3 &&
+              cpu.registers().a == 0x80 &&
+              (cpu.registers().psw & 0x82U) == 0x80,
+          "EOR A,dp XORs memory and updates N/Z");
+}
+
+void test_lsr_a() {
+    gameboy::SnesApuBus bus;
+    gameboy::SnesApuBus::IplRom ipl{};
+    ipl[0] = 0xE8; ipl[1] = 1; // MOV A,#1
+    ipl[2] = 0x5C;              // LSR A
+    bus.install_ipl(ipl);
+    gameboy::SnesSpc700 cpu(bus);
+    check(cpu.step().supported && cpu.step().cycles == 2 &&
+              cpu.registers().a == 0 &&
+              (cpu.registers().psw & 0x83U) == 0x03,
+          "LSR A shifts low bit into carry and updates N/Z");
+}
+
+void test_ror_direct() {
+    gameboy::SnesApuBus bus;
+    gameboy::SnesApuBus::IplRom ipl{};
+    ipl[0] = 0x80;              // SETC
+    ipl[1] = 0x6B; ipl[2] = 0x20; // ROR $20
+    bus.install_ipl(ipl);
+    bus.spc_write(0x20, 1);
+    gameboy::SnesSpc700 cpu(bus);
+    check(cpu.step().supported && cpu.step().cycles == 4 &&
+              bus.spc_read(0x20) == 0x80 &&
+              (cpu.registers().psw & 0x83U) == 0x81,
+          "ROR dp rotates through carry and updates N/Z/C");
+}
+
+void test_load_y_absolute() {
+    gameboy::SnesApuBus bus;
+    gameboy::SnesApuBus::IplRom ipl{};
+    ipl[0] = 0xEC; ipl[1] = 0x00; ipl[2] = 0x20; // MOV Y,$2000
+    bus.install_ipl(ipl);
+    bus.spc_write(0x2000, 0x80);
+    gameboy::SnesSpc700 cpu(bus);
+    check(cpu.step().cycles == 4 && cpu.registers().y == 0x80 &&
+              (cpu.registers().psw & 0x82U) == 0x80,
+          "MOV Y,absolute loads Y and updates N/Z");
+}
+
+void test_push_y() {
+    gameboy::SnesApuBus bus;
+    gameboy::SnesApuBus::IplRom ipl{};
+    ipl[0] = 0x8D; ipl[1] = 0x42; // MOV Y,#$42
+    ipl[2] = 0x6D;                // PUSH Y
+    bus.install_ipl(ipl);
+    gameboy::SnesSpc700 cpu(bus);
+    check(cpu.step().supported && cpu.step().cycles == 4 &&
+              bus.spc_read(0x100) == 0x42 && cpu.registers().sp == 0xFF,
+          "PUSH Y writes stack byte and wraps stack pointer");
+}
+
 } // namespace
 
 int main() {
@@ -575,5 +967,32 @@ int main() {
     test_decrement_y_branch();
     test_or_a_immediate();
     test_asl_a();
+    test_set_carry();
+    test_adc_a_immediate();
+    test_absolute_jump();
+    test_set_direct_bit();
+    test_multiply_ya();
+    test_load_a_absolute_x();
+    test_move_a_to_y();
+    test_load_x_direct();
+    test_compare_y_immediate();
+    test_compare_a_immediate();
+    test_branch_carry_set();
+    test_branch_carry_clear();
+    test_pop_y();
+    test_load_a_direct_indexed_x();
+    test_shift_direct_left();
+    test_compare_a_absolute_indexed_x();
+    test_compare_y_absolute();
+    test_store_x_absolute();
+    test_store_a_direct_indexed_x();
+    test_store_x_direct();
+    test_load_a_indirect_x();
+    test_compare_direct_to_direct();
+    test_eor_a_direct();
+    test_lsr_a();
+    test_ror_direct();
+    test_load_y_absolute();
+    test_push_y();
     return failures == 0 ? 0 : 1;
 }

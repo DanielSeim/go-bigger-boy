@@ -413,6 +413,10 @@ Snes65c816TraceCpu::StepResult Snes65c816TraceCpu::step() noexcept {
     const auto bank = r_.pb;
     const auto pc = r_.pc;
     const auto opcode = fetch8();
+    // APU rendezvous can fail during the opcode fetch. Do not turn its
+    // sentinel read value into a misleading 65C816 opcode failure.
+    if (error_ != Error::none)
+        return {error_, opcode, bank, pc, error_address_};
     switch (opcode) {
     case 0x18: r_.p &= static_cast<std::uint8_t>(~carry); break; // CLC
     case 0x78: r_.p |= irq_disable; break; // SEI

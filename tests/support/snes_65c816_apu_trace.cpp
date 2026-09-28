@@ -75,6 +75,8 @@ int main(int argc, char** argv) {
             std::array<Event, 16> events{};
             std::size_t count{};
             std::size_t printed{};
+            std::uint64_t dsp_writes{};
+            std::uint64_t dsp_hash{14695981039346656037ULL};
             unsigned pending{};
             std::uint8_t address{};
             std::uint8_t value{};
@@ -108,7 +110,7 @@ int main(int argc, char** argv) {
                     apu.set_dsp_write_observer(nullptr);
                     apu.set_spc_ram_write_observer(nullptr);
                     cpu.set_spc_step_observer(nullptr);
-                    std::cerr << "synchronized DSP observation overflow or multi-write"
+                    std::cerr << "synchronized DSP observation multi-write"
                                  " SPC instruction\n";
                     return 5;
                 }
@@ -170,12 +172,25 @@ int main(int argc, char** argv) {
                                 }
                                 observed.pending_ram_count = 0;
                                 if (observed.pending != 0) {
-                                    if (observed.pending != 1 ||
-                                        observed.count == observed.events.size()) {
+                                    if (observed.pending != 1) {
                                         observed.unsupported = true;
                                     } else {
-                                        observed.events[observed.count++] = {
-                                            cycle, opcode, observed.address, observed.value};
+                                        ++observed.dsp_writes;
+                                        const auto fold = [&](std::uint8_t byte) {
+                                            observed.dsp_hash =
+                                                (observed.dsp_hash ^ byte) *
+                                                1099511628211ULL;
+                                        };
+                                        fold(opcode);
+                                        fold(observed.address);
+                                        fold(observed.value);
+                                        for (unsigned shift = 0; shift < 64; shift += 8)
+                                            fold(static_cast<std::uint8_t>(cycle >> shift));
+                                        if (observed.count < observed.events.size()) {
+                                            observed.events[observed.count++] = {
+                                                cycle, opcode, observed.address,
+                                                observed.value};
+                                        }
                                     }
                                 }
                                 observed.pending = 0;
@@ -240,6 +255,10 @@ int main(int argc, char** argv) {
                               << dsp_observation.first_ram_cycle << " fnv64="
                               << std::hex << std::setw(16) << std::setfill('0')
                               << dsp_observation.ram_hash << std::dec << '\n';
+                    std::cout << "post-handoff DSP writes="
+                              << dsp_observation.dsp_writes << " fnv64="
+                              << std::hex << std::setw(16) << std::setfill('0')
+                              << dsp_observation.dsp_hash << std::dec << '\n';
                 }
                 std::cerr << "SNES CPU trace stopped after " << cpu.steps()
                           << " instructions at $" << std::hex << std::setw(2)

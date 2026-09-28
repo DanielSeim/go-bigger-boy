@@ -1,4 +1,5 @@
 #include "snes_65c816_trace_cpu.hpp"
+#include "gameboy/snes_spc700.hpp"
 
 #include <cstdint>
 #include <filesystem>
@@ -69,6 +70,23 @@ void test_fail_closed() {
     check(opcode.error == sgb_test::Snes65c816TraceCpu::Error::unsupported_opcode &&
               opcode.opcode == 0x02 && opcode.pc == 0x8104,
           "unsupported opcode reports its original PC");
+
+    rom = program({0x80, 0xFE}); // BRA self while SPC fetches unsupported STOP
+    gameboy::SnesApuBus::IplRom ipl{};
+    ipl[0] = 0xFF;
+    apu.install_ipl(ipl);
+    gameboy::SnesSpc700 spc(apu);
+    sgb_test::Snes65c816TraceCpu coupled(rom, apu, &spc);
+    sgb_test::Snes65c816TraceCpu::StepResult synchronized{};
+    for (unsigned i = 0; i < 16; ++i) {
+        synchronized = coupled.step();
+        if (synchronized.error != sgb_test::Snes65c816TraceCpu::Error::none)
+            break;
+    }
+    check(synchronized.error ==
+              sgb_test::Snes65c816TraceCpu::Error::unsupported_spc_opcode &&
+              synchronized.address == 0xFFC0,
+          "SPC error during 65C816 opcode fetch is not mislabeled as a host opcode");
 }
 
 void test_ntsc_status_boundaries() {

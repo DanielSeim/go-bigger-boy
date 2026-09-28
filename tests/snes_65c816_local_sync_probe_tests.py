@@ -29,9 +29,10 @@ def main() -> int:
     else:
         events = [line for line in result.stdout.splitlines()
                   if line.startswith("synchronized DSP write")]
-        if len(events) != 6 or "register $4d=$00" not in events[0] or \
-                "register $7d=$01" not in events[-1] or \
-                "unsupported opcode $00" not in result.stderr:
+        if len(events) != 16 or "register $4d=$00" not in events[0] or \
+                "register $7d=$02" not in events[-1] or \
+                "post-handoff DSP writes=383 fnv64=4d9f16ff8dcb1b38" not in result.stdout or \
+                "unsupported SPC700 opcode at $065b ($0e)" not in result.stderr:
             raise AssertionError("SGB2 initialized DSP differently or did not trap")
     print(f"{args.kind}: synchronized firmware probe stopped explicitly")
     return 0

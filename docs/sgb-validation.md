@@ -215,8 +215,11 @@ That `--driver-probe` mode advances the SPC700 alone after handoff. A separate
 writes and physical SPC700 RAM writes at SPC instruction completion. It reports
 the RAM-write count, first completion cycle, and a trace hash without storing
 the uploaded firmware. On the local SGB1 image it stops at the
-first unmodeled ICD read (`$6000`); on the local SGB2 image it observes six
-initialization writes, then stops at an unsupported SNES opcode. It does not
+first unmodeled ICD read (`$6000`); on the local SGB2 image it observes 383
+post-handoff DSP writes (the first 16 are printed), then stops at unsupported
+SPC700 opcode `$0E` at `$065B`. A host opcode-fetch failure now reports the
+underlying SPC700 stop instead of mislabeling its fallback byte as a host
+opcode. The probe does not
 invent ICD packet/pixel data or claim exact intra-instruction DSP write phases.
 These are **driver-upload and initialization diagnostics**, not proof that the
 driver handles a real `SOUND` or `SOU_TRN` event. The SPC700 opcode and cycle

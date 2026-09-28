@@ -6,8 +6,8 @@ namespace gameboy {
 
 class SnesApuBus;
 
-// Incremental SPC700 interpreter. Only the instructions needed to execute
-// the 64-byte IPL upload protocol are implemented so far. Unsupported opcodes
+// Incremental SPC700 interpreter for the IPL and bounded driver probes.
+// Unsupported opcodes
 // stop explicitly; they are never treated as NOPs or as synthesized audio.
 class SnesSpc700 final {
 public:
@@ -39,6 +39,7 @@ private:
     void set_nz8(std::uint8_t value) noexcept;
     void set_nz16(std::uint16_t value) noexcept;
     void compare(std::uint8_t lhs, std::uint8_t rhs) noexcept;
+    void add_with_carry(std::uint8_t rhs) noexcept;
     [[nodiscard]] unsigned branch(bool take) noexcept;
     void push(std::uint8_t value) noexcept;
     [[nodiscard]] std::uint8_t pop() noexcept;
