@@ -1,8 +1,10 @@
 #include "snes_icd_gb_source.hpp"
 
 #include "gameboy/cartridge.hpp"
+#include "sgb_input_script.h"
 
 #include <fstream>
+#include <string>
 #include <stdexcept>
 
 namespace sgb_test {
@@ -23,6 +25,41 @@ SnesIcdGbSource::SnesIcdGbSource(const std::filesystem::path& rom,
     gb_->bus().debug_enable_io_trace(true);
 }
 
+void SnesIcdGbSource::load_input_script(const std::filesystem::path& path) {
+    gbb_sgb_input_script script{};
+    char error[128]{};
+    if (!gbb_sgb_input_load(path.string().c_str(), &script,
+                            error, sizeof(error)))
+        throw std::runtime_error(std::string{"input script: "} + error);
+    input_events_.clear();
+    input_events_.reserve(script.count);
+    for (std::size_t index = 0; index < script.count; ++index)
+        input_events_.push_back({script.events[index].frame,
+                                 script.events[index].mask});
+    next_input_event_ = 0;
+    held_buttons_ = 0;
+    apply_input(0);
+}
+
+void SnesIcdGbSource::apply_input(const std::uint64_t frame) noexcept {
+    if (next_input_event_ >= input_events_.size() ||
+        input_events_[next_input_event_].frame != frame)
+        return;
+    const auto next = input_events_[next_input_event_++].mask;
+    constexpr gameboy::Button buttons[] = {
+        gameboy::Button::right, gameboy::Button::left,
+        gameboy::Button::up, gameboy::Button::down,
+        gameboy::Button::a, gameboy::Button::b,
+        gameboy::Button::select, gameboy::Button::start};
+    for (unsigned bit = 0; bit < 8; ++bit) {
+        const auto flag = static_cast<std::uint8_t>(1U << bit);
+        if ((held_buttons_ & flag) != (next & flag))
+            gb_->set_button(buttons[bit], (next & flag) != 0);
+    }
+    held_buttons_ = next;
+    ++input_events_applied_;
+}
+
 void SnesIcdGbSource::complete_packet() noexcept {
     if (queued_.size() >= 32) {
         missing_address_ = 0x7000;
@@ -40,6 +77,17 @@ void SnesIcdGbSource::complete_packet() noexcept {
             }
             if (sound_commands_ == 0) first_sound_packet_ = building_;
             ++sound_commands_;
+            const auto a = building_[1];
+            const auto b = building_[2];
+            if ((building_[3] & 0x0CU) != 0x0CU &&
+                ((a != 0 && a < 0x80) || (b != 0 && b < 0x80) ||
+                 building_[4] != 0)) {
+                if (audible_sound_commands_ == 0) {
+                    first_audible_sound_packet_ = building_;
+                    first_audible_frame_ = completed_frames_;
+                }
+                ++audible_sound_commands_;
+            }
         }
         if (command == 0x09) ++transfer_commands_;
     } else {
@@ -106,6 +154,11 @@ void SnesIcdGbSource::synchronize(const std::uint64_t master_clocks) noexcept {
     const auto target = (master_clocks - release_clock_) / divider_;
     while (gb_cycles_ < target && missing_address_ == 0) {
         gb_cycles_ += gb_->step();
+        if (gb_->frame_ready()) {
+            ++completed_frames_;
+            gb_->consume_frame();
+            apply_input(completed_frames_);
+        }
         const auto ly = gb_->bus().read8(0xFF44);
         if (ly != last_ly_) {
             if (ly <= 144 && ly != 0 && (ly & 7U) == 0)
@@ -172,6 +225,10 @@ bool SnesIcdGbSource::write(const std::uint16_t address,
             gb_->bus().install_boot_rom(boot_image_);
             gb_->bus().debug_enable_io_trace(true);
             gb_cycles_ = 0;
+            completed_frames_ = 0;
+            next_input_event_ = 0;
+            held_buttons_ = 0;
+            apply_input(0);
             last_ly_ = gb_->bus().read8(0xFF44);
             row_valid_.fill(false);
             row_stream_offset_ = 0;

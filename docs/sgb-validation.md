@@ -262,8 +262,35 @@ same real GB delivery point. The SNES/APU trace then produces nonzero PCM
 an unsupported SPC700 opcode (`$B4`). The local test checks both outcomes.
 This proves a bounded synthetic packet-to-PCM slice; it does **not** validate
 the substituted effect against hardware or prove a real title's audible
-command. An audible real `SOUND` event, `SOU_TRN` playback, exact ICD timing,
-and sound in the running emulator remain unverified/unimplemented.
+command. Audible PCM from a real `SOUND` event, `SOU_TRN` playback, exact ICD
+timing, and sound in the running emulator remain unverified/unimplemented.
+
+The existing Donkey Kong gameplay script also reaches a **title-authentic**
+music-score request, without replacing the ROM or packet: with the local SGB2
+boot image, the GB-side ICD probe sees its first non-mute `SOUND` at GB frame
+2472, `41 00 00 00 01`, after two `SOU_TRN` requests and four applied input
+events. The optional `gameboy_snes_icd_gb_local_donkey_audible_title` test pins
+the local ROM SHA-256 and this packet. Reproduce it with:
+
+```sh
+build/gameboy_snes_icd_gb_title_probe \
+  '/path/to/Donkey Kong (JU) (V1.1) [S][!].gb' \
+  /path/to/sgb2.boot.rom \
+  tests/fixtures/sgb/titles/donkey-kong-gameplay.script
+```
+
+This is a GB-side packet capture, **not** title PCM. In the synchronized SNES
+trace, the host later waits for an APU port acknowledgement and stops reading
+ICD packets. The GB continues advancing with host master time; when its
+bounded packet queue fills, the trace now stops explicitly instead of silently
+freezing the GB. The music-score packet is generated but not delivered to the
+host sound driver in that trace, so there is no honest PCM capture around this
+title event yet. At the wait, the host expects APU port 0 to advance from
+`$47` to `$48`; it does not. A bounded diagnostic observed the SPC700 writing
+`$00` over its earlier `$0E46` program byte while transferring to a pointer
+at `$0E00`. Whether that transfer is expected firmware behavior or an
+interpreter/timing error needs independent validation. The host/APU handshake
+must be resolved before claiming title PCM.
 
 A new fully synthetic SNES program waits, writes a host command to the APU,
 and runs concurrently with an original SPC700 test program. The test stamps

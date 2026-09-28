@@ -4,6 +4,7 @@
 #include "gameboy/snes_spc700.hpp"
 
 #include <array>
+#include <charconv>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -28,16 +29,43 @@ int main(int argc, char** argv) {
         std::string_view(argv[argc - 1]) == "--driver-probe";
     const bool sync_probe = argc >= 3 &&
         std::string_view(argv[argc - 1]) == "--sync-probe";
-    const bool audible_sound_probe = argc >= 7 &&
-        std::string_view(argv[argc - 1]) == "--audible-sound-probe";
-    const int sync_option_index = argc - (audible_sound_probe ? 4 : 3);
-    const bool sync_gb = argc >= (audible_sound_probe ? 7 : 6) &&
-        (std::string_view(argv[sync_option_index]) == "--sync-gb-sgb1" ||
-         std::string_view(argv[sync_option_index]) == "--sync-gb-sgb2");
+    const bool sync_gb = argc >= 6 &&
+        (std::string_view(argv[3]) == "--sync-gb-sgb1" ||
+         std::string_view(argv[3]) == "--sync-gb-sgb2");
+    bool audible_sound_probe = false;
+    std::filesystem::path input_script_path;
+    unsigned requested_instruction_limit = 0;
+    if (sync_gb) {
+        for (int index = 6; index < argc; ++index) {
+            const std::string_view option(argv[index]);
+            if (option == "--audible-sound-probe" && !audible_sound_probe) {
+                audible_sound_probe = true;
+            } else if (option == "--input-script" &&
+                       input_script_path.empty() && index + 1 < argc) {
+                input_script_path = argv[++index];
+            } else if (option == "--instruction-limit" &&
+                       requested_instruction_limit == 0 && index + 1 < argc) {
+                const std::string_view number(argv[++index]);
+                const auto [end, error] = std::from_chars(
+                    number.data(), number.data() + number.size(),
+                    requested_instruction_limit);
+                if (error != std::errc{} || end != number.data() + number.size() ||
+                    requested_instruction_limit == 0 ||
+                    requested_instruction_limit > 500000000U) {
+                    std::cerr << "instruction limit must be 1..500000000\n";
+                    return 2;
+                }
+            } else {
+                std::cerr << "unsupported synchronized GB option: " << option
+                          << '\n';
+                return 2;
+            }
+        }
+    }
     const bool synchronized = sync_probe || sync_gb;
-    const int path_count = argc - 1 -
+    const int path_count = sync_gb ? 2 : argc - 1 -
         (trace || upload || upload_two || upload_three || upload_boot || driver_probe ||
-         sync_probe ? 1 : sync_gb ? (audible_sound_probe ? 4 : 3) : 0);
+         sync_probe ? 1 : 0);
     if (path_count < 1 || path_count > 2 ||
         ((upload || upload_two || upload_three || upload_boot || driver_probe ||
           synchronized) && path_count != 2)) {
@@ -46,6 +74,7 @@ int main(int argc, char** argv) {
                      "--upload-three|--upload-boot|--driver-probe|--sync-probe|"
                      "--sync-gb-sgb1 GB-ROM GB-BOOT|"
                      "--sync-gb-sgb2 GB-ROM GB-BOOT"
+                     " [--input-script PATH] [--instruction-limit N]"
                      " [--audible-sound-probe]]\n";
         return 2;
     }
@@ -71,10 +100,12 @@ int main(int argc, char** argv) {
                                           path_count == 2 ? &spc : nullptr);
         std::unique_ptr<sgb_test::SnesIcdGbSource> icd;
         if (sync_gb) {
-            const auto model = std::string_view(argv[sync_option_index]) == "--sync-gb-sgb2"
+            const auto model = std::string_view(argv[3]) == "--sync-gb-sgb2"
                 ? gameboy::HardwareModel::sgb2 : gameboy::HardwareModel::sgb;
             icd = std::make_unique<sgb_test::SnesIcdGbSource>(
-                argv[sync_option_index + 1], argv[sync_option_index + 2], model);
+                argv[4], argv[5], model);
+            if (!input_script_path.empty())
+                icd->load_input_script(input_script_path);
             icd->set_audible_sound_substitution(audible_sound_probe);
             if (audible_sound_probe)
                 std::cerr << "SYNTHETIC SOUND payload substitution enabled;"
@@ -132,11 +163,39 @@ int main(int argc, char** argv) {
         std::uint8_t expected_index = 0;
         std::uint16_t destination = 0;
         std::vector<std::uint8_t> transferred;
-        const unsigned instruction_bound = sync_gb ? 20000000U :
+        const unsigned instruction_bound = requested_instruction_limit != 0
+            ? requested_instruction_limit : sync_gb ? 20000000U :
             ((upload || upload_two || upload_three || upload_boot ||
               driver_probe || synchronized) ? 5000000U : 1000000U);
         for (unsigned i = 0; i < instruction_bound; ++i) {
             const auto result = cpu.step();
+            if (icd) {
+                icd->advance_to(cpu.timing().clocks());
+                if (icd->missing_address() != 0) {
+                    std::cerr << "GB ICD source stopped at missing/overflowed $"
+                              << std::hex << std::setw(4) << std::setfill('0')
+                              << icd->missing_address() << std::dec
+                              << " after GB frame " << icd->completed_frames()
+                              << "; host consumed " << icd->packets_delivered()
+                              << " of " << icd->packets_completed()
+                              << " packets; audible SOUND generated="
+                              << icd->audible_sound_commands()
+                              << "; observed PCM samples="
+                              << dsp_observation.pcm_samples
+                              << " nonzero=" << dsp_observation.pcm_nonzero
+                              << " post_initial_SOUND_nonzero="
+                              << dsp_observation.post_sound_nonzero << '\n';
+                    if (icd->audible_sound_commands() != 0) {
+                        std::cerr << "first audible SOUND frame="
+                                  << icd->first_audible_frame() << " packet=";
+                        for (const auto byte : icd->first_audible_sound_packet())
+                            std::cerr << ' ' << std::hex << std::setw(2)
+                                      << static_cast<unsigned>(byte);
+                        std::cerr << std::dec << '\n';
+                    }
+                    return 5;
+                }
+            }
             if (synchronized) {
                 while (dsp_observation.printed < dsp_observation.count) {
                     const auto& event = dsp_observation.events[dsp_observation.printed++];
@@ -361,6 +420,10 @@ int main(int argc, char** argv) {
                               << " delivered=" << icd->packets_delivered()
                               << " SOUND_delivered="
                               << icd->sound_packets_delivered()
+                              << " audible_SOUND="
+                              << icd->audible_sound_commands()
+                              << " GB_frames=" << icd->completed_frames()
+                              << " input_events=" << icd->input_events_applied()
                               << " SOU_TRN=" << icd->transfer_commands()
                               << " control_writes=" << icd->control_writes()
                               << " last_control=$" << std::hex << std::setw(2)
@@ -371,6 +434,15 @@ int main(int argc, char** argv) {
                     if (icd->sound_commands() != 0) {
                         std::cout << "first SOUND packet=";
                         for (const auto byte : icd->first_sound_packet())
+                            std::cout << ' ' << std::hex << std::setw(2)
+                                      << std::setfill('0')
+                                      << static_cast<unsigned>(byte);
+                        std::cout << std::dec << '\n';
+                    }
+                    if (icd->audible_sound_commands() != 0) {
+                        std::cout << "first audible SOUND frame="
+                                  << icd->first_audible_frame() << " packet=";
+                        for (const auto byte : icd->first_audible_sound_packet())
                             std::cout << ' ' << std::hex << std::setw(2)
                                       << std::setfill('0')
                                       << static_cast<unsigned>(byte);
@@ -521,12 +593,34 @@ int main(int argc, char** argv) {
                   << " after " << cpu.timing().clocks() << " master clocks"
                   << " (V=" << cpu.timing().line()
                   << " H=" << cpu.timing().horizontal_clock() << ")\n";
+        if (synchronized)
+            std::cerr << "APU wait context SPC_PC=$" << std::hex
+                      << std::setw(4) << std::setfill('0')
+                      << spc.registers().pc << " host_port0=$"
+                      << std::setw(2)
+                      << static_cast<unsigned>(apu.host_read_port(0))
+                      << " spc_input0=$" << std::setw(2)
+                      << static_cast<unsigned>(apu.spc_read(0xF4))
+                      << std::dec << '\n';
+        if (synchronized && sync_gb) {
+            const auto& registers = spc.registers();
+            std::cerr << "SPC registers A=$" << std::hex << std::setw(2)
+                      << static_cast<unsigned>(registers.a) << " X=$"
+                      << std::setw(2) << static_cast<unsigned>(registers.x)
+                      << " Y=$" << std::setw(2)
+                      << static_cast<unsigned>(registers.y) << " PSW=$"
+                      << std::setw(2) << static_cast<unsigned>(registers.psw)
+                      << std::dec << '\n';
+        }
         if (sync_gb) {
             std::cerr << "GB ICD source cycles=" << icd->gb_cycles()
                       << " packets=" << icd->packets_completed()
                       << " SOUND=" << icd->sound_commands()
                       << " delivered=" << icd->packets_delivered()
                       << " SOUND_delivered=" << icd->sound_packets_delivered()
+                      << " audible_SOUND=" << icd->audible_sound_commands()
+                      << " GB_frames=" << icd->completed_frames()
+                      << " input_events=" << icd->input_events_applied()
                       << " SOU_TRN=" << icd->transfer_commands()
                       << " control_writes=" << icd->control_writes()
                       << " last_control=$" << std::hex << std::setw(2)
@@ -545,10 +639,18 @@ int main(int argc, char** argv) {
                               << std::setfill('0') << static_cast<unsigned>(byte);
                 std::cerr << std::dec << '\n';
             }
+            if (icd->audible_sound_commands() != 0) {
+                std::cerr << "first audible SOUND frame="
+                          << icd->first_audible_frame() << " packet=";
+                for (const auto byte : icd->first_audible_sound_packet())
+                    std::cerr << ' ' << std::hex << std::setw(2)
+                              << std::setfill('0') << static_cast<unsigned>(byte);
+                std::cerr << std::dec << '\n';
+            }
         }
         return 4;
     } catch (const std::exception& error) {
-        std::cerr << "could not load SGB program ROM: " << error.what() << '\n';
+        std::cerr << "could not run SGB trace: " << error.what() << '\n';
         return 2;
     }
 }

@@ -9,6 +9,7 @@
 #include <deque>
 #include <filesystem>
 #include <memory>
+#include <vector>
 
 namespace sgb_test {
 
@@ -25,6 +26,9 @@ public:
                             std::uint8_t& value) noexcept override;
     [[nodiscard]] bool write(std::uint16_t address, std::uint64_t master_clocks,
                              std::uint8_t value) noexcept override;
+    void advance_to(std::uint64_t master_clocks) noexcept {
+        synchronize(master_clocks);
+    }
     [[nodiscard]] std::uint64_t gb_cycles() const noexcept { return gb_cycles_; }
     [[nodiscard]] std::uint64_t packets_completed() const noexcept {
         return packets_completed_;
@@ -57,12 +61,33 @@ public:
     void set_audible_sound_substitution(bool enabled) noexcept {
         audible_sound_substitution_ = enabled;
     }
+    void load_input_script(const std::filesystem::path& path);
+    [[nodiscard]] std::uint64_t completed_frames() const noexcept {
+        return completed_frames_;
+    }
+    [[nodiscard]] std::uint64_t input_events_applied() const noexcept {
+        return input_events_applied_;
+    }
+    [[nodiscard]] std::uint64_t audible_sound_commands() const noexcept {
+        return audible_sound_commands_;
+    }
+    [[nodiscard]] const std::array<std::uint8_t, 16>& first_audible_sound_packet()
+        const noexcept { return first_audible_sound_packet_; }
+    [[nodiscard]] std::uint64_t first_audible_frame() const noexcept {
+        return first_audible_frame_;
+    }
 
 private:
     void synchronize(std::uint64_t master_clocks) noexcept;
     void joyp_write(std::uint8_t value) noexcept;
     void complete_packet() noexcept;
     void complete_tile_row(unsigned tile_row) noexcept;
+    void apply_input(std::uint64_t frame) noexcept;
+
+    struct InputEvent {
+        unsigned frame{};
+        std::uint8_t mask{};
+    };
 
     std::unique_ptr<gameboy::Emulator> gb_;
     gameboy::DiagnosticBootRom boot_image_{};
@@ -73,6 +98,14 @@ private:
     std::uint64_t packets_delivered_{};
     std::uint64_t sound_packets_delivered_{};
     std::array<std::uint8_t, 16> first_sound_packet_{};
+    std::array<std::uint8_t, 16> first_audible_sound_packet_{};
+    std::uint64_t audible_sound_commands_{};
+    std::uint64_t first_audible_frame_{};
+    std::uint64_t completed_frames_{};
+    std::uint64_t input_events_applied_{};
+    std::vector<InputEvent> input_events_;
+    std::size_t next_input_event_{};
+    std::uint8_t held_buttons_{};
     std::uint64_t transfer_commands_{};
     std::uint16_t missing_address_{};
     std::uint64_t control_writes_{};
