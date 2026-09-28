@@ -21,3 +21,5 @@ __pycache__/
 /fuzz-corpus-run/
 /fuzz-artifacts/
 *.semantic-review.tsv
+/docs/images/gbb-game-boy-camera.jpg
+*:Zone.Identifier

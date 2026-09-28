@@ -13,6 +13,10 @@
   <a href="https://danielseim.github.io/go-bigger-boy/"><strong>Try the latest web build on GitHub Pages</strong></a>
 </p>
 
+<p align="center">
+  <img src="docs/images/gbb-android-sgb.jpg" alt="Go Bigger Boy on Android showing a homebrew game with a Super Game Boy border and touch controls" width="950">
+</p>
+
 A portable C++17 Game Boy and Game Boy Color emulator core with desktop,
 Android, and Web frontends. The core is shared across those frontends; native
 Switch support is not currently part of the project.
@@ -87,6 +91,34 @@ Known limitations:
 
 DMG games can use the automatic Game Boy Color compatibility palettes selected
 from their cartridge headers.
+
+## Frontends
+
+The shared core runs in the SDL3 desktop frontend, a browser frontend, and a
+native Android app with multitouch controls. The portrait view below shows the
+Android gameplay layout.
+
+<p align="center">
+  <img src="docs/images/gbb-android-portrait.jpg" alt="Go Bigger Boy Android gameplay with portrait touch controls" width="360">
+</p>
+
+## Hardware and peripherals
+
+Beyond standard cartridges, GBB supports Game Boy Camera and Printer devices,
+rumble, local and TCP link sessions, and a clean-room Super Game Boy adapter.
+Platform-specific support and limitations are described above and in the
+[platform guide](docs/platforms.md).
+
+## Experimental presentation
+
+Voxel diorama is an optional scene-based rendering mode alongside the regular
+2D presentation. The desktop capture below shows it running a hardware test
+ROM with the FPS overlay enabled; the counter is a single capture, not a
+performance guarantee across devices or games.
+
+<p align="center">
+  <img src="docs/images/gbb-voxel-renderer.png" alt="Go Bigger Boy desktop voxel diorama rendering a hardware test ROM with an FPS overlay" width="720">
+</p>
 
 ## Nintendo and third-party intellectual property
 
