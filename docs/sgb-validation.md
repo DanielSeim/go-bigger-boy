@@ -101,11 +101,12 @@ packet structure, **not** against physical SGB audio output. The SNES-side
 program ROMs in `roms/` are user-supplied, Git-ignored firmware and are not
 read, copied or embedded by the current sound path.
 
-The core has a bounded 48 kHz stereo PCM mixing boundary for a future SNES
+The running emulator has a bounded 48 kHz stereo PCM mixing boundary for a future SNES
 renderer; synthetic tests verify channel alignment, saturation, mute/reset,
-and save-state queue clearing. There is currently no SNES-side execution,
-DSP synthesis, firmware loader or score/sample renderer connected to it. Consequently
-`SOUND` and `SOU_TRN` still add no audible output. Do not mistake a successful
+and save-state queue clearing. The development-only host/APU trace described
+below can execute a bounded firmware path and observe PCM from a real title
+event, but is **not connected to that runtime mixer**. Consequently `SOUND`
+and `SOU_TRN` still add no audible output in the app. Do not mistake a successful
 packet report or mixer test for SGB audio support. Archival SPC rips can be
 useful as listening references, but are not timing-calibrated hardware
 captures and must not be bundled in the repository.
@@ -149,8 +150,9 @@ opened the ignored `roms/sgb1.program.rom` and `roms/sgb2.program.rom` files.
 The 256-byte `sgb.boot.rom` and `sgb2.boot.rom` files are Game Boy-side boot
 ROMs, not the S-SMP's 64-byte IPL, so they cannot boot the SNES audio CPU.
 The development-only probes below can execute a bounded startup path in the
-SNES program ROM and produce PCM for synthetic host commands; they cannot
-produce game-requested SGB sound and are not wired into the running emulator.
+SNES program ROM and produce PCM for synthetic host commands; the synchronized
+title trace can also observe PCM after a game-requested `SOUND` packet, but
+neither path is wired into the running emulator.
 An incremental SPC700 interpreter
 can now execute the IPL upload instruction set. A synthetic, non-proprietary
 IPL test advertises readiness, waits for a host command, and copies a byte
@@ -293,6 +295,55 @@ instruction bound. This establishes a title-authentic packet-to-PCM path in a
 bounded diagnostic, not hardware-validated audio fidelity, complete SNES DMA,
 or sound in the running emulator. Math results are modeled only after their
 nominal completion delay; early/intermediate reads still fail closed.
+
+For an independent **diagnostic** comparison of that Donkey Kong event, the
+libretro capture tool accepts the same complete-held-state input script and
+can save a reference video frame. The SGB2 host trace can export its own
+32 kHz stereo PCM plus the exact `first_audible_delivery_sample` offset in
+its output; neither operation changes the shipping audio path:
+
+```sh
+python3 scripts/capture_sgb_libretro_audio.py \
+  --core /path/to/bsnes_libretro.so \
+  --game '/path/to/Donkey Kong (JU) (V1.1) [S][!].gb' \
+  --sgb-rom /path/to/sgb2.program.rom \
+  --system-dir /path/to/firmware-directory \
+  --input-script tests/fixtures/sgb/titles/donkey-kong-gameplay.script \
+  --input-offset-frames 228 \
+  --input-offset-change 1600:253 --input-offset-change 2800:321 \
+  --frames 3500 --snapshot-frame 2740 \
+  --snapshot-output /tmp/sgb2-title-reference.ppm \
+  --output /tmp/sgb2-title-reference.wav
+
+build/gameboy_snes_65c816_apu_trace \
+  /path/to/sgb2.program.rom /path/to/spc700.rom \
+  --sync-gb-sgb2 '/path/to/Donkey Kong (JU) (V1.1) [S][!].gb' \
+  /path/to/sgb2.boot.rom \
+  --input-script tests/fixtures/sgb/titles/donkey-kong-gameplay.script \
+  --instruction-limit 40000000 --pcm-output /tmp/gbb-title-trace.wav
+
+python3 scripts/compare_sgb_title_audio.py \
+  --gbb /tmp/gbb-title-trace.wav \
+  --reference /tmp/sgb2-title-reference.wav \
+  --gbb-event-sample FIRST_AUDIBLE_DELIVERY_SAMPLE \
+  --reference-frame-offset 253 --search-seconds 3
+```
+
+The trace intentionally exits at its instruction bound; the optional local
+test checks the resulting WAV and packet anchor. The reference WAV contains
+the independent core's **GB and SNES audio mixed together**, so direct sample
+agreement is not expected. Boot/input phase and scene identity must also be
+verified before interpreting a sound match. A local exploratory run with
+offsets borrowed from the *separate SameBoy frame-alignment fixture* (228
+reference frames initially, 253 from GB frame 1600, 321 from 2800) reached
+all 11 scripted events but **did not establish same-scene alignment**: at the
+GBB event (frame 2472, sample 1,482,476), the nominal 3-second 25 ms RMS
+envelope correlation was only 0.095. Searching within 3 seconds found a
+0.619 envelope correlation 1.075 seconds early, but only 0.031 waveform
+correlation in its strongest 1-second segment. That is a diagnostic lead, not
+audio validation; different scene phase, GB audio in the reference, or both
+could explain it. The comparison tool defaults to the nominal frame and
+requires an explicit `--search-seconds` for exploratory alignment.
 
 A new fully synthetic SNES program waits, writes a host command to the APU,
 and runs concurrently with an original SPC700 test program. The test stamps

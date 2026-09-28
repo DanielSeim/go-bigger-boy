@@ -12,6 +12,62 @@ import tempfile
 import wave
 
 
+BUTTON_IDS = {"right": 7, "left": 6, "up": 4, "down": 5,
+              "a": 8, "b": 0, "select": 2, "start": 3}
+GB_FRAME_RATE = 4194304 / 70224
+
+
+def load_input_script(path: Path) -> list[tuple[int, int]]:
+    """Read the repository's complete-held-state GBB SGB input v1 format."""
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if not lines or lines[0] != "GBB SGB input v1":
+        raise ValueError("expected GBB SGB input v1 header")
+    events: list[tuple[int, int]] = []
+    for number, line in enumerate(lines[1:], 2):
+        content = line.split("#", 1)[0].strip()
+        if not content:
+            continue
+        fields = content.split()
+        if len(fields) != 2 or not fields[0].isascii() or not fields[0].isdecimal():
+            raise ValueError(f"input script line {number}: expected frame and buttons")
+        frame = int(fields[0])
+        if frame > 100000 or (events and frame <= events[-1][0]):
+            raise ValueError(f"input script line {number}: frames must increase and fit limit")
+        names = [] if fields[1] == "none" else fields[1].split("+")
+        if any(name not in BUTTON_IDS for name in names) or len(set(names)) != len(names):
+            raise ValueError(f"input script line {number}: invalid button list")
+        mask = sum(1 << BUTTON_IDS[name] for name in names)
+        events.append((frame, mask))
+        if len(events) > 1024:
+            raise ValueError("input script exceeds 1024 events")
+    return events
+
+
+def schedule_input(events: list[tuple[int, int]], reference_fps: float,
+                   offset: int,
+                   offset_changes: list[tuple[int, int]] | None = None
+                   ) -> list[tuple[int, int]]:
+    """Map GB frame boundaries to zero-based libretro run-call indices."""
+    if not 30 <= reference_fps <= 120:
+        raise ValueError("reference core returned an implausible video rate")
+    changes = offset_changes or []
+    if any(frame <= 0 or (index and frame <= changes[index - 1][0])
+           for index, (frame, _) in enumerate(changes)):
+        raise ValueError("offset changes must use increasing positive GB frames")
+    scheduled = []
+    next_change = 0
+    for frame, mask in events:
+        while next_change < len(changes) and frame >= changes[next_change][0]:
+            offset = changes[next_change][1]
+            next_change += 1
+        scheduled.append((round(frame * reference_fps / GB_FRAME_RATE) + offset,
+                          mask))
+    if any(frame < 0 or (index and frame <= scheduled[index - 1][0])
+           for index, (frame, _) in enumerate(scheduled)):
+        raise ValueError("mapped input frames must increase and be nonnegative")
+    return scheduled
+
+
 class GameInfo(C.Structure):
     _fields_ = [("path", C.c_char_p), ("data", C.c_void_p),
                 ("size", C.c_size_t), ("meta", C.c_char_p)]
@@ -48,7 +104,14 @@ Log = C.CFUNCTYPE(None, C.c_int, C.c_char_p)
 
 
 def capture(core_path: Path, game_path: Path, sgb_path: Path,
-            system_dir: Path, frames: int, output: Path) -> tuple[int, int]:
+            system_dir: Path, frames: int, output: Path,
+            input_script: Path | None = None,
+            input_offset: int = 0,
+            input_offset_changes: list[tuple[int, int]] | None = None,
+            snapshot_frame: int | None = None,
+            snapshot_output: Path | None = None,
+            snapshot_series: tuple[int, int, Path] | None = None
+            ) -> tuple[int, int]:
     if C.sizeof(C.c_void_p) != 8:
         raise RuntimeError("the diagnostic host currently requires a 64-bit process")
     for path in (core_path, game_path, sgb_path):
@@ -56,10 +119,23 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
             raise FileNotFoundError(path)
     if not system_dir.is_dir():
         raise NotADirectoryError(system_dir)
-    if not 1 <= frames <= 2000:
-        raise ValueError("frames must be between 1 and 2000")
+    if not 1 <= frames <= 10000:
+        raise ValueError("frames must be between 1 and 10000")
     if output.exists():
         raise FileExistsError(output)
+    if (snapshot_frame is None) != (snapshot_output is None):
+        raise ValueError("snapshot frame and output must be supplied together")
+    if snapshot_frame is not None and not 1 <= snapshot_frame <= frames:
+        raise ValueError("snapshot frame must be within the capture")
+    if snapshot_output is not None and snapshot_output.exists():
+        raise FileExistsError(snapshot_output)
+    if snapshot_series is not None:
+        first, last, directory = snapshot_series
+        if not 1 <= first <= last <= frames or last - first > 200:
+            raise ValueError("snapshot series must fit capture and span at most 201 frames")
+        if directory.exists() and any(directory.iterdir()):
+            raise FileExistsError("snapshot series directory must be empty")
+    events = load_input_script(input_script) if input_script is not None else []
     core = C.CDLL(str(core_path.resolve()))
     required = ("retro_api_version", "retro_set_environment", "retro_set_video_refresh",
                 "retro_set_audio_sample", "retro_set_audio_sample_batch",
@@ -84,6 +160,11 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
 
     audio = bytearray()
     video_frames = 0
+    held_buttons = 0
+    input_queries = 0
+    pressed_queries = 0
+    snapshot: tuple[int, int, bytes] | None = None
+    snapshots: dict[int, tuple[int, int, bytes]] = {}
     subsystems: dict[str, int] = {}
     system_bytes = C.c_char_p(str(system_dir.resolve()).encode())
 
@@ -121,10 +202,24 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
             pass
 
         @Video
-        def video(data: int, width: int, height: int, _pitch: int) -> None:
-            nonlocal video_frames
+        def video(data: int, width: int, height: int, pitch: int) -> None:
+            nonlocal video_frames, snapshot
             if data and width and height:
                 video_frames += 1
+                in_series = (snapshot_series is not None and
+                             snapshot_series[0] <= video_frames <= snapshot_series[1])
+                if video_frames == snapshot_frame or in_series:
+                    pixels = bytearray()
+                    for row in range(height):
+                        row_bytes = C.string_at(data + row * pitch, width * 4)
+                        for column in range(0, len(row_bytes), 4):
+                            blue, green, red = row_bytes[column:column + 3]
+                            pixels.extend((red, green, blue))
+                    captured = (width, height, bytes(pixels))
+                    if video_frames == snapshot_frame:
+                        snapshot = captured
+                    if in_series:
+                        snapshots[video_frames] = captured
 
         @Audio
         def audio_sample(left: int, right: int) -> None:
@@ -141,8 +236,17 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
             pass
 
         @InputState
-        def input_state(_port: int, _device: int, _index: int, _button: int) -> int:
-            return 0
+        def input_state(port: int, device: int, index: int, button: int) -> int:
+            nonlocal input_queries, pressed_queries
+            if port != 0 or device != 1 or index != 0:
+                return 0
+            input_queries += 1
+            if button == 256:  # RETRO_DEVICE_ID_JOYPAD_MASK
+                pressed_queries += held_buttons != 0
+                return held_buttons
+            pressed = int(0 <= button < 16 and (held_buttons & (1 << button)) != 0)
+            pressed_queries += pressed
+            return pressed
 
         # Keep all callbacks and directory byte strings alive while the core runs.
         core.retro_set_environment(environment)
@@ -168,8 +272,18 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
             sample_rate = round(av.timing.sample_rate)
             if sample_rate <= 0 or abs(av.timing.sample_rate - sample_rate) > 0.01:
                 raise RuntimeError("core returned an invalid audio rate")
-            for _ in range(frames):
+            scheduled = schedule_input(events, av.timing.fps, input_offset,
+                                       input_offset_changes)
+            next_event = 0
+            for frame in range(frames):
+                if next_event < len(scheduled) and frame == scheduled[next_event][0]:
+                    held_buttons = scheduled[next_event][1]
+                    next_event += 1
                 core.retro_run()
+            if events and next_event == 0:
+                raise RuntimeError("capture ended before the first scripted input event")
+            if events and (input_queries == 0 or pressed_queries == 0):
+                raise RuntimeError("reference core did not poll scripted controller presses")
             if not video_frames:
                 raise RuntimeError("core produced no video frames; content may not be running")
             if not audio:
@@ -181,6 +295,30 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                     wav.setsampwidth(2)
                     wav.setframerate(sample_rate)
                     wav.writeframes(audio)
+            if snapshot_output is not None:
+                if snapshot is None:
+                    raise RuntimeError("core did not produce the requested video frame")
+                snapshot_output.parent.mkdir(parents=True, exist_ok=True)
+                width, height, pixels = snapshot
+                with snapshot_output.open("xb") as image_file:
+                    image_file.write(f"P6\n{width} {height}\n255\n".encode())
+                    image_file.write(pixels)
+            if snapshot_series is not None:
+                first, last, directory = snapshot_series
+                if len(snapshots) != last - first + 1:
+                    raise RuntimeError("core did not produce every requested series frame")
+                directory.mkdir(parents=True, exist_ok=True)
+                for frame, (width, height, pixels) in snapshots.items():
+                    with (directory / f"reference-frame-{frame}.ppm").open("xb") as image_file:
+                        image_file.write(f"P6\n{width} {height}\n255\n".encode())
+                        image_file.write(pixels)
+            if events:
+                print(f"Applied {next_event}/{len(events)} scripted input events; "
+                      f"core queried {input_queries} joypad states "
+                      f"({pressed_queries} pressed results); "
+                      f"video rate {av.timing.fps:.6f} Hz, "
+                      f"GB-to-reference frame offset {input_offset}, "
+                      f"changes {input_offset_changes or []}")
             return sample_rate, len(audio) // 4
         finally:
             if loaded:
@@ -198,11 +336,36 @@ def main() -> None:
     parser.add_argument("--system-dir", type=Path, required=True,
                         help="directory containing your own GB-side boot ROM, if needed")
     parser.add_argument("--frames", type=int, default=400)
+    parser.add_argument("--input-script", type=Path,
+                        help="GBB SGB input v1 script; mapped from GB to SNES frames")
+    parser.add_argument("--input-offset-frames", type=int, default=0,
+                        help="signed reference-frame adjustment after rate conversion")
+    parser.add_argument("--input-offset-change", action="append", default=[],
+                        metavar="GB_FRAME:OFFSET",
+                        help="change the signed reference-frame offset at a GB frame")
+    parser.add_argument("--snapshot-frame", type=int,
+                        help="optional 1-based libretro video frame to save")
+    parser.add_argument("--snapshot-output", type=Path,
+                        help="PPM output for the requested video frame")
+    parser.add_argument("--snapshot-series", nargs=3, metavar=("FIRST", "LAST", "DIR"),
+                        help="save up to 201 consecutive video frames as local PPM files")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:
+        changes = []
+        for item in args.input_offset_change:
+            frame_text, separator, offset_text = item.partition(":")
+            if not separator:
+                raise ValueError("offset change must be GB_FRAME:OFFSET")
+            changes.append((int(frame_text), int(offset_text)))
+        series = None
+        if args.snapshot_series is not None:
+            first, last, directory = args.snapshot_series
+            series = (int(first), int(last), Path(directory))
         rate, count = capture(args.core, args.game, args.sgb_rom,
-                              args.system_dir, args.frames, args.output)
+                              args.system_dir, args.frames, args.output,
+                              args.input_script, args.input_offset_frames, changes,
+                              args.snapshot_frame, args.snapshot_output, series)
     except (OSError, RuntimeError, ValueError) as error:
         parser.error(str(error))
     print(f"Captured {count} stereo frames at {rate} Hz to {args.output}")

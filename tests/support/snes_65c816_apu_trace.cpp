@@ -11,10 +11,53 @@
 #include <iomanip>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string_view>
 #include <utility>
 #include <vector>
+
+namespace {
+
+void write_pcm_wav(const std::filesystem::path& path,
+                   const std::vector<sgb_test::SnesDspPcmRenderer::StereoSample>& samples) {
+    if (std::filesystem::exists(path))
+        throw std::runtime_error("PCM output already exists: " + path.string());
+    if (samples.size() > (UINT32_MAX - 44U) / 4U)
+        throw std::runtime_error("PCM output exceeds WAV size limit");
+    if (!path.parent_path().empty())
+        std::filesystem::create_directories(path.parent_path());
+    std::ofstream output(path, std::ios::binary);
+    if (!output) throw std::runtime_error("could not create PCM output: " + path.string());
+    const auto u16 = [&output](std::uint16_t value) {
+        output.put(static_cast<char>(value));
+        output.put(static_cast<char>(value >> 8));
+    };
+    const auto u32 = [&output](std::uint32_t value) {
+        for (unsigned shift = 0; shift < 32; shift += 8)
+            output.put(static_cast<char>(value >> shift));
+    };
+    const auto data_bytes = static_cast<std::uint32_t>(samples.size() * 4U);
+    output.write("RIFF", 4);
+    u32(data_bytes + 36U);
+    output.write("WAVEfmt ", 8);
+    u32(16);
+    u16(1);
+    u16(2);
+    u32(sgb_test::SnesDspPcmRenderer::sample_rate);
+    u32(sgb_test::SnesDspPcmRenderer::sample_rate * 4U);
+    u16(4);
+    u16(16);
+    output.write("data", 4);
+    u32(data_bytes);
+    for (const auto& sample : samples) {
+        u16(static_cast<std::uint16_t>(sample.left));
+        u16(static_cast<std::uint16_t>(sample.right));
+    }
+    if (!output) throw std::runtime_error("could not finish PCM output: " + path.string());
+}
+
+} // namespace
 
 int main(int argc, char** argv) {
     const bool trace = argc >= 3 && std::string_view(argv[argc - 1]) == "--trace";
@@ -34,6 +77,7 @@ int main(int argc, char** argv) {
          std::string_view(argv[3]) == "--sync-gb-sgb2");
     bool audible_sound_probe = false;
     std::filesystem::path input_script_path;
+    std::filesystem::path pcm_output_path;
     unsigned requested_instruction_limit = 0;
     if (sync_gb) {
         for (int index = 6; index < argc; ++index) {
@@ -43,6 +87,9 @@ int main(int argc, char** argv) {
             } else if (option == "--input-script" &&
                        input_script_path.empty() && index + 1 < argc) {
                 input_script_path = argv[++index];
+            } else if (option == "--pcm-output" &&
+                       pcm_output_path.empty() && index + 1 < argc) {
+                pcm_output_path = argv[++index];
             } else if (option == "--instruction-limit" &&
                        requested_instruction_limit == 0 && index + 1 < argc) {
                 const std::string_view number(argv[++index]);
@@ -74,7 +121,7 @@ int main(int argc, char** argv) {
                      "--upload-three|--upload-boot|--driver-probe|--sync-probe|"
                      "--sync-gb-sgb1 GB-ROM GB-BOOT|"
                      "--sync-gb-sgb2 GB-ROM GB-BOOT"
-                     " [--input-script PATH] [--instruction-limit N]"
+                     " [--input-script PATH] [--pcm-output WAV] [--instruction-limit N]"
                      " [--audible-sound-probe]]\n";
         return 2;
     }
@@ -157,11 +204,15 @@ int main(int argc, char** argv) {
             std::uint64_t post_sound_nonzero{};
             std::uint64_t post_audible_sound_nonzero{};
             std::uint64_t pcm_hash{14695981039346656037ULL};
+            std::vector<sgb_test::SnesDspPcmRenderer::StereoSample>* pcm_export{};
+            std::optional<std::uint64_t> first_audible_sample;
         } dsp_observation;
+        std::vector<sgb_test::SnesDspPcmRenderer::StereoSample> pcm_export;
         if (sync_gb) {
             dsp_observation.pcm = &pcm;
             dsp_observation.pcm_bus = &pcm_bus;
             dsp_observation.icd = icd.get();
+            if (!pcm_output_path.empty()) dsp_observation.pcm_export = &pcm_export;
         }
         std::vector<std::pair<std::uint16_t, std::size_t>> uploaded_ranges;
         std::uint8_t expected_index = 0;
@@ -282,6 +333,11 @@ int main(int argc, char** argv) {
                                             observed.pcm_unsupported = true;
                                             break;
                                         }
+                                        if (observed.icd->audible_sound_packets_delivered() != 0 &&
+                                            !observed.first_audible_sample)
+                                            observed.first_audible_sample = observed.pcm_samples;
+                                        if (observed.pcm_export != nullptr)
+                                            observed.pcm_export->push_back(*sample);
                                         ++observed.pcm_samples;
                                         if (sample->left != 0 || sample->right != 0) {
                                             ++observed.pcm_nonzero;
@@ -611,6 +667,17 @@ int main(int argc, char** argv) {
                   << " after " << cpu.timing().clocks() << " master clocks"
                   << " (V=" << cpu.timing().line()
                   << " H=" << cpu.timing().horizontal_clock() << ")\n";
+        if (!pcm_output_path.empty()) {
+            if (!dsp_observation.first_audible_sample)
+                throw std::runtime_error(
+                    "PCM output requested but no audible SOUND packet was delivered");
+            write_pcm_wav(pcm_output_path, pcm_export);
+            std::cerr << "PCM output=" << pcm_output_path
+                      << " rate=" << sgb_test::SnesDspPcmRenderer::sample_rate
+                      << " frames=" << pcm_export.size()
+                      << " first_audible_delivery_sample="
+                      << *dsp_observation.first_audible_sample << '\n';
+        }
         if (synchronized)
             std::cerr << "APU wait context SPC_PC=$" << std::hex
                       << std::setw(4) << std::setfill('0')

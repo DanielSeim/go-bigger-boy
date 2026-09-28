@@ -645,7 +645,12 @@ if(GAMEBOY_BUILD_TESTS)
                      COMMAND ${Python3_EXECUTABLE}
                              ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_sound_report_tests.py
                              $<TARGET_FILE:gameboy_test_runner>)
+            add_test(NAME gameboy_sgb_audio_reference_tools
+                     COMMAND ${Python3_EXECUTABLE}
+                             ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_audio_reference_tools_tests.py)
             set_tests_properties(gameboy_sgb_sound_report
+                                 PROPERTIES LABELS "sgb;audio;trace")
+            set_tests_properties(gameboy_sgb_audio_reference_tools
                                  PROPERTIES LABELS "sgb;audio;trace")
             add_test(NAME gameboy_sgb_trace_fixture
                      COMMAND ${Python3_EXECUTABLE}
