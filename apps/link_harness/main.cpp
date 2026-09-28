@@ -50,7 +50,7 @@ using namespace gbb::link_harness;
 
 constexpr std::uint64_t cycles_per_frame = 70'224;
 constexpr std::uint64_t poll_interval_cycles = 1'024;
-constexpr unsigned tcp_handshake_poll_attempts = 10'000;
+constexpr auto tcp_handshake_deadline = std::chrono::seconds(8);
 
 
 SemanticSample capture_semantic_sample(gameboy::Emulator& first,
@@ -399,18 +399,62 @@ int main(int argc, char** argv) {
                                second.link_compatibility_id(),
                                second.link_compatibility_profile());
 
-        // A loaded macOS runner can spend several seconds scheduling the
-        // loopback accept/connect pair, especially after repeated fault
-        // replay subprocesses. Keep the handshake bounded, but do not turn
-        // that platform scheduling delay into a false transport failure.
-        for (unsigned attempt = 0;
-             attempt < tcp_handshake_poll_attempts &&
-             !first_endpoint.peer_ready_for_link(); ++attempt) {
-            poll_pair(first_endpoint, second_endpoint);
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        }
-        if (!first_endpoint.peer_ready_for_link()) {
-            throw std::runtime_error("TCP link handshake did not become ready");
+        // A poll count is not a time bound: a loaded macOS runner can turn
+        // 10,000 one-millisecond sleeps into more than the test watchdog.
+        // Retry once with fresh loopback sockets and endpoint sessions before
+        // running either guest. No fault packet or game frame has been sent.
+        const auto handshake_status = [&] {
+            std::ostringstream status;
+            status << "server=" << static_cast<int>(server.state())
+                   << " client=" << static_cast<int>(client.state())
+                   << " host_connected=" << first_endpoint.connected()
+                   << " join_connected=" << second_endpoint.connected()
+                   << " host_hello=" << first_endpoint.peer_hello_seen()
+                   << " join_hello=" << second_endpoint.peer_hello_seen()
+                   << " host_digest=" << first_endpoint.state_digest_valid()
+                   << " join_digest=" << second_endpoint.state_digest_valid()
+                   << " host_ready=" << first_endpoint.peer_ready_for_link()
+                   << " join_ready=" << second_endpoint.peer_ready_for_link();
+            return status.str();
+        };
+        const auto wait_for_handshake = [&] {
+            const auto deadline = std::chrono::steady_clock::now() +
+                                  tcp_handshake_deadline;
+            do {
+                poll_pair(first_endpoint, second_endpoint);
+                // The joiner need not be ready until it sees the host's
+                // first serial request; requiring both sides deadlocks here.
+                if (first_endpoint.peer_ready_for_link()) return true;
+                if (server.state() == gameboy::TcpLinkChannel::State::failed ||
+                    client.state() == gameboy::TcpLinkChannel::State::failed) return false;
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            } while (std::chrono::steady_clock::now() < deadline);
+            return false;
+        };
+        if (!wait_for_handshake()) {
+            const auto first_status = handshake_status();
+            first_endpoint.detach();
+            second_endpoint.detach();
+            server.close();
+            client.close();
+            if (!server.listen(options.port) || server.local_port() == 0 ||
+                !client.connect("127.0.0.1", server.local_port())) {
+                throw std::runtime_error("TCP link handshake retry could not open loopback "
+                                         "sockets; first attempt: " + first_status);
+            }
+            first_endpoint.attach(first.bus().serial_port(), *host_channel,
+                                  first.link_compatibility_id(),
+                                  first.link_compatibility_profile());
+            second_endpoint.attach(second.bus().serial_port(), *join_channel,
+                                   second.link_compatibility_id(),
+                                   second.link_compatibility_profile());
+            if (!wait_for_handshake()) {
+                throw std::runtime_error("TCP link handshake did not become ready; "
+                                         "first attempt: " + first_status +
+                                         "; retry: " + handshake_status());
+            }
+            std::cerr << "TCP link handshake recovered after retry; "
+                      << first_status << '\n';
         }
 
         AutoInputState input_state;

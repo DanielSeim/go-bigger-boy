@@ -322,9 +322,17 @@ build/gameboy_snes_65c816_apu_trace \
   --input-script tests/fixtures/sgb/titles/donkey-kong-gameplay.script \
   --instruction-limit 40000000 --pcm-output /tmp/gbb-title-trace.wav
 
+build/gbb_test_runner \
+  '/path/to/Donkey Kong (JU) (V1.1) [S][!].gb' --model sgb2 \
+  --input-script tests/fixtures/sgb/titles/donkey-kong-gameplay.script \
+  --max-cycles 200000000 \
+  --frames 2472 --sgb-frame --frame-output /tmp/gbb-title-scene.ppm
+
 python3 scripts/compare_sgb_title_audio.py \
   --gbb /tmp/gbb-title-trace.wav \
   --reference /tmp/sgb2-title-reference.wav \
+  --gbb-scene /tmp/gbb-title-scene.ppm \
+  --reference-scene /tmp/sgb2-title-reference.ppm \
   --gbb-event-sample FIRST_AUDIBLE_DELIVERY_SAMPLE \
   --reference-frame-offset 253 --search-seconds 3
 ```
@@ -333,15 +341,27 @@ The trace intentionally exits at its instruction bound; the optional local
 test checks the resulting WAV and packet anchor. The reference WAV contains
 the independent core's **GB and SNES audio mixed together**, so direct sample
 agreement is not expected. Boot/input phase and scene identity must also be
-verified before interpreting a sound match. A local exploratory run with
-offsets borrowed from the *separate SameBoy frame-alignment fixture* (228
-reference frames initially, 253 from GB frame 1600, 321 from 2800) reached
-all 11 scripted events but **did not establish same-scene alignment**: at the
-GBB event (frame 2472, sample 1,482,476), the nominal 3-second 25 ms RMS
-envelope correlation was only 0.095. Searching within 3 seconds found a
-0.619 envelope correlation 1.075 seconds early, but only 0.031 waveform
+verified before interpreting a sound match. The comparator now requires a
+recognizable 256x224 scene image from each run and rejects a GB viewport
+that agrees at fewer than 65% of pixels within 16 RGB levels per channel.
+This is a conservative same-scene guard, not evidence of exact frame phase,
+palette fidelity, or audio accuracy. The libretro capture now decodes the
+negotiated video pixel format, including the default 0RGB1555 format; earlier
+reference screenshots accidentally treated those 16-bit pixels as 32-bit
+XRGB8888 and must not be used for scene checks.
+
+A local exploratory run with offsets borrowed from the *separate SameBoy
+frame-alignment fixture* (228 reference frames initially, 253 from GB frame
+1600, 321 from 2800) reached
+all 11 scripted events. Correctly decoded reference frame 2740 and GBB frame
+2472 show the same Donkey Kong stage and agree at 71.5% of viewport pixels
+within the guard's tolerance; an intentionally wrong reference frame scores
+0% and is rejected. At the GBB event (sample 1,482,476), the nominal
+3-second 25 ms RMS envelope correlation was only 0.095. Searching within
+3 seconds found a 0.619 envelope correlation 1.075 seconds early, but only
+0.031 waveform
 correlation in its strongest 1-second segment. That is a diagnostic lead, not
-audio validation; different scene phase, GB audio in the reference, or both
+audio validation; different event phase, GB audio in the reference, or both
 could explain it. The comparison tool defaults to the nominal frame and
 requires an explicit `--search-seconds` for exploratory alignment.
 

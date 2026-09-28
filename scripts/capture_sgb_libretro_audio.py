@@ -8,6 +8,7 @@ No firmware, game data, or captured audio is checked into the repository.
 import argparse
 import ctypes as C
 from pathlib import Path
+import sys
 import tempfile
 import wave
 
@@ -15,6 +16,27 @@ import wave
 BUTTON_IDS = {"right": 7, "left": 6, "up": 4, "down": 5,
               "a": 8, "b": 0, "select": 2, "start": 3}
 GB_FRAME_RATE = 4194304 / 70224
+
+
+def decode_video_row(row: bytes, pixel_format: int) -> bytes:
+    """Convert one native-endian libretro row to packed RGB888."""
+    bytes_per_pixel = 4 if pixel_format == 1 else 2
+    if pixel_format not in (0, 1, 2) or len(row) % bytes_per_pixel:
+        raise ValueError("invalid libretro video row or pixel format")
+    rgb = bytearray()
+    for offset in range(0, len(row), bytes_per_pixel):
+        pixel = int.from_bytes(row[offset:offset + bytes_per_pixel], sys.byteorder)
+        if pixel_format == 1:  # XRGB8888
+            rgb.extend(((pixel >> 16) & 255, (pixel >> 8) & 255, pixel & 255))
+        elif pixel_format == 2:  # RGB565
+            rgb.extend(((((pixel >> 11) & 31) * 255 + 15) // 31,
+                        (((pixel >> 5) & 63) * 255 + 31) // 63,
+                        ((pixel & 31) * 255 + 15) // 31))
+        else:  # 0RGB1555 is the libretro default when no format is requested.
+            rgb.extend(((((pixel >> 10) & 31) * 255 + 15) // 31,
+                        (((pixel >> 5) & 31) * 255 + 15) // 31,
+                        ((pixel & 31) * 255 + 15) // 31))
+    return bytes(rgb)
 
 
 def load_input_script(path: Path) -> list[tuple[int, int]]:
@@ -165,6 +187,7 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
     pressed_queries = 0
     snapshot: tuple[int, int, bytes] | None = None
     snapshots: dict[int, tuple[int, int, bytes]] = {}
+    video_pixel_format = 0  # RETRO_PIXEL_FORMAT_0RGB1555 is the API default.
     subsystems: dict[str, int] = {}
     system_bytes = C.c_char_p(str(system_dir.resolve()).encode())
 
@@ -173,14 +196,19 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
 
         @Environment
         def environment(command: int, data: int) -> bool:
+            nonlocal video_pixel_format
             if command == 9:  # GET_SYSTEM_DIRECTORY
                 C.cast(data, C.POINTER(C.c_void_p))[0] = C.cast(system_bytes, C.c_void_p).value
                 return True
             if command == 31:  # GET_SAVE_DIRECTORY; never write near the ROMs
                 C.cast(data, C.POINTER(C.c_void_p))[0] = C.cast(save_bytes, C.c_void_p).value
                 return True
-            if command == 10:  # SET_PIXEL_FORMAT; bsnes requests XRGB8888
-                return C.cast(data, C.POINTER(C.c_int))[0] == 1
+            if command == 10:  # SET_PIXEL_FORMAT
+                requested = C.cast(data, C.POINTER(C.c_int))[0]
+                if requested not in (0, 1, 2):
+                    return False
+                video_pixel_format = requested
+                return True
             if command == 27:  # GET_LOG_INTERFACE
                 C.cast(data, C.POINTER(C.c_void_p))[0] = C.cast(logger, C.c_void_p).value
                 return True
@@ -210,11 +238,12 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                              snapshot_series[0] <= video_frames <= snapshot_series[1])
                 if video_frames == snapshot_frame or in_series:
                     pixels = bytearray()
+                    bytes_per_pixel = 4 if video_pixel_format == 1 else 2
                     for row in range(height):
-                        row_bytes = C.string_at(data + row * pitch, width * 4)
-                        for column in range(0, len(row_bytes), 4):
-                            blue, green, red = row_bytes[column:column + 3]
-                            pixels.extend((red, green, blue))
+                        row_bytes = C.string_at(data + row * pitch,
+                                                width * bytes_per_pixel)
+                        pixels.extend(decode_video_row(row_bytes,
+                                                       video_pixel_format))
                     captured = (width, height, bytes(pixels))
                     if video_frames == snapshot_frame:
                         snapshot = captured
@@ -319,6 +348,9 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                       f"video rate {av.timing.fps:.6f} Hz, "
                       f"GB-to-reference frame offset {input_offset}, "
                       f"changes {input_offset_changes or []}")
+            if snapshot_output is not None or snapshot_series is not None:
+                print(f"Reference video pixel format: {video_pixel_format} "
+                      "(0=0RGB1555, 1=XRGB8888, 2=RGB565)")
             return sample_rate, len(audio) // 4
         finally:
             if loaded:

@@ -7,6 +7,7 @@ libretro reference includes GB audio and may have different boot/input phases.
 
 import argparse
 from array import array
+from collections import Counter
 import math
 from pathlib import Path
 import statistics
@@ -14,6 +15,29 @@ import sys
 import wave
 
 from capture_sgb_libretro_audio import GB_FRAME_RATE
+from align_sgb_frames import read_sgb_image, VIEWPORT, WIDTH
+
+
+def scene_agreement(gbb_scene: Path, reference_scene: Path) -> float:
+    """Check a recognizable GB viewport, allowing small palette differences."""
+    ours = read_sgb_image(gbb_scene)
+    theirs = read_sgb_image(reference_scene)
+    x0, y0, width, height = VIEWPORT
+    pixels_ours = []
+    pixels_theirs = []
+    for y in range(y0, y0 + height):
+        for x in range(x0, x0 + width):
+            offset = (y * WIDTH + x) * 3
+            pixels_ours.append(ours[offset:offset + 3])
+            pixels_theirs.append(theirs[offset:offset + 3])
+    # A blank/loading frame can trivially match an unrelated blank frame.
+    for path, pixels in ((gbb_scene, pixels_ours),
+                         (reference_scene, pixels_theirs)):
+        if len(set(pixels)) < 4 or Counter(pixels).most_common(1)[0][1] > len(pixels) * 0.9:
+            raise ValueError(f"{path}: scene checkpoint is too uniform")
+    matching = sum(all(abs(a - b) <= 16 for a, b in zip(left, right))
+                   for left, right in zip(pixels_ours, pixels_theirs))
+    return matching / len(pixels_ours)
 
 
 def read_stereo_wav(path: Path) -> tuple[int, array]:
@@ -112,7 +136,15 @@ def waveform_alignment(ours: list[float], reference: list[float],
 def compare(gbb_path: Path, reference_path: Path, gbb_event_sample: int,
             event_gb_frame: int, search_seconds: float,
             window_seconds: float, reference_video_fps: float = 60.098812,
-            reference_frame_offset: int = 0) -> str:
+            reference_frame_offset: int = 0,
+            gbb_scene: Path | None = None,
+            reference_scene: Path | None = None) -> str:
+    if gbb_scene is None or reference_scene is None:
+        raise ValueError("both scene checkpoint images are required before audio comparison")
+    scene_score = scene_agreement(gbb_scene, reference_scene)
+    if scene_score < 0.65:
+        raise ValueError(f"scene checkpoint mismatch: {scene_score:.1%} of GB viewport "
+                         "pixels agree within 16/channel (minimum 65%)")
     gbb_rate, gbb_pcm = read_stereo_wav(gbb_path)
     reference_rate, reference_pcm = read_stereo_wav(reference_path)
     if gbb_event_sample < 0 or gbb_event_sample >= len(gbb_pcm) // 2:
@@ -153,7 +185,10 @@ def compare(gbb_path: Path, reference_path: Path, gbb_event_sample: int,
         gbb_wave, reference_wave, radius_samples)
     gbb_rms, gbb_peak, gbb_active = describe(ours)
     ref_rms, ref_peak, ref_active = describe(reference[start:start + len(ours)])
-    return (f"GBB: {gbb_rate} Hz, event sample {gbb_event_sample} "
+    return (f"Same-scene checkpoint: {scene_score:.1%} of GB viewport pixels "
+            "agree within 16/channel (minimum 65%); this does not prove "
+            "audio phase alignment.\n"
+            f"GBB: {gbb_rate} Hz, event sample {gbb_event_sample} "
             f"({gbb_time:.3f}s in trace WAV)\n"
             f"Reference: {reference_rate} Hz, frame-based estimate "
             f"{expected_reference_time:.3f}s (video frame {event_reference_frame}); "
@@ -178,6 +213,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--gbb", type=Path, required=True)
     parser.add_argument("--reference", type=Path, required=True)
+    parser.add_argument("--gbb-scene", type=Path, required=True,
+                        help="256x224 image captured at the GBB event frame")
+    parser.add_argument("--reference-scene", type=Path, required=True,
+                        help="256x224 image captured at the predicted reference event frame")
     parser.add_argument("--gbb-event-sample", type=int, required=True)
     parser.add_argument("--event-gb-frame", type=int, default=2472)
     parser.add_argument("--reference-video-fps", type=float, default=60.098812)
@@ -191,7 +230,8 @@ def main() -> int:
         print(compare(args.gbb, args.reference, args.gbb_event_sample,
                       args.event_gb_frame, args.search_seconds,
                       args.window_seconds, args.reference_video_fps,
-                      args.reference_frame_offset))
+                      args.reference_frame_offset, args.gbb_scene,
+                      args.reference_scene))
         return 0
     except (OSError, ValueError, wave.Error) as error:
         print(f"audio comparison failed: {error}", file=sys.stderr)
