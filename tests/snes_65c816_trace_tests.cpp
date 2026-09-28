@@ -89,6 +89,176 @@ void test_fail_closed() {
           "SPC error during 65C816 opcode fetch is not mislabeled as a host opcode");
 }
 
+void test_icd_wram_port_dma() {
+    struct Stream final : sgb_test::SnesIcdTraceSource {
+        unsigned reads{};
+        bool read(std::uint16_t address, std::uint64_t,
+                  std::uint8_t& value) noexcept override {
+            if (address != 0x7800) return false;
+            value = static_cast<std::uint8_t>(0xA0U + reads++);
+            return true;
+        }
+        bool write(std::uint16_t, std::uint64_t,
+                   std::uint8_t) noexcept override { return false; }
+    } source;
+    std::vector<std::uint8_t> code;
+    const auto store = [&code](const std::uint16_t address,
+                               const std::uint8_t value) {
+        code.insert(code.end(), {0xA9, value, 0x8D,
+            static_cast<std::uint8_t>(address),
+            static_cast<std::uint8_t>(address >> 8)});
+    };
+    store(0x2181, 0xFE);
+    store(0x2182, 0xFF);
+    store(0x2183, 0x01);
+    store(0x4300, 0x08); // A-bus to B-bus, fixed source, mode 0.
+    store(0x4301, 0x80); // WRAM data port.
+    store(0x4302, 0x00);
+    store(0x4303, 0x78);
+    store(0x4304, 0x00);
+    store(0x4305, 0x03);
+    store(0x4306, 0x00);
+    store(0x420B, 0x01);
+    store(0x2180, 0xA3); // Direct port write after DMA wraps WMADD.
+    gameboy::SnesApuBus apu;
+    const auto rom = program(code);
+    sgb_test::Snes65c816TraceCpu cpu(rom, apu);
+    cpu.set_icd_source(&source);
+    for (unsigned i = 0; i < 24; ++i)
+        check(cpu.step().error == sgb_test::Snes65c816TraceCpu::Error::none,
+              "ICD WRAM DMA setup and transfer execute");
+    check(source.reads == 3 && cpu.debug_wram_byte(0x1FFFE) == 0xA0 &&
+              cpu.debug_wram_byte(0x1FFFF) == 0xA1 &&
+              cpu.debug_wram_byte(0) == 0xA2 &&
+              cpu.debug_wram_byte(1) == 0xA3 &&
+              cpu.wram_port_address() == 2,
+          "fixed ICD stream DMA and direct WMDATA wrap at 128 KiB");
+    check(cpu.dma_register(0, 5) == 0 && cpu.dma_register(0, 6) == 0,
+          "completed DMA clears transfer count");
+
+    code.clear();
+    store(0x4300, 0x00); // Incrementing source is not modeled here.
+    store(0x4301, 0x80);
+    store(0x4302, 0x00);
+    store(0x4303, 0x78);
+    store(0x4305, 0x01);
+    store(0x420B, 0x01);
+    const auto unsupported_rom = program(code);
+    sgb_test::Snes65c816TraceCpu unsupported(unsupported_rom, apu);
+    unsupported.set_icd_source(&source);
+    for (unsigned i = 0; i < 11; ++i)
+        check(unsupported.step().error ==
+                  sgb_test::Snes65c816TraceCpu::Error::none,
+              "unsupported DMA setup executes");
+    const auto result = unsupported.step();
+    check(result.error ==
+              sgb_test::Snes65c816TraceCpu::Error::unsupported_write &&
+              result.address == 0x420B && source.reads == 3,
+          "unsupported WRAM DMA fails before consuming ICD bytes");
+}
+
+void test_host_math_results() {
+    const auto rom = program({
+        0xA9, 0x12, 0x8D, 0x02, 0x42, // Multiplicand 18.
+        0xA9, 0x34, 0x8D, 0x03, 0x42, // Multiplier 52.
+        0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+        0xAD, 0x16, 0x42,             // Product low = $A8.
+        0xAD, 0x17, 0x42,             // Product high = $03.
+        0xA9, 0x34, 0x8D, 0x04, 0x42,
+        0xA9, 0x12, 0x8D, 0x05, 0x42,
+        0xA9, 0x10, 0x8D, 0x06, 0x42,
+        0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+        0xAD, 0x14, 0x42,             // Quotient low = $23.
+        0xAD, 0x15, 0x42,             // Quotient high = $01.
+        0xAD, 0x16, 0x42,             // Remainder = $04.
+    });
+    gameboy::SnesApuBus apu;
+    sgb_test::Snes65c816TraceCpu cpu(rom, apu);
+    for (unsigned i = 0; i < 12; ++i)
+        check(cpu.step().error == sgb_test::Snes65c816TraceCpu::Error::none,
+              "host multiplication setup and delay execute");
+    check(cpu.step().error == sgb_test::Snes65c816TraceCpu::Error::none &&
+              (cpu.registers().a & 0xFFU) == 0xA8,
+          "host multiplication low byte is visible");
+    check(cpu.step().error == sgb_test::Snes65c816TraceCpu::Error::none &&
+              (cpu.registers().a & 0xFFU) == 0x03,
+          "host multiplication high byte is visible");
+    for (unsigned i = 0; i < 14; ++i)
+        check(cpu.step().error == sgb_test::Snes65c816TraceCpu::Error::none,
+              "host division setup and delay execute");
+    check(cpu.step().error == sgb_test::Snes65c816TraceCpu::Error::none &&
+              (cpu.registers().a & 0xFFU) == 0x23,
+          "host division quotient low byte is visible");
+    check(cpu.step().error == sgb_test::Snes65c816TraceCpu::Error::none &&
+              (cpu.registers().a & 0xFFU) == 0x01,
+          "host division quotient high byte is visible");
+    check(cpu.step().error == sgb_test::Snes65c816TraceCpu::Error::none &&
+              (cpu.registers().a & 0xFFU) == 0x04,
+          "host division remainder is visible");
+
+    const auto early_rom = program({
+        0xA9, 0x03, 0x8D, 0x02, 0x42,
+        0xA9, 0x07, 0x8D, 0x03, 0x42,
+        0xAD, 0x16, 0x42,
+    });
+    sgb_test::Snes65c816TraceCpu early(early_rom, apu);
+    for (unsigned i = 0; i < 4; ++i)
+        check(early.step().error == sgb_test::Snes65c816TraceCpu::Error::none,
+              "early host math setup executes");
+    check(early.step().error ==
+              sgb_test::Snes65c816TraceCpu::Error::unsupported_read,
+          "intermediate hardware math result fails closed");
+
+    const auto unknown_quotient_rom = program({
+        0xA9, 0x03, 0x8D, 0x02, 0x42,
+        0xA9, 0x07, 0x8D, 0x03, 0x42,
+        0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+        0xAD, 0x14, 0x42,
+    });
+    sgb_test::Snes65c816TraceCpu unknown_quotient(unknown_quotient_rom, apu);
+    for (unsigned i = 0; i < 12; ++i)
+        check(unknown_quotient.step().error ==
+                  sgb_test::Snes65c816TraceCpu::Error::none,
+              "unknown quotient setup executes");
+    check(unknown_quotient.step().error ==
+              sgb_test::Snes65c816TraceCpu::Error::unsupported_read,
+          "multiplication does not fabricate an uninitialized quotient");
+}
+
+void test_lsr_direct_page() {
+    const auto rom = program({
+        0xA9, 0x03, 0x85, 0x20, // LDA #3; STA $20
+        0x46, 0x20,             // LSR $20 -> 1, carry set
+        0xA5, 0x20,             // LDA $20
+    });
+    gameboy::SnesApuBus apu;
+    sgb_test::Snes65c816TraceCpu cpu(rom, apu);
+    for (unsigned i = 0; i < 4; ++i)
+        check(cpu.step().error == sgb_test::Snes65c816TraceCpu::Error::none,
+              "LSR direct-page fixture executes");
+    check(cpu.debug_wram_byte(0x20) == 1 &&
+              (cpu.registers().a & 0xFFU) == 1 &&
+              (cpu.registers().p & 1U) != 0,
+          "LSR direct-page writes shifted value and old bit zero to carry");
+}
+
+void test_asl_direct_page() {
+    const auto rom = program({
+        0xA9, 0x81, 0x85, 0x20, // LDA #$81; STA $20
+        0x06, 0x20,             // ASL $20 -> 2, carry set
+        0xA5, 0x20,
+    });
+    gameboy::SnesApuBus apu;
+    sgb_test::Snes65c816TraceCpu cpu(rom, apu);
+    for (unsigned i = 0; i < 4; ++i)
+        check(cpu.step().error == sgb_test::Snes65c816TraceCpu::Error::none,
+              "ASL direct-page fixture executes");
+    check(cpu.debug_wram_byte(0x20) == 2 &&
+              (cpu.registers().a & 0xFFU) == 2 &&
+              (cpu.registers().p & 1U) != 0,
+          "ASL direct-page writes shifted value and old top bit to carry");
+}
+
 void test_icd_source_contract() {
     struct Source final : sgb_test::SnesIcdTraceSource {
         std::uint16_t read_address{};
@@ -887,6 +1057,10 @@ int main(int argc, char** argv) {
     if (argc != 1) return 2;
     test_native_width_and_apu_mapping();
     test_fail_closed();
+    test_icd_wram_port_dma();
+    test_host_math_results();
+    test_lsr_direct_page();
+    test_asl_direct_page();
     test_icd_source_contract();
     test_branch_carry_set();
     test_compare_y_immediate();

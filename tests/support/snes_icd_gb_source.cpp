@@ -200,8 +200,15 @@ bool SnesIcdGbSource::read(const std::uint16_t address,
                 latched_ = queued_.front();
                 queued_.pop_front();
                 ++packets_delivered_;
-                if ((latched_[0] >> 3) == 0x08)
+                if ((latched_[0] >> 3) == 0x08) {
                     ++sound_packets_delivered_;
+                    const auto a = latched_[1];
+                    const auto b = latched_[2];
+                    if ((latched_[3] & 0x0CU) != 0x0CU &&
+                        ((a != 0 && a < 0x80) || (b != 0 && b < 0x80) ||
+                         latched_[4] != 0))
+                        ++audible_sound_packets_delivered_;
+                }
             }
             value = latched_[address & 0xF];
             return true;

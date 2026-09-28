@@ -101,6 +101,34 @@ public:
                         gameboy::SnesSpc700* spc = nullptr) noexcept;
     [[nodiscard]] StepResult step() noexcept;
     [[nodiscard]] const Registers& registers() const noexcept { return r_; }
+    [[nodiscard]] std::uint8_t debug_wram_byte(std::size_t address) const noexcept {
+        return address < wram_.size() ? wram_[address] : 0;
+    }
+    [[nodiscard]] std::uint64_t dma_start_count() const noexcept {
+        return dma_start_count_;
+    }
+    [[nodiscard]] std::uint8_t last_dma_mask() const noexcept {
+        return last_dma_mask_;
+    }
+    [[nodiscard]] std::uint64_t dma_destination_count(
+        std::uint8_t destination) const noexcept {
+        return dma_destination_counts_[destination];
+    }
+    [[nodiscard]] std::uint8_t dma_register(std::uint8_t channel,
+                                             std::uint8_t offset) const noexcept {
+        return dma_registers_[static_cast<unsigned>(channel & 7U) * 16U +
+                              (offset & 15U)];
+    }
+    [[nodiscard]] std::uint32_t wram_port_address() const noexcept {
+        return wram_port_address_;
+    }
+    [[nodiscard]] std::uint32_t last_wram_dma_target() const noexcept {
+        return last_wram_dma_target_;
+    }
+    [[nodiscard]] std::uint8_t last_wram_dma_register(
+        std::uint8_t offset) const noexcept {
+        return last_wram_dma_registers_[offset < 7 ? offset : 0];
+    }
     [[nodiscard]] std::size_t apu_write_count() const noexcept { return apu_write_count_; }
     [[nodiscard]] ApuWrite apu_write(std::size_t index) const noexcept {
         return index < apu_write_count_ ? apu_writes_[index] : ApuWrite{};
@@ -164,6 +192,25 @@ private:
     void* spc_step_context_{};
     Registers r_{};
     std::array<std::uint8_t, 0x20000> wram_{};
+    std::array<std::uint8_t, 0x80> dma_registers_{};
+    std::array<std::uint64_t, 256> dma_destination_counts_{};
+    std::array<std::uint8_t, 7> last_wram_dma_registers_{};
+    std::uint32_t wram_port_address_{};
+    std::uint32_t last_wram_dma_target_{};
+    std::uint64_t dma_start_count_{};
+    std::uint8_t last_dma_mask_{};
+    std::uint8_t multiply_a_{};
+    std::uint16_t dividend_{};
+    std::uint16_t quotient_{};
+    std::uint16_t product_or_remainder_{};
+    std::uint16_t pending_quotient_{};
+    std::uint16_t pending_product_or_remainder_{};
+    std::uint64_t cpu_cycles_{};
+    std::uint64_t math_ready_cycle_{};
+    bool math_result_valid_{};
+    bool quotient_valid_{};
+    bool math_pending_{};
+    bool pending_division_{};
     std::array<ApuWrite, 16384> apu_writes_{};
     std::size_t apu_write_count_{};
     std::uint64_t steps_{};

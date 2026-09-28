@@ -116,6 +116,9 @@ int main(int argc, char** argv) {
         std::uint8_t ports[4]{};
         bool transfer_started = false;
         unsigned completed_blocks = 0;
+        std::array<sgb_test::Snes65c816TraceCpu::ApuWrite, 16> recent_apu_writes{};
+        std::size_t recent_apu_next = 0;
+        std::size_t recent_apu_count = 0;
         const unsigned requested_blocks = upload_boot || driver_probe || synchronized ? 0U :
             upload_three ? 3U : upload_two ? 2U : 1U;
         bool entry_command_seen = false;
@@ -152,6 +155,7 @@ int main(int argc, char** argv) {
             std::uint64_t pcm_samples{};
             std::uint64_t pcm_nonzero{};
             std::uint64_t post_sound_nonzero{};
+            std::uint64_t post_audible_sound_nonzero{};
             std::uint64_t pcm_hash{14695981039346656037ULL};
         } dsp_observation;
         if (sync_gb) {
@@ -169,6 +173,14 @@ int main(int argc, char** argv) {
               driver_probe || synchronized) ? 5000000U : 1000000U);
         for (unsigned i = 0; i < instruction_bound; ++i) {
             const auto result = cpu.step();
+            if (sync_gb) {
+                for (std::size_t event = 0; event < cpu.apu_write_count(); ++event) {
+                    recent_apu_writes[recent_apu_next] = cpu.apu_write(event);
+                    recent_apu_next = (recent_apu_next + 1) % recent_apu_writes.size();
+                    if (recent_apu_count < recent_apu_writes.size())
+                        ++recent_apu_count;
+                }
+            }
             if (icd) {
                 icd->advance_to(cpu.timing().clocks());
                 if (icd->missing_address() != 0) {
@@ -275,6 +287,8 @@ int main(int argc, char** argv) {
                                             ++observed.pcm_nonzero;
                                             if (observed.icd->sound_packets_delivered() != 0)
                                                 ++observed.post_sound_nonzero;
+                                            if (observed.icd->audible_sound_packets_delivered() != 0)
+                                                ++observed.post_audible_sound_nonzero;
                                         }
                                         for (const auto value : {sample->left,
                                                                  sample->right}) {
@@ -409,6 +423,8 @@ int main(int argc, char** argv) {
                                   << " nonzero=" << dsp_observation.pcm_nonzero
                                   << " post_SOUND_nonzero="
                                   << dsp_observation.post_sound_nonzero
+                                  << " post_audible_SOUND_nonzero="
+                                  << dsp_observation.post_audible_sound_nonzero
                                   << " fnv64=" << std::hex << std::setw(16)
                                   << std::setfill('0') << dsp_observation.pcm_hash
                                   << std::dec << '\n';
@@ -420,6 +436,8 @@ int main(int argc, char** argv) {
                               << " delivered=" << icd->packets_delivered()
                               << " SOUND_delivered="
                               << icd->sound_packets_delivered()
+                              << " audible_SOUND_delivered="
+                              << icd->audible_sound_packets_delivered()
                               << " audible_SOUND="
                               << icd->audible_sound_commands()
                               << " GB_frames=" << icd->completed_frames()
@@ -611,6 +629,61 @@ int main(int argc, char** argv) {
                       << static_cast<unsigned>(registers.y) << " PSW=$"
                       << std::setw(2) << static_cast<unsigned>(registers.psw)
                       << std::dec << '\n';
+            const auto& host = cpu.registers();
+            const auto base = host.d;
+            std::cerr << "host transfer context D=$" << std::hex
+                      << std::setw(4) << base << " Y=$" << std::setw(4)
+                      << host.y << " src=$";
+            for (unsigned offset = 0x98; offset <= 0x9A; ++offset)
+                std::cerr << std::setw(2)
+                          << static_cast<unsigned>(cpu.debug_wram_byte(
+                                 static_cast<std::uint16_t>(base + offset)));
+            std::cerr << " remaining=$" << std::setw(4)
+                      << static_cast<unsigned>(cpu.debug_wram_byte(
+                             static_cast<std::uint16_t>(base + 0x9C)))
+                      << std::dec << '\n';
+            std::cerr << "DMA starts=" << cpu.dma_start_count()
+                      << " last_mask=$" << std::hex << std::setw(2)
+                      << static_cast<unsigned>(cpu.last_dma_mask());
+            for (unsigned channel = 0; channel < 8; ++channel) {
+                if ((cpu.last_dma_mask() & (1U << channel)) == 0) continue;
+                std::cerr << " ch" << channel << '=';
+                for (unsigned offset = 0; offset <= 6; ++offset)
+                    std::cerr << std::setw(2)
+                              << static_cast<unsigned>(cpu.dma_register(
+                                     static_cast<std::uint8_t>(channel),
+                                     static_cast<std::uint8_t>(offset)));
+            }
+            std::cerr << std::dec << '\n';
+            std::cerr << "DMA destinations:";
+            for (unsigned destination = 0; destination < 256; ++destination) {
+                const auto count = cpu.dma_destination_count(
+                    static_cast<std::uint8_t>(destination));
+                if (count != 0)
+                    std::cerr << " $" << std::hex << std::setw(2)
+                              << std::setfill('0') << destination << std::dec
+                              << '=' << count;
+            }
+            std::cerr << '\n';
+            std::cerr << "last WRAM DMA target=$" << std::hex
+                      << cpu.last_wram_dma_target() << " regs=";
+            for (unsigned offset = 0; offset < 7; ++offset)
+                std::cerr << std::setw(2) << std::setfill('0')
+                          << static_cast<unsigned>(cpu.last_wram_dma_register(
+                                 static_cast<std::uint8_t>(offset)));
+            std::cerr << " WMADD=$" << cpu.wram_port_address()
+                      << std::dec << '\n';
+            std::cerr << "recent host APU writes:";
+            for (std::size_t index = 0; index < recent_apu_count; ++index) {
+                const auto& write = recent_apu_writes[
+                    (recent_apu_next + recent_apu_writes.size() -
+                     recent_apu_count + index) % recent_apu_writes.size()];
+                std::cerr << ' ' << write.step << '/'
+                          << static_cast<unsigned>(write.port) << "=$"
+                          << std::hex << std::setw(2) << std::setfill('0')
+                          << static_cast<unsigned>(write.value) << std::dec;
+            }
+            std::cerr << '\n';
         }
         if (sync_gb) {
             std::cerr << "GB ICD source cycles=" << icd->gb_cycles()
@@ -618,6 +691,8 @@ int main(int argc, char** argv) {
                       << " SOUND=" << icd->sound_commands()
                       << " delivered=" << icd->packets_delivered()
                       << " SOUND_delivered=" << icd->sound_packets_delivered()
+                      << " audible_SOUND_delivered="
+                      << icd->audible_sound_packets_delivered()
                       << " audible_SOUND=" << icd->audible_sound_commands()
                       << " GB_frames=" << icd->completed_frames()
                       << " input_events=" << icd->input_events_applied()
@@ -631,7 +706,9 @@ int main(int argc, char** argv) {
                       << " PCM_samples=" << dsp_observation.pcm_samples
                       << " PCM_nonzero=" << dsp_observation.pcm_nonzero
                       << " post_SOUND_nonzero="
-                      << dsp_observation.post_sound_nonzero << '\n';
+                      << dsp_observation.post_sound_nonzero
+                      << " post_audible_SOUND_nonzero="
+                      << dsp_observation.post_audible_sound_nonzero << '\n';
             if (icd->sound_commands() != 0) {
                 std::cerr << "first SOUND packet=";
                 for (const auto byte : icd->first_sound_packet())

@@ -216,7 +216,7 @@ unsigned Snes65c816TraceCpu::instruction_cycles(
     case 0x5F: case 0x7F: case 0x8F: case 0x9F: case 0xAF: case 0xBF:
         return 5 + m;
     case 0x2E: return 6 + 2 * m;
-    case 0x26: return 5 + 2 * m + dp;
+    case 0x06: case 0x26: case 0x46: return 5 + 2 * m + dp;
     case 0x99: case 0x9D: case 0x9E: return 5 + m;
     case 0x05: case 0x25: case 0x45: case 0x64: case 0x65:
     case 0x85: case 0xA5:
@@ -263,6 +263,7 @@ std::uint8_t Snes65c816TraceCpu::read8_raw(const std::uint8_t bank,
     timing_.cpu_cycle(bus_clocks(bank, address));
     update_irq();
     ++bus_accesses_;
+    ++cpu_cycles_;
     synchronize_apu();
     if (error_ != Error::none) return 0;
     if (bank == 0x7E || bank == 0x7F) {
@@ -309,6 +310,23 @@ std::uint8_t Snes65c816TraceCpu::read8_raw(const std::uint8_t bank,
     }
     if (system_bank && address == 0x4212 && timing_.autojoy_known())
         return timing_.hvbjoy();
+    if (system_bank && address >= 0x4214 && address <= 0x4217) {
+        if (math_pending_ && cpu_cycles_ >= math_ready_cycle_) {
+            quotient_ = pending_quotient_;
+            product_or_remainder_ = pending_product_or_remainder_;
+            math_result_valid_ = true;
+            if (pending_division_) quotient_valid_ = true;
+            math_pending_ = false;
+        }
+        if (!math_result_valid_ || math_pending_ ||
+            (address <= 0x4215 && !quotient_valid_)) {
+            error_ = Error::unsupported_read;
+            error_address_ = (static_cast<std::uint32_t>(bank) << 16) | address;
+            return 0;
+        }
+        const auto result = address <= 0x4215 ? quotient_ : product_or_remainder_;
+        return static_cast<std::uint8_t>(result >> (8U * (address & 1U)));
+    }
     if (system_bank && address >= 0x4218 && address <= 0x421F &&
         timing_.autojoy_known() && (timing_.hvbjoy() & 1U) == 0)
         return 0; // Explicit no-button controller profile, after auto-read.
@@ -338,6 +356,7 @@ void Snes65c816TraceCpu::write8(const std::uint8_t bank,
     timing_.cpu_cycle(bus_clocks(bank, address));
     update_irq();
     ++bus_accesses_;
+    ++cpu_cycles_;
     synchronize_apu();
     if (error_ != Error::none) return;
     open_bus_ = value;
@@ -346,6 +365,65 @@ void Snes65c816TraceCpu::write8(const std::uint8_t bank,
         return;
     }
     const bool system_bank = bank <= 0x3F || (bank >= 0x80 && bank <= 0xBF);
+    if (system_bank && address >= 0x2181 && address <= 0x2183) {
+        const unsigned shift = 8U * (address - 0x2181);
+        wram_port_address_ = (wram_port_address_ & ~(0xFFU << shift)) |
+            (static_cast<unsigned>(value) << shift);
+        wram_port_address_ &= 0x1FFFFU;
+        return;
+    }
+    if (system_bank && address == 0x2180) {
+        wram_[wram_port_address_] = value;
+        wram_port_address_ = (wram_port_address_ + 1U) & 0x1FFFFU;
+        return;
+    }
+    if (system_bank && address >= 0x4300 && address <= 0x437F) {
+        dma_registers_[address - 0x4300] = value;
+        return;
+    }
+    if (system_bank && address == 0x420B) {
+        ++dma_start_count_;
+        last_dma_mask_ = value;
+        for (unsigned channel = 0; channel < 8; ++channel) {
+            if ((value & (1U << channel)) != 0) {
+                ++dma_destination_counts_[dma_registers_[channel * 16U + 1U]];
+                if (dma_registers_[channel * 16U + 1U] == 0x80) {
+                    last_wram_dma_target_ = wram_port_address_;
+                    for (unsigned offset = 0; offset < 7; ++offset)
+                        last_wram_dma_registers_[offset] =
+                            dma_registers_[channel * 16U + offset];
+                    const auto base = channel * 16U;
+                    const auto mode = dma_registers_[base];
+                    const auto source = static_cast<std::uint16_t>(
+                        dma_registers_[base + 2U] |
+                        (static_cast<unsigned>(dma_registers_[base + 3U]) << 8));
+                    const auto source_bank = dma_registers_[base + 4U];
+                    // This bounded host trace models only the observed ICD
+                    // fixed-source byte stream into the WRAM data port.
+                    if (mode != 0x08 || source_bank != 0 ||
+                        source < 0x7800 || source > 0x780F) {
+                        error_ = Error::unsupported_write;
+                        error_address_ = (static_cast<std::uint32_t>(bank) << 16) |
+                            address;
+                        return;
+                    }
+                    const auto size = static_cast<unsigned>(
+                        dma_registers_[base + 5U] |
+                        (static_cast<unsigned>(dma_registers_[base + 6U]) << 8));
+                    const auto count = size != 0 ? size : 65536U;
+                    for (unsigned i = 0; i < count; ++i) {
+                        const auto byte = read8(source_bank, source);
+                        if (error_ != Error::none) return;
+                        wram_[wram_port_address_] = byte;
+                        wram_port_address_ = (wram_port_address_ + 1U) & 0x1FFFFU;
+                    }
+                    dma_registers_[base + 5U] = 0;
+                    dma_registers_[base + 6U] = 0;
+                }
+            }
+        }
+        return;
+    }
     if (system_bank && address < 0x2000) {
         wram_[address] = value;
         return;
@@ -371,6 +449,36 @@ void Snes65c816TraceCpu::write8(const std::uint8_t bank,
     }
     if (system_bank && address == 0x420D) {
         fast_rom_ = (value & 1U) != 0;
+        return;
+    }
+    if (system_bank && address >= 0x4202 && address <= 0x4206) {
+        switch (address) {
+        case 0x4202: multiply_a_ = value; break;
+        case 0x4203:
+            pending_product_or_remainder_ =
+                static_cast<std::uint16_t>(multiply_a_ * value);
+            pending_quotient_ = quotient_;
+            math_ready_cycle_ = cpu_cycles_ + 8;
+            math_pending_ = true;
+            pending_division_ = false;
+            break;
+        case 0x4204:
+            dividend_ = static_cast<std::uint16_t>((dividend_ & 0xFF00U) | value);
+            break;
+        case 0x4205:
+            dividend_ = static_cast<std::uint16_t>((dividend_ & 0xFFU) |
+                (static_cast<unsigned>(value) << 8));
+            break;
+        case 0x4206:
+            pending_quotient_ = value == 0 ? 0xFFFFU :
+                static_cast<std::uint16_t>(dividend_ / value);
+            pending_product_or_remainder_ = value == 0 ? dividend_ :
+                static_cast<std::uint16_t>(dividend_ % value);
+            math_ready_cycle_ = cpu_cycles_ + 16;
+            math_pending_ = true;
+            pending_division_ = true;
+            break;
+        }
         return;
     }
     if (system_bank && address == 0x4200) {
@@ -1357,6 +1465,39 @@ Snes65c816TraceCpu::StepResult Snes65c816TraceCpu::step() noexcept {
         else set_nz16(r_.a);
         break;
     }
+    case 0x06: { // ASL dp
+        const auto address = static_cast<std::uint16_t>(r_.d + fetch8());
+        const auto old = accumulator_8() ? read8(0, address) : read16(0, address);
+        const unsigned mask = accumulator_8() ? 0xFFU : 0xFFFFU;
+        const unsigned top = accumulator_8() ? 0x80U : 0x8000U;
+        const auto result = static_cast<std::uint16_t>((old << 1) & mask);
+        r_.p = static_cast<std::uint8_t>((r_.p & ~carry) |
+            ((old & top) != 0 ? carry : 0));
+        if (accumulator_8()) {
+            write8(0, address, static_cast<std::uint8_t>(old));
+            write8(0, address, static_cast<std::uint8_t>(result));
+            set_nz8(static_cast<std::uint8_t>(result));
+        } else {
+            write16(0, address, result);
+            set_nz16(result);
+        }
+        break;
+    }
+    case 0x46: { // LSR dp
+        const auto address = static_cast<std::uint16_t>(r_.d + fetch8());
+        const auto old = accumulator_8() ? read8(0, address) : read16(0, address);
+        const auto result = static_cast<std::uint16_t>(old >> 1);
+        r_.p = static_cast<std::uint8_t>((r_.p & ~carry) | (old & 1U));
+        if (accumulator_8()) {
+            write8(0, address, static_cast<std::uint8_t>(old));
+            write8(0, address, static_cast<std::uint8_t>(result));
+            set_nz8(static_cast<std::uint8_t>(result));
+        } else {
+            write16(0, address, result);
+            set_nz16(result);
+        }
+        break;
+    }
     case 0x6A: { // ROR A
         const auto old = accumulator_8() ? (r_.a & 0xFFU) : r_.a;
         const auto top = accumulator_8() ? 0x80U : 0x8000U;
@@ -1546,6 +1687,7 @@ Snes65c816TraceCpu::StepResult Snes65c816TraceCpu::step() noexcept {
                                            branch_taken_, branch_crossed_);
     if (cycles > bus_accesses_) {
         timing_.cpu_cycle((cycles - bus_accesses_) * 6);
+        cpu_cycles_ += cycles - bus_accesses_;
         update_irq();
     }
     synchronize_apu();
