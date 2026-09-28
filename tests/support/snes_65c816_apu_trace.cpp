@@ -1,4 +1,6 @@
 #include "snes_65c816_trace_cpu.hpp"
+#include "snes_icd_gb_source.hpp"
+#include "snes_dsp_pcm_renderer.hpp"
 #include "gameboy/snes_spc700.hpp"
 
 #include <array>
@@ -7,6 +9,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 #include <string_view>
 #include <utility>
@@ -25,15 +28,25 @@ int main(int argc, char** argv) {
         std::string_view(argv[argc - 1]) == "--driver-probe";
     const bool sync_probe = argc >= 3 &&
         std::string_view(argv[argc - 1]) == "--sync-probe";
+    const bool audible_sound_probe = argc >= 7 &&
+        std::string_view(argv[argc - 1]) == "--audible-sound-probe";
+    const int sync_option_index = argc - (audible_sound_probe ? 4 : 3);
+    const bool sync_gb = argc >= (audible_sound_probe ? 7 : 6) &&
+        (std::string_view(argv[sync_option_index]) == "--sync-gb-sgb1" ||
+         std::string_view(argv[sync_option_index]) == "--sync-gb-sgb2");
+    const bool synchronized = sync_probe || sync_gb;
     const int path_count = argc - 1 -
         (trace || upload || upload_two || upload_three || upload_boot || driver_probe ||
-         sync_probe ? 1 : 0);
+         sync_probe ? 1 : sync_gb ? (audible_sound_probe ? 4 : 3) : 0);
     if (path_count < 1 || path_count > 2 ||
         ((upload || upload_two || upload_three || upload_boot || driver_probe ||
-          sync_probe) && path_count != 2)) {
+          synchronized) && path_count != 2)) {
         std::cerr << "usage: gameboy_snes_65c816_apu_trace <SGB-program-ROM> "
                      "[64-byte-SPC700-IPL] [--trace|--upload|--upload-two|"
-                     "--upload-three|--upload-boot|--driver-probe|--sync-probe]\n";
+                     "--upload-three|--upload-boot|--driver-probe|--sync-probe|"
+                     "--sync-gb-sgb1 GB-ROM GB-BOOT|"
+                     "--sync-gb-sgb2 GB-ROM GB-BOOT"
+                     " [--audible-sound-probe]]\n";
         return 2;
     }
     try {
@@ -56,15 +69,29 @@ int main(int argc, char** argv) {
         gameboy::SnesSpc700 spc(apu);
         sgb_test::Snes65c816TraceCpu cpu(rom, apu,
                                           path_count == 2 ? &spc : nullptr);
+        std::unique_ptr<sgb_test::SnesIcdGbSource> icd;
+        if (sync_gb) {
+            const auto model = std::string_view(argv[sync_option_index]) == "--sync-gb-sgb2"
+                ? gameboy::HardwareModel::sgb2 : gameboy::HardwareModel::sgb;
+            icd = std::make_unique<sgb_test::SnesIcdGbSource>(
+                argv[sync_option_index + 1], argv[sync_option_index + 2], model);
+            icd->set_audible_sound_substitution(audible_sound_probe);
+            if (audible_sound_probe)
+                std::cerr << "SYNTHETIC SOUND payload substitution enabled;"
+                             " not a title-authentic packet\n";
+            cpu.set_icd_source(icd.get());
+        }
         std::size_t printed = 0;
         std::uint8_t ports[4]{};
         bool transfer_started = false;
         unsigned completed_blocks = 0;
-        const unsigned requested_blocks = upload_boot || driver_probe || sync_probe ? 0U :
+        const unsigned requested_blocks = upload_boot || driver_probe || synchronized ? 0U :
             upload_three ? 3U : upload_two ? 2U : 1U;
         bool entry_command_seen = false;
         bool boot_handed_off = false;
         std::uint16_t entry_address = 0;
+        gameboy::SnesApuBus pcm_bus;
+        sgb_test::SnesDspPcmRenderer pcm(pcm_bus);
         struct DspObservation {
             struct Event {
                 std::uint64_t completed_cycle{};
@@ -86,16 +113,31 @@ int main(int argc, char** argv) {
             std::uint64_t ram_hash{14695981039346656037ULL};
             std::uint64_t first_ram_cycle{};
             bool unsupported{};
+            bool pcm_unsupported{};
+            sgb_test::SnesDspPcmRenderer* pcm{};
+            gameboy::SnesApuBus* pcm_bus{};
+            const sgb_test::SnesIcdGbSource* icd{};
+            std::uint64_t next_sample_cycle{};
+            std::uint64_t pcm_samples{};
+            std::uint64_t pcm_nonzero{};
+            std::uint64_t post_sound_nonzero{};
+            std::uint64_t pcm_hash{14695981039346656037ULL};
         } dsp_observation;
+        if (sync_gb) {
+            dsp_observation.pcm = &pcm;
+            dsp_observation.pcm_bus = &pcm_bus;
+            dsp_observation.icd = icd.get();
+        }
         std::vector<std::pair<std::uint16_t, std::size_t>> uploaded_ranges;
         std::uint8_t expected_index = 0;
         std::uint16_t destination = 0;
         std::vector<std::uint8_t> transferred;
-        for (unsigned i = 0; i < ((upload || upload_two || upload_three ||
-                                      upload_boot || driver_probe || sync_probe) ?
-                                        5000000U : 1000000U); ++i) {
+        const unsigned instruction_bound = sync_gb ? 20000000U :
+            ((upload || upload_two || upload_three || upload_boot ||
+              driver_probe || synchronized) ? 5000000U : 1000000U);
+        for (unsigned i = 0; i < instruction_bound; ++i) {
             const auto result = cpu.step();
-            if (sync_probe) {
+            if (synchronized) {
                 while (dsp_observation.printed < dsp_observation.count) {
                     const auto& event = dsp_observation.events[dsp_observation.printed++];
                     std::cout << "synchronized DSP write at SPC instruction end cycle "
@@ -110,12 +152,14 @@ int main(int argc, char** argv) {
                     apu.set_dsp_write_observer(nullptr);
                     apu.set_spc_ram_write_observer(nullptr);
                     cpu.set_spc_step_observer(nullptr);
-                    std::cerr << "synchronized DSP observation multi-write"
-                                 " SPC instruction\n";
+                    std::cerr << (dsp_observation.pcm_unsupported
+                                      ? "synchronized PCM renderer rejected a sample\n"
+                                      : "synchronized DSP observation multi-write"
+                                        " SPC instruction\n");
                     return 5;
                 }
             }
-            if ((upload_boot || driver_probe || sync_probe) && entry_command_seen &&
+            if ((upload_boot || driver_probe || synchronized) && entry_command_seen &&
                 result.error == sgb_test::Snes65c816TraceCpu::Error::none &&
                 spc.registers().pc < 0xFFC0) {
                 if (!boot_handed_off) {
@@ -125,9 +169,13 @@ int main(int argc, char** argv) {
                               << ") after " << std::dec << cpu.steps()
                               << " SNES steps\n";
                 }
-                if (sync_probe) {
+                if (synchronized) {
                     if (!boot_handed_off) {
                         boot_handed_off = true;
+                        if (sync_gb) {
+                            pcm_bus = apu;
+                            pcm.reset();
+                        }
                         apu.set_dsp_write_observer(
                             [](void* context, std::uint8_t address,
                                std::uint8_t value) noexcept {
@@ -152,10 +200,44 @@ int main(int argc, char** argv) {
                             [](void* context, std::uint64_t cycle,
                                std::uint8_t opcode, unsigned) noexcept {
                                 auto& observed = *static_cast<DspObservation*>(context);
+                                if (observed.pcm != nullptr) {
+                                    if (observed.next_sample_cycle == 0)
+                                        observed.next_sample_cycle = cycle + 32;
+                                    while (observed.next_sample_cycle <= cycle &&
+                                           !observed.unsupported) {
+                                        const auto sample = observed.pcm->next_sample();
+                                        if (!sample) {
+                                            observed.unsupported = true;
+                                            observed.pcm_unsupported = true;
+                                            break;
+                                        }
+                                        ++observed.pcm_samples;
+                                        if (sample->left != 0 || sample->right != 0) {
+                                            ++observed.pcm_nonzero;
+                                            if (observed.icd->sound_packets_delivered() != 0)
+                                                ++observed.post_sound_nonzero;
+                                        }
+                                        for (const auto value : {sample->left,
+                                                                 sample->right}) {
+                                            const auto bits = static_cast<std::uint16_t>(value);
+                                            observed.pcm_hash =
+                                                (observed.pcm_hash ^
+                                                 static_cast<std::uint8_t>(bits)) *
+                                                1099511628211ULL;
+                                            observed.pcm_hash =
+                                                (observed.pcm_hash ^
+                                                 static_cast<std::uint8_t>(bits >> 8)) *
+                                                1099511628211ULL;
+                                        }
+                                        observed.next_sample_cycle += 32;
+                                    }
+                                }
                                 for (unsigned index = 0;
                                      index < observed.pending_ram_count; ++index) {
                                     const auto [address, value] =
                                         observed.pending_ram[index];
+                                    if (observed.pcm_bus != nullptr)
+                                        observed.pcm_bus->dsp_write_ram(address, value);
                                     if (observed.ram_writes == 0)
                                         observed.first_ram_cycle = cycle;
                                     ++observed.ram_writes;
@@ -191,6 +273,9 @@ int main(int argc, char** argv) {
                                                 cycle, opcode, observed.address,
                                                 observed.value};
                                         }
+                                        if (observed.pcm != nullptr)
+                                            observed.pcm->write_dsp(
+                                                observed.address, observed.value);
                                     }
                                 }
                                 observed.pending = 0;
@@ -245,7 +330,7 @@ int main(int argc, char** argv) {
                 return 0;
             }
             if (result.error != sgb_test::Snes65c816TraceCpu::Error::none) {
-                if (sync_probe) {
+                if (synchronized) {
                     apu.set_dsp_write_observer(nullptr);
                     apu.set_spc_ram_write_observer(nullptr);
                     cpu.set_spc_step_observer(nullptr);
@@ -259,6 +344,38 @@ int main(int argc, char** argv) {
                               << dsp_observation.dsp_writes << " fnv64="
                               << std::hex << std::setw(16) << std::setfill('0')
                               << dsp_observation.dsp_hash << std::dec << '\n';
+                    if (sync_gb)
+                        std::cout << "post-handoff PCM samples="
+                                  << dsp_observation.pcm_samples
+                                  << " nonzero=" << dsp_observation.pcm_nonzero
+                                  << " post_SOUND_nonzero="
+                                  << dsp_observation.post_sound_nonzero
+                                  << " fnv64=" << std::hex << std::setw(16)
+                                  << std::setfill('0') << dsp_observation.pcm_hash
+                                  << std::dec << '\n';
+                }
+                if (icd) {
+                    std::cout << "GB ICD source cycles=" << icd->gb_cycles()
+                              << " packets=" << icd->packets_completed()
+                              << " SOUND=" << icd->sound_commands()
+                              << " delivered=" << icd->packets_delivered()
+                              << " SOUND_delivered="
+                              << icd->sound_packets_delivered()
+                              << " SOU_TRN=" << icd->transfer_commands()
+                              << " control_writes=" << icd->control_writes()
+                              << " last_control=$" << std::hex << std::setw(2)
+                              << static_cast<unsigned>(icd->last_control())
+                              << " missing=$" << std::hex << std::setw(4)
+                              << std::setfill('0') << icd->missing_address()
+                              << std::dec << '\n';
+                    if (icd->sound_commands() != 0) {
+                        std::cout << "first SOUND packet=";
+                        for (const auto byte : icd->first_sound_packet())
+                            std::cout << ' ' << std::hex << std::setw(2)
+                                      << std::setfill('0')
+                                      << static_cast<unsigned>(byte);
+                        std::cout << std::dec << '\n';
+                    }
                 }
                 std::cerr << "SNES CPU trace stopped after " << cpu.steps()
                           << " instructions at $" << std::hex << std::setw(2)
@@ -281,15 +398,16 @@ int main(int argc, char** argv) {
                 std::cerr << std::dec << '\n';
                 std::cerr << "master clocks " << cpu.timing().clocks()
                           << " V=" << cpu.timing().line()
-                          << " H=" << cpu.timing().horizontal_clock() << '\n';
+                          << " H=" << cpu.timing().horizontal_clock()
+                          << " IRQ_entries=" << cpu.irq_entries() << '\n';
                 return 3;
             }
             for (std::size_t event = 0; event < cpu.apu_write_count(); ++event) {
                 const auto write = cpu.apu_write(event);
                 ++printed;
-                if (sync_probe && boot_handed_off) continue;
+                if (synchronized && boot_handed_off) continue;
                 if (upload || upload_two || upload_three || upload_boot || driver_probe ||
-                    sync_probe) {
+                    synchronized) {
                     ports[write.port] = write.value;
                     if (!transfer_started && write.port == 0 &&
                         write.value == 0xCC && ports[1] == 1) {
@@ -342,7 +460,7 @@ int main(int argc, char** argv) {
                             ++completed_blocks;
                             if (requested_blocks != 0 &&
                                 completed_blocks == requested_blocks) return 0;
-                            if ((upload_boot || driver_probe || sync_probe) &&
+                            if ((upload_boot || driver_probe || synchronized) &&
                                 ports[1] == 0) {
                                 entry_address = static_cast<std::uint16_t>(
                                     ports[2] | (static_cast<unsigned>(ports[3]) << 8));
@@ -403,6 +521,31 @@ int main(int argc, char** argv) {
                   << " after " << cpu.timing().clocks() << " master clocks"
                   << " (V=" << cpu.timing().line()
                   << " H=" << cpu.timing().horizontal_clock() << ")\n";
+        if (sync_gb) {
+            std::cerr << "GB ICD source cycles=" << icd->gb_cycles()
+                      << " packets=" << icd->packets_completed()
+                      << " SOUND=" << icd->sound_commands()
+                      << " delivered=" << icd->packets_delivered()
+                      << " SOUND_delivered=" << icd->sound_packets_delivered()
+                      << " SOU_TRN=" << icd->transfer_commands()
+                      << " control_writes=" << icd->control_writes()
+                      << " last_control=$" << std::hex << std::setw(2)
+                      << std::setfill('0')
+                      << static_cast<unsigned>(icd->last_control())
+                      << " missing=$" << std::setw(4)
+                      << icd->missing_address() << std::dec
+                      << " PCM_samples=" << dsp_observation.pcm_samples
+                      << " PCM_nonzero=" << dsp_observation.pcm_nonzero
+                      << " post_SOUND_nonzero="
+                      << dsp_observation.post_sound_nonzero << '\n';
+            if (icd->sound_commands() != 0) {
+                std::cerr << "first SOUND packet=";
+                for (const auto byte : icd->first_sound_packet())
+                    std::cerr << ' ' << std::hex << std::setw(2)
+                              << std::setfill('0') << static_cast<unsigned>(byte);
+                std::cerr << std::dec << '\n';
+            }
+        }
         return 4;
     } catch (const std::exception& error) {
         std::cerr << "could not load SGB program ROM: " << error.what() << '\n';

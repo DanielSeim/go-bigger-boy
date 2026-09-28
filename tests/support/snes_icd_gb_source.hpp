@@ -1,0 +1,98 @@
+#pragma once
+
+#include "snes_65c816_trace_cpu.hpp"
+
+#include "gameboy/emulator.hpp"
+
+#include <array>
+#include <cstdint>
+#include <deque>
+#include <filesystem>
+#include <memory>
+
+namespace sgb_test {
+
+// Test-only live GB input for the bounded SNES trace. The GB clock is anchored
+// to ICD reset release; status is scanline-granular, not a cycle-exact ICD2
+// model. Unknown row-buffer data deliberately fails closed.
+class SnesIcdGbSource final : public SnesIcdTraceSource {
+public:
+    explicit SnesIcdGbSource(const std::filesystem::path& rom,
+                             const std::filesystem::path& boot_rom,
+                             gameboy::HardwareModel model);
+
+    [[nodiscard]] bool read(std::uint16_t address, std::uint64_t master_clocks,
+                            std::uint8_t& value) noexcept override;
+    [[nodiscard]] bool write(std::uint16_t address, std::uint64_t master_clocks,
+                             std::uint8_t value) noexcept override;
+    [[nodiscard]] std::uint64_t gb_cycles() const noexcept { return gb_cycles_; }
+    [[nodiscard]] std::uint64_t packets_completed() const noexcept {
+        return packets_completed_;
+    }
+    [[nodiscard]] std::uint64_t sound_commands() const noexcept {
+        return sound_commands_;
+    }
+    [[nodiscard]] std::uint64_t packets_delivered() const noexcept {
+        return packets_delivered_;
+    }
+    [[nodiscard]] std::uint64_t sound_packets_delivered() const noexcept {
+        return sound_packets_delivered_;
+    }
+    [[nodiscard]] const std::array<std::uint8_t, 16>& first_sound_packet()
+        const noexcept { return first_sound_packet_; }
+    [[nodiscard]] std::uint64_t transfer_commands() const noexcept {
+        return transfer_commands_;
+    }
+    [[nodiscard]] std::uint16_t missing_address() const noexcept {
+        return missing_address_;
+    }
+    [[nodiscard]] std::uint64_t control_writes() const noexcept {
+        return control_writes_;
+    }
+    [[nodiscard]] std::uint8_t last_control() const noexcept {
+        return last_control_;
+    }
+    // Synthetic diagnostic only: replace the first GB SOUND payload while
+    // preserving the packet's real delivery timing and command framing.
+    void set_audible_sound_substitution(bool enabled) noexcept {
+        audible_sound_substitution_ = enabled;
+    }
+
+private:
+    void synchronize(std::uint64_t master_clocks) noexcept;
+    void joyp_write(std::uint8_t value) noexcept;
+    void complete_packet() noexcept;
+    void complete_tile_row(unsigned tile_row) noexcept;
+
+    std::unique_ptr<gameboy::Emulator> gb_;
+    gameboy::DiagnosticBootRom boot_image_{};
+    std::uint64_t release_clock_{};
+    std::uint64_t gb_cycles_{};
+    std::uint64_t packets_completed_{};
+    std::uint64_t sound_commands_{};
+    std::uint64_t packets_delivered_{};
+    std::uint64_t sound_packets_delivered_{};
+    std::array<std::uint8_t, 16> first_sound_packet_{};
+    std::uint64_t transfer_commands_{};
+    std::uint16_t missing_address_{};
+    std::uint64_t control_writes_{};
+    std::uint8_t last_control_{};
+    unsigned divider_{5};
+    bool released_{};
+    bool pulse_armed_{true};
+    bool receiving_{};
+    bool packet_pending_{};
+    bool audible_sound_substitution_{};
+    unsigned bit_count_{};
+    unsigned continuation_packets_{};
+    unsigned last_ly_{};
+    unsigned selected_row_{};
+    unsigned row_stream_offset_{};
+    std::array<std::array<std::uint8_t, 320>, 4> rows_{};
+    std::array<bool, 4> row_valid_{};
+    std::array<std::uint8_t, 16> building_{};
+    std::array<std::uint8_t, 16> latched_{};
+    std::deque<std::array<std::uint8_t, 16>> queued_;
+};
+
+} // namespace sgb_test

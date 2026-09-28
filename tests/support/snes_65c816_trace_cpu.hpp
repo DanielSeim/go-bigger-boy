@@ -10,6 +10,19 @@ namespace gameboy { class SnesSpc700; }
 
 namespace sgb_test {
 
+// Test-only ICD2 input. Returning false leaves the host trace stopped at the
+// exact access; implementations must not guess missing GB-side data.
+class SnesIcdTraceSource {
+public:
+    virtual ~SnesIcdTraceSource() = default;
+    [[nodiscard]] virtual bool read(std::uint16_t address,
+                                    std::uint64_t master_clocks,
+                                    std::uint8_t& value) noexcept = 0;
+    [[nodiscard]] virtual bool write(std::uint16_t address,
+                                     std::uint64_t master_clocks,
+                                     std::uint8_t value) noexcept = 0;
+};
+
 // NTSC, non-interlace timing for the development trace. Master clocks, not
 // interpreted instruction counts, drive the observable PPU status bits.
 class SnesTraceTiming final {
@@ -25,10 +38,15 @@ public:
     [[nodiscard]] bool autojoy_known() const noexcept;
     void write_overscan(std::uint8_t value) noexcept { overscan_ = (value & 4U) != 0; }
     void write_latch(std::uint8_t value) noexcept;
+    [[nodiscard]] bool software_latch() noexcept;
     [[nodiscard]] std::uint64_t clocks() const noexcept { return clocks_; }
     [[nodiscard]] unsigned line() const noexcept { return line_; }
     [[nodiscard]] unsigned horizontal_clock() const noexcept { return horizontal_clock_; }
     [[nodiscard]] bool field() const noexcept { return field_; }
+    [[nodiscard]] std::uint64_t frames() const noexcept { return frames_; }
+    [[nodiscard]] std::uint64_t frame_start_clocks() const noexcept {
+        return frame_start_clocks_;
+    }
 
 private:
     [[nodiscard]] unsigned line_length() const noexcept;
@@ -96,16 +114,20 @@ public:
         spc_step_observer_ = observer;
         spc_step_context_ = context;
     }
+    void set_icd_source(SnesIcdTraceSource* source) noexcept { icd_ = source; }
     [[nodiscard]] std::uint64_t spc_cycles() const noexcept { return spc_cycles_; }
     [[nodiscard]] const SnesTraceTiming& timing() const noexcept { return timing_; }
     [[nodiscard]] std::uint8_t interrupt_enable() const noexcept {
         return interrupt_enable_;
     }
     [[nodiscard]] bool nmi_was_enabled() const noexcept { return nmi_was_enabled_; }
+    [[nodiscard]] std::uint64_t irq_entries() const noexcept { return irq_entries_; }
 
 private:
     [[nodiscard]] std::uint8_t read8(std::uint8_t bank,
                                       std::uint16_t address) noexcept;
+    [[nodiscard]] std::uint8_t read8_raw(std::uint8_t bank,
+                                          std::uint16_t address) noexcept;
     void write8(std::uint8_t bank, std::uint16_t address,
                 std::uint8_t value) noexcept;
     [[nodiscard]] std::uint8_t fetch8() noexcept;
@@ -131,10 +153,12 @@ private:
                                                bool branch_taken,
                                                bool branch_crossed) const noexcept;
     void synchronize_apu() noexcept;
+    void update_irq() noexcept;
 
     const gameboy::SgbProgramRom& rom_;
     gameboy::SnesApuBus& apu_;
     gameboy::SnesSpc700* spc_{};
+    SnesIcdTraceSource* icd_{};
     std::uint64_t spc_cycles_{};
     SpcStepObserver spc_step_observer_{};
     void* spc_step_context_{};
@@ -147,6 +171,17 @@ private:
     unsigned bus_accesses_{};
     bool fast_rom_{};
     std::uint8_t interrupt_enable_{};
+    std::uint16_t irq_h_target_{};
+    std::uint16_t irq_v_target_{};
+    std::uint64_t last_irq_clock_{};
+    bool irq_latched_{};
+    bool irq_defer_after_cli_{};
+    std::uint64_t irq_entries_{};
+    std::uint8_t open_bus_{};
+    std::uint16_t latched_h_{};
+    std::uint16_t latched_v_{};
+    bool h_counter_high_{};
+    bool v_counter_high_{};
     bool nmi_was_enabled_{};
     bool branch_taken_{};
     bool branch_crossed_{};

@@ -80,6 +80,10 @@ public:
     void flush_battery();
     [[nodiscard]] const Ppu::Framebuffer& framebuffer() const noexcept;
     [[nodiscard]] const Ppu::SgbFramebuffer& sgb_framebuffer() const noexcept;
+    [[nodiscard]] std::uint8_t debug_sgb_source_pixel(
+        unsigned x, unsigned y) const noexcept {
+        return ppu_.debug_sgb_source_pixel(x, y);
+    }
     [[nodiscard]] const Ppu::SgbViewportMask& sgb_border_opaque_mask() const noexcept;
     [[nodiscard]] std::uint64_t debug_sgb_border_revision() const noexcept;
     [[nodiscard]] std::uint64_t debug_sgb_sound_transfer_revision() const noexcept {

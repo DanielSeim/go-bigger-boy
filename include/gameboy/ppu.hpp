@@ -58,6 +58,11 @@ public:
         std::uint16_t offset) const noexcept;
     [[nodiscard]] std::uint8_t debug_read_sgb_sound_data(
         std::uint16_t offset) const noexcept;
+    [[nodiscard]] std::uint8_t debug_sgb_source_pixel(
+        unsigned x, unsigned y) const noexcept {
+        return x < screen_width && y < screen_height
+            ? (*sgb_screen_buffer_)[y * screen_width + x] : 0;
+    }
     [[nodiscard]] std::uint64_t debug_sgb_sound_transfer_revision() const noexcept;
     [[nodiscard]] std::array<std::uint8_t, 4> debug_sgb_sound_request() const noexcept {
         return sgb_sound_request_;

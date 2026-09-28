@@ -104,6 +104,12 @@ void SnesTraceTiming::write_latch(const std::uint8_t value) noexcept {
     latch_enable_ = enabled;
 }
 
+bool SnesTraceTiming::software_latch() noexcept {
+    if (!latch_enable_) return false;
+    latched_ = true;
+    return true;
+}
+
 Snes65c816TraceCpu::Snes65c816TraceCpu(
     const gameboy::SgbProgramRom& rom, gameboy::SnesApuBus& apu,
     gameboy::SnesSpc700* spc) noexcept
@@ -134,6 +140,35 @@ void Snes65c816TraceCpu::synchronize_apu() noexcept {
     }
 }
 
+void Snes65c816TraceCpu::update_irq() noexcept {
+    const auto now = timing_.clocks();
+    const auto mode = interrupt_enable_ & 0x30U;
+    if (mode == 0 || irq_v_target_ >= 262) {
+        last_irq_clock_ = now;
+        return;
+    }
+    // This bounded host trace currently uses V/HV timer IRQs. H-only and
+    // external IRQs remain unmodeled and are rejected at $4211.
+    if (mode == 0x10U) { last_irq_clock_ = now; return; }
+    const auto event_for = [&](const std::uint64_t frame_start,
+                               const bool odd_field) {
+        const auto line_start = frame_start +
+            static_cast<std::uint64_t>(irq_v_target_) * 1364U -
+            (odd_field && irq_v_target_ > 240 ? 4U : 0U);
+        const auto h = mode == 0x20U ? 0U : irq_h_target_;
+        return line_start + (h == 0 ? 10U : 14U + h * 4U);
+    };
+    const auto current = event_for(timing_.frame_start_clocks(), timing_.field());
+    if (current > last_irq_clock_ && current <= now) irq_latched_ = true;
+    if (timing_.frames() != 0) {
+        const auto previous_start = timing_.frame_start_clocks() -
+            (timing_.field() ? 262U * 1364U : 262U * 1364U - 4U);
+        const auto previous = event_for(previous_start, !timing_.field());
+        if (previous > last_irq_clock_ && previous <= now) irq_latched_ = true;
+    }
+    last_irq_clock_ = now;
+}
+
 unsigned Snes65c816TraceCpu::bus_clocks(const std::uint8_t bank,
                                          const std::uint16_t address) const noexcept {
     if (bank == 0x7E || bank == 0x7F) return 8;
@@ -155,58 +190,78 @@ unsigned Snes65c816TraceCpu::instruction_cycles(
     const unsigned x = index8 ? 0U : 1U;
     const unsigned dp = (r_.d & 0xFFU) == 0 ? 0U : 1U;
     switch (opcode) {
-    case 0x18: case 0x78: case 0xD8: case 0xFB:
+    case 0x18: case 0x38: case 0x58: case 0x78: case 0xD8: case 0xFB:
     case 0x9A: case 0xE8: case 0xC8: case 0xCA: case 0x88:
-    case 0x0A: case 0x3A: case 0x4A: case 0x98: case 0xA8:
-    case 0xAA: case 0x8A: return 2;
+    case 0x0A: case 0x1A: case 0x3A: case 0x4A: case 0x6A:
+    case 0x98: case 0xA8:
+    case 0xAA: case 0x8A: case 0x9B: case 0xBB: return 2;
     case 0xC2: case 0xE2: return 3;
     case 0xEB: return 3;
-    case 0x09: case 0x29: case 0x49: case 0x69: case 0xC9: case 0xA9:
+    case 0x09: case 0x29: case 0x49: case 0x69: case 0x89:
+    case 0xC9: case 0xE9: case 0xA9:
         return 2 + m;
-    case 0xA0: case 0xA2: case 0xE0: return 2 + x;
+    case 0xA0: case 0xA2: case 0xC0: case 0xE0: return 2 + x;
     case 0xAC: return 4 + x;
     case 0x8C: case 0x8E: case 0xAE: return 4 + x;
     case 0x0D: case 0x2D: case 0x8D: case 0x9C: case 0xAD: case 0xCD:
+    case 0x6D: case 0xED:
         return 4 + m;
-    case 0x19: case 0xB9: case 0xBD:
+    case 0x19: case 0xB9: case 0xBD: case 0xD9: case 0xDD:
         return 4 + m + (indexed_extra_ ? 1U : 0U);
-    case 0xB1: return 5 + m + dp + (indexed_extra_ ? 1U : 0U);
-    case 0x97: case 0xB7: return 6 + m + dp;
+    case 0xBC: return 4 + x + (indexed_extra_ ? 1U : 0U);
+    case 0x11: case 0xB1:
+        return 5 + m + dp + (indexed_extra_ ? 1U : 0U);
+    case 0x17: case 0x97: case 0xB7: return 6 + m + dp;
     case 0xA7: return 6 + m + dp;
     case 0x5F: case 0x7F: case 0x8F: case 0x9F: case 0xAF: case 0xBF:
         return 5 + m;
     case 0x2E: return 6 + 2 * m;
     case 0x26: return 5 + 2 * m + dp;
-    case 0x9D: case 0x9E: return 5 + m;
-    case 0x64: case 0x65: case 0x85: case 0xA5: case 0xC5:
+    case 0x99: case 0x9D: case 0x9E: return 5 + m;
+    case 0x05: case 0x25: case 0x45: case 0x64: case 0x65:
+    case 0x85: case 0xA5:
+    case 0xC5: case 0xE5:
         return 3 + m + dp;
-    case 0xA4: return 3 + x + dp;
+    case 0xA4: case 0xA6: return 3 + x + dp;
     case 0xC6: case 0xE6: return 5 + 2 * m + dp;
-    case 0xEE: return 6 + 2 * m;
+    case 0x04: return 5 + 2 * m + dp;
+    case 0xCE: case 0xEE: return 6 + 2 * m;
+    case 0xFE: return 7 + 2 * m;
     case 0x74: return 4 + m + dp;
     case 0x48: return 3 + m;
+    case 0x5A: case 0xDA: return 3 + x;
     case 0x08: case 0x8B: return 3;
     case 0x68: return 4 + m;
+    case 0x7A: case 0xFA: return 4 + x;
     case 0x28: return 4;
     case 0xAB: return 4;
     case 0x2B: return 5;
-    case 0x10: case 0x30: case 0x90: case 0xD0: case 0xF0:
+    case 0x10: case 0x30: case 0x90: case 0xB0: case 0xD0: case 0xF0:
         return 2 + (branch_taken ? 1U : 0U) +
             (r_.e && branch_crossed ? 1U : 0U);
     case 0x80: return 3 + (r_.e && branch_crossed ? 1U : 0U);
     case 0x4C: return 3;
     case 0x5C: return 4;
-    case 0xDC: return 6;
+    case 0x7C: case 0xDC: return 6;
     case 0x20: case 0x60: case 0x6B: return 6;
-    case 0x22: return 8;
+    case 0x40: return r_.e ? 6U : 7U;
+    case 0x22: case 0xFC: return 8;
     case 0x54: return 7;
     default: return 0;
     }
 }
 
 std::uint8_t Snes65c816TraceCpu::read8(const std::uint8_t bank,
-                                        const std::uint16_t address) noexcept {
+                                       const std::uint16_t address) noexcept {
+    const auto value = read8_raw(bank, address);
+    if (error_ == Error::none) open_bus_ = value;
+    return value;
+}
+
+std::uint8_t Snes65c816TraceCpu::read8_raw(const std::uint8_t bank,
+                                           const std::uint16_t address) noexcept {
     timing_.cpu_cycle(bus_clocks(bank, address));
+    update_irq();
     ++bus_accesses_;
     synchronize_apu();
     if (error_ != Error::none) return 0;
@@ -218,20 +273,49 @@ std::uint8_t Snes65c816TraceCpu::read8(const std::uint8_t bank,
     if (system_bank && address >= 0x2140 && address <= 0x2143) {
         return apu_.host_read_port(address - 0x2140);
     }
-    if (system_bank && address == 0x213F) return timing_.stat78();
+    if (system_bank && address == 0x2137) {
+        if (timing_.software_latch()) {
+            latched_h_ = static_cast<std::uint16_t>(
+                timing_.horizontal_clock() / 4U);
+            latched_v_ = static_cast<std::uint16_t>(timing_.line());
+        }
+        return open_bus_; // SLHV is a latch strobe; the data bus is undriven.
+    }
+    if (system_bank && address == 0x213C) {
+        h_counter_high_ = !h_counter_high_;
+        return h_counter_high_ ? static_cast<std::uint8_t>(latched_h_) :
+            static_cast<std::uint8_t>(latched_h_ >> 8);
+    }
+    if (system_bank && address == 0x213D) {
+        v_counter_high_ = !v_counter_high_;
+        return v_counter_high_ ? static_cast<std::uint8_t>(latched_v_) :
+            static_cast<std::uint8_t>(latched_v_ >> 8);
+    }
+    if (system_bank && address == 0x213F) {
+        h_counter_high_ = false;
+        v_counter_high_ = false;
+        return timing_.stat78();
+    }
     if (system_bank && address == 0x4210) return timing_.rdnmi();
     if (system_bank && address == 0x4016 && (timing_.hvbjoy() & 1U) == 0)
         return 0; // No controller attached: both data lines are low.
     if (system_bank && address == 0x4017 && (timing_.hvbjoy() & 1U) == 0)
         return 0x1C; // No controller data; fixed bits 2..4 are high.
-    if (system_bank && address == 0x4211 && (interrupt_enable_ & 0x30U) == 0)
-        return 0;
+    if (system_bank && address == 0x4211 &&
+        (interrupt_enable_ & 0x30U) != 0x10U) {
+        const auto value = static_cast<std::uint8_t>(irq_latched_ ? 0x80U : 0U);
+        irq_latched_ = false;
+        return value;
+    }
     if (system_bank && address == 0x4212 && timing_.autojoy_known())
         return timing_.hvbjoy();
     if (system_bank && address >= 0x4218 && address <= 0x421F &&
         timing_.autojoy_known() && (timing_.hvbjoy() & 1U) == 0)
         return 0; // Explicit no-button controller profile, after auto-read.
     if (system_bank && address >= 0x6000 && address <= 0x7FFF) {
+        std::uint8_t value{};
+        if (icd_ != nullptr && icd_->read(address, timing_.clocks(), value))
+            return value;
         // ICD packet/row/status reads need an explicit Game Boy-side source.
         error_ = Error::unsupported_read;
         error_address_ = (static_cast<std::uint32_t>(bank) << 16) | address;
@@ -252,9 +336,11 @@ void Snes65c816TraceCpu::write8(const std::uint8_t bank,
                                 const std::uint16_t address,
                                 const std::uint8_t value) noexcept {
     timing_.cpu_cycle(bus_clocks(bank, address));
+    update_irq();
     ++bus_accesses_;
     synchronize_apu();
     if (error_ != Error::none) return;
+    open_bus_ = value;
     if (bank == 0x7E || bank == 0x7F) {
         wram_[(static_cast<unsigned>(bank - 0x7E) << 16) | address] = value;
         return;
@@ -289,14 +375,36 @@ void Snes65c816TraceCpu::write8(const std::uint8_t bank,
     }
     if (system_bank && address == 0x4200) {
         interrupt_enable_ = value;
+        last_irq_clock_ = timing_.clocks();
+        if ((value & 0x30U) == 0) irq_latched_ = false;
         nmi_was_enabled_ |= (value & 0x80U) != 0;
         timing_.write_autojoy(value);
         return;
     }
+    if (system_bank && address >= 0x4207 && address <= 0x420A) {
+        const auto high = (value & 1U) << 8;
+        switch (address) {
+        case 0x4207: irq_h_target_ = static_cast<std::uint16_t>(
+            (irq_h_target_ & 0x100U) | value); break;
+        case 0x4208: irq_h_target_ = static_cast<std::uint16_t>(
+            (irq_h_target_ & 0xFFU) | high); break;
+        case 0x4209: irq_v_target_ = static_cast<std::uint16_t>(
+            (irq_v_target_ & 0x100U) | value); break;
+        case 0x420A: irq_v_target_ = static_cast<std::uint16_t>(
+            (irq_v_target_ & 0xFFU) | high); break;
+        }
+        last_irq_clock_ = timing_.clocks();
+        return;
+    }
     if (system_bank && (address == 0x6001 || address == 0x6003 ||
                         (address >= 0x6004 && address <= 0x6007))) {
-        // Write-only ICD control and joypad forwarding. GB-side effects are
-        // not synthesized; reads from this region still fail closed.
+        if (icd_ != nullptr &&
+            !icd_->write(address, timing_.clocks(), value)) {
+            error_ = Error::unsupported_write;
+            error_address_ = (static_cast<std::uint32_t>(bank) << 16) | address;
+        }
+        // Without an explicit source the legacy bounded trace still accepts
+        // these write-only controls, but reads fail closed.
         return;
     }
     // PPU/DMA/CPU registers are write-only in this bounded trace. We permit
@@ -405,6 +513,21 @@ void Snes65c816TraceCpu::branch(const bool take) noexcept {
 Snes65c816TraceCpu::StepResult Snes65c816TraceCpu::step() noexcept {
     if (error_ != Error::none) return {error_, 0, r_.pb, r_.pc, error_address_};
     bus_accesses_ = 0;
+    const bool defer_irq = irq_defer_after_cli_;
+    irq_defer_after_cli_ = false;
+    if (irq_latched_ && (r_.p & irq_disable) == 0 && !defer_irq) {
+        if (!r_.e) push8(r_.pb);
+        push8(static_cast<std::uint8_t>(r_.pc >> 8));
+        push8(static_cast<std::uint8_t>(r_.pc));
+        push8(r_.p);
+        r_.p = static_cast<std::uint8_t>((r_.p | irq_disable) & ~decimal);
+        r_.pb = 0;
+        r_.pc = read16(0, r_.e ? 0xFFFE : 0xFFEE);
+        ++irq_entries_;
+        if (error_ != Error::none)
+            return {error_, 0, r_.pb, r_.pc, error_address_};
+        bus_accesses_ = 0;
+    }
     branch_taken_ = false;
     branch_crossed_ = false;
     indexed_extra_ = false;
@@ -419,6 +542,9 @@ Snes65c816TraceCpu::StepResult Snes65c816TraceCpu::step() noexcept {
         return {error_, opcode, bank, pc, error_address_};
     switch (opcode) {
     case 0x18: r_.p &= static_cast<std::uint8_t>(~carry); break; // CLC
+    case 0x38: r_.p |= carry; break; // SEC
+    case 0x58: r_.p &= static_cast<std::uint8_t>(~irq_disable);
+               irq_defer_after_cli_ = true; break; // CLI
     case 0x78: r_.p |= irq_disable; break; // SEI
     case 0xD8: r_.p &= static_cast<std::uint8_t>(~decimal); break; // CLD
     case 0xFB: { // XCE
@@ -485,6 +611,17 @@ Snes65c816TraceCpu::StepResult Snes65c816TraceCpu::step() noexcept {
         }
         break;
     }
+    case 0x05: { // ORA dp
+        const auto address = static_cast<std::uint16_t>(r_.d + fetch8());
+        if (accumulator_8()) {
+            r_.a = static_cast<std::uint16_t>(r_.a | read8(0, address));
+            set_nz8(static_cast<std::uint8_t>(r_.a));
+        } else {
+            r_.a |= read16(0, address);
+            set_nz16(r_.a);
+        }
+        break;
+    }
     case 0x19: { // ORA abs,Y
         const auto base = fetch16();
         const auto address = static_cast<std::uint16_t>(base + r_.y);
@@ -514,14 +651,94 @@ Snes65c816TraceCpu::StepResult Snes65c816TraceCpu::step() noexcept {
         cmp(accumulator_8() ? fetch8() : fetch16());
         break;
     }
+    case 0x89: { // BIT #imm changes Z only
+        const auto value = accumulator_8() ? fetch8() : fetch16();
+        const auto mask = accumulator_8() ? (r_.a & 0xFFU) : r_.a;
+        r_.p = static_cast<std::uint8_t>(
+            (r_.p & ~zero) | ((value & mask) == 0 ? zero : 0));
+        break;
+    }
     case 0xC5: { // CMP dp
         const auto address = static_cast<std::uint16_t>(r_.d + fetch8());
         cmp(accumulator_8() ? read8(0, address) : read16(0, address));
         break;
     }
+    case 0x25: { // AND dp
+        const auto address = static_cast<std::uint16_t>(r_.d + fetch8());
+        if (accumulator_8()) {
+            r_.a = static_cast<std::uint16_t>((r_.a & 0xFF00U) |
+                ((r_.a & 0xFFU) & read8(0, address)));
+            set_nz8(static_cast<std::uint8_t>(r_.a));
+        } else {
+            r_.a &= read16(0, address);
+            set_nz16(r_.a);
+        }
+        break;
+    }
+    case 0x45: { // EOR dp
+        const auto address = static_cast<std::uint16_t>(r_.d + fetch8());
+        if (accumulator_8()) {
+            r_.a = static_cast<std::uint16_t>((r_.a & 0xFF00U) |
+                ((r_.a & 0xFFU) ^ read8(0, address)));
+            set_nz8(static_cast<std::uint8_t>(r_.a));
+        } else {
+            r_.a ^= read16(0, address);
+            set_nz16(r_.a);
+        }
+        break;
+    }
+    case 0xA6: { // LDX dp
+        const auto address = static_cast<std::uint16_t>(r_.d + fetch8());
+        if (index_8()) {
+            r_.x = read8(0, address);
+            set_nz8(static_cast<std::uint8_t>(r_.x));
+        } else {
+            r_.x = read16(0, address);
+            set_nz16(r_.x);
+        }
+        break;
+    }
+    case 0xBC: { // LDY abs,X
+        const auto base = fetch16();
+        const auto address = static_cast<std::uint16_t>(base + r_.x);
+        indexed_extra_ = !index_8() || ((base ^ address) & 0xFF00U) != 0;
+        if (index_8()) {
+            r_.y = read8(r_.db, address);
+            set_nz8(static_cast<std::uint8_t>(r_.y));
+        } else {
+            r_.y = read16(r_.db, address);
+            set_nz16(r_.y);
+        }
+        break;
+    }
     case 0xCD: { // CMP abs
         const auto address = fetch16();
         cmp(accumulator_8() ? read8(r_.db, address) : read16(r_.db, address));
+        break;
+    }
+    case 0xDD: { // CMP abs,X
+        const auto base = fetch16();
+        const auto address = static_cast<std::uint16_t>(base + r_.x);
+        indexed_extra_ = !index_8() || ((base ^ address) & 0xFF00U) != 0;
+        cmp(accumulator_8() ? read8(r_.db, address) : read16(r_.db, address));
+        break;
+    }
+    case 0xD9: { // CMP abs,Y
+        const auto base = fetch16();
+        const auto address = static_cast<std::uint16_t>(base + r_.y);
+        indexed_extra_ = !index_8() || ((base ^ address) & 0xFF00U) != 0;
+        cmp(accumulator_8() ? read8(r_.db, address) : read16(r_.db, address));
+        break;
+    }
+    case 0x04: { // TSB dp: Z from A & old, then set A bits
+        const auto address = static_cast<std::uint16_t>(r_.d + fetch8());
+        const auto old = accumulator_8() ? read8(0, address) : read16(0, address);
+        const auto mask = accumulator_8() ? (r_.a & 0xFFU) : r_.a;
+        r_.p = static_cast<std::uint8_t>(
+            (r_.p & ~zero) | ((old & mask) == 0 ? zero : 0));
+        if (accumulator_8()) write8(0, address,
+            static_cast<std::uint8_t>(old | mask));
+        else write16(0, address, static_cast<std::uint16_t>(old | mask));
         break;
     }
     case 0x69: { // ADC #imm (binary mode only in this bounded trace)
@@ -531,6 +748,54 @@ Snes65c816TraceCpu::StepResult Snes65c816TraceCpu::step() noexcept {
                     (static_cast<std::uint32_t>(bank) << 16) | pc};
         }
         adc(accumulator_8() ? fetch8() : fetch16());
+        break;
+    }
+    case 0xE9: { // SBC #imm (binary mode only)
+        if ((r_.p & decimal) != 0) {
+            r_.pc = pc;
+            return {Error::unsupported_opcode, opcode, bank, pc,
+                    (static_cast<std::uint32_t>(bank) << 16) | pc};
+        }
+        const auto value = accumulator_8() ? fetch8() : fetch16();
+        adc(static_cast<std::uint16_t>(value ^
+            (accumulator_8() ? 0x00FFU : 0xFFFFU)));
+        break;
+    }
+    case 0xED: { // SBC abs (binary mode only)
+        if ((r_.p & decimal) != 0) {
+            r_.pc = pc;
+            return {Error::unsupported_opcode, opcode, bank, pc,
+                    (static_cast<std::uint32_t>(bank) << 16) | pc};
+        }
+        const auto address = fetch16();
+        const auto value = accumulator_8() ? read8(r_.db, address) :
+            read16(r_.db, address);
+        adc(static_cast<std::uint16_t>(value ^
+            (accumulator_8() ? 0x00FFU : 0xFFFFU)));
+        break;
+    }
+    case 0xE5: { // SBC dp (binary mode only)
+        if ((r_.p & decimal) != 0) {
+            r_.pc = pc;
+            return {Error::unsupported_opcode, opcode, bank, pc,
+                    (static_cast<std::uint32_t>(bank) << 16) | pc};
+        }
+        const auto address = static_cast<std::uint16_t>(r_.d + fetch8());
+        const auto value = accumulator_8() ? read8(0, address) :
+            read16(0, address);
+        adc(static_cast<std::uint16_t>(value ^
+            (accumulator_8() ? 0x00FFU : 0xFFFFU)));
+        break;
+    }
+    case 0x6D: { // ADC abs (binary mode only)
+        if ((r_.p & decimal) != 0) {
+            r_.pc = pc;
+            return {Error::unsupported_opcode, opcode, bank, pc,
+                    (static_cast<std::uint32_t>(bank) << 16) | pc};
+        }
+        const auto address = fetch16();
+        adc(accumulator_8() ? read8(r_.db, address) :
+            read16(r_.db, address));
         break;
     }
     case 0x65: { // ADC dp
@@ -645,6 +910,12 @@ Snes65c816TraceCpu::StepResult Snes65c816TraceCpu::step() noexcept {
         else write16(r_.db, address, r_.a);
         break;
     }
+    case 0x99: { // STA abs,Y
+        const auto address = static_cast<std::uint16_t>(fetch16() + r_.y);
+        if (accumulator_8()) write8(r_.db, address, static_cast<std::uint8_t>(r_.a));
+        else write16(r_.db, address, r_.a);
+        break;
+    }
     case 0x9F: { // STA long,X
         const auto base = static_cast<std::uint32_t>(fetch16()) |
             (static_cast<std::uint32_t>(fetch8()) << 16);
@@ -704,6 +975,36 @@ Snes65c816TraceCpu::StepResult Snes65c816TraceCpu::step() noexcept {
             set_nz8(value);
         } else {
             const auto value = static_cast<std::uint16_t>(read16(r_.db, address) + 1);
+            write16(r_.db, address, value);
+            set_nz16(value);
+        }
+        break;
+    }
+    case 0xCE: { // DEC abs
+        const auto address = fetch16();
+        if (accumulator_8()) {
+            const auto value = static_cast<std::uint8_t>(
+                read8(r_.db, address) - 1U);
+            write8(r_.db, address, value);
+            set_nz8(value);
+        } else {
+            const auto value = static_cast<std::uint16_t>(
+                read16(r_.db, address) - 1U);
+            write16(r_.db, address, value);
+            set_nz16(value);
+        }
+        break;
+    }
+    case 0xFE: { // INC abs,X
+        const auto address = static_cast<std::uint16_t>(fetch16() + r_.x);
+        if (accumulator_8()) {
+            const auto value = static_cast<std::uint8_t>(
+                read8(r_.db, address) + 1U);
+            write8(r_.db, address, value);
+            set_nz8(value);
+        } else {
+            const auto value = static_cast<std::uint16_t>(
+                read16(r_.db, address) + 1U);
             write16(r_.db, address, value);
             set_nz16(value);
         }
@@ -786,6 +1087,22 @@ Snes65c816TraceCpu::StepResult Snes65c816TraceCpu::step() noexcept {
         }
         break;
     }
+    case 0x11: { // ORA (dp),Y
+        const auto pointer = static_cast<std::uint16_t>(r_.d + fetch8());
+        const auto base = read16(0, pointer);
+        const auto address = static_cast<std::uint16_t>(base + r_.y);
+        indexed_extra_ = !index_8() || ((base ^ address) & 0xFF00U) != 0;
+        if (accumulator_8()) {
+            r_.a = static_cast<std::uint16_t>((r_.a & 0xFF00U) |
+                (static_cast<unsigned>(read8(r_.db, address)) |
+                 (r_.a & 0xFFU)));
+            set_nz8(static_cast<std::uint8_t>(r_.a));
+        } else {
+            r_.a |= read16(r_.db, address);
+            set_nz16(r_.a);
+        }
+        break;
+    }
     case 0xB7: { // LDA [dp],Y
         const auto pointer = static_cast<std::uint16_t>(r_.d + fetch8());
         const auto low = read8(0, pointer);
@@ -804,6 +1121,28 @@ Snes65c816TraceCpu::StepResult Snes65c816TraceCpu::step() noexcept {
             r_.a = static_cast<std::uint16_t>(value | (static_cast<unsigned>(read8(
                 static_cast<std::uint8_t>(next >> 16),
                 static_cast<std::uint16_t>(next))) << 8));
+            set_nz16(r_.a);
+        }
+        break;
+    }
+    case 0x17: { // ORA [dp],Y
+        const auto pointer = static_cast<std::uint16_t>(r_.d + fetch8());
+        const auto low = read8(0, pointer);
+        const auto high = read8(0, static_cast<std::uint16_t>(pointer + 1));
+        const auto pbank = read8(0, static_cast<std::uint16_t>(pointer + 2));
+        const auto effective = (((static_cast<std::uint32_t>(pbank) << 16) |
+            low | (static_cast<std::uint32_t>(high) << 8)) + r_.y) & 0xFFFFFFU;
+        const auto value = read8(static_cast<std::uint8_t>(effective >> 16),
+                                 static_cast<std::uint16_t>(effective));
+        if (accumulator_8()) {
+            r_.a = static_cast<std::uint16_t>(r_.a | value);
+            set_nz8(static_cast<std::uint8_t>(r_.a));
+        } else {
+            const auto next = (effective + 1) & 0xFFFFFFU;
+            r_.a |= static_cast<std::uint16_t>(value |
+                (static_cast<unsigned>(read8(
+                    static_cast<std::uint8_t>(next >> 16),
+                    static_cast<std::uint16_t>(next))) << 8));
             set_nz16(r_.a);
         }
         break;
@@ -895,6 +1234,16 @@ Snes65c816TraceCpu::StepResult Snes65c816TraceCpu::step() noexcept {
         push8(static_cast<std::uint8_t>(r_.a));
         break;
     }
+    case 0xDA: { // PHX
+        if (!index_8()) push8(static_cast<std::uint8_t>(r_.x >> 8));
+        push8(static_cast<std::uint8_t>(r_.x));
+        break;
+    }
+    case 0x5A: { // PHY
+        if (!index_8()) push8(static_cast<std::uint8_t>(r_.y >> 8));
+        push8(static_cast<std::uint8_t>(r_.y));
+        break;
+    }
     case 0x08: push8(r_.p); break; // PHP
     case 0x8B: push8(r_.db); break; // PHB
     case 0x28: r_.p = pop8(); set_index_width(); break; // PLP
@@ -911,6 +1260,22 @@ Snes65c816TraceCpu::StepResult Snes65c816TraceCpu::step() noexcept {
         break;
     }
     case 0xAB: r_.db = pop8(); set_nz8(r_.db); break; // PLB
+    case 0x7A: { // PLY
+        const auto low = pop8();
+        r_.y = index_8() ? low : static_cast<std::uint16_t>(
+            low | (static_cast<unsigned>(pop8()) << 8));
+        if (index_8()) set_nz8(static_cast<std::uint8_t>(r_.y));
+        else set_nz16(r_.y);
+        break;
+    }
+    case 0xFA: { // PLX
+        const auto low = pop8();
+        r_.x = index_8() ? low : static_cast<std::uint16_t>(
+            low | (static_cast<unsigned>(pop8()) << 8));
+        if (index_8()) set_nz8(static_cast<std::uint8_t>(r_.x));
+        else set_nz16(r_.x);
+        break;
+    }
     case 0x2B: { // PLD
         const auto low = pop8();
         r_.d = static_cast<std::uint16_t>(low | (static_cast<unsigned>(pop8()) << 8));
@@ -953,6 +1318,14 @@ Snes65c816TraceCpu::StepResult Snes65c816TraceCpu::step() noexcept {
                    index_8() ? (r_.y - 1) & 0xFF : r_.y - 1);
                if (index_8()) set_nz8(static_cast<std::uint8_t>(r_.y));
                else set_nz16(r_.y); break; // DEY
+    case 0xBB: r_.x = index_8() ? (r_.y & 0xFFU) : r_.y;
+               if (index_8()) set_nz8(static_cast<std::uint8_t>(r_.x));
+               else set_nz16(r_.x);
+               break; // TYX
+    case 0x9B: r_.y = index_8() ? (r_.x & 0xFFU) : r_.x;
+               if (index_8()) set_nz8(static_cast<std::uint8_t>(r_.y));
+               else set_nz16(r_.y);
+               break; // TXY
     case 0x3A: { // DEC A
         if (accumulator_8()) {
             r_.a = static_cast<std::uint16_t>((r_.a & 0xFF00U) |
@@ -964,11 +1337,34 @@ Snes65c816TraceCpu::StepResult Snes65c816TraceCpu::step() noexcept {
         }
         break;
     }
+    case 0x1A: { // INC A
+        if (accumulator_8()) {
+            r_.a = static_cast<std::uint16_t>((r_.a & 0xFF00U) |
+                ((r_.a + 1) & 0xFFU));
+            set_nz8(static_cast<std::uint8_t>(r_.a));
+        } else {
+            ++r_.a;
+            set_nz16(r_.a);
+        }
+        break;
+    }
     case 0x4A: { // LSR A
         const auto old = accumulator_8() ? (r_.a & 0xFFU) : r_.a;
         r_.p = static_cast<std::uint8_t>((r_.p & ~carry) | (old & 1U));
         r_.a = static_cast<std::uint16_t>((r_.a & (accumulator_8() ? 0xFF00U : 0U)) |
             (old >> 1));
+        if (accumulator_8()) set_nz8(static_cast<std::uint8_t>(r_.a));
+        else set_nz16(r_.a);
+        break;
+    }
+    case 0x6A: { // ROR A
+        const auto old = accumulator_8() ? (r_.a & 0xFFU) : r_.a;
+        const auto top = accumulator_8() ? 0x80U : 0x8000U;
+        const auto value = static_cast<std::uint16_t>(
+            (old >> 1) | ((r_.p & carry) != 0 ? top : 0U));
+        r_.p = static_cast<std::uint8_t>((r_.p & ~carry) | (old & 1U));
+        r_.a = static_cast<std::uint16_t>(
+            (r_.a & (accumulator_8() ? 0xFF00U : 0U)) | value);
         if (accumulator_8()) set_nz8(static_cast<std::uint8_t>(r_.a));
         else set_nz16(r_.a);
         break;
@@ -1032,13 +1428,32 @@ Snes65c816TraceCpu::StepResult Snes65c816TraceCpu::step() noexcept {
             (r_.x >= value ? carry : 0));
         break;
     }
+    case 0xC0: { // CPY #imm
+        const auto value = index_8() ? fetch8() : fetch16();
+        const auto difference = static_cast<std::uint16_t>(r_.y - value);
+        if (index_8()) set_nz8(static_cast<std::uint8_t>(difference));
+        else set_nz16(difference);
+        r_.p = static_cast<std::uint8_t>((r_.p & ~carry) |
+            (r_.y >= value ? carry : 0));
+        break;
+    }
     case 0x30: branch((r_.p & negative) != 0); break; // BMI
     case 0x90: branch((r_.p & carry) == 0); break; // BCC
+    case 0xB0: branch((r_.p & carry) != 0); break; // BCS
     case 0x10: branch((r_.p & negative) == 0); break; // BPL
     case 0xD0: branch((r_.p & zero) == 0); break; // BNE
     case 0xF0: branch((r_.p & zero) != 0); break; // BEQ
     case 0x80: branch(true); break; // BRA
     case 0x4C: r_.pc = fetch16(); break; // JMP abs
+    case 0x7C: { // JMP (abs,X), pointer in current program bank
+        const auto pointer = static_cast<std::uint16_t>(fetch16() + r_.x);
+        const auto low = read8(r_.pb, pointer);
+        const auto high = read8(r_.pb,
+            static_cast<std::uint16_t>(pointer + 1));
+        r_.pc = static_cast<std::uint16_t>(
+            low | (static_cast<unsigned>(high) << 8));
+        break;
+    }
     case 0x5C: { // JML long
         const auto target = fetch16();
         r_.pb = fetch8();
@@ -1074,6 +1489,18 @@ Snes65c816TraceCpu::StepResult Snes65c816TraceCpu::step() noexcept {
         r_.pc = target;
         break;
     }
+    case 0xFC: { // JSR (abs,X), pointer in current program bank
+        const auto pointer = static_cast<std::uint16_t>(fetch16() + r_.x);
+        const auto low = read8(r_.pb, pointer);
+        const auto high = read8(r_.pb,
+            static_cast<std::uint16_t>(pointer + 1));
+        const auto return_address = static_cast<std::uint16_t>(r_.pc - 1);
+        push8(static_cast<std::uint8_t>(return_address >> 8));
+        push8(static_cast<std::uint8_t>(return_address));
+        r_.pc = static_cast<std::uint16_t>(
+            low | (static_cast<unsigned>(high) << 8));
+        break;
+    }
     case 0x22: { // JSL long
         const auto target = fetch16();
         const auto target_bank = fetch8();
@@ -1099,6 +1526,16 @@ Snes65c816TraceCpu::StepResult Snes65c816TraceCpu::step() noexcept {
             (low | (static_cast<unsigned>(high) << 8)) + 1);
         break;
     }
+    case 0x40: { // RTI
+        r_.p = pop8();
+        set_index_width();
+        const auto low = pop8();
+        const auto high = pop8();
+        r_.pc = static_cast<std::uint16_t>(
+            low | (static_cast<unsigned>(high) << 8));
+        if (!r_.e) r_.pb = pop8();
+        break;
+    }
     default:
         r_.pc = pc;
         return {Error::unsupported_opcode, opcode, bank, pc,
@@ -1107,7 +1544,10 @@ Snes65c816TraceCpu::StepResult Snes65c816TraceCpu::step() noexcept {
     if (error_ != Error::none) return {error_, opcode, bank, pc, error_address_};
     const auto cycles = instruction_cycles(opcode, memory8, index8,
                                            branch_taken_, branch_crossed_);
-    if (cycles > bus_accesses_) timing_.cpu_cycle((cycles - bus_accesses_) * 6);
+    if (cycles > bus_accesses_) {
+        timing_.cpu_cycle((cycles - bus_accesses_) * 6);
+        update_irq();
+    }
     synchronize_apu();
     if (error_ != Error::none) return {error_, opcode, bank, pc, error_address_};
     ++steps_;

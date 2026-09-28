@@ -157,9 +157,10 @@ IPL test advertises readiness, waits for a host command, and copies a byte
 from host ports into APU RAM through decoded instructions. Unsupported
 opcodes trap rather than silently acting as NOPs; this is not a complete
 SPC700, and no proprietary IPL or SGB sound program is bundled.
-The remaining implementation must include the SNES-side command/ICD handoff,
-a 65C816 execution path (or an independently validated equivalent), full
-SPC700 execution, and S-DSP synthesis.
+The remaining runtime implementation must include an independently validated
+SNES-side command/ICD handoff, sufficiently complete 65C816 and SPC700
+execution, and S-DSP synthesis. The bounded local probes below exercise parts
+of that path but are not an emulator audio backend.
 Until a real sound effect passes an end-to-end comparison, the UI and release
 notes must continue to describe SNES audio as unsupported.
 
@@ -169,8 +170,10 @@ then KOFF through $F2/$F3. The observed write cycles are replayed into the test-
 S-DSP renderer, and its 128-sample PCM trace is pinned in CI and compared
 locally with an independent DSP. The program is not SGB firmware, the PCM is
 not produced by the running emulator, and this test does not make SGB sound
-available. Substantially more SPC700/65C816 work is still required before a
-real SGB firmware sound-command test is possible.
+available. More SPC700/65C816 and ICD work is still required for a real SGB
+firmware sound-command *playback* test. A later local-only trace now proves
+that one real mute `SOUND` packet reaches the host reader, but not that an
+audible effect is rendered.
 The ignored local `roms/spc700.rom` is a 64-byte S-SMP IPL image. The probe
 reaches its ready handshake after 2,404 interpreted cycles, uploads an original
 eight-byte test program via the host ports, enters that program, and observes
@@ -214,13 +217,12 @@ That `--driver-probe` mode advances the SPC700 alone after handoff. A separate
 `--sync-probe` mode keeps the SNES CPU and SPC700 synchronized and stamps DSP
 writes and physical SPC700 RAM writes at SPC instruction completion. It reports
 the RAM-write count, first completion cycle, and a trace hash without storing
-the uploaded firmware. On the local SGB1 image it stops at the
-first unmodeled ICD read (`$6000`); on the local SGB2 image it observes 383
-post-handoff DSP writes (the first 16 are printed), then stops at unsupported
-SPC700 opcode `$0E` at `$065B`. A host opcode-fetch failure now reports the
-underlying SPC700 stop instead of mislabeling its fallback byte as a host
-opcode. The probe does not
-invent ICD packet/pixel data or claim exact intra-instruction DSP write phases.
+the uploaded firmware. Without a GB source, both local program images stop at
+the first unmodeled ICD read (`$6000`). The SGB2 trace observes 755
+post-handoff DSP writes before that stop (the first 16 are printed). A host
+opcode-fetch failure reports the underlying SPC700 stop instead of mislabeling
+its fallback byte as a host opcode. The probe does not invent ICD packet/pixel
+data or claim exact intra-instruction DSP write phases.
 These are **driver-upload and initialization diagnostics**, not proof that the
 driver handles a real `SOUND` or `SOU_TRN` event. The SPC700 opcode and cycle
 model follows the
@@ -234,6 +236,34 @@ sound available in the running emulator. The timing model follows the
 [SNES timing](https://wiki.superfamicom.org/timing) and
 [memory mapping](https://wiki.superfamicom.org/memory-mapping) references;
 the remaining hardware behavior needs independent validation.
+
+An opt-in **local-only** `--sync-gb-sgb1 GB-ROM GB-BOOT` or
+`--sync-gb-sgb2 GB-ROM GB-BOOT` mode connects the bounded host trace to a
+running GB emulator. It requires a local 256-byte GB-side SGB boot ROM, honors
+the host ICD reset/release and clock divider, captures JOYP packets, and
+exposes only completed 2-bit GB tile rows. Missing packet/row data and
+unmodeled ICD accesses stop the trace rather than returning fabricated data.
+This is an instruction/scanline-granular test seam, **not** a cycle-accurate
+ICD2 implementation; firmware, title ROMs, and captured pixels are not stored
+in the repository. The optional local Donkey Kong/SGB2 check runs as
+`gameboy_snes_65c816_local_icd_sound_handoff` when all local files exist.
+
+In that local check, a real Donkey Kong boot emitted a `SOUND` packet beginning
+`41 80 80 8c 00`; the SNES-side ICD reader consumed it. The two `80` effect
+fields request stop/silence, and the `8c` attribute requests muting, so the
+observed zero nonzero PCM samples **after** this packet are expected. The
+bounded host trace reaches its 20-million-instruction limit after the packet.
+The independent, cloned-bus PCM observer saw nonzero samples during earlier
+APU initialization, but this is **not** evidence that an audible title effect
+was reproduced. With the explicitly synthetic `--audible-sound-probe` option,
+the test replaces only that first packet's payload with `41 03 80 00` at the
+same real GB delivery point. The SNES/APU trace then produces nonzero PCM
+**after** packet delivery, unlike the unmodified mute run, before stopping at
+an unsupported SPC700 opcode (`$B4`). The local test checks both outcomes.
+This proves a bounded synthetic packet-to-PCM slice; it does **not** validate
+the substituted effect against hardware or prove a real title's audible
+command. An audible real `SOUND` event, `SOU_TRN` playback, exact ICD timing,
+and sound in the running emulator remain unverified/unimplemented.
 
 A new fully synthetic SNES program waits, writes a host command to the APU,
 and runs concurrently with an original SPC700 test program. The test stamps

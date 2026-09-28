@@ -1190,6 +1190,8 @@ if(GAMEBOY_BUILD_TESTS)
     target_link_libraries(gameboy_snes_spc700_ipl_probe PRIVATE gameboy_core)
     add_executable(gameboy_snes_65c816_apu_trace
         tests/support/snes_65c816_apu_trace.cpp
+        tests/support/snes_dsp_pcm_renderer.cpp
+        tests/support/snes_icd_gb_source.cpp
         tests/support/snes_65c816_trace_cpu.cpp)
     target_include_directories(gameboy_snes_65c816_apu_trace PRIVATE tests/support)
     target_link_libraries(gameboy_snes_65c816_apu_trace PRIVATE gameboy_core)
@@ -1267,6 +1269,17 @@ if(GAMEBOY_BUILD_TESTS)
                              $<TARGET_FILE:gameboy_snes_65c816_apu_trace>
                              ${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.program.rom
                              ${CMAKE_CURRENT_SOURCE_DIR}/roms/spc700.rom sgb2)
+            if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.boot.rom" AND
+               EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/Donkey Kong (JU) (V1.1) [S][!].gb")
+                add_test(NAME gameboy_snes_65c816_local_icd_sound_handoff
+                         COMMAND ${Python3_EXECUTABLE}
+                                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/snes_65c816_local_icd_sound_tests.py
+                                 $<TARGET_FILE:gameboy_snes_65c816_apu_trace>
+                                 ${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.program.rom
+                                 ${CMAKE_CURRENT_SOURCE_DIR}/roms/spc700.rom
+                                 "${CMAKE_CURRENT_SOURCE_DIR}/roms/Donkey Kong (JU) (V1.1) [S][!].gb"
+                                 ${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.boot.rom)
+            endif()
         endif()
     endif()
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/spc700.rom")

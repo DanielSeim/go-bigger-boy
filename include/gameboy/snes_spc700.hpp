@@ -40,6 +40,7 @@ private:
     void set_nz16(std::uint16_t value) noexcept;
     void compare(std::uint8_t lhs, std::uint8_t rhs) noexcept;
     void add_with_carry(std::uint8_t rhs) noexcept;
+    void subtract_with_carry(std::uint8_t rhs) noexcept;
     [[nodiscard]] unsigned branch(bool take) noexcept;
     void push(std::uint8_t value) noexcept;
     [[nodiscard]] std::uint8_t pop() noexcept;
