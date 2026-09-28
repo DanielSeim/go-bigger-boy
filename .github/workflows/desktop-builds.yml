@@ -65,12 +65,18 @@ jobs:
 
       - name: Build accuracy regression report
         if: always()
-        run: >-
-          python3 tests/ci_regression_report.py
-          --ctest-junit accuracy-ctest.xml
-          --ctest-junit audio-ctest.xml
-          --output accuracy-regression-report.md
-          --json-output accuracy-regression-report.json
+        shell: bash
+        env:
+          GBB_AUDIO_GATE_ENABLED: ${{ hashFiles('tests/fixtures/audio-external/*.txt') != '' }}
+        run: |
+          junit_args=(--ctest-junit build-accuracy/accuracy-ctest.xml)
+          if [ "$GBB_AUDIO_GATE_ENABLED" = true ]; then
+            junit_args+=(--ctest-junit build-accuracy/audio-ctest.xml)
+          fi
+          python3 tests/ci_regression_report.py \
+            "${junit_args[@]}" \
+            --output accuracy-regression-report.md \
+            --json-output accuracy-regression-report.json
 
       - name: Add accuracy report to job summary
         if: always()
@@ -87,8 +93,8 @@ jobs:
           name: accuracy-visual-results
           path: |
             build-accuracy/visual-results
-            accuracy-ctest.xml
-            audio-ctest.xml
+            build-accuracy/accuracy-ctest.xml
+            build-accuracy/audio-ctest.xml
             accuracy-regression-report.md
             accuracy-regression-report.json
           if-no-files-found: ignore
@@ -522,7 +528,7 @@ jobs:
         if: always()
         run: >-
           python tests/ci_regression_report.py
-          --ctest-junit ctest-results.xml
+          --ctest-junit build/ctest-results.xml
           --link-diagnostics build/real-link-harness-results
           --output desktop-regression-report.md
           --json-output desktop-regression-report.json
@@ -541,7 +547,7 @@ jobs:
         with:
           name: desktop-test-results-${{ matrix.artifact }}
           path: |
-            ctest-results.xml
+            build/ctest-results.xml
             desktop-regression-report.md
             desktop-regression-report.json
             render-performance.json
