@@ -112,7 +112,7 @@ bool SnesTraceTiming::software_latch() noexcept {
 
 Snes65c816TraceCpu::Snes65c816TraceCpu(
     const gameboy::SgbProgramRom& rom, gameboy::SnesApuBus& apu,
-    gameboy::SnesSpc700* spc) noexcept
+    gameboy::SnesSpc700* spc)
     : rom_(rom), apu_(apu), spc_(spc) {
     r_.pc = rom.reset_vector();
 }

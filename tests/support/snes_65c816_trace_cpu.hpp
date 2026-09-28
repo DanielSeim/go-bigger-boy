@@ -5,6 +5,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 namespace gameboy { class SnesSpc700; }
 
@@ -98,7 +99,7 @@ public:
 
     Snes65c816TraceCpu(const gameboy::SgbProgramRom& rom,
                         gameboy::SnesApuBus& apu,
-                        gameboy::SnesSpc700* spc = nullptr) noexcept;
+                        gameboy::SnesSpc700* spc = nullptr);
     [[nodiscard]] StepResult step() noexcept;
     [[nodiscard]] const Registers& registers() const noexcept { return r_; }
     [[nodiscard]] std::uint8_t debug_wram_byte(std::size_t address) const noexcept {
@@ -211,7 +212,9 @@ private:
     bool quotient_valid_{};
     bool math_pending_{};
     bool pending_division_{};
-    std::array<ApuWrite, 16384> apu_writes_{};
+    // Keep the bounded trace off the stack: tests may hold several CPUs at once
+    // and Windows test processes use a smaller default thread stack.
+    std::vector<ApuWrite> apu_writes_ = std::vector<ApuWrite>(16384);
     std::size_t apu_write_count_{};
     std::uint64_t steps_{};
     SnesTraceTiming timing_{};

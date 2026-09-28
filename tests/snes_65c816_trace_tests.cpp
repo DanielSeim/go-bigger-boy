@@ -9,6 +9,9 @@
 
 namespace {
 
+static_assert(sizeof(sgb_test::Snes65c816TraceCpu) < 192 * 1024,
+              "trace CPU must leave room for multiple instances on Windows stacks");
+
 int failures{};
 
 void check(const bool condition, const char* message) {
