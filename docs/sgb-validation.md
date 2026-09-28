@@ -186,26 +186,33 @@ project, use:
 build/gameboy_snes_spc700_ipl_probe /path/to/spc700-ipl.rom --upload-smoke
 ```
 
-The next development-only SNES-side probe interprets a deliberately bounded
-subset of 65C816 instructions from a *local* SGB program ROM. It has 128 KiB
-of WRAM, maps the SNES APU communication ports into the independent APU bus,
-and records host writes. Synthetic CI tests check native-mode register widths,
-16-bit direct-page stores, port mapping, and fail-closed unsupported I/O and
-opcodes. With the ignored local program images used for validation, SGB1 clears
-ports 0–3 after 16,628–16,631 interpreted instructions, then stops at its
-first unmodeled PPU status read. SGB2 stops earlier at the dynamic blanking
-status register, before its first APU write. Those **zero-valued clears are
-not an IPL upload**, and the instruction counts are not cycle timings. The
-probe never guesses values for dynamic status registers or ships firmware.
-Run a local diagnostic with:
+The development-only SNES-side probe interprets a deliberately bounded subset
+of 65C816 instructions from a *local* SGB program ROM. It has 128 KiB of WRAM,
+maps the SNES APU communication ports into the independent APU bus, and records
+host writes. Its NTSC master-clock/scanline model supplies H/V blanking,
+`$213F` field/latch status, `$4210` NMI status, controller auto-read timing,
+and WRAM refresh stalls. With a local 64-byte SPC700 IPL, it advances the
+independent SPC700 at the nominal APU-to-SNES clock ratio and can verify the
+first nonzero upload block against APU RAM. Synthetic tests cover status
+boundaries and fail-closed unsupported reads/opcodes. The optional local-ROM
+tests check the first upload for both SGB program images. Run:
 
 ```sh
-build/gameboy_snes_65c816_apu_trace /path/to/sgb1.program.rom --trace
+build/gameboy_snes_65c816_apu_trace /path/to/sgb1.program.rom /path/to/spc700.rom --upload
 ```
 
-An actual SGB sound-driver upload still needs SNES PPU/CPU timing and ICD
-behavior, sufficient 65C816 coverage, and a scheduled 65C816–SPC700 bridge.
-This trace does not make SGB sound available in the running emulator.
+With the ignored local SGB1 and SGB2 program images, the first completed block
+is 378 bytes at APU RAM `$4C30`, FNV-1a-64
+`5e07f0679df67eb8` in both cases. That is a **first-block diagnostic**, not
+a complete SGB driver boot or audible output. The interpreter models bus
+access speed and instruction-level timing, but not sub-instruction bus phase,
+DMA transfer side effects, or the full ICD/PPU. APU rendezvous is likewise
+instruction-granular; neither its master-clock totals nor its packet timing
+are hardware-validated. The probe ships no firmware and does not make SGB
+sound available in the running emulator. The timing model follows the
+[SNES timing](https://wiki.superfamicom.org/timing) and
+[memory mapping](https://wiki.superfamicom.org/memory-mapping) references;
+the remaining hardware behavior needs independent validation.
 
 A separate clean-room BRR decoder now handles one nine-byte block at a time,
 including all four predictor filters, signed nibbles, unusual shift values,

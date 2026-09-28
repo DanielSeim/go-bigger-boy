@@ -55,12 +55,12 @@ void test_native_width_and_apu_mapping() {
 }
 
 void test_fail_closed() {
-    auto rom = program({0xAD, 0x12, 0x42}); // LDA $4212: unmodeled HVBJOY
+    auto rom = program({0xAD, 0x3E, 0x21}); // LDA $213E: unmodeled sprite status
     gameboy::SnesApuBus apu;
     sgb_test::Snes65c816TraceCpu cpu(rom, apu);
     const auto read = cpu.step();
     check(read.error == sgb_test::Snes65c816TraceCpu::Error::unsupported_read &&
-              read.address == 0x004212 && cpu.apu_write_count() == 0,
+              read.address == 0x00213E && cpu.apu_write_count() == 0,
           "unknown control-flow-relevant I/O reads trap");
 
     rom = program({0x02}); // COP is not silently treated as NOP
@@ -69,6 +69,68 @@ void test_fail_closed() {
     check(opcode.error == sgb_test::Snes65c816TraceCpu::Error::unsupported_opcode &&
               opcode.opcode == 0x02 && opcode.pc == 0x8104,
           "unsupported opcode reports its original PC");
+}
+
+void test_ntsc_status_boundaries() {
+    sgb_test::SnesTraceTiming timing;
+    check(timing.hvbjoy() == 0x40 && timing.stat78() == 0x02,
+          "reset starts in H-blank, field zero, NTSC PPU2 version 2");
+    timing.advance(4);
+    check(timing.hvbjoy() == 0, "H-blank clears at H=1 dot");
+    timing.advance(1092);
+    check(timing.hvbjoy() == 0x40, "H-blank starts at H=274 dots");
+    timing.advance(225ULL * 1364 - timing.clocks());
+    check(timing.line() == 225 && timing.horizontal_clock() == 0 &&
+              (timing.hvbjoy() & 0x80U) != 0 && timing.rdnmi() == 0x82 &&
+              timing.rdnmi() == 0x02,
+          "V-blank and read-to-clear NMI status begin on line 225");
+    timing.write_autojoy(1);
+    timing.advance(297);
+    check((timing.hvbjoy() & 1U) == 0, "first auto-read has not started at H=297");
+    timing.advance(1);
+    check((timing.hvbjoy() & 1U) != 0, "first auto-read starts at H=298");
+    timing.advance(4224);
+    check((timing.hvbjoy() & 1U) == 0, "auto-read busy clears after 4224 clocks");
+    timing.advance(262ULL * 1364 - timing.clocks());
+    check(timing.line() == 0 && timing.field() && timing.stat78() == 0x82 &&
+              (timing.hvbjoy() & 0x80U) == 0,
+          "field toggles and V-blank clears on frame wrap");
+    const auto second_vblank = timing.clocks() + 225ULL * 1364;
+    const auto earliest = second_vblank + 130;
+    const auto first_phase = (225ULL * 1364 + 298) % 256;
+    const auto next_start = earliest + (first_phase + 256 - earliest % 256) % 256;
+    timing.advance(next_start - timing.clocks() - 1);
+    check((timing.hvbjoy() & 1U) == 0, "second auto-read has not started early");
+    timing.advance(1);
+    check((timing.hvbjoy() & 1U) != 0, "second auto-read keeps the 256-clock phase");
+    timing.advance(4224);
+    check((timing.hvbjoy() & 1U) == 0, "second auto-read ends after 4224 clocks");
+    timing.advance(240ULL * 1364 + 262ULL * 1364 - timing.clocks());
+    check(timing.line() == 240 && timing.field(), "odd field reaches line 240");
+    timing.advance(1360);
+    check(timing.line() == 241 && timing.horizontal_clock() == 0,
+          "odd field line 240 has the short 1360-clock length");
+}
+
+void test_status_latch_overscan_and_refresh() {
+    sgb_test::SnesTraceTiming timing;
+    timing.write_overscan(4);
+    timing.advance(225ULL * 1364);
+    check((timing.hvbjoy() & 0x80U) == 0, "overscan defers V-blank past line 225");
+    timing.advance(15ULL * 1364);
+    check((timing.hvbjoy() & 0x80U) != 0, "overscan V-blank begins at line 240");
+    timing.write_latch(0);
+    check((timing.stat78() & 0x40U) != 0, "counter latch sets STAT78 latch flag");
+    timing.write_latch(0x80);
+    check((timing.stat78() & 0x40U) != 0 &&
+              (timing.stat78() & 0x40U) == 0,
+          "STAT78 read clears the latch flag when latch is enabled");
+
+    sgb_test::SnesTraceTiming refresh;
+    refresh.advance(532);
+    refresh.cpu_cycle(12);
+    check(refresh.clocks() == 584 && refresh.horizontal_clock() == 584,
+          "CPU access crossing H=538 incurs a 40-clock WRAM refresh pause");
 }
 
 void test_16_bit_direct_page_store() {
@@ -95,27 +157,20 @@ void test_local_program(const std::filesystem::path& path, const bool sgb2) {
     gameboy::SnesApuBus apu;
     sgb_test::Snes65c816TraceCpu cpu(rom, apu);
     sgb_test::Snes65c816TraceCpu::StepResult result{};
-    for (unsigned i = 0; i < 1000000; ++i) {
+    for (unsigned i = 0; i < 1000000 && cpu.apu_write_count() < 4; ++i) {
         result = cpu.step();
         if (result.error != sgb_test::Snes65c816TraceCpu::Error::none) break;
     }
     using Error = sgb_test::Snes65c816TraceCpu::Error;
-    if (sgb2) {
-        check(cpu.steps() == 24 && result.error == Error::unsupported_read &&
-                  result.bank == 0x88 && result.pc == 0xC3E4 &&
-                  result.address == 0x014212 && cpu.apu_write_count() == 0,
-              "local SGB2 stops at dynamic HVBJOY before APU traffic");
-    } else {
-        check(cpu.steps() == 16635 && result.error == Error::unsupported_read &&
-                  result.bank == 0 && result.pc == 0x831A &&
-                  result.address == 0x01213F && cpu.apu_write_count() == 4,
-              "local SGB1 clears four APU ports, then stops at PPU status");
-        for (std::size_t port = 0; port < 4 && port < cpu.apu_write_count(); ++port) {
-            const auto write = cpu.apu_write(port);
-            check(write.step == 16628 + port && write.port == port &&
-                      write.value == 0 && apu.spc_read(0xF4 + port) == 0,
-                  "local SGB1 port-clear sequence is mapped exactly");
-        }
+    const auto first_step = sgb2 ? 28289U : 16628U;
+    check(result.error == Error::none && cpu.steps() == first_step + 3 &&
+              cpu.apu_write_count() == 4,
+          "local program reaches its first four APU port clears");
+    for (std::size_t port = 0; port < 4 && port < cpu.apu_write_count(); ++port) {
+        const auto write = cpu.apu_write(port);
+        check(write.step == first_step + port && write.port == port &&
+                  write.value == 0 && apu.spc_read(0xF4 + port) == 0,
+              "local port-clear sequence is mapped exactly");
     }
 }
 
@@ -132,6 +187,8 @@ int main(int argc, char** argv) {
     if (argc != 1) return 2;
     test_native_width_and_apu_mapping();
     test_fail_closed();
+    test_ntsc_status_boundaries();
+    test_status_latch_overscan_and_refresh();
     test_16_bit_direct_page_store();
     return failures == 0 ? 0 : 1;
 }

@@ -1204,11 +1204,29 @@ if(GAMEBOY_BUILD_TESTS)
         add_test(NAME gameboy_snes_65c816_local_sgb1_apu_trace
                  COMMAND gameboy_snes_65c816_trace_tests
                          --local-sgb1 ${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb1.program.rom)
+        if(Python3_Interpreter_FOUND AND
+           EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/spc700.rom")
+            add_test(NAME gameboy_snes_65c816_local_sgb1_first_upload
+                     COMMAND ${Python3_EXECUTABLE}
+                             ${CMAKE_CURRENT_SOURCE_DIR}/tests/snes_65c816_local_upload_tests.py
+                             $<TARGET_FILE:gameboy_snes_65c816_apu_trace>
+                             ${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb1.program.rom
+                             ${CMAKE_CURRENT_SOURCE_DIR}/roms/spc700.rom)
+        endif()
     endif()
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.program.rom")
         add_test(NAME gameboy_snes_65c816_local_sgb2_apu_trace
                  COMMAND gameboy_snes_65c816_trace_tests
                          --local-sgb2 ${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.program.rom)
+        if(Python3_Interpreter_FOUND AND
+           EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/spc700.rom")
+            add_test(NAME gameboy_snes_65c816_local_sgb2_first_upload
+                     COMMAND ${Python3_EXECUTABLE}
+                             ${CMAKE_CURRENT_SOURCE_DIR}/tests/snes_65c816_local_upload_tests.py
+                             $<TARGET_FILE:gameboy_snes_65c816_apu_trace>
+                             ${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.program.rom
+                             ${CMAKE_CURRENT_SOURCE_DIR}/roms/spc700.rom)
+        endif()
     endif()
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/spc700.rom")
         add_test(NAME gameboy_snes_spc700_local_ipl_upload
