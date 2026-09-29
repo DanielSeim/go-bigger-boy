@@ -311,8 +311,8 @@ python3 scripts/capture_sgb_libretro_audio.py \
   --input-script tests/fixtures/sgb/titles/donkey-kong-gameplay.script \
   --input-offset-frames 228 \
   --input-offset-change 1600:253 --input-offset-change 2800:321 \
-  --frames 3500 --snapshot-frame 2740 \
-  --snapshot-output /tmp/sgb2-title-reference.ppm \
+  --frames 3500 \
+  --snapshot-series 2718 2758 /tmp/sgb2-title-reference-frames \
   --timeline-output /tmp/sgb2-title-reference-timeline.json \
   --output /tmp/sgb2-title-reference.wav
 
@@ -327,15 +327,20 @@ build/gbb_test_runner \
   '/path/to/Donkey Kong (JU) (V1.1) [S][!].gb' --model sgb2 \
   --input-script tests/fixtures/sgb/titles/donkey-kong-gameplay.script \
   --max-cycles 200000000 \
-  --frames 2472 --sgb-frame --frame-output /tmp/gbb-title-scene.ppm
+  --sgb-frame --frame-series 2450 2490 /tmp/gbb-title-frame
+
+python3 scripts/compare_sgb_audio_phase.py \
+  --gbb-series '/tmp/gbb-title-frame-*.ppm' \
+  --reference-series '/tmp/sgb2-title-reference-frames/reference-frame-*.ppm' \
+  --expected-offset 268 --window 10
 
 python3 scripts/compare_sgb_title_audio.py \
   --gbb /tmp/gbb-title-trace.wav \
   --reference /tmp/sgb2-title-reference.wav \
-  --gbb-scene /tmp/gbb-title-scene.ppm \
-  --reference-scene /tmp/sgb2-title-reference.ppm \
+  --gbb-scene /tmp/gbb-title-frame-2472.ppm \
+  --reference-scene /tmp/sgb2-title-reference-frames/reference-frame-2738.ppm \
   --gbb-event-sample FIRST_AUDIBLE_DELIVERY_SAMPLE \
-  --reference-frame-offset 253 --reference-scene-frame 2740 \
+  --reference-frame-offset 251 --reference-scene-frame 2738 \
   --reference-timeline /tmp/sgb2-title-reference-timeline.json \
   --search-seconds 3
 ```
@@ -365,21 +370,41 @@ also show the same scene at different phases. The current libretro callback
 provides no isolated GB or SNES stem, so this tool cannot subtract GB audio or
 establish SGB waveform fidelity from its mixed reference. Such a claim needs
 an independently instrumented, time-aligned reference or a hardware capture.
+The optional phase tool counts *changes within* each run's GB viewport and
+aligns significant transitions; it does not require GBB and the reference to
+use identical RGB palettes. It fails closed if fewer than two transitions or
+multiple equally scored offsets leave the phase unresolved. Its adaptive
+change threshold is half of each run's largest viewport change (at least 16
+pixels); use `--min-changed-pixels` when a title needs a different threshold.
+This visual alignment is independent of the input-event offsets passed to the
+capture tool: the comparison's `--reference-frame-offset` applies only to its
+event-frame prediction. For this event, frame-rate conversion maps GB frame
+2472 to reference frame 2487, so comparison offset 251 selects frame 2738;
+the direct visual difference between the two frame numbers is 266.
 
 A local exploratory run with offsets borrowed from the *separate SameBoy
 frame-alignment fixture* (228 reference frames initially, 253 from GB frame
-1600, 321 from 2800) reached
-all 11 scripted events. Correctly decoded reference frame 2740 and GBB frame
-2472 show the same Donkey Kong stage and agree at 71.5% of viewport pixels
-within the guard's tolerance; an intentionally wrong reference frame scores
-0% and is rejected. At the GBB event (sample 1,482,476), the reference's
-video frame 2740 falls within mixed-audio samples 2,187,200-2,188,000
-(45.567-45.583 s), rather than an assumed `frame / fps` timestamp. The
-nominal 3-second 25 ms RMS envelope correlation is only about 0.08. An
-exploratory three-second search finds about 0.61 envelope correlation 1.075
-seconds early, but waveform correlation remains about -0.03 in its strongest
-one-second segment. These are diagnostic leads, **not audio validation**;
+1600, 321 from 2800) reached all 11 scripted input events. Over GB frames
+2450-2490 and reference frames 2718-2758, GBB's significant viewport
+transitions at 2456/2472/2488 align uniquely with reference transitions at
+2722/2738/2754: a visual offset of 266, two frames earlier than the original
+single-frame prediction. A smaller reference-only transition at 2725 is
+below the adaptive threshold and is not used for phase alignment. The
+transition-aligned reference frame 2738 and GBB frame 2472 show the same
+Donkey Kong stage and agree at 71.5% of viewport pixels within the guard's
+tolerance; an intentionally wrong scene scores 0% and is rejected. At the
+GBB event (sample 1,482,476), reference frame 2738 falls within mixed-audio
+samples 2,185,600-2,186,400 (45.533-45.550 s). The nominal 3-second 25 ms
+RMS envelope correlation is still only 0.039. An exploratory three-second
+search finds 0.619 envelope correlation 1.025 seconds early, but waveform
+correlation remains only 0.029 in its strongest one-second segment. These
+are diagnostic leads, **not audio validation**;
 different event phase, GB audio in the reference, or both could explain them.
+In fact, reference frame 2676 (near that early envelope match) is byte-for-byte
+identical to frame 2738. This stage stays visually static across distinct
+audio times, so even transition alignment cannot independently identify the
+SGB `SOUND` onset. An isolated, event-tagged reference audio source is still
+needed before an accuracy gate or runtime integration is justified.
 The comparison tool defaults to the nominal frame and requires an explicit
 `--search-seconds` for exploratory alignment.
 

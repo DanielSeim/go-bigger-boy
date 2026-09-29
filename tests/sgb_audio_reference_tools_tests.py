@@ -14,6 +14,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from capture_sgb_libretro_audio import (BUTTON_IDS, decode_video_row,
                                         load_input_script, schedule_input)
+from compare_sgb_audio_phase import rank_offsets, series_transitions
 from compare_sgb_title_audio import (compare, correlation, read_stereo_wav,
                                      reference_frame_window, scene_agreement)
 
@@ -98,6 +99,32 @@ def main() -> None:
         assert "25ms RMS-envelope correlation at nominal frame=" in report
         assert "best within search range=" in report
         assert "does not establish waveform fidelity" in report
+        phase = root / "phase"
+        phase.mkdir()
+        for number, shift in ((10, 0), (11, 1), (12, 1), (13, 0)):
+            write_scene(phase / f"gbb-{number}.ppm", shift=shift)
+        frame_range, transitions, threshold = series_transitions(
+            str(phase / "gbb-*.ppm"), 0)
+        assert frame_range == (10, 13) and set(transitions) == {11, 13}
+        assert threshold > 0
+        (phase / "gbb-12.ppm").unlink()
+        try:
+            series_transitions(str(phase / "gbb-*.ppm"), 0)
+        except ValueError as error:
+            assert "no missing frames" in str(error)
+        else:
+            raise AssertionError("gapped phase series accepted")
+        ranked = rank_offsets((10, 14), {11: 500, 13: 500},
+                              (110, 114), {111: 450, 113: 450}, 102, 3)
+        assert ranked[0]["offset"] == 100
+        assert ranked[0]["matched"] == 2 and ranked[0]["disagreements"] == 0
+        try:
+            rank_offsets((10, 14), {11: 500, 13: 500},
+                         (110, 114), {111: 450, 113: 450}, 102, 121)
+        except ValueError as error:
+            assert "offset window" in str(error)
+        else:
+            raise AssertionError("unbounded phase search accepted")
         try:
             compare(gbb, reference, 32000, 60, 0.1, 2.0,
                     gbb_scene=gbb_scene, reference_scene=reference_scene,
