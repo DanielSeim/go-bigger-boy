@@ -7,6 +7,8 @@ No firmware, game data, or captured audio is checked into the repository.
 
 import argparse
 import ctypes as C
+import hashlib
+import json
 from pathlib import Path
 import sys
 import tempfile
@@ -132,7 +134,8 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
             input_offset_changes: list[tuple[int, int]] | None = None,
             snapshot_frame: int | None = None,
             snapshot_output: Path | None = None,
-            snapshot_series: tuple[int, int, Path] | None = None
+            snapshot_series: tuple[int, int, Path] | None = None,
+            timeline_output: Path | None = None
             ) -> tuple[int, int]:
     if C.sizeof(C.c_void_p) != 8:
         raise RuntimeError("the diagnostic host currently requires a 64-bit process")
@@ -145,12 +148,18 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
         raise ValueError("frames must be between 1 and 10000")
     if output.exists():
         raise FileExistsError(output)
+    if timeline_output is not None and timeline_output.exists():
+        raise FileExistsError(timeline_output)
     if (snapshot_frame is None) != (snapshot_output is None):
         raise ValueError("snapshot frame and output must be supplied together")
     if snapshot_frame is not None and not 1 <= snapshot_frame <= frames:
         raise ValueError("snapshot frame must be within the capture")
     if snapshot_output is not None and snapshot_output.exists():
         raise FileExistsError(snapshot_output)
+    targets = [path.resolve() for path in
+               (output, snapshot_output, timeline_output) if path is not None]
+    if len(targets) != len(set(targets)):
+        raise ValueError("WAV, snapshot, and timeline output paths must differ")
     if snapshot_series is not None:
         first, last, directory = snapshot_series
         if not 1 <= first <= last <= frames or last - first > 200:
@@ -187,6 +196,10 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
     pressed_queries = 0
     snapshot: tuple[int, int, bytes] | None = None
     snapshots: dict[int, tuple[int, int, bytes]] = {}
+    frame_callbacks: list[dict[str, int]] = []
+    run_samples: list[list[int]] = []
+    snapshot_hashes: dict[str, str] = {}
+    current_run = -1
     video_pixel_format = 0  # RETRO_PIXEL_FORMAT_0RGB1555 is the API default.
     subsystems: dict[str, int] = {}
     system_bytes = C.c_char_p(str(system_dir.resolve()).encode())
@@ -234,6 +247,10 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
             nonlocal video_frames, snapshot
             if data and width and height:
                 video_frames += 1
+                if timeline_output is not None:
+                    frame_callbacks.append({"video_frame": video_frames,
+                                            "run_index": current_run,
+                                            "sample_at_callback": len(audio) // 4})
                 in_series = (snapshot_series is not None and
                              snapshot_series[0] <= video_frames <= snapshot_series[1])
                 if video_frames == snapshot_frame or in_series:
@@ -305,10 +322,14 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                                        input_offset_changes)
             next_event = 0
             for frame in range(frames):
+                current_run = frame
                 if next_event < len(scheduled) and frame == scheduled[next_event][0]:
                     held_buttons = scheduled[next_event][1]
                     next_event += 1
+                sample_start = len(audio) // 4
                 core.retro_run()
+                if timeline_output is not None:
+                    run_samples.append([sample_start, len(audio) // 4])
             if events and next_event == 0:
                 raise RuntimeError("capture ended before the first scripted input event")
             if events and (input_queries == 0 or pressed_queries == 0):
@@ -329,18 +350,34 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                     raise RuntimeError("core did not produce the requested video frame")
                 snapshot_output.parent.mkdir(parents=True, exist_ok=True)
                 width, height, pixels = snapshot
+                image = f"P6\n{width} {height}\n255\n".encode() + pixels
                 with snapshot_output.open("xb") as image_file:
-                    image_file.write(f"P6\n{width} {height}\n255\n".encode())
-                    image_file.write(pixels)
+                    image_file.write(image)
+                snapshot_hashes[str(snapshot_frame)] = hashlib.sha256(image).hexdigest()
             if snapshot_series is not None:
                 first, last, directory = snapshot_series
                 if len(snapshots) != last - first + 1:
                     raise RuntimeError("core did not produce every requested series frame")
                 directory.mkdir(parents=True, exist_ok=True)
                 for frame, (width, height, pixels) in snapshots.items():
+                    image = f"P6\n{width} {height}\n255\n".encode() + pixels
                     with (directory / f"reference-frame-{frame}.ppm").open("xb") as image_file:
-                        image_file.write(f"P6\n{width} {height}\n255\n".encode())
-                        image_file.write(pixels)
+                        image_file.write(image)
+                    snapshot_hashes[str(frame)] = hashlib.sha256(image).hexdigest()
+            if timeline_output is not None:
+                timeline = {"format": "gbb-libretro-audio-timeline-v1",
+                            "sample_rate": sample_rate,
+                            "sample_count": len(audio) // 4,
+                            "pcm_sha256": hashlib.sha256(audio).hexdigest(),
+                            "video_fps": av.timing.fps,
+                            "run_samples": run_samples,
+                            "video_callbacks": frame_callbacks,
+                            "snapshot_sha256": snapshot_hashes,
+                            "scheduled_input": scheduled}
+                timeline_output.parent.mkdir(parents=True, exist_ok=True)
+                with timeline_output.open("x", encoding="utf-8") as timeline_file:
+                    json.dump(timeline, timeline_file, separators=(",", ":"))
+                    timeline_file.write("\n")
             if events:
                 print(f"Applied {next_event}/{len(events)} scripted input events; "
                       f"core queried {input_queries} joypad states "
@@ -382,6 +419,8 @@ def main() -> None:
     parser.add_argument("--snapshot-series", nargs=3, metavar=("FIRST", "LAST", "DIR"),
                         help="save up to 201 consecutive video frames as local PPM files")
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--timeline-output", type=Path,
+                        help="JSON mapping video callbacks and run calls to mixed PCM samples")
     args = parser.parse_args()
     try:
         changes = []
@@ -397,7 +436,8 @@ def main() -> None:
         rate, count = capture(args.core, args.game, args.sgb_rom,
                               args.system_dir, args.frames, args.output,
                               args.input_script, args.input_offset_frames, changes,
-                              args.snapshot_frame, args.snapshot_output, series)
+                              args.snapshot_frame, args.snapshot_output, series,
+                              args.timeline_output)
     except (OSError, RuntimeError, ValueError) as error:
         parser.error(str(error))
     print(f"Captured {count} stereo frames at {rate} Hz to {args.output}")

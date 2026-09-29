@@ -8,6 +8,8 @@ libretro reference includes GB audio and may have different boot/input phases.
 import argparse
 from array import array
 from collections import Counter
+import hashlib
+import json
 import math
 from pathlib import Path
 import statistics
@@ -133,14 +135,74 @@ def waveform_alignment(ours: list[float], reference: list[float],
     return best
 
 
+def reference_frame_window(timeline_path: Path, video_frame: int,
+                           rate: int, pcm: array,
+                           scene_path: Path | None = None) -> tuple[int, int]:
+    """Bound a video callback by samples emitted during its retro_run call.
+
+    The reference core may batch audio on either side of the video callback;
+    this is a frame-sized uncertainty interval, not an exact sound onset.
+    """
+    timeline = json.loads(timeline_path.read_text(encoding="utf-8"))
+    sample_count = len(pcm) // 2
+    if not isinstance(timeline, dict) or timeline.get("format") != \
+            "gbb-libretro-audio-timeline-v1":
+        raise ValueError("invalid libretro audio timeline format")
+    if timeline.get("sample_rate") != rate or timeline.get("sample_count") != sample_count:
+        raise ValueError("timeline does not match reference WAV rate and length")
+    if timeline.get("pcm_sha256") != hashlib.sha256(pcm.tobytes()).hexdigest():
+        raise ValueError("timeline does not match reference WAV PCM content")
+    if scene_path is not None:
+        snapshots = timeline.get("snapshot_sha256")
+        if not isinstance(snapshots, dict) or \
+                snapshots.get(str(video_frame)) != \
+                hashlib.sha256(scene_path.read_bytes()).hexdigest():
+            raise ValueError("reference scene does not match timeline snapshot")
+    runs = timeline.get("run_samples")
+    callbacks = timeline.get("video_callbacks")
+    if not isinstance(runs, list) or not runs or not isinstance(callbacks, list):
+        raise ValueError("timeline has no run or video records")
+    previous = 0
+    for run in runs:
+        if not isinstance(run, list) or len(run) != 2 or \
+                any(type(value) is not int for value in run) or \
+                run[0] != previous or run[1] < run[0] or run[1] > sample_count:
+            raise ValueError("timeline has noncontiguous or invalid PCM run ranges")
+        previous = run[1]
+    if previous != sample_count:
+        raise ValueError("timeline does not cover the complete reference WAV")
+    selected = None
+    last_frame = 0
+    for entry in callbacks:
+        if not isinstance(entry, dict):
+            raise ValueError("timeline contains invalid video callback")
+        frame = entry.get("video_frame")
+        index = entry.get("run_index")
+        sample = entry.get("sample_at_callback")
+        if type(frame) is not int or frame <= last_frame or \
+                type(index) is not int or not 0 <= index < len(runs) or \
+                type(sample) is not int or not runs[index][0] <= sample <= runs[index][1]:
+            raise ValueError("timeline contains invalid video callback mapping")
+        last_frame = frame
+        if frame == video_frame:
+            selected = tuple(runs[index])
+    if selected is None:
+        raise ValueError(f"video frame {video_frame} is absent from reference timeline")
+    return selected
+
+
 def compare(gbb_path: Path, reference_path: Path, gbb_event_sample: int,
             event_gb_frame: int, search_seconds: float,
             window_seconds: float, reference_video_fps: float = 60.098812,
             reference_frame_offset: int = 0,
             gbb_scene: Path | None = None,
-            reference_scene: Path | None = None) -> str:
+            reference_scene: Path | None = None,
+            reference_timeline: Path | None = None,
+            reference_scene_frame: int | None = None) -> str:
     if gbb_scene is None or reference_scene is None:
         raise ValueError("both scene checkpoint images are required before audio comparison")
+    if reference_scene_frame is not None and reference_timeline is None:
+        raise ValueError("reference scene frame requires a reference timeline")
     scene_score = scene_agreement(gbb_scene, reference_scene)
     if scene_score < 0.65:
         raise ValueError(f"scene checkpoint mismatch: {scene_score:.1%} of GB viewport "
@@ -157,7 +219,22 @@ def compare(gbb_path: Path, reference_path: Path, gbb_event_sample: int,
         raise ValueError("reference video rate is implausible")
     event_reference_frame = round(event_gb_frame * reference_video_fps /
                                   GB_FRAME_RATE) + reference_frame_offset
-    expected_reference_time = event_reference_frame / reference_video_fps
+    if reference_timeline is not None:
+        if reference_scene_frame is None:
+            raise ValueError("reference scene frame is required with a timeline")
+        if reference_scene_frame != event_reference_frame:
+            raise ValueError("reference scene frame differs from predicted event frame")
+        first_sample, last_sample = reference_frame_window(
+            reference_timeline, reference_scene_frame, reference_rate,
+            reference_pcm, reference_scene)
+        expected_reference_time = (first_sample + last_sample) / (2 * reference_rate)
+        anchor_description = (f"callback audio range [{first_sample}, {last_sample}] "
+                              f"({first_sample / reference_rate:.3f}-"
+                              f"{last_sample / reference_rate:.3f}s), "
+                              f"midpoint {expected_reference_time:.3f}s")
+    else:
+        expected_reference_time = event_reference_frame / reference_video_fps
+        anchor_description = f"frame-based estimate {expected_reference_time:.3f}s"
     ours = rms_buckets(gbb_pcm, gbb_rate, gbb_time, window_seconds, bucket)
     reference_start = max(0.0, expected_reference_time - search_seconds)
     reference_span = window_seconds + 2 * search_seconds
@@ -190,8 +267,8 @@ def compare(gbb_path: Path, reference_path: Path, gbb_event_sample: int,
             "audio phase alignment.\n"
             f"GBB: {gbb_rate} Hz, event sample {gbb_event_sample} "
             f"({gbb_time:.3f}s in trace WAV)\n"
-            f"Reference: {reference_rate} Hz, frame-based estimate "
-            f"{expected_reference_time:.3f}s (video frame {event_reference_frame}); "
+            f"Reference: {reference_rate} Hz, {anchor_description} "
+            f"(video frame {event_reference_frame}); "
             f"best envelope start "
             f"{aligned_time:.3f}s (shift {aligned_time - expected_reference_time:+.3f}s)\n"
             f"{window_seconds:.2f}s post-event window: "
@@ -222,6 +299,10 @@ def main() -> int:
     parser.add_argument("--reference-video-fps", type=float, default=60.098812)
     parser.add_argument("--reference-frame-offset", type=int, default=0,
                         help="offset effective at the event GB frame")
+    parser.add_argument("--reference-timeline", type=Path,
+                        help="JSON timeline from the same reference WAV capture")
+    parser.add_argument("--reference-scene-frame", type=int,
+                        help="1-based reference video frame saved as --reference-scene")
     parser.add_argument("--search-seconds", type=float, default=0.0,
                         help="optional exploratory envelope search around the nominal frame")
     parser.add_argument("--window-seconds", type=float, default=3.0)
@@ -231,7 +312,8 @@ def main() -> int:
                       args.event_gb_frame, args.search_seconds,
                       args.window_seconds, args.reference_video_fps,
                       args.reference_frame_offset, args.gbb_scene,
-                      args.reference_scene))
+                      args.reference_scene, args.reference_timeline,
+                      args.reference_scene_frame))
         return 0
     except (OSError, ValueError, wave.Error) as error:
         print(f"audio comparison failed: {error}", file=sys.stderr)

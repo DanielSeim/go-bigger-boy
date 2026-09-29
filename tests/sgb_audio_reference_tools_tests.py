@@ -2,6 +2,8 @@
 """ROM-free contracts for scripted libretro audio capture and event comparison."""
 
 from array import array
+import hashlib
+import json
 from pathlib import Path
 import sys
 import tempfile
@@ -12,7 +14,8 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from capture_sgb_libretro_audio import (BUTTON_IDS, decode_video_row,
                                         load_input_script, schedule_input)
-from compare_sgb_title_audio import compare, correlation, scene_agreement
+from compare_sgb_title_audio import (compare, correlation, read_stereo_wav,
+                                     reference_frame_window, scene_agreement)
 
 
 def write_wave(path: Path, rate: int, onset: float) -> None:
@@ -88,12 +91,78 @@ def main() -> None:
         assert scene_agreement(gbb_scene, reference_scene) == 1.0
         write_wave(gbb, 32000, 1.15)
         write_wave(reference, 48000, 1.15)
+        _, reference_pcm = read_stereo_wav(reference)
         report = compare(gbb, reference, 32000, 60, 0.1, 2.0,
                          gbb_scene=gbb_scene, reference_scene=reference_scene)
         assert "Same-scene checkpoint: 100.0%" in report
         assert "25ms RMS-envelope correlation at nominal frame=" in report
         assert "best within search range=" in report
         assert "does not establish waveform fidelity" in report
+        try:
+            compare(gbb, reference, 32000, 60, 0.1, 2.0,
+                    gbb_scene=gbb_scene, reference_scene=reference_scene,
+                    reference_scene_frame=60)
+        except ValueError as error:
+            assert "requires a reference timeline" in str(error)
+        else:
+            raise AssertionError("unbound scene frame accepted")
+        timeline = root / "reference-timeline.json"
+        timeline.write_text(json.dumps({
+            "format": "gbb-libretro-audio-timeline-v1",
+            "sample_rate": 48000, "sample_count": 240000,
+            "pcm_sha256": hashlib.sha256(reference_pcm.tobytes()).hexdigest(),
+            "snapshot_sha256": {
+                "60": hashlib.sha256(reference_scene.read_bytes()).hexdigest()},
+            "run_samples": [[0, 47600], [47600, 48500], [48500, 240000]],
+            "video_callbacks": [{"video_frame": 60, "run_index": 1,
+                                 "sample_at_callback": 48000}]}), encoding="utf-8")
+        assert reference_frame_window(timeline, 60, 48000, reference_pcm) == (47600, 48500)
+        report = compare(gbb, reference, 32000, 60, 0.1, 2.0,
+                         gbb_scene=gbb_scene, reference_scene=reference_scene,
+                         reference_timeline=timeline, reference_scene_frame=60)
+        assert "callback audio range [47600, 48500]" in report
+        wrong_scene = root / "wrong-reference.ppm"
+        write_scene(wrong_scene, shift=0)
+        wrong_scene.write_bytes(wrong_scene.read_bytes() + b"\n")
+        try:
+            reference_frame_window(timeline, 60, 48000, reference_pcm, wrong_scene)
+        except ValueError as error:
+            assert "scene does not match" in str(error)
+        else:
+            raise AssertionError("unbound reference scene accepted")
+        for wrong_frame, wrong_rate in ((61, 48000), (60, 32000)):
+            try:
+                reference_frame_window(timeline, wrong_frame, wrong_rate, reference_pcm)
+            except ValueError:
+                pass
+            else:
+                raise AssertionError("invalid reference timeline accepted")
+        try:
+            compare(gbb, reference, 32000, 60, 0.1, 2.0,
+                    gbb_scene=gbb_scene, reference_scene=reference_scene,
+                    reference_timeline=timeline, reference_scene_frame=61)
+        except ValueError as error:
+            assert "differs from predicted" in str(error)
+        else:
+            raise AssertionError("mismatched reference scene frame accepted")
+        broken = json.loads(timeline.read_text(encoding="utf-8"))
+        broken["pcm_sha256"] = "0" * 64
+        timeline.write_text(json.dumps(broken), encoding="utf-8")
+        try:
+            reference_frame_window(timeline, 60, 48000, reference_pcm)
+        except ValueError as error:
+            assert "PCM content" in str(error)
+        else:
+            raise AssertionError("wrong reference PCM accepted")
+        broken["pcm_sha256"] = hashlib.sha256(reference_pcm.tobytes()).hexdigest()
+        broken["run_samples"][1][0] += 1
+        timeline.write_text(json.dumps(broken), encoding="utf-8")
+        try:
+            reference_frame_window(timeline, 60, 48000, reference_pcm)
+        except ValueError as error:
+            assert "noncontiguous" in str(error)
+        else:
+            raise AssertionError("noncontiguous reference audio accepted")
         write_scene(reference_scene, shift=1)
         assert scene_agreement(gbb_scene, reference_scene) < 0.65
         try:

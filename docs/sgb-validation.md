@@ -313,6 +313,7 @@ python3 scripts/capture_sgb_libretro_audio.py \
   --input-offset-change 1600:253 --input-offset-change 2800:321 \
   --frames 3500 --snapshot-frame 2740 \
   --snapshot-output /tmp/sgb2-title-reference.ppm \
+  --timeline-output /tmp/sgb2-title-reference-timeline.json \
   --output /tmp/sgb2-title-reference.wav
 
 build/gameboy_snes_65c816_apu_trace \
@@ -334,7 +335,9 @@ python3 scripts/compare_sgb_title_audio.py \
   --gbb-scene /tmp/gbb-title-scene.ppm \
   --reference-scene /tmp/sgb2-title-reference.ppm \
   --gbb-event-sample FIRST_AUDIBLE_DELIVERY_SAMPLE \
-  --reference-frame-offset 253 --search-seconds 3
+  --reference-frame-offset 253 --reference-scene-frame 2740 \
+  --reference-timeline /tmp/sgb2-title-reference-timeline.json \
+  --search-seconds 3
 ```
 
 The trace intentionally exits at its instruction bound; the optional local
@@ -350,20 +353,35 @@ negotiated video pixel format, including the default 0RGB1555 format; earlier
 reference screenshots accidentally treated those 16-bit pixels as 32-bit
 XRGB8888 and must not be used for scene checks.
 
+The optional timeline binds each reference video callback to the range of
+mixed PCM samples emitted during its `retro_run` call. The comparator verifies
+the reference WAV's sample rate, length, and PCM SHA-256 against that timeline,
+checks the saved screenshot's SHA-256, and requires its declared frame to match
+the predicted event frame.
+This removes nominal video-rate drift from the anchor, but a video callback
+does **not** identify a SNES sound onset: audio may be batched before or after
+the callback, and the result is only a frame-sized interval. A screenshot can
+also show the same scene at different phases. The current libretro callback
+provides no isolated GB or SNES stem, so this tool cannot subtract GB audio or
+establish SGB waveform fidelity from its mixed reference. Such a claim needs
+an independently instrumented, time-aligned reference or a hardware capture.
+
 A local exploratory run with offsets borrowed from the *separate SameBoy
 frame-alignment fixture* (228 reference frames initially, 253 from GB frame
 1600, 321 from 2800) reached
 all 11 scripted events. Correctly decoded reference frame 2740 and GBB frame
 2472 show the same Donkey Kong stage and agree at 71.5% of viewport pixels
 within the guard's tolerance; an intentionally wrong reference frame scores
-0% and is rejected. At the GBB event (sample 1,482,476), the nominal
-3-second 25 ms RMS envelope correlation was only 0.095. Searching within
-3 seconds found a 0.619 envelope correlation 1.075 seconds early, but only
-0.031 waveform
-correlation in its strongest 1-second segment. That is a diagnostic lead, not
-audio validation; different event phase, GB audio in the reference, or both
-could explain it. The comparison tool defaults to the nominal frame and
-requires an explicit `--search-seconds` for exploratory alignment.
+0% and is rejected. At the GBB event (sample 1,482,476), the reference's
+video frame 2740 falls within mixed-audio samples 2,187,200-2,188,000
+(45.567-45.583 s), rather than an assumed `frame / fps` timestamp. The
+nominal 3-second 25 ms RMS envelope correlation is only about 0.08. An
+exploratory three-second search finds about 0.61 envelope correlation 1.075
+seconds early, but waveform correlation remains about -0.03 in its strongest
+one-second segment. These are diagnostic leads, **not audio validation**;
+different event phase, GB audio in the reference, or both could explain them.
+The comparison tool defaults to the nominal frame and requires an explicit
+`--search-seconds` for exploratory alignment.
 
 A new fully synthetic SNES program waits, writes a host command to the APU,
 and runs concurrently with an original SPC700 test program. The test stamps
