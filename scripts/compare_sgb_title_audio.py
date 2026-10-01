@@ -191,6 +191,44 @@ def reference_frame_window(timeline_path: Path, video_frame: int,
     return selected
 
 
+def reference_sound_event(timeline_path: Path, event_index: int,
+                          expected_packet_prefix: bytes, video_frame: int,
+                          rate: int, pcm: array, scene_path: Path
+                          ) -> tuple[int, int, str]:
+    """Anchor to a host-consumed SOUND packet in a SNES-only probe capture."""
+    frame_window = reference_frame_window(timeline_path, video_frame, rate,
+                                          pcm, scene_path)
+    timeline = json.loads(timeline_path.read_text(encoding="utf-8"))
+    if timeline.get("audio_source") != "snes-only":
+        raise ValueError("a SOUND-event anchor requires SNES-only reference audio")
+    events = timeline.get("sgb_sound_events")
+    if not isinstance(events, list) or not 0 <= event_index < len(events):
+        raise ValueError("reference SOUND event index is absent")
+    event = events[event_index]
+    if not isinstance(event, dict) or \
+            type(event.get("run_index")) is not int or \
+            type(event.get("video_frame_after_run")) is not int or \
+            type(event.get("sample_start")) is not int or \
+            type(event.get("sample_end")) is not int or \
+            not isinstance(event.get("packet"), str):
+        raise ValueError("malformed reference SOUND event")
+    try:
+        packet = bytes.fromhex(event["packet"])
+    except ValueError as error:
+        raise ValueError("malformed reference SOUND packet hex") from error
+    if len(packet) != 16 or packet[0] >> 3 != 8 or \
+            not packet.startswith(expected_packet_prefix):
+        raise ValueError("reference SOUND packet differs from expected packet")
+    runs = timeline["run_samples"]
+    index = event["run_index"]
+    if not 0 <= index < len(runs) or \
+            [event["sample_start"], event["sample_end"]] != runs[index] or \
+            event["video_frame_after_run"] != video_frame or \
+            tuple(runs[index]) != frame_window:
+        raise ValueError("reference SOUND event does not match its PCM/video run")
+    return frame_window[0], frame_window[1], packet.hex()
+
+
 def compare(gbb_path: Path, reference_path: Path, gbb_event_sample: int,
             event_gb_frame: int, search_seconds: float,
             window_seconds: float, reference_video_fps: float = 60.098812,
@@ -198,17 +236,31 @@ def compare(gbb_path: Path, reference_path: Path, gbb_event_sample: int,
             gbb_scene: Path | None = None,
             reference_scene: Path | None = None,
             reference_timeline: Path | None = None,
-            reference_scene_frame: int | None = None) -> str:
+            reference_scene_frame: int | None = None,
+            reference_sound_event_index: int | None = None,
+            reference_sound_packet_prefix: bytes = b"") -> str:
     if gbb_scene is None or reference_scene is None:
         raise ValueError("both scene checkpoint images are required before audio comparison")
     if reference_scene_frame is not None and reference_timeline is None:
         raise ValueError("reference scene frame requires a reference timeline")
+    if reference_sound_event_index is not None and \
+            (reference_timeline is None or reference_scene_frame is None or
+             not reference_sound_packet_prefix):
+        raise ValueError("SOUND-event anchor requires timeline, scene frame, and packet prefix")
     scene_score = scene_agreement(gbb_scene, reference_scene)
     if scene_score < 0.65:
         raise ValueError(f"scene checkpoint mismatch: {scene_score:.1%} of GB viewport "
                          "pixels agree within 16/channel (minimum 65%)")
     gbb_rate, gbb_pcm = read_stereo_wav(gbb_path)
     reference_rate, reference_pcm = read_stereo_wav(reference_path)
+    reference_source = "mixed"
+    if reference_timeline is not None:
+        metadata = json.loads(reference_timeline.read_text(encoding="utf-8"))
+        if not isinstance(metadata, dict):
+            raise ValueError("invalid reference timeline")
+        reference_source = metadata.get("audio_source", "mixed")
+        if reference_source not in ("mixed", "snes-only"):
+            raise ValueError("unsupported reference audio source in timeline")
     if gbb_event_sample < 0 or gbb_event_sample >= len(gbb_pcm) // 2:
         raise ValueError("GBB event sample is outside the GBB WAV")
     if event_gb_frame < 0 or search_seconds < 0 or window_seconds <= 0:
@@ -219,7 +271,19 @@ def compare(gbb_path: Path, reference_path: Path, gbb_event_sample: int,
         raise ValueError("reference video rate is implausible")
     event_reference_frame = round(event_gb_frame * reference_video_fps /
                                   GB_FRAME_RATE) + reference_frame_offset
-    if reference_timeline is not None:
+    if reference_sound_event_index is not None:
+        first_sample, last_sample, packet = reference_sound_event(
+            reference_timeline, reference_sound_event_index,
+            reference_sound_packet_prefix, reference_scene_frame,
+            reference_rate, reference_pcm, reference_scene)
+        event_reference_frame = reference_scene_frame
+        expected_reference_time = (first_sample + last_sample) / (2 * reference_rate)
+        anchor_description = (f"host-consumed SOUND event {reference_sound_event_index} "
+                              f"packet {packet[:10]}, PCM range [{first_sample}, "
+                              f"{last_sample}] ({first_sample / reference_rate:.3f}-"
+                              f"{last_sample / reference_rate:.3f}s), "
+                              f"midpoint {expected_reference_time:.3f}s")
+    elif reference_timeline is not None:
         if reference_scene_frame is None:
             raise ValueError("reference scene frame is required with a timeline")
         if reference_scene_frame != event_reference_frame:
@@ -260,8 +324,27 @@ def compare(gbb_path: Path, reference_path: Path, gbb_event_sample: int,
                                    segment_buckets * bucket + 0.1)
     waveform_shift, waveform_score = waveform_alignment(
         gbb_wave, reference_wave, radius_samples)
+    short_windows = []
+    for offset in (0.1, 0.5, 1.0):
+        if offset + 0.2 > window_seconds:
+            continue
+        try:
+            short_gbb = resample_mono(gbb_pcm, gbb_rate, gbb_time + offset, 0.2)
+            short_ref = resample_mono(reference_pcm, reference_rate,
+                                      aligned_time + offset - 0.05, 0.3)
+            shift, local_score = waveform_alignment(short_gbb, short_ref,
+                                                     radius_samples)
+            short_windows.append(f"{offset:.1f}s:{local_score:+.3f} "
+                                 f"(lag {shift / 8000:+.3f}s)")
+        except ValueError:
+            pass
     gbb_rms, gbb_peak, gbb_active = describe(ours)
     ref_rms, ref_peak, ref_active = describe(reference[start:start + len(ours)])
+    source_description = ("SNES-only reference from an instrumented core; this still "
+                          "does not prove hardware waveform fidelity."
+                          if reference_source == "snes-only" else
+                          "The reference mixes GB and SNES audio, and independent runs "
+                          "may differ before scripted input.")
     return (f"Same-scene checkpoint: {scene_score:.1%} of GB viewport pixels "
             "agree within 16/channel (minimum 65%); this does not prove "
             "audio phase alignment.\n"
@@ -280,10 +363,11 @@ def compare(gbb_path: Path, reference_path: Path, gbb_event_sample: int,
             f"best within search range={score:.3f}\n"
             f"Best 8kHz mono waveform correlation={waveform_score:.3f} "
             f"within +/-50ms (lag {waveform_shift / 8000:+.4f}s)\n"
+            + ("Exploratory fixed 0.2s waveform windows: " +
+               ", ".join(short_windows) + "\n" if short_windows else "") +
             "Interpretation: this does not establish waveform fidelity. "
-            "The reference mixes GB and SNES audio, and independent runs "
-            "may differ before scripted input. Inspect game phase and "
-            "audio stems before using this as an accuracy gate.")
+            f"{source_description} Inspect packet phase and audio scaling "
+            "before using this as an accuracy gate.")
 
 
 def main() -> int:
@@ -303,17 +387,24 @@ def main() -> int:
                         help="JSON timeline from the same reference WAV capture")
     parser.add_argument("--reference-scene-frame", type=int,
                         help="1-based reference video frame saved as --reference-scene")
+    parser.add_argument("--reference-sound-event-index", type=int,
+                        help="zero-based host-consumed SOUND event from SNES-only probe")
+    parser.add_argument("--reference-sound-packet-prefix",
+                        help="expected hexadecimal SOUND packet prefix, e.g. 4100000001")
     parser.add_argument("--search-seconds", type=float, default=0.0,
                         help="optional exploratory envelope search around the nominal frame")
     parser.add_argument("--window-seconds", type=float, default=3.0)
     args = parser.parse_args()
     try:
+        packet_prefix = bytes.fromhex(args.reference_sound_packet_prefix) \
+            if args.reference_sound_packet_prefix else b""
         print(compare(args.gbb, args.reference, args.gbb_event_sample,
                       args.event_gb_frame, args.search_seconds,
                       args.window_seconds, args.reference_video_fps,
                       args.reference_frame_offset, args.gbb_scene,
                       args.reference_scene, args.reference_timeline,
-                      args.reference_scene_frame))
+                      args.reference_scene_frame, args.reference_sound_event_index,
+                      packet_prefix))
         return 0
     except (OSError, ValueError, wave.Error) as error:
         print(f"audio comparison failed: {error}", file=sys.stderr)

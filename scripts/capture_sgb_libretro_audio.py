@@ -135,7 +135,8 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
             snapshot_frame: int | None = None,
             snapshot_output: Path | None = None,
             snapshot_series: tuple[int, int, Path] | None = None,
-            timeline_output: Path | None = None
+            timeline_output: Path | None = None,
+            require_snes_only_probe: bool = False
             ) -> tuple[int, int]:
     if C.sizeof(C.c_void_p) != 8:
         raise RuntimeError("the diagnostic host currently requires a 64-bit process")
@@ -150,6 +151,8 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
         raise FileExistsError(output)
     if timeline_output is not None and timeline_output.exists():
         raise FileExistsError(timeline_output)
+    if require_snes_only_probe and timeline_output is None:
+        raise ValueError("the SNES-only probe requires a timeline output")
     if (snapshot_frame is None) != (snapshot_output is None):
         raise ValueError("snapshot frame and output must be supplied together")
     if snapshot_frame is not None and not 1 <= snapshot_frame <= frames:
@@ -168,6 +171,19 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
             raise FileExistsError("snapshot series directory must be empty")
     events = load_input_script(input_script) if input_script is not None else []
     core = C.CDLL(str(core_path.resolve()))
+    if require_snes_only_probe:
+        probe_symbols = ("gbb_reference_sgb_probe_version",
+                         "gbb_reference_sgb_sound_count",
+                         "gbb_reference_sgb_sound_packet")
+        if any(not hasattr(core, symbol) for symbol in probe_symbols):
+            raise RuntimeError("core is not the instrumented SNES-only reference build")
+        core.gbb_reference_sgb_probe_version.restype = C.c_uint
+        if core.gbb_reference_sgb_probe_version() != 1:
+            raise RuntimeError("unsupported SNES-only reference probe version")
+        core.gbb_reference_sgb_sound_count.restype = C.c_uint
+        core.gbb_reference_sgb_sound_packet.argtypes = [C.c_uint,
+                                                         C.POINTER(C.c_uint8)]
+        core.gbb_reference_sgb_sound_packet.restype = C.c_uint
     required = ("retro_api_version", "retro_set_environment", "retro_set_video_refresh",
                 "retro_set_audio_sample", "retro_set_audio_sample_batch",
                 "retro_set_input_poll", "retro_set_input_state", "retro_init",
@@ -199,6 +215,7 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
     frame_callbacks: list[dict[str, int]] = []
     run_samples: list[list[int]] = []
     snapshot_hashes: dict[str, str] = {}
+    sound_events: list[dict[str, object]] = []
     current_run = -1
     video_pixel_format = 0  # RETRO_PIXEL_FORMAT_0RGB1555 is the API default.
     subsystems: dict[str, int] = {}
@@ -321,6 +338,7 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
             scheduled = schedule_input(events, av.timing.fps, input_offset,
                                        input_offset_changes)
             next_event = 0
+            next_sound_event = 0
             for frame in range(frames):
                 current_run = frame
                 if next_event < len(scheduled) and frame == scheduled[next_event][0]:
@@ -328,6 +346,20 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                     next_event += 1
                 sample_start = len(audio) // 4
                 core.retro_run()
+                if require_snes_only_probe:
+                    sound_count = core.gbb_reference_sgb_sound_count()
+                    if sound_count < next_sound_event or sound_count > 1024:
+                        raise RuntimeError("reference SOUND probe count reset or overflowed")
+                    for event_index in range(next_sound_event, sound_count):
+                        packet = (C.c_uint8 * 16)()
+                        if core.gbb_reference_sgb_sound_packet(event_index, packet) != 1:
+                            raise RuntimeError("reference SOUND probe lost a packet")
+                        sound_events.append({"run_index": frame,
+                                             "video_frame_after_run": video_frames,
+                                             "sample_start": sample_start,
+                                             "sample_end": len(audio) // 4,
+                                             "packet": bytes(packet).hex()})
+                    next_sound_event = sound_count
                 if timeline_output is not None:
                     run_samples.append([sample_start, len(audio) // 4])
             if events and next_event == 0:
@@ -366,6 +398,9 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                     snapshot_hashes[str(frame)] = hashlib.sha256(image).hexdigest()
             if timeline_output is not None:
                 timeline = {"format": "gbb-libretro-audio-timeline-v1",
+                            "core_sha256": hashlib.sha256(core_path.read_bytes()).hexdigest(),
+                            "game_sha256": hashlib.sha256(game_path.read_bytes()).hexdigest(),
+                            "sgb_rom_sha256": hashlib.sha256(sgb_path.read_bytes()).hexdigest(),
                             "sample_rate": sample_rate,
                             "sample_count": len(audio) // 4,
                             "pcm_sha256": hashlib.sha256(audio).hexdigest(),
@@ -373,7 +408,10 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                             "run_samples": run_samples,
                             "video_callbacks": frame_callbacks,
                             "snapshot_sha256": snapshot_hashes,
-                            "scheduled_input": scheduled}
+                            "scheduled_input": scheduled,
+                            "audio_source": "snes-only" if require_snes_only_probe
+                            else "mixed",
+                            "sgb_sound_events": sound_events}
                 timeline_output.parent.mkdir(parents=True, exist_ok=True)
                 with timeline_output.open("x", encoding="utf-8") as timeline_file:
                     json.dump(timeline, timeline_file, separators=(",", ":"))
@@ -385,6 +423,8 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                       f"video rate {av.timing.fps:.6f} Hz, "
                       f"GB-to-reference frame offset {input_offset}, "
                       f"changes {input_offset_changes or []}")
+            if require_snes_only_probe:
+                print(f"SNES-only reference: {len(sound_events)} host-consumed SOUND packets")
             if snapshot_output is not None or snapshot_series is not None:
                 print(f"Reference video pixel format: {video_pixel_format} "
                       "(0=0RGB1555, 1=XRGB8888, 2=RGB565)")
@@ -420,7 +460,9 @@ def main() -> None:
                         help="save up to 201 consecutive video frames as local PPM files")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--timeline-output", type=Path,
-                        help="JSON mapping video callbacks and run calls to mixed PCM samples")
+                        help="JSON mapping callbacks, sound events, and runs to PCM samples")
+    parser.add_argument("--require-snes-only-probe", action="store_true",
+                        help="require the local instrumented core; log host-consumed SOUND packets")
     args = parser.parse_args()
     try:
         changes = []
@@ -437,7 +479,7 @@ def main() -> None:
                               args.system_dir, args.frames, args.output,
                               args.input_script, args.input_offset_frames, changes,
                               args.snapshot_frame, args.snapshot_output, series,
-                              args.timeline_output)
+                              args.timeline_output, args.require_snes_only_probe)
     except (OSError, RuntimeError, ValueError) as error:
         parser.error(str(error))
     print(f"Captured {count} stereo frames at {rate} Hz to {args.output}")

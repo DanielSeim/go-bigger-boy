@@ -405,6 +405,79 @@ identical to frame 2738. This stage stays visually static across distinct
 audio times, so even transition alignment cannot independently identify the
 SGB `SOUND` onset. An isolated, event-tagged reference audio source is still
 needed before an accuracy gate or runtime integration is justified.
+
+### Event-tagged, SNES-only development reference
+
+The libretro callback above is a **mixed** output. For a more useful local
+diagnostic, a small patch for the separately fetched GPLv3 bsnes-libretro
+revision `05439f96121d2b9d7ad7a5fc1f29d7eebdcc8c43` is kept at
+[`scripts/patches/bsnes-05439f9-sgb-snes-only.patch`](../scripts/patches/bsnes-05439f9-sgb-snes-only.patch).
+Apply it only to a separate upstream source checkout, **not** to GBB's runtime
+or release pipeline:
+
+```sh
+git clone https://github.com/libretro/bsnes-libretro.git /tmp/bsnes-sgb-reference-src
+git -C /tmp/bsnes-sgb-reference-src checkout 05439f96121d2b9d7ad7a5fc1f29d7eebdcc8c43
+git -C /tmp/bsnes-sgb-reference-src apply /path/to/gbb/scripts/patches/bsnes-05439f9-sgb-snes-only.patch
+make -C /tmp/bsnes-sgb-reference-src -j4
+```
+
+The patch writes zeros to the **GB audio stream while preserving its sample
+clock**. It leaves the SNES DSP stream untouched and exports a versioned probe
+that reports when the SNES host reads each SGB `SOUND` packet from ICD `$6002`.
+It does not alter the game ROM or bundle any firmware. The capture tool requires
+this probe explicitly; an ordinary core cannot silently masquerade as an
+isolated reference. The optional timeline records SHA-256 identities for the
+core and local ROMs, but never stores their bytes.
+
+With the same legally obtained local Donkey Kong and SGB2 ROMs used above:
+
+```sh
+python3 scripts/capture_sgb_libretro_audio.py \
+  --core /tmp/bsnes-sgb-reference-src/bsnes_libretro.so \
+  --game '/path/to/Donkey Kong (JU) (V1.1) [S][!].gb' \
+  --sgb-rom /path/to/sgb2.program.rom \
+  --system-dir /path/to/firmware-directory \
+  --input-script tests/fixtures/sgb/titles/donkey-kong-gameplay.script \
+  --input-offset-frames 228 \
+  --input-offset-change 1600:253 --input-offset-change 2800:321 \
+  --frames 3500 --snapshot-frame 2754 \
+  --snapshot-output /tmp/sgb2-snes-only-scene.ppm \
+  --timeline-output /tmp/sgb2-snes-only-timeline.json \
+  --output /tmp/sgb2-snes-only.wav --require-snes-only-probe
+
+python3 scripts/compare_sgb_title_audio.py \
+  --gbb /tmp/gbb-title-trace.wav \
+  --reference /tmp/sgb2-snes-only.wav \
+  --gbb-scene /tmp/gbb-title-frame-2472.ppm \
+  --reference-scene /tmp/sgb2-snes-only-scene.ppm \
+  --gbb-event-sample FIRST_AUDIBLE_DELIVERY_SAMPLE \
+  --reference-timeline /tmp/sgb2-snes-only-timeline.json \
+  --reference-scene-frame 2754 \
+  --reference-sound-event-index 1 \
+  --reference-sound-packet-prefix 4100000001 \
+  --search-seconds 3
+```
+
+In the local run, the probe saw three host-consumed `SOUND` packets. The first
+matching `41 00 00 00 01` packet was consumed during reference run 2753
+(video frame 2754), with output PCM samples 2,198,400-2,199,200 at 48 kHz.
+The repeated matching packet occurred at frame 2803. At the first event,
+GBB's modeled 32 kHz SNES-side output and the isolated reference had a 0.987
+nominal 25 ms RMS-envelope correlation and 0.990 at the best nearby offset;
+the two independently repeated reference WAVs were byte-identical. This
+strongly supports the *event timing and broad sound envelope*. The strongest
+1-second 8 kHz mono waveform correlation was only about -0.402, so **sample
+fidelity is not established**. The GB/SNES clock domains, synthesis, phase,
+resampling, and level still need investigation. The probe is not physical
+hardware evidence and must not be used to claim runtime SGB audio support.
+Exploratory 0.2-second waveform windows can show much larger *absolute*
+correlation, but their sign and lag vary; these short searches are clues about
+phase/timing differences, not a substitute for a continuous waveform match.
+As a separation sanity check, the patched reference's one-second windows at
+20 s and 40 s were silent, while the unmodified mixed reference was audible
+in both; its SNES-only output was nonzero after the tagged event. This checks
+the patch's intended behavior for this run, not every possible audio source.
 The comparison tool defaults to the nominal frame and requires an explicit
 `--search-seconds` for exploratory alignment.
 

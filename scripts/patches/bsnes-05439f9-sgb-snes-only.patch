@@ -1,0 +1,80 @@
+diff --git a/bsnes/sfc/coprocessor/icd/icd.cpp b/bsnes/sfc/coprocessor/icd/icd.cpp
+--- a/bsnes/sfc/coprocessor/icd/icd.cpp
++++ b/bsnes/sfc/coprocessor/icd/icd.cpp
+@@ -151,6 +151,7 @@ auto ICD::power(bool reset) -> void {
+   if(!reset) stream = Emulator::audio.createStream(2, frequency / 128);
+ 
+   for(auto& packet : this->packet) packet = {};
++  diagnosticSoundCount = 0;
+   packetSize = 0;
+ 
+   joypID = 0;
+@@ -182,4 +183,15 @@ auto ICD::power(bool reset) -> void {
+   GB_reset(&sameboy);
+ }
+ 
++extern "C" unsigned gbb_reference_sgb_probe_version() { return 1; }
++extern "C" unsigned gbb_reference_sgb_sound_count() {
++  return SuperFamicom::icd.diagnosticSoundCount;
++}
++extern "C" unsigned gbb_reference_sgb_sound_packet(unsigned index, uint8_t* output) {
++  if(index >= SuperFamicom::icd.diagnosticSoundCount || index >= 1024 || !output) return 0;
++  for(unsigned i = 0; i < 16; i++)
++    output[i] = SuperFamicom::icd.diagnosticSoundPackets[index][i];
++  return 1;
++}
++
+ }
+diff --git a/bsnes/sfc/coprocessor/icd/icd.hpp b/bsnes/sfc/coprocessor/icd/icd.hpp
+--- a/bsnes/sfc/coprocessor/icd/icd.hpp
++++ b/bsnes/sfc/coprocessor/icd/icd.hpp
+@@ -1,6 +1,8 @@
+ struct ICD : Emulator::Platform, Thread {
+   shared_pointer<Emulator::Stream> stream;
+   Emulator::Cheat cheats;
++  unsigned diagnosticSoundCount = 0;
++  uint8_t diagnosticSoundPackets[1024][16] = {};
+ 
+   inline auto pathID() const -> uint { return information.pathID; }
+ 
+diff --git a/bsnes/sfc/coprocessor/icd/interface.cpp b/bsnes/sfc/coprocessor/icd/interface.cpp
+--- a/bsnes/sfc/coprocessor/icd/interface.cpp
++++ b/bsnes/sfc/coprocessor/icd/interface.cpp
+@@ -20,7 +20,8 @@ auto ICD::ppuWrite(uint2 color) -> void {
+ }
+ 
+ auto ICD::apuWrite(float left, float right) -> void {
+-  double samples[] = {left, right};
++  // Diagnostic build: retain the GB stream clock while excluding its samples.
++  double samples[] = {0.0, 0.0};
+   if(!system.runAhead) stream->write(samples);
+ }
+ 
+diff --git a/bsnes/sfc/coprocessor/icd/io.cpp b/bsnes/sfc/coprocessor/icd/io.cpp
+--- a/bsnes/sfc/coprocessor/icd/io.cpp
++++ b/bsnes/sfc/coprocessor/icd/io.cpp
+@@ -10,6 +10,15 @@ auto ICD::readIO(uint addr, uint8 data) -> uint8 {
+   if(addr == 0x6002) {
+     data = packetSize > 0;
+     if(data) {
++      if((packet[0][0] >> 3) == 8) {
++        if(diagnosticSoundCount < 1024) {
++          for(unsigned i = 0; i < 16; i++)
++            diagnosticSoundPackets[diagnosticSoundCount][i] = packet[0][i];
++          diagnosticSoundCount++;
++        } else {
++          diagnosticSoundCount = 1025;  //let the capture reject overflow
++        }
++      }
+       for(auto n : range(16)) r7000[n] = packet[0][n];
+       packetSize--;
+       for(auto n : range(packetSize)) packet[n] = packet[n + 1];
+diff --git a/bsnes/target-libretro/link.T b/bsnes/target-libretro/link.T
+--- a/bsnes/target-libretro/link.T
++++ b/bsnes/target-libretro/link.T
+@@ -1,4 +1,4 @@
+ {
+-   global: retro_*;
++   global: retro_*; gbb_reference_sgb_*;
+    local: *;
+ };

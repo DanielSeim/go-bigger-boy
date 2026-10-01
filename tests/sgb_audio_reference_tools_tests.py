@@ -16,7 +16,8 @@ from capture_sgb_libretro_audio import (BUTTON_IDS, decode_video_row,
                                         load_input_script, schedule_input)
 from compare_sgb_audio_phase import rank_offsets, series_transitions
 from compare_sgb_title_audio import (compare, correlation, read_stereo_wav,
-                                     reference_frame_window, scene_agreement)
+                                     reference_frame_window, reference_sound_event,
+                                     scene_agreement)
 
 
 def write_wave(path: Path, rate: int, onset: float) -> None:
@@ -97,6 +98,7 @@ def main() -> None:
                          gbb_scene=gbb_scene, reference_scene=reference_scene)
         assert "Same-scene checkpoint: 100.0%" in report
         assert "25ms RMS-envelope correlation at nominal frame=" in report
+        assert "Exploratory fixed 0.2s waveform windows:" in report
         assert "best within search range=" in report
         assert "does not establish waveform fidelity" in report
         phase = root / "phase"
@@ -148,6 +150,41 @@ def main() -> None:
                          gbb_scene=gbb_scene, reference_scene=reference_scene,
                          reference_timeline=timeline, reference_scene_frame=60)
         assert "callback audio range [47600, 48500]" in report
+        instrumented = json.loads(timeline.read_text(encoding="utf-8"))
+        instrumented["audio_source"] = "snes-only"
+        instrumented["sgb_sound_events"] = [{
+            "run_index": 1, "video_frame_after_run": 60,
+            "sample_start": 47600, "sample_end": 48500,
+            "packet": "41000000010000000000000000000000"}]
+        timeline.write_text(json.dumps(instrumented), encoding="utf-8")
+        assert reference_sound_event(timeline, 0, bytes.fromhex("4100000001"),
+                                     60, 48000, reference_pcm, reference_scene) == \
+            (47600, 48500, "41000000010000000000000000000000")
+        report = compare(gbb, reference, 32000, 60, 0.1, 2.0,
+                         gbb_scene=gbb_scene, reference_scene=reference_scene,
+                         reference_timeline=timeline, reference_scene_frame=60,
+                         reference_sound_event_index=0,
+                         reference_sound_packet_prefix=bytes.fromhex("4100000001"))
+        assert "host-consumed SOUND event 0" in report
+        assert "SNES-only reference" in report
+        try:
+            reference_sound_event(timeline, 0, bytes.fromhex("418000"),
+                                  60, 48000, reference_pcm, reference_scene)
+        except ValueError as error:
+            assert "differs from expected" in str(error)
+        else:
+            raise AssertionError("wrong SOUND packet accepted")
+        instrumented["audio_source"] = "mixed"
+        timeline.write_text(json.dumps(instrumented), encoding="utf-8")
+        try:
+            reference_sound_event(timeline, 0, bytes.fromhex("4100000001"),
+                                  60, 48000, reference_pcm, reference_scene)
+        except ValueError as error:
+            assert "SNES-only" in str(error)
+        else:
+            raise AssertionError("mixed audio accepted as an isolated reference")
+        instrumented["audio_source"] = "snes-only"
+        timeline.write_text(json.dumps(instrumented), encoding="utf-8")
         wrong_scene = root / "wrong-reference.ppm"
         write_scene(wrong_scene, shift=0)
         wrong_scene.write_bytes(wrong_scene.read_bytes() + b"\n")
