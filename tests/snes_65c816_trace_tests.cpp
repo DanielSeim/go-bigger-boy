@@ -1,4 +1,5 @@
 #include "snes_65c816_trace_cpu.hpp"
+#include "snes_icd_gb_source.hpp"
 #include "gameboy/snes_spc700.hpp"
 
 #include <cstdint>
@@ -11,6 +12,12 @@ namespace {
 
 static_assert(sizeof(sgb_test::Snes65c816TraceCpu) < 192 * 1024,
               "trace CPU must leave room for multiple instances on Windows stacks");
+static_assert(sgb_test::sgb_icd_target_gb_cycles(
+                  21'477'273ULL, 5, gameboy::HardwareModel::sgb2) == 4'194'304ULL);
+static_assert(sgb_test::sgb_icd_target_gb_cycles(
+                  21'477'273ULL, 5, gameboy::HardwareModel::sgb) == 4'295'454ULL);
+static_assert(sgb_test::sgb_icd_target_gb_cycles(
+                  21'477'273ULL, 4, gameboy::HardwareModel::sgb2) == 5'242'880ULL);
 
 int failures{};
 

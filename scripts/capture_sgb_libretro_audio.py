@@ -174,16 +174,20 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
     if require_snes_only_probe:
         probe_symbols = ("gbb_reference_sgb_probe_version",
                          "gbb_reference_sgb_sound_count",
-                         "gbb_reference_sgb_sound_packet")
+                         "gbb_reference_sgb_sound_packet",
+                         "gbb_reference_sgb_sound_position")
         if any(not hasattr(core, symbol) for symbol in probe_symbols):
             raise RuntimeError("core is not the instrumented SNES-only reference build")
         core.gbb_reference_sgb_probe_version.restype = C.c_uint
-        if core.gbb_reference_sgb_probe_version() != 1:
+        if core.gbb_reference_sgb_probe_version() != 2:
             raise RuntimeError("unsupported SNES-only reference probe version")
         core.gbb_reference_sgb_sound_count.restype = C.c_uint
         core.gbb_reference_sgb_sound_packet.argtypes = [C.c_uint,
                                                          C.POINTER(C.c_uint8)]
         core.gbb_reference_sgb_sound_packet.restype = C.c_uint
+        core.gbb_reference_sgb_sound_position.argtypes = [
+            C.c_uint, C.POINTER(C.c_uint), C.POINTER(C.c_uint)]
+        core.gbb_reference_sgb_sound_position.restype = C.c_uint
     required = ("retro_api_version", "retro_set_environment", "retro_set_video_refresh",
                 "retro_set_audio_sample", "retro_set_audio_sample_batch",
                 "retro_set_input_poll", "retro_set_input_state", "retro_init",
@@ -354,10 +358,19 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                         packet = (C.c_uint8 * 16)()
                         if core.gbb_reference_sgb_sound_packet(event_index, packet) != 1:
                             raise RuntimeError("reference SOUND probe lost a packet")
+                        vertical = C.c_uint()
+                        horizontal = C.c_uint()
+                        if core.gbb_reference_sgb_sound_position(
+                                event_index, C.byref(vertical),
+                                C.byref(horizontal)) != 1 or \
+                                vertical.value >= 262 or horizontal.value >= 1364:
+                            raise RuntimeError("reference SOUND probe has invalid CPU position")
                         sound_events.append({"run_index": frame,
                                              "video_frame_after_run": video_frames,
                                              "sample_start": sample_start,
                                              "sample_end": len(audio) // 4,
+                                             "cpu_vcounter": vertical.value,
+                                             "cpu_hcounter": horizontal.value,
                                              "packet": bytes(packet).hex()})
                     next_sound_event = sound_count
                 if timeline_output is not None:

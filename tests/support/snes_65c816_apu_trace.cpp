@@ -230,6 +230,8 @@ int main(int argc, char** argv) {
                 std::cout << "host SOUND delivery index="
                           << logged_sound_deliveries - 1
                           << " GB_frame=" << icd->completed_frames()
+                          << " GB_cycle=" << icd->gb_cycles()
+                          << " SNES_master_clock=" << cpu.timing().clocks()
                           << " PCM_sample=" << dsp_observation.pcm_samples
                           << " packet=";
                 for (const auto byte : icd->last_delivered_sound_packet())

@@ -18,12 +18,13 @@ int main(int argc, char** argv) {
         if (!source.write(0x6003, 0, 0x91))
             throw std::runtime_error("could not release the GB side");
 
-        // SGB2 ICD divider 5, with roughly one GB frame per 70,224 cycles.
-        // Packet reads happen at each interval, so the bounded ICD queue is
-        // never treated as an unlimited recording buffer.
-        constexpr std::uint64_t clocks_per_frame = 70224ULL * 5ULL;
+        // Poll once per GB frame on SGB2's dedicated oscillator. Packet
+        // reads keep the bounded ICD queue from becoming an unlimited log.
+        constexpr std::uint64_t master_hz = 21'477'273ULL;
+        constexpr std::uint64_t gb_hz = 4'194'304ULL;
         for (unsigned interval = 1; interval <= 4000; ++interval) {
-            const auto clock = interval * clocks_per_frame;
+            const auto clock = (interval * 70'224ULL * master_hz + gb_hz - 1) /
+                               gb_hz;
             source.advance_to(clock);
             if (source.missing_address() != 0)
                 throw std::runtime_error("GB ICD source data became unavailable");

@@ -14,7 +14,8 @@ SnesIcdGbSource::SnesIcdGbSource(const std::filesystem::path& rom,
                                  const gameboy::HardwareModel model)
     : gb_(std::make_unique<gameboy::Emulator>(
           gameboy::Cartridge::from_file(rom), model,
-          gameboy::BootRomMode::diagnostic)) {
+          gameboy::BootRomMode::diagnostic)),
+      model_(model) {
     if (std::filesystem::file_size(boot_rom) != boot_image_.size())
         throw std::runtime_error("GB boot ROM must be exactly 256 bytes");
     std::ifstream input(boot_rom, std::ios::binary);
@@ -151,7 +152,12 @@ void SnesIcdGbSource::complete_tile_row(const unsigned tile_row) noexcept {
 
 void SnesIcdGbSource::synchronize(const std::uint64_t master_clocks) noexcept {
     if (!released_ || master_clocks < release_clock_) return;
-    const auto target = (master_clocks - release_clock_) / divider_;
+    // SGB1 divides the SNES CPU oscillator. SGB2 has a dedicated
+    // 20,971,520 Hz oscillator; at the normal /5 setting this yields the
+    // GB's 4,194,304 Hz. Use a rational conversion to avoid accumulated
+    // per-step rounding drift relative to the SNES master clock.
+    const auto target = sgb_icd_target_gb_cycles(
+        master_clocks - release_clock_, divider_, model_);
     while (gb_cycles_ < target && missing_address_ == 0) {
         gb_cycles_ += gb_->step();
         if (gb_->frame_ready()) {

@@ -13,6 +13,19 @@
 
 namespace sgb_test {
 
+// Convert SNES master clocks to GB cycles without truncating at each host
+// step. SGB1 shares the SNES oscillator; SGB2 uses a dedicated oscillator.
+constexpr std::uint64_t sgb_icd_target_gb_cycles(
+    const std::uint64_t master_elapsed, const unsigned divider,
+    const gameboy::HardwareModel model) noexcept {
+    constexpr std::uint64_t master_hz = 21'477'273ULL;
+    const auto oscillator_hz = model == gameboy::HardwareModel::sgb2
+        ? 20'971'520ULL : master_hz;
+    const auto denominator = master_hz * divider;
+    return (master_elapsed / denominator) * oscillator_hz +
+           ((master_elapsed % denominator) * oscillator_hz) / denominator;
+}
+
 // Test-only live GB input for the bounded SNES trace. The GB clock is anchored
 // to ICD reset release; status is scanline-granular, not a cycle-exact ICD2
 // model. Unknown row-buffer data deliberately fails closed.
@@ -118,6 +131,7 @@ private:
     std::uint64_t control_writes_{};
     std::uint8_t last_control_{};
     unsigned divider_{5};
+    gameboy::HardwareModel model_{};
     bool released_{};
     bool pulse_armed_{true};
     bool receiving_{};

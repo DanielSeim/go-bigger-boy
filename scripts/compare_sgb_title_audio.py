@@ -218,6 +218,12 @@ def reference_sound_event(timeline_path: Path, event_index: int,
             type(event.get("sample_end")) is not int or \
             not isinstance(event.get("packet"), str):
         raise ValueError("malformed reference SOUND event")
+    if "cpu_vcounter" in event or "cpu_hcounter" in event:
+        if type(event.get("cpu_vcounter")) is not int or \
+                not 0 <= event["cpu_vcounter"] < 262 or \
+                type(event.get("cpu_hcounter")) is not int or \
+                not 0 <= event["cpu_hcounter"] < 1364:
+            raise ValueError("malformed reference SOUND CPU position")
     try:
         packet = bytes.fromhex(event["packet"])
     except ValueError as error:
@@ -390,6 +396,20 @@ def compare(gbb_path: Path, reference_path: Path, gbb_event_sample: int,
             raise ValueError("repeated SOUND packet differs from first event")
         repeat_ref_time = (repeat_start + repeat_end) / (2 * reference_rate)
         repeat_gbb_time = gbb_repeat_event_sample / gbb_rate
+        first_entry = entries[reference_sound_event_index]
+        positions = ""
+        if ("cpu_vcounter" in first_entry) != \
+                ("cpu_vcounter" in repeat_entry):
+            raise ValueError("repeated SOUND CPU positions are inconsistent")
+        if "cpu_vcounter" in first_entry and \
+                "cpu_vcounter" in repeat_entry:
+            positions = (
+                f" Reference CPU positions: first V={first_entry['cpu_vcounter']} "
+                f"H={first_entry['cpu_hcounter']}, repeated "
+                f"V={repeat_entry['cpu_vcounter']} "
+                f"H={repeat_entry['cpu_hcounter']}; "
+                "these locate ICD reads within their runs, not exact output "
+                "PCM samples.")
         burst_scores = []
         for name, gbb_anchor, ref_anchor in (
                 ("first", gbb_time, expected_reference_time),
@@ -405,13 +425,14 @@ def compare(gbb_path: Path, reference_path: Path, gbb_event_sample: int,
             f"reference event {reference_repeat_sound_event_index} PCM range "
             f"[{repeat_start}, {repeat_end}]; first-to-repeat anchor spacing "
             f"GBB={repeat_gbb_time - gbb_time:.4f}s, "
-            f"reference={repeat_ref_time - expected_reference_time:.4f}s.\n"
+            f"reference={repeat_ref_time - expected_reference_time:.4f}s."
+            f"{positions}\n"
             "Independent 0.1-0.5s post-packet waveform windows: " +
             ", ".join(f"{name}:{burst_score:+.3f} "
                       f"(lag {lag / 8000:+.4f}s)"
                       for name, lag, burst_score in burst_scores) +
-            ". The repeated event has no separate scene checkpoint and its "
-            "reference anchor is uncertain within a video run.\n")
+            ". The repeated event has no separate scene checkpoint; "
+            "its audio-output anchor remains uncertain within a video run.\n")
     gbb_rms, gbb_peak, gbb_active = describe(ours)
     ref_rms, ref_peak, ref_active = describe(reference[start:start + len(ours)])
     source_description = ("SNES-only reference from an instrumented core; this still "

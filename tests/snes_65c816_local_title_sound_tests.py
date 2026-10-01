@@ -50,16 +50,23 @@ def main() -> int:
         raise AssertionError("title-authentic music-score packet was not captured")
     deliveries = re.findall(
         r"host SOUND delivery index=(\d+) GB_frame=(\d+) "
+        r"GB_cycle=(\d+) SNES_master_clock=(\d+) "
         r"PCM_sample=(\d+) packet= ([0-9a-f ]+)", output)
     if [int(event[0]) for event in deliveries] != [0, 1, 2]:
         raise AssertionError("host SOUND delivery timeline is incomplete")
     first_music, second_music = deliveries[1:]
-    if [int(first_music[1]), int(second_music[1])] != [2472, 2521] or \
-            first_music[3] != second_music[3] or \
-            not first_music[3].startswith("41 00 00 00 01") or \
-            not 0.7 * 32000 < int(second_music[2]) - int(first_music[2]) \
-            < 0.9 * 32000:
+    if [int(first_music[1]), int(second_music[1])] != [2473, 2521] or \
+            first_music[5] != second_music[5] or \
+            not first_music[5].startswith("41 00 00 00 01") or \
+            not 0.8 * 32000 < int(second_music[4]) - int(first_music[4]) \
+            < 0.83 * 32000:
         raise AssertionError("repeated title SOUND packets differ or lack PCM anchors")
+    gb_cycles = int(second_music[2]) - int(first_music[2])
+    master_clocks = int(second_music[3]) - int(first_music[3])
+    pcm_seconds = (int(second_music[4]) - int(first_music[4])) / 32000
+    if abs(gb_cycles / master_clocks - 4194304 / 21477273) > 0.0001 or \
+            abs(pcm_seconds - master_clocks / 21477273) > 0.002:
+        raise AssertionError("SGB2 GB, SNES, and DSP clock spacing disagree")
     delivered = re.search(r"audible_SOUND_delivered=(\d+)", output)
     nonzero = re.search(r"post_audible_SOUND_nonzero=(\d+)", output)
     if delivered is None or int(delivered.group(1)) == 0:

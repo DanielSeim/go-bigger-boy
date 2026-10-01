@@ -194,6 +194,19 @@ def main() -> None:
         assert reference_sound_event(timeline, 0, bytes.fromhex("4100000001"),
                                      60, 48000, reference_pcm, reference_scene) == \
             (47600, 48500, "41000000010000000000000000000000")
+        instrumented["sgb_sound_events"][0]["cpu_vcounter"] = 262
+        instrumented["sgb_sound_events"][0]["cpu_hcounter"] = 20
+        timeline.write_text(json.dumps(instrumented), encoding="utf-8")
+        try:
+            reference_sound_event(timeline, 0, bytes.fromhex("4100000001"),
+                                  60, 48000, reference_pcm, reference_scene)
+        except ValueError as error:
+            assert "CPU position" in str(error)
+        else:
+            raise AssertionError("invalid reference CPU position was accepted")
+        del instrumented["sgb_sound_events"][0]["cpu_vcounter"]
+        del instrumented["sgb_sound_events"][0]["cpu_hcounter"]
+        timeline.write_text(json.dumps(instrumented), encoding="utf-8")
         report = compare(gbb, reference, 32000, 60, 0.1, 2.0,
                          gbb_scene=gbb_scene, reference_scene=reference_scene,
                          reference_timeline=timeline, reference_scene_frame=60,
@@ -203,6 +216,8 @@ def main() -> None:
         assert "SNES-only reference" in report
         repeated_timeline = root / "repeated-timeline.json"
         repeated = json.loads(timeline.read_text(encoding="utf-8"))
+        repeated["sgb_sound_events"][0].update(
+            {"cpu_vcounter": 21, "cpu_hcounter": 1118})
         repeated["run_samples"] = [[0, 47600], [47600, 48500],
                                    [48500, 95000], [95000, 96000],
                                    [96000, 240000]]
@@ -212,6 +227,7 @@ def main() -> None:
         repeated["sgb_sound_events"].append({
             "run_index": 3, "video_frame_after_run": 61,
             "sample_start": 95000, "sample_end": 96000,
+            "cpu_vcounter": 24, "cpu_hcounter": 894,
             "packet": "41000000010000000000000000000000"})
         repeated_timeline.write_text(json.dumps(repeated), encoding="utf-8")
         report = compare(gbb, reference, 32000, 60, 0.1, 2.0,
@@ -224,6 +240,7 @@ def main() -> None:
                          gbb_repeat_event_sample=64000,
                          reference_repeat_sound_event_index=1)
         assert "Repeated SOUND packet: GBB sample 64000" in report
+        assert "first V=21 H=1118, repeated V=24 H=894" in report
         assert "Independent 0.1-0.5s post-packet waveform windows:" in report
         try:
             compare(gbb, reference, 32000, 60, 0.1, 2.0,
