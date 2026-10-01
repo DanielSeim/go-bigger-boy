@@ -352,7 +352,7 @@ def compare(gbb_path: Path, reference_path: Path, gbb_event_sample: int,
                              gbb_time + segment_offset,
                              segment_buckets * bucket)
     reference_wave = resample_mono(reference_pcm, reference_rate,
-                                   aligned_time + segment_offset - 0.05,
+                                   aligned_time + (segment_offset - 0.05) * clock_scale,
                                    segment_buckets * bucket + 0.1,
                                    time_scale=clock_scale)
     waveform_shift, waveform_score = waveform_alignment(
@@ -364,7 +364,7 @@ def compare(gbb_path: Path, reference_path: Path, gbb_event_sample: int,
         try:
             short_gbb = resample_mono(gbb_pcm, gbb_rate, gbb_time + offset, 0.2)
             short_ref = resample_mono(reference_pcm, reference_rate,
-                                      aligned_time + offset - 0.05, 0.3,
+                                      aligned_time + (offset - 0.05) * clock_scale, 0.3,
                                       time_scale=clock_scale)
             shift, local_score = waveform_alignment(short_gbb, short_ref,
                                                      radius_samples)
@@ -416,7 +416,7 @@ def compare(gbb_path: Path, reference_path: Path, gbb_event_sample: int,
                 ("repeated", repeat_gbb_time, repeat_ref_time)):
             ours_burst = resample_mono(gbb_pcm, gbb_rate, gbb_anchor + 0.1, 0.4)
             ref_burst = resample_mono(reference_pcm, reference_rate,
-                                      ref_anchor + 0.05, 0.5,
+                                      ref_anchor + 0.05 * clock_scale, 0.5,
                                       time_scale=clock_scale)
             lag, burst_score = waveform_alignment(ours_burst, ref_burst, 400)
             burst_scores.append((name, lag, burst_score))
@@ -458,8 +458,8 @@ def compare(gbb_path: Path, reference_path: Path, gbb_event_sample: int,
             f"best within search range={score:.3f}\n"
             + (f"Exploratory local reference DSP clock correction: "
                f"{gbb_dsp_rate:g}/{reference_dsp_rate:g}={clock_scale:.6f}; "
-               "each waveform window is stretched from its own start, "
-               "not continuously aligned.\n" if gbb_dsp_rate is not None else "") +
+               "each waveform window starts at the continuously scaled "
+               "offset from its own SOUND anchor.\n" if gbb_dsp_rate is not None else "") +
             f"Best single-sample-lag 8kHz mono waveform correlation={waveform_score:.3f} "
             f"within +/-50ms (lag {waveform_shift / 8000:+.4f}s)\n"
             + ("Exploratory fixed 0.2s waveform windows: " +

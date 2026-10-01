@@ -183,11 +183,13 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                          "gbb_reference_sgb_sound_packet",
                          "gbb_reference_sgb_sound_position",
                          "gbb_reference_sgb_dsp_sample_count",
-                         "gbb_reference_sgb_dsp_copy")
+                         "gbb_reference_sgb_dsp_copy",
+                         "gbb_reference_sgb_event_count",
+                         "gbb_reference_sgb_event_copy")
         if any(not hasattr(core, symbol) for symbol in probe_symbols):
             raise RuntimeError("core is not the instrumented SNES-only reference build")
         core.gbb_reference_sgb_probe_version.restype = C.c_uint
-        if core.gbb_reference_sgb_probe_version() != 3:
+        if core.gbb_reference_sgb_probe_version() != 5:
             raise RuntimeError("unsupported SNES-only reference probe version")
         core.gbb_reference_sgb_sound_count.restype = C.c_uint
         core.gbb_reference_sgb_sound_packet.argtypes = [C.c_uint,
@@ -200,6 +202,10 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
         core.gbb_reference_sgb_dsp_copy.argtypes = [
             C.c_uint, C.c_uint, C.POINTER(C.c_int16)]
         core.gbb_reference_sgb_dsp_copy.restype = C.c_uint
+        core.gbb_reference_sgb_event_count.restype = C.c_uint
+        core.gbb_reference_sgb_event_copy.argtypes = [C.c_uint,
+                                                        C.POINTER(C.c_uint)]
+        core.gbb_reference_sgb_event_copy.restype = C.c_uint
     required = ("retro_api_version", "retro_set_environment", "retro_set_video_refresh",
                 "retro_set_audio_sample", "retro_set_audio_sample_batch",
                 "retro_set_input_poll", "retro_set_input_state", "retro_init",
@@ -355,6 +361,8 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                                        input_offset_changes)
             next_event = 0
             next_sound_event = 0
+            next_trace_event = 0
+            sound_trace = []
             for frame in range(frames):
                 current_run = frame
                 if next_event < len(scheduled) and frame == scheduled[next_event][0]:
@@ -385,6 +393,26 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                                              "cpu_hcounter": horizontal.value,
                                              "packet": bytes(packet).hex()})
                     next_sound_event = sound_count
+                    trace_count = core.gbb_reference_sgb_event_count()
+                    if trace_count < next_trace_event or trace_count > 4096:
+                        raise RuntimeError("reference sound write trace count is invalid")
+                    for event_index in range(next_trace_event, trace_count):
+                        entry = (C.c_uint * 6)()
+                        if core.gbb_reference_sgb_event_copy(event_index, entry) != 1 or \
+                                entry[0] not in (1, 2) or \
+                                entry[1] > (3 if entry[0] == 1 else 127) or \
+                                entry[2] > 255 or \
+                                (entry[0] == 1 and (entry[4] >= 262 or entry[5] >= 1364)):
+                            raise RuntimeError("reference sound write trace is invalid")
+                        sound_trace.append({"kind": "host" if entry[0] == 1 else "dsp",
+                                            "address": int(entry[1]),
+                                            "value": int(entry[2]),
+                                            "dsp_sample": int(entry[3]) if entry[0] == 2
+                                            else None,
+                                            "cpu_vcounter": int(entry[4]),
+                                            "cpu_hcounter": int(entry[5]),
+                                            "run_index": frame})
+                    next_trace_event = trace_count
                 if timeline_output is not None:
                     run_samples.append([sample_start, len(audio) // 4])
             if events and next_event == 0:
@@ -457,6 +485,9 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                             "audio_source": "snes-only" if require_snes_only_probe
                             else "mixed",
                             "sgb_sound_events": sound_events}
+                if require_snes_only_probe:
+                    timeline["post_audible_sound_writes"] = sound_trace
+                    timeline["post_audible_sound_writes_limit_reached"] = len(sound_trace) == 4096
                 if native_dsp is not None:
                     timeline["native_dsp"] = {
                         "sample_rate": 32040, "sample_count": native_count,

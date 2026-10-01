@@ -73,14 +73,15 @@ def compare_stages(gbb_path: Path, output_path: Path, native_path: Path,
             ours = resample_mono(gbb_pcm, gbb_rate,
                                  gbb_time + offset, window_seconds)
             reference = resample_mono(pcm, rate,
-                                      ref_time + offset - 0.05,
+                                      ref_time + (offset - 0.05) * 32000 / native_rate,
                                       window_seconds + 0.1,
                                       time_scale=32000 / native_rate)
             lag, score = waveform_alignment(ours, reference, 400)
             lines.append(f"  {offset:.1f}s: correlation={score:+.5f}, "
                          f"lag={lag / 8000:+.5f}s")
-    lines.append("Window-local 32000/32040 clock adjustment is exploratory; "
-                 "this is not a sample-exact or hardware-fidelity test.")
+    lines.append("Continuous 32000/32040 clock adjustment from the SOUND "
+                 "anchor is exploratory; this is not a sample-exact or "
+                 "hardware-fidelity test.")
     return "\n".join(lines)
 
 

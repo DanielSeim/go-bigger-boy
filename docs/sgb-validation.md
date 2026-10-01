@@ -499,8 +499,8 @@ while the GBB development trace exports 32,000 Hz. With an explicit,
 **exploratory** 32,000/32,040 local time-scale correction, the highest-energy
 one-second waveform correlation is about +0.942; independently anchored
 0.4-second windows after both title packets reach about +0.939 each. The
-clock correction restarts at each window and the reference's 48 kHz output
-samples still locate a packet only to a video run. These measurements support
+clock correction is continuous from each SOUND anchor, while the reference's
+48 kHz output samples still locate a packet only to a video run. These measurements support
 the modeled sound and timing but **do not establish sample-exact or hardware
 audio fidelity**. The second event has no separate scene checkpoint. The probe
 is development-only and does not provide runtime SGB audio support.
@@ -517,13 +517,65 @@ this buffer at four million stereo frames; the capture rejects overflow and
 pins both WAVs to their hashes in the timeline. On the same local Donkey Kong
 replay, the new probe's 48 kHz WAV and scene were byte-identical to the prior
 capture. Fixed 0.4-second post-packet windows at +0.1, +0.5, and +1.0 seconds
-had correlations of **0.939, 0.968, 0.943** against the 48 kHz output and
-**0.940, 0.974, 0.943** against the native DSP. Thus the libretro output
+had correlations of **0.940, 0.975, 0.943** against the 48 kHz output and
+**0.939, 0.969, 0.943** against the native DSP after continuous clock
+correction. Thus the libretro output
 resampler is **not the principal cause** of this remaining waveform gap in
-this run. The measured lags drift across those windows, so synthesis phase
-or event scheduling remains under investigation. The reference is still an
-independent emulator, not a hardware audio capture, and these window-local
-clock adjustments do not establish sample-exact fidelity.
+this run. Earlier apparent lag drift across windows came from restarting the
+clock correction at each window instead of scaling the offset from the SOUND
+anchor. The reference is still an independent emulator, not a hardware audio
+capture, and this corrected comparison does not establish sample-exact fidelity.
+
+### Post-packet write sequence and clock-position probe
+
+For the pinned Donkey Kong replay (whose first audible packet is SOUND index
+1), the instrumented reference probe now records a bounded post-packet
+sequence of SNES CPU writes to the APU ports and SPC700 writes to DSP
+registers. Each host write includes its CPU V/H position and libretro run
+index; the DSP trace has the register/value sequence and a native-sample
+counter snapshot. The GBB test-only host trace exports a matching bounded
+CSV with the packet-delivery master clock, host-port writes, and DSP writes:
+
+```sh
+build/gameboy_snes_65c816_apu_trace \
+  /path/to/sgb2.program.rom /path/to/spc700.rom \
+  --sync-gb-sgb2 '/path/to/Donkey Kong (JU) (V1.1) [S][!].gb' \
+  /path/to/sgb2.boot.rom \
+  --input-script tests/fixtures/sgb/titles/donkey-kong-gameplay.script \
+  --instruction-limit 40000000 \
+  --sound-event-trace-output /tmp/gbb-title-sound-events.csv
+
+python3 scripts/compare_sgb_sound_event_trace.py \
+  --gbb-events /tmp/gbb-title-sound-events.csv \
+  --reference-timeline /tmp/sgb2-snes-only-timeline.json
+```
+
+On the local title replay, the packet-to-first-host-port-write interval was
+357,942 SNES master clocks in GBB and 356,780–356,784 in the independent
+reference (the four-clock range allows the odd field's short scanline). All
+180 captured host port/value writes agreed in order. The first plain DSP
+sequence difference was at write 150: GBB wrote `$0C=$01`, while the
+reference performed another ten-write polling loop before the same write.
+Both streams then carried the same early non-polling register/value sequence.
+This is a **phase-dependent scheduling difference**, not evidence that a
+specific DSP register or synthesizer rule is wrong. The CPU and DSP threads
+can be out of sync at a host write, so a DSP-buffer-length snapshot is **not**
+a host-write timestamp. The comparison tool deliberately uses CPU V/H
+positions and refuses to extrapolate beyond one known video frame. Changing
+the emulator's sound timing to match this one replay would be unjustified
+without a hardware capture or an independently phase-aligned reference.
+
+As a local phase check, changing the capture's two offset switches from
+`1600:253`/`2800:321` to `1600:252`/`2800:320` or
+`1600:254`/`2800:322` kept the same audible SOUND payload and first host-port
+values but moved its first `$0C=$01` DSP write from sequence index 160
+(baseline) to 120 (earlier) or 170 (later); GBB's was at 150. The earlier
+replay retained roughly the same 0.94/0.97/0.94 native-DSP waveform scores
+in the three checked windows. This supports treating the intervening
+poll-loop count as replay phase, not a register-data bug. The remaining
+waveform difference still requires a separately phase-aligned synthesis
+comparison; neither this probe nor the test-only renderer enables live SGB
+audio in the emulator.
 
 A new fully synthetic SNES program waits, writes a host command to the APU,
 and runs concurrently with an original SPC700 test program. The test stamps

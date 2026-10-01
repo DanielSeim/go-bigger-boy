@@ -78,6 +78,7 @@ int main(int argc, char** argv) {
     bool audible_sound_probe = false;
     std::filesystem::path input_script_path;
     std::filesystem::path pcm_output_path;
+    std::filesystem::path sound_event_trace_path;
     unsigned requested_instruction_limit = 0;
     if (sync_gb) {
         for (int index = 6; index < argc; ++index) {
@@ -90,6 +91,9 @@ int main(int argc, char** argv) {
             } else if (option == "--pcm-output" &&
                        pcm_output_path.empty() && index + 1 < argc) {
                 pcm_output_path = argv[++index];
+            } else if (option == "--sound-event-trace-output" &&
+                       sound_event_trace_path.empty() && index + 1 < argc) {
+                sound_event_trace_path = argv[++index];
             } else if (option == "--instruction-limit" &&
                        requested_instruction_limit == 0 && index + 1 < argc) {
                 const std::string_view number(argv[++index]);
@@ -122,6 +126,7 @@ int main(int argc, char** argv) {
                      "--sync-gb-sgb1 GB-ROM GB-BOOT|"
                      "--sync-gb-sgb2 GB-ROM GB-BOOT"
                      " [--input-script PATH] [--pcm-output WAV] [--instruction-limit N]"
+                     " [--sound-event-trace-output CSV]"
                      " [--audible-sound-probe]]\n";
         return 2;
     }
@@ -171,6 +176,15 @@ int main(int argc, char** argv) {
         bool entry_command_seen = false;
         bool boot_handed_off = false;
         std::uint16_t entry_address = 0;
+        struct SoundTraceEvent {
+            char kind{};
+            std::uint64_t master_clock{};
+            std::uint64_t spc_cycle{};
+            std::uint64_t pcm_sample{};
+            std::uint8_t address{};
+            std::uint8_t value{};
+        };
+        std::vector<SoundTraceEvent> sound_trace;
         gameboy::SnesApuBus pcm_bus;
         sgb_test::SnesDspPcmRenderer pcm(pcm_bus);
         struct DspObservation {
@@ -206,6 +220,7 @@ int main(int argc, char** argv) {
             std::uint64_t pcm_hash{14695981039346656037ULL};
             std::vector<sgb_test::SnesDspPcmRenderer::StereoSample>* pcm_export{};
             std::optional<std::uint64_t> first_audible_sample;
+            std::vector<SoundTraceEvent>* sound_trace{};
         } dsp_observation;
         std::vector<sgb_test::SnesDspPcmRenderer::StereoSample> pcm_export;
         if (sync_gb) {
@@ -213,6 +228,8 @@ int main(int argc, char** argv) {
             dsp_observation.pcm_bus = &pcm_bus;
             dsp_observation.icd = icd.get();
             if (!pcm_output_path.empty()) dsp_observation.pcm_export = &pcm_export;
+            if (!sound_event_trace_path.empty())
+                dsp_observation.sound_trace = &sound_trace;
         }
         std::vector<std::pair<std::uint16_t, std::size_t>> uploaded_ranges;
         std::uint8_t expected_index = 0;
@@ -227,6 +244,10 @@ int main(int argc, char** argv) {
             const auto result = cpu.step();
             if (icd && icd->sound_packets_delivered() > logged_sound_deliveries) {
                 logged_sound_deliveries = icd->sound_packets_delivered();
+                if (!sound_event_trace_path.empty() &&
+                    icd->audible_sound_packets_delivered() == 1)
+                    sound_trace.push_back({'P', cpu.timing().clocks(), 0,
+                                           dsp_observation.pcm_samples, 0, 0});
                 std::cout << "host SOUND delivery index="
                           << logged_sound_deliveries - 1
                           << " GB_frame=" << icd->completed_frames()
@@ -241,10 +262,18 @@ int main(int argc, char** argv) {
             }
             if (sync_gb) {
                 for (std::size_t event = 0; event < cpu.apu_write_count(); ++event) {
-                    recent_apu_writes[recent_apu_next] = cpu.apu_write(event);
+                    const auto write = cpu.apu_write(event);
+                    recent_apu_writes[recent_apu_next] = write;
                     recent_apu_next = (recent_apu_next + 1) % recent_apu_writes.size();
                     if (recent_apu_count < recent_apu_writes.size())
                         ++recent_apu_count;
+                    if (!sound_event_trace_path.empty() &&
+                        icd->audible_sound_packets_delivered() != 0 &&
+                        sound_trace.size() < 4096) {
+                        sound_trace.push_back({'H', cpu.timing().clocks(), 0,
+                                               dsp_observation.pcm_samples,
+                                               write.port, write.value});
+                    }
                 }
             }
             if (icd) {
@@ -416,6 +445,13 @@ int main(int argc, char** argv) {
                                             observed.events[observed.count++] = {
                                                 cycle, opcode, observed.address,
                                                 observed.value};
+                                        }
+                                        if (observed.sound_trace != nullptr &&
+                                            observed.icd->audible_sound_packets_delivered() != 0 &&
+                                            observed.sound_trace->size() < 4096) {
+                                            observed.sound_trace->push_back({
+                                                'D', 0, cycle, observed.pcm_samples,
+                                                observed.address, observed.value});
                                         }
                                         if (observed.pcm != nullptr)
                                             observed.pcm->write_dsp(
@@ -682,6 +718,21 @@ int main(int argc, char** argv) {
                   << " after " << cpu.timing().clocks() << " master clocks"
                   << " (V=" << cpu.timing().line()
                   << " H=" << cpu.timing().horizontal_clock() << ")\n";
+        if (!sound_event_trace_path.empty()) {
+            if (std::filesystem::exists(sound_event_trace_path))
+                throw std::runtime_error("sound event trace already exists");
+            if (!sound_event_trace_path.parent_path().empty())
+                std::filesystem::create_directories(sound_event_trace_path.parent_path());
+            std::ofstream output(sound_event_trace_path);
+            if (!output) throw std::runtime_error("could not create sound event trace");
+            output << "kind,master_clock,spc_cycle,pcm_sample,address,value\n";
+            for (const auto& event : sound_trace)
+                output << event.kind << ',' << event.master_clock << ','
+                       << event.spc_cycle << ',' << event.pcm_sample << ','
+                       << static_cast<unsigned>(event.address) << ','
+                       << static_cast<unsigned>(event.value) << '\n';
+            if (!output) throw std::runtime_error("could not finish sound event trace");
+        }
         if (!pcm_output_path.empty()) {
             if (!dsp_observation.first_audible_sample)
                 throw std::runtime_error(

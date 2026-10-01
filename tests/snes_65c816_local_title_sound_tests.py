@@ -2,6 +2,7 @@
 """Optional local-ROM test: unmodified Donkey Kong SOUND reaches host PCM."""
 
 import argparse
+import csv
 import hashlib
 from pathlib import Path
 import re
@@ -29,10 +30,12 @@ def main() -> int:
         raise AssertionError("Donkey Kong input script does not match the pinned sequence")
     with tempfile.TemporaryDirectory(prefix="gbb-sgb-title-pcm-") as directory:
         pcm_path = Path(directory) / "title.wav"
+        event_path = Path(directory) / "sound-events.csv"
         result = subprocess.run(
             [args.trace, args.program, args.ipl, "--sync-gb-sgb2",
              args.gb_rom, args.gb_boot, "--input-script", args.input_script,
-             "--instruction-limit", "40000000", "--pcm-output", str(pcm_path)],
+             "--instruction-limit", "40000000", "--pcm-output", str(pcm_path),
+             "--sound-event-trace-output", str(event_path)],
             capture_output=True, text=True, timeout=180, check=False,
         )
         output = result.stdout + result.stderr
@@ -44,6 +47,16 @@ def main() -> int:
                     wav.getframerate() != 32000 or \
                     not 0 < int(anchor.group(1)) < wav.getnframes():
                 raise AssertionError("title WAV format or event anchor is invalid")
+        with event_path.open(newline="", encoding="utf-8") as event_file:
+            event_rows = list(csv.DictReader(event_file))
+        packets = [event for event in event_rows if event["kind"] == "P"]
+        hosts = [event for event in event_rows if event["kind"] == "H"]
+        dsp = [event for event in event_rows if event["kind"] == "D"]
+        if len(packets) != 1 or len(hosts) < 4 or len(dsp) < 10 or \
+                [(int(event["address"]), int(event["value"]))
+                 for event in hosts[:4]] != [(0, 1), (1, 0), (2, 0), (3, 0)] or \
+                (int(dsp[0]["address"]), int(dsp[0]["value"])) != (92, 0):
+            raise AssertionError("post-SOUND host/DSP event trace is incomplete")
     if result.returncode != 4 or "SNES CPU trace reached instruction bound" not in output:
         raise AssertionError(f"unexpected bounded trace outcome: {output[-3000:]}")
     if "first audible SOUND frame=2472 packet= 41 00 00 00 01" not in output:

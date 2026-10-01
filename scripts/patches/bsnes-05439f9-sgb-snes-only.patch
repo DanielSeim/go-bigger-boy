@@ -13,7 +13,7 @@ diff --git a/bsnes/sfc/coprocessor/icd/icd.cpp b/bsnes/sfc/coprocessor/icd/icd.c
    GB_reset(&sameboy);
  }
  
-+extern "C" unsigned gbb_reference_sgb_probe_version() { return 3; }
++extern "C" unsigned gbb_reference_sgb_probe_version() { return 5; }
 +extern "C" unsigned gbb_reference_sgb_sound_count() {
 +  return SuperFamicom::icd.diagnosticSoundCount;
 +}
@@ -81,10 +81,28 @@ diff --git a/bsnes/sfc/coprocessor/icd/io.cpp b/bsnes/sfc/coprocessor/icd/io.cpp
        for(auto n : range(16)) r7000[n] = packet[0][n];
        packetSize--;
        for(auto n : range(packetSize)) packet[n] = packet[n + 1];
+diff --git a/bsnes/sfc/cpu/io.cpp b/bsnes/sfc/cpu/io.cpp
+--- a/bsnes/sfc/cpu/io.cpp
++++ b/bsnes/sfc/cpu/io.cpp
+@@ -1,3 +1,6 @@
++extern "C" void gbb_reference_sgb_record_host_write(unsigned, unsigned,
++    unsigned, unsigned);
++
+ auto CPU::readRAM(uint addr, uint8 data) -> uint8 {
+   return wram[addr];
+ }
+@@ -104,6 +107,7 @@ auto CPU::writeRAM(uint addr, uint8 data) -> void {
+
+ auto CPU::writeAPU(uint addr, uint8 data) -> void {
+   synchronizeSMP();
++  gbb_reference_sgb_record_host_write(addr & 3, data, vcounter(), hcounter());
+   return smp.portWrite(addr & 3, data);
+ }
+
 diff --git a/bsnes/sfc/dsp/dsp.cpp b/bsnes/sfc/dsp/dsp.cpp
 --- a/bsnes/sfc/dsp/dsp.cpp
 +++ b/bsnes/sfc/dsp/dsp.cpp
-@@ -1,8 +1,23 @@
+@@ -1,8 +1,50 @@
  #include <sfc/sfc.hpp>
 +#include <vector>
 
@@ -93,6 +111,33 @@ diff --git a/bsnes/sfc/dsp/dsp.cpp b/bsnes/sfc/dsp/dsp.cpp
  DSP dsp;
 +static std::vector<int16_t> diagnosticDspSamples;
 +static bool diagnosticDspOverflow = false;
++struct DiagnosticSoundEvent { unsigned kind, address, value, dspFrame, vertical, horizontal; };
++static std::vector<DiagnosticSoundEvent> diagnosticSoundEvents;
++
++extern "C" void gbb_reference_sgb_record_host_write(unsigned port, unsigned value,
++    unsigned vertical, unsigned horizontal) {
++  // This local Donkey Kong replay's first audible packet is SOUND index 1.
++  if(icd.diagnosticSoundCount >= 2 && diagnosticSoundEvents.size() < 4096)
++    diagnosticSoundEvents.push_back({1, port, value,
++                                     static_cast<unsigned>(diagnosticDspSamples.size() / 2),
++                                     vertical, horizontal});
++}
++
++extern "C" unsigned gbb_reference_sgb_event_count() {
++  return diagnosticSoundEvents.size();
++}
++
++extern "C" unsigned gbb_reference_sgb_event_copy(unsigned index, unsigned* output) {
++  if(index >= diagnosticSoundEvents.size() || !output) return 0;
++  const auto& event = diagnosticSoundEvents[index];
++  output[0] = event.kind;
++  output[1] = event.address;
++  output[2] = event.value;
++  output[3] = event.dspFrame;
++  output[4] = event.vertical;
++  output[5] = event.horizontal;
++  return 1;
++}
 +
 +extern "C" unsigned gbb_reference_sgb_dsp_sample_count() {
 +  return diagnosticDspOverflow ? 0xffffffffu : diagnosticDspSamples.size() / 2;
@@ -108,7 +153,7 @@ diff --git a/bsnes/sfc/dsp/dsp.cpp b/bsnes/sfc/dsp/dsp.cpp
 
  #include "serialization.cpp"
  #include "SPC_DSP.cpp"
-@@ -18,6 +33,11 @@ auto DSP::main() -> void {
+@@ -18,6 +60,11 @@ auto DSP::main() -> void {
 
    int count = spc_dsp.sample_count();
    if(count > 0) {
@@ -120,12 +165,23 @@ diff --git a/bsnes/sfc/dsp/dsp.cpp b/bsnes/sfc/dsp/dsp.cpp
      if(!system.runAhead)
      for(uint n = 0; n < count; n += 2) {
        float left  = samplebuffer[n + 0] / 32768.0f;
-@@ -48,6 +68,8 @@ auto DSP::load() -> bool {
+@@ -33,5 +80,9 @@ auto DSP::read(uint8 address) -> uint8 {
+ }
+
+ auto DSP::write(uint8 address, uint8 data) -> void {
++  if(icd.diagnosticSoundCount >= 2 && diagnosticSoundEvents.size() < 4096)
++    diagnosticSoundEvents.push_back({2, address, data,
++                                     static_cast<unsigned>(diagnosticDspSamples.size() / 2),
++                                     0, 0});
+   if(configuration.hacks.dsp.echoShadow) {
+     if(address == 0x6c && (data & 0x20)) {
+@@ -48,6 +100,9 @@ auto DSP::load() -> bool {
 
  auto DSP::power(bool reset) -> void {
    clock = 0;
 +  diagnosticDspSamples.clear();
 +  diagnosticDspOverflow = false;
++  diagnosticSoundEvents.clear();
    stream = Emulator::audio.createStream(2, system.apuFrequency() / 768.0);
 
    if(!reset) {

@@ -20,6 +20,7 @@ from compare_sgb_title_audio import (compare, correlation, read_stereo_wav,
                                      resample_mono, scene_agreement,
                                      waveform_alignment)
 from compare_sgb_reference_stages import compare_stages
+from compare_sgb_sound_event_trace import compare as compare_sound_trace
 
 
 def write_wave(path: Path, rate: int, onset: float) -> None:
@@ -145,6 +146,37 @@ def main() -> None:
             assert "native PCM does not match" in str(error)
         else:
             raise AssertionError("mismatched native DSP capture was accepted")
+        trace_csv = root / "sound-events.csv"
+        trace_csv.write_text(
+            "kind,master_clock,spc_cycle,pcm_sample,address,value\n"
+            "P,1000000,0,32000,0,0\n"
+            "D,0,100,32002,92,0\n"
+            "H,1357942,0,32500,0,1\n",
+            encoding="utf-8")
+        trace_timeline = root / "trace-timeline.json"
+        trace_reference = {
+            "format": "gbb-libretro-audio-timeline-v1",
+            "audio_source": "snes-only",
+            "sgb_sound_events": [{"packet": "41000000010000000000000000000000",
+                                  "run_index": 10, "cpu_vcounter": 21,
+                                  "cpu_hcounter": 1118}],
+            "post_audible_sound_writes": [
+                {"kind": "dsp", "address": 92, "value": 0},
+                {"kind": "host", "address": 0, "value": 1,
+                 "run_index": 11, "cpu_vcounter": 21, "cpu_hcounter": 534}]}
+        trace_timeline.write_text(json.dumps(trace_reference), encoding="utf-8")
+        trace_report = compare_sound_trace(trace_csv, trace_timeline, 0)
+        assert "GBB 357942 master clocks" in trace_report
+        assert "reference 356780..356784 clocks" in trace_report
+        assert "Host port/value prefix agrees for 1 writes" in trace_report
+        trace_reference["post_audible_sound_writes"][1]["run_index"] = 12
+        trace_timeline.write_text(json.dumps(trace_reference), encoding="utf-8")
+        try:
+            compare_sound_trace(trace_csv, trace_timeline, 0)
+        except ValueError as error:
+            assert "one known video frame" in str(error)
+        else:
+            raise AssertionError("unbounded CPU timing comparison was accepted")
         report = compare(gbb, reference, 32000, 60, 0.1, 2.0,
                          gbb_scene=gbb_scene, reference_scene=reference_scene)
         assert "Same-scene checkpoint: 100.0%" in report
