@@ -201,6 +201,58 @@ def main() -> None:
                          reference_sound_packet_prefix=bytes.fromhex("4100000001"))
         assert "host-consumed SOUND event 0" in report
         assert "SNES-only reference" in report
+        repeated_timeline = root / "repeated-timeline.json"
+        repeated = json.loads(timeline.read_text(encoding="utf-8"))
+        repeated["run_samples"] = [[0, 47600], [47600, 48500],
+                                   [48500, 95000], [95000, 96000],
+                                   [96000, 240000]]
+        repeated["video_callbacks"].append({"video_frame": 61,
+                                             "run_index": 3,
+                                             "sample_at_callback": 95500})
+        repeated["sgb_sound_events"].append({
+            "run_index": 3, "video_frame_after_run": 61,
+            "sample_start": 95000, "sample_end": 96000,
+            "packet": "41000000010000000000000000000000"})
+        repeated_timeline.write_text(json.dumps(repeated), encoding="utf-8")
+        report = compare(gbb, reference, 32000, 60, 0.1, 2.0,
+                         gbb_scene=gbb_scene, reference_scene=reference_scene,
+                         reference_timeline=repeated_timeline,
+                         reference_scene_frame=60,
+                         reference_sound_event_index=0,
+                         reference_sound_packet_prefix=bytes.fromhex("4100000001"),
+                         gbb_dsp_rate=32000, reference_dsp_rate=32040,
+                         gbb_repeat_event_sample=64000,
+                         reference_repeat_sound_event_index=1)
+        assert "Repeated SOUND packet: GBB sample 64000" in report
+        assert "Independent 0.1-0.5s post-packet waveform windows:" in report
+        try:
+            compare(gbb, reference, 32000, 60, 0.1, 2.0,
+                    gbb_scene=gbb_scene, reference_scene=reference_scene,
+                    reference_timeline=repeated_timeline,
+                    reference_scene_frame=60,
+                    reference_sound_event_index=0,
+                    reference_sound_packet_prefix=bytes.fromhex("4100000001"),
+                    gbb_repeat_event_sample=64000)
+        except ValueError as error:
+            assert "both repeated SOUND anchors" in str(error)
+        else:
+            raise AssertionError("unpaired repeated SOUND anchor was accepted")
+        repeated["sgb_sound_events"][1]["packet"] = \
+            "41000000020000000000000000000000"
+        repeated_timeline.write_text(json.dumps(repeated), encoding="utf-8")
+        try:
+            compare(gbb, reference, 32000, 60, 0.1, 2.0,
+                    gbb_scene=gbb_scene, reference_scene=reference_scene,
+                    reference_timeline=repeated_timeline,
+                    reference_scene_frame=60,
+                    reference_sound_event_index=0,
+                    reference_sound_packet_prefix=bytes.fromhex("41"),
+                    gbb_repeat_event_sample=64000,
+                    reference_repeat_sound_event_index=1)
+        except ValueError as error:
+            assert "differs from first" in str(error)
+        else:
+            raise AssertionError("different repeated SOUND packet was accepted")
         try:
             reference_sound_event(timeline, 0, bytes.fromhex("418000"),
                                   60, 48000, reference_pcm, reference_scene)

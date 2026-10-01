@@ -455,6 +455,8 @@ python3 scripts/compare_sgb_title_audio.py \
   --reference-timeline /tmp/sgb2-snes-only-timeline.json \
   --reference-scene-frame 2754 \
   --reference-sound-event-index 1 \
+  --gbb-repeat-event-sample SECOND_AUDIBLE_DELIVERY_SAMPLE \
+  --reference-repeat-sound-event-index 2 \
   --reference-sound-packet-prefix 4100000001 \
   --search-seconds 3 \
   --gbb-dsp-rate 32000 --reference-dsp-rate 32040
@@ -490,8 +492,15 @@ host-consumed SOUND packets with PCM sample anchors. Its two matching audible
 packets are delivered at samples 1,482,476 and 1,508,034 (about 0.799 s
 apart); the reference probe associates its matching packets with runs 2,753
 and 2,802 (about 0.817 s between run starts). Reference run tagging has
-roughly one video frame of intra-run uncertainty, so this is a lead for
-investigating the later burst, not proof of a delivery-timing defect. The
+roughly one video frame of uncertainty in the *difference* between two event
+midpoints. The opt-in repeated-packet check verifies identical payloads and
+compares 0.1-0.5 s after each packet separately: clock-corrected correlations
+are about +0.940 for the first and +0.939 for the second, with best lags +6.0
+and -2.9 ms relative to their respective run midpoints. The later burst's
+waveform therefore also largely agrees under its own local alignment. The
+18 ms difference between packet-spacing estimates is a lead for investigating
+the host/ICD timing; it is not proof of a delivery-timing defect. The second
+event has no independently checked scene snapshot. The
 GB/SNES clock domains, packet phase, resampling, and level still need
 investigation. The probe is not physical hardware evidence and must not be
 used to claim runtime SGB audio support.

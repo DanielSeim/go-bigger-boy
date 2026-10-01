@@ -199,7 +199,7 @@ def reference_frame_window(timeline_path: Path, video_frame: int,
 
 def reference_sound_event(timeline_path: Path, event_index: int,
                           expected_packet_prefix: bytes, video_frame: int,
-                          rate: int, pcm: array, scene_path: Path
+                          rate: int, pcm: array, scene_path: Path | None
                           ) -> tuple[int, int, str]:
     """Anchor to a host-consumed SOUND packet in a SNES-only probe capture."""
     frame_window = reference_frame_window(timeline_path, video_frame, rate,
@@ -246,7 +246,9 @@ def compare(gbb_path: Path, reference_path: Path, gbb_event_sample: int,
             reference_sound_event_index: int | None = None,
             reference_sound_packet_prefix: bytes = b"",
             gbb_dsp_rate: float | None = None,
-            reference_dsp_rate: float | None = None) -> str:
+            reference_dsp_rate: float | None = None,
+            gbb_repeat_event_sample: int | None = None,
+            reference_repeat_sound_event_index: int | None = None) -> str:
     if gbb_scene is None or reference_scene is None:
         raise ValueError("both scene checkpoint images are required before audio comparison")
     if reference_scene_frame is not None and reference_timeline is None:
@@ -257,6 +259,12 @@ def compare(gbb_path: Path, reference_path: Path, gbb_event_sample: int,
         raise ValueError("SOUND-event anchor requires timeline, scene frame, and packet prefix")
     if (gbb_dsp_rate is None) != (reference_dsp_rate is None):
         raise ValueError("both native DSP rates are required for clock correction")
+    if (gbb_repeat_event_sample is None) != \
+            (reference_repeat_sound_event_index is None):
+        raise ValueError("both repeated SOUND anchors are required")
+    if gbb_repeat_event_sample is not None and \
+            reference_sound_event_index is None:
+        raise ValueError("repeated SOUND comparison requires the first SOUND anchor")
     clock_scale = 1.0
     if gbb_dsp_rate is not None:
         if not all(math.isfinite(rate) and rate > 0 for rate in
@@ -358,6 +366,52 @@ def compare(gbb_path: Path, reference_path: Path, gbb_event_sample: int,
                                  f"(lag {shift / 8000:+.3f}s)")
         except ValueError:
             pass
+    repeat_description = ""
+    if gbb_repeat_event_sample is not None:
+        if not gbb_event_sample < gbb_repeat_event_sample < len(gbb_pcm) // 2 or \
+                reference_repeat_sound_event_index <= reference_sound_event_index:
+            raise ValueError("repeated SOUND anchors must follow the first event")
+        repeated = json.loads(reference_timeline.read_text(encoding="utf-8"))
+        entries = repeated.get("sgb_sound_events")
+        if not isinstance(entries, list) or not \
+                0 <= reference_repeat_sound_event_index < len(entries):
+            raise ValueError("repeated reference SOUND event is absent")
+        repeat_entry = entries[reference_repeat_sound_event_index]
+        if not isinstance(repeat_entry, dict):
+            raise ValueError("repeated reference SOUND event is invalid")
+        repeat_frame = repeat_entry.get("video_frame_after_run")
+        if type(repeat_frame) is not int:
+            raise ValueError("repeated reference SOUND frame is invalid")
+        repeat_start, repeat_end, repeat_packet = reference_sound_event(
+            reference_timeline, reference_repeat_sound_event_index,
+            reference_sound_packet_prefix, repeat_frame, reference_rate,
+            reference_pcm, None)
+        if repeat_packet != packet:
+            raise ValueError("repeated SOUND packet differs from first event")
+        repeat_ref_time = (repeat_start + repeat_end) / (2 * reference_rate)
+        repeat_gbb_time = gbb_repeat_event_sample / gbb_rate
+        burst_scores = []
+        for name, gbb_anchor, ref_anchor in (
+                ("first", gbb_time, expected_reference_time),
+                ("repeated", repeat_gbb_time, repeat_ref_time)):
+            ours_burst = resample_mono(gbb_pcm, gbb_rate, gbb_anchor + 0.1, 0.4)
+            ref_burst = resample_mono(reference_pcm, reference_rate,
+                                      ref_anchor + 0.05, 0.5,
+                                      time_scale=clock_scale)
+            lag, burst_score = waveform_alignment(ours_burst, ref_burst, 400)
+            burst_scores.append((name, lag, burst_score))
+        repeat_description = (
+            f"Repeated SOUND packet: GBB sample {gbb_repeat_event_sample}, "
+            f"reference event {reference_repeat_sound_event_index} PCM range "
+            f"[{repeat_start}, {repeat_end}]; first-to-repeat anchor spacing "
+            f"GBB={repeat_gbb_time - gbb_time:.4f}s, "
+            f"reference={repeat_ref_time - expected_reference_time:.4f}s.\n"
+            "Independent 0.1-0.5s post-packet waveform windows: " +
+            ", ".join(f"{name}:{burst_score:+.3f} "
+                      f"(lag {lag / 8000:+.4f}s)"
+                      for name, lag, burst_score in burst_scores) +
+            ". The repeated event has no separate scene checkpoint and its "
+            "reference anchor is uncertain within a video run.\n")
     gbb_rms, gbb_peak, gbb_active = describe(ours)
     ref_rms, ref_peak, ref_active = describe(reference[start:start + len(ours)])
     source_description = ("SNES-only reference from an instrumented core; this still "
@@ -389,6 +443,7 @@ def compare(gbb_path: Path, reference_path: Path, gbb_event_sample: int,
             f"within +/-50ms (lag {waveform_shift / 8000:+.4f}s)\n"
             + ("Exploratory fixed 0.2s waveform windows: " +
                ", ".join(short_windows) + "\n" if short_windows else "") +
+            repeat_description +
             "Interpretation: this does not establish waveform fidelity. "
             f"{source_description} Inspect packet phase and audio scaling "
             "before using this as an accuracy gate.")
@@ -422,6 +477,10 @@ def main() -> int:
                         help="optional native GBB DSP rate for exploratory clock correction")
     parser.add_argument("--reference-dsp-rate", type=float,
                         help="optional native reference DSP rate; requires --gbb-dsp-rate")
+    parser.add_argument("--gbb-repeat-event-sample", type=int,
+                        help="PCM sample at the repeated GBB SOUND delivery")
+    parser.add_argument("--reference-repeat-sound-event-index", type=int,
+                        help="reference probe index of the matching repeated SOUND packet")
     args = parser.parse_args()
     try:
         packet_prefix = bytes.fromhex(args.reference_sound_packet_prefix) \
@@ -432,7 +491,9 @@ def main() -> int:
                       args.reference_frame_offset, args.gbb_scene,
                       args.reference_scene, args.reference_timeline,
                       args.reference_scene_frame, args.reference_sound_event_index,
-                      packet_prefix, args.gbb_dsp_rate, args.reference_dsp_rate))
+                      packet_prefix, args.gbb_dsp_rate, args.reference_dsp_rate,
+                      args.gbb_repeat_event_sample,
+                      args.reference_repeat_sound_event_index))
         return 0
     except (OSError, ValueError, wave.Error) as error:
         print(f"audio comparison failed: {error}", file=sys.stderr)
