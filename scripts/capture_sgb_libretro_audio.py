@@ -394,7 +394,7 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                                              "packet": bytes(packet).hex()})
                     next_sound_event = sound_count
                     trace_count = core.gbb_reference_sgb_event_count()
-                    if trace_count < next_trace_event or trace_count > 4096:
+                    if trace_count < next_trace_event or trace_count > 16384:
                         raise RuntimeError("reference sound write trace count is invalid")
                     for event_index in range(next_trace_event, trace_count):
                         entry = (C.c_uint * 6)()
@@ -487,7 +487,7 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                             "sgb_sound_events": sound_events}
                 if require_snes_only_probe:
                     timeline["post_audible_sound_writes"] = sound_trace
-                    timeline["post_audible_sound_writes_limit_reached"] = len(sound_trace) == 4096
+                    timeline["post_audible_sound_writes_limit_reached"] = len(sound_trace) == 16384
                 if native_dsp is not None:
                     timeline["native_dsp"] = {
                         "sample_rate": 32040, "sample_count": native_count,

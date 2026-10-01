@@ -577,6 +577,43 @@ waveform difference still requires a separately phase-aligned synthesis
 comparison; neither this probe nor the test-only renderer enables live SGB
 audio in the emulator.
 
+### First key-on-anchored native PCM comparison
+
+The development-only traces now retain up to 16,384 post-SOUND writes, so the
+first seconds after key-on remain visible instead of ending at about 0.69 s.
+Capture the GBB PCM and event CSV in **the same probe invocation**; capture the
+reference's native DSP WAV and timeline in the same reference invocation (the
+commands above show both invocations). Compare them with:
+
+```sh
+python3 scripts/compare_sgb_keyon_pcm.py \
+  --gbb /tmp/gbb-title-trace.wav \
+  --gbb-events /tmp/gbb-title-sound-events.csv \
+  --reference-native /tmp/sgb2-native-dsp.wav \
+  --reference-timeline /tmp/sgb2-snes-only-timeline.json
+```
+
+The comparator verifies the reference WAV against the timeline hash and finds
+the first matching nonzero DSP `$4c` (KON) write. It searches only the first
+0.08-s window for an initial phase within ±15 ms, then holds that phase fixed
+through subsequent windows. Reference samples are mapped continuously using
+the 32,000/32,040 native-rate ratio; each later window is **not** independently
+realigned. The comparison is 8 kHz mono and diagnostic, not sample-exact.
+
+On the local Donkey Kong SGB2 replay, the key-on positions were GBB sample
+1,517,600 and reference native sample 1,469,800. The initial best lag was
+zero on the 8 kHz grid. Correlations were at least 0.9997 from +0.02 to
++0.7 s (the +0.7-s window is very quiet), but fell to 0.7436 at +0.8 s,
+0.6966 at +0.9 s, and 0.6628 at +1.0 s. The level ratio stayed near one.
+The matching `$24=$00`, `$25=$8f`, `$26=$e0`, `$27=$b8` register sequence
+appeared around +0.808 s in GBB and +0.807 s in the reference. Its values
+agree, but the DSP state, SPC-to-DSP timing, or sample-RAM/echo behavior at
+that transition has **not** been proven equivalent. A 1-ms write-phase
+difference is not enough evidence to alter the emulation clock. The next
+diagnostic should trace RAM writes and DSP voice/echo state across this
+transition, then compare a short interval under matched register state.
+No hardware capture was used, and this result does not enable live SGB audio.
+
 A new fully synthetic SNES program waits, writes a host command to the APU,
 and runs concurrently with an original SPC700 test program. The test stamps
 its KON write at SPC instruction-end cycle 2,304, feeds that event to the

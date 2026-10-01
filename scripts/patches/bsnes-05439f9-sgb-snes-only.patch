@@ -117,7 +117,7 @@ diff --git a/bsnes/sfc/dsp/dsp.cpp b/bsnes/sfc/dsp/dsp.cpp
 +extern "C" void gbb_reference_sgb_record_host_write(unsigned port, unsigned value,
 +    unsigned vertical, unsigned horizontal) {
 +  // This local Donkey Kong replay's first audible packet is SOUND index 1.
-+  if(icd.diagnosticSoundCount >= 2 && diagnosticSoundEvents.size() < 4096)
++  if(icd.diagnosticSoundCount >= 2 && diagnosticSoundEvents.size() < 16384)
 +    diagnosticSoundEvents.push_back({1, port, value,
 +                                     static_cast<unsigned>(diagnosticDspSamples.size() / 2),
 +                                     vertical, horizontal});
@@ -169,7 +169,7 @@ diff --git a/bsnes/sfc/dsp/dsp.cpp b/bsnes/sfc/dsp/dsp.cpp
  }
 
  auto DSP::write(uint8 address, uint8 data) -> void {
-+  if(icd.diagnosticSoundCount >= 2 && diagnosticSoundEvents.size() < 4096)
++  if(icd.diagnosticSoundCount >= 2 && diagnosticSoundEvents.size() < 16384)
 +    diagnosticSoundEvents.push_back({2, address, data,
 +                                     static_cast<unsigned>(diagnosticDspSamples.size() / 2),
 +                                     0, 0});

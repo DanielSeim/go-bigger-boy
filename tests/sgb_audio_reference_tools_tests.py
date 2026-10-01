@@ -21,6 +21,7 @@ from compare_sgb_title_audio import (compare, correlation, read_stereo_wav,
                                      waveform_alignment)
 from compare_sgb_reference_stages import compare_stages
 from compare_sgb_sound_event_trace import compare as compare_sound_trace
+from compare_sgb_keyon_pcm import compare as compare_keyon_pcm
 
 
 def write_wave(path: Path, rate: int, onset: float) -> None:
@@ -177,6 +178,39 @@ def main() -> None:
             assert "one known video frame" in str(error)
         else:
             raise AssertionError("unbounded CPU timing comparison was accepted")
+        keyon_csv = root / "keyon-events.csv"
+        keyon_csv.write_text(
+            "kind,master_clock,spc_cycle,pcm_sample,address,value\n"
+            "P,1000000,0,31990,0,0\n"
+            "D,0,100,32000,76,4\n", encoding="utf-8")
+        stages["native_dsp"]["pcm_sha256"] = \
+            hashlib.sha256(native_pcm.tobytes()).hexdigest()
+        stages["post_audible_sound_writes"] = [
+            {"kind": "dsp", "address": 76, "value": 4,
+             "dsp_sample": 32040}]
+        stages_timeline.write_text(json.dumps(stages), encoding="utf-8")
+        keyon_report = compare_keyon_pcm(gbb, native, keyon_csv,
+                                          stages_timeline, (0.1, 0.2), 0.1)
+        assert "First nonzero DSP KON" in keyon_report
+        assert "Later windows do not re-optimize phase" in keyon_report
+        assert "0.200s" in keyon_report
+        stages["post_audible_sound_writes"][0]["value"] = 8
+        stages_timeline.write_text(json.dumps(stages), encoding="utf-8")
+        try:
+            compare_keyon_pcm(gbb, native, keyon_csv, stages_timeline)
+        except ValueError as error:
+            assert "KON register writes do not match" in str(error)
+        else:
+            raise AssertionError("mismatched key-on event was accepted")
+        stages["post_audible_sound_writes"][0]["value"] = 4
+        stages["native_dsp"]["pcm_sha256"] = "0" * 64
+        stages_timeline.write_text(json.dumps(stages), encoding="utf-8")
+        try:
+            compare_keyon_pcm(gbb, native, keyon_csv, stages_timeline)
+        except ValueError as error:
+            assert "does not match its timeline" in str(error)
+        else:
+            raise AssertionError("unbound native DSP capture was accepted")
         report = compare(gbb, reference, 32000, 60, 0.1, 2.0,
                          gbb_scene=gbb_scene, reference_scene=reference_scene)
         assert "Same-scene checkpoint: 100.0%" in report

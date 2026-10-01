@@ -269,7 +269,7 @@ int main(int argc, char** argv) {
                         ++recent_apu_count;
                     if (!sound_event_trace_path.empty() &&
                         icd->audible_sound_packets_delivered() != 0 &&
-                        sound_trace.size() < 4096) {
+                        sound_trace.size() < 16384) {
                         sound_trace.push_back({'H', cpu.timing().clocks(), 0,
                                                dsp_observation.pcm_samples,
                                                write.port, write.value});
@@ -448,7 +448,7 @@ int main(int argc, char** argv) {
                                         }
                                         if (observed.sound_trace != nullptr &&
                                             observed.icd->audible_sound_packets_delivered() != 0 &&
-                                            observed.sound_trace->size() < 4096) {
+                                            observed.sound_trace->size() < 16384) {
                                             observed.sound_trace->push_back({
                                                 'D', 0, cycle, observed.pcm_samples,
                                                 observed.address, observed.value});
