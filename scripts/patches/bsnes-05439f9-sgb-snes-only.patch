@@ -13,7 +13,7 @@ diff --git a/bsnes/sfc/coprocessor/icd/icd.cpp b/bsnes/sfc/coprocessor/icd/icd.c
    GB_reset(&sameboy);
  }
  
-+extern "C" unsigned gbb_reference_sgb_probe_version() { return 2; }
++extern "C" unsigned gbb_reference_sgb_probe_version() { return 3; }
 +extern "C" unsigned gbb_reference_sgb_sound_count() {
 +  return SuperFamicom::icd.diagnosticSoundCount;
 +}
@@ -81,6 +81,54 @@ diff --git a/bsnes/sfc/coprocessor/icd/io.cpp b/bsnes/sfc/coprocessor/icd/io.cpp
        for(auto n : range(16)) r7000[n] = packet[0][n];
        packetSize--;
        for(auto n : range(packetSize)) packet[n] = packet[n + 1];
+diff --git a/bsnes/sfc/dsp/dsp.cpp b/bsnes/sfc/dsp/dsp.cpp
+--- a/bsnes/sfc/dsp/dsp.cpp
++++ b/bsnes/sfc/dsp/dsp.cpp
+@@ -1,8 +1,23 @@
+ #include <sfc/sfc.hpp>
++#include <vector>
+
+ namespace SuperFamicom {
+
+ DSP dsp;
++static std::vector<int16_t> diagnosticDspSamples;
++static bool diagnosticDspOverflow = false;
++
++extern "C" unsigned gbb_reference_sgb_dsp_sample_count() {
++  return diagnosticDspOverflow ? 0xffffffffu : diagnosticDspSamples.size() / 2;
++}
++
++extern "C" unsigned gbb_reference_sgb_dsp_copy(unsigned start, unsigned count,
++    int16_t* output) {
++  if(!output || diagnosticDspOverflow || start > diagnosticDspSamples.size() / 2 ||
++      count > diagnosticDspSamples.size() / 2 - start) return 0;
++  for(unsigned i = 0; i < count * 2; i++) output[i] = diagnosticDspSamples[start * 2 + i];
++  return 1;
++}
+
+ #include "serialization.cpp"
+ #include "SPC_DSP.cpp"
+@@ -18,6 +33,11 @@ auto DSP::main() -> void {
+
+   int count = spc_dsp.sample_count();
+   if(count > 0) {
++    if(!system.runAhead && !diagnosticDspOverflow) {
++      if(diagnosticDspSamples.size() + count <= 8000000)
++        diagnosticDspSamples.insert(diagnosticDspSamples.end(), samplebuffer, samplebuffer + count);
++      else diagnosticDspOverflow = true;
++    }
+     if(!system.runAhead)
+     for(uint n = 0; n < count; n += 2) {
+       float left  = samplebuffer[n + 0] / 32768.0f;
+@@ -48,6 +68,8 @@ auto DSP::load() -> bool {
+
+ auto DSP::power(bool reset) -> void {
+   clock = 0;
++  diagnosticDspSamples.clear();
++  diagnosticDspOverflow = false;
+   stream = Emulator::audio.createStream(2, system.apuFrequency() / 768.0);
+
+   if(!reset) {
 diff --git a/bsnes/target-libretro/link.T b/bsnes/target-libretro/link.T
 --- a/bsnes/target-libretro/link.T
 +++ b/bsnes/target-libretro/link.T

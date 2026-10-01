@@ -19,6 +19,7 @@ from compare_sgb_title_audio import (compare, correlation, read_stereo_wav,
                                      reference_frame_window, reference_sound_event,
                                      resample_mono, scene_agreement,
                                      waveform_alignment)
+from compare_sgb_reference_stages import compare_stages
 
 
 def write_wave(path: Path, rate: int, onset: float) -> None:
@@ -115,7 +116,35 @@ def main() -> None:
         assert scene_agreement(gbb_scene, reference_scene) == 1.0
         write_wave(gbb, 32000, 1.15)
         write_wave(reference, 48000, 1.15)
+        native = root / "native.wav"
+        write_wave(native, 32040, 1.15)
         _, reference_pcm = read_stereo_wav(reference)
+        _, native_pcm = read_stereo_wav(native)
+        stages_timeline = root / "stages-timeline.json"
+        stages = {
+            "format": "gbb-libretro-audio-timeline-v1",
+            "audio_source": "snes-only",
+            "sample_rate": 48000, "sample_count": 240000,
+            "pcm_sha256": hashlib.sha256(reference_pcm.tobytes()).hexdigest(),
+            "native_dsp": {
+                "sample_rate": 32040, "sample_count": 160200,
+                "pcm_sha256": hashlib.sha256(native_pcm.tobytes()).hexdigest()},
+            "run_samples": [[0, 48000], [48000, 48800], [48800, 240000]],
+            "sgb_sound_events": [{"run_index": 1, "sample_start": 48000,
+                                  "sample_end": 48800}]}
+        stages_timeline.write_text(json.dumps(stages), encoding="utf-8")
+        stage_report = compare_stages(gbb, reference, native, stages_timeline,
+                                      32000, 0)
+        assert "libretro: 25ms envelope=" in stage_report
+        assert "native DSP: 25ms envelope=" in stage_report
+        stages["native_dsp"]["pcm_sha256"] = "0" * 64
+        stages_timeline.write_text(json.dumps(stages), encoding="utf-8")
+        try:
+            compare_stages(gbb, reference, native, stages_timeline, 32000, 0)
+        except ValueError as error:
+            assert "native PCM does not match" in str(error)
+        else:
+            raise AssertionError("mismatched native DSP capture was accepted")
         report = compare(gbb, reference, 32000, 60, 0.1, 2.0,
                          gbb_scene=gbb_scene, reference_scene=reference_scene)
         assert "Same-scene checkpoint: 100.0%" in report

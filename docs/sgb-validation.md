@@ -447,7 +447,9 @@ python3 scripts/capture_sgb_libretro_audio.py \
   --frames 3500 --snapshot-frame 2754 \
   --snapshot-output /tmp/sgb2-snes-only-scene.ppm \
   --timeline-output /tmp/sgb2-snes-only-timeline.json \
-  --output /tmp/sgb2-snes-only.wav --require-snes-only-probe
+  --output /tmp/sgb2-snes-only.wav \
+  --native-dsp-output /tmp/sgb2-native-dsp.wav \
+  --require-snes-only-probe
 
 python3 scripts/compare_sgb_title_audio.py \
   --gbb /tmp/gbb-title-trace.wav \
@@ -463,6 +465,14 @@ python3 scripts/compare_sgb_title_audio.py \
   --reference-sound-packet-prefix 4100000001 \
   --search-seconds 3 \
   --gbb-dsp-rate 32000 --reference-dsp-rate 32040
+
+python3 scripts/compare_sgb_reference_stages.py \
+  --gbb /tmp/gbb-title-trace.wav \
+  --reference-output /tmp/sgb2-snes-only.wav \
+  --reference-native /tmp/sgb2-native-dsp.wav \
+  --reference-timeline /tmp/sgb2-snes-only-timeline.json \
+  --gbb-event-sample FIRST_AUDIBLE_DELIVERY_SAMPLE \
+  --reference-sound-event-index 1
 ```
 
 In the local run, the reference probe saw three host-consumed `SOUND` packets.
@@ -500,6 +510,20 @@ in both; its SNES-only output was nonzero after the tagged event. This checks
 the patch's intended behavior for this run, not every possible audio source.
 The comparison tool defaults to the nominal frame and requires an explicit
 `--search-seconds` for exploratory alignment.
+
+The development-only reference probe also exports the SNES DSP's native
+32,040 Hz integer samples before the libretro 48 kHz output stage. It caps
+this buffer at four million stereo frames; the capture rejects overflow and
+pins both WAVs to their hashes in the timeline. On the same local Donkey Kong
+replay, the new probe's 48 kHz WAV and scene were byte-identical to the prior
+capture. Fixed 0.4-second post-packet windows at +0.1, +0.5, and +1.0 seconds
+had correlations of **0.939, 0.968, 0.943** against the 48 kHz output and
+**0.940, 0.974, 0.943** against the native DSP. Thus the libretro output
+resampler is **not the principal cause** of this remaining waveform gap in
+this run. The measured lags drift across those windows, so synthesis phase
+or event scheduling remains under investigation. The reference is still an
+independent emulator, not a hardware audio capture, and these window-local
+clock adjustments do not establish sample-exact fidelity.
 
 A new fully synthetic SNES program waits, writes a host command to the APU,
 and runs concurrently with an original SPC700 test program. The test stamps
