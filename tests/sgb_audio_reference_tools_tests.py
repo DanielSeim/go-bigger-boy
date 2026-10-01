@@ -17,7 +17,8 @@ from capture_sgb_libretro_audio import (BUTTON_IDS, decode_video_row,
 from compare_sgb_audio_phase import rank_offsets, series_transitions
 from compare_sgb_title_audio import (compare, correlation, read_stereo_wav,
                                      reference_frame_window, reference_sound_event,
-                                     scene_agreement, waveform_alignment)
+                                     resample_mono, scene_agreement,
+                                     waveform_alignment)
 
 
 def write_wave(path: Path, rate: int, onset: float) -> None:
@@ -94,6 +95,17 @@ def main() -> None:
         shifted_signal = [0.0] * 103 + signal + [0.0] * 97
         lag, score = waveform_alignment(signal, shifted_signal, 100)
         assert lag == 3 and abs(score - 1.0) < 1e-12
+        ramp = array("h", [value for index in range(12)
+                           for value in (index * 1000, index * 1000)])
+        assert resample_mono(ramp, 4, 0, 1, output_rate=4,
+                             time_scale=0.5) == \
+            [value / 32768 for value in (0, 500, 1000, 1500)]
+        try:
+            resample_mono(ramp, 4, 0, 1, time_scale=0)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("zero native clock ratio was accepted")
         gbb = root / "gbb.wav"
         reference = root / "reference.wav"
         gbb_scene = root / "gbb.ppm"
@@ -111,6 +123,18 @@ def main() -> None:
         assert "Exploratory fixed 0.2s waveform windows:" in report
         assert "best within search range=" in report
         assert "does not establish waveform fidelity" in report
+        try:
+            compare(gbb, reference, 32000, 60, 0.1, 2.0,
+                    gbb_scene=gbb_scene, reference_scene=reference_scene,
+                    gbb_dsp_rate=32000)
+        except ValueError as error:
+            assert "both native DSP rates" in str(error)
+        else:
+            raise AssertionError("unpaired native DSP rate was accepted")
+        report = compare(gbb, reference, 32000, 60, 0.1, 2.0,
+                         gbb_scene=gbb_scene, reference_scene=reference_scene,
+                         gbb_dsp_rate=32000, reference_dsp_rate=32040)
+        assert "32000/32040=0.998752" in report
         phase = root / "phase"
         phase.mkdir()
         for number, shift in ((10, 0), (11, 1), (12, 1), (13, 0)):

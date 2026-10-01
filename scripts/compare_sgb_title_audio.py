@@ -108,13 +108,16 @@ def describe(values: list[float]) -> tuple[float, float, float]:
 
 
 def resample_mono(pcm: array, source_rate: int, start_seconds: float,
-                  seconds: float, output_rate: int = 8000) -> list[float]:
+                  seconds: float, output_rate: int = 8000,
+                  time_scale: float = 1.0) -> list[float]:
     count = round(seconds * output_rate)
-    if start_seconds < 0 or (start_seconds + seconds) * source_rate >= len(pcm) // 2:
+    if not math.isfinite(time_scale) or time_scale <= 0 or \
+            start_seconds < 0 or \
+            (start_seconds + seconds * time_scale) * source_rate >= len(pcm) // 2:
         raise ValueError("waveform window falls outside a WAV file")
     values = []
     for index in range(count):
-        position = (start_seconds + index / output_rate) * source_rate
+        position = (start_seconds + index * time_scale / output_rate) * source_rate
         source = int(position)
         fraction = position - source
         first = (int(pcm[source * 2]) + int(pcm[source * 2 + 1])) / 2
@@ -241,7 +244,9 @@ def compare(gbb_path: Path, reference_path: Path, gbb_event_sample: int,
             reference_timeline: Path | None = None,
             reference_scene_frame: int | None = None,
             reference_sound_event_index: int | None = None,
-            reference_sound_packet_prefix: bytes = b"") -> str:
+            reference_sound_packet_prefix: bytes = b"",
+            gbb_dsp_rate: float | None = None,
+            reference_dsp_rate: float | None = None) -> str:
     if gbb_scene is None or reference_scene is None:
         raise ValueError("both scene checkpoint images are required before audio comparison")
     if reference_scene_frame is not None and reference_timeline is None:
@@ -250,6 +255,16 @@ def compare(gbb_path: Path, reference_path: Path, gbb_event_sample: int,
             (reference_timeline is None or reference_scene_frame is None or
              not reference_sound_packet_prefix):
         raise ValueError("SOUND-event anchor requires timeline, scene frame, and packet prefix")
+    if (gbb_dsp_rate is None) != (reference_dsp_rate is None):
+        raise ValueError("both native DSP rates are required for clock correction")
+    clock_scale = 1.0
+    if gbb_dsp_rate is not None:
+        if not all(math.isfinite(rate) and rate > 0 for rate in
+                   (gbb_dsp_rate, reference_dsp_rate)):
+            raise ValueError("native DSP rates must be positive and finite")
+        clock_scale = gbb_dsp_rate / reference_dsp_rate
+        if not 0.9 <= clock_scale <= 1.1:
+            raise ValueError("native DSP clock ratio is implausible")
     scene_score = scene_agreement(gbb_scene, reference_scene)
     if scene_score < 0.65:
         raise ValueError(f"scene checkpoint mismatch: {scene_score:.1%} of GB viewport "
@@ -324,7 +339,8 @@ def compare(gbb_path: Path, reference_path: Path, gbb_event_sample: int,
                              segment_buckets * bucket)
     reference_wave = resample_mono(reference_pcm, reference_rate,
                                    aligned_time + segment_offset - 0.05,
-                                   segment_buckets * bucket + 0.1)
+                                   segment_buckets * bucket + 0.1,
+                                   time_scale=clock_scale)
     waveform_shift, waveform_score = waveform_alignment(
         gbb_wave, reference_wave, radius_samples)
     short_windows = []
@@ -334,7 +350,8 @@ def compare(gbb_path: Path, reference_path: Path, gbb_event_sample: int,
         try:
             short_gbb = resample_mono(gbb_pcm, gbb_rate, gbb_time + offset, 0.2)
             short_ref = resample_mono(reference_pcm, reference_rate,
-                                      aligned_time + offset - 0.05, 0.3)
+                                      aligned_time + offset - 0.05, 0.3,
+                                      time_scale=clock_scale)
             shift, local_score = waveform_alignment(short_gbb, short_ref,
                                                      radius_samples)
             short_windows.append(f"{offset:.1f}s:{local_score:+.3f} "
@@ -364,6 +381,10 @@ def compare(gbb_path: Path, reference_path: Path, gbb_event_sample: int,
             f"active={ref_active:.1%}\n"
             f"25ms RMS-envelope correlation at nominal frame={nominal_score:.3f}; "
             f"best within search range={score:.3f}\n"
+            + (f"Exploratory local reference DSP clock correction: "
+               f"{gbb_dsp_rate:g}/{reference_dsp_rate:g}={clock_scale:.6f}; "
+               "each waveform window is stretched from its own start, "
+               "not continuously aligned.\n" if gbb_dsp_rate is not None else "") +
             f"Best single-sample-lag 8kHz mono waveform correlation={waveform_score:.3f} "
             f"within +/-50ms (lag {waveform_shift / 8000:+.4f}s)\n"
             + ("Exploratory fixed 0.2s waveform windows: " +
@@ -397,6 +418,10 @@ def main() -> int:
     parser.add_argument("--search-seconds", type=float, default=0.0,
                         help="optional exploratory envelope search around the nominal frame")
     parser.add_argument("--window-seconds", type=float, default=3.0)
+    parser.add_argument("--gbb-dsp-rate", type=float,
+                        help="optional native GBB DSP rate for exploratory clock correction")
+    parser.add_argument("--reference-dsp-rate", type=float,
+                        help="optional native reference DSP rate; requires --gbb-dsp-rate")
     args = parser.parse_args()
     try:
         packet_prefix = bytes.fromhex(args.reference_sound_packet_prefix) \
@@ -407,7 +432,7 @@ def main() -> int:
                       args.reference_frame_offset, args.gbb_scene,
                       args.reference_scene, args.reference_timeline,
                       args.reference_scene_frame, args.reference_sound_event_index,
-                      packet_prefix))
+                      packet_prefix, args.gbb_dsp_rate, args.reference_dsp_rate))
         return 0
     except (OSError, ValueError, wave.Error) as error:
         print(f"audio comparison failed: {error}", file=sys.stderr)

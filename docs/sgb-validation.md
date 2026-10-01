@@ -456,7 +456,8 @@ python3 scripts/compare_sgb_title_audio.py \
   --reference-scene-frame 2754 \
   --reference-sound-event-index 1 \
   --reference-sound-packet-prefix 4100000001 \
-  --search-seconds 3
+  --search-seconds 3 \
+  --gbb-dsp-rate 32000 --reference-dsp-rate 32040
 ```
 
 In the local run, the probe saw three host-consumed `SOUND` packets. The first
@@ -474,13 +475,26 @@ this interval: it skipped
 the narrow positive peak and is not a valid estimate of the best alignment.
 Exploratory 0.2-second windows at 0.5 and 1.3 seconds after the event reach
 about +0.889 and +0.982 respectively, but their best lags differ by roughly
-9 ms. A uniform playback-rate adjustment of up to 2% did not recover a
-continuous match in the local exploratory search; time-varying phase and
-synthesis differences remain plausible. The short windows are not a
-substitute for a continuous waveform match. The GB/SNES clock domains,
-synthesis, phase, resampling, and level still need investigation. The probe is
-not physical hardware evidence and must not be used to claim runtime SGB
-audio support.
+9 ms. That initial coarse rate search did not resolve the native-clock
+difference: this bsnes revision defaults to a 32,040 Hz APU/DSP sample rate
+([source](https://github.com/libretro/bsnes-libretro/blob/05439f96121d2b9d7ad7a5fc1f29d7eebdcc8c43/bsnes/sfc/system/system.hpp#L37)),
+while the bounded GBB development trace exports 32,000 Hz. An explicit,
+**exploratory** 32,000/32,040 local time-scale correction raises the
+highest-energy one-second correlation from +0.517 to about +0.832; 0.2-second
+windows at 0.1 and 0.5 seconds now reach nearly +1.000. This strongly
+indicates a reference-versus-GBB clock difference for the first audible burst,
+not a DSP synthesis defect there. The correction restarts at each comparison
+window, and the later burst still has a different best lag: it does **not**
+prove continuous sample fidelity. The GBB host trace now logs all three
+host-consumed SOUND packets with PCM sample anchors. Its two matching audible
+packets are delivered at samples 1,482,476 and 1,508,034 (about 0.799 s
+apart); the reference probe associates its matching packets with runs 2,753
+and 2,802 (about 0.817 s between run starts). Reference run tagging has
+roughly one video frame of intra-run uncertainty, so this is a lead for
+investigating the later burst, not proof of a delivery-timing defect. The
+GB/SNES clock domains, packet phase, resampling, and level still need
+investigation. The probe is not physical hardware evidence and must not be
+used to claim runtime SGB audio support.
 As a separation sanity check, the patched reference's one-second windows at
 20 s and 40 s were silent, while the unmodified mixed reference was audible
 in both; its SNES-only output was nonzero after the tagged event. This checks

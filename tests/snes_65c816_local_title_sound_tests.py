@@ -48,6 +48,18 @@ def main() -> int:
         raise AssertionError(f"unexpected bounded trace outcome: {output[-3000:]}")
     if "first audible SOUND frame=2472 packet= 41 00 00 00 01" not in output:
         raise AssertionError("title-authentic music-score packet was not captured")
+    deliveries = re.findall(
+        r"host SOUND delivery index=(\d+) GB_frame=(\d+) "
+        r"PCM_sample=(\d+) packet= ([0-9a-f ]+)", output)
+    if [int(event[0]) for event in deliveries] != [0, 1, 2]:
+        raise AssertionError("host SOUND delivery timeline is incomplete")
+    first_music, second_music = deliveries[1:]
+    if [int(first_music[1]), int(second_music[1])] != [2472, 2521] or \
+            first_music[3] != second_music[3] or \
+            not first_music[3].startswith("41 00 00 00 01") or \
+            not 0.7 * 32000 < int(second_music[2]) - int(first_music[2]) \
+            < 0.9 * 32000:
+        raise AssertionError("repeated title SOUND packets differ or lack PCM anchors")
     delivered = re.search(r"audible_SOUND_delivered=(\d+)", output)
     nonzero = re.search(r"post_audible_SOUND_nonzero=(\d+)", output)
     if delivered is None or int(delivered.group(1)) == 0:

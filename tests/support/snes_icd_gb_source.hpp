@@ -47,6 +47,8 @@ public:
     }
     [[nodiscard]] const std::array<std::uint8_t, 16>& first_sound_packet()
         const noexcept { return first_sound_packet_; }
+    [[nodiscard]] const std::array<std::uint8_t, 16>& last_delivered_sound_packet()
+        const noexcept { return last_delivered_sound_packet_; }
     [[nodiscard]] std::uint64_t transfer_commands() const noexcept {
         return transfer_commands_;
     }
@@ -102,6 +104,7 @@ private:
     std::uint64_t sound_packets_delivered_{};
     std::uint64_t audible_sound_packets_delivered_{};
     std::array<std::uint8_t, 16> first_sound_packet_{};
+    std::array<std::uint8_t, 16> last_delivered_sound_packet_{};
     std::array<std::uint8_t, 16> first_audible_sound_packet_{};
     std::uint64_t audible_sound_commands_{};
     std::uint64_t first_audible_frame_{};

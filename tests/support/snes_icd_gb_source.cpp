@@ -202,6 +202,7 @@ bool SnesIcdGbSource::read(const std::uint16_t address,
                 ++packets_delivered_;
                 if ((latched_[0] >> 3) == 0x08) {
                     ++sound_packets_delivered_;
+                    last_delivered_sound_packet_ = latched_;
                     const auto a = latched_[1];
                     const auto b = latched_[2];
                     if ((latched_[3] & 0x0CU) != 0x0CU &&

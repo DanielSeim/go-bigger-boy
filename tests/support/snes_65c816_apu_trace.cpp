@@ -222,8 +222,21 @@ int main(int argc, char** argv) {
             ? requested_instruction_limit : sync_gb ? 20000000U :
             ((upload || upload_two || upload_three || upload_boot ||
               driver_probe || synchronized) ? 5000000U : 1000000U);
+        std::uint64_t logged_sound_deliveries{};
         for (unsigned i = 0; i < instruction_bound; ++i) {
             const auto result = cpu.step();
+            if (icd && icd->sound_packets_delivered() > logged_sound_deliveries) {
+                logged_sound_deliveries = icd->sound_packets_delivered();
+                std::cout << "host SOUND delivery index="
+                          << logged_sound_deliveries - 1
+                          << " GB_frame=" << icd->completed_frames()
+                          << " PCM_sample=" << dsp_observation.pcm_samples
+                          << " packet=";
+                for (const auto byte : icd->last_delivered_sound_packet())
+                    std::cout << ' ' << std::hex << std::setw(2)
+                              << std::setfill('0') << static_cast<unsigned>(byte);
+                std::cout << std::dec << '\n';
+            }
             if (sync_gb) {
                 for (std::size_t event = 0; event < cpu.apu_write_count(); ++event) {
                     recent_apu_writes[recent_apu_next] = cpu.apu_write(event);
