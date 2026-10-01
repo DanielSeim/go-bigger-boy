@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Compare a real SGB title event against independent, mixed reference audio.
+"""Compare a real SGB title event against independent reference audio.
 
 This is a timing/envelope diagnostic, not a sample-exact accuracy test: the
-libretro reference includes GB audio and may have different boot/input phases.
+An uninstrumented libretro reference includes GB audio; an instrumented
+SNES-only reference still may have different boot/input phases.
 """
 
 import argparse
@@ -127,7 +128,9 @@ def waveform_alignment(ours: list[float], reference: list[float],
     if len(reference) < len(ours) + 2 * radius_samples:
         raise ValueError("waveform search window is too short")
     best = (0, 0.0)
-    for shift in range(-radius_samples, radius_samples + 1, 8):
+    # An eight-sample grid at 8 kHz can miss the actual peak entirely for
+    # tonal SGB effects: nearby phases may even have opposite polarity.
+    for shift in range(-radius_samples, radius_samples + 1):
         start = radius_samples + shift
         score = correlation(ours, reference[start:start + len(ours)])
         if abs(score) > abs(best[1]):
@@ -325,7 +328,7 @@ def compare(gbb_path: Path, reference_path: Path, gbb_event_sample: int,
     waveform_shift, waveform_score = waveform_alignment(
         gbb_wave, reference_wave, radius_samples)
     short_windows = []
-    for offset in (0.1, 0.5, 1.0):
+    for offset in (0.1, 0.5, 1.0, 1.3):
         if offset + 0.2 > window_seconds:
             continue
         try:
@@ -361,7 +364,7 @@ def compare(gbb_path: Path, reference_path: Path, gbb_event_sample: int,
             f"active={ref_active:.1%}\n"
             f"25ms RMS-envelope correlation at nominal frame={nominal_score:.3f}; "
             f"best within search range={score:.3f}\n"
-            f"Best 8kHz mono waveform correlation={waveform_score:.3f} "
+            f"Best single-sample-lag 8kHz mono waveform correlation={waveform_score:.3f} "
             f"within +/-50ms (lag {waveform_shift / 8000:+.4f}s)\n"
             + ("Exploratory fixed 0.2s waveform windows: " +
                ", ".join(short_windows) + "\n" if short_windows else "") +

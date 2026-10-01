@@ -466,14 +466,21 @@ The repeated matching packet occurred at frame 2803. At the first event,
 GBB's modeled 32 kHz SNES-side output and the isolated reference had a 0.987
 nominal 25 ms RMS-envelope correlation and 0.990 at the best nearby offset;
 the two independently repeated reference WAVs were byte-identical. This
-strongly supports the *event timing and broad sound envelope*. The strongest
-1-second 8 kHz mono waveform correlation was only about -0.402, so **sample
-fidelity is not established**. The GB/SNES clock domains, synthesis, phase,
-resampling, and level still need investigation. The probe is not physical
-hardware evidence and must not be used to claim runtime SGB audio support.
-Exploratory 0.2-second waveform windows can show much larger *absolute*
-correlation, but their sign and lag vary; these short searches are clues about
-phase/timing differences, not a substitute for a continuous waveform match.
+strongly supports the *event timing and broad sound envelope*. The
+highest-energy 1-second interval's 8 kHz mono waveform correlation is only
+about +0.517 after searching every 8 kHz sample lag, so **sample fidelity is
+not established**. An earlier eight-sample search grid reported -0.402 for
+this interval: it skipped
+the narrow positive peak and is not a valid estimate of the best alignment.
+Exploratory 0.2-second windows at 0.5 and 1.3 seconds after the event reach
+about +0.889 and +0.982 respectively, but their best lags differ by roughly
+9 ms. A uniform playback-rate adjustment of up to 2% did not recover a
+continuous match in the local exploratory search; time-varying phase and
+synthesis differences remain plausible. The short windows are not a
+substitute for a continuous waveform match. The GB/SNES clock domains,
+synthesis, phase, resampling, and level still need investigation. The probe is
+not physical hardware evidence and must not be used to claim runtime SGB
+audio support.
 As a separation sanity check, the patched reference's one-second windows at
 20 s and 40 s were silent, while the unmodified mixed reference was audible
 in both; its SNES-only output was nonzero after the tagged event. This checks

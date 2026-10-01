@@ -17,7 +17,7 @@ from capture_sgb_libretro_audio import (BUTTON_IDS, decode_video_row,
 from compare_sgb_audio_phase import rank_offsets, series_transitions
 from compare_sgb_title_audio import (compare, correlation, read_stereo_wav,
                                      reference_frame_window, reference_sound_event,
-                                     scene_agreement)
+                                     scene_agreement, waveform_alignment)
 
 
 def write_wave(path: Path, rate: int, onset: float) -> None:
@@ -84,6 +84,16 @@ def main() -> None:
             else:
                 raise AssertionError("invalid input script was accepted")
         assert abs(correlation([0, 1, 2], [0, 1, 2]) - 1) < 1e-12
+        # A shifted, nonperiodic waveform must be found at single-sample
+        # precision; an eight-sample lag grid misses this exact match.
+        signal = [((index * 131 + 17) % 251) / 251 - 0.5
+                  for index in range(512)]
+        reference_signal = [0.0] * 100 + signal + [0.0] * 100
+        lag, score = waveform_alignment(signal, reference_signal, 100)
+        assert lag == 0 and abs(score - 1.0) < 1e-12
+        shifted_signal = [0.0] * 103 + signal + [0.0] * 97
+        lag, score = waveform_alignment(signal, shifted_signal, 100)
+        assert lag == 3 and abs(score - 1.0) < 1e-12
         gbb = root / "gbb.wav"
         reference = root / "reference.wav"
         gbb_scene = root / "gbb.ppm"
