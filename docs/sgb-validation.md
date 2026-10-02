@@ -1028,6 +1028,77 @@ explains all remaining state differences nor proves sample-exact audio.
 The fractional path is opt-in and release scheduling/audio remain unchanged.
 No external core, firmware, ROM, or capture is included in releases.
 
+### Equal-native checkpoints and master-volume acceptance
+
+The previous +0.82 s position mismatch was a **comparison mismatch**, not
+evidence of incorrect pitch progression: at 32,040 Hz the reference ran 33
+more native outputs than GBB at 32,000 Hz. The optional incremental patch
+`scripts/patches/bsnes-05439f9-sgb-native-checkpoints.patch`, applied after the
+version-7 SNES-only and APU-bus patches, lets the reference capture select
+**24,000 and 26,240** outputs after first KON. Use
+`--native-cycle-checkpoints` with the reference capture and
+`--equal-native-checkpoints` with `compare_sgb_sound_ram.py`. The second-KON
+checkpoint remains +640 outputs. All snapshots must be taken immediately
+after DSP phase 27, and incorrect counts, missing provenance, or mixing
+native captures with wall-time labels are rejected. The original wall-time
+mode remains available for historical comparisons; its legacy RAM-write
+window is still wall-time-based, not normalized by the new state option.
+
+Fresh Donkey Kong native-count captures show:
+
+| Checkpoint | GBB active voice | Independent active voice |
+| --- | --- | --- |
+| First KON +26,240 outputs | position 13,749, BRR $3b36, ENV 2,047 | identical |
+| Second KON +640 outputs | position 8,501, BRR $3b7e, ENV 2,047 | identical |
+
+Native reference PCM remains byte-identical in both checkpoint modes. Dormant
+voice and echo state still differ; these are not hidden or tolerance-adjusted.
+
+`scripts/compare_sgb_native_writes.py` compares accepted writes in exact
+native DSP clocks, relative to first KON. GBB supplies actual SPC cycles;
+the reference supplies native output counts and write phases, including the
+phase-31-to-0 rollover. There is no fitted rate or phase offset. It separates
+written values from write timing and distinguishes bounded-window count
+differences from exact matches. This is **acceptance**, not a trace of every
+internal voice's register-consumption phase.
+
+```sh
+python3 scripts/compare_sgb_native_writes.py \
+  --gbb-events fractional-events.csv --reference-timeline native-timeline.json \
+  --gbb-pcm fractional.wav --reference-native-pcm native-dsp.wav
+```
+
+The active voice's pitch writes match exactly: `$22=$9d` at +830,387 clocks,
+and `$23=$05` at +830,423. The first master-volume write `$0c=$04` occurs at
++1,521 clocks in GBB and +3,568 in the reference; right volume follows at
++1,546/+3,593. Those are equal values accepted **2,047 clocks apart**. Thus a
+real upstream driver/timer/host scheduling difference remains after fixing
+the wall-time checkpoint mistake; it is not established as a DSP synthesis
+bug, and the evidence does not justify retiming the DSP or its volume writes.
+The first unequal native PCM buffer index is 48 (output 49 after KON):
+GBB `(-5,-5)`, reference `(-6,-6)`. The comparison binds reference PCM to its
+timeline hash and compares equal native output counts before resampling.
+
+A ROM-free repeating-tone regression replays these early/late acceptance
+timings. Both produce byte-exact PCM against the independent DSP when given
+the same writes; changing only the acceptance times produces different PCM
+(first differing fixture output frame 48). Independently verified corpus
+SHA-256: `01b392b103856a42f545a6c3fdc2f4104f9650a16ab7a9d8473e3ada5672543e`.
+Seven comparison contract tests cover native output counts, phase rollover,
+rejection of wall/native mixing, wrong clocks, and timing-versus-value errors.
+They also check the first differing output and reject unbound PCM captures.
+
+```sh
+python3 tests/snes_dsp_native_volume_timing_tests.py \
+  build/gameboy_snes_dsp_pcm_fixture_runner \
+  --reference-dir /tmp/bsnes-sgb-reference-src/bsnes/sfc/dsp
+```
+
+The next upstream investigation is timer/polling phase before the first music
+command, with both native clock rates kept explicit. Production DSP/audio,
+clock rates, and scheduling are unchanged. No title bytes, firmware, external
+core, or captured audio are committed or shipped.
+
 A new fully synthetic SNES program waits, writes a host command to the APU,
 and runs concurrently with an original SPC700 test program. The test stamps
 its KON write at SPC instruction-end cycle 2,304, feeds that event to the

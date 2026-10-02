@@ -149,7 +149,8 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
             require_snes_only_probe: bool = False,
             native_dsp_output: Path | None = None,
             apu_ram_output: Path | None = None,
-            apu_bus_output: Path | None = None
+            apu_bus_output: Path | None = None,
+            native_cycle_checkpoints: bool = False
             ) -> tuple[int, int]:
     if C.sizeof(C.c_void_p) != 8:
         raise RuntimeError("the diagnostic host currently requires a 64-bit process")
@@ -172,6 +173,8 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
         raise FileExistsError(apu_bus_output)
     if apu_bus_output is not None and not require_snes_only_probe:
         raise ValueError("APU bus capture requires the SNES-only probe")
+    if native_cycle_checkpoints and not require_snes_only_probe:
+        raise ValueError("native-cycle checkpoints require the SNES-only probe")
     if native_dsp_output is not None and not require_snes_only_probe:
         raise ValueError("native DSP capture requires the SNES-only probe")
     if require_snes_only_probe and timeline_output is None:
@@ -213,6 +216,13 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
         core.gbb_reference_sgb_probe_version.restype = C.c_uint
         if core.gbb_reference_sgb_probe_version() != 7:
             raise RuntimeError("unsupported SNES-only reference probe version")
+        if native_cycle_checkpoints and not hasattr(core, "gbb_reference_sgb_native_checkpoints"):
+            raise RuntimeError("core lacks the native-cycle checkpoint probe")
+        if hasattr(core, "gbb_reference_sgb_native_checkpoints"):
+            core.gbb_reference_sgb_native_checkpoints.argtypes = [C.c_uint]
+            core.gbb_reference_sgb_native_checkpoints.restype = C.c_uint
+            if core.gbb_reference_sgb_native_checkpoints(int(native_cycle_checkpoints)) != 1:
+                raise RuntimeError("native-cycle checkpoint probe rejected the request")
         core.gbb_reference_sgb_sound_count.restype = C.c_uint
         core.gbb_reference_sgb_sound_packet.argtypes = [C.c_uint,
                                                          C.POINTER(C.c_uint8)]
@@ -551,6 +561,7 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                             "sgb_sound_events": sound_events}
                 if require_snes_only_probe:
                     timeline["post_audible_sound_writes"] = sound_trace
+                    timeline["native_cycle_checkpoints"] = native_cycle_checkpoints
                     timeline["reference_options"] = configured_options
                     timeline["post_audible_sound_writes_limit_reached"] = len(sound_trace) == 32768
                 if native_dsp is not None:
@@ -637,6 +648,8 @@ def main() -> None:
                         help="JSON mapping callbacks, sound events, and runs to PCM samples")
     parser.add_argument("--apu-bus-output", type=Path,
                         help="bounded host/SPC bus timeline (additional local reference patch required)")
+    parser.add_argument("--native-cycle-checkpoints", action="store_true",
+                        help="equal native output counts, not wall-time checkpoints (local probe required)")
     parser.add_argument("--require-snes-only-probe", action="store_true",
                         help="require the local instrumented core; log host-consumed SOUND packets")
     parser.add_argument("--native-dsp-output", type=Path,
@@ -660,7 +673,8 @@ def main() -> None:
                               args.input_script, args.input_offset_frames, changes,
                               args.snapshot_frame, args.snapshot_output, series,
                               args.timeline_output, args.require_snes_only_probe,
-                              args.native_dsp_output, args.apu_ram_output, args.apu_bus_output)
+                              args.native_dsp_output, args.apu_ram_output, args.apu_bus_output,
+                              args.native_cycle_checkpoints)
     except (OSError, RuntimeError, ValueError) as error:
         parser.error(str(error))
     print(f"Captured {count} stereo frames at {rate} Hz to {args.output}")

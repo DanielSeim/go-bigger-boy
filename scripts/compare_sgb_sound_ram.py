@@ -22,7 +22,8 @@ def read_traces(gbb_path: Path, timeline_path: Path):
             raise ValueError("invalid GBB trace header")
         gbb = [{"kind": row["kind"], "sample": int(row["pcm_sample"]),
                 "address": int(row["address"]), "value": int(row["value"]),
-                "clocked": int(row["spc_cycle"]) > 0}
+                "clocked": int(row["spc_cycle"]) > 0,
+                "cycle": int(row["spc_cycle"])}
                for row in reader]
     timeline = json.loads(timeline_path.read_text(encoding="utf-8"))
     if not isinstance(timeline, dict) or timeline.get("format") != \
@@ -73,10 +74,18 @@ def register_image(stream, anchor: int, rate: int, offset: float):
 def compare(gbb_path: Path, reference_timeline: Path,
             gbb_ram: Path | None = None,
             reference_ram: Path | None = None,
-            require_cycle_checkpoints: bool = False) -> str:
+            require_cycle_checkpoints: bool = False,
+            equal_native_checkpoints: bool = False) -> str:
     if (gbb_ram is None) != (reference_ram is None):
         raise ValueError("both APU RAM snapshots are required")
     gbb, reference = read_traces(gbb_path, reference_timeline)
+    native_capture = json.loads(reference_timeline.read_text()).get("native_cycle_checkpoints") is True
+    if equal_native_checkpoints and not native_capture:
+        raise ValueError("equal-native comparison requires explicitly captured native checkpoints")
+    if native_capture and not equal_native_checkpoints:
+        raise ValueError("native checkpoint capture requires equal-native comparison, not wall-time labels")
+    if equal_native_checkpoints:
+        require_cycle_checkpoints = True
     gbb_anchor, gbb_value = keyon(gbb)
     ref_anchor, ref_value = keyon(reference)
     if gbb_value != ref_value:
@@ -140,13 +149,14 @@ def compare(gbb_path: Path, reference_timeline: Path,
                  f"address/value multisets {'agree' if high_ours == high_theirs else 'differ'}.")
     for offset in (0.70, 0.75, 0.80, 0.85):
         left = register_image(gbb, gbb_anchor, 32000, offset)
-        right = register_image(reference, ref_anchor, 32040, offset)
+        right = register_image(reference, ref_anchor, 32000 if equal_native_checkpoints else 32040, offset)
         known = left.keys() & right.keys()
         different = [(address, left[address], right[address]) for address in
                      sorted(known) if left[address] != right[address]]
         shown = ", ".join(f"${address:02x}:${a:02x}/${b:02x}"
                           for address, a, b in different[:8]) or "none"
-        lines.append(f"+{offset:.2f}s DSP write-derived registers: "
+        label = f"+{round(offset*32000)} native outputs" if equal_native_checkpoints else f"+{offset:.2f}s"
+        lines.append(f"{label} DSP write-derived registers: "
                      f"{len(known)} common, {len(different)} differ; "
                      f"first differences (GBB/reference): {shown}.")
     lines.append("Register images exclude unknown pre-packet state and internal "
@@ -163,6 +173,9 @@ def compare(gbb_path: Path, reference_timeline: Path,
             if [row["address"] for row in selected] != list(range(25)) or \
                     len({row["sample"] for row in selected}) != 1:
                 raise ValueError("malformed DSP state snapshot")
+            if equal_native_checkpoints and checkpoint < 2 and \
+                    selected[0]["sample"] - keyon(stream)[0] != (24000, 26240)[checkpoint]:
+                raise ValueError("native checkpoint is not at the exact requested output count")
             snapshots.append([row["value"] for row in selected])
             if require_cycle_checkpoints and (
                     (stream_index == 0 and not all(row["clocked"] for row in selected)) or
@@ -183,8 +196,10 @@ def compare(gbb_path: Path, reference_timeline: Path,
         left, right = snapshots
         changed_env = [voice for voice in range(8)
                        if left[voice * 3] != right[voice * 3]]
-        label = ("first KON +0.75s", "first KON +0.82s",
-                 "second KON +640 native samples")[checkpoint]
+        label = (("first KON +24000 native outputs", "first KON +26240 native outputs")
+                 if equal_native_checkpoints else ("first KON +0.75s", "first KON +0.82s")) + (
+                 "second KON +640 native samples",)
+        label = label[checkpoint]
         if checkpoint == 2:
             lines.append("Second-KON elapsed outputs: GBB=640, reference=640. "
                          "Equal output counts do not establish equal write/poll phase.")
@@ -241,10 +256,12 @@ def main() -> int:
     parser.add_argument("--gbb-ram", type=Path)
     parser.add_argument("--reference-ram", type=Path)
     parser.add_argument("--require-cycle-checkpoints", action="store_true")
+    parser.add_argument("--equal-native-checkpoints", action="store_true")
     args = parser.parse_args()
     try:
         print(compare(args.gbb_events, args.reference_timeline,
-                      args.gbb_ram, args.reference_ram, args.require_cycle_checkpoints))
+                      args.gbb_ram, args.reference_ram, args.require_cycle_checkpoints,
+                      args.equal_native_checkpoints))
         return 0
     except (OSError, ValueError, KeyError, TypeError) as error:
         print(f"sound RAM comparison failed: {error}", file=sys.stderr)

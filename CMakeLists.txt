@@ -1446,6 +1446,13 @@ if(GAMEBOY_BUILD_TESTS)
         add_test(NAME gameboy_sgb_apu_bus_comparison
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_apu_bus_comparison_tests.py)
+        add_test(NAME gameboy_sgb_native_cycle_comparison
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_native_cycle_comparison_tests.py)
+        add_test(NAME gameboy_snes_dsp_native_volume_timing
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/snes_dsp_native_volume_timing_tests.py
+                         $<TARGET_FILE:gameboy_snes_dsp_pcm_fixture_runner>)
         add_test(NAME gameboy_snes_spc700_dsp_multi_key_pcm
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/snes_spc700_dsp_multi_key_pcm_tests.py

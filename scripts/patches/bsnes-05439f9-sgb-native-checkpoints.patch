@@ -1,0 +1,16 @@
+diff --git a/bsnes/sfc/dsp/dsp.cpp b/bsnes/sfc/dsp/dsp.cpp
+--- a/bsnes/sfc/dsp/dsp.cpp
++++ b/bsnes/sfc/dsp/dsp.cpp
+@@ -7,2 +7,7 @@
+ static std::vector<int16_t> diagnosticDspSamples;
++static bool diagnosticNativeCheckpoints = false;
++extern "C" unsigned gbb_reference_sgb_native_checkpoints(unsigned enabled) {
++  diagnosticNativeCheckpoints = enabled != 0;
++  return 1;
++}
+ static bool diagnosticDspOverflow = false;
+@@ -115,2 +120,3 @@
+-      const unsigned offsets[2] = {24030, 26273}; // +0.75s and +0.82s at 32040Hz
++      const unsigned offsets[2] = {diagnosticNativeCheckpoints ? 24000u : 24030u,
++                                   diagnosticNativeCheckpoints ? 26240u : 26273u};
+       const unsigned target = diagnosticStateCheckpoints < 2

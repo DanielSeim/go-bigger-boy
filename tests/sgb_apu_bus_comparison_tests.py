@@ -103,6 +103,8 @@ class Contracts(unittest.TestCase):
             wav = root / "audio.wav"
             with self.assertRaisesRegex(ValueError, "SNES-only"):
                 capture_audio(*inputs, root, 1, wav, apu_bus_output=bus)
+            with self.assertRaisesRegex(ValueError, "SNES-only"):
+                capture_audio(*inputs, root, 1, wav, native_cycle_checkpoints=True)
             with self.assertRaisesRegex(ValueError, "paths must differ"):
                 capture_audio(*inputs, root, 1, bus, apu_bus_output=bus,
                               timeline_output=root / "timeline.json", require_snes_only_probe=True)
