@@ -13,7 +13,7 @@ diff --git a/bsnes/sfc/coprocessor/icd/icd.cpp b/bsnes/sfc/coprocessor/icd/icd.c
    GB_reset(&sameboy);
  }
  
-+extern "C" unsigned gbb_reference_sgb_probe_version() { return 5; }
++extern "C" unsigned gbb_reference_sgb_probe_version() { return 6; }
 +extern "C" unsigned gbb_reference_sgb_sound_count() {
 +  return SuperFamicom::icd.diagnosticSoundCount;
 +}
@@ -102,7 +102,7 @@ diff --git a/bsnes/sfc/cpu/io.cpp b/bsnes/sfc/cpu/io.cpp
 diff --git a/bsnes/sfc/dsp/dsp.cpp b/bsnes/sfc/dsp/dsp.cpp
 --- a/bsnes/sfc/dsp/dsp.cpp
 +++ b/bsnes/sfc/dsp/dsp.cpp
-@@ -1,8 +1,50 @@
+@@ -1,8 +1,68 @@
  #include <sfc/sfc.hpp>
 +#include <vector>
 
@@ -111,13 +111,25 @@ diff --git a/bsnes/sfc/dsp/dsp.cpp b/bsnes/sfc/dsp/dsp.cpp
  DSP dsp;
 +static std::vector<int16_t> diagnosticDspSamples;
 +static bool diagnosticDspOverflow = false;
++static unsigned diagnosticFirstKonSample = 0xffffffffu;
++static unsigned diagnosticSecondKonSample = 0xffffffffu;
++static unsigned diagnosticStateCheckpoints = 0;
 +struct DiagnosticSoundEvent { unsigned kind, address, value, dspFrame, vertical, horizontal; };
 +static std::vector<DiagnosticSoundEvent> diagnosticSoundEvents;
++
++extern "C" void gbb_reference_sgb_record_ram_write(unsigned address, unsigned value) {
++  const unsigned sample = diagnosticDspSamples.size() / 2;
++  if(diagnosticFirstKonSample != 0xffffffffu &&
++      sample >= diagnosticFirstKonSample + 22428 &&
++      sample < diagnosticFirstKonSample + 27234 &&
++      diagnosticSoundEvents.size() < 32768)
++    diagnosticSoundEvents.push_back({3, address, value, sample, 0, 0});
++}
 +
 +extern "C" void gbb_reference_sgb_record_host_write(unsigned port, unsigned value,
 +    unsigned vertical, unsigned horizontal) {
 +  // This local Donkey Kong replay's first audible packet is SOUND index 1.
-+  if(icd.diagnosticSoundCount >= 2 && diagnosticSoundEvents.size() < 16384)
++  if(icd.diagnosticSoundCount >= 2 && diagnosticSoundEvents.size() < 32768)
 +    diagnosticSoundEvents.push_back({1, port, value,
 +                                     static_cast<unsigned>(diagnosticDspSamples.size() / 2),
 +                                     vertical, horizontal});
@@ -150,10 +162,16 @@ diff --git a/bsnes/sfc/dsp/dsp.cpp b/bsnes/sfc/dsp/dsp.cpp
 +  for(unsigned i = 0; i < count * 2; i++) output[i] = diagnosticDspSamples[start * 2 + i];
 +  return 1;
 +}
++
++extern "C" unsigned gbb_reference_sgb_ram_copy(uint8_t* output, unsigned count) {
++  if(!output || count != 65536) return 0;
++  memcpy(output, dsp.apuram, count);
++  return 1;
++}
 
  #include "serialization.cpp"
  #include "SPC_DSP.cpp"
-@@ -18,6 +60,11 @@ auto DSP::main() -> void {
+@@ -18,6 +78,30 @@ auto DSP::main() -> void {
 
    int count = spc_dsp.sample_count();
    if(count > 0) {
@@ -162,29 +180,94 @@ diff --git a/bsnes/sfc/dsp/dsp.cpp b/bsnes/sfc/dsp/dsp.cpp
 +        diagnosticDspSamples.insert(diagnosticDspSamples.end(), samplebuffer, samplebuffer + count);
 +      else diagnosticDspOverflow = true;
 +    }
++    if(!system.runAhead && diagnosticFirstKonSample != 0xffffffffu &&
++        diagnosticStateCheckpoints < 3 && diagnosticSoundEvents.size() < 32700) {
++      const unsigned offsets[2] = {24030, 26273}; // +0.75s and +0.82s at 32040Hz
++      const unsigned target = diagnosticStateCheckpoints < 2
++          ? diagnosticFirstKonSample + offsets[diagnosticStateCheckpoints]
++          : diagnosticSecondKonSample == 0xffffffffu ? 0xffffffffu
++          : diagnosticSecondKonSample + 641;
++      if(target != 0xffffffffu && diagnosticDspSamples.size() / 2 >= target) {
++        for(unsigned voice = 0; voice < 8; voice++)
++          for(unsigned field = 0; field < 3; field++)
++            diagnosticSoundEvents.push_back({4, voice * 3 + field,
++                static_cast<unsigned>(spc_dsp.diagnostic_state(voice, field)),
++                static_cast<unsigned>(diagnosticDspSamples.size() / 2), 0, 0});
++        diagnosticSoundEvents.push_back({4, 24,
++            static_cast<unsigned>(spc_dsp.diagnostic_state(8, 0)),
++            static_cast<unsigned>(diagnosticDspSamples.size() / 2), 0, 0});
++        diagnosticStateCheckpoints++;
++      }
++    }
      if(!system.runAhead)
      for(uint n = 0; n < count; n += 2) {
        float left  = samplebuffer[n + 0] / 32768.0f;
-@@ -33,5 +80,9 @@ auto DSP::read(uint8 address) -> uint8 {
+@@ -33,5 +117,15 @@ auto DSP::read(uint8 address) -> uint8 {
  }
 
  auto DSP::write(uint8 address, uint8 data) -> void {
-+  if(icd.diagnosticSoundCount >= 2 && diagnosticSoundEvents.size() < 16384)
++  if(icd.diagnosticSoundCount >= 2 && address == 0x4c && data != 0) {
++    if(diagnosticFirstKonSample == 0xffffffffu)
++      diagnosticFirstKonSample = diagnosticDspSamples.size() / 2;
++    else if(diagnosticSecondKonSample == 0xffffffffu)
++      diagnosticSecondKonSample = diagnosticDspSamples.size() / 2;
++  }
++  if(icd.diagnosticSoundCount >= 2 && diagnosticSoundEvents.size() < 32768)
 +    diagnosticSoundEvents.push_back({2, address, data,
 +                                     static_cast<unsigned>(diagnosticDspSamples.size() / 2),
 +                                     0, 0});
    if(configuration.hacks.dsp.echoShadow) {
      if(address == 0x6c && (data & 0x20)) {
-@@ -48,6 +100,9 @@ auto DSP::load() -> bool {
+@@ -48,6 +142,12 @@ auto DSP::load() -> bool {
 
  auto DSP::power(bool reset) -> void {
    clock = 0;
 +  diagnosticDspSamples.clear();
 +  diagnosticDspOverflow = false;
++  diagnosticFirstKonSample = 0xffffffffu;
++  diagnosticSecondKonSample = 0xffffffffu;
++  diagnosticStateCheckpoints = 0;
 +  diagnosticSoundEvents.clear();
    stream = Emulator::audio.createStream(2, system.apuFrequency() / 768.0);
 
    if(!reset) {
+diff --git a/bsnes/sfc/smp/memory.cpp b/bsnes/sfc/smp/memory.cpp
+--- a/bsnes/sfc/smp/memory.cpp
++++ b/bsnes/sfc/smp/memory.cpp
+@@ -1,3 +1,5 @@
++extern "C" void gbb_reference_sgb_record_ram_write(unsigned, unsigned);
++
+ auto SMP::readRAM(uint16 address) -> uint8 {
+   if(address >= 0xffc0 && io.iplromEnable) return iplrom[address & 0x3f];
+   if(io.ramDisable) return 0x5a;  //0xff on mini-SNES
+@@ -6,7 +8,10 @@ auto SMP::readRAM(uint16 address) -> uint8 {
+
+ auto SMP::writeRAM(uint16 address, uint8 data) -> void {
+   //writes to $ffc0-$ffff always go to apuram, even if the iplrom is enabled
+-  if(io.ramWritable && !io.ramDisable) dsp.apuram[address] = data;
++  if(io.ramWritable && !io.ramDisable) {
++    dsp.apuram[address] = data;
++    gbb_reference_sgb_record_ram_write(address, data);
++  }
+ }
+
+ auto SMP::idle() -> void {
+diff --git a/bsnes/sfc/dsp/SPC_DSP.h b/bsnes/sfc/dsp/SPC_DSP.h
+--- a/bsnes/sfc/dsp/SPC_DSP.h
++++ b/bsnes/sfc/dsp/SPC_DSP.h
+@@ -68,1 +68,12 @@ public:
++	// Development-only state probe; these are internal values, not bus reads.
++	int diagnostic_state( int voice, int field ) const {
++		if( voice >= 0 && voice < voice_count ) {
++			voice_t const& v = m.voices[voice];
++			if( field == 0 ) return v.env;
++			if( field == 1 ) return v.brr_addr;
++			if( field == 2 ) return v.interp_pos;
++		}
++		if( voice == voice_count && field == 0 ) return m.echo_offset;
++		return 0;
++	}
+ // DSP register addresses
 diff --git a/bsnes/target-libretro/link.T b/bsnes/target-libretro/link.T
 --- a/bsnes/target-libretro/link.T
 +++ b/bsnes/target-libretro/link.T

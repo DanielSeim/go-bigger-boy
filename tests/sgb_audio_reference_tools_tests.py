@@ -22,6 +22,7 @@ from compare_sgb_title_audio import (compare, correlation, read_stereo_wav,
 from compare_sgb_reference_stages import compare_stages
 from compare_sgb_sound_event_trace import compare as compare_sound_trace
 from compare_sgb_keyon_pcm import compare as compare_keyon_pcm
+from compare_sgb_sound_ram import compare as compare_sound_ram
 
 
 def write_wave(path: Path, rate: int, onset: float) -> None:
@@ -202,6 +203,51 @@ def main() -> None:
             assert "KON register writes do not match" in str(error)
         else:
             raise AssertionError("mismatched key-on event was accepted")
+        ram_csv = root / "ram-events.csv"
+        ram_csv.write_text(
+            "kind,master_clock,spc_cycle,pcm_sample,address,value\n"
+            "P,1000000,0,31990,0,0\n"
+            "D,0,100,32000,76,4\n"
+            "R,0,0,55000,4660,42\n"
+            "D,0,101,57600,12,7\n" +
+            "".join(f"V,0,0,{sample},{address},0\n"
+                    for sample in (56000, 58240, 59000)
+                    for address in range(25)), encoding="utf-8")
+        stages["post_audible_sound_writes"] = [
+            {"kind": "dsp", "address": 76, "value": 4,
+             "dsp_sample": 32040},
+            {"kind": "ram", "address": 4660, "value": 42,
+             "dsp_sample": 55068},
+            {"kind": "dsp", "address": 12, "value": 7,
+             "dsp_sample": 57672}]
+        stages["post_audible_sound_writes"].extend(
+            {"kind": "state", "address": address, "value": 0,
+             "dsp_sample": sample}
+            for sample in (56070, 58313, 59090) for address in range(25))
+        stages_timeline.write_text(json.dumps(stages), encoding="utf-8")
+        ram_report = compare_sound_ram(ram_csv, stages_timeline)
+        assert "RAM address/value ordered prefix: 1 writes" in ram_report
+        assert "+0.80s DSP write-derived registers: 2 common, 0 differ" in ram_report
+        stages["post_audible_sound_writes"][1]["value"] = 43
+        stages_timeline.write_text(json.dumps(stages), encoding="utf-8")
+        ram_report = compare_sound_ram(ram_csv, stages_timeline)
+        assert "RAM address/value multisets differ" in ram_report
+        gbb_ram = root / "gbb-ram.bin"
+        ref_ram = root / "ref-ram.bin"
+        gbb_ram.write_bytes(bytes(65536))
+        ref_ram.write_bytes(bytes(65536))
+        stages["apu_ram"] = {"size": 65536,
+                             "sha256": hashlib.sha256(bytes(65536)).hexdigest()}
+        stages_timeline.write_text(json.dumps(stages), encoding="utf-8")
+        ram_report = compare_sound_ram(ram_csv, stages_timeline,
+                                       gbb_ram, ref_ram)
+        assert "byte-identical" in ram_report
+        changed = bytearray(65536)
+        changed[0x4db0] = 1
+        gbb_ram.write_bytes(changed)
+        ram_report = compare_sound_ram(ram_csv, stages_timeline,
+                                       gbb_ram, ref_ram)
+        assert "1 differing bytes" in ram_report
         stages["post_audible_sound_writes"][0]["value"] = 4
         stages["native_dsp"]["pcm_sha256"] = "0" * 64
         stages_timeline.write_text(json.dumps(stages), encoding="utf-8")

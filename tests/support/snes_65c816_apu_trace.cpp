@@ -78,7 +78,8 @@ int main(int argc, char** argv) {
     bool audible_sound_probe = false;
     std::filesystem::path input_script_path;
     std::filesystem::path pcm_output_path;
-    std::filesystem::path sound_event_trace_path;
+        std::filesystem::path sound_event_trace_path;
+        std::filesystem::path apu_ram_output_path;
     unsigned requested_instruction_limit = 0;
     if (sync_gb) {
         for (int index = 6; index < argc; ++index) {
@@ -94,6 +95,9 @@ int main(int argc, char** argv) {
             } else if (option == "--sound-event-trace-output" &&
                        sound_event_trace_path.empty() && index + 1 < argc) {
                 sound_event_trace_path = argv[++index];
+            } else if (option == "--apu-ram-output" &&
+                       apu_ram_output_path.empty() && index + 1 < argc) {
+                apu_ram_output_path = argv[++index];
             } else if (option == "--instruction-limit" &&
                        requested_instruction_limit == 0 && index + 1 < argc) {
                 const std::string_view number(argv[++index]);
@@ -181,8 +185,8 @@ int main(int argc, char** argv) {
             std::uint64_t master_clock{};
             std::uint64_t spc_cycle{};
             std::uint64_t pcm_sample{};
-            std::uint8_t address{};
-            std::uint8_t value{};
+            std::uint16_t address{};
+            std::uint32_t value{};
         };
         std::vector<SoundTraceEvent> sound_trace;
         gameboy::SnesApuBus pcm_bus;
@@ -220,6 +224,9 @@ int main(int argc, char** argv) {
             std::uint64_t pcm_hash{14695981039346656037ULL};
             std::vector<sgb_test::SnesDspPcmRenderer::StereoSample>* pcm_export{};
             std::optional<std::uint64_t> first_audible_sample;
+            std::optional<std::uint64_t> first_keyon_sample;
+            std::optional<std::uint64_t> second_keyon_sample;
+            unsigned state_checkpoints{};
             std::vector<SoundTraceEvent>* sound_trace{};
         } dsp_observation;
         std::vector<sgb_test::SnesDspPcmRenderer::StereoSample> pcm_export;
@@ -269,7 +276,7 @@ int main(int argc, char** argv) {
                         ++recent_apu_count;
                     if (!sound_event_trace_path.empty() &&
                         icd->audible_sound_packets_delivered() != 0 &&
-                        sound_trace.size() < 16384) {
+                        sound_trace.size() < 32768) {
                         sound_trace.push_back({'H', cpu.timing().clocks(), 0,
                                                dsp_observation.pcm_samples,
                                                write.port, write.value});
@@ -361,6 +368,17 @@ int main(int argc, char** argv) {
                                 }
                                 observed.pending_ram[observed.pending_ram_count++] =
                                     {address, value};
+                                if (observed.sound_trace != nullptr &&
+                                    observed.first_keyon_sample &&
+                                    observed.pcm_samples >=
+                                        *observed.first_keyon_sample + 22400 &&
+                                    observed.pcm_samples <
+                                        *observed.first_keyon_sample + 27200 &&
+                                    observed.sound_trace->size() < 32768) {
+                                    observed.sound_trace->push_back({
+                                        'R', 0, 0, observed.pcm_samples,
+                                        address, value});
+                                }
                             }, &dsp_observation);
                         cpu.set_spc_step_observer(
                             [](void* context, std::uint64_t cycle,
@@ -383,6 +401,32 @@ int main(int argc, char** argv) {
                                         if (observed.pcm_export != nullptr)
                                             observed.pcm_export->push_back(*sample);
                                         ++observed.pcm_samples;
+                                        if (observed.sound_trace != nullptr &&
+                                            observed.first_keyon_sample &&
+                                            observed.state_checkpoints < 3) {
+                                            constexpr std::array<std::uint64_t, 2> offsets{
+                                                24000, 26240}; // +0.75s, +0.82s at 32kHz
+                                            const auto target = observed.state_checkpoints < 2
+                                                ? std::optional<std::uint64_t>{
+                                                    *observed.first_keyon_sample +
+                                                    offsets[observed.state_checkpoints]}
+                                                : observed.second_keyon_sample
+                                                    ? std::optional<std::uint64_t>{
+                                                        *observed.second_keyon_sample + 640}
+                                                    : std::nullopt;
+                                            if (target && observed.pcm_samples >= *target) {
+                                                for (unsigned voice = 0; voice < 8; ++voice)
+                                                    for (unsigned field = 0; field < 3; ++field)
+                                                        observed.sound_trace->push_back({
+                                                            'V', 0, 0, observed.pcm_samples,
+                                                            static_cast<std::uint16_t>(voice * 3 + field),
+                                                            observed.pcm->diagnostic_state(voice, field)});
+                                                observed.sound_trace->push_back({
+                                                    'V', 0, 0, observed.pcm_samples, 24,
+                                                    observed.pcm->diagnostic_state(8, 0)});
+                                                ++observed.state_checkpoints;
+                                            }
+                                        }
                                         if (sample->left != 0 || sample->right != 0) {
                                             ++observed.pcm_nonzero;
                                             if (observed.icd->sound_packets_delivered() != 0)
@@ -446,9 +490,17 @@ int main(int argc, char** argv) {
                                                 cycle, opcode, observed.address,
                                                 observed.value};
                                         }
+                                        if (observed.address == 0x4c &&
+                                            observed.value != 0 &&
+                                            observed.icd->audible_sound_packets_delivered() != 0) {
+                                            if (!observed.first_keyon_sample)
+                                                observed.first_keyon_sample = observed.pcm_samples;
+                                            else if (!observed.second_keyon_sample)
+                                                observed.second_keyon_sample = observed.pcm_samples;
+                                        }
                                         if (observed.sound_trace != nullptr &&
                                             observed.icd->audible_sound_packets_delivered() != 0 &&
-                                            observed.sound_trace->size() < 16384) {
+                                            observed.sound_trace->size() < 32768) {
                                             observed.sound_trace->push_back({
                                                 'D', 0, cycle, observed.pcm_samples,
                                                 observed.address, observed.value});
@@ -732,6 +784,18 @@ int main(int argc, char** argv) {
                        << static_cast<unsigned>(event.address) << ','
                        << static_cast<unsigned>(event.value) << '\n';
             if (!output) throw std::runtime_error("could not finish sound event trace");
+        }
+        if (!apu_ram_output_path.empty()) {
+            if (std::filesystem::exists(apu_ram_output_path))
+                throw std::runtime_error("APU RAM output already exists");
+            if (!apu_ram_output_path.parent_path().empty())
+                std::filesystem::create_directories(apu_ram_output_path.parent_path());
+            std::ofstream output(apu_ram_output_path, std::ios::binary);
+            if (!output) throw std::runtime_error("could not create APU RAM output");
+            for (unsigned address = 0; address < 65536; ++address)
+                output.put(static_cast<char>(pcm_bus.dsp_read_ram(
+                    static_cast<std::uint16_t>(address))));
+            if (!output) throw std::runtime_error("could not finish APU RAM output");
         }
         if (!pcm_output_path.empty()) {
             if (!dsp_observation.first_audible_sample)

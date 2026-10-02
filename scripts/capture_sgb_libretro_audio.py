@@ -137,7 +137,8 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
             snapshot_series: tuple[int, int, Path] | None = None,
             timeline_output: Path | None = None,
             require_snes_only_probe: bool = False,
-            native_dsp_output: Path | None = None
+            native_dsp_output: Path | None = None,
+            apu_ram_output: Path | None = None
             ) -> tuple[int, int]:
     if C.sizeof(C.c_void_p) != 8:
         raise RuntimeError("the diagnostic host currently requires a 64-bit process")
@@ -154,10 +155,14 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
         raise FileExistsError(timeline_output)
     if native_dsp_output is not None and native_dsp_output.exists():
         raise FileExistsError(native_dsp_output)
+    if apu_ram_output is not None and apu_ram_output.exists():
+        raise FileExistsError(apu_ram_output)
     if native_dsp_output is not None and not require_snes_only_probe:
         raise ValueError("native DSP capture requires the SNES-only probe")
     if require_snes_only_probe and timeline_output is None:
         raise ValueError("the SNES-only probe requires a timeline output")
+    if apu_ram_output is not None and not require_snes_only_probe:
+        raise ValueError("APU RAM output requires the SNES-only probe")
     if (snapshot_frame is None) != (snapshot_output is None):
         raise ValueError("snapshot frame and output must be supplied together")
     if snapshot_frame is not None and not 1 <= snapshot_frame <= frames:
@@ -165,7 +170,8 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
     if snapshot_output is not None and snapshot_output.exists():
         raise FileExistsError(snapshot_output)
     targets = [path.resolve() for path in
-               (output, snapshot_output, timeline_output, native_dsp_output)
+               (output, snapshot_output, timeline_output, native_dsp_output,
+                apu_ram_output)
                if path is not None]
     if len(targets) != len(set(targets)):
         raise ValueError("WAV, native DSP, snapshot, and timeline paths must differ")
@@ -184,12 +190,13 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                          "gbb_reference_sgb_sound_position",
                          "gbb_reference_sgb_dsp_sample_count",
                          "gbb_reference_sgb_dsp_copy",
+                         "gbb_reference_sgb_ram_copy",
                          "gbb_reference_sgb_event_count",
                          "gbb_reference_sgb_event_copy")
         if any(not hasattr(core, symbol) for symbol in probe_symbols):
             raise RuntimeError("core is not the instrumented SNES-only reference build")
         core.gbb_reference_sgb_probe_version.restype = C.c_uint
-        if core.gbb_reference_sgb_probe_version() != 5:
+        if core.gbb_reference_sgb_probe_version() != 6:
             raise RuntimeError("unsupported SNES-only reference probe version")
         core.gbb_reference_sgb_sound_count.restype = C.c_uint
         core.gbb_reference_sgb_sound_packet.argtypes = [C.c_uint,
@@ -202,6 +209,8 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
         core.gbb_reference_sgb_dsp_copy.argtypes = [
             C.c_uint, C.c_uint, C.POINTER(C.c_int16)]
         core.gbb_reference_sgb_dsp_copy.restype = C.c_uint
+        core.gbb_reference_sgb_ram_copy.argtypes = [C.POINTER(C.c_uint8), C.c_uint]
+        core.gbb_reference_sgb_ram_copy.restype = C.c_uint
         core.gbb_reference_sgb_event_count.restype = C.c_uint
         core.gbb_reference_sgb_event_copy.argtypes = [C.c_uint,
                                                         C.POINTER(C.c_uint)]
@@ -394,20 +403,23 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                                              "packet": bytes(packet).hex()})
                     next_sound_event = sound_count
                     trace_count = core.gbb_reference_sgb_event_count()
-                    if trace_count < next_trace_event or trace_count > 16384:
+                    if trace_count < next_trace_event or trace_count > 32768:
                         raise RuntimeError("reference sound write trace count is invalid")
                     for event_index in range(next_trace_event, trace_count):
                         entry = (C.c_uint * 6)()
                         if core.gbb_reference_sgb_event_copy(event_index, entry) != 1 or \
-                                entry[0] not in (1, 2) or \
-                                entry[1] > (3 if entry[0] == 1 else 127) or \
-                                entry[2] > 255 or \
+                                entry[0] not in (1, 2, 3, 4) or \
+                                entry[1] > (3 if entry[0] == 1 else
+                                            127 if entry[0] == 2 else
+                                            24 if entry[0] == 4 else 65535) or \
+                                entry[2] > (65535 if entry[0] == 4 else 255) or \
                                 (entry[0] == 1 and (entry[4] >= 262 or entry[5] >= 1364)):
                             raise RuntimeError("reference sound write trace is invalid")
-                        sound_trace.append({"kind": "host" if entry[0] == 1 else "dsp",
+                        sound_trace.append({"kind": {1: "host", 2: "dsp", 3: "ram",
+                                                      4: "state"}[entry[0]],
                                             "address": int(entry[1]),
                                             "value": int(entry[2]),
-                                            "dsp_sample": int(entry[3]) if entry[0] == 2
+                                            "dsp_sample": int(entry[3]) if entry[0] in (2, 3, 4)
                                             else None,
                                             "cpu_vcounter": int(entry[4]),
                                             "cpu_hcounter": int(entry[5]),
@@ -450,6 +462,15 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                         wav.setsampwidth(2)
                         wav.setframerate(32040)
                         wav.writeframes(native_dsp)
+            ram_bytes = None
+            if apu_ram_output is not None:
+                ram = (C.c_uint8 * 65536)()
+                if core.gbb_reference_sgb_ram_copy(ram, 65536) != 1:
+                    raise RuntimeError("reference APU RAM probe failed")
+                ram_bytes = bytes(ram)
+                apu_ram_output.parent.mkdir(parents=True, exist_ok=True)
+                with apu_ram_output.open("xb") as ram_file:
+                    ram_file.write(ram_bytes)
             if snapshot_output is not None:
                 if snapshot is None:
                     raise RuntimeError("core did not produce the requested video frame")
@@ -487,11 +508,15 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                             "sgb_sound_events": sound_events}
                 if require_snes_only_probe:
                     timeline["post_audible_sound_writes"] = sound_trace
-                    timeline["post_audible_sound_writes_limit_reached"] = len(sound_trace) == 16384
+                    timeline["post_audible_sound_writes_limit_reached"] = len(sound_trace) == 32768
                 if native_dsp is not None:
                     timeline["native_dsp"] = {
                         "sample_rate": 32040, "sample_count": native_count,
                         "pcm_sha256": hashlib.sha256(native_dsp).hexdigest()}
+                if ram_bytes is not None:
+                    timeline["apu_ram"] = {
+                        "size": len(ram_bytes),
+                        "sha256": hashlib.sha256(ram_bytes).hexdigest()}
                 timeline_output.parent.mkdir(parents=True, exist_ok=True)
                 with timeline_output.open("x", encoding="utf-8") as timeline_file:
                     json.dump(timeline, timeline_file, separators=(",", ":"))
@@ -545,6 +570,8 @@ def main() -> None:
                         help="require the local instrumented core; log host-consumed SOUND packets")
     parser.add_argument("--native-dsp-output", type=Path,
                         help="capture pre-resampler SNES DSP PCM (instrumented core only)")
+    parser.add_argument("--apu-ram-output", type=Path,
+                        help="capture final physical APU RAM (instrumented core only)")
     args = parser.parse_args()
     try:
         changes = []
@@ -562,7 +589,7 @@ def main() -> None:
                               args.input_script, args.input_offset_frames, changes,
                               args.snapshot_frame, args.snapshot_output, series,
                               args.timeline_output, args.require_snes_only_probe,
-                              args.native_dsp_output)
+                              args.native_dsp_output, args.apu_ram_output)
     except (OSError, RuntimeError, ValueError) as error:
         parser.error(str(error))
     print(f"Captured {count} stereo frames at {rate} Hz to {args.output}")

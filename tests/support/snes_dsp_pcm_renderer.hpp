@@ -59,6 +59,19 @@ public:
     [[nodiscard]] std::uint8_t endx() const noexcept {
         return timed_mode_ ? timed_endx_visible_ : ends_.endx();
     }
+    // Development-only state probe; these are renderer internals, not SNES
+    // register reads. Used to localize a divergence in a title capture.
+    [[nodiscard]] std::uint32_t diagnostic_state(unsigned voice,
+                                                  unsigned field) const noexcept {
+        if (voice < voices_.size()) {
+            const auto& state = voices_[voice];
+            if (field == 0) return state.envelope.value();
+            if (field == 1) return state.stream.next_address();
+            if (field == 2) return state.ring.phase();
+        }
+        if (voice == voices_.size() && field == 0) return echo_offset_;
+        return 0;
+    }
 
 private:
     struct Voice {

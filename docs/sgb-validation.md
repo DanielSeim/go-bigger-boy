@@ -614,6 +614,52 @@ diagnostic should trace RAM writes and DSP voice/echo state across this
 transition, then compare a short interval under matched register state.
 No hardware capture was used, and this result does not enable live SGB audio.
 
+### RAM and internal-state follow-up at the split
+
+The pinned development probe now records accepted SPC700 physical RAM writes
+from +0.70 to +0.85 s after the first nonzero KON, plus DSP voice/echo-state
+checkpoints at first-KON +0.75 s, first-KON +0.82 s, and second-KON +0.02 s.
+The captures are compared with:
+
+```sh
+python3 scripts/compare_sgb_sound_ram.py \
+  --gbb-events /tmp/gbb-title-sound-events.csv \
+  --reference-timeline /tmp/sgb2-snes-only-timeline.json \
+  --gbb-ram /tmp/gbb-apu-ram.bin \
+  --reference-ram /tmp/sgb2-reference-apu-ram.bin
+```
+
+Use `--apu-ram-output` on the two trace/capture commands above to produce
+the binary RAM files. These are local diagnostics and must not be committed;
+the reference timeline pins its RAM dump by SHA-256. The comparison without
+both RAM files still checks the event and internal-state traces.
+
+On the local Donkey Kong SGB2 replay, the final `$4db0..$eeef` sample-upload
+region was **byte-identical (41,280/41,280 bytes)**. Neither side wrote to
+that region during the split window. Both had 893 accepted SPC RAM writes at
+`$0100` and above in that window, with the same address/value multiset;
+low-memory volatile writes and their edge-of-window order differed. These
+observations rule out different uploaded BRR sample bytes as the immediate
+cause in this replay, but do not compare transient DSP echo writeback or
+every RAM read.
+
+At +0.75 and +0.80 s the write-derived DSP register images agreed for all
+28 registers observed in both traces; a one-step master-volume difference
+appeared at +0.70 and +0.85 s. The new voice-2 KON write happened at
++0.811969 s in GBB and +0.810986 s in the reference relative to the first
+KON. At +0.82 s, voice 2 had the same envelope (2047) and BRR address
+(`$3b36`) but a different interpolation position (16,623 versus 10,581).
+At **0.02 s after each side's second KON**, the envelope and BRR address
+still matched (2047 and `$3b7e`), while positions were 9,938 and 8,501:
+one 1,437-unit pitch step apart. Echo offsets also differed, although both
+echo-output volume registers were zero at the checked register checkpoint.
+This localizes the audible discrepancy to voice/pitch phase or its scheduling
+around the second KON, rather than a different BRR upload or envelope value.
+It does **not** yet prove which implementation's sample phase is hardware-
+correct; the development renderer and independent reference have distinct
+clocking paths, and their snapshot points may differ by a DSP sample. Do not
+change the shipping clock or claim SGB audio support based on this probe.
+
 A new fully synthetic SNES program waits, writes a host command to the APU,
 and runs concurrently with an original SPC700 test program. The test stamps
 its KON write at SPC instruction-end cycle 2,304, feeds that event to the
