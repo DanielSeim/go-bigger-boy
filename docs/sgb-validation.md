@@ -836,6 +836,59 @@ SPC bus. Those are separate remaining tasks, not solved by these access
 traces. No proprietary ROM/capture bytes or external processor implementation
 are committed, and release audio behavior is unchanged.
 
+### Shared diagnostic SPC/DSP bus and live readback
+
+The opt-in `--shared-bus-dsp` mode builds on cycle-level SPC execution but
+removes the diagnostic RAM/register copy. The SPC and renderer now use the
+same physical APU RAM for uploads, BRR data and echo. Accepted SPC DSP writes
+feed synthesis side effects exactly once; the renderer never rewrites the
+SPC selector/data ports. DSP-owned register publication bypasses CPU observers
+and the physical I/O RAM shadow, while ordinary `$F3` reads see live values.
+
+`ENVX`, `OUTX` and `ENDX` publication follows the staggered voice phases,
+including the shared ENVX/OUTX pipeline buffers and intervening CPU writes.
+Echo inputs are read at phases 22/23 and written back at 29/30, rather than
+reading both channels later during the output mix. Physical echo beneath
+`$F0..$F3` does not invoke SPC I/O effects or alter the DSP selector.
+
+The ROM-free corpus compares **945 cases** with the independent DSP:
+all eight voices under direct gain/ADSR, every readback-register write phase,
+cross-voice pipeline-latch interference, echo read/write collisions and
+physical echo underneath I/O. PCM and ordered register/RAM probes match
+byte-for-byte. Its verified SHA-256 is
+`b391ccf5e4d96feb3a557100c9f81103a0d04032d34387bddf8949ec9595bff1`.
+Additional contracts run a real synthetic SPC program against the shared
+renderer, check live ENVX/OUTX/ENDX reads, reject mixed sample/cycle modes, and
+verify that publication does not recurse into SPC write observers.
+
+```sh
+python3 tests/snes_dsp_shared_bus_tests.py \
+  build/gameboy_snes_dsp_pcm_fixture_runner \
+  --reference-dir /tmp/bsnes-sgb-reference-src/bsnes/sfc/dsp
+```
+
+Use the local title command with `--shared-bus-dsp` instead of
+`--cycle-bus-dsp`. The diagnostic starts with `FLG=$e0` (muted, soft-reset,
+echo writes disabled) so the DSP cannot overwrite the live IPL upload before
+firmware configures it. This is an explicit safe reset condition, not a claim
+to reproduce every power-on register/RAM value. Earlier modes remain usable
+as unchanged baselines. Observer cleanup covers early exits as well as the
+successful bounded replay; RAM exports now come from the actual shared bus.
+
+Donkey Kong still delivers all three SOUND packets, has identical 41,280-byte
+uploaded sample data, matches KON phases 37/37 and 41/41, and matches the
+active voice's second-KON output-640 checkpoint. The fixed-lag 8 kHz audio
+windows remain at least 0.9997 correlated. **The other mismatches did not
+disappear**: the +0.82-second position remains 13,749/12,018, and dormant
+voice state, echo offset and volume-ramp timing still differ.
+
+Shared memory is not full bus-level emulation. BRR/directory accesses still
+use the diagnostic renderer's grouped fetches rather than every interleaved
+DSP memory access; SNES/SPC rendezvous and half-cycle port timing remain
+unfinished. The synthetic matches and local replay establish this coupling
+path, not hardware-exact whole-system audio or live SGB sound in releases.
+No external core or proprietary ROM/capture bytes are linked or shipped.
+
 A new fully synthetic SNES program waits, writes a host command to the APU,
 and runs concurrently with an original SPC700 test program. The test stamps
 its KON write at SPC instruction-end cycle 2,304, feeds that event to the

@@ -1329,6 +1329,16 @@ if(GAMEBOY_BUILD_TESTS)
                                  ${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.boot.rom
                                  ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/sgb/titles/donkey-kong-gameplay.script
                                  --cycle-bus-dsp)
+                add_test(NAME gameboy_snes_65c816_local_title_shared_bus_pcm
+                         COMMAND ${Python3_EXECUTABLE}
+                                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/snes_65c816_local_title_sound_tests.py
+                                 $<TARGET_FILE:gameboy_snes_65c816_apu_trace>
+                                 ${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.program.rom
+                                 ${CMAKE_CURRENT_SOURCE_DIR}/roms/spc700.rom
+                                 "${CMAKE_CURRENT_SOURCE_DIR}/roms/Donkey Kong (JU) (V1.1) [S][!].gb"
+                                 ${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.boot.rom
+                                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/sgb/titles/donkey-kong-gameplay.script
+                                 --shared-bus-dsp)
             endif()
         endif()
     endif()
@@ -1391,6 +1401,10 @@ if(GAMEBOY_BUILD_TESTS)
         add_test(NAME gameboy_snes_dsp_second_keyon_phase
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/snes_dsp_second_keyon_phase_tests.py
+                         $<TARGET_FILE:gameboy_snes_dsp_pcm_fixture_runner>)
+        add_test(NAME gameboy_snes_dsp_shared_bus
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/snes_dsp_shared_bus_tests.py
                          $<TARGET_FILE:gameboy_snes_dsp_pcm_fixture_runner>)
         add_test(NAME gameboy_snes_spc_write_cycle
                  COMMAND ${Python3_EXECUTABLE}

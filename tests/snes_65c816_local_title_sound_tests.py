@@ -25,6 +25,7 @@ def main() -> int:
     parser.add_argument("input_script")
     parser.add_argument("--bus-clocked-dsp", action="store_true")
     parser.add_argument("--cycle-bus-dsp", action="store_true")
+    parser.add_argument("--shared-bus-dsp", action="store_true")
     args = parser.parse_args()
     if hashlib.sha256(Path(args.gb_rom).read_bytes()).hexdigest() != DONKEY_SHA256:
         raise AssertionError("local Donkey Kong ROM does not match the pinned title")
@@ -38,7 +39,8 @@ def main() -> int:
              args.gb_rom, args.gb_boot, "--input-script", args.input_script,
              "--instruction-limit", "40000000", "--pcm-output", str(pcm_path),
              "--sound-event-trace-output", str(event_path)] +
-            (["--cycle-bus-dsp"] if args.cycle_bus_dsp else
+            (["--shared-bus-dsp"] if args.shared_bus_dsp else
+             ["--cycle-bus-dsp"] if args.cycle_bus_dsp else
              ["--bus-clocked-dsp"] if args.bus_clocked_dsp else []),
             capture_output=True, text=True, timeout=180, check=False,
         )
@@ -56,16 +58,19 @@ def main() -> int:
         packets = [event for event in event_rows if event["kind"] == "P"]
         hosts = [event for event in event_rows if event["kind"] == "H"]
         dsp = [event for event in event_rows if event["kind"] == "D"]
-        if args.bus_clocked_dsp or args.cycle_bus_dsp:
+        if args.bus_clocked_dsp or args.cycle_bus_dsp or args.shared_bus_dsp:
             if "DSP clock from SPC reset; write-boundary observation enabled" not in output:
                 raise AssertionError("bus-clocked DSP did not start at reset")
             checkpoints = [event for event in event_rows if event["kind"] == "V"]
             if not checkpoints or any(int(event["spc_cycle"]) == 0 for event in checkpoints):
                 raise AssertionError("bus-clocked voice checkpoints lack cycle positions")
-        if args.cycle_bus_dsp and \
+        if (args.cycle_bus_dsp or args.shared_bus_dsp) and \
                 "SPC cycle-level reads, dummy accesses and timers enabled" not in output:
             raise AssertionError("title probe did not opt into cycle-level SPC execution")
-        if args.cycle_bus_dsp:
+        if args.shared_bus_dsp and \
+                "Shared SPC/DSP APU RAM and live register readback enabled" not in output:
+            raise AssertionError("title probe did not use the shared SPC/DSP bus")
+        if args.cycle_bus_dsp or args.shared_bus_dsp:
             phases = [(int(event["address"]), int(event["value"]))
                       for event in event_rows if event["kind"] == "Q"]
             # Independently observed non-fast reference phases for this script.

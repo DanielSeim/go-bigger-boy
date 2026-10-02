@@ -27,6 +27,7 @@ public:
             renderer_.mix_timed_voice_channel(p / 3, 1);
         if (p >= 2 && p <= 23 && (p - 2) % 3 == 0)
             renderer_.publish_timed_endx((p - 2) / 3);
+        renderer_.publish_timed_readback(p);
         if (p >= 22 && p <= 25) renderer_.latch_timed_fir(p);
         if (p == 26) {
             left_ = bus_.dsp_register(0x0c);

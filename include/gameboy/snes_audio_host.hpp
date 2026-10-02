@@ -52,6 +52,11 @@ public:
     [[nodiscard]] std::uint8_t host_read_port(unsigned index) const noexcept;
     void host_write_port(unsigned index, std::uint8_t value) noexcept;
     [[nodiscard]] std::uint8_t dsp_register(std::uint8_t index) const noexcept;
+    // DSP-owned register publication bypasses SPC ports and observers. It
+    // must not change the DSP selector, physical I/O RAM, or CPU write trace.
+    void dsp_publish_register(std::uint8_t index, std::uint8_t value) noexcept {
+        dsp_[index & 0x7FU] = value;
+    }
     // Optional observation of accepted SPC700 DSP-data writes. The callback
     // must not throw and must be detached before its context is destroyed.
     void set_dsp_write_observer(DspWriteObserver observer,

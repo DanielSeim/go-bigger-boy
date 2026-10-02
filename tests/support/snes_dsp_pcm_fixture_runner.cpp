@@ -12,13 +12,21 @@ namespace {
 
 class Sink final {
 public:
-    Sink() : renderer_(bus_), clock_(renderer_, bus_) {}
+    explicit Sink(bool shared) : renderer_(bus_), clock_(renderer_, bus_), shared_(shared) {
+        renderer_.set_live_readback_enabled(shared);
+        if (shared) bus_.set_dsp_write_observer(
+            [](void* context, std::uint8_t address, std::uint8_t value) noexcept {
+                static_cast<Sink*>(context)->renderer_.accept_dsp_write(address, value);
+            }, this);
+    }
+    ~Sink() { bus_.set_dsp_write_observer(nullptr); }
     void ram(const std::uint16_t address, const std::uint8_t value) {
         if (clock_count_ != 0) supported_ = false;
-        bus_.spc_write(address, value);
+        if (shared_) bus_.dsp_write_ram(address, value);
+        else bus_.spc_write(address, value);
     }
     void reg(const std::uint8_t address, const std::uint8_t value) {
-        if (clock_count_ != 0 && address != 0x0C && address != 0x1C &&
+        if (!shared_ && clock_count_ != 0 && address != 0x0C && address != 0x1C &&
             address != 0x0D && address != 0x2C && address != 0x3C &&
             address != 0x2D && address != 0x4C && address != 0x4D &&
             address != 0x3D && address != 0x5C && address != 0x5D &&
@@ -26,7 +34,26 @@ public:
             (address & 0x0FU) > 7 && (address & 0x0FU) != 0x0FU) {
             supported_ = false;
         }
-        renderer_.write_dsp(address, value);
+        if (shared_) {
+            bus_.dsp_publish_register(address, value);
+            renderer_.accept_dsp_write(address, value);
+        } else renderer_.write_dsp(address, value);
+    }
+    void spc(std::uint16_t address, std::uint8_t value) {
+        if (!shared_) { supported_ = false; return; }
+        bus_.spc_write(address, value);
+    }
+    [[nodiscard]] std::optional<std::uint8_t> readreg(unsigned address) const {
+        if (!shared_) return std::nullopt;
+        return bus_.dsp_register(static_cast<std::uint8_t>(address));
+    }
+    [[nodiscard]] std::optional<std::uint8_t> readram(unsigned address) const {
+        if (!shared_) return std::nullopt;
+        return bus_.dsp_read_ram(static_cast<std::uint16_t>(address));
+    }
+    [[nodiscard]] std::optional<std::uint8_t> spcread(unsigned address) {
+        if (!shared_) return std::nullopt;
+        return bus_.spc_read(static_cast<std::uint16_t>(address));
     }
     [[nodiscard]] std::optional<std::array<std::int16_t, 2>> step() {
         const auto sample = renderer_.next_sample();
@@ -41,7 +68,7 @@ public:
         return renderer_.diagnostic_state(voice, field);
     }
     [[nodiscard]] sgb_test::DspClockResult step_result() {
-        if (!supported_ || clock_count_ != 0) return {false, {}};
+        if (!supported_ || shared_ || clock_count_ != 0) return {false, {}};
         stepped_ = true;
         const auto sample = step();
         return {sample.has_value(), sample};
@@ -63,11 +90,14 @@ private:
     std::uint64_t clock_count_{};
     bool supported_{true};
     bool stepped_{};
+    bool shared_{};
 };
 
 } // namespace
 
-int main() {
-    Sink sink;
+int main(int argc, char** argv) {
+    const bool shared = argc == 2 && std::string(argv[1]) == "--shared-bus";
+    if (argc != 1 && !shared) return 2;
+    Sink sink(shared);
     return sgb_test::run_dsp_fixture(sink);
 }

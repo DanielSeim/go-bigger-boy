@@ -80,6 +80,7 @@ int main(int argc, char** argv) {
     bool clocked_dsp = false;
     bool bus_clocked_dsp = false;
     bool cycle_bus_dsp = false;
+    bool shared_bus_dsp = false;
     std::filesystem::path input_script_path;
     std::filesystem::path pcm_output_path;
         std::filesystem::path sound_event_trace_path;
@@ -98,6 +99,8 @@ int main(int argc, char** argv) {
             } else if (option == "--cycle-bus-dsp" && !cycle_bus_dsp) {
                 cycle_bus_dsp = true;
                 bus_clocked_dsp = clocked_dsp = true;
+            } else if (option == "--shared-bus-dsp" && !shared_bus_dsp) {
+                shared_bus_dsp = cycle_bus_dsp = bus_clocked_dsp = clocked_dsp = true;
             } else if (option == "--input-script" &&
                        input_script_path.empty() && index + 1 < argc) {
                 input_script_path = argv[++index];
@@ -146,6 +149,7 @@ int main(int argc, char** argv) {
                      " [--clocked-dsp]"
                      " [--bus-clocked-dsp]"
                      " [--cycle-bus-dsp]"
+                     " [--shared-bus-dsp]"
                      " [--audible-sound-probe]]\n";
         return 2;
     }
@@ -205,8 +209,10 @@ int main(int argc, char** argv) {
         };
         std::vector<SoundTraceEvent> sound_trace;
         gameboy::SnesApuBus pcm_bus;
-        sgb_test::SnesDspPcmRenderer pcm(pcm_bus);
-        sgb_test::SnesDspClock pcm_clock(pcm, pcm_bus);
+        auto& render_bus = shared_bus_dsp ? apu : pcm_bus;
+        sgb_test::SnesDspPcmRenderer pcm(render_bus);
+        pcm.set_live_readback_enabled(shared_bus_dsp);
+        sgb_test::SnesDspClock pcm_clock(pcm, render_bus);
         struct DspObservation {
             struct Event {
                 std::uint64_t completed_cycle{};
@@ -232,6 +238,7 @@ int main(int argc, char** argv) {
             sgb_test::SnesDspPcmRenderer* pcm{};
             sgb_test::SnesDspClock* clock{};
             gameboy::SnesApuBus* pcm_bus{};
+            bool shared_bus{};
             const sgb_test::SnesIcdGbSource* icd{};
             std::uint64_t next_sample_cycle{};
             std::uint64_t pcm_samples{};
@@ -248,10 +255,23 @@ int main(int argc, char** argv) {
             sgb_test::Snes65c816TraceCpu::SpcStepObserver advance{};
         } dsp_observation;
         std::vector<sgb_test::SnesDspPcmRenderer::StereoSample> pcm_export;
+        struct ObserverScope {
+            gameboy::SnesApuBus& apu;
+            gameboy::SnesSpc700& spc;
+            sgb_test::Snes65c816TraceCpu& cpu;
+            ~ObserverScope() {
+                apu.set_dsp_write_observer(nullptr);
+                apu.set_spc_ram_write_observer(nullptr);
+                spc.set_write_cycle_observer(nullptr);
+                spc.set_bus_cycle_observer(nullptr);
+                cpu.set_spc_step_observer(nullptr);
+            }
+        } observer_scope{apu, spc, cpu};
         if (sync_gb) {
             dsp_observation.pcm = &pcm;
             if (clocked_dsp) dsp_observation.clock = &pcm_clock;
-            dsp_observation.pcm_bus = &pcm_bus;
+            dsp_observation.pcm_bus = &render_bus;
+            dsp_observation.shared_bus = shared_bus_dsp;
             dsp_observation.icd = icd.get();
             if (!pcm_output_path.empty()) dsp_observation.pcm_export = &pcm_export;
             if (!sound_event_trace_path.empty())
@@ -385,7 +405,7 @@ int main(int argc, char** argv) {
                          index < observed.pending_ram_count; ++index) {
                         const auto [address, value] =
                             observed.pending_ram[index];
-                        if (observed.pcm_bus != nullptr)
+                        if (observed.pcm_bus != nullptr && !observed.shared_bus)
                             observed.pcm_bus->dsp_write_ram(address, value);
                         if (observed.ram_writes == 0)
                             observed.first_ram_cycle = cycle;
@@ -437,9 +457,12 @@ int main(int argc, char** argv) {
                                     'D', 0, cycle, observed.pcm_samples,
                                     observed.address, observed.value});
                             }
-                            if (observed.pcm != nullptr)
-                                observed.pcm->write_dsp(
-                                    observed.address, observed.value);
+                            if (observed.pcm != nullptr) {
+                                if (observed.shared_bus)
+                                    observed.pcm->accept_dsp_write(observed.address, observed.value);
+                                else
+                                    observed.pcm->write_dsp(observed.address, observed.value);
+                            }
                             if (observed.clock != nullptr &&
                                 observed.sound_trace != nullptr &&
                                 observed.address == 0x4c && observed.value != 0 &&
@@ -456,9 +479,15 @@ int main(int argc, char** argv) {
             cpu.set_spc_step_observer(dsp_observation.advance, &dsp_observation);
         };
         if (bus_clocked_dsp) {
-            pcm_bus = apu;
+            if (!shared_bus_dsp) pcm_bus = apu;
             pcm.reset();
             pcm_clock.reset();
+            if (shared_bus_dsp) {
+                // Start muted, soft-reset and with echo writes disabled. A
+                // zeroed FLG would let the DSP overwrite the live IPL upload.
+                render_bus.dsp_publish_register(0x6C, 0xE0);
+                pcm.accept_dsp_write(0x6C, 0xE0);
+            }
             dsp_observation.next_sample_cycle = 1;
             install_observation();
             spc.set_write_cycle_observer(
@@ -480,6 +509,8 @@ int main(int argc, char** argv) {
                     }, &dsp_observation);
                 std::cout << "SPC cycle-level reads, dummy accesses and timers enabled\n";
             }
+            if (shared_bus_dsp)
+                std::cout << "Shared SPC/DSP APU RAM and live register readback enabled\n";
             std::cout << "DSP clock from SPC reset; write-boundary observation enabled\n";
         }
         for (unsigned i = 0; i < instruction_bound; ++i) {
@@ -869,7 +900,7 @@ int main(int argc, char** argv) {
             std::ofstream output(apu_ram_output_path, std::ios::binary);
             if (!output) throw std::runtime_error("could not create APU RAM output");
             for (unsigned address = 0; address < 65536; ++address)
-                output.put(static_cast<char>(pcm_bus.dsp_read_ram(
+                output.put(static_cast<char>(render_bus.dsp_read_ram(
                     static_cast<std::uint16_t>(address))));
             if (!output) throw std::runtime_error("could not finish APU RAM output");
         }

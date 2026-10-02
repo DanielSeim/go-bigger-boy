@@ -1,6 +1,8 @@
 #include "snes_dsp_pcm_renderer.hpp"
+#include "snes_dsp_clock.hpp"
 
 #include "gameboy/snes_audio_host.hpp"
+#include "gameboy/snes_spc700.hpp"
 
 #include <cstdint>
 #include <iostream>
@@ -149,6 +151,64 @@ void test_nonlooping_end_and_keyoff() {
           "held KOFF eventually releases the voice to silent PCM");
 }
 
+void test_shared_spc_dsp_bus() {
+    gameboy::SnesApuBus bus;
+    setup_source(bus, 0x83);
+    sgb_test::SnesDspPcmRenderer renderer(bus);
+    configure_mix(renderer);
+    configure_voice(renderer, 0, 0x7F, 0x40);
+    renderer.set_live_readback_enabled(true);
+    sgb_test::SnesDspClock clock(renderer, bus);
+    gameboy::SnesApuBus::IplRom ipl{};
+    constexpr std::uint8_t program[]{
+        0x8F, 0x4C, 0xF2, 0x8F, 1, 0xF3, // SPC starts voice 0 once.
+        0x8F, 8, 0xF2, 0xE4, 0xF3, 0xC4, 0x20,
+        0x8F, 9, 0xF2, 0xE4, 0xF3, 0xC4, 0x21,
+        0x8F, 0x7C, 0xF2, 0xE4, 0xF3, 0xC4, 0x22,
+        0x2F, 0xE9}; // Loop over live ENVX/OUTX/ENDX reads.
+    for (unsigned i = 0; i < sizeof(program); ++i) ipl[i] = program[i];
+    bus.install_ipl(ipl);
+    struct Observation {
+        sgb_test::SnesDspPcmRenderer* renderer;
+        sgb_test::SnesDspClock* clock;
+        gameboy::SnesApuBus* bus;
+        unsigned writes{}, outputs{}, nonzero{};
+        bool selector_changed{};
+    } observed{&renderer, &clock, &bus};
+    bus.set_dsp_write_observer(
+        [](void* context, std::uint8_t address, std::uint8_t value) noexcept {
+            auto& state = *static_cast<Observation*>(context);
+            ++state.writes;
+            state.renderer->accept_dsp_write(address, value);
+        }, &observed);
+    gameboy::SnesSpc700 spc(bus);
+    spc.set_cycle_bus_enabled(true);
+    spc.set_bus_cycle_observer(
+        [](void* context, std::uint64_t, char kind, std::uint16_t, std::uint8_t) noexcept {
+            if (kind != 'T') return;
+            auto& state = *static_cast<Observation*>(context);
+            const auto selector = state.bus->spc_read(0xF2);
+            const auto sample = state.clock->clock();
+            state.selector_changed |= state.bus->spc_read(0xF2) != selector;
+            if (sample) {
+                ++state.outputs;
+                if (sample->left != 0 || sample->right != 0) ++state.nonzero;
+            }
+        }, &observed);
+    bool env{}, out{}, end{};
+    while (spc.cycles() < 4096) {
+        if (!spc.step().supported) { check(false, "shared bus SPC test program executes"); break; }
+        env |= bus.dsp_read_ram(0x20) == 127;
+        out |= bus.dsp_read_ram(0x21) != 0;
+        end |= bus.dsp_read_ram(0x22) == 1;
+    }
+    check(env && out && end && observed.writes == 1 && observed.outputs >= 128 &&
+              observed.nonzero != 0 && !observed.selector_changed,
+          "SPC observes live DSP registers without recursive writes or selector corruption");
+    spc.set_bus_cycle_observer(nullptr);
+    bus.set_dsp_write_observer(nullptr);
+}
+
 } // namespace
 
 int main() {
@@ -156,5 +216,6 @@ int main() {
     test_two_voice_mix_and_rejection();
     test_brr_end_and_key_retrigger();
     test_nonlooping_end_and_keyoff();
+    test_shared_spc_dsp_bus();
     return failures == 0 ? 0 : 1;
 }

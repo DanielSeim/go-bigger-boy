@@ -17,6 +17,24 @@ public:
     void reg(const std::uint8_t address, const std::uint8_t value) {
         dsp_.write(address, value);
     }
+    void spc(std::uint16_t address, std::uint8_t value) {
+        ram_[address] = value;
+        if (address == 0xf2) selector_ = value;
+        if (address == 0xf3 && selector_ < 128) dsp_.write(selector_, value);
+    }
+    [[nodiscard]] std::optional<std::uint8_t> readreg(unsigned address) const {
+        return dsp_.read(address);
+    }
+    [[nodiscard]] std::optional<std::uint8_t> readram(unsigned address) const {
+        return ram_[address];
+    }
+    [[nodiscard]] std::optional<std::uint8_t> spcread(unsigned address) const {
+        if (address == 0xf2) return selector_;
+        if (address == 0xf3) return dsp_.read(selector_ & 127);
+        // Shared fixtures do not enable timers or host input ports.
+        if (address >= 0xf0 && address <= 0xff) return 0;
+        return ram_[address];
+    }
     [[nodiscard]] std::uint8_t endx() const { return dsp_.read(0x7c); }
     [[nodiscard]] std::optional<unsigned> key_clock() const {
 #ifdef GBB_REFERENCE_KEY_CLOCK
@@ -59,6 +77,7 @@ public:
 private:
     std::array<std::uint8_t, 0x10000> ram_{};
     SPC_DSP dsp_{};
+    std::uint8_t selector_{};
 };
 
 } // namespace

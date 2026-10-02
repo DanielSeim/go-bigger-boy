@@ -17,9 +17,9 @@ class SnesApuBus;
 
 namespace sgb_test {
 
-// A deliberately test-only 32 kHz PCM path. Register writes must go through
-// write_dsp(); the bus does not notify observers about SPC700 DSP writes.
-// No SPC700/65C816 scheduling is modeled.
+// A deliberately test-only 32 kHz PCM path. Standalone fixtures use write_dsp();
+// shared-bus callers commit an SPC write then feed accept_dsp_write() once.
+// Scheduling is supplied by the caller, not by this renderer.
 class SnesDspPcmRenderer final {
 public:
     struct StereoSample {
@@ -31,6 +31,11 @@ public:
     explicit SnesDspPcmRenderer(gameboy::SnesApuBus& bus) noexcept;
     void reset() noexcept;
     void write_dsp(std::uint8_t address, std::uint8_t value) noexcept;
+    // A shared-bus caller has already committed this SPC write. Only update
+    // synthesis side effects; do not write the SPC ports again.
+    void accept_dsp_write(std::uint8_t address, std::uint8_t value) noexcept;
+    void set_live_readback_enabled(bool enabled) noexcept { live_readback_ = enabled; }
+    void publish_timed_readback(unsigned phase) noexcept;
     [[nodiscard]] std::optional<StereoSample> next_sample() noexcept;
     // Whole-sample fixture can supply the four output volumes explicitly;
     // clock fixtures use the phase methods below for per-voice reads.
@@ -106,6 +111,14 @@ private:
     bool timed_mode_{};
     gameboy::SnesDspKeyControl::Sample current_keys_{};
     std::array<std::int16_t, 8> voice_output16_{};
+    bool live_readback_{};
+    std::array<std::uint8_t, 8> live_envx_{};
+    std::array<bool, 8> live_loop_event_{};
+    std::array<bool, 8> live_kon_event_{};
+    std::uint8_t live_envx_buffer_{};
+    std::uint8_t live_outx_buffer_{};
+    std::uint8_t live_endx_buffer_{};
+    StereoSample live_echo_input_{};
     std::array<TimedVoiceRegisters, 8> timed_voice_registers_{};
     [[nodiscard]] StereoSample mix_echo(StereoSample dac_mix,
                                         StereoSample dac_send,

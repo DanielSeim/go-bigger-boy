@@ -68,7 +68,9 @@ int run_dsp_fixture(Sink& sink) {
         std::string second;
         std::string excess;
         if (!(fields >> first) ||
-            (operation != "step" && operation != "clock" && !(fields >> second)) ||
+            (operation != "step" && operation != "clock" &&
+             operation != "readreg" && operation != "readram" && operation != "spcread" &&
+             !(fields >> second)) ||
             (fields >> excess)) {
             std::cerr << "fixture line " << line_number << ": invalid field count\n";
             return 2;
@@ -81,7 +83,14 @@ int run_dsp_fixture(Sink& sink) {
                 return value;
             };
             const auto address = parse(first);
-            if (operation == "state") {
+            if (operation == "readreg" || operation == "readram" || operation == "spcread") {
+                if (address > (operation == "readreg" ? 127UL : 65535UL))
+                    throw std::out_of_range("read probe address");
+                const auto value = operation == "readreg" ? sink.readreg(address)
+                    : operation == "readram" ? sink.readram(address) : sink.spcread(address);
+                if (!value) throw std::invalid_argument("shared bus probe unavailable");
+                std::cerr << operation << ' ' << address << ' ' << unsigned(*value) << '\n';
+            } else if (operation == "state") {
                 const auto field = parse(second);
                 if (address > 8 || field > 2 || (address == 8 && field != 0))
                     throw std::out_of_range("state voice or field");
@@ -89,12 +98,14 @@ int run_dsp_fixture(Sink& sink) {
                                               static_cast<unsigned>(field));
                 if (!value) throw std::invalid_argument("state probe unavailable");
                 std::cerr << "state " << address << ' ' << field << ' ' << *value << '\n';
-            } else if (operation == "ram" || operation == "reg") {
+            } else if (operation == "ram" || operation == "reg" || operation == "spc") {
                 const auto value = parse(second);
-                if (value > 0xffUL || address > (operation == "ram" ? 0xffffUL : 0x7fUL)) {
+                if (value > 0xffUL || address > (operation == "reg" ? 0x7fUL : 0xffffUL)) {
                     throw std::out_of_range("address or value");
                 }
                 if (operation == "ram") sink.ram(static_cast<std::uint16_t>(address),
+                                                    static_cast<std::uint8_t>(value));
+                else if (operation == "spc") sink.spc(static_cast<std::uint16_t>(address),
                                                     static_cast<std::uint8_t>(value));
                 else sink.reg(static_cast<std::uint8_t>(address),
                               static_cast<std::uint8_t>(value));

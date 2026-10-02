@@ -180,6 +180,28 @@ void test_spc_physical_ram_observer() {
     check(seen.count == 2, "APU reset detaches physical RAM observer");
 }
 
+void test_dsp_register_publication() {
+    gameboy::SnesApuBus bus;
+    bus.spc_write(0xF2, 0x8C);
+    bus.spc_write(0xF3, 0x55);
+    unsigned writes{};
+    bus.set_dsp_write_observer(
+        [](void* context, std::uint8_t, std::uint8_t) noexcept {
+            ++*static_cast<unsigned*>(context);
+        }, &writes);
+    bus.set_spc_ram_write_observer(
+        [](void* context, std::uint16_t, std::uint8_t) noexcept {
+            ++*static_cast<unsigned*>(context);
+        }, &writes);
+    bus.dsp_publish_register(0x0C, 0xBA);
+    check(bus.spc_read(0xF3) == 0xBA && bus.dsp_register(0x0C) == 0xBA &&
+              bus.spc_read(0xF2) == 0x8C && bus.dsp_read_ram(0xF2) == 0x8C &&
+              bus.dsp_read_ram(0xF3) == 0x55 && writes == 0,
+          "DSP publication updates live readback without SPC selector/RAM/observer effects");
+    bus.set_dsp_write_observer(nullptr);
+    bus.set_spc_ram_write_observer(nullptr);
+}
+
 void test_timer_batching() {
     // Compare the fast bulk advance to a literal single-cycle reference
     // across target changes, enable transitions, and fractional phases.
@@ -238,6 +260,7 @@ int main(const int argc, char** argv) {
     test_program_mapping();
     test_apu_bus();
     test_spc_physical_ram_observer();
+    test_dsp_register_publication();
     test_timer_batching();
     test_local_programs(argc, argv);
     return failures == 0 ? 0 : 1;
