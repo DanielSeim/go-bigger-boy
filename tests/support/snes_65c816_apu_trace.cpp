@@ -83,6 +83,7 @@ int main(int argc, char** argv) {
     bool shared_bus_dsp = false;
     bool cycle_apu_sync = false;
     bool fractional_apu_sync = false;
+    bool timer_poll_trace = false;
     std::filesystem::path apu_bus_output_path;
     std::filesystem::path input_script_path;
     std::filesystem::path pcm_output_path;
@@ -110,6 +111,8 @@ int main(int argc, char** argv) {
                 fractional_apu_sync = cycle_apu_sync = shared_bus_dsp = cycle_bus_dsp = bus_clocked_dsp = clocked_dsp = true;
             } else if (option == "--apu-bus-output" && apu_bus_output_path.empty() && index + 1 < argc) {
                 apu_bus_output_path = argv[++index];
+            } else if (option == "--timer-poll-trace" && !timer_poll_trace) {
+                timer_poll_trace = true;
             } else if (option == "--input-script" &&
                        input_script_path.empty() && index + 1 < argc) {
                 input_script_path = argv[++index];
@@ -162,6 +165,7 @@ int main(int argc, char** argv) {
                      " [--cycle-apu-sync]"
                      " [--fractional-apu-sync]"
                      " [--apu-bus-output JSON]"
+                     " [--timer-poll-trace]"
                      " [--audible-sound-probe]]\n";
         return 2;
     }
@@ -228,10 +232,14 @@ int main(int argc, char** argv) {
             unsigned dsp_clock64;
         };
         std::vector<ApuBusEvent> apu_trace;
+        if (timer_poll_trace && apu_bus_output_path.empty())
+            throw std::runtime_error("timer polling requires APU bus output");
         if (!apu_bus_output_path.empty()) {
             if (!cycle_apu_sync) throw std::runtime_error("APU bus trace requires cycle APU synchronization");
             apu_trace.reserve(262144);
         }
+        if (timer_poll_trace)
+            std::cout << "Timer polling and bounded driver-state trace enabled\n";
         gameboy::SnesApuBus pcm_bus;
         auto& render_bus = shared_bus_dsp ? apu : pcm_bus;
         sgb_test::SnesDspPcmRenderer pcm(render_bus);
@@ -264,6 +272,7 @@ int main(int argc, char** argv) {
             gameboy::SnesApuBus* pcm_bus{};
             bool shared_bus{};
             bool fractional_bus{};
+            bool timer_trace{};
             sgb_test::Snes65c816TraceCpu* cpu{};
             gameboy::SnesSpc700* spc{};
             std::vector<ApuBusEvent>* apu_trace{};
@@ -284,11 +293,17 @@ int main(int argc, char** argv) {
             sgb_test::Snes65c816TraceCpu::SpcStepObserver advance{};
             void record_bus(char kind, std::uint64_t half_clock,
                             std::uint16_t address, std::uint8_t value) noexcept {
-                if (!apu_trace || !icd || icd->audible_sound_packets_delivered() == 0) return;
+                const bool configuration = timer_trace && kind == 'W' &&
+                    (address == 0xf0 || address == 0xf1 || (address >= 0xfa && address <= 0xfc));
+                if (!apu_trace || !icd || (!configuration && icd->audible_sound_packets_delivered() == 0)) return;
                 if (first_keyon_sample && pcm_samples >= *first_keyon_sample + 27200) return;
-                if (kind == 'R' && (address < 0xf4 || address > 0xf7)) return;
+                const bool driver = timer_trace && (kind == 'R' || kind == 'W') && address < 0xf0;
+                if (driver && first_keyon_sample && pcm_samples >= *first_keyon_sample + 250) return;
+                if (driver) kind = kind == 'R' ? 'r' : 'w';
+                if (kind == 'R' && (address < 0xf4 || address > 0xf7) &&
+                    !(timer_trace && address >= 0xfd && address <= 0xff)) return;
                 if (kind == 'W' && address != 0xf1 && address != 0xf3 &&
-                    (address < 0xf4 || address > 0xf7)) return;
+                    (address < 0xf4 || address > 0xf7) && !configuration) return;
                 if (kind == 'W' && address == 0xf3 && pcm_bus->spc_read(0xf2) == 0x4c) kind = 'K';
                 if (apu_trace->size() >= 262144) { apu_trace_overflow = true; return; }
                 apu_trace->push_back({kind, cpu->timing().clocks(), half_clock,
@@ -316,6 +331,7 @@ int main(int argc, char** argv) {
             dsp_observation.pcm_bus = &render_bus;
             dsp_observation.shared_bus = shared_bus_dsp;
             dsp_observation.fractional_bus = fractional_apu_sync;
+            dsp_observation.timer_trace = timer_poll_trace;
             dsp_observation.cpu = &cpu;
             dsp_observation.spc = &spc;
             if (!apu_bus_output_path.empty()) {
@@ -988,7 +1004,8 @@ int main(int argc, char** argv) {
                 std::filesystem::create_directories(apu_bus_output_path.parent_path());
             std::ofstream output(apu_bus_output_path);
             if (!output) throw std::runtime_error("could not create APU bus trace");
-            output << "{\"format\":\"gbb-apu-bus-v1\",\"source\":\"gbb\","
+            output << "{\"format\":\"" << (timer_poll_trace ? "gbb-apu-bus-v2" : "gbb-apu-bus-v1")
+                   << "\",\"source\":\"gbb\","
                       "\"master_hz\":21477273,\"apu_half_hz\":2048000,\"events\":[";
             for (std::size_t i = 0; i < apu_trace.size(); ++i) {
                 const auto& event = apu_trace[i];

@@ -11,6 +11,10 @@ import sys
 import tempfile
 import wave
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+from compare_sgb_apu_bus import load as load_bus
+from compare_sgb_timer_polls import observations
+
 DONKEY_SHA256 = "b490c89efe718633b07381def66ce0ed58a5075aabe40c6e644baf2b408a76f4"
 SCRIPT_SHA256 = "a5d37081cc52b8bfe72284f5cd836b0ccea9bfc3ddf25fcc1ac2769b3b2e802b"
 
@@ -40,6 +44,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="gbb-sgb-title-pcm-") as directory:
         pcm_path = Path(directory) / "title.wav"
         event_path = Path(directory) / "sound-events.csv"
+        bus_path = Path(directory) / "bus.json"
         result = subprocess.run(
             [args.trace, args.program, args.ipl, "--sync-gb-sgb2",
              args.gb_rom, args.gb_boot, "--input-script", args.input_script,
@@ -49,7 +54,9 @@ def main() -> int:
              ["--cycle-apu-sync"] if args.cycle_apu_sync else
              ["--shared-bus-dsp"] if args.shared_bus_dsp else
              ["--cycle-bus-dsp"] if args.cycle_bus_dsp else
-             ["--bus-clocked-dsp"] if args.bus_clocked_dsp else []),
+             ["--bus-clocked-dsp"] if args.bus_clocked_dsp else []) +
+            (["--timer-poll-trace", "--apu-bus-output", str(bus_path)]
+             if args.fractional_apu_sync else []),
             capture_output=True, text=True, timeout=180, check=False,
         )
         output = result.stdout + result.stderr
@@ -98,6 +105,21 @@ def main() -> int:
             if boundary is None or boundary[1] != boundary[2] or \
                     "Fractional APU ports:" not in output:
                 raise AssertionError("title fractional rendezvous did not stop at its exact half target")
+            data = load_bus(bus_path, "gbb")
+            state = observations(data)
+            positive = [p for p in state["polls"] if p["ticks"]][:2]
+            if "Timer polling and bounded driver-state trace enabled" not in output or \
+                    [(p["half_clocks_after_kon"], p["ticks"], p.get("phase_before"),
+                      p.get("phase_after")) for p in positive] != \
+                    [(558, 2, 164, 252), (2876, 1, 252, 40)]:
+                raise AssertionError("bounded timer/driver-state capture changed")
+            if not any(e["kind"] == "W" and e["address"] == 0xfa and e["value"] == 16
+                       for e in data["events"]):
+                raise AssertionError("timer configuration was not captured")
+            # Opt-in observation must not alter the established native PCM.
+            if hashlib.sha256(pcm_path.read_bytes()).hexdigest() != \
+                    "ed07e3f031130c20fd2f8eb5ac12599fbea4a3eb4501e90a1e955a97f89d8d10":
+                raise AssertionError("timer observation changed title PCM")
         if len(packets) != 1 or len(hosts) < 4 or len(dsp) < 10 or \
                 [(int(event["address"]), int(event["value"]))
                  for event in hosts[:4]] != [(0, 1), (1, 0), (2, 0), (3, 0)] or \

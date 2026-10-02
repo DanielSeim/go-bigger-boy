@@ -150,7 +150,8 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
             native_dsp_output: Path | None = None,
             apu_ram_output: Path | None = None,
             apu_bus_output: Path | None = None,
-            native_cycle_checkpoints: bool = False
+            native_cycle_checkpoints: bool = False,
+            timer_poll_trace: bool = False
             ) -> tuple[int, int]:
     if C.sizeof(C.c_void_p) != 8:
         raise RuntimeError("the diagnostic host currently requires a 64-bit process")
@@ -175,6 +176,8 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
         raise ValueError("APU bus capture requires the SNES-only probe")
     if native_cycle_checkpoints and not require_snes_only_probe:
         raise ValueError("native-cycle checkpoints require the SNES-only probe")
+    if timer_poll_trace and (not require_snes_only_probe or apu_bus_output is None):
+        raise ValueError("timer polling requires the SNES-only probe and APU bus output")
     if native_dsp_output is not None and not require_snes_only_probe:
         raise ValueError("native DSP capture requires the SNES-only probe")
     if require_snes_only_probe and timeline_output is None:
@@ -244,13 +247,21 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
             symbols = ("gbb_reference_sgb_apu_bus_version", "gbb_reference_sgb_apu_bus_count",
                        "gbb_reference_sgb_apu_bus_copy", "gbb_reference_sgb_apu_bus_frequencies")
             if any(not hasattr(core, name) for name in symbols) or \
-                    core.gbb_reference_sgb_apu_bus_version() != 1:
-                raise RuntimeError("core lacks the version-1 APU bus probe")
+                    core.gbb_reference_sgb_apu_bus_version() not in (1, 2):
+                raise RuntimeError("core lacks a supported APU bus probe")
+            if timer_poll_trace and (core.gbb_reference_sgb_apu_bus_version() != 2 or
+                                    not hasattr(core, "gbb_reference_sgb_timer_trace")):
+                raise RuntimeError("core lacks the version-2 timer polling probe")
             core.gbb_reference_sgb_apu_bus_count.restype = C.c_uint
             core.gbb_reference_sgb_apu_bus_copy.argtypes = [C.c_uint, C.POINTER(C.c_uint64)]
             core.gbb_reference_sgb_apu_bus_copy.restype = C.c_uint
             core.gbb_reference_sgb_apu_bus_frequencies.argtypes = [C.POINTER(C.c_uint64)]
             core.gbb_reference_sgb_apu_bus_frequencies.restype = C.c_uint
+        if hasattr(core, "gbb_reference_sgb_timer_trace"):
+            core.gbb_reference_sgb_timer_trace.argtypes = [C.c_uint]
+            core.gbb_reference_sgb_timer_trace.restype = C.c_uint
+            if core.gbb_reference_sgb_timer_trace(int(timer_poll_trace)) != 1:
+                raise RuntimeError("timer polling probe rejected the request")
     required = ("retro_api_version", "retro_set_environment", "retro_set_video_refresh",
                 "retro_set_audio_sample", "retro_set_audio_sample_batch",
                 "retro_set_input_poll", "retro_set_input_state", "retro_init",
@@ -587,7 +598,7 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                 for index in range(count):
                     entry = (C.c_uint64 * 7)()
                     if core.gbb_reference_sgb_apu_bus_copy(index, entry) != 1 or \
-                            entry[0] not in map(ord, "hHRWK") or entry[5] > 255 or entry[6] >= 64:
+                            entry[0] not in map(ord, "hHRWKrw" if timer_poll_trace else "hHRWK") or entry[5] > 255 or entry[6] >= 64:
                         raise RuntimeError("reference APU bus probe lost or corrupted an event")
                     bus_events.append(dict(zip(
                         ("kind", "master_clock", "spc_half_clock", "pcm_sample",
@@ -595,7 +606,8 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                         [chr(entry[0])] + list(entry)[1:])))
                 apu_bus_output.parent.mkdir(parents=True, exist_ok=True)
                 with apu_bus_output.open("x", encoding="utf-8") as bus_file:
-                    json.dump({"format": "gbb-apu-bus-v1", "source": "reference",
+                    json.dump({"format": "gbb-apu-bus-v2" if timer_poll_trace else "gbb-apu-bus-v1",
+                               "source": "reference",
                                "master_hz": int(frequencies[0]),
                                "apu_half_hz": int(frequencies[1]),
                                "core_sha256": hashlib.sha256(core_path.read_bytes()).hexdigest(),
@@ -650,6 +662,8 @@ def main() -> None:
                         help="bounded host/SPC bus timeline (additional local reference patch required)")
     parser.add_argument("--native-cycle-checkpoints", action="store_true",
                         help="equal native output counts, not wall-time checkpoints (local probe required)")
+    parser.add_argument("--timer-poll-trace", action="store_true",
+                        help="include timer configuration and read-to-clear polling in APU bus capture")
     parser.add_argument("--require-snes-only-probe", action="store_true",
                         help="require the local instrumented core; log host-consumed SOUND packets")
     parser.add_argument("--native-dsp-output", type=Path,
@@ -674,7 +688,7 @@ def main() -> None:
                               args.snapshot_frame, args.snapshot_output, series,
                               args.timeline_output, args.require_snes_only_probe,
                               args.native_dsp_output, args.apu_ram_output, args.apu_bus_output,
-                              args.native_cycle_checkpoints)
+                              args.native_cycle_checkpoints, args.timer_poll_trace)
     except (OSError, RuntimeError, ValueError) as error:
         parser.error(str(error))
     print(f"Captured {count} stereo frames at {rate} Hz to {args.output}")

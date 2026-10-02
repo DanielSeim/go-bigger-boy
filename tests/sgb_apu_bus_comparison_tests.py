@@ -105,6 +105,8 @@ class Contracts(unittest.TestCase):
                 capture_audio(*inputs, root, 1, wav, apu_bus_output=bus)
             with self.assertRaisesRegex(ValueError, "SNES-only"):
                 capture_audio(*inputs, root, 1, wav, native_cycle_checkpoints=True)
+            with self.assertRaisesRegex(ValueError, "timer polling"):
+                capture_audio(*inputs, root, 1, wav, timer_poll_trace=True)
             with self.assertRaisesRegex(ValueError, "paths must differ"):
                 capture_audio(*inputs, root, 1, bus, apu_bus_output=bus,
                               timeline_output=root / "timeline.json", require_snes_only_probe=True)
@@ -112,6 +114,27 @@ class Contracts(unittest.TestCase):
             with self.assertRaises(FileExistsError):
                 capture_audio(*inputs, root, 1, wav, apu_bus_output=bus)
             self.assertEqual(bus.read_bytes(), b"keep")
+
+    def test_timer_profile_is_explicit(self):
+        data = capture()
+        read = data["events"][2]
+        read["address"] = 0xfd
+        with self.assertRaises(ValueError):
+            self.load(data)
+        data["format"] = "gbb-apu-bus-v2"
+        self.load(data)
+        with self.assertRaisesRegex(ValueError, "input-port reads"):
+            module.summarize(self.load(data))
+        read["value"] = 16
+        with self.assertRaisesRegex(ValueError, "four-bit"):
+            self.load(data)
+        read["value"] = 1
+        read["kind"] = "r"
+        read["address"] = 0x10
+        self.load(data)
+        read["address"] = 0xf0
+        with self.assertRaises(ValueError):
+            self.load(data)
 
 
 if __name__ == "__main__":

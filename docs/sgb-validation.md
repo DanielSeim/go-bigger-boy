@@ -1094,10 +1094,74 @@ python3 tests/snes_dsp_native_volume_timing_tests.py \
   --reference-dir /tmp/bsnes-sgb-reference-src/bsnes/sfc/dsp
 ```
 
-The next upstream investigation is timer/polling phase before the first music
-command, with both native clock rates kept explicit. Production DSP/audio,
-clock rates, and scheduling are unchanged. No title bytes, firmware, external
-core, or captured audio are committed or shipped.
+### Timer polling and inherited driver phase
+
+The optional `--timer-poll-trace` profile records timer configuration writes
+from reset, read-to-clear timer counters, and direct-page driver reads/writes.
+Driver state is bounded to the first audible handoff through first KON +250
+native outputs; the existing bus window remains bounded. It requires
+`--apu-bus-output` and cycle-level APU synchronization in the GBB probe, or
+the SNES-only probe in the reference capture. The extended JSON format is
+`gbb-apu-bus-v2`; uppercase `R/W` describe I/O and lowercase `r/w` describe
+direct-page state. Without the flag, the original v1 capture remains intact.
+
+Apply `scripts/patches/bsnes-05439f9-sgb-timer-poll.patch` after the existing
+version-7 SNES-only/APU-bus patches (and native-checkpoint patch when used).
+It extends only the local reference bus ABI to version 2; the SNES-only ABI
+remains version 7. No external core is used by release runtime audio.
+
+```sh
+python3 scripts/compare_sgb_timer_polls.py \
+  --gbb timer-bus.json --reference reference-timer-bus.json
+python3 tests/snes_spc_timer_phase_tests.py \
+  build/gameboy_snes_spc_write_fixture_runner \
+  --reference-dir /tmp/bsnes-sgb-reference-src
+```
+
+In the baseline-reproducing Donkey Kong capture, the first **45** timer-0
+polls after KON match exactly in relative native half clocks and returned
+values. This includes +279 SPC clocks (two ticks) and +1,438 (one tick).
+The observed phase byte at direct-page `$43` differs already before the
+first host `$2140=$01` command: the first captured reads are 80/64, and the
+last pre-KON writes are 164/104. Both executions subsequently add the same
+observed increment of 44 per returned tick:
+
+| Timer observation | GBB phase | Independent phase |
+| --- | --- | --- |
+| +279 clocks, two ticks | 164 → 252 | 104 → 192 |
+| +1,438 clocks, one tick | 252 → 40, carry | 192 → 236, no carry |
+
+GBB takes the carry path, increments the volume counter at `$d8` from 3 to
+4, and accepts master-volume writes at +1,521/+1,546 clocks. The reference
+waits until its next tick to wrap to 24, accepting them at +3,568/+3,593.
+That explains the previously measured **2,047-clock** volume gap in this
+replay without a missing timer tick or a DSP synthesis change. The first
+subsequent poll differs because the executions took different branches.
+The earliest upstream difference established by this bounded trace is the
+inherited phase state, not its complete earlier boot-time origin.
+
+An original ROM-free SPC program reproduces the distinction with identical
+timer reads and starting phases 252, 192 and 236. Its full half-clock traces
+match the independent SPC processor with the timed-I/O fixture adapter;
+SHA-256 `2d4c78b8848b50e232b9ce326552d34f1cd4d410d36cd3f2ea70ec1c6f229e89`.
+This checks carry/branch behavior, not the complete independent SMP device.
+The local title regression also verifies the extended bus profile and
+byte-identical GBB PCM with observation enabled.
+
+Reference repeatability is not assumed: one repeated capture observed its
+second positive poll eight native clocks earlier, while keeping the same
+192 → 236 phase transition. Another repeat and a profile-disabled control
+both reproduced the original native PCM byte-for-byte. The tool reports
+poll timing separately from returned values and phase state; it never fits
+away this variation. Native frequencies remain explicit, and host SPC
+timestamps remain scheduler snapshots, not hardware command latency.
+
+The next investigation must follow the phase accumulator farther back into
+driver initialization and pre-command operation, while controlling reference
+power-on state. Resetting it on SOUND, adding a fixed delay, or retiming DSP
+volume writes would conceal the cause. Production DSP/audio, clock rates and
+scheduling are unchanged. No title bytes, firmware, external core, or
+captured audio are committed or shipped.
 
 A new fully synthetic SNES program waits, writes a host command to the APU,
 and runs concurrently with an original SPC700 test program. The test stamps

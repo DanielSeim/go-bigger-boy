@@ -1,0 +1,32 @@
+diff --git a/bsnes/sfc/dsp/dsp.cpp b/bsnes/sfc/dsp/dsp.cpp
+--- a/bsnes/sfc/dsp/dsp.cpp
++++ b/bsnes/sfc/dsp/dsp.cpp
+@@ -16,3 +16,8 @@
+ static bool diagnosticApuOverflow = false;
+-extern "C" unsigned gbb_reference_sgb_apu_bus_version() { return 1; }
++static bool diagnosticTimerTrace = false;
++extern "C" unsigned gbb_reference_sgb_timer_trace(unsigned enabled) {
++  diagnosticTimerTrace = enabled != 0;
++  return 1;
++}
++extern "C" unsigned gbb_reference_sgb_apu_bus_version() { return 2; }
+ extern "C" unsigned gbb_reference_sgb_apu_bus_count() {
+@@ -33,8 +38,15 @@
+ extern "C" void gbb_reference_sgb_record_apu_bus(unsigned kind, unsigned address, unsigned value) {
+-  if(icd.diagnosticSoundCount < 2) return;
++  const bool configuration = diagnosticTimerTrace && kind == 'W' &&
++      (address == 0xf0 || address == 0xf1 || (address >= 0xfa && address <= 0xfc));
++  if(!configuration && icd.diagnosticSoundCount < 2) return;
+   if(diagnosticFirstKonSample != 0xffffffffu &&
+       diagnosticDspSamples.size() / 2 >= diagnosticFirstKonSample + 27234) return;
++  const bool driver = diagnosticTimerTrace && (kind == 'R' || kind == 'W') && address < 0xf0;
++  if(driver && diagnosticFirstKonSample != 0xffffffffu &&
++      diagnosticDspSamples.size() / 2 >= diagnosticFirstKonSample + 250) return;
++  if(driver) kind = kind == 'R' ? 'r' : 'w';
+-  if(kind == 'R' && (address < 0xf4 || address > 0xf7)) return;
++  if(kind == 'R' && (address < 0xf4 || address > 0xf7) &&
++      !(diagnosticTimerTrace && address >= 0xfd && address <= 0xff)) return;
+   if(kind == 'W' && address != 0xf1 && address != 0xf3 &&
+-      (address < 0xf4 || address > 0xf7)) return;
++      (address < 0xf4 || address > 0xf7) && !configuration) return;
+   if(kind == 'W' && address == 0xf3 && smp.diagnosticDspAddress() == 0x4c) kind = 'K';

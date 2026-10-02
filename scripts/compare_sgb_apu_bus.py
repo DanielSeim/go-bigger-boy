@@ -16,8 +16,9 @@ def integer(value, maximum, label, minimum=0):
 
 def load(path, source):
     data = json.loads(path.read_text())
-    if not isinstance(data, dict) or data.get("format") != "gbb-apu-bus-v1" or data.get("source") != source:
+    if not isinstance(data, dict) or data.get("format") not in ("gbb-apu-bus-v1", "gbb-apu-bus-v2") or data.get("source") != source:
         raise ValueError("wrong bus format or source")
+    timer_trace = data["format"] == "gbb-apu-bus-v2"
     for key in ("master_hz", "apu_half_hz"):
         integer(data.get(key), 100_000_000, key, 1)
     events = data.get("events")
@@ -25,7 +26,8 @@ def load(path, source):
         raise ValueError("empty or overflowing bus capture")
     previous = {"master_clock": 0, "spc_half_clock": 0, "pcm_sample": 0}
     for event in events:
-        if not isinstance(event, dict) or event.get("kind") not in ("h", "H", "R", "W", "K"):
+        if not isinstance(event, dict) or event.get("kind") not in (
+                ("h", "H", "R", "W", "K", "r", "w") if timer_trace else ("h", "H", "R", "W", "K")):
             raise ValueError("invalid bus event kind")
         for key in previous:
             integer(event.get(key), 2**64 - 1, key)
@@ -36,12 +38,16 @@ def load(path, source):
         integer(event.get("address"), 65535, "address")
         integer(event.get("dsp_clock64"), 63, "DSP phase")
         kind, address = event["kind"], event["address"]
-        valid = (0x2140 <= address <= 0x2143 if kind in "hH" else
-                 0xf4 <= address <= 0xf7 if kind == "R" else
+        valid = (address < 0xf0 if kind in "rw" else
+                 0x2140 <= address <= 0x2143 if kind in "hH" else
+                 (0xf4 <= address <= 0xf7 or timer_trace and 0xfd <= address <= 0xff) if kind == "R" else
                  address == 0xf3 if kind == "K" else
-                 address in (0xf1, 0xf3) or 0xf4 <= address <= 0xf7)
+                 address in (0xf1, 0xf3) or 0xf4 <= address <= 0xf7 or
+                 timer_trace and (address == 0xf0 or 0xfa <= address <= 0xfc))
         if not valid:
             raise ValueError("bus event address inconsistent with kind")
+        if kind == "R" and address >= 0xfd and event["value"] > 15:
+            raise ValueError("timer counter is not four-bit")
     return data
 
 
@@ -50,7 +56,9 @@ def summarize(data):
     counts = Counter(e["kind"] for e in events)
     if any(not counts[k] for k in ("H", "h", "R", "K")):
         raise ValueError("capture lacks host accesses, port reads, or key writes")
-    reads = [e for e in events if e["kind"] == "R"]
+    reads = [e for e in events if e["kind"] == "R" and 0xf4 <= e["address"] <= 0xf7]
+    if not reads:
+        raise ValueError("capture lacks SPC input-port reads")
     keys = [e for e in events if e["kind"] == "K" and e["value"]]
     if len(keys) < 2:
         raise ValueError("capture needs two nonzero key writes")
