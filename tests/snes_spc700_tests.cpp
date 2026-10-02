@@ -85,6 +85,58 @@ void test_write_cycle_observation() {
           "MOVW observes separate DSP address and data writes in bus order");
 }
 
+void test_cycle_bus_timers() {
+    gameboy::SnesApuBus bus;
+    gameboy::SnesApuBus::IplRom ipl{};
+    ipl[0] = 0xE4; ipl[1] = 0xFD; // MOV A,timer0
+    bus.install_ipl(ipl);
+    bus.spc_write(0xFA, 1);
+    bus.spc_write(0xF1, 0x81);
+    bus.tick(126);
+    gameboy::SnesSpc700 cpu(bus);
+    cpu.set_cycle_bus_enabled(true);
+    check(cpu.step().cycles == 3 && cpu.registers().a == 1 &&
+              bus.spc_read(0xFD) == 0,
+          "cycle-level timer read observes rollover before access and clears output");
+
+    bus.reset();
+    ipl = {};
+    ipl[0] = 0xC4; ipl[1] = 0xFD; // MOV timer0,A includes a destructive dummy read.
+    bus.install_ipl(ipl);
+    bus.spc_write(0xFA, 1);
+    bus.spc_write(0xF1, 0x81);
+    bus.tick(125);
+    cpu.reset();
+    check(cpu.step().cycles == 4 && bus.spc_read(0xFD) == 0,
+          "store destination dummy read clears timer output at its own cycle");
+
+    bus.reset();
+    ipl = {};
+    ipl[0] = 0x8F; ipl[1] = 0x84; ipl[2] = 0xF1; // Enable timer2 at cycle5.
+    bus.install_ipl(ipl);
+    bus.spc_write(0xFC, 1);
+    bus.tick(11);
+    cpu.reset();
+    check(cpu.step().cycles == 5 && bus.spc_read(0xFF) == 0,
+          "timer enable write does not retroactively count earlier instruction clocks");
+    bus.tick(16);
+    check(bus.spc_read(0xFF) == 1,
+          "cycle-level timer enable preserves the free-running divider phase");
+
+    // Default execution remains the unchanged instruction-granular baseline.
+    bus.reset();
+    ipl = {};
+    ipl[0] = 0xE4; ipl[1] = 0xFD;
+    bus.install_ipl(ipl);
+    bus.spc_write(0xFA, 1);
+    bus.spc_write(0xF1, 0x81);
+    bus.tick(126);
+    cpu.reset();
+    cpu.set_cycle_bus_enabled(false);
+    check(cpu.step().cycles == 3 && cpu.registers().a == 0 && bus.spc_read(0xFD) == 1,
+          "legacy timer read and instruction-tail clocking remain available");
+}
+
 void test_synthetic_upload() {
     gameboy::SnesApuBus bus;
     gameboy::SnesApuBus::IplRom ipl{};
@@ -1637,6 +1689,7 @@ void test_push_y() {
 
 int main() {
     test_write_cycle_observation();
+    test_cycle_bus_timers();
     test_adc_a_absolute();
     test_load_x_absolute();
     test_dec_absolute();

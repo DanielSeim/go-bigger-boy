@@ -30,10 +30,23 @@ public:
     void reset() noexcept { registers_ = {}; cycles_ = 0; }
     [[nodiscard]] const Registers& registers() const noexcept { return registers_; }
     [[nodiscard]] std::uint64_t cycles() const noexcept { return cycles_; }
+    // Opt-in diagnostic bus execution. Each read/write/idle advances timers
+    // separately; the legacy instruction-granular path remains the default.
+    void set_cycle_bus_enabled(bool enabled) noexcept { cycle_bus_ = enabled; }
+    // T: completed clock, before the access; R/W: accepted access; I: idle.
+    // Observer installation alone does not opt into cycle-level execution.
+    using BusCycleObserver = void (*)(void*, std::uint64_t, char,
+                                      std::uint16_t, std::uint8_t) noexcept;
+    void set_bus_cycle_observer(BusCycleObserver observer,
+                                void* context = nullptr) noexcept {
+        bus_observer_ = observer;
+        bus_context_ = context;
+    }
     // Optional write-boundary diagnostic. Called before/after the accepted
     // bus write, at its instruction-relative completed cycle (not instruction
     // end). A zero cycle means an unclassified write; consumers must reject it.
-    // This observes writes only: reads and timers remain instruction-granular.
+    // This observer only reports writes. Reads/timers remain instruction-
+    // granular unless cycle-level bus execution is explicitly enabled.
     using WriteCycleObserver = void (*)(void*, std::uint64_t, std::uint8_t,
                                         std::uint16_t, std::uint8_t, bool) noexcept;
     void set_write_cycle_observer(WriteCycleObserver observer,
@@ -45,6 +58,10 @@ public:
 
 private:
     [[nodiscard]] std::uint8_t fetch() noexcept;
+    [[nodiscard]] std::uint8_t read_memory(std::uint16_t address) noexcept;
+    void idle_cycle() noexcept;
+    void clock_bus() noexcept;
+    void begin_bus_instruction() noexcept;
     [[nodiscard]] std::uint16_t direct_address(std::uint8_t offset) const noexcept;
     [[nodiscard]] std::uint8_t read_direct(std::uint8_t offset) noexcept;
     void write_direct(std::uint8_t offset, std::uint8_t value) noexcept;
@@ -66,6 +83,10 @@ private:
     unsigned write_index_{};
     WriteCycleObserver write_observer_{};
     void* write_context_{};
+    bool cycle_bus_{};
+    unsigned instruction_cycle_{};
+    BusCycleObserver bus_observer_{};
+    void* bus_context_{};
 };
 
 } // namespace gameboy

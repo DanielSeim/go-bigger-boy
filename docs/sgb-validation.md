@@ -789,6 +789,53 @@ SNES/APU port rendezvous remain instruction-granular. The external processor
 is a development-only reference, never linked or shipped. These changes do
 not change the shipping playback clock or enable live SGB sound.
 
+### Cycle-level SPC reads, dummy accesses and timer side effects
+
+The further opt-in `--cycle-bus-dsp` mode adds real read/write/idle sequencing
+to the diagnostic interpreter. It advances the APU timers at each completed
+SPC clock, performs store-destination and implied-instruction dummy reads,
+and orders word, direct-to-direct and branch operands at their bus boundaries.
+This matters because reading `$FD..$FF` clears the timer output, even when
+the read is only a dummy access. Timer enable writes no longer count clocks
+that occurred before the write. Reset retains the selected execution mode;
+the instruction-granular path is still the default.
+
+The new ROM-free corpus covers **2,820 cases**: every one of the 148 supported
+opcodes on both direct pages, taken/non-taken branches, stack and wrapping
+word accesses, all 64 key-write phases, every timer-divider phase, targets
+0/1/2/255, timer disable/re-enable, destructive/double/dummy timer reads and
+host-port changes placed around individual reads. Each accepted read, write
+and idle clock, its address/value, total cycles and final registers matches
+the external SPC700 execution. The external processor adapter uses a
+**separate analytical timer/port oracle**, not the GBB bus or the complete
+bsnes SMP hardware implementation. The pin is
+`19614ed37f3b3f847935a61b4416a8dffc6774b3fe028efe67804fe27f08b1e2`.
+
+```sh
+python3 tests/snes_spc_bus_cycle_tests.py \
+  build/gameboy_snes_spc_write_fixture_runner \
+  --reference-dir /tmp/bsnes-sgb-reference-src
+```
+
+Use the earlier local title command with `--cycle-bus-dsp` in place of
+`--bus-clocked-dsp`. Donkey Kong's first and second KON write phases now
+match the non-fast independent reference: **37/37 and 41/41**. The sample
+upload remains byte-identical, and the second-KON output-640 active voice
+still agrees on envelope, BRR address and interpolation position. The
+optional local-ROM test pins these two independently observed write phases.
+Fixed-lag 8 kHz PCM correlation remains at least 0.9997 over the checked
++0.02..+1.5-second windows; this step corrects write phase without claiming
+a new sample-exact audio result.
+
+The first-KON +0.82-second active-voice position still differs (13,749/12,018),
+as do dormant voice state, echo offsets and some volume-ramp timing. The
+host trace still completes whole SPC instructions at SNES rendezvous points;
+it does not yet suspend an instruction for a concurrent SNES port access,
+model half-cycle port bus holds, or fully couple DSP readback/echo RAM to the
+SPC bus. Those are separate remaining tasks, not solved by these access
+traces. No proprietary ROM/capture bytes or external processor implementation
+are committed, and release audio behavior is unchanged.
+
 A new fully synthetic SNES program waits, writes a host command to the APU,
 and runs concurrently with an original SPC700 test program. The test stamps
 its KON write at SPC instruction-end cycle 2,304, feeds that event to the

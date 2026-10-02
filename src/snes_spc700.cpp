@@ -33,18 +33,101 @@ unsigned SnesSpc700::write_cycle_offset() const noexcept {
     }
 }
 
+void SnesSpc700::clock_bus() noexcept {
+    bus_.tick(1);
+    ++instruction_cycle_;
+    if (bus_observer_)
+        bus_observer_(bus_context_, cycles_ + instruction_cycle_, 'T', 0, 0);
+}
+
+void SnesSpc700::idle_cycle() noexcept {
+    clock_bus();
+    if (bus_observer_)
+        bus_observer_(bus_context_, cycles_ + instruction_cycle_, 'I', 0, 0);
+}
+
+std::uint8_t SnesSpc700::read_memory(const std::uint16_t address) noexcept {
+    if (cycle_bus_) {
+        // Address calculation, word arithmetic and branch-bit tests have
+        // internal clocks between their operand accesses, not at the tail.
+        if (instruction_cycle_ == 2) {
+            switch (opcode_) {
+            case 0xF4: case 0xFB: case 0xE7: case 0xC7:
+            case 0x9B: case 0xBB: case 0xD4: case 0xDE: idle_cycle(); break;
+            default: break;
+            }
+        } else if (instruction_cycle_ == 3) {
+            switch (opcode_) {
+            case 0xF5: case 0xF6: case 0xB5: case 0xB6: case 0x95:
+            case 0x96: case 0x75: case 0xD5: case 0xD6: case 0x1F:
+            case 0xBA: case 0x7A: case 0x9A: idle_cycle(); break;
+            default:
+                if ((opcode_ & 0x1FU) == 3 || (opcode_ & 0x1FU) == 0x13)
+                    idle_cycle();
+                break;
+            }
+        } else if (instruction_cycle_ == 4 &&
+                   (opcode_ == 0xD7 || opcode_ == 0xF7 || opcode_ == 0xDE)) {
+            idle_cycle();
+        }
+        clock_bus();
+    }
+    const auto value = bus_.spc_read(address);
+    if (cycle_bus_ && bus_observer_)
+        bus_observer_(bus_context_, cycles_ + instruction_cycle_, 'R', address, value);
+    return value;
+}
+
+void SnesSpc700::begin_bus_instruction() noexcept {
+    switch (opcode_) {
+    case 0x00: case 0x20: case 0x40: case 0x60: case 0x80: case 0xED:
+    case 0x7D: case 0xBD: case 0xDD: case 0xFD: case 0x5D:
+    case 0x1C: case 0x5C: case 0x7C: case 0x9F: case 0xCF: case 0x9E:
+    case 0x1D: case 0x3D: case 0xBC: case 0xFC: case 0xDC:
+    case 0xC6: case 0xE6: case 0xAF:
+    case 0x2D: case 0x4D: case 0x6D:
+    case 0xAE: case 0xCE: case 0xEE: case 0x6F:
+        (void)read_memory(registers_.pc); // Real dummy read; PC does not advance.
+        break;
+    default: break;
+    }
+    if (opcode_ == 0xAE || opcode_ == 0xCE || opcode_ == 0xEE || opcode_ == 0x6F)
+        idle_cycle();
+}
+
 void SnesSpc700::write_memory(const std::uint16_t address,
                               const std::uint8_t value) noexcept {
     const auto offset = write_cycle_offset();
-    const auto cycle = offset != 0 ? cycles_ + offset : 0;
+    if (cycle_bus_) {
+        switch (opcode_) {
+        case 0xC4: case 0xC5: case 0xC6: case 0xC7: case 0xC9:
+        case 0xCB: case 0xCC: case 0xD4: case 0xD5: case 0xD6:
+        case 0xD7: case 0xD8: case 0x8F:
+            (void)read_memory(address); break; // Store destination dummy read.
+        case 0xDA:
+            if (write_index_ == 0) (void)read_memory(address);
+            break;
+        case 0x0E: case 0x4E: (void)read_memory(address); break;
+        case 0xAF: idle_cycle(); break;
+        case 0x3F:
+            if (write_index_ == 0) idle_cycle();
+            break;
+        default: break;
+        }
+        clock_bus();
+    }
+    const auto cycle = cycle_bus_ ? cycles_ + instruction_cycle_
+                                 : offset != 0 ? cycles_ + offset : 0;
     ++write_index_;
     if (write_observer_) write_observer_(write_context_, cycle, opcode_, address, value, false);
     bus_.spc_write(address, value);
     if (write_observer_) write_observer_(write_context_, cycle, opcode_, address, value, true);
+    if (cycle_bus_ && bus_observer_)
+        bus_observer_(bus_context_, cycle, 'W', address, value);
 }
 
 std::uint8_t SnesSpc700::fetch() noexcept {
-    const auto value = bus_.spc_read(registers_.pc);
+    const auto value = read_memory(registers_.pc);
     ++registers_.pc;
     return value;
 }
@@ -55,7 +138,7 @@ std::uint16_t SnesSpc700::direct_address(const std::uint8_t offset) const noexce
 }
 
 std::uint8_t SnesSpc700::read_direct(const std::uint8_t offset) noexcept {
-    return bus_.spc_read(direct_address(offset));
+    return read_memory(direct_address(offset));
 }
 
 void SnesSpc700::write_direct(const std::uint8_t offset,
@@ -125,14 +208,16 @@ void SnesSpc700::push(const std::uint8_t value) noexcept {
 }
 
 std::uint8_t SnesSpc700::pop() noexcept {
-    return bus_.spc_read(static_cast<std::uint16_t>(0x100U | ++registers_.sp));
+    return read_memory(static_cast<std::uint16_t>(0x100U | ++registers_.sp));
 }
 
 SnesSpc700::StepResult SnesSpc700::step() noexcept {
     const auto start = registers_.pc;
+    instruction_cycle_ = 0;
     const auto opcode = fetch();
     opcode_ = opcode;
     write_index_ = 0;
+    if (cycle_bus_) begin_bus_instruction();
     unsigned cycles = 0;
     switch (opcode) {
     case 0x00: cycles = 2; break; // NOP
@@ -177,9 +262,10 @@ SnesSpc700::StepResult SnesSpc700::step() noexcept {
     }
     case 0x09: { // OR dp,dp: source offset precedes destination
         const auto source = fetch();
+        const auto source_value = cycle_bus_ ? read_direct(source) : 0;
         const auto destination = fetch();
         const auto value = static_cast<std::uint8_t>(
-            read_direct(destination) | read_direct(source));
+            read_direct(destination) | (cycle_bus_ ? source_value : read_direct(source)));
         write_direct(destination, value);
         set_nz8(value);
         cycles = 6;
@@ -202,7 +288,7 @@ SnesSpc700::StepResult SnesSpc700::step() noexcept {
         const auto high = fetch();
         const auto address = static_cast<std::uint16_t>(
             (low | (static_cast<unsigned>(high) << 8)) + registers_.x);
-        subtract_with_carry(bus_.spc_read(address));
+        subtract_with_carry(read_memory(address));
         cycles = 5;
         break;
     }
@@ -211,7 +297,7 @@ SnesSpc700::StepResult SnesSpc700::step() noexcept {
         const auto high = fetch();
         const auto address = static_cast<std::uint16_t>(
             (low | (static_cast<unsigned>(high) << 8)) + registers_.y);
-        subtract_with_carry(bus_.spc_read(address));
+        subtract_with_carry(read_memory(address));
         cycles = 5;
         break;
     }
@@ -233,14 +319,14 @@ SnesSpc700::StepResult SnesSpc700::step() noexcept {
         const auto high = fetch();
         const auto address = static_cast<std::uint16_t>(
             (low | (static_cast<unsigned>(high) << 8)) + registers_.x);
-        add_with_carry(bus_.spc_read(address));
+        add_with_carry(read_memory(address));
         cycles = 5;
         break;
     }
     case 0x85: { // ADC A,!abs
         const auto low = fetch();
         const auto high = fetch();
-        add_with_carry(bus_.spc_read(static_cast<std::uint16_t>(
+        add_with_carry(read_memory(static_cast<std::uint16_t>(
             low | (static_cast<unsigned>(high) << 8))));
         cycles = 4;
         break;
@@ -250,7 +336,7 @@ SnesSpc700::StepResult SnesSpc700::step() noexcept {
         const auto high = fetch();
         const auto address = static_cast<std::uint16_t>(
             (low | (static_cast<unsigned>(high) << 8)) + registers_.y);
-        add_with_carry(bus_.spc_read(address));
+        add_with_carry(read_memory(address));
         cycles = 5;
         break;
     }
@@ -289,7 +375,7 @@ SnesSpc700::StepResult SnesSpc700::step() noexcept {
         const auto high = fetch();
         const auto address = static_cast<std::uint16_t>(
             low | (static_cast<unsigned>(high) << 8));
-        const auto old = bus_.spc_read(address);
+        const auto old = read_memory(address);
         set_nz8(static_cast<std::uint8_t>(registers_.a - old));
         write_memory(address, static_cast<std::uint8_t>(old | registers_.a));
         cycles = 6;
@@ -300,7 +386,7 @@ SnesSpc700::StepResult SnesSpc700::step() noexcept {
         const auto high = fetch();
         const auto address = static_cast<std::uint16_t>(
             low | (static_cast<unsigned>(high) << 8));
-        const auto old = bus_.spc_read(address);
+        const auto old = read_memory(address);
         set_nz8(static_cast<std::uint8_t>(registers_.a - old));
         write_memory(address, static_cast<std::uint8_t>(old & ~registers_.a));
         cycles = 6;
@@ -331,7 +417,7 @@ SnesSpc700::StepResult SnesSpc700::step() noexcept {
         const auto high = fetch();
         const auto address = static_cast<std::uint16_t>(
             low | (static_cast<unsigned>(high) << 8));
-        const auto old = bus_.spc_read(address);
+        const auto old = read_memory(address);
         const auto value = static_cast<std::uint8_t>(old >> 1);
         registers_.psw = static_cast<std::uint8_t>(
             (registers_.psw & ~carry) | (old & 1U));
@@ -402,7 +488,7 @@ SnesSpc700::StepResult SnesSpc700::step() noexcept {
         const auto high = fetch();
         const auto address = static_cast<std::uint16_t>(
             low | (static_cast<unsigned>(high) << 8));
-        compare(registers_.a, bus_.spc_read(static_cast<std::uint16_t>(
+        compare(registers_.a, read_memory(static_cast<std::uint16_t>(
             address + registers_.x)));
         cycles = 5;
         break;
@@ -413,7 +499,7 @@ SnesSpc700::StepResult SnesSpc700::step() noexcept {
         const auto high = fetch();
         const auto address = static_cast<std::uint16_t>(
             low | (static_cast<unsigned>(high) << 8));
-        compare(registers_.y, bus_.spc_read(address));
+        compare(registers_.y, read_memory(address));
         cycles = 4;
         break;
     }
@@ -484,9 +570,9 @@ SnesSpc700::StepResult SnesSpc700::step() noexcept {
     }
     case 0x9A: { // SUBW YA,dp; H is from the high-byte subtraction
         const auto offset = fetch();
-        const auto rhs = static_cast<unsigned>(read_direct(offset)) |
-            (static_cast<unsigned>(read_direct(
-                static_cast<std::uint8_t>(offset + 1))) << 8);
+        const auto low = read_direct(offset);
+        const auto high = read_direct(static_cast<std::uint8_t>(offset + 1));
+        const auto rhs = static_cast<unsigned>(low) | (static_cast<unsigned>(high) << 8);
         const auto lhs = static_cast<unsigned>(registers_.a) |
             (static_cast<unsigned>(registers_.y) << 8);
         const auto result = static_cast<std::uint16_t>(lhs - rhs);
@@ -506,9 +592,9 @@ SnesSpc700::StepResult SnesSpc700::step() noexcept {
     }
     case 0x7A: { // ADDW YA,dp; H is from the high-byte addition
         const auto offset = fetch();
-        const auto rhs = static_cast<unsigned>(read_direct(offset)) |
-            (static_cast<unsigned>(read_direct(
-                static_cast<std::uint8_t>(offset + 1))) << 8);
+        const auto low = read_direct(offset);
+        const auto high = read_direct(static_cast<std::uint8_t>(offset + 1));
+        const auto rhs = static_cast<unsigned>(low) | (static_cast<unsigned>(high) << 8);
         const auto lhs = static_cast<unsigned>(registers_.a) |
             (static_cast<unsigned>(registers_.y) << 8);
         const auto sum = lhs + rhs;
@@ -537,6 +623,10 @@ SnesSpc700::StepResult SnesSpc700::step() noexcept {
     case 0x2F: cycles = branch(true); break;
     case 0xFE: { // DBNZ Y,rel: flags are unchanged
         const auto displacement = static_cast<std::int8_t>(fetch());
+        if (cycle_bus_) {
+            idle_cycle();
+            (void)read_memory(static_cast<std::uint16_t>(registers_.pc - 1));
+        }
         --registers_.y;
         if (registers_.y != 0) {
             registers_.pc = static_cast<std::uint16_t>(registers_.pc + displacement);
@@ -548,9 +638,11 @@ SnesSpc700::StepResult SnesSpc700::step() noexcept {
     }
     case 0x6E: { // DBNZ dp,rel: flags are unchanged
         const auto offset = fetch();
-        const auto displacement = static_cast<std::int8_t>(fetch());
+        const auto early_displacement = cycle_bus_ ? 0 : fetch();
         const auto value = static_cast<std::uint8_t>(read_direct(offset) - 1U);
         write_direct(offset, value);
+        const auto displacement = static_cast<std::int8_t>(
+            cycle_bus_ ? fetch() : early_displacement);
         if (value != 0) {
             registers_.pc = static_cast<std::uint16_t>(
                 registers_.pc + displacement);
@@ -562,8 +654,10 @@ SnesSpc700::StepResult SnesSpc700::step() noexcept {
     }
     case 0xDE: { // CBNE dp+X,rel: compare without changing flags
         const auto offset = static_cast<std::uint8_t>(fetch() + registers_.x);
-        const auto displacement = static_cast<std::int8_t>(fetch());
+        const auto early_displacement = cycle_bus_ ? 0 : fetch();
         const auto take = registers_.a != read_direct(offset);
+        const auto displacement = static_cast<std::int8_t>(
+            cycle_bus_ ? fetch() : early_displacement);
         if (take)
             registers_.pc = static_cast<std::uint16_t>(
                 registers_.pc + displacement);
@@ -585,8 +679,9 @@ SnesSpc700::StepResult SnesSpc700::step() noexcept {
     case 0x64: compare(registers_.a, read_direct(fetch())); cycles = 3; break;
     case 0x69: { // CMP dp,dp: encoded source offset, then destination
         const auto source = fetch();
+        const auto early_source = cycle_bus_ ? read_direct(source) : 0;
         const auto destination = fetch();
-        const auto source_value = read_direct(source);
+        const auto source_value = cycle_bus_ ? early_source : read_direct(source);
         const auto destination_value = read_direct(destination);
         compare(destination_value, source_value);
         cycles = 6;
@@ -605,7 +700,7 @@ SnesSpc700::StepResult SnesSpc700::step() noexcept {
         const auto offset = static_cast<std::uint8_t>(fetch() + registers_.x);
         const auto lo = read_direct(offset);
         const auto hi = read_direct(static_cast<std::uint8_t>(offset + 1));
-        registers_.a = bus_.spc_read(static_cast<std::uint16_t>(
+        registers_.a = read_memory(static_cast<std::uint16_t>(
             lo | (static_cast<unsigned>(hi) << 8)));
         set_nz8(registers_.a);
         cycles = 6;
@@ -614,7 +709,7 @@ SnesSpc700::StepResult SnesSpc700::step() noexcept {
     case 0xE5: { // MOV A,!abs
         const auto low = fetch();
         const auto high = fetch();
-        registers_.a = bus_.spc_read(static_cast<std::uint16_t>(
+        registers_.a = read_memory(static_cast<std::uint16_t>(
             low | (static_cast<unsigned>(high) << 8)));
         set_nz8(registers_.a);
         cycles = 4;
@@ -623,7 +718,7 @@ SnesSpc700::StepResult SnesSpc700::step() noexcept {
     case 0xEC: { // MOV Y,!abs
         const auto low = fetch();
         const auto high = fetch();
-        registers_.y = bus_.spc_read(static_cast<std::uint16_t>(
+        registers_.y = read_memory(static_cast<std::uint16_t>(
             low | (static_cast<unsigned>(high) << 8)));
         set_nz8(registers_.y);
         cycles = 4;
@@ -632,7 +727,7 @@ SnesSpc700::StepResult SnesSpc700::step() noexcept {
     case 0xE9: { // MOV X,!abs
         const auto low = fetch();
         const auto high = fetch();
-        registers_.x = bus_.spc_read(static_cast<std::uint16_t>(
+        registers_.x = read_memory(static_cast<std::uint16_t>(
             low | (static_cast<unsigned>(high) << 8)));
         set_nz8(registers_.x);
         cycles = 4;
@@ -643,7 +738,7 @@ SnesSpc700::StepResult SnesSpc700::step() noexcept {
         const auto high = fetch();
         const auto address = static_cast<std::uint16_t>(
             (low | (static_cast<unsigned>(high) << 8)) + registers_.y);
-        registers_.a = bus_.spc_read(address);
+        registers_.a = read_memory(address);
         set_nz8(registers_.a);
         cycles = 5;
         break;
@@ -653,7 +748,7 @@ SnesSpc700::StepResult SnesSpc700::step() noexcept {
         const auto high = fetch();
         const auto address = static_cast<std::uint16_t>(
             (low | (static_cast<unsigned>(high) << 8)) + registers_.x);
-        registers_.a = bus_.spc_read(address);
+        registers_.a = read_memory(address);
         set_nz8(registers_.a);
         cycles = 5;
         break;
@@ -684,7 +779,7 @@ SnesSpc700::StepResult SnesSpc700::step() noexcept {
         const auto hi = read_direct(static_cast<std::uint8_t>(offset + 1));
         const auto address = static_cast<std::uint16_t>(
             (lo | (static_cast<unsigned>(hi) << 8)) + registers_.y);
-        registers_.a = bus_.spc_read(address);
+        registers_.a = read_memory(address);
         set_nz8(registers_.a);
         cycles = 6;
         break;
@@ -713,7 +808,7 @@ SnesSpc700::StepResult SnesSpc700::step() noexcept {
         const auto address = static_cast<std::uint16_t>(
             low | (static_cast<unsigned>(high) << 8));
         const auto value = static_cast<std::uint8_t>(
-            bus_.spc_read(address) - 1U);
+            read_memory(address) - 1U);
         write_memory(address, value);
         set_nz8(value);
         cycles = 5;
@@ -738,10 +833,11 @@ SnesSpc700::StepResult SnesSpc700::step() noexcept {
     case 0x3A: { // INCW dp
         const auto offset = fetch();
         const auto low = read_direct(offset);
+        if (cycle_bus_) write_direct(offset, static_cast<std::uint8_t>(low + 1U));
         const auto high = read_direct(static_cast<std::uint8_t>(offset + 1));
         const auto value = static_cast<std::uint16_t>(
             (low | (static_cast<unsigned>(high) << 8)) + 1U);
-        write_direct(offset, static_cast<std::uint8_t>(value));
+        if (!cycle_bus_) write_direct(offset, static_cast<std::uint8_t>(value));
         write_direct(static_cast<std::uint8_t>(offset + 1),
                      static_cast<std::uint8_t>(value >> 8));
         set_nz16(value);
@@ -807,8 +903,8 @@ SnesSpc700::StepResult SnesSpc700::step() noexcept {
         const auto hi = fetch();
         const auto address = static_cast<std::uint16_t>(
             (lo | (static_cast<unsigned>(hi) << 8)) + registers_.x);
-        const auto target_lo = bus_.spc_read(address);
-        const auto target_hi = bus_.spc_read(static_cast<std::uint16_t>(address + 1));
+        const auto target_lo = read_memory(address);
+        const auto target_hi = read_memory(static_cast<std::uint16_t>(address + 1));
         registers_.pc = static_cast<std::uint16_t>(
             target_lo | (static_cast<unsigned>(target_hi) << 8));
         cycles = 6;
@@ -844,9 +940,18 @@ SnesSpc700::StepResult SnesSpc700::step() noexcept {
             break;
         }
         registers_.pc = start;
-        return {0, opcode, false};
+        if (cycle_bus_) cycles_ += instruction_cycle_;
+        return {cycle_bus_ ? instruction_cycle_ : 0, opcode, false};
     }
-    bus_.tick(cycles);
+    if (cycle_bus_) {
+        if (instruction_cycle_ > cycles) {
+            cycles_ += instruction_cycle_;
+            return {instruction_cycle_, opcode, false}; // Reject an invalid bus schedule.
+        }
+        while (instruction_cycle_ < cycles) idle_cycle();
+    } else {
+        bus_.tick(cycles);
+    }
     cycles_ += cycles;
     return {cycles, opcode, true};
 }

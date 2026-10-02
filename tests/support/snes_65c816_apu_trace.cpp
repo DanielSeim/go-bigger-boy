@@ -79,6 +79,7 @@ int main(int argc, char** argv) {
     bool audible_sound_probe = false;
     bool clocked_dsp = false;
     bool bus_clocked_dsp = false;
+    bool cycle_bus_dsp = false;
     std::filesystem::path input_script_path;
     std::filesystem::path pcm_output_path;
         std::filesystem::path sound_event_trace_path;
@@ -94,6 +95,9 @@ int main(int argc, char** argv) {
             } else if (option == "--bus-clocked-dsp" && !bus_clocked_dsp) {
                 bus_clocked_dsp = true;
                 clocked_dsp = true;
+            } else if (option == "--cycle-bus-dsp" && !cycle_bus_dsp) {
+                cycle_bus_dsp = true;
+                bus_clocked_dsp = clocked_dsp = true;
             } else if (option == "--input-script" &&
                        input_script_path.empty() && index + 1 < argc) {
                 input_script_path = argv[++index];
@@ -141,6 +145,7 @@ int main(int argc, char** argv) {
                      " [--sound-event-trace-output CSV]"
                      " [--clocked-dsp]"
                      " [--bus-clocked-dsp]"
+                     " [--cycle-bus-dsp]"
                      " [--audible-sound-probe]]\n";
         return 2;
     }
@@ -465,6 +470,16 @@ int main(int argc, char** argv) {
                     // and DSP writes at the same boundary, before any idle tail.
                     observed.advance(context, cycle, opcode, 0);
                 }, &dsp_observation);
+            if (cycle_bus_dsp) {
+                spc.set_cycle_bus_enabled(true);
+                spc.set_bus_cycle_observer(
+                    [](void* context, std::uint64_t cycle, char kind,
+                       std::uint16_t, std::uint8_t) noexcept {
+                        auto& observed = *static_cast<DspObservation*>(context);
+                        if (kind == 'T') observed.advance(context, cycle, 0, 0);
+                    }, &dsp_observation);
+                std::cout << "SPC cycle-level reads, dummy accesses and timers enabled\n";
+            }
             std::cout << "DSP clock from SPC reset; write-boundary observation enabled\n";
         }
         for (unsigned i = 0; i < instruction_bound; ++i) {
