@@ -14,6 +14,7 @@ struct Sink final : Processor::SPC700 {
     std::uint64_t cycles{};
     std::uint8_t opcode{};
     bool trace_bus{};
+    bool half_bus{};
     std::array<unsigned, 3> timer_stage{};
     std::array<std::uint8_t, 3> timer_output{};
     std::array<std::uint8_t, 3> timer_target{};
@@ -32,21 +33,26 @@ struct Sink final : Processor::SPC700 {
             for (const auto& event : host_events)
                 if (event[0] == cycles && event[3]) ports[event[1]] = event[2];
     }
-    void clock() {
-        ++cycles;
-        if (!trace_bus) return;
-        // Independent one-clock analytical timer oracle, not the GBB bus.
-        // Timer stages run on fixed 128/16-clock boundaries; output is 4-bit.
-        for (unsigned index = 0; index < 3; ++index) {
-            if (!(enabled & (1U << index)) || cycles % (index == 2 ? 16 : 128)) continue;
-            timer_stage[index] = (timer_stage[index] + 1) & 255;
-            if (timer_stage[index] == timer_target[index]) {
-                timer_stage[index] = 0;
-                timer_output[index] = (timer_output[index] + 1) & 15;
+    void clock(unsigned ticks = 0) {
+        if (!ticks) ticks = half_bus ? 2 : 1;
+        while (ticks--) {
+            ++cycles;
+            if (!trace_bus) return;
+            // Independent analytical timer oracle, not the GBB bus.
+            // Timer stages run on fixed 128/16-clock boundaries; output is 4-bit.
+            for (unsigned index = 0; index < 3; ++index) {
+                if (!(enabled & (1U << index)) ||
+                    cycles % ((index == 2 ? 16 : 128) * (half_bus ? 2 : 1))) continue;
+                timer_stage[index] = (timer_stage[index] + 1) & 255;
+                if (timer_stage[index] == timer_target[index]) {
+                    timer_stage[index] = 0;
+                    timer_output[index] = (timer_output[index] + 1) & 15;
+                }
             }
+            for (const auto& event : host_events)
+                if (event[0] == cycles && !event[3]) ports[event[1]] = event[2];
+            if (ticks) finish_access();
         }
-        for (const auto& event : host_events)
-            if (event[0] == cycles && !event[3]) ports[event[1]] = event[2];
     }
     void idle() override {
         clock();
@@ -54,7 +60,8 @@ struct Sink final : Processor::SPC700 {
         finish_access();
     }
     uint8 read(uint16 address) override {
-        clock();
+        const bool early = half_bus && address >= 0xf4 && address <= 0xf7;
+        clock(early ? 1 : 0);
         // Synthetic fixtures never enable timers. Their counter overlays
         // therefore read zero, including the direct-page-zero wrap case.
         auto value = address >= 0xfd && address <= 0xff ? 0 : ram[address];
@@ -71,6 +78,7 @@ struct Sink final : Processor::SPC700 {
         if (trace_bus) std::cout << "R " << cycles << ' ' << unsigned(address)
                                  << ' ' << unsigned(value) << '\n';
         finish_access();
+        if (early) { clock(1); finish_access(); }
         return value;
     }
     void write(uint16 address, uint8 value) override {
@@ -114,7 +122,11 @@ struct Sink final : Processor::SPC700 {
 
 int main(int argc, char** argv) {
     Sink sink;
-    if (argc == 2 && std::string(argv[1]) == "--bus-cycles") sink.trace_bus = true;
+    if (argc == 2 && (std::string(argv[1]) == "--bus-cycles" ||
+                      std::string(argv[1]) == "--half-cycles")) {
+        sink.trace_bus = true;
+        sink.half_bus = std::string(argv[1]) == "--half-cycles";
+    }
     else if (argc != 1) return 2;
     return sgb_test::run_spc_write_fixture(sink);
 }

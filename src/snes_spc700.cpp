@@ -33,19 +33,36 @@ unsigned SnesSpc700::write_cycle_offset() const noexcept {
     }
 }
 
-void SnesSpc700::clock_bus() noexcept {
+void SnesSpc700::clock_bus(const bool early_read) noexcept {
     if (replaying_) {
         if (suspended_ || invalid_replay_) { ++instruction_cycle_; return; }
-        if (instruction_cycle_ < replay_count_) {
+        if (instruction_cycle_ < replay_count_ &&
+            (!half_mode_ || replay_[instruction_cycle_].halves == 2)) {
             ++instruction_cycle_;
             return;
         }
         if (clock_used_) { suspended_ = true; ++instruction_cycle_; return; }
-        if (replay_count_ == replay_.size()) {
+        if (instruction_cycle_ == replay_count_ && replay_count_ == replay_.size()) {
             invalid_replay_ = true; ++instruction_cycle_; return;
         }
-        replay_[replay_count_++] = {};
+        if (instruction_cycle_ == replay_count_) {
+            replay_[replay_count_++] = {};
+            replay_[instruction_cycle_].early_read = early_read;
+        }
         clock_used_ = true;
+        if (half_mode_) {
+            auto& access = replay_[instruction_cycle_++];
+            if (access.early_read != early_read) { invalid_replay_ = true; return; }
+            ++access.halves;
+            half_pending_ = access.halves == 1;
+            if (!half_pending_) { bus_.tick(1); ++cycles_; }
+            if (half_observer_)
+                half_observer_(half_context_, half_cycles(), 'T', 0, 0);
+            if (!half_pending_ && bus_observer_)
+                bus_observer_(bus_context_, cycles_, 'T', 0, 0);
+            if (half_pending_ && !early_read) suspended_ = true;
+            return;
+        }
     }
     bus_.tick(1);
     ++instruction_cycle_;
@@ -67,6 +84,8 @@ void SnesSpc700::idle_cycle() noexcept {
     }
     if (bus_observer_)
         bus_observer_(bus_context_, replaying_ ? cycles_ : cycles_ + instruction_cycle_, 'I', 0, 0);
+    if (replaying_ && half_mode_ && half_observer_)
+        half_observer_(half_context_, half_cycles(), 'I', 0, 0);
 }
 
 std::uint8_t SnesSpc700::read_memory(const std::uint16_t address) noexcept {
@@ -93,7 +112,7 @@ std::uint8_t SnesSpc700::read_memory(const std::uint16_t address) noexcept {
                    (opcode_ == 0xD7 || opcode_ == 0xF7 || opcode_ == 0xDE)) {
             idle_cycle();
         }
-        clock_bus();
+        clock_bus(half_mode_ && (address & 0xfffcU) == 0xf4);
     }
     if (suspended_ || invalid_replay_) return 0;
     if (replaying_) {
@@ -104,9 +123,14 @@ std::uint8_t SnesSpc700::read_memory(const std::uint16_t address) noexcept {
         }
     }
     const auto value = bus_.spc_read(address);
-    if (replaying_) replay_[instruction_cycle_ - 1] = {'R', address, value};
-    if (cycle_bus_ && bus_observer_)
+    if (replaying_) {
+        auto& access = replay_[instruction_cycle_ - 1];
+        access.kind = 'R'; access.address = address; access.value = value;
+    }
+    if (cycle_bus_ && bus_observer_ && !(replaying_ && half_mode_))
         bus_observer_(bus_context_, replaying_ ? cycles_ : cycles_ + instruction_cycle_, 'R', address, value);
+    if (replaying_ && half_mode_ && half_observer_)
+        half_observer_(half_context_, half_cycles(), 'R', address, value);
     return value;
 }
 
@@ -160,13 +184,15 @@ void SnesSpc700::write_memory(const std::uint16_t address,
                 invalid_replay_ = true;
             return;
         }
-        access = {'W', address, value};
+        access.kind = 'W'; access.address = address; access.value = value;
     }
     if (write_observer_) write_observer_(write_context_, cycle, opcode_, address, value, false);
     bus_.spc_write(address, value);
     if (write_observer_) write_observer_(write_context_, cycle, opcode_, address, value, true);
     if (cycle_bus_ && bus_observer_)
         bus_observer_(bus_context_, cycle, 'W', address, value);
+    if (replaying_ && half_mode_ && half_observer_)
+        half_observer_(half_context_, half_cycles(), 'W', address, value);
 }
 
 std::uint8_t SnesSpc700::fetch() noexcept {
@@ -260,13 +286,23 @@ SnesSpc700::StepResult SnesSpc700::step() noexcept {
 }
 
 SnesSpc700::ClockResult SnesSpc700::clock() noexcept {
+    return advance_continuation(false);
+}
+
+SnesSpc700::ClockResult SnesSpc700::clock_half() noexcept {
+    return advance_continuation(true);
+}
+
+SnesSpc700::ClockResult SnesSpc700::advance_continuation(const bool half) noexcept {
     if (!cycle_bus_) return {{0, opcode_, false}, true};
+    if (continuation_ && half_mode_ != half) return {{0, opcode_, false}, true};
     if (!continuation_) {
         instruction_registers_ = registers_;
         instruction_opcode_ = opcode_;
         instruction_start_ = cycles_;
         replay_count_ = 0;
         continuation_ = true;
+        half_mode_ = half;
     }
     registers_ = instruction_registers_;
     opcode_ = instruction_opcode_;
@@ -283,7 +319,7 @@ SnesSpc700::ClockResult SnesSpc700::clock() noexcept {
         continuation_ = suspended_ = invalid_replay_ = false;
         return {{0, opcode_, false}, true};
     }
-    if (suspended_) {
+    if (suspended_ || half_pending_) {
         registers_ = instruction_registers_;
         suspended_ = false;
         return {{0, opcode_, true}, false};

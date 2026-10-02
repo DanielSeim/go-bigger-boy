@@ -16,6 +16,36 @@ void check(const bool condition, const char* message) {
     }
 }
 
+void test_half_bus() {
+    gameboy::SnesApuBus bus;
+    gameboy::SnesApuBus::IplRom ipl{};
+    ipl[0] = 0xE4; ipl[1] = 0xF4; // MOV A,$F4
+    bus.install_ipl(ipl);
+    gameboy::SnesSpc700 cpu(bus);
+    cpu.set_cycle_bus_enabled(true);
+    bus.host_write_port(0, 0x17);
+    for (unsigned half = 1; half <= 5; ++half) {
+        const auto result = cpu.clock_half();
+        check(result.instruction.supported && !result.completed && cpu.half_cycles() == half,
+              "half-clock execution stops exactly at the midpoint port read");
+    }
+    check(cpu.registers().pc == 0xFFC0 && cpu.cycles() == 2,
+          "midpoint read does not commit architectural state or a full timer clock");
+    check(!cpu.clock().instruction.supported && cpu.half_cycles() == 5 &&
+              !cpu.step().supported,
+          "full-clock and instruction stepping cannot skip a pending half clock");
+    bus.host_write_port(0, 0x99);
+    const auto result = cpu.clock_half();
+    check(result.completed && result.instruction.cycles == 3 && cpu.registers().a == 0x17 &&
+              cpu.half_cycles() == 6,
+          "port read latches at the first half and ignores the subsequent host update");
+    (void)cpu.clock_half();
+    cpu.reset();
+    check(cpu.half_cycles() == 0 && !cpu.instruction_pending() &&
+              cpu.clock().instruction.supported && cpu.cycles() == 1,
+          "reset clears partial-half state and permits full-clock execution");
+}
+
 void test_resumable_bus() {
     gameboy::SnesApuBus bus;
     gameboy::SnesApuBus::IplRom ipl{};
@@ -1745,6 +1775,7 @@ void test_push_y() {
 
 int main() {
     test_resumable_bus();
+    test_half_bus();
     test_write_cycle_observation();
     test_cycle_bus_timers();
     test_adc_a_absolute();

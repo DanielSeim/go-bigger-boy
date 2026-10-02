@@ -962,6 +962,72 @@ These are development replay timings, not emulator FPS or a runtime guarantee.
 The diagnostic remains opt-in; release audio/scheduling are unchanged, and no
 external core, proprietary ROM or captured audio is shipped.
 
+### Fractional APU port timing
+
+The opt-in `--fractional-apu-sync` diagnostic extends completed-clock rendezvous
+with two half clocks per normal SPC bus clock. Input-port reads at `$F4..$F7`
+latch on the first half; other reads, writes, and idles finish on the second.
+The SNES APU read samples four master clocks before its bus-cycle end; writes
+still occur at the end. The scheduler stops at
+`floor(SNES_master_clocks * 2048000 / 21477273)`, without finishing the current
+SPC instruction or fitting a phase offset. The final `APU fractional` marker
+must report equal target and completed half clocks. This does not model SMP
+TEST-register variable wait states; DSP/timers still advance on full clocks.
+
+All **3,199** half-clock cases agree byte-for-byte with the independent SPC
+processor and timed I/O adapter, including 128 additional host-before/after
+word-read and store cases. Independently verified SHA-256:
+`c8bb3d27569a4e442eb7ee19cab672a1428f881b1170fe14a364119c119f4232`.
+The existing 3,071 full-clock corpus retains its original pin. Unit tests check
+midpoint latching, exact odd-half targets, mixed-stepping rejection, reset of a
+partial half, and the SNES read's four-clock tail. This is still a diagnostic
+continuation, not a production scheduler or independently validated hardware.
+
+```sh
+python3 tests/snes_spc_half_cycle_tests.py \
+  build/gameboy_snes_spc_write_fixture_runner \
+  --reference-dir /tmp/bsnes-sgb-reference-src
+```
+
+For a bounded shared timeline, add `--apu-bus-output bus.json` to the local
+title trace with `--cycle-apu-sync` or `--fractional-apu-sync`. The bounded JSON
+records host reads/writes, SPC input reads, control/output/DSP writes, KON
+writes, master-clock snapshots, SPC half clocks, PCM position, and DSP phase.
+The optional incremental reference patch
+`scripts/patches/bsnes-05439f9-sgb-apu-bus.patch` applies **after** the version-7
+SNES-only patch at pinned commit `05439f9`. Rebuild the changed CPU/SMP/DSP
+translation units (or do a clean build), then add `--apu-bus-output` to the
+reference capture command. The extra bus ABI is version 1; the existing
+SNES-only audio ABI remains version 7. Missing/overflowing probes fail closed.
+Native reference PCM was byte-identical with and without the added host probe.
+The instrumented full-clock GBB run also retained byte-identical PCM, sound
+events, and final RAM against the previous completed-clock baseline.
+
+```sh
+python3 scripts/compare_sgb_apu_bus.py \
+  --gbb fractional-bus.json --reference reference-bus.json \
+  --require-midpoint-reads
+```
+
+The fresh Donkey Kong capture has **948/948** midpoint port reads in the
+fractional path and **942/942** in the independent reference. First/second
+nonzero KON phases are now **37/41 in both**, versus 34/38 with full-clock
+rendezvous. No clock-rate or arbitrary phase adjustment was applied. All
+41,280 uploaded sample bytes still match, and fixed-lag 8 kHz correlation is
+at least 0.9997. The active voice still agrees at second KON +640 outputs
+(position 8,501), while the +0.82 s checkpoint still differs (13,749/12,018).
+Volume ramps, dormant voices, and echo state remain unresolved.
+
+The comparison reports each native frequency explicitly: GBB uses master
+21,477,273 Hz and SPC half-clock 2,048,000 Hz; the pinned reference uses
+21,477,272 Hz and 2,050,560 Hz (32,040 Hz DSP output). Absolute boot origins
+and coroutine catch-up differ. Host-side SPC timestamps are scheduler snapshots,
+not hardware sampling times; command observation spacing must not be treated
+as a measured hardware latency. Matching two KON phases therefore neither
+explains all remaining state differences nor proves sample-exact audio.
+The fractional path is opt-in and release scheduling/audio remain unchanged.
+No external core, firmware, ROM, or capture is included in releases.
+
 A new fully synthetic SNES program waits, writes a host command to the APU,
 and runs concurrently with an original SPC700 test program. The test stamps
 its KON write at SPC instruction-end cycle 2,304, feeds that event to the

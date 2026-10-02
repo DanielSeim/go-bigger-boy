@@ -12,6 +12,7 @@ struct Sink {
     gameboy::SnesSpc700 cpu{bus};
     bool valid{true};
     bool resumable{};
+    bool half{};
     std::vector<std::array<unsigned, 4>> host_events;
     void schedule_host(unsigned cycle, unsigned port, std::uint8_t value) {
         host_events.push_back({cycle, port, value, 0});
@@ -29,7 +30,7 @@ struct Sink {
             std::uint8_t opcode, std::uint16_t address, std::uint8_t value, bool after) noexcept {
             auto& sink = *static_cast<Sink*>(context);
             if (cycle == 0) sink.valid = false;
-            std::cout << (after ? "W " : "B ") << cycle << ' ' << unsigned(opcode)
+            std::cout << (after ? "W " : "B ") << (sink.half ? cycle * 2 : cycle) << ' ' << unsigned(opcode)
                       << ' ' << address << ' ' << unsigned(value) << '\n';
         }, this);
         for (unsigned index = 0; index < count; ++index) {
@@ -38,14 +39,22 @@ struct Sink {
             } else {
                 gameboy::SnesSpc700::ClockResult result;
                 do {
-                    const auto before = cpu.cycles();
-                    result = cpu.clock();
-                    if (!result.instruction.supported || cpu.cycles() != before + 1) return false;
+                    const auto before = half ? cpu.half_cycles() : cpu.cycles();
+                    result = half ? cpu.clock_half() : cpu.clock();
+                    if (!result.instruction.supported ||
+                        (half ? cpu.half_cycles() : cpu.cycles()) != before + 1) return false;
+                    if (half) {
+                        // Waiting halves have no R/W/I callback. Apply the
+                        // after-boundary stimulus after every physical half.
+                        for (const auto& event : host_events)
+                            if (event[0] == cpu.half_cycles() && event[3])
+                                bus.host_write_port(event[1], event[2]);
+                    }
                 } while (!result.completed);
             }
         }
         const auto& r = cpu.registers();
-        std::cout << "E " << cpu.cycles() << ' ' << r.pc << ' ' << unsigned(r.a)
+        std::cout << "E " << (half ? cpu.half_cycles() : cpu.cycles()) << ' ' << r.pc << ' ' << unsigned(r.a)
                   << ' ' << unsigned(r.x) << ' ' << unsigned(r.y) << ' '
                   << unsigned(r.sp) << ' ' << unsigned(r.psw) << '\n';
         cpu.set_write_cycle_observer(nullptr);
@@ -57,11 +66,12 @@ struct Sink {
 int main(int argc, char** argv) {
     Sink sink;
     if (argc == 2 && (std::string(argv[1]) == "--bus-cycles" ||
-                      std::string(argv[1]) == "--resumable-cycles")) {
-        sink.resumable = std::string(argv[1]) == "--resumable-cycles";
+                      std::string(argv[1]) == "--resumable-cycles" ||
+                      std::string(argv[1]) == "--half-cycles")) {
+        sink.half = std::string(argv[1]) == "--half-cycles";
+        sink.resumable = sink.half || std::string(argv[1]) == "--resumable-cycles";
         sink.cpu.set_cycle_bus_enabled(true);
-        sink.cpu.set_bus_cycle_observer(
-            [](void* context, std::uint64_t cycle, char kind, std::uint16_t address,
+        const auto observer = [](void* context, std::uint64_t cycle, char kind, std::uint16_t address,
                std::uint8_t value) noexcept {
                 auto& sink = *static_cast<Sink*>(context);
                 if (kind == 'T') {
@@ -76,10 +86,12 @@ int main(int argc, char** argv) {
                     if (kind == 'R') std::cout << ' ' << address << ' ' << unsigned(value);
                     std::cout << '\n';
                 }
-                for (const auto& event : sink.host_events)
+                if (!sink.half) for (const auto& event : sink.host_events)
                     if (event[0] == cycle && event[3])
                         sink.bus.host_write_port(event[1], event[2]);
-            }, &sink);
+            };
+        if (sink.half) sink.cpu.set_half_cycle_observer(observer, &sink);
+        else sink.cpu.set_bus_cycle_observer(observer, &sink);
     } else if (argc != 1) return 2;
     return sgb_test::run_spc_write_fixture(sink);
 }

@@ -94,6 +94,34 @@ void test_cycle_apu_rendezvous() {
           "host accesses interleave with pending SPC instructions and receive the response");
 }
 
+void test_fractional_apu_rendezvous() {
+    const auto rom = program({0xAD, 0x40, 0x21, 0x80, 0xFB});
+    gameboy::SnesApuBus bus;
+    gameboy::SnesApuBus::IplRom ipl{};
+    bus.install_ipl(ipl); // NOP stream, no firmware needed.
+    gameboy::SnesSpc700 spc(bus);
+    spc.set_cycle_bus_enabled(true);
+    sgb_test::Snes65c816TraceCpu cpu(rom, bus, &spc);
+    cpu.set_fractional_apu_sync_enabled(true);
+    std::uint64_t sampled{};
+    cpu.set_apu_port_observer([](void* context, std::uint64_t clock, char kind,
+                                std::uint16_t, std::uint8_t) noexcept {
+        if (kind == 'h') *static_cast<std::uint64_t*>(context) = clock;
+    }, &sampled);
+    bool odd_target{};
+    for (unsigned i = 0; i < 100; ++i) {
+        check(cpu.step().error == sgb_test::Snes65c816TraceCpu::Error::none,
+              "fractional APU synthetic host reads execute");
+        const auto target = cpu.timing().clocks() * 2'048'000ULL / 21'477'273ULL;
+        check(spc.half_cycles() == target,
+              "fractional scheduler catches up exactly without rounding to a full clock");
+        odd_target |= target % 2 != 0;
+        if (i % 2 == 0) check(sampled + 4 == cpu.timing().clocks(),
+              "SNES APU read samples before its four-master-clock tail");
+    }
+    check(odd_target, "fractional rendezvous includes odd half-clock targets");
+}
+
 void test_fail_closed() {
     auto rom = program({0xAD, 0x3E, 0x21}); // LDA $213E: unmodeled sprite status
     gameboy::SnesApuBus apu;
@@ -1087,6 +1115,7 @@ void test_local_program(const std::filesystem::path& path, const bool sgb2) {
 
 int main(int argc, char** argv) {
     test_cycle_apu_rendezvous();
+    test_fractional_apu_rendezvous();
     if (argc == 3) {
         const auto mode = std::string_view(argv[1]);
         if (mode == "--local-sgb1" || mode == "--local-sgb2") {

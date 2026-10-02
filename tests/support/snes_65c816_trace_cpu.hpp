@@ -144,9 +144,20 @@ public:
         spc_step_context_ = context;
     }
     void set_icd_source(SnesIcdTraceSource* source) noexcept { icd_ = source; }
+    using ApuPortObserver = void (*)(void*, std::uint64_t, char,
+                                     std::uint16_t, std::uint8_t) noexcept;
+    void set_apu_port_observer(ApuPortObserver observer, void* context = nullptr) noexcept {
+        apu_port_observer_ = observer; apu_port_context_ = context;
+    }
     // Opt-in diagnostic rendezvous; only whole completed SPC clocks run before
     // a host access. The legacy instruction-granular baseline stays unchanged.
     void set_cycle_apu_sync_enabled(bool enabled) noexcept { cycle_apu_sync_ = enabled; }
+    // Diagnostic midpoint SPC input reads and SNES reads before a four-clock
+    // bus tail. Requires the attached SPC's explicit cycle-bus opt-in.
+    void set_fractional_apu_sync_enabled(bool enabled) noexcept {
+        fractional_apu_sync_ = enabled;
+        if (enabled) cycle_apu_sync_ = true;
+    }
     [[nodiscard]] std::uint64_t spc_cycles() const noexcept { return spc_cycles_; }
     [[nodiscard]] const SnesTraceTiming& timing() const noexcept { return timing_; }
     [[nodiscard]] std::uint8_t interrupt_enable() const noexcept {
@@ -191,6 +202,9 @@ private:
     gameboy::SnesApuBus& apu_;
     gameboy::SnesSpc700* spc_{};
     bool cycle_apu_sync_{};
+    bool fractional_apu_sync_{};
+    ApuPortObserver apu_port_observer_{};
+    void* apu_port_context_{};
     SnesIcdTraceSource* icd_{};
     std::uint64_t spc_cycles_{};
     SpcStepObserver spc_step_observer_{};

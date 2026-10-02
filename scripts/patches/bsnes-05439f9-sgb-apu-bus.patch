@@ -1,0 +1,121 @@
+diff --git a/bsnes/sfc/smp/smp.hpp b/bsnes/sfc/smp/smp.hpp
+--- a/bsnes/sfc/smp/smp.hpp
++++ b/bsnes/sfc/smp/smp.hpp
+@@ -3,2 +3,4 @@
+ struct SMP : Processor::SPC700, Thread {
++  uint64 diagnosticHalfClocks = 0;
++  auto diagnosticDspAddress() const -> unsigned { return io.dspAddr; }
+   inline auto synchronizing() const -> bool override { return scheduler.synchronizing(); }
+diff --git a/bsnes/sfc/smp/smp.cpp b/bsnes/sfc/smp/smp.cpp
+--- a/bsnes/sfc/smp/smp.cpp
++++ b/bsnes/sfc/smp/smp.cpp
+@@ -45,2 +45,3 @@
+ auto SMP::power(bool reset) -> void {
++  diagnosticHalfClocks = 0;
+   SPC700::power();
+diff --git a/bsnes/sfc/smp/timing.cpp b/bsnes/sfc/smp/timing.cpp
+--- a/bsnes/sfc/smp/timing.cpp
++++ b/bsnes/sfc/smp/timing.cpp
+@@ -37,2 +37,3 @@
+ auto SMP::step(uint clocks) -> void {
++  diagnosticHalfClocks += clocks;
+   clock += clocks * (uint64_t)cpu.frequency;
+@@ -45,2 +46,3 @@
+ auto SMP::stepIdle(uint clocks) -> void {
++  diagnosticHalfClocks += clocks;
+   clock += clocks * (uint64_t)cpu.frequency;
+diff --git a/bsnes/sfc/cpu/io.cpp b/bsnes/sfc/cpu/io.cpp
+--- a/bsnes/sfc/cpu/io.cpp
++++ b/bsnes/sfc/cpu/io.cpp
+@@ -1,2 +1,3 @@
++extern "C" void gbb_reference_sgb_record_apu_bus(unsigned, unsigned, unsigned);
+ extern "C" void gbb_reference_sgb_record_host_write(unsigned, unsigned,
+     unsigned, unsigned);
+@@ -8,3 +9,5 @@
+   synchronizeSMP();
+-  return smp.portRead(addr & 3);
++  const auto value = smp.portRead(addr & 3);
++  gbb_reference_sgb_record_apu_bus('h', 0x2140 + (addr & 3), value);
++  return value;
+ }
+@@ -108,3 +111,4 @@
+   synchronizeSMP();
++  gbb_reference_sgb_record_apu_bus('H', 0x2140 + (addr & 3), data);
+   gbb_reference_sgb_record_host_write(addr & 3, data, vcounter(), hcounter());
+   return smp.portWrite(addr & 3, data);
+diff --git a/bsnes/sfc/smp/memory.cpp b/bsnes/sfc/smp/memory.cpp
+--- a/bsnes/sfc/smp/memory.cpp
++++ b/bsnes/sfc/smp/memory.cpp
+@@ -1,1 +1,2 @@
++extern "C" void gbb_reference_sgb_record_apu_bus(unsigned, unsigned, unsigned);
+ extern "C" void gbb_reference_sgb_record_ram_write(unsigned, unsigned);
+@@ -25,3 +26,4 @@
+     if((address & 0xfff0) == 0x00f0) data = readIO(address);
++    gbb_reference_sgb_record_apu_bus('R', address, data);
+     wait(address, 1);
+     return data;
+@@ -31,3 +33,4 @@
+     if((address & 0xfff0) == 0x00f0) data = readIO(address);
++    gbb_reference_sgb_record_apu_bus('R', address, data);
+     return data;
+   }
+@@ -40,2 +43,3 @@
+   if((address & 0xfff0) == 0x00f0) writeIO(address, data);
++  gbb_reference_sgb_record_apu_bus('W', address, data);
+ }
+diff --git a/bsnes/sfc/dsp/dsp.cpp b/bsnes/sfc/dsp/dsp.cpp
+--- a/bsnes/sfc/dsp/dsp.cpp
++++ b/bsnes/sfc/dsp/dsp.cpp
+@@ -14,2 +14,33 @@
+ static std::vector<DiagnosticSoundEvent> diagnosticSoundEvents;
++struct DiagnosticApuEvent { uint64 fields[7]; };
++static std::vector<DiagnosticApuEvent> diagnosticApuEvents;
++static bool diagnosticApuOverflow = false;
++extern "C" unsigned gbb_reference_sgb_apu_bus_version() { return 1; }
++extern "C" unsigned gbb_reference_sgb_apu_bus_count() {
++  return diagnosticApuOverflow ? 0xffffffffu : diagnosticApuEvents.size();
++}
++extern "C" unsigned gbb_reference_sgb_apu_bus_frequencies(uint64* output) {
++  if(!output) return 0;
++  output[0] = cpu.frequency;
++  output[1] = smp.frequency;
++  return 1;
++}
++extern "C" unsigned gbb_reference_sgb_apu_bus_copy(unsigned index, uint64* output) {
++  if(!output || index >= diagnosticApuEvents.size()) return 0;
++  for(unsigned i = 0; i < 7; ++i) output[i] = diagnosticApuEvents[index].fields[i];
++  return 1;
++}
++extern "C" void gbb_reference_sgb_record_apu_bus(unsigned kind, unsigned address, unsigned value) {
++  if(icd.diagnosticSoundCount < 2) return;
++  if(diagnosticFirstKonSample != 0xffffffffu &&
++      diagnosticDspSamples.size() / 2 >= diagnosticFirstKonSample + 27234) return;
++  if(kind == 'R' && (address < 0xf4 || address > 0xf7)) return;
++  if(kind == 'W' && address != 0xf1 && address != 0xf3 &&
++      (address < 0xf4 || address > 0xf7)) return;
++  if(kind == 'W' && address == 0xf3 && smp.diagnosticDspAddress() == 0x4c) kind = 'K';
++  if(diagnosticApuEvents.size() >= 262144) { diagnosticApuOverflow = true; return; }
++  diagnosticApuEvents.push_back({{kind, cpu.diagnosticMasterClocks(), smp.diagnosticHalfClocks,
++    static_cast<uint64>(diagnosticDspSamples.size() / 2), address, value,
++    static_cast<uint64>(dsp.diagnosticKeyPollClock())}});
++}
+ 
+@@ -148,2 +179,4 @@
+   diagnosticSoundEvents.clear();
++  diagnosticApuEvents.clear();
++  diagnosticApuOverflow = false;
+   stream = Emulator::audio.createStream(2, system.apuFrequency() / 768.0);
+diff --git a/bsnes/sfc/cpu/cpu.hpp b/bsnes/sfc/cpu/cpu.hpp
+--- a/bsnes/sfc/cpu/cpu.hpp
++++ b/bsnes/sfc/cpu/cpu.hpp
+@@ -1,2 +1,3 @@
+ struct CPU : Processor::WDC65816, Thread, PPUcounter {
++  auto diagnosticMasterClocks() const -> uint64 { return counter.cpu; }
+   inline auto interruptPending() const -> bool override { return status.interruptPending; }
+diff --git a/bsnes/sfc/dsp/dsp.hpp b/bsnes/sfc/dsp/dsp.hpp
+--- a/bsnes/sfc/dsp/dsp.hpp
++++ b/bsnes/sfc/dsp/dsp.hpp
+@@ -3,2 +3,3 @@
+ struct DSP {
++  auto diagnosticKeyPollClock() const -> unsigned { return spc_dsp.diagnostic_key_poll_clock(); }
+   shared_pointer<Emulator::Stream> stream;

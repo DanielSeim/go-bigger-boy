@@ -27,7 +27,10 @@ def main() -> int:
     parser.add_argument("--cycle-bus-dsp", action="store_true")
     parser.add_argument("--shared-bus-dsp", action="store_true")
     parser.add_argument("--cycle-apu-sync", action="store_true")
+    parser.add_argument("--fractional-apu-sync", action="store_true")
     args = parser.parse_args()
+    if args.fractional_apu_sync:
+        args.cycle_apu_sync = True
     if args.cycle_apu_sync:
         args.shared_bus_dsp = True
     if hashlib.sha256(Path(args.gb_rom).read_bytes()).hexdigest() != DONKEY_SHA256:
@@ -42,7 +45,8 @@ def main() -> int:
              args.gb_rom, args.gb_boot, "--input-script", args.input_script,
              "--instruction-limit", "40000000", "--pcm-output", str(pcm_path),
              "--sound-event-trace-output", str(event_path)] +
-            (["--cycle-apu-sync"] if args.cycle_apu_sync else
+            (["--fractional-apu-sync"] if args.fractional_apu_sync else
+             ["--cycle-apu-sync"] if args.cycle_apu_sync else
              ["--shared-bus-dsp"] if args.shared_bus_dsp else
              ["--cycle-bus-dsp"] if args.cycle_bus_dsp else
              ["--bus-clocked-dsp"] if args.bus_clocked_dsp else []),
@@ -80,7 +84,8 @@ def main() -> int:
             # Shared instruction-rendezvous baseline matches reference 37/41.
             # Exact rendezvous removes overshoot but produces 34/38: pin that
             # diagnostic result without claiming it matches hardware/reference.
-            expected_phases = [(34, 4), (38, 4)] if args.cycle_apu_sync else [(37, 4), (41, 4)]
+            expected_phases = ([(34, 4), (38, 4)] if args.cycle_apu_sync and
+                               not args.fractional_apu_sync else [(37, 4), (41, 4)])
             if phases[:2] != expected_phases:
                 raise AssertionError("title KON bus phases changed for the selected diagnostic mode")
         if args.cycle_apu_sync:
@@ -88,6 +93,11 @@ def main() -> int:
             if "Cycle-level SNES/SPC APU rendezvous enabled" not in output or \
                     boundary is None or len(set(boundary.groups())) != 1:
                 raise AssertionError("title rendezvous did not stop at its exact SPC target")
+        if args.fractional_apu_sync:
+            boundary = re.search(r"APU fractional target_half=(\d+) completed_half=(\d+)", output)
+            if boundary is None or boundary[1] != boundary[2] or \
+                    "Fractional APU ports:" not in output:
+                raise AssertionError("title fractional rendezvous did not stop at its exact half target")
         if len(packets) != 1 or len(hosts) < 4 or len(dsp) < 10 or \
                 [(int(event["address"]), int(event["value"]))
                  for event in hosts[:4]] != [(0, 1), (1, 0), (2, 0), (3, 0)] or \

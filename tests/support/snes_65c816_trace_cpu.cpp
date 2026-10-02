@@ -121,9 +121,26 @@ void Snes65c816TraceCpu::synchronize_apu() noexcept {
     if (spc_ == nullptr || error_ != Error::none) return;
     // NTSC master oscillator (1.89e9/88 Hz) versus the 1.024 MHz S-SMP.
     // Completed SPC accesses win an equal-clock tie with the host access.
-    // Fractional/half-clock visibility remains a separate validation task.
+    // The optional fractional path uses half-clock targets instead. Neither
+    // convention claims independently verified hardware port visibility.
     constexpr std::uint64_t master_hz = 21'477'273;
     constexpr std::uint64_t spc_hz = 1'024'000;
+    if (fractional_apu_sync_) {
+        const auto target_half = timing_.clocks() * (spc_hz * 2) / master_hz;
+        while (spc_->half_cycles() < target_half) {
+            const auto pc = spc_->registers().pc;
+            const auto before = spc_->half_cycles();
+            const auto result = spc_->clock_half();
+            if (!result.instruction.supported || spc_->half_cycles() != before + 1) {
+                error_ = Error::unsupported_spc_opcode; error_address_ = pc; return;
+            }
+            spc_cycles_ = spc_->cycles();
+            if (result.completed && spc_step_observer_)
+                spc_step_observer_(spc_step_context_, spc_cycles_,
+                                   result.instruction.opcode, result.instruction.cycles);
+        }
+        return;
+    }
     const auto target = timing_.clocks() * spc_hz / master_hz;
     while (spc_cycles_ < target) {
         const auto pc = spc_->registers().pc;
@@ -273,7 +290,10 @@ std::uint8_t Snes65c816TraceCpu::read8(const std::uint8_t bank,
 
 std::uint8_t Snes65c816TraceCpu::read8_raw(const std::uint8_t bank,
                                            const std::uint16_t address) noexcept {
-    timing_.cpu_cycle(bus_clocks(bank, address));
+    const bool early_apu = fractional_apu_sync_ &&
+        (bank <= 0x3f || (bank >= 0x80 && bank <= 0xbf)) &&
+        address >= 0x2140 && address <= 0x2143;
+    timing_.cpu_cycle(bus_clocks(bank, address) - (early_apu ? 4U : 0U));
     update_irq();
     ++bus_accesses_;
     ++cpu_cycles_;
@@ -285,7 +305,15 @@ std::uint8_t Snes65c816TraceCpu::read8_raw(const std::uint8_t bank,
     const bool system_bank = bank <= 0x3F || (bank >= 0x80 && bank <= 0xBF);
     if (system_bank && address < 0x2000) return wram_[address];
     if (system_bank && address >= 0x2140 && address <= 0x2143) {
-        return apu_.host_read_port(address - 0x2140);
+        const auto value = apu_.host_read_port(address - 0x2140);
+        if (apu_port_observer_)
+            apu_port_observer_(apu_port_context_, timing_.clocks(), 'h', address, value);
+        if (early_apu) {
+            timing_.cpu_cycle(4);
+            update_irq();
+            synchronize_apu();
+        }
+        return value;
     }
     if (system_bank && address == 0x2137) {
         if (timing_.software_latch()) {
@@ -448,6 +476,8 @@ void Snes65c816TraceCpu::write8(const std::uint8_t bank,
             return;
         }
         apu_.host_write_port(address - 0x2140, value);
+        if (apu_port_observer_)
+            apu_port_observer_(apu_port_context_, timing_.clocks(), 'H', address, value);
         apu_writes_[apu_write_count_++] = {steps_ + 1,
             static_cast<std::uint8_t>(address - 0x2140), value};
         return;

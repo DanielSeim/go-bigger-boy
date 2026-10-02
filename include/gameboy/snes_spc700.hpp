@@ -30,7 +30,7 @@ public:
     explicit SnesSpc700(SnesApuBus& bus) noexcept : bus_(bus) {}
     void reset() noexcept {
         registers_ = {}; cycles_ = 0;
-        continuation_ = replaying_ = clock_used_ = suspended_ = invalid_replay_ = false;
+        continuation_ = replaying_ = clock_used_ = suspended_ = invalid_replay_ = half_pending_ = false;
         replay_count_ = 0;
     }
     [[nodiscard]] const Registers& registers() const noexcept { return registers_; }
@@ -72,6 +72,17 @@ public:
     // step() is rejected and mode changes are ignored while an instruction is
     // in flight. Reset explicitly discards the continuation, not bus effects.
     [[nodiscard]] ClockResult clock() noexcept;
+    // Two half clocks per normal bus clock; input-port reads latch on the
+    // first half, other accesses on the second. DSP/timers tick on full clocks.
+    [[nodiscard]] ClockResult clock_half() noexcept;
+    [[nodiscard]] std::uint64_t half_cycles() const noexcept { return cycles_ * 2 + half_pending_; }
+    // T: advanced half-clock before its access, including waiting halves;
+    // R/W/I: actual accepted access only, never a replayed latched access.
+    using HalfCycleObserver = void (*)(void*, std::uint64_t, char,
+                                       std::uint16_t, std::uint8_t) noexcept;
+    void set_half_cycle_observer(HalfCycleObserver observer, void* context = nullptr) noexcept {
+        half_observer_ = observer; half_context_ = context;
+    }
     [[nodiscard]] bool instruction_pending() const noexcept { return continuation_; }
 
 private:
@@ -79,7 +90,8 @@ private:
     [[nodiscard]] std::uint8_t fetch() noexcept;
     [[nodiscard]] std::uint8_t read_memory(std::uint16_t address) noexcept;
     void idle_cycle() noexcept;
-    void clock_bus() noexcept;
+    void clock_bus(bool early_read = false) noexcept;
+    [[nodiscard]] ClockResult advance_continuation(bool half) noexcept;
     void begin_bus_instruction() noexcept;
     [[nodiscard]] std::uint16_t direct_address(std::uint8_t offset) const noexcept;
     [[nodiscard]] std::uint8_t read_direct(std::uint8_t offset) noexcept;
@@ -106,7 +118,10 @@ private:
     unsigned instruction_cycle_{};
     BusCycleObserver bus_observer_{};
     void* bus_context_{};
-    struct ReplayAccess { char kind{}; std::uint16_t address{}; std::uint8_t value{}; };
+    struct ReplayAccess {
+        char kind{}; std::uint16_t address{}; std::uint8_t value{};
+        unsigned halves{}; bool early_read{};
+    };
     // No dynamic allocation. Supported instructions use at most twelve clocks.
     std::array<ReplayAccess, 16> replay_{};
     Registers instruction_registers_{};
@@ -118,6 +133,10 @@ private:
     bool clock_used_{};
     bool suspended_{};
     bool invalid_replay_{};
+    bool half_mode_{};
+    bool half_pending_{};
+    HalfCycleObserver half_observer_{};
+    void* half_context_{};
 };
 
 } // namespace gameboy

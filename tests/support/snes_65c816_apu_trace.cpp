@@ -82,6 +82,8 @@ int main(int argc, char** argv) {
     bool cycle_bus_dsp = false;
     bool shared_bus_dsp = false;
     bool cycle_apu_sync = false;
+    bool fractional_apu_sync = false;
+    std::filesystem::path apu_bus_output_path;
     std::filesystem::path input_script_path;
     std::filesystem::path pcm_output_path;
         std::filesystem::path sound_event_trace_path;
@@ -104,6 +106,10 @@ int main(int argc, char** argv) {
                 shared_bus_dsp = cycle_bus_dsp = bus_clocked_dsp = clocked_dsp = true;
             } else if (option == "--cycle-apu-sync" && !cycle_apu_sync) {
                 cycle_apu_sync = shared_bus_dsp = cycle_bus_dsp = bus_clocked_dsp = clocked_dsp = true;
+            } else if (option == "--fractional-apu-sync" && !fractional_apu_sync) {
+                fractional_apu_sync = cycle_apu_sync = shared_bus_dsp = cycle_bus_dsp = bus_clocked_dsp = clocked_dsp = true;
+            } else if (option == "--apu-bus-output" && apu_bus_output_path.empty() && index + 1 < argc) {
+                apu_bus_output_path = argv[++index];
             } else if (option == "--input-script" &&
                        input_script_path.empty() && index + 1 < argc) {
                 input_script_path = argv[++index];
@@ -154,6 +160,8 @@ int main(int argc, char** argv) {
                      " [--cycle-bus-dsp]"
                      " [--shared-bus-dsp]"
                      " [--cycle-apu-sync]"
+                     " [--fractional-apu-sync]"
+                     " [--apu-bus-output JSON]"
                      " [--audible-sound-probe]]\n";
         return 2;
     }
@@ -212,6 +220,18 @@ int main(int argc, char** argv) {
             std::uint32_t value{};
         };
         std::vector<SoundTraceEvent> sound_trace;
+        struct ApuBusEvent {
+            char kind;
+            std::uint64_t master_clock, spc_half_clock, pcm_sample;
+            std::uint16_t address;
+            std::uint8_t value;
+            unsigned dsp_clock64;
+        };
+        std::vector<ApuBusEvent> apu_trace;
+        if (!apu_bus_output_path.empty()) {
+            if (!cycle_apu_sync) throw std::runtime_error("APU bus trace requires cycle APU synchronization");
+            apu_trace.reserve(262144);
+        }
         gameboy::SnesApuBus pcm_bus;
         auto& render_bus = shared_bus_dsp ? apu : pcm_bus;
         sgb_test::SnesDspPcmRenderer pcm(render_bus);
@@ -243,6 +263,11 @@ int main(int argc, char** argv) {
             sgb_test::SnesDspClock* clock{};
             gameboy::SnesApuBus* pcm_bus{};
             bool shared_bus{};
+            bool fractional_bus{};
+            sgb_test::Snes65c816TraceCpu* cpu{};
+            gameboy::SnesSpc700* spc{};
+            std::vector<ApuBusEvent>* apu_trace{};
+            bool apu_trace_overflow{};
             const sgb_test::SnesIcdGbSource* icd{};
             std::uint64_t next_sample_cycle{};
             std::uint64_t pcm_samples{};
@@ -257,6 +282,18 @@ int main(int argc, char** argv) {
             unsigned state_checkpoints{};
             std::vector<SoundTraceEvent>* sound_trace{};
             sgb_test::Snes65c816TraceCpu::SpcStepObserver advance{};
+            void record_bus(char kind, std::uint64_t half_clock,
+                            std::uint16_t address, std::uint8_t value) noexcept {
+                if (!apu_trace || !icd || icd->audible_sound_packets_delivered() == 0) return;
+                if (first_keyon_sample && pcm_samples >= *first_keyon_sample + 27200) return;
+                if (kind == 'R' && (address < 0xf4 || address > 0xf7)) return;
+                if (kind == 'W' && address != 0xf1 && address != 0xf3 &&
+                    (address < 0xf4 || address > 0xf7)) return;
+                if (kind == 'W' && address == 0xf3 && pcm_bus->spc_read(0xf2) == 0x4c) kind = 'K';
+                if (apu_trace->size() >= 262144) { apu_trace_overflow = true; return; }
+                apu_trace->push_back({kind, cpu->timing().clocks(), half_clock,
+                    pcm_samples, address, value, clock->key_poll_clock()});
+            }
         } dsp_observation;
         std::vector<sgb_test::SnesDspPcmRenderer::StereoSample> pcm_export;
         struct ObserverScope {
@@ -268,7 +305,9 @@ int main(int argc, char** argv) {
                 apu.set_spc_ram_write_observer(nullptr);
                 spc.set_write_cycle_observer(nullptr);
                 spc.set_bus_cycle_observer(nullptr);
+                spc.set_half_cycle_observer(nullptr);
                 cpu.set_spc_step_observer(nullptr);
+                cpu.set_apu_port_observer(nullptr);
             }
         } observer_scope{apu, spc, cpu};
         if (sync_gb) {
@@ -276,6 +315,18 @@ int main(int argc, char** argv) {
             if (clocked_dsp) dsp_observation.clock = &pcm_clock;
             dsp_observation.pcm_bus = &render_bus;
             dsp_observation.shared_bus = shared_bus_dsp;
+            dsp_observation.fractional_bus = fractional_apu_sync;
+            dsp_observation.cpu = &cpu;
+            dsp_observation.spc = &spc;
+            if (!apu_bus_output_path.empty()) {
+                dsp_observation.apu_trace = &apu_trace;
+                cpu.set_apu_port_observer(
+                    [](void* context, std::uint64_t, char kind, std::uint16_t address,
+                       std::uint8_t value) noexcept {
+                        auto& observed = *static_cast<DspObservation*>(context);
+                        observed.record_bus(kind, observed.spc->half_cycles(), address, value);
+                    }, &dsp_observation);
+            }
             dsp_observation.icd = icd.get();
             if (!pcm_output_path.empty()) dsp_observation.pcm_export = &pcm_export;
             if (!sound_event_trace_path.empty())
@@ -507,9 +558,11 @@ int main(int argc, char** argv) {
                 spc.set_cycle_bus_enabled(true);
                 spc.set_bus_cycle_observer(
                     [](void* context, std::uint64_t cycle, char kind,
-                       std::uint16_t, std::uint8_t) noexcept {
+                       std::uint16_t address, std::uint8_t value) noexcept {
                         auto& observed = *static_cast<DspObservation*>(context);
                         if (kind == 'T') observed.advance(context, cycle, 0, 0);
+                        else if (!observed.fractional_bus && (kind == 'R' || kind == 'W'))
+                            observed.record_bus(kind, cycle * 2, address, value);
                     }, &dsp_observation);
                 std::cout << "SPC cycle-level reads, dummy accesses and timers enabled\n";
             }
@@ -518,6 +571,16 @@ int main(int argc, char** argv) {
             if (cycle_apu_sync) {
                 cpu.set_cycle_apu_sync_enabled(true);
                 std::cout << "Cycle-level SNES/SPC APU rendezvous enabled\n";
+            }
+            if (fractional_apu_sync) {
+                cpu.set_fractional_apu_sync_enabled(true);
+                spc.set_half_cycle_observer(
+                    [](void* context, std::uint64_t half, char kind,
+                       std::uint16_t address, std::uint8_t value) noexcept {
+                        if (kind == 'R' || kind == 'W')
+                            static_cast<DspObservation*>(context)->record_bus(kind, half, address, value);
+                    }, &dsp_observation);
+                std::cout << "Fractional APU ports: SPC midpoint reads and SNES four-clock read tail enabled\n";
             }
             std::cout << "DSP clock from SPC reset; write-boundary observation enabled\n";
         }
@@ -893,6 +956,13 @@ int main(int argc, char** argv) {
                       << " instruction_pending=" << spc.instruction_pending() << '\n';
             if (cpu.spc_cycles() != target || spc.cycles() != target)
                 throw std::runtime_error("cycle APU rendezvous overshot its master-clock target");
+            if (fractional_apu_sync) {
+                const auto half_target = cpu.timing().clocks() * 2'048'000ULL / 21'477'273ULL;
+                std::cout << "APU fractional target_half=" << half_target
+                          << " completed_half=" << spc.half_cycles() << '\n';
+                if (spc.half_cycles() != half_target)
+                    throw std::runtime_error("fractional APU rendezvous overshot its half-clock target");
+            }
         }
         if (!sound_event_trace_path.empty()) {
             if (std::filesystem::exists(sound_event_trace_path))
@@ -908,6 +978,28 @@ int main(int argc, char** argv) {
                        << static_cast<unsigned>(event.address) << ','
                        << static_cast<unsigned>(event.value) << '\n';
             if (!output) throw std::runtime_error("could not finish sound event trace");
+        }
+        if (!apu_bus_output_path.empty()) {
+            if (dsp_observation.apu_trace_overflow || apu_trace.empty())
+                throw std::runtime_error("APU bus trace is empty or overflowed");
+            if (std::filesystem::exists(apu_bus_output_path))
+                throw std::runtime_error("APU bus trace already exists");
+            if (!apu_bus_output_path.parent_path().empty())
+                std::filesystem::create_directories(apu_bus_output_path.parent_path());
+            std::ofstream output(apu_bus_output_path);
+            if (!output) throw std::runtime_error("could not create APU bus trace");
+            output << "{\"format\":\"gbb-apu-bus-v1\",\"source\":\"gbb\","
+                      "\"master_hz\":21477273,\"apu_half_hz\":2048000,\"events\":[";
+            for (std::size_t i = 0; i < apu_trace.size(); ++i) {
+                const auto& event = apu_trace[i];
+                if (i) output << ',';
+                output << "{\"kind\":\"" << event.kind << "\",\"master_clock\":" << event.master_clock
+                    << ",\"spc_half_clock\":" << event.spc_half_clock << ",\"pcm_sample\":" << event.pcm_sample
+                    << ",\"address\":" << event.address << ",\"value\":" << unsigned(event.value)
+                    << ",\"dsp_clock64\":" << event.dsp_clock64 << '}';
+            }
+            output << "]}\n";
+            if (!output) throw std::runtime_error("could not finish APU bus trace");
         }
         if (!apu_ram_output_path.empty()) {
             if (std::filesystem::exists(apu_ram_output_path))
