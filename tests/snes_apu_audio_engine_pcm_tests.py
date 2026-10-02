@@ -2,10 +2,29 @@
 """Integrated SPC-generated PCM against the existing independent DSP protocol."""
 import argparse
 import hashlib
+import json
+import math
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+
+def validate_benchmark(path, model):
+    report = json.loads(path.read_text())
+    trials = report["trials"]
+    if (report["format"] != "gbb-apu-firmware-performance-v1" or
+            report["model"] != model or report["apu_hz"] != 1024000 or
+            report["emulated_seconds_per_trial"] != 2 or len(trials) != 3):
+        raise AssertionError("invalid firmware benchmark metadata")
+    for trial in trials:
+        if (trial["samples"] != 64000 or not 0 < trial["nonzero_samples"] <= 64000 or
+                not math.isfinite(trial["seconds"]) or trial["seconds"] <= 0 or
+                not math.isfinite(trial["realtime_ratio"]) or trial["realtime_ratio"] <= 0 or
+                not math.isclose(trial["realtime_ratio"] * trial["seconds"], 2, rel_tol=1e-5)):
+            raise AssertionError("incomplete firmware benchmark")
+    if len({(t["pcm_fnv64"], t["nonzero_samples"]) for t in trials}) != 1:
+        raise AssertionError("nondeterministic live firmware replay")
+    return trials
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -13,6 +32,15 @@ def main():
     parser.add_argument("renderer", type=Path)
     parser.add_argument("--reference-dir", type=Path)
     args = parser.parse_args()
+    with tempfile.TemporaryDirectory(prefix="gbb-apu-benchmark-") as directory:
+        report = Path(directory) / "performance.json"
+        subprocess.run([str(args.engine), "--benchmark-fixture", str(report)], check=True, timeout=60)
+        validate_benchmark(report, "synthetic")
+        original = report.read_bytes()
+        duplicate = subprocess.run([str(args.engine), "--benchmark-fixture", str(report)],
+                                   capture_output=True, timeout=60)
+        if duplicate.returncode != 1 or report.read_bytes() != original:
+            raise AssertionError("benchmark overwrote an existing report")
     fixture = subprocess.check_output([str(args.engine), "--fixture"], timeout=30)
     pcm = subprocess.check_output([str(args.engine), "--pcm"], timeout=30)
     expected = subprocess.run([str(args.renderer)], input=fixture, capture_output=True,

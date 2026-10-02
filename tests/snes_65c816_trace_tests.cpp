@@ -37,6 +37,95 @@ gameboy::SgbProgramRom program(const std::vector<std::uint8_t>& code) {
     return gameboy::SgbProgramRom(std::move(bytes));
 }
 
+void test_add_absolute_indexed_x() {
+    for (bool wide : {false, true}) for (bool wide_index : {false, true})
+        for (bool crossing : {false, true}) {
+            std::vector<std::uint8_t> code{
+                0x18, 0xfb, 0xc2, 0x20, // Native, 16-bit accumulator.
+                0xa9, 1, 0, 0x8d, 0, 2, // Store RHS=1 in WRAM $0200.
+                0xa9, 0x7f, 0xab};       // Set hidden B for narrow ADC.
+            if (!wide) { code.push_back(0xe2); code.push_back(0x20); }
+            if (wide_index) { code.push_back(0xc2); code.push_back(0x10); }
+            code.insert(code.end(), {0xa2, 1});
+            if (wide_index) code.push_back(0);
+            code.insert(code.end(), {0x18, 0xa9, 0x7f});
+            if (wide) code.push_back(0x7f);
+            const auto adc_pc = 0x8104 + code.size();
+            code.insert(code.end(), {0x7d, static_cast<std::uint8_t>(crossing ? 0xff : 0xfe), 1});
+            // Non-crossing case addresses $01ff rather than $0200; store RHS
+            // there too, using an initial wide WRAM store without disturbing A.
+            code[8] = crossing ? 0 : 0xff;
+            code[9] = crossing ? 2 : 1;
+            const auto rom = program(code);
+            gameboy::SnesApuBus bus;
+            sgb_test::Snes65c816TraceCpu cpu(rom, bus);
+            while (cpu.registers().pc < adc_pc) {
+                if (cpu.step().error != sgb_test::Snes65c816TraceCpu::Error::none) {
+                    check(false, "indexed ADC setup supported"); break;
+                }
+            }
+            const auto start = cpu.timing().clocks();
+            check(cpu.step().error == sgb_test::Snes65c816TraceCpu::Error::none,
+                  "ADC absolute,X supports accumulator/index widths and page crossing");
+            check(cpu.registers().a == (wide ? 0x7f80 : 0xab80),
+                  "indexed ADC uses indexed WRAM data and preserves narrow hidden B");
+            check((cpu.registers().p & 0xc3) == (wide ? 0 : 0xc0),
+                  "indexed ADC publishes arithmetic flags");
+            check(cpu.timing().clocks() - start == (wide ? 40U : 32U) +
+                      ((crossing || wide_index) ? 6U : 0U),
+                  "indexed ADC charges width/page-cross internal cycles");
+        }
+    const auto decimal_rom = program({0xe2, 8, 0x7d, 0, 2});
+    gameboy::SnesApuBus bus;
+    sgb_test::Snes65c816TraceCpu decimal_cpu(decimal_rom, bus);
+    check(decimal_cpu.step().error == sgb_test::Snes65c816TraceCpu::Error::none,
+          "decimal ADC setup supported");
+    check(decimal_cpu.step().error == sgb_test::Snes65c816TraceCpu::Error::unsupported_opcode &&
+          decimal_cpu.registers().pc == 0x8106, "unimplemented indexed decimal ADC traps without guessing");
+}
+
+void test_store_indirect_indexed_y() {
+    for (bool wide : {false, true}) for (bool crossing : {false, true})
+        for (bool unaligned_dp : {false, true}) for (bool wide_index : {false, true}) {
+            std::vector<std::uint8_t> code{
+                0x18, 0xfb, 0xc2, 0x20,
+                0xa9, static_cast<std::uint8_t>(unaligned_dp), 0, 0x48, 0x2b, // PHA; PLD: D=0/1.
+                0xa9, static_cast<std::uint8_t>(crossing ? 0xff : 0xfe), 1,
+                0x8d, static_cast<std::uint8_t>(0x10 + unaligned_dp), 0}; // Pointer.
+            if (wide_index) code.insert(code.end(), {0xc2, 0x10});
+            code.insert(code.end(), {0xa0, 1});
+            if (wide_index) code.push_back(1); // Y=$0101, not just its low byte.
+            code.insert(code.end(), {0xa9, 0x80, 0xbe});
+            if (!wide) code.insert(code.end(), {0xe2, 0x20});
+            const auto store_pc = 0x8104 + code.size();
+            code.insert(code.end(), {0x91, 0x10});
+            if (!wide) code.insert(code.end(), {0xc2, 0x20}); // Inspect both stored bytes.
+            code.insert(code.end(), {0xad,
+                static_cast<std::uint8_t>(crossing ? 0 : 0xff),
+                static_cast<std::uint8_t>((crossing ? 2 : 1) + (wide_index ? 1 : 0))});
+            const auto rom = program(code);
+            gameboy::SnesApuBus bus;
+            sgb_test::Snes65c816TraceCpu cpu(rom, bus);
+            while (cpu.registers().pc < store_pc) {
+                if (cpu.step().error != sgb_test::Snes65c816TraceCpu::Error::none) {
+                    check(false, "indirect store setup supported"); break;
+                }
+            }
+            const auto flags = cpu.registers().p;
+            const auto start = cpu.timing().clocks();
+            check(cpu.step().error == sgb_test::Snes65c816TraceCpu::Error::none &&
+                  cpu.registers().p == flags && cpu.registers().a == 0xbe80,
+                  "STA (dp),Y supports both widths without changing flags/accumulator");
+            check(cpu.timing().clocks() - start == (wide ? 54U : 46U) + (unaligned_dp ? 6U : 0U),
+                  "indirect store always charges indexing and direct-page alignment cycles");
+            if (!wide) check(cpu.step().error == sgb_test::Snes65c816TraceCpu::Error::none,
+                             "indirect store byte inspection widens accumulator");
+            check(cpu.step().error == sgb_test::Snes65c816TraceCpu::Error::none &&
+                  cpu.registers().a == (wide ? 0xbe80 : 0x0080),
+                  "indirect store uses full index and writes exactly the selected width");
+        }
+}
+
 void test_native_width_and_apu_mapping() {
     const auto rom = program({
         0x78,             // SEI
@@ -1274,6 +1363,8 @@ int main(int argc, char** argv) {
     test_indexed_indirect_subroutine();
     test_bit_immediate();
     test_add_absolute();
+    test_add_absolute_indexed_x();
+    test_store_indirect_indexed_y();
     test_decrement_absolute();
     test_load_x_direct();
     test_load_y_absolute_indexed_x();

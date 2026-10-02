@@ -157,12 +157,15 @@ The diagnostic SNES trace accepts `--core-apu-engine` for PCM/RAM capture on
 the existing fractional host schedule, without running a second DSP renderer.
 Legacy bus/state tracing options are rejected in this mode. Optional local-ROM
 tests compare complete native WAVs against the established diagnostic path:
-SGB1 **firmware startup only**, and SGB2 Donkey Kong gameplay. The SGB1 host
-currently encounters unsupported SNES opcode `$7d` before GB gameplay begins;
-this is not a validated SGB1 title replay. `--allow-unanchored-pcm` explicitly
-permits a startup capture without an audible Game Boy SOUND anchor and marks
-it as such. Integration parity does not resolve the documented independent
-title timing/waveform differences or establish hardware-perfect audio.
+SGB1 and SGB2 Donkey Kong gameplay, each through 60 million host instructions.
+The bounded diagnostic host now supports binary `ADC abs,X` (`$7d`) and
+`STA (dp),Y` (`$91`), which previously prevented SGB1 from releasing the GB.
+No change to the ICD run-control bit was needed. Decimal indexed ADC still
+fails closed, and this is not a complete SNES CPU implementation.
+`--allow-unanchored-pcm` remains an explicit startup-only diagnostic option;
+the title regression no longer uses it. Integration parity does not resolve
+the documented independent title timing/waveform differences or establish
+hardware-perfect audio.
 The local integration test enables `--core-apu-state-roundtrip`, restoring the
 live APU component every 8,192 native samples while requiring unchanged WAV
 bytes. No private snapshot bytes are written to disk.
@@ -170,6 +173,23 @@ bytes. No private snapshot bytes are written to disk.
 The original eight-voice synthetic workload also reports measured native PCM
 throughput after warmup (no resampling or frontend). This is a desktop diagnostic,
 not a fixed cross-platform FPS gate or an Android/web performance guarantee.
+
+`--core-apu-benchmark-output /path/to/new-report.json` additionally captures a
+private live APU state 8,192 native samples after the first audible SOUND
+delivery and replays it three times, for two emulated seconds per trial. The
+report contains wall time, realtime ratio, sample counts and a PCM hash; no
+firmware, state or audio bytes are persisted by the benchmark. The local title
+test requires 64,000 outputs per trial at the nominal clock, nonsilent PCM,
+and identical output hashes across all three restored continuations. It
+measures the real firmware/SOUND workload in isolation: no GB/SNES host CPU,
+future host commands, frontend, audio device or resampling. Measured ratios
+are reported, not used as a machine-dependent CI speed threshold.
+
+One local Release run, concurrent with the regression suite, measured SGB1
+at 3.07×, 2.94× and 3.07× realtime, and SGB2 at 2.80×, 2.97× and 3.23×.
+Both produced 64,000 native stereo outputs per trial with repeatable hashes.
+These are host-specific isolated APU measurements, not end-to-end emulator
+frame rates or evidence that Android/web already have sufficient headroom.
 
 See [SGB validation](sgb-validation.md) for the independent capture evidence
 and remaining timing/host limitations. These tests do not establish complete

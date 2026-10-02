@@ -290,12 +290,13 @@ unsigned Snes65c816TraceCpu::instruction_cycles(
     case 0x0D: case 0x2D: case 0x8D: case 0x9C: case 0xAD: case 0xCD:
     case 0x6D: case 0xED:
         return 4 + m;
-    case 0x19: case 0xB9: case 0xBD: case 0xD9: case 0xDD:
+    case 0x19: case 0x7D: case 0xB9: case 0xBD: case 0xD9: case 0xDD:
         return 4 + m + (indexed_extra_ ? 1U : 0U);
     case 0xBC: return 4 + x + (indexed_extra_ ? 1U : 0U);
     case 0x11: case 0xB1:
         return 5 + m + dp + (indexed_extra_ ? 1U : 0U);
     case 0x17: case 0x97: case 0xB7: return 6 + m + dp;
+    case 0x91: return 6 + m + dp;
     case 0xA7: return 6 + m + dp;
     case 0x5F: case 0x7F: case 0x8F: case 0x9F: case 0xAF: case 0xBF:
         return 5 + m;
@@ -1038,13 +1039,16 @@ Snes65c816TraceCpu::StepResult Snes65c816TraceCpu::step() noexcept {
             (accumulator_8() ? 0x00FFU : 0xFFFFU)));
         break;
     }
-    case 0x6D: { // ADC abs (binary mode only)
+    case 0x6D: case 0x7D: { // ADC abs / abs,X (binary mode only)
         if ((r_.p & decimal) != 0) {
             r_.pc = pc;
             return {Error::unsupported_opcode, opcode, bank, pc,
                     (static_cast<std::uint32_t>(bank) << 16) | pc};
         }
-        const auto address = fetch16();
+        const auto base = fetch16();
+        const auto address = static_cast<std::uint16_t>(base + (opcode == 0x7D ? r_.x : 0));
+        if (opcode == 0x7D)
+            indexed_extra_ = !index_8() || ((base ^ address) & 0xFF00U) != 0;
         adc(accumulator_8() ? read8(r_.db, address) :
             read16(r_.db, address));
         break;
@@ -1184,6 +1188,13 @@ Snes65c816TraceCpu::StepResult Snes65c816TraceCpu::step() noexcept {
         const auto address = static_cast<std::uint16_t>(r_.d + fetch8());
         if (accumulator_8()) write8(0, address, static_cast<std::uint8_t>(r_.a));
         else write16(0, address, r_.a);
+        break;
+    }
+    case 0x91: { // STA (dp),Y: stores always take the indexing cycle.
+        const auto pointer = static_cast<std::uint16_t>(r_.d + fetch8());
+        const auto address = static_cast<std::uint16_t>(read16(0, pointer) + r_.y);
+        if (accumulator_8()) write8(r_.db, address, static_cast<std::uint8_t>(r_.a));
+        else write16(r_.db, address, r_.a);
         break;
     }
     case 0xE6: { // INC dp

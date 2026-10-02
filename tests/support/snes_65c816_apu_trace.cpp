@@ -3,6 +3,7 @@
 #include "snes_dsp_pcm_renderer.hpp"
 #include "snes_dsp_clock.hpp"
 #include "gameboy/snes_apu_audio_engine.hpp"
+#include "snes_apu_firmware_benchmark.hpp"
 #include "gameboy/snes_spc700.hpp"
 
 #include <array>
@@ -100,6 +101,7 @@ int main(int argc, char** argv) {
     std::filesystem::path host_startup_path;
     std::filesystem::path input_script_path;
     std::filesystem::path pcm_output_path;
+    std::filesystem::path core_apu_benchmark_path;
         std::filesystem::path sound_event_trace_path;
         std::filesystem::path apu_ram_output_path;
     unsigned requested_instruction_limit = 0;
@@ -116,6 +118,8 @@ int main(int argc, char** argv) {
                 allow_unanchored_pcm = true;
             } else if (option == "--core-apu-state-roundtrip" && !core_apu_state_roundtrip) {
                 core_apu_state_roundtrip = true;
+            } else if (option == "--core-apu-benchmark-output" && core_apu_benchmark_path.empty() && index + 1 < argc) {
+                core_apu_benchmark_path = argv[++index];
             } else if (option == "--clocked-dsp" && !clocked_dsp) {
                 clocked_dsp = true;
             } else if (option == "--bus-clocked-dsp" && !bus_clocked_dsp) {
@@ -203,8 +207,8 @@ int main(int argc, char** argv) {
         std::cerr << "core APU engine mode currently exports PCM/RAM only, not legacy observer traces\n";
         return 2;
     }
-    if (core_apu_state_roundtrip && !core_apu_engine) {
-        std::cerr << "core APU state roundtrip requires --core-apu-engine\n";
+    if ((core_apu_state_roundtrip || !core_apu_benchmark_path.empty()) && !core_apu_engine) {
+        std::cerr << "core APU state roundtrip/benchmark requires --core-apu-engine\n";
         return 2;
     }
     const bool synchronized = sync_probe || sync_gb;
@@ -224,6 +228,7 @@ int main(int argc, char** argv) {
                      " [--clocked-dsp]"
                      " [--core-apu-engine]"
                      " [--core-apu-state-roundtrip]"
+                     " [--core-apu-benchmark-output JSON]"
                      " [--allow-unanchored-pcm]"
                      " [--bus-clocked-dsp]"
                      " [--cycle-bus-dsp]"
@@ -343,6 +348,10 @@ int main(int argc, char** argv) {
             throw std::runtime_error("boot timeline requires fractional APU synchronization and APU bus output");
         if (native_gb_input && input_script_path.empty())
             throw std::runtime_error("native GB input requires an input script");
+        if (!core_apu_benchmark_path.empty() &&
+            (std::filesystem::exists(core_apu_benchmark_path) ||
+             core_apu_benchmark_path == pcm_output_path || core_apu_benchmark_path == apu_ram_output_path))
+            throw std::runtime_error("core APU benchmark requires an unused, distinct output path");
         if (!boot_timeline_path.empty() && std::filesystem::exists(boot_timeline_path))
             throw std::runtime_error("boot timeline already exists");
         if (!boot_timeline_path.empty() && (boot_timeline_path == apu_bus_output_path ||
@@ -753,7 +762,11 @@ int main(int argc, char** argv) {
             DspObservation* observed;
             bool roundtrip;
             unsigned until_restore{8192};
-        } core_driver{core_apu ? &*core_apu : nullptr, &dsp_observation, core_apu_state_roundtrip};
+            bool benchmark{};
+            std::vector<std::uint8_t> benchmark_state;
+        } core_driver{core_apu ? &*core_apu : nullptr, &dsp_observation, core_apu_state_roundtrip,
+                      8192, false, {}};
+        core_driver.benchmark = !core_apu_benchmark_path.empty();
         if (core_apu_engine) {
             cpu.set_fractional_apu_sync_enabled(true);
             cpu.set_apu_half_driver([](void* context) noexcept {
@@ -772,6 +785,9 @@ int main(int argc, char** argv) {
                         if (!driver.engine->load_state(state)) return false;
                         driver.until_restore = 8192;
                     }
+                    if (driver.benchmark && driver.benchmark_state.empty() && observed.first_audible_sample &&
+                        observed.pcm_samples >= *observed.first_audible_sample + 8192)
+                        driver.benchmark_state = driver.engine->save_state();
                 }
                 return true;
             }, &core_driver);
@@ -1305,6 +1321,9 @@ int main(int argc, char** argv) {
                               ? std::to_string(*dsp_observation.first_audible_sample)
                               : "unanchored-firmware-startup") << '\n';
         }
+        if (!core_apu_benchmark_path.empty())
+            sgb_test::benchmark_apu_firmware(core_driver.benchmark_state, apu_clock_hz,
+                std::string_view(argv[3]) == "--sync-gb-sgb1" ? "sgb1" : "sgb2", core_apu_benchmark_path);
         if (synchronized)
             std::cerr << "APU wait context SPC_PC=$" << std::hex
                       << std::setw(4) << std::setfill('0')

@@ -1,4 +1,5 @@
 #include "gameboy/snes_apu_audio_engine.hpp"
+#include "support/snes_apu_firmware_benchmark.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -292,6 +293,16 @@ void operator delete(void* p, std::size_t) noexcept { std::free(p); }
 void operator delete[](void* p, std::size_t) noexcept { std::free(p); }
 
 int main(int argc, char** argv) {
+    if (argc == 3 && std::string_view(argv[1]) == "--benchmark-fixture") {
+        try {
+            Engine engine; setup(engine);
+            (void)run(engine, 8192);
+            sgb_test::benchmark_apu_firmware(engine.save_state(), 1024000, "synthetic", argv[2]);
+            return failures ? 1 : 0;
+        } catch (const std::exception& error) {
+            std::cerr << error.what() << '\n'; return 1;
+        }
+    }
     if (argc == 2 && std::string_view(argv[1]) == "--fixture") return export_synthetic(true);
     if (argc == 2 && std::string_view(argv[1]) == "--pcm") return export_synthetic(false);
     if (argc != 1) return 2;

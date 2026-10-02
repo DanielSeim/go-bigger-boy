@@ -10,6 +10,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import wave
+from snes_apu_audio_engine_pcm_tests import validate_benchmark
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -30,17 +31,18 @@ def main():
                            str(args.roms / "spc700.rom"), f"--sync-gb-{model}", str(game),
                            str(args.roms / ("sgb.boot.rom" if model == "sgb1" else "sgb2.boot.rom")),
                            "--input-script", str(args.script), "--native-gb-input",
-                           "--instruction-limit", "2900000" if model == "sgb1" else "60000000",
+                           "--instruction-limit", "60000000",
                            "--ppu-dma-timing", "--host-bus-timing", mode, "--pcm-output", str(output)]
-                if model == "sgb1":
-                    # SGB1 SNES-host execution currently hits an unsupported
-                    # opcode before GB gameplay; validate startup audio only.
-                    command.append("--allow-unanchored-pcm")
                 if mode == "--core-apu-engine":
-                    command.append("--core-apu-state-roundtrip")
+                    benchmark = Path(directory) / f"{model}-performance.json"
+                    command.extend(["--core-apu-state-roundtrip", "--core-apu-benchmark-output", str(benchmark)])
                 result = subprocess.run(command, capture_output=True, text=True, timeout=240)
                 if result.returncode != 4 or "SNES CPU trace reached instruction bound" not in result.stderr:
                     raise AssertionError(result.stdout[-2000:] + result.stderr[-2000:])
+                if mode == "--core-apu-engine":
+                    trials = validate_benchmark(benchmark, model)
+                    print(f"{model}: isolated firmware/music APU realtime ratios " +
+                          ", ".join(f"{t['realtime_ratio']:.2f}x" for t in trials), flush=True)
                 files.append(output.read_bytes())
                 with wave.open(str(output), "rb") as wav:
                     if wav.getframerate() != 32000 or wav.getnchannels() != 2 or wav.getsampwidth() != 2:
@@ -49,12 +51,11 @@ def main():
                         raise AssertionError("title audio was silent")
             if files[0] != files[1]:
                 raise AssertionError(f"{model}: reusable core scheduler altered native title PCM")
-            pinned = ("7f2bc059f6c82e1fd1c27814e629debd031d5c76f0e4934ea1c3724100a51504" if model == "sgb1" else
+            pinned = ("553c8992a2de7dbc86eac6de3132000299f2fcb7e73fbe8ef0d03f9c8ec6856f" if model == "sgb1" else
                       "d430fa49f199df87fc20b6465cba0fff0e89daf6b446a9a07159b90b188e4bc9")
             if hashlib.sha256(files[1]).hexdigest() != pinned:
                 raise AssertionError(f"{model}: native WAV baseline changed in both paths")
-            scope = "firmware startup" if model == "sgb1" else "title gameplay"
-            print(f"{model}: {scope} native WAV parity {hashlib.sha256(files[1]).hexdigest()}", flush=True)
+            print(f"{model}: title gameplay native WAV parity {hashlib.sha256(files[1]).hexdigest()}", flush=True)
     return 0
 
 if __name__ == "__main__":

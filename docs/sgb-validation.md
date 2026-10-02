@@ -1585,6 +1585,64 @@ resolve the four deferred visual mismatches, reverse PPU-DMA payloads, full
 65C816 timing or all timer-phase differences. Private firmware/captures and
 the independent reference remain untracked and are not shipped.
 
+### SGB1 host completion and independent audio check
+
+The bounded diagnostic SNES host previously stopped at `$7d` before releasing
+the GB. Implementing binary `ADC abs,X` exposed a second missing instruction,
+`STA (dp),Y` (`$91`); implementing both allows the original SGB1 program ROM
+to reach gameplay. Original ROM-free tests cover accumulator/index widths,
+page crossing, direct-page alignment, stored byte widths, arithmetic flags,
+and cycle charges. Decimal indexed ADC remains an explicit unsupported trap.
+The ICD `$6003` run bit remains `$80`: the stalled host, not that bit, was
+the cause of the missing GB execution.
+
+The local Donkey Kong v1.1 replay now runs 60 million host instructions on
+both models. SGB1 reaches 5,419 GB frames, applies all 11 scripted inputs,
+and delivers three SOUND packets (two classified audible) plus two SOU_TRN
+packets. Its complete nominal-clock WAV SHA-256 is
+`553c8992a2de7dbc86eac6de3132000299f2fcb7e73fbe8ef0d03f9c8ec6856f`.
+The integrated core produces identical bytes while saving/restoring its live
+APU state every 8,192 samples; SGB2 retains its existing gameplay baseline.
+
+A separate 3,600-frame, SNES-only bsnes-libretro SGB1 capture uses the same
+native GB input script, local title and firmware. The boot-timeline comparison
+confirms all five upload fingerprints, all 11 frame/mask markers and all
+three SOUND parameter sets. At the nominal 32,000 Hz DSP clock, the first
+KON anchors are GBB sample 1,576,175 and reference sample 1,579,111. Direct
+native comparison first differs at buffer index 47 (output 48 after KON).
+The first two 250 ms mono windows have oscillator-scaled fixed-anchor
+correlations 0.999411 and 0.999758, but the window at +1 s falls to 0.154987.
+This is not a whole-title audio match; accepted volume/pitch write timings
+also differ and are not fitted away.
+
+Repeating GBB with the **explicit diagnostic-only** `--apu-clock-hz 1025280`
+profile gives first-KON anchors 1,579,119 versus reference 1,579,111. Comparing
+stereo samples directly from those observed anchors finds **zero differing
+channel samples in the first 1.5 seconds** (96,120 channel samples), with no
+resampling or lag search. All input/upload/SOUND preconditions still match;
+SOUND snapshot differences are less than 0.02 ms. Other host/input landmarks
+can still differ, including one run-control snapshot by about 18.8 ms.
+The equal-clock complete GBB WAV SHA-256 is
+`4620a9a0ab99ca83aeccd9a498fc6fd6c499bd7c9cfcc432265d69def59106b4`.
+This bounded emulator-reference agreement is not real-hardware proof or a
+reason to silently change the shipping oscillator.
+
+Reference provenance: bsnes checkout
+`05439f96121d2b9d7ad7a5fc1f29d7eebdcc8c43`, instrumented by the existing
+development-only capture harness, with entropy `None` and
+`--require-snes-only-probe`. The reference native WAV SHA-256 is
+`6e50756c6db40c37f163a2836428ba0a707b60ad8502d4ecd59f60f926dc8fc2`;
+its timeline also binds the raw PCM hash and sample count.
+
+Reproduce GBB with the existing Donkey Kong native replay command, replacing
+`--sync-gb-sgb2`, `sgb2.program.rom` and `sgb2.boot.rom` with `--sync-gb-sgb1`,
+`sgb1.program.rom` and `sgb.boot.rom`. Keep both `--ppu-dma-timing` and
+`--host-bus-timing`; add `--apu-clock-hz 1025280` only for the equal-clock
+diagnostic. Use `compare_sgb_boot_timeline.py` and `compare_sgb_native_writes.py`
+on the corresponding captures rather than reusing SGB2 anchors. All private
+ROMs, firmware, snapshots, PCM and external reference binaries stay untracked.
+Shipping frontend SNES audio remains disabled.
+
 A new fully synthetic SNES program waits, writes a host command to the APU,
 and runs concurrently with an original SPC700 test program. The test stamps
 its KON write at SPC instruction-end cycle 2,304, feeds that event to the
