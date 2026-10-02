@@ -746,6 +746,49 @@ regression. The remaining task is to align/validate instruction and bus-level
 host/SPC/DSP scheduling. No real-hardware audio capture was used, and none
 of these test-path corrections enables live SGB audio in releases.
 
+### SPC write boundaries and uninterrupted diagnostic DSP clock
+
+The opt-in `--bus-clocked-dsp` mode supersedes `--clocked-dsp` for title
+scheduling investigations. It starts the diagnostic DSP at SPC reset, keeps
+its phase through the IPL-to-uploaded-program handoff, and applies RAM/DSP
+writes at their individual SPC bus-write boundaries. The earlier modes remain
+available as baselines. Use the title command above with
+`--bus-clocked-dsp` instead of `--clocked-dsp`; the same RAM and PCM comparison
+tools and version-7 non-fast reference capture apply.
+
+The SPC observer brackets each physical write before and after mutation. A
+ROM-free corpus checks 175 cases against the external bsnes SPC700, including
+all currently implemented write instructions, both direct pages, every
+64-clock write phase, stack/word writes, and an IPL-to-RAM jump with no clock
+reset. Write values, before/after timestamps, final registers and total clocks
+match exactly. Its independently verified trace SHA-256 is
+`98c3ff86ff917d2bf27b9eb8b8921395c98e43a234bda166ca9a4c428f80aa38`.
+Normal CTest uses the ROM-free pin; to independently verify it:
+
+```sh
+python3 tests/snes_spc_write_cycle_tests.py \
+  build/gameboy_snes_spc_write_fixture_runner \
+  --reference-dir /tmp/bsnes-sgb-reference-src
+```
+
+In the local Donkey Kong replay, active voice 2 now agrees at output 640 after
+the second KON: envelope 2,047, BRR address `$3b7e`, and interpolation position
+8,501 on both sides. The 41,280-byte sample upload still matches. With one
+continuous clock-ratio conversion and zero fixed lag at 8 kHz, the checked
+PCM windows from +0.02 through +1.5 seconds have correlations of at least
+0.9997, without per-window realignment. The optional local-ROM CTest also
+checks bus-clocked packet delivery, PCM anchors and cycle-stamped checkpoints.
+
+This is **not** sample-exact whole-system or real-hardware validation. First
+and second KON write phases remain GBB 47/43 versus reference 37/41. At the
+first-KON +0.82-second checkpoint, active voice 2 still has interpolation
+positions 13,749 versus 12,018. Dormant voice state, echo offsets and
+volume-ramp scheduling can also differ. Only
+writes have bus-cycle observation: SPC reads, dummy accesses, timers and
+SNES/APU port rendezvous remain instruction-granular. The external processor
+is a development-only reference, never linked or shipped. These changes do
+not change the shipping playback clock or enable live SGB sound.
+
 A new fully synthetic SNES program waits, writes a host command to the APU,
 and runs concurrently with an original SPC700 test program. The test stamps
 its KON write at SPC instruction-end cycle 2,304, feeds that event to the

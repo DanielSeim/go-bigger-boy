@@ -16,6 +16,75 @@ void check(const bool condition, const char* message) {
     }
 }
 
+void test_write_cycle_observation() {
+    gameboy::SnesApuBus bus;
+    gameboy::SnesApuBus::IplRom ipl{};
+    ipl[0] = 0xE8; ipl[1] = 0x5A; // MOV A,#$5A
+    ipl[2] = 0xC4; ipl[3] = 0x20; // MOV $20,A
+    ipl[4] = 0xFF; // Explicitly unsupported.
+    bus.install_ipl(ipl);
+    bus.dsp_write_ram(0x20, 0x17);
+    gameboy::SnesSpc700 cpu(bus);
+    struct Observation {
+        gameboy::SnesApuBus* bus;
+        unsigned count{};
+        std::array<std::uint64_t, 8> cycles{};
+        std::array<std::uint8_t, 8> memory{};
+        std::array<bool, 8> after{};
+    } observation{&bus};
+    cpu.set_write_cycle_observer(
+        [](void* context, std::uint64_t cycle, std::uint8_t,
+           std::uint16_t address, std::uint8_t, bool after) noexcept {
+            auto& state = *static_cast<Observation*>(context);
+            if (state.count < state.cycles.size()) {
+                state.cycles[state.count] = cycle;
+                state.memory[state.count] = state.bus->dsp_read_ram(address);
+                state.after[state.count] = after;
+            }
+            ++state.count;
+        }, &observation);
+    check(cpu.step().cycles == 2 && cpu.step().cycles == 4,
+          "write observation preserves instruction cycle counts");
+    check(observation.count == 2 && observation.cycles[0] == 6 &&
+              observation.cycles[1] == 6 && !observation.after[0] &&
+              observation.after[1] && observation.memory[0] == 0x17 &&
+              observation.memory[1] == 0x5A,
+          "write callbacks bracket the physical bus mutation at its cycle");
+    check(!cpu.step().supported && cpu.cycles() == 6,
+          "unsupported instructions do not advance observed clocks");
+    cpu.reset();
+    check(cpu.cycles() == 0 && cpu.registers().pc == 0xFFC0,
+          "reset clears observed clocks and restores IPL entry");
+    check(cpu.step().supported && cpu.step().supported && observation.count == 4 &&
+              observation.cycles[2] == 6,
+          "reset preserves the installed observer with a fresh clock origin");
+    cpu.set_write_cycle_observer(nullptr);
+    cpu.reset();
+    check(cpu.step().supported && cpu.step().supported && observation.count == 4,
+          "detaching write observation stops callbacks");
+
+    ipl = {};
+    ipl[0] = 0xE8; ipl[1] = 0x4C; // MOV A,#KON
+    ipl[2] = 0x8D; ipl[3] = 0x04; // MOV Y,#voice2
+    ipl[4] = 0xDA; ipl[5] = 0xF2; // MOVW $F2,YA
+    bus.install_ipl(ipl);
+    cpu.reset();
+    observation.count = 0;
+    cpu.set_write_cycle_observer(
+        [](void* context, std::uint64_t cycle, std::uint8_t,
+           std::uint16_t, std::uint8_t, bool) noexcept {
+            auto& state = *static_cast<Observation*>(context);
+            if (state.count < state.cycles.size()) state.cycles[state.count] = cycle;
+            ++state.count;
+        }, &observation);
+    check(cpu.step().supported && cpu.step().supported && cpu.step().cycles == 5 &&
+              cpu.cycles() == 9 && observation.count == 4 &&
+              observation.cycles[0] == 8 && observation.cycles[1] == 8 &&
+              observation.cycles[2] == 9 && observation.cycles[3] == 9 &&
+              bus.dsp_register(0x4C) == 4,
+          "MOVW observes separate DSP address and data writes in bus order");
+}
+
 void test_synthetic_upload() {
     gameboy::SnesApuBus bus;
     gameboy::SnesApuBus::IplRom ipl{};
@@ -1567,6 +1636,7 @@ void test_push_y() {
 } // namespace
 
 int main() {
+    test_write_cycle_observation();
     test_adc_a_absolute();
     test_load_x_absolute();
     test_dec_absolute();

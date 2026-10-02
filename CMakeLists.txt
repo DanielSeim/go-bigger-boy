@@ -1106,6 +1106,10 @@ if(GAMEBOY_BUILD_TESTS)
     target_link_libraries(gameboy_snes_spc700_tests PRIVATE gameboy_core)
     add_test(NAME gameboy_snes_spc700_contract
              COMMAND gameboy_snes_spc700_tests)
+    add_executable(gameboy_snes_spc_write_fixture_runner
+        tests/support/snes_spc_write_fixture_runner.cpp)
+    target_include_directories(gameboy_snes_spc_write_fixture_runner PRIVATE tests/support)
+    target_link_libraries(gameboy_snes_spc_write_fixture_runner PRIVATE gameboy_core)
 
     add_executable(gameboy_snes_brr_tests
         tests/snes_brr_tests.cpp)
@@ -1305,6 +1309,16 @@ if(GAMEBOY_BUILD_TESTS)
                                  "${CMAKE_CURRENT_SOURCE_DIR}/roms/Donkey Kong (JU) (V1.1) [S][!].gb"
                                  ${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.boot.rom
                                  ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/sgb/titles/donkey-kong-gameplay.script)
+                add_test(NAME gameboy_snes_65c816_local_title_bus_clocked_pcm
+                         COMMAND ${Python3_EXECUTABLE}
+                                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/snes_65c816_local_title_sound_tests.py
+                                 $<TARGET_FILE:gameboy_snes_65c816_apu_trace>
+                                 ${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.program.rom
+                                 ${CMAKE_CURRENT_SOURCE_DIR}/roms/spc700.rom
+                                 "${CMAKE_CURRENT_SOURCE_DIR}/roms/Donkey Kong (JU) (V1.1) [S][!].gb"
+                                 ${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.boot.rom
+                                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/sgb/titles/donkey-kong-gameplay.script
+                                 --bus-clocked-dsp)
             endif()
         endif()
     endif()
@@ -1368,6 +1382,10 @@ if(GAMEBOY_BUILD_TESTS)
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/snes_dsp_second_keyon_phase_tests.py
                          $<TARGET_FILE:gameboy_snes_dsp_pcm_fixture_runner>)
+        add_test(NAME gameboy_snes_spc_write_cycle
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/snes_spc_write_cycle_tests.py
+                         $<TARGET_FILE:gameboy_snes_spc_write_fixture_runner>)
         add_test(NAME gameboy_snes_spc700_dsp_multi_key_pcm
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/snes_spc700_dsp_multi_key_pcm_tests.py

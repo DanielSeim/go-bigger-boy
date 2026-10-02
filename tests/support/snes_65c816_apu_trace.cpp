@@ -78,6 +78,7 @@ int main(int argc, char** argv) {
          std::string_view(argv[3]) == "--sync-gb-sgb2");
     bool audible_sound_probe = false;
     bool clocked_dsp = false;
+    bool bus_clocked_dsp = false;
     std::filesystem::path input_script_path;
     std::filesystem::path pcm_output_path;
         std::filesystem::path sound_event_trace_path;
@@ -89,6 +90,9 @@ int main(int argc, char** argv) {
             if (option == "--audible-sound-probe" && !audible_sound_probe) {
                 audible_sound_probe = true;
             } else if (option == "--clocked-dsp" && !clocked_dsp) {
+                clocked_dsp = true;
+            } else if (option == "--bus-clocked-dsp" && !bus_clocked_dsp) {
+                bus_clocked_dsp = true;
                 clocked_dsp = true;
             } else if (option == "--input-script" &&
                        input_script_path.empty() && index + 1 < argc) {
@@ -136,6 +140,7 @@ int main(int argc, char** argv) {
                      " [--input-script PATH] [--pcm-output WAV] [--instruction-limit N]"
                      " [--sound-event-trace-output CSV]"
                      " [--clocked-dsp]"
+                     " [--bus-clocked-dsp]"
                      " [--audible-sound-probe]]\n";
         return 2;
     }
@@ -235,6 +240,7 @@ int main(int argc, char** argv) {
             std::optional<std::uint64_t> second_keyon_sample;
             unsigned state_checkpoints{};
             std::vector<SoundTraceEvent>* sound_trace{};
+            sgb_test::Snes65c816TraceCpu::SpcStepObserver advance{};
         } dsp_observation;
         std::vector<sgb_test::SnesDspPcmRenderer::StereoSample> pcm_export;
         if (sync_gb) {
@@ -255,6 +261,212 @@ int main(int argc, char** argv) {
             ((upload || upload_two || upload_three || upload_boot ||
               driver_probe || synchronized) ? 5000000U : 1000000U);
         std::uint64_t logged_sound_deliveries{};
+        const auto install_observation = [&] {
+            apu.set_dsp_write_observer(
+                [](void* context, std::uint8_t address,
+                   std::uint8_t value) noexcept {
+                    auto& observed = *static_cast<DspObservation*>(context);
+                    ++observed.pending;
+                    observed.address = address;
+                    observed.value = value;
+                }, &dsp_observation);
+            apu.set_spc_ram_write_observer(
+                [](void* context, std::uint16_t address,
+                   std::uint8_t value) noexcept {
+                    auto& observed = *static_cast<DspObservation*>(context);
+                    if (observed.pending_ram_count ==
+                        observed.pending_ram.size()) {
+                        observed.unsupported = true;
+                        return;
+                    }
+                    observed.pending_ram[observed.pending_ram_count++] =
+                        {address, value};
+                    if (observed.sound_trace != nullptr &&
+                        observed.first_keyon_sample &&
+                        observed.pcm_samples >=
+                            *observed.first_keyon_sample + 22400 &&
+                        observed.pcm_samples <
+                            *observed.first_keyon_sample + 27200 &&
+                        observed.sound_trace->size() < 32768) {
+                        observed.sound_trace->push_back({
+                            'R', 0, 0, observed.pcm_samples,
+                            address, value});
+                    }
+                }, &dsp_observation);
+            dsp_observation.advance =
+                [](void* context, std::uint64_t cycle,
+                   std::uint8_t opcode, unsigned) noexcept {
+                    auto& observed = *static_cast<DspObservation*>(context);
+                    if (observed.pcm != nullptr) {
+                        if (observed.next_sample_cycle == 0)
+                            observed.next_sample_cycle = cycle +
+                                (observed.clock != nullptr ? 1 : 32);
+                        while (observed.next_sample_cycle <= cycle &&
+                               !observed.unsupported) {
+                            const bool output = observed.clock == nullptr ||
+                                observed.clock->phase() == 27;
+                            const auto sample = observed.clock != nullptr
+                                ? observed.clock->clock()
+                                : observed.pcm->next_sample();
+                            if (!output) {
+                                ++observed.next_sample_cycle;
+                                continue;
+                            }
+                            if (!sample) {
+                                observed.unsupported = true;
+                                observed.pcm_unsupported = true;
+                                break;
+                            }
+                            if (observed.icd->audible_sound_packets_delivered() != 0 &&
+                                !observed.first_audible_sample)
+                                observed.first_audible_sample = observed.pcm_samples;
+                            if (observed.pcm_export != nullptr)
+                                observed.pcm_export->push_back(*sample);
+                            ++observed.pcm_samples;
+                            if (observed.sound_trace != nullptr &&
+                                observed.first_keyon_sample &&
+                                observed.state_checkpoints < 3) {
+                                constexpr std::array<std::uint64_t, 2> offsets{
+                                    24000, 26240}; // +0.75s, +0.82s at 32kHz
+                                const auto target = observed.state_checkpoints < 2
+                                    ? std::optional<std::uint64_t>{
+                                        *observed.first_keyon_sample +
+                                        offsets[observed.state_checkpoints]}
+                                    : observed.second_keyon_sample
+                                        ? std::optional<std::uint64_t>{
+                                            *observed.second_keyon_sample + 640}
+                                        : std::nullopt;
+                                if (target && observed.pcm_samples >= *target) {
+                                    for (unsigned voice = 0; voice < 8; ++voice)
+                                        for (unsigned field = 0; field < 3; ++field)
+                                            observed.sound_trace->push_back({
+                                                'V', 0,
+                                                observed.clock != nullptr ? observed.next_sample_cycle : 0,
+                                                observed.pcm_samples,
+                                                static_cast<std::uint16_t>(voice * 3 + field),
+                                                observed.pcm->diagnostic_state(voice, field)});
+                                    observed.sound_trace->push_back({
+                                        'V', 0,
+                                        observed.clock != nullptr ? observed.next_sample_cycle : 0,
+                                        observed.pcm_samples, 24,
+                                        observed.pcm->diagnostic_state(8, 0)});
+                                    ++observed.state_checkpoints;
+                                }
+                            }
+                            if (sample->left != 0 || sample->right != 0) {
+                                ++observed.pcm_nonzero;
+                                if (observed.icd->sound_packets_delivered() != 0)
+                                    ++observed.post_sound_nonzero;
+                                if (observed.icd->audible_sound_packets_delivered() != 0)
+                                    ++observed.post_audible_sound_nonzero;
+                            }
+                            for (const auto value : {sample->left,
+                                                     sample->right}) {
+                                const auto bits = static_cast<std::uint16_t>(value);
+                                observed.pcm_hash =
+                                    (observed.pcm_hash ^
+                                     static_cast<std::uint8_t>(bits)) *
+                                    1099511628211ULL;
+                                observed.pcm_hash =
+                                    (observed.pcm_hash ^
+                                     static_cast<std::uint8_t>(bits >> 8)) *
+                                    1099511628211ULL;
+                            }
+                            observed.next_sample_cycle +=
+                                observed.clock != nullptr ? 1 : 32;
+                        }
+                    }
+                    for (unsigned index = 0;
+                         index < observed.pending_ram_count; ++index) {
+                        const auto [address, value] =
+                            observed.pending_ram[index];
+                        if (observed.pcm_bus != nullptr)
+                            observed.pcm_bus->dsp_write_ram(address, value);
+                        if (observed.ram_writes == 0)
+                            observed.first_ram_cycle = cycle;
+                        ++observed.ram_writes;
+                        const auto fold = [&](std::uint8_t byte) {
+                            observed.ram_hash =
+                                (observed.ram_hash ^ byte) *
+                                1099511628211ULL;
+                        };
+                        fold(static_cast<std::uint8_t>(address));
+                        fold(static_cast<std::uint8_t>(address >> 8));
+                        fold(value);
+                        for (unsigned shift = 0; shift < 64; shift += 8)
+                            fold(static_cast<std::uint8_t>(cycle >> shift));
+                    }
+                    observed.pending_ram_count = 0;
+                    if (observed.pending != 0) {
+                        if (observed.pending != 1) {
+                            observed.unsupported = true;
+                        } else {
+                            ++observed.dsp_writes;
+                            const auto fold = [&](std::uint8_t byte) {
+                                observed.dsp_hash =
+                                    (observed.dsp_hash ^ byte) *
+                                    1099511628211ULL;
+                            };
+                            fold(opcode);
+                            fold(observed.address);
+                            fold(observed.value);
+                            for (unsigned shift = 0; shift < 64; shift += 8)
+                                fold(static_cast<std::uint8_t>(cycle >> shift));
+                            if (observed.count < observed.events.size()) {
+                                observed.events[observed.count++] = {
+                                    cycle, opcode, observed.address,
+                                    observed.value};
+                            }
+                            if (observed.address == 0x4c &&
+                                observed.value != 0 &&
+                                observed.icd->audible_sound_packets_delivered() != 0) {
+                                if (!observed.first_keyon_sample)
+                                    observed.first_keyon_sample = observed.pcm_samples;
+                                else if (!observed.second_keyon_sample)
+                                    observed.second_keyon_sample = observed.pcm_samples;
+                            }
+                            if (observed.sound_trace != nullptr &&
+                                observed.icd->audible_sound_packets_delivered() != 0 &&
+                                observed.sound_trace->size() < 32768) {
+                                observed.sound_trace->push_back({
+                                    'D', 0, cycle, observed.pcm_samples,
+                                    observed.address, observed.value});
+                            }
+                            if (observed.pcm != nullptr)
+                                observed.pcm->write_dsp(
+                                    observed.address, observed.value);
+                            if (observed.clock != nullptr &&
+                                observed.sound_trace != nullptr &&
+                                observed.address == 0x4c && observed.value != 0 &&
+                                observed.icd->audible_sound_packets_delivered() != 0 &&
+                                observed.sound_trace->size() < 32768)
+                                observed.sound_trace->push_back({
+                                    'Q', 0, cycle, observed.pcm_samples,
+                                    static_cast<std::uint16_t>(observed.clock->key_poll_clock()),
+                                    observed.value});
+                        }
+                    }
+                    observed.pending = 0;
+                };
+            cpu.set_spc_step_observer(dsp_observation.advance, &dsp_observation);
+        };
+        if (bus_clocked_dsp) {
+            pcm_bus = apu;
+            pcm.reset();
+            pcm_clock.reset();
+            dsp_observation.next_sample_cycle = 1;
+            install_observation();
+            spc.set_write_cycle_observer(
+                [](void* context, std::uint64_t cycle, std::uint8_t opcode,
+                   std::uint16_t, std::uint8_t, bool) noexcept {
+                    auto& observed = *static_cast<DspObservation*>(context);
+                    if (cycle == 0) { observed.unsupported = true; return; }
+                    // Before: advance DSP up to the write. After: commit RAM
+                    // and DSP writes at the same boundary, before any idle tail.
+                    observed.advance(context, cycle, opcode, 0);
+                }, &dsp_observation);
+            std::cout << "DSP clock from SPC reset; write-boundary observation enabled\n";
+        }
         for (unsigned i = 0; i < instruction_bound; ++i) {
             const auto result = cpu.step();
             if (icd && icd->sound_packets_delivered() > logged_sound_deliveries) {
@@ -321,7 +533,9 @@ int main(int argc, char** argv) {
             if (synchronized) {
                 while (dsp_observation.printed < dsp_observation.count) {
                     const auto& event = dsp_observation.events[dsp_observation.printed++];
-                    std::cout << "synchronized DSP write at SPC instruction end cycle "
+                    std::cout << (bus_clocked_dsp
+                                      ? "synchronized DSP write at SPC bus write cycle "
+                                      : "synchronized DSP write at SPC instruction end cycle ")
                               << std::dec << event.completed_cycle << " opcode $"
                               << std::hex << std::setw(2) << std::setfill('0')
                               << static_cast<unsigned>(event.opcode) << " register $"
@@ -353,197 +567,12 @@ int main(int argc, char** argv) {
                 if (synchronized) {
                     if (!boot_handed_off) {
                         boot_handed_off = true;
-                        if (sync_gb) {
+                        if (sync_gb && !bus_clocked_dsp) {
                             pcm_bus = apu;
                             pcm.reset();
                             pcm_clock.reset();
                         }
-                        apu.set_dsp_write_observer(
-                            [](void* context, std::uint8_t address,
-                               std::uint8_t value) noexcept {
-                                auto& observed = *static_cast<DspObservation*>(context);
-                                ++observed.pending;
-                                observed.address = address;
-                                observed.value = value;
-                            }, &dsp_observation);
-                        apu.set_spc_ram_write_observer(
-                            [](void* context, std::uint16_t address,
-                               std::uint8_t value) noexcept {
-                                auto& observed = *static_cast<DspObservation*>(context);
-                                if (observed.pending_ram_count ==
-                                    observed.pending_ram.size()) {
-                                    observed.unsupported = true;
-                                    return;
-                                }
-                                observed.pending_ram[observed.pending_ram_count++] =
-                                    {address, value};
-                                if (observed.sound_trace != nullptr &&
-                                    observed.first_keyon_sample &&
-                                    observed.pcm_samples >=
-                                        *observed.first_keyon_sample + 22400 &&
-                                    observed.pcm_samples <
-                                        *observed.first_keyon_sample + 27200 &&
-                                    observed.sound_trace->size() < 32768) {
-                                    observed.sound_trace->push_back({
-                                        'R', 0, 0, observed.pcm_samples,
-                                        address, value});
-                                }
-                            }, &dsp_observation);
-                        cpu.set_spc_step_observer(
-                            [](void* context, std::uint64_t cycle,
-                               std::uint8_t opcode, unsigned) noexcept {
-                                auto& observed = *static_cast<DspObservation*>(context);
-                                if (observed.pcm != nullptr) {
-                                    if (observed.next_sample_cycle == 0)
-                                        observed.next_sample_cycle = cycle +
-                                            (observed.clock != nullptr ? 1 : 32);
-                                    while (observed.next_sample_cycle <= cycle &&
-                                           !observed.unsupported) {
-                                        const bool output = observed.clock == nullptr ||
-                                            observed.clock->phase() == 27;
-                                        const auto sample = observed.clock != nullptr
-                                            ? observed.clock->clock()
-                                            : observed.pcm->next_sample();
-                                        if (!output) {
-                                            ++observed.next_sample_cycle;
-                                            continue;
-                                        }
-                                        if (!sample) {
-                                            observed.unsupported = true;
-                                            observed.pcm_unsupported = true;
-                                            break;
-                                        }
-                                        if (observed.icd->audible_sound_packets_delivered() != 0 &&
-                                            !observed.first_audible_sample)
-                                            observed.first_audible_sample = observed.pcm_samples;
-                                        if (observed.pcm_export != nullptr)
-                                            observed.pcm_export->push_back(*sample);
-                                        ++observed.pcm_samples;
-                                        if (observed.sound_trace != nullptr &&
-                                            observed.first_keyon_sample &&
-                                            observed.state_checkpoints < 3) {
-                                            constexpr std::array<std::uint64_t, 2> offsets{
-                                                24000, 26240}; // +0.75s, +0.82s at 32kHz
-                                            const auto target = observed.state_checkpoints < 2
-                                                ? std::optional<std::uint64_t>{
-                                                    *observed.first_keyon_sample +
-                                                    offsets[observed.state_checkpoints]}
-                                                : observed.second_keyon_sample
-                                                    ? std::optional<std::uint64_t>{
-                                                        *observed.second_keyon_sample + 640}
-                                                    : std::nullopt;
-                                            if (target && observed.pcm_samples >= *target) {
-                                                for (unsigned voice = 0; voice < 8; ++voice)
-                                                    for (unsigned field = 0; field < 3; ++field)
-                                                        observed.sound_trace->push_back({
-                                                            'V', 0,
-                                                            observed.clock != nullptr ? observed.next_sample_cycle : 0,
-                                                            observed.pcm_samples,
-                                                            static_cast<std::uint16_t>(voice * 3 + field),
-                                                            observed.pcm->diagnostic_state(voice, field)});
-                                                observed.sound_trace->push_back({
-                                                    'V', 0,
-                                                    observed.clock != nullptr ? observed.next_sample_cycle : 0,
-                                                    observed.pcm_samples, 24,
-                                                    observed.pcm->diagnostic_state(8, 0)});
-                                                ++observed.state_checkpoints;
-                                            }
-                                        }
-                                        if (sample->left != 0 || sample->right != 0) {
-                                            ++observed.pcm_nonzero;
-                                            if (observed.icd->sound_packets_delivered() != 0)
-                                                ++observed.post_sound_nonzero;
-                                            if (observed.icd->audible_sound_packets_delivered() != 0)
-                                                ++observed.post_audible_sound_nonzero;
-                                        }
-                                        for (const auto value : {sample->left,
-                                                                 sample->right}) {
-                                            const auto bits = static_cast<std::uint16_t>(value);
-                                            observed.pcm_hash =
-                                                (observed.pcm_hash ^
-                                                 static_cast<std::uint8_t>(bits)) *
-                                                1099511628211ULL;
-                                            observed.pcm_hash =
-                                                (observed.pcm_hash ^
-                                                 static_cast<std::uint8_t>(bits >> 8)) *
-                                                1099511628211ULL;
-                                        }
-                                        observed.next_sample_cycle +=
-                                            observed.clock != nullptr ? 1 : 32;
-                                    }
-                                }
-                                for (unsigned index = 0;
-                                     index < observed.pending_ram_count; ++index) {
-                                    const auto [address, value] =
-                                        observed.pending_ram[index];
-                                    if (observed.pcm_bus != nullptr)
-                                        observed.pcm_bus->dsp_write_ram(address, value);
-                                    if (observed.ram_writes == 0)
-                                        observed.first_ram_cycle = cycle;
-                                    ++observed.ram_writes;
-                                    const auto fold = [&](std::uint8_t byte) {
-                                        observed.ram_hash =
-                                            (observed.ram_hash ^ byte) *
-                                            1099511628211ULL;
-                                    };
-                                    fold(static_cast<std::uint8_t>(address));
-                                    fold(static_cast<std::uint8_t>(address >> 8));
-                                    fold(value);
-                                    for (unsigned shift = 0; shift < 64; shift += 8)
-                                        fold(static_cast<std::uint8_t>(cycle >> shift));
-                                }
-                                observed.pending_ram_count = 0;
-                                if (observed.pending != 0) {
-                                    if (observed.pending != 1) {
-                                        observed.unsupported = true;
-                                    } else {
-                                        ++observed.dsp_writes;
-                                        const auto fold = [&](std::uint8_t byte) {
-                                            observed.dsp_hash =
-                                                (observed.dsp_hash ^ byte) *
-                                                1099511628211ULL;
-                                        };
-                                        fold(opcode);
-                                        fold(observed.address);
-                                        fold(observed.value);
-                                        for (unsigned shift = 0; shift < 64; shift += 8)
-                                            fold(static_cast<std::uint8_t>(cycle >> shift));
-                                        if (observed.count < observed.events.size()) {
-                                            observed.events[observed.count++] = {
-                                                cycle, opcode, observed.address,
-                                                observed.value};
-                                        }
-                                        if (observed.address == 0x4c &&
-                                            observed.value != 0 &&
-                                            observed.icd->audible_sound_packets_delivered() != 0) {
-                                            if (!observed.first_keyon_sample)
-                                                observed.first_keyon_sample = observed.pcm_samples;
-                                            else if (!observed.second_keyon_sample)
-                                                observed.second_keyon_sample = observed.pcm_samples;
-                                        }
-                                        if (observed.sound_trace != nullptr &&
-                                            observed.icd->audible_sound_packets_delivered() != 0 &&
-                                            observed.sound_trace->size() < 32768) {
-                                            observed.sound_trace->push_back({
-                                                'D', 0, cycle, observed.pcm_samples,
-                                                observed.address, observed.value});
-                                        }
-                                        if (observed.pcm != nullptr)
-                                            observed.pcm->write_dsp(
-                                                observed.address, observed.value);
-                                        if (observed.clock != nullptr &&
-                                            observed.sound_trace != nullptr &&
-                                            observed.address == 0x4c && observed.value != 0 &&
-                                            observed.icd->audible_sound_packets_delivered() != 0 &&
-                                            observed.sound_trace->size() < 32768)
-                                            observed.sound_trace->push_back({
-                                                'Q', 0, cycle, observed.pcm_samples,
-                                                static_cast<std::uint16_t>(observed.clock->key_poll_clock()),
-                                                observed.value});
-                                    }
-                                }
-                                observed.pending = 0;
-                            }, &dsp_observation);
+                        if (!bus_clocked_dsp) install_observation();
                     }
                     cpu.clear_apu_writes();
                     continue;
