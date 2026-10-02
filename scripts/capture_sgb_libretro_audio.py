@@ -23,6 +23,13 @@ GB_FRAME_RATE = 4194304 / 70224
 ENTROPY_VALUES = {"None": b"None", "Low": b"Low", "High": b"High"}
 
 
+def native_button_mask(libretro_mask: int) -> int:
+    """Convert libretro joypad IDs to the GBB/SGB eight-bit held state."""
+    return sum(((libretro_mask >> BUTTON_IDS[name]) & 1) << bit
+               for bit, name in enumerate(("right", "left", "up", "down",
+                                           "a", "b", "select", "start")))
+
+
 class RetroVariable(C.Structure):
     _fields_ = [("key", C.c_char_p), ("value", C.c_char_p)]
 
@@ -158,7 +165,8 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
             native_cycle_checkpoints: bool = False,
             timer_poll_trace: bool = False,
             reference_entropy: str | None = None,
-            history_window_half: tuple[int, int] | None = None
+            history_window_half: tuple[int, int] | None = None,
+            boot_timeline_output: Path | None = None
             ) -> tuple[int, int]:
     if C.sizeof(C.c_void_p) != 8:
         raise RuntimeError("the diagnostic host currently requires a 64-bit process")
@@ -179,6 +187,10 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
         raise FileExistsError(apu_ram_output)
     if apu_bus_output is not None and apu_bus_output.exists():
         raise FileExistsError(apu_bus_output)
+    if boot_timeline_output is not None and boot_timeline_output.exists():
+        raise FileExistsError(boot_timeline_output)
+    if boot_timeline_output is not None and (not require_snes_only_probe or apu_bus_output is None):
+        raise ValueError("boot timeline requires the SNES-only probe and APU bus output")
     if apu_bus_output is not None and not require_snes_only_probe:
         raise ValueError("APU bus capture requires the SNES-only probe")
     if native_cycle_checkpoints and not require_snes_only_probe:
@@ -205,7 +217,7 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
         raise FileExistsError(snapshot_output)
     targets = [path.resolve() for path in
                (output, snapshot_output, timeline_output, native_dsp_output,
-                apu_ram_output, apu_bus_output)
+                apu_ram_output, apu_bus_output, boot_timeline_output)
                if path is not None]
     if len(targets) != len(set(targets)):
         raise ValueError("WAV, native DSP, snapshot, and timeline paths must differ")
@@ -284,6 +296,22 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
             core.gbb_reference_sgb_history_window.restype = C.c_uint
             if core.gbb_reference_sgb_history_window(*(history_window_half or (0, 0))) != 1:
                 raise RuntimeError("reference rejected the history window")
+        boot_symbols = ("gbb_reference_sgb_boot_version", "gbb_reference_sgb_boot_enable",
+                        "gbb_reference_sgb_boot_count", "gbb_reference_sgb_boot_copy", "gbb_reference_sgb_boot_input")
+        if boot_timeline_output is not None and (any(not hasattr(core, name) for name in boot_symbols) or
+                                                core.gbb_reference_sgb_boot_version() != 1):
+            raise RuntimeError("reference lacks the version-1 boot timeline probe")
+        if hasattr(core, "gbb_reference_sgb_boot_enable"):
+            core.gbb_reference_sgb_boot_enable.argtypes = [C.c_uint]
+            core.gbb_reference_sgb_boot_enable.restype = C.c_uint
+            if core.gbb_reference_sgb_boot_enable(int(boot_timeline_output is not None)) != 1:
+                raise RuntimeError("reference rejected the boot timeline")
+        if boot_timeline_output is not None:
+            core.gbb_reference_sgb_boot_input.argtypes = [C.c_uint]
+            core.gbb_reference_sgb_boot_input.restype = C.c_uint
+            core.gbb_reference_sgb_boot_count.restype = C.c_uint
+            core.gbb_reference_sgb_boot_copy.argtypes = [C.c_uint, C.POINTER(C.c_uint64)]
+            core.gbb_reference_sgb_boot_copy.restype = C.c_uint
     required = ("retro_api_version", "retro_set_environment", "retro_set_video_refresh",
                 "retro_set_audio_sample", "retro_set_audio_sample_batch",
                 "retro_set_input_poll", "retro_set_input_state", "retro_init",
@@ -454,6 +482,8 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                 current_run = frame
                 if next_event < len(scheduled) and frame == scheduled[next_event][0]:
                     held_buttons = scheduled[next_event][1]
+                    if boot_timeline_output is not None and core.gbb_reference_sgb_boot_input(native_button_mask(held_buttons)) != 1:
+                        raise RuntimeError("reference rejected input timeline marker")
                     next_event += 1
                 sample_start = len(audio) // 4
                 core.retro_run()
@@ -611,6 +641,29 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                 with timeline_output.open("x", encoding="utf-8") as timeline_file:
                     json.dump(timeline, timeline_file, separators=(",", ":"))
                     timeline_file.write("\n")
+            if boot_timeline_output is not None:
+                count = core.gbb_reference_sgb_boot_count()
+                if not 0 < count <= 128:
+                    raise RuntimeError("reference boot timeline is empty or overflowed")
+                boot_events = []
+                for index in range(count):
+                    entry = (C.c_uint64 * 7)()
+                    if core.gbb_reference_sgb_boot_copy(index, entry) != 1 or entry[0] not in map(ord, "CBUSEPTAIN") or entry[6] != 0:
+                        raise RuntimeError("reference boot timeline lost or corrupted an event")
+                    boot_events.append(dict(zip(
+                        ("kind", "master_clock_snapshot", "spc_half_clock_snapshot", "value", "count", "digest_fnv64"),
+                        [chr(entry[0])] + list(entry)[1:6])))
+                frequencies = (C.c_uint64 * 2)()
+                if core.gbb_reference_sgb_apu_bus_frequencies(frequencies) != 1:
+                    raise RuntimeError("reference boot timeline lacks clock frequencies")
+                boot_timeline_output.parent.mkdir(parents=True, exist_ok=True)
+                with boot_timeline_output.open("x", encoding="utf-8") as boot_file:
+                    json.dump({"format": "gbb-sgb-boot-timeline-v1", "source": "reference",
+                               "master_hz": int(frequencies[0]), "apu_half_hz": int(frequencies[1]),
+                               "reference_options": configured_options,
+                               "core_sha256": hashlib.sha256(core_path.read_bytes()).hexdigest(),
+                               "events": boot_events}, boot_file, indent=2)
+                    boot_file.write("\n")
             if apu_bus_output is not None:
                 count = core.gbb_reference_sgb_apu_bus_count()
                 frequencies = (C.c_uint64 * 2)()
@@ -695,6 +748,8 @@ def main() -> None:
                         help="explicit diagnostic reference power-on state; default leaves core unchanged")
     parser.add_argument("--apu-history-window-half", type=int, nargs=2, metavar=("START", "END"),
                         help="bounded pre-command bus history in native half clocks (local probe required)")
+    parser.add_argument("--boot-timeline-output", type=Path,
+                        help="bounded boot/control/upload timeline (additional local probe required)")
     parser.add_argument("--require-snes-only-probe", action="store_true",
                         help="require the local instrumented core; log host-consumed SOUND packets")
     parser.add_argument("--native-dsp-output", type=Path,
@@ -720,7 +775,8 @@ def main() -> None:
                               args.timeline_output, args.require_snes_only_probe,
                               args.native_dsp_output, args.apu_ram_output, args.apu_bus_output,
                               args.native_cycle_checkpoints, args.timer_poll_trace, args.reference_entropy,
-                              tuple(args.apu_history_window_half) if args.apu_history_window_half else None)
+                              tuple(args.apu_history_window_half) if args.apu_history_window_half else None,
+                              args.boot_timeline_output)
     except (OSError, RuntimeError, ValueError) as error:
         parser.error(str(error))
     print(f"Captured {count} stereo frames at {rate} Hz to {args.output}")

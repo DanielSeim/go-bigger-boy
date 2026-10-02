@@ -1236,6 +1236,90 @@ power-on state. No production scheduling or DSP correction is justified by
 this first transient alone. ROMs, firmware, captured audio and external cores
 remain local and are not committed or shipped.
 
+### Boot, upload and input-delivery landmarks
+
+Both the fractional GBB trace and the instrumented reference capture now
+accept `--boot-timeline-output FILE.json`. GBB requires
+`--fractional-apu-sync --apu-bus-output FILE.json`; the reference requires
+`--require-snes-only-probe --apu-bus-output FILE.json` and the incremental
+`scripts/patches/bsnes-05439f9-sgb-boot-timeline.patch`, applied after the
+phase-origin patch. The boot ABI is version 1, separate from the APU bus ABI.
+Capture is opt-in, limited to 128 events and fails on overflow. Existing
+output files are refused. No firmware bytes are exported: upload blocks
+carry only destination, length and FNV-64 fingerprint.
+
+The event kinds distinguish observations rather than claiming exact
+hardware timestamps:
+
+| Kind | Observation |
+| --- | --- |
+| `I` | Initial SPC IPL `$aa/$bb` ready signature |
+| `A` | Host requests the first IPL upload with `$cc` |
+| `U` | Host finishes an initial upload block |
+| `E` | Host requests the uploaded SPC entry point, not its execution |
+| `T` | SPC writes CONTROL `$f1` or timer-0 target `$fa` |
+| `C` | Host writes ICD control `$6003` |
+| `B` | GB boot unmapping observed after a GB execution step |
+| `N` | Script held-state change, with observed frame counter |
+| `S` | Host consumes a SOUND packet |
+| `P` | First host `$2140=1` after an audible SOUND packet |
+
+`master_clock_snapshot` can be stale at coroutine boundaries; it is not an
+exact bus-latency measurement. `spc_half_clock_snapshot` retains the native
+SPC clock. GBB counts completed LCD frames and applies `N` at that boundary;
+the current reference records its normal-GB-vblank counter when a scripted
+libretro run-call boundary is reached. These input markers are **not** proof
+that a held state reached the cartridge on the same cycle. SOUND consumption
+is sampled at GBB's `$7000` packet pop versus the reference's `$6002` pop.
+Do not interpret their difference as an exact transport latency. The
+reference retains its selected options and core hash in the JSON.
+
+```sh
+python3 scripts/compare_sgb_boot_timeline.py \
+  --gbb boot.json --reference reference-boot.json
+```
+
+The reporter retains both absolute snapshots and each source's frequency;
+it does not align clocks or discard differing inputs. It compares upload
+fingerprints, SOUND parameters and input frame/mask observations, reports
+missing tails, and returns 2 when those comparison preconditions are not met.
+Even a successful precondition check is not hardware validation.
+
+The constant-state local Donkey Kong replay found:
+
+| Landmark | GBB | Independent reference |
+| --- | ---: | ---: |
+| Initial IPL readiness, native half clock | 4,808 | 4,808 |
+| First upload request, master-clock snapshot | 1,297,958 | 2,135,016 |
+| Final initial upload / entry request, master snapshot | 29,532,832 | 30,979,618 |
+| First music SOUND consumption, master snapshot | 1,046,698,084 | 983,858,362 |
+| First scripted Start, observed frame counter | 1,000 | 337 |
+
+All five upload destinations, lengths (378, 24, 9,971, 256, 41,280) and
+fingerprints agree. The independent core's embedded GB boot images also
+match the user-provided SGB1/SGB2 boot files byte-for-byte. Thus there is no
+evidence here of different upload contents or replacement boot firmware.
+The first upload starts roughly 39 ms later in the reference despite equal
+initial SPC readiness; that host-startup difference remains unexplained.
+
+Crucially, the legacy reference script maps GB frame numbers to SNES
+libretro run calls using offsets inherited from visual comparisons. Its
+Start/A events occur about 3.04/2.93 seconds earlier in master time than
+GBB's events, while the recorded LCD frame histories also differ. The later
+music gap therefore cannot be attributed solely to an APU scheduling defect.
+The ROM-free reporter tests reproduce and reject this input-provenance
+mismatch. The next prerequisite is an independently checked, equivalent
+input-delivery path, including whether SNES controller writes overwrite
+direct scripted GB states. Do not reset driver phase, fit a title-specific
+delay, or change production scheduling to compensate for this replay.
+
+The optional local fractional-title test checks the boot landmarks and
+retains its existing native WAV SHA-256. Adding these probes preserved
+GBB's `ed07e3f0…f89d8d10` and the constant-state reference's
+`69a0a7de…13677` native WAV baselines byte-for-byte. This investigation does
+not resolve the remaining four visual mismatches or establish hardware
+audio accuracy.
+
 A new fully synthetic SNES program waits, writes a host command to the APU,
 and runs concurrently with an original SPC700 test program. The test stamps
 its KON write at SPC instruction-end cycle 2,304, feeds that event to the

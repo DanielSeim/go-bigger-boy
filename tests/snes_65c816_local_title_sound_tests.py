@@ -4,6 +4,7 @@
 import argparse
 import csv
 import hashlib
+import json
 from pathlib import Path
 import re
 import subprocess
@@ -14,6 +15,7 @@ import wave
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from compare_sgb_apu_bus import load as load_bus
 from compare_sgb_timer_polls import observations
+from compare_sgb_boot_timeline import validate as validate_boot
 
 DONKEY_SHA256 = "b490c89efe718633b07381def66ce0ed58a5075aabe40c6e644baf2b408a76f4"
 SCRIPT_SHA256 = "a5d37081cc52b8bfe72284f5cd836b0ccea9bfc3ddf25fcc1ac2769b3b2e802b"
@@ -45,6 +47,7 @@ def main() -> int:
         pcm_path = Path(directory) / "title.wav"
         event_path = Path(directory) / "sound-events.csv"
         bus_path = Path(directory) / "bus.json"
+        boot_path = Path(directory) / "boot.json"
         result = subprocess.run(
             [args.trace, args.program, args.ipl, "--sync-gb-sgb2",
              args.gb_rom, args.gb_boot, "--input-script", args.input_script,
@@ -55,7 +58,8 @@ def main() -> int:
              ["--shared-bus-dsp"] if args.shared_bus_dsp else
              ["--cycle-bus-dsp"] if args.cycle_bus_dsp else
              ["--bus-clocked-dsp"] if args.bus_clocked_dsp else []) +
-            (["--timer-poll-trace", "--apu-bus-output", str(bus_path)]
+            (["--timer-poll-trace", "--apu-bus-output", str(bus_path),
+              "--boot-timeline-output", str(boot_path)]
              if args.fractional_apu_sync else []),
             capture_output=True, text=True, timeout=180, check=False,
         )
@@ -101,6 +105,15 @@ def main() -> int:
                     boundary is None or len(set(boundary.groups())) != 1:
                 raise AssertionError("title rendezvous did not stop at its exact SPC target")
         if args.fractional_apu_sync:
+            boot = validate_boot(json.loads(boot_path.read_text()), "gbb")
+            ready = [e for e in boot if e["kind"] == "I"]
+            uploads = [e for e in boot if e["kind"] == "U"]
+            inputs = [e for e in boot if e["kind"] == "N"]
+            if len(ready) != 1 or ready[0]["spc_half_clock_snapshot"] != 4808 or \
+                    [e["count"] for e in uploads] != [378, 24, 9971, 256, 41280] or \
+                    not inputs or (inputs[0]["count"], inputs[0]["value"]) != (1000, 128) or \
+                    len([e for e in boot if e["kind"] == "P"]) != 1:
+                raise AssertionError("boot timeline landmarks changed or were omitted")
             boundary = re.search(r"APU fractional target_half=(\d+) completed_half=(\d+)", output)
             if boundary is None or boundary[1] != boundary[2] or \
                     "Fractional APU ports:" not in output:

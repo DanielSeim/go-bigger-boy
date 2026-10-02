@@ -31,6 +31,11 @@ constexpr std::uint64_t sgb_icd_target_gb_cycles(
 // model. Unknown row-buffer data deliberately fails closed.
 class SnesIcdGbSource final : public SnesIcdTraceSource {
 public:
+    using BootObserver = void (*)(void*, char, std::uint64_t, std::uint32_t, std::uint64_t) noexcept;
+    void set_boot_observer(BootObserver observer, void* context = nullptr) noexcept {
+        boot_observer_ = observer;
+        boot_observer_context_ = context;
+    }
     explicit SnesIcdGbSource(const std::filesystem::path& rom,
                              const std::filesystem::path& boot_rom,
                              gameboy::HardwareModel model);
@@ -110,6 +115,7 @@ private:
     std::unique_ptr<gameboy::Emulator> gb_;
     gameboy::DiagnosticBootRom boot_image_{};
     std::uint64_t release_clock_{};
+    std::uint64_t master_snapshot_{};
     std::uint64_t gb_cycles_{};
     std::uint64_t packets_completed_{};
     std::uint64_t sound_commands_{};
@@ -133,6 +139,9 @@ private:
     unsigned divider_{5};
     gameboy::HardwareModel model_{};
     bool released_{};
+    bool boot_reported_{};
+    BootObserver boot_observer_{};
+    void* boot_observer_context_{};
     bool pulse_armed_{true};
     bool receiving_{};
     bool packet_pending_{};

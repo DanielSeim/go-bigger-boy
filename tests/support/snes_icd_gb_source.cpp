@@ -59,6 +59,7 @@ void SnesIcdGbSource::apply_input(const std::uint64_t frame) noexcept {
     }
     held_buttons_ = next;
     ++input_events_applied_;
+    if (boot_observer_) boot_observer_(boot_observer_context_, 'N', master_snapshot_, next, frame);
 }
 
 void SnesIcdGbSource::complete_packet() noexcept {
@@ -151,6 +152,7 @@ void SnesIcdGbSource::complete_tile_row(const unsigned tile_row) noexcept {
 }
 
 void SnesIcdGbSource::synchronize(const std::uint64_t master_clocks) noexcept {
+    master_snapshot_ = master_clocks;
     if (!released_ || master_clocks < release_clock_) return;
     // SGB1 divides the SNES CPU oscillator. SGB2 has a dedicated
     // 20,971,520 Hz oscillator; at the normal /5 setting this yields the
@@ -160,6 +162,10 @@ void SnesIcdGbSource::synchronize(const std::uint64_t master_clocks) noexcept {
         master_clocks - release_clock_, divider_, model_);
     while (gb_cycles_ < target && missing_address_ == 0) {
         gb_cycles_ += gb_->step();
+        if (!boot_reported_ && !gb_->bus().boot_rom_enabled()) {
+            boot_reported_ = true;
+            if (boot_observer_) boot_observer_(boot_observer_context_, 'B', master_clocks, 1, gb_cycles_);
+        }
         if (gb_->frame_ready()) {
             ++completed_frames_;
             gb_->consume_frame();
@@ -209,6 +215,11 @@ bool SnesIcdGbSource::read(const std::uint16_t address,
                 if ((latched_[0] >> 3) == 0x08) {
                     ++sound_packets_delivered_;
                     last_delivered_sound_packet_ = latched_;
+                    if (boot_observer_) {
+                        const auto parameters = std::uint32_t(latched_[1]) | (std::uint32_t(latched_[2]) << 8) |
+                            (std::uint32_t(latched_[3]) << 16) | (std::uint32_t(latched_[4]) << 24);
+                        boot_observer_(boot_observer_context_, 'S', master_clocks, parameters, sound_packets_delivered_ - 1);
+                    }
                     const auto a = latched_[1];
                     const auto b = latched_[2];
                     if ((latched_[3] & 0x0CU) != 0x0CU &&
@@ -230,6 +241,7 @@ bool SnesIcdGbSource::write(const std::uint16_t address,
                             const std::uint64_t master_clocks,
                             const std::uint8_t value) noexcept {
     if (address == 0x6003) {
+        if (boot_observer_) boot_observer_(boot_observer_context_, 'C', master_clocks, value, gb_cycles_);
         ++control_writes_;
         last_control_ = value;
         const bool run = (value & 0x80U) != 0;
@@ -239,6 +251,7 @@ bool SnesIcdGbSource::write(const std::uint16_t address,
             gb_->bus().install_boot_rom(boot_image_);
             gb_->bus().debug_enable_io_trace(true);
             gb_cycles_ = 0;
+            boot_reported_ = false;
             completed_frames_ = 0;
             next_input_event_ = 0;
             held_buttons_ = 0;

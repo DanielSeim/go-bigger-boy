@@ -107,6 +107,8 @@ class Contracts(unittest.TestCase):
                 capture_audio(*inputs, root, 1, wav, native_cycle_checkpoints=True)
             with self.assertRaisesRegex(ValueError, "timer polling"):
                 capture_audio(*inputs, root, 1, wav, timer_poll_trace=True)
+            with self.assertRaisesRegex(ValueError, "boot timeline"):
+                capture_audio(*inputs, root, 1, wav, boot_timeline_output=root / "boot.json")
             for entropy in ("None", "invalid"):
                 with self.assertRaisesRegex(ValueError, "reference entropy"):
                     capture_audio(*inputs, root, 1, wav, reference_entropy=entropy)

@@ -86,6 +86,7 @@ int main(int argc, char** argv) {
     bool timer_poll_trace = false;
     std::array<std::uint64_t, 2> history_window{};
     std::filesystem::path apu_bus_output_path;
+    std::filesystem::path boot_timeline_path;
     std::filesystem::path input_script_path;
     std::filesystem::path pcm_output_path;
         std::filesystem::path sound_event_trace_path;
@@ -112,6 +113,8 @@ int main(int argc, char** argv) {
                 fractional_apu_sync = cycle_apu_sync = shared_bus_dsp = cycle_bus_dsp = bus_clocked_dsp = clocked_dsp = true;
             } else if (option == "--apu-bus-output" && apu_bus_output_path.empty() && index + 1 < argc) {
                 apu_bus_output_path = argv[++index];
+            } else if (option == "--boot-timeline-output" && boot_timeline_path.empty() && index + 1 < argc) {
+                boot_timeline_path = argv[++index];
             } else if (option == "--timer-poll-trace" && !timer_poll_trace) {
                 timer_poll_trace = true;
             } else if (option == "--apu-history-window-half" && history_window[1] == 0 && index + 2 < argc) {
@@ -176,6 +179,7 @@ int main(int argc, char** argv) {
                      " [--cycle-apu-sync]"
                      " [--fractional-apu-sync]"
                      " [--apu-bus-output JSON]"
+                     " [--boot-timeline-output JSON]"
                      " [--timer-poll-trace]"
                      " [--apu-history-window-half START END]"
                      " [--audible-sound-probe]]\n";
@@ -201,15 +205,34 @@ int main(int argc, char** argv) {
         gameboy::SnesSpc700 spc(apu);
         sgb_test::Snes65c816TraceCpu cpu(rom, apu,
                                           path_count == 2 ? &spc : nullptr);
+        struct BootTimeline {
+            struct Event { char kind; std::uint64_t master, half, value, count, digest; };
+            std::vector<Event> events;
+            sgb_test::Snes65c816TraceCpu* cpu;
+            gameboy::SnesSpc700* spc;
+            bool enabled{}, overflow{}, command_seen{};
+            bool ipl_a{}, ipl_ready{};
+            void record(char kind, std::uint64_t master, std::uint64_t value,
+                        std::uint64_t count = 0, std::uint64_t digest = 0) noexcept {
+                if (!enabled) return;
+                if (events.size() == 128) { overflow = true; return; }
+                events.push_back({kind, master, spc->half_cycles(), value, count, digest});
+            }
+        } boot_timeline{{}, &cpu, &spc, !boot_timeline_path.empty()};
+        if (boot_timeline.enabled) boot_timeline.events.reserve(128);
         std::unique_ptr<sgb_test::SnesIcdGbSource> icd;
         if (sync_gb) {
             const auto model = std::string_view(argv[3]) == "--sync-gb-sgb2"
                 ? gameboy::HardwareModel::sgb2 : gameboy::HardwareModel::sgb;
             icd = std::make_unique<sgb_test::SnesIcdGbSource>(
                 argv[4], argv[5], model);
+            icd->set_audible_sound_substitution(audible_sound_probe);
+            if (boot_timeline.enabled) icd->set_boot_observer(
+                [](void* context, char kind, std::uint64_t master, std::uint32_t value, std::uint64_t count) noexcept {
+                    static_cast<BootTimeline*>(context)->record(kind, master, value, count);
+                }, &boot_timeline);
             if (!input_script_path.empty())
                 icd->load_input_script(input_script_path);
-            icd->set_audible_sound_substitution(audible_sound_probe);
             if (audible_sound_probe)
                 std::cerr << "SYNTHETIC SOUND payload substitution enabled;"
                              " not a title-authentic packet\n";
@@ -244,6 +267,13 @@ int main(int argc, char** argv) {
             unsigned dsp_clock64;
         };
         std::vector<ApuBusEvent> apu_trace;
+        if (!boot_timeline_path.empty() && (!fractional_apu_sync || apu_bus_output_path.empty()))
+            throw std::runtime_error("boot timeline requires fractional APU synchronization and APU bus output");
+        if (!boot_timeline_path.empty() && std::filesystem::exists(boot_timeline_path))
+            throw std::runtime_error("boot timeline already exists");
+        if (!boot_timeline_path.empty() && (boot_timeline_path == apu_bus_output_path ||
+                boot_timeline_path == pcm_output_path || boot_timeline_path == sound_event_trace_path))
+            throw std::runtime_error("boot timeline output paths must differ");
         if (timer_poll_trace && apu_bus_output_path.empty())
             throw std::runtime_error("timer polling requires APU bus output");
         if (history_window[1] && !timer_poll_trace)
@@ -291,6 +321,7 @@ int main(int argc, char** argv) {
             sgb_test::Snes65c816TraceCpu* cpu{};
             gameboy::SnesSpc700* spc{};
             std::vector<ApuBusEvent>* apu_trace{};
+            BootTimeline* boot_timeline{};
             bool apu_trace_overflow{};
             const sgb_test::SnesIcdGbSource* icd{};
             std::uint64_t next_sample_cycle{};
@@ -308,6 +339,20 @@ int main(int argc, char** argv) {
             sgb_test::Snes65c816TraceCpu::SpcStepObserver advance{};
             void record_bus(char kind, std::uint64_t half_clock,
                             std::uint16_t address, std::uint8_t value) noexcept {
+                if (boot_timeline && !boot_timeline->command_seen && kind == 'H' && address == 0x2140 &&
+                    value == 1 && icd && icd->audible_sound_packets_delivered() != 0) {
+                    boot_timeline->record('P', cpu->timing().clocks(), value);
+                    boot_timeline->command_seen = true;
+                }
+                if (boot_timeline && kind == 'W' && (address == 0xf1 || address == 0xfa))
+                    boot_timeline->record('T', cpu->timing().clocks(), (std::uint64_t(address) << 8) | value);
+                if (boot_timeline && !boot_timeline->ipl_ready && kind == 'W') {
+                    if (address == 0xf4 && value == 0xaa) boot_timeline->ipl_a = true;
+                    if (address == 0xf5 && value == 0xbb && boot_timeline->ipl_a) {
+                        boot_timeline->ipl_ready = true;
+                        boot_timeline->record('I', cpu->timing().clocks(), 0xaabb);
+                    }
+                }
                 const bool configuration = timer_trace && kind == 'W' &&
                     (address == 0xf0 || address == 0xf1 || (address >= 0xfa && address <= 0xfc));
                 const bool phase_write = timer_trace && kind == 'W' && (address == 0x43 || address == 0xd8);
@@ -350,6 +395,7 @@ int main(int argc, char** argv) {
             dsp_observation.fractional_bus = fractional_apu_sync;
             dsp_observation.timer_trace = timer_poll_trace;
             dsp_observation.history_window = history_window;
+            dsp_observation.boot_timeline = boot_timeline.enabled ? &boot_timeline : nullptr;
             dsp_observation.cpu = &cpu;
             dsp_observation.spc = &spc;
             if (!apu_bus_output_path.empty()) {
@@ -875,6 +921,7 @@ int main(int argc, char** argv) {
                         transfer_started = true;
                         destination = static_cast<std::uint16_t>(
                             ports[2] | (static_cast<unsigned>(ports[3]) << 8));
+                        boot_timeline.record('A', cpu.timing().clocks(), destination);
                     } else if (transfer_started && write.port == 0) {
                         if (write.value == expected_index) {
                             transferred.push_back(ports[1]);
@@ -918,6 +965,7 @@ int main(int argc, char** argv) {
                                       << static_cast<unsigned>(cpu.registers().p)
                                       << std::dec << '\n';
                             uploaded_ranges.emplace_back(destination, transferred.size());
+                            boot_timeline.record('U', cpu.timing().clocks(), destination, transferred.size(), hash);
                             ++completed_blocks;
                             if (requested_blocks != 0 &&
                                 completed_blocks == requested_blocks) return 0;
@@ -925,6 +973,7 @@ int main(int argc, char** argv) {
                                 ports[1] == 0) {
                                 entry_address = static_cast<std::uint16_t>(
                                     ports[2] | (static_cast<unsigned>(ports[3]) << 8));
+                                boot_timeline.record('E', cpu.timing().clocks(), entry_address);
                                 bool entry_uploaded = false;
                                 for (const auto& [start, length] : uploaded_ranges) {
                                     if (entry_address >= start &&
@@ -1012,6 +1061,23 @@ int main(int argc, char** argv) {
                        << static_cast<unsigned>(event.address) << ','
                        << static_cast<unsigned>(event.value) << '\n';
             if (!output) throw std::runtime_error("could not finish sound event trace");
+        }
+        if (!boot_timeline_path.empty()) {
+            if (boot_timeline.overflow) throw std::runtime_error("boot timeline overflowed");
+            if (!boot_timeline_path.parent_path().empty()) std::filesystem::create_directories(boot_timeline_path.parent_path());
+            std::ofstream output(boot_timeline_path);
+            if (!output) throw std::runtime_error("could not create boot timeline");
+            output << "{\"format\":\"gbb-sgb-boot-timeline-v1\",\"source\":\"gbb\","
+                "\"master_hz\":21477273,\"apu_half_hz\":2048000,\"events\":[";
+            for (std::size_t index = 0; index < boot_timeline.events.size(); ++index) {
+                const auto& e = boot_timeline.events[index];
+                if (index) output << ',';
+                output << "{\"kind\":\"" << e.kind << "\",\"master_clock_snapshot\":" << e.master
+                    << ",\"spc_half_clock_snapshot\":" << e.half << ",\"value\":" << e.value
+                    << ",\"count\":" << e.count << ",\"digest_fnv64\":" << e.digest << '}';
+            }
+            output << "]}\n";
+            if (!output) throw std::runtime_error("could not finish boot timeline");
         }
         if (!apu_bus_output_path.empty()) {
             if (dsp_observation.apu_trace_overflow || apu_trace.empty())

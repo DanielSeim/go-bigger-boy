@@ -1,0 +1,186 @@
+diff --git a/bsnes/sfc/dsp/dsp.cpp b/bsnes/sfc/dsp/dsp.cpp
+--- a/bsnes/sfc/dsp/dsp.cpp
++++ b/bsnes/sfc/dsp/dsp.cpp
+@@ -4,6 +4,7 @@
+ namespace SuperFamicom {
+ 
+ DSP dsp;
++#include "gbb_boot_probe.hpp"
+ static std::vector<int16_t> diagnosticDspSamples;
+ static bool diagnosticNativeCheckpoints = false;
+ extern "C" unsigned gbb_reference_sgb_native_checkpoints(unsigned enabled) {
+@@ -47,6 +48,16 @@
+   return 1;
+ }
+ extern "C" void gbb_reference_sgb_record_apu_bus(unsigned kind, unsigned address, unsigned value) {
++  if(kind == 'H') diagnosticBootHost(address, value);
++  if(diagnosticBootEnabled && !diagnosticBootIplReady && kind == 'W') {
++    if(address == 0xf4 && value == 0xaa) diagnosticBootIplA = true;
++    if(address == 0xf5 && value == 0xbb && diagnosticBootIplA) {
++      diagnosticBootIplReady = true;
++      gbb_reference_sgb_record_boot('I', cpu.diagnosticMasterClocks(), 0xaabb, 0, 0);
++    }
++  }
++  if(kind == 'W' && (address == 0xf1 || address == 0xfa))
++    gbb_reference_sgb_record_boot('T', cpu.diagnosticMasterClocks(), address << 8 | value, 0, 0);
+   const bool configuration = diagnosticTimerTrace && kind == 'W' &&
+       (address == 0xf0 || address == 0xf1 || (address >= 0xfa && address <= 0xfc));
+   const bool phaseWrite = diagnosticTimerTrace && kind == 'W' && (address == 0x43 || address == 0xd8);
+diff --git a/bsnes/sfc/coprocessor/icd/icd.cpp b/bsnes/sfc/coprocessor/icd/icd.cpp
+--- a/bsnes/sfc/coprocessor/icd/icd.cpp
++++ b/bsnes/sfc/coprocessor/icd/icd.cpp
+@@ -3,6 +3,10 @@
+ namespace SuperFamicom {
+ 
+ ICD icd;
++extern "C" void gbb_reference_sgb_record_boot(unsigned, uint64, uint64, uint64, uint64);
++static uint64 diagnosticGbBootCycles = 0;
++static uint64 diagnosticGbFrames = 0;
++static bool diagnosticGbBootReported = false;
+ #include "interface.cpp"
+ #include "io.cpp"
+ #include "boot-roms.cpp"
+@@ -42,7 +46,8 @@
+     icd.apuWrite(left, right);
+   }
+ 
+-  static auto vblank(GB_gameboy_t*, GB_vblank_type_t) -> void {
++  static auto vblank(GB_gameboy_t*, GB_vblank_type_t type) -> void {
++    if(type == GB_VBLANK_TYPE_NORMAL_FRAME) ++diagnosticGbFrames;
+   }
+ 
+   static auto log(GB_gameboy_t *gb, const char *string, GB_log_attributes_t attributes) -> void {
+@@ -63,6 +68,11 @@
+ auto ICD::main() -> void {
+   if(r6003 & 0x80) {
+     auto clocks = GB_run(&sameboy);
++    diagnosticGbBootCycles += clocks >> 1;
++    if(!diagnosticGbBootReported && sameboy.boot_rom_finished) {
++      diagnosticGbBootReported = true;
++      gbb_reference_sgb_record_boot('B', cpu.diagnosticMasterClocks(), 1, diagnosticGbBootCycles, 0);
++    }
+     step(clocks >> 1);
+   } else {  //DMG halted
+     apuWrite(0.0, 0.0);
+@@ -146,6 +156,9 @@
+ }
+ 
+ auto ICD::power(bool reset) -> void {
++  diagnosticGbBootCycles = 0;
++  diagnosticGbFrames = 0;
++  diagnosticGbBootReported = false;
+   auto frequency = clockFrequency() / 5;
+   create(ICD::Enter, frequency);
+   if(!reset) stream = Emulator::audio.createStream(2, frequency / 128);
+@@ -184,6 +197,11 @@
+ }
+ 
+ extern "C" unsigned gbb_reference_sgb_probe_version() { return 7; }
++extern "C" unsigned gbb_reference_sgb_boot_input(unsigned mask) {
++  if(mask > 255) return 0;
++  gbb_reference_sgb_record_boot('N', cpu.diagnosticMasterClocks(), mask, diagnosticGbFrames, 0);
++  return 1;
++}
+ extern "C" unsigned gbb_reference_sgb_sound_count() {
+   return SuperFamicom::icd.diagnosticSoundCount;
+ }
+diff --git a/bsnes/sfc/coprocessor/icd/io.cpp b/bsnes/sfc/coprocessor/icd/io.cpp
+--- a/bsnes/sfc/coprocessor/icd/io.cpp
++++ b/bsnes/sfc/coprocessor/icd/io.cpp
+@@ -11,6 +11,9 @@
+     data = packetSize > 0;
+     if(data) {
+       if((packet[0][0] >> 3) == 8) {
++        const uint64 parameters = uint64(packet[0][1]) | uint64(packet[0][2]) << 8 |
++            uint64(packet[0][3]) << 16 | uint64(packet[0][4]) << 24;
++        gbb_reference_sgb_record_boot('S', cpu.diagnosticMasterClocks(), parameters, diagnosticSoundCount, 0);
+         if(diagnosticSoundCount < 1024) {
+           for(unsigned i = 0; i < 16; i++)
+             diagnosticSoundPackets[diagnosticSoundCount][i] = packet[0][i];
+@@ -63,6 +66,7 @@
+   //d5,d4: 0 = 1-player, 1 = 2-player, 2 = 4-player, 3 = ???
+   //d1,d0: 0 = frequency divider (clock rate adjust)
+   if(addr == 0x6003) {
++    gbb_reference_sgb_record_boot('C', cpu.diagnosticMasterClocks(), data, diagnosticGbBootCycles, 0);
+     if((r6003 & 0x80) == 0x00 && (data & 0x80) == 0x80) {
+       power(true);  //soft reset
+     }
+diff --git a/bsnes/sfc/dsp/gbb_boot_probe.hpp b/bsnes/sfc/dsp/gbb_boot_probe.hpp
+new file mode 100644
+--- /dev/null
++++ b/bsnes/sfc/dsp/gbb_boot_probe.hpp
+@@ -0,0 +1,74 @@
++// Original, opt-in bounded diagnostic instrumentation; never release runtime.
++struct DiagnosticBootEvent { uint64 fields[7]; };
++static std::vector<DiagnosticBootEvent> diagnosticBootEvents;
++static bool diagnosticBootEnabled = false, diagnosticBootOverflow = false;
++static bool diagnosticBootEntry = false, diagnosticBootTransfer = false;
++static bool diagnosticBootAudible = false, diagnosticBootCommand = false;
++static bool diagnosticBootIplA = false, diagnosticBootIplReady = false;
++static uint8 diagnosticBootPorts[4] = {}, diagnosticBootIndex = 0;
++static unsigned diagnosticBootDestination = 0, diagnosticBootLength = 0;
++static uint64 diagnosticBootDigest = 14695981039346656037ull;
++extern "C" unsigned gbb_reference_sgb_boot_version() { return 1; }
++extern "C" unsigned gbb_reference_sgb_boot_enable(unsigned enabled) {
++  diagnosticBootEnabled = enabled != 0;
++  diagnosticBootEvents.clear();
++  diagnosticBootEvents.reserve(128);
++  diagnosticBootOverflow = diagnosticBootEntry = diagnosticBootTransfer = false;
++  diagnosticBootAudible = diagnosticBootCommand = false;
++  diagnosticBootIplA = diagnosticBootIplReady = false;
++  for(auto& p : diagnosticBootPorts) p = 0;
++  diagnosticBootIndex = diagnosticBootDestination = diagnosticBootLength = 0;
++  diagnosticBootDigest = 14695981039346656037ull;
++  return 1;
++}
++extern "C" unsigned gbb_reference_sgb_boot_count() {
++  return diagnosticBootOverflow ? 0xffffffffu : diagnosticBootEvents.size();
++}
++extern "C" unsigned gbb_reference_sgb_boot_copy(unsigned index, uint64* output) {
++  if(!output || index >= diagnosticBootEvents.size()) return 0;
++  for(unsigned i = 0; i < 7; ++i) output[i] = diagnosticBootEvents[index].fields[i];
++  return 1;
++}
++extern "C" void gbb_reference_sgb_record_boot(unsigned kind, uint64 master, uint64 value, uint64 count, uint64 digest) {
++  if(!diagnosticBootEnabled) return;
++  if(diagnosticBootEvents.size() == 128) { diagnosticBootOverflow = true; return; }
++  if(kind == 'S') {
++    const auto a = value & 255, b = value >> 8 & 255, control = value >> 16 & 255, score = value >> 24 & 255;
++    if((control & 12) != 12 && ((a && a < 128) || (b && b < 128) || score)) diagnosticBootAudible = true;
++  }
++  diagnosticBootEvents.push_back({{kind, master, smp.diagnosticHalfClocks, value, count, digest, 0}});
++}
++static void diagnosticBootHost(unsigned address, unsigned value) {
++  if(!diagnosticBootEnabled) return;
++  const unsigned port = address & 3;
++  if(diagnosticBootAudible && !diagnosticBootCommand && port == 0 && value == 1) {
++    diagnosticBootCommand = true;
++    gbb_reference_sgb_record_boot('P', cpu.diagnosticMasterClocks(), value, 0, 0);
++  }
++  if(diagnosticBootEntry) return;
++  diagnosticBootPorts[port] = value;
++  if(!diagnosticBootTransfer) {
++    if(port == 0 && value == 0xcc && diagnosticBootPorts[1] == 1) {
++      diagnosticBootTransfer = true;
++      diagnosticBootDestination = diagnosticBootPorts[2] | diagnosticBootPorts[3] << 8;
++      gbb_reference_sgb_record_boot('A', cpu.diagnosticMasterClocks(), diagnosticBootDestination, 0, 0);
++    }
++    return;
++  }
++  if(port != 0) return;
++  if(value == diagnosticBootIndex) {
++    diagnosticBootDigest = (diagnosticBootDigest ^ diagnosticBootPorts[1]) * 1099511628211ull;
++    ++diagnosticBootLength;
++    ++diagnosticBootIndex;
++  } else if(value == uint8(diagnosticBootIndex + 1)) {
++    if(!diagnosticBootLength) { diagnosticBootOverflow = true; return; }
++    gbb_reference_sgb_record_boot('U', cpu.diagnosticMasterClocks(), diagnosticBootDestination, diagnosticBootLength, diagnosticBootDigest);
++    diagnosticBootDestination = diagnosticBootPorts[2] | diagnosticBootPorts[3] << 8;
++    if(diagnosticBootPorts[1] == 0) {
++      diagnosticBootEntry = true;
++      gbb_reference_sgb_record_boot('E', cpu.diagnosticMasterClocks(), diagnosticBootDestination, 0, 0);
++    }
++    diagnosticBootLength = diagnosticBootIndex = 0;
++    diagnosticBootDigest = 14695981039346656037ull;
++  } else diagnosticBootOverflow = true;
++}
