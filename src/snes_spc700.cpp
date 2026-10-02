@@ -34,16 +34,39 @@ unsigned SnesSpc700::write_cycle_offset() const noexcept {
 }
 
 void SnesSpc700::clock_bus() noexcept {
+    if (replaying_) {
+        if (suspended_ || invalid_replay_) { ++instruction_cycle_; return; }
+        if (instruction_cycle_ < replay_count_) {
+            ++instruction_cycle_;
+            return;
+        }
+        if (clock_used_) { suspended_ = true; ++instruction_cycle_; return; }
+        if (replay_count_ == replay_.size()) {
+            invalid_replay_ = true; ++instruction_cycle_; return;
+        }
+        replay_[replay_count_++] = {};
+        clock_used_ = true;
+    }
     bus_.tick(1);
     ++instruction_cycle_;
+    if (replaying_) ++cycles_;
     if (bus_observer_)
-        bus_observer_(bus_context_, cycles_ + instruction_cycle_, 'T', 0, 0);
+        bus_observer_(bus_context_, replaying_ ? cycles_ : cycles_ + instruction_cycle_, 'T', 0, 0);
 }
 
 void SnesSpc700::idle_cycle() noexcept {
     clock_bus();
+    if (suspended_ || invalid_replay_) return;
+    if (replaying_) {
+        auto& access = replay_[instruction_cycle_ - 1];
+        if (access.kind) {
+            if (access.kind != 'I') invalid_replay_ = true;
+            return;
+        }
+        access.kind = 'I';
+    }
     if (bus_observer_)
-        bus_observer_(bus_context_, cycles_ + instruction_cycle_, 'I', 0, 0);
+        bus_observer_(bus_context_, replaying_ ? cycles_ : cycles_ + instruction_cycle_, 'I', 0, 0);
 }
 
 std::uint8_t SnesSpc700::read_memory(const std::uint16_t address) noexcept {
@@ -72,9 +95,18 @@ std::uint8_t SnesSpc700::read_memory(const std::uint16_t address) noexcept {
         }
         clock_bus();
     }
+    if (suspended_ || invalid_replay_) return 0;
+    if (replaying_) {
+        auto& access = replay_[instruction_cycle_ - 1];
+        if (access.kind) {
+            if (access.kind != 'R' || access.address != address) invalid_replay_ = true;
+            return access.value;
+        }
+    }
     const auto value = bus_.spc_read(address);
+    if (replaying_) replay_[instruction_cycle_ - 1] = {'R', address, value};
     if (cycle_bus_ && bus_observer_)
-        bus_observer_(bus_context_, cycles_ + instruction_cycle_, 'R', address, value);
+        bus_observer_(bus_context_, replaying_ ? cycles_ : cycles_ + instruction_cycle_, 'R', address, value);
     return value;
 }
 
@@ -116,9 +148,20 @@ void SnesSpc700::write_memory(const std::uint16_t address,
         }
         clock_bus();
     }
-    const auto cycle = cycle_bus_ ? cycles_ + instruction_cycle_
+    const auto cycle = replaying_ ? instruction_start_ + instruction_cycle_
+                                 : cycle_bus_ ? cycles_ + instruction_cycle_
                                  : offset != 0 ? cycles_ + offset : 0;
     ++write_index_;
+    if (suspended_ || invalid_replay_) return;
+    if (replaying_) {
+        auto& access = replay_[instruction_cycle_ - 1];
+        if (access.kind) {
+            if (access.kind != 'W' || access.address != address || access.value != value)
+                invalid_replay_ = true;
+            return;
+        }
+        access = {'W', address, value};
+    }
     if (write_observer_) write_observer_(write_context_, cycle, opcode_, address, value, false);
     bus_.spc_write(address, value);
     if (write_observer_) write_observer_(write_context_, cycle, opcode_, address, value, true);
@@ -212,6 +255,44 @@ std::uint8_t SnesSpc700::pop() noexcept {
 }
 
 SnesSpc700::StepResult SnesSpc700::step() noexcept {
+    if (continuation_) return {0, opcode_, false};
+    return execute();
+}
+
+SnesSpc700::ClockResult SnesSpc700::clock() noexcept {
+    if (!cycle_bus_) return {{0, opcode_, false}, true};
+    if (!continuation_) {
+        instruction_registers_ = registers_;
+        instruction_opcode_ = opcode_;
+        instruction_start_ = cycles_;
+        replay_count_ = 0;
+        continuation_ = true;
+    }
+    registers_ = instruction_registers_;
+    opcode_ = instruction_opcode_;
+    replaying_ = true;
+    clock_used_ = suspended_ = invalid_replay_ = false;
+    // Replay arithmetic from the last committed registers using latched bus
+    // results. After the one new access, remaining work is side-effect-free
+    // speculation and is discarded. This avoids a second opcode interpreter,
+    // dynamic allocations and an exception/stack unwind at every APU clock.
+    const auto result = execute();
+    replaying_ = false;
+    if (invalid_replay_) {
+        registers_ = instruction_registers_;
+        continuation_ = suspended_ = invalid_replay_ = false;
+        return {{0, opcode_, false}, true};
+    }
+    if (suspended_) {
+        registers_ = instruction_registers_;
+        suspended_ = false;
+        return {{0, opcode_, true}, false};
+    }
+    continuation_ = false;
+    return {result, true};
+}
+
+SnesSpc700::StepResult SnesSpc700::execute() noexcept {
     const auto start = registers_.pc;
     instruction_cycle_ = 0;
     const auto opcode = fetch();
@@ -940,19 +1021,19 @@ SnesSpc700::StepResult SnesSpc700::step() noexcept {
             break;
         }
         registers_.pc = start;
-        if (cycle_bus_) cycles_ += instruction_cycle_;
+        if (cycle_bus_ && !replaying_) cycles_ += instruction_cycle_;
         return {cycle_bus_ ? instruction_cycle_ : 0, opcode, false};
     }
     if (cycle_bus_) {
         if (instruction_cycle_ > cycles) {
-            cycles_ += instruction_cycle_;
+            if (!replaying_) cycles_ += instruction_cycle_;
             return {instruction_cycle_, opcode, false}; // Reject an invalid bus schedule.
         }
         while (instruction_cycle_ < cycles) idle_cycle();
     } else {
         bus_.tick(cycles);
     }
-    cycles_ += cycles;
+    if (!replaying_) cycles_ += cycles;
     return {cycles, opcode, true};
 }
 

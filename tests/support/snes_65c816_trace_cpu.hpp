@@ -144,6 +144,9 @@ public:
         spc_step_context_ = context;
     }
     void set_icd_source(SnesIcdTraceSource* source) noexcept { icd_ = source; }
+    // Opt-in diagnostic rendezvous; only whole completed SPC clocks run before
+    // a host access. The legacy instruction-granular baseline stays unchanged.
+    void set_cycle_apu_sync_enabled(bool enabled) noexcept { cycle_apu_sync_ = enabled; }
     [[nodiscard]] std::uint64_t spc_cycles() const noexcept { return spc_cycles_; }
     [[nodiscard]] const SnesTraceTiming& timing() const noexcept { return timing_; }
     [[nodiscard]] std::uint8_t interrupt_enable() const noexcept {
@@ -187,6 +190,7 @@ private:
     const gameboy::SgbProgramRom& rom_;
     gameboy::SnesApuBus& apu_;
     gameboy::SnesSpc700* spc_{};
+    bool cycle_apu_sync_{};
     SnesIcdTraceSource* icd_{};
     std::uint64_t spc_cycles_{};
     SpcStepObserver spc_step_observer_{};

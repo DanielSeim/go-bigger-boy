@@ -65,6 +65,35 @@ void test_native_width_and_apu_mapping() {
           "SNES CPU write reaches the independent APU input port");
 }
 
+void test_cycle_apu_rendezvous() {
+    const auto rom = program({
+        0xA9, 0x5A, 0x8D, 0x40, 0x21,
+        0xAD, 0x41, 0x21, 0x80, 0xF8,
+    });
+    gameboy::SnesApuBus bus;
+    gameboy::SnesApuBus::IplRom ipl{};
+    const std::uint8_t code[]{0xE4, 0xF4, 0xC4, 0xF5, 0x2F, 0xFA};
+    for (unsigned i = 0; i < sizeof(code); ++i) ipl[i] = code[i];
+    bus.install_ipl(ipl);
+    gameboy::SnesSpc700 spc(bus);
+    spc.set_cycle_bus_enabled(true);
+    sgb_test::Snes65c816TraceCpu cpu(rom, bus, &spc);
+    cpu.set_cycle_apu_sync_enabled(true);
+    bool suspended{};
+    bool response{};
+    for (unsigned i = 0; i < 100; ++i) {
+        check(cpu.step().error == sgb_test::Snes65c816TraceCpu::Error::none,
+              "cycle-rendezvous synthetic host/SPC exchange executes");
+        const auto target = cpu.timing().clocks() * 1'024'000ULL / 21'477'273ULL;
+        check(cpu.spc_cycles() == target && spc.cycles() == target,
+              "SPC catches up exactly without instruction-tail overshoot");
+        suspended |= spc.instruction_pending();
+        response |= bus.host_read_port(1) == 0x5A;
+    }
+    check(suspended && response,
+          "host accesses interleave with pending SPC instructions and receive the response");
+}
+
 void test_fail_closed() {
     auto rom = program({0xAD, 0x3E, 0x21}); // LDA $213E: unmodeled sprite status
     gameboy::SnesApuBus apu;
@@ -1057,6 +1086,7 @@ void test_local_program(const std::filesystem::path& path, const bool sgb2) {
 } // namespace
 
 int main(int argc, char** argv) {
+    test_cycle_apu_rendezvous();
     if (argc == 3) {
         const auto mode = std::string_view(argv[1]);
         if (mode == "--local-sgb1" || mode == "--local-sgb2") {

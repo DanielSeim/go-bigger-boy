@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <array>
 
 namespace gameboy {
 
@@ -27,12 +28,18 @@ public:
     };
 
     explicit SnesSpc700(SnesApuBus& bus) noexcept : bus_(bus) {}
-    void reset() noexcept { registers_ = {}; cycles_ = 0; }
+    void reset() noexcept {
+        registers_ = {}; cycles_ = 0;
+        continuation_ = replaying_ = clock_used_ = suspended_ = invalid_replay_ = false;
+        replay_count_ = 0;
+    }
     [[nodiscard]] const Registers& registers() const noexcept { return registers_; }
     [[nodiscard]] std::uint64_t cycles() const noexcept { return cycles_; }
     // Opt-in diagnostic bus execution. Each read/write/idle advances timers
     // separately; the legacy instruction-granular path remains the default.
-    void set_cycle_bus_enabled(bool enabled) noexcept { cycle_bus_ = enabled; }
+    void set_cycle_bus_enabled(bool enabled) noexcept {
+        if (!continuation_) cycle_bus_ = enabled;
+    }
     // T: completed clock, before the access; R/W: accepted access; I: idle.
     // Observer installation alone does not opt into cycle-level execution.
     using BusCycleObserver = void (*)(void*, std::uint64_t, char,
@@ -55,8 +62,20 @@ public:
         write_context_ = context;
     }
     [[nodiscard]] StepResult step() noexcept;
+    struct ClockResult {
+        StepResult instruction{};
+        bool completed{};
+    };
+    // Diagnostic continuation: exactly one physical bus clock per call.
+    // Previous accesses are latched, never reissued. Architectural registers
+    // are only exposed at completed instruction boundaries in this mode.
+    // step() is rejected and mode changes are ignored while an instruction is
+    // in flight. Reset explicitly discards the continuation, not bus effects.
+    [[nodiscard]] ClockResult clock() noexcept;
+    [[nodiscard]] bool instruction_pending() const noexcept { return continuation_; }
 
 private:
+    [[nodiscard]] StepResult execute() noexcept;
     [[nodiscard]] std::uint8_t fetch() noexcept;
     [[nodiscard]] std::uint8_t read_memory(std::uint16_t address) noexcept;
     void idle_cycle() noexcept;
@@ -87,6 +106,18 @@ private:
     unsigned instruction_cycle_{};
     BusCycleObserver bus_observer_{};
     void* bus_context_{};
+    struct ReplayAccess { char kind{}; std::uint16_t address{}; std::uint8_t value{}; };
+    // No dynamic allocation. Supported instructions use at most twelve clocks.
+    std::array<ReplayAccess, 16> replay_{};
+    Registers instruction_registers_{};
+    std::uint64_t instruction_start_{};
+    unsigned replay_count_{};
+    std::uint8_t instruction_opcode_{};
+    bool continuation_{};
+    bool replaying_{};
+    bool clock_used_{};
+    bool suspended_{};
+    bool invalid_replay_{};
 };
 
 } // namespace gameboy

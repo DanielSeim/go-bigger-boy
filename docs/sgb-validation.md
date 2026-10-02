@@ -884,10 +884,83 @@ voice state, echo offset and volume-ramp timing still differ.
 
 Shared memory is not full bus-level emulation. BRR/directory accesses still
 use the diagnostic renderer's grouped fetches rather than every interleaved
-DSP memory access; SNES/SPC rendezvous and half-cycle port timing remain
+DSP memory access; fractional SNES/SPC rendezvous and half-cycle port timing remain
 unfinished. The synthetic matches and local replay establish this coupling
 path, not hardware-exact whole-system audio or live SGB sound in releases.
 No external core or proprietary ROM/capture bytes are linked or shipped.
+
+### Resumable SPC and completed-clock APU rendezvous
+
+The opt-in `--cycle-apu-sync` diagnostic implies `--shared-bus-dsp` and stops
+the SPC at the **exact completed-clock target** before each SNES bus access.
+The old scheduler finishes the whole SPC instruction and can run past a host
+port access. The new scheduler computes
+`floor(SNES_master_clocks * 1024000 / 21477273)` and advances only that far.
+A completed SPC access wins a tie with a host access at the same boundary.
+This is an explicit whole-clock convention, not verified half-cycle hardware
+port visibility or a replacement for the SNES processor's timing model.
+
+`SnesSpc700::clock()` retains an unfinished instruction across host accesses.
+It uses a bounded, allocation-free access journal and the existing interpreter:
+past read values are latched; past writes, timer ticks, DSP side effects and
+observer callbacks are never repeated. Each call accepts one new physical
+read/write/idle. Remaining arithmetic is side-effect-free speculative work,
+discarded until the instruction completes. Architectural registers are exposed
+at completed instruction boundaries. Mixed `step()` calls fail closed,
+in-flight mode changes are ignored, and reset discards the continuation without
+undoing already accepted bus effects. This diagnostic strategy avoids a second
+opcode implementation and does not use exceptions to suspend at every clock.
+It is not yet a production micro-operation engine or a save-state format.
+
+All **2,820 existing** independent bus/timer/port cases still match, with the
+original pin unchanged. The resumable corpus adds 251 host-before/host-after
+boundary cases, including writes between word-read halves, store dummy reads,
+port clearing, and all four ports. All **3,071 cases** match the independent
+processor's bus traces and final registers byte-for-byte; the independently
+verified SHA-256 is
+`d7f8dade8aa3c7c5beb331ec9aaaa9232e72cf9fe4c8406b9c8536cec528dd39`.
+The port stimulus adapter applies explicit events to an independent processor;
+it is not an independent complete SNES scheduler or SMP hardware model.
+Additional unit tests interleave a synthetic SNES/SPC request/response and
+assert exact clock targets, latched reads, separate word-store commits, reset,
+unsupported opcodes and rejection of mixed stepping.
+
+```sh
+python3 tests/snes_spc_bus_cycle_tests.py \
+  build/gameboy_snes_spc_write_fixture_runner --resumable \
+  --reference-dir /tmp/bsnes-sgb-reference-src
+```
+
+Run the local title command with `--cycle-apu-sync` instead of
+`--shared-bus-dsp`. Its final `APU rendezvous` marker reports the target,
+completed scheduler clocks and completed SPC clocks; all three must agree.
+The optional local-ROM CTest checks that equality and pins this mode's actual
+KON phases, without presenting them as a reference match.
+
+A fresh version-7, non-fast independent Donkey Kong capture and both local
+modes gave the following results:
+
+| Checkpoint | Shared instruction rendezvous | Exact completed-clock rendezvous | Independent reference |
+| --- | --- | --- | --- |
+| First/second KON phases | 37 / 41 | 34 / 38 | 37 / 41 |
+| Active voice position at +0.82 s | 13,749 | 13,749 | 12,018 |
+| Active voice position at second KON +640 outputs | 8,501 | 8,501 | 8,501 |
+| Echo offset at second KON +640 outputs | 1,796 | 3,336 | 2,556 |
+
+Both modes deliver all three SOUND packets and preserve the byte-identical
+41,280-byte sample upload. The fixed-lag 8 kHz audio windows remain at least
+0.9997 correlated with the reference, with no phase re-optimization in later
+windows. Volume-ramp differences and dormant voice differences remain.
+Removing scheduler overshoot therefore **does not solve the remaining title
+state mismatches**. The three-clock KON difference must be investigated with
+fractional host/SMP timing, not concealed with an arbitrary phase adjustment.
+Grouped BRR/directory reads also remain a separate limitation.
+
+On this local machine, the bounded 40-million-instruction diagnostic took
+about 60 seconds versus 51 seconds for the shared instruction baseline.
+These are development replay timings, not emulator FPS or a runtime guarantee.
+The diagnostic remains opt-in; release audio/scheduling are unchanged, and no
+external core, proprietary ROM or captured audio is shipped.
 
 A new fully synthetic SNES program waits, writes a host command to the APU,
 and runs concurrently with an original SPC700 test program. The test stamps

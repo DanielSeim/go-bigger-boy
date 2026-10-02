@@ -120,13 +120,26 @@ Snes65c816TraceCpu::Snes65c816TraceCpu(
 void Snes65c816TraceCpu::synchronize_apu() noexcept {
     if (spc_ == nullptr || error_ != Error::none) return;
     // NTSC master oscillator (1.89e9/88 Hz) versus the 1.024 MHz S-SMP.
-    // Instruction-granular rendezvous is deliberately bounded; sub-cycle
-    // APU port ordering remains a separate validation task.
+    // Completed SPC accesses win an equal-clock tie with the host access.
+    // Fractional/half-clock visibility remains a separate validation task.
     constexpr std::uint64_t master_hz = 21'477'273;
     constexpr std::uint64_t spc_hz = 1'024'000;
     const auto target = timing_.clocks() * spc_hz / master_hz;
     while (spc_cycles_ < target) {
         const auto pc = spc_->registers().pc;
+        if (cycle_apu_sync_) {
+            const auto result = spc_->clock();
+            if (!result.instruction.supported || spc_->cycles() != spc_cycles_ + 1) {
+                error_ = Error::unsupported_spc_opcode;
+                error_address_ = pc;
+                return;
+            }
+            ++spc_cycles_;
+            if (result.completed && spc_step_observer_)
+                spc_step_observer_(spc_step_context_, spc_cycles_,
+                                   result.instruction.opcode, result.instruction.cycles);
+            continue;
+        }
         const auto result = spc_->step();
         if (!result.supported) {
             error_ = Error::unsupported_spc_opcode;

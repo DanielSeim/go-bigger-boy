@@ -81,6 +81,7 @@ int main(int argc, char** argv) {
     bool bus_clocked_dsp = false;
     bool cycle_bus_dsp = false;
     bool shared_bus_dsp = false;
+    bool cycle_apu_sync = false;
     std::filesystem::path input_script_path;
     std::filesystem::path pcm_output_path;
         std::filesystem::path sound_event_trace_path;
@@ -101,6 +102,8 @@ int main(int argc, char** argv) {
                 bus_clocked_dsp = clocked_dsp = true;
             } else if (option == "--shared-bus-dsp" && !shared_bus_dsp) {
                 shared_bus_dsp = cycle_bus_dsp = bus_clocked_dsp = clocked_dsp = true;
+            } else if (option == "--cycle-apu-sync" && !cycle_apu_sync) {
+                cycle_apu_sync = shared_bus_dsp = cycle_bus_dsp = bus_clocked_dsp = clocked_dsp = true;
             } else if (option == "--input-script" &&
                        input_script_path.empty() && index + 1 < argc) {
                 input_script_path = argv[++index];
@@ -150,6 +153,7 @@ int main(int argc, char** argv) {
                      " [--bus-clocked-dsp]"
                      " [--cycle-bus-dsp]"
                      " [--shared-bus-dsp]"
+                     " [--cycle-apu-sync]"
                      " [--audible-sound-probe]]\n";
         return 2;
     }
@@ -511,6 +515,10 @@ int main(int argc, char** argv) {
             }
             if (shared_bus_dsp)
                 std::cout << "Shared SPC/DSP APU RAM and live register readback enabled\n";
+            if (cycle_apu_sync) {
+                cpu.set_cycle_apu_sync_enabled(true);
+                std::cout << "Cycle-level SNES/SPC APU rendezvous enabled\n";
+            }
             std::cout << "DSP clock from SPC reset; write-boundary observation enabled\n";
         }
         for (unsigned i = 0; i < instruction_bound; ++i) {
@@ -877,6 +885,15 @@ int main(int argc, char** argv) {
                   << " after " << cpu.timing().clocks() << " master clocks"
                   << " (V=" << cpu.timing().line()
                   << " H=" << cpu.timing().horizontal_clock() << ")\n";
+        if (cycle_apu_sync) {
+            const auto target = cpu.timing().clocks() * 1'024'000ULL / 21'477'273ULL;
+            std::cout << "APU rendezvous target=" << target
+                      << " completed=" << cpu.spc_cycles()
+                      << " SPC_completed=" << spc.cycles()
+                      << " instruction_pending=" << spc.instruction_pending() << '\n';
+            if (cpu.spc_cycles() != target || spc.cycles() != target)
+                throw std::runtime_error("cycle APU rendezvous overshot its master-clock target");
+        }
         if (!sound_event_trace_path.empty()) {
             if (std::filesystem::exists(sound_event_trace_path))
                 throw std::runtime_error("sound event trace already exists");

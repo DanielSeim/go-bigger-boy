@@ -16,6 +16,62 @@ void check(const bool condition, const char* message) {
     }
 }
 
+void test_resumable_bus() {
+    gameboy::SnesApuBus bus;
+    gameboy::SnesApuBus::IplRom ipl{};
+    ipl[0] = 0xBA; ipl[1] = 0xF4; // MOVW YA,$F4: separate low/high reads.
+    ipl[2] = 0xDA; ipl[3] = 0xF6; // MOVW $F6,YA: separate port writes.
+    bus.install_ipl(ipl);
+    bus.host_write_port(0, 0x17);
+    bus.host_write_port(1, 0x22);
+    gameboy::SnesSpc700 cpu(bus);
+    check(!cpu.clock().instruction.supported && cpu.cycles() == 0,
+          "continuation requires explicit cycle-bus opt-in");
+    cpu.set_cycle_bus_enabled(true);
+    for (unsigned clock = 1; clock <= 3; ++clock) {
+        const auto result = cpu.clock();
+        check(result.instruction.supported && !result.completed && cpu.cycles() == clock,
+              "continuation advances exactly one clock and suspends the word read");
+    }
+    check(cpu.registers().pc == 0xFFC0 && cpu.instruction_pending(),
+          "suspended instruction exposes only committed architectural state");
+    check(!cpu.step().supported && cpu.cycles() == 3,
+          "instruction stepping cannot skip a suspended bus access");
+    cpu.set_cycle_bus_enabled(false); // In-flight mode changes are ignored.
+    bus.host_write_port(0, 0x99);
+    bus.host_write_port(1, 0x33);
+    check(!cpu.clock().completed && cpu.cycles() == 4,
+          "the word-read internal idle is independently resumable");
+    const auto read = cpu.clock();
+    check(read.completed && read.instruction.supported && read.instruction.cycles == 5 &&
+              cpu.registers().a == 0x17 && cpu.registers().y == 0x33 &&
+              !cpu.instruction_pending(),
+          "past read is latched while future read sees an intervening host write");
+    for (unsigned clock = 1; clock <= 4; ++clock) {
+        const auto result = cpu.clock();
+        check(!result.completed && cpu.cycles() == 5 + clock,
+              "word store suspends up to and between its two writes");
+    }
+    check(bus.host_read_port(2) == 0x17 && bus.host_read_port(3) == 0,
+          "only the first word-store port has been written at clock four");
+    const auto write = cpu.clock();
+    check(write.completed && write.instruction.cycles == 5 &&
+              bus.host_read_port(3) == 0x33 && cpu.cycles() == 10,
+          "second word-store port commits only on its own clock");
+    (void)cpu.clock();
+    cpu.reset();
+    check(!cpu.instruction_pending() && cpu.cycles() == 0 &&
+              cpu.clock().instruction.supported && cpu.cycles() == 1,
+          "reset discards an unfinished continuation without replaying its effects");
+    cpu.reset();
+    ipl[0] = 0xFF;
+    bus.install_ipl(ipl);
+    const auto unsupported = cpu.clock();
+    check(unsupported.completed && !unsupported.instruction.supported &&
+              cpu.cycles() == 1 && cpu.registers().pc == 0xFFC0,
+          "unsupported opcode fails closed after its single actual fetch clock");
+}
+
 void test_write_cycle_observation() {
     gameboy::SnesApuBus bus;
     gameboy::SnesApuBus::IplRom ipl{};
@@ -1688,6 +1744,7 @@ void test_push_y() {
 } // namespace
 
 int main() {
+    test_resumable_bus();
     test_write_cycle_observation();
     test_cycle_bus_timers();
     test_adc_a_absolute();

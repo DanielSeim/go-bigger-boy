@@ -20,9 +20,17 @@ struct Sink final : Processor::SPC700 {
     std::array<std::uint8_t, 4> ports{};
     std::array<std::uint8_t, 128> dsp{};
     std::uint8_t enabled{}, dsp_address{};
-    std::vector<std::array<unsigned, 3>> host_events;
+    std::vector<std::array<unsigned, 4>> host_events;
     void schedule_host(unsigned cycle, unsigned port, std::uint8_t value) {
-        host_events.push_back({cycle, port, value});
+        host_events.push_back({cycle, port, value, 0});
+    }
+    void schedule_host_after(unsigned cycle, unsigned port, std::uint8_t value) {
+        host_events.push_back({cycle, port, value, 1});
+    }
+    void finish_access() {
+        if (trace_bus)
+            for (const auto& event : host_events)
+                if (event[0] == cycles && event[3]) ports[event[1]] = event[2];
     }
     void clock() {
         ++cycles;
@@ -38,11 +46,12 @@ struct Sink final : Processor::SPC700 {
             }
         }
         for (const auto& event : host_events)
-            if (event[0] == cycles) ports[event[1]] = event[2];
+            if (event[0] == cycles && !event[3]) ports[event[1]] = event[2];
     }
     void idle() override {
         clock();
         if (trace_bus) std::cout << "I " << cycles << '\n';
+        finish_access();
     }
     uint8 read(uint16 address) override {
         clock();
@@ -61,6 +70,7 @@ struct Sink final : Processor::SPC700 {
         }
         if (trace_bus) std::cout << "R " << cycles << ' ' << unsigned(address)
                                  << ' ' << unsigned(value) << '\n';
+        finish_access();
         return value;
     }
     void write(uint16 address, uint8 value) override {
@@ -82,6 +92,7 @@ struct Sink final : Processor::SPC700 {
         }
         std::cout << "W " << cycles << ' ' << unsigned(opcode) << ' '
                   << unsigned(address) << ' ' << unsigned(value) << '\n';
+        finish_access();
     }
     bool synchronizing() const override { return true; }
     void load(std::uint16_t address, std::uint8_t value) { ram[address] = value; }

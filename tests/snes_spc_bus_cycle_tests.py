@@ -11,6 +11,7 @@ import tempfile
 from snes_spc_write_cycle_tests import build_reference, cases as write_cases, fixture as write_fixture
 
 EXPECTED = "19614ed37f3b3f847935a61b4416a8dffc6774b3fe028efe67804fe27f08b1e2"
+RESUMABLE_EXPECTED = "d7f8dade8aa3c7c5beb331ec9aaaa9232e72cf9fe4c8406b9c8536cec528dd39"
 OPCODES = bytes.fromhex("""
 00 02 03 04 08 09 0b 0e 10 12 13 18 1c 1d 1f 20 22 23 24 28 2b 2d 2f
 30 32 33 38 3a 3d 3f 40 42 43 44 48 4b 4c 4d 4e 52 53 5c 5d 5e 5f 60
@@ -41,7 +42,7 @@ def padded(instruction, timer, target, padding, hosts=()):
     return fixture(ipl, 4 + padding // 2 + padding % 2, ram, hosts)
 
 
-def corpus():
+def corpus(resumable=False):
     for page in (0, 1):
         for memory in (0, 255):
             for opcode in OPCODES:
@@ -94,10 +95,28 @@ def corpus():
     # A store's dummy read clears timer 2; a following explicit read sees zero.
     yield "store-clears-timer", fixture(
         bytes((0x8f, 1, 0xfc, 0x8f, 4, 0xf1, 0, 0, 0xc4, 0xff, 0xe4, 0xff)), 6)
+    if resumable:
+        # Host events before/after the same completed bus access distinguish
+        # ties, suspended word reads, and port clearing followed by late input.
+        for opcode in (0xe4, 0xba, 0xc4, 0xda, 0x0b, 0x8f):
+            for port in range(4):
+                for cycle in range(1, 11):
+                    program = (bytes((opcode, 0x30, 0xf1)) if opcode == 0x8f
+                               else bytes((opcode, 0xf4+port))) + bytes((0xe4, 0xf4+port))
+                    data = fixture(program, 2)
+                    events = (f"host {cycle} {port} 90\n"
+                              f"host-after {cycle} {port} 165\n"
+                              f"host-after {cycle} {(port+1)%4} 51\n").encode()
+                    yield f"rendezvous-{opcode:02x}-port{port}-clock{cycle}", events + data
+        for cycle in range(1, 12):
+            data = fixture(bytes((0x8f, 0x30, 0xf1, 0xba, 0xf4, 0xba, 0xf6)), 3)
+            events = b"".join(f"host-after {cycle} {port} {port+81}\n".encode()
+                              for port in range(4))
+            yield f"rendezvous-port-clear-{cycle}", events + data
 
 
-def run(binary, data):
-    result = subprocess.run([str(binary), "--bus-cycles"], input=data,
+def run(binary, data, resumable=False):
+    result = subprocess.run([str(binary), "--resumable-cycles" if resumable else "--bus-cycles"], input=data,
                             capture_output=True, timeout=30)
     if result.returncode:
         raise AssertionError(f"bus runner failed: {result.returncode}: {result.stdout!r}")
@@ -108,6 +127,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("gbb", type=Path)
     parser.add_argument("--reference-dir", type=Path)
+    parser.add_argument("--resumable", action="store_true")
     args = parser.parse_args()
     digest = hashlib.sha256()
     count = 0
@@ -115,8 +135,8 @@ def main():
         reference = Path(directory) / "reference"
         if args.reference_dir:
             build_reference(args.reference_dir.resolve(), reference)
-        for name, data in corpus():
-            ours = run(args.gbb.resolve(), data)
+        for name, data in corpus(args.resumable):
+            ours = run(args.gbb.resolve(), data, args.resumable)
             if args.reference_dir:
                 expected = run(reference, data)
                 if ours != expected:
@@ -130,7 +150,7 @@ def main():
             count += 1
         actual = digest.hexdigest()
         print(f"{count} SPC bus-cycle cases: {actual}")
-        if actual != EXPECTED:
+        if actual != (RESUMABLE_EXPECTED if args.resumable else EXPECTED):
             raise AssertionError("SPC bus-cycle corpus changed")
     return 0
 

@@ -26,7 +26,10 @@ def main() -> int:
     parser.add_argument("--bus-clocked-dsp", action="store_true")
     parser.add_argument("--cycle-bus-dsp", action="store_true")
     parser.add_argument("--shared-bus-dsp", action="store_true")
+    parser.add_argument("--cycle-apu-sync", action="store_true")
     args = parser.parse_args()
+    if args.cycle_apu_sync:
+        args.shared_bus_dsp = True
     if hashlib.sha256(Path(args.gb_rom).read_bytes()).hexdigest() != DONKEY_SHA256:
         raise AssertionError("local Donkey Kong ROM does not match the pinned title")
     if hashlib.sha256(Path(args.input_script).read_bytes()).hexdigest() != SCRIPT_SHA256:
@@ -39,7 +42,8 @@ def main() -> int:
              args.gb_rom, args.gb_boot, "--input-script", args.input_script,
              "--instruction-limit", "40000000", "--pcm-output", str(pcm_path),
              "--sound-event-trace-output", str(event_path)] +
-            (["--shared-bus-dsp"] if args.shared_bus_dsp else
+            (["--cycle-apu-sync"] if args.cycle_apu_sync else
+             ["--shared-bus-dsp"] if args.shared_bus_dsp else
              ["--cycle-bus-dsp"] if args.cycle_bus_dsp else
              ["--bus-clocked-dsp"] if args.bus_clocked_dsp else []),
             capture_output=True, text=True, timeout=180, check=False,
@@ -73,10 +77,17 @@ def main() -> int:
         if args.cycle_bus_dsp or args.shared_bus_dsp:
             phases = [(int(event["address"]), int(event["value"]))
                       for event in event_rows if event["kind"] == "Q"]
-            # Independently observed non-fast reference phases for this script.
-            # This pins two write boundaries, not whole-system audio accuracy.
-            if phases[:2] != [(37, 4), (41, 4)]:
-                raise AssertionError("title KON bus phases differ from the independent reference")
+            # Shared instruction-rendezvous baseline matches reference 37/41.
+            # Exact rendezvous removes overshoot but produces 34/38: pin that
+            # diagnostic result without claiming it matches hardware/reference.
+            expected_phases = [(34, 4), (38, 4)] if args.cycle_apu_sync else [(37, 4), (41, 4)]
+            if phases[:2] != expected_phases:
+                raise AssertionError("title KON bus phases changed for the selected diagnostic mode")
+        if args.cycle_apu_sync:
+            boundary = re.search(r"APU rendezvous target=(\d+) completed=(\d+) SPC_completed=(\d+)", output)
+            if "Cycle-level SNES/SPC APU rendezvous enabled" not in output or \
+                    boundary is None or len(set(boundary.groups())) != 1:
+                raise AssertionError("title rendezvous did not stop at its exact SPC target")
         if len(packets) != 1 or len(hosts) < 4 or len(dsp) < 10 or \
                 [(int(event["address"]), int(event["value"]))
                  for event in hosts[:4]] != [(0, 1), (1, 0), (2, 0), (3, 0)] or \
