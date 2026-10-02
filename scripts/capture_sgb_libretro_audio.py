@@ -30,6 +30,28 @@ def native_button_mask(libretro_mask: int) -> int:
                                            "a", "b", "select", "start")))
 
 
+def configure_frame_input(core, events: list[tuple[int, int]], enabled: bool) -> None:
+    """Reset optional probe state even when reusing a core in legacy mode."""
+    names = ("gbb_reference_sgb_frame_input_version", "gbb_reference_sgb_frame_input_enable",
+             "gbb_reference_sgb_frame_input_add", "gbb_reference_sgb_frame_input_applied")
+    if enabled and (any(not hasattr(core, name) for name in names) or
+                    core.gbb_reference_sgb_frame_input_version() != 1):
+        raise RuntimeError("reference lacks the version-1 native GB input probe")
+    if not hasattr(core, names[1]):
+        return
+    setter = core.gbb_reference_sgb_frame_input_enable
+    setter.argtypes, setter.restype = [C.c_uint], C.c_uint
+    if setter(int(enabled)) != 1:
+        raise RuntimeError("reference rejected native GB input configuration")
+    if enabled:
+        add = core.gbb_reference_sgb_frame_input_add
+        add.argtypes, add.restype = [C.c_uint64, C.c_uint], C.c_uint
+        core.gbb_reference_sgb_frame_input_applied.restype = C.c_uint
+        for frame, mask in events:
+            if add(frame, native_button_mask(mask)) != 1:
+                raise RuntimeError("reference rejected native GB input event")
+
+
 class RetroVariable(C.Structure):
     _fields_ = [("key", C.c_char_p), ("value", C.c_char_p)]
 
@@ -166,7 +188,8 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
             timer_poll_trace: bool = False,
             reference_entropy: str | None = None,
             history_window_half: tuple[int, int] | None = None,
-            boot_timeline_output: Path | None = None
+            boot_timeline_output: Path | None = None,
+            native_gb_input: bool = False
             ) -> tuple[int, int]:
     if C.sizeof(C.c_void_p) != 8:
         raise RuntimeError("the diagnostic host currently requires a 64-bit process")
@@ -179,6 +202,9 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
         raise ValueError("frames must be between 1 and 10000")
     if output.exists():
         raise FileExistsError(output)
+    if native_gb_input and (not require_snes_only_probe or boot_timeline_output is None or
+                            input_script is None or input_offset != 0 or input_offset_changes):
+        raise ValueError("native GB input requires a script and SNES-only boot probe, without frame offsets")
     if timeline_output is not None and timeline_output.exists():
         raise FileExistsError(timeline_output)
     if native_dsp_output is not None and native_dsp_output.exists():
@@ -299,8 +325,8 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
         boot_symbols = ("gbb_reference_sgb_boot_version", "gbb_reference_sgb_boot_enable",
                         "gbb_reference_sgb_boot_count", "gbb_reference_sgb_boot_copy", "gbb_reference_sgb_boot_input")
         if boot_timeline_output is not None and (any(not hasattr(core, name) for name in boot_symbols) or
-                                                core.gbb_reference_sgb_boot_version() != 1):
-            raise RuntimeError("reference lacks the version-1 boot timeline probe")
+                                                core.gbb_reference_sgb_boot_version() not in (1, 2)):
+            raise RuntimeError("reference lacks a supported boot timeline probe (version 1 or 2)")
         if hasattr(core, "gbb_reference_sgb_boot_enable"):
             core.gbb_reference_sgb_boot_enable.argtypes = [C.c_uint]
             core.gbb_reference_sgb_boot_enable.restype = C.c_uint
@@ -312,6 +338,7 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
             core.gbb_reference_sgb_boot_count.restype = C.c_uint
             core.gbb_reference_sgb_boot_copy.argtypes = [C.c_uint, C.POINTER(C.c_uint64)]
             core.gbb_reference_sgb_boot_copy.restype = C.c_uint
+    configure_frame_input(core, events, native_gb_input)
     required = ("retro_api_version", "retro_set_environment", "retro_set_video_refresh",
                 "retro_set_audio_sample", "retro_set_audio_sample_batch",
                 "retro_set_input_poll", "retro_set_input_state", "retro_init",
@@ -472,8 +499,8 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
             sample_rate = round(av.timing.sample_rate)
             if sample_rate <= 0 or abs(av.timing.sample_rate - sample_rate) > 0.01:
                 raise RuntimeError("core returned an invalid audio rate")
-            scheduled = schedule_input(events, av.timing.fps, input_offset,
-                                       input_offset_changes)
+            scheduled = [] if native_gb_input else schedule_input(events, av.timing.fps, input_offset,
+                                                                  input_offset_changes)
             next_event = 0
             next_sound_event = 0
             next_trace_event = 0
@@ -545,9 +572,11 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                     next_trace_event = trace_count
                 if timeline_output is not None:
                     run_samples.append([sample_start, len(audio) // 4])
-            if events and next_event == 0:
+            if native_gb_input and core.gbb_reference_sgb_frame_input_applied() != len(events):
+                raise RuntimeError("native GB input replay ended before all scripted events were applied")
+            if events and not native_gb_input and next_event == 0:
                 raise RuntimeError("capture ended before the first scripted input event")
-            if events and (input_queries == 0 or pressed_queries == 0):
+            if events and not native_gb_input and (input_queries == 0 or pressed_queries == 0):
                 raise RuntimeError("reference core did not poll scripted controller presses")
             if not video_frames:
                 raise RuntimeError("core produced no video frames; content may not be running")
@@ -621,6 +650,8 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                             "video_callbacks": frame_callbacks,
                             "snapshot_sha256": snapshot_hashes,
                             "scheduled_input": scheduled,
+                            "input_mode": "gb-lcd-frame-held-v1" if native_gb_input else "legacy-libretro-run-v1",
+                            "native_gb_input_events": [(f, native_button_mask(m)) for f, m in events] if native_gb_input else [],
                             "audio_source": "snes-only" if require_snes_only_probe
                             else "mixed",
                             "sgb_sound_events": sound_events}
@@ -648,7 +679,7 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                 boot_events = []
                 for index in range(count):
                     entry = (C.c_uint64 * 7)()
-                    if core.gbb_reference_sgb_boot_copy(index, entry) != 1 or entry[0] not in map(ord, "CBUSEPTAIN") or entry[6] != 0:
+                    if core.gbb_reference_sgb_boot_copy(index, entry) != 1 or entry[0] not in map(ord, "CBUSEPTAINR") or entry[6] != 0:
                         raise RuntimeError("reference boot timeline lost or corrupted an event")
                     boot_events.append(dict(zip(
                         ("kind", "master_clock_snapshot", "spc_half_clock_snapshot", "value", "count", "digest_fnv64"),
@@ -662,6 +693,7 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                                "master_hz": int(frequencies[0]), "apu_half_hz": int(frequencies[1]),
                                "reference_options": configured_options,
                                "core_sha256": hashlib.sha256(core_path.read_bytes()).hexdigest(),
+                               "input_mode": "gb-lcd-frame-held-v1" if native_gb_input else "legacy-libretro-run-v1",
                                "events": boot_events}, boot_file, indent=2)
                     boot_file.write("\n")
             if apu_bus_output is not None:
@@ -694,12 +726,13 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                                "events": bus_events}, bus_file, separators=(",", ":"))
                     bus_file.write("\n")
             if events:
-                print(f"Applied {next_event}/{len(events)} scripted input events; "
+                applied = core.gbb_reference_sgb_frame_input_applied() if native_gb_input else next_event
+                print(f"Applied {applied}/{len(events)} scripted input events; "
                       f"core queried {input_queries} joypad states "
                       f"({pressed_queries} pressed results); "
                       f"video rate {av.timing.fps:.6f} Hz, "
                       f"GB-to-reference frame offset {input_offset}, "
-                      f"changes {input_offset_changes or []}")
+                      f"changes {input_offset_changes or []}; native GB input {native_gb_input}")
             if require_snes_only_probe:
                 print(f"SNES-only reference: {len(sound_events)} host-consumed SOUND packets")
             if snapshot_output is not None or snapshot_series is not None:
@@ -750,6 +783,8 @@ def main() -> None:
                         help="bounded pre-command bus history in native half clocks (local probe required)")
     parser.add_argument("--boot-timeline-output", type=Path,
                         help="bounded boot/control/upload timeline (additional local probe required)")
+    parser.add_argument("--native-gb-input", action="store_true",
+                        help="hold scripted player-1 input at observed GB LCD frames; forbids frame offsets")
     parser.add_argument("--require-snes-only-probe", action="store_true",
                         help="require the local instrumented core; log host-consumed SOUND packets")
     parser.add_argument("--native-dsp-output", type=Path,
@@ -776,7 +811,7 @@ def main() -> None:
                               args.native_dsp_output, args.apu_ram_output, args.apu_bus_output,
                               args.native_cycle_checkpoints, args.timer_poll_trace, args.reference_entropy,
                               tuple(args.apu_history_window_half) if args.apu_history_window_half else None,
-                              args.boot_timeline_output)
+                              args.boot_timeline_output, args.native_gb_input)
     except (OSError, RuntimeError, ValueError) as error:
         parser.error(str(error))
     print(f"Captured {count} stereo frames at {rate} Hz to {args.output}")

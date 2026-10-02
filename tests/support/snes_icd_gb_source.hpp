@@ -1,4 +1,5 @@
 #pragma once
+#include "sgb_frame_input.hpp"
 
 #include "snes_65c816_trace_cpu.hpp"
 
@@ -31,6 +32,8 @@ constexpr std::uint64_t sgb_icd_target_gb_cycles(
 // model. Unknown row-buffer data deliberately fails closed.
 class SnesIcdGbSource final : public SnesIcdTraceSource {
 public:
+    void set_native_gb_input(bool enabled) noexcept { native_gb_input_ = enabled; }
+    [[nodiscard]] std::uint8_t diagnostic_joypad_read() noexcept { return gb_->bus().read8(0xff00); }
     using BootObserver = void (*)(void*, char, std::uint64_t, std::uint32_t, std::uint64_t) noexcept;
     void set_boot_observer(BootObserver observer, void* context = nullptr) noexcept {
         boot_observer_ = observer;
@@ -132,6 +135,9 @@ private:
     std::vector<InputEvent> input_events_;
     std::size_t next_input_event_{};
     std::uint8_t held_buttons_{};
+    FrameInput frame_input_;
+    void set_input_buttons(std::uint8_t mask) noexcept;
+    bool native_gb_input_{};
     std::uint64_t transfer_commands_{};
     std::uint16_t missing_address_{};
     std::uint64_t control_writes_{};

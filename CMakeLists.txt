@@ -1209,6 +1209,10 @@ if(GAMEBOY_BUILD_TESTS)
         tests/support/snes_icd_gb_source.cpp)
     target_include_directories(gameboy_snes_icd_gb_title_probe PRIVATE tests/support scripts)
     target_link_libraries(gameboy_snes_icd_gb_title_probe PRIVATE gameboy_core)
+    add_executable(gameboy_sgb_frame_input_source_probe
+        tests/sgb_frame_input_source_tests.cpp tests/support/snes_icd_gb_source.cpp)
+    target_include_directories(gameboy_sgb_frame_input_source_probe PRIVATE tests/support scripts)
+    target_link_libraries(gameboy_sgb_frame_input_source_probe PRIVATE gameboy_core)
     add_executable(gameboy_snes_65c816_trace_tests
         tests/snes_65c816_trace_tests.cpp
         tests/support/snes_65c816_trace_cpu.cpp)
@@ -1359,6 +1363,15 @@ if(GAMEBOY_BUILD_TESTS)
                                  ${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.boot.rom
                                  ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/sgb/titles/donkey-kong-gameplay.script
                                  --fractional-apu-sync)
+                add_test(NAME gameboy_sgb_local_native_frame_replay
+                         COMMAND ${Python3_EXECUTABLE}
+                                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_native_frame_replay_local_tests.py
+                                 $<TARGET_FILE:gameboy_snes_65c816_apu_trace>
+                                 ${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.program.rom
+                                 ${CMAKE_CURRENT_SOURCE_DIR}/roms/spc700.rom
+                                 "${CMAKE_CURRENT_SOURCE_DIR}/roms/Donkey Kong (JU) (V1.1) [S][!].gb"
+                                 ${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.boot.rom
+                                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/sgb/titles/donkey-kong-gameplay.script)
             endif()
         endif()
     endif()
@@ -1456,6 +1469,11 @@ if(GAMEBOY_BUILD_TESTS)
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_boot_timeline_tests.py
                          ${CMAKE_CXX_COMPILER})
+        add_test(NAME gameboy_sgb_frame_input
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_frame_input_tests.py
+                         ${CMAKE_CXX_COMPILER}
+                         $<TARGET_FILE:gameboy_sgb_frame_input_source_probe>)
         add_test(NAME gameboy_snes_spc_timer_phase
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/snes_spc_timer_phase_tests.py

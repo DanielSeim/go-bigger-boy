@@ -33,12 +33,17 @@ void SnesIcdGbSource::load_input_script(const std::filesystem::path& path) {
                             error, sizeof(error)))
         throw std::runtime_error(std::string{"input script: "} + error);
     input_events_.clear();
+    frame_input_.clear();
     input_events_.reserve(script.count);
-    for (std::size_t index = 0; index < script.count; ++index)
+    for (std::size_t index = 0; index < script.count; ++index) {
         input_events_.push_back({script.events[index].frame,
                                  script.events[index].mask});
+        if (!frame_input_.add(script.events[index].frame, script.events[index].mask))
+            throw std::runtime_error("invalid native GB input event");
+    }
     next_input_event_ = 0;
     held_buttons_ = 0;
+    if (native_gb_input_) set_input_buttons(0);
     apply_input(0);
 }
 
@@ -47,6 +52,13 @@ void SnesIcdGbSource::apply_input(const std::uint64_t frame) noexcept {
         input_events_[next_input_event_].frame != frame)
         return;
     const auto next = input_events_[next_input_event_++].mask;
+    if (native_gb_input_) frame_input_.advance(frame);
+    set_input_buttons(next);
+    ++input_events_applied_;
+    if (boot_observer_) boot_observer_(boot_observer_context_, 'N', master_snapshot_, next, frame);
+}
+
+void SnesIcdGbSource::set_input_buttons(const std::uint8_t next) noexcept {
     constexpr gameboy::Button buttons[] = {
         gameboy::Button::right, gameboy::Button::left,
         gameboy::Button::up, gameboy::Button::down,
@@ -54,12 +66,10 @@ void SnesIcdGbSource::apply_input(const std::uint64_t frame) noexcept {
         gameboy::Button::select, gameboy::Button::start};
     for (unsigned bit = 0; bit < 8; ++bit) {
         const auto flag = static_cast<std::uint8_t>(1U << bit);
-        if ((held_buttons_ & flag) != (next & flag))
+        if (native_gb_input_ || (held_buttons_ & flag) != (next & flag))
             gb_->set_button(buttons[bit], (next & flag) != 0);
     }
     held_buttons_ = next;
-    ++input_events_applied_;
-    if (boot_observer_) boot_observer_(boot_observer_context_, 'N', master_snapshot_, next, frame);
 }
 
 void SnesIcdGbSource::complete_packet() noexcept {
@@ -255,6 +265,8 @@ bool SnesIcdGbSource::write(const std::uint16_t address,
             completed_frames_ = 0;
             next_input_event_ = 0;
             held_buttons_ = 0;
+            frame_input_.reset();
+            if (native_gb_input_) set_input_buttons(0);
             apply_input(0);
             last_ly_ = gb_->bus().read8(0xFF44);
             row_valid_.fill(false);
@@ -281,6 +293,7 @@ bool SnesIcdGbSource::write(const std::uint16_t address,
         return true;
     }
     if (address >= 0x6004 && address <= 0x6007) {
+        const auto controller = frame_input_.controller(address - 0x6004, value, native_gb_input_);
         constexpr gameboy::Button buttons[] = {
             gameboy::Button::right, gameboy::Button::left,
             gameboy::Button::up, gameboy::Button::down,
@@ -288,7 +301,7 @@ bool SnesIcdGbSource::write(const std::uint16_t address,
             gameboy::Button::select, gameboy::Button::start};
         for (unsigned bit = 0; bit < 8; ++bit)
             gb_->set_player_button(static_cast<std::uint8_t>(address - 0x6004),
-                                   buttons[bit], (value & (1U << bit)) == 0);
+                                   buttons[bit], (controller & (1U << bit)) == 0);
         return true;
     }
     missing_address_ = address;

@@ -84,6 +84,7 @@ int main(int argc, char** argv) {
     bool cycle_apu_sync = false;
     bool fractional_apu_sync = false;
     bool timer_poll_trace = false;
+    bool native_gb_input = false;
     std::array<std::uint64_t, 2> history_window{};
     std::filesystem::path apu_bus_output_path;
     std::filesystem::path boot_timeline_path;
@@ -117,6 +118,8 @@ int main(int argc, char** argv) {
                 boot_timeline_path = argv[++index];
             } else if (option == "--timer-poll-trace" && !timer_poll_trace) {
                 timer_poll_trace = true;
+            } else if (option == "--native-gb-input" && !native_gb_input) {
+                native_gb_input = true;
             } else if (option == "--apu-history-window-half" && history_window[1] == 0 && index + 2 < argc) {
                 for (auto& value : history_window) {
                     const std::string_view number(argv[++index]);
@@ -212,6 +215,7 @@ int main(int argc, char** argv) {
             gameboy::SnesSpc700* spc;
             bool enabled{}, overflow{}, command_seen{};
             bool ipl_a{}, ipl_ready{};
+            unsigned host_ipl_reads{};
             void record(char kind, std::uint64_t master, std::uint64_t value,
                         std::uint64_t count = 0, std::uint64_t digest = 0) noexcept {
                 if (!enabled) return;
@@ -226,6 +230,7 @@ int main(int argc, char** argv) {
                 ? gameboy::HardwareModel::sgb2 : gameboy::HardwareModel::sgb;
             icd = std::make_unique<sgb_test::SnesIcdGbSource>(
                 argv[4], argv[5], model);
+            icd->set_native_gb_input(native_gb_input);
             icd->set_audible_sound_substitution(audible_sound_probe);
             if (boot_timeline.enabled) icd->set_boot_observer(
                 [](void* context, char kind, std::uint64_t master, std::uint32_t value, std::uint64_t count) noexcept {
@@ -269,6 +274,8 @@ int main(int argc, char** argv) {
         std::vector<ApuBusEvent> apu_trace;
         if (!boot_timeline_path.empty() && (!fractional_apu_sync || apu_bus_output_path.empty()))
             throw std::runtime_error("boot timeline requires fractional APU synchronization and APU bus output");
+        if (native_gb_input && input_script_path.empty())
+            throw std::runtime_error("native GB input requires an input script");
         if (!boot_timeline_path.empty() && std::filesystem::exists(boot_timeline_path))
             throw std::runtime_error("boot timeline already exists");
         if (!boot_timeline_path.empty() && (boot_timeline_path == apu_bus_output_path ||
@@ -339,6 +346,16 @@ int main(int argc, char** argv) {
             sgb_test::Snes65c816TraceCpu::SpcStepObserver advance{};
             void record_bus(char kind, std::uint64_t half_clock,
                             std::uint16_t address, std::uint8_t value) noexcept {
+                if (boot_timeline && kind == 'h' &&
+                    ((address == 0x2140 && value == 0xaa) || (address == 0x2141 && value == 0xbb))) {
+                    const unsigned flag = 1U << (address - 0x2140);
+                    if (!(boot_timeline->host_ipl_reads & flag)) {
+                        boot_timeline->host_ipl_reads |= flag;
+                        const auto& r = cpu->registers();
+                        boot_timeline->record('R', cpu->timing().clocks(), (unsigned(address) << 8) | value,
+                                              (unsigned(r.pb) << 16) | r.pc);
+                    }
+                }
                 if (boot_timeline && !boot_timeline->command_seen && kind == 'H' && address == 0x2140 &&
                     value == 1 && icd && icd->audible_sound_packets_delivered() != 0) {
                     boot_timeline->record('P', cpu->timing().clocks(), value);
@@ -1068,7 +1085,8 @@ int main(int argc, char** argv) {
             std::ofstream output(boot_timeline_path);
             if (!output) throw std::runtime_error("could not create boot timeline");
             output << "{\"format\":\"gbb-sgb-boot-timeline-v1\",\"source\":\"gbb\","
-                "\"master_hz\":21477273,\"apu_half_hz\":2048000,\"events\":[";
+                "\"master_hz\":21477273,\"apu_half_hz\":2048000,\"input_mode\":\""
+                << (native_gb_input ? "gb-lcd-frame-held-v1" : "legacy-direct-gb-v1") << "\",\"events\":[";
             for (std::size_t index = 0; index < boot_timeline.events.size(); ++index) {
                 const auto& e = boot_timeline.events[index];
                 if (index) output << ',';

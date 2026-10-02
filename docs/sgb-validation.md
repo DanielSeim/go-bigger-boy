@@ -1243,7 +1243,8 @@ accept `--boot-timeline-output FILE.json`. GBB requires
 `--fractional-apu-sync --apu-bus-output FILE.json`; the reference requires
 `--require-snes-only-probe --apu-bus-output FILE.json` and the incremental
 `scripts/patches/bsnes-05439f9-sgb-boot-timeline.patch`, applied after the
-phase-origin patch. The boot ABI is version 1, separate from the APU bus ABI.
+phase-origin patch. The boot ABI is separate from the APU bus ABI (version 1
+in that patch; version 2 with the frame-input patch below).
 Capture is opt-in, limited to 128 events and fails on overflow. Existing
 output files are refused. No firmware bytes are exported: upload blocks
 carry only destination, length and FNV-64 fingerprint.
@@ -1254,6 +1255,7 @@ hardware timestamps:
 | Kind | Observation |
 | --- | --- |
 | `I` | Initial SPC IPL `$aa/$bb` ready signature |
+| `R` | First host reads of those ready bytes; `count` is the observed SNES PC (boot ABI 2) |
 | `A` | Host requests the first IPL upload with `$cc` |
 | `U` | Host finishes an initial upload block |
 | `E` | Host requests the uploaded SPC entry point, not its execution |
@@ -1308,9 +1310,8 @@ Start/A events occur about 3.04/2.93 seconds earlier in master time than
 GBB's events, while the recorded LCD frame histories also differ. The later
 music gap therefore cannot be attributed solely to an APU scheduling defect.
 The ROM-free reporter tests reproduce and reject this input-provenance
-mismatch. The next prerequisite is an independently checked, equivalent
-input-delivery path, including whether SNES controller writes overwrite
-direct scripted GB states. Do not reset driver phase, fit a title-specific
+mismatch. The frame-held mode below addresses that prerequisite and
+reproduces the controller-overwrite defect. Do not reset driver phase, fit a title-specific
 delay, or change production scheduling to compensate for this replay.
 
 The optional local fractional-title test checks the boot landmarks and
@@ -1319,6 +1320,98 @@ GBB's `ed07e3f0…f89d8d10` and the constant-state reference's
 `69a0a7de…13677` native WAV baselines byte-for-byte. This investigation does
 not resolve the remaining four visual mismatches or establish hardware
 audio accuracy.
+
+### Offset-free, frame-held diagnostic input
+
+The GBB ICD harness's legacy direct script state could be overwritten by
+host writes to `$6004` between a script's press and release events. A new
+original ROM-free integration test reproduces that through the **actual ICD
+source**, using an original 256-byte boot program and original dummy
+cartridge. It checks held Start, release, held A, unrelated player writes,
+and restart/frame-zero input. The legacy path reproduces the overwrite;
+the new path keeps the scripted state until its release event. It also
+clears stale GB button state on restart, rather than allowing a previously
+held A button to combine with the next epoch's frame-zero Start event.
+
+Use `--native-gb-input` on **both** diagnostic tools. The shared original
+`tests/support/sgb_frame_input.hpp` policy makes script state authoritative
+for player 1, leaves other players alone, rejects invalid/oversized event
+queues, and resets held state and cursor at each GB restart. The reference
+uses the same header in
+`scripts/patches/bsnes-05439f9-sgb-frame-input.patch`, applied after the
+boot-timeline patch. Its independent frame-input ABI is version 1; its boot
+ABI is version 2 to expose the additional ready-read landmarks.
+
+Reference inputs advance when LY transitions to 144 with LCD enabled,
+observed after a GB instruction, matching the GBB completed-LCD-frame
+boundary. The previous normal-vblank callback counter is not used for
+native input scheduling. This is a direct, diagnostic GB input override,
+not a claim to reproduce SNES controller-poll latency. Packet decoding and
+the firmware remain unchanged. The reference bypasses libretro controller
+presses in this mode, so zero pressed results from host polls are expected.
+It fails if the capture ends before every event in the final GB epoch was
+applied, rejects all estimated frame-offset options, and clears native mode
+when a later capture selects legacy input.
+
+Both boot timelines mark `input_mode: gb-lcd-frame-held-v1`. The comparison
+tool refuses to accept legacy or unmarked modes as equivalent even if their
+frame numbers happen to agree. Legacy modes remain available explicitly
+through omission of this opt-in flag, preserving the existing historical
+PCM contracts; do not use them for new timing conclusions.
+
+```sh
+build-release/gameboy_snes_65c816_apu_trace \
+  roms/sgb2.program.rom roms/spc700.rom --sync-gb-sgb2 \
+  'roms/Donkey Kong (JU) (V1.1) [S][!].gb' roms/sgb2.boot.rom \
+  --input-script tests/fixtures/sgb/titles/donkey-kong-gameplay.script \
+  --native-gb-input --instruction-limit 60000000 --fractional-apu-sync \
+  --timer-poll-trace --apu-bus-output gbb-bus.json \
+  --boot-timeline-output gbb-boot.json --pcm-output gbb.wav
+# Exit 4 is the intentional instruction bound, not an unsupported opcode.
+
+python3 scripts/capture_sgb_libretro_audio.py --core /path/to/local/core.so \
+  --game 'roms/Donkey Kong (JU) (V1.1) [S][!].gb' \
+  --sgb-rom roms/sgb2.program.rom --system-dir roms \
+  --input-script tests/fixtures/sgb/titles/donkey-kong-gameplay.script \
+  --native-gb-input --frames 6000 --reference-entropy None \
+  --native-cycle-checkpoints --timer-poll-trace --require-snes-only-probe \
+  --apu-bus-output reference-bus.json --boot-timeline-output reference-boot.json \
+  --timeline-output reference-timeline.json --output reference.wav \
+  --native-dsp-output reference-native.wav
+```
+
+The local offset-free Donkey Kong replay matches all **11 frame/mask input
+events**, all five upload fingerprints and all three SOUND parameter sets.
+The first music-command difference is now about **+135.892 ms** (reference
+minus GBB), rather than the legacy **−2.926 s** difference. Input markers
+have a nearly constant +144.3 ms startup offset. Pre-command phase-write
+counts are now 23,419 versus 23,479, rather than 23,419 versus 21,948. The
+first transient differing phase value remains ordinal 897; this replay fix
+does not establish a timer/DSP correction.
+
+Two complete constant-state reference runs have identical APU bus events
+and native WAV SHA-256 `df60299d…899c0d7`; adding the ready-read probes does
+not change that PCM. The optional new 60-million-instruction GBB replay
+contract checks all input events and native WAV SHA-256
+`c3890ffb…336156f`. These are separate-source baselines, not matching PCM
+claims: clocks and capture durations differ.
+
+The ready-read probe narrows the unresolved initial upload gap:
+
+| Host landmark | GBB master snapshot | Reference master snapshot | Observed PC |
+| --- | ---: | ---: | --- |
+| Read `$2140=$aa` | 696,664 | 696,726 | `$008311` |
+| Read `$2141=$bb` | 696,694 | 696,756 | `$008314` |
+| Request first upload | 1,297,958 | 2,135,016 | not recorded |
+
+Ready reads agree to 62 master clocks at the same PCs. Almost all of the
+roughly 39 ms gap develops **after the host recognizes IPL readiness and
+before it requests the upload**, rather than in SPC IPL initialization.
+Further work should compare the SNES host's upload-preparation instruction,
+DMA and beam-wait path in that interval. No production clock adjustment or
+title-specific delay has been added. The remaining startup/phase differences
+and four visual mismatches are still open; no hardware audio-accuracy claim
+is implied. Firmware, private captures and reference cores remain local.
 
 A new fully synthetic SNES program waits, writes a host command to the APU,
 and runs concurrently with an original SPC700 test program. The test stamps

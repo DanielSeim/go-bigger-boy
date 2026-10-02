@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import sys
 
-KINDS = "IC AUE TBS PN".replace(" ", "")
+KINDS = "IC RAUE TBS PN".replace(" ", "")
 FIELDS = ("master_clock_snapshot", "spc_half_clock_snapshot", "value", "count", "digest_fnv64")
 
 
@@ -48,11 +48,14 @@ def compare(gbb, reference):
     common = min(map(len, inputs))
     first = next((i for i in range(common) if inputs[0][i] != inputs[1][i]), None)
     sounds = [[e["value"] for e in rows if e["kind"] == "S"] for rows in (left, right)]
-    eligible = (common > 0 and first is None and len(inputs[0]) == len(inputs[1]) and
+    modes = [data.get("input_mode", "unspecified-legacy") for data in (gbb, reference)]
+    eligible = (modes == ["gb-lcd-frame-held-v1"] * 2 and
+                common > 0 and first is None and len(inputs[0]) == len(inputs[1]) and
                 bool(uploads[0]) and uploads[0] == uploads[1] and
                 bool(sounds[0]) and sounds[0] == sounds[1])
     return {"format": "gbb-sgb-boot-comparison-v1",
             "input_and_upload_preconditions_met": eligible,
+            "input_modes": modes,
             "upload_fingerprints_match": bool(uploads[0]) and uploads[0] == uploads[1],
             "upload_counts": list(map(len, uploads)), "sound_parameters_match": sounds[0] == sounds[1],
             "input_counts": list(map(len, inputs)), "compared_input_prefix_length": common,

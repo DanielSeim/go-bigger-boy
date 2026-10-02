@@ -18,6 +18,7 @@ def capture(source):
     rows = [("I", 0xaabb, 0, 0), ("U", 0x400, 20, 123),
             ("N", 128, 1000, 0), ("S", 0x1000000, 0, 0)]
     return {"format": "gbb-sgb-boot-timeline-v1", "source": source,
+            "input_mode": "gb-lcd-frame-held-v1",
             "master_hz": 20, "apu_half_hz": 2,
             "events": [dict(kind=k, master_clock_snapshot=100 + i * 20,
                             spc_half_clock_snapshot=i * 2, value=v, count=c,
@@ -27,6 +28,12 @@ def capture(source):
 class Contracts(unittest.TestCase):
     def test_matching_preconditions(self):
         self.assertTrue(compare(capture("gbb"), capture("reference"))["input_and_upload_preconditions_met"])
+
+    def test_legacy_or_unmarked_inputs_are_not_accepted(self):
+        for mode in ("legacy-libretro-run-v1", None):
+            r = capture("reference")
+            r["input_mode"] = mode
+            self.assertFalse(compare(capture("gbb"), r)["input_and_upload_preconditions_met"])
 
     def test_input_mismatch_is_not_hidden_by_alignment(self):
         r = capture("reference")

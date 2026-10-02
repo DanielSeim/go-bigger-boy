@@ -1,0 +1,153 @@
+diff --git a/bsnes/sfc/dsp/dsp.cpp b/bsnes/sfc/dsp/dsp.cpp
+--- a/bsnes/sfc/dsp/dsp.cpp
++++ b/bsnes/sfc/dsp/dsp.cpp
+@@ -48,6 +48,14 @@
+   return 1;
+ }
+ extern "C" void gbb_reference_sgb_record_apu_bus(unsigned kind, unsigned address, unsigned value) {
++  if(diagnosticBootEnabled && kind == 'h' &&
++     ((address == 0x2140 && value == 0xaa) || (address == 0x2141 && value == 0xbb))) {
++    const unsigned flag = 1u << (address - 0x2140);
++    if(!(diagnosticHostIplReads & flag)) {
++      diagnosticHostIplReads |= flag;
++      gbb_reference_sgb_record_boot('R', cpu.diagnosticMasterClocks(), address << 8 | value, cpu.r.pc.d, 0);
++    }
++  }
+   if(kind == 'H') diagnosticBootHost(address, value);
+   if(diagnosticBootEnabled && !diagnosticBootIplReady && kind == 'W') {
+     if(address == 0xf4 && value == 0xaa) diagnosticBootIplA = true;
+diff --git a/bsnes/sfc/dsp/gbb_boot_probe.hpp b/bsnes/sfc/dsp/gbb_boot_probe.hpp
+--- a/bsnes/sfc/dsp/gbb_boot_probe.hpp
++++ b/bsnes/sfc/dsp/gbb_boot_probe.hpp
+@@ -8,10 +8,12 @@
+ static uint8 diagnosticBootPorts[4] = {}, diagnosticBootIndex = 0;
+ static unsigned diagnosticBootDestination = 0, diagnosticBootLength = 0;
+ static uint64 diagnosticBootDigest = 14695981039346656037ull;
+-extern "C" unsigned gbb_reference_sgb_boot_version() { return 1; }
++static unsigned diagnosticHostIplReads = 0;
++extern "C" unsigned gbb_reference_sgb_boot_version() { return 2; }
+ extern "C" unsigned gbb_reference_sgb_boot_enable(unsigned enabled) {
+   diagnosticBootEnabled = enabled != 0;
+   diagnosticBootEvents.clear();
++  diagnosticHostIplReads = 0;
+   diagnosticBootEvents.reserve(128);
+   diagnosticBootOverflow = diagnosticBootEntry = diagnosticBootTransfer = false;
+   diagnosticBootAudible = diagnosticBootCommand = false;
+diff --git a/bsnes/sfc/coprocessor/icd/icd.cpp b/bsnes/sfc/coprocessor/icd/icd.cpp
+--- a/bsnes/sfc/coprocessor/icd/icd.cpp
++++ b/bsnes/sfc/coprocessor/icd/icd.cpp
+@@ -1,5 +1,6 @@
+ #include <sfc/sfc.hpp>
+ 
++#include "gbb_frame_input.hpp"
+ namespace SuperFamicom {
+ 
+ ICD icd;
+@@ -7,6 +8,14 @@
+ static uint64 diagnosticGbBootCycles = 0;
+ static uint64 diagnosticGbFrames = 0;
+ static bool diagnosticGbBootReported = false;
++static sgb_test::FrameInput diagnosticFrameInput;
++static bool diagnosticNativeInput = false;
++static uint64 diagnosticLcdFrames = 0;
++static unsigned diagnosticLastLy = 0;
++static void diagnosticApplyFrameInput(uint64 frame) {
++  if(diagnosticNativeInput && diagnosticFrameInput.advance(frame))
++    gbb_reference_sgb_record_boot('N', cpu.diagnosticMasterClocks(), diagnosticFrameInput.held(), frame, 0);
++}
+ #include "interface.cpp"
+ #include "io.cpp"
+ #include "boot-roms.cpp"
+@@ -68,6 +77,12 @@
+ auto ICD::main() -> void {
+   if(r6003 & 0x80) {
+     auto clocks = GB_run(&sameboy);
++    const unsigned ly = sameboy.io_registers[GB_IO_LY];
++    if(ly == 144 && diagnosticLastLy != 144 && (sameboy.io_registers[GB_IO_LCDC] & 0x80)) {
++      ++diagnosticLcdFrames;
++      diagnosticApplyFrameInput(diagnosticLcdFrames);
++    }
++    diagnosticLastLy = ly;
+     diagnosticGbBootCycles += clocks >> 1;
+     if(!diagnosticGbBootReported && sameboy.boot_rom_finished) {
+       diagnosticGbBootReported = true;
+@@ -159,6 +174,9 @@
+   diagnosticGbBootCycles = 0;
+   diagnosticGbFrames = 0;
+   diagnosticGbBootReported = false;
++  diagnosticLcdFrames = diagnosticLastLy = 0;
++  diagnosticFrameInput.reset();
++  diagnosticApplyFrameInput(0);
+   auto frequency = clockFrequency() / 5;
+   create(ICD::Enter, frequency);
+   if(!reset) stream = Emulator::audio.createStream(2, frequency / 128);
+@@ -197,6 +215,17 @@
+ }
+ 
+ extern "C" unsigned gbb_reference_sgb_probe_version() { return 7; }
++extern "C" unsigned gbb_reference_sgb_frame_input_version() { return 1; }
++extern "C" unsigned gbb_reference_sgb_frame_input_enable(unsigned enabled) {
++  if(enabled > 1) return 0;
++  diagnosticNativeInput = enabled != 0;
++  diagnosticFrameInput.clear();
++  return 1;
++}
++extern "C" unsigned gbb_reference_sgb_frame_input_add(uint64 frame, unsigned mask) {
++  return diagnosticNativeInput && diagnosticFrameInput.add(frame, mask);
++}
++extern "C" unsigned gbb_reference_sgb_frame_input_applied() { return diagnosticFrameInput.applied(); }
+ extern "C" unsigned gbb_reference_sgb_boot_input(unsigned mask) {
+   if(mask > 255) return 0;
+   gbb_reference_sgb_record_boot('N', cpu.diagnosticMasterClocks(), mask, diagnosticGbFrames, 0);
+diff --git a/bsnes/sfc/coprocessor/icd/interface.cpp b/bsnes/sfc/coprocessor/icd/interface.cpp
+--- a/bsnes/sfc/coprocessor/icd/interface.cpp
++++ b/bsnes/sfc/coprocessor/icd/interface.cpp
+@@ -43,6 +43,7 @@
+   if(joypID == 1) joypad = r6005;
+   if(joypID == 2) joypad = r6006;
+   if(joypID == 3) joypad = r6007;
++  joypad = diagnosticFrameInput.controller(joypID, joypad, diagnosticNativeInput);
+ 
+   uint4 input = 0xf;
+   if(p14 == 1 && p15 == 1) input = 0xf - joypID;
+diff --git a/bsnes/sfc/coprocessor/icd/gbb_frame_input.hpp b/bsnes/sfc/coprocessor/icd/gbb_frame_input.hpp
+new file mode 100644
+--- /dev/null
++++ b/bsnes/sfc/coprocessor/icd/gbb_frame_input.hpp
+@@ -0,0 +1,36 @@
++#pragma once
++
++#include <array>
++#include <cstddef>
++#include <cstdint>
++
++// Original diagnostic input policy. Not a production controller backend.
++namespace sgb_test {
++class FrameInput {
++public:
++    bool add(std::uint64_t frame, unsigned mask) noexcept {
++        if (size_ == events_.size() || frame > 100000 || mask > 255 ||
++            (size_ && frame <= events_[size_ - 1].frame)) return false;
++        events_[size_++] = {frame, static_cast<std::uint8_t>(mask)};
++        return true;
++    }
++    void clear() noexcept { size_ = 0; reset(); }
++    void reset() noexcept { next_ = 0; held_ = 0; }
++    bool advance(std::uint64_t frame) noexcept {
++        if (next_ == size_ || events_[next_].frame != frame) return false;
++        held_ = events_[next_++].mask;
++        return true;
++    }
++    std::uint8_t held() const noexcept { return held_; }
++    std::size_t applied() const noexcept { return next_; }
++    std::size_t size() const noexcept { return size_; }
++    std::uint8_t controller(unsigned player, std::uint8_t host, bool enabled) const noexcept {
++        return enabled && player == 0 ? static_cast<std::uint8_t>(~held_) : host;
++    }
++private:
++    struct Event { std::uint64_t frame; std::uint8_t mask; };
++    std::array<Event, 1024> events_{};
++    std::size_t size_{}, next_{};
++    std::uint8_t held_{};
++};
++} // namespace sgb_test
