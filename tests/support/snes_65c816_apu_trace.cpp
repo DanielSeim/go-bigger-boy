@@ -2,6 +2,7 @@
 #include "snes_icd_gb_source.hpp"
 #include "snes_dsp_pcm_renderer.hpp"
 #include "snes_dsp_clock.hpp"
+#include "gameboy/snes_apu_audio_engine.hpp"
 #include "gameboy/snes_spc700.hpp"
 
 #include <array>
@@ -84,6 +85,9 @@ int main(int argc, char** argv) {
     bool shared_bus_dsp = false;
     bool cycle_apu_sync = false;
     bool fractional_apu_sync = false;
+    bool core_apu_engine = false;
+    bool core_apu_state_roundtrip = false;
+    bool allow_unanchored_pcm = false;
     bool ppu_dma_timing = false;
     unsigned apu_clock_hz = 1024000;
     bool apu_clock_set = false;
@@ -104,6 +108,14 @@ int main(int argc, char** argv) {
             const std::string_view option(argv[index]);
             if (option == "--audible-sound-probe" && !audible_sound_probe) {
                 audible_sound_probe = true;
+            } else if (option == "--core-apu-engine" && !core_apu_engine) {
+                core_apu_engine = true;
+                fractional_apu_sync = cycle_apu_sync = shared_bus_dsp = cycle_bus_dsp =
+                    bus_clocked_dsp = clocked_dsp = true;
+            } else if (option == "--allow-unanchored-pcm" && !allow_unanchored_pcm) {
+                allow_unanchored_pcm = true;
+            } else if (option == "--core-apu-state-roundtrip" && !core_apu_state_roundtrip) {
+                core_apu_state_roundtrip = true;
             } else if (option == "--clocked-dsp" && !clocked_dsp) {
                 clocked_dsp = true;
             } else if (option == "--bus-clocked-dsp" && !bus_clocked_dsp) {
@@ -185,6 +197,16 @@ int main(int argc, char** argv) {
         std::cerr << "APU clock profile requires cycle or fractional APU synchronization\n";
         return 2;
     }
+    if (core_apu_engine && (timer_poll_trace || history_window[1] ||
+        !apu_bus_output_path.empty() || !boot_timeline_path.empty() ||
+        !sound_event_trace_path.empty() || !host_startup_path.empty())) {
+        std::cerr << "core APU engine mode currently exports PCM/RAM only, not legacy observer traces\n";
+        return 2;
+    }
+    if (core_apu_state_roundtrip && !core_apu_engine) {
+        std::cerr << "core APU state roundtrip requires --core-apu-engine\n";
+        return 2;
+    }
     const bool synchronized = sync_probe || sync_gb;
     const int path_count = sync_gb ? 2 : argc - 1 -
         (trace || upload || upload_two || upload_three || upload_boot || driver_probe ||
@@ -200,6 +222,9 @@ int main(int argc, char** argv) {
                      " [--input-script PATH] [--pcm-output WAV] [--instruction-limit N]"
                      " [--sound-event-trace-output CSV]"
                      " [--clocked-dsp]"
+                     " [--core-apu-engine]"
+                     " [--core-apu-state-roundtrip]"
+                     " [--allow-unanchored-pcm]"
                      " [--bus-clocked-dsp]"
                      " [--cycle-bus-dsp]"
                      " [--shared-bus-dsp]"
@@ -232,6 +257,8 @@ int main(int argc, char** argv) {
             apu.install_ipl(image);
         }
         gameboy::SnesSpc700 spc(apu);
+        std::optional<gameboy::SnesApuAudioEngine> core_apu;
+        if (core_apu_engine) core_apu.emplace(spc);
         sgb_test::Snes65c816TraceCpu cpu(rom, apu,
                                           path_count == 2 ? &spc : nullptr);
         struct BootTimeline {
@@ -670,7 +697,7 @@ int main(int argc, char** argv) {
                 };
             cpu.set_spc_step_observer(dsp_observation.advance, &dsp_observation);
         };
-        if (bus_clocked_dsp) {
+        if (bus_clocked_dsp && !core_apu_engine) {
             if (!shared_bus_dsp) pcm_bus = apu;
             pcm.reset();
             pcm_clock.reset();
@@ -720,6 +747,35 @@ int main(int argc, char** argv) {
                 std::cout << "Fractional APU ports: SPC midpoint reads and SNES four-clock read tail enabled\n";
             }
             std::cout << "DSP clock from SPC reset; write-boundary observation enabled\n";
+        }
+        struct CoreApuDriver {
+            gameboy::SnesApuAudioEngine* engine;
+            DspObservation* observed;
+            bool roundtrip;
+            unsigned until_restore{8192};
+        } core_driver{core_apu ? &*core_apu : nullptr, &dsp_observation, core_apu_state_roundtrip};
+        if (core_apu_engine) {
+            cpu.set_fractional_apu_sync_enabled(true);
+            cpu.set_apu_half_driver([](void* context) noexcept {
+                auto& driver = *static_cast<CoreApuDriver*>(context);
+                if (!driver.engine->clock_half()) return false;
+                gameboy::SnesApuAudioEngine::StereoSample sample;
+                auto& observed = *driver.observed;
+                while (driver.engine->pop_sample(sample)) {
+                    if (observed.icd->audible_sound_packets_delivered() && !observed.first_audible_sample)
+                        observed.first_audible_sample = observed.pcm_samples;
+                    if (observed.pcm_export) observed.pcm_export->push_back(sample);
+                    ++observed.pcm_samples;
+                    if (sample.left || sample.right) ++observed.pcm_nonzero;
+                    if (driver.roundtrip && !--driver.until_restore) {
+                        const auto state = driver.engine->save_state();
+                        if (!driver.engine->load_state(state)) return false;
+                        driver.until_restore = 8192;
+                    }
+                }
+                return true;
+            }, &core_driver);
+            std::cout << "Reusable core SPC700/DSP scheduler enabled; frontend playback remains disabled\n";
         }
         cpu.set_ppu_dma_timing_enabled(ppu_dma_timing);
         cpu.set_host_bus_timing_enabled(host_bus_timing);
@@ -1237,7 +1293,7 @@ int main(int argc, char** argv) {
             if (!output) throw std::runtime_error("could not finish APU RAM output");
         }
         if (!pcm_output_path.empty()) {
-            if (!dsp_observation.first_audible_sample)
+            if (!dsp_observation.first_audible_sample && !allow_unanchored_pcm)
                 throw std::runtime_error(
                     "PCM output requested but no audible SOUND packet was delivered");
             write_pcm_wav(pcm_output_path, pcm_export, apu_clock_hz / 32);
@@ -1245,7 +1301,9 @@ int main(int argc, char** argv) {
                       << " rate=" << apu_clock_hz / 32
                       << " frames=" << pcm_export.size()
                       << " first_audible_delivery_sample="
-                      << *dsp_observation.first_audible_sample << '\n';
+                      << (dsp_observation.first_audible_sample
+                              ? std::to_string(*dsp_observation.first_audible_sample)
+                              : "unanchored-firmware-startup") << '\n';
         }
         if (synchronized)
             std::cerr << "APU wait context SPC_PC=$" << std::hex

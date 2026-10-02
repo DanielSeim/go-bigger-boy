@@ -1,7 +1,9 @@
 # Super Game Boy validation
 
 The verified DSP renderer is now a reusable core component, with a bounded
-caller-clocked audio engine and versioned component snapshots. See
+caller-clocked audio engine and versioned component snapshots. An integrated
+SPC700/APU scheduler now preserves half-clock accesses and bounded PCM, with
+complete APU-component restore and local firmware/title integration parity. See
 [SGB audio engine](sgb-audio-engine.md) for its API, buffering/reset/state
 contracts and limitations. Frontend SGB sound remains disabled; the bounded
 SNES diagnostic host has not been promoted into release execution.

@@ -158,6 +158,12 @@ public:
         fractional_apu_sync_ = enabled;
         if (enabled) cycle_apu_sync_ = true;
     }
+    // Diagnostic override used to exercise the reusable core APU scheduler.
+    // It must advance the attached SPC by exactly one half clock and drain PCM.
+    using ApuHalfDriver = bool (*)(void*) noexcept;
+    void set_apu_half_driver(ApuHalfDriver driver, void* context) noexcept {
+        apu_half_driver_ = driver; apu_half_context_ = context;
+    }
     [[nodiscard]] std::uint64_t spc_cycles() const noexcept { return spc_cycles_; }
     // Capture-only oscillator profile, set before execution. The nominal
     // 1.024 MHz runtime clock is not changed by selecting a reference profile.
@@ -216,6 +222,8 @@ private:
     const gameboy::SgbProgramRom& rom_;
     gameboy::SnesApuBus& apu_;
     gameboy::SnesSpc700* spc_{};
+    ApuHalfDriver apu_half_driver_{};
+    void* apu_half_context_{};
     bool cycle_apu_sync_{};
     bool fractional_apu_sync_{};
     bool ppu_dma_timing_{};

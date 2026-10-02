@@ -12,7 +12,52 @@ instantiates it yet. This work does not enable SGB music/effects in releases,
 replace the Game Boy APU, load firmware automatically, or add a bsnes runtime
 dependency. It is a building block for a future original sound host.
 
-## Scheduling and buffering
+## Integrated SPC700/APU scheduler
+
+`gameboy::SnesApuAudioEngine` now runs our incremental SPC700 and the DSP
+engine on one shared APU bus. It owns its components by default; the optional
+SPC700 constructor attaches to a caller-owned CPU and its actual bus **at
+reset**, for diagnostic host integration. Those external objects must outlive
+the engine. A legally obtained IPL must be supplied by the caller; missing
+IPL is reported explicitly without executing zero-filled memory. This still
+does not execute a SNES CPU or enable frontend SGB playback.
+
+`clock_half()` advances one physical SPC half clock. Input-port reads latch
+on the first half; timers and one DSP phase advance on each completed full
+clock, before its accepted SPC access. DSP-data writes are accepted exactly
+once through the shared bus. A full 512-sample FIFO pauses **both** processors,
+without issuing another read/write or losing PCM. Unsupported instructions
+stop explicitly; reset is required to resume after a CPU fault.
+
+`advance_to(master_clock, master_hz, apu_hz)` uses absolute integer half-clock
+targets without accumulated rounding drift. Backward/overflowing targets and
+invalid profiles are rejected. Drain PCM and retry the same target after
+backpressure. The default remains 1,024,000 APU Hz; explicit oscillator profiles
+are diagnostic inputs, not automatic SGB model detection. No DAC resampling,
+wall-clock pacing or thread synchronization is performed here.
+
+The scheduler reserves the CPU's full-clock observer and bus DSP-write
+observer; callers must not replace these or clock the attached CPU separately.
+The RAM-write/half-clock observers remain available for diagnostics. Restore
+retains destination callbacks; reset clears bus observers and reattaches the
+internal DSP route. Destruction detaches the reserved callbacks.
+
+Composite state signature is `GBBSAPU` followed by version byte `1`. It contains
+the DSP snapshot payload described below, plus explicitly encoded SPC registers,
+cycle counters, instruction-start registers, all sixteen latched access slots,
+continuation/half-clock flags, and scheduler status. Access slots store kind,
+address, value, half count and early-read flag. Integer CPU counters use uint32;
+cycle counts use uint64. Parsing validates a separate candidate before committing;
+CPU/DSP clock agreement and replay/half-clock invariants are checked. The limit
+is 71 KiB; restore and realtime clock/drain operations do not allocate.
+
+This snapshot is complete for **this APU component**, not the whole SGB: it
+excludes the SNES CPU, ICD/Game Boy timing and frontend queues/resampler. The
+owner must restore those at the same boundary before resuming. Absolute master
+targets and oscillator profiles belong to that owner, not this snapshot.
+Firmware/RAM in snapshots remain private user data.
+
+## DSP-only scheduling and buffering
 
 Each successful `clock()` executes one DSP phase. DAC output occurs after
 phase 27; one stereo sample is produced every 32 phases. The nominal output
@@ -79,7 +124,7 @@ at a common boundary. The emulator's existing save-state format is unchanged.
 
 ```sh
 ctest --test-dir build-release \
-  -R 'gameboy_snes_dsp_(audio_engine|pcm_renderer)_contract' \
+  -R 'gameboy_snes_(apu_audio_engine|dsp_(audio_engine|pcm_renderer))' \
   --output-on-failure
 ```
 
@@ -90,6 +135,41 @@ echo writes, wrapped/full/empty FIFO behavior, allocation-free clock/restore
 paths, reset repeatability, observer preservation and atomic malformed-state
 rejection. Existing independent DSP fixtures and local title PCM contracts
 remain the extraction's audio-regression checks.
+
+The integrated tests additionally cover all 128 half-clock positions twice
+(startup and active echo/envelopes),
+including pending opcode/operand reads and DSP stores, full FIFO pauses,
+allocation-free restore/clock/drain, invalid CPU replay states, destination
+observer preservation and exact integer rendezvous. A SPC-generated eight-voice
+stream matches the independent DSP reference byte-for-byte (256 stereo outputs,
+SHA-256 `ded49d6cc25f85de36ed2768075fb889d59b383b45817bae905023638fe70371`).
+CI pins that hash and compares against the existing renderer protocol; the
+independent source stays external and is only used when explicitly provided:
+
+```sh
+python3 tests/snes_apu_audio_engine_pcm_tests.py \
+  build-release/gameboy_snes_apu_audio_engine_tests \
+  build-release/gameboy_snes_dsp_pcm_fixture_runner \
+  --reference-dir /path/to/external/SPC_DSP/source
+```
+
+The diagnostic SNES trace accepts `--core-apu-engine` for PCM/RAM capture on
+the existing fractional host schedule, without running a second DSP renderer.
+Legacy bus/state tracing options are rejected in this mode. Optional local-ROM
+tests compare complete native WAVs against the established diagnostic path:
+SGB1 **firmware startup only**, and SGB2 Donkey Kong gameplay. The SGB1 host
+currently encounters unsupported SNES opcode `$7d` before GB gameplay begins;
+this is not a validated SGB1 title replay. `--allow-unanchored-pcm` explicitly
+permits a startup capture without an audible Game Boy SOUND anchor and marks
+it as such. Integration parity does not resolve the documented independent
+title timing/waveform differences or establish hardware-perfect audio.
+The local integration test enables `--core-apu-state-roundtrip`, restoring the
+live APU component every 8,192 native samples while requiring unchanged WAV
+bytes. No private snapshot bytes are written to disk.
+
+The original eight-voice synthetic workload also reports measured native PCM
+throughput after warmup (no resampling or frontend). This is a desktop diagnostic,
+not a fixed cross-platform FPS gate or an Android/web performance guarantee.
 
 See [SGB validation](sgb-validation.md) for the independent capture evidence
 and remaining timing/host limitations. These tests do not establish complete

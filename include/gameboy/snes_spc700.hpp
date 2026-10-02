@@ -32,6 +32,10 @@ public:
         registers_ = {}; cycles_ = 0;
         continuation_ = replaying_ = clock_used_ = suspended_ = invalid_replay_ = half_pending_ = false;
         replay_count_ = 0;
+        opcode_ = instruction_opcode_ = 0;
+        write_index_ = instruction_cycle_ = 0;
+        replay_.fill({}); instruction_registers_ = {}; instruction_start_ = 0;
+        half_mode_ = false;
     }
     [[nodiscard]] const Registers& registers() const noexcept { return registers_; }
     [[nodiscard]] std::uint64_t cycles() const noexcept { return cycles_; }
@@ -86,6 +90,8 @@ public:
     [[nodiscard]] bool instruction_pending() const noexcept { return continuation_; }
 
 private:
+    friend class SnesDspStateCodec;
+    friend class SnesApuAudioEngine;
     [[nodiscard]] StepResult execute() noexcept;
     [[nodiscard]] std::uint8_t fetch() noexcept;
     [[nodiscard]] std::uint8_t read_memory(std::uint16_t address) noexcept;

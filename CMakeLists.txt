@@ -101,6 +101,7 @@ add_library(gameboy_core
     src/snes_audio_host.cpp
     src/snes_dsp_pcm_renderer.cpp
     src/snes_dsp_audio_engine.cpp
+    src/snes_apu_audio_engine.cpp
     src/snes_spc700.cpp
     src/snes_brr.cpp
     src/snes_dsp_brr_stream.cpp
@@ -1184,11 +1185,21 @@ if(GAMEBOY_BUILD_TESTS)
     target_link_libraries(gameboy_snes_dsp_audio_engine_tests PRIVATE gameboy_core)
     add_test(NAME gameboy_snes_dsp_audio_engine_contract
              COMMAND gameboy_snes_dsp_audio_engine_tests)
+    add_executable(gameboy_snes_apu_audio_engine_tests tests/snes_apu_audio_engine_tests.cpp)
+    target_link_libraries(gameboy_snes_apu_audio_engine_tests PRIVATE gameboy_core)
+    add_test(NAME gameboy_snes_apu_audio_engine_contract COMMAND gameboy_snes_apu_audio_engine_tests)
 
     add_executable(gameboy_snes_dsp_pcm_fixture_runner
         tests/support/snes_dsp_pcm_fixture_runner.cpp)
     target_include_directories(gameboy_snes_dsp_pcm_fixture_runner PRIVATE tests/support)
     target_link_libraries(gameboy_snes_dsp_pcm_fixture_runner PRIVATE gameboy_core)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME gameboy_snes_apu_audio_engine_pcm
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/snes_apu_audio_engine_pcm_tests.py
+                         $<TARGET_FILE:gameboy_snes_apu_audio_engine_tests>
+                         $<TARGET_FILE:gameboy_snes_dsp_pcm_fixture_runner>)
+    endif()
     add_executable(gameboy_snes_spc700_dsp_timeline_tests
         tests/snes_spc700_dsp_timeline_tests.cpp)
     target_link_libraries(gameboy_snes_spc700_dsp_timeline_tests PRIVATE gameboy_core)
@@ -1293,6 +1304,16 @@ if(GAMEBOY_BUILD_TESTS)
                              ${CMAKE_CURRENT_SOURCE_DIR}/roms/spc700.rom sgb2)
             if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.boot.rom" AND
                EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/Donkey Kong (JU) (V1.1) [S][!].gb")
+                if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb1.program.rom" AND
+                   EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb.boot.rom")
+                    add_test(NAME gameboy_snes_apu_audio_engine_local_titles
+                             COMMAND ${Python3_EXECUTABLE}
+                                     ${CMAKE_CURRENT_SOURCE_DIR}/tests/snes_apu_audio_engine_local_title_tests.py
+                                     $<TARGET_FILE:gameboy_snes_65c816_apu_trace>
+                                     ${CMAKE_CURRENT_SOURCE_DIR}/roms
+                                     ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/sgb/titles/donkey-kong-gameplay.script)
+                    set_tests_properties(gameboy_snes_apu_audio_engine_local_titles PROPERTIES TIMEOUT 1000)
+                endif()
                 add_test(NAME gameboy_snes_icd_gb_local_donkey_audible_title
                          COMMAND ${Python3_EXECUTABLE}
                                  ${CMAKE_CURRENT_SOURCE_DIR}/tests/snes_icd_gb_local_title_tests.py

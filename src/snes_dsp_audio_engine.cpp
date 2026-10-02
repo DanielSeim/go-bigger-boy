@@ -1,5 +1,6 @@
 #include "gameboy/snes_dsp_audio_engine.hpp"
 #include "gameboy/snes_audio_host.hpp"
+#include "gameboy/snes_apu_audio_engine.hpp"
 
 #include <algorithm>
 #include <limits>
@@ -76,6 +77,58 @@ constexpr std::array<std::uint8_t, 8> signature{'G', 'B', 'B', 'S', 'D', 'S', 'P
 // One codec can see the component internals, without exposing mutable DSP
 // state to callers. Field order below defines version 1, not sizeof(class).
 class SnesDspStateCodec final {
+    template<class IO, class Registers> static void registers(IO& io, Registers& r) {
+        io(r.pc); io(r.a); io(r.x); io(r.y); io(r.sp); io(r.psw);
+    }
+    template<class IO, class Cpu> static void cpu_fields(IO& io, Cpu& c) {
+        registers(io, c.registers_); io(c.cycles_); io(c.opcode_);
+        const auto counter = [&](auto& value) {
+            std::uint32_t fixed = value; io(fixed);
+            if constexpr (!std::is_const_v<Cpu>) value = fixed;
+        };
+        counter(c.write_index_); io(c.cycle_bus_); counter(c.instruction_cycle_);
+        for (auto& access : c.replay_) {
+            // char signedness is platform dependent; kind is an explicit byte.
+            std::uint8_t kind = static_cast<std::uint8_t>(access.kind); io(kind);
+            if constexpr (!std::is_const_v<Cpu>) access.kind = static_cast<char>(kind);
+            io(access.address); io(access.value); counter(access.halves); io(access.early_read);
+        }
+        registers(io, c.instruction_registers_); io(c.instruction_start_);
+        counter(c.replay_count_); io(c.instruction_opcode_);
+        io(c.continuation_); io(c.replaying_); io(c.clock_used_);
+        io(c.suspended_); io(c.invalid_replay_); io(c.half_mode_); io(c.half_pending_);
+    }
+    static bool valid_cpu(const SnesApuAudioEngine& e) noexcept {
+        const auto& c = e.cpu_;
+        if (!c.cycle_bus_ || c.replaying_ || c.suspended_ || c.invalid_replay_ ||
+            c.cycles_ > std::numeric_limits<std::uint64_t>::max() / 2 ||
+            c.replay_count_ > c.replay_.size() || c.instruction_cycle_ > 32 ||
+            c.write_index_ > 16 || c.instruction_start_ > c.cycles_ ||
+            e.dsp_.clock_.count_ != c.cycles_ ||
+            static_cast<unsigned>(e.status_) > 4 ||
+            (c.half_pending_ && (!c.continuation_ || !c.half_mode_))) return false;
+        unsigned halves{};
+        for (unsigned i = 0; i < c.replay_count_; ++i) {
+            const auto& a = c.replay_[i];
+            if (a.halves < 1 || a.halves > 2 ||
+                (a.kind != 0 && a.kind != 'R' && a.kind != 'W' && a.kind != 'I') ||
+                (i + 1 < c.replay_count_ && a.halves != 2) ||
+                (a.kind == 0 && (a.halves != 1 || a.early_read)) ||
+                (a.early_read && (a.kind != 'R' || (a.address & 0xfffcU) != 0xf4))) return false;
+            halves += a.halves;
+        }
+        if (c.continuation_ && (!c.half_mode_ || !c.replay_count_ ||
+            c.cycles_ - c.instruction_start_ > 16 ||
+            (c.cycles_ - c.instruction_start_) * 2 + c.half_pending_ != halves)) return false;
+        if (c.continuation_) {
+            const auto& a = c.registers_;
+            const auto& b = c.instruction_registers_;
+            if (!c.clock_used_ || a.pc != b.pc || a.a != b.a || a.x != b.x ||
+                a.y != b.y || a.sp != b.sp || a.psw != b.psw ||
+                c.half_pending_ != (c.replay_[c.replay_count_ - 1].halves == 1)) return false;
+        }
+        return true;
+    }
     template<class IO, class Sample> static void sample(IO& io, Sample& s) {
         io(s.left); io(s.right);
     }
@@ -144,6 +197,27 @@ class SnesDspStateCodec final {
         return true;
     }
 public:
+    static std::vector<std::uint8_t> save_apu(const SnesApuAudioEngine& e) {
+        Writer w;
+        w.bytes.reserve(71 * 1024);
+        w(std::array<std::uint8_t, 8>{'G', 'B', 'B', 'S', 'A', 'P', 'U', 1});
+        fields(w, e.dsp_); cpu_fields(w, std::as_const(e.cpu_)); w(e.status_);
+        return std::move(w.bytes);
+    }
+    static bool load_apu(SnesApuAudioEngine& e, const std::vector<std::uint8_t>& bytes) noexcept {
+        constexpr std::array<std::uint8_t, 8> header{'G', 'B', 'B', 'S', 'A', 'P', 'U', 1};
+        if (bytes.size() < header.size() || bytes.size() > 71 * 1024) return false;
+        Reader r{bytes};
+        std::array<std::uint8_t, 8> found{}; r(found);
+        if (found != header) return false;
+        SnesApuAudioEngine candidate;
+        fields(r, candidate.dsp_); cpu_fields(r, candidate.cpu_); r(candidate.status_);
+        if (!r.valid || r.position != bytes.size() || !valid(candidate.dsp_) || !valid_cpu(candidate))
+            return false;
+        Reader commit{bytes, header.size()};
+        fields(commit, e.dsp_); cpu_fields(commit, e.cpu_); commit(e.status_);
+        return true;
+    }
     static std::vector<std::uint8_t> save(const SnesDspAudioEngine& e) {
         Writer writer;
         writer.bytes.reserve(70 * 1024);
@@ -212,6 +286,14 @@ std::vector<std::uint8_t> SnesDspAudioEngine::save_state() const {
 
 bool SnesDspAudioEngine::load_state(const std::vector<std::uint8_t>& bytes) noexcept {
     return SnesDspStateCodec::load(*this, bytes);
+}
+
+std::vector<std::uint8_t> SnesApuAudioEngine::save_state() const {
+    return SnesDspStateCodec::save_apu(*this);
+}
+
+bool SnesApuAudioEngine::load_state(const std::vector<std::uint8_t>& bytes) noexcept {
+    return SnesDspStateCodec::load_apu(*this, bytes);
 }
 
 } // namespace gameboy

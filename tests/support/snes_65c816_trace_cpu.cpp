@@ -130,6 +130,13 @@ void Snes65c816TraceCpu::synchronize_apu() noexcept {
         while (spc_->half_cycles() < target_half) {
             const auto pc = spc_->registers().pc;
             const auto before = spc_->half_cycles();
+            if (apu_half_driver_) {
+                if (!apu_half_driver_(apu_half_context_) || spc_->half_cycles() != before + 1) {
+                    error_ = Error::unsupported_spc_opcode; error_address_ = pc; return;
+                }
+                spc_cycles_ = spc_->cycles();
+                continue;
+            }
             const auto result = spc_->clock_half();
             if (!result.instruction.supported || spc_->half_cycles() != before + 1) {
                 error_ = Error::unsupported_spc_opcode; error_address_ = pc; return;
