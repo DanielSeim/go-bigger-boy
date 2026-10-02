@@ -99,6 +99,8 @@ endif()
 add_library(gameboy_core
     src/apu.cpp
     src/snes_audio_host.cpp
+    src/snes_dsp_pcm_renderer.cpp
+    src/snes_dsp_audio_engine.cpp
     src/snes_spc700.cpp
     src/snes_brr.cpp
     src/snes_dsp_brr_stream.cpp
@@ -1172,16 +1174,19 @@ if(GAMEBOY_BUILD_TESTS)
              COMMAND gameboy_snes_dsp_end_state_tests)
 
     add_executable(gameboy_snes_dsp_pcm_renderer_tests
-        tests/snes_dsp_pcm_renderer_tests.cpp
-        tests/support/snes_dsp_pcm_renderer.cpp)
+        tests/snes_dsp_pcm_renderer_tests.cpp)
     target_include_directories(gameboy_snes_dsp_pcm_renderer_tests PRIVATE tests/support)
     target_link_libraries(gameboy_snes_dsp_pcm_renderer_tests PRIVATE gameboy_core)
     add_test(NAME gameboy_snes_dsp_pcm_renderer_contract
              COMMAND gameboy_snes_dsp_pcm_renderer_tests)
+    add_executable(gameboy_snes_dsp_audio_engine_tests
+        tests/snes_dsp_audio_engine_tests.cpp)
+    target_link_libraries(gameboy_snes_dsp_audio_engine_tests PRIVATE gameboy_core)
+    add_test(NAME gameboy_snes_dsp_audio_engine_contract
+             COMMAND gameboy_snes_dsp_audio_engine_tests)
 
     add_executable(gameboy_snes_dsp_pcm_fixture_runner
-        tests/support/snes_dsp_pcm_fixture_runner.cpp
-        tests/support/snes_dsp_pcm_renderer.cpp)
+        tests/support/snes_dsp_pcm_fixture_runner.cpp)
     target_include_directories(gameboy_snes_dsp_pcm_fixture_runner PRIVATE tests/support)
     target_link_libraries(gameboy_snes_dsp_pcm_fixture_runner PRIVATE gameboy_core)
     add_executable(gameboy_snes_spc700_dsp_timeline_tests
@@ -1199,7 +1204,6 @@ if(GAMEBOY_BUILD_TESTS)
     target_link_libraries(gameboy_snes_spc700_ipl_probe PRIVATE gameboy_core)
     add_executable(gameboy_snes_65c816_apu_trace
         tests/support/snes_65c816_apu_trace.cpp
-        tests/support/snes_dsp_pcm_renderer.cpp
         tests/support/snes_icd_gb_source.cpp
         tests/support/snes_65c816_trace_cpu.cpp)
     target_include_directories(gameboy_snes_65c816_apu_trace PRIVATE tests/support scripts)

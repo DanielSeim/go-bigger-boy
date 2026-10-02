@@ -16,6 +16,7 @@ public:
     [[nodiscard]] std::uint16_t counter() const noexcept { return counter_; }
 
 private:
+    friend class SnesDspStateCodec;
     std::uint16_t counter_{};
 };
 
@@ -33,6 +34,7 @@ public:
     [[nodiscard]] Phase phase() const noexcept { return phase_; }
 
 private:
+    friend class SnesDspStateCodec;
     std::uint16_t envelope_{};
     std::int32_t preclamp_{};
     Phase phase_{Phase::release};

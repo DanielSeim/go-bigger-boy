@@ -30,6 +30,7 @@ public:
     [[nodiscard]] Step next(const SnesDspSampleRing& ring) noexcept;
 
 private:
+    friend class SnesDspStateCodec;
     enum class Stage { steady, source, group0, group1, group2, envelope };
     Stage stage_{Stage::steady};
 };

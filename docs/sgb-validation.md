@@ -1,5 +1,11 @@
 # Super Game Boy validation
 
+The verified DSP renderer is now a reusable core component, with a bounded
+caller-clocked audio engine and versioned component snapshots. See
+[SGB audio engine](sgb-audio-engine.md) for its API, buffering/reset/state
+contracts and limitations. Frontend SGB sound remains disabled; the bounded
+SNES diagnostic host has not been promoted into release execution.
+
 The SGB contract checks use hand-authored expectations from
 [Pan Docs' border format](https://gbdev.io/pandocs/SGB_Command_Border.html)
 and [mask command](https://gbdev.io/pandocs/SGB_Command_System.html), not

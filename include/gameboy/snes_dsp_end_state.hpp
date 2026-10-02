@@ -23,6 +23,7 @@ public:
                       SnesDspEnvelope& envelope) noexcept;
 
 private:
+    friend class SnesDspStateCodec;
     std::uint8_t endx_{};
 };
 

@@ -34,8 +34,8 @@ private:
 
 // Models the S-SMP's addressable RAM, host ports, IPL overlay, timers, and DSP
 // register access. A caller must supply its own legally obtained 64-byte IPL
-// image before attempting to run an SPC700 CPU. DSP synthesis is deliberately
-// absent until its behavior has independent tests.
+// image before attempting to run an SPC700 CPU. DSP synthesis lives in the
+// separate SnesDspPcmRenderer; this bus does not execute either processor.
 class SnesApuBus final {
 public:
     using IplRom = std::array<std::uint8_t, 64>;
@@ -82,6 +82,7 @@ public:
     }
 
 private:
+    friend class SnesDspStateCodec;
     std::array<std::uint8_t, 0x10000> ram_{};
     std::array<std::uint8_t, 0x80> dsp_{};
     std::array<std::uint8_t, 4> host_to_spc_{};

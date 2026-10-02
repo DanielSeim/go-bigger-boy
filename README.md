@@ -181,6 +181,7 @@ covers Linux, Android, and Web builds.
 - [Link cable diagnostics](docs/link-cable.md)
 - [Link compatibility matrix](docs/link_compatibility.md)
 - [SGB traces and replay](docs/sgb-traces.md)
+- [SGB audio engine and component states](docs/sgb-audio-engine.md)
 - [Architecture](docs/architecture.md)
 - [Cloud-save synchronization contract](docs/cloud-save-sync.md)
 - [Plug-in ABI, manifests, and security](docs/plugin-abi.md)

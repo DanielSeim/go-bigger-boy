@@ -34,6 +34,7 @@ public:
     [[nodiscard]] std::uint8_t write_position() const noexcept { return write_position_; }
 
 private:
+    friend class SnesDspStateCodec;
     std::array<std::int16_t, 12> samples_{};
     std::uint16_t phase_{};
     std::uint8_t write_position_{};

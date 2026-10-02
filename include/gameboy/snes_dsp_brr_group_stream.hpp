@@ -40,6 +40,7 @@ public:
     [[nodiscard]] std::uint8_t next_group_index() const noexcept { return group_index_; }
 
 private:
+    friend class SnesDspStateCodec;
     [[nodiscard]] std::uint16_t directory_word(std::uint8_t directory,
                                                 std::uint8_t source,
                                                 unsigned word_offset) const noexcept;

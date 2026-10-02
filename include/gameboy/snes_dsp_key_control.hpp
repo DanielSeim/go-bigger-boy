@@ -44,6 +44,7 @@ public:
                             SnesDspKeyOnSequence& sequence) noexcept;
 
 private:
+    friend class SnesDspStateCodec;
     std::uint8_t pending_kon_{};
     std::uint8_t koff_register_{};
     std::uint8_t sampled_koff_{};

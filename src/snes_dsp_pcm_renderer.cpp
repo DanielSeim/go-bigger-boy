@@ -1,4 +1,4 @@
-#include "snes_dsp_pcm_renderer.hpp"
+#include "gameboy/snes_dsp_pcm_renderer.hpp"
 
 #include "gameboy/snes_audio_host.hpp"
 #include "gameboy/snes_dsp_voice_math.hpp"
@@ -7,7 +7,7 @@
 #include <cstdint>
 #include <optional>
 
-namespace sgb_test {
+namespace gameboy {
 namespace {
 
 std::uint8_t voice_register(const gameboy::SnesApuBus& bus,
@@ -521,4 +521,4 @@ void SnesDspPcmRenderer::advance_voice(const unsigned index,
     live_loop_event_[index] = decoded != nullptr && decoded->completed_block && decoded->end;
 }
 
-} // namespace sgb_test
+} // namespace gameboy

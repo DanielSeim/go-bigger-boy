@@ -33,6 +33,7 @@ public:
     void reset() noexcept { previous_ = 0; before_previous_ = 0; }
 
 private:
+    friend class SnesDspStateCodec;
     std::int16_t previous_{};
     std::int16_t before_previous_{};
 };
