@@ -222,6 +222,72 @@ void test_icd_wram_port_dma() {
               sgb_test::Snes65c816TraceCpu::Error::unsupported_write &&
               result.address == 0x420B && source.reads == 3,
           "unsupported WRAM DMA fails before consuming ICD bytes");
+
+    code.clear();
+    store(0x4300, 0x08);
+    store(0x4301, 0x18);
+    store(0x4302, 0x00);
+    store(0x4303, 0x78);
+    store(0x4305, 0x01);
+    store(0x420B, 0x01);
+    const auto side_effect_rom = program(code);
+    sgb_test::Snes65c816TraceCpu side_effect(side_effect_rom, apu);
+    side_effect.set_icd_source(&source);
+    side_effect.set_ppu_dma_timing_enabled(true);
+    for (unsigned i = 0; i < 11; ++i)
+        check(side_effect.step().error == sgb_test::Snes65c816TraceCpu::Error::none,
+              "PPU DMA side-effect source setup executes");
+    check(side_effect.step().error == sgb_test::Snes65c816TraceCpu::Error::unsupported_write &&
+              source.reads == 3,
+          "timing-only PPU DMA rejects ICD sources without consuming bytes");
+}
+
+void test_ppu_dma_stall() {
+    // Original program: transfer a WRAM byte to VRAM, then execute BRA.
+    // Compare two sizes so setup/alignment cancels without a firmware fixture.
+    const auto run = [](unsigned count, std::uint8_t mode = 8) {
+        std::vector<std::uint8_t> code;
+        const auto store = [&code](std::uint16_t address, std::uint8_t value) {
+            code.insert(code.end(), {0xA9, value, 0x8D,
+                static_cast<std::uint8_t>(address),
+                static_cast<std::uint8_t>(address >> 8)});
+        };
+        store(0x4300, mode);
+        store(0x4301, 0x18);
+        store(0x4302, 0x00);
+        store(0x4303, 0x00);
+        store(0x4304, 0x7E);
+        store(0x4305, static_cast<std::uint8_t>(count));
+        store(0x4306, static_cast<std::uint8_t>(count >> 8));
+        store(0x420B, 1);
+        code.insert(code.end(), {0x80, 0x00}); // BRA to the next instruction.
+        const auto rom = program(code);
+        gameboy::SnesApuBus apu;
+        gameboy::SnesApuBus::IplRom ipl{}; // Original all-NOP SPC program.
+        apu.install_ipl(ipl);
+        gameboy::SnesSpc700 spc(apu);
+        spc.set_cycle_bus_enabled(true);
+        sgb_test::Snes65c816TraceCpu cpu(rom, apu, &spc);
+        cpu.set_fractional_apu_sync_enabled(true);
+        cpu.set_ppu_dma_timing_enabled(true);
+        for (unsigned i = 0; i < 17; ++i)
+            check(cpu.step().error == sgb_test::Snes65c816TraceCpu::Error::none,
+                  "original PPU DMA timing program executes");
+        check(cpu.dma_register(0, 5) == 0 && cpu.dma_register(0, 6) == 0,
+              "PPU DMA completes and clears count");
+        check(spc.half_cycles() == cpu.timing().clocks() * 2048000ULL / 21477273ULL,
+              "SPC continues clocking through PPU DMA and refresh");
+        const auto address = cpu.dma_register(0, 2) | (unsigned(cpu.dma_register(0, 3)) << 8);
+        const auto expected = (mode & 8) ? 0U : ((mode & 16) ? (65536U - count) & 0xFFFFU : count & 0xFFFFU);
+        check(address == expected, "PPU DMA fixed/increment/decrement source bookkeeping");
+        return cpu.timing().clocks();
+    };
+    check(run(9) - run(1) == 64,
+          "eight additional PPU DMA bytes stall the CPU for 64 master clocks");
+    check(run(0) > 524288,
+          "zero PPU DMA count transfers 65536 bytes including refresh stalls");
+    check(run(9, 0) == run(9, 16), "source direction does not change DMA bus-slot timing");
+    check(run(9, 0x80) == run(9, 0), "timing-only reverse PPU DMA retains the same bus slots");
 }
 
 void test_host_math_results() {
@@ -1127,6 +1193,7 @@ int main(int argc, char** argv) {
     test_native_width_and_apu_mapping();
     test_fail_closed();
     test_icd_wram_port_dma();
+    test_ppu_dma_stall();
     test_host_math_results();
     test_lsr_direct_page();
     test_asl_direct_page();

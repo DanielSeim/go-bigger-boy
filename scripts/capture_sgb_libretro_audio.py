@@ -189,7 +189,8 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
             reference_entropy: str | None = None,
             history_window_half: tuple[int, int] | None = None,
             boot_timeline_output: Path | None = None,
-            native_gb_input: bool = False
+            native_gb_input: bool = False,
+            host_startup_output: Path | None = None
             ) -> tuple[int, int]:
     if C.sizeof(C.c_void_p) != 8:
         raise RuntimeError("the diagnostic host currently requires a 64-bit process")
@@ -202,6 +203,11 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
         raise ValueError("frames must be between 1 and 10000")
     if output.exists():
         raise FileExistsError(output)
+    if host_startup_output is not None:
+        if host_startup_output.exists():
+            raise FileExistsError(host_startup_output)
+        if boot_timeline_output is None or not require_snes_only_probe:
+            raise ValueError("host startup requires the SNES-only boot timeline probe")
     if native_gb_input and (not require_snes_only_probe or boot_timeline_output is None or
                             input_script is None or input_offset != 0 or input_offset_changes):
         raise ValueError("native GB input requires a script and SNES-only boot probe, without frame offsets")
@@ -243,7 +249,7 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
         raise FileExistsError(snapshot_output)
     targets = [path.resolve() for path in
                (output, snapshot_output, timeline_output, native_dsp_output,
-                apu_ram_output, apu_bus_output, boot_timeline_output)
+                apu_ram_output, apu_bus_output, boot_timeline_output, host_startup_output)
                if path is not None]
     if len(targets) != len(set(targets)):
         raise ValueError("WAV, native DSP, snapshot, and timeline paths must differ")
@@ -339,6 +345,19 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
             core.gbb_reference_sgb_boot_copy.argtypes = [C.c_uint, C.POINTER(C.c_uint64)]
             core.gbb_reference_sgb_boot_copy.restype = C.c_uint
     configure_frame_input(core, events, native_gb_input)
+    host_symbols = ("gbb_reference_sgb_host_startup_version", "gbb_reference_sgb_host_startup_enable",
+                    "gbb_reference_sgb_host_startup_count", "gbb_reference_sgb_host_startup_copy")
+    if host_startup_output is not None and (any(not hasattr(core, n) for n in host_symbols) or
+                                           core.gbb_reference_sgb_host_startup_version() != 1):
+        raise RuntimeError("reference lacks the version-1 host startup probe")
+    if hasattr(core, host_symbols[1]):
+        core.gbb_reference_sgb_host_startup_enable.argtypes = [C.c_uint]
+        if core.gbb_reference_sgb_host_startup_enable(int(host_startup_output is not None)) != 1:
+            raise RuntimeError("reference rejected host startup probe")
+    if host_startup_output is not None:
+        core.gbb_reference_sgb_host_startup_count.restype = C.c_uint
+        core.gbb_reference_sgb_host_startup_copy.argtypes = [C.c_uint, C.POINTER(C.c_uint64)]
+        core.gbb_reference_sgb_host_startup_copy.restype = C.c_uint
     required = ("retro_api_version", "retro_set_environment", "retro_set_video_refresh",
                 "retro_set_audio_sample", "retro_set_audio_sample_batch",
                 "retro_set_input_poll", "retro_set_input_state", "retro_init",
@@ -576,6 +595,38 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                 raise RuntimeError("native GB input replay ended before all scripted events were applied")
             if events and not native_gb_input and next_event == 0:
                 raise RuntimeError("capture ended before the first scripted input event")
+            if host_startup_output is not None:
+                count = core.gbb_reference_sgb_host_startup_count()
+                if not 0 < count <= 131072:
+                    raise RuntimeError("empty or overflowing host startup probe")
+                instructions = []
+                for index in range(count):
+                    entry = (C.c_uint64 * 11)()
+                    if core.gbb_reference_sgb_host_startup_copy(index, entry) != 1:
+                        raise RuntimeError("lost host startup instruction")
+                    instructions.append(list(entry))
+                # A nonempty prefix is not a completed startup capture.
+                boot_count = core.gbb_reference_sgb_boot_count()
+                if not 0 < boot_count <= 128:
+                    raise RuntimeError("invalid startup boot landmarks")
+                upload_seen = False
+                for index in range(boot_count):
+                    landmark = (C.c_uint64 * 7)()
+                    if core.gbb_reference_sgb_boot_copy(index, landmark) != 1:
+                        raise RuntimeError("lost startup boot landmark")
+                    upload_seen |= landmark[0] == ord("A")
+                if not upload_seen:
+                    raise RuntimeError("host startup ended before the first upload request")
+                frequencies = (C.c_uint64 * 2)()
+                if core.gbb_reference_sgb_apu_bus_frequencies(frequencies) != 1 or not frequencies[0]:
+                    raise RuntimeError("host startup probe lacks clock frequency")
+                host_startup_output.parent.mkdir(parents=True, exist_ok=True)
+                with host_startup_output.open("x", encoding="utf-8") as host_file:
+                    json.dump({"format": "gbb-sgb-host-startup-v1", "source": "reference",
+                               "master_hz": int(frequencies[0]), "instructions": instructions,
+                               "reference_options": configured_options,
+                               "core_sha256": hashlib.sha256(core_path.read_bytes()).hexdigest()}, host_file)
+                    host_file.write("\n")
             if events and not native_gb_input and (input_queries == 0 or pressed_queries == 0):
                 raise RuntimeError("reference core did not poll scripted controller presses")
             if not video_frames:
@@ -785,6 +836,8 @@ def main() -> None:
                         help="bounded boot/control/upload timeline (additional local probe required)")
     parser.add_argument("--native-gb-input", action="store_true",
                         help="hold scripted player-1 input at observed GB LCD frames; forbids frame offsets")
+    parser.add_argument("--host-startup-output", type=Path,
+                        help="instruction snapshots from IPL ready reads to first upload request")
     parser.add_argument("--require-snes-only-probe", action="store_true",
                         help="require the local instrumented core; log host-consumed SOUND packets")
     parser.add_argument("--native-dsp-output", type=Path,
@@ -811,7 +864,7 @@ def main() -> None:
                               args.native_dsp_output, args.apu_ram_output, args.apu_bus_output,
                               args.native_cycle_checkpoints, args.timer_poll_trace, args.reference_entropy,
                               tuple(args.apu_history_window_half) if args.apu_history_window_half else None,
-                              args.boot_timeline_output, args.native_gb_input)
+                              args.boot_timeline_output, args.native_gb_input, args.host_startup_output)
     except (OSError, RuntimeError, ValueError) as error:
         parser.error(str(error))
     print(f"Captured {count} stereo frames at {rate} Hz to {args.output}")

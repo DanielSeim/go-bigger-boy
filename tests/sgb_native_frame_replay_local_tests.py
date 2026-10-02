@@ -13,7 +13,10 @@ from compare_sgb_boot_timeline import validate
 
 
 def main():
-    trace, program, ipl, game, boot, script = sys.argv[1:]
+    trace, program, ipl, game, boot, script, *options = sys.argv[1:]
+    if options not in ([], ["--ppu-dma-timing"]):
+        raise ValueError("unsupported local replay options")
+    ppu_dma_timing = bool(options)
     if hashlib.sha256(Path(game).read_bytes()).hexdigest() != \
             "b490c89efe718633b07381def66ce0ed58a5075aabe40c6e644baf2b408a76f4":
         raise AssertionError("unexpected local Donkey Kong ROM")
@@ -26,6 +29,7 @@ def main():
         result = subprocess.run([trace, program, ipl, "--sync-gb-sgb2", game, boot,
                                  "--input-script", script, "--native-gb-input",
                                  "--instruction-limit", "60000000", "--fractional-apu-sync",
+                                 *options,
                                  "--timer-poll-trace", "--apu-bus-output", str(bus),
                                  "--boot-timeline-output", str(timeline), "--pcm-output", str(pcm)],
                                 capture_output=True, text=True, timeout=240)
@@ -35,6 +39,8 @@ def main():
         rows = validate(data, "gbb")
         if data["input_mode"] != "gb-lcd-frame-held-v1":
             raise AssertionError("unmarked native replay")
+        if data.get("ppu_dma_timing") is not ppu_dma_timing:
+            raise AssertionError("unmarked PPU DMA timing mode")
         actual = [(e["count"], e["value"]) for e in rows if e["kind"] == "N"]
         expected = [(f, native_button_mask(m)) for f, m in load_input_script(Path(script))]
         if actual != expected or len(actual) != 11:
@@ -42,8 +48,9 @@ def main():
         ready = [e for e in rows if e["kind"] == "R"]
         if [(e["value"], e["count"]) for e in ready] != [(0x2140aa, 0x8311), (0x2141bb, 0x8314)]:
             raise AssertionError("startup ready-read landmarks changed")
-        if hashlib.sha256(pcm.read_bytes()).hexdigest() != \
-                "c3890ffb50438ea2b28aa834a965137d7b425e927c92d24d45fb3ade0336156f":
+        expected_pcm = ("ecdf32efda85f0067b1e04ce64d286a2aed3fe7c120d92fb917ec46fadf5bdca" if ppu_dma_timing else
+                        "c3890ffb50438ea2b28aa834a965137d7b425e927c92d24d45fb3ade0336156f")
+        if hashlib.sha256(pcm.read_bytes()).hexdigest() != expected_pcm:
             raise AssertionError("native input title PCM changed")
     print("All 11 LCD-frame input events and native PCM baseline match")
 

@@ -199,6 +199,44 @@ void Snes65c816TraceCpu::update_irq() noexcept {
     last_irq_clock_ = now;
 }
 
+void Snes65c816TraceCpu::service_ppu_dma(unsigned resumed_bus_clocks) noexcept {
+    if (!pending_ppu_dma_ || error_ != Error::none) return;
+    const auto mask = pending_ppu_dma_;
+    pending_ppu_dma_ = 0;
+    // Timing-only PPU DMA. Neither PPU data reads nor pixels are modeled.
+    // No forward source with read side effects is accepted.
+    const auto clock = [this](unsigned amount) {
+        timing_.cpu_cycle(amount);
+        update_irq();
+        synchronize_apu();
+    };
+    unsigned dma_clocks = 8U - static_cast<unsigned>(timing_.clocks() % 8U);
+    clock(dma_clocks);
+    clock(8); // Global DMA setup.
+    dma_clocks += 8;
+    for (unsigned channel = 0; channel < 8 && error_ == Error::none; ++channel) {
+        if (!(mask & (1U << channel))) continue;
+        const auto base = channel * 16U;
+        clock(8); // Per-channel setup.
+        dma_clocks += 8;
+        auto address = static_cast<std::uint16_t>(dma_registers_[base + 2] |
+            (unsigned(dma_registers_[base + 3]) << 8));
+        const unsigned size = dma_registers_[base + 5] |
+            (unsigned(dma_registers_[base + 6]) << 8);
+        const unsigned count = size ? size : 65536U;
+        const auto mode = dma_registers_[base];
+        for (unsigned i = 0; i < count && error_ == Error::none; ++i) {
+            clock(8); // DMA bus slots are always eight clocks, not CPU bus speed.
+            if (!(mode & 8)) address += (mode & 16) ? -1 : 1;
+        }
+        dma_clocks += count * 8U;
+        dma_registers_[base + 2] = static_cast<std::uint8_t>(address);
+        dma_registers_[base + 3] = static_cast<std::uint8_t>(address >> 8);
+        dma_registers_[base + 5] = dma_registers_[base + 6] = 0;
+    }
+    clock(resumed_bus_clocks - dma_clocks % resumed_bus_clocks);
+}
+
 unsigned Snes65c816TraceCpu::bus_clocks(const std::uint8_t bank,
                                          const std::uint16_t address) const noexcept {
     if (bank == 0x7E || bank == 0x7F) return 8;
@@ -293,6 +331,7 @@ std::uint8_t Snes65c816TraceCpu::read8_raw(const std::uint8_t bank,
     const bool early_apu = fractional_apu_sync_ &&
         (bank <= 0x3f || (bank >= 0x80 && bank <= 0xbf)) &&
         address >= 0x2140 && address <= 0x2143;
+    service_ppu_dma(bus_clocks(bank, address));
     timing_.cpu_cycle(bus_clocks(bank, address) - (early_apu ? 4U : 0U));
     update_irq();
     ++bus_accesses_;
@@ -394,6 +433,7 @@ std::uint8_t Snes65c816TraceCpu::read8_raw(const std::uint8_t bank,
 void Snes65c816TraceCpu::write8(const std::uint8_t bank,
                                 const std::uint16_t address,
                                 const std::uint8_t value) noexcept {
+    service_ppu_dma(bus_clocks(bank, address));
     timing_.cpu_cycle(bus_clocks(bank, address));
     update_irq();
     ++bus_accesses_;
@@ -425,6 +465,50 @@ void Snes65c816TraceCpu::write8(const std::uint8_t bank,
     if (system_bank && address == 0x420B) {
         ++dma_start_count_;
         last_dma_mask_ = value;
+        if (ppu_dma_timing_ && value) {
+            // Validate every selected channel before queuing any timing.
+            bool ppu_only = true;
+            for (unsigned ch = 0; ch < 8; ++ch) {
+                if (!(value & (1U << ch))) continue;
+                const auto base = ch * 16U;
+                if (dma_registers_[base + 1] == 0x80) { ppu_only = false; continue; }
+                const auto source_bank = dma_registers_[base + 4];
+                const auto source = dma_registers_[base + 2] |
+                    (unsigned(dma_registers_[base + 3]) << 8);
+                const auto size = dma_registers_[base + 5] |
+                    (unsigned(dma_registers_[base + 6]) << 8);
+                const auto count = size ? size : 65536U;
+                const auto mode = dma_registers_[base];
+                const bool wram = source_bank == 0x7E || source_bank == 0x7F;
+                const bool fixed = mode & 8;
+                const bool mirror = (source_bank <= 0x3F || (source_bank >= 0x80 && source_bank <= 0xBF)) &&
+                    source < 0x2000 && (fixed || ((mode & 16) ? source + 1U >= count : 0x2000U - source >= count));
+                const bool rom_span = source >= 0x8000 &&
+                    (fixed || ((mode & 16) ? source - 0x8000U + 1U >= count : 0x10000U - source >= count));
+                const bool reverse = mode & 0x80;
+                // Reverse PPU-to-WRAM transfers contribute timing only;
+                // PPU read values and destination bytes are not synthesized.
+                const bool reverse_supported = reverse && wram;
+                if ((mode & 0x60) || dma_registers_[base + 1] > 0x3F ||
+                    (reverse ? !reverse_supported : (!wram && !mirror && !rom_span))) {
+                    error_ = Error::unsupported_write;
+                    error_address_ = address;
+                    return;
+                }
+            }
+            if (ppu_only) {
+                for (unsigned ch = 0; ch < 8; ++ch)
+                    if (value & (1U << ch)) ++dma_destination_counts_[dma_registers_[ch * 16U + 1]];
+                pending_ppu_dma_ = value;
+                return;
+            }
+            // Mixing PPU and WRAM DMA is outside this timing-only model.
+            for (unsigned ch = 0; ch < 8; ++ch) {
+                if ((value & (1U << ch)) && dma_registers_[ch * 16U + 1] != 0x80) {
+                    error_ = Error::unsupported_write; error_address_ = address; return;
+                }
+            }
+        }
         for (unsigned channel = 0; channel < 8; ++channel) {
             if ((value & (1U << channel)) != 0) {
                 ++dma_destination_counts_[dma_registers_[channel * 16U + 1U]];

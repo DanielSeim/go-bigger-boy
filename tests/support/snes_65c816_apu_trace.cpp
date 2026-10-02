@@ -83,11 +83,13 @@ int main(int argc, char** argv) {
     bool shared_bus_dsp = false;
     bool cycle_apu_sync = false;
     bool fractional_apu_sync = false;
+    bool ppu_dma_timing = false;
     bool timer_poll_trace = false;
     bool native_gb_input = false;
     std::array<std::uint64_t, 2> history_window{};
     std::filesystem::path apu_bus_output_path;
     std::filesystem::path boot_timeline_path;
+    std::filesystem::path host_startup_path;
     std::filesystem::path input_script_path;
     std::filesystem::path pcm_output_path;
         std::filesystem::path sound_event_trace_path;
@@ -116,6 +118,10 @@ int main(int argc, char** argv) {
                 apu_bus_output_path = argv[++index];
             } else if (option == "--boot-timeline-output" && boot_timeline_path.empty() && index + 1 < argc) {
                 boot_timeline_path = argv[++index];
+            } else if (option == "--host-startup-output" && host_startup_path.empty() && index + 1 < argc) {
+                host_startup_path = argv[++index];
+            } else if (option == "--ppu-dma-timing" && !ppu_dma_timing) {
+                ppu_dma_timing = true;
             } else if (option == "--timer-poll-trace" && !timer_poll_trace) {
                 timer_poll_trace = true;
             } else if (option == "--native-gb-input" && !native_gb_input) {
@@ -223,6 +229,20 @@ int main(int argc, char** argv) {
                 events.push_back({kind, master, spc->half_cycles(), value, count, digest});
             }
         } boot_timeline{{}, &cpu, &spc, !boot_timeline_path.empty()};
+        std::vector<std::array<std::uint64_t, 11>> host_startup;
+        std::vector<std::array<std::uint64_t, 7>> startup_dma;
+        bool host_startup_finished = false;
+        if (!host_startup_path.empty()) {
+            if (boot_timeline_path.empty() || std::filesystem::exists(host_startup_path))
+                throw std::runtime_error("host startup requires a boot timeline and unused output path");
+            host_startup.reserve(131072);
+            startup_dma.reserve(128);
+            const auto host = std::filesystem::weakly_canonical(host_startup_path);
+            for (const auto& path : {boot_timeline_path, apu_bus_output_path, pcm_output_path,
+                                    sound_event_trace_path, apu_ram_output_path, input_script_path})
+                if (!path.empty() && host == std::filesystem::weakly_canonical(path))
+                    throw std::runtime_error("host startup output paths must differ");
+        }
         if (boot_timeline.enabled) boot_timeline.events.reserve(128);
         std::unique_ptr<sgb_test::SnesIcdGbSource> icd;
         if (sync_gb) {
@@ -681,8 +701,28 @@ int main(int argc, char** argv) {
             }
             std::cout << "DSP clock from SPC reset; write-boundary observation enabled\n";
         }
+        cpu.set_ppu_dma_timing_enabled(ppu_dma_timing);
         for (unsigned i = 0; i < instruction_bound; ++i) {
+            if (!host_startup_path.empty() && boot_timeline.host_ipl_reads == 3 && !host_startup_finished) {
+                if (host_startup.size() == 131072) throw std::runtime_error("host startup trace overflowed");
+                const auto& r = cpu.registers();
+                host_startup.push_back({cpu.timing().clocks(), (unsigned(r.pb) << 16) | r.pc,
+                    r.a, r.x, r.y, r.s, r.d, r.db, r.p, cpu.timing().line(), cpu.timing().horizontal_clock()});
+            }
+            const auto dma_before = cpu.dma_start_count();
             const auto result = cpu.step();
+            if (!host_startup_path.empty() && !host_startup_finished &&
+                boot_timeline.host_ipl_reads == 3 && cpu.dma_start_count() != dma_before) {
+                for (unsigned ch = 0; ch < 8; ++ch) {
+                    if (!(cpu.last_dma_mask() & (1U << ch))) continue;
+                    if (startup_dma.size() == 128) throw std::runtime_error("startup DMA trace overflowed");
+                    startup_dma.push_back({cpu.timing().clocks(), cpu.last_dma_mask(), ch,
+                        cpu.dma_register(ch, 0), cpu.dma_register(ch, 1),
+                        (unsigned(cpu.dma_register(ch, 4)) << 16) |
+                        (unsigned(cpu.dma_register(ch, 3)) << 8) | cpu.dma_register(ch, 2),
+                        (unsigned(cpu.dma_register(ch, 6)) << 8) | cpu.dma_register(ch, 5)});
+                }
+            }
             if (icd && icd->sound_packets_delivered() > logged_sound_deliveries) {
                 logged_sound_deliveries = icd->sound_packets_delivered();
                 if (!sound_event_trace_path.empty() &&
@@ -920,6 +960,16 @@ int main(int argc, char** argv) {
                               << std::setw(6) << result.address;
                 }
                 std::cerr << std::dec << '\n';
+                if ((result.address & 0xFFFF) == 0x420B) {
+                    std::cerr << "Rejected DMA mask=$" << std::hex << unsigned(cpu.last_dma_mask());
+                    for (unsigned ch = 0; ch < 8; ++ch) {
+                        if (!(cpu.last_dma_mask() & (1U << ch))) continue;
+                        std::cerr << " channel=" << ch << " registers=";
+                        for (unsigned j = 0; j < 7; ++j)
+                            std::cerr << std::setw(2) << std::setfill('0') << unsigned(cpu.dma_register(ch, j));
+                    }
+                    std::cerr << std::dec << '\n';
+                }
                 std::cerr << "master clocks " << cpu.timing().clocks()
                           << " V=" << cpu.timing().line()
                           << " H=" << cpu.timing().horizontal_clock()
@@ -939,6 +989,7 @@ int main(int argc, char** argv) {
                         destination = static_cast<std::uint16_t>(
                             ports[2] | (static_cast<unsigned>(ports[3]) << 8));
                         boot_timeline.record('A', cpu.timing().clocks(), destination);
+                        host_startup_finished = true;
                     } else if (transfer_started && write.port == 0) {
                         if (write.value == expected_index) {
                             transferred.push_back(ports[1]);
@@ -1079,6 +1130,28 @@ int main(int argc, char** argv) {
                        << static_cast<unsigned>(event.value) << '\n';
             if (!output) throw std::runtime_error("could not finish sound event trace");
         }
+        if (!host_startup_path.empty()) {
+            if (host_startup.empty() || !host_startup_finished) throw std::runtime_error("incomplete host startup trace");
+            if (!host_startup_path.parent_path().empty()) std::filesystem::create_directories(host_startup_path.parent_path());
+            std::ofstream output(host_startup_path);
+            output << "{\"format\":\"gbb-sgb-host-startup-v1\",\"source\":\"gbb\",\"master_hz\":21477273,\"ppu_dma_timing\":"
+                   << (ppu_dma_timing ? "true" : "false") << ",\"instructions\":[";
+            for (std::size_t i = 0; i < host_startup.size(); ++i) {
+                if (i) output << ',';
+                output << '[';
+                for (std::size_t j = 0; j < 11; ++j) { if (j) output << ','; output << host_startup[i][j]; }
+                output << ']';
+            }
+            output << "],\"dma_requests\":[";
+            for (std::size_t i = 0; i < startup_dma.size(); ++i) {
+                if (i) output << ',';
+                output << '[';
+                for (std::size_t j = 0; j < 7; ++j) { if (j) output << ','; output << startup_dma[i][j]; }
+                output << ']';
+            }
+            output << "]}\n";
+            if (!output) throw std::runtime_error("could not finish host startup trace");
+        }
         if (!boot_timeline_path.empty()) {
             if (boot_timeline.overflow) throw std::runtime_error("boot timeline overflowed");
             if (!boot_timeline_path.parent_path().empty()) std::filesystem::create_directories(boot_timeline_path.parent_path());
@@ -1086,7 +1159,8 @@ int main(int argc, char** argv) {
             if (!output) throw std::runtime_error("could not create boot timeline");
             output << "{\"format\":\"gbb-sgb-boot-timeline-v1\",\"source\":\"gbb\","
                 "\"master_hz\":21477273,\"apu_half_hz\":2048000,\"input_mode\":\""
-                << (native_gb_input ? "gb-lcd-frame-held-v1" : "legacy-direct-gb-v1") << "\",\"events\":[";
+                << (native_gb_input ? "gb-lcd-frame-held-v1" : "legacy-direct-gb-v1")
+                << "\",\"ppu_dma_timing\":" << (ppu_dma_timing ? "true" : "false") << ",\"events\":[";
             for (std::size_t index = 0; index < boot_timeline.events.size(); ++index) {
                 const auto& e = boot_timeline.events[index];
                 if (index) output << ',';
@@ -1109,6 +1183,7 @@ int main(int argc, char** argv) {
             output << "{\"format\":\"" << (timer_poll_trace ? "gbb-apu-bus-v2" : "gbb-apu-bus-v1")
                    << "\",\"source\":\"gbb\","
                       "\"master_hz\":21477273,\"apu_half_hz\":2048000,";
+            output << "\"ppu_dma_timing\":" << (ppu_dma_timing ? "true" : "false") << ',';
             if (timer_poll_trace) output << "\"phase_writes_from_reset\":true,";
             if (history_window[1]) output << "\"history_window_half_clocks\":[" << history_window[0] << ',' << history_window[1] << "],";
             output << "\"events\":[";

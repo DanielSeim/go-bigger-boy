@@ -159,6 +159,9 @@ public:
         if (enabled) cycle_apu_sync_ = true;
     }
     [[nodiscard]] std::uint64_t spc_cycles() const noexcept { return spc_cycles_; }
+    // Experimental timing-only PPU DMA path. No SNES PPU pixels are modeled.
+    // Historical audio baselines retain their explicitly bounded legacy path.
+    void set_ppu_dma_timing_enabled(bool enabled) noexcept { ppu_dma_timing_ = enabled; }
     [[nodiscard]] const SnesTraceTiming& timing() const noexcept { return timing_; }
     [[nodiscard]] std::uint8_t interrupt_enable() const noexcept {
         return interrupt_enable_;
@@ -197,12 +200,15 @@ private:
                                                bool branch_crossed) const noexcept;
     void synchronize_apu() noexcept;
     void update_irq() noexcept;
+    void service_ppu_dma(unsigned resumed_bus_clocks) noexcept;
 
     const gameboy::SgbProgramRom& rom_;
     gameboy::SnesApuBus& apu_;
     gameboy::SnesSpc700* spc_{};
     bool cycle_apu_sync_{};
     bool fractional_apu_sync_{};
+    bool ppu_dma_timing_{};
+    std::uint8_t pending_ppu_dma_{};
     ApuPortObserver apu_port_observer_{};
     void* apu_port_context_{};
     SnesIcdTraceSource* icd_{};

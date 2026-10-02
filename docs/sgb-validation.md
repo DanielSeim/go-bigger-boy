@@ -1407,11 +1407,107 @@ The ready-read probe narrows the unresolved initial upload gap:
 Ready reads agree to 62 master clocks at the same PCs. Almost all of the
 roughly 39 ms gap develops **after the host recognizes IPL readiness and
 before it requests the upload**, rather than in SPC IPL initialization.
-Further work should compare the SNES host's upload-preparation instruction,
-DMA and beam-wait path in that interval. No production clock adjustment or
-title-specific delay has been added. The remaining startup/phase differences
+The instruction/DMA investigation below identifies the large initial gap.
+No production clock adjustment or title-specific delay has been added. The remaining startup/phase differences
 and four visual mismatches are still open; no hardware audio-accuracy claim
 is implied. Firmware, private captures and reference cores remain local.
+
+### Upload-preparation instruction trace and missing PPU DMA stalls
+
+Both diagnostic hosts now accept `--host-startup-output PATH`, recording
+bounded instruction-start snapshots after the host observes both IPL ready
+bytes, through its first upload request. The independent version-1 probe is
+[`scripts/patches/bsnes-05439f9-sgb-host-startup.patch`](../scripts/patches/bsnes-05439f9-sgb-host-startup.patch),
+applied **after the frame-input patch** to the same pinned reference revision.
+Rebuild its CPU and DSP translation units. The patch only observes state;
+it does not change instruction execution. Reference captures retain the core
+hash and options and reject incomplete startup traces. Nothing from this
+reference core is linked into or shipped with GBB releases.
+
+The JSON rows are `[master, PC24, A, X, Y, S, D, DB, P, beam_V, beam_H]`.
+GBB also records DMA request rows `[master, channel_mask, channel, mode,
+B_bus_destination, A_bus_address24, transfer_count16]`. Count zero means
+65,536 bytes. Each trace is limited to 131,072 instructions and GBB's DMA
+request list to 128 rows; overflow fails rather than silently truncating.
+
+Add `--host-startup-output gbb-host.json` and `--ppu-dma-timing` to the GBB
+native-input capture command above. Add
+`--host-startup-output reference-host.json` to the reference command. Compare:
+
+```sh
+python3 scripts/compare_sgb_host_startup.py \
+  --gbb gbb-host.json --reference reference-host.json
+```
+
+The reporter distinguishes register-state mismatch from PC divergence and
+compares clock intervals only within the identical-PC prefix. It never fits
+away the clock gap or implies that equal PCs mean equal beam state.
+
+The local startup recordings have an identical-PC prefix of 3,693
+instructions. The earliest register mismatch is ordinal 3: PPU `STAT78`
+version/status returns `$82` versus `$83`. That is **not evidence that it
+causes the large stall discrepancy**. Three later instruction intervals
+reveal missing PPU DMA time in the bounded GBB tracer:
+
+| Instruction interval at PC | Legacy GBB clocks | PPU-timed GBB clocks | Reference clocks |
+| --- | ---: | ---: | ---: |
+| `$008364` | 82 | 540,226 | 540,186 |
+| `$008430` | 42 | 202,594 | 202,594 |
+| `$008455` | 42 | 202,594 | 202,594 |
+
+These correspond to a 65,535-byte fixed-source VRAM transfer and two
+24,576-byte reverse PPU transfers. The legacy tracer skipped their timing;
+consequently it entered the later beam-wait loop much earlier. There is no
+ROM-specific delay adjustment. The new **opt-in, test-only**
+`--ppu-dma-timing` path charges eight master clocks per byte, global and
+channel setup, alignment/resumption and the existing 40-clock refresh
+windows. SPC/DSP execution continues during these stalls. Transfer counts
+and fixed/increment/decrement address bookkeeping complete normally, without
+counting DMA bytes as CPU instruction accesses.
+
+This is explicitly a **timing-only PPU model**: it neither renders SNES PPU
+pixels nor supplies reverse-DMA PPU read values/WRAM payloads. Sources with
+ICD read side effects, unsupported mappings and mixed PPU/WRAM channel
+batches fail closed. The pre-existing supported ICD-to-WRAM data-transfer
+path and historical audio baselines remain unchanged. It is not appropriate
+to treat this opt-in capture as proof of complete DMA data or hardware parity.
+
+With the opt-in path, the first upload request is at master clock
+**2,135,142**, versus **2,135,016** in the independent reference: about
+**6 microseconds** apart rather than 39 milliseconds. Original ROM-free
+tests first reproduced the omission, then verified per-byte stalls,
+65,536-byte count semantics, address direction/wrapping, SPC progression and
+rejection of side-effectful sources. An optional local-title startup test
+guards the first upload against the pinned independent observation.
+
+The complete 60-million-instruction native-input Donkey Kong replay still
+matches all 11 input events, five upload fingerprints and three SOUND
+parameter sets. Its first music-command snapshot gap is now **+99.956 ms**
+(reference minus GBB), versus +135.892 ms in the legacy PPU timing path.
+Input marker gaps are roughly +96.6 to +96.7 ms. The earliest phase-write
+value divergence moves to ordinal 311; it has **not** been hidden by keeping
+the old ordinal or applying a fitted phase offset. The remaining upload,
+release and timer phase differences require separate investigation. The four
+deferred visual mismatches and live SGB audio support are not changed here.
+
+The reference startup instruction rows repeat exactly, and its native WAV
+remains `df60299dabe0ba2d86a9a2d645f6792a9e5333f93e0ccac8cd6a8a9c3899c0d7`.
+The new opt-in GBB capture hashes to
+`ecdf32efda85f0067b1e04ce64d286a2aed3fe7c120d92fb917ec46fadf5bdca`.
+Different capture durations and native rates mean these hashes are
+**separate-source reproducibility anchors**, not matching-PCM claims.
+Two complete GBB captures, one with an additional bounded timer-history
+window, repeat the same WAV, boot landmarks and startup instruction rows.
+The optional local replay contracts pin both legacy and PPU-timed PCM hashes
+separately; the old baseline has not been overwritten.
+
+The existing first-KON-anchored comparator, using CSV and WAV from the same
+PPU-timed invocation, observes GBB sample 1,562,715 versus reference native
+sample 1,567,719. With one fixed zero lag on its 8 kHz mono grid, correlations
+are **approximately 0.9996 or better** in the checked windows from +0.02 through +1.5 seconds.
+This indicates closely matching waveform shape after the independent key-on
+anchors; it does **not** erase the roughly 100 ms command-start difference,
+establish sample-exact stereo output or prove real-hardware audio accuracy.
 
 A new fully synthetic SNES program waits, writes a host command to the APU,
 and runs concurrently with an original SPC700 test program. The test stamps

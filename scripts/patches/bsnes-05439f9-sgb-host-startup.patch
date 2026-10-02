@@ -1,0 +1,55 @@
+--- a/bsnes/sfc/cpu/cpu.cpp
++++ b/bsnes/sfc/cpu/cpu.cpp
+@@ -31,7 +31,9 @@
+   }
+ }
+ 
++extern "C" void gbb_reference_sgb_record_host_startup();
+ auto CPU::main() -> void {
++  if(!r.wai && !r.stp && !status.interruptPending) gbb_reference_sgb_record_host_startup();
+   if(r.wai) return instructionWait();
+   if(r.stp) return instructionStop();
+   if(!status.interruptPending) return instruction();
+--- a/bsnes/sfc/dsp/dsp.cpp
++++ b/bsnes/sfc/dsp/dsp.cpp
+@@ -1,10 +1,12 @@
+ #include <sfc/sfc.hpp>
++#include <array>
+ #include <vector>
+ 
+ namespace SuperFamicom {
+ 
+ DSP dsp;
+ #include "gbb_boot_probe.hpp"
++#include "gbb_host_startup.hpp"
+ static std::vector<int16_t> diagnosticDspSamples;
+ static bool diagnosticNativeCheckpoints = false;
+ extern "C" unsigned gbb_reference_sgb_native_checkpoints(unsigned enabled) {
+--- /dev/null
++++ b/bsnes/sfc/dsp/gbb_host_startup.hpp
+@@ -0,0 +1,25 @@
++// Original opt-in diagnostic, never release runtime.
++static std::vector<std::array<uint64, 11>> diagnosticHostStartup;
++static bool diagnosticHostStartupEnabled = false, diagnosticHostStartupOverflow = false;
++extern "C" unsigned gbb_reference_sgb_host_startup_version() { return 1; }
++extern "C" unsigned gbb_reference_sgb_host_startup_enable(unsigned enabled) {
++  diagnosticHostStartupEnabled = enabled != 0;
++  diagnosticHostStartupOverflow = false;
++  diagnosticHostStartup.clear(); diagnosticHostStartup.reserve(131072);
++  return 1;
++}
++extern "C" unsigned gbb_reference_sgb_host_startup_count() {
++  return diagnosticHostStartupOverflow ? 0xffffffffu : diagnosticHostStartup.size();
++}
++extern "C" unsigned gbb_reference_sgb_host_startup_copy(unsigned index, uint64* output) {
++  if(!output || index >= diagnosticHostStartup.size()) return 0;
++  for(unsigned i = 0; i < 11; ++i) output[i] = diagnosticHostStartup[index][i];
++  return 1;
++}
++extern "C" void gbb_reference_sgb_record_host_startup() {
++  if(!diagnosticHostStartupEnabled || diagnosticHostIplReads != 3 || diagnosticBootTransfer) return;
++  if(diagnosticHostStartup.size() == 131072) { diagnosticHostStartupOverflow = true; return; }
++  const auto& r = cpu.r;
++  diagnosticHostStartup.push_back({{cpu.diagnosticMasterClocks(), r.pc.d, r.a.w, r.x.w,
++      r.y.w, r.s.w, r.d.w, r.b, uint8(r.p), cpu.vcounter(), cpu.hcounter()}});
++}
