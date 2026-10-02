@@ -21,7 +21,8 @@ def read_traces(gbb_path: Path, timeline_path: Path):
                                  "pcm_sample", "address", "value"]:
             raise ValueError("invalid GBB trace header")
         gbb = [{"kind": row["kind"], "sample": int(row["pcm_sample"]),
-                "address": int(row["address"]), "value": int(row["value"])}
+                "address": int(row["address"]), "value": int(row["value"]),
+                "clocked": int(row["spc_cycle"]) > 0}
                for row in reader]
     timeline = json.loads(timeline_path.read_text(encoding="utf-8"))
     if not isinstance(timeline, dict) or timeline.get("format") != \
@@ -34,15 +35,18 @@ def read_traces(gbb_path: Path, timeline_path: Path):
     reference = [{"kind": {"dsp": "D", "ram": "R", "host": "H",
                            "state": "V"}[row["kind"]],
                   "sample": row.get("dsp_sample"),
-                  "address": row["address"], "value": row["value"]}
+                  "address": row["address"], "value": row["value"],
+                  "phase": row.get("dsp_phase"),
+                  "clock64": row.get("dsp_clock64")}
                  for row in events]
     for stream in (gbb, reference):
         for row in stream:
-            if row["kind"] not in ("P", "D", "R", "H", "V") or \
-                    (row["kind"] in ("D", "R", "V") and
+            if row["kind"] not in ("P", "D", "R", "H", "V", "Q") or \
+                    (row["kind"] in ("D", "R", "V", "Q") and
                      (type(row["sample"]) is not int or row["sample"] < 0)) or \
                     not 0 <= row["address"] <= (65535 if row["kind"] == "R" else
-                                                   24 if row["kind"] == "V" else 127) or \
+                                                   24 if row["kind"] == "V" else
+                                                   63 if row["kind"] == "Q" else 127) or \
                     not 0 <= row["value"] <= (65535 if row["kind"] == "V" else 255):
                 raise ValueError("invalid sound trace event")
     return gbb, reference
@@ -68,7 +72,8 @@ def register_image(stream, anchor: int, rate: int, offset: float):
 
 def compare(gbb_path: Path, reference_timeline: Path,
             gbb_ram: Path | None = None,
-            reference_ram: Path | None = None) -> str:
+            reference_ram: Path | None = None,
+            require_cycle_checkpoints: bool = False) -> str:
     if (gbb_ram is None) != (reference_ram is None):
         raise ValueError("both APU RAM snapshots are required")
     gbb, reference = read_traces(gbb_path, reference_timeline)
@@ -76,6 +81,11 @@ def compare(gbb_path: Path, reference_timeline: Path,
     ref_anchor, ref_value = keyon(reference)
     if gbb_value != ref_value:
         raise ValueError("first nonzero KON values differ")
+    key_phases = [row for row in gbb if row["kind"] == "Q"]
+    gbb_keys = [row for row in gbb if row["kind"] == "D" and
+                row["address"] == 0x4c and row["value"] != 0]
+    ref_keys = [row for row in reference if row["kind"] == "D" and
+                row["address"] == 0x4c and row["value"] != 0]
     ours = [row for row in gbb if row["kind"] == "R"]
     theirs = [row for row in reference if row["kind"] == "R"]
     if not ours or not theirs:
@@ -85,6 +95,19 @@ def compare(gbb_path: Path, reference_timeline: Path,
              f"Accepted SPC RAM writes at +0.70..+0.85s: "
              f"GBB {len(ours)}, reference {len(theirs)}. "
              "DSP echo writeback is not included."]
+    if len(key_phases) >= 2 and len(ref_keys) >= 2 and \
+            all(type(row["clock64"]) is int and 0 <= row["clock64"] < 64
+                for row in ref_keys[:2]):
+        for index in range(2):
+            if len(gbb_keys) <= index or \
+                    (key_phases[index]["sample"], key_phases[index]["value"]) != \
+                    (gbb_keys[index]["sample"], gbb_keys[index]["value"]):
+                raise ValueError("key-write phase event does not match KON write")
+            ours_phase = key_phases[index]["address"]
+            ref_phase = ref_keys[index]["clock64"]
+            lines.append(f"KON {index+1} write clock in 64-cycle key-poll period: "
+                         f"GBB={ours_phase}, reference={ref_phase}; "
+                         f"{'same' if ours_phase == ref_phase else 'different'} write phase.")
     prefix = 0
     for left, right in zip(ours, theirs):
         if (left["address"], left["value"]) != \
@@ -131,7 +154,8 @@ def compare(gbb_path: Path, reference_timeline: Path,
                  "themselves identify a synthesizer bug.")
     for checkpoint in (0, 1, 2):
         snapshots = []
-        for stream in (gbb, reference):
+        elapsed = []
+        for stream_index, stream in enumerate((gbb, reference)):
             rows = [row for row in stream if row["kind"] == "V"]
             if len(rows) != 75:
                 raise ValueError("expected three complete 25-field DSP state snapshots")
@@ -140,11 +164,30 @@ def compare(gbb_path: Path, reference_timeline: Path,
                     len({row["sample"] for row in selected}) != 1:
                 raise ValueError("malformed DSP state snapshot")
             snapshots.append([row["value"] for row in selected])
+            if require_cycle_checkpoints and (
+                    (stream_index == 0 and not all(row["clocked"] for row in selected)) or
+                    (stream_index == 1 and not all(row["phase"] == 28 for row in selected))):
+                raise ValueError("cycle comparison requires checkpoints immediately after DSP phase 27")
+            if checkpoint == 2:
+                keys = [row for row in stream if row["kind"] == "D" and
+                        row["address"] == 0x4c and row["value"] != 0]
+                if len(keys) < 2:
+                    raise ValueError("second nonzero KON is missing")
+                if stream_index == 0:
+                    second_mask = keys[1]["value"]
+                elif second_mask != keys[1]["value"]:
+                    raise ValueError("second KON values differ")
+                elapsed.append(selected[0]["sample"] - keys[1]["sample"])
+        if checkpoint == 2 and elapsed != [640, 640]:
+            raise ValueError(f"second-KON checkpoints need exactly 640 native samples on both sides; got {elapsed}")
         left, right = snapshots
         changed_env = [voice for voice in range(8)
                        if left[voice * 3] != right[voice * 3]]
         label = ("first KON +0.75s", "first KON +0.82s",
-                 "second KON +0.02s")[checkpoint]
+                 "second KON +640 native samples")[checkpoint]
+        if checkpoint == 2:
+            lines.append("Second-KON elapsed outputs: GBB=640, reference=640. "
+                         "Equal output counts do not establish equal write/poll phase.")
         lines.append(f"Internal DSP checkpoint {label}: "
                      f"envelope differs on voices {changed_env or 'none'}; "
                      f"echo offsets GBB={left[24]} reference={right[24]}.")
@@ -197,10 +240,11 @@ def main() -> int:
     parser.add_argument("--reference-timeline", required=True, type=Path)
     parser.add_argument("--gbb-ram", type=Path)
     parser.add_argument("--reference-ram", type=Path)
+    parser.add_argument("--require-cycle-checkpoints", action="store_true")
     args = parser.parse_args()
     try:
         print(compare(args.gbb_events, args.reference_timeline,
-                      args.gbb_ram, args.reference_ram))
+                      args.gbb_ram, args.reference_ram, args.require_cycle_checkpoints))
         return 0
     except (OSError, ValueError, KeyError, TypeError) as error:
         print(f"sound RAM comparison failed: {error}", file=sys.stderr)

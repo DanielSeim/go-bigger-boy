@@ -12,7 +12,7 @@ import wave
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from capture_sgb_libretro_audio import (BUTTON_IDS, decode_video_row,
+from capture_sgb_libretro_audio import (BUTTON_IDS, decode_video_row, diagnostic_option,
                                         load_input_script, schedule_input)
 from compare_sgb_audio_phase import rank_offsets, series_transitions
 from compare_sgb_title_audio import (compare, correlation, read_stereo_wav,
@@ -208,18 +208,23 @@ def main() -> None:
             "kind,master_clock,spc_cycle,pcm_sample,address,value\n"
             "P,1000000,0,31990,0,0\n"
             "D,0,100,32000,76,4\n"
+            "Q,0,100,32000,2,4\n"
             "R,0,0,55000,4660,42\n"
             "D,0,101,57600,12,7\n" +
+            "D,0,102,58360,76,4\n" +
+            "Q,0,102,58360,62,4\n" +
             "".join(f"V,0,0,{sample},{address},0\n"
                     for sample in (56000, 58240, 59000)
                     for address in range(25)), encoding="utf-8")
         stages["post_audible_sound_writes"] = [
             {"kind": "dsp", "address": 76, "value": 4,
-             "dsp_sample": 32040},
+             "dsp_sample": 32040, "dsp_clock64": 37},
             {"kind": "ram", "address": 4660, "value": 42,
              "dsp_sample": 55068},
             {"kind": "dsp", "address": 12, "value": 7,
-             "dsp_sample": 57672}]
+             "dsp_sample": 57672},
+            {"kind": "dsp", "address": 76, "value": 4,
+             "dsp_sample": 58450, "dsp_clock64": 41}]
         stages["post_audible_sound_writes"].extend(
             {"kind": "state", "address": address, "value": 0,
              "dsp_sample": sample}
@@ -228,6 +233,49 @@ def main() -> None:
         ram_report = compare_sound_ram(ram_csv, stages_timeline)
         assert "RAM address/value ordered prefix: 1 writes" in ram_report
         assert "+0.80s DSP write-derived registers: 2 common, 0 differ" in ram_report
+        assert "Second-KON elapsed outputs: GBB=640, reference=640" in ram_report
+        assert "GBB=62, reference=41; different write phase" in ram_report
+        assert diagnostic_option(b"bsnes_dsp_fast", True) == b"OFF"
+        assert diagnostic_option(b"bsnes_dsp_fast", False) is None
+        assert diagnostic_option(b"unrelated", True) is None
+        for row in stages["post_audible_sound_writes"]:
+            if row["kind"] == "state" and row["dsp_sample"] == 59090:
+                row["dsp_sample"] += 1
+        stages_timeline.write_text(json.dumps(stages), encoding="utf-8")
+        try:
+            compare_sound_ram(ram_csv, stages_timeline)
+        except ValueError as error:
+            assert "exactly 640 native samples" in str(error)
+        else:
+            raise AssertionError("off-by-one checkpoint was accepted")
+        for row in stages["post_audible_sound_writes"]:
+            if row["kind"] == "state" and row["dsp_sample"] == 59091:
+                row["dsp_sample"] -= 1
+        stages_timeline.write_text(json.dumps(stages), encoding="utf-8")
+        try:
+            compare_sound_ram(ram_csv, stages_timeline, require_cycle_checkpoints=True)
+        except ValueError as error:
+            assert "immediately after DSP phase 27" in str(error)
+        else:
+            raise AssertionError("unclocked checkpoint was accepted")
+        original_ram_csv = ram_csv.read_text(encoding="utf-8")
+        ram_csv.write_text(original_ram_csv.replace("V,0,0,", "V,0,100,"),
+                           encoding="utf-8")
+        for row in stages["post_audible_sound_writes"]:
+            if row["kind"] == "state":
+                row["dsp_phase"] = 28
+        stages_timeline.write_text(json.dumps(stages), encoding="utf-8")
+        assert "GBB=640, reference=640" in compare_sound_ram(
+            ram_csv, stages_timeline, require_cycle_checkpoints=True)
+        stages["post_audible_sound_writes"][-1]["dsp_phase"] = 0
+        stages_timeline.write_text(json.dumps(stages), encoding="utf-8")
+        try:
+            compare_sound_ram(ram_csv, stages_timeline, require_cycle_checkpoints=True)
+        except ValueError as error:
+            assert "immediately after DSP phase 27" in str(error)
+        else:
+            raise AssertionError("batched reference checkpoint was accepted")
+        ram_csv.write_text(original_ram_csv, encoding="utf-8")
         stages["post_audible_sound_writes"][1]["value"] = 43
         stages_timeline.write_text(json.dumps(stages), encoding="utf-8")
         ram_report = compare_sound_ram(ram_csv, stages_timeline)

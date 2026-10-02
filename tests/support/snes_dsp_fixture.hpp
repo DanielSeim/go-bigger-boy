@@ -42,6 +42,16 @@ int run_dsp_fixture(Sink& sink) {
         std::istringstream fields(line);
         std::string operation;
         if (!(fields >> operation)) continue;
+        if (operation == "keyclock") {
+            std::string excess;
+            const auto clock = sink.key_clock();
+            if ((fields >> excess) || !clock) {
+                std::cerr << "fixture line " << line_number << ": invalid keyclock probe\n";
+                return 2;
+            }
+            std::cerr << "keyclock " << *clock << '\n';
+            continue;
+        }
         if (operation == "endx") {
             std::string excess;
             if (fields >> excess) {
@@ -71,7 +81,15 @@ int run_dsp_fixture(Sink& sink) {
                 return value;
             };
             const auto address = parse(first);
-            if (operation == "ram" || operation == "reg") {
+            if (operation == "state") {
+                const auto field = parse(second);
+                if (address > 8 || field > 2 || (address == 8 && field != 0))
+                    throw std::out_of_range("state voice or field");
+                const auto value = sink.state(static_cast<unsigned>(address),
+                                              static_cast<unsigned>(field));
+                if (!value) throw std::invalid_argument("state probe unavailable");
+                std::cerr << "state " << address << ' ' << field << ' ' << *value << '\n';
+            } else if (operation == "ram" || operation == "reg") {
                 const auto value = parse(second);
                 if (value > 0xffUL || address > (operation == "ram" ? 0xffffUL : 0x7fUL)) {
                     throw std::out_of_range("address or value");

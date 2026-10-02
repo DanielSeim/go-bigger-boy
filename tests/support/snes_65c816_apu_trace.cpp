@@ -1,6 +1,7 @@
 #include "snes_65c816_trace_cpu.hpp"
 #include "snes_icd_gb_source.hpp"
 #include "snes_dsp_pcm_renderer.hpp"
+#include "snes_dsp_clock.hpp"
 #include "gameboy/snes_spc700.hpp"
 
 #include <array>
@@ -76,6 +77,7 @@ int main(int argc, char** argv) {
         (std::string_view(argv[3]) == "--sync-gb-sgb1" ||
          std::string_view(argv[3]) == "--sync-gb-sgb2");
     bool audible_sound_probe = false;
+    bool clocked_dsp = false;
     std::filesystem::path input_script_path;
     std::filesystem::path pcm_output_path;
         std::filesystem::path sound_event_trace_path;
@@ -86,6 +88,8 @@ int main(int argc, char** argv) {
             const std::string_view option(argv[index]);
             if (option == "--audible-sound-probe" && !audible_sound_probe) {
                 audible_sound_probe = true;
+            } else if (option == "--clocked-dsp" && !clocked_dsp) {
+                clocked_dsp = true;
             } else if (option == "--input-script" &&
                        input_script_path.empty() && index + 1 < argc) {
                 input_script_path = argv[++index];
@@ -131,6 +135,7 @@ int main(int argc, char** argv) {
                      "--sync-gb-sgb2 GB-ROM GB-BOOT"
                      " [--input-script PATH] [--pcm-output WAV] [--instruction-limit N]"
                      " [--sound-event-trace-output CSV]"
+                     " [--clocked-dsp]"
                      " [--audible-sound-probe]]\n";
         return 2;
     }
@@ -191,6 +196,7 @@ int main(int argc, char** argv) {
         std::vector<SoundTraceEvent> sound_trace;
         gameboy::SnesApuBus pcm_bus;
         sgb_test::SnesDspPcmRenderer pcm(pcm_bus);
+        sgb_test::SnesDspClock pcm_clock(pcm, pcm_bus);
         struct DspObservation {
             struct Event {
                 std::uint64_t completed_cycle{};
@@ -214,6 +220,7 @@ int main(int argc, char** argv) {
             bool unsupported{};
             bool pcm_unsupported{};
             sgb_test::SnesDspPcmRenderer* pcm{};
+            sgb_test::SnesDspClock* clock{};
             gameboy::SnesApuBus* pcm_bus{};
             const sgb_test::SnesIcdGbSource* icd{};
             std::uint64_t next_sample_cycle{};
@@ -232,6 +239,7 @@ int main(int argc, char** argv) {
         std::vector<sgb_test::SnesDspPcmRenderer::StereoSample> pcm_export;
         if (sync_gb) {
             dsp_observation.pcm = &pcm;
+            if (clocked_dsp) dsp_observation.clock = &pcm_clock;
             dsp_observation.pcm_bus = &pcm_bus;
             dsp_observation.icd = icd.get();
             if (!pcm_output_path.empty()) dsp_observation.pcm_export = &pcm_export;
@@ -348,6 +356,7 @@ int main(int argc, char** argv) {
                         if (sync_gb) {
                             pcm_bus = apu;
                             pcm.reset();
+                            pcm_clock.reset();
                         }
                         apu.set_dsp_write_observer(
                             [](void* context, std::uint8_t address,
@@ -386,10 +395,19 @@ int main(int argc, char** argv) {
                                 auto& observed = *static_cast<DspObservation*>(context);
                                 if (observed.pcm != nullptr) {
                                     if (observed.next_sample_cycle == 0)
-                                        observed.next_sample_cycle = cycle + 32;
+                                        observed.next_sample_cycle = cycle +
+                                            (observed.clock != nullptr ? 1 : 32);
                                     while (observed.next_sample_cycle <= cycle &&
                                            !observed.unsupported) {
-                                        const auto sample = observed.pcm->next_sample();
+                                        const bool output = observed.clock == nullptr ||
+                                            observed.clock->phase() == 27;
+                                        const auto sample = observed.clock != nullptr
+                                            ? observed.clock->clock()
+                                            : observed.pcm->next_sample();
+                                        if (!output) {
+                                            ++observed.next_sample_cycle;
+                                            continue;
+                                        }
                                         if (!sample) {
                                             observed.unsupported = true;
                                             observed.pcm_unsupported = true;
@@ -418,11 +436,15 @@ int main(int argc, char** argv) {
                                                 for (unsigned voice = 0; voice < 8; ++voice)
                                                     for (unsigned field = 0; field < 3; ++field)
                                                         observed.sound_trace->push_back({
-                                                            'V', 0, 0, observed.pcm_samples,
+                                                            'V', 0,
+                                                            observed.clock != nullptr ? observed.next_sample_cycle : 0,
+                                                            observed.pcm_samples,
                                                             static_cast<std::uint16_t>(voice * 3 + field),
                                                             observed.pcm->diagnostic_state(voice, field)});
                                                 observed.sound_trace->push_back({
-                                                    'V', 0, 0, observed.pcm_samples, 24,
+                                                    'V', 0,
+                                                    observed.clock != nullptr ? observed.next_sample_cycle : 0,
+                                                    observed.pcm_samples, 24,
                                                     observed.pcm->diagnostic_state(8, 0)});
                                                 ++observed.state_checkpoints;
                                             }
@@ -446,7 +468,8 @@ int main(int argc, char** argv) {
                                                  static_cast<std::uint8_t>(bits >> 8)) *
                                                 1099511628211ULL;
                                         }
-                                        observed.next_sample_cycle += 32;
+                                        observed.next_sample_cycle +=
+                                            observed.clock != nullptr ? 1 : 32;
                                     }
                                 }
                                 for (unsigned index = 0;
@@ -508,6 +531,15 @@ int main(int argc, char** argv) {
                                         if (observed.pcm != nullptr)
                                             observed.pcm->write_dsp(
                                                 observed.address, observed.value);
+                                        if (observed.clock != nullptr &&
+                                            observed.sound_trace != nullptr &&
+                                            observed.address == 0x4c && observed.value != 0 &&
+                                            observed.icd->audible_sound_packets_delivered() != 0 &&
+                                            observed.sound_trace->size() < 32768)
+                                            observed.sound_trace->push_back({
+                                                'Q', 0, cycle, observed.pcm_samples,
+                                                static_cast<std::uint16_t>(observed.clock->key_poll_clock()),
+                                                observed.value});
                                     }
                                 }
                                 observed.pending = 0;

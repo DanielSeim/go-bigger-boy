@@ -619,7 +619,7 @@ No hardware capture was used, and this result does not enable live SGB audio.
 The pinned development probe now records accepted SPC700 physical RAM writes
 from +0.70 to +0.85 s after the first nonzero KON, plus DSP voice/echo-state
 checkpoints at first-KON +0.75 s, first-KON +0.82 s, and second-KON +0.02 s.
-The captures are compared with:
+The original version-6 captures were compared with:
 
 ```sh
 python3 scripts/compare_sgb_sound_ram.py \
@@ -659,6 +659,92 @@ It does **not** yet prove which implementation's sample phase is hardware-
 correct; the development renderer and independent reference have distinct
 clocking paths, and their snapshot points may differ by a DSP sample. Do not
 change the shipping clock or claim SGB audio support based on this probe.
+
+### Cycle-boundary and second-KON follow-up
+
+The version-7 diagnostic corrects two comparison problems above. The original
+second-KON checkpoint used 640 native outputs on GBB but 641 on the reference;
+it now uses **640 outputs on both sides**, rather than rounding 20 ms at each
+native rate. The reference capture explicitly requests `bsnes_dsp_fast=OFF`:
+its default fast mode batches 32 DSP clocks and exposes state after a different
+phase. Version 7 records and validates reference checkpoint phase 28, immediately
+after the DAC output at phase 27. Old probe builds/captures cannot be reused
+for this cycle-boundary comparison. The local title probe must opt into the
+shared single-clock test renderer:
+
+```sh
+build/gameboy_snes_65c816_apu_trace \
+  /path/to/sgb2.program.rom /path/to/spc700.rom \
+  --sync-gb-sgb2 '/path/to/Donkey Kong (JU) (V1.1) [S][!].gb' \
+  /path/to/sgb2.boot.rom \
+  --input-script tests/fixtures/sgb/titles/donkey-kong-gameplay.script \
+  --instruction-limit 40000000 --clocked-dsp \
+  --pcm-output /tmp/gbb-clocked-title.wav \
+  --sound-event-trace-output /tmp/gbb-clocked-title.csv \
+  --apu-ram-output /tmp/gbb-clocked-title-ram.bin
+
+python3 scripts/compare_sgb_sound_ram.py \
+  --gbb-events /tmp/gbb-clocked-title.csv \
+  --reference-timeline /tmp/sgb2-snes-only-timeline.json \
+  --gbb-ram /tmp/gbb-clocked-title-ram.bin \
+  --reference-ram /tmp/sgb2-reference-apu-ram.bin \
+  --require-cycle-checkpoints
+```
+
+Recapture the reference with the command in the SNES-only section and the
+version-7 patch. The timeline records the explicit reference option, every
+DSP write's position in its 64-clock KON-poll period, and the checkpoint phase.
+GBB records matching `Q` key-write phase events and nonzero SPC-cycle positions
+on clocked `V` checkpoints. The comparator rejects off-by-one second-KON
+output counts and missing/wrong cycle checkpoint markers. Its strict flag
+verifies the **observation boundary**, not equal host or KON-write phase.
+SPC writes are still stamped at instruction end in GBB, not individual bus
+access cycles, and the diagnostic DSP starts at the uploaded-program handoff.
+
+A new ROM-free voice-2 retrigger corpus uses original looping BRR data and
+pitch 1,437. It covers every write phase and both alternate-sample key-poll
+parities (64 cases), observes the first eight startup outputs and outputs
+640/641, and compares PCM, envelope, BRR address, interpolation position,
+and key-poll clock position with the independent DSP. It exposed a genuine
+**test-renderer state-ordering error**: accepting KON cleared the old envelope
+and ring position immediately instead of at the following source-startup step.
+The cycle renderer now latches the restart, preserves the accepted sample's
+old state/pitch update, and clears state at source startup. The whole-sample
+path retains its existing behavior. All 64 cases then match the independent
+DSP byte-for-byte; advancing output 640 to 641 adds exactly one pitch step.
+The independently checked PCM/state/key-clock corpus SHA-256 is
+`1a4d66d373ad299283f2f3684da0c5d94af490ecf442841c6ade48483ecade1c`.
+Normal CTest uses that ROM-free pin; optional independent verification is:
+
+```sh
+python3 tests/snes_dsp_second_keyon_phase_tests.py \
+  build/gameboy_snes_dsp_pcm_fixture_runner \
+  --reference-dir /tmp/bsnes-sgb-reference-src/bsnes/sfc/dsp
+```
+
+The correctly sampled local Donkey Kong replay still has different key-write
+phases: first KON is GBB clock 2 versus reference 37 in the 64-clock period;
+second KON is 62 versus 41. At output 640 after the second write, active voice
+2 still has envelope 2,047 and BRR address `$3b7e` on both sides, with positions
+9,938 versus 8,501 (one pitch step). The 41,280-byte uploaded sample region
+remains identical. Different write/poll phase can change accepted startup
+timing despite equal output counts; the 64-phase corpus demonstrates matching
+synthesis **when the stimulus phase is equal**. Do not infer a pitch-decoder
+bug or alter the shipping clock from this title-state difference.
+Moreover, the same synthetic sample/register data at write phase 41 gives
+position 8,501 after 640 outputs, while phase 62 gives 9,938: this reproduces
+the title's exact one-step difference using **only** a change of write phase.
+The ROM-free test asserts both positions. This explains that checkpoint
+difference without assuming different BRR content or a wrong pitch increment;
+it does not establish which whole-system scheduling is hardware-correct.
+
+With fast DSP disabled and the cycle renderer selected, the fixed-lag 8 kHz
+title PCM correlations are approximately 0.93/0.92/0.91 at +0.8/+0.9/+1.0 s,
+with level ratios near one. These are diagnostics, not sample-exact results;
+the earlier apparent sudden +0.8-s split is not a valid isolated synthesizer
+regression. The remaining task is to align/validate instruction and bus-level
+host/SPC/DSP scheduling. No real-hardware audio capture was used, and none
+of these test-path corrections enables live SGB audio in releases.
 
 A new fully synthetic SNES program waits, writes a host command to the APU,
 and runs concurrently with an original SPC700 test program. The test stamps

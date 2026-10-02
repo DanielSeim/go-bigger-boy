@@ -1,5 +1,6 @@
 #include "snes_dsp_fixture.hpp"
 #include "snes_dsp_pcm_renderer.hpp"
+#include "snes_dsp_clock.hpp"
 
 #include "gameboy/snes_audio_host.hpp"
 
@@ -11,7 +12,7 @@ namespace {
 
 class Sink final {
 public:
-    Sink() : renderer_(bus_) {}
+    Sink() : renderer_(bus_), clock_(renderer_, bus_) {}
     void ram(const std::uint16_t address, const std::uint8_t value) {
         if (clock_count_ != 0) supported_ = false;
         bus_.spc_write(address, value);
@@ -33,6 +34,12 @@ public:
         return std::array<std::int16_t, 2>{sample->left, sample->right};
     }
     [[nodiscard]] std::uint8_t endx() const noexcept { return renderer_.endx(); }
+    [[nodiscard]] std::optional<unsigned> key_clock() const {
+        return clock_.key_poll_clock();
+    }
+    [[nodiscard]] std::optional<std::uint32_t> state(unsigned voice, unsigned field) const {
+        return renderer_.diagnostic_state(voice, field);
+    }
     [[nodiscard]] sgb_test::DspClockResult step_result() {
         if (!supported_ || clock_count_ != 0) return {false, {}};
         stepped_ = true;
@@ -41,47 +48,10 @@ public:
     }
     [[nodiscard]] sgb_test::DspClockResult clock() {
         if (!supported_ || stepped_) return {false, {}};
-        const auto phase = clock_count_ % 32;
-        renderer_.latch_timed_voice_registers(static_cast<unsigned>(phase));
-        if (phase == 0) renderer_.mix_timed_voice_channel(0, 1);
-        if (phase == 31) renderer_.mix_timed_voice_channel(0, 0);
-        if (phase >= 1 && phase <= 19 && (phase - 1) % 3 == 0) {
-            renderer_.advance_timed_voice(static_cast<unsigned>((phase + 2) / 3));
-        }
-        if (phase >= 2 && phase <= 20 && (phase - 2) % 3 == 0) {
-            renderer_.mix_timed_voice_channel(static_cast<unsigned>((phase + 1) / 3), 0);
-        }
-        if (phase >= 3 && phase <= 21 && (phase - 3) % 3 == 0) {
-            renderer_.mix_timed_voice_channel(static_cast<unsigned>(phase / 3), 1);
-        }
-        // The S-DSP publishes voice n's ENDX bit at phase 2 + 3*n.
-        if (phase >= 2 && phase <= 23 && (phase - 2) % 3 == 0) {
-            renderer_.publish_timed_endx(static_cast<unsigned>((phase - 2) / 3));
-        }
-        if (phase >= 22 && phase <= 25) renderer_.latch_timed_fir(phase);
-        if (phase == 26) {
-            left_volume_ = bus_.dsp_register(0x0C);
-            left_echo_volume_ = bus_.dsp_register(0x2C);
-            renderer_.timed_phase26();
-        }
-        if (phase == 27) {
-            right_volume_ = bus_.dsp_register(0x1C);
-            right_echo_volume_ = bus_.dsp_register(0x3C);
-        }
-        if (phase == 27) renderer_.timed_phase27();
-        if (phase == 28) renderer_.timed_phase28();
         ++clock_count_;
-        if (phase == 29) {
-            renderer_.timed_phase29();
-            renderer_.timed_echo_phase29();
-        }
-        if (phase == 30) {
-            renderer_.advance_timed_sample();
-            renderer_.timed_echo_phase30();
-        }
-        if (phase != 27) return {true, {}};
-        const auto sample = renderer_.output_timed_sample(
-            left_volume_, right_volume_, left_echo_volume_, right_echo_volume_);
+        const bool output = clock_.phase() == 27;
+        const auto sample = clock_.clock();
+        if (!output) return {true, {}};
         if (!sample) return {false, {}};
         return {true, std::array<std::int16_t, 2>{sample->left, sample->right}};
     }
@@ -89,11 +59,8 @@ public:
 private:
     gameboy::SnesApuBus bus_;
     sgb_test::SnesDspPcmRenderer renderer_;
+    sgb_test::SnesDspClock clock_;
     std::uint64_t clock_count_{};
-    std::uint8_t left_volume_{};
-    std::uint8_t right_volume_{};
-    std::uint8_t left_echo_volume_{};
-    std::uint8_t right_echo_volume_{};
     bool supported_{true};
     bool stepped_{};
 };

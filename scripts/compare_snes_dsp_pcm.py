@@ -33,6 +33,10 @@ def build_reference(source_dir: Path, output: Path) -> None:
         str(SUPPORT / "snes_dsp_reference_fixture_runner.cpp"),
         str(source), "-o", str(output),
     ]
+    if "diagnostic_state(" in header.read_text(encoding="utf-8"):
+        command.insert(len(compiler), "-DGBB_REFERENCE_DIAGNOSTIC_STATE")
+    if "diagnostic_key_poll_clock(" in header.read_text(encoding="utf-8"):
+        command.insert(len(compiler), "-DGBB_REFERENCE_KEY_CLOCK")
     subprocess.run(command, check=True)
 
 

@@ -368,17 +368,27 @@ void SnesDspPcmRenderer::advance_voice(const unsigned index,
     if (timed) keys.soft_reset = (bus_.dsp_register(0x6C) & 0x80U) != 0;
     const auto bit = static_cast<std::uint8_t>(1U << index);
     const bool accepted_kon = (keys.key_on & bit) != 0;
+    const auto apply_keys = [&] {
+        auto controls = keys;
+        if (timed && accepted_kon) controls.key_on = 0;
+        gameboy::SnesDspKeyControl::apply_voice(
+            index, controls, voice.ring, voice.envelope, voice.sequence);
+        if (timed && accepted_kon) voice.sequence.latch_key_on();
+    };
     voice_output16_[index] = 0;
     if (!voice.started) {
         if (accepted_kon) {
             voice.started = true;
-            gameboy::SnesDspKeyControl::apply_voice(
-                index, keys, voice.ring, voice.envelope, voice.sequence);
+            apply_keys();
             ends_.apply_sample(index, nullptr, true, voice.envelope);
         }
         return;
     }
     const auto step = voice.sequence.next(voice.ring);
+    if (timed && step.read_source) {
+        voice.ring.key_on();
+        voice.envelope.key_on();
+    }
     const auto directory = timed ? timed_voice_registers_[index].directory
                                  : bus_.dsp_register(0x5D);
     const auto source = timed ? timed_voice_registers_[index].source
@@ -409,8 +419,7 @@ void SnesDspPcmRenderer::advance_voice(const unsigned index,
         voice.envelope.reset();
     }
     if (!accepted_kon) {
-        gameboy::SnesDspKeyControl::apply_voice(
-            index, keys, voice.ring, voice.envelope, voice.sequence);
+        apply_keys();
     }
     if (step.clock_envelope && !accepted_kon) {
         voice.envelope.clock(rates_, timed ? timed_voice_registers_[index].adsr0
@@ -424,7 +433,7 @@ void SnesDspPcmRenderer::advance_voice(const unsigned index,
         group = voice.stream.decode_into_ring(directory, source, voice.ring);
         decoded = &group;
     }
-    if (step.advance_pitch && !accepted_kon) {
+    if (step.advance_pitch && (!accepted_kon || timed)) {
         const auto pitch_low = timed ? timed_voice_registers_[index].pitch_low
                                      : voice_register(bus_, index, 2);
         const auto pitch_high = timed ? timed_voice_registers_[index].pitch_high
@@ -437,8 +446,7 @@ void SnesDspPcmRenderer::advance_voice(const unsigned index,
             index != 0 && ((timed ? timed_pmon_ : bus_.dsp_register(0x2D)) & bit) != 0);
     }
     if (accepted_kon) {
-        gameboy::SnesDspKeyControl::apply_voice(
-            index, keys, voice.ring, voice.envelope, voice.sequence);
+        apply_keys();
     }
     ends_.apply_sample(index, decoded, accepted_kon, voice.envelope);
 }

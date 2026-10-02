@@ -18,6 +18,22 @@ public:
         dsp_.write(address, value);
     }
     [[nodiscard]] std::uint8_t endx() const { return dsp_.read(0x7c); }
+    [[nodiscard]] std::optional<unsigned> key_clock() const {
+#ifdef GBB_REFERENCE_KEY_CLOCK
+        return dsp_.diagnostic_key_poll_clock();
+#else
+        return std::nullopt;
+#endif
+    }
+    [[nodiscard]] std::optional<std::uint32_t> state(unsigned voice, unsigned field) const {
+#ifdef GBB_REFERENCE_DIAGNOSTIC_STATE
+        return static_cast<std::uint32_t>(dsp_.diagnostic_state(voice, field));
+#else
+        (void)voice;
+        (void)field;
+        return std::nullopt;
+#endif
+    }
     [[nodiscard]] std::optional<std::array<std::int16_t, 2>> step() {
         // Leave one stereo slot spare: this implementation redirects its
         // output pointer to an internal buffer when a buffer fills exactly.

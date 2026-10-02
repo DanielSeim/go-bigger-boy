@@ -81,6 +81,27 @@ void test_group_due_during_playback() {
           "steady playback requests a BRR group when phase reaches 0x4000");
 }
 
+void test_cycle_latch_preserves_old_voice() {
+    gameboy::SnesDspKeyOnSequence sequence;
+    gameboy::SnesDspSampleRing ring;
+    gameboy::SnesDspEnvelope envelope;
+    gameboy::SnesDspRateClock rates;
+    ring.advance_pitch(1437);
+    envelope.key_on();
+    rates.advance();
+    envelope.clock(rates, 0, 0, 127);
+    const auto value = envelope.value();
+    sequence.latch_key_on();
+    check(value != 0 && envelope.value() == value && ring.phase() == 1437,
+          "cycle-driven KON latch retains the old envelope and pitch position");
+    check(same(sequence.next(ring), Step{true, true, false, false, false}),
+          "the following voice step requests source startup after a latched KON");
+    ring.key_on();
+    envelope.key_on();
+    check(ring.phase() == 0 && envelope.value() == 0,
+          "the cycle-driven caller clears state at the source startup step");
+}
+
 void test_startup_pipeline_handoff() {
     gameboy::SnesApuBus bus;
     bus.spc_write(0x2800, 0x00);
@@ -128,6 +149,7 @@ void test_startup_pipeline_handoff() {
 int main() {
     test_startup_actions_and_retrigger();
     test_group_due_during_playback();
+    test_cycle_latch_preserves_old_voice();
     test_startup_pipeline_handoff();
     return failures == 0 ? 0 : 1;
 }

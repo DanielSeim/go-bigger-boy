@@ -80,6 +80,11 @@ class PcmCompareToolTests(unittest.TestCase):
                 self.assertEqual(hashlib.sha256(pcm).hexdigest(), expected)
 
     def test_rejects_malformed_stimuli(self) -> None:
+        for data in (b"state 9 0\n", b"state 8 1\n", b"state 2 3\n",
+                     b"state 2 0 extra\n"):
+            invalid_state = subprocess.run([str(self.runner)], input=data,
+                                           capture_output=True, check=False)
+            self.assertEqual(invalid_state.returncode, 2)
         malformed = subprocess.run(
             [str(self.runner)], input=b"ram 0x10000 1\nstep 1\n",
             capture_output=True, check=False,

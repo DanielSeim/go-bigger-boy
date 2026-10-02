@@ -20,6 +20,16 @@ BUTTON_IDS = {"right": 7, "left": 6, "up": 4, "down": 5,
 GB_FRAME_RATE = 4194304 / 70224
 
 
+class RetroVariable(C.Structure):
+    _fields_ = [("key", C.c_char_p), ("value", C.c_char_p)]
+
+
+def diagnostic_option(key: bytes, snes_only: bool) -> bytes | None:
+    # A batched DSP can expose state several phases after a DAC sample. Use
+    # single-clock scheduling for the instrumented reference, explicitly.
+    return b"OFF" if snes_only and key == b"bsnes_dsp_fast" else None
+
+
 def decode_video_row(row: bytes, pixel_format: int) -> bytes:
     """Convert one native-endian libretro row to packed RGB888."""
     bytes_per_pixel = 4 if pixel_format == 1 else 2
@@ -196,7 +206,7 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
         if any(not hasattr(core, symbol) for symbol in probe_symbols):
             raise RuntimeError("core is not the instrumented SNES-only reference build")
         core.gbb_reference_sgb_probe_version.restype = C.c_uint
-        if core.gbb_reference_sgb_probe_version() != 6:
+        if core.gbb_reference_sgb_probe_version() != 7:
             raise RuntimeError("unsupported SNES-only reference probe version")
         core.gbb_reference_sgb_sound_count.restype = C.c_uint
         core.gbb_reference_sgb_sound_packet.argtypes = [C.c_uint,
@@ -251,6 +261,7 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
     video_pixel_format = 0  # RETRO_PIXEL_FORMAT_0RGB1555 is the API default.
     subsystems: dict[str, int] = {}
     system_bytes = C.c_char_p(str(system_dir.resolve()).encode())
+    configured_options: dict[str, str] = {}
 
     with tempfile.TemporaryDirectory(prefix="gbb-sgb-reference-") as save_dir:
         save_bytes = C.c_char_p(save_dir.encode())
@@ -283,6 +294,14 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                 return True
             if command == 17:  # GET_VARIABLE_UPDATE
                 C.cast(data, C.POINTER(C.c_bool))[0] = False
+                return True
+            if command == 15:  # GET_VARIABLE
+                variable = C.cast(data, C.POINTER(RetroVariable)).contents
+                value = diagnostic_option(variable.key, require_snes_only_probe)
+                if value is None:
+                    return False
+                variable.value = value
+                configured_options[variable.key.decode()] = value.decode()
                 return True
             return False
 
@@ -380,6 +399,8 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                 sample_start = len(audio) // 4
                 core.retro_run()
                 if require_snes_only_probe:
+                    if configured_options.get("bsnes_dsp_fast") != "OFF":
+                        raise RuntimeError("reference did not request single-clock DSP configuration")
                     sound_count = core.gbb_reference_sgb_sound_count()
                     if sound_count < next_sound_event or sound_count > 1024:
                         raise RuntimeError("reference SOUND probe count reset or overflowed")
@@ -413,7 +434,9 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                                             127 if entry[0] == 2 else
                                             24 if entry[0] == 4 else 65535) or \
                                 entry[2] > (65535 if entry[0] == 4 else 255) or \
-                                (entry[0] == 1 and (entry[4] >= 262 or entry[5] >= 1364)):
+                                (entry[0] == 1 and (entry[4] >= 262 or entry[5] >= 1364)) or \
+                                (entry[0] == 2 and entry[5] >= 64) or \
+                                (entry[0] == 4 and entry[5] != 28):
                             raise RuntimeError("reference sound write trace is invalid")
                         sound_trace.append({"kind": {1: "host", 2: "dsp", 3: "ram",
                                                       4: "state"}[entry[0]],
@@ -424,6 +447,10 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                                             "cpu_vcounter": int(entry[4]),
                                             "cpu_hcounter": int(entry[5]),
                                             "run_index": frame})
+                        if entry[0] == 4:
+                            sound_trace[-1]["dsp_phase"] = int(entry[5])
+                        if entry[0] == 2:
+                            sound_trace[-1]["dsp_clock64"] = int(entry[5])
                     next_trace_event = trace_count
                 if timeline_output is not None:
                     run_samples.append([sample_start, len(audio) // 4])
@@ -508,6 +535,7 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                             "sgb_sound_events": sound_events}
                 if require_snes_only_probe:
                     timeline["post_audible_sound_writes"] = sound_trace
+                    timeline["reference_options"] = configured_options
                     timeline["post_audible_sound_writes_limit_reached"] = len(sound_trace) == 32768
                 if native_dsp is not None:
                     timeline["native_dsp"] = {
