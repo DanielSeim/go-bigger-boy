@@ -1449,6 +1449,9 @@ if(GAMEBOY_BUILD_TESTS)
         add_test(NAME gameboy_sgb_timer_poll_comparison
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_timer_poll_comparison_tests.py)
+        add_test(NAME gameboy_sgb_phase_origin_comparison
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_phase_origin_comparison_tests.py)
         add_test(NAME gameboy_snes_spc_timer_phase
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/snes_spc_timer_phase_tests.py

@@ -18,15 +18,20 @@ import wave
 BUTTON_IDS = {"right": 7, "left": 6, "up": 4, "down": 5,
               "a": 8, "b": 0, "select": 2, "start": 3}
 GB_FRAME_RATE = 4194304 / 70224
+# GET_VARIABLE returns borrowed C strings. Keep option buffers alive after
+# the Python callback returns, until the core has consumed them.
+ENTROPY_VALUES = {"None": b"None", "Low": b"Low", "High": b"High"}
 
 
 class RetroVariable(C.Structure):
     _fields_ = [("key", C.c_char_p), ("value", C.c_char_p)]
 
 
-def diagnostic_option(key: bytes, snes_only: bool) -> bytes | None:
+def diagnostic_option(key: bytes, snes_only: bool, reference_entropy: str | None = None) -> bytes | None:
     # A batched DSP can expose state several phases after a DAC sample. Use
     # single-clock scheduling for the instrumented reference, explicitly.
+    if snes_only and key == b"bsnes_entropy" and reference_entropy is not None:
+        return ENTROPY_VALUES[reference_entropy]
     return b"OFF" if snes_only and key == b"bsnes_dsp_fast" else None
 
 
@@ -151,7 +156,9 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
             apu_ram_output: Path | None = None,
             apu_bus_output: Path | None = None,
             native_cycle_checkpoints: bool = False,
-            timer_poll_trace: bool = False
+            timer_poll_trace: bool = False,
+            reference_entropy: str | None = None,
+            history_window_half: tuple[int, int] | None = None
             ) -> tuple[int, int]:
     if C.sizeof(C.c_void_p) != 8:
         raise RuntimeError("the diagnostic host currently requires a 64-bit process")
@@ -178,6 +185,12 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
         raise ValueError("native-cycle checkpoints require the SNES-only probe")
     if timer_poll_trace and (not require_snes_only_probe or apu_bus_output is None):
         raise ValueError("timer polling requires the SNES-only probe and APU bus output")
+    if reference_entropy is not None and (not require_snes_only_probe or reference_entropy not in ("None", "Low", "High")):
+        raise ValueError("reference entropy requires the SNES-only probe and None, Low or High")
+    if history_window_half is not None and (not timer_poll_trace or len(history_window_half) != 2 or
+            any(type(v) is not int or not 0 <= v < 2**64 for v in history_window_half) or
+            not 0 < history_window_half[1] - history_window_half[0] <= 200000):
+        raise ValueError("history window requires timer polling and 1..200000 valid half clocks")
     if native_dsp_output is not None and not require_snes_only_probe:
         raise ValueError("native DSP capture requires the SNES-only probe")
     if require_snes_only_probe and timeline_output is None:
@@ -204,6 +217,7 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
             raise FileExistsError("snapshot series directory must be empty")
     events = load_input_script(input_script) if input_script is not None else []
     core = C.CDLL(str(core_path.resolve()))
+    phase_writes_from_reset = False
     if require_snes_only_probe:
         probe_symbols = ("gbb_reference_sgb_probe_version",
                          "gbb_reference_sgb_sound_count",
@@ -247,11 +261,12 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
             symbols = ("gbb_reference_sgb_apu_bus_version", "gbb_reference_sgb_apu_bus_count",
                        "gbb_reference_sgb_apu_bus_copy", "gbb_reference_sgb_apu_bus_frequencies")
             if any(not hasattr(core, name) for name in symbols) or \
-                    core.gbb_reference_sgb_apu_bus_version() not in (1, 2):
+                    core.gbb_reference_sgb_apu_bus_version() not in (1, 2, 3):
                 raise RuntimeError("core lacks a supported APU bus probe")
-            if timer_poll_trace and (core.gbb_reference_sgb_apu_bus_version() != 2 or
+            if timer_poll_trace and (core.gbb_reference_sgb_apu_bus_version() not in (2, 3) or
                                     not hasattr(core, "gbb_reference_sgb_timer_trace")):
                 raise RuntimeError("core lacks the version-2 timer polling probe")
+            phase_writes_from_reset = core.gbb_reference_sgb_apu_bus_version() == 3
             core.gbb_reference_sgb_apu_bus_count.restype = C.c_uint
             core.gbb_reference_sgb_apu_bus_copy.argtypes = [C.c_uint, C.POINTER(C.c_uint64)]
             core.gbb_reference_sgb_apu_bus_copy.restype = C.c_uint
@@ -262,6 +277,13 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
             core.gbb_reference_sgb_timer_trace.restype = C.c_uint
             if core.gbb_reference_sgb_timer_trace(int(timer_poll_trace)) != 1:
                 raise RuntimeError("timer polling probe rejected the request")
+        if history_window_half is not None and not hasattr(core, "gbb_reference_sgb_history_window"):
+            raise RuntimeError("reference lacks the bounded history window probe")
+        if hasattr(core, "gbb_reference_sgb_history_window"):
+            core.gbb_reference_sgb_history_window.argtypes = [C.c_uint64, C.c_uint64]
+            core.gbb_reference_sgb_history_window.restype = C.c_uint
+            if core.gbb_reference_sgb_history_window(*(history_window_half or (0, 0))) != 1:
+                raise RuntimeError("reference rejected the history window")
     required = ("retro_api_version", "retro_set_environment", "retro_set_video_refresh",
                 "retro_set_audio_sample", "retro_set_audio_sample_batch",
                 "retro_set_input_poll", "retro_set_input_state", "retro_init",
@@ -334,7 +356,7 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                 return True
             if command == 15:  # GET_VARIABLE
                 variable = C.cast(data, C.POINTER(RetroVariable)).contents
-                value = diagnostic_option(variable.key, require_snes_only_probe)
+                value = diagnostic_option(variable.key, require_snes_only_probe, reference_entropy)
                 if value is None:
                     return False
                 variable.value = value
@@ -438,6 +460,8 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                 if require_snes_only_probe:
                     if configured_options.get("bsnes_dsp_fast") != "OFF":
                         raise RuntimeError("reference did not request single-clock DSP configuration")
+                    if reference_entropy is not None and configured_options.get("bsnes_entropy") != reference_entropy:
+                        raise RuntimeError("reference did not request the selected power-on entropy")
                     sound_count = core.gbb_reference_sgb_sound_count()
                     if sound_count < next_sound_event or sound_count > 1024:
                         raise RuntimeError("reference SOUND probe count reset or overflowed")
@@ -608,6 +632,9 @@ def capture(core_path: Path, game_path: Path, sgb_path: Path,
                 with apu_bus_output.open("x", encoding="utf-8") as bus_file:
                     json.dump({"format": "gbb-apu-bus-v2" if timer_poll_trace else "gbb-apu-bus-v1",
                                "source": "reference",
+                               **({"phase_writes_from_reset": phase_writes_from_reset,
+                                   "reference_options": configured_options} if timer_poll_trace else {}),
+                               **({"history_window_half_clocks": list(history_window_half)} if history_window_half else {}),
                                "master_hz": int(frequencies[0]),
                                "apu_half_hz": int(frequencies[1]),
                                "core_sha256": hashlib.sha256(core_path.read_bytes()).hexdigest(),
@@ -664,6 +691,10 @@ def main() -> None:
                         help="equal native output counts, not wall-time checkpoints (local probe required)")
     parser.add_argument("--timer-poll-trace", action="store_true",
                         help="include timer configuration and read-to-clear polling in APU bus capture")
+    parser.add_argument("--reference-entropy", choices=("None", "Low", "High"),
+                        help="explicit diagnostic reference power-on state; default leaves core unchanged")
+    parser.add_argument("--apu-history-window-half", type=int, nargs=2, metavar=("START", "END"),
+                        help="bounded pre-command bus history in native half clocks (local probe required)")
     parser.add_argument("--require-snes-only-probe", action="store_true",
                         help="require the local instrumented core; log host-consumed SOUND packets")
     parser.add_argument("--native-dsp-output", type=Path,
@@ -688,7 +719,8 @@ def main() -> None:
                               args.snapshot_frame, args.snapshot_output, series,
                               args.timeline_output, args.require_snes_only_probe,
                               args.native_dsp_output, args.apu_ram_output, args.apu_bus_output,
-                              args.native_cycle_checkpoints, args.timer_poll_trace)
+                              args.native_cycle_checkpoints, args.timer_poll_trace, args.reference_entropy,
+                              tuple(args.apu_history_window_half) if args.apu_history_window_half else None)
     except (OSError, RuntimeError, ValueError) as error:
         parser.error(str(error))
     print(f"Captured {count} stereo frames at {rate} Hz to {args.output}")

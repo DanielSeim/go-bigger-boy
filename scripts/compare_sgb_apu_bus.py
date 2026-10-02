@@ -19,6 +19,16 @@ def load(path, source):
     if not isinstance(data, dict) or data.get("format") not in ("gbb-apu-bus-v1", "gbb-apu-bus-v2") or data.get("source") != source:
         raise ValueError("wrong bus format or source")
     timer_trace = data["format"] == "gbb-apu-bus-v2"
+    if "phase_writes_from_reset" in data and (not timer_trace or type(data["phase_writes_from_reset"]) is not bool):
+        raise ValueError("invalid phase-write provenance")
+    if "history_window_half_clocks" in data:
+        window = data["history_window_half_clocks"]
+        if not timer_trace or not isinstance(window, list) or len(window) != 2:
+            raise ValueError("invalid history window")
+        for value in window:
+            integer(value, 2**64-1, "history half clock")
+        if not 0 < window[1] - window[0] <= 200000:
+            raise ValueError("invalid history window span")
     for key in ("master_hz", "apu_half_hz"):
         integer(data.get(key), 100_000_000, key, 1)
     events = data.get("events")

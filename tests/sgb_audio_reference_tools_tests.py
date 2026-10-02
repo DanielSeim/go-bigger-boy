@@ -238,6 +238,10 @@ def main() -> None:
         assert diagnostic_option(b"bsnes_dsp_fast", True) == b"OFF"
         assert diagnostic_option(b"bsnes_dsp_fast", False) is None
         assert diagnostic_option(b"unrelated", True) is None
+        assert diagnostic_option(b"bsnes_entropy", True) is None
+        assert diagnostic_option(b"bsnes_entropy", True, "None") == b"None"
+        assert diagnostic_option(b"bsnes_entropy", False, "None") is None
+        assert diagnostic_option(b"bsnes_dsp_fast", True, "None") == b"OFF"
         for row in stages["post_audible_sound_writes"]:
             if row["kind"] == "state" and row["dsp_sample"] == 59090:
                 row["dsp_sample"] += 1

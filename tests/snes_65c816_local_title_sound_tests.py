@@ -106,6 +106,10 @@ def main() -> int:
                     "Fractional APU ports:" not in output:
                 raise AssertionError("title fractional rendezvous did not stop at its exact half target")
             data = load_bus(bus_path, "gbb")
+            if data.get("phase_writes_from_reset") is not True or not any(
+                    e["kind"] == "w" and e["address"] == 0x43 and e["value"] == 0
+                    and e["spc_half_clock"] == 3460 for e in data["events"]):
+                raise AssertionError("sparse phase initialization was not captured from reset")
             state = observations(data)
             positive = [p for p in state["polls"] if p["ticks"]][:2]
             if "Timer polling and bounded driver-state trace enabled" not in output or \

@@ -9,6 +9,21 @@ from snes_spc_half_cycle_tests import run
 from snes_spc_write_cycle_tests import build_reference
 
 EXPECTED = "2d4c78b8848b50e232b9ce326552d34f1cd4d410d36cd3f2ea70ec1c6f229e89"
+BOUNDARY_EXPECTED = "d321d6de7773e14bfbbd66c42554a0eac466b40109ce75f6194c02be9d5a4976"
+
+
+def boundary_fixture(padding):
+    # Two polls straddle a free-running timer boundary. Multiplying each
+    # returned count by 44 preserves total phase when a tick moves to the
+    # following poll. These bytes are original stimuli, not firmware code.
+    update = bytes((0xfd, 0xe8, 44, 0xcf, 0x60, 0x84, 0x43, 0xc4, 0x43))
+    program = (bytes((0x8f, 1, 0xfa, 0x8f, 1, 0xf1)) + bytes(padding) +
+               bytes((0xe4, 0, 0xe4, 0xfd)) + update + bytes(61) +
+               bytes((0xe4, 0xfd)) + update)
+    lines = ["ram 65472 95", "ram 65473 0", "ram 65474 4", "ram 67 156"]
+    lines += [f"ram {0x400+i} {value}" for i, value in enumerate(program)]
+    lines.append(f"run {padding+79}")
+    return ("\n".join(lines) + "\n").encode()
 
 
 def fixture(phase):
@@ -61,9 +76,24 @@ def main():
             common_poll = poll
             digest.update(bytes((phase,)) + ours)
             print(f"phase {phase} -> {(phase+44)&255}: timer={poll}, volume={volume}")
+        boundary_digest = hashlib.sha256()
+        for padding, ticks, phases in ((118, [1, 2], [200, 32]), (119, [2, 1], [244, 32])):
+            data = boundary_fixture(padding)
+            ours = run(args.gbb.resolve(), data)
+            if args.reference_dir and ours != run(reference, data):
+                raise AssertionError("independent timer-boundary trace differs")
+            rows = [line.split() for line in ours.splitlines()]
+            observed_ticks = [int(r[3]) for r in rows if r[0] == b"R" and int(r[2]) == 0xfd]
+            observed_phases = [int(r[4]) for r in rows if r[0] == b"W" and int(r[3]) == 0x43]
+            if observed_ticks != ticks or observed_phases != phases:
+                raise AssertionError(f"timer boundary: {observed_ticks}, {observed_phases}")
+            boundary_digest.update(bytes((padding,)) + ours)
+        print(f"2 timer-boundary cases: {boundary_digest.hexdigest()}")
+        if boundary_digest.hexdigest() != BOUNDARY_EXPECTED:
+            raise AssertionError("independently checked timer-boundary trace changed")
     if digest.hexdigest() != EXPECTED:
         raise AssertionError("independently checked timer/phase trace changed")
-    print("3 timer/phase cases passed; no firmware bytes or phase reset used.")
+    print("5 timer/phase cases passed; no firmware bytes or phase reset used.")
     return 0
 
 

@@ -84,6 +84,7 @@ int main(int argc, char** argv) {
     bool cycle_apu_sync = false;
     bool fractional_apu_sync = false;
     bool timer_poll_trace = false;
+    std::array<std::uint64_t, 2> history_window{};
     std::filesystem::path apu_bus_output_path;
     std::filesystem::path input_script_path;
     std::filesystem::path pcm_output_path;
@@ -113,6 +114,16 @@ int main(int argc, char** argv) {
                 apu_bus_output_path = argv[++index];
             } else if (option == "--timer-poll-trace" && !timer_poll_trace) {
                 timer_poll_trace = true;
+            } else if (option == "--apu-history-window-half" && history_window[1] == 0 && index + 2 < argc) {
+                for (auto& value : history_window) {
+                    const std::string_view number(argv[++index]);
+                    const auto [end, error] = std::from_chars(number.data(), number.data() + number.size(), value);
+                    if (error != std::errc{} || end != number.data() + number.size()) return 2;
+                }
+                if (history_window[1] <= history_window[0] || history_window[1] - history_window[0] > 200000) {
+                    std::cerr << "APU history window must span 1..200000 half clocks\n";
+                    return 2;
+                }
             } else if (option == "--input-script" &&
                        input_script_path.empty() && index + 1 < argc) {
                 input_script_path = argv[++index];
@@ -166,6 +177,7 @@ int main(int argc, char** argv) {
                      " [--fractional-apu-sync]"
                      " [--apu-bus-output JSON]"
                      " [--timer-poll-trace]"
+                     " [--apu-history-window-half START END]"
                      " [--audible-sound-probe]]\n";
         return 2;
     }
@@ -234,6 +246,8 @@ int main(int argc, char** argv) {
         std::vector<ApuBusEvent> apu_trace;
         if (timer_poll_trace && apu_bus_output_path.empty())
             throw std::runtime_error("timer polling requires APU bus output");
+        if (history_window[1] && !timer_poll_trace)
+            throw std::runtime_error("APU history window requires timer polling");
         if (!apu_bus_output_path.empty()) {
             if (!cycle_apu_sync) throw std::runtime_error("APU bus trace requires cycle APU synchronization");
             apu_trace.reserve(262144);
@@ -273,6 +287,7 @@ int main(int argc, char** argv) {
             bool shared_bus{};
             bool fractional_bus{};
             bool timer_trace{};
+            std::array<std::uint64_t, 2> history_window{};
             sgb_test::Snes65c816TraceCpu* cpu{};
             gameboy::SnesSpc700* spc{};
             std::vector<ApuBusEvent>* apu_trace{};
@@ -295,7 +310,9 @@ int main(int argc, char** argv) {
                             std::uint16_t address, std::uint8_t value) noexcept {
                 const bool configuration = timer_trace && kind == 'W' &&
                     (address == 0xf0 || address == 0xf1 || (address >= 0xfa && address <= 0xfc));
-                if (!apu_trace || !icd || (!configuration && icd->audible_sound_packets_delivered() == 0)) return;
+                const bool phase_write = timer_trace && kind == 'W' && (address == 0x43 || address == 0xd8);
+                const bool history = history_window[1] && half_clock >= history_window[0] && half_clock < history_window[1];
+                if (!apu_trace || !icd || (!configuration && !phase_write && !history && icd->audible_sound_packets_delivered() == 0)) return;
                 if (first_keyon_sample && pcm_samples >= *first_keyon_sample + 27200) return;
                 const bool driver = timer_trace && (kind == 'R' || kind == 'W') && address < 0xf0;
                 if (driver && first_keyon_sample && pcm_samples >= *first_keyon_sample + 250) return;
@@ -332,6 +349,7 @@ int main(int argc, char** argv) {
             dsp_observation.shared_bus = shared_bus_dsp;
             dsp_observation.fractional_bus = fractional_apu_sync;
             dsp_observation.timer_trace = timer_poll_trace;
+            dsp_observation.history_window = history_window;
             dsp_observation.cpu = &cpu;
             dsp_observation.spc = &spc;
             if (!apu_bus_output_path.empty()) {
@@ -1006,7 +1024,10 @@ int main(int argc, char** argv) {
             if (!output) throw std::runtime_error("could not create APU bus trace");
             output << "{\"format\":\"" << (timer_poll_trace ? "gbb-apu-bus-v2" : "gbb-apu-bus-v1")
                    << "\",\"source\":\"gbb\","
-                      "\"master_hz\":21477273,\"apu_half_hz\":2048000,\"events\":[";
+                      "\"master_hz\":21477273,\"apu_half_hz\":2048000,";
+            if (timer_poll_trace) output << "\"phase_writes_from_reset\":true,";
+            if (history_window[1]) output << "\"history_window_half_clocks\":[" << history_window[0] << ',' << history_window[1] << "],";
+            output << "\"events\":[";
             for (std::size_t i = 0; i < apu_trace.size(); ++i) {
                 const auto& event = apu_trace[i];
                 if (i) output << ',';

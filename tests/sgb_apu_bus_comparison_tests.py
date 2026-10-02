@@ -107,6 +107,12 @@ class Contracts(unittest.TestCase):
                 capture_audio(*inputs, root, 1, wav, native_cycle_checkpoints=True)
             with self.assertRaisesRegex(ValueError, "timer polling"):
                 capture_audio(*inputs, root, 1, wav, timer_poll_trace=True)
+            for entropy in ("None", "invalid"):
+                with self.assertRaisesRegex(ValueError, "reference entropy"):
+                    capture_audio(*inputs, root, 1, wav, reference_entropy=entropy)
+            for window in ((1, 2), (2, 1), (0, 200001), (True, 10)):
+                with self.assertRaisesRegex(ValueError, "history window"):
+                    capture_audio(*inputs, root, 1, wav, history_window_half=window)
             with self.assertRaisesRegex(ValueError, "paths must differ"):
                 capture_audio(*inputs, root, 1, bus, apu_bus_output=bus,
                               timeline_output=root / "timeline.json", require_snes_only_probe=True)
@@ -135,6 +141,17 @@ class Contracts(unittest.TestCase):
         read["address"] = 0xf0
         with self.assertRaises(ValueError):
             self.load(data)
+
+    def test_history_metadata(self):
+        for key, value in (("phase_writes_from_reset", 1),
+                           ("history_window_half_clocks", [0, 200001]),
+                           ("history_window_half_clocks", [3, 2]),
+                           ("history_window_half_clocks", [True, 2])):
+            data = capture()
+            data["format"] = "gbb-apu-bus-v2"
+            data[key] = value
+            with self.assertRaises(ValueError):
+                self.load(data)
 
 
 if __name__ == "__main__":

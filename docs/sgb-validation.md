@@ -1163,6 +1163,79 @@ volume writes would conceal the cause. Production DSP/audio, clock rates and
 scheduling are unchanged. No title bytes, firmware, external core, or
 captured audio are committed or shipped.
 
+### Pre-command phase origin and repeatable reference startup
+
+The follow-up extends the opt-in timer profile with sparse writes to phase
+`$43` and volume counter `$d8` from reset. Both captures mark this explicitly
+with `phase_writes_from_reset`; older bounded-only captures cannot be passed
+off as initialization histories. Full driver/timer reads can also be captured
+in a chosen, bounded pre-command window with
+`--apu-history-window-half START END` (native half clocks, end exclusive,
+maximum 200,000). Ordinary v1 captures and release audio are unchanged.
+
+The incremental reference patch is
+`scripts/patches/bsnes-05439f9-sgb-phase-origin.patch`, applied after the
+timer-poll patch. It advances only the local bus ABI to version 3; capture
+still accepts the older supported ABIs. Its window setter is reset between
+captures. Both the sparse and windowed GBB probes preserve the previous PCM
+byte-for-byte, as does the windowed reference against its constant-state
+baseline.
+
+The reference's default power-on entropy was previously left at its core
+default (`Low`, with a runtime-derived seed in this pinned source). The
+capture tool now accepts `--reference-entropy None|Low|High` for the SNES-only
+diagnostic and fails if the core does not request the selected setting.
+The selection is recorded in bus/timeline provenance. Default behavior is
+unchanged; `None` provides constant initial state for reproducibility, **not
+a claim about physical SGB power-on RAM**. Two explicit-`None` replays
+produced byte-identical complete bus traces and native PCM.
+
+```sh
+python3 scripts/compare_sgb_phase_origin.py \
+  --gbb phase-history.json --reference reference-phase-history.json
+```
+
+The constant-state Donkey Kong comparison shows matching initialized phase
+values: both first write zero at half clock 3,460 and initialize it to zero
+again before timer enable. The first **897 ordered phase-write values**
+agree. The first different value is write ordinal 897 (zero-based), not an
+incorrect initial phase. Bounded windows of 6,900,000–6,940,000 half clocks
+in GBB and 7,040,000–7,080,000 in the reference expose the responsible reads:
+
+| Observation | GBB | Independent reference |
+| --- | ---: | ---: |
+| Last timer-0 enable, half clock | 4,467,786 | 4,609,344 |
+| Previous counter read | 6,916,982 | 7,058,556 |
+| Differing counter read | 6,921,214 | 7,062,788 |
+| Position within 4,096-half-clock output period | 4,094 | 4 |
+| Returned ticks | 1 | 2 |
+| Phase update | 156 → 200 | 156 → 244 |
+| Following phase value | 32 | 32 |
+
+The target remains 16. The default free-running divider predicts exactly
+these counts: GBB reads two half clocks before the next output tick, and
+the reference reads four after it. GBB receives the extra tick on its next
+read, so the values rejoin at 32. The reporter keeps both absolute native
+timestamps, and reports the analytical divider model only when the captured
+configuration permits it; TEST writes or running-target changes suppress
+that model. This is a transient polling-boundary difference, **not evidence
+of a lost timer tick** and not a proof that it causes every later mismatch.
+
+Two additional original ROM-free programs straddle a timer boundary, receive
+`1,2` versus `2,1` ticks, and produce `200,32` versus `244,32` phases. Their
+complete half-clock traces match the independent SPC processor plus timed-I/O
+adapter; SHA-256
+`d321d6de7773e14bfbbd66c42554a0eac466b40109ce75f6194c02be9d5a4976`.
+
+Before the first music command, GBB has 23,419 captured phase writes versus
+21,948 in the reference. Their native frequencies, timer-enable times, and
+boot/command timelines differ; those histories must not be normalized away
+by resetting the phase or delaying volume writes. The next investigation is
+the earlier SNES/GB boot and command-delivery timeline, with controlled
+power-on state. No production scheduling or DSP correction is justified by
+this first transient alone. ROMs, firmware, captured audio and external cores
+remain local and are not committed or shipped.
+
 A new fully synthetic SNES program waits, writes a host command to the APU,
 and runs concurrently with an original SPC700 test program. The test stamps
 its KON write at SPC instruction-end cycle 2,304, feeds that event to the

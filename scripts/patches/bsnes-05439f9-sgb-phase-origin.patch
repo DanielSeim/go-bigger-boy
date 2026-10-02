@@ -1,0 +1,28 @@
+diff --git a/bsnes/sfc/dsp/dsp.cpp b/bsnes/sfc/dsp/dsp.cpp
+--- a/bsnes/sfc/dsp/dsp.cpp
++++ b/bsnes/sfc/dsp/dsp.cpp
+@@ -22,7 +22,14 @@
+ static bool diagnosticTimerTrace = false;
++static uint64 diagnosticHistoryStart = 0, diagnosticHistoryEnd = 0;
++extern "C" unsigned gbb_reference_sgb_history_window(uint64 start, uint64 end) {
++  if((start != 0 || end != 0) && (end <= start || end - start > 200000)) return 0;
++  diagnosticHistoryStart = start;
++  diagnosticHistoryEnd = end;
++  return 1;
++}
+ extern "C" unsigned gbb_reference_sgb_timer_trace(unsigned enabled) {
+   diagnosticTimerTrace = enabled != 0;
+   return 1;
+ }
+-extern "C" unsigned gbb_reference_sgb_apu_bus_version() { return 2; }
++extern "C" unsigned gbb_reference_sgb_apu_bus_version() { return 3; }
+ extern "C" unsigned gbb_reference_sgb_apu_bus_count() {
+@@ -44,4 +51,7 @@
+       (address == 0xf0 || address == 0xf1 || (address >= 0xfa && address <= 0xfc));
+-  if(!configuration && icd.diagnosticSoundCount < 2) return;
++  const bool phaseWrite = diagnosticTimerTrace && kind == 'W' && (address == 0x43 || address == 0xd8);
++  const bool history = diagnosticHistoryEnd && smp.diagnosticHalfClocks >= diagnosticHistoryStart &&
++      smp.diagnosticHalfClocks < diagnosticHistoryEnd;
++  if(!configuration && !phaseWrite && !history && icd.diagnosticSoundCount < 2) return;
+   if(diagnosticFirstKonSample != 0xffffffffu &&
+       diagnosticDspSamples.size() / 2 >= diagnosticFirstKonSample + 27234) return;
