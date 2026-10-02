@@ -242,6 +242,69 @@ void test_icd_wram_port_dma() {
           "timing-only PPU DMA rejects ICD sources without consuming bytes");
 }
 
+void test_host_rmw_bus_timing() {
+    for (const bool corrected : {false, true}) {
+        const auto rom = program({0xE6, 0x10, 0xEE, 0x40, 0x21});
+        gameboy::SnesApuBus apu;
+        apu.spc_write(0xF4, 0x55);
+        sgb_test::Snes65c816TraceCpu cpu(rom, apu);
+        cpu.set_host_bus_timing_enabled(corrected);
+        const auto start = cpu.timing().clocks();
+        check(cpu.step().error == sgb_test::Snes65c816TraceCpu::Error::none,
+              "original INC direct-page executes");
+        check(cpu.timing().clocks() - start == (corrected ? 38U : 40U),
+              "65816 RMW uses a six-clock idle, not an eight-clock old-value write");
+        check(cpu.step().error == sgb_test::Snes65c816TraceCpu::Error::none,
+              "original INC APU port executes");
+        check(cpu.apu_write_count() == (corrected ? 1U : 2U) &&
+                  cpu.apu_write(cpu.apu_write_count() - 1).value == 0x56,
+              "65816 RMW does not send a false old-value command to the APU");
+    }
+    for (const auto opcode : {0xE6, 0xC6, 0x06, 0x46, 0x26}) {
+        const auto rom = program({0xA9, 0x55, 0x85, 0x10,
+                                  static_cast<std::uint8_t>(opcode), 0x10});
+        gameboy::SnesApuBus apu;
+        sgb_test::Snes65c816TraceCpu cpu(rom, apu);
+        cpu.set_host_bus_timing_enabled(true);
+        check(cpu.step().error == sgb_test::Snes65c816TraceCpu::Error::none &&
+                  cpu.step().error == sgb_test::Snes65c816TraceCpu::Error::none,
+              "original direct-page RMW fixture initializes memory");
+        const auto start = cpu.timing().clocks();
+        check(cpu.step().error == sgb_test::Snes65c816TraceCpu::Error::none &&
+                  cpu.timing().clocks() - start == 38,
+              "all corrected direct-page RMW opcodes use the same six-clock idle");
+    }
+    const auto rom = program({0x2E, 0x40, 0x21});
+    gameboy::SnesApuBus apu;
+    apu.spc_write(0xF4, 0x55);
+    sgb_test::Snes65c816TraceCpu cpu(rom, apu);
+    cpu.set_host_bus_timing_enabled(true);
+    check(cpu.step().error == sgb_test::Snes65c816TraceCpu::Error::none &&
+              cpu.apu_write_count() == 1 && cpu.apu_write(0).value == 0xAA,
+          "absolute rotate also avoids an old-value APU command");
+}
+
+void test_apu_clock_profile() {
+    const auto rom = program({0x18, 0x80, 0xFD});
+    gameboy::SnesApuBus apu;
+    gameboy::SnesApuBus::IplRom ipl{};
+    apu.install_ipl(ipl);
+    gameboy::SnesSpc700 spc(apu);
+    spc.set_cycle_bus_enabled(true);
+    sgb_test::Snes65c816TraceCpu cpu(rom, apu, &spc);
+    check(cpu.apu_clock_hz() == 1024000 && !cpu.set_apu_clock_hz(0) &&
+              !cpu.set_apu_clock_hz(1025281) && !cpu.set_apu_clock_hz(1100032),
+          "diagnostic oscillator profile rejects invalid frequencies");
+    check(cpu.set_apu_clock_hz(1025280), "reference oscillator profile accepted before execution");
+    cpu.set_fractional_apu_sync_enabled(true);
+    for (unsigned i = 0; i < 1000; ++i)
+        check(cpu.step().error == sgb_test::Snes65c816TraceCpu::Error::none,
+              "original clock-profile loop executes");
+    check(spc.half_cycles() == cpu.timing().clocks() * 2050560ULL / 21477273ULL &&
+              !cpu.set_apu_clock_hz(1024000) && cpu.apu_clock_hz() == 1025280,
+          "reference oscillator uses exact rational rendezvous and cannot change mid-run");
+}
+
 void test_ppu_dma_stall() {
     // Original program: transfer a WRAM byte to VRAM, then execute BRA.
     // Compare two sizes so setup/alignment cancels without a firmware fixture.
@@ -1180,6 +1243,8 @@ void test_local_program(const std::filesystem::path& path, const bool sgb2) {
 } // namespace
 
 int main(int argc, char** argv) {
+    test_host_rmw_bus_timing();
+    test_apu_clock_profile();
     test_cycle_apu_rendezvous();
     test_fractional_apu_rendezvous();
     if (argc == 3) {

@@ -30,6 +30,21 @@ class Core:
 
 class Contracts(unittest.TestCase):
     @unittest.skipUnless(SOURCE_PROBE, "requires diagnostic source probe")
+    def test_external_boot_starts_with_lcd_off_and_no_phantom_frames(self):
+        with tempfile.TemporaryDirectory(prefix="gbb-icd-cold-boot-") as directory:
+            root = Path(directory)
+            rom, boot, script = root / "original.gb", root / "original.boot", root / "input.script"
+            rom.write_bytes(bytes(32768))
+            # Original boot waits 140k GB clocks before enabling the LCD.
+            code = bytes([0x3e, 0x10, 0xe0, 0x00, 0xf3, 0x01, 0x88, 0x13,
+                          0x0b, 0x78, 0xb1, 0x20, 0xfb, 0x3e, 0x91, 0xe0, 0x40,
+                          0xc3, 0x11, 0x00])
+            boot.write_bytes(code + bytes(256 - len(code)))
+            script.write_text("GBB SGB input v1\n0 start\n1 none\n2 a\n")
+            result = subprocess.run([SOURCE_PROBE, str(rom), str(boot), str(script), "--cold-reset"],
+                                    capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+    @unittest.skipUnless(SOURCE_PROBE, "requires diagnostic source probe")
     def test_actual_icd_source_held_release_and_reset(self):
         # Entire ROM and 256-byte boot are original; no commercial firmware.
         with tempfile.TemporaryDirectory(prefix="gbb-icd-original-input-") as directory:

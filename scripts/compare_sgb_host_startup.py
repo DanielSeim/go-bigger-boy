@@ -20,8 +20,12 @@ def validate(data, source):
             raise ValueError("invalid instruction state")
     if any(b[0] <= a[0] for a, b in zip(rows, rows[1:])):
         raise ValueError("non-increasing instruction clock")
-    if "ppu_dma_timing" in data and type(data["ppu_dma_timing"]) is not bool:
-        raise ValueError("invalid DMA timing mode")
+    for field in ("ppu_dma_timing", "host_bus_timing"):
+        if field in data and type(data[field]) is not bool:
+            raise ValueError("invalid host timing mode")
+    if "apu_half_hz" in data and (type(data["apu_half_hz"]) is not int or
+                                  not 2000000 <= data["apu_half_hz"] <= 2200000):
+        raise ValueError("invalid APU oscillator profile")
     dma = data.get("dma_requests", [])
     if not isinstance(dma, list) or len(dma) > 128:
         raise ValueError("invalid startup DMA requests")
@@ -53,6 +57,8 @@ def compare(gbb, reference):
             "largest_instruction_interval_deltas": sorted(intervals,
                 key=lambda row: abs(row["reference_minus_gbb_seconds"]), reverse=True)[:12],
             "gbb_ppu_dma_timing": gbb.get("ppu_dma_timing", False),
+            "gbb_host_bus_timing": gbb.get("host_bus_timing", False),
+            "gbb_apu_half_hz": gbb.get("apu_half_hz"),
             "gbb_dma_requests": gbb.get("dma_requests", []),
             "caution": "PC equality is not register or beam equality. Only the common PC prefix is compared; "
                        "clock observations do not establish hardware accuracy or complete PPU DMA data semantics."}

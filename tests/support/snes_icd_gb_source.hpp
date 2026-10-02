@@ -32,8 +32,14 @@ constexpr std::uint64_t sgb_icd_target_gb_cycles(
 // model. Unknown row-buffer data deliberately fails closed.
 class SnesIcdGbSource final : public SnesIcdTraceSource {
 public:
-    void set_native_gb_input(bool enabled) noexcept { native_gb_input_ = enabled; }
+    void set_native_gb_input(bool enabled) noexcept {
+        // Configure before release. Native replay executes an external boot
+        // from LCD/DIV reset rather than inheriting a post-boot bus image.
+        native_gb_input_ = enabled;
+        if (enabled) initialize_external_boot_bus();
+    }
     [[nodiscard]] std::uint8_t diagnostic_joypad_read() noexcept { return gb_->bus().read8(0xff00); }
+    [[nodiscard]] std::uint8_t diagnostic_io_read(std::uint16_t address) noexcept { return gb_->bus().read8(address); }
     using BootObserver = void (*)(void*, char, std::uint64_t, std::uint32_t, std::uint64_t) noexcept;
     void set_boot_observer(BootObserver observer, void* context = nullptr) noexcept {
         boot_observer_ = observer;
@@ -105,6 +111,7 @@ public:
 
 private:
     void synchronize(std::uint64_t master_clocks) noexcept;
+    void initialize_external_boot_bus() noexcept;
     void joyp_write(std::uint8_t value) noexcept;
     void complete_packet() noexcept;
     void complete_tile_row(unsigned tile_row) noexcept;

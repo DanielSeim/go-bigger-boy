@@ -1390,6 +1390,22 @@ if(GAMEBOY_BUILD_TESTS)
                                  ${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.boot.rom
                                  ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/sgb/titles/donkey-kong-gameplay.script
                                  --ppu-dma-timing)
+                foreach(profile IN ITEMS host_bus reference_clock)
+                    set(sgb_clock_options)
+                    if(profile STREQUAL "reference_clock")
+                        set(sgb_clock_options --apu-clock-hz 1025280)
+                    endif()
+                    add_test(NAME gameboy_sgb_local_native_${profile}_replay
+                             COMMAND ${Python3_EXECUTABLE}
+                                     ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_native_frame_replay_local_tests.py
+                                     $<TARGET_FILE:gameboy_snes_65c816_apu_trace>
+                                     ${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.program.rom
+                                     ${CMAKE_CURRENT_SOURCE_DIR}/roms/spc700.rom
+                                     "${CMAKE_CURRENT_SOURCE_DIR}/roms/Donkey Kong (JU) (V1.1) [S][!].gb"
+                                     ${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.boot.rom
+                                     ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/sgb/titles/donkey-kong-gameplay.script
+                                     --ppu-dma-timing --host-bus-timing ${sgb_clock_options})
+                endforeach()
             endif()
         endif()
     endif()
@@ -1490,7 +1506,8 @@ if(GAMEBOY_BUILD_TESTS)
         add_test(NAME gameboy_sgb_host_startup_comparison
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_host_startup_tests.py
-                         ${CMAKE_CXX_COMPILER})
+                         ${CMAKE_CXX_COMPILER}
+                         $<TARGET_FILE:gameboy_snes_65c816_apu_trace>)
         add_test(NAME gameboy_sgb_frame_input
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_frame_input_tests.py

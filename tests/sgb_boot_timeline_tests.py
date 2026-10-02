@@ -63,7 +63,8 @@ class Contracts(unittest.TestCase):
         self.assertEqual(compare(capture("gbb"), r)["landmarks"][0]["reference_minus_gbb_seconds"], 5)
 
     def test_reject_corrupt_provenance(self):
-        for field, value in (("source", "gbb"), ("master_hz", 0), ("apu_half_hz", True), ("events", [])):
+        for field, value in (("source", "gbb"), ("master_hz", 0), ("apu_half_hz", True),
+                             ("host_bus_timing", 1), ("external_boot_reset", 1), ("events", [])):
             r = capture("reference")
             r[field] = value
             with self.assertRaises(ValueError):

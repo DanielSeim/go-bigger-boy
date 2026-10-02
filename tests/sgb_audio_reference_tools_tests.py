@@ -195,6 +195,10 @@ def main() -> None:
         assert "First nonzero DSP KON" in keyon_report
         assert "Later windows do not re-optimize phase" in keyon_report
         assert "0.200s" in keyon_report
+        matched_clock = root / "gbb-reference-clock.wav"
+        write_wave(matched_clock, 32040, 1.15)
+        assert "First nonzero DSP KON" in compare_keyon_pcm(
+            matched_clock, native, keyon_csv, stages_timeline, (0.1, 0.2), 0.1)
         stages["post_audible_sound_writes"][0]["value"] = 8
         stages_timeline.write_text(json.dumps(stages), encoding="utf-8")
         try:

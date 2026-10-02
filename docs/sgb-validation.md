@@ -1408,8 +1408,10 @@ Ready reads agree to 62 master clocks at the same PCs. Almost all of the
 roughly 39 ms gap develops **after the host recognizes IPL readiness and
 before it requests the upload**, rather than in SPC IPL initialization.
 The instruction/DMA investigation below identifies the large initial gap.
-No production clock adjustment or title-specific delay has been added. The remaining startup/phase differences
-and four visual mismatches are still open; no hardware audio-accuracy claim
+No production clock adjustment or title-specific delay has been added. These
+were intermediate observations; the cold-reset/RMW investigation below resolves
+the large music-start gap. Four visual mismatches and finer phase differences
+remain open; no hardware audio-accuracy claim
 is implied. Firmware, private captures and reference cores remain local.
 
 ### Upload-preparation instruction trace and missing PPU DMA stalls
@@ -1480,9 +1482,10 @@ tests first reproduced the omission, then verified per-byte stalls,
 rejection of side-effectful sources. An optional local-title startup test
 guards the first upload against the pinned independent observation.
 
-The complete 60-million-instruction native-input Donkey Kong replay still
+Before the cold-reset/RMW corrections below, the complete
+60-million-instruction native-input Donkey Kong replay still
 matches all 11 input events, five upload fingerprints and three SOUND
-parameter sets. Its first music-command snapshot gap is now **+99.956 ms**
+parameter sets. Its first music-command snapshot gap was **+99.956 ms**
 (reference minus GBB), versus +135.892 ms in the legacy PPU timing path.
 Input marker gaps are roughly +96.6 to +96.7 ms. The earliest phase-write
 value divergence moves to ordinal 311; it has **not** been hidden by keeping
@@ -1498,8 +1501,9 @@ Different capture durations and native rates mean these hashes are
 **separate-source reproducibility anchors**, not matching-PCM claims.
 Two complete GBB captures, one with an additional bounded timer-history
 window, repeat the same WAV, boot landmarks and startup instruction rows.
-The optional local replay contracts pin both legacy and PPU-timed PCM hashes
-separately; the old baseline has not been overwritten.
+These hashes record the earlier, incorrect external-boot reset state. Native
+replay contracts now pin the corrected cold-reset results separately below;
+non-native historical audio baselines are unchanged.
 
 The existing first-KON-anchored comparator, using CSV and WAV from the same
 PPU-timed invocation, observes GBB sample 1,562,715 versus reference native
@@ -1508,6 +1512,70 @@ are **approximately 0.9996 or better** in the checked windows from +0.02 through
 This indicates closely matching waveform shape after the independent key-on
 anchors; it does **not** erase the roughly 100 ms command-start difference,
 establish sample-exact stereo output or prove real-hardware audio accuracy.
+
+### External boot reset and host read/modify/write timing
+
+The remaining large music-start discrepancy had two reproducible causes in
+the **test-only bounded tracer**, rather than requiring a title-specific delay:
+
+- Its external GB boot ROM inherited a post-boot bus image: LCD enabled and
+  DIV already advanced. Native replay now clears LCDC, DIV, IF and IE before
+  release and on ICD soft reset. Boot completion takes **1,955,920 GB clocks**,
+  exactly the independently observed instruction count. No frames elapse
+  before the original ROM-free test boot enables its LCD.
+- Eight-bit 65C816 memory read/modify/write instructions incorrectly sent the
+  old value back to memory, as a 6502 would. The opt-in `--host-bus-timing`
+  path replaces these legacy writes with six-master-clock internal idles.
+  An `INC` direct-page interval changes from 40 to 38 master clocks; an
+  `INC` of an APU port sends only the final value, not an extra command.
+  This covers the tracer's existing old-value-write paths, not a claim of
+  complete 65C816 bus-cycle accuracy.
+
+For the corrected diagnostic capture, add **both** `--ppu-dma-timing` and
+`--host-bus-timing` to the existing `--native-gb-input --fractional-apu-sync`
+command. The default APU oscillator remains **1,024,000 Hz / 32,000 PCM Hz**.
+The first music-command snapshot is **1,049,974,386** master clocks versus
+**1,049,973,168** in the pinned reference: reference minus GBB is
+**−0.05671 ms**, down from +99.956 ms. Boot completion differs by +0.03920 ms.
+All 11 frame/mask inputs, five upload fingerprints and three SOUND parameter
+sets still match. Intermediate input snapshots can differ by approximately
+2.2 ms, and upload completion by approximately 14.2 ms at the nominal APU
+frequency; these observations are not hidden by a fitted offset.
+
+An explicit capture-only `--apu-clock-hz 1025280` profile also permits an
+equal-oscillator comparison with the pinned reference's **32,040 Hz** native
+DSP stream. This is not a runtime clock change or a proposed hardware clock
+correction. It marks the oscillator in boot/bus/startup JSON and the actual
+WAV sample rate. With that profile, the music-command gap is **−0.04190 ms**;
+the default nominal-clock result above already resolves the large gap.
+
+Reproducibility anchors for the corrected 60-million-instruction native replay:
+
+| Diagnostic profile | WAV SHA-256 |
+| --- | --- |
+| Cold reset, legacy PPU/host timing | `964da6c4780c053d5beb24d0eee75d2e9efd569c9f5aa729bd8715f1deabc847` |
+| Cold reset, PPU DMA timing only | `15059e74817aeb5287062b903b71bccd58e4197f0c781129f907760fb5c518e0` |
+| Cold reset, PPU DMA and host RMW timing, nominal oscillator | `d430fa49f199df87fc20b6465cba0fff0e89daf6b446a9a07159b90b188e4bc9` |
+| Same corrected timing, explicit reference oscillator | `26fa4738f2f99ac6b0c611a8417acea683667a1140269c60bd60d3748bbdac78` |
+
+Original ROM-free tests guard the LCD-off first-frame behavior, soft reset,
+RMW idle duration and absence of spurious APU writes. Optional local-title
+contracts guard boot-cycle count, upload fingerprints, SOUND parameters,
+PCM reproducibility and boot/music snapshots within 2,048 master clocks
+(less than 0.1 ms) of the independent reference for both corrected profiles.
+The equal-oscillator first-KON comparison uses GBB sample 1,567,723 versus
+reference sample 1,567,719; the 8 kHz mono windows from +0.02 through +1.5 s
+match at the report's four-decimal precision with fixed zero lag. This does
+not establish general sample-exact stereo or real-hardware fidelity. A
+separate direct stereo comparison, using those same KON anchors without
+resampling or a lag search, also finds zero differing samples in the first
+1.5 seconds (96,120 channel samples) of the equal-oscillator capture. This
+bounded window is not a claim about the whole title or other clock profiles.
+
+These corrections neither enable SNES-side audio in shipping frontends nor
+resolve the four deferred visual mismatches, reverse PPU-DMA payloads, full
+65C816 timing or all timer-phase differences. Private firmware/captures and
+the independent reference remain untracked and are not shipped.
 
 A new fully synthetic SNES program waits, writes a host command to the APU,
 and runs concurrently with an original SPC700 test program. The test stamps

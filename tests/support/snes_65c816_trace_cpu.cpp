@@ -124,7 +124,7 @@ void Snes65c816TraceCpu::synchronize_apu() noexcept {
     // The optional fractional path uses half-clock targets instead. Neither
     // convention claims independently verified hardware port visibility.
     constexpr std::uint64_t master_hz = 21'477'273;
-    constexpr std::uint64_t spc_hz = 1'024'000;
+    const std::uint64_t spc_hz = apu_clock_hz_;
     if (fractional_apu_sync_) {
         const auto target_half = timing_.clocks() * (spc_hz * 2) / master_hz;
         while (spc_->half_cycles() < target_half) {
@@ -235,6 +235,15 @@ void Snes65c816TraceCpu::service_ppu_dma(unsigned resumed_bus_clocks) noexcept {
         dma_registers_[base + 5] = dma_registers_[base + 6] = 0;
     }
     clock(resumed_bus_clocks - dma_clocks % resumed_bus_clocks);
+}
+
+void Snes65c816TraceCpu::rmw_dummy(std::uint8_t bank, std::uint16_t address, std::uint8_t old) noexcept {
+    if (!host_bus_timing_) { write8(bank, address, old); return; }
+    timing_.cpu_cycle(6);
+    ++bus_accesses_;
+    ++cpu_cycles_;
+    update_irq();
+    synchronize_apu();
 }
 
 unsigned Snes65c816TraceCpu::bus_clocks(const std::uint8_t bank,
@@ -1174,7 +1183,7 @@ Snes65c816TraceCpu::StepResult Snes65c816TraceCpu::step() noexcept {
         const auto address = static_cast<std::uint16_t>(r_.d + fetch8());
         if (accumulator_8()) {
             const auto old = read8(0, address);
-            write8(0, address, old); // RMW dummy write
+            rmw_dummy(0, address, old);
             const auto value = static_cast<std::uint8_t>(old + 1);
             write8(0, address, value);
             set_nz8(value);
@@ -1189,7 +1198,7 @@ Snes65c816TraceCpu::StepResult Snes65c816TraceCpu::step() noexcept {
         const auto address = static_cast<std::uint16_t>(r_.d + fetch8());
         if (accumulator_8()) {
             const auto old = read8(0, address);
-            write8(0, address, old); // RMW dummy write
+            rmw_dummy(0, address, old);
             const auto value = static_cast<std::uint8_t>(old - 1);
             write8(0, address, value);
             set_nz8(value);
@@ -1204,7 +1213,7 @@ Snes65c816TraceCpu::StepResult Snes65c816TraceCpu::step() noexcept {
         const auto address = fetch16();
         if (accumulator_8()) {
             const auto old = read8(r_.db, address);
-            write8(r_.db, address, old);
+            rmw_dummy(r_.db, address, old);
             const auto value = static_cast<std::uint8_t>(old + 1);
             write8(r_.db, address, value);
             set_nz8(value);
@@ -1601,7 +1610,7 @@ Snes65c816TraceCpu::StepResult Snes65c816TraceCpu::step() noexcept {
         r_.p = static_cast<std::uint8_t>((r_.p & ~carry) |
             ((old & top) != 0 ? carry : 0));
         if (accumulator_8()) {
-            write8(0, address, static_cast<std::uint8_t>(old));
+            rmw_dummy(0, address, static_cast<std::uint8_t>(old));
             write8(0, address, static_cast<std::uint8_t>(result));
             set_nz8(static_cast<std::uint8_t>(result));
         } else {
@@ -1616,7 +1625,7 @@ Snes65c816TraceCpu::StepResult Snes65c816TraceCpu::step() noexcept {
         const auto result = static_cast<std::uint16_t>(old >> 1);
         r_.p = static_cast<std::uint8_t>((r_.p & ~carry) | (old & 1U));
         if (accumulator_8()) {
-            write8(0, address, static_cast<std::uint8_t>(old));
+            rmw_dummy(0, address, static_cast<std::uint8_t>(old));
             write8(0, address, static_cast<std::uint8_t>(result));
             set_nz8(static_cast<std::uint8_t>(result));
         } else {
@@ -1659,7 +1668,7 @@ Snes65c816TraceCpu::StepResult Snes65c816TraceCpu::step() noexcept {
         r_.p = static_cast<std::uint8_t>((r_.p & ~carry) |
             ((old & top) != 0 ? carry : 0));
         if (accumulator_8()) {
-            write8(r_.db, address, static_cast<std::uint8_t>(old));
+            rmw_dummy(r_.db, address, static_cast<std::uint8_t>(old));
             write8(r_.db, address, static_cast<std::uint8_t>(result));
             set_nz8(static_cast<std::uint8_t>(result));
         } else {
@@ -1678,7 +1687,7 @@ Snes65c816TraceCpu::StepResult Snes65c816TraceCpu::step() noexcept {
         r_.p = static_cast<std::uint8_t>((r_.p & ~carry) |
             ((old & top) != 0 ? carry : 0));
         if (accumulator_8()) {
-            write8(0, address, static_cast<std::uint8_t>(old));
+            rmw_dummy(0, address, static_cast<std::uint8_t>(old));
             write8(0, address, static_cast<std::uint8_t>(result));
             set_nz8(static_cast<std::uint8_t>(result));
         } else {

@@ -33,7 +33,7 @@ def keyon_positions(gbb_events: Path, timeline_path: Path,
     native_rate, native_pcm = read_stereo_wav(native_path)
     gbb_rate, gbb_pcm = read_stereo_wav(gbb_path)
     meta = timeline.get("native_dsp")
-    if native_rate != 32040 or gbb_rate != 32000 or \
+    if native_rate != 32040 or gbb_rate not in (32000, 32040) or \
             not isinstance(meta, dict) or meta.get("sample_rate") != native_rate or \
             meta.get("sample_count") != len(native_pcm) // 2 or \
             meta.get("pcm_sha256") != hashlib.sha256(native_pcm.tobytes()).hexdigest():

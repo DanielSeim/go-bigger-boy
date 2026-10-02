@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from compare_sgb_host_startup import compare, validate
 
 COMPILER = sys.argv.pop(1) if len(sys.argv) > 1 else None
+TRACER = sys.argv.pop(1) if len(sys.argv) > 1 else None
 
 
 def capture(source):
@@ -21,6 +22,19 @@ def capture(source):
 
 
 class Contracts(unittest.TestCase):
+    @unittest.skipUnless(TRACER, "requires diagnostic trace executable")
+    def test_clock_profile_rejected_before_loading_roms(self):
+        for options, message in ((["--apu-clock-hz", "1025280"], "requires cycle"),
+                                 (["--apu-clock-hz", "1025281"], "divisible by 32"),
+                                 (["--apu-clock-hz", "0"], "divisible by 32"),
+                                 (["--apu-clock-hz", "1025280", "--apu-clock-hz", "1024000"],
+                                  "unsupported synchronized GB option")):
+            result = subprocess.run([TRACER, "absent-program", "absent-ipl", "--sync-gb-sgb2",
+                                     "absent-game", "absent-boot", *options],
+                                    capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 2)
+            self.assertIn(message, result.stderr)
+
     def test_matching_pc_is_not_matching_state(self):
         r = capture("reference")
         r["instructions"][1][2] = 3
@@ -53,6 +67,8 @@ class Contracts(unittest.TestCase):
     def test_reject_corruption(self):
         for field, value in (("source", "reference"), ("master_hz", True),
                              ("instructions", []), ("ppu_dma_timing", 1),
+                             ("host_bus_timing", 1), ("apu_half_hz", True),
+                             ("apu_half_hz", 0),
                              ("dma_requests", [[0] * 6])):
             d = capture("gbb")
             d[field] = value

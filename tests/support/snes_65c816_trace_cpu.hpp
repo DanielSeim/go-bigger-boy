@@ -159,6 +159,16 @@ public:
         if (enabled) cycle_apu_sync_ = true;
     }
     [[nodiscard]] std::uint64_t spc_cycles() const noexcept { return spc_cycles_; }
+    // Capture-only oscillator profile, set before execution. The nominal
+    // 1.024 MHz runtime clock is not changed by selecting a reference profile.
+    bool set_apu_clock_hz(unsigned hz) noexcept {
+        if (hz < 1000000 || hz > 1100000 || hz % 32 || timing_.clocks()) return false;
+        apu_clock_hz_ = hz; return true;
+    }
+    [[nodiscard]] unsigned apu_clock_hz() const noexcept { return apu_clock_hz_; }
+    // Correct the legacy eight-bit RMW old-value writes to six-clock idles.
+    // Opt-in preserves the historical bounded trace/PCM baselines.
+    void set_host_bus_timing_enabled(bool enabled) noexcept { host_bus_timing_ = enabled; }
     // Experimental timing-only PPU DMA path. No SNES PPU pixels are modeled.
     // Historical audio baselines retain their explicitly bounded legacy path.
     void set_ppu_dma_timing_enabled(bool enabled) noexcept { ppu_dma_timing_ = enabled; }
@@ -201,6 +211,7 @@ private:
     void synchronize_apu() noexcept;
     void update_irq() noexcept;
     void service_ppu_dma(unsigned resumed_bus_clocks) noexcept;
+    void rmw_dummy(std::uint8_t bank, std::uint16_t address, std::uint8_t old) noexcept;
 
     const gameboy::SgbProgramRom& rom_;
     gameboy::SnesApuBus& apu_;
@@ -208,11 +219,13 @@ private:
     bool cycle_apu_sync_{};
     bool fractional_apu_sync_{};
     bool ppu_dma_timing_{};
+    bool host_bus_timing_{};
     std::uint8_t pending_ppu_dma_{};
     ApuPortObserver apu_port_observer_{};
     void* apu_port_context_{};
     SnesIcdTraceSource* icd_{};
     std::uint64_t spc_cycles_{};
+    unsigned apu_clock_hz_{1024000};
     SpcStepObserver spc_step_observer_{};
     void* spc_step_context_{};
     Registers r_{};

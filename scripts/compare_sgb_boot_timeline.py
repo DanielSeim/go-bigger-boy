@@ -16,6 +16,9 @@ def validate(data, source):
         if type(data.get(field)) is not int or not 0 < data[field] < 100000000:
             raise ValueError("missing or invalid clock frequency")
     events = data.get("events")
+    for field in ("ppu_dma_timing", "host_bus_timing", "external_boot_reset"):
+        if field in data and type(data[field]) is not bool:
+            raise ValueError("invalid diagnostic timing/reset mode")
     if not isinstance(events, list) or not 0 < len(events) <= 128:
         raise ValueError("empty or oversized boot timeline")
     for e in events:
@@ -54,6 +57,9 @@ def compare(gbb, reference):
                 bool(uploads[0]) and uploads[0] == uploads[1] and
                 bool(sounds[0]) and sounds[0] == sounds[1])
     return {"format": "gbb-sgb-boot-comparison-v1",
+            "apu_half_hz": [gbb["apu_half_hz"], reference["apu_half_hz"]],
+            "gbb_host_bus_timing": gbb.get("host_bus_timing", False),
+            "gbb_external_boot_reset": gbb.get("external_boot_reset", False),
             "input_and_upload_preconditions_met": eligible,
             "input_modes": modes,
             "upload_fingerprints_match": bool(uploads[0]) and uploads[0] == uploads[1],

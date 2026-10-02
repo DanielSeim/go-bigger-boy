@@ -4,8 +4,29 @@
 #include <string>
 
 int main(int argc, char** argv) {
-    if (argc != 4) return 2;
+    if (argc != 4 && argc != 5) return 2;
+    if (argc == 5 && std::string(argv[4]) != "--cold-reset") return 2;
     try {
+        if (argc == 5 && std::string(argv[4]) == "--cold-reset") {
+            sgb_test::SnesIcdGbSource source(argv[1], argv[2], gameboy::HardwareModel::sgb2);
+            source.set_native_gb_input(true);
+            source.load_input_script(argv[3]);
+            if (source.diagnostic_io_read(0xFF40) != 0 || source.diagnostic_io_read(0xFF04) != 0)
+                throw std::runtime_error("external boot inherited post-boot LCD/DIV state");
+            if (!source.write(0x6003, 0, 1) || !source.write(0x6003, 0, 0x81)) return 1;
+            source.advance_to(400000);
+            // Loading and reset each apply frame zero; neither is an LCD frame.
+            if (source.completed_frames() != 0 || source.input_events_applied() != 2)
+                throw std::runtime_error("input frame elapsed before original boot enabled LCD");
+            source.advance_to(1200000);
+            if (source.completed_frames() != 1 || (source.diagnostic_joypad_read() & 0xF) != 0xF)
+                throw std::runtime_error("first actual LCD frame did not release input");
+            if (!source.write(0x6003, 1200000, 1) || !source.write(0x6003, 1200000, 0x81)) return 1;
+            if (source.diagnostic_io_read(0xFF40) != 0 || source.diagnostic_io_read(0xFF04) != 0)
+                throw std::runtime_error("soft reset inherited post-boot LCD/DIV state");
+            std::cout << "External boot LCD/DIV reset and first LCD frame verified\n";
+            return 0;
+        }
         for (const bool native : {false, true}) {
             sgb_test::SnesIcdGbSource source(argv[1], argv[2], gameboy::HardwareModel::sgb2);
             source.set_native_gb_input(native);

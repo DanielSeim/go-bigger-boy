@@ -21,7 +21,8 @@
 namespace {
 
 void write_pcm_wav(const std::filesystem::path& path,
-                   const std::vector<sgb_test::SnesDspPcmRenderer::StereoSample>& samples) {
+                   const std::vector<sgb_test::SnesDspPcmRenderer::StereoSample>& samples,
+                   unsigned sample_rate) {
     if (std::filesystem::exists(path))
         throw std::runtime_error("PCM output already exists: " + path.string());
     if (samples.size() > (UINT32_MAX - 44U) / 4U)
@@ -45,8 +46,8 @@ void write_pcm_wav(const std::filesystem::path& path,
     u32(16);
     u16(1);
     u16(2);
-    u32(sgb_test::SnesDspPcmRenderer::sample_rate);
-    u32(sgb_test::SnesDspPcmRenderer::sample_rate * 4U);
+    u32(sample_rate);
+    u32(sample_rate * 4U);
     u16(4);
     u16(16);
     output.write("data", 4);
@@ -84,6 +85,9 @@ int main(int argc, char** argv) {
     bool cycle_apu_sync = false;
     bool fractional_apu_sync = false;
     bool ppu_dma_timing = false;
+    unsigned apu_clock_hz = 1024000;
+    bool apu_clock_set = false;
+    bool host_bus_timing = false;
     bool timer_poll_trace = false;
     bool native_gb_input = false;
     std::array<std::uint64_t, 2> history_window{};
@@ -122,6 +126,16 @@ int main(int argc, char** argv) {
                 host_startup_path = argv[++index];
             } else if (option == "--ppu-dma-timing" && !ppu_dma_timing) {
                 ppu_dma_timing = true;
+            } else if (option == "--host-bus-timing" && !host_bus_timing) {
+                host_bus_timing = true;
+            } else if (option == "--apu-clock-hz" && !apu_clock_set && index + 1 < argc) {
+                apu_clock_set = true;
+                const std::string_view number(argv[++index]);
+                const auto [end, error] = std::from_chars(number.data(), number.data() + number.size(), apu_clock_hz);
+                if (error != std::errc{} || end != number.data() + number.size() ||
+                    apu_clock_hz < 1000000 || apu_clock_hz > 1100000 || apu_clock_hz % 32) {
+                    std::cerr << "APU clock must be 1000000..1100000 Hz and divisible by 32\n"; return 2;
+                }
             } else if (option == "--timer-poll-trace" && !timer_poll_trace) {
                 timer_poll_trace = true;
             } else if (option == "--native-gb-input" && !native_gb_input) {
@@ -167,6 +181,10 @@ int main(int argc, char** argv) {
             }
         }
     }
+    if (apu_clock_set && !cycle_apu_sync) {
+        std::cerr << "APU clock profile requires cycle or fractional APU synchronization\n";
+        return 2;
+    }
     const bool synchronized = sync_probe || sync_gb;
     const int path_count = sync_gb ? 2 : argc - 1 -
         (trace || upload || upload_two || upload_three || upload_boot || driver_probe ||
@@ -187,6 +205,8 @@ int main(int argc, char** argv) {
                      " [--shared-bus-dsp]"
                      " [--cycle-apu-sync]"
                      " [--fractional-apu-sync]"
+                     " [--native-gb-input] [--ppu-dma-timing] [--host-bus-timing]"
+                     " [--apu-clock-hz HZ] [--host-startup-output JSON]"
                      " [--apu-bus-output JSON]"
                      " [--boot-timeline-output JSON]"
                      " [--timer-poll-trace]"
@@ -702,6 +722,8 @@ int main(int argc, char** argv) {
             std::cout << "DSP clock from SPC reset; write-boundary observation enabled\n";
         }
         cpu.set_ppu_dma_timing_enabled(ppu_dma_timing);
+        cpu.set_host_bus_timing_enabled(host_bus_timing);
+        if (!cpu.set_apu_clock_hz(apu_clock_hz)) throw std::runtime_error("invalid APU clock profile");
         for (unsigned i = 0; i < instruction_bound; ++i) {
             if (!host_startup_path.empty() && boot_timeline.host_ipl_reads == 3 && !host_startup_finished) {
                 if (host_startup.size() == 131072) throw std::runtime_error("host startup trace overflowed");
@@ -1100,7 +1122,7 @@ int main(int argc, char** argv) {
                   << " (V=" << cpu.timing().line()
                   << " H=" << cpu.timing().horizontal_clock() << ")\n";
         if (cycle_apu_sync) {
-            const auto target = cpu.timing().clocks() * 1'024'000ULL / 21'477'273ULL;
+            const auto target = cpu.timing().clocks() * apu_clock_hz / 21'477'273ULL;
             std::cout << "APU rendezvous target=" << target
                       << " completed=" << cpu.spc_cycles()
                       << " SPC_completed=" << spc.cycles()
@@ -1108,7 +1130,7 @@ int main(int argc, char** argv) {
             if (cpu.spc_cycles() != target || spc.cycles() != target)
                 throw std::runtime_error("cycle APU rendezvous overshot its master-clock target");
             if (fractional_apu_sync) {
-                const auto half_target = cpu.timing().clocks() * 2'048'000ULL / 21'477'273ULL;
+                const auto half_target = cpu.timing().clocks() * (std::uint64_t(apu_clock_hz) * 2) / 21'477'273ULL;
                 std::cout << "APU fractional target_half=" << half_target
                           << " completed_half=" << spc.half_cycles() << '\n';
                 if (spc.half_cycles() != half_target)
@@ -1135,7 +1157,8 @@ int main(int argc, char** argv) {
             if (!host_startup_path.parent_path().empty()) std::filesystem::create_directories(host_startup_path.parent_path());
             std::ofstream output(host_startup_path);
             output << "{\"format\":\"gbb-sgb-host-startup-v1\",\"source\":\"gbb\",\"master_hz\":21477273,\"ppu_dma_timing\":"
-                   << (ppu_dma_timing ? "true" : "false") << ",\"instructions\":[";
+                   << (ppu_dma_timing ? "true" : "false") << ",\"host_bus_timing\":" << (host_bus_timing ? "true" : "false")
+                   << ",\"apu_half_hz\":" << apu_clock_hz * 2 << ",\"instructions\":[";
             for (std::size_t i = 0; i < host_startup.size(); ++i) {
                 if (i) output << ',';
                 output << '[';
@@ -1158,9 +1181,11 @@ int main(int argc, char** argv) {
             std::ofstream output(boot_timeline_path);
             if (!output) throw std::runtime_error("could not create boot timeline");
             output << "{\"format\":\"gbb-sgb-boot-timeline-v1\",\"source\":\"gbb\","
-                "\"master_hz\":21477273,\"apu_half_hz\":2048000,\"input_mode\":\""
+                "\"master_hz\":21477273,\"apu_half_hz\":" << apu_clock_hz * 2 << ",\"input_mode\":\""
                 << (native_gb_input ? "gb-lcd-frame-held-v1" : "legacy-direct-gb-v1")
-                << "\",\"ppu_dma_timing\":" << (ppu_dma_timing ? "true" : "false") << ",\"events\":[";
+                << "\",\"ppu_dma_timing\":" << (ppu_dma_timing ? "true" : "false")
+                << ",\"host_bus_timing\":" << (host_bus_timing ? "true" : "false")
+                << ",\"external_boot_reset\":" << (native_gb_input ? "true" : "false") << ",\"events\":[";
             for (std::size_t index = 0; index < boot_timeline.events.size(); ++index) {
                 const auto& e = boot_timeline.events[index];
                 if (index) output << ',';
@@ -1182,8 +1207,9 @@ int main(int argc, char** argv) {
             if (!output) throw std::runtime_error("could not create APU bus trace");
             output << "{\"format\":\"" << (timer_poll_trace ? "gbb-apu-bus-v2" : "gbb-apu-bus-v1")
                    << "\",\"source\":\"gbb\","
-                      "\"master_hz\":21477273,\"apu_half_hz\":2048000,";
+                      "\"master_hz\":21477273,\"apu_half_hz\":" << apu_clock_hz * 2 << ',';
             output << "\"ppu_dma_timing\":" << (ppu_dma_timing ? "true" : "false") << ',';
+            output << "\"host_bus_timing\":" << (host_bus_timing ? "true" : "false") << ',';
             if (timer_poll_trace) output << "\"phase_writes_from_reset\":true,";
             if (history_window[1]) output << "\"history_window_half_clocks\":[" << history_window[0] << ',' << history_window[1] << "],";
             output << "\"events\":[";
@@ -1214,9 +1240,9 @@ int main(int argc, char** argv) {
             if (!dsp_observation.first_audible_sample)
                 throw std::runtime_error(
                     "PCM output requested but no audible SOUND packet was delivered");
-            write_pcm_wav(pcm_output_path, pcm_export);
+            write_pcm_wav(pcm_output_path, pcm_export, apu_clock_hz / 32);
             std::cerr << "PCM output=" << pcm_output_path
-                      << " rate=" << sgb_test::SnesDspPcmRenderer::sample_rate
+                      << " rate=" << apu_clock_hz / 32
                       << " frames=" << pcm_export.size()
                       << " first_audible_delivery_sample="
                       << *dsp_observation.first_audible_sample << '\n';

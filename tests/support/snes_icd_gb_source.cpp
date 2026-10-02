@@ -47,6 +47,15 @@ void SnesIcdGbSource::load_input_script(const std::filesystem::path& path) {
     apply_input(0);
 }
 
+void SnesIcdGbSource::initialize_external_boot_bus() noexcept {
+    // An external boot ROM executes from reset, not from a post-boot LCD/DIV
+    // image. Otherwise frames can elapse before its first LCD-enable write.
+    gb_->bus().write8(0xFF40, 0);
+    gb_->bus().write8(0xFF04, 0);
+    gb_->bus().write8(0xFF0F, 0);
+    gb_->bus().write8(0xFFFF, 0);
+}
+
 void SnesIcdGbSource::apply_input(const std::uint64_t frame) noexcept {
     if (next_input_event_ >= input_events_.size() ||
         input_events_[next_input_event_].frame != frame)
@@ -259,6 +268,7 @@ bool SnesIcdGbSource::write(const std::uint16_t address,
             released_ = false;
             gb_->reset();
             gb_->bus().install_boot_rom(boot_image_);
+            if (native_gb_input_) initialize_external_boot_bus();
             gb_->bus().debug_enable_io_trace(true);
             gb_cycles_ = 0;
             boot_reported_ = false;
