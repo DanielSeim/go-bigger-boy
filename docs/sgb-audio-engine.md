@@ -1,5 +1,9 @@
 # Reusable SGB DSP audio components
 
+The [bounded SGB firmware host](sgb-host.md) now owns the CPU, ICD/Game Boy
+and APU scheduler together, with coordinated snapshots and bounded PCM output.
+It remains opt-in and does not enable frontend playback.
+
 GBB's validated DSP PCM renderer and 32-phase driver now live in
 `gameboy_core`: `gameboy::SnesDspPcmRenderer` and `gameboy::SnesDspClock`.
 The old diagnostic headers are compatibility aliases, so the synthetic

@@ -182,6 +182,7 @@ covers Linux, Android, and Web builds.
 - [Link compatibility matrix](docs/link_compatibility.md)
 - [SGB traces and replay](docs/sgb-traces.md)
 - [SGB audio engine and component states](docs/sgb-audio-engine.md)
+- [Bounded SGB firmware host and coordinated states](docs/sgb-host.md)
 - [Architecture](docs/architecture.md)
 - [Cloud-save synchronization contract](docs/cloud-save-sync.md)
 - [Plug-in ABI, manifests, and security](docs/plugin-abi.md)

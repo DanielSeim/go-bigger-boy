@@ -116,6 +116,7 @@ private:
     friend class SaveStateCodec;
     friend class SaveStatePpuCodec;
     friend class SaveStateBusCodec;
+    friend class SgbHostStateCodec;
 
     struct BackgroundPixel {
         std::uint8_t color{};

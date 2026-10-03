@@ -93,7 +93,18 @@ class Contracts(unittest.TestCase):
         patch = (ROOT / "scripts/patches/bsnes-05439f9-sgb-frame-input.patch").read_text()
         section = patch.split("+++ b/bsnes/sfc/coprocessor/icd/gbb_frame_input.hpp\n", 1)[1]
         added = "\n".join(line[1:] for line in section.splitlines() if line.startswith("+"))
-        self.assertEqual(added.strip(), (ROOT / "tests/support/sgb_frame_input.hpp").read_text().strip())
+        core = (ROOT / "include/gameboy/sgb_frame_input.hpp").read_text()
+        # The implementation moved into the core. Ignore only its renamed
+        # type/namespace, documentation and snapshot friendship; keep every
+        # policy statement identical to the independently built reference.
+        core = core.replace(
+            "// Original held-frame input policy for deterministic firmware replays.\n"
+            "// Not a frontend controller backend.",
+            "// Original diagnostic input policy. Not a production controller backend.")
+        core = core.replace("namespace gameboy", "namespace sgb_test")
+        core = core.replace("class SgbFrameInput", "class FrameInput")
+        core = core.replace("    friend class SgbHostStateCodec;\n", "")
+        self.assertEqual(added.strip(), core.strip())
         source = r'''
 #include "sgb_frame_input.hpp"
 #include <cassert>
@@ -126,9 +137,12 @@ int main() {
             cpp, exe = root / "input.cpp", root / ("input.exe" if os.name == "nt" else "input")
             cpp.write_text(source)
             include = str(ROOT / "tests/support")
+            core_include = str(ROOT / "include")
             msvc = Path(COMPILER).name.lower() in ("cl", "cl.exe", "clang-cl", "clang-cl.exe")
-            command = ([COMPILER, "/nologo", "/EHsc", "/std:c++17", "/I" + include, str(cpp), "/Fe:" + str(exe)] if msvc
-                       else [COMPILER, "-std=c++17", "-I", include, str(cpp), "-o", str(exe)])
+            command = ([COMPILER, "/nologo", "/EHsc", "/std:c++17", "/I" + include,
+                        "/I" + core_include, str(cpp), "/Fe:" + str(exe)] if msvc
+                       else [COMPILER, "-std=c++17", "-I", include, "-I", core_include,
+                             str(cpp), "-o", str(exe)])
             subprocess.run(command, check=True, capture_output=True, timeout=30, cwd=root)
             subprocess.run([str(exe)], check=True, capture_output=True, timeout=10)
 

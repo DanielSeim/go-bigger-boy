@@ -45,6 +45,7 @@ public:
     [[nodiscard]] std::vector<std::uint8_t> save_state() const;
     [[nodiscard]] bool load_state(const std::vector<std::uint8_t>& bytes) noexcept;
 private:
+    friend class SgbHost;
     friend class SnesDspStateCodec;
     SnesApuBus owned_bus_;
     SnesSpc700 owned_cpu_{owned_bus_};

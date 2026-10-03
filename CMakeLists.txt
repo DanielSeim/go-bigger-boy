@@ -99,6 +99,9 @@ endif()
 add_library(gameboy_core
     src/apu.cpp
     src/snes_audio_host.cpp
+    src/snes_host_cpu.cpp
+    src/sgb_icd_gb_source.cpp
+    src/sgb_host.cpp
     src/snes_dsp_pcm_renderer.cpp
     src/snes_dsp_audio_engine.cpp
     src/snes_apu_audio_engine.cpp
@@ -1103,6 +1106,25 @@ if(GAMEBOY_BUILD_TESTS)
     target_link_libraries(gameboy_snes_audio_host_tests PRIVATE gameboy_core)
     add_test(NAME gameboy_snes_audio_host_contract
              COMMAND gameboy_snes_audio_host_tests)
+    add_executable(gameboy_sgb_host_tests tests/sgb_host_tests.cpp)
+    target_link_libraries(gameboy_sgb_host_tests PRIVATE gameboy_core)
+    add_test(NAME gameboy_sgb_host_contract COMMAND gameboy_sgb_host_tests)
+    add_executable(gameboy_sgb_host_title_runner tests/support/sgb_host_title_runner.cpp)
+    target_include_directories(gameboy_sgb_host_title_runner PRIVATE scripts)
+    target_link_libraries(gameboy_sgb_host_title_runner PRIVATE gameboy_core)
+    if(Python3_Interpreter_FOUND AND
+       EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb1.program.rom" AND
+       EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.program.rom" AND
+       EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/spc700.rom" AND
+       EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb.boot.rom" AND
+       EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.boot.rom" AND
+       EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/Donkey Kong (JU) (V1.1) [S][!].gb")
+        add_test(NAME gameboy_sgb_host_local_titles
+                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_host_local_title_tests.py
+                         $<TARGET_FILE:gameboy_sgb_host_title_runner> ${CMAKE_CURRENT_SOURCE_DIR}/roms
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/sgb/titles/donkey-kong-gameplay.script)
+        set_tests_properties(gameboy_sgb_host_local_titles PROPERTIES TIMEOUT 1500)
+    endif()
 
     add_executable(gameboy_snes_spc700_tests
         tests/snes_spc700_tests.cpp)
