@@ -126,6 +126,7 @@ private:
     friend class SaveStateCodec;
     friend class SaveStateBusCodec;
     friend class SgbHostStateCodec;
+    friend class SgbIcdGbSource;
 
     [[nodiscard]] std::uint8_t cpu_read8(std::uint16_t address) const noexcept;
     void cpu_write8(std::uint16_t address, std::uint8_t value) noexcept;

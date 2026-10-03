@@ -89,6 +89,18 @@ void SnesSpc700::idle_cycle() noexcept {
 }
 
 std::uint8_t SnesSpc700::read_memory(const std::uint16_t address) noexcept {
+    // A completed latched read has no timer, memory or observer side effect.
+    // Internal idle slots have kind I and still take the scheduled slow path.
+    // Incomplete midpoint reads must also retain their original rendezvous.
+    if (replay_cache_enabled_ && replaying_ && !suspended_ && !invalid_replay_ &&
+        instruction_cycle_ < replay_count_) {
+        const auto& access = replay_[instruction_cycle_];
+        if (access.kind == 'R' && access.address == address &&
+            (!half_mode_ || access.halves == 2)) {
+            ++instruction_cycle_;
+            return access.value;
+        }
+    }
     if (cycle_bus_) {
         // Address calculation, word arithmetic and branch-bit tests have
         // internal clocks between their operand accesses, not at the tail.

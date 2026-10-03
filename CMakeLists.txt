@@ -102,6 +102,7 @@ add_library(gameboy_core
     src/snes_host_cpu.cpp
     src/sgb_icd_gb_source.cpp
     src/sgb_host.cpp
+    src/sgb_audio_mixer.cpp
     src/snes_dsp_pcm_renderer.cpp
     src/snes_dsp_audio_engine.cpp
     src/snes_apu_audio_engine.cpp
@@ -1109,6 +1110,12 @@ if(GAMEBOY_BUILD_TESTS)
     add_executable(gameboy_sgb_host_tests tests/sgb_host_tests.cpp)
     target_link_libraries(gameboy_sgb_host_tests PRIVATE gameboy_core)
     add_test(NAME gameboy_sgb_host_contract COMMAND gameboy_sgb_host_tests)
+    add_executable(gameboy_apu_mixer_cache_tests tests/apu_mixer_cache_tests.cpp)
+    target_link_libraries(gameboy_apu_mixer_cache_tests PRIVATE gameboy_core)
+    add_test(NAME gameboy_apu_mixer_cache_contract COMMAND gameboy_apu_mixer_cache_tests)
+    add_executable(gameboy_snes_spc_replay_cache_tests tests/snes_spc_replay_cache_tests.cpp)
+    target_link_libraries(gameboy_snes_spc_replay_cache_tests PRIVATE gameboy_core)
+    add_test(NAME gameboy_snes_spc_replay_cache_contract COMMAND gameboy_snes_spc_replay_cache_tests)
     add_executable(gameboy_sgb_host_title_runner tests/support/sgb_host_title_runner.cpp)
     target_include_directories(gameboy_sgb_host_title_runner PRIVATE scripts)
     target_link_libraries(gameboy_sgb_host_title_runner PRIVATE gameboy_core)
@@ -1124,6 +1131,11 @@ if(GAMEBOY_BUILD_TESTS)
                          $<TARGET_FILE:gameboy_sgb_host_title_runner> ${CMAKE_CURRENT_SOURCE_DIR}/roms
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/sgb/titles/donkey-kong-gameplay.script)
         set_tests_properties(gameboy_sgb_host_local_titles PROPERTIES TIMEOUT 1500)
+        add_test(NAME gameboy_sgb_host_combined_local_titles
+                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_host_combined_title_tests.py
+                         $<TARGET_FILE:gameboy_sgb_host_title_runner> ${CMAKE_CURRENT_SOURCE_DIR}/roms
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/sgb/titles/donkey-kong-gameplay.script)
+        set_tests_properties(gameboy_sgb_host_combined_local_titles PROPERTIES TIMEOUT 3700)
     endif()
 
     add_executable(gameboy_snes_spc700_tests

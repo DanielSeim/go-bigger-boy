@@ -11,6 +11,9 @@ struct SgbHost::Impl {
     SnesApuAudioEngine apu;
     SgbIcdGbSource icd;
     SnesHostCpu cpu;
+    std::unique_ptr<SgbAudioMixer> mixer;
+    bool combined;
+    unsigned apu_hz;
     std::array<StereoSample, buffer_capacity> pcm{};
     std::size_t head{}, count{};
     std::uint64_t produced{};
@@ -18,14 +21,24 @@ struct SgbHost::Impl {
     SnesHostCpu::StepResult fault{};
     explicit Impl(const SgbHostConfig& config)
         : rom(config.program_rom), icd(config.game_rom, config.gb_boot_rom, config.model),
-          cpu(rom, apu.bus(), &apu.cpu_) {
+          cpu(rom, apu.bus(), &apu.cpu_),
+          mixer(config.combined_audio ? std::make_unique<SgbAudioMixer>(
+              config.output_hz,config.gb_gain_q15,config.snes_gain_q15) : nullptr),
+          combined(config.combined_audio), apu_hz(config.apu_clock_hz) {
         apu.install_ipl(config.spc_ipl);
         if (!config.battery_ram.empty()) icd.import_battery_ram(config.battery_ram);
         icd.set_native_gb_input(true);
         icd.set_input_events(config.input_events);
-        // Keep GB channel clocks/registers running, but don't accumulate a
-        // second, unused frontend audio queue. Mixing is a separate future step.
-        icd.set_audio_enabled(false);
+        icd.set_audio_enabled(combined);
+        if (combined) icd.set_audio_sink([](void* context, std::uint64_t clock,
+                                           std::int16_t left, std::int16_t right) noexcept {
+            auto& self = *static_cast<Impl*>(context);
+            if (!self.mixer->push(SgbAudioMixer::Source::gb,clock,{left,right}))
+                self.status = Status::host_fault;
+        }, [](void* context, std::uint64_t clock) noexcept {
+            auto& self = *static_cast<Impl*>(context);
+            if (!self.mixer->reset_gb_at(clock)) self.status = Status::host_fault;
+        }, this);
         cpu.set_icd_source(&icd);
         cpu.set_ppu_dma_timing_enabled(true);
         cpu.set_host_bus_timing_enabled(true);
@@ -37,11 +50,21 @@ struct SgbHost::Impl {
             if (!self.apu.clock_half()) { self.status = Status::apu_fault; return false; }
             StereoSample sample;
             while (self.apu.pop_sample(sample)) {
+                ++self.produced;
+                if (self.combined) {
+                    const auto halves = self.apu.cpu().half_cycles();
+                    const auto hz = std::uint64_t(self.apu_hz)*2;
+                    const auto clock = halves/hz*SgbAudioMixer::master_hz +
+                        (halves%hz*SgbAudioMixer::master_hz+hz-1)/hz;
+                    if (!self.mixer->push(SgbAudioMixer::Source::snes,clock,sample)) {
+                        self.status = Status::host_fault; return false;
+                    }
+                    continue;
+                }
                 if (self.count == buffer_capacity) {
                     self.status = Status::host_fault; return false;
                 }
                 self.pcm[(self.head + self.count++) % buffer_capacity] = sample;
-                ++self.produced;
             }
             return true;
         }, this);
@@ -51,6 +74,9 @@ struct SgbHost::Impl {
 SgbHost::SgbHost(SgbHostConfig config) : config_(std::move(config)) {
     if (config_.model != HardwareModel::sgb && config_.model != HardwareModel::sgb2)
         throw std::invalid_argument("SGB host requires SGB1 or SGB2 model");
+    if (config_.output_hz < 8000 || config_.output_hz > 48000 ||
+        config_.gb_gain_q15 > 32768 || config_.snes_gain_q15 > 32768)
+        throw std::invalid_argument("invalid SGB audio rate or Q15 gain");
     reset();
 }
 SgbHost::~SgbHost() = default;
@@ -58,7 +84,8 @@ void SgbHost::reset() { auto fresh = std::make_unique<Impl>(config_); impl_.swap
 bool SgbHost::step() noexcept {
     auto& s = *impl_;
     if (s.status != Status::ready && s.status != Status::buffer_full) return false;
-    if (buffer_capacity - s.count < instruction_reserve) {
+    if (buffer_capacity - pending_samples() <
+            (s.combined ? combined_instruction_reserve : instruction_reserve)) {
         s.status = Status::buffer_full; return false;
     }
     // Guard the CPU's absolute-clock multiply against overflow. No wraparound
@@ -78,6 +105,10 @@ bool SgbHost::step() noexcept {
     }
     s.icd.advance_to(s.cpu.timing().clocks());
     if (s.icd.missing_address()) { s.status = Status::icd_fault; return false; }
+    if (s.status != Status::ready) return false;
+    if (s.combined && !s.mixer->advance_to(s.cpu.timing().clocks())) {
+        s.status = Status::host_fault; return false;
+    }
     return true;
 }
 std::uint64_t SgbHost::run_until(std::uint64_t target, std::uint64_t budget) noexcept {
@@ -87,6 +118,12 @@ std::uint64_t SgbHost::run_until(std::uint64_t target, std::uint64_t budget) noe
 }
 bool SgbHost::pop_sample(StereoSample& sample) noexcept {
     auto& s = *impl_;
+    if (s.combined) {
+        if (!s.mixer->pop_sample(sample)) return false;
+        if (s.status == Status::buffer_full && buffer_capacity-pending_samples() >= combined_instruction_reserve)
+            s.status = Status::ready;
+        return true;
+    }
     if (!s.count) return false;
     sample = s.pcm[s.head]; s.pcm[s.head] = {};
     s.head = (s.head + 1) % buffer_capacity; --s.count;
@@ -94,12 +131,20 @@ bool SgbHost::pop_sample(StereoSample& sample) noexcept {
         s.status = Status::ready;
     return true;
 }
-std::size_t SgbHost::pending_samples() const noexcept { return impl_->count; }
+std::size_t SgbHost::pending_samples() const noexcept {
+    return impl_->combined ? impl_->mixer->pending_samples() : impl_->count;
+}
 SgbHost::Status SgbHost::status() const noexcept { return impl_->status; }
 const SnesHostCpu& SgbHost::cpu() const noexcept { return impl_->cpu; }
 const SgbIcdGbSource& SgbHost::icd() const noexcept { return impl_->icd; }
 std::uint64_t SgbHost::apu_half_clocks() const noexcept { return impl_->apu.cpu().half_cycles(); }
-std::uint64_t SgbHost::samples_produced() const noexcept { return impl_->produced; }
+std::uint64_t SgbHost::samples_produced() const noexcept {
+    return impl_->combined ? impl_->mixer->samples_produced() : impl_->produced;
+}
+std::uint64_t SgbHost::snes_samples_produced() const noexcept { return impl_->produced; }
+std::uint64_t SgbHost::gb_samples_captured() const noexcept { return impl_->icd.audio_samples_captured(); }
+std::uint64_t SgbHost::clipped_samples() const noexcept { return impl_->combined ? impl_->mixer->clipped_samples() : 0; }
+unsigned SgbHost::sample_rate() const noexcept { return impl_->combined ? impl_->mixer->sample_rate() : impl_->apu_hz/32; }
 SnesHostCpu::StepResult SgbHost::fault() const noexcept { return impl_->fault; }
 
 // Explicit scalar encoding, never object bytes/padding/pointers. Byte fields
@@ -124,6 +169,8 @@ class SgbHostStateCodec {
         void value(SnesHostCpu::ApuWrite& x) { (*this)(x.step,x.port,x.value); }
         void value(SgbIcdGbSource::InputEvent& x) { (*this)(x.frame,x.mask); }
         void value(SgbHost::StereoSample& x) { (*this)(x.left,x.right); }
+        void value(SgbAudioMixer::Event& x) { (*this)(x.clock,x.sample); }
+        void value(SgbAudioMixer::Stream& x) { (*this)(x.events,x.head,x.count,x.last_clock,x.held); }
     };
     struct Reader {
         save_state_format::Reader in;
@@ -152,6 +199,8 @@ class SgbHostStateCodec {
         void value(SnesHostCpu::ApuWrite& x) { (*this)(x.step,x.port,x.value); }
         void value(SgbIcdGbSource::InputEvent& x) { (*this)(x.frame,x.mask); }
         void value(SgbHost::StereoSample& x) { (*this)(x.left,x.right); }
+        void value(SgbAudioMixer::Event& x) { (*this)(x.clock,x.sample); }
+        void value(SgbAudioMixer::Stream& x) { (*this)(x.events,x.head,x.count,x.last_clock,x.held); }
     };
     template<class C> static void cpu(C& c, SnesHostCpu& s) {
         c(s.cycle_apu_sync_,s.fractional_apu_sync_,s.ppu_dma_timing_,s.host_bus_timing_,
@@ -181,7 +230,8 @@ class SgbHostStateCodec {
         c(s.native_gb_input_,s.transfer_commands_,s.missing_address_,s.control_writes_,s.last_control_,
           s.divider_,s.model_,s.released_,s.boot_reported_,s.pulse_armed_,s.receiving_,s.packet_pending_,
           s.audible_sound_substitution_,s.bit_count_,s.continuation_packets_,s.last_ly_,s.selected_row_,
-          s.row_stream_offset_,s.rows_,s.row_valid_,s.building_,s.latched_,s.queued_);
+          s.row_stream_offset_,s.rows_,s.row_valid_,s.building_,s.latched_,s.queued_,
+          s.audio_samples_,s.audio_captured_,s.audio_gap_cycles_);
     }
     static std::uint64_t hash(const std::uint8_t* data, std::size_t n) {
         std::uint64_t h=14695981039346656037ULL;
@@ -189,7 +239,8 @@ class SgbHostStateCodec {
     }
     static std::uint64_t identity(const SgbHostConfig& cfg) {
         Writer w; auto& c=const_cast<SgbHostConfig&>(cfg);
-        w(c.program_rom,c.game_rom,c.battery_ram,c.gb_boot_rom,c.spc_ipl,c.model,c.apu_clock_hz,c.input_events);
+        w(c.program_rom,c.game_rom,c.battery_ram,c.gb_boot_rom,c.spc_ipl,c.model,c.apu_clock_hz,c.input_events,
+          c.combined_audio,c.output_hz,c.gb_gain_q15,c.snes_gain_q15);
         return hash(w.out.data().data(),w.out.data().size());
     }
     template<class C> static void components(C& c, SgbHost::Impl& s) {
@@ -199,6 +250,11 @@ class SgbHostStateCodec {
         // The application GB snapshot does not retain the live indexed LCD
         // image used by ICD tile-row reads. Preserve it in this host container.
         c(*s.icd.gb_->bus().ppu_.sgb_screen_buffer_);
+        if (s.combined) {
+            auto& m = *s.mixer;
+            c(m.output_hz_,m.gb_gain_q15_,m.snes_gain_q15_,m.streams_,m.pcm_,m.head_,m.count_,
+              m.time_,m.produced_,m.clipped_,m.left_area_,m.right_area_);
+        }
     }
     static void validate(const SgbHostConfig& cfg, SgbHost::Impl& s) {
         auto& c=s.cpu; auto& i=s.icd; auto& t=c.timing_; auto& f=i.frame_input_;
@@ -231,6 +287,16 @@ class SgbHostStateCodec {
             if(!input.add(e.frame,e.mask) || f.events_[n].frame!=e.frame || f.events_[n].mask!=e.mask)
                 throw SaveStateError("invalid SGB input state");
         }
+        if (cfg.combined_audio) {
+            const auto& m = *s.mixer;
+            if (!m.validate() || m.output_hz_ != cfg.output_hz || m.gb_gain_q15_ != cfg.gb_gain_q15 ||
+                m.snes_gain_q15_ != cfg.snes_gain_q15 || i.audio_samples_ > i.audio_captured_ ||
+                i.audio_gap_cycles_ > i.gb_cycles_ || i.audio_samples_ > i.gb_cycles_ ||
+                i.audio_captured_ > t.clocks_ || s.count != 0 ||
+                ((s.status == Status::ready || s.status == Status::buffer_full) && m.time_ != t.clocks_*cfg.output_hz))
+                throw SaveStateError("invalid combined SGB audio state");
+        } else if (i.audio_samples_ || i.audio_captured_ || i.audio_gap_cycles_)
+            throw SaveStateError("unexpected GB audio capture");
         // At successful instruction boundaries the APU is caught up exactly.
         const auto half_hz=std::uint64_t(cfg.apu_clock_hz)*2;
         if(t.clocks_>std::numeric_limits<std::uint64_t>::max()/half_hz)
@@ -246,7 +312,7 @@ class SgbHostStateCodec {
 public:
     static std::vector<std::uint8_t> save(const SgbHost& host) {
         Writer w; const std::array<std::uint8_t,8> signature{'G','B','B','S','H','O','S','T'};
-        w.out.bytes(signature.data(),signature.size()); w.out.u8(1);
+        w.out.bytes(signature.data(),signature.size()); w.out.u8(2);
         auto id=identity(host.config_); w(id);
         auto& s=*host.impl_; components(w,s);
         auto apu=s.apu.save_state(), gb=s.icd.gb_->save_state(); w(apu,gb);
@@ -257,7 +323,7 @@ public:
     static bool load(SgbHost& host,const std::vector<std::uint8_t>& state) noexcept {
         try {
             if(state.size()<25 || state.size()>limit ||
-               std::memcmp(state.data(),"GBBSHOST",8)!=0 || state[8]!=1) return false;
+               std::memcmp(state.data(),"GBBSHOST",8)!=0 || state[8]!=2) return false;
             save_state_format::Reader tail(state,state.size()-8,8);
             if(tail.u64()!=hash(state.data(),state.size()-8)) return false;
             Reader r(state); std::uint64_t id{}; r(id);
@@ -269,6 +335,7 @@ public:
             candidate->icd.gb_->load_state(gb);
             (void)candidate->icd.gb_->bus().debug_take_io_trace();
             validate(host.config_,*candidate);
+            if (candidate->combined) candidate->mixer->refresh_cache();
             host.impl_.swap(candidate); return true;
         } catch(...) { return false; }
     }

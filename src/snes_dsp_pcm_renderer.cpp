@@ -10,6 +10,13 @@
 namespace gameboy {
 namespace {
 
+constexpr std::array<unsigned,32> phase_voices(const std::array<unsigned,8>& phases) {
+    std::array<unsigned,32> result{};
+    for (auto& index:result) index=8;
+    for (unsigned index=0;index<phases.size();++index) result[phases[index]]=index;
+    return result;
+}
+
 std::uint8_t voice_register(const gameboy::SnesApuBus& bus,
                             const unsigned voice,
                             const unsigned offset) noexcept {
@@ -322,28 +329,23 @@ void SnesDspPcmRenderer::latch_timed_voice_registers(
     const unsigned phase) noexcept {
     // S-DSP V1, V2, and V3a reads are staggered; voice 0 crosses the
     // 32-clock wrap. The external PCM corpus checks every voice's boundary.
-    constexpr std::array<unsigned, 8> source_phase{
-        17, 20, 31, 2, 5, 8, 11, 14};
-    constexpr std::array<unsigned, 8> pitch_low_phase{
-        21, 0, 3, 6, 9, 12, 15, 18};
-    constexpr std::array<unsigned, 8> pitch_high_phase{
-        22, 1, 4, 7, 10, 13, 16, 19};
-    for (unsigned index = 0; index < voices_.size(); ++index) {
-        auto& registers = timed_voice_registers_[index];
-        if (phase == source_phase[index]) {
-            // V1 computes the sample-directory address from the global DIR
-            // latch before V3c consumes the resulting pointer.
-            registers.directory = timed_dir_;
-            registers.source = voice_register(bus_, index, 4);
-        }
-        if (phase == pitch_low_phase[index]) {
-            registers.pitch_low = voice_register(bus_, index, 2);
-            registers.adsr0 = voice_register(bus_, index, 5);
-        }
-        if (phase == pitch_high_phase[index]) {
-            registers.pitch_high = voice_register(bus_, index, 3);
-        }
+    constexpr auto source = phase_voices({17,20,31,2,5,8,11,14});
+    constexpr auto low = phase_voices({21,0,3,6,9,12,15,18});
+    constexpr auto high = phase_voices({22,1,4,7,10,13,16,19});
+    if (phase>=32) return;
+    if (const auto index=source[phase]; index<voices_.size()) {
+        auto& registers=timed_voice_registers_[index];
+        // V1 uses the global DIR latch before V3c consumes the pointer.
+        registers.directory=timed_dir_;
+        registers.source=voice_register(bus_,index,4);
     }
+    if (const auto index=low[phase]; index<voices_.size()) {
+        auto& registers=timed_voice_registers_[index];
+        registers.pitch_low=voice_register(bus_,index,2);
+        registers.adsr0=voice_register(bus_,index,5);
+    }
+    if (const auto index=high[phase]; index<voices_.size())
+        timed_voice_registers_[index].pitch_high=voice_register(bus_,index,3);
 }
 
 void SnesDspPcmRenderer::advance_timed_voice(const unsigned voice) noexcept {
@@ -370,8 +372,13 @@ void SnesDspPcmRenderer::publish_timed_endx(const unsigned voice) noexcept {
 }
 
 void SnesDspPcmRenderer::publish_timed_readback(const unsigned phase) noexcept {
-    if (!live_readback_) return;
-    for (unsigned voice = 0; voice < 8; ++voice) {
+    if (!live_readback_ || phase>25) return;
+    // Only the current and preceding voice can have a V5..V9 stage here.
+    // Keep ascending order: earlier V8/V9 publication precedes the next
+    // voice's shared OUTX/ENVX latch update on coincident clocks.
+    const auto current=phase/3;
+    const auto first=current ? current-1 : 0;
+    for (unsigned voice = first; voice < std::min(8U,current+1); ++voice) {
         const auto base = voice * 3;
         const auto bit = static_cast<std::uint8_t>(1U << voice);
         if (phase == base) { // V5: stage the whole ENDX byte.

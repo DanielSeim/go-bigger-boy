@@ -100,6 +100,12 @@ public:
     struct InputEvent { unsigned frame{}; std::uint8_t mask{}; };
     void set_input_events(const std::vector<InputEvent>& events);
     void set_audio_enabled(bool enabled) noexcept { gb_->set_audio_enabled(enabled); }
+    using AudioSink = void (*)(void*, std::uint64_t, std::int16_t, std::int16_t) noexcept;
+    using AudioResetSink = void (*)(void*, std::uint64_t) noexcept;
+    // Raw GB APU output, independent of the frontend's host-audio mixer.
+    // Configure before release. Timestamps include the ICD reset-release clock.
+    void set_audio_sink(AudioSink sink, AudioResetSink reset, void* context) noexcept;
+    [[nodiscard]] std::uint64_t audio_samples_captured() const noexcept { return audio_captured_; }
     [[nodiscard]] std::uint64_t completed_frames() const noexcept {
         return completed_frames_;
     }
@@ -117,6 +123,10 @@ public:
 
 private:
     friend class SgbHostStateCodec;
+    AudioSink audio_sink_{};
+    AudioResetSink audio_reset_sink_{};
+    void* audio_context_{};
+    std::uint64_t audio_samples_{}, audio_captured_{}, audio_gap_cycles_{};
     void synchronize(std::uint64_t master_clocks) noexcept;
     void initialize_external_boot_bus() noexcept;
     void joyp_write(std::uint8_t value) noexcept;

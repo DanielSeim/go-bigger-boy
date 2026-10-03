@@ -88,8 +88,11 @@ public:
         half_observer_ = observer; half_context_ = context;
     }
     [[nodiscard]] bool instruction_pending() const noexcept { return continuation_; }
+    // Diagnostic oracle for the latched-read replay fast path.
+    void debug_set_replay_cache_enabled(bool enabled) noexcept { replay_cache_enabled_ = enabled; }
 
 private:
+    bool replay_cache_enabled_{true}; // Derived execution choice, not serialized.
     friend class SnesDspStateCodec;
     friend class SnesApuAudioEngine;
     [[nodiscard]] StepResult execute() noexcept;

@@ -24,6 +24,25 @@ SgbIcdGbSource::SgbIcdGbSource(gameboy::Cartridge cartridge,
     gb_->bus().debug_enable_io_trace(true);
 }
 
+void SgbIcdGbSource::set_audio_sink(AudioSink sink, AudioResetSink reset, void* context) noexcept {
+    audio_sink_ = sink; audio_reset_sink_ = reset; audio_context_ = context;
+    gb_->bus().apu_.set_sample_sink(sink ? [](void* opaque, std::int16_t left,
+                                             std::int16_t right) noexcept {
+        auto& self = *static_cast<SgbIcdGbSource*>(opaque);
+        ++self.audio_samples_; ++self.audio_captured_;
+        // The APU area sampler emits at ceil(n * model_hz / 48000) native
+        // clocks. Map that absolute boundary, not the end of a GB instruction.
+        const auto hz = hardware_clock_rate_hz(self.model_);
+        const auto cycles = self.audio_gap_cycles_ + self.audio_samples_/48000*hz +
+            (self.audio_samples_%48000*hz+47999)/48000;
+        const auto oscillator = self.model_ == HardwareModel::sgb2 ? 20971520ULL : 21477273ULL;
+        const auto scale = 21477273ULL*self.divider_;
+        const auto clock = self.release_clock_ + cycles/oscillator*scale +
+            (cycles%oscillator*scale+oscillator-1)/oscillator;
+        self.audio_sink_(self.audio_context_, clock, left, right);
+    } : static_cast<Apu::SampleSink>(nullptr), this);
+}
+
 void SgbIcdGbSource::set_input_events(const std::vector<InputEvent>& events) {
     SgbFrameInput validated;
     for (const auto& event : events)
@@ -170,7 +189,13 @@ void SgbIcdGbSource::synchronize(const std::uint64_t master_clocks) noexcept {
     const auto target = sgb_icd_target_gb_cycles(
         master_clocks - release_clock_, divider_, model_);
     while (gb_cycles_ < target && missing_address_ == 0) {
-        gb_cycles_ += gb_->step();
+        const bool stopped = audio_sink_ && gb_->cpu().stopped() &&
+            (gb_->bus().read8(0xff0f) & gb_->bus().read8(0xffff) & 0x1f) == 0;
+        const auto cycles = gb_->step();
+        gb_cycles_ += cycles;
+        // STOP consumes scheduler time but no peripheral/APU clocks. Keep
+        // that gap in the absolute sample epoch, including after restoration.
+        if (stopped) audio_gap_cycles_ += cycles;
         if (!boot_reported_ && !gb_->bus().boot_rom_enabled()) {
             boot_reported_ = true;
             if (boot_observer_) boot_observer_(boot_observer_context_, 'B', master_clocks, 1, gb_cycles_);
@@ -186,9 +211,13 @@ void SgbIcdGbSource::synchronize(const std::uint64_t master_clocks) noexcept {
                 complete_tile_row(ly / 8U - 1U);
             last_ly_ = ly;
         }
-        for (const auto& event : gb_->bus().debug_take_io_trace()) {
+        // Consume at the same instruction boundary, but retain storage rather
+        // than allocating a new trace vector for the next IO write.
+        auto& trace = gb_->bus().debug_io_trace_;
+        for (const auto& event : trace) {
             if (event.address == 0xFF00) joyp_write(event.value);
         }
+        trace.clear();
     }
 }
 
@@ -250,13 +279,28 @@ bool SgbIcdGbSource::write(const std::uint16_t address,
                             const std::uint64_t master_clocks,
                             const std::uint8_t value) noexcept {
     if (address == 0x6003) {
+        constexpr unsigned dividers[] = {4, 5, 7, 9};
+        const auto next_divider = dividers[value & 3U];
+        const bool run = (value & 0x80U) != 0;
+        // The bounded ICD has no piecewise oscillator phase model. Do not
+        // silently retime captured audio on a live divider change.
+        if (audio_sink_ && released_ && run && divider_ != next_divider) {
+            missing_address_ = address; return false;
+        }
         if (boot_observer_) boot_observer_(boot_observer_context_, 'C', master_clocks, value, gb_cycles_);
         ++control_writes_;
         last_control_ = value;
-        const bool run = (value & 0x80U) != 0;
         if (!run) {
             released_ = false;
             gb_->reset();
+            if (audio_sink_) {
+                // Reset the presentation accumulator too, without changing
+                // channel/register-visible behavior in the legacy path.
+                gb_->set_audio_enabled(false); gb_->set_audio_enabled(true);
+                audio_samples_ = 0;
+                audio_gap_cycles_ = 0;
+                if (audio_reset_sink_) audio_reset_sink_(audio_context_, master_clocks);
+            }
             gb_->bus().install_boot_rom(boot_image_);
             if (native_gb_input_) initialize_external_boot_bus();
             gb_->bus().debug_enable_io_trace(true);
@@ -282,8 +326,7 @@ bool SgbIcdGbSource::write(const std::uint16_t address,
             released_ = true;
             release_clock_ = master_clocks;
         }
-        constexpr unsigned dividers[] = {4, 5, 7, 9};
-        divider_ = dividers[value & 3U];
+        divider_ = next_divider;
         return true;
     }
     synchronize(master_clocks);

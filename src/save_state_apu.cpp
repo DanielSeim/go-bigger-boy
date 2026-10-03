@@ -72,6 +72,7 @@ void SaveStateApuCodec::write(save_state_format::Writer& writer,
 
 void SaveStateApuCodec::read(save_state_format::Reader& reader, Apu& apu,
                              const std::uint32_t /*version*/) {
+    apu.mixer_dirty_ = true; // Derived voltage must reflect the restored channels.
     const auto read_envelope = [&reader](auto& envelope) {
         envelope.running = reader.boolean();
         // The zombie-mode lock is a short-lived combinational state and is

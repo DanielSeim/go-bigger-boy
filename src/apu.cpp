@@ -114,6 +114,7 @@ std::uint8_t Apu::read_register(const std::uint16_t address) const noexcept {
 void Apu::write_register(const std::uint16_t address,
                          const std::uint8_t value,
                          const bool divider_apu_signal) noexcept {
+    mixer_dirty_ = true;
     if (address >= 0xFF30 && address <= 0xFF3F) {
         if (!wave_.enabled) {
             wave_ram_[address - 0xFF30] = value;
@@ -286,30 +287,33 @@ void Apu::tick(const unsigned cycles) noexcept {
         // audio. Skip only the costly analog mixer/resampler path.
         if (!audio_enabled_) continue;
 
-        const std::array<float, 4> outputs{
-            powered_ ? pulse_output(pulse1_, 0x01) : 0.0F,
-            powered_ ? pulse_output(pulse2_, 0x06) : 0.0F,
-            powered_ ? wave_output() : 0.0F,
-            powered_ ? noise_output() : 0.0F,
-        };
-        const auto routing = registers_[0x15];
-        auto left = 0.0F;
-        auto right = 0.0F;
-        for (std::size_t channel = 0; channel < outputs.size(); ++channel) {
-            if ((routing & (1U << channel)) != 0) right += outputs[channel];
-            if ((routing & (1U << (channel + 4))) != 0) left += outputs[channel];
+        if (mixer_dirty_ || !mixer_cache_enabled_) {
+            const std::array<float, 4> outputs{
+                powered_ ? pulse_output(pulse1_, 0x01) : 0.0F,
+                powered_ ? pulse_output(pulse2_, 0x06) : 0.0F,
+                powered_ ? wave_output() : 0.0F,
+                powered_ ? noise_output() : 0.0F,
+            };
+            const auto routing = registers_[0x15];
+            auto left = 0.0F;
+            auto right = 0.0F;
+            for (std::size_t channel = 0; channel < outputs.size(); ++channel) {
+                if ((routing & (1U << channel)) != 0) right += outputs[channel];
+                if ((routing & (1U << (channel + 4))) != 0) left += outputs[channel];
+            }
+            const auto volumes = registers_[0x14];
+            left *= static_cast<float>(((volumes >> 4) & 7) + 1) / 8.0F;
+            right *= static_cast<float>((volumes & 7) + 1) / 8.0F;
+            mixed_left_ = left; mixed_right_ = right;
+            mixed_dacs_enabled_ = any_dac_enabled(); mixer_dirty_ = false;
         }
-        const auto volumes = registers_[0x14];
-        left *= static_cast<float>(((volumes >> 4) & 7) + 1) / 8.0F;
-        right *= static_cast<float>((volumes & 7) + 1) / 8.0F;
-        const auto dacs_enabled = any_dac_enabled();
-        if (!dacs_enabled) {
+        if (!mixed_dacs_enabled_) {
             // Disconnected DACs cannot contribute a pending partial sample.
             sample_integrator_left_ = 0.0F;
             sample_integrator_right_ = 0.0F;
         }
-        integrate_sample(high_pass(left, dacs_enabled, left_capacitor_),
-                         high_pass(right, dacs_enabled, right_capacitor_));
+        integrate_sample(high_pass(mixed_left_, mixed_dacs_enabled_, left_capacitor_),
+                         high_pass(mixed_right_, mixed_dacs_enabled_, right_capacitor_));
     }
 }
 
@@ -325,9 +329,11 @@ void Apu::set_audio_enabled(const bool enabled) noexcept {
     right_capacitor_ = 0.0F;
     sample_integrator_left_ = 0.0F;
     sample_integrator_right_ = 0.0F;
+    mixer_dirty_ = true;
 }
 
 void Apu::clock_frame_sequencer() noexcept {
+    mixer_dirty_ = true;
     if (skip_frame_sequencer_event_) {
         skip_frame_sequencer_event_ = false;
         return;
@@ -368,6 +374,7 @@ std::uint8_t Apu::pcm34() const noexcept {
 }
 
 void Apu::power_off() noexcept {
+    mixer_dirty_ = true;
     const auto pulse1_length = pulse1_.length;
     const auto pulse2_length = pulse2_.length;
     const auto wave_length = wave_.length;
@@ -650,6 +657,7 @@ void Apu::tick_pulse(PulseState& pulse,
     }
     if (pulse.timer > 0) --pulse.timer;
     if (pulse.timer == 0) {
+        mixer_dirty_ = true;
         pulse.period = pulse_period(register_offset);
         pulse.timer = pulse.period;
         pulse.duty_step = static_cast<std::uint8_t>((pulse.duty_step + 1) & 7);
@@ -665,6 +673,7 @@ void Apu::tick_wave() noexcept {
 
     wave_.wave_ram_accessible = false;
     if (wave_.timer == 0) {
+        mixer_dirty_ = true;
         wave_.timer = wave_period();
         wave_.position = static_cast<std::uint8_t>((wave_.position + 1) & 31);
         const auto packed = wave_ram_[wave_.position / 2];
@@ -682,6 +691,7 @@ void Apu::tick_noise() noexcept {
     if (noise_.timer > 0) --noise_.timer;
     if (noise_.timer != 0) return;
 
+    mixer_dirty_ = true;
     noise_.timer = noise_period();
     const auto feedback = static_cast<std::uint16_t>(
         (noise_.lfsr & 1) ^ ((noise_.lfsr >> 1) & 1));
@@ -718,12 +728,12 @@ void Apu::integrate_sample(const float left, const float right) noexcept {
 }
 
 void Apu::emit_sample(const float left, const float right) {
-    if (samples_.size() >= maximum_buffered_samples) return;
     constexpr auto gain = 0.25F * 32767.0F;
-    samples_.push_back(static_cast<std::int16_t>(
-        std::clamp(left * gain, -32767.0F, 32767.0F)));
-    samples_.push_back(static_cast<std::int16_t>(
-        std::clamp(right * gain, -32767.0F, 32767.0F)));
+    const auto l = static_cast<std::int16_t>(std::clamp(left * gain, -32767.0F, 32767.0F));
+    const auto r = static_cast<std::int16_t>(std::clamp(right * gain, -32767.0F, 32767.0F));
+    if (sample_sink_) { sample_sink_(sample_context_, l, r); return; }
+    if (samples_.size() >= maximum_buffered_samples) return;
+    samples_.push_back(l); samples_.push_back(r);
 }
 
 bool Apu::next_step_skips_length() const noexcept {

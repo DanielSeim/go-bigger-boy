@@ -5,12 +5,29 @@
 #include <iostream>
 #include <iterator>
 #include <string_view>
+#include <algorithm>
+#include <charconv>
+#include <optional>
+#if defined(__unix__) || defined(__APPLE__)
+#include <sys/resource.h>
+#endif
 
 namespace {
+std::optional<double> process_cpu_seconds() noexcept {
+#if defined(__unix__) || defined(__APPLE__)
+    rusage usage{};
+    if (getrusage(RUSAGE_SELF,&usage)==0)
+        return usage.ru_utime.tv_sec+usage.ru_stime.tv_sec+
+            (usage.ru_utime.tv_usec+usage.ru_stime.tv_usec)/1000000.0;
+#endif
+    return std::nullopt;
+}
 std::vector<std::uint8_t> read_file(const std::filesystem::path& path) {
     std::ifstream input(path,std::ios::binary);
     if(!input) throw std::runtime_error("missing local image");
-    return {std::istreambuf_iterator<char>(input),std::istreambuf_iterator<char>()};
+    std::vector<std::uint8_t> bytes{std::istreambuf_iterator<char>(input),std::istreambuf_iterator<char>()};
+    if(input.bad()) throw std::runtime_error("could not read complete local image");
+    return bytes;
 }
 template<std::size_t N> std::array<std::uint8_t,N> image(const std::filesystem::path& path) {
     auto bytes=read_file(path); if(bytes.size()!=N) throw std::runtime_error("wrong image size");
@@ -57,15 +74,37 @@ inline void write_pcm_wav(const std::filesystem::path& path,
 
 } // namespace
 int main(int argc,char** argv) {
-    if(argc!=9 && argc!=10) return 2;
-    const bool restore=argc==10 && std::string_view(argv[9])=="--restore";
-    if(argc==10 && !restore) return 2;
+    if(argc<9) return 2;
     try {
+        bool restore{}, combined{};
+        unsigned rate=48000, chunk=1;
+        std::uint64_t steps=60000000;
+        const auto number=[](std::string_view text) {
+            std::uint64_t value{};
+            const auto result=std::from_chars(text.data(),text.data()+text.size(),value);
+            if(result.ec!=std::errc{} || result.ptr!=text.data()+text.size())
+                throw std::runtime_error("invalid numeric option");
+            return value;
+        };
+        for(int n=9;n<argc;++n) {
+            const std::string_view option(argv[n]);
+            if(option=="--restore") restore=true;
+            else if(option=="--combined") combined=true;
+            else if((option=="--output-hz" || option=="--chunk" || option=="--steps") && n+1<argc) {
+                const auto value=number(argv[++n]);
+                if(option=="--steps") { if(!value || value>60000000) throw std::runtime_error("invalid step budget"); steps=value; }
+                else if(option=="--chunk") { if(!value || value>1024) throw std::runtime_error("invalid consumer chunk"); chunk=static_cast<unsigned>(value); }
+                else { if(value<8000 || value>48000) throw std::runtime_error("invalid sample rate"); rate=static_cast<unsigned>(value); }
+            } else throw std::runtime_error("unknown runner option");
+        }
         const std::string_view model(argv[1]);
         if(model!="sgb1" && model!="sgb2") return 2;
         if(std::filesystem::exists(argv[7]) || std::filesystem::exists(argv[8]))
             throw std::runtime_error("output paths must be unused");
+        if(std::filesystem::absolute(argv[7]).lexically_normal()==std::filesystem::absolute(argv[8]).lexically_normal())
+            throw std::runtime_error("WAV and report paths must be distinct");
         gameboy::SgbHostConfig config;
+        config.combined_audio=combined; config.output_hz=rate;
         config.model=model=="sgb1"?gameboy::HardwareModel::sgb:gameboy::HardwareModel::sgb2;
         config.program_rom=read_file(argv[2]); config.spc_ipl=image<64>(argv[3]);
         config.game_rom=read_file(argv[4]); config.gb_boot_rom=image<256>(argv[5]);
@@ -76,31 +115,51 @@ int main(int argc,char** argv) {
         for(std::size_t n=0;n<script.count;++n) config.input_events.push_back({script.events[n].frame,script.events[n].mask});
         gameboy::SgbHost host(std::move(config));
         std::vector<gameboy::SgbHost::StereoSample> pcm;
-        pcm.reserve(4000000);
+        pcm.reserve(combined?6000000:4000000);
         std::uint64_t restorations{},nonzero{};
+        const auto cpu_start=process_cpu_seconds();
         const auto start=std::chrono::steady_clock::now();
-        for(std::uint64_t n=0;n<60000000;++n) {
-            if(!host.step()) throw std::runtime_error("host stopped at step "+std::to_string(n)+
-                " status "+std::to_string(static_cast<unsigned>(host.status())));
+        const auto consume=[&](bool flush) {
             gameboy::SgbHost::StereoSample sample;
-            while(host.pop_sample(sample)) {
+            while(host.pending_samples() >= (flush?1:chunk)) {
+                const auto count=flush?host.pending_samples():chunk;
+                for(std::size_t n=0;n<count;++n) {
+                if(!host.pop_sample(sample)) throw std::runtime_error("consumer lost pending sample");
                 pcm.push_back(sample); if(sample.left || sample.right) ++nonzero;
                 if(restore && pcm.size()%8192==0) {
                     const auto state=host.save_state();
                     if(!host.load_state(state)) throw std::runtime_error("whole host restore rejected");
                     ++restorations;
                 }
+                }
             }
+        };
+        for(std::uint64_t n=0;n<steps;++n) {
+            if(!host.step()) throw std::runtime_error("host stopped at step "+std::to_string(n)+
+                " status "+std::to_string(static_cast<unsigned>(host.status()))+
+                " address "+std::to_string(host.fault().address));
+            consume(false);
         }
+        consume(true);
         const auto seconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-start).count();
-        write_pcm_wav(argv[7],pcm,32000);
+        const auto cpu_end=process_cpu_seconds();
+        write_pcm_wav(argv[7],pcm,host.sample_rate());
         std::ofstream report(argv[8]);
         report<<"{\"format\":\"gbb-sgb-host-performance-v1\",\"model\":\""<<model<<"\",\"steps\":"<<host.cpu().steps()
               <<",\"master_clocks\":"<<host.cpu().timing().clocks()<<",\"apu_half_clocks\":"<<host.apu_half_clocks()
               <<",\"samples\":"<<pcm.size()<<",\"nonzero\":"<<nonzero<<",\"gb_frames\":"<<host.icd().completed_frames()
               <<",\"inputs\":"<<host.icd().input_events_applied()<<",\"sound_delivered\":"<<host.icd().sound_packets_delivered()
               <<",\"audible_delivered\":"<<host.icd().audible_sound_packets_delivered()<<",\"restorations\":"<<restorations
-              <<",\"seconds\":"<<seconds<<",\"realtime_ratio\":"<<(host.cpu().timing().clocks()/21477273.0/seconds)<<"}\n";
+              <<",\"combined\":"<<(combined?"true":"false")<<",\"output_hz\":"<<host.sample_rate()
+              <<",\"gb_samples\":"<<host.gb_samples_captured()<<",\"snes_samples\":"<<host.snes_samples_produced()
+              <<",\"clipped_samples\":"<<host.clipped_samples()<<",\"consumer_chunk\":"<<chunk
+              <<",\"seconds\":"<<seconds<<",\"realtime_ratio\":"<<(host.cpu().timing().clocks()/21477273.0/seconds)
+              <<",\"cpu_seconds\":";
+        if(cpu_start && cpu_end && *cpu_end>*cpu_start) {
+            const auto cpu_seconds=*cpu_end-*cpu_start;
+            report<<cpu_seconds<<",\"cpu_realtime_ratio\":"<<(host.cpu().timing().clocks()/21477273.0/cpu_seconds);
+        } else report<<"null,\"cpu_realtime_ratio\":null";
+        report<<"}\n";
         if(!report) throw std::runtime_error("failed to write host report");
         std::cout<<model<<": whole host "<<(restore?"restored":"uninterrupted")<<" completed, "<<seconds<<" seconds\n";
     } catch(const std::exception& error) { std::cerr<<error.what()<<'\n'; return 1; }

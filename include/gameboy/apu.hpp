@@ -26,6 +26,17 @@ public:
     void tick(unsigned cycles) noexcept;
     void clock_frame_sequencer() noexcept;
     [[nodiscard]] std::vector<std::int16_t> take_samples();
+    using SampleSink = void (*)(void*, std::int16_t, std::int16_t) noexcept;
+    // Exclusive raw-APU sink: bypasses the frontend sample vector. Caller must
+    // keep its context alive and detach before destruction. Not serialized.
+    void set_sample_sink(SampleSink sink, void* context = nullptr) noexcept {
+        samples_.clear(); sample_sink_ = sink; sample_context_ = context;
+    }
+    // Diagnostic oracle: the uncached path recomputes the original voltage
+    // mix each cycle. Neither mode changes channel, filter or resampler clocks.
+    void debug_set_mixer_cache_enabled(bool enabled) noexcept {
+        mixer_cache_enabled_ = enabled; mixer_dirty_ = true;
+    }
     // Audio generation is a presentation preference. Channel state and
     // register-visible behavior continue to advance while disabled, but the
     // mixer and sample resampler do no work and produce no samples.
@@ -128,6 +139,8 @@ private:
     std::array<std::uint8_t, 0x17> registers_{};
     std::array<std::uint8_t, 0x10> wave_ram_{};
     std::vector<std::int16_t> samples_{};
+    SampleSink sample_sink_{};
+    void* sample_context_{};
     bool cgb_hardware_{};
     bool modern_cgb_{};
     bool cgb_e_revision_{};
@@ -150,6 +163,10 @@ private:
     float right_capacitor_{};
     float sample_integrator_left_{};
     float sample_integrator_right_{};
+    // Derived DAC/routing voltage only. HP capacitors and area accumulation
+    // still run on every APU cycle with exactly the same float operations.
+    bool mixer_cache_enabled_{true}, mixer_dirty_{true}, mixed_dacs_enabled_{};
+    float mixed_left_{}, mixed_right_{};
 };
 
 } // namespace gameboy

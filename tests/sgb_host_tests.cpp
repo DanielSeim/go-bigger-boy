@@ -19,7 +19,9 @@ gameboy::SgbHostConfig config(gameboy::HardwareModel model=gameboy::HardwareMode
     c.game_rom[0x100]=0xc3; c.game_rom[0x101]=0x50; c.game_rom[0x102]=1;
     c.game_rom[0x150]=0xc3; c.game_rom[0x151]=0x50; c.game_rom[0x152]=1;
     // Original minimal boot: LCD on, jump to our cartridge loop. No SGB packets.
-    const std::uint8_t boot[]{0x3e,0x91,0xe0,0x40,0xc3,0,1};
+    const std::uint8_t boot[]{0x3e,0x80,0xe0,0x26,0x3e,0x77,0xe0,0x24,
+        0x3e,0x11,0xe0,0x25,0x3e,0x80,0xe0,0x11,0x3e,0xf3,0xe0,0x12,
+        0x3e,0xc0,0xe0,0x13,0x3e,0x87,0xe0,0x14,0x3e,0x91,0xe0,0x40,0xc3,0,1};
     std::copy(std::begin(boot),std::end(boot),c.gb_boot_rom.begin());
     c.spc_ipl[0]=0x2f; c.spc_ipl[1]=0xfe;
     c.input_events={{0,0x80},{1,0},{2,0x10},{3,0}};
@@ -38,9 +40,10 @@ void checksum(std::vector<std::uint8_t>& state) {
     for(std::size_t n=0;n<state.size()-8;++n) { h^=state[n]; h*=1099511628211ULL; }
     for(unsigned n=0;n<8;++n) state[state.size()-8+n]=static_cast<std::uint8_t>(h>>(n*8));
 }
-void snapshots() {
+void snapshots(bool combined=false, unsigned rate=48000) {
     for(auto model:{gameboy::HardwareModel::sgb,gameboy::HardwareModel::sgb2}) {
-        Host h(config(model)), other(config(model));
+        auto cfg=config(model); cfg.combined_audio=combined; cfg.output_hz=rate;
+        Host h(cfg), other(cfg);
         const auto cold=h.save_state();
         check(h.load_state(cold),"cold host restores");
         for(unsigned boundary=0;boundary<32;++boundary) {
@@ -60,7 +63,7 @@ void snapshots() {
             auto bad=live; bad.resize(length);
             check(!h.load_state(bad) && h.save_state()==live,"truncated restore is atomic");
         }
-        auto bad=live; bad[8]=2;
+        auto bad=live; bad[8]=255;
         check(!h.load_state(bad) && h.save_state()==live,"unknown version rejected atomically");
         bad=live; bad[30]^=1;
         check(!h.load_state(bad) && h.save_state()==live,"corrupt payload rejected atomically");
@@ -73,14 +76,35 @@ void snapshots() {
         bad[head_offset]=0; bad[head_offset+1]=0x40;
         checksum(bad);
         check(!h.load_state(bad) && h.save_state()==live,"invalid ring index rejected atomically after parsing");
-        auto wrong=config(model); wrong.spc_ipl[63]=1; Host incompatible(std::move(wrong));
+        if(combined) {
+            std::array<std::uint8_t,24> marker{};
+            for(unsigned n=0;n<8;++n) {
+                marker[n]=static_cast<std::uint8_t>(std::uint64_t(rate)>>(n*8));
+                marker[8+n]=marker[16+n]=static_cast<std::uint8_t>(std::uint64_t(16384)>>(n*8));
+            }
+            const auto at=std::search(live.begin(),live.end(),marker.begin(),marker.end());
+            check(at!=live.end(),"combined state contains explicit rate/gain header");
+            if(at!=live.end()) {
+                const auto offset=static_cast<std::size_t>(at-live.begin());
+                bad=live; bad[offset]^=1; checksum(bad);
+                check(!h.load_state(bad) && h.save_state()==live,"inner rate disagreement rejected with valid checksum");
+                bad=live;
+                const auto stream_head=offset+24+gameboy::SgbAudioMixer::capacity*24;
+                bad[stream_head]=0; bad[stream_head+1]=0x40; checksum(bad);
+                check(!h.load_state(bad) && h.save_state()==live,"invalid source queue index rejected with valid checksum");
+            }
+        }
+        auto wrong=cfg; wrong.spc_ipl[63]=1; Host incompatible(std::move(wrong));
         check(!incompatible.load_state(live),"firmware identity bound to state");
         h.reset(); check(h.save_state()==cold,"full reset recreates exact cold state");
     }
 }
-void maximum_dma() {
+void maximum_dma(bool combined=false, bool fastest=false) {
     auto cfg=config();
+    cfg.combined_audio=combined;
+    if(fastest) cfg.apu_clock_hz=1099968;
     std::vector<std::uint8_t> code{0x78,0xa9,0x81,0x8d,3,0x60};
+    if(fastest) code[2]=0x80; // Fastest ICD divider /4 and highest supported APU rate.
     for(unsigned ch=0;ch<8;++ch) {
         const std::uint8_t values[]{0,0x18,0,0,0x7e,0,0};
         for(unsigned off=0;off<7;++off)
@@ -98,20 +122,23 @@ void maximum_dma() {
                           <<" opcode="<<unsigned(h.fault().opcode)<<" pc="<<h.fault().pc<<'\n';
     check(advanced,"all eight maximum PPU DMA channels complete in one reservation");
     const auto samples=h.samples_produced()-before;
-    check(samples>6000 && samples<Host::instruction_reserve,"maximum DMA output bounded below reserved headroom");
+    check(combined ? samples>9000 && samples<Host::combined_instruction_reserve :
+                     samples>6000 && samples<Host::instruction_reserve,
+          "maximum DMA output bounded below reserved headroom");
     const auto pcm=drain(h);
     const auto final=h.save_state();
     check(h.load_state(pending) && h.step(),"pending DMA state restores and runs once");
     check(equal(pcm,drain(h)) && h.save_state()==final,"DMA timing and PCM continuation exact");
 }
-void backpressure() {
-    Host h(config()), ref(config());
+void backpressure(bool combined=false) {
+    auto cfg=config(); cfg.combined_audio=combined;
+    Host h(cfg), ref(cfg);
     std::uint64_t steps{};
     while(h.step()) { ++steps; if(steps>1000000) break; }
     check(h.status()==Host::Status::buffer_full && h.pending_samples()>0,"instruction reservation applies bounded backpressure");
     const auto full=h.save_state(); const auto clock=h.cpu().timing().clocks();
     check(!h.step() && h.save_state()==full,"blocked retry repeats no host IO, GB or APU clocks");
-    Host restored(config()); check(restored.load_state(full),"backpressured host restores");
+    Host restored(cfg); check(restored.load_state(full),"backpressured host restores");
     check(equal(drain(h),drain(restored)),"pending host PCM survives restore");
     for(std::uint64_t n=0;n<steps;++n) { check(ref.step(),"unbuffered reference advances"); (void)drain(ref); }
     check(h.save_state()==ref.save_state(),"draining pressure preserves exact complete state");
@@ -119,6 +146,167 @@ void backpressure() {
     check(h.run_until(clock+100000,0)==0,"zero instruction budget is no-op");
     check(h.run_until(clock+100000,100)==100,"instruction budget is honored");
     check(h.cpu().timing().clocks()>clock && h.apu_half_clocks()>0,"retry advances synchronized processors");
+}
+void mixer() {
+    using Mixer=gameboy::SgbAudioMixer; using Source=Mixer::Source;
+    // Fixed source/output rings are large: keep them off Windows' 1 MiB
+    // default stack, just as the host's mixer is heap-owned.
+    auto a_storage=std::make_unique<Mixer>(44100), b_storage=std::make_unique<Mixer>(44100);
+    auto& a=*a_storage; auto& b=*b_storage;
+    check(a.push(Source::gb,0,{10000,-10000}) && a.push(Source::snes,0,{20000,-20000}),"two sources accepted");
+    check(b.push(Source::gb,0,{10000,-10000}) && b.push(Source::snes,0,{20000,-20000}),"reference sources accepted");
+    check(a.push(Source::gb,1000,{-10000,10000}) && b.push(Source::gb,1000,{-10000,10000}),"sample transition accepted");
+    check(a.advance_to(100000),"area sampler advances");
+    std::vector<Host::StereoSample> reference, partitioned; Host::StereoSample sample;
+    while(a.pop_sample(sample)) reference.push_back(sample);
+    for(std::uint64_t clock=0;clock<=100000;clock+=137) {
+        check(b.advance_to(clock),"partitioned sampler advances");
+        while(b.pop_sample(sample)) partitioned.push_back(sample);
+    }
+    check(b.advance_to(100000),"final partial interval advances");
+    while(b.pop_sample(sample)) partitioned.push_back(sample);
+    check(equal(reference,partitioned),"44.1kHz area resampling independent of producer/consumer partitions");
+    check(reference.size()==100000*44100ULL/Mixer::master_hz && reference[0].left==15000 &&
+          reference[0].right==-15000,"rational count and exact DC gain");
+    const auto before=1000*44100ULL-2*Mixer::master_hz;
+    const auto expected=(15000*before+5000*(Mixer::master_hz-before)+Mixer::master_hz/2)/Mixer::master_hz;
+    check(reference[2].left==expected && reference[2].right==-static_cast<int>(expected),
+          "fractional transition has analytically exact area and symmetric rounding");
+    check(!a.push(Source::gb,1,{}) && !a.advance_to(1),"late source/rewind rejected");
+    auto isolated_storage=std::make_unique<Mixer>(32000,32768,0); auto& isolated=*isolated_storage;
+    check(isolated.push(Source::gb,0,{12345,-23456}) && isolated.push(Source::snes,0,{-32768,32767}) &&
+          isolated.advance_to(1000) && isolated.pop_sample(sample) && sample.left==12345 && sample.right==-23456,
+          "muted SNES contribution cannot leak into GB-only output");
+    auto snes_storage=std::make_unique<Mixer>(32000,0,32768); auto& snes_only=*snes_storage;
+    check(snes_only.push(Source::gb,0,{-32768,32767}) && snes_only.push(Source::snes,0,{12345,-23456}) &&
+          snes_only.advance_to(1000) && snes_only.pop_sample(sample) && sample.left==12345 && sample.right==-23456,
+          "muted GB contribution cannot leak into SNES-only output");
+    auto clipped_storage=std::make_unique<Mixer>(48000,32768,32768); auto& clipped=*clipped_storage;
+    check(clipped.push(Source::gb,0,{32767,-32768}) && clipped.push(Source::snes,0,{32767,-32768}),"unity sources accepted");
+    check(clipped.advance_to(1000) && clipped.pop_sample(sample) && sample.left==32767 && sample.right==-32768 &&
+          clipped.clipped_samples()==2,"wide sum saturates, never wraps");
+    auto pressure_storage=std::make_unique<Mixer>(); auto& pressure=*pressure_storage;
+    check(pressure.advance_to(Mixer::master_hz/4),"first quarter second fills output");
+    const auto produced=pressure.samples_produced();
+    check(!pressure.advance_to(Mixer::master_hz) && pressure.samples_produced()==produced,
+          "output preflight has no partial side effects");
+    while(pressure.pop_sample(sample)) {}
+    check(pressure.advance_to(Mixer::master_hz/3),"output retry continues exact timeline");
+    auto inputs_storage=std::make_unique<Mixer>(); auto& inputs=*inputs_storage;
+    for(std::size_t n=0;n<Mixer::capacity;++n)
+        check(inputs.push(Source::gb,1000,{1,1}),"fixed source queue fills without allocation");
+    check(!inputs.push(Source::gb,1001,{2,2}) && inputs.advance_to(1000) &&
+          inputs.push(Source::gb,1001,{2,2}),"source overflow fails atomically and drain permits retry");
+    check(!inputs.push(static_cast<Source>(255),1001,{}) &&
+          !inputs.advance_to(std::numeric_limits<std::uint64_t>::max()),"invalid source and overflowing timeline rejected");
+    auto reset_storage=std::make_unique<Mixer>(); auto& reset=*reset_storage;
+    check(reset.push(Source::gb,0,{10000,10000}) && reset.push(Source::gb,1000,{20000,20000}) &&
+          reset.reset_gb_at(500) && reset.advance_to(2000),"reset removes speculative GB data and inserts silence");
+    unsigned nonzero{}; while(reset.pop_sample(sample)) { if(sample.left) ++nonzero; }
+    check(nonzero==2,"no stale DAC data after reset");
+    for(const auto rate:{8000U,32000U,44100U,48000U}) {
+        auto drift_storage=std::make_unique<Mixer>(rate); auto& drift=*drift_storage;
+        // Drain at deliberately awkward clock boundaries for a full second.
+        for(std::uint64_t clock=1;clock<Mixer::master_hz;clock+=7919) {
+            check(drift.advance_to(clock),"long rational progression");
+            while(drift.pop_sample(sample)) {}
+        }
+        check(drift.advance_to(Mixer::master_hz) && drift.samples_produced()==rate,"one second has exactly configured sample count");
+    }
+    bool rejected=false; try { (void)std::make_unique<Mixer>(48001); } catch(const std::invalid_argument&) { rejected=true; }
+    check(rejected,"unbounded rate rejected");
+}
+void raw_apu_sink() {
+    gameboy::Apu vector, sink;
+    vector.initialize_post_boot(gameboy::HardwareModel::sgb2);
+    sink.initialize_post_boot(gameboy::HardwareModel::sgb2);
+    std::vector<Host::StereoSample> captured;
+    sink.set_sample_sink([](void* context,std::int16_t l,std::int16_t r) noexcept {
+        static_cast<std::vector<Host::StereoSample>*>(context)->push_back({l,r});
+    },&captured);
+    for(auto* apu:{&vector,&sink}) {
+        apu->write_register(0xff11,0x80); apu->write_register(0xff12,0xf3);
+        apu->write_register(0xff13,0xc0); apu->write_register(0xff14,0x87);
+    }
+    for(unsigned n=0;n<1000;++n) { vector.tick(97); sink.tick(97); }
+    const auto samples=vector.take_samples();
+    check(samples.size()==captured.size()*2 && !captured.empty(),"raw callback has every stereo sample");
+    for(std::size_t n=0;n<captured.size();++n)
+        check(samples[2*n]==captured[n].left && samples[2*n+1]==captured[n].right,"raw capture leaves GB synthesis intact");
+    check(sink.take_samples().empty(),"exclusive sink bypasses frontend/HLE mixing queue");
+    sink.set_sample_sink(nullptr); sink.tick(1000);
+    check(!sink.take_samples().empty(),"detaching restores ordinary frontend queue");
+}
+void combined_chunks_and_reset() {
+    for(auto model:{gameboy::HardwareModel::sgb,gameboy::HardwareModel::sgb2}) {
+        auto cfg=config(model); cfg.combined_audio=true; cfg.output_hz=44100;
+        Host a(cfg), b(cfg);
+        std::vector<Host::StereoSample> x,y;
+        for(unsigned n=0;n<10000;++n) {
+            check(a.step() && b.step(),"combined host advances");
+            auto values=drain(a); x.insert(x.end(),values.begin(),values.end());
+            if(n%257==0) { values=drain(b); y.insert(y.end(),values.begin(),values.end()); }
+        }
+        auto values=drain(b); y.insert(y.end(),values.begin(),values.end());
+        check(equal(x,y) && a.save_state()==b.save_state(),"consumer chunk sizes cannot alter clocking or audio");
+        check(a.gb_samples_captured()>0 && std::any_of(x.begin(),x.end(),[](auto s){return s.left || s.right;}),
+              "combined host actually captures audible GB channels");
+        check(a.sample_rate()==44100 && a.samples_produced()==a.cpu().timing().clocks()*44100/21477273,
+              "combined output remains on absolute host timeline");
+        auto wrong=cfg; wrong.gb_gain_q15=32768; Host gains(wrong);
+        check(!gains.load_state(a.save_state()),"mix gains are part of state identity");
+        wrong=cfg; wrong.output_hz=48000; Host rate(wrong);
+        check(!rate.load_state(a.save_state()),"output rate is part of state identity");
+    }
+    // Repeated ICD reset/release while pulse audio is running. Reset semantics
+    // and callback ownership must survive snapshots, not just cold startup.
+    auto cfg=config(); cfg.combined_audio=true;
+    const std::uint8_t code[]{0x78,0xa9,0x81,0x8d,3,0x60,0xa2,0,
+        0xe6,0,0xca,0xd0,0xfb,0xa9,1,0x8d,3,0x60,0xa9,0x81,0x8d,3,0x60,0x80,0xed};
+    std::copy(std::begin(code),std::end(code),cfg.program_rom.begin()+0x104);
+    Host h(cfg);
+    for(unsigned n=0;n<4000;++n) {
+        check(h.step(),"warm reset/release supported"); (void)drain(h);
+        if(n%73==0) check(h.load_state(h.save_state()),"warm reset presentation state restores");
+    }
+    check(h.icd().control_writes()>5 && h.gb_samples_captured()>0,"warm resets exercised with GB audio");
+    auto changing=config(); changing.combined_audio=true;
+    const std::uint8_t divider[]{0x78,0xa9,0x81,0x8d,3,0x60,0xa9,0x80,0x8d,3,0x60};
+    std::copy(std::begin(divider),std::end(divider),changing.program_rom.begin()+0x104);
+    Host unsupported(changing);
+    for(unsigned n=0;n<10 && unsupported.step();++n) {}
+    check(unsupported.status()==Host::Status::icd_fault && unsupported.icd().missing_address()==0x6003,
+          "live divider change stops instead of silently corrupting the audio timeline");
+}
+void stop_timeline() {
+    for(auto model:{gameboy::HardwareModel::sgb,gameboy::HardwareModel::sgb2}) {
+        auto cfg=config(model);
+        const std::uint8_t game[]{0x3e,0x10,0xe0,0,0x3e,0x10,0xe0,0xff,0x3e,0,0xe0,0x0f,
+            0x01,0,1,0x0b,0x78,0xb1,0x20,0xfb,0x10,0,0xc3,0x66,1};
+        std::copy(std::begin(game),std::end(game),cfg.game_rom.begin()+0x150);
+        gameboy::SgbIcdGbSource source(cfg.game_rom,cfg.gb_boot_rom,model);
+        source.set_native_gb_input(true); source.set_native_gb_input(false);
+        std::vector<std::uint64_t> times;
+        source.set_audio_sink([](void* context,std::uint64_t clock,std::int16_t,std::int16_t) noexcept {
+            static_cast<std::vector<std::uint64_t>*>(context)->push_back(clock);
+        },nullptr,&times);
+        check(source.write(0x6003,0,0x81),"STOP fixture releases GB");
+        source.advance_to(60000);
+        const auto paused=times.size(); check(paused>0,"STOP follows audible APU clocking");
+        source.advance_to(80000);
+        check(times.size()==paused,"STOP pauses APU sampling without dropping host time");
+        check(source.write(0x6004,80000,0xef),"host A press wakes stopped GB");
+        source.advance_to(90000);
+        check(times.size()>paused && times[paused]>=80000 && std::is_sorted(times.begin(),times.end()),
+              "resumed samples include stopped-clock gap, never timestamps in the past");
+        // Native host input cannot wake this fixture, so also exercise snapshots
+        // while STOP is held and the host is continuing to emit output.
+        cfg.combined_audio=true; Host host(cfg);
+        for(unsigned n=0;n<5000;++n) {
+            check(host.step(),"host remains live while GB is stopped"); (void)drain(host);
+            if(n%211==0) check(host.load_state(host.save_state()),"STOP gap and partial sample state restore");
+        }
+    }
 }
 void faults() {
     auto c=config(); c.program_rom[0x104]=0xf8; Host host(std::move(c));
@@ -140,4 +328,8 @@ void faults() {
     check(rejected,"non-SGB model rejected");
 }
 }
-int main() { snapshots(); backpressure(); maximum_dma(); faults(); return failures?1:0; }
+int main() {
+    mixer(); raw_apu_sink(); snapshots(); backpressure(); maximum_dma(); faults();
+    snapshots(true); snapshots(true,44100); backpressure(true); maximum_dma(true); maximum_dma(true,true);
+    combined_chunks_and_reset(); stop_timeline(); return failures?1:0;
+}
