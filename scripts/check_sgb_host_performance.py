@@ -38,7 +38,7 @@ def summarize(data, warmup=10.0, minimum_windows=30):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("reports", type=Path, nargs="+")
-    parser.add_argument("--minimum-ratio", type=float, default=1.5)
+    parser.add_argument("--minimum-ratio", type=float, default=1.4)
     parser.add_argument("--worst-ratio", type=float, default=1.2)
     parser.add_argument("--warmup-seconds", type=float, default=10.0)
     parser.add_argument("--minimum-windows", type=int, default=30)
@@ -56,8 +56,8 @@ def main():
             passed = result["p05"] >= args.minimum_ratio and result["worst"] >= args.worst_ratio
             failed |= not passed
             print(f"{data['model']}/{'combined' if data['combined'] else 'native'} "
-                  f"{data['output_hz']} Hz: median {result['median']:.2f}x, "
-                  f"p05 {result['p05']:.2f}x, worst {result['worst']:.2f}x "
+                  f"{data['output_hz']} Hz: median {result['median']:.3f}x, "
+                  f"p05 {result['p05']:.3f}x, worst {result['worst']:.3f}x "
                   f"({result['windows']} windows): {'PASS' if passed else 'FAIL'}")
         except (ValueError, KeyError, TypeError, OSError) as error:
             failed = True

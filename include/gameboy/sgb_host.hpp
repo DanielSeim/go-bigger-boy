@@ -61,6 +61,8 @@ public:
     // Exact scalar scheduling oracle for tests; not a playback quality option.
     void debug_set_apu_batch_enabled(bool enabled) noexcept;
     void debug_set_spc_idle_tail_cache_enabled(bool enabled) noexcept;
+    void debug_set_direct_dsp_clock_enabled(bool enabled) noexcept;
+    void debug_set_dsp_phase_dispatch_enabled(bool enabled) noexcept;
     // Instruction-boundary snapshot: CPU/timing/WRAM/DMA, APU, GB, ICD
     // packet/input/row state and unread host PCM. Private images may be present.
     [[nodiscard]] std::vector<std::uint8_t> save_state() const;

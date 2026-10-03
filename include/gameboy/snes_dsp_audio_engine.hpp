@@ -40,6 +40,7 @@ public:
     [[nodiscard]] bool pop_sample(StereoSample& sample) noexcept;
     [[nodiscard]] std::size_t pending_samples() const noexcept { return size_; }
     [[nodiscard]] unsigned phase() const noexcept { return clock_.phase(); }
+    void debug_set_phase_dispatch_enabled(bool enabled) noexcept { phase_dispatch_enabled_ = enabled; }
 
     // Versioned little-endian component snapshot, including the shared APU bus
     // and queued PCM. No pointers/callbacks, host padding or firmware paths.
@@ -58,6 +59,7 @@ private:
     std::array<StereoSample, buffer_capacity> buffer_{};
     std::uint16_t head_{};
     std::uint16_t size_{};
+    bool phase_dispatch_enabled_{true}; // Execution choice, never serialized.
 };
 
 } // namespace gameboy

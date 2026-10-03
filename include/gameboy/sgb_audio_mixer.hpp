@@ -41,6 +41,8 @@ private:
     bool validate() const noexcept;
     void refresh_cache() noexcept;
     unsigned output_hz_, gb_gain_q15_, snes_gain_q15_;
+    // Derived from the immutable output rate, never serialized.
+    std::uint64_t maximum_sample_clock_{}, maximum_advance_clock_{};
     std::array<Stream, 2> streams_{};
     std::array<StereoSample, capacity> pcm_{};
     std::size_t head_{}, count_{};

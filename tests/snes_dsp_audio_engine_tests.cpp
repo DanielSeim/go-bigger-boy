@@ -90,7 +90,7 @@ void test_buffering_preserves_raw_renderer_output() {
     unsigned samples{}, audible{};
     for (unsigned i = 0; i < 100000; ++i) {
         scheduled_writes(buffered, i % 1024); scheduled_writes(raw, i % 1024);
-        const auto expected = clock.clock();
+        const auto expected = clock.clock_scalar();
         check(buffered.clock(), "unblocked buffered engine advances");
         Sample sample{};
         const bool emitted = buffered.pop_sample(sample);
@@ -134,6 +134,7 @@ void test_all_phase_restore() {
 
         gameboy::SnesApuBus other_bus;
         Engine other(other_bus);
+        other.debug_set_phase_dispatch_enabled(false);
         check(other.load_state(snapshot), "cross-instance state accepted");
         // The restored BRR walkers must read their destination bus, not old pointers.
         bus.dsp_write_ram(0x8001, 0);

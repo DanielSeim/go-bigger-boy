@@ -9,8 +9,22 @@
 #include <charconv>
 #include <optional>
 #include <cstring>
+#include <iomanip>
+#include <cmath>
 #if defined(__unix__) || defined(__APPLE__)
 #include <sys/resource.h>
+#endif
+#if defined(__linux__)
+#include <sched.h>
+#endif
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
 #endif
 
 namespace {
@@ -32,14 +46,57 @@ std::uint64_t gb_state_hash(const gameboy::SgbHost& host) {
     }
     throw std::runtime_error("nested GB state was not found");
 }
-std::optional<double> process_cpu_seconds() noexcept {
+struct ProcessMetrics {
+    std::optional<double> cpu_seconds;
+    std::optional<std::uint64_t> voluntary_switches, involuntary_switches;
+    std::optional<unsigned> processor;
+};
+ProcessMetrics process_metrics() noexcept {
+    ProcessMetrics result;
 #if defined(__unix__) || defined(__APPLE__)
     rusage usage{};
-    if (getrusage(RUSAGE_SELF,&usage)==0)
-        return usage.ru_utime.tv_sec+usage.ru_stime.tv_sec+
+    if (getrusage(RUSAGE_SELF,&usage)==0) {
+        result.cpu_seconds=usage.ru_utime.tv_sec+usage.ru_stime.tv_sec+
             (usage.ru_utime.tv_usec+usage.ru_stime.tv_usec)/1000000.0;
+        result.voluntary_switches=usage.ru_nvcsw;
+        result.involuntary_switches=usage.ru_nivcsw;
+    }
+#elif defined(_WIN32)
+    FILETIME creation{}, exit{}, kernel{}, user{};
+    if (GetProcessTimes(GetCurrentProcess(),&creation,&exit,&kernel,&user)) {
+        const auto ticks=[](FILETIME value) {
+            return (std::uint64_t(value.dwHighDateTime)<<32)|value.dwLowDateTime;
+        };
+        result.cpu_seconds=(ticks(kernel)+ticks(user))/10000000.0;
+    }
+    result.processor=GetCurrentProcessorNumber();
 #endif
+#if defined(__linux__)
+    const auto processor=sched_getcpu();
+    if(processor>=0) result.processor=static_cast<unsigned>(processor);
+#endif
+    return result;
+}
+template<class T> std::optional<T> difference(std::optional<T> after,
+                                             std::optional<T> before) {
+    if(after && before && *after>=*before) return *after-*before;
     return std::nullopt;
+}
+template<class T> void optional_json(std::ostream& output,std::optional<T> value) {
+    if(value) output<<*value; else output<<"null";
+}
+volatile std::uint32_t calibration_sink=0x53474232;
+double calibrate_host() noexcept {
+    // Diagnostic only, outside timed playback. Comparing the same binary's
+    // before/after dependency-chain cost helps detect changing host capacity;
+    // this is neither an emulation benchmark nor a cross-compiler score.
+    auto value=calibration_sink;
+    const auto start=std::chrono::steady_clock::now();
+    for(unsigned i=0;i<2000000;++i) {
+        value^=value<<13; value^=value>>17; value^=value<<5;
+    }
+    calibration_sink=value;
+    return std::chrono::duration<double>(std::chrono::steady_clock::now()-start).count();
 }
 std::vector<std::uint8_t> read_file(const std::filesystem::path& path) {
     std::ifstream input(path,std::ios::binary);
@@ -93,9 +150,21 @@ inline void write_pcm_wav(const std::filesystem::path& path,
 
 } // namespace
 int main(int argc,char** argv) {
+    if(argc==2 && std::string_view(argv[1])=="--metrics-self-test") {
+        const auto before=process_metrics();
+        const auto elapsed=calibrate_host();
+        const auto after=process_metrics();
+        if(!std::isfinite(elapsed) || elapsed<=0 ||
+           !before.cpu_seconds || !after.cpu_seconds ||
+           !std::isfinite(*before.cpu_seconds) ||
+           !std::isfinite(*after.cpu_seconds) ||
+           *before.cpu_seconds<0 || *after.cpu_seconds<*before.cpu_seconds)
+            return 1;
+        return 0;
+    }
     if(argc<9) return 2;
     try {
-        bool restore{}, combined{}, scalar_apu{}, scalar_spc{};
+        bool restore{}, combined{}, scalar_apu{}, scalar_spc{}, calibration{}, callback_dsp{}, scalar_dsp{};
         unsigned rate=48000, chunk=1;
         std::uint64_t steps=60000000;
         const auto number=[](std::string_view text) {
@@ -111,6 +180,9 @@ int main(int argc,char** argv) {
             else if(option=="--combined") combined=true;
             else if(option=="--scalar-apu") scalar_apu=true;
             else if(option=="--scalar-spc") scalar_spc=true;
+            else if(option=="--calibrate-host") calibration=true;
+            else if(option=="--callback-dsp") callback_dsp=true;
+            else if(option=="--scalar-dsp") scalar_dsp=true;
             else if((option=="--output-hz" || option=="--chunk" || option=="--steps") && n+1<argc) {
                 const auto value=number(argv[++n]);
                 if(option=="--steps") { if(!value || value>60000000) throw std::runtime_error("invalid step budget"); steps=value; }
@@ -137,16 +209,26 @@ int main(int argc,char** argv) {
         gameboy::SgbHost host(std::move(config));
         host.debug_set_apu_batch_enabled(!scalar_apu);
         host.debug_set_spc_idle_tail_cache_enabled(!scalar_spc);
+        host.debug_set_direct_dsp_clock_enabled(!callback_dsp);
+        host.debug_set_dsp_phase_dispatch_enabled(!scalar_dsp);
         std::vector<gameboy::SgbHost::StereoSample> pcm;
         pcm.reserve(combined?6000000:4000000);
         std::uint64_t restorations{},nonzero{};
-        const auto cpu_start=process_cpu_seconds();
+        const auto calibration_before=calibration?std::optional<double>(calibrate_host()):std::nullopt;
+        const auto metrics_start=process_metrics();
+        const auto cpu_start=metrics_start.cpu_seconds;
         const auto start=std::chrono::steady_clock::now();
-        struct Window { std::uint64_t clocks; double seconds; };
+        struct Window {
+            std::uint64_t clocks; double seconds;
+            std::optional<double> cpu_seconds;
+            std::optional<std::uint64_t> voluntary_switches, involuntary_switches;
+            std::optional<unsigned> processor_before,processor_after;
+        };
         std::vector<Window> windows; windows.reserve(512);
         bool windows_complete=true;
         std::uint64_t window_clock{}, next_window=21477273;
         auto window_start=start;
+        auto window_metrics=metrics_start;
         const auto consume=[&](bool flush) {
             gameboy::SgbHost::StereoSample sample;
             while(host.pending_samples() >= (flush?1:chunk)) {
@@ -170,18 +252,26 @@ int main(int argc,char** argv) {
             const auto clock=host.cpu().timing().clocks();
             if(clock>=next_window) {
                 const auto now=std::chrono::steady_clock::now();
+                const auto metrics=process_metrics();
                 if(windows.size()<512) windows.push_back({clock-window_clock,
-                    std::chrono::duration<double>(now-window_start).count()});
+                    std::chrono::duration<double>(now-window_start).count(),
+                    difference(metrics.cpu_seconds,window_metrics.cpu_seconds),
+                    difference(metrics.voluntary_switches,window_metrics.voluntary_switches),
+                    difference(metrics.involuntary_switches,window_metrics.involuntary_switches),
+                    window_metrics.processor,metrics.processor});
                 else windows_complete=false;
                 window_start=now; window_clock=clock; next_window=clock+21477273;
+                window_metrics=metrics;
             }
         }
         consume(true);
         const auto seconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-start).count();
-        const auto cpu_end=process_cpu_seconds();
+        const auto cpu_end=process_metrics().cpu_seconds;
+        const auto calibration_after=calibration?std::optional<double>(calibrate_host()):std::nullopt;
         const auto gb_hash=gb_state_hash(host); // Outside timed playback.
         write_pcm_wav(argv[7],pcm,host.sample_rate());
         std::ofstream report(argv[8]);
+        report<<std::setprecision(10);
         report<<"{\"format\":\"gbb-sgb-host-performance-v1\",\"model\":\""<<model<<"\",\"steps\":"<<host.cpu().steps()
               <<",\"master_clocks\":"<<host.cpu().timing().clocks()<<",\"apu_half_clocks\":"<<host.apu_half_clocks()
               <<",\"samples\":"<<pcm.size()<<",\"nonzero\":"<<nonzero<<",\"gb_frames\":"<<host.icd().completed_frames()
@@ -196,13 +286,24 @@ int main(int argc,char** argv) {
             const auto cpu_seconds=*cpu_end-*cpu_start;
             report<<cpu_seconds<<",\"cpu_realtime_ratio\":"<<(host.cpu().timing().clocks()/21477273.0/cpu_seconds);
         } else report<<"null,\"cpu_realtime_ratio\":null";
+        report<<",\"calibration_before_seconds\":"; optional_json(report,calibration_before);
+        report<<",\"calibration_after_seconds\":"; optional_json(report,calibration_after);
         report<<",\"apu_batched\":"<<(scalar_apu?"false":"true")
               <<",\"spc_idle_tail_cached\":"<<(scalar_spc?"false":"true")
+              <<",\"direct_dsp_clock\":"<<(callback_dsp?"false":"true")
+              <<",\"dsp_phase_dispatch\":"<<(scalar_dsp?"false":"true")
               <<",\"gb_state_hash\":"<<gb_hash
               <<",\"windows_complete\":"<<(windows_complete?"true":"false")<<",\"windows\":[";
         for(std::size_t n=0;n<windows.size();++n) {
             if(n) report<<',';
-            report<<"{\"master_clocks\":"<<windows[n].clocks<<",\"seconds\":"<<windows[n].seconds<<'}';
+            const auto& w=windows[n];
+            report<<"{\"master_clocks\":"<<w.clocks<<",\"seconds\":"<<w.seconds;
+            report<<",\"cpu_seconds\":"; optional_json(report,w.cpu_seconds);
+            report<<",\"voluntary_switches\":"; optional_json(report,w.voluntary_switches);
+            report<<",\"involuntary_switches\":"; optional_json(report,w.involuntary_switches);
+            report<<",\"processor_before\":"; optional_json(report,w.processor_before);
+            report<<",\"processor_after\":"; optional_json(report,w.processor_after);
+            report<<'}';
         }
         report<<"]}\n";
         if(!report) throw std::runtime_error("failed to write host report");

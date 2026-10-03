@@ -14,7 +14,7 @@ public:
     enum class Status : std::uint8_t { ready, buffer_full, unsupported_instruction, invalid_target, missing_ipl };
     explicit SnesApuAudioEngine() noexcept;
     // Attach to a caller-owned bus/CPU at reset. Both must outlive the engine;
-    // this resets them and reserves their DSP-write/full-clock observers.
+    // this resets them and reserves their DSP-write observer/clock binding.
     explicit SnesApuAudioEngine(SnesSpc700& cpu) noexcept;
     ~SnesApuAudioEngine();
     SnesApuAudioEngine(const SnesApuAudioEngine&) = delete;
@@ -40,6 +40,11 @@ public:
     [[nodiscard]] bool pop_sample(StereoSample& sample) noexcept { return dsp_.pop_sample(sample); }
     [[nodiscard]] std::size_t pending_samples() const noexcept { return dsp_.pending_samples(); }
     [[nodiscard]] Status status() const noexcept { return status_; }
+    // Independent callback-based timing oracle; does not change state/PCM.
+    void debug_set_direct_dsp_clock_enabled(bool enabled) noexcept;
+    void debug_set_dsp_phase_dispatch_enabled(bool enabled) noexcept {
+        dsp_.debug_set_phase_dispatch_enabled(enabled);
+    }
     // Atomic component state includes CPU replay/half clocks, bus, DSP and
     // FIFO. Excludes the SNES CPU, ICD/GB scheduler and frontend DAC/resampler.
     [[nodiscard]] std::vector<std::uint8_t> save_state() const;
@@ -53,6 +58,7 @@ private:
     SnesSpc700& cpu_;
     SnesDspAudioEngine dsp_{bus_};
     Status status_{Status::ready};
+    bool direct_dsp_clock_enabled_{true}; // Execution binding, never saved.
 };
 
 } // namespace gameboy

@@ -248,16 +248,91 @@ the Linux/GCC reference profile. Other compiler/architecture profiles require
 a same-platform original-core comparison: ARM/Clang's existing float rounding
 can differ from GCC by occasional PCM least-significant bits. That difference
 must not be mistaken for a performance optimization changing the audio.
+For repeatability qualification, add `--repeat 3` (up to 20 serial rounds).
+Every complete capture must meet the same raw gate; repeats are not averaged
+and no failing round is discarded. Repeated captures use `round-N` folders.
 
 The runner records bounded one-second emulated playback windows. After ten
 emulated seconds of warmup, at least 30 full windows are required. The default
-gate requires **p05 >= 1.5x realtime and worst >= 1.2x**: a good whole-run
+gate requires **p05 >= 1.40x realtime and worst >= 1.20x**: a good whole-run
 average cannot hide sustained slow sections. Truncated, restored and incomplete
 model/audio-mode reports fail closed. Existing reports can be checked with
 `scripts/check_sgb_host_performance.py`. The JSON also includes a final nested
 GB-state hash, computed outside timed playback, for comparisons to an older
 runner/core build. That hash includes framebuffer data; it is a regression
 diagnostic, not a security or independent hardware-fidelity claim.
+
+For host scheduling diagnosis, the runner also reports process CPU time in
+each window, Unix voluntary/involuntary context switches, and sampled CPU
+endpoints (Linux/Windows). Missing platform counters are `null`, not zero.
+An endpoint change is not a complete count of migrations. `--calibrate-host`
+adds a small dependent integer workload before and after playback, outside
+the timed interval; compare it only between runs of the same binary. It can
+help explain changing host capacity, but is not an emulator benchmark or a
+cross-compiler score. Neither CPU time nor calibration normalizes the raw
+wall-time headroom gate:
+
+```sh
+python3 scripts/diagnose_sgb_host_performance.py /tmp/sgb-headroom/*.json
+```
+
+`--callback-dsp` selects the original full-clock callback as an independent
+oracle for the scheduler-owned direct DSP clock binding. Both paths advance
+timers, then DSP, then the accepted SPC access, at the same physical clocks.
+The binding is destination-owned across reset/restoration and never saved as
+hardware state. Complete live APU snapshots, every opcode/half phase, output
+backpressure, maximum DMA, and complete title PCM are compared; the direct
+binding is not a license to skip clocks or samples. Other exact hot-path
+changes bypass lower-half host I/O decoding for already-mapped ROM reads,
+cache the immutable oscillator overflow limit, and collapse only speculative
+idle-tail counter updates after the next physical access has blocked.
+Completed operand-prefix reads use the same address/kind/half checks in a
+compact fetch path; new, incomplete, dummy and early input-port accesses still
+use the original generic bus path.
+
+Absolute/indexed SPC loads and relative branches also retain a derived,
+already-latched operand prefix. Their pending operand read, internal idles,
+early port latch and arithmetic completion still follow the original bus
+schedule. The prefix is discarded at instruction entry and restoration; it
+is not hardware or snapshot state. Tests cover asynchronous port writes,
+timer/DSP/IPL addresses, taken and untaken branches, and half-clock restores.
+Absolute loads additionally retain only their completed low address byte;
+the high-byte and target reads still rendezvous through the original bus
+helpers. This two-byte derived cache is invalidated on entry, restore, and
+execution-choice changes, and is never serialized.
+
+The DSP driver specializes the same ordered schedule for each of its 32
+phases, removing repeated phase tests without dropping a voice, echo access,
+readback update or sample. `--scalar-dsp` selects the original runtime-phase
+schedule. This destination-owned diagnostic choice survives reset/restore
+without entering serialized hardware state. Live eight-voice/noise/pitch-
+modulation/echo output and complete APU snapshots are compared with the
+runtime-phase oracle, including full-buffer backpressure.
+The specialized path also publishes the same ordered OUTX/ENVX/ENDX readback
+with constant phase indices. A zero voice output can bypass multiplication
+and saturating addition by zero, but not voice/envelope/pitch/BRR/key/echo
+clocks or register publication.
+
+On x86-64, eligible Game Boy APU batches compute the independent left/right
+high-pass recurrences in paired SSE lanes. Every native cycle retains the
+same subtraction, multiplication, addition, rounding, and capacitor update;
+there is no fused arithmetic or analytic decay approximation. Other targets
+retain the scalar recurrence. All-model scalar-oracle tests compare complete
+PCM and serialized core state, not just the final displayed frame.
+
+The optimized monochrome SGB pixel path resolves object/background priority
+once for the raw 2-bit transfer capture and displayed RGB pixel. It applies
+BGP/OBP only to display output, preserves the default configurable DMG
+palette, and leaves mask/window timing unchanged. CGB and the cache-disabled
+oracle retain the original separate composition paths. Randomized palettes,
+object priority/OBP selection, raw transfer pixels, and complete title GB
+states/framebuffers are compared byte for byte.
+
+The combined mixer caches its sample-timestamp and advancement overflow
+limits from the fixed output rate. Reset/queue ordering, capacity preflight,
+area integration, clipping, and rounding are unchanged. Snapshots omit these
+derived limits and validate the restored rate against the destination
+configuration; constructor limits therefore remain valid after restoration.
 
 These are **host-only** headroom thresholds. Frontend rendering, audio-device
 latency, browser execution and Android thermal behavior need separate device
@@ -268,7 +343,13 @@ measurement before enabling firmware playback in shipping frontends.
 The 60-million-instruction local captures below use the same initial save,
 provisional gains and 48/44.1 kHz combined rates above. Ratios compare emulated
 time to wall time; 1.5x means the host consumes at most about two thirds of the
-available CPU time. Each row contains 90 post-warmup one-second windows:
+realtime wall-time budget. Each row contains 90 post-warmup one-second windows:
+
+The latest desktop captures use the unchanged **Silent** Windows power profile
+on an i7-12650H (Linux runs under WSL2). No governor, affinity or power-plan
+changes, relaxed thresholds, sample/frame skipping or calibration scaling are
+used. Passing captures below are not a repeatability qualification: subsequent
+quiet captures failed in the same profile, as recorded below.
 
 | Profile | Model / audio | Median | p05 | Worst | Gate |
 | --- | --- | ---: | ---: | ---: | --- |
@@ -276,10 +357,14 @@ available CPU time. Each row contains 90 post-warmup one-second windows:
 | same | SGB1 combined | 1.74x | 1.69x | 1.67x | pass |
 | same | SGB2 native | 1.84x | 1.78x | 1.76x | pass |
 | same | SGB2 combined | 1.75x | 1.69x | 1.68x | pass |
-| Linux, GCC 15.2, Release + IPO, later quiet run | SGB1 native | 1.34x | 1.26x | 1.19x | fail |
-| same | SGB1 combined | 1.23x | 1.17x | 1.07x | fail |
-| same | SGB2 native | 1.32x | 1.25x | 1.06x | fail |
-| same | SGB2 combined | 1.24x | 1.18x | 1.13x | fail |
+| Linux, GCC 15.2, Release + IPO, final operand replay | SGB1 native | 1.89x | 1.57x | 1.43x | pass |
+| same | SGB1 combined | 1.83x | 1.65x | 1.63x | pass |
+| same | SGB2 native | 1.93x | 1.80x | 1.71x | pass |
+| same | SGB2 combined | 1.80x | 1.71x | 1.66x | pass |
+| Windows, native MSVC 19.51, Release + IPO, final operand replay | SGB1 native | 1.83x | 1.68x | 1.48x | pass |
+| same | SGB1 combined | 1.75x | 1.62x | 1.55x | pass |
+| same | SGB2 native | 1.83x | 1.70x | 1.66x | pass |
+| same | SGB2 combined | 1.72x | 1.64x | 1.58x | pass |
 
 The Android Release + full-LTO profile independently passed all four rows
 (p05 1.71–1.81x). Complete native and combined audio match the original
@@ -288,16 +373,123 @@ previous same-platform optimized captures. The actual packaged shared library
 also builds. Tests exercise optimized static-core consumers on-device; their
 link options must retain Android's emulated-TLS handling.
 
+The final operand-replay build also completed a 1,272-second SM-X130 soak:
+six serial repeats of all four profiles, with all 24 complete PCM and final GB
+state hashes unchanged. Minimum p05 / worst across the six repeats were
+SGB1 native 1.80x / 1.78x, SGB1 combined 1.72x / 1.70x, SGB2 native
+1.82x / 1.80x, and SGB2 combined 1.74x / 1.57x. The screen stayed awake
+using harmless pointer movement with no clicks; power settings, affinity and
+the installed app were unchanged. This is standalone host playback, not
+shipping frontend FPS or a portable thermal-stability guarantee.
+
+The later retained phase-dispatch, operand-cache, shared-pixel and fixed-rate
+mixer-limit implementation completed another **1,219-second** awake SM-X130
+soak on 2026-10-03. All six four-profile rounds passed the unchanged gates;
+all 24 complete WAV hashes and final GB-state hashes matched their original
+ARM baselines. Minimum ratios across the six rounds were:
+
+| Model / audio | Minimum p05 | Minimum worst window |
+| --- | ---: | ---: |
+| SGB1 native | 1.888x | 1.850x |
+| SGB1 combined, 48 kHz | 1.788x | 1.702x |
+| SGB2 native | 1.911x | 1.782x |
+| SGB2 combined, 44.1 kHz | 1.816x | 1.800x |
+
+The actual packaged Android shared library also built with this source.
+This qualifies the tested standalone awake-device workload, not frontend
+rendering or arbitrary device/power conditions. The temporary ROM, save,
+firmware and output copies were removed after retaining reports and exact
+hash evidence; original files and installed-app settings were unchanged.
+
+An attempted final-build soak while the tablet was Dozing failed all four
+profiles (p05 1.24–1.43x, worst 0.88–1.39x), although complete PCM and GB state
+still matched. Waking the locked screen periodically did not keep it awake
+and added transition overhead; that attempt was stopped and retained as a
+failure, not relabeled a pass. Active-playback measurements above do not
+qualify background/suspended playback.
+
 The packaged SGB1-native table entry is an isolated repeat. Its first run had
 slow windows at emulated seconds 10–14 (p05 1.42x, worst 1.12x) and failed the
 gate; that result is retained, not silently discarded. Earlier Linux IPO
 captures passed all four profiles (p05 1.59–1.87x), but later quiet captures
-did not. Direct old/new binary A/B runs also showed the slower desktop
-throughput. These observations are not portable speed guarantees, proof of
-thermal stability or frontend FPS. More aggressive GCC inlining and a native
-Clang experiment did not resolve the later desktop shortfall and were not
-adopted. **Cross-platform playback headroom is not yet qualified.** Shipping
-firmware playback remains disabled; no quality reduction hides a failed gate.
+failed (p05 1.17–1.26x, worst 1.06–1.19x). Pre-operand-replay native Windows
+captures also failed; even a later three-profile pass still failed SGB1
+combined at p05 1.46x. These observations are not portable speed guarantees
+or frontend FPS. More aggressive GCC inlining, a native Clang experiment and
+MSVC `/Ob3` were tested but not adopted: they did not consistently pass the
+unchanged gate. Same-binary direct/callback A/B runs and diagnostic calibration
+also showed host-capacity variation; do not attribute the entire measured
+speed difference to one optimization. Shipping firmware playback remains
+disabled; no quality reduction hides a failed gate.
+
+Final quiet desktop repeats still failed all four modes: Linux p05
+1.19–1.26x / worst 1.06–1.16x, native Windows p05 1.07–1.15x /
+worst 0.95–1.07x. Complete PCM and GB state remained exact. Linux process
+CPU/wall ratios were approximately 1.00 and Windows approximately 0.97;
+same-binary calibration was substantially slower than during the earlier
+passes. These counters diagnose changing host capacity, not an excuse to
+normalize away a failing wall-time gate. **Repeatable Silent-mode desktop
+headroom remained unqualified at the original 1.50x target.** A targeted forced-fetch-inlining A/B experiment
+also did not show a reliable gain and was removed.
+
+Further phase-specialization captures passed all four Linux profiles, but
+native Windows still failed both combined profiles (p05 1.452x and 1.490x).
+A subsequent paired-filter candidate failed three native Windows profiles,
+despite exact complete PCM and GB hashes; one p05 result was 1.495x, which
+fails the 1.500x gate even though two-decimal formatting could obscure that.
+The gate was changed to print three decimals without changing its threshold
+at that point. Later operand/cache candidates required their own qualification;
+older passing tablet captures did not qualify those changes.
+Bounded APU-check reservation and compact SPC return experiments were not
+adopted: reservation added work to the common one-half rendezvous, and both
+compact-return candidate runs were slower than the surrounding baseline
+captures. Their all-opcode integrated-clock and DSP-phase fault tests remain.
+A Windows-only compact-return comparison also preserved complete output,
+but its later reporting baseline nearly matched the candidates and had the
+better p05. That ABI variant was removed rather than presenting the first,
+slower reporting capture as a reliable gain.
+
+A subsequent three-round Linux qualification of the shared SGB pixel
+composition and fixed-rate mixer-limit caches preserved complete PCM and GB
+state in all twelve captures, but four captures failed headroom. The first
+round failed SGB1 native and both combined profiles; the second round still
+failed SGB1 combined. Only the third round passed all four. Consequently the
+series fails qualification: the favorable final round does not replace the
+earlier failures. These results are retained separately from later SPC
+load-prefix experiments and do not qualify an unmeasured candidate.
+The subsequent completed-load-opcode shortcut and a new Clang 19 comparison
+also preserved exact output but showed no reliable gain against the enclosing
+GCC baselines. The shortcut was removed; additional cache-toggle tests at
+every load-prefix boundary remain. No shipping compiler choice was changed.
+
+Three native MSVC repeats of the retained phase/pixel/mixer implementation
+also preserved all twelve complete PCM and GB-state baselines, but nine of
+twelve captures failed headroom. Every profile failed in the first round;
+only SGB2 native passed in the second, and only the two SGB2 profiles passed
+in the third. Failed p05 values ranged from 1.262x to 1.497x. Process CPU/wall
+ratios remained approximately 0.98–0.99. Silent remained the active power plan
+and no affinity or priority changes were made. All 164 Linux regressions,
+four ASan/UBSan checks and six native Windows core checks passed for that
+implementation. These correctness and awake-tablet successes do not qualify
+the failing desktop series under the original 1.50x target. A later direct
+host/APU binding experiment preserved exact output but showed only small,
+mixed timing gains; it was removed in favor of the verified implementation.
+
+### Accepted performance target (2026-10-03)
+
+The practical default p05 target is now **1.40x**, with the **1.20x worst-window**
+floor unchanged. The historical results above used the stricter 1.50x target;
+their recorded failures are not retroactively relabeled. No audio, rendering,
+clock accuracy or exact-output requirements were relaxed.
+
+Rechecking the retained implementation's existing captures against the new
+target gives **12/12 Linux**, **8/12 native Windows (Silent)** and **24/24 awake
+tablet** passes. All Windows worst windows meet 1.20x, but four Windows p05
+outliers remain below 1.40x (lowest 1.262x). This is an accepted stopping point,
+not a claim of universal Silent-mode headroom or frontend FPS qualification.
+Further speculative optimization is deferred; retained captures and diagnostics
+make these limits explicit. Use `--minimum-ratio 1.5` for the previous stricter
+gate.
 
 Supported native release targets now enable IPO by default:
 

@@ -6,6 +6,7 @@
 namespace gameboy {
 
 class SnesApuBus;
+class SnesDspAudioEngine;
 
 // Incremental SPC700 interpreter for the IPL and bounded driver probes.
 // Unsupported opcodes
@@ -38,6 +39,8 @@ public:
         half_mode_ = false;
         waiting_half_known_ = false;
         idle_tail_known_ = false;
+        read_tail_known_ = false;
+        absolute_low_known_ = false;
     }
     [[nodiscard]] const Registers& registers() const noexcept { return registers_; }
     [[nodiscard]] std::uint64_t cycles() const noexcept { return cycles_; }
@@ -91,7 +94,10 @@ public:
     }
     [[nodiscard]] bool instruction_pending() const noexcept { return continuation_; }
     // Diagnostic oracle for the latched-read replay fast path.
-    void debug_set_replay_cache_enabled(bool enabled) noexcept { replay_cache_enabled_ = enabled; }
+    void debug_set_replay_cache_enabled(bool enabled) noexcept {
+        replay_cache_enabled_ = enabled;
+        read_tail_known_ = absolute_low_known_ = false;
+    }
     void debug_set_idle_tail_cache_enabled(bool enabled) noexcept {
         idle_tail_cache_enabled_ = enabled; idle_tail_known_ = false;
     }
@@ -110,6 +116,8 @@ private:
     [[nodiscard]] StepResult execute() noexcept;
     [[nodiscard]] std::uint8_t fetch() noexcept;
     [[nodiscard]] std::uint8_t read_memory(std::uint16_t address) noexcept;
+    [[nodiscard]] std::uint8_t read_load_operand(std::uint16_t address, unsigned cycles) noexcept;
+    [[nodiscard]] StepResult finish_instruction(unsigned cycles) noexcept;
     void idle_cycle() noexcept;
     void clock_bus(bool early_read = false) noexcept;
     [[nodiscard]] ClockResult advance_continuation(bool half) noexcept;
@@ -139,6 +147,9 @@ private:
     unsigned instruction_cycle_{};
     BusCycleObserver bus_observer_{};
     void* bus_context_{};
+    // Scheduler-owned binding, not architectural or serialized state. The
+    // direct path clocks DSP at exactly the former full-clock T callback.
+    SnesDspAudioEngine* dsp_clock_driver_{};
     struct ReplayAccess {
         char kind{}; std::uint16_t address{}; std::uint8_t value{};
         unsigned halves{}; bool early_read{};
@@ -163,6 +174,17 @@ private:
     bool idle_tail_cache_enabled_{true}, idle_tail_known_{};
     Registers idle_tail_registers_{};
     unsigned idle_tail_cycles_{}, idle_tail_write_index_{};
+    // A load/branch operand prefix is already latched. Its pending read
+    // still uses the original physical bus path; this only avoids replaying
+    // the completed operand/address arithmetic. Never serialized.
+    bool read_tail_known_{};
+    bool read_tail_branch_{}, read_tail_take_{};
+    Registers read_tail_registers_{};
+    std::uint16_t read_tail_address_{};
+    unsigned read_tail_start_{}, read_tail_cycles_{};
+    std::uint8_t read_tail_opcode_{};
+    bool absolute_low_known_{};
+    std::uint8_t absolute_low_{}; // Completed load operand byte, never saved.
 };
 
 } // namespace gameboy

@@ -3,6 +3,9 @@
 #include "gameboy/hardware_model.hpp"
 
 #include <algorithm>
+#if defined(__x86_64__) || defined(_M_X64)
+#include <xmmintrin.h>
+#endif
 
 namespace gameboy {
 namespace {
@@ -323,11 +326,35 @@ void Apu::tick(const unsigned cycles) noexcept {
         if (mixer_dirty_ || !mixer_cache_enabled_) refresh_mixer();
         if (!mixed_dacs_enabled_) {
             sample_integrator_left_ = sample_integrator_right_ = 0.0F;
-        } else for (unsigned cycle = 0; cycle < cycles; ++cycle) {
-            const auto left = high_pass(mixed_left_, true, left_capacitor_);
-            const auto right = high_pass(mixed_right_, true, right_capacitor_);
-            sample_integrator_left_ += left * static_cast<float>(sample_rate);
-            sample_integrator_right_ += right * static_cast<float>(sample_rate);
+        } else {
+#if defined(__x86_64__) || defined(_M_X64)
+            // Independent stereo lanes, not a shortcut across time: retain
+            // every original float subtraction/multiply/add in each cycle.
+            // The guard excludes callbacks and changes of DAC/routing state.
+            // SSE is baseline on x86-64; no ISA dispatch or FMA/fast-math.
+            const auto input = _mm_setr_ps(mixed_left_, mixed_right_, 0.0F, 0.0F);
+            auto capacitor = _mm_setr_ps(left_capacitor_, right_capacitor_, 0.0F, 0.0F);
+            auto integral = _mm_setr_ps(sample_integrator_left_, sample_integrator_right_, 0.0F, 0.0F);
+            const auto charge = _mm_set1_ps(cgb_hardware_ ? 0.998943F : 0.999958F);
+            const auto rate = _mm_set1_ps(static_cast<float>(sample_rate));
+            for (unsigned cycle = 0; cycle < cycles; ++cycle) {
+                const auto output = _mm_sub_ps(input, capacitor);
+                capacitor = _mm_sub_ps(input, _mm_mul_ps(output, charge));
+                integral = _mm_add_ps(integral, _mm_mul_ps(output, rate));
+            }
+            std::array<float, 4> charge_result{}, integral_result{};
+            _mm_storeu_ps(charge_result.data(), capacitor);
+            _mm_storeu_ps(integral_result.data(), integral);
+            left_capacitor_ = charge_result[0]; right_capacitor_ = charge_result[1];
+            sample_integrator_left_ = integral_result[0]; sample_integrator_right_ = integral_result[1];
+#else
+            for (unsigned cycle = 0; cycle < cycles; ++cycle) {
+                const auto left = high_pass(mixed_left_, true, left_capacitor_);
+                const auto right = high_pass(mixed_right_, true, right_capacitor_);
+                sample_integrator_left_ += left * static_cast<float>(sample_rate);
+                sample_integrator_right_ += right * static_cast<float>(sample_rate);
+            }
+#endif
         }
         sample_accumulator_ += cycles * sample_rate;
         return;

@@ -6,6 +6,7 @@ Do not run concurrently with compilation, other benchmarks or snapshot tests.
 """
 import argparse
 import hashlib
+import itertools
 import json
 from pathlib import Path
 import subprocess
@@ -17,7 +18,11 @@ def main():
     parser.add_argument("--runner", type=Path, required=True)
     parser.add_argument("--roms", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--repeat", type=int, default=1,
+                        help="serial complete four-profile repeats; every capture must pass (1-20)")
     args = parser.parse_args()
+    if not 1 <= args.repeat <= 20:
+        parser.error("repeat must be between 1 and 20")
     root = Path(__file__).resolve().parents[1]
     runner, roms = args.runner.resolve(), args.roms.resolve()
     game = roms / "Donkey Kong (JU) (V1.1) [S][!].gb"
@@ -42,14 +47,19 @@ def main():
         parser.error("output directory already exists; choose a new path")
     args.output_dir.mkdir(parents=True)
     reports = []
-    for model, combined, rate, expected, expected_state in profiles:
-        prefix = args.output_dir / f"{model}-{'combined' if combined else 'native'}"
+    for round_index, profile in itertools.product(range(args.repeat), profiles):
+        model, combined, rate, expected, expected_state = profile
+        directory = args.output_dir
+        if args.repeat > 1:
+            directory /= f"round-{round_index + 1}"
+            directory.mkdir(exist_ok=True)
+        prefix = directory / f"{model}-{'combined' if combined else 'native'}"
         wav, report = prefix.with_suffix(".wav"), prefix.with_suffix(".json")
         command = [str(runner), model, str(roms / f"{model}.program.rom"),
                    str(roms / "spc700.rom"), str(game),
                    str(roms / ("sgb.boot.rom" if model == "sgb1" else "sgb2.boot.rom")),
                    str(root / "tests/fixtures/sgb/titles/donkey-kong-gameplay.script"),
-                   str(wav), str(report)]
+                   str(wav), str(report), "--calibrate-host"]
         if combined:
             command.extend(("--combined", "--output-hz", str(rate)))
         subprocess.run(command, check=True, cwd=root)
@@ -58,7 +68,8 @@ def main():
         if json.loads(report.read_text()).get("gb_state_hash") != expected_state:
             raise RuntimeError(f"{model}: playback changed final GB state/framebuffers")
         reports.append(str(report))
-        print(f"{model}/{'combined' if combined else 'native'}: exact PCM and GB state PASS", flush=True)
+        print(f"round {round_index + 1}/{args.repeat}: {model}/{'combined' if combined else 'native'}: "
+              "exact PCM and GB state PASS", flush=True)
     return subprocess.run([sys.executable, str(root / "scripts/check_sgb_host_performance.py"),
                            *reports], check=False).returncode
 

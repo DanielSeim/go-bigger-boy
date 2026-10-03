@@ -14,6 +14,9 @@ struct SgbHost::Impl {
     std::unique_ptr<SgbAudioMixer> mixer;
     bool combined;
     unsigned apu_hz;
+    std::uint64_t maximum_step_start{}; // Derived from immutable oscillator.
+    bool direct_dsp_clock_enabled{true}; // Diagnostic binding, never saved.
+    bool dsp_phase_dispatch_enabled{true}; // Execution choice, never saved.
     std::array<StereoSample, buffer_capacity> pcm{};
     std::size_t head{}, count{};
     std::uint64_t produced{};
@@ -45,6 +48,8 @@ struct SgbHost::Impl {
         cpu.set_fractional_apu_sync_enabled(true);
         if (!cpu.set_apu_clock_hz(config.apu_clock_hz))
             throw std::invalid_argument("invalid SGB host APU clock");
+        maximum_step_start = std::numeric_limits<std::uint64_t>::max() /
+            (std::uint64_t(config.apu_clock_hz) * 2) - 5'000'000;
         cpu.set_apu_batch_driver([](void* context, std::uint64_t target) noexcept {
             auto& self = *static_cast<Impl*>(context);
             // Keep buffering bounded even for a long DMA instruction. Drain
@@ -135,7 +140,22 @@ void SgbHost::debug_set_apu_batch_enabled(bool enabled) noexcept {
 void SgbHost::debug_set_spc_idle_tail_cache_enabled(bool enabled) noexcept {
     impl_->apu.cpu_.debug_set_idle_tail_cache_enabled(enabled);
 }
-void SgbHost::reset() { auto fresh = std::make_unique<Impl>(config_); impl_.swap(fresh); }
+void SgbHost::debug_set_direct_dsp_clock_enabled(bool enabled) noexcept {
+    impl_->direct_dsp_clock_enabled=enabled;
+    impl_->apu.debug_set_direct_dsp_clock_enabled(enabled);
+}
+void SgbHost::debug_set_dsp_phase_dispatch_enabled(bool enabled) noexcept {
+    impl_->dsp_phase_dispatch_enabled=enabled;
+    impl_->apu.debug_set_dsp_phase_dispatch_enabled(enabled);
+}
+void SgbHost::reset() {
+    auto fresh = std::make_unique<Impl>(config_);
+    fresh->direct_dsp_clock_enabled=impl_ ? impl_->direct_dsp_clock_enabled : true;
+    fresh->apu.debug_set_direct_dsp_clock_enabled(fresh->direct_dsp_clock_enabled);
+    fresh->dsp_phase_dispatch_enabled=impl_ ? impl_->dsp_phase_dispatch_enabled : true;
+    fresh->apu.debug_set_dsp_phase_dispatch_enabled(fresh->dsp_phase_dispatch_enabled);
+    impl_.swap(fresh);
+}
 bool SgbHost::step() noexcept {
     auto& s = *impl_;
     if (s.status != Status::ready && s.status != Status::buffer_full) return false;
@@ -145,9 +165,7 @@ bool SgbHost::step() noexcept {
     }
     // Guard the CPU's absolute-clock multiply against overflow. No wraparound
     // may replay a host/APU access; the caller must reset at this extreme limit.
-    constexpr std::uint64_t max_instruction_clocks = 5'000'000;
-    if (s.cpu.timing().clocks() > std::numeric_limits<std::uint64_t>::max() /
-            (std::uint64_t(config_.apu_clock_hz) * 2) - max_instruction_clocks) {
+    if (s.cpu.timing().clocks() > s.maximum_step_start) {
         s.status = Status::host_fault; return false;
     }
     s.status = Status::ready;
@@ -385,6 +403,10 @@ public:
             Reader r(state); std::uint64_t id{}; r(id);
             if(id!=identity(host.config_)) return false;
             auto candidate=std::make_unique<SgbHost::Impl>(host.config_);
+            candidate->direct_dsp_clock_enabled=host.impl_->direct_dsp_clock_enabled;
+            candidate->apu.debug_set_direct_dsp_clock_enabled(candidate->direct_dsp_clock_enabled);
+            candidate->dsp_phase_dispatch_enabled=host.impl_->dsp_phase_dispatch_enabled;
+            candidate->apu.debug_set_dsp_phase_dispatch_enabled(candidate->dsp_phase_dispatch_enabled);
             components(r,*candidate);
             std::vector<std::uint8_t> apu,gb; r(apu,gb); r.in.finish();
             if(!candidate->apu.load_state(apu)) return false;

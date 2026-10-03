@@ -70,12 +70,27 @@ int main() {
         const auto value = next();
         cached->debug_write_vram(0, i, value); reference->debug_write_vram(0, i, value);
     }
+    for (unsigned sprite = 0; sprite < 40; ++sprite) {
+        const std::uint8_t bytes[]{
+            static_cast<std::uint8_t>(16 + sprite * 13 % 144),
+            static_cast<std::uint8_t>(8 + sprite * 17 % 160),
+            static_cast<std::uint8_t>(next()),
+            static_cast<std::uint8_t>((sprite & 1U ? 0x10U : 0U) |
+                                      (sprite & 2U ? 0x80U : 0U))};
+        for (unsigned byte = 0; byte < 4; ++byte)
+            for (auto* ppu : {cached.get(), reference.get()})
+                ppu->debug_write_oam(sprite * 4 + byte, bytes[byte]);
+    }
     constexpr unsigned commands[]{0,1,2,3,4,5,6,7,0x0a,0x0b,0x17};
     for (unsigned i = 0; i < 100; ++i) {
         std::array<std::uint8_t,112> packet{};
         for (auto& byte : packet) byte = next();
         packet[0] = static_cast<std::uint8_t>((commands[i % std::size(commands)] << 3) | 1);
+        const std::uint8_t palettes[]{static_cast<std::uint8_t>(next()),
+            static_cast<std::uint8_t>(next()), static_cast<std::uint8_t>(next())};
         for (auto* ppu : {cached.get(), reference.get()}) {
+            for (unsigned palette = 0; palette < 3; ++palette)
+                (void)ppu->write_register(0xFF47 + palette, palettes[palette]);
             ppu->apply_sgb_command(packet, i % 7 ? packet.size() : 1);
             (void)ppu->tick(70224);
         }
@@ -83,6 +98,12 @@ int main() {
             cached->sgb_framebuffer() != reference->sgb_framebuffer()) {
             std::cerr << "SGB palette cache changed pixels at " << i << '\n'; return 1;
         }
+        for (unsigned y = 0; y < gameboy::Ppu::screen_height; ++y)
+        for (unsigned x = 0; x < gameboy::Ppu::screen_width; ++x)
+            if (cached->debug_sgb_source_pixel(x,y) != reference->debug_sgb_source_pixel(x,y)) {
+                std::cerr << "SGB composition changed raw transfer source at " << i << '\n';
+                return 1;
+            }
     }
     return 0;
 }

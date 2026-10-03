@@ -47,6 +47,12 @@ void test_stereo_fixed_point() {
               Math::saturating_add(32000, 1000) == 32767 &&
               Math::saturating_add(-32000, -1000) == -32768,
           "voice volume and mixer addition clamp to signed 16-bit output");
+    for (unsigned volume = 0; volume < 256; ++volume)
+        check(Math::apply_channel_volume(0, static_cast<std::uint8_t>(volume)) == 0,
+              "silent voice is zero at every signed channel volume");
+    for (int value = -32768; value <= 32767; ++value)
+        check(Math::saturating_add(static_cast<std::int16_t>(value), 0) == value,
+              "zero contribution preserves every int16 accumulator exactly");
 }
 
 void test_decoded_sample_boundary() {

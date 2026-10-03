@@ -84,6 +84,8 @@ class SnesDspStateCodec final {
         if constexpr (!std::is_const_v<Cpu>) {
             c.waiting_half_known_ = false;
             c.idle_tail_known_ = false;
+            c.read_tail_known_ = false;
+            c.absolute_low_known_ = false;
         }
         registers(io, c.registers_); io(c.cycles_); io(c.opcode_);
         const auto counter = [&](auto& value) {
@@ -262,7 +264,7 @@ void SnesDspAudioEngine::reset() noexcept {
 
 bool SnesDspAudioEngine::clock() noexcept {
     if (size_ == buffer_capacity) return false;
-    if (const auto sample = clock_.clock()) {
+    if (const auto sample = phase_dispatch_enabled_ ? clock_.clock() : clock_.clock_scalar()) {
         buffer_[(head_ + size_) % buffer_capacity] = *sample;
         ++size_;
     }

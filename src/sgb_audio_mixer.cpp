@@ -9,10 +9,12 @@ SgbAudioMixer::SgbAudioMixer(unsigned hz, unsigned gb, unsigned snes)
     : output_hz_(hz), gb_gain_q15_(gb), snes_gain_q15_(snes) {
     if (hz < 8000 || hz > 48000 || gb > 32768 || snes > 32768)
         throw std::invalid_argument("invalid SGB audio rate or Q15 gain");
+    maximum_sample_clock_ = std::numeric_limits<std::uint64_t>::max() / output_hz_;
+    maximum_advance_clock_ = (std::numeric_limits<std::uint64_t>::max() - master_hz) / output_hz_;
 }
 bool SgbAudioMixer::push(Source source, std::uint64_t clock, StereoSample sample) noexcept {
     const auto index = static_cast<unsigned>(source);
-    if (index >= streams_.size() || clock > std::numeric_limits<std::uint64_t>::max()/output_hz_ ||
+    if (index >= streams_.size() || clock > maximum_sample_clock_ ||
         clock*output_hz_ < time_) return false;
     auto& s = streams_[index];
     if (s.count == capacity || clock < s.last_clock) return false;
@@ -22,7 +24,7 @@ bool SgbAudioMixer::push(Source source, std::uint64_t clock, StereoSample sample
     return true;
 }
 bool SgbAudioMixer::reset_gb_at(std::uint64_t clock) noexcept {
-    if (clock > std::numeric_limits<std::uint64_t>::max()/output_hz_ ||
+    if (clock > maximum_sample_clock_ ||
         clock*output_hz_ < time_) return false;
     auto& s = streams_[0];
     auto count = s.count;
@@ -43,7 +45,7 @@ void SgbAudioMixer::refresh_cache() noexcept {
                    std::int64_t(streams_[1].held.right)*snes_gain_q15_;
 }
 bool SgbAudioMixer::advance_to(std::uint64_t clock) noexcept {
-    if (clock > (std::numeric_limits<std::uint64_t>::max()-master_hz)/output_hz_) return false;
+    if (clock > maximum_advance_clock_) return false;
     const auto target = clock*output_hz_;
     if (target < time_) return false;
     if (target < (produced_+1)*master_hz && target < next_event_) {

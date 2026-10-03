@@ -384,6 +384,9 @@ std::uint8_t SnesHostCpu::read8_raw(const std::uint8_t bank,
     if (bank == 0x7E || bank == 0x7F) {
         return wram_[(static_cast<unsigned>(bank - 0x7E) << 16) | address];
     }
+    // The mapped high half cannot alias any host I/O. Perform the exact
+    // bus/APU/IRQ rendezvous above, then bypass lower-half register decoding.
+    if (address >= 0x8000) return rom_.read(bank, address);
     if (system_bank && address < 0x2000) return wram_[address];
     if (system_bank && address >= 0x2140 && address <= 0x2143) {
         const auto value = apu_.host_read_port(address - 0x2140);
@@ -466,7 +469,6 @@ std::uint8_t SnesHostCpu::read8_raw(const std::uint8_t bank,
         error_address_ = (static_cast<std::uint32_t>(bank) << 16) | address;
         return 0;
     }
-    if (address >= 0x8000) return rom_.read(bank, address);
     error_ = Error::unsupported_read;
     error_address_ = (static_cast<std::uint32_t>(bank) << 16) | address;
     return 0;

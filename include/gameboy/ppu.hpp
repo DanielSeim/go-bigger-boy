@@ -157,6 +157,8 @@ private:
         unsigned x, BackgroundPixel background) const noexcept;
     [[nodiscard]] std::uint8_t sgb_source_pixel(
         unsigned x, BackgroundPixel background) const noexcept;
+    [[nodiscard]] std::uint32_t compose_sgb_pixel(
+        unsigned x, BackgroundPixel background, std::uint8_t& source) const noexcept;
     [[nodiscard]] std::uint32_t palette_color(
         std::uint8_t palette, std::uint8_t color,
         const std::array<std::uint32_t, 4>& colors) const noexcept;

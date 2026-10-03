@@ -1,6 +1,7 @@
 #include "gameboy/snes_spc700.hpp"
 
 #include "gameboy/snes_audio_host.hpp"
+#include "gameboy/snes_dsp_audio_engine.hpp"
 
 namespace gameboy {
 namespace {
@@ -64,6 +65,7 @@ void SnesSpc700::clock_bus(const bool early_read) noexcept {
             if (!half_pending_) { bus_.tick(1); ++cycles_; }
             if (half_observer_)
                 half_observer_(half_context_, half_cycles(), 'T', 0, 0);
+            if (!half_pending_ && dsp_clock_driver_) (void)dsp_clock_driver_->clock();
             if (!half_pending_ && bus_observer_)
                 bus_observer_(bus_context_, cycles_, 'T', 0, 0);
             if (half_pending_ && !early_read) suspended_ = true;
@@ -73,6 +75,7 @@ void SnesSpc700::clock_bus(const bool early_read) noexcept {
     bus_.tick(1);
     ++instruction_cycle_;
     if (replaying_) ++cycles_;
+    if (dsp_clock_driver_) (void)dsp_clock_driver_->clock();
     if (bus_observer_)
         bus_observer_(bus_context_, replaying_ ? cycles_ : cycles_ + instruction_cycle_, 'T', 0, 0);
 }
@@ -152,6 +155,21 @@ std::uint8_t SnesSpc700::read_memory(const std::uint16_t address) noexcept {
     return value;
 }
 
+std::uint8_t SnesSpc700::read_load_operand(const std::uint16_t address,
+                                         const unsigned cycles) noexcept {
+    if (replay_cache_enabled_ && replaying_ && !suspended_ &&
+        !invalid_replay_ && !half_pending_) {
+        read_tail_known_ = true;
+        read_tail_branch_ = false;
+        read_tail_registers_ = registers_;
+        read_tail_address_ = address;
+        read_tail_start_ = instruction_cycle_;
+        read_tail_cycles_ = cycles;
+        read_tail_opcode_ = opcode_;
+    }
+    return read_memory(address);
+}
+
 void SnesSpc700::begin_bus_instruction() noexcept {
     switch (opcode_) {
     case 0x00: case 0x20: case 0x40: case 0x60: case 0x80: case 0xED:
@@ -214,8 +232,31 @@ void SnesSpc700::write_memory(const std::uint16_t address,
 }
 
 std::uint8_t SnesSpc700::fetch() noexcept {
+    // Keep the completed operand-prefix path small enough to inline into
+    // the interpreter. Generic read_memory handles all new/incomplete
+    // accesses, including the first-half input-port latch and dummy clocks.
+    if (replay_cache_enabled_ && replaying_ && !suspended_ && !invalid_replay_ &&
+        instruction_cycle_ < replay_count_) {
+        const auto& access = replay_[instruction_cycle_];
+        if (access.kind == 'R' && access.address == registers_.pc &&
+            (!half_mode_ || access.halves == 2)) {
+            ++instruction_cycle_;
+            ++registers_.pc;
+            return access.value;
+        }
+    }
     const auto value = read_memory(registers_.pc);
     ++registers_.pc;
+    if (replay_cache_enabled_ && replaying_ && instruction_cycle_ == 2 &&
+        !suspended_ && !invalid_replay_ && !half_pending_) {
+        switch (opcode_) {
+        case 0xE5: case 0xE9: case 0xEC: case 0xF5: case 0xF6:
+            absolute_low_ = value;
+            absolute_low_known_ = true;
+            break;
+        default: break;
+        }
+    }
     return value;
 }
 
@@ -282,6 +323,15 @@ void SnesSpc700::subtract_with_carry(const std::uint8_t rhs) noexcept {
 }
 
 unsigned SnesSpc700::branch(const bool take) noexcept {
+    if (replay_cache_enabled_ && replaying_ && !suspended_ &&
+        !invalid_replay_ && !half_pending_) {
+        read_tail_known_ = true;
+        read_tail_branch_ = true;
+        read_tail_take_ = take;
+        read_tail_registers_ = registers_;
+        read_tail_start_ = instruction_cycle_;
+        read_tail_opcode_ = opcode_;
+    }
     const auto displacement = static_cast<std::int8_t>(fetch());
     if (take) {
         registers_.pc = static_cast<std::uint16_t>(registers_.pc + displacement);
@@ -316,6 +366,8 @@ SnesSpc700::ClockResult SnesSpc700::advance_continuation(const bool half) noexce
     if (continuation_ && half_mode_ != half) return {{0, opcode_, false}, true};
     if (!continuation_) {
         idle_tail_known_ = false;
+        read_tail_known_ = false;
+        absolute_low_known_ = false;
         instruction_registers_ = registers_;
         instruction_opcode_ = opcode_;
         instruction_start_ = cycles_;
@@ -359,8 +411,57 @@ SnesSpc700::ClockResult SnesSpc700::advance_continuation(const bool half) noexce
         // Skip only completed, latched prefix accesses. An incomplete idle
         // half must still rendezvous with timers/DSP through clock_bus().
         instruction_cycle_ = replay_count_ - (half_pending_ ? 1U : 0U);
-        while (instruction_cycle_ < idle_tail_cycles_) idle_cycle();
+        while (instruction_cycle_ < idle_tail_cycles_) {
+            idle_cycle();
+            if (suspended_ || invalid_replay_) {
+                // Once the next idle access blocks, remaining tail calls
+                // only increment this speculative counter. No clocks,
+                // accesses, observers or architectural arithmetic occur.
+                instruction_cycle_ = idle_tail_cycles_;
+                break;
+            }
+        }
         result = {idle_tail_cycles_, opcode_, true};
+    } else if (replay_cache_enabled_ && read_tail_known_) {
+        registers_ = read_tail_registers_;
+        opcode_ = read_tail_opcode_;
+        instruction_cycle_ = read_tail_start_;
+        write_index_ = 0;
+        if (read_tail_branch_) {
+            result = finish_instruction(branch(read_tail_take_));
+        } else {
+            const auto value = read_memory(read_tail_address_);
+            switch (opcode_) {
+            case 0xEC: registers_.y = value; break;
+            case 0xE9: registers_.x = value; break;
+            default: registers_.a = value; break;
+            }
+            set_nz8(value);
+            result = finish_instruction(read_tail_cycles_);
+        }
+    } else if (replay_cache_enabled_ && absolute_low_known_) {
+        // These loads cannot change registers before their target read.
+        // Reconstruct the completed prefix instead of saving extra register
+        // checkpoints. Only the low byte is reused; both pending reads retain
+        // the original fetch/bus/early-port/internal-idle schedule.
+        opcode_ = replay_[0].value;
+        registers_.pc = static_cast<std::uint16_t>(instruction_registers_.pc + 2U);
+        instruction_cycle_ = 2;
+        write_index_ = 0;
+        const auto high = fetch();
+        const auto index = opcode_ == 0xF5 ? registers_.x :
+                           opcode_ == 0xF6 ? registers_.y : 0;
+        const auto address = static_cast<std::uint16_t>(
+            (absolute_low_ | (static_cast<unsigned>(high) << 8)) + index);
+        const auto cycles = opcode_ == 0xF5 || opcode_ == 0xF6 ? 5U : 4U;
+        const auto value = read_load_operand(address, cycles);
+        switch (opcode_) {
+        case 0xEC: registers_.y = value; break;
+        case 0xE9: registers_.x = value; break;
+        default: registers_.a = value; break;
+        }
+        set_nz8(value);
+        result = finish_instruction(cycles);
     } else result = execute();
     replaying_ = false;
     if (invalid_replay_) {
@@ -885,8 +986,8 @@ SnesSpc700::StepResult SnesSpc700::execute() noexcept {
     case 0xE5: { // MOV A,!abs
         const auto low = fetch();
         const auto high = fetch();
-        registers_.a = read_memory(static_cast<std::uint16_t>(
-            low | (static_cast<unsigned>(high) << 8)));
+        registers_.a = read_load_operand(static_cast<std::uint16_t>(
+            low | (static_cast<unsigned>(high) << 8)), 4);
         set_nz8(registers_.a);
         cycles = 4;
         break;
@@ -894,8 +995,8 @@ SnesSpc700::StepResult SnesSpc700::execute() noexcept {
     case 0xEC: { // MOV Y,!abs
         const auto low = fetch();
         const auto high = fetch();
-        registers_.y = read_memory(static_cast<std::uint16_t>(
-            low | (static_cast<unsigned>(high) << 8)));
+        registers_.y = read_load_operand(static_cast<std::uint16_t>(
+            low | (static_cast<unsigned>(high) << 8)), 4);
         set_nz8(registers_.y);
         cycles = 4;
         break;
@@ -903,8 +1004,8 @@ SnesSpc700::StepResult SnesSpc700::execute() noexcept {
     case 0xE9: { // MOV X,!abs
         const auto low = fetch();
         const auto high = fetch();
-        registers_.x = read_memory(static_cast<std::uint16_t>(
-            low | (static_cast<unsigned>(high) << 8)));
+        registers_.x = read_load_operand(static_cast<std::uint16_t>(
+            low | (static_cast<unsigned>(high) << 8)), 4);
         set_nz8(registers_.x);
         cycles = 4;
         break;
@@ -914,7 +1015,7 @@ SnesSpc700::StepResult SnesSpc700::execute() noexcept {
         const auto high = fetch();
         const auto address = static_cast<std::uint16_t>(
             (low | (static_cast<unsigned>(high) << 8)) + registers_.y);
-        registers_.a = read_memory(address);
+        registers_.a = read_load_operand(address, 5);
         set_nz8(registers_.a);
         cycles = 5;
         break;
@@ -924,7 +1025,7 @@ SnesSpc700::StepResult SnesSpc700::execute() noexcept {
         const auto high = fetch();
         const auto address = static_cast<std::uint16_t>(
             (low | (static_cast<unsigned>(high) << 8)) + registers_.x);
-        registers_.a = read_memory(address);
+        registers_.a = read_load_operand(address, 5);
         set_nz8(registers_.a);
         cycles = 5;
         break;
@@ -1119,10 +1220,14 @@ SnesSpc700::StepResult SnesSpc700::execute() noexcept {
         if (cycle_bus_ && !replaying_) cycles_ += instruction_cycle_;
         return {cycle_bus_ ? instruction_cycle_ : 0, opcode, false};
     }
+    return finish_instruction(cycles);
+}
+
+SnesSpc700::StepResult SnesSpc700::finish_instruction(const unsigned cycles) noexcept {
     if (cycle_bus_) {
         if (instruction_cycle_ > cycles) {
             if (!replaying_) cycles_ += instruction_cycle_;
-            return {instruction_cycle_, opcode, false}; // Reject an invalid bus schedule.
+            return {instruction_cycle_, opcode_, false}; // Reject an invalid bus schedule.
         }
         if (idle_tail_cache_enabled_ && replaying_ && !suspended_ &&
             !invalid_replay_ && !half_pending_ && instruction_cycle_ < cycles) {
@@ -1136,7 +1241,7 @@ SnesSpc700::StepResult SnesSpc700::execute() noexcept {
         bus_.tick(cycles);
     }
     if (!replaying_) cycles_ += cycles;
-    return {cycles, opcode, true};
+    return {cycles, opcode_, true};
 }
 
 } // namespace gameboy

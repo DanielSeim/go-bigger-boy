@@ -1161,6 +1161,10 @@ if(GAMEBOY_BUILD_TESTS)
     gbb_enable_release_ipo(gameboy_sgb_host_title_runner)
     target_include_directories(gameboy_sgb_host_title_runner PRIVATE scripts)
     target_link_libraries(gameboy_sgb_host_title_runner PRIVATE gameboy_core)
+    if(UNIX OR WIN32)
+        add_test(NAME gameboy_sgb_host_metrics_contract
+                 COMMAND gameboy_sgb_host_title_runner --metrics-self-test)
+    endif()
     if(Python3_Interpreter_FOUND AND
        EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb1.program.rom" AND
        EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.program.rom" AND

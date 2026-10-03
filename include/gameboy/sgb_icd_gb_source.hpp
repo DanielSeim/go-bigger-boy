@@ -32,8 +32,8 @@ constexpr std::uint64_t sgb_icd_target_gb_cycles(
     // Constant denominators let each supported oscillator profile use exact
     // multiply/shift division, rather than two hardware divisions on every
     // host rendezvous. Keep quotient/remainder splitting to avoid overflow.
-    constexpr auto oscillator_hz = 20'971'520ULL;
     const auto convert = [master_elapsed](std::uint64_t denominator) constexpr {
+        constexpr auto oscillator_hz = 20'971'520ULL;
         return master_elapsed / denominator * oscillator_hz +
             master_elapsed % denominator * oscillator_hz / denominator;
     };

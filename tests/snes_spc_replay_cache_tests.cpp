@@ -103,6 +103,8 @@ int main() {
         gameboy::SnesSpc700 cached(a), reference(b);
         auto x=std::make_unique<gameboy::SnesApuAudioEngine>(cached);
         auto y=std::make_unique<gameboy::SnesApuAudioEngine>(reference);
+        y->debug_set_direct_dsp_clock_enabled(false);
+        reference.debug_set_replay_cache_enabled(false);
         reference.debug_set_idle_tail_cache_enabled(false);
         gameboy::SnesApuBus::IplRom program{};
         program[0]=opcode; program[1]=0xf4; program[2]=0x02;
@@ -118,6 +120,73 @@ int main() {
             if(!p) break;
             if(half%11==7 && (!x->load_state(x->save_state()) ||
                               !y->load_state(y->save_state()))) return 1;
+        }
+    }
+    // Absolute-load tails must not turn a first-half port latch into a later
+    // re-read, collapse timer/DSP accesses, or survive a restored prefix.
+    for (unsigned opcode:{0xE5U,0xE9U,0xECU,0xF5U,0xF6U})
+    for (unsigned address:{0xF2U,0xF3U,0xF4U,0xF5U,0xF6U,0xF7U,
+                           0xFDU,0xFEU,0xFFU,0x1234U,0xFFC0U,0xFFFFU})
+    for (bool restore_state:{false,true})
+    for (unsigned restore=0;restore<16;++restore) {
+        auto a=std::make_unique<gameboy::SnesApuBus>();
+        auto b=std::make_unique<gameboy::SnesApuBus>();
+        gameboy::SnesSpc700 cached(*a), reference(*b);
+        auto x=std::make_unique<gameboy::SnesApuAudioEngine>(cached);
+        auto y=std::make_unique<gameboy::SnesApuAudioEngine>(reference);
+        y->debug_set_direct_dsp_clock_enabled(false);
+        reference.debug_set_replay_cache_enabled(false);
+        reference.debug_set_idle_tail_cache_enabled(false);
+        // Both sides use the same first-half placeholder representation;
+        // its speculative counter differs from the fully uncached trace
+        // oracle above, despite identical physical bus operations.
+        gameboy::SnesApuBus::IplRom program{};
+        program[0]=opcode;program[1]=address;program[2]=address>>8;
+        program[3]=0x2f;program[4]=0xfb;
+        x->install_ipl(program);y->install_ipl(program);
+        a->spc_write(0xf1,0x87);b->spc_write(0xf1,0x87);
+        for(unsigned half=0;half<48;++half) {
+            for(unsigned port=0;port<4;++port) {
+                a->host_write_port(port,half*13+port);
+                b->host_write_port(port,half*13+port);
+            }
+            if(x->clock_half()!=y->clock_half() || x->save_state()!=y->save_state()) {
+                std::cerr<<"absolute-load tail changed: opcode "<<opcode
+                         <<" address "<<address<<" half "<<half<<'\n';return 1;
+            }
+            if(half==restore) {
+                if(restore_state) {
+                    if(!x->load_state(x->save_state()) ||
+                       !y->load_state(y->save_state())) return 1;
+                } else cached.debug_set_replay_cache_enabled(false);
+            } else if(!restore_state && half==restore+1) {
+                cached.debug_set_replay_cache_enabled(true);
+            }
+        }
+    }
+    // Taken and untaken branch tails with every relevant flag combination.
+    for(unsigned opcode:{0x10U,0x30U,0x90U,0xB0U,0xD0U,0xF0U,0x2FU})
+    for(unsigned value:{0U,1U,0x80U}) for(bool carry:{false,true})
+    for(unsigned restore=0;restore<16;++restore) {
+        auto a=std::make_unique<gameboy::SnesApuBus>();
+        auto b=std::make_unique<gameboy::SnesApuBus>();
+        gameboy::SnesSpc700 cached(*a),reference(*b);
+        auto x=std::make_unique<gameboy::SnesApuAudioEngine>(cached);
+        auto y=std::make_unique<gameboy::SnesApuAudioEngine>(reference);
+        reference.debug_set_replay_cache_enabled(false);
+        reference.debug_set_idle_tail_cache_enabled(false);
+        y->debug_set_direct_dsp_clock_enabled(false);
+        gameboy::SnesApuBus::IplRom program{};
+        program[0]=0xe8;program[1]=value;program[2]=carry?0x80:0x60;
+        program[3]=opcode;program[4]=0xfe;program[5]=0x2f;program[6]=0xfc;
+        x->install_ipl(program);y->install_ipl(program);
+        for(unsigned half=0;half<48;++half) {
+            if(x->clock_half()!=y->clock_half() || x->save_state()!=y->save_state()) {
+                std::cerr<<"branch operand tail changed: opcode "<<opcode
+                         <<" value "<<value<<" carry "<<carry<<" half "<<half<<'\n';return 1;
+            }
+            if(half==restore && (!x->load_state(x->save_state()) ||
+                                !y->load_state(y->save_state()))) return 1;
         }
     }
     return 0;

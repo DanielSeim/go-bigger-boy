@@ -103,6 +103,73 @@ void restore_tests() {
           "restored integrated voices produce nonsilent PCM");
 }
 
+void direct_clock_equivalence() {
+    Engine direct, callback;
+    callback.debug_set_direct_dsp_clock_enabled(false);
+    callback.debug_set_dsp_phase_dispatch_enabled(false);
+    setup(direct); setup(callback);
+    // Live voices, echo, noise and pitch modulation, every half-clock phase,
+    // destination-owned restore bindings, and a full output FIFO.
+    for (unsigned half = 0; half < 40000; ++half) {
+        if (half % 137 == 0) {
+            direct.bus().host_write_port(0, half & 255);
+            callback.bus().host_write_port(0, half & 255);
+        }
+        const bool a = direct.clock_half(), b = callback.clock_half();
+        check(a == b, "direct and callback clocks have identical backpressure");
+        if (half % 97 == 0 || !a) {
+            check(direct.save_state() == callback.save_state(),
+                  "direct DSP clock preserves complete live APU state");
+            const auto state = direct.save_state();
+            check(direct.load_state(state) && callback.load_state(state),
+                  "restore retains both clock driver implementations");
+        }
+        if (!a) {
+            Sample x{}, y{};
+            check(direct.pop_sample(x) && callback.pop_sample(y) && same(x,y),
+                  "backpressured clock paths drain identical PCM");
+        }
+    }
+    direct.reset(); callback.reset(); setup(direct); setup(callback);
+    const auto x = run(direct, 8192), y = run(callback, 8192);
+    check(x.size() == y.size() && std::equal(x.begin(),x.end(),y.begin(),same) &&
+          direct.save_state() == callback.save_state(),
+          "reset reinstalls direct and callback DSP bindings exactly");
+}
+
+void integrated_clock_opcode_equivalence() {
+    for (unsigned opcode = 0; opcode < 256; ++opcode)
+    for (unsigned seed = 0; seed < 2; ++seed) {
+        Engine direct, reported;
+        reported.debug_set_direct_dsp_clock_enabled(false);
+        reported.debug_set_dsp_phase_dispatch_enabled(false);
+        gameboy::SnesApuBus::IplRom image{};
+        image[0] = static_cast<std::uint8_t>(opcode);
+        image[1] = static_cast<std::uint8_t>(0xF4 + seed);
+        image[2] = seed ? 0xFF : 0x00;
+        for (auto* engine : {&direct, &reported}) {
+            engine->install_ipl(image);
+            engine->bus().spc_write(0xF1, 0x87);
+            engine->bus().spc_write(0xFA, 1);
+            engine->bus().spc_write(0xFB, 3);
+            engine->bus().spc_write(0xFC, 2);
+        }
+        for (unsigned half = 0; half < 64; ++half) {
+            for (auto* engine : {&direct, &reported})
+                engine->bus().host_write_port(half % 4, static_cast<std::uint8_t>(half * 7));
+            const bool a = direct.clock_half(), b = reported.clock_half();
+            check(a == b && direct.save_state() == reported.save_state(),
+                  "direct/callback clocks preserve all-opcode half-clock state and status");
+            if (!a) break;
+            if (half % 13 == 0) {
+                const auto state = direct.save_state();
+                check(direct.load_state(state) && reported.load_state(state),
+                      "direct/callback scheduler choices survive half-clock restoration");
+            }
+        }
+    }
+}
+
 void boundaries() {
     Engine missing;
     check(!missing.clock_half() && missing.status() == Engine::Status::missing_ipl &&
@@ -306,6 +373,7 @@ int main(int argc, char** argv) {
     if (argc == 2 && std::string_view(argv[1]) == "--fixture") return export_synthetic(true);
     if (argc == 2 && std::string_view(argv[1]) == "--pcm") return export_synthetic(false);
     if (argc != 1) return 2;
-    restore_tests(); boundaries(); malformed_cpu_and_realtime(); benchmark();
+    restore_tests(); direct_clock_equivalence(); integrated_clock_opcode_equivalence();
+    boundaries(); malformed_cpu_and_realtime(); benchmark();
     return failures ? 1 : 0;
 }

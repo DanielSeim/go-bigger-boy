@@ -411,6 +411,10 @@ void SnesDspPcmRenderer::begin_sample(const bool timed) noexcept {
 
 void SnesDspPcmRenderer::mix_voice_channel(const unsigned index,
                                            const unsigned channel) noexcept {
+    // Volume register reads have no side effect and are not latched here.
+    // Both accumulators are already int16: saturating_add(x, 0) is exactly x.
+    // Voice/key/envelope/BRR progression and physical echo clocks still run.
+    if (voice_output16_[index] == 0) return;
     const auto bit = static_cast<std::uint8_t>(1U << index);
     const auto output = gameboy::SnesDspVoiceMath::apply_channel_volume(
         voice_output16_[index], voice_register(bus_, index, channel));

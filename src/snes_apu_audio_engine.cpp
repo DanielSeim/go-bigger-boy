@@ -12,6 +12,7 @@ SnesApuAudioEngine::SnesApuAudioEngine(SnesSpc700& cpu) noexcept
 SnesApuAudioEngine::~SnesApuAudioEngine() {
     bus_.set_dsp_write_observer(nullptr);
     cpu_.set_bus_cycle_observer(nullptr);
+    cpu_.dsp_clock_driver_=nullptr;
 }
 
 void SnesApuAudioEngine::reset() noexcept {
@@ -22,19 +23,27 @@ void SnesApuAudioEngine::reset() noexcept {
     }, this);
     cpu_.reset();
     cpu_.set_cycle_bus_enabled(true);
+    debug_set_direct_dsp_clock_enabled(direct_dsp_clock_enabled_);
+    dsp_.reset();
+    // Prevent echo DMA from corrupting IPL upload RAM before firmware setup.
+    bus_.dsp_publish_register(0x6c, 0xe0);
+    dsp_.accept_dsp_write(0x6c, 0xe0);
+    status_ = Status::ready;
+}
+
+void SnesApuAudioEngine::debug_set_direct_dsp_clock_enabled(bool enabled) noexcept {
+    direct_dsp_clock_enabled_=enabled;
+    cpu_.dsp_clock_driver_=enabled?&dsp_:nullptr;
     // Full-clock T runs after timers but before the accepted SPC access.
-    cpu_.set_bus_cycle_observer([](void* context, std::uint64_t, char kind,
+    // Keep the prior callback implementation as an independent oracle.
+    if(enabled) cpu_.set_bus_cycle_observer(nullptr);
+    else cpu_.set_bus_cycle_observer([](void* context, std::uint64_t, char kind,
                                   std::uint16_t, std::uint8_t) noexcept {
         if (kind == 'T') {
             auto& self = *static_cast<SnesApuAudioEngine*>(context);
             (void)self.dsp_.clock(); // Capacity reserved by clock_half().
         }
     }, this);
-    dsp_.reset();
-    // Prevent echo DMA from corrupting IPL upload RAM before firmware setup.
-    bus_.dsp_publish_register(0x6c, 0xe0);
-    dsp_.accept_dsp_write(0x6c, 0xe0);
-    status_ = Status::ready;
 }
 
 bool SnesApuAudioEngine::clock_half() noexcept {

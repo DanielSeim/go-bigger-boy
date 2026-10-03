@@ -116,6 +116,8 @@ void maximum_dma(bool combined=false, bool fastest=false) {
     Host h(cfg), scalar(cfg);
     scalar.debug_set_apu_batch_enabled(false);
     scalar.debug_set_spc_idle_tail_cache_enabled(false);
+    scalar.debug_set_direct_dsp_clock_enabled(false);
+    scalar.debug_set_dsp_phase_dispatch_enabled(false);
     while(h.cpu().registers().pc<trigger_pc) {
         check(h.step() && scalar.step(),"DMA setup supported");
     }
@@ -139,12 +141,16 @@ void maximum_dma(bool combined=false, bool fastest=false) {
 void backpressure(bool combined=false) {
     auto cfg=config(); cfg.combined_audio=combined;
     Host h(cfg), ref(cfg);
+    ref.debug_set_direct_dsp_clock_enabled(false);
+    ref.debug_set_dsp_phase_dispatch_enabled(false);
     std::uint64_t steps{};
     while(h.step()) { ++steps; if(steps>1000000) break; }
     check(h.status()==Host::Status::buffer_full && h.pending_samples()>0,"instruction reservation applies bounded backpressure");
     const auto full=h.save_state(); const auto clock=h.cpu().timing().clocks();
     check(!h.step() && h.save_state()==full,"blocked retry repeats no host IO, GB or APU clocks");
-    Host restored(cfg); check(restored.load_state(full),"backpressured host restores");
+    Host restored(cfg); restored.debug_set_direct_dsp_clock_enabled(false);
+    restored.debug_set_dsp_phase_dispatch_enabled(false);
+    check(restored.load_state(full),"backpressured host restores");
     check(equal(drain(h),drain(restored)),"pending host PCM survives restore");
     for(std::uint64_t n=0;n<steps;++n) { check(ref.step(),"unbuffered reference advances"); (void)drain(ref); }
     check(h.save_state()==ref.save_state(),"draining pressure preserves exact complete state");
@@ -218,6 +224,26 @@ void mixer() {
             while(drift.pop_sample(sample)) {}
         }
         check(drift.advance_to(Mixer::master_hz) && drift.samples_produced()==rate,"one second has exactly configured sample count");
+    }
+    for (const auto rate : {8000U, 8001U, 16000U, 32000U, 44100U, 48000U}) {
+        auto limits = std::make_unique<Mixer>(rate);
+        const auto last_sample = std::numeric_limits<std::uint64_t>::max() / rate;
+        const auto last_advance = (std::numeric_limits<std::uint64_t>::max() - Mixer::master_hz) / rate;
+        check(limits->push(Source::gb, last_sample, {1,1}) &&
+              !limits->push(Source::snes, last_sample + 1, {}) &&
+              !limits->reset_gb_at(last_sample + 1) &&
+              !limits->advance_to(last_advance + 1),
+              "derived mixer limits preserve exact sample/reset/advance overflow boundaries");
+        check(limits->samples_produced() == 0 && limits->pending_samples() == 0 &&
+              limits->reset_gb_at(0) && limits->advance_to(100000),
+              "overflow rejection preserves queues and permits valid reset/advancement");
+        unsigned count{};
+        while (limits->pop_sample(sample)) {
+            check(!sample.left && !sample.right, "overflow rejection cannot leak future source data");
+            ++count;
+        }
+        check(count == 100000ULL * rate / Mixer::master_hz,
+              "derived mixer limit keeps exact rational sample count");
     }
     bool rejected=false; try { (void)std::make_unique<Mixer>(48001); } catch(const std::invalid_argument&) { rejected=true; }
     check(rejected,"unbounded rate rejected");
@@ -347,6 +373,8 @@ void batch_oracle() {
         }
         Host batch(cfg), scalar(cfg); scalar.debug_set_apu_batch_enabled(false);
         scalar.debug_set_spc_idle_tail_cache_enabled(false);
+        scalar.debug_set_direct_dsp_clock_enabled(false);
+        scalar.debug_set_dsp_phase_dispatch_enabled(false);
         for(unsigned i=0;i<30000;++i) {
             const auto a=batch.step(), b=scalar.step();
             check(a==b,"batched/scalar terminal boundary identical");
@@ -360,9 +388,44 @@ void batch_oracle() {
         check(!fault || batch.status()==Host::Status::apu_fault,"late SPC fault exercised");
     }
 }
+void batch_fault_phase_oracle() {
+    // A terminal fetch can coincide with any DSP output/readback phase.
+    // Reservation must preserve the pre-fault PC/cycle and leave output from
+    // the failing half unread, just like the scalar scheduler.
+    for (auto model : {gameboy::HardwareModel::sgb, gameboy::HardwareModel::sgb2})
+    for (bool combined : {false, true}) for (unsigned delay = 0; delay < 64; ++delay) {
+        auto cfg = config(model);
+        cfg.combined_audio = combined;
+        cfg.output_hz = model == gameboy::HardwareModel::sgb ? 48000 : 44100;
+        cfg.apu_clock_hz = 1099968;
+        cfg.spc_ipl.fill(0); // NOP: two clocks.
+        unsigned end = delay / 2;
+        if (delay & 1U) cfg.spc_ipl[end++] = 0xED; // NOTC: three clocks.
+        cfg.spc_ipl[end] = 0xFF; // Unsupported STOP, fail closed.
+        Host batch(cfg), scalar(cfg);
+        scalar.debug_set_apu_batch_enabled(false);
+        scalar.debug_set_direct_dsp_clock_enabled(false);
+        scalar.debug_set_dsp_phase_dispatch_enabled(false);
+        for (unsigned step = 0; step < 1000; ++step) {
+            const bool a = batch.step(), b = scalar.step();
+            check(a == b, "batch/scalar fault phase terminal boundary identical");
+            if (!a) {
+                check(batch.status() == Host::Status::apu_fault,
+                      "batch fault phase reaches intentional unsupported fetch");
+                check(batch.save_state() == scalar.save_state(),
+                      "batch fault phase retains exact state and unread PCM");
+                check(equal(drain(batch), drain(scalar)),
+                      "batch fault phase retains exact emitted PCM");
+                break;
+            }
+            check(step != 999, "batch fault phase does not run past terminal fetch");
+        }
+    }
+}
 }
 int main() {
     batch_oracle();
+    batch_fault_phase_oracle();
     mixer(); raw_apu_sink(); snapshots(); backpressure(); maximum_dma(); faults();
     snapshots(true); snapshots(true,44100); backpressure(true); maximum_dma(true); maximum_dma(true,true);
     combined_chunks_and_reset(); stop_timeline(); return failures?1:0;

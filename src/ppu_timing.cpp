@@ -818,15 +818,21 @@ void Ppu::emit_pixel() noexcept {
         window_disable_source_x_ = 0;
     }
 
-    if (sgb_mode_) {
-        // Keep the transfer capture in its existing raw 2-bit format. Apply
-        // BGP/OBP to the displayed pixel in compose_pixel below; remapping
-        // this source corrupts our CHR_TRN/PCT_TRN border uploads.
+    std::uint32_t result;
+    if (sgb_mode_ && !cgb_mode_ && sgb_palette_cache_enabled_) {
+        std::uint8_t source;
+        result = compose_sgb_pixel(output_x_, background, source);
         (*sgb_screen_buffer_)[static_cast<std::size_t>(ly_) * screen_width +
-                              output_x_] =
-            sgb_source_pixel(output_x_, background);
+                              output_x_] = source;
+    } else {
+        if (sgb_mode_) {
+            // Keep the transfer capture in its existing raw 2-bit format.
+            // Remapping corrupts CHR_TRN/PCT_TRN border uploads.
+            (*sgb_screen_buffer_)[static_cast<std::size_t>(ly_) * screen_width +
+                                  output_x_] = sgb_source_pixel(output_x_, background);
+        }
+        result = compose_pixel(output_x_, background);
     }
-    auto result = compose_pixel(output_x_, background);
     if (sgb_mode_) {
         if (sgb_mask_mode_ == 1) {
             // Freeze leaves the existing SNES framebuffer untouched while
@@ -954,6 +960,27 @@ std::uint8_t Ppu::sgb_source_pixel(
         background.color != 0 && (object.attributes & 0x80) != 0;
     if (!background_blocks_object) color = object.color;
     return color;
+}
+
+std::uint32_t Ppu::compose_sgb_pixel(const unsigned x,
+    const BackgroundPixel background, std::uint8_t& source) const noexcept {
+    // DMG/SGB priority selects the raw transfer pixel and displayed pixel
+    // together. Do not remap the capture through BGP/OBP; do not calculate a
+    // background RGB value that an opaque object would immediately replace.
+    const auto& object = object_pixels_[x];
+    const bool visible_object = (lcdc_ & 2U) && object.valid &&
+        (background.color == 0 || !(object.attributes & 0x80U));
+    source = visible_object ? object.color : background.color;
+    const bool second_palette = visible_object && (object.attributes & 0x10U);
+    const auto palette = visible_object
+        ? (second_palette ? object_palette_1_ : object_palette_0_) : bg_palette_;
+    const auto shade = static_cast<std::uint8_t>((palette >> (source * 2U)) & 3U);
+    if (!sgb_palette_default_)
+        return sgb_palette_color(sgb_attribute_for_pixel(x), shade);
+    const auto& colors = visible_object
+        ? (second_palette ? dmg_palette_.object_1 : dmg_palette_.object_0)
+        : dmg_palette_.background;
+    return colors[shade];
 }
 
 std::uint32_t Ppu::cgb_palette_color(

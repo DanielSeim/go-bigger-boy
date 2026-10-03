@@ -6,6 +6,7 @@
 #include "gameboy/snes_dsp_key_control.hpp"
 #include "gameboy/snes_dsp_key_on_sequence.hpp"
 #include "gameboy/snes_dsp_sample_ring.hpp"
+#include "gameboy/snes_audio_host.hpp"
 
 #include <array>
 #include <cstdint>
@@ -80,6 +81,31 @@ public:
 
 private:
     friend class SnesDspStateCodec;
+    friend class SnesDspClock;
+    template<unsigned Phase> void publish_timed_readback_phase() noexcept {
+        static_assert(Phase <= 25);
+        if (!live_readback_) return;
+        constexpr auto current = Phase / 3;
+        // Exactly the runtime-phase oracle, with the voice/kind already
+        // known by the phase driver. Publication still precedes staging.
+        if constexpr (Phase % 3 == 0) {
+            if constexpr (current != 0)
+                bus_.dsp_publish_register(static_cast<std::uint8_t>((current - 1) * 16 + 9), live_outx_buffer_);
+            if constexpr (current < 8) {
+                constexpr auto bit = static_cast<std::uint8_t>(1U << current);
+                live_endx_buffer_ = static_cast<std::uint8_t>(
+                    timed_endx_visible_ | (live_loop_event_[current] ? bit : 0));
+                if (live_kon_event_[current])
+                    live_endx_buffer_ &= static_cast<std::uint8_t>(~bit);
+            }
+        } else if constexpr (Phase % 3 == 1) {
+            if constexpr (current != 0)
+                bus_.dsp_publish_register(static_cast<std::uint8_t>((current - 1) * 16 + 8), live_envx_buffer_);
+            if constexpr (current < 8)
+                live_outx_buffer_ = static_cast<std::uint8_t>(
+                    static_cast<std::uint16_t>(voice_output16_[current]) >> 8);
+        } else live_envx_buffer_ = live_envx_[current];
+    }
     struct Voice {
         explicit Voice(const gameboy::SnesApuBus& bus) noexcept : stream(bus) {}
         gameboy::SnesDspBrrGroupStream stream;
