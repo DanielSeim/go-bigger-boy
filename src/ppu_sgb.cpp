@@ -245,6 +245,7 @@ void Ppu::apply_sgb_command(
         }
         // Transparent border pixels outside the GB viewport show the current
         // SGB screen color zero, so their cached RGB must be refreshed.
+        refresh_sgb_palette_cache();
         sgb_border_cache_valid_ = false;
         ++sgb_border_revision_;
     };
@@ -376,6 +377,7 @@ void Ppu::apply_sgb_command(
             load_sgb_attribute_file(packet[9] & 0x3FU);
         }
         if ((packet[9] & 0x40U) != 0) sgb_mask_mode_ = 0;
+        refresh_sgb_palette_cache();
         sgb_border_cache_valid_ = false;
         ++sgb_border_revision_;
         break;

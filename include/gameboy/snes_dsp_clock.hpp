@@ -16,18 +16,21 @@ public:
     [[nodiscard]] unsigned key_poll_clock() const noexcept { return count_ % 64; }
     [[nodiscard]] std::optional<SnesDspPcmRenderer::StereoSample> clock() noexcept {
         const auto p = phase();
-        renderer_.latch_timed_voice_registers(p);
-        if (p == 0) renderer_.mix_timed_voice_channel(0, 1);
-        if (p == 31) renderer_.mix_timed_voice_channel(0, 0);
-        if (p >= 1 && p <= 19 && (p - 1) % 3 == 0)
-            renderer_.advance_timed_voice((p + 2) / 3);
-        if (p >= 2 && p <= 20 && (p - 2) % 3 == 0)
-            renderer_.mix_timed_voice_channel((p + 1) / 3, 0);
-        if (p >= 3 && p <= 21 && (p - 3) % 3 == 0)
-            renderer_.mix_timed_voice_channel(p / 3, 1);
-        if (p >= 2 && p <= 23 && (p - 2) % 3 == 0)
-            renderer_.publish_timed_endx((p - 2) / 3);
-        renderer_.publish_timed_readback(p);
+        if (p <= 22 || p == 31) renderer_.latch_timed_voice_registers(p);
+        // These three schedules are mutually exclusive. Dispatch once, and
+        // retain V7 after the left mix on coincident phases (including V0).
+        if (p <= 21) {
+            switch (p % 3) {
+            case 0: renderer_.mix_timed_voice_channel(p / 3, 1); break;
+            case 1: renderer_.advance_timed_voice((p + 2) / 3); break;
+            case 2:
+                renderer_.mix_timed_voice_channel((p + 1) / 3, 0);
+                renderer_.publish_timed_endx((p - 2) / 3);
+                break;
+            }
+        } else if (p == 23) renderer_.publish_timed_endx(7);
+        else if (p == 31) renderer_.mix_timed_voice_channel(0, 0);
+        if (p <= 25) renderer_.publish_timed_readback(p);
         if (p >= 22 && p <= 25) renderer_.latch_timed_fir(p);
         if (p == 26) {
             left_ = bus_.dsp_register(0x0c);

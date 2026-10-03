@@ -81,6 +81,10 @@ class SnesDspStateCodec final {
         io(r.pc); io(r.a); io(r.x); io(r.y); io(r.sp); io(r.psw);
     }
     template<class IO, class Cpu> static void cpu_fields(IO& io, Cpu& c) {
+        if constexpr (!std::is_const_v<Cpu>) {
+            c.waiting_half_known_ = false;
+            c.idle_tail_known_ = false;
+        }
         registers(io, c.registers_); io(c.cycles_); io(c.opcode_);
         const auto counter = [&](auto& value) {
             std::uint32_t fixed = value; io(fixed);

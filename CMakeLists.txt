@@ -39,6 +39,42 @@ option(GAMEBOY_BUILD_FUZZERS
 option(GAMEBOY_BUILD_PERFORMANCE_TESTS
        "Build deterministic emulation load and FPS performance tests"
        ON)
+option(GAMEBOY_ENABLE_RELEASE_IPO
+       "Use supported native release link-time optimization without fast-math"
+       ON)
+set(GBB_RELEASE_IPO_SUPPORTED FALSE)
+if(GAMEBOY_ENABLE_RELEASE_IPO AND NOT EMSCRIPTEN AND
+   NOT GAMEBOY_ENABLE_SANITIZERS AND NOT GAMEBOY_ENABLE_THREAD_SANITIZER)
+    include(CheckIPOSupported)
+    check_ipo_supported(RESULT GBB_RELEASE_IPO_SUPPORTED
+                        OUTPUT GBB_RELEASE_IPO_ERROR LANGUAGES CXX)
+    if(NOT GBB_RELEASE_IPO_SUPPORTED)
+        message(STATUS "Release IPO unavailable: ${GBB_RELEASE_IPO_ERROR}")
+    endif()
+endif()
+function(gbb_enable_release_ipo target)
+    if(GBB_RELEASE_IPO_SUPPORTED)
+        set_property(TARGET ${target} PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
+        # Android's packaged release configuration uses RelWithDebInfo.
+        if(ANDROID)
+            set_property(TARGET ${target} PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO TRUE)
+            if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+                # CMake selects ThinLTO for Clang by default. Full LTO lets
+                # LLVM inline the CPU/APU/GB coordination paths together;
+                # measured ARM64 playback needs that additional headroom.
+                # The last flag overrides CMake's -flto=thin, without ISA
+                # tuning, fast-math or changes to emulated timing/output.
+                target_compile_options(${target} PRIVATE
+                    "$<$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>>:-flto=full>")
+                # Consumers of the static core also need the LTO driver
+                # option: otherwise Android's emulated-TLS linker settings
+                # are lost when LLVM bitcode is linked by a non-IPO target.
+                target_link_options(${target} PUBLIC
+                    "$<$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>>:-flto=full>")
+            endif()
+        endif()
+    endif()
+endfunction()
 set(GAMEBOY_TEST_ROM_DIR "" CACHE PATH
     "Optional root of the c-sp Game Boy test ROM bundle")
 set(GAMEBOY_SAMESUITE_DIR "" CACHE PATH
@@ -200,6 +236,8 @@ endif()
 
 target_include_directories(gameboy_core PUBLIC include)
 target_compile_features(gameboy_core PUBLIC cxx_std_17)
+gbb_enable_release_ipo(gameboy_core)
+gbb_enable_release_ipo(gbb_core_api)
 
 if(WIN32)
     target_link_libraries(gameboy_core PUBLIC ws2_32 uuid iphlpapi)
@@ -211,17 +249,13 @@ endif()
 
 if(MSVC)
     target_compile_options(gameboy_core PRIVATE /W4 /permissive-)
-    # The emulator executes through many small cross-translation-unit helpers.
-    # Release LTO lets MSVC inline and specialize that hot path instead of
-    # paying the frontend call overhead on every Game Boy instruction.
-    set_property(TARGET gameboy_core
-                 PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
 else()
     target_compile_options(gameboy_core PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
 if(NOT ANDROID)
     add_executable(gameboy_cli apps/cli/main.cpp)
+    gbb_enable_release_ipo(gameboy_cli)
     target_link_libraries(gameboy_cli PRIVATE gbb_core_api)
     set_target_properties(gameboy_cli PROPERTIES OUTPUT_NAME gbb_cli)
 
@@ -484,6 +518,7 @@ if(GAMEBOY_BUILD_SDL)
                 set(GAMEBOY_DESKTOP_VERSION "${CMAKE_MATCH_1}")
             endif()
             target_link_libraries(gameboy_sdl PRIVATE gbb_core_api SDL3::SDL3)
+            gbb_enable_release_ipo(gameboy_sdl)
             if(SDL3_ttf_FOUND AND TARGET SDL3_ttf::SDL3_ttf)
                 target_link_libraries(gameboy_sdl PRIVATE SDL3_ttf::SDL3_ttf)
                 target_compile_definitions(gameboy_sdl PRIVATE GBB_HAS_SDL_TTF=1)
@@ -502,8 +537,6 @@ if(GAMEBOY_BUILD_SDL)
                     # The resource script embeds our DPI/common-controls
                     # manifest; prevent MSVC from adding a second copy.
                     target_link_options(gameboy_sdl PRIVATE "/MANIFEST:NO")
-                    set_property(TARGET gameboy_sdl
-                                 PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
                 endif()
             endif()
             if(ANDROID)
@@ -624,6 +657,11 @@ if(GAMEBOY_BUILD_TESTS)
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/android_sgb_performance_gate_tests.py)
         set_tests_properties(gameboy_android_sgb_performance_gate
+                             PROPERTIES LABELS "performance;sgb")
+        add_test(NAME gameboy_sgb_host_performance_gate
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_host_performance_gate_tests.py)
+        set_tests_properties(gameboy_sgb_host_performance_gate
                              PROPERTIES LABELS "performance;sgb")
         add_test(NAME gameboy_sgb_command_report
                  COMMAND ${Python3_EXECUTABLE}
@@ -1116,7 +1154,11 @@ if(GAMEBOY_BUILD_TESTS)
     add_executable(gameboy_snes_spc_replay_cache_tests tests/snes_spc_replay_cache_tests.cpp)
     target_link_libraries(gameboy_snes_spc_replay_cache_tests PRIVATE gameboy_core)
     add_test(NAME gameboy_snes_spc_replay_cache_contract COMMAND gameboy_snes_spc_replay_cache_tests)
+    add_executable(gameboy_sgb_execution_cache_tests tests/sgb_execution_cache_tests.cpp)
+    target_link_libraries(gameboy_sgb_execution_cache_tests PRIVATE gameboy_core)
+    add_test(NAME gameboy_sgb_execution_cache_contract COMMAND gameboy_sgb_execution_cache_tests)
     add_executable(gameboy_sgb_host_title_runner tests/support/sgb_host_title_runner.cpp)
+    gbb_enable_release_ipo(gameboy_sgb_host_title_runner)
     target_include_directories(gameboy_sgb_host_title_runner PRIVATE scripts)
     target_link_libraries(gameboy_sgb_host_title_runner PRIVATE gameboy_core)
     if(Python3_Interpreter_FOUND AND

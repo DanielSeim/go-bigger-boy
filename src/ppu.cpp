@@ -37,6 +37,7 @@ Ppu::Ppu()
     cgb_bg_palette_.fill(0xFF);
     cgb_object_palette_.fill(0xFF);
     object_pixel_active_index_.fill(0xFF);
+    refresh_sgb_palette_cache();
     trace_window_state("construct");
 }
 
@@ -78,6 +79,7 @@ void Ppu::set_sgb_mode(const bool enabled) noexcept {
     // SGB starts with the same four neutral colors as a DMG until the game
     // sends its first PAL command.
     sgb_palettes_ = default_sgb_palettes;
+    refresh_sgb_palette_cache();
     sgb_attributes_.fill(0);
     sgb_ram_palettes_->fill(0);
     sgb_attribute_files_->fill(0);

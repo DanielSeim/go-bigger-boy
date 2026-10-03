@@ -1,7 +1,9 @@
 #include "gameboy/snes_audio_host.hpp"
 #include "gameboy/snes_spc700.hpp"
+#include "gameboy/snes_apu_audio_engine.hpp"
 
 #include <iostream>
+#include <memory>
 #include <tuple>
 #include <vector>
 
@@ -24,6 +26,8 @@ int main() {
         gameboy::SnesApuBus a,b;
         gameboy::SnesSpc700 cached(a), reference(b);
         reference.debug_set_replay_cache_enabled(false);
+        reference.debug_set_idle_tail_cache_enabled(false);
+        reference.debug_set_waiting_half_cache_enabled(false);
         gameboy::SnesApuBus::IplRom program{};
         program[0]=opcode; program[1]=seed<4 ? 0xf4+seed : 0x13*seed;
         program[2]=seed&1 ? 0xff : 0x02;
@@ -38,7 +42,7 @@ int main() {
         std::vector<Event> x,y;
         cached.set_bus_cycle_observer(observe,&x); reference.set_bus_cycle_observer(observe,&y);
         cached.set_half_cycle_observer(observe,&x); reference.set_half_cycle_observer(observe,&y);
-        for (unsigned clock=0;clock<32;++clock) {
+        for (unsigned clock=0;clock<128;++clock) {
             a.host_write_port(clock%4,clock*7); b.host_write_port(clock%4,clock*7);
             const auto p=half?cached.clock_half():cached.clock();
             const auto q=half?reference.clock_half():reference.clock();
@@ -49,7 +53,10 @@ int main() {
                 std::cerr << "SPC replay changed: opcode " << opcode << " seed " << seed
                           << " clock " << clock << " half " << half << '\n'; return 1;
             }
-            if (p.completed) { supported+=p.instruction.supported; break; }
+            if (p.completed) {
+                supported+=p.instruction.supported;
+                if (!p.instruction.supported) break;
+            }
         }
         for (unsigned address=0;address<65536;++address)
             if (a.dsp_read_ram(address)!=b.dsp_read_ram(address)) return 1;
@@ -58,5 +65,60 @@ int main() {
             if (a.spc_read(address)!=b.spc_read(address)) return 1;
     }
     if (supported<1000) { std::cerr << "insufficient supported replay coverage\n"; return 1; }
+    // An opcode fetch can itself be an early input-port read. Exercise all
+    // opcode bytes with PC=$00f4, not just operands that address the ports.
+    for (unsigned opcode=0;opcode<256;++opcode) {
+        gameboy::SnesApuBus a,b;
+        gameboy::SnesSpc700 cached(a), reference(b);
+        reference.debug_set_replay_cache_enabled(false);
+        reference.debug_set_idle_tail_cache_enabled(false);
+        reference.debug_set_waiting_half_cache_enabled(false);
+        gameboy::SnesApuBus::IplRom program{};
+        program[0]=0x5f; program[1]=0xf4; // JMP $00f4
+        for(auto* bus:{&a,&b}) { bus->reset(); bus->install_ipl(program); }
+        cached.set_cycle_bus_enabled(true); reference.set_cycle_bus_enabled(true);
+        std::vector<Event> x,y;
+        cached.set_half_cycle_observer(observe,&x); reference.set_half_cycle_observer(observe,&y);
+        for(unsigned half=0;half<64;++half) {
+            for(auto* bus:{&a,&b}) {
+                bus->host_write_port(0,opcode);
+                bus->host_write_port(1,half*11);
+                bus->host_write_port(2,half*3);
+                bus->host_write_port(3,half*5);
+            }
+            const auto p=cached.clock_half(), q=reference.clock_half();
+            if(p.completed!=q.completed || p.instruction.supported!=q.instruction.supported ||
+               p.instruction.cycles!=q.instruction.cycles || p.instruction.opcode!=q.instruction.opcode ||
+               cached.half_cycles()!=reference.half_cycles() || x!=y ||
+               !equal(cached.registers(),reference.registers())) {
+                std::cerr << "early opcode fetch changed: " << opcode << '\n'; return 1;
+            }
+            if(p.completed && !p.instruction.supported) break;
+        }
+    }
+    // Isolate the idle-tail cache: compare complete DSP/APU snapshots, not
+    // just CPU registers, and invalidate the derived tail on restoration.
+    for (unsigned opcode=0;opcode<256;++opcode) {
+        gameboy::SnesApuBus a,b;
+        gameboy::SnesSpc700 cached(a), reference(b);
+        auto x=std::make_unique<gameboy::SnesApuAudioEngine>(cached);
+        auto y=std::make_unique<gameboy::SnesApuAudioEngine>(reference);
+        reference.debug_set_idle_tail_cache_enabled(false);
+        gameboy::SnesApuBus::IplRom program{};
+        program[0]=opcode; program[1]=0xf4; program[2]=0x02;
+        x->install_ipl(program); y->install_ipl(program);
+        for(unsigned half=0;half<48;++half) {
+            a.host_write_port(half%4,half*13);
+            b.host_write_port(half%4,half*13);
+            const auto p=x->clock_half(), q=y->clock_half();
+            if(p!=q || x->save_state()!=y->save_state()) {
+                std::cerr << "idle-tail snapshot changed: opcode " << opcode
+                          << " half " << half << '\n'; return 1;
+            }
+            if(!p) break;
+            if(half%11==7 && (!x->load_state(x->save_state()) ||
+                              !y->load_state(y->save_state()))) return 1;
+        }
+    }
     return 0;
 }

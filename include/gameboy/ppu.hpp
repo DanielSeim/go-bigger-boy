@@ -34,6 +34,7 @@ public:
     // earlier CGB revisions also re-sample it for both bitplanes.
     void set_cgb_late_revision(bool enabled) noexcept;
     void set_sgb_mode(bool enabled) noexcept;
+    void debug_set_sgb_palette_cache_enabled(bool enabled) noexcept { sgb_palette_cache_enabled_ = enabled; }
     [[nodiscard]] bool cgb_mode() const noexcept;
     [[nodiscard]] unsigned debug_dot() const noexcept { return dot_; }
     [[nodiscard]] unsigned debug_mode3_end_dot() const noexcept {
@@ -232,6 +233,10 @@ private:
     // map through commands sent over JOYP. Keep this state separate from CGB
     // palettes so monochrome rendering remains unchanged on ordinary models.
     std::array<std::uint16_t, 16> sgb_palettes_{};
+    void refresh_sgb_palette_cache() noexcept;
+    std::array<std::uint32_t, 16> sgb_palette_rgb_{};
+    bool sgb_palette_default_{true};
+    bool sgb_palette_cache_enabled_{true}; // Derived, not serialized.
     std::array<std::uint8_t, 20 * 18> sgb_attributes_{};
     // PAL_TRN stores 2048 RGB555 entries; ATTR_TRN stores 45 packed 20x18
     // attribute maps consumed by PAL_SET and ATTR_SET.

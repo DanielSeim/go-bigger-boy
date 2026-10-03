@@ -476,6 +476,7 @@ void SaveStateBusCodec::read(save_state_format::Reader& reader,
         bus.ppu_.sgb_ram_palettes_->fill(0);
         bus.ppu_.sgb_attribute_files_->fill(0);
     }
+    bus.ppu_.refresh_sgb_palette_cache();
     // Diagnostics are session observations rather than emulated state. A
     // loaded state starts a fresh observation window while preserving the
     // restored adapter protocol state above.

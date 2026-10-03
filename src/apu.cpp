@@ -276,37 +276,76 @@ void Apu::write_register(const std::uint16_t address,
 }
 
 void Apu::tick(const unsigned cycles) noexcept {
+    const auto refresh_mixer = [&]() noexcept {
+        const std::array<float, 4> outputs{
+            powered_ ? pulse_output(pulse1_, 0x01) : 0.0F,
+            powered_ ? pulse_output(pulse2_, 0x06) : 0.0F,
+            powered_ ? wave_output() : 0.0F,
+            powered_ ? noise_output() : 0.0F,
+        };
+        const auto routing = registers_[0x15];
+        auto left = 0.0F;
+        auto right = 0.0F;
+        for (std::size_t channel = 0; channel < outputs.size(); ++channel) {
+            if ((routing & (1U << channel)) != 0) right += outputs[channel];
+            if ((routing & (1U << (channel + 4))) != 0) left += outputs[channel];
+        }
+        const auto volumes = registers_[0x14];
+        left *= static_cast<float>(((volumes >> 4) & 7) + 1) / 8.0F;
+        right *= static_cast<float>((volumes & 7) + 1) / 8.0F;
+        mixed_left_ = left; mixed_right_ = right;
+        mixed_dacs_enabled_ = any_dac_enabled(); mixer_dirty_ = false;
+    };
+    const auto wave_clocks = cycles / 2 + (wave_.clock_phase ? cycles % 2 : 0);
+    const auto noise_running = noise_.enabled && (registers_[0x12] >> 4) < 14;
+    const auto batch = channel_batch_enabled_ && cycles > 1 &&
+        (!pulse1_.enabled || pulse1_.timer > cycles) &&
+        (!pulse2_.enabled || pulse2_.timer > cycles) &&
+        (!wave_.enabled || wave_clocks <= wave_.timer) &&
+        (!noise_running || noise_.timer > cycles) && !sample_boundary_within(cycles);
+    if (batch) {
+        // Between transitions only countdowns change. No callback can inspect
+        // an intermediate state in this span. HP filtering and integration
+        // below still execute literally once per native cycle.
+        for (auto* pulse : {&pulse1_, &pulse2_}) if (pulse->enabled) {
+            pulse->timer -= cycles; pulse->just_reloaded = false;
+        }
+        if (wave_.enabled) {
+            wave_.clock_phase ^= (cycles & 1U) != 0;
+            wave_.timer -= wave_clocks;
+            if (wave_clocks) wave_.wave_ram_accessible = false;
+        }
+        if (noise_running) noise_.timer -= cycles;
+        if (!audio_enabled_) return;
+        // Voltage and routing are invariant, and the guard excludes sample
+        // callbacks/boundaries. Preserve each individual float operation;
+        // only the integer accumulator update and no-op tests are grouped.
+        if (mixer_dirty_ || !mixer_cache_enabled_) refresh_mixer();
+        if (!mixed_dacs_enabled_) {
+            sample_integrator_left_ = sample_integrator_right_ = 0.0F;
+        } else for (unsigned cycle = 0; cycle < cycles; ++cycle) {
+            const auto left = high_pass(mixed_left_, true, left_capacitor_);
+            const auto right = high_pass(mixed_right_, true, right_capacitor_);
+            sample_integrator_left_ += left * static_cast<float>(sample_rate);
+            sample_integrator_right_ += right * static_cast<float>(sample_rate);
+        }
+        sample_accumulator_ += cycles * sample_rate;
+        return;
+    }
     for (unsigned cycle = 0; cycle < cycles; ++cycle) {
-        tick_pulse(pulse1_, 0x01);
-        tick_pulse(pulse2_, 0x06);
-        tick_wave();
-        tick_noise();
+        if (!batch) {
+            tick_pulse(pulse1_, 0x01);
+            tick_pulse(pulse2_, 0x06);
+            tick_wave();
+            tick_noise();
+        }
 
         // Keep clocking all channels above: their state drives register reads
         // (including CGB PCM12/PCM34) and must not depend on presentation
         // audio. Skip only the costly analog mixer/resampler path.
         if (!audio_enabled_) continue;
 
-        if (mixer_dirty_ || !mixer_cache_enabled_) {
-            const std::array<float, 4> outputs{
-                powered_ ? pulse_output(pulse1_, 0x01) : 0.0F,
-                powered_ ? pulse_output(pulse2_, 0x06) : 0.0F,
-                powered_ ? wave_output() : 0.0F,
-                powered_ ? noise_output() : 0.0F,
-            };
-            const auto routing = registers_[0x15];
-            auto left = 0.0F;
-            auto right = 0.0F;
-            for (std::size_t channel = 0; channel < outputs.size(); ++channel) {
-                if ((routing & (1U << channel)) != 0) right += outputs[channel];
-                if ((routing & (1U << (channel + 4))) != 0) left += outputs[channel];
-            }
-            const auto volumes = registers_[0x14];
-            left *= static_cast<float>(((volumes >> 4) & 7) + 1) / 8.0F;
-            right *= static_cast<float>((volumes & 7) + 1) / 8.0F;
-            mixed_left_ = left; mixed_right_ = right;
-            mixed_dacs_enabled_ = any_dac_enabled(); mixer_dirty_ = false;
-        }
+        if (mixer_dirty_ || !mixer_cache_enabled_) refresh_mixer();
         if (!mixed_dacs_enabled_) {
             // Disconnected DACs cannot contribute a pending partial sample.
             sample_integrator_left_ = 0.0F;

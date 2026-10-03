@@ -1,6 +1,7 @@
 #include "gbb/log.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <charconv>
 #include <cstdio>
 #include <cstdlib>
@@ -17,7 +18,9 @@ namespace {
 
 struct LoggerState {
     std::mutex mutex;
-    LogLevel minimum_level{LogLevel::warning};
+    // The disabled-log hot path must not lock the sink mutex per PPU dot.
+    // Level changes remain visible at runtime; sink state stays mutex-owned.
+    std::atomic<LogLevel> minimum_level{LogLevel::warning};
     std::FILE* file{};
     std::size_t memory_capacity{};
     std::deque<std::string> memory;
@@ -128,14 +131,12 @@ Logger& Logger::instance() noexcept {
 
 void Logger::set_level(const LogLevel level) noexcept {
     if (state_ == nullptr) return;
-    std::lock_guard<std::mutex> lock(state_->mutex);
-    state_->minimum_level = level;
+    state_->minimum_level.store(level, std::memory_order_relaxed);
 }
 
 LogLevel Logger::level() const noexcept {
     if (state_ == nullptr) return LogLevel::error;
-    std::lock_guard<std::mutex> lock(state_->mutex);
-    return state_->minimum_level;
+    return state_->minimum_level.load(std::memory_order_relaxed);
 }
 
 bool Logger::enabled(const LogLevel level) const noexcept {
@@ -194,7 +195,7 @@ void Logger::write(const LogLevel level, const LogCategory category,
                    const LogContext context) noexcept {
     if (state_ == nullptr) return;
     std::lock_guard<std::mutex> lock(state_->mutex);
-    if (level_rank(level) > level_rank(state_->minimum_level)) return;
+    if (level_rank(level) > level_rank(state_->minimum_level.load(std::memory_order_relaxed))) return;
 
     try {
         const auto inherited = current_log_context();

@@ -36,6 +36,8 @@ public:
         write_index_ = instruction_cycle_ = 0;
         replay_.fill({}); instruction_registers_ = {}; instruction_start_ = 0;
         half_mode_ = false;
+        waiting_half_known_ = false;
+        idle_tail_known_ = false;
     }
     [[nodiscard]] const Registers& registers() const noexcept { return registers_; }
     [[nodiscard]] std::uint64_t cycles() const noexcept { return cycles_; }
@@ -90,9 +92,19 @@ public:
     [[nodiscard]] bool instruction_pending() const noexcept { return continuation_; }
     // Diagnostic oracle for the latched-read replay fast path.
     void debug_set_replay_cache_enabled(bool enabled) noexcept { replay_cache_enabled_ = enabled; }
+    void debug_set_idle_tail_cache_enabled(bool enabled) noexcept {
+        idle_tail_cache_enabled_ = enabled; idle_tail_known_ = false;
+    }
+    void debug_set_waiting_half_cache_enabled(bool enabled) noexcept {
+        waiting_half_cache_enabled_ = enabled;
+        waiting_half_known_ = false;
+    }
 
 private:
     bool replay_cache_enabled_{true}; // Derived execution choice, not serialized.
+    bool waiting_half_cache_enabled_{true};
+    bool waiting_half_known_{}; // Derived lookahead, never saved.
+    bool next_access_early_{};
     friend class SnesDspStateCodec;
     friend class SnesApuAudioEngine;
     [[nodiscard]] StepResult execute() noexcept;
@@ -146,6 +158,11 @@ private:
     bool half_pending_{};
     HalfCycleObserver half_observer_{};
     void* half_context_{};
+    // Derived only: once operands finish, remaining internal idle clocks
+    // cannot change the instruction's already computed register result.
+    bool idle_tail_cache_enabled_{true}, idle_tail_known_{};
+    Registers idle_tail_registers_{};
+    unsigned idle_tail_cycles_{}, idle_tail_write_index_{};
 };
 
 } // namespace gameboy

@@ -24,6 +24,10 @@ public:
                         bool divider_apu_signal = false) noexcept;
 
     void tick(unsigned cycles) noexcept;
+    [[nodiscard]] bool sample_boundary_within(unsigned cycles) const noexcept {
+        return audio_enabled_ && cycles >=
+            (master_clock_hz_ - sample_accumulator_ + sample_rate - 1) / sample_rate;
+    }
     void clock_frame_sequencer() noexcept;
     [[nodiscard]] std::vector<std::int16_t> take_samples();
     using SampleSink = void (*)(void*, std::int16_t, std::int16_t) noexcept;
@@ -37,6 +41,7 @@ public:
     void debug_set_mixer_cache_enabled(bool enabled) noexcept {
         mixer_cache_enabled_ = enabled; mixer_dirty_ = true;
     }
+    void debug_set_channel_batch_enabled(bool enabled) noexcept { channel_batch_enabled_ = enabled; }
     // Audio generation is a presentation preference. Channel state and
     // register-visible behavior continue to advance while disabled, but the
     // mixer and sample resampler do no work and produce no samples.
@@ -166,6 +171,7 @@ private:
     // Derived DAC/routing voltage only. HP capacitors and area accumulation
     // still run on every APU cycle with exactly the same float operations.
     bool mixer_cache_enabled_{true}, mixer_dirty_{true}, mixed_dacs_enabled_{};
+    bool channel_batch_enabled_{true}; // Derived execution choice, not serialized.
     float mixed_left_{}, mixed_right_{};
 };
 

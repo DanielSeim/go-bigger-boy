@@ -82,24 +82,42 @@ void Timer::set_double_speed(const bool enabled) noexcept {
 }
 
 bool Timer::tick(const unsigned cycles) noexcept {
+    return tick_impl(cycles, false);
+}
+bool Timer::tick_bus(const unsigned cycles) noexcept {
+    return tick_impl(cycles, true);
+}
+bool Timer::tick_impl(const unsigned cycles, const bool last_reload_only) noexcept {
     auto interrupt_requested = false;
     reload_happened_ = false;
+    constexpr std::array<unsigned, 4> divider_bits{9, 3, 5, 7};
+    const auto timer_mask = (1U << (divider_bits[control_ & 3U] + 1)) - 1;
+    const auto apu_mask = double_speed_ ? 0x3fffU : 0x1fffU;
+    if (cycles < apu_mask + 1 - (divider_counter_ & apu_mask) &&
+        (!(control_ & 4U) || cycles < timer_mask + 1 - (divider_counter_ & timer_mask)) &&
+        (!reload_delay_ || cycles < reload_delay_)) {
+        // No falling edge or reload in this span: only the divider and an
+        // optional pending reload countdown change. Boundary cycles retain
+        // their original increment-before-compare order below.
+        divider_counter_ = static_cast<std::uint16_t>(divider_counter_ + cycles);
+        if (reload_delay_) reload_delay_ -= cycles;
+        return false;
+    }
     for (unsigned cycle = 0; cycle < cycles; ++cycle) {
+        if (last_reload_only) reload_happened_ = false;
         if (reload_delay_ != 0 && --reload_delay_ == 0) {
             counter_ = modulo_;
             reload_happened_ = true;
             interrupt_requested = true;
         }
 
-        const auto old_signal = input_signal();
-        const auto apu_bit = double_speed_ ? 13U : 12U;
-        const auto old_apu_signal = (divider_counter_ & (1U << apu_bit)) != 0;
         ++divider_counter_;
-        if (old_signal && !input_signal()) {
+        // A falling divider bit is exactly a wrap of its lower bit field,
+        // including the uint16 wrap. No need to evaluate both signals.
+        if ((control_ & 4U) && (divider_counter_ & timer_mask) == 0) {
             increment_counter();
         }
-        const auto new_apu_signal = (divider_counter_ & (1U << apu_bit)) != 0;
-        if (old_apu_signal && !new_apu_signal) ++apu_ticks_;
+        if ((divider_counter_ & apu_mask) == 0) ++apu_ticks_;
     }
     return interrupt_requested;
 }

@@ -41,7 +41,13 @@ void SnesSpc700::clock_bus(const bool early_read) noexcept {
             ++instruction_cycle_;
             return;
         }
-        if (clock_used_) { suspended_ = true; ++instruction_cycle_; return; }
+        if (clock_used_) {
+            // Only the first blocked access has operands backed entirely by
+            // latched reads. Later speculative accesses are not lookahead.
+            next_access_early_ = early_read;
+            waiting_half_known_ = !half_pending_;
+            suspended_ = true; ++instruction_cycle_; return;
+        }
         if (instruction_cycle_ == replay_count_ && replay_count_ == replay_.size()) {
             invalid_replay_ = true; ++instruction_cycle_; return;
         }
@@ -309,13 +315,34 @@ SnesSpc700::ClockResult SnesSpc700::advance_continuation(const bool half) noexce
     if (!cycle_bus_) return {{0, opcode_, false}, true};
     if (continuation_ && half_mode_ != half) return {{0, opcode_, false}, true};
     if (!continuation_) {
+        idle_tail_known_ = false;
         instruction_registers_ = registers_;
         instruction_opcode_ = opcode_;
         instruction_start_ = cycles_;
         replay_count_ = 0;
         continuation_ = true;
         half_mode_ = half;
+        // Opcode fetch itself can be an early port read when PC is $00f4..7.
+        waiting_half_known_ = true;
+        next_access_early_ = (registers_.pc & 0xfffcU) == 0xf4;
     }
+    if (half && waiting_half_cache_enabled_ && waiting_half_known_ &&
+        !next_access_early_ && !half_pending_ && replay_count_ < replay_.size()) {
+        // A normal access does nothing on its first half except report T.
+        // Its address/value and all arithmetic are evaluated on the second
+        // half by the unchanged interpreter; host writes may occur between.
+        waiting_half_known_ = false;
+        auto& access = replay_[replay_count_++];
+        access = {}; access.halves = 1;
+        half_pending_ = clock_used_ = true;
+        instruction_cycle_ = replay_count_;
+        write_index_ = 0;
+        opcode_ = replay_count_ == 1 ? 0 : replay_[0].value;
+        if (half_observer_)
+            half_observer_(half_context_, half_cycles(), 'T', 0, 0);
+        return {{0, opcode_, true}, false};
+    }
+    waiting_half_known_ = false;
     registers_ = instruction_registers_;
     opcode_ = instruction_opcode_;
     replaying_ = true;
@@ -324,7 +351,17 @@ SnesSpc700::ClockResult SnesSpc700::advance_continuation(const bool half) noexce
     // results. After the one new access, remaining work is side-effect-free
     // speculation and is discarded. This avoids a second opcode interpreter,
     // dynamic allocations and an exception/stack unwind at every APU clock.
-    const auto result = execute();
+    StepResult result;
+    if (idle_tail_cache_enabled_ && idle_tail_known_) {
+        registers_ = idle_tail_registers_;
+        opcode_ = replay_[0].value;
+        write_index_ = idle_tail_write_index_;
+        // Skip only completed, latched prefix accesses. An incomplete idle
+        // half must still rendezvous with timers/DSP through clock_bus().
+        instruction_cycle_ = replay_count_ - (half_pending_ ? 1U : 0U);
+        while (instruction_cycle_ < idle_tail_cycles_) idle_cycle();
+        result = {idle_tail_cycles_, opcode_, true};
+    } else result = execute();
     replaying_ = false;
     if (invalid_replay_) {
         registers_ = instruction_registers_;
@@ -343,10 +380,20 @@ SnesSpc700::ClockResult SnesSpc700::advance_continuation(const bool half) noexce
 SnesSpc700::StepResult SnesSpc700::execute() noexcept {
     const auto start = registers_.pc;
     instruction_cycle_ = 0;
-    const auto opcode = fetch();
+    std::uint8_t opcode;
+    if (replay_cache_enabled_ && replaying_ && replay_count_ &&
+        replay_[0].kind == 'R' && replay_[0].address == start &&
+        (!half_mode_ || replay_[0].halves == 2)) {
+        // The committed opcode read is invariant throughout a continuation.
+        // Bypass generic access validation/dispatch, not the original fetch.
+        opcode = replay_[0].value;
+        ++registers_.pc; instruction_cycle_ = 1;
+    } else opcode = fetch();
     opcode_ = opcode;
     write_index_ = 0;
+    if (waiting_half_cache_enabled_ && (suspended_ || invalid_replay_)) return {0, opcode, true};
     if (cycle_bus_) begin_bus_instruction();
+    if (waiting_half_cache_enabled_ && (suspended_ || invalid_replay_)) return {0, opcode, true};
     unsigned cycles = 0;
     switch (opcode) {
     case 0x00: cycles = 2; break; // NOP
@@ -1076,6 +1123,13 @@ SnesSpc700::StepResult SnesSpc700::execute() noexcept {
         if (instruction_cycle_ > cycles) {
             if (!replaying_) cycles_ += instruction_cycle_;
             return {instruction_cycle_, opcode, false}; // Reject an invalid bus schedule.
+        }
+        if (idle_tail_cache_enabled_ && replaying_ && !suspended_ &&
+            !invalid_replay_ && !half_pending_ && instruction_cycle_ < cycles) {
+            idle_tail_registers_ = registers_;
+            idle_tail_cycles_ = cycles;
+            idle_tail_write_index_ = write_index_;
+            idle_tail_known_ = true;
         }
         while (instruction_cycle_ < cycles) idle_cycle();
     } else {

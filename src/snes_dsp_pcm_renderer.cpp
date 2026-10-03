@@ -10,13 +10,6 @@
 namespace gameboy {
 namespace {
 
-constexpr std::array<unsigned,32> phase_voices(const std::array<unsigned,8>& phases) {
-    std::array<unsigned,32> result{};
-    for (auto& index:result) index=8;
-    for (unsigned index=0;index<phases.size();++index) result[phases[index]]=index;
-    return result;
-}
-
 std::uint8_t voice_register(const gameboy::SnesApuBus& bus,
                             const unsigned voice,
                             const unsigned offset) noexcept {
@@ -329,23 +322,21 @@ void SnesDspPcmRenderer::latch_timed_voice_registers(
     const unsigned phase) noexcept {
     // S-DSP V1, V2, and V3a reads are staggered; voice 0 crosses the
     // 32-clock wrap. The external PCM corpus checks every voice's boundary.
-    constexpr auto source = phase_voices({17,20,31,2,5,8,11,14});
-    constexpr auto low = phase_voices({21,0,3,6,9,12,15,18});
-    constexpr auto high = phase_voices({22,1,4,7,10,13,16,19});
-    if (phase>=32) return;
-    if (const auto index=source[phase]; index<voices_.size()) {
-        auto& registers=timed_voice_registers_[index];
+    if (phase > 22 && phase != 31) return;
+    const auto kind = phase == 31 ? 2U : phase % 3;
+    constexpr std::array<unsigned, 23> phase_voice{
+        1,1,3, 2,2,4, 3,3,5, 4,4,6, 5,5,7, 6,6,0, 7,7,1, 0,0};
+    const auto voice = phase == 31 ? 2U : phase_voice[phase];
+    if (kind == 2) {
+        auto& registers=timed_voice_registers_[voice];
         // V1 uses the global DIR latch before V3c consumes the pointer.
         registers.directory=timed_dir_;
-        registers.source=voice_register(bus_,index,4);
-    }
-    if (const auto index=low[phase]; index<voices_.size()) {
-        auto& registers=timed_voice_registers_[index];
-        registers.pitch_low=voice_register(bus_,index,2);
-        registers.adsr0=voice_register(bus_,index,5);
-    }
-    if (const auto index=high[phase]; index<voices_.size())
-        timed_voice_registers_[index].pitch_high=voice_register(bus_,index,3);
+        registers.source=voice_register(bus_,voice,4);
+    } else if (kind == 0) {
+        auto& registers=timed_voice_registers_[voice];
+        registers.pitch_low=voice_register(bus_,voice,2);
+        registers.adsr0=voice_register(bus_,voice,5);
+    } else timed_voice_registers_[voice].pitch_high=voice_register(bus_,voice,3);
 }
 
 void SnesDspPcmRenderer::advance_timed_voice(const unsigned voice) noexcept {
@@ -373,28 +364,27 @@ void SnesDspPcmRenderer::publish_timed_endx(const unsigned voice) noexcept {
 
 void SnesDspPcmRenderer::publish_timed_readback(const unsigned phase) noexcept {
     if (!live_readback_ || phase>25) return;
-    // Only the current and preceding voice can have a V5..V9 stage here.
-    // Keep ascending order: earlier V8/V9 publication precedes the next
-    // voice's shared OUTX/ENVX latch update on coincident clocks.
+    // Earlier V8/V9 publication precedes the next voice's shared latch on
+    // coincident clocks. Each phase has just one of these three schedules.
     const auto current=phase/3;
-    const auto first=current ? current-1 : 0;
-    for (unsigned voice = first; voice < std::min(8U,current+1); ++voice) {
-        const auto base = voice * 3;
-        const auto bit = static_cast<std::uint8_t>(1U << voice);
-        if (phase == base) { // V5: stage the whole ENDX byte.
+    switch (phase%3) {
+    case 0:
+        if (current) bus_.dsp_publish_register(static_cast<std::uint8_t>((current-1)*16+9), live_outx_buffer_);
+        if (current<8) { // V5: stage the whole ENDX byte.
+            const auto bit=static_cast<std::uint8_t>(1U<<current);
             live_endx_buffer_ = static_cast<std::uint8_t>(
-                timed_endx_visible_ | (live_loop_event_[voice] ? bit : 0));
-            if (live_kon_event_[voice]) live_endx_buffer_ &= static_cast<std::uint8_t>(~bit);
+                timed_endx_visible_ | (live_loop_event_[current] ? bit : 0));
+            if (live_kon_event_[current]) live_endx_buffer_ &= static_cast<std::uint8_t>(~bit);
         }
-        if (phase == base + 1) { // V6: latch signed output's high byte.
+        break;
+    case 1:
+        if (current) bus_.dsp_publish_register(static_cast<std::uint8_t>((current-1)*16+8), live_envx_buffer_);
+        if (current<8) { // V6: latch signed output's high byte.
             live_outx_buffer_ = static_cast<std::uint8_t>(
-                static_cast<std::uint16_t>(voice_output16_[voice]) >> 8);
+                static_cast<std::uint16_t>(voice_output16_[current]) >> 8);
         }
-        if (phase == base + 2) live_envx_buffer_ = live_envx_[voice]; // V7
-        if (phase == base + 3) // V8
-            bus_.dsp_publish_register(static_cast<std::uint8_t>(voice * 16 + 9), live_outx_buffer_);
-        if (phase == base + 4) // V9
-            bus_.dsp_publish_register(static_cast<std::uint8_t>(voice * 16 + 8), live_envx_buffer_);
+        break;
+    case 2: live_envx_buffer_ = live_envx_[current]; break; // V7
     }
 }
 
@@ -470,16 +460,20 @@ void SnesDspPcmRenderer::advance_voice(const unsigned index,
                               : voice_register(bus_, index, 4);
     if (step.read_source) voice.stream.key_on(directory, source);
 
-    const auto non = timed ? timed_non_ : bus_.dsp_register(0x3D);
-    const auto noise_value = noise_;
-    const auto source15 = (non & bit) != 0
-        ? static_cast<std::int16_t>(
-            noise_value >= 0x4000U ? static_cast<int>(noise_value) - 0x8000
-                                    : static_cast<int>(noise_value))
-        : voice.ring.interpolated();
-    const auto output15 = step.force_silence ? std::int16_t{0} :
-        gameboy::SnesDspVoiceMath::apply_envelope(
-            source15, voice.envelope.value());
+    std::int16_t output15{};
+    if (!step.force_silence && voice.envelope.value() != 0) {
+        // Interpolation is a pure read. Its product is exactly zero at a
+        // zero envelope, but BRR decoding, pitch, noise, envelope and key
+        // sequencing below must still advance, even for an inaudible voice.
+        const auto non = timed ? timed_non_ : bus_.dsp_register(0x3D);
+        const auto noise_value = noise_;
+        const auto source15 = (non & bit) != 0
+            ? static_cast<std::int16_t>(
+                noise_value >= 0x4000U ? static_cast<int>(noise_value) - 0x8000
+                                        : static_cast<int>(noise_value))
+            : voice.ring.interpolated();
+        output15 = gameboy::SnesDspVoiceMath::apply_envelope(source15, voice.envelope.value());
+    }
     const auto output16 = gameboy::SnesDspVoiceMath::expand_to_16bit(output15);
     voice_output16_[index] = output16;
     live_envx_[index] = static_cast<std::uint8_t>(voice.envelope.value() >> 4);

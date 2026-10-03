@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <array>
 #include <cstdio>
+#include <cstring>
+#include <type_traits>
 #include <string_view>
 
 namespace gameboy {
@@ -32,6 +34,30 @@ std::uint8_t Ppu::tick(const unsigned cycles) noexcept {
 
     std::uint8_t requests = 0;
     for (unsigned cycle = 0; cycle < cycles; ++cycle) {
+        // Mode 2 has no per-dot work between its entry and the dot-80
+        // fetcher handoff. Retain dot 1 and all delayed SCY writes literally.
+        if (cycles - cycle > 1 && !scy_pending_valid_ && stat_mode_ == 2 &&
+            dot_ >= 1 && dot_ < 79 && !scx_hblank_request_early_) {
+            const auto span = std::min(cycles - cycle, 79U - dot_);
+            dot_ += span; cycle += span - 1;
+            continue;
+        }
+        // Blank dots have no pixel/fetch work. Stop before every possible
+        // transition; the ordinary dot path handles the boundary itself.
+        // Active display, pending SCY writes and early HBlank races retain
+        // their literal dot-by-dot execution.
+        if (cycles - cycle > 1 && !scy_pending_valid_ &&
+            (ly_ >= screen_height || (dot_ >= mode3_end_dot_ + 1 &&
+                (!scx_hblank_request_early_ || stat_line_ || !(stat_select_ & 8U) ||
+                 output_x_ != screen_width - ((scx_ & 7U) == 1U || (scx_ & 7U) == 5U ? 2U : 4U))))) {
+            auto end = lcd_startup_ ? 451U : 455U;
+            if (cgb_hardware_ && ly_ == screen_height - 1 && dot_ < 452) end = 451;
+            if (dot_ < end) {
+                const auto span = std::min(cycles - cycle, end - dot_);
+                dot_ += span; cycle += span - 1;
+                continue;
+            }
+        }
         if (scy_pending_valid_ && scy_pending_delay_ != 0 &&
             --scy_pending_delay_ == 0) {
             scy_ = scy_pending_;
@@ -313,7 +339,8 @@ void Ppu::tick_mode3() noexcept {
         --window_delay_;
         return;
     }
-    for (unsigned index = 0; index < line_sprite_count_; ++index) {
+    // Without pending objects every iteration below would be a no-op.
+    if (pending_sprite_mask_ != 0) for (unsigned index = 0; index < line_sprite_count_; ++index) {
         const auto sprite = line_sprites_[index];
         if ((pending_sprite_mask_ & (std::uint64_t{1} << sprite)) == 0 ||
             pending_sprite_deadlines_[sprite] == 0) {
@@ -826,9 +853,10 @@ void Ppu::emit_pixel() noexcept {
 
 Ppu::BackgroundPixel Ppu::pop_background_pixel() noexcept {
     const auto pixel = background_fifo_[0];
-    for (unsigned index = 1; index < background_fifo_size_; ++index) {
-        background_fifo_[index - 1] = background_fifo_[index];
-    }
+    static_assert(std::is_trivially_copyable_v<BackgroundPixel>);
+    if (background_fifo_size_ > 1)
+        std::memmove(background_fifo_.data(), background_fifo_.data() + 1,
+                     (background_fifo_size_ - 1) * sizeof(BackgroundPixel));
     --background_fifo_size_;
     return pixel;
 }
@@ -876,7 +904,8 @@ std::uint32_t Ppu::compose_pixel(
     // automatic cartridge compatibility colors still work. A real SGB PAL
     // command changes the latched values and immediately restores native SGB
     // rendering.
-    const auto use_sgb_palette = sgb_mode_ && !sgb_palette_is_default(sgb_palettes_);
+    const auto use_sgb_palette = sgb_mode_ && !(sgb_palette_cache_enabled_
+        ? sgb_palette_default_ : sgb_palette_is_default(sgb_palettes_));
     std::uint32_t result{};
     if (cgb_mode_) {
         result = cgb_palette_color(cgb_bg_palette_, background.palette,
@@ -957,6 +986,8 @@ std::uint8_t Ppu::sgb_attribute_for_pixel(const unsigned x) const noexcept {
 
 std::uint32_t Ppu::sgb_palette_color(const std::uint8_t palette,
                                      const std::uint8_t color) const noexcept {
+    if (sgb_palette_cache_enabled_)
+        return sgb_palette_rgb_[static_cast<std::size_t>(palette & 3U) * 4 + (color & 3U)];
     const auto rgb555 = sgb_palettes_[static_cast<std::size_t>(palette & 3U) * 4 +
                                       (color & 3U)];
     const auto expand = [](const unsigned component) {
@@ -964,6 +995,16 @@ std::uint32_t Ppu::sgb_palette_color(const std::uint8_t palette,
     };
     return UINT32_C(0xFF000000) | (expand(rgb555 & 0x1F) << 16) |
            (expand((rgb555 >> 5) & 0x1F) << 8) | expand((rgb555 >> 10) & 0x1F);
+}
+
+void Ppu::refresh_sgb_palette_cache() noexcept {
+    sgb_palette_default_ = sgb_palette_is_default(sgb_palettes_);
+    for (std::size_t i = 0; i < sgb_palettes_.size(); ++i) {
+        const auto rgb = sgb_palettes_[i];
+        const auto expand = [](unsigned c) { return (c << 3) | (c >> 2); };
+        sgb_palette_rgb_[i] = UINT32_C(0xFF000000) | (expand(rgb & 31U) << 16) |
+            (expand((rgb >> 5) & 31U) << 8) | expand((rgb >> 10) & 31U);
+    }
 }
 
 

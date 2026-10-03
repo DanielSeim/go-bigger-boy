@@ -3,10 +3,12 @@
 #include "gameboy/ppu.hpp"
 
 #include <filesystem>
+#include <atomic>
 #include <fstream>
 #include <iostream>
 #include <iterator>
 #include <string>
+#include <thread>
 
 namespace {
 
@@ -115,6 +117,33 @@ void test_logging_contract() {
                   std::string::npos,
           "PPU window tracing follows runtime logger level changes");
     logger.set_level(gbb::LogLevel::warning);
+    check(logger.level() == gbb::LogLevel::warning &&
+              logger.enabled(gbb::LogLevel::error) &&
+              logger.enabled(gbb::LogLevel::warning) &&
+              !logger.enabled(gbb::LogLevel::info) &&
+              !logger.enabled(gbb::LogLevel::trace),
+          "lock-free level reads preserve filtering after runtime changes");
+    logger.write(gbb::LogLevel::trace, gbb::LogCategory::ppu,
+                 "disabled trace must not enter sinks");
+    check(logger.recent_records() == ppu_records,
+          "disabled trace leaves bounded sinks unchanged");
+    std::atomic<bool> finished{false};
+    std::thread writer([&]() {
+        for (unsigned i = 0; i < 10000; ++i) {
+            logger.set_level(gbb::LogLevel::trace);
+            logger.set_level(gbb::LogLevel::warning);
+        }
+        finished.store(true, std::memory_order_release);
+    });
+    while (!finished.load(std::memory_order_acquire)) {
+        const auto level = logger.level();
+        check(level == gbb::LogLevel::trace || level == gbb::LogLevel::warning,
+              "concurrent configuration exposes complete log levels");
+        (void)logger.enabled(gbb::LogLevel::debug);
+    }
+    writer.join();
+    check(logger.level() == gbb::LogLevel::warning,
+          "concurrent runtime configuration retains its final level");
     logger.set_memory_capacity(0);
     cleanup_error.clear();
     std::filesystem::remove_all(directory, cleanup_error);

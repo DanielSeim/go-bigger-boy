@@ -21,6 +21,13 @@ unsigned SnesHostTiming::line_length() const noexcept {
 }
 
 void SnesHostTiming::advance(std::uint64_t master_clocks) noexcept {
+    // Most bus accesses stay within the current scanline. Boundary clocks
+    // retain the original loop, including short lines, NMI and field wrap.
+    if (master_clocks < line_length() - horizontal_clock_) {
+        horizontal_clock_ += static_cast<unsigned>(master_clocks);
+        clocks_ += master_clocks;
+        return;
+    }
     while (master_clocks != 0) {
         const auto span = static_cast<unsigned>(
             std::min<std::uint64_t>(master_clocks, line_length() - horizontal_clock_));
@@ -127,6 +134,15 @@ void SnesHostCpu::synchronize_apu() noexcept {
     const std::uint64_t spc_hz = apu_clock_hz_;
     if (fractional_apu_sync_) {
         const auto target_half = timing_.clocks() * (spc_hz * 2) / master_hz;
+        if (spc_->half_cycles() >= target_half) return;
+        if (apu_batch_driver_ && apu_batch_enabled_) {
+            const auto result = apu_batch_driver_(apu_batch_context_, target_half);
+            spc_cycles_ = result.completed_cycles;
+            if (!result.supported || spc_->half_cycles() != target_half) {
+                error_ = Error::unsupported_spc_opcode; error_address_ = result.pc;
+            }
+            return;
+        }
         while (spc_->half_cycles() < target_half) {
             const auto pc = spc_->registers().pc;
             const auto before = spc_->half_cycles();
@@ -195,12 +211,21 @@ void SnesHostCpu::update_irq() noexcept {
         const auto h = mode == 0x20U ? 0U : irq_h_target_;
         return line_start + (h == 0 ? 10U : 14U + h * 4U);
     };
-    const auto current = event_for(timing_.frame_start_clocks(), timing_.field());
+    if (!irq_cache_valid_ || irq_cache_frame_ != timing_.frame_start_clocks()) {
+        irq_cache_frame_ = timing_.frame_start_clocks();
+        irq_cache_current_ = event_for(irq_cache_frame_, timing_.field());
+        irq_cache_previous_ = 0;
+        if (timing_.frames() != 0) {
+            const auto previous_start = irq_cache_frame_ -
+                (timing_.field() ? 262U * 1364U : 262U * 1364U - 4U);
+            irq_cache_previous_ = event_for(previous_start, !timing_.field());
+        }
+        irq_cache_valid_ = true;
+    }
+    const auto current = irq_cache_current_;
     if (current > last_irq_clock_ && current <= now) irq_latched_ = true;
     if (timing_.frames() != 0) {
-        const auto previous_start = timing_.frame_start_clocks() -
-            (timing_.field() ? 262U * 1364U : 262U * 1364U - 4U);
-        const auto previous = event_for(previous_start, !timing_.field());
+        const auto previous = irq_cache_previous_;
         if (previous > last_irq_clock_ && previous <= now) irq_latched_ = true;
     }
     last_irq_clock_ = now;
@@ -345,11 +370,12 @@ std::uint8_t SnesHostCpu::read8(const std::uint8_t bank,
 
 std::uint8_t SnesHostCpu::read8_raw(const std::uint8_t bank,
                                            const std::uint16_t address) noexcept {
-    const bool early_apu = fractional_apu_sync_ &&
-        (bank <= 0x3f || (bank >= 0x80 && bank <= 0xbf)) &&
+    const bool system_bank = (bank & 0x7fU) <= 0x3fU;
+    const bool early_apu = fractional_apu_sync_ && system_bank &&
         address >= 0x2140 && address <= 0x2143;
-    service_ppu_dma(bus_clocks(bank, address));
-    timing_.cpu_cycle(bus_clocks(bank, address) - (early_apu ? 4U : 0U));
+    const auto clocks = bus_clocks(bank, address);
+    if (pending_ppu_dma_) service_ppu_dma(clocks);
+    timing_.cpu_cycle(clocks - (early_apu ? 4U : 0U));
     update_irq();
     ++bus_accesses_;
     ++cpu_cycles_;
@@ -358,7 +384,6 @@ std::uint8_t SnesHostCpu::read8_raw(const std::uint8_t bank,
     if (bank == 0x7E || bank == 0x7F) {
         return wram_[(static_cast<unsigned>(bank - 0x7E) << 16) | address];
     }
-    const bool system_bank = bank <= 0x3F || (bank >= 0x80 && bank <= 0xBF);
     if (system_bank && address < 0x2000) return wram_[address];
     if (system_bank && address >= 0x2140 && address <= 0x2143) {
         const auto value = apu_.host_read_port(address - 0x2140);
@@ -450,8 +475,9 @@ std::uint8_t SnesHostCpu::read8_raw(const std::uint8_t bank,
 void SnesHostCpu::write8(const std::uint8_t bank,
                                 const std::uint16_t address,
                                 const std::uint8_t value) noexcept {
-    service_ppu_dma(bus_clocks(bank, address));
-    timing_.cpu_cycle(bus_clocks(bank, address));
+    const auto clocks = bus_clocks(bank, address);
+    if (pending_ppu_dma_) service_ppu_dma(clocks);
+    timing_.cpu_cycle(clocks);
     update_irq();
     ++bus_accesses_;
     ++cpu_cycles_;
@@ -627,6 +653,7 @@ void SnesHostCpu::write8(const std::uint8_t bank,
     }
     if (system_bank && address == 0x4200) {
         interrupt_enable_ = value;
+        irq_cache_valid_ = false;
         last_irq_clock_ = timing_.clocks();
         if ((value & 0x30U) == 0) irq_latched_ = false;
         nmi_was_enabled_ |= (value & 0x80U) != 0;
@@ -634,6 +661,7 @@ void SnesHostCpu::write8(const std::uint8_t bank,
         return;
     }
     if (system_bank && address >= 0x4207 && address <= 0x420A) {
+        irq_cache_valid_ = false;
         const auto high = (value & 1U) << 8;
         switch (address) {
         case 0x4207: irq_h_target_ = static_cast<std::uint16_t>(

@@ -12,6 +12,15 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
+For playback measurements, use `-DCMAKE_BUILD_TYPE=Release`. Supported native
+release builds enable cross-module link-time optimization by default via
+`GAMEBOY_ENABLE_RELEASE_IPO`; unsupported compiler/linker combinations fall
+back with a configure-time message. Debug, web and sanitizer profiles are not
+changed. Use `-DGAMEBOY_ENABLE_RELEASE_IPO=OFF` to opt out when debugging build
+or linker problems. Android's packaged `RelWithDebInfo` profile also enables
+IPO, using Clang full LTO rather than ThinLTO. This does not enable fast-math,
+require a newer CPU instruction set or reduce emulated work/audio quality.
+
 ## Performance and load testing
 
 Normal native test builds include a deterministic emulation load test and a
@@ -23,7 +32,7 @@ audio samples, and FPS measurement windows:
 ```sh
 cmake -S . -B build-performance -DCMAKE_BUILD_TYPE=Release
 cmake --build build-performance --target \
-  gameboy_frame_rate_metrics_tests gameboy_emulation_performance_tests
+  gameboy_frame_rate_metrics_tests gameboy_emulation_performance_tests \
   gameboy_sgb_performance_tests
 ctest --test-dir build-performance -L performance --output-on-failure
 ```
@@ -73,6 +82,13 @@ separately for DMG, SGB fallback, and transferred-border cases. Its default
 combined-frame floor is 60 FPS; `GBB_SGB_PERF_MIN_FPS` overrides that floor
 for diagnostic runs. For on-device SGB/voxel timing and the Android gate, see
 [SGB validation](sgb-validation.md).
+
+The experimental firmware-driven SGB1/SGB2 host has a separate serial
+playback benchmark and exact-audio regression gate. It measures native and
+combined audio in one-second windows, requiring 1.5x p05 and 1.2x worst-window
+host headroom. See [bounded SGB host](sgb-host.md#repeatable-playback-headroom-gate)
+for caller-owned firmware requirements and commands. This does not replace
+frontend FPS or on-device validation.
 
 ## Fuzzing
 

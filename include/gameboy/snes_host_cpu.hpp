@@ -165,6 +165,16 @@ public:
     void set_apu_half_driver(ApuHalfDriver driver, void* context) noexcept {
         apu_half_driver_ = driver; apu_half_context_ = context;
     }
+    // A wired audio engine can own the loop between host rendezvous. Every
+    // physical half still runs; no host access occurs within this interval.
+    // On failure, report the PC before the failing half, as the scalar driver
+    // does. The returned CPU clock must equal the requested absolute target.
+    struct ApuBatchResult { bool supported; std::uint16_t pc; std::uint64_t completed_cycles; };
+    using ApuBatchDriver = ApuBatchResult (*)(void*, std::uint64_t) noexcept;
+    void set_apu_batch_driver(ApuBatchDriver driver, void* context) noexcept {
+        apu_batch_driver_ = driver; apu_batch_context_ = context;
+    }
+    void debug_set_apu_batch_enabled(bool enabled) noexcept { apu_batch_enabled_ = enabled; }
     [[nodiscard]] std::uint64_t spc_cycles() const noexcept { return spc_cycles_; }
     // Capture-only oscillator profile, set before execution. The nominal
     // 1.024 MHz runtime clock is not changed by selecting a reference profile.
@@ -271,6 +281,11 @@ private:
     std::uint16_t irq_h_target_{};
     std::uint16_t irq_v_target_{};
     std::uint64_t last_irq_clock_{};
+    std::uint64_t irq_cache_frame_{}, irq_cache_current_{}, irq_cache_previous_{};
+    bool irq_cache_valid_{}; // Derived frame/target lookup, not serialized.
+    ApuBatchDriver apu_batch_driver_{};
+    void* apu_batch_context_{};
+    bool apu_batch_enabled_{true}; // Diagnostic oracle toggle, not serialized.
     bool irq_latched_{};
     bool irq_defer_after_cli_{};
     std::uint64_t irq_entries_{};

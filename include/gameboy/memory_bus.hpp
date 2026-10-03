@@ -65,6 +65,13 @@ public:
     // run once per bus cycle and must not perturb this half-cycle alignment.
     [[nodiscard]] bool debug_apu_cycle_phase() const noexcept;
     void debug_enable_io_trace(bool enabled) noexcept;
+    void debug_set_peripheral_batch_enabled(bool enabled) noexcept { peripheral_batch_enabled_ = enabled; }
+    void debug_set_apu_channel_batch_enabled(bool enabled) noexcept {
+        apu_.debug_set_channel_batch_enabled(enabled);
+    }
+    void debug_set_sgb_palette_cache_enabled(bool enabled) noexcept {
+        ppu_.debug_set_sgb_palette_cache_enabled(enabled);
+    }
     [[nodiscard]] std::vector<IoTraceEvent> debug_take_io_trace() noexcept;
     void set_dmg_palette(const DmgPalette& palette) noexcept;
     [[nodiscard]] std::uint8_t debug_read_vram(std::uint8_t bank,
@@ -182,6 +189,7 @@ private:
     std::uint8_t last_ppu_requests_{};
     std::uint64_t debug_bus_cycles_{};
     bool debug_io_trace_enabled_{};
+    bool peripheral_batch_enabled_{true}; // Derived execution choice, not serialized.
     bool timer_paused_{};
     std::vector<IoTraceEvent> debug_io_trace_{};
 };

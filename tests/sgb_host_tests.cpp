@@ -113,14 +113,20 @@ void maximum_dma(bool combined=false, bool fastest=false) {
     const auto trigger_pc=0x8104+code.size()+5;
     code.insert(code.end(),{0xa9,0xff,0x8d,0x0b,0x42,0x18,0x80,0xfd});
     std::copy(code.begin(),code.end(),cfg.program_rom.begin()+0x104);
-    Host h(std::move(cfg));
-    while(h.cpu().registers().pc<trigger_pc) check(h.step(),"DMA setup supported");
+    Host h(cfg), scalar(cfg);
+    scalar.debug_set_apu_batch_enabled(false);
+    scalar.debug_set_spc_idle_tail_cache_enabled(false);
+    while(h.cpu().registers().pc<trigger_pc) {
+        check(h.step() && scalar.step(),"DMA setup supported");
+    }
     const auto pending=h.save_state();
     const auto before=h.samples_produced();
     const auto advanced=h.step();
     if(!advanced) std::cerr<<"DMA status="<<static_cast<unsigned>(h.status())<<" address="<<h.fault().address
                           <<" opcode="<<unsigned(h.fault().opcode)<<" pc="<<h.fault().pc<<'\n';
     check(advanced,"all eight maximum PPU DMA channels complete in one reservation");
+    check(scalar.step() && scalar.save_state()==h.save_state(),
+          "maximum DMA batched/scalar complete state and unread PCM identical");
     const auto samples=h.samples_produced()-before;
     check(combined ? samples>9000 && samples<Host::combined_instruction_reserve :
                      samples>6000 && samples<Host::instruction_reserve,
@@ -327,8 +333,36 @@ void faults() {
     catch(const std::invalid_argument&) { rejected=true; }
     check(rejected,"non-SGB model rejected");
 }
+void batch_oracle() {
+    for(auto model:{gameboy::HardwareModel::sgb,gameboy::HardwareModel::sgb2})
+    for(bool combined:{false,true}) for(bool fault:{false,true}) {
+        auto cfg=config(model); cfg.combined_audio=combined;
+        cfg.output_hz=model==gameboy::HardwareModel::sgb ? 48000 : 44100;
+        cfg.apu_clock_hz=1099968;
+        if(fault) {
+            // Delay the unsupported STOP until several DSP outputs have
+            // occurred, exercising failure inside a partially drained batch.
+            const std::uint8_t spc[]{0xcd,0xff,0x1d,0xd0,0xfd,0xff};
+            std::copy(std::begin(spc),std::end(spc),cfg.spc_ipl.begin());
+        }
+        Host batch(cfg), scalar(cfg); scalar.debug_set_apu_batch_enabled(false);
+        scalar.debug_set_spc_idle_tail_cache_enabled(false);
+        for(unsigned i=0;i<30000;++i) {
+            const auto a=batch.step(), b=scalar.step();
+            check(a==b,"batched/scalar terminal boundary identical");
+            if(i%997==0 || !a) {
+                check(batch.save_state()==scalar.save_state(),
+                      "batched/scalar full state and sample timestamps identical");
+                check(equal(drain(batch),drain(scalar)),"batched/scalar PCM identical");
+            }
+            if(!a) { check(fault,"only intentional SPC fault stops oracle"); break; }
+        }
+        check(!fault || batch.status()==Host::Status::apu_fault,"late SPC fault exercised");
+    }
+}
 }
 int main() {
+    batch_oracle();
     mixer(); raw_apu_sink(); snapshots(); backpressure(); maximum_dma(); faults();
     snapshots(true); snapshots(true,44100); backpressure(true); maximum_dma(true); maximum_dma(true,true);
     combined_chunks_and_reset(); stop_timeline(); return failures?1:0;

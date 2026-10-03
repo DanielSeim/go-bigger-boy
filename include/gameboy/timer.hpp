@@ -28,8 +28,16 @@ public:
     [[nodiscard]] bool tick(unsigned cycles) noexcept;
     [[nodiscard]] unsigned take_apu_ticks() noexcept;
     [[nodiscard]] bool apu_signal() const noexcept;
+    [[nodiscard]] unsigned cycles_until_apu_tick() const noexcept {
+        const auto mask = double_speed_ ? 0x3fffU : 0x1fffU;
+        return apu_ticks_ ? 1U : mask + 1 - (divider_counter_ & mask);
+    }
+    // CPU bus batching retains the last T-cycle's reload-write lock, unlike
+    // the historical standalone tick() which ORs reloads across its span.
+    [[nodiscard]] bool tick_bus(unsigned cycles) noexcept;
 
 private:
+    [[nodiscard]] bool tick_impl(unsigned cycles, bool last_reload_only) noexcept;
     friend class SaveStateCodec;
     friend class SaveStateTimerCodec;
     friend class SaveStateBusCodec;

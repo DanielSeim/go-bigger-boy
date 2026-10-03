@@ -20,11 +20,30 @@ constexpr std::uint64_t sgb_icd_target_gb_cycles(
     const std::uint64_t master_elapsed, const unsigned divider,
     const gameboy::HardwareModel model) noexcept {
     constexpr std::uint64_t master_hz = 21'477'273ULL;
-    const auto oscillator_hz = model == gameboy::HardwareModel::sgb2
-        ? 20'971'520ULL : master_hz;
-    const auto denominator = master_hz * divider;
-    return (master_elapsed / denominator) * oscillator_hz +
-           ((master_elapsed % denominator) * oscillator_hz) / denominator;
+    if (model != gameboy::HardwareModel::sgb2) {
+        switch (divider) {
+        case 4: return master_elapsed / 4;
+        case 5: return master_elapsed / 5;
+        case 7: return master_elapsed / 7;
+        case 9: return master_elapsed / 9;
+        default: return master_elapsed / divider;
+        }
+    }
+    // Constant denominators let each supported oscillator profile use exact
+    // multiply/shift division, rather than two hardware divisions on every
+    // host rendezvous. Keep quotient/remainder splitting to avoid overflow.
+    constexpr auto oscillator_hz = 20'971'520ULL;
+    const auto convert = [master_elapsed](std::uint64_t denominator) constexpr {
+        return master_elapsed / denominator * oscillator_hz +
+            master_elapsed % denominator * oscillator_hz / denominator;
+    };
+    switch (divider) {
+    case 4: return convert(master_hz * 4);
+    case 5: return convert(master_hz * 5);
+    case 7: return convert(master_hz * 7);
+    case 9: return convert(master_hz * 9);
+    default: return convert(master_hz * divider);
+    }
 }
 
 // Live GB input for the bounded firmware host. The GB clock is anchored
@@ -122,6 +141,8 @@ public:
     }
 
 private:
+    std::uint64_t next_gb_clock_{};
+    bool next_gb_clock_known_{}; // Derived rendezvous cache, not serialized.
     friend class SgbHostStateCodec;
     AudioSink audio_sink_{};
     AudioResetSink audio_reset_sink_{};

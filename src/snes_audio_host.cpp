@@ -51,7 +51,7 @@ std::uint8_t SgbProgramRom::read(const std::uint8_t bank,
     if (address < 0x8000 || bank == 0x7E || bank == 0x7F) return 0xFF;
     const auto offset =
         ((static_cast<std::size_t>(bank & 0x7FU) * 0x8000) |
-         (address & 0x7FFFU)) % bytes_.size();
+         (address & 0x7FFFU)) & (bytes_.size() - 1);
     return bytes_[offset];
 }
 
@@ -151,6 +151,21 @@ void SnesApuBus::spc_write(const std::uint16_t address,
 }
 
 void SnesApuBus::tick(const unsigned spc_cycles) noexcept {
+    if (spc_cycles == 1) {
+        // The cycle-level host uses this path millions of times a second.
+        // Stage 1 still runs when disabled; the increment-before-compare
+        // rule also preserves target changes and target zero (256 ticks).
+        for (unsigned index = 0; index < 3; ++index) {
+            const auto mask = index == 2 ? 15U : 127U;
+            timer_phase_[index] = (timer_phase_[index] + 1) & mask;
+            if (timer_phase_[index] || !(timer_enabled_ & (1U << index))) continue;
+            if (++timer_stage2_[index] == timer_target_[index]) {
+                timer_stage2_[index] = 0;
+                timer_output_[index] = static_cast<std::uint8_t>((timer_output_[index] + 1) & 15U);
+            }
+        }
+        return;
+    }
     for (unsigned index = 0; index < 3; ++index) {
         const unsigned period = index == 2 ? 16 : 128;
         // Keep stage 1 running even while disabled. Stage 2 and 3 start only

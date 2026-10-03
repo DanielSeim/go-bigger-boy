@@ -18,6 +18,7 @@ int main() {
         gameboy::Apu cached, reference;
         cached.initialize_post_boot(model); reference.initialize_post_boot(model);
         reference.debug_set_mixer_cache_enabled(false);
+        reference.debug_set_channel_batch_enabled(false);
         std::vector<std::int16_t> a,b;
         cached.set_sample_sink(record,&a); reference.set_sample_sink(record,&b);
         std::size_t samples{}, audible{};

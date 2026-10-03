@@ -372,7 +372,14 @@ void MemoryBus::tick(const unsigned cycles) noexcept {
     // speed, the APU advances once per two CPU cycles, matching the existing
     // peripheral-cycle conversion.
     auto timer_interrupt = false;
-    for (unsigned cycle = 0; cycle < cycles; ++cycle) {
+    if (peripheral_batch_enabled_ && !double_speed_ && !timer_paused_ && cycles &&
+        cycles < timer_.cycles_until_apu_tick() && !apu_.sample_boundary_within(cycles)) {
+        // No frame-sequencer edge or user sample callback inside this span:
+        // the independent per-cycle arithmetic can run in its own tight loop.
+        // Preserve TIMA's final-cycle reload lock, not an OR of earlier locks.
+        apu_.tick(cycles);
+        timer_interrupt = timer_.tick_bus(cycles);
+    } else for (unsigned cycle = 0; cycle < cycles; ++cycle) {
         if (!double_speed_) {
             // Sound runs at its normal rate even while the CPU is in normal
             // speed.  Do not advance the 1 MHz phase here; doing so makes the
@@ -401,7 +408,12 @@ void MemoryBus::tick(const unsigned cycles) noexcept {
     // HBlanks into one notification and make an HDMA transfer miss blocks
     // whenever a caller advances across more than one scanline.
     std::uint8_t ppu_requests = 0;
-    for (unsigned cycle = 0; cycle < peripheral_cycles; ++cycle) {
+    if (peripheral_batch_enabled_ && !hdma_active_) {
+        // With no HDMA consumer, PPU::tick already ORs precisely the same
+        // per-dot notifications. Preserve all dots, but avoid a cross-module
+        // function call for every one of them.
+        ppu_requests = ppu_.tick(peripheral_cycles);
+    } else for (unsigned cycle = 0; cycle < peripheral_cycles; ++cycle) {
         const auto requests = ppu_.tick(1);
         ppu_requests = static_cast<std::uint8_t>(ppu_requests | requests);
         if ((requests & 0x04) != 0 && hdma_active_) {

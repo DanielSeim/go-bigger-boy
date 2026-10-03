@@ -5,6 +5,7 @@
 #include <fstream>
 #include <string>
 #include <stdexcept>
+#include <limits>
 
 namespace gameboy {
 
@@ -37,8 +38,9 @@ void SgbIcdGbSource::set_audio_sink(AudioSink sink, AudioResetSink reset, void* 
             (self.audio_samples_%48000*hz+47999)/48000;
         const auto oscillator = self.model_ == HardwareModel::sgb2 ? 20971520ULL : 21477273ULL;
         const auto scale = 21477273ULL*self.divider_;
-        const auto clock = self.release_clock_ + cycles/oscillator*scale +
-            (cycles%oscillator*scale+oscillator-1)/oscillator;
+        const auto clock = self.release_clock_ + (self.model_ != HardwareModel::sgb2
+            ? cycles*self.divider_
+            : cycles/oscillator*scale + (cycles%oscillator*scale+oscillator-1)/oscillator);
         self.audio_sink_(self.audio_context_, clock, left, right);
     } : static_cast<Apu::SampleSink>(nullptr), this);
 }
@@ -182,6 +184,7 @@ void SgbIcdGbSource::complete_tile_row(const unsigned tile_row) noexcept {
 void SgbIcdGbSource::synchronize(const std::uint64_t master_clocks) noexcept {
     master_snapshot_ = master_clocks;
     if (!released_ || master_clocks < release_clock_) return;
+    if (next_gb_clock_known_ && master_clocks < next_gb_clock_) return;
     // SGB1 divides the SNES CPU oscillator. SGB2 has a dedicated
     // 20,971,520 Hz oscillator; at the normal /5 setting this yields the
     // GB's 4,194,304 Hz. Use a rational conversion to avoid accumulated
@@ -219,6 +222,20 @@ void SgbIcdGbSource::synchronize(const std::uint64_t master_clocks) noexcept {
         }
         trace.clear();
     }
+    const auto next = gb_cycles_ + 1;
+    if (model_ != HardwareModel::sgb2) {
+        next_gb_clock_known_ = next && next <=
+            (std::numeric_limits<std::uint64_t>::max() - release_clock_) / divider_;
+        if (next_gb_clock_known_) next_gb_clock_ = release_clock_ + next * divider_;
+        return;
+    }
+    constexpr auto oscillator = 20971520ULL;
+    const auto scale = 21477273ULL * divider_;
+    const auto tail = (next % oscillator * scale + oscillator - 1) / oscillator;
+    const auto quotient = next / oscillator;
+    next_gb_clock_known_ = next && tail <= std::numeric_limits<std::uint64_t>::max() - release_clock_ && quotient <=
+        (std::numeric_limits<std::uint64_t>::max() - release_clock_ - tail) / scale;
+    if (next_gb_clock_known_) next_gb_clock_ = release_clock_ + quotient * scale + tail;
 }
 
 bool SgbIcdGbSource::read(const std::uint16_t address,
@@ -327,6 +344,7 @@ bool SgbIcdGbSource::write(const std::uint16_t address,
             release_clock_ = master_clocks;
         }
         divider_ = next_divider;
+        next_gb_clock_known_ = false;
         return true;
     }
     synchronize(master_clocks);

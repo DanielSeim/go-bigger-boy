@@ -8,11 +8,30 @@
 #include <algorithm>
 #include <charconv>
 #include <optional>
+#include <cstring>
 #if defined(__unix__) || defined(__APPLE__)
 #include <sys/resource.h>
 #endif
 
 namespace {
+// The nested GB state includes CPU/peripherals, raw capture and displayed
+// framebuffers. Hash only that component: SPC replay bookkeeping is allowed
+// to differ, but GB state/pixels must remain identical across optimizations.
+std::uint64_t gb_state_hash(const gameboy::SgbHost& host) {
+    const auto state = host.save_state();
+    const auto end = state.size() - 8;
+    for (std::size_t i = 8; i + 28 <= end; ++i) {
+        if (std::memcmp(state.data()+i,"GBBSTATE",8)) continue;
+        std::uint64_t length{}; unsigned payload{};
+        for (unsigned j=0;j<8;++j) length |= std::uint64_t(state[i-8+j]) << (8*j);
+        for (unsigned j=0;j<4;++j) payload |= unsigned(state[i+20+j]) << (8*j);
+        if (length != end-i || length != std::uint64_t(payload)+28) continue;
+        std::uint64_t hash=14695981039346656037ULL;
+        for (std::size_t j=i;j<end;++j) { hash ^= state[j]; hash *= 1099511628211ULL; }
+        return hash;
+    }
+    throw std::runtime_error("nested GB state was not found");
+}
 std::optional<double> process_cpu_seconds() noexcept {
 #if defined(__unix__) || defined(__APPLE__)
     rusage usage{};
@@ -76,7 +95,7 @@ inline void write_pcm_wav(const std::filesystem::path& path,
 int main(int argc,char** argv) {
     if(argc<9) return 2;
     try {
-        bool restore{}, combined{};
+        bool restore{}, combined{}, scalar_apu{}, scalar_spc{};
         unsigned rate=48000, chunk=1;
         std::uint64_t steps=60000000;
         const auto number=[](std::string_view text) {
@@ -90,6 +109,8 @@ int main(int argc,char** argv) {
             const std::string_view option(argv[n]);
             if(option=="--restore") restore=true;
             else if(option=="--combined") combined=true;
+            else if(option=="--scalar-apu") scalar_apu=true;
+            else if(option=="--scalar-spc") scalar_spc=true;
             else if((option=="--output-hz" || option=="--chunk" || option=="--steps") && n+1<argc) {
                 const auto value=number(argv[++n]);
                 if(option=="--steps") { if(!value || value>60000000) throw std::runtime_error("invalid step budget"); steps=value; }
@@ -114,11 +135,18 @@ int main(int argc,char** argv) {
         if(!gbb_sgb_input_load(argv[6],&script,error,sizeof(error))) throw std::runtime_error(error);
         for(std::size_t n=0;n<script.count;++n) config.input_events.push_back({script.events[n].frame,script.events[n].mask});
         gameboy::SgbHost host(std::move(config));
+        host.debug_set_apu_batch_enabled(!scalar_apu);
+        host.debug_set_spc_idle_tail_cache_enabled(!scalar_spc);
         std::vector<gameboy::SgbHost::StereoSample> pcm;
         pcm.reserve(combined?6000000:4000000);
         std::uint64_t restorations{},nonzero{};
         const auto cpu_start=process_cpu_seconds();
         const auto start=std::chrono::steady_clock::now();
+        struct Window { std::uint64_t clocks; double seconds; };
+        std::vector<Window> windows; windows.reserve(512);
+        bool windows_complete=true;
+        std::uint64_t window_clock{}, next_window=21477273;
+        auto window_start=start;
         const auto consume=[&](bool flush) {
             gameboy::SgbHost::StereoSample sample;
             while(host.pending_samples() >= (flush?1:chunk)) {
@@ -139,10 +167,19 @@ int main(int argc,char** argv) {
                 " status "+std::to_string(static_cast<unsigned>(host.status()))+
                 " address "+std::to_string(host.fault().address));
             consume(false);
+            const auto clock=host.cpu().timing().clocks();
+            if(clock>=next_window) {
+                const auto now=std::chrono::steady_clock::now();
+                if(windows.size()<512) windows.push_back({clock-window_clock,
+                    std::chrono::duration<double>(now-window_start).count()});
+                else windows_complete=false;
+                window_start=now; window_clock=clock; next_window=clock+21477273;
+            }
         }
         consume(true);
         const auto seconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-start).count();
         const auto cpu_end=process_cpu_seconds();
+        const auto gb_hash=gb_state_hash(host); // Outside timed playback.
         write_pcm_wav(argv[7],pcm,host.sample_rate());
         std::ofstream report(argv[8]);
         report<<"{\"format\":\"gbb-sgb-host-performance-v1\",\"model\":\""<<model<<"\",\"steps\":"<<host.cpu().steps()
@@ -159,7 +196,15 @@ int main(int argc,char** argv) {
             const auto cpu_seconds=*cpu_end-*cpu_start;
             report<<cpu_seconds<<",\"cpu_realtime_ratio\":"<<(host.cpu().timing().clocks()/21477273.0/cpu_seconds);
         } else report<<"null,\"cpu_realtime_ratio\":null";
-        report<<"}\n";
+        report<<",\"apu_batched\":"<<(scalar_apu?"false":"true")
+              <<",\"spc_idle_tail_cached\":"<<(scalar_spc?"false":"true")
+              <<",\"gb_state_hash\":"<<gb_hash
+              <<",\"windows_complete\":"<<(windows_complete?"true":"false")<<",\"windows\":[";
+        for(std::size_t n=0;n<windows.size();++n) {
+            if(n) report<<',';
+            report<<"{\"master_clocks\":"<<windows[n].clocks<<",\"seconds\":"<<windows[n].seconds<<'}';
+        }
+        report<<"]}\n";
         if(!report) throw std::runtime_error("failed to write host report");
         std::cout<<model<<": whole host "<<(restore?"restored":"uninterrupted")<<" completed, "<<seconds<<" seconds\n";
     } catch(const std::exception& error) { std::cerr<<error.what()<<'\n'; return 1; }

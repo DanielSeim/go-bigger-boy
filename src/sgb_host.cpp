@@ -45,6 +45,57 @@ struct SgbHost::Impl {
         cpu.set_fractional_apu_sync_enabled(true);
         if (!cpu.set_apu_clock_hz(config.apu_clock_hz))
             throw std::invalid_argument("invalid SGB host APU clock");
+        cpu.set_apu_batch_driver([](void* context, std::uint64_t target) noexcept {
+            auto& self = *static_cast<Impl*>(context);
+            // Keep buffering bounded even for a long DMA instruction. Drain
+            // at most 16 DSP samples at once. Each sample's clock follows
+            // phase 27, not the end of this batch or the host instruction.
+            const auto drain = [&](std::size_t pending) noexcept {
+              while (pending--) {
+                StereoSample sample;
+                if (!self.apu.pop_sample(sample)) return false;
+                ++self.produced;
+                if (self.combined) {
+                    const auto halves = (self.produced * 32 - 4) * 2;
+                    const auto hz = std::uint64_t(self.apu_hz)*2;
+                    const auto clock = halves/hz*SgbAudioMixer::master_hz +
+                        (halves%hz*SgbAudioMixer::master_hz+hz-1)/hz;
+                    if (!self.mixer->push(SgbAudioMixer::Source::snes,clock,sample)) return false;
+                } else {
+                    if (self.count == buffer_capacity) return false;
+                    self.pcm[(self.head + self.count++) % buffer_capacity] = sample;
+                }
+              }
+              return true;
+            };
+            auto current = self.apu.cpu().half_cycles();
+            while (current < target) {
+                const auto stop = current + std::min<std::uint64_t>(1024, target-current);
+                while (current < stop) {
+                    const auto pc = self.apu.cpu().registers().pc;
+                    const auto cycles = current / 2;
+                    const auto pending = self.apu.pending_samples();
+                    if (!self.apu.clock_half()) {
+                        // Scalar execution had drained all earlier samples,
+                        // but leaves any output from the failing half unread.
+                        const auto drained = drain(pending);
+                        self.status = drained ? Status::apu_fault : Status::host_fault;
+                        return SnesHostCpu::ApuBatchResult{false, pc, cycles};
+                    }
+                    // clock_half checks exactly one physical half advanced;
+                    // no need to reload processor metadata for loop bounds.
+                    ++current;
+                }
+                if (!drain(self.apu.pending_samples())) {
+                    self.status = Status::host_fault;
+                    return SnesHostCpu::ApuBatchResult{false, self.apu.cpu().registers().pc,
+                                                      self.apu.cpu().cycles()};
+                }
+            }
+            return SnesHostCpu::ApuBatchResult{true, self.apu.cpu().registers().pc,
+                                              current / 2};
+        }, this);
+        // Retain the original scalar scheduler as an independent oracle.
         cpu.set_apu_half_driver([](void* context) noexcept {
             auto& self = *static_cast<Impl*>(context);
             if (!self.apu.clock_half()) { self.status = Status::apu_fault; return false; }
@@ -59,12 +110,10 @@ struct SgbHost::Impl {
                     if (!self.mixer->push(SgbAudioMixer::Source::snes,clock,sample)) {
                         self.status = Status::host_fault; return false;
                     }
-                    continue;
+                } else {
+                    if (self.count == buffer_capacity) { self.status = Status::host_fault; return false; }
+                    self.pcm[(self.head + self.count++) % buffer_capacity] = sample;
                 }
-                if (self.count == buffer_capacity) {
-                    self.status = Status::host_fault; return false;
-                }
-                self.pcm[(self.head + self.count++) % buffer_capacity] = sample;
             }
             return true;
         }, this);
@@ -80,6 +129,12 @@ SgbHost::SgbHost(SgbHostConfig config) : config_(std::move(config)) {
     reset();
 }
 SgbHost::~SgbHost() = default;
+void SgbHost::debug_set_apu_batch_enabled(bool enabled) noexcept {
+    impl_->cpu.debug_set_apu_batch_enabled(enabled);
+}
+void SgbHost::debug_set_spc_idle_tail_cache_enabled(bool enabled) noexcept {
+    impl_->apu.cpu_.debug_set_idle_tail_cache_enabled(enabled);
+}
 void SgbHost::reset() { auto fresh = std::make_unique<Impl>(config_); impl_.swap(fresh); }
 bool SgbHost::step() noexcept {
     auto& s = *impl_;
@@ -203,6 +258,7 @@ class SgbHostStateCodec {
         void value(SgbAudioMixer::Stream& x) { (*this)(x.events,x.head,x.count,x.last_clock,x.held); }
     };
     template<class C> static void cpu(C& c, SnesHostCpu& s) {
+        if constexpr (std::is_same_v<C,Reader>) s.irq_cache_valid_ = false;
         c(s.cycle_apu_sync_,s.fractional_apu_sync_,s.ppu_dma_timing_,s.host_bus_timing_,
           s.pending_ppu_dma_,s.spc_cycles_,s.apu_clock_hz_,s.r_.pc,s.r_.a,s.r_.x,s.r_.y,
           s.r_.s,s.r_.d,s.r_.pb,s.r_.db,s.r_.p,s.r_.e,s.wram_,s.dma_registers_,
