@@ -198,6 +198,17 @@ void test_save_state_round_trip_and_validation() {
     // No SOU_TRN has completed in this fixture, so version 39 adds two
     // revisions and the last four-byte SOUND request to the payload.
     auto version_forty = saved;
+    version_forty.resize(version_forty.size() - 25); // Version 42 splash metadata.
+    auto version_forty_one = version_forty;
+    version_forty_one[8] = 41;
+    const auto v41_size = static_cast<std::uint32_t>(version_forty_one.size() - state_header_size);
+    write_little_u32(version_forty_one, 20, v41_size);
+    write_little_u32(version_forty_one, 24,
+                    state_crc32(version_forty_one.data() + state_header_size, v41_size));
+    gameboy::Emulator v41_loader{gameboy::Cartridge{rom}};
+    v41_loader.load_state(version_forty_one);
+    check(v41_loader.cpu().total_cycles() == saved_cycles && !v41_loader.startup_animation_active(),
+          "version 41 restores without startup presentation metadata");
     version_forty.pop_back(); // Version 41 appends the STAT acknowledgment phase.
     version_forty[8] = 40;
     const auto v40_payload_size = static_cast<std::uint32_t>(

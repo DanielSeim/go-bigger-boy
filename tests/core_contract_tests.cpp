@@ -1,5 +1,7 @@
 #include "gbb/core_contract.hpp"
 #include "gbb/core_registry.hpp"
+#include "gbb/gameboy_core.hpp"
+#include "gameboy/emulator.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -400,6 +402,79 @@ void test_invalid_core_contracts() {
 } // namespace
 
 int main() {
+    {
+        const auto& registry = gbb::built_in_core_registry();
+        auto rom = test_rom();
+        // Logo-free cartridge with a valid header and an infinite entry loop.
+        rom[0x100] = 0x18;
+        rom[0x101] = 0xfe;
+        std::uint8_t checksum{};
+        for (std::size_t i = 0x134; i <= 0x14c; ++i)
+            checksum = static_cast<std::uint8_t>(checksum - rom[i] - 1);
+        rom[0x14d] = checksum;
+        gbb::CoreLoadOptions options;
+        auto instant = registry.create(rom, options);
+        check(!gbb::gameboy_emulator(instant.get())->bus().boot_rom_enabled(),
+              "factory default keeps instant startup");
+        options.startup_mode = gbb::StartupMode::replacement_dmg;
+        auto cold = registry.create(rom, options);
+        auto* emulator = gbb::gameboy_emulator(cold.get());
+        check(emulator->bus().boot_rom_enabled() && emulator->cpu().registers().pc == 0,
+              "automatic DMG starts bundled firmware at zero");
+        for (int i = 0; i < 100; ++i) cold->step_instruction();
+        const auto snapshot = cold->save_state();
+        auto restored = registry.create(rom, options);
+        restored->load_state(snapshot);
+        check(restored->save_state() == snapshot, "mid-boot state round trips through factory core");
+        for (int i = 0; i < 100; ++i) {
+            static_cast<void>(cold->step_instruction());
+            static_cast<void>(restored->step_instruction());
+        }
+        check(restored->save_state() == cold->save_state(),
+              "restored cold core continues identically through firmware instructions");
+        while (emulator->bus().boot_rom_enabled() && emulator->cpu().total_cycles() < 5000000)
+            cold->step_instruction();
+        check(!emulator->bus().boot_rom_enabled() && emulator->cpu().registers().pc == 0x100,
+              "logo-free valid cartridge reaches firmware handoff");
+        cold->reset();
+        check(emulator->bus().boot_rom_enabled() && emulator->cpu().registers().pc == 0,
+              "replacement core reset reruns firmware");
+        instant->load_state(snapshot);
+        instant->reset();
+        check(!gbb::gameboy_emulator(instant.get())->bus().boot_rom_enabled(),
+              "instant receiver reset keeps its selected startup after loading cold state");
+        options.startup_mode = gbb::StartupMode::animated_dmg;
+        auto animated = registry.create(rom, options);
+        check(gbb::gameboy_emulator(animated.get())->startup_animation_active(),
+              "factory exposes original animated DMG startup");
+        for (const auto model : gameboy::selectable_hardware_models) {
+            if (model == gameboy::HardwareModel::automatic || model == gameboy::HardwareModel::dmg) continue;
+            options.hardware_model = std::string{gameboy::hardware_model_id(model)};
+            auto other = registry.create(rom, options);
+            check(!gbb::gameboy_emulator(other.get())->bus().boot_rom_enabled(),
+                  "non-DMG profiles safely retain instant startup");
+            check(gbb::gameboy_emulator(other.get())->hardware_model() == model,
+                  "startup preference never overrides explicit hardware profile");
+            auto baseline_options = options;
+            baseline_options.startup_mode = gbb::StartupMode::instant;
+            auto baseline = registry.create(rom, baseline_options);
+            check(other->save_state() == baseline->save_state(),
+                  "non-DMG fallback is identical to its existing instant state");
+        }
+        options.hardware_model = std::string{gameboy::hardware_model_id(gameboy::HardwareModel::automatic)};
+        rom[0x146] = 3;
+        auto sgb = registry.create(rom, options);
+        check(!gbb::gameboy_emulator(sgb.get())->bus().boot_rom_enabled(),
+              "automatic SGB does not receive DMG firmware");
+        rom[0x143] = 0x80;
+        auto cgb = registry.create(rom, options);
+        check(!gbb::gameboy_emulator(cgb.get())->bus().boot_rom_enabled(),
+              "automatic CGB takes precedence over SGB and ignores DMG firmware");
+        options.hardware_model = "dmg";
+        auto forced = registry.create(rom, options);
+        check(gbb::gameboy_emulator(forced.get())->bus().boot_rom_enabled(),
+              "explicit DMG profile enables replacement on dual-mode cartridge");
+    }
     test_invalid_core_contracts();
     const auto rom = test_rom();
     const auto& registry = gbb::built_in_core_registry();

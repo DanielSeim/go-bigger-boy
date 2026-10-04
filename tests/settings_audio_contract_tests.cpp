@@ -28,9 +28,14 @@ void test_audio_round_trip_and_migration() {
     check(!error, "create temporary settings directory");
 
     AppSettings settings;
+    check(settings.startup_mode == gbb::StartupMode::instant,
+          "instant startup remains the default");
+    settings.startup_mode = gbb::StartupMode::replacement_dmg;
     settings.audio_enabled = false;
     settings.show_fps = true;
     write_portable_settings(directory, settings);
+    check(load_app_settings(directory).startup_mode == gbb::StartupMode::replacement_dmg,
+          "replacement startup survives settings round trip");
     check(!load_app_settings(directory).audio_enabled,
           "audio disabled value survives settings round trip");
     check(load_app_settings(directory).show_fps,
@@ -41,6 +46,8 @@ void test_audio_round_trip_and_migration() {
     write_portable_settings(directory, settings);
     check(load_app_settings(directory).audio_enabled,
           "audio enabled value survives settings round trip");
+    check(load_app_settings(directory).startup_mode == gbb::StartupMode::replacement_dmg,
+          "changing other settings preserves startup preference");
     check(load_app_settings(directory).sgb_trace_capture,
           "SGB trace capture value survives settings round trip");
     settings.sgb_firmware={true,std::filesystem::u8path(u8"firmware #; ünicode"),"sgb"};
@@ -58,6 +65,8 @@ void test_audio_round_trip_and_migration() {
         output << "palette = classic\nvideo.Mode = nearest\n";
     }
     const auto migrated = load_app_settings(directory);
+    check(migrated.startup_mode == gbb::StartupMode::instant,
+          "legacy settings migrate to instant startup");
     check(!migrated.sgb_firmware.enabled && migrated.sgb_firmware.directory.empty() && migrated.sgb_firmware.model=="sgb2",
           "older settings retain HLE default and safe firmware defaults");
     const auto first_migration=gbb::read_settings_file(path).entries.size();
@@ -71,6 +80,14 @@ void test_audio_round_trip_and_migration() {
     check(!migrated.show_fps,
           "settings without FPS key retain the safe disabled default");
     const auto document = gbb::read_settings_file(path);
+    bool found_startup = false;
+    for (const auto& entry : document.entries) {
+        if (entry.key == "boot.Startup") {
+            found_startup = true;
+            check(entry.value == "instant", "migration writes instant startup default");
+        }
+    }
+    check(found_startup, "migration writes the startup key");
     bool found_audio = false;
     for (const auto& entry : document.entries) {
         if (entry.key == "audio.Enabled") {
@@ -98,6 +115,20 @@ void test_audio_round_trip_and_migration() {
         }
     }
     check(found_show_fps, "settings migration writes the FPS overlay key");
+    {
+        std::ofstream output(path, std::ios::trunc);
+        output << "boot.Startup = invalid\n";
+    }
+    check(load_app_settings(directory).startup_mode == gbb::StartupMode::instant,
+          "unknown startup values safely fall back to instant");
+    settings.startup_mode = gbb::StartupMode::animated_dmg;
+    write_portable_settings(directory, settings);
+    check(load_app_settings(directory).startup_mode == gbb::StartupMode::animated_dmg,
+          "animated startup survives settings round trip");
+    settings.startup_mode = gbb::StartupMode::instant;
+    write_portable_settings(directory, settings);
+    check(load_app_settings(directory).startup_mode == gbb::StartupMode::instant,
+          "startup can be switched back to instant");
     std::filesystem::remove_all(directory, error);
 }
 

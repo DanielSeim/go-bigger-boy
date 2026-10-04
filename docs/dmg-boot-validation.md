@@ -1,7 +1,8 @@
 # DMG replacement boot validation
 
-The replacement remains **experimental and opt-in**. Normal frontend startup
-still uses the production post-boot path. This tool compares two CPU-executed
+The replacement remains **experimental and opt-in** through frontend Startup
+settings. Instant startup still defaults to the production post-boot path.
+This tool compares two CPU-executed
 cold starts on the same GBB core; it is not an independent emulator or a claim
 of complete hardware equivalence.
 

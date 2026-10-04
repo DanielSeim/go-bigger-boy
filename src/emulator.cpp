@@ -1,4 +1,5 @@
 #include "gameboy/emulator.hpp"
+#include "gameboy/boot_splash.hpp"
 
 #include <stdexcept>
 #include <utility>
@@ -8,16 +9,12 @@ namespace gameboy {
 Emulator::Emulator(Cartridge cartridge, const HardwareModel model,
                    const BootRomMode boot_rom_mode)
     : bus_(std::move(cartridge)), boot_rom_mode_(boot_rom_mode) {
-    hardware_model_ = model == HardwareModel::automatic
-                          ? (bus_.cgb_mode()
-                                 ? HardwareModel::cgb
-                                 : (bus_.cartridge().supports_sgb()
-                                        ? HardwareModel::sgb
-                                        : HardwareModel::dmg))
-                          : model;
+    hardware_model_ = resolve_hardware_model(model, bus_.cgb_mode(),
+                                             bus_.cartridge().supports_sgb());
     automatic_dmg_palette_ = cgb_compatibility_palette(
         bus_.cartridge().cgb_compatibility_palette_id());
-    if (boot_rom_mode_ == BootRomMode::replacement_dmg) {
+    splash_enabled_ = boot_rom_mode_ == BootRomMode::animated_dmg;
+    if (boot_rom_mode_ == BootRomMode::replacement_dmg || splash_enabled_) {
         if (hardware_model_ != HardwareModel::dmg) {
             throw std::invalid_argument("DMG replacement boot requires the DMG hardware model");
         }
@@ -42,7 +39,11 @@ Emulator Emulator::from_file(const std::filesystem::path& path,
 }
 
 void Emulator::reset() noexcept {
-    if (boot_rom_mode_ == BootRomMode::replacement_dmg) {
+    splash_enabled_ = boot_rom_mode_ == BootRomMode::animated_dmg;
+    splash_skipped_ = false;
+    splash_consumed_frame_ = splash_handoff_cycles_ = splash_audio_cursor_ = 0;
+    splash_cached_frame_ = UINT64_MAX;
+    if (boot_rom_mode_ == BootRomMode::replacement_dmg || splash_enabled_) {
         bus_.initialize_dmg_power_on();
         bus_.install_boot_rom(dmg_boot_rom());
         cpu_.reset_boot();
@@ -63,7 +64,10 @@ void Emulator::reset() noexcept {
 }
 
 unsigned Emulator::step() {
-    return cpu_.step(bus_);
+    const bool was_booting = splash_enabled_ && bus_.boot_rom_enabled();
+    const auto cycles = cpu_.step(bus_);
+    if (was_booting && !bus_.boot_rom_enabled()) splash_handoff_cycles_ = cpu_.total_cycles();
+    return cycles;
 }
 
 const Cpu& Emulator::cpu() const noexcept {
@@ -83,6 +87,14 @@ MemoryBus& Emulator::bus() noexcept {
 }
 
 const Ppu::Framebuffer& Emulator::framebuffer() const noexcept {
+    if (startup_animation_active()) {
+        const auto frame = cpu_.total_cycles() / boot_splash_frame_cycles;
+        if (frame != splash_cached_frame_) {
+            render_boot_splash(splash_pixels_, frame);
+            splash_cached_frame_ = frame;
+        }
+        return splash_pixels_;
+    }
     return bus_.framebuffer();
 }
 
@@ -90,27 +102,61 @@ const Ppu::SgbFramebuffer& Emulator::sgb_framebuffer() const noexcept {
     return bus_.sgb_framebuffer();
 }
 
-bool Emulator::frame_ready() const noexcept { return bus_.frame_ready(); }
+bool Emulator::startup_animation_active() const noexcept {
+    return splash_enabled_ && !splash_skipped_ && bus_.boot_rom_enabled();
+}
 
-void Emulator::consume_frame() noexcept { bus_.consume_frame(); }
+bool Emulator::frame_ready() const noexcept {
+    return bus_.frame_ready() || (startup_animation_active() &&
+        cpu_.total_cycles() / boot_splash_frame_cycles > splash_consumed_frame_);
+}
+
+void Emulator::consume_frame() noexcept {
+    if (splash_enabled_) splash_consumed_frame_ = cpu_.total_cycles() / boot_splash_frame_cycles;
+    bus_.consume_frame();
+}
 
 std::vector<std::int16_t> Emulator::take_audio_samples() {
-    return bus_.take_audio_samples();
+    auto samples = bus_.take_audio_samples();
+    if (splash_enabled_) {
+        const auto cutoff = splash_handoff_cycles_ ? boot_splash_sample_time(splash_handoff_cycles_)
+            : bus_.boot_rom_enabled() ? UINT64_MAX : 0;
+        for (std::size_t index = 0; index < samples.size() / 2; ++index) {
+            const auto time = splash_audio_cursor_ + index;
+            if (time >= cutoff) break;
+            const auto value = splash_skipped_ ? 0 : boot_splash_sample(time);
+            samples[index * 2] = samples[index * 2 + 1] = value;
+        }
+        // APU buffers are bounded. Advance to now even if undrained samples
+        // were dropped; never replay an old note after a long pause.
+        splash_audio_cursor_ = boot_splash_sample_time(cpu_.total_cycles());
+    }
+    return samples;
 }
 
 void Emulator::set_audio_enabled(const bool enabled) noexcept {
+    if (splash_enabled_ && enabled != bus_.audio_enabled())
+        splash_audio_cursor_ = boot_splash_sample_time(cpu_.total_cycles());
     bus_.set_audio_enabled(enabled);
 }
 
 bool Emulator::audio_enabled() const noexcept { return bus_.audio_enabled(); }
 
 void Emulator::set_button(const Button button, const bool pressed) noexcept {
+    if (startup_animation_active() && pressed && (button == Button::a || button == Button::start)) {
+        splash_skipped_ = true;
+        return;
+    }
     bus_.set_button(button, pressed);
 }
 
 void Emulator::set_player_button(const std::uint8_t player,
                                   const Button button,
                                   const bool pressed) noexcept {
+    if (player == 0) {
+        set_button(button, pressed);
+        return;
+    }
     bus_.set_player_button(player, button, pressed);
 }
 

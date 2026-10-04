@@ -186,6 +186,7 @@ void present_frame(const PresentationContext& context) {
         constexpr auto sgb_gameboy_surface = false;
 #endif
         if (context.emulator != nullptr &&
+            !context.emulator->startup_animation_active() &&
             has_capability(context.core->descriptor().capabilities,
                            CoreCapability::scene_layers) &&
             voxel_mode && (native_gameboy_surface || sgb_gameboy_surface)) {
@@ -395,7 +396,8 @@ void present_frame(const PresentationContext& context) {
             if (sgb_surface) sdl.sgb_upload_us = elapsed_us(upload_started);
 #endif
 #ifdef __ANDROID__
-            if (!touch_is_landscape(sdl) && !voxel_mode_enabled(sdl)) {
+            if (!touch_is_landscape(sdl) && (!voxel_mode_enabled(sdl) ||
+                (context.emulator && context.emulator->startup_animation_active()))) {
                 const auto game_rect = android_portrait_game_rect(sdl);
                 if (!SDL_SetRenderLogicalPresentation(
                         sdl.renderer, 0, 0,

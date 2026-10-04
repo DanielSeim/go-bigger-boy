@@ -865,6 +865,7 @@ int run_emulation(int argc, char** argv) {
         }
         const auto app_settings = load_app_settings(preference_path);
         auto hardware_model = app_settings.hardware_model;
+        auto startup_mode = app_settings.startup_mode;
         auto firmware_settings = app_settings.sgb_firmware;
         const gbb::sdl::DesktopFirmwareSettings cli_firmware{
             !launch_options.firmware_directory.empty(), launch_options.firmware_directory,
@@ -1177,6 +1178,7 @@ int run_emulation(int argc, char** argv) {
                     display_palette,
                     sdl.video_mode,
                     hardware_model,
+                    startup_mode,
                     firmware_settings,
                     !active_load_options.sgb_firmware_directory.empty(),
                     audio_enabled,
@@ -1237,6 +1239,12 @@ int run_emulation(int argc, char** argv) {
                     hardware_model = result.hardware_model;
                     auto settings = load_app_settings(preference_path);
                     settings.hardware_model = hardware_model;
+                    write_portable_settings(preference_path, settings);
+                }
+                if (result.startup_mode_changed) {
+                    startup_mode = result.startup_mode;
+                    auto settings = load_app_settings(preference_path);
+                    settings.startup_mode = startup_mode;
                     write_portable_settings(preference_path, settings);
                 }
                 if(result.firmware_changed) {
@@ -1677,7 +1685,9 @@ int run_emulation(int argc, char** argv) {
                     // selected profile at the actual construction boundary
                     // so the next ROM launch always uses the latest choice.
                     hardware_model = load_hardware_model(preference_path);
-                    firmware_settings=load_app_settings(preference_path).sgb_firmware;
+                    const auto launch_settings = load_app_settings(preference_path);
+                    firmware_settings = launch_settings.sgb_firmware;
+                    startup_mode = launch_settings.startup_mode;
                     auto load_options=active_load_options;
 #ifdef __ANDROID__
                     // Preserve Android's existing reset/profile semantics;
@@ -1690,6 +1700,7 @@ int run_emulation(int argc, char** argv) {
                             std::string{gameboy::hardware_model_id(hardware_model)},cli_firmware);
                     }
 #endif
+                    load_options.startup_mode = startup_mode;
                     if(!load_options.sgb_firmware_directory.empty() && !gbb::sdl::firmware_video_supported(sdl.video_mode))
                         throw std::runtime_error("Experimental SGB firmware playback does not support voxel presentation. Choose a 2D video mode before launching the game.");
                     load_rom(requested_rom, core,
@@ -1697,7 +1708,8 @@ int run_emulation(int argc, char** argv) {
                              gameboy::display_palettes[display_palette], sdl,
                              preference_path,
                              load_options.hardware_model,
-                             load_options.sgb_firmware_directory);
+                             load_options.sgb_firmware_directory,
+                             load_options.startup_mode);
                     active_load_options=std::move(load_options);
                     emulator = gbb::gameboy_emulator(core.get());
                     if(!active_load_options.sgb_firmware_directory.empty())

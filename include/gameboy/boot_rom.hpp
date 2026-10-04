@@ -11,6 +11,8 @@ enum class BootRomMode {
     post_boot,
     diagnostic,
     replacement_dmg,
+    // The same firmware, with an original host-rendered splash and chime.
+    animated_dmg,
 };
 
 constexpr std::size_t diagnostic_boot_rom_size = 0x100;

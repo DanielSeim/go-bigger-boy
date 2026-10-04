@@ -528,7 +528,8 @@ void load_rom(const std::string& path,
               const gameboy::DisplayPalette& palette, SdlResources& sdl,
               const std::filesystem::path& preference_path,
               std::string hardware_model,
-              const std::filesystem::path& firmware_directory) {
+              const std::filesystem::path& firmware_directory,
+              const gbb::StartupMode startup_mode) {
 #ifdef __ANDROID__
     std::size_t byte_count{};
     void* loaded = SDL_LoadFile(path.c_str(), &byte_count);
@@ -545,6 +546,7 @@ void load_rom(const std::string& path,
     auto metadata = registry.create(bytes);
     gbb::CoreLoadOptions options;
     options.hardware_model = std::move(hardware_model);
+    options.startup_mode = startup_mode;
     options.sgb_firmware_directory = firmware_directory;
     if (metadata->descriptor().has_battery && !preference_path.empty()) {
         const auto save_directory = preference_path / "saves";
@@ -563,6 +565,7 @@ void load_rom(const std::string& path,
     if (core && (!firmware_directory.empty() || !gbb::sgb_firmware_model(*core).empty())) core->flush_persistent_data();
     gbb::CoreLoadOptions options;
     options.hardware_model = std::move(hardware_model);
+    options.startup_mode = startup_mode;
     options.sgb_firmware_directory = firmware_directory;
     // An explicit firmware launch must not be intercepted by a plug-in probe.
     const auto& selected_registry = firmware_directory.empty()

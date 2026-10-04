@@ -111,6 +111,9 @@ std::vector<DashboardItem> dashboard_items(
         case gbb::desktop::DashboardAction::shortcuts:
             label = "Keyboard shortcuts";
             break;
+        case gbb::desktop::DashboardAction::startup:
+            label = "Startup";
+            break;
         case gbb::desktop::DashboardAction::firmware_settings:
             label="SGB firmware settings (experimental)";
             break;
@@ -190,6 +193,9 @@ void activate_dashboard_selection(
         break;
     case gbb::desktop::DashboardAction::shortcuts:
         show_help(sdl.window, bindings);
+        break;
+    case gbb::desktop::DashboardAction::startup:
+        choose_startup_mode(sdl, preference_path);
         break;
     case gbb::desktop::DashboardAction::firmware_settings:
 #ifndef __ANDROID__

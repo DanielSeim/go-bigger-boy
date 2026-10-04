@@ -81,6 +81,14 @@
           Hardware model
           <select id="hardware-model" disabled></select>
         </label>
+        <label class="palette" for="startup-mode" title="Bundled DMG firmware only; other models use instant startup. Animated boot adds original GBB lettering and a chime; A/Start skips the intro. Applies on ROM reload. No download needed.">
+          Startup (DMG only)
+          <select id="startup-mode" disabled>
+            <option value="instant">Instant startup</option>
+            <option value="replacement-dmg">GBB replacement boot</option>
+            <option value="animated-dmg">GBB animated boot</option>
+          </select>
+        </label>
         <label class="audio-toggle" for="audio-enabled">
           <input id="audio-enabled" type="checkbox" checked>
           <span>Generate audio</span>
@@ -127,6 +135,7 @@
     const palettePicker = document.getElementById('display-palette');
     const videoPicker = document.getElementById('video-mode');
     const hardwareModelPicker = document.getElementById('hardware-model');
+    const startupModePicker = document.getElementById('startup-mode');
     const audioEnabledPicker = document.getElementById('audio-enabled');
     const showFpsPicker = document.getElementById('show-fps');
     const savePicker = document.getElementById('save-file');
@@ -582,6 +591,13 @@
       onRuntimeInitialized() {
         openButton.disabled = false;
         restoreHardwareModel();
+        try {
+          const stored = localStorage.getItem('gbb-startup-mode');
+          if ([...startupModePicker.options].some(option => option.value === stored))
+            startupModePicker.value = stored;
+        } catch (error) {}
+        Module._gbb_set_startup_mode(startupModePicker.selectedIndex);
+        startupModePicker.disabled = false;
         restorePalette();
         try {
           audioEnabledPicker.checked =
@@ -903,6 +919,13 @@
           false);
       }
       canvas.focus();
+    });
+    startupModePicker.addEventListener('change', () => {
+      Module._gbb_set_startup_mode(startupModePicker.selectedIndex);
+      try {
+        localStorage.setItem('gbb-startup-mode', startupModePicker.value);
+      } catch (error) {}
+      Module.gbbSetStatus('Startup setting saved. Reload the ROM to apply it (DMG only).', false);
     });
     audioEnabledPicker.addEventListener('change', () => {
       Module._gbb_set_audio_enabled(audioEnabledPicker.checked);

@@ -16,6 +16,7 @@ struct AppSettings {
     InputBindings bindings;
     std::size_t palette{};
     gameboy::HardwareModel hardware_model{gameboy::HardwareModel::automatic};
+    gbb::StartupMode startup_mode{gbb::StartupMode::instant};
     gameboy::VideoMode video_mode{gameboy::default_video_mode};
     bool audio_enabled{true};
     bool show_fps{};
@@ -77,7 +78,7 @@ void append_missing_portable_settings(
     const std::array<bool, touch_layout_count * touch_control_count>&
         has_touch_positions,
     bool has_firmware_enabled = false, bool has_firmware_directory = false,
-    bool has_firmware_model = false);
+    bool has_firmware_model = false, bool has_startup_mode = false);
 
 [[nodiscard]] AppSettings load_portable_settings(
     const std::filesystem::path& preference_directory);

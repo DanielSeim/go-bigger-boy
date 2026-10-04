@@ -88,6 +88,17 @@ always moved as one control, while A, B, Select, and Start can be positioned
 individually beside or below the emulation screen. Positions are stored as
 normalized `touch.Portrait.*` and `touch.Landscape.*` coordinates.
 
+Desktop, Android and web expose a **Startup** selector: **Instant startup**
+remains the default; **GBB replacement boot** runs the bundled, original DMG
+firmware without a download. The preference is saved as `boot.Startup` on
+desktop/Android and `gbb-startup-mode` in browser storage. It applies on the next
+ROM start or frontend restart, not while a core is running. Only the DMG profile
+uses this firmware; other profiles retain instant startup. Automatic model
+selection is unchanged, so select DMG explicitly for dual-mode CGB/SGB titles.
+**GBB animated boot** adds original descending pixel lettering and a synthesized
+two-note chime over the same firmware; A or Start skips the presentation.
+See [replacement firmware](../firmware/README.md) for limitations and validation.
+
 The desktop and Android settings pages also expose a **Hardware model**
 selector. `Automatic (cartridge)` preserves normal header-based selection;
 the explicit profiles are DMG-0, DMG-B/DMG, MGB, SGB, SGB2, CGB-0, CGB-C, and
@@ -369,4 +380,3 @@ The `Web build and Pages` workflow repeats this build on every push to `main`
 and deploys the result to GitHub Pages. Pull requests build the WebAssembly site
 without deploying it. The repository's Pages source must be set to **GitHub
 Actions** before the first deployment.
-

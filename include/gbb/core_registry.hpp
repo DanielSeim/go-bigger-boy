@@ -1,6 +1,7 @@
 #pragma once
 
 #include "gbb/core.hpp"
+#include "gbb/startup_mode.hpp"
 #include "gameboy/hardware_model.hpp"
 
 #include <filesystem>
@@ -23,6 +24,9 @@ struct CoreLoadOptions {
     std::string hardware_model{"auto"};
     // Explicit experimental built-in desktop path; never auto-discovered.
     std::filesystem::path sgb_firmware_directory;
+    // Built-in DMG preference, not a hardware override. Other models and
+    // provider cores retain normal startup; external SGB firmware is separate.
+    StartupMode startup_mode{StartupMode::instant};
 };
 
 struct CoreProbeResult {

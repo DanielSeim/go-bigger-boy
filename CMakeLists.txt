@@ -160,6 +160,7 @@ add_library(gameboy_core
     src/cpu.cpp
     src/dmg_palette.cpp
     src/emulator.cpp
+    src/boot_splash.cpp
     src/gameboy_link_endpoint.cpp
     src/gameshark.cpp
     src/joypad.cpp
@@ -321,7 +322,7 @@ if(GAMEBOY_BUILD_SDL)
                 "-sALLOW_MEMORY_GROWTH=1"
                 "-sMAXIMUM_MEMORY=536870912"
                 "-sENVIRONMENT=web"
-                "-sEXPORTED_FUNCTIONS=['_main','_gbb_resume_audio','_gbb_start_rom','_gbb_pause_rom','_gbb_set_palette','_gbb_set_video_mode','_gbb_set_hardware_model','_gbb_set_audio_enabled','_gbb_set_show_fps','_gbb_set_voxel_camera','_gbb_reset_voxel_camera','_gbb_export_scene_snapshot']"
+                "-sEXPORTED_FUNCTIONS=['_main','_gbb_resume_audio','_gbb_start_rom','_gbb_pause_rom','_gbb_set_palette','_gbb_set_video_mode','_gbb_set_hardware_model','_gbb_set_startup_mode','_gbb_set_audio_enabled','_gbb_set_show_fps','_gbb_set_voxel_camera','_gbb_reset_voxel_camera','_gbb_export_scene_snapshot']"
             )
             target_compile_definitions(gameboy_web PRIVATE
                 GBB_VERSION="${PROJECT_VERSION}"
@@ -764,7 +765,10 @@ if(GAMEBOY_BUILD_TESTS)
     add_executable(gameboy_dmg_boot_tests tests/dmg_boot_tests.cpp)
     target_link_libraries(gameboy_dmg_boot_tests PRIVATE gameboy_core)
     add_test(NAME gameboy_dmg_boot COMMAND gameboy_dmg_boot_tests)
-    set_tests_properties(gameboy_dmg_boot PROPERTIES LABELS "firmware;boot")
+    add_executable(gameboy_boot_splash_tests tests/boot_splash_tests.cpp)
+    target_link_libraries(gameboy_boot_splash_tests PRIVATE gameboy_core)
+    add_test(NAME gameboy_boot_splash COMMAND gameboy_boot_splash_tests)
+    set_tests_properties(gameboy_dmg_boot gameboy_boot_splash PROPERTIES LABELS "firmware;boot")
     target_link_libraries(gameboy_tests PRIVATE gbb_core_api)
     add_custom_command(TARGET gameboy_tests POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory

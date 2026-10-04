@@ -1,4 +1,5 @@
 #include "gameboy/emulator.hpp"
+#include "gameboy/boot_splash.hpp"
 #include "save_state_bus.hpp"
 #include "save_state_container.hpp"
 #include "save_state_cpu.hpp"
@@ -24,6 +25,15 @@ public:
         write_bus(payload, emulator.bus_);
         // Append the phase rather than changing legacy CPU/bus field offsets.
         SaveStateCpuCodec::write_irq_phase(payload, emulator.cpu_);
+        payload.u8(static_cast<std::uint8_t>((emulator.splash_enabled_ ? 1 : 0) |
+                                            (emulator.splash_skipped_ ? 2 : 0)));
+        payload.u64(emulator.splash_consumed_frame_);
+        payload.u64(emulator.splash_handoff_cycles_);
+        // Queued PCM is deliberately not serialized by the APU codec. A
+        // restored presentation must start at the saved clock, not replay
+        // the interval since the source last drained its pending queue.
+        payload.u64(emulator.splash_enabled_
+            ? boot_splash_sample_time(emulator.cpu_.total_cycles()) : 0);
         return save_state_container::encode(emulator.rom_fingerprint(),
                                             payload.data());
     }
@@ -37,6 +47,26 @@ public:
         read_bus(payload, emulator.bus_, decoded.version);
         if (decoded.version >= 41)
             SaveStateCpuCodec::read_irq_phase(payload, emulator.cpu_);
+        emulator.splash_enabled_ = emulator.splash_skipped_ = false;
+        emulator.splash_consumed_frame_ = emulator.splash_handoff_cycles_ = emulator.splash_audio_cursor_ = 0;
+        emulator.splash_cached_frame_ = UINT64_MAX;
+        if (decoded.version >= 42) {
+            const auto flags = payload.u8();
+            emulator.splash_enabled_ = (flags & 1) != 0;
+            emulator.splash_skipped_ = (flags & 2) != 0;
+            emulator.splash_consumed_frame_ = payload.u64();
+            emulator.splash_handoff_cycles_ = payload.u64();
+            emulator.splash_audio_cursor_ = payload.u64();
+            const auto cycles = emulator.cpu_.total_cycles();
+            if ((flags & ~3U) || (emulator.splash_skipped_ && !emulator.splash_enabled_) ||
+                emulator.splash_consumed_frame_ > cycles / boot_splash_frame_cycles ||
+                emulator.splash_handoff_cycles_ > cycles ||
+                emulator.splash_audio_cursor_ > boot_splash_sample_time(cycles) ||
+                (emulator.bus_.boot_rom_enabled() && emulator.splash_handoff_cycles_ != 0) ||
+                (!emulator.splash_enabled_ && (emulator.splash_consumed_frame_ ||
+                    emulator.splash_handoff_cycles_ || emulator.splash_audio_cursor_)))
+                throw SaveStateError("Invalid startup presentation state");
+        }
         payload.finish();
     }
 

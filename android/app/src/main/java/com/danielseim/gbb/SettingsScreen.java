@@ -132,6 +132,29 @@ final class SettingsScreen {
                 ViewGroup.LayoutParams.WRAP_CONTENT));
 
         final String settingsDirectory = activity.getFilesDir().getAbsolutePath();
+        display.addView(settingLabel("Startup (DMG only)"));
+        final Spinner startup = new Spinner(activity);
+        final StartupSettingModel startupSetting = new StartupSettingModel(new StartupSettingModel.Store() {
+            @Override public String read() { return LibraryActivity.nativeStartupMode(settingsDirectory); }
+            @Override public void write(String mode) { LibraryActivity.nativeSetStartupMode(settingsDirectory, mode); }
+        });
+        startup.setAdapter(new ArrayAdapter<>(activity,
+                android.R.layout.simple_spinner_dropdown_item,
+                StartupSettingModel.NAMES));
+        startup.setSelection(startupSetting.selection());
+        startup.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                try {
+                    if (!startupSetting.select(position)) return;
+                    Toast.makeText(activity, "Startup applies when the ROM is started again", Toast.LENGTH_SHORT).show();
+                } catch (Exception error) {
+                    Toast.makeText(activity, "Could not save startup setting", Toast.LENGTH_SHORT).show();
+                }
+            }
+            @Override public void onNothingSelected(AdapterView<?> parent) {}
+        });
+        display.addView(startup);
+        display.addView(settingLabel("Bundled DMG firmware; other models use instant startup. Animated boot adds an original GBB splash/chime. A or Start skips the splash. No download needed."));
         final AudioSettingModel audioSetting = new AudioSettingModel(
                 new AudioSettingModel.Store() {
                     @Override

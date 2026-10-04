@@ -21,6 +21,7 @@ enum class DashboardAction {
     recent_rom,
     no_matching_games,
     quit,
+    startup,
 };
 
 struct DashboardNavigationItem {
@@ -37,7 +38,10 @@ inline std::vector<DashboardNavigationItem> dashboard_navigation_items(
     items.push_back({DashboardAction::palette, 0});
     items.push_back({DashboardAction::video, 0});
     items.push_back({DashboardAction::shortcuts, 0});
-    if(firmware_settings) items.push_back({DashboardAction::firmware_settings,0});
+    if(firmware_settings) {
+        items.push_back({DashboardAction::startup,0});
+        items.push_back({DashboardAction::firmware_settings,0});
+    }
     for (std::size_t index = 0; index < recent_count; ++index) {
         items.push_back({DashboardAction::recent_rom, index});
     }

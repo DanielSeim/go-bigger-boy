@@ -70,6 +70,9 @@ struct DashboardState {
     HWND video{};
     HWND hardware_model{};
     HWND hardware_model_label{};
+    HWND startup_mode{};
+    HWND startup_mode_label{};
+    HWND startup_description{};
     HWND audio_enabled{};
     HWND show_fps{};
     HWND firmware_enabled{}, firmware_model{}, firmware_directory{}, firmware_browse{}, firmware_status{};

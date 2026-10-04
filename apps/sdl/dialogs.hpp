@@ -25,6 +25,7 @@ void update_window_title(
 void choose_video_mode(SdlResources& sdl,
                        const std::filesystem::path& preference_path,gbb::EmulatorCore* core=nullptr);
 void choose_firmware_playback(DialogState& dialog,SdlResources& sdl,const std::filesystem::path& preference_path);
+void choose_startup_mode(SdlResources& sdl, const std::filesystem::path& preference_path);
 
 void choose_display_palette(gbb::EmulatorCore* core, SdlResources& sdl,
                             const std::filesystem::path& preference_path,

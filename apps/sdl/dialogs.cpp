@@ -321,6 +321,26 @@ void choose_video_mode(SdlResources& sdl,
 #endif
 }
 
+void choose_startup_mode(SdlResources& sdl, const std::filesystem::path& preference_path) {
+#ifndef __ANDROID__
+    const auto settings = load_app_settings(preference_path);
+    std::vector<std::string> choices;
+    for (const auto mode : gbb::startup_modes) choices.emplace_back(gbb::startup_mode_name(mode));
+    open_desktop_choice_dialog(sdl.window, "Startup", std::string{gbb::startup_description},
+        std::move(choices), static_cast<std::size_t>(std::distance(gbb::startup_modes.begin(),
+            std::find(gbb::startup_modes.begin(), gbb::startup_modes.end(), settings.startup_mode))),
+        [preference_path](const std::size_t index) {
+            if (index >= gbb::startup_modes.size()) return;
+            auto updated = load_app_settings(preference_path);
+            updated.startup_mode = gbb::startup_modes[index];
+            write_portable_settings(preference_path, updated);
+        });
+#else
+    (void)sdl;
+    (void)preference_path;
+#endif
+}
+
 void choose_firmware_playback(DialogState& dialog,SdlResources& sdl,const std::filesystem::path& preference_path) {
 #ifndef __ANDROID__
     const auto settings=load_app_settings(preference_path).sgb_firmware;

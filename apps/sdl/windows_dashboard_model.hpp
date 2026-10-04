@@ -60,6 +60,8 @@ struct DashboardResult {
     bool video_mode_changed{};
     gameboy::HardwareModel hardware_model{gameboy::HardwareModel::automatic};
     bool hardware_model_changed{};
+    gbb::StartupMode startup_mode{gbb::StartupMode::instant};
+    bool startup_mode_changed{};
     gbb::sdl::DesktopFirmwareSettings firmware;
     bool firmware_changed{};
     bool audio_enabled{true};

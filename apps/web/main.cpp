@@ -86,6 +86,7 @@ struct WebApp {
     std::uint64_t presentation_frame{};
     std::size_t display_palette{};
     gameboy::HardwareModel hardware_model{gameboy::HardwareModel::automatic};
+    gbb::StartupMode startup_mode{gbb::StartupMode::instant};
     gameboy::VideoMode video_mode{gameboy::default_video_mode};
     bool audio_enabled{true};
     bool show_fps{};
@@ -98,6 +99,7 @@ struct WebApp {
 
 WebApp* active_app{};
 unsigned requested_video_mode{};
+gbb::StartupMode requested_startup_mode{gbb::StartupMode::instant};
 gameboy::HardwareModel requested_hardware_model{
     gameboy::HardwareModel::automatic};
 std::string scene_snapshot_export;
@@ -1158,7 +1160,9 @@ void present(WebApp& app) {
         gbb::transform_video_frame(
             frame.pixels, frame.pixel_count, frame.width, frame.height, palette,
             native_colors, app.video_mode, app.display_pixels);
-        if ((app.video_mode == gameboy::VideoMode::voxel_diorama ||
+        const auto* boot_emulator = gbb::gameboy_emulator(app.emulator.get());
+        if ((!boot_emulator || !boot_emulator->startup_animation_active()) &&
+            (app.video_mode == gameboy::VideoMode::voxel_diorama ||
              app.video_mode == gameboy::VideoMode::voxel_shape ||
              app.video_mode == gameboy::VideoMode::voxel_popup) &&
             frame.width == 160 && frame.height == 144) {
@@ -1195,6 +1199,7 @@ int load_rom_from_browser(emscripten::val bytes) noexcept {
         gbb::CoreLoadOptions options;
         options.hardware_model = std::string(
             gameboy::hardware_model_id(active_app->hardware_model));
+        options.startup_mode = active_app->startup_mode;
         active_app->emulator = gbb::create_core(std::move(rom), options);
         active_app->voxel_camera_pitch_offset = 0.0F;
         active_app->voxel_camera_yaw_offset = 0.0F;
@@ -1431,6 +1436,12 @@ extern "C" EMSCRIPTEN_KEEPALIVE void gbb_set_hardware_model(
     if (active_app) active_app->hardware_model = requested_hardware_model;
 }
 
+extern "C" EMSCRIPTEN_KEEPALIVE void gbb_set_startup_mode(const unsigned index) noexcept {
+    if (index >= gbb::startup_modes.size()) return;
+    requested_startup_mode = gbb::startup_modes[index];
+    if (active_app) active_app->startup_mode = requested_startup_mode;
+}
+
 extern "C" EMSCRIPTEN_KEEPALIVE void gbb_set_audio_enabled(
     const bool enabled) noexcept {
     if (active_app) set_audio_enabled(*active_app, enabled);
@@ -1497,6 +1508,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int, char**) {
     }
     static_cast<void>(SDL_SetRenderVSync(app->renderer, 1));
     app->hardware_model = requested_hardware_model;
+    app->startup_mode = requested_startup_mode;
     active_app = app.get();
     *appstate = app.release();
     set_status("Ready. Choose a Game Boy ROM to begin.");

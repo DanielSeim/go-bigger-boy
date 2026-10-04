@@ -68,8 +68,9 @@ gameboy::HardwareModel hardware_model_from_option(const std::string& value) {
 class GameBoyCore final : public EmulatorCore {
 public:
     explicit GameBoyCore(gameboy::Cartridge cartridge,
-                          const gameboy::HardwareModel model)
-        : emulator_(std::move(cartridge), model) {
+                          const gameboy::HardwareModel model,
+                          const gameboy::BootRomMode boot_mode)
+        : emulator_(std::move(cartridge), model, boot_mode) {
         descriptor_.system = emulator_.bus().cgb_mode()
                                  ? SystemId::game_boy_color
                                  : SystemId::game_boy;
@@ -221,8 +222,15 @@ CoreFactory gameboy_core_factory() {
             } else if (!options.source_path.empty()) {
                 cartridge.set_persistence_path(options.source_path);
             }
-            return std::make_unique<GameBoyCore>(
-                std::move(cartridge), hardware_model_from_option(options.hardware_model));
+            const auto model = gameboy::resolve_hardware_model(
+                hardware_model_from_option(options.hardware_model),
+                cartridge.supports_cgb(), cartridge.supports_sgb());
+            const auto boot_mode = (options.startup_mode == StartupMode::replacement_dmg ||
+                                   options.startup_mode == StartupMode::animated_dmg) &&
+                                   model == gameboy::HardwareModel::dmg
+                ? (options.startup_mode == StartupMode::animated_dmg ? gameboy::BootRomMode::animated_dmg
+                    : gameboy::BootRomMode::replacement_dmg) : gameboy::BootRomMode::post_boot;
+            return std::make_unique<GameBoyCore>(std::move(cartridge), model, boot_mode);
         }};
 }
 

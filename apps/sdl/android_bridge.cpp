@@ -633,6 +633,31 @@ Java_com_danielseim_gbb_LibraryActivity_nativeHardwareModel(
     return environment->NewStringUTF(std::string{gameboy::hardware_model_id(model)}.c_str());
 }
 
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_danielseim_gbb_LibraryActivity_nativeStartupMode(
+    JNIEnv* environment, jclass, jstring directory) {
+    const auto* raw = environment->GetStringUTFChars(directory, nullptr);
+    if (!raw) return nullptr;
+    const auto settings = load_app_settings(std::filesystem::u8path(raw));
+    environment->ReleaseStringUTFChars(directory, raw);
+    return environment->NewStringUTF(std::string{gbb::startup_mode_id(settings.startup_mode)}.c_str());
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_danielseim_gbb_LibraryActivity_nativeSetStartupMode(
+    JNIEnv* environment, jclass, jstring directory, jstring mode) {
+    const auto* raw = environment->GetStringUTFChars(directory, nullptr);
+    const auto* value = mode ? environment->GetStringUTFChars(mode, nullptr) : nullptr;
+    if (raw && value) {
+        const auto path = std::filesystem::u8path(raw);
+        auto settings = load_app_settings(path);
+        settings.startup_mode = gbb::startup_mode_from_setting(value);
+        write_portable_settings(path, settings);
+    }
+    if (value) environment->ReleaseStringUTFChars(mode, value);
+    if (raw) environment->ReleaseStringUTFChars(directory, raw);
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_danielseim_gbb_LibraryActivity_nativeSetHardwareModel(
     JNIEnv* environment, jclass, jstring directory, jstring model) {

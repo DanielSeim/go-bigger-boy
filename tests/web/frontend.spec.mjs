@@ -55,6 +55,10 @@ test('loads a ROM and persists the primary display settings', async ({page}) => 
   await expect(page.locator('#display-palette')).toBeEnabled();
   await expect(page.locator('#video-mode')).toBeEnabled();
   await expect(page.locator('#hardware-model')).toBeEnabled();
+  await expect(page.locator('#startup-mode')).toBeEnabled();
+  await expect(page.locator('#startup-mode')).toHaveValue('instant');
+  await page.locator('#startup-mode').selectOption('replacement-dmg');
+  await expect(await page.evaluate(() => localStorage.getItem('gbb-startup-mode'))).toBe('replacement-dmg');
 
   await page.locator('#audio-enabled').uncheck();
   await page.locator('#display-palette').selectOption('3');
@@ -71,6 +75,7 @@ test('loads a ROM and persists the primary display settings', async ({page}) => 
   await expect(page.locator('#status')).toHaveText(
     'Ready. Choose a Game Boy ROM to begin.', {timeout: 90_000});
   await expect(page.locator('#audio-enabled')).not.toBeChecked();
+  await expect(page.locator('#startup-mode')).toHaveValue('replacement-dmg');
   await expect(page.locator('#display-palette')).toHaveValue('3');
   await expect(page.locator('#video-mode')).toHaveValue('2');
   await expect(page.locator('#hardware-model')).toHaveValue('cgb-e');
@@ -102,4 +107,75 @@ test('loads a ROM and persists the primary display settings', async ({page}) => 
 
   expect(pageErrors, pageErrors.map(error => error.stack).join('\n'))
     .toEqual([]);
+});
+
+test('bundled DMG boot reaches a logo-free cartridge and unknown preferences fall back safely', async ({page}) => {
+  await page.goto('/');
+  await expect(page.locator('#startup-mode')).toBeEnabled({timeout: 90_000});
+  await page.evaluate(() => localStorage.setItem('gbb-startup-mode', 'unknown'));
+  await page.reload();
+  await expect(page.locator('#startup-mode')).toBeEnabled({timeout: 90_000});
+  await expect(page.locator('#startup-mode')).toHaveValue('instant');
+  await page.locator('#audio-enabled').uncheck();
+  await page.locator('#hardware-model').selectOption('dmg');
+  await page.locator('#startup-mode').selectOption('replacement-dmg');
+
+  const rom = new Uint8Array(0x8000);
+  // JP 0150; cartridge writes a unique scroll marker after boot handoff.
+  rom.set([0xc3, 0x50, 0x01], 0x100);
+  rom.set([0x3e, 0x2a, 0xe0, 0x43, 0x18, 0xfe], 0x150);
+  let checksum = 0;
+  for (let index = 0x134; index <= 0x14c; ++index) checksum = (checksum - rom[index] - 1) & 0xff;
+  rom[0x14d] = checksum;
+  await page.locator('#rom-file').setInputFiles({
+    name: 'gbb-logo-free-boot.gb', mimeType: 'application/octet-stream', buffer: Buffer.from(rom),
+  });
+  await expect(page.locator('#status')).toContainText('ROM loaded');
+  await expect.poll(async () => page.evaluate(() => {
+    const pointer = Module._gbb_export_scene_snapshot();
+    return JSON.parse(UTF8ToString(pointer)).scx;
+  }), {timeout: 30_000}).toBe(42);
+  // Preference changes do not restart or replace the running cartridge.
+  await page.locator('#startup-mode').selectOption('instant');
+  await expect(await page.evaluate(() => {
+    return JSON.parse(UTF8ToString(Module._gbb_export_scene_snapshot())).scx;
+  })).toBe(42);
+  await expect(await page.evaluate(() => localStorage.getItem('gbb-startup-mode'))).toBe('instant');
+});
+
+test('animated DMG splash stays flat with voxel selected and hands off', async ({page}) => {
+  await page.goto('/');
+  await expect(page.locator('#startup-mode')).toBeEnabled({timeout: 90_000});
+  await page.locator('#audio-enabled').uncheck();
+  await page.locator('#hardware-model').selectOption('dmg');
+  await page.locator('#startup-mode').selectOption('animated-dmg');
+  await page.locator('#video-mode').selectOption('5');
+  const rom = new Uint8Array(0x8000);
+  rom.set([0xc3, 0x50, 0x01], 0x100);
+  rom.set([0x3e, 0x2a, 0xe0, 0x43, 0x18, 0xfe], 0x150);
+  let sum = 0;
+  for (let i = 0x134; i <= 0x14c; ++i) sum = (sum - rom[i] - 1) & 0xff;
+  rom[0x14d] = sum;
+  await page.locator('#rom-file').setInputFiles({
+    name: 'gbb-animated-boot.gb', mimeType: 'application/octet-stream', buffer: Buffer.from(rom),
+  });
+  // Pause at a known emulated time rather than relying on screenshot wall time.
+  await expect.poll(async () => page.evaluate(() => {
+    const state = JSON.parse(UTF8ToString(Module._gbb_export_scene_snapshot()));
+    if (state.emulation_cycles >= 2700000 && state.emulation_cycles < 4200000) {
+      Module._gbb_pause_rom();
+      return true;
+    }
+    return false;
+  }), {intervals: [10], timeout: 30000}).toBe(true);
+  const directory = process.env.GBB_WEB_CAPTURE_DIR || 'test-results/web-captures';
+  await mkdir(directory, {recursive: true});
+  await page.locator('#canvas').screenshot({path: path.join(directory, 'animated-boot.png')});
+  await page.evaluate(() => Module._gbb_start_rom());
+  await expect.poll(async () => page.evaluate(() =>
+    JSON.parse(UTF8ToString(Module._gbb_export_scene_snapshot())).scx
+  ), {timeout: 30000}).toBe(42);
+  await expect(page.locator('#startup-mode')).toHaveValue('animated-dmg');
+  await expect(page.locator('#video-mode')).toHaveValue('5');
+  expect(await page.evaluate(() => localStorage.getItem('gbb-startup-mode'))).toBe('animated-dmg');
 });

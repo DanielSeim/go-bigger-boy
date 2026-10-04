@@ -9,7 +9,7 @@ repository's GPL-3.0-or-later license.
 
 `gameboy/dmg.asm` is an original, 256-byte **fast cold-start** implementation.
 It is opt-in, DMG-only, and not a cycle-exact recreation of Nintendo's startup.
-The production startup selection and existing diagnostic ROM are unchanged.
+Instant startup remains the default; the existing diagnostic ROM is unchanged.
 
 The firmware executes on the emulated CPU from `0000`, with the LCD and APU
 off and the divider starting at zero. It establishes the stack, disables
@@ -67,7 +67,28 @@ ctest --test-dir build -R 'gameboy_dmg_' --output-on-failure
 
 The firmware is also available through `BootRomMode::replacement_dmg` in the
 core API. Other hardware profiles are rejected rather than silently receiving
-DMG initialization. There is not yet a desktop, Android, or web settings toggle.
+DMG initialization. Desktop, Android and web settings expose **Startup** with
+**Instant startup** (default), **GBB replacement boot**, and **GBB animated boot**. Desktop and Android
+persist `boot.Startup = instant`, `replacement-dmg`, or `animated-dmg` in `settings.ini`; web
+persists the choice in browser local storage. No external firmware download is
+required: the image is bundled in every build.
+
+The animated option runs the exact same 256-byte replacement firmware, with
+a shared host presentation layered over it: original descending **Go Bigger Boy**
+pixel lettering and an original synthesized two-note pulse chime. No Nintendo
+logo, sound recording or firmware instructions are included. This is not an
+animation encoded inside the boot ROM. It fits the existing approximately
+1.03-second boot, without adding emulated cycles or modifying RAM, VRAM or APU
+state. **A or Start** skips the presentation and chime, not firmware execution
+or header validation. The startup screen stays flat even if voxel rendering is
+selected; the chosen renderer resumes at cartridge handoff. Muted audio stays muted.
+
+The choice applies when a ROM is started again (including frontend restart),
+not to an already running core. It does not force a hardware model. Automatic
+selection still prefers CGB for CGB-capable titles and SGB for SGB-capable titles;
+select the **DMG** hardware profile explicitly if you want to use the replacement
+with a dual-mode title. Non-DMG profiles retain instant startup. Experimental
+SNES-side SGB firmware playback remains separate and still needs user firmware.
 
 ### State and reset contracts
 
@@ -80,7 +101,10 @@ physical cartridge power cycle or mapper reset.
 Save-state version 40 includes the actual 256-byte mapped boot image when a
 boot is in progress, so a mid-boot restore does not depend on the destination
 constructor having selected the same firmware. Completed boots have no image
-payload. Versions 1–39 remain loadable using their existing compatibility path.
+payload. Version 42 additionally stores animation/skip progress and the chime
+cursor, so a mid-intro restore continues deterministically. Versions 1–41 remain
+loadable using their existing compatibility paths, without adding an intro to
+an older state. Reset follows the receiving emulator's configured startup mode.
 Reset after a restore still follows the receiving emulator's configured boot
 mode; restoring a state does not silently change its startup preference.
 
@@ -120,8 +144,10 @@ The firmware hands off with channel 1's envelope at
 zero while retaining the canonical readable sound registers and an active DAC.
 Logo-free cartridges that never write the APU stay below -72 dBFS in the
 automated one-second quiet-output check; retriggering produces normal sound.
-There is a DAC/mixer power-on DC transient during boot, not a replacement chime.
-No host mute or private post-boot state injection is used.
-An original GBB splash/chime, broader title-level and independent-hardware validation,
-and model-specific boot implementations remain future milestones. SNES-side
+In the fast replacement mode there is a DAC/mixer power-on DC transient during
+boot, not a chime. That mode uses no host mute or private post-boot state
+injection. The optional animated mode replaces only the returned pre-handoff
+PCM with its original chime, without changing the emulated APU state.
+Broader title-level and independent-hardware validation and model-specific boot
+implementations remain future milestones. SNES-side
 SGB1/SGB2 and SPC700 replacement firmware are not implemented here yet.

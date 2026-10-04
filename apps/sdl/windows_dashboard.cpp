@@ -59,6 +59,7 @@ constexpr int id_palette = 107;
 constexpr int id_remove = 108;
 constexpr int id_video = 109;
 constexpr int id_hardware_model = 130;
+constexpr int id_startup_mode = 144;
 constexpr int id_audio_enabled = 131;
 // Keep this outside the settings-section command range below. A collision
 // here makes a checkbox click look like a request to switch sections.
@@ -98,6 +99,8 @@ constexpr int id_action_first = 220;
 static_assert(id_show_fps < id_settings_section_first ||
                   id_show_fps >= id_settings_section_first + 4,
               "FPS checkbox ID must not overlap settings section IDs");
+static_assert(id_startup_mode > id_firmware_browse && id_startup_mode < id_binding_first,
+              "Startup combo ID must not overlap section, firmware or binding controls");
 static_assert(id_voxel_first_edit > id_action_first + 4 &&
                   id_voxel_first_edit > id_firmware_browse,
               "Voxel edit range must not overlap dashboard command IDs");
@@ -183,7 +186,7 @@ using State = DashboardState;
 long settings_content_bottom(const State& state) {
     switch (state.settings_section) {
     case State::SettingsSection::general:
-        return 800;
+        return 890;
     case State::SettingsSection::controls:
         // The last control in this section ends at y=830. Keep the small
         // bottom margin out of the scroll range so a normal-sized dashboard
@@ -432,7 +435,7 @@ void refresh_firmware_controls(State& state) {
     EnableWindow(state.firmware_browse,enabled);
     EnableWindow(state.hardware_model,!enabled);
     SetWindowTextW(state.firmware_status,
-        L"Experimental, next ROM launch only. Caller-owned images; no firmware is bundled.\r\n"
+        L"Experimental, next ROM launch only. Caller-owned images; no SGB firmware is bundled.\r\n"
         L"Separate firmware saves. No voxel modes, link, debugger, cheats or automatic rewind.\r\n"
         L"Existing SGB border/color composition is retained; full SNES menus are not implemented.");
     state.video_choices.clear();
@@ -514,7 +517,7 @@ void show_settings_section(State& state) {
     const auto settings = state.page == State::Page::settings;
     const auto section = state.settings_section;
     constexpr std::array<const wchar_t*, 4> descriptions{{
-        L"Display palette, video mode, audio generation, and hardware model. Hardware changes apply to the next game.",
+        L"Display, audio, hardware model and startup. Hardware and startup changes apply when the ROM is started again.",
         L"Click a slot, press a key, or press Delete to clear it. Duplicate keys are moved from their previous action.",
         L"Choose TCP for a LAN connection or Bluetooth Classic for paired devices. Only relevant fields are shown.",
         L"Advanced tools are optional. Voxel profiles are per-ROM; plug-in policy changes require a restart."}};
@@ -544,6 +547,9 @@ void show_settings_section(State& state) {
     show(state.video, State::SettingsSection::general);
     show(state.hardware_model_label, State::SettingsSection::general);
     show(state.hardware_model, State::SettingsSection::general);
+    show(state.startup_mode_label, State::SettingsSection::general);
+    show(state.startup_mode, State::SettingsSection::general);
+    show(state.startup_description, State::SettingsSection::general);
     show(state.audio_enabled, State::SettingsSection::general);
     show(state.show_fps, State::SettingsSection::general);
     for(const auto control:{state.firmware_enabled,state.firmware_model,state.firmware_directory,state.firmware_browse,state.firmware_status})
@@ -1251,6 +1257,9 @@ void show_page(State& state, const State::Page page) {
     ShowWindow(state.video, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.hardware_model_label, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.hardware_model, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.startup_mode_label, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.startup_mode, settings ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.startup_description, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.audio_enabled, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.show_fps, settings ? SW_SHOW : SW_HIDE);
     ShowWindow(state.controls_label, settings ? SW_SHOW : SW_HIDE);
@@ -1626,13 +1635,16 @@ void layout_dashboard(State& state) {
     place_child(state.video, 200, 390, 320, 28, offset);
     place_child(state.hardware_model_label, 32, 440, 150, 26, offset);
     place_child(state.hardware_model, 200, 435, 320, 28, offset);
-    place_child(state.audio_enabled, 32, 490, 360, 34, offset);
-    place_child(state.show_fps, 400, 490, 360, 34, offset);
-    place_child(state.firmware_enabled,32,540,600,34,offset);
-    place_child(state.firmware_model,32,585,160,28,offset);
-    place_child(state.firmware_directory,210,585,530,28,offset);
-    place_child(state.firmware_browse,755,585,173,30,offset);
-    place_child(state.firmware_status,32,630,896,150,offset);
+    place_child(state.startup_mode_label, 32, 485, 150, 26, offset);
+    place_child(state.startup_mode, 200, 480, 320, 28, offset);
+    place_child(state.startup_description, 32, 520, 896, 50, offset);
+    place_child(state.audio_enabled, 32, 580, 360, 34, offset);
+    place_child(state.show_fps, 400, 580, 360, 34, offset);
+    place_child(state.firmware_enabled,32,630,600,34,offset);
+    place_child(state.firmware_model,32,675,160,28,offset);
+    place_child(state.firmware_directory,210,675,530,28,offset);
+    place_child(state.firmware_browse,755,675,173,30,offset);
+    place_child(state.firmware_status,32,720,896,150,offset);
 
     // Controls use a literal table instead of placing buttons over a
     // decorative controller illustration.
@@ -2132,6 +2144,19 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                     state->result.video_mode = state->video_choices[static_cast<std::size_t>(selected)];
                     state->result.video_mode_changed = true;
                     mark_settings_dirty(*state);
+                }
+            }
+            return 0;
+        case id_startup_mode:
+            if (HIWORD(wparam) == CBN_SELENDOK) {
+                const auto selected = SendMessageW(state->startup_mode, CB_GETCURSEL, 0, 0);
+                if (selected >= 0 && selected < static_cast<LRESULT>(gbb::startup_modes.size())) {
+                    const auto mode = gbb::startup_modes[static_cast<std::size_t>(selected)];
+                    if (mode != state->result.startup_mode) {
+                        state->result.startup_mode = mode;
+                        state->result.startup_mode_changed = true;
+                        mark_settings_dirty(*state);
+                    }
                 }
             }
             return 0;
@@ -2949,6 +2974,7 @@ DashboardResult show_windows_dashboard(
     const gbb::CoreCapability capabilities,
     const std::size_t palette, const gameboy::VideoMode video_mode,
     const gameboy::HardwareModel hardware_model,
+    const gbb::StartupMode startup_mode,
     const gbb::sdl::DesktopFirmwareSettings& firmware,
     const bool firmware_active,
     const bool audio_enabled,
@@ -2998,6 +3024,7 @@ DashboardResult show_windows_dashboard(
     state.result.palette = palette;
     state.result.video_mode = video_mode;
     state.result.hardware_model = hardware_model;
+    state.result.startup_mode = startup_mode;
     state.result.firmware=firmware;
     state.result.audio_enabled = audio_enabled;
     state.result.show_fps = show_fps;
@@ -3228,6 +3255,18 @@ DashboardResult show_windows_dashboard(
     if (selected_model < 0) selected_model = 0;
     SendMessageW(state.hardware_model, CB_SETCURSEL,
                  static_cast<WPARAM>(selected_model), 0);
+    state.startup_mode_label = control(state, L"STATIC", L"Startup", 0, 32, 485, 150, 26, 0);
+    state.startup_mode = control(state, L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_TABSTOP,
+        200, 480, 320, 120, id_startup_mode);
+    for (const auto mode : gbb::startup_modes) {
+        const auto name = widen(std::string{gbb::startup_mode_name(mode)});
+        SendMessageW(state.startup_mode, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(name.c_str()));
+    }
+    SendMessageW(state.startup_mode, CB_SETCURSEL,
+        static_cast<WPARAM>(std::distance(gbb::startup_modes.begin(),
+            std::find(gbb::startup_modes.begin(), gbb::startup_modes.end(), startup_mode))), 0);
+    const auto startup_text = widen(std::string{gbb::startup_description});
+    state.startup_description = control(state, L"STATIC", startup_text.c_str(), 0, 32, 520, 896, 50, 0);
     state.audio_enabled = control(
         state, L"BUTTON", L"Generate audio",
         WS_TABSTOP | BS_AUTOCHECKBOX, 510, 270, 300, 34, id_audio_enabled);
@@ -3442,6 +3481,9 @@ DashboardResult show_windows_dashboard(
         state.video,
         state.hardware_model_label,
         state.hardware_model,
+        state.startup_mode_label,
+        state.startup_mode,
+        state.startup_description,
         state.audio_enabled,
         state.show_fps,
         state.firmware_enabled,state.firmware_model,state.firmware_directory,state.firmware_browse,state.firmware_status,

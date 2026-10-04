@@ -36,6 +36,7 @@ public:
     [[nodiscard]] const Ppu::Framebuffer& framebuffer() const noexcept;
     [[nodiscard]] const Ppu::SgbFramebuffer& sgb_framebuffer() const noexcept;
     [[nodiscard]] bool frame_ready() const noexcept;
+    [[nodiscard]] bool startup_animation_active() const noexcept;
     void consume_frame() noexcept;
     [[nodiscard]] std::vector<std::int16_t> take_audio_samples();
     void set_audio_enabled(bool enabled) noexcept;
@@ -75,6 +76,13 @@ private:
     HardwareModel hardware_model_{HardwareModel::dmg};
     BootRomMode boot_rom_mode_{BootRomMode::post_boot};
     DmgPalette automatic_dmg_palette_{grayscale_dmg_palette};
+    bool splash_enabled_{};
+    bool splash_skipped_{};
+    std::uint64_t splash_consumed_frame_{};
+    std::uint64_t splash_handoff_cycles_{};
+    std::uint64_t splash_audio_cursor_{};
+    mutable std::uint64_t splash_cached_frame_{UINT64_MAX};
+    mutable Ppu::Framebuffer splash_pixels_{};
 };
 
 } // namespace gameboy

@@ -119,8 +119,9 @@ void append_missing_portable_settings(
     const bool has_plugin_allow_capability,
     const std::array<bool, touch_layout_count * touch_control_count>&
         has_touch_positions, const bool has_firmware_enabled,
-    const bool has_firmware_directory, const bool has_firmware_model) {
-    const auto complete = has_firmware_enabled && has_firmware_directory && has_firmware_model && has_palette && has_hardware_model &&
+    const bool has_firmware_directory, const bool has_firmware_model,
+    const bool has_startup_mode) {
+    const auto complete = has_startup_mode && has_firmware_enabled && has_firmware_directory && has_firmware_model && has_palette && has_hardware_model &&
         std::all_of(has_keyboard.begin(), has_keyboard.end(),
                     [](const bool value) { return value; }) &&
         std::all_of(has_gamepad.begin(), has_gamepad.end(),
@@ -145,6 +146,7 @@ void append_missing_portable_settings(
         return;
     }
     output << "\n# Missing entries added automatically by GBB\n";
+    if (!has_startup_mode) output << "boot.Startup = " << gbb::startup_mode_id(settings.startup_mode) << '\n';
     if(!has_firmware_enabled) output << "sgb.FirmwarePlayback = " << (settings.sgb_firmware.enabled?"true":"false") << '\n';
     if(!has_firmware_directory) output << "sgb.FirmwareDirectory = " << gbb::sdl::firmware_directory_setting(settings.sgb_firmware.directory) << '\n';
     if(!has_firmware_model) output << "sgb.FirmwareModel = " << settings.sgb_firmware.model << '\n';
@@ -295,6 +297,7 @@ void write_portable_settings(const std::filesystem::path& preference_directory,
            << gameboy::display_palettes[settings.palette].id << "\n"
               "hardware.Model = "
            << gameboy::hardware_model_id(settings.hardware_model) << "\n"
+           << "boot.Startup = " << gbb::startup_mode_id(settings.startup_mode) << "\n"
               "video.Mode = "
            << gameboy::video_mode_info(settings.video_mode).id << "\n"
               "audio.Enabled = "
@@ -522,6 +525,7 @@ AppSettings load_portable_settings(
     std::array<bool, 8> has_legacy_touch_positions{};
     bool has_palette = false;
     bool has_hardware_model = false;
+    bool has_startup_mode = false;
     bool has_firmware_enabled=false, has_firmware_directory=false, has_firmware_model=false;
     bool has_video_mode = false;
     bool has_audio_enabled = false;
@@ -602,6 +606,11 @@ AppSettings load_portable_settings(
         if (key == "video.ShowFps") {
             has_show_fps = true;
             settings.show_fps = parse_bool_setting(value, settings.show_fps);
+            continue;
+        }
+        if (key == "boot.Startup") {
+            has_startup_mode = true;
+            settings.startup_mode = gbb::startup_mode_from_setting(value);
             continue;
         }
         if (key == "link.Diagnostics") {
@@ -889,7 +898,8 @@ AppSettings load_portable_settings(
                                      has_plugin_require_capability_allowlist,
                                      has_plugin_allow_capability,
                                      has_touch_positions, has_firmware_enabled,
-                                     has_firmware_directory, has_firmware_model);
+                                     has_firmware_directory, has_firmware_model,
+                                     has_startup_mode);
     return settings;
 }
 

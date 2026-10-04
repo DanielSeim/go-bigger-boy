@@ -29,7 +29,8 @@ void load_rom(const std::string& path,
               SdlResources& sdl,
               const std::filesystem::path& preference_path,
               std::string hardware_model = "auto",
-              const std::filesystem::path& firmware_directory = {});
+              const std::filesystem::path& firmware_directory = {},
+              gbb::StartupMode startup_mode = gbb::StartupMode::instant);
 
 void start_link_trace(const std::filesystem::path& preference_path,
                       const char* role_suffix = nullptr,

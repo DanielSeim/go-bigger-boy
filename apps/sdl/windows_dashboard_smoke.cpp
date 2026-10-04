@@ -508,7 +508,7 @@ DashboardResult invoke_dashboard(const bool can_resume,
         // Apply/Discard and link commands while the section was hidden.
         can_resume ? gbb::CoreCapability::scene_layers : gbb::CoreCapability::none,
         0, gameboy::default_video_mode,
-        gameboy::HardwareModel::automatic, {}, false, true, false, keyboard, actions,
+        gameboy::HardwareModel::automatic, gbb::StartupMode::instant, {}, false, true, false, keyboard, actions,
         link_settings, plugin_options, plugin_catalog, {}, {});
 }
 
@@ -602,6 +602,17 @@ bool run_dashboard_case(const bool can_resume, const bool discard,
                          pages_ok, sections_ok, controls_ok, render_ok);
         }
     }
+    if (passed) {
+        send_dashboard_command(dashboard, 136);
+        const auto startup = GetDlgItem(dashboard, 144);
+        passed &= startup != nullptr && SendMessageW(startup, CB_GETCOUNT, 0, 0) == 3;
+        if (startup) {
+            SendMessageW(startup, CB_SETCURSEL, 2, 0);
+            SendMessageW(dashboard, WM_COMMAND, MAKEWPARAM(144, CBN_SELENDOK), reinterpret_cast<LPARAM>(startup));
+            passed &= visible_child(dashboard, L"Display palette") &&
+                      !visible_child(dashboard, L"Keyboard controls");
+        }
+    }
     if (passed && discard) {
         passed = click_child(dashboard, L"Generate audio");
         if (passed) {
@@ -663,7 +674,9 @@ bool run_dashboard_case(const bool can_resume, const bool discard,
                               ? DashboardResultAction::quit
                               : can_resume ? DashboardResultAction::resume
                                             : DashboardResultAction::library;
-    const auto result_matches = invocation.result.action == expected;
+    const auto result_matches = invocation.result.action == expected &&
+        invocation.result.startup_mode == (discard ? gbb::StartupMode::instant : gbb::StartupMode::animated_dmg) &&
+        invocation.result.startup_mode_changed == !discard;
     if (!passed || !result_matches) {
         std::fprintf(stderr,
                      "dashboard smoke: case failed passed=%d result=%d expected=%d\n",
