@@ -22,6 +22,8 @@ public:
         Writer payload;
         write_cpu(payload, emulator.cpu_);
         write_bus(payload, emulator.bus_);
+        // Append the phase rather than changing legacy CPU/bus field offsets.
+        SaveStateCpuCodec::write_irq_phase(payload, emulator.cpu_);
         return save_state_container::encode(emulator.rom_fingerprint(),
                                             payload.data());
     }
@@ -33,6 +35,8 @@ public:
         Reader payload(decoded.payload);
         read_cpu(payload, emulator.cpu_);
         read_bus(payload, emulator.bus_, decoded.version);
+        if (decoded.version >= 41)
+            SaveStateCpuCodec::read_irq_phase(payload, emulator.cpu_);
         payload.finish();
     }
 

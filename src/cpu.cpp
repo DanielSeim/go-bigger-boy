@@ -60,6 +60,7 @@ void Cpu::reset(const HardwareModel model) noexcept {
     halt_bug_ = false;
     ime_enable_delay_ = 0;
     step_cycles_ = 0;
+    stat_acknowledgment_ = false;
     total_cycles_ = 0;
 }
 
@@ -71,6 +72,7 @@ void Cpu::reset_boot() noexcept {
     halt_bug_ = false;
     ime_enable_delay_ = 0;
     step_cycles_ = 0;
+    stat_acknowledgment_ = false;
     total_cycles_ = 0;
 }
 
@@ -604,6 +606,8 @@ unsigned Cpu::service_interrupt(MemoryBus& bus,
     bus.cpu_write8(registers_.sp, static_cast<std::uint8_t>(registers_.pc));
 
     unsigned interrupt = 0;
+    const auto late_stat_ack = (dispatched & 0x03U) == 0x02U &&
+                              !bus.cgb_hardware_ && !bus.sgb_adapter_.enabled();
     if (dispatched != 0) {
         while ((dispatched & (1U << interrupt)) == 0) {
             ++interrupt;
@@ -617,11 +621,19 @@ unsigned Cpu::service_interrupt(MemoryBus& bus,
     // does not.  This is the boundary exercised by Wilbert's 45/46-NOP
     // timer_if fixture.  HALT dispatch and every other interrupt source keep
     // the ordinary peripheral timing path.
+    // Keep the STAT reset effective through vector entry and its first
+    // opcode fetch. This is distinct from a software IF write: an edge
+    // coincident with acknowledgment is consumed, while a later edge
+    // can retrigger. Do not shift LY/coincidence or IF read timing, or
+    // change the timer path when multiple sources are pending together.
+    stat_acknowledgment_ = late_stat_ack;
     if (from_halt || (dispatched & 0x04U) == 0) {
         idle(bus, 4);
     } else {
         idle_without_timer(bus, 4);
     }
+    if (late_stat_ack)
+        bus.write8(0xFF0F, static_cast<std::uint8_t>(bus.read8(0xFF0F) & ~0x02U));
     registers_.pc = dispatched == 0
                         ? 0
                         : static_cast<std::uint16_t>(0x0040 + interrupt * 8);
@@ -687,6 +699,10 @@ std::uint16_t Cpu::pop(MemoryBus& bus) noexcept {
 
 std::uint8_t Cpu::fetch8(MemoryBus& bus) noexcept {
     const auto value = read8(bus, registers_.pc);
+    if (stat_acknowledgment_) {
+        bus.write8(0xFF0F, static_cast<std::uint8_t>(bus.read8(0xFF0F) & ~0x02U));
+        stat_acknowledgment_ = false;
+    }
     if (halt_bug_) {
         halt_bug_ = false;
     } else {

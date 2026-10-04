@@ -101,10 +101,81 @@ its own independent reference validation. Regression tests cover dot boundaries,
 interrupts, bulk versus single-dot clocks, frame publication and state restore.
 Hardware evidence is from [TCAGBD section 8.9.1](https://github.com/AntonioND/giibiiadvance/blob/master/docs/TCAGBD.pdf)
 and the [Gambatte hardware tests](https://github.com/pokemon-speedrunning/gambatte-core/tree/master/test/hwtests/ly0).
-Eleven of twelve DMG-applicable line-153 LY/LYC fixtures now produce their
-expected visible result. `lycint152_lyc153irq_late_retrigger_2` still produces
-`E2` instead of `E0`; the interrupt-clear/retrigger race needs separate work.
-This is reported rather than silently treated as passing.
+The initial twelve-fixture check passed eleven cases. The previously failing
+`lycint152_lyc153irq_late_retrigger_2` acknowledgment race is now fixed; the
+expanded check and its remaining limitations are recorded below.
+
+## STAT acknowledgment regression (2026-10-04)
+
+The standalone DMG/MGB CPU now retains a STAT acknowledgment phase across
+vector entry and the first vector opcode fetch. An overlapping STAT edge is
+consumed; an edge after that fetch can retrigger. Interrupt dispatch still
+takes twenty clocks, with unchanged arbitration, stack writes and vector
+selection. Other IF bits are preserved. Software IF writes do not arm this
+phase. PPU LY/coincidence transitions and ordinary IF read/write timings are
+unchanged: moving the PPU interrupt earlier fixed the target but regressed
+neighboring tests, so that candidate was discarded.
+
+This is a hardware-fixture-backed **behavioral timing model**, not a claim that
+the internal CPU acknowledgment signal has been independently measured at
+gate level. It is restricted to the standalone DMG-style path; CGB and the
+coupled SGB/SGB2 host timing are not migrated by this change.
+
+The expanded local check covers all 33 DMG-applicable `lycint152_*` fixtures
+in the public Gambatte `ly0` group. Results improve from **29/33 to 31/33**,
+both with direct post-boot startup and with the replacement DMG firmware:
+
+- `lyc153irq_late_retrigger_2` and `lyc0irq_late_retrigger_2` now return the
+  expected `E0`; the neighboring `late_retrigger_1` cases still return `E2`.
+- Ordinary interrupt reads, IF-write races and LY/LYC comparisons retain
+  their previously passing results.
+- `lycint152_m0irq_1` and `lycint152_m2irq_1` remain mismatches (`E2` versus
+  `E0`). These are existing mode-source timing limitations, not passing tests.
+- All 63 CGB-C results are unchanged from the baseline, which passes only
+  19/63 in this broader group. This does **not** establish CGB conformance.
+
+Reproduce using a local copy of the external fixtures (not shipped in GBB):
+
+```sh
+cmake --build build-boot --target gameboy_stat_irq_probe
+python3 scripts/validate_stat_irq.py \
+  --probe build-boot/gbb_stat_irq_probe \
+  --rom-directory /path/to/gambatte/ly0 \
+  --output /tmp/stat-ly0.json
+# Add --dmg-boot for the replacement, or --model cgb-c for the CGB group.
+```
+
+The source-specific probe observes A at the public tests' result routine;
+it is not a generic cartridge completion detector. Reports contain computed
+bytes, fixture names and SHA-256 provenance, not ROM/RAM data. Inputs and
+tools are fingerprinted before and after execution, reports refuse overwrite,
+and mismatches return exit code 1 rather than being hidden as successes.
+
+Offline synthetic regressions cover both LYC sources, individual-clock
+acknowledgment boundaries, batched/literal PPU execution, reset, model isolation,
+priority and save/load across vector entry. Save-state version 41 appends one
+boolean acknowledgment phase without moving legacy CPU/bus fields. Versions
+1-40 still load, defaulting to no pending phase; malformed phases are rejected
+with atomic rollback. The replacement firmware image itself is unchanged.
+
+The eleven focused boot/CPU/timer/PPU/save checks pass. The five selected
+ASan/UBSan checks also pass (LeakSanitizer disabled for the sandbox). Ten of
+eleven additional Mooneye interrupt/HALT fixtures pass; the sprite variant of
+`intr_2_mode0_timing` times out with identical diagnostics on the committed
+baseline and the updated core, so it remains an existing limitation.
+
+A direct before/after check against the committed core (`75ca1a3`) runs
+Pokémon Blue, Donkey Kong v1.1, Tetris v1.1 and Super Mario Land v1.0 for thirty
+seconds after replacement boot, pressing Start at four seconds. All four have
+byte-identical stereo PCM, identical **final** framebuffer hashes and equal
+instruction budgets. This checks the sampled final images, not every video
+frame. An intermediate candidate accidentally changed timer clocking when
+STAT and timer requests were both pending; the exact PCM comparison caught
+that, and a dedicated mixed-source regression now protects the existing
+timer path. Private captures and firmware remain local, never shipped assets.
+The final optimized 165-entry CTest run passes 162 entries with three
+network-dependent skips and no failures, including the local SGB combined-title
+and audio regressions. Skipped network tests are not reported as passing.
 
 ## Revision 2: timer and quiet-audio handoff (2026-10-04)
 

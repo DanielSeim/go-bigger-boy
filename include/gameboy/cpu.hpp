@@ -98,6 +98,8 @@ private:
     bool halt_bug_{};
     unsigned ime_enable_delay_{};
     unsigned step_cycles_{};
+    // Standalone DMG STAT reset remains effective until the first vector fetch.
+    bool stat_acknowledgment_{};
     std::uint64_t total_cycles_{};
 };
 

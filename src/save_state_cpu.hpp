@@ -13,6 +13,8 @@ class SaveStateCpuCodec final {
 public:
     static void write(save_state_format::Writer& writer, const Cpu& cpu);
     static void read(save_state_format::Reader& reader, Cpu& cpu);
+    static void write_irq_phase(save_state_format::Writer& writer, const Cpu& cpu);
+    static void read_irq_phase(save_state_format::Reader& reader, Cpu& cpu);
 };
 
 } // namespace gameboy

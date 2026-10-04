@@ -197,7 +197,21 @@ void test_save_state_round_trip_and_validation() {
         version_fourteen_sprite_deadline_size + version_fifteen_sprite_render_size;
     // No SOU_TRN has completed in this fixture, so version 39 adds two
     // revisions and the last four-byte SOUND request to the payload.
-    auto version_thirty_eight = saved;
+    auto version_forty = saved;
+    version_forty.pop_back(); // Version 41 appends the STAT acknowledgment phase.
+    version_forty[8] = 40;
+    const auto v40_payload_size = static_cast<std::uint32_t>(
+        version_forty.size() - state_header_size);
+    write_little_u32(version_forty, 20, v40_payload_size);
+    write_little_u32(version_forty, 24,
+                    state_crc32(version_forty.data() + state_header_size,
+                                v40_payload_size));
+    gameboy::Emulator v40_loader{gameboy::Cartridge{rom}};
+    v40_loader.load_state(version_forty);
+    check(v40_loader.cpu().registers().pc == saved_pc &&
+              v40_loader.cpu().total_cycles() == saved_cycles,
+          "version 40 states load without a STAT acknowledgment phase");
+    auto version_thirty_eight = version_forty;
     version_thirty_eight.resize(version_thirty_eight.size() -
                                version_thirty_nine_sgb_sound_size);
     version_thirty_eight[8] = 38;

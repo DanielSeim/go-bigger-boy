@@ -637,8 +637,15 @@ if(GAMEBOY_BUILD_TESTS)
     add_executable(gameboy_dmg_boot_probe tests/dmg_boot_probe.cpp)
     target_link_libraries(gameboy_dmg_boot_probe PRIVATE gameboy_core)
     set_target_properties(gameboy_dmg_boot_probe PROPERTIES OUTPUT_NAME gbb_dmg_boot_probe)
+    add_executable(gameboy_stat_irq_probe tests/stat_irq_probe.cpp)
+    target_link_libraries(gameboy_stat_irq_probe PRIVATE gameboy_core)
+    set_target_properties(gameboy_stat_irq_probe PROPERTIES OUTPUT_NAME gbb_stat_irq_probe)
     find_package(Python3 COMPONENTS Interpreter QUIET)
     if(Python3_Interpreter_FOUND)
+        add_test(NAME gameboy_stat_irq_tool
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/stat_irq_tool_tests.py
+                         $<TARGET_FILE:gameboy_stat_irq_probe>)
         add_test(NAME gameboy_dmg_boot_probe
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/dmg_boot_probe_tests.py
@@ -1078,6 +1085,11 @@ if(GAMEBOY_BUILD_TESTS)
     target_link_libraries(gameboy_cpu_execution_contract_tests PRIVATE gameboy_core)
     add_test(NAME gameboy_cpu_execution_contract
              COMMAND gameboy_cpu_execution_contract_tests)
+
+    add_executable(gameboy_stat_irq_contract_tests tests/stat_irq_contract_tests.cpp)
+    target_include_directories(gameboy_stat_irq_contract_tests PRIVATE src)
+    target_link_libraries(gameboy_stat_irq_contract_tests PRIVATE gameboy_core)
+    add_test(NAME gameboy_stat_irq_contract COMMAND gameboy_stat_irq_contract_tests)
 
     add_executable(gameboy_timer_contract_tests
         tests/timer_contract_tests.cpp)

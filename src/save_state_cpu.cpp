@@ -43,6 +43,17 @@ void SaveStateCpuCodec::read(save_state_format::Reader& reader, Cpu& cpu) {
     cpu.ime_enable_delay_ = reader.u32();
     cpu.step_cycles_ = reader.u32();
     cpu.total_cycles_ = reader.u64();
+    cpu.stat_acknowledgment_ = false; // Versions 1-40 have no acknowledgment phase.
+}
+
+void SaveStateCpuCodec::write_irq_phase(save_state_format::Writer& writer,
+                                      const Cpu& cpu) {
+    writer.boolean(cpu.stat_acknowledgment_);
+}
+
+void SaveStateCpuCodec::read_irq_phase(save_state_format::Reader& reader,
+                                     Cpu& cpu) {
+    cpu.stat_acknowledgment_ = reader.boolean();
 }
 
 } // namespace gameboy
