@@ -147,6 +147,9 @@ void MemoryBus::initialize_dmg_power_on() {
     apu_.set_audio_enabled(audio_enabled);
     timer_ = Timer{};
     joypad_ = Joypad{};
+    // DMG powers on with both input groups selected (JOYP=CF with no keys).
+    // The original boot does not write JOYP, unlike our explicit fast boot.
+    static_cast<void>(joypad_.write(0));
     sgb_adapter_ = SgbAdapter{};
     sgb_host_audio_.clear();
     serial_.initialize_dmg_power_on();

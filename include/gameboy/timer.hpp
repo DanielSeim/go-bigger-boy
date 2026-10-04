@@ -11,6 +11,9 @@ enum class HardwareModel;
 
 class Timer {
 public:
+    [[nodiscard]] std::uint16_t debug_divider_counter() const noexcept {
+        return divider_counter_;
+    }
     [[nodiscard]] std::uint8_t divider() const noexcept;
     [[nodiscard]] std::uint8_t counter() const noexcept;
     [[nodiscard]] std::uint8_t modulo() const noexcept;

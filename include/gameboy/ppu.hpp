@@ -41,6 +41,10 @@ public:
         return mode3_end_dot_;
     }
     [[nodiscard]] std::uint8_t debug_mode() const noexcept { return mode_; }
+    // Internal scanline 153 remains in VBlank after the CPU-visible LY wraps.
+    [[nodiscard]] std::uint8_t visible_ly() const noexcept {
+        return !cgb_hardware_ && !sgb_mode_ && ly_ == 153 && dot_ >= 4 ? 0 : ly_;
+    }
     // HBlank DMA may begin immediately only while the LCD is off or the
     // visible PPU is already in mode 0. LCD startup is deliberately excluded.
     [[nodiscard]] bool hblank_dma_available() const noexcept;

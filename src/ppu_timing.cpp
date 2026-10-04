@@ -51,6 +51,11 @@ std::uint8_t Ppu::tick(const unsigned cycles) noexcept {
                 (!scx_hblank_request_early_ || stat_line_ || !(stat_select_ & 8U) ||
                  output_x_ != screen_width - ((scx_ & 7U) == 1U || (scx_ & 7U) == 5U ? 2U : 4U))))) {
             auto end = lcd_startup_ ? 451U : 455U;
+            // DMG's final VBlank line exposes LY=0 at dot 4, but the LYC
+            // comparison has separate dot-4/8/12 phases. Never batch across
+            // these edges. Keep ly_ as the internal scanline, not visible LY.
+            if (!cgb_hardware_ && !sgb_mode_ && ly_ == 153 && dot_ < 12)
+                end = dot_ < 4 ? 3U : (dot_ < 8 ? 7U : 11U);
             if (cgb_hardware_ && ly_ == screen_height - 1 && dot_ < 452) end = 451;
             if (dot_ < end) {
                 const auto span = std::min(cycles - cycle, end - dot_);
@@ -64,6 +69,12 @@ std::uint8_t Ppu::tick(const unsigned cycles) noexcept {
             scy_pending_valid_ = false;
         }
         ++dot_;
+        if (!cgb_hardware_ && !sgb_mode_ && ly_ == 153 &&
+            (dot_ == 4 || dot_ == 8 || dot_ == 12)) {
+            coincidence_ = dot_ == 4 ? lyc_ == 153
+                : (dot_ == 12 && lyc_ == 0);
+            if (update_stat_line()) requests |= 0x02;
+        }
         if (ly_ < screen_height) {
             // LCD startup exposes its transitions immediately. On subsequent
             // lines, STAT sources and memory arbitration change internally
@@ -178,6 +189,13 @@ std::uint8_t Ppu::tick(const unsigned cycles) noexcept {
                 window_line_ = 0;
                 window_y_triggered_ = false;
                 begin_visible_line();
+            } else if (!cgb_hardware_ && !sgb_mode_ && ly_ >= 145 && ly_ <= 152) {
+                // Like line 144, VBlank lines update comparison at entry.
+                // Delaying this until the next CPU M-cycle shifts the
+                // line-152 IRQ and all line-153 observations by four clocks.
+                coincidence_ = ly_ == lyc_;
+            } else if (!cgb_hardware_ && !sgb_mode_ && ly_ == 153) {
+                coincidence_ = false;
             } else if (ly_ < screen_height) {
                 coincidence_ = false;
                 mode_ = 0;

@@ -49,6 +49,17 @@ public:
     [[nodiscard]] bool audio_enabled() const noexcept { return audio_enabled_; }
     [[nodiscard]] std::uint8_t pcm12() const noexcept;
     [[nodiscard]] std::uint8_t pcm34() const noexcept;
+    // Read-only boot diagnostics: waveform/envelope clocks are not recoverable
+    // from the register-visible state alone. No host preferences are changed.
+    [[nodiscard]] std::array<unsigned, 18> debug_clock_state() const noexcept {
+        return {frame_sequencer_step_, skip_frame_sequencer_event_,
+                sample_accumulator_, pulse1_.timer, pulse1_.duty_step,
+                pulse1_.length, pulse1_.envelope.volume, pulse1_.envelope.timer,
+                pulse2_.timer, pulse2_.duty_step, pulse2_.length,
+                pulse2_.envelope.volume, pulse2_.envelope.timer,
+                wave_.timer, wave_.position, wave_.length,
+                noise_.timer, noise_.lfsr};
+    }
 
 private:
     friend class SaveStateCodec;

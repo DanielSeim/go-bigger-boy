@@ -79,8 +79,8 @@ void check_handoff(gameboy::Emulator& emulator, bool zero_checksum) {
             check(false, "CPU-executed hardware initialization matches the DMG register contract");
         }
     }
-    check(bus.read8(0xFF41) == 0x87,
-          "fast-start hands off in its deterministic line-zero transfer phase, not original STAT=85");
+    check(bus.read8(0xFF41) == 0x85,
+          "LY zero on the final VBlank line hands off in mode 1, not pixel transfer");
     check(bus.read8(0xFF80) == 0, "replacement does not write the diagnostic HRAM marker");
     emulator.bus().write8(0xFF50, 0);
     check(!bus.boot_rom_enabled(), "FF50 cannot remap firmware after handoff");
@@ -97,6 +97,8 @@ void test_power_on_and_reset() {
           "LCD, divider and APU are cold before any firmware instruction");
     check(!emulator.bus().cgb_mode() && emulator.bus().read8(0xFF02) == 0x7E,
           "DMG hardware remains monochrome even for a CGB-compatible cartridge");
+    check(emulator.bus().read8(0xFF00) == 0xCF,
+          "cold JOYP selects both groups even before the boot writes it");
     auto undefined = emulator.cpu().registers();
     undefined.a = 0xA5; undefined.f = 0xF0;
     undefined.b = 0x55; undefined.c = 0xAA; undefined.d = 0xCC;

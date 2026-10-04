@@ -634,8 +634,16 @@ endif()
 
 if(GAMEBOY_BUILD_TESTS)
     enable_testing()
+    add_executable(gameboy_dmg_boot_probe tests/dmg_boot_probe.cpp)
+    target_link_libraries(gameboy_dmg_boot_probe PRIVATE gameboy_core)
+    set_target_properties(gameboy_dmg_boot_probe PROPERTIES OUTPUT_NAME gbb_dmg_boot_probe)
     find_package(Python3 COMPONENTS Interpreter QUIET)
     if(Python3_Interpreter_FOUND)
+        add_test(NAME gameboy_dmg_boot_probe
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/dmg_boot_probe_tests.py
+                         $<TARGET_FILE:gameboy_dmg_boot_probe>)
+        set_tests_properties(gameboy_dmg_boot_probe PROPERTIES LABELS "firmware;boot")
         add_test(NAME gameboy_dmg_firmware_source
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_dmg_boot_rom.py --check-source)

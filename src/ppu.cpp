@@ -291,7 +291,7 @@ std::uint8_t Ppu::read_register(const std::uint16_t address) const noexcept {
             (lcd_enabled() ? mode_ : 0));
     case 0xFF42: return scy_;
     case 0xFF43: return scx_;
-    case 0xFF44: return ly_;
+    case 0xFF44: return visible_ly();
     case 0xFF45: return lyc_;
     case 0xFF47: return bg_palette_;
     case 0xFF48: return object_palette_0_;
@@ -513,7 +513,12 @@ bool Ppu::write_register(const std::uint16_t address,
     case 0xFF44: break; // LY is read-only.
     case 0xFF45:
         lyc_ = value;
-        if (lcd_enabled()) coincidence_ = ly_ == lyc_;
+        if (lcd_enabled()) {
+            if (!cgb_hardware_ && !sgb_mode_ && ly_ == 153) {
+                coincidence_ = dot_ >= 12 ? lyc_ == 0
+                    : (dot_ >= 4 && dot_ < 8 && lyc_ == 153);
+            } else coincidence_ = ly_ == lyc_;
+        }
         break;
     case 0xFF47: bg_palette_ = value; break;
     case 0xFF48: object_palette_0_ = value; break;

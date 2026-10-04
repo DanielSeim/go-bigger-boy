@@ -9,7 +9,7 @@ repository's GPL-3.0-or-later license.
 
 `gameboy/dmg.asm` is an original, 256-byte **fast cold-start** implementation.
 It is opt-in, DMG-only, and not a cycle-exact recreation of Nintendo's startup.
-The production post-boot path and existing diagnostic ROM are unchanged.
+The production startup selection and existing diagnostic ROM are unchanged.
 
 The firmware executes on the emulated CPU from `0000`, with the LCD and APU
 off and the divider starting at zero. It establishes the stack, disables
@@ -80,18 +80,24 @@ They do not establish equivalence of every power-on or title-level behavior.
 
 The implementation uses the public [Pan Docs power-up hardware contract](https://gbdev.io/pandocs/Power_Up_Sequence.html).
 No proprietary ROM or disassembly was read to produce its instructions or data.
-The downloaded originals in Git-ignored `roms/` were **not** inputs to the build
-or execution contracts, and are not included in releases. Tests use synthetic
-homebrew headers with no Nintendo logo.
+The downloaded originals in Git-ignored `roms/` are **not** inputs to the build
+or automated execution contracts, and are not included in releases. Automated
+tests use synthetic homebrew headers with no Nintendo logo. A separate opt-in
+[black-box comparison harness](../docs/dmg-boot-validation.md) can execute a
+user-provided local original as an opaque behavioral reference; it never
+disassembles, exports or incorporates its instructions into the replacement.
 
 This first milestone is hardware initialization and deterministic handoff, not
 100% behavioral equivalence. In particular, startup duration, DIV/serial/APU
 phase, logo tiles/tile maps, trademark graphics, animation and chime differ
 from the original. Games or power-up conformance tests that depend on those
 details may fail; the existing post-boot path remains the production default.
-The fast-start path currently enters the cartridge with LY=0 and STAT=`87`
-(pixel transfer), not the original DMG's STAT=`85`; this difference is tested
-explicitly rather than described as hardware-equivalent startup timing.
-An original GBB splash/chime, title-level and independent-reference validation,
+The core now models DMG's early LY wrap on the final VBlank line, so fast-start
+enters the cartridge with LY=0 and STAT=`85` (VBlank), rather than erroneously
+waiting until pixel transfer. Local same-core reference runs match the stable
+CPU/I/O/RAM contract for Pokémon Blue, Super Mario Land, Tetris and Donkey Kong,
+with matching framebuffer hashes after a short followup run. They do not
+prove physical hardware equivalence; DIV, serial and APU phase still differ.
+An original GBB splash/chime, broader title-level and independent-hardware validation,
 and model-specific boot implementations remain future milestones. SNES-side
 SGB1/SGB2 and SPC700 replacement firmware are not implemented here yet.

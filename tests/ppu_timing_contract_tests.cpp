@@ -43,6 +43,76 @@ void test_cpu_machine_cycle_bus_timing() {
           "calling Cpu::step directly advances bus hardware exactly once");
 }
 
+void test_dmg_final_vblank_line() {
+    // TCAGBD section 8.9.1: the internal final VBlank line lasts 456 dots,
+    // while LY reads zero from dot 4; LYC compares 153 at dot 4, neither at
+    // dot 8, and zero at dot 12. Bulk bus clocks must retain those edges.
+    gameboy::Emulator emulator{gameboy::Cartridge{test_rom()}};
+    auto& bus = emulator.bus();
+    bus.write8(0xFF40, 0);
+    bus.write8(0xFF45, 153);
+    bus.write8(0xFF41, 0x40);
+    bus.write8(0xFF40, 0x80);
+    bus.tick(153U * 456U - 4U); // The initial line is four dots shorter.
+    check(bus.debug_ppu_dot() == 0 && bus.read8(0xFF44) == 153,
+          "final VBlank line starts with visible LY=153");
+    check((bus.read8(0xFF41) & 7) == 1,
+          "DMG line 153 entry has no LYC coincidence");
+    bus.write8(0xFF0F, 0);
+    bus.tick(3);
+    check(bus.read8(0xFF44) == 153 && !(bus.read8(0xFF0F) & 2),
+          "LY remains 153 before dot four");
+    const auto saved = emulator.save_state();
+    bus.tick(1);
+    check(bus.read8(0xFF44) == 0 && (bus.read8(0xFF41) & 7) == 5 &&
+          (bus.read8(0xFF0F) & 2), "dot four exposes LY=0 but compares LYC=153");
+    bus.tick(4);
+    check((bus.read8(0xFF41) & 7) == 1, "dot eight clears coincidence");
+    bus.write8(0xFF45, 0);
+    bus.write8(0xFF0F, 0);
+    bus.tick(3);
+    check(!(bus.read8(0xFF0F) & 2), "LYC zero interrupt waits until dot twelve");
+    bus.tick(1);
+    check((bus.read8(0xFF41) & 7) == 5 && (bus.read8(0xFF0F) & 2),
+          "dot twelve compares LY zero while retaining VBlank mode");
+    bus.consume_frame();
+    bus.tick(443);
+    check(bus.read8(0xFF44) == 0 && bus.debug_ppu_mode() == 1 && !bus.frame_ready(),
+          "early LY zero does not render or publish a duplicate frame");
+    bus.tick(1);
+    check(bus.debug_ppu_dot() == 0 && bus.read8(0xFF44) == 0 &&
+          bus.debug_ppu_mode() == 0, "visible line zero starts only after the full VBlank line");
+    emulator.load_state(saved);
+    bus.tick(9);
+    check(bus.debug_ppu_dot() == 12 && bus.read8(0xFF44) == 0,
+          "restoring the internal final scanline reproduces visible LY transitions");
+
+    gameboy::MemoryBus batched{gameboy::Cartridge{test_rom()}};
+    gameboy::MemoryBus literal{gameboy::Cartridge{test_rom()}};
+    for (auto* candidate : {&batched, &literal}) {
+        candidate->write8(0xFF45, 0);
+        candidate->write8(0xFF41, 0x40);
+        candidate->write8(0xFF40, 0x80);
+        candidate->tick(153U * 456U - 4U);
+        candidate->write8(0xFF0F, 0);
+    }
+    literal.debug_set_peripheral_batch_enabled(false);
+    batched.tick(455);
+    for (unsigned i = 0; i < 455; ++i) literal.tick(1);
+    check(batched.read8(0xFF41) == literal.read8(0xFF41) &&
+          batched.read8(0xFF44) == literal.read8(0xFF44) &&
+          batched.read8(0xFF0F) == literal.read8(0xFF0F) &&
+          batched.debug_ppu_dot() == literal.debug_ppu_dot(),
+          "batched and literal final-line clocks retain identical STAT/LY/IF edges");
+
+    gameboy::Emulator sgb{gameboy::Cartridge{test_rom()}, gameboy::HardwareModel::sgb};
+    sgb.bus().write8(0xFF40, 0);
+    sgb.bus().write8(0xFF40, 0x80);
+    sgb.bus().tick(153U * 456U - 4U + 12U);
+    check(sgb.bus().read8(0xFF44) == 153 && sgb.bus().debug_ppu_mode() == 1,
+          "standalone DMG timing changes do not migrate SGB host audio timing implicitly");
+}
+
 void test_ppu_modes_and_memory_access() {
     gameboy::MemoryBus bus{gameboy::Cartridge{test_rom()}};
     bus.write8(0x8000, 0x12);
@@ -648,6 +718,7 @@ void test_oam_dma() {
 } // namespace
 
 int main() {
+    test_dmg_final_vblank_line();
     test_cpu_machine_cycle_bus_timing();
     test_ppu_modes_and_memory_access();
     test_ppu_stat_interrupts();

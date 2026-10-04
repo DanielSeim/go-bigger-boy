@@ -41,7 +41,9 @@ register or VRAM seeding. This opt-in fast-start implementation validates the
 header checksum and establishes the DMG register handoff, but does not reproduce
 Nintendo's animation, logo/trademark tiles, chime, or exact divider/APU timing.
 See [replacement firmware](../firmware/README.md) for its scope, reproducible
-build, state/reset contracts, and remaining validation work. It is not used to
+build and state/reset contracts, and [DMG boot validation](dmg-boot-validation.md)
+for the execution-only local comparison, verified LCD fixes and remaining
+timer/audio differences. It is not used to
 inflate the existing post-boot conformance results.
 
 ### Additional pinned-bundle suites
