@@ -5,7 +5,7 @@ It does **not** contain Nintendo boot ROMs, disassemblies, logos, sound assets,
 SNES program ROMs, or SPC700 IPL dumps. Sources and generated images use the
 repository's GPL-3.0-or-later license.
 
-## DMG revision 2
+## DMG revision 3
 
 `gameboy/dmg.asm` is an original, 256-byte **fast cold-start** implementation.
 It is opt-in, DMG-only, and not a cycle-exact recreation of Nintendo's startup.
@@ -21,6 +21,11 @@ rendered frame, and establishes the documented CPU handoff state. Startup takes
 about 1.03 emulated seconds; it deliberately omits the original animation/chime.
 CPU-written DIV reset and bounded delay loops establish divider `ABC8` and
 internal LCD line 153, dot 396 (visible LY=0, STAT=`85`), for either checksum path.
+Revision 3 also aligns the inherited APU sequencer and silent CH1 waveform
+state through ordinary writes/delays, fixing measured Pokémon audio differences
+without changing the readable register contract. See
+[cartridge audio validation](../docs/dmg-boot-audio-validation.md) for commands,
+coverage and limitations.
 The `LDH [FF50],A` at `00FE` unmaps the image; the next instruction is fetched
 from the cartridge at `0100`. The checksum determines whether F is `80` or `B0`.
 An invalid checksum keeps execution inside the boot ROM with the LCD off.
@@ -104,8 +109,8 @@ waiting until pixel transfer. Local same-core reference runs match the stable
 CPU/I/O/RAM contract for Pokémon Blue, Super Mario Land, Tetris and Donkey Kong,
 with matching framebuffer hashes after a short followup run. They do not
 prove physical hardware equivalence; the cold original's DIV phase is four clocks
-behind the hardware-test-backed fast-start phase, and serial/APU waveform and
-resampler phase still differ. Revision 2 hands off with channel 1's envelope at
+behind the hardware-test-backed fast-start phase, and serial/resampler phase
+still differ. The firmware hands off with channel 1's envelope at
 zero while retaining the canonical readable sound registers and an active DAC.
 Logo-free cartridges that never write the APU stay below -72 dBFS in the
 automated one-second quiet-output check; retriggering produces normal sound.

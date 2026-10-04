@@ -85,6 +85,9 @@ void check_handoff(gameboy::Emulator& emulator, bool zero_checksum) {
           "both checksum paths establish the timer and LCD fast-start phase");
     check(bus.debug_apu_clock_state()[6] == 0,
           "canonical readable pulse registers do not leave a startup tone running");
+    const auto clocks = bus.debug_apu_clock_state();
+    check(clocks[0] == 1 && clocks[1] == 0 && clocks[3] == 30 && clocks[4] == 2,
+          "firmware aligns inherited sequencer and silent pulse phase without a private snapshot");
     check(emulator.cpu().total_cycles() < 4'400'000,
           "silent fast startup remains below 1.05 emulated seconds");
     check(bus.read8(0xFF80) == 0, "replacement does not write the diagnostic HRAM marker");
@@ -199,6 +202,10 @@ void test_silent_handoff_and_later_audio() {
         gameboy::Emulator emulator(gameboy::Cartridge(cartridge(checksum_zero)),
             gameboy::HardwareModel::dmg, gameboy::BootRomMode::replacement_dmg);
         check_handoff(emulator, checksum_zero);
+        for (unsigned instruction = 0; instruction < 25; ++instruction) (void)emulator.step();
+        check(emulator.bus().debug_apu_clock_state()[3] == 182 &&
+              emulator.bus().debug_apu_clock_state()[4] == 3,
+              "inherited silent pulse reloads after 252 clocks, not the old 8192-clock period");
         (void)emulator.take_audio_samples(); // exclude the boot's DAC power-on transient
         const auto state = emulator.save_state();
         const auto start = emulator.cpu().total_cycles();

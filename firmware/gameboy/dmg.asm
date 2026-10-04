@@ -1,5 +1,5 @@
 ; SPDX-License-Identifier: GPL-3.0-or-later
-; Original GBB DMG cold-start firmware, revision 2.
+; Original GBB DMG cold-start firmware, revision 3.
 ; Written from the public hardware contract, not a Nintendo disassembly.
 ; Intentionally no Nintendo logo, trademark tile, animation or logo check.
 
@@ -51,7 +51,7 @@ DmgBoot:
     jr nz, .checksum
     ld a, [hl]
     cp c
-    jr nz, .invalid_header
+    jp nz, .invalid_header
 
     ; Initialize sound using CPU-visible writes, not a post-boot snapshot.
     ld hl, .io_values
@@ -77,6 +77,16 @@ DmgBoot:
     jr nz, .settle_loop
     dec d
     jr nz, .settle_envelope
+    ; Match the observed silent CH1 waveform handoff (step 2, timer 30).
+    ; 28*12+8+8 = 352 clocks, before the final DIV phase is established.
+    ld bc, 12
+.waveform_phase
+    dec bc
+    ld a, b
+    or c
+    jr nz, .waveform_phase
+    nop
+    nop
     ld a, $F3
     ldh [$FF25], a
 
@@ -84,6 +94,19 @@ DmgBoot:
     ; Leave time for the mixer high-pass filter and a completed LCD frame.
     xor a
     ldh [$FF04], a
+    ; Align the inherited envelope/length sequencer without resetting the APU.
+    ; Four forced falling edges advance step 5 to step 1. Each wait observes
+    ; the public DIV-APU bit; no hidden state or envelope-write quirk is used.
+    ld b, 4
+.apu_phase
+    ldh a, [$FF04]
+    and $10
+    jr z, .apu_phase
+    xor a
+    ldh [$FF04], a
+    dec b
+    jr nz, .apu_phase
+    ldh [$FF04], a                ; final reset is low: no extra APU edge
     ; 6085 iterations: 28*N+8 clocks including LD BC, then four NOPs.
     ; The LCD poll/phase-alignment/handoff path takes 70180 clocks.
     ; (170388 + 16 + 70180) modulo 65536 = ABC8.
@@ -145,7 +168,9 @@ DmgBoot:
 
 .io_values
     db $26, $80, $10, $80, $11, $80, $12, $F3
-    db $13, $00, $14, $80, $1C, $80, $24, $77, $25, $00
+    ; Opaque reference execution leaves CH1's period at 252 clocks (7C1).
+    ; A second ordinary trigger establishes its inherited low-two-bit phase.
+    db $13, $C1, $14, $87, $14, $87, $1C, $80, $24, $77, $25, $00
     db $47, $FC, $48, $FF, $49, $FF
 .io_end
     ASSERT @ <= $00FE, "DMG startup must fit below the unmap instruction"

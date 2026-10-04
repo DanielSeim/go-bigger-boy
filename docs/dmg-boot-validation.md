@@ -171,6 +171,12 @@ not Nintendo instruction listings.
 
 ## Remaining differences and next gates
 
+Revision 3 subsequently aligns the inherited APU sequencer and CH1 waveform
+state and validates actual cartridge output; see
+[cartridge audio validation](dmg-boot-audio-validation.md). It preserves the
+timer/LCD and quiet-handoff gates above; the resampler phase and the original
+cold-reset discrepancy remain distinct limitations.
+
 The replacement remains opt-in. Cold reset provenance, broader title-level
 sound comparisons, and model-specific MGB/CGB implementations remain separate
 gates. The outstanding STAT interrupt-clear/retrigger race above is unchanged.
