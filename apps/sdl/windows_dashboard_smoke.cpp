@@ -163,10 +163,21 @@ BOOL CALLBACK collect_visible_controls(HWND child, LPARAM data) {
     if (!GetWindowRect(child, &screen_rect)) return TRUE;
     POINT origin{screen_rect.left, screen_rect.top};
     MapWindowPoints(nullptr, collection.dashboard, &origin, 1);
+    RECT visible_rect{0, 0, screen_rect.right - screen_rect.left,
+                      screen_rect.bottom - screen_rect.top};
+    // Scrolling deliberately preserves the real control size (to avoid
+    // flicker) and applies a window region. Inspect that actual region, not
+    // an unconditional client intersection that could hide unclipped leaks.
+    const auto region = CreateRectRgn(0, 0, 0, 0);
+    if (region == nullptr) return FALSE;
+    const auto region_kind = GetWindowRgn(child, region);
+    if (region_kind != ERROR) GetRgnBox(region, &visible_rect);
+    DeleteObject(region);
+    if (region_kind == NULLREGION) return TRUE;
     collection.controls.push_back(
         {child, std::wstring{class_name},
-         {origin.x, origin.y, origin.x + screen_rect.right - screen_rect.left,
-          origin.y + screen_rect.bottom - screen_rect.top}});
+         {origin.x + visible_rect.left, origin.y + visible_rect.top,
+          origin.x + visible_rect.right, origin.y + visible_rect.bottom}});
     return TRUE;
 }
 
@@ -309,17 +320,21 @@ bool check_scrolled_settings_clipping(HWND dashboard) {
     SendMessageW(dashboard, WM_VSCROLL, MAKEWPARAM(SB_BOTTOM, 0), 0);
     RECT screen_rect{};
     const auto got_rect = GetWindowRect(generate_audio, &screen_rect) != FALSE;
-    POINT origin{screen_rect.left, screen_rect.top};
-    if (got_rect) MapWindowPoints(nullptr, dashboard, &origin, 1);
-    const auto width = got_rect ? screen_rect.right - screen_rect.left : 0L;
-    const auto height = got_rect ? screen_rect.bottom - screen_rect.top : 0L;
-    const auto leaked_into_header = IsWindowVisible(generate_audio) != FALSE &&
-                                    origin.y < 320 && height > 0 && width > 0;
+    ControlCollection collection{dashboard};
+    const auto collected = EnumChildWindows(dashboard, collect_visible_controls,
+                               reinterpret_cast<LPARAM>(&collection)) != FALSE;
+    bool leaked_into_header = false;
+    for (const auto& control : collection.controls) {
+        if (control.window == generate_audio && control.rect.top < 320) {
+            leaked_into_header = true;
+            std::fprintf(stderr, "dashboard smoke: scrolled audio region leaks into header\n");
+        }
+    }
 
     // Leave the dashboard at the top so later smoke steps interact with the
     // same controls as a newly opened settings page.
     SendMessageW(dashboard, WM_VSCROLL, MAKEWPARAM(SB_TOP, 0), 0);
-    return got_rect && !leaked_into_header;
+    return got_rect && collected && !leaked_into_header;
 }
 
 bool check_native_controls_and_layout(HWND dashboard) {
@@ -565,7 +580,11 @@ bool run_dashboard_case(const bool can_resume, const bool discard,
         }
     }
     if (passed && inspect_controls) {
-        const auto pages_ok = check_page_isolation(dashboard);
+        // Exercise the short client area used by hosted Windows runners,
+        // even when the local desktop would open a much taller window.
+        passed = SetWindowPos(dashboard, nullptr, 0, 0, 980, 680,
+                              SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE) != FALSE;
+        const auto pages_ok = passed && check_page_isolation(dashboard);
         const auto sections_ok = pages_ok && check_settings_sections(dashboard);
         // The detailed control and clipping checks use the general settings
         // section as their stable baseline.
