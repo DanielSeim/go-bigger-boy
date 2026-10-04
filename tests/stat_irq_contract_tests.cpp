@@ -165,6 +165,154 @@ void test_mixed_stat_timer_entry() {
     check(bus.debug_divider_counter() == 20 && bus.read8(0xFF0F) == 0xE4,
           "STAT acknowledgment does not consume timer requests or alter the vector fetch clock");
 }
+
+void test_first_visible_mode_edges() {
+    constexpr unsigned frame_start = 154U * 456U - 4U;
+    for (auto model : {gameboy::HardwareModel::dmg, gameboy::HardwareModel::mgb,
+                       gameboy::HardwareModel::cgb_c, gameboy::HardwareModel::sgb,
+                       gameboy::HardwareModel::sgb2}) {
+        const bool dmg = model == gameboy::HardwareModel::dmg ||
+                         model == gameboy::HardwareModel::mgb;
+        for (bool batched : {false, true}) {
+            for (unsigned line : {0U, 1U}) {
+                for (unsigned source : {0x08U, 0x20U}) {
+                    const unsigned edge = frame_start + line * 456U +
+                        (source == 0x08 ? 252U : 0U);
+                    // Independently authored LD C,0F; LD A,(C) or LDH A,(0F).
+                    // Sweep individual T-cycles around the edge, not just M-cycles.
+                    for (bool immediate : {false, true}) {
+                        for (int offset = -1; offset <= 1; ++offset) {
+                            auto bytes = rom();
+                            bytes[0x100] = 0x0E;
+                            bytes[0x101] = 0x0F;
+                            bytes[0x102] = immediate ? 0xF0 : 0xF2;
+                            bytes[0x103] = 0x0F;
+                            gameboy::Emulator emulator{gameboy::Cartridge{bytes}, model};
+                            auto& bus = emulator.bus();
+                            bus.debug_set_peripheral_batch_enabled(batched);
+                            bus.write8(0xFF40, 0);
+                            bus.write8(0xFFFF, 0);
+                            check(emulator.step() == 8, "synthetic IF reader sets C normally");
+                            bus.write8(0xFF45, 200); // Exclude coincidence as an IRQ source.
+                            bus.write8(0xFF41, static_cast<std::uint8_t>(source));
+                            bus.write8(0xFF40, 0x80);
+                            const unsigned read_cycles = immediate ? 12U : 8U;
+                            bus.tick(edge - read_cycles + offset);
+                            bus.write8(0xFF0F, 0x15); // Other pending IF bits must survive.
+                            const auto saved = emulator.save_state();
+                            const bool old_flag = offset < 0 || (dmg && line == 0 && offset == 0);
+                            check(emulator.step() == read_cycles &&
+                                      emulator.cpu().registers().a == (old_flag ? 0xF5 : 0xF7),
+                                  "IF reader samples first-line mode races without delaying later-line flags");
+                            check((bus.read8(0xFF0F) & 2U) == (offset < 0 ? 0U : 2U),
+                                  "CPU sampling never delays or consumes the actual pending interrupt");
+                            const auto completed = emulator.save_state();
+                            emulator.load_state(saved);
+                            (void)emulator.step();
+                            check(emulator.save_state() == completed,
+                                  "mode-edge save/load reproduces the exact CPU and PPU state");
+                        }
+                    }
+                    // Save exactly before the internal interrupt edge as well.
+                    gameboy::Emulator emulator{gameboy::Cartridge{rom()}, model};
+                    auto& bus = emulator.bus();
+                    bus.debug_set_peripheral_batch_enabled(batched);
+                    bus.write8(0xFF40, 0);
+                    bus.write8(0xFF45, 200);
+                    bus.write8(0xFF41, static_cast<std::uint8_t>(source));
+                    bus.write8(0xFF40, 0x80);
+                    bus.tick(edge - 1);
+                    bus.write8(0xFF0F, 0);
+                    const auto saved = emulator.save_state();
+                    bus.tick(1);
+                    check((bus.read8(0xFF0F) & 2U) != 0,
+                          "mode source rises at the PPU edge without changing CPU sampling");
+                    const auto completed = emulator.save_state();
+                    emulator.load_state(saved);
+                    bus.tick(1);
+                    check(emulator.save_state() == completed,
+                          "mode-edge sampling phase is represented in existing save-state fields");
+                }
+            }
+        }
+    }
+}
+
+void test_first_line_arbitration_and_blocking() {
+    constexpr unsigned frame_start = 154U * 456U - 4U;
+    for (bool batched : {false, true}) {
+        gameboy::Emulator emulator{gameboy::Cartridge{rom()}, gameboy::HardwareModel::dmg};
+        auto& bus = emulator.bus();
+        bus.debug_set_peripheral_batch_enabled(batched);
+        bus.write8(0xFF40, 0);
+        bus.write8(0xFE00, 0x52);
+        bus.write8(0xFF45, 200);
+        bus.write8(0xFF41, 0x20);
+        bus.write8(0xFF40, 0x80);
+        bus.tick(frame_start - 1);
+        bus.write8(0xFF0F, 0);
+        bus.tick(1);
+        check((bus.read8(0xFF41) & 3U) == 0 && bus.read8(0xFE00) == 0xFF,
+              "first-line OAM reads lock before visible mode 2");
+        bus.write8(0xFE00, 0x91);
+        check(bus.debug_read_oam(0) == 0x91 && (bus.read8(0xFF0F) & 2U),
+              "IF sampling preserves dot-zero interrupt arbitration and existing OAM writes");
+        bus.tick(1);
+        check((bus.read8(0xFF41) & 3U) == 2 && (bus.read8(0xFF0F) & 2U),
+              "visible OAM mode follows the already-pending interrupt");
+        bus.write8(0xFE00, 0x73);
+        check(bus.debug_read_oam(0) == 0x91,
+              "visible mode 2 retains the existing blocked OAM write behavior");
+
+        // VBlank and OAM selectors share one line, not separate IRQ pulses.
+        for (unsigned selection : {0x30U, 0x60U}) {
+            gameboy::Emulator combined{gameboy::Cartridge{rom()}, gameboy::HardwareModel::dmg};
+            auto& joined = combined.bus();
+            joined.debug_set_peripheral_batch_enabled(batched);
+            joined.write8(0xFF40, 0);
+            joined.write8(0xFF45, selection == 0x60 ? 0 : 200);
+            joined.write8(0xFF41, static_cast<std::uint8_t>(selection));
+            joined.write8(0xFF40, 0x80);
+            joined.tick(frame_start - 1);
+            joined.write8(0xFF0F, 0);
+            joined.tick(2);
+            check(!(joined.read8(0xFF0F) & 2U),
+                  "VBlank or coincidence blocks a second STAT edge at the first OAM handoff");
+        }
+    }
+}
+
+void test_first_line_read_preserves_pending_stat() {
+    constexpr unsigned frame_start = 154U * 456U - 4U;
+    for (bool batched : {false, true}) {
+        for (unsigned source : {0x08U, 0x20U}) {
+            for (bool pending : {false, true}) {
+                auto bytes = rom();
+                // LD C,0F; EI; NOP; LD A,(C); NOP.
+                bytes[0x100] = 0x0E; bytes[0x101] = 0x0F;
+                bytes[0x102] = 0xFB; bytes[0x103] = 0x00;
+                bytes[0x104] = 0xF2;
+                gameboy::Emulator emulator{gameboy::Cartridge{bytes}, gameboy::HardwareModel::dmg};
+                auto& bus = emulator.bus();
+                bus.debug_set_peripheral_batch_enabled(batched);
+                bus.write8(0xFF40, 0);
+                bus.write8(0xFFFF, 0);
+                (void)emulator.step(); (void)emulator.step(); (void)emulator.step();
+                bus.write8(0xFF45, 200);
+                bus.write8(0xFF41, static_cast<std::uint8_t>(source));
+                bus.write8(0xFF40, 0x80);
+                const unsigned edge = frame_start + (source == 0x08 ? 252U : 0U);
+                bus.tick(edge - 8);
+                bus.write8(0xFF0F, pending ? 0x17 : 0x15);
+                check(emulator.step() == 8 && emulator.cpu().registers().a == (pending ? 0xF7 : 0xF5),
+                      "first-line read hides only a new edge, never an already-pending STAT flag");
+                bus.write8(0xFFFF, 2);
+                check(emulator.step() == 20 && emulator.cpu().registers().pc == 0x48,
+                      "a flag hidden from the coincident IF read still dispatches at the next instruction");
+            }
+        }
+    }
+}
 } // namespace
 
 int main() {
@@ -172,5 +320,8 @@ int main() {
     test_save_and_reset();
     test_other_interrupts_and_models();
     test_mixed_stat_timer_entry();
+    test_first_visible_mode_edges();
+    test_first_line_arbitration_and_blocking();
+    test_first_line_read_preserves_pending_stat();
     return failures ? 1 : 0;
 }

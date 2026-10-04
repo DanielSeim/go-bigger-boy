@@ -48,6 +48,9 @@ public:
     // HBlank DMA may begin immediately only while the LCD is off or the
     // visible PPU is already in mode 0. LCD startup is deliberately excluded.
     [[nodiscard]] bool hblank_dma_available() const noexcept;
+    // IF-read sampling at the first post-VBlank mode edge is separate from
+    // interrupt arbitration; querying this does not consume the request.
+    [[nodiscard]] bool first_line_stat_read_race() const noexcept;
     void set_dmg_palette(const DmgPalette& palette) noexcept;
     [[nodiscard]] const DmgPalette& dmg_palette() const noexcept { return dmg_palette_; }
     void initialize_post_boot_phase(HardwareModel model) noexcept;

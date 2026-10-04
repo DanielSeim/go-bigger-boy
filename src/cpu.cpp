@@ -668,6 +668,13 @@ std::uint8_t Cpu::read8(MemoryBus& bus, const std::uint16_t address) noexcept {
         idle(bus, 3);
         const auto value = bus.cpu_read8(address);
         idle(bus, 1);
+        if ((bus.last_ppu_requests_ & 0x02U) != 0 &&
+            bus.ppu_.first_line_stat_read_race()) {
+            // Keep an already-pending STAT flag and final-cycle non-STAT
+            // requests; only the newly coincident mode edge reads late.
+            return static_cast<std::uint8_t>((bus.cpu_read8(address) & ~0x02U) |
+                                             (value & 0x02U));
+        }
         return (bus.last_ppu_requests_ & 0x08) != 0
                    ? static_cast<std::uint8_t>(value & ~0x02U)
                    : bus.cpu_read8(address);

@@ -122,17 +122,49 @@ gate level. It is restricted to the standalone DMG-style path; CGB and the
 coupled SGB/SGB2 host timing are not migrated by this change.
 
 The expanded local check covers all 33 DMG-applicable `lycint152_*` fixtures
-in the public Gambatte `ly0` group. Results improve from **29/33 to 31/33**,
+in the public Gambatte `ly0` group. Results improve from **29/33 to 33/33**,
 both with direct post-boot startup and with the replacement DMG firmware:
 
 - `lyc153irq_late_retrigger_2` and `lyc0irq_late_retrigger_2` now return the
   expected `E0`; the neighboring `late_retrigger_1` cases still return `E2`.
 - Ordinary interrupt reads, IF-write races and LY/LYC comparisons retain
   their previously passing results.
-- `lycint152_m0irq_1` and `lycint152_m2irq_1` remain mismatches (`E2` versus
-  `E0`). These are existing mode-source timing limitations, not passing tests.
+- `lycint152_m0irq_1` and `lycint152_m2irq_1` now return the expected `E0`;
+  their neighboring `_2` cases retain `E2`. These two corrections follow the
+  initial acknowledgment fix, which reached 31/33.
 - All 63 CGB-C results are unchanged from the baseline, which passes only
   19/63 in this broader group. This does **not** establish CGB conformance.
+
+### First post-VBlank line IF sampling
+
+The two remaining fixtures sampled IF on the final T-cycle of a CPU read,
+exactly when GBB raised the first visible line's mode source: dot 0 for OAM
+and dot 252 for an unscrolled, sprite-free HBlank. The coincident CPU read now
+returns the preceding STAT flag, while the actual IF bit and interrupt
+arbitration still change on their original dots. A read finishing one dot
+later sees the new flag. Subsequent visible lines, LCD-enable startup and
+CGB/SGB/SGB2 reads retain their existing behavior.
+
+This is a fixture-backed first-line timing model, not an independently measured
+gate-level account. A universal change to IF read sampling was rejected: although
+it fixed these two outputs, it broke three neighboring LY/LYC/line-one fixtures.
+Delaying the actual first-line mode source was also rejected because it broke
+Mooneye's VBlank-to-OAM interrupt timing. The accepted fix changes only the
+first-line coincident IF read value. It preserves read instruction cycle counts,
+already-pending STAT flags, final-cycle non-STAT flags, interrupt dispatch,
+shared STAT-line behavior, pixel fetching and the firmware image.
+
+Original logo-free regression programs sweep both IF read forms (`LD A,(C)`
+and `LDH A,(n)`) one T-cycle before, on and after each edge, on the first and
+second visible lines. They cover DMG/MGB and unchanged CGB/SGB/SGB2 profiles,
+literal/batched peripheral execution, unrelated pending IF bits, and exact
+save/load replay including the edge-sampling boundaries. Existing PPU fields encode
+these phases; no save-state format extension is needed for this correction.
+Memory arbitration is checked separately: the existing first-dot OAM read/write
+behavior is retained rather than redefined as part of the interrupt fix. Shared
+VBlank/OAM and coincidence/OAM selectors must not generate a second STAT edge.
+The public timing fixtures are available in the
+[Gambatte hardware-test sources](https://github.com/gb-archive/gambatte/tree/efa674a9327ce598bd24585d38d85f744436b7c6/test/hwtests/ly0).
 
 Reproduce using a local copy of the external fixtures (not shipped in GBB):
 
@@ -158,13 +190,14 @@ boolean acknowledgment phase without moving legacy CPU/bus fields. Versions
 1-40 still load, defaulting to no pending phase; malformed phases are rejected
 with atomic rollback. The replacement firmware image itself is unchanged.
 
-The eleven focused boot/CPU/timer/PPU/save checks pass. The five selected
-ASan/UBSan checks also pass (LeakSanitizer disabled for the sandbox). Ten of
-eleven additional Mooneye interrupt/HALT fixtures pass; the sprite variant of
-`intr_2_mode0_timing` times out with identical diagnostics on the committed
-baseline and the updated core, so it remains an existing limitation.
+The focused boot/CPU/timer/PPU/save checks pass. The latest first-line correction
+also passes four selected ASan/UBSan checks (LeakSanitizer disabled for the
+sandbox). Twenty selected Mooneye interrupt/HALT/boot fixtures pass through
+replacement boot with a 24-million-clock budget. The earlier ten-million-clock
+timeout for `intr_2_mode0_timing_sprites` was insufficient test budget: both
+the committed baseline and updated core pass with twenty million clocks.
 
-A direct before/after check against the committed core (`75ca1a3`) runs
+A direct before/after check against the committed core (`9fbb5f2`) runs
 Pokémon Blue, Donkey Kong v1.1, Tetris v1.1 and Super Mario Land v1.0 for thirty
 seconds after replacement boot, pressing Start at four seconds. All four have
 byte-identical stereo PCM, identical **final** framebuffer hashes and equal

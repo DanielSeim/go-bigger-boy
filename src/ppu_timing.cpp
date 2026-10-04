@@ -234,6 +234,15 @@ bool Ppu::stat_condition() const noexcept {
            ((stat_select_ & 0x08) != 0 && stat_mode_ == 0);
 }
 
+bool Ppu::first_line_stat_read_race() const noexcept {
+    // The first post-VBlank mode edge can request an interrupt before a
+    // coincident CPU IF read exposes it. Do not delay the actual request:
+    // interrupt arbitration and the shared STAT line use the ordinary edge.
+    return !cgb_hardware_ && !sgb_mode_ && !lcd_startup_ && ly_ == 0 &&
+        (((stat_select_ & 0x20U) != 0 && stat_mode_ == 2 && dot_ == 0) ||
+         ((stat_select_ & 0x08U) != 0 && stat_mode_ == 0 && dot_ == mode3_end_dot_));
+}
+
 bool Ppu::update_stat_line() noexcept {
     const auto new_line = stat_condition();
     const auto rising_edge = new_line && !stat_line_;
