@@ -491,6 +491,35 @@ Further speculative optimization is deferred; retained captures and diagnostics
 make these limits explicit. Use `--minimum-ratio 1.5` for the previous stricter
 gate.
 
+Silent mode is no longer a release acceptance requirement. Future desktop
+qualification should use the user's normal Balanced/Performance profile, with
+the same raw 1.40x / 1.20x gate and exact-output checks. Historical Silent
+captures remain diagnostic evidence, not evidence of normal-profile performance.
+The benchmark accepts `--power-profile balanced` (or another descriptive label)
+and records it in each report's `benchmark_context`. This label is explicitly
+caller-declared, not an automatic detection or verification of system settings.
+Omitting it records an unspecified profile; no tool changes power settings or
+normalizes results based on the label.
+
+One subsequent native MSVC Release + IPO capture of commit `2f7ae4e` on the
+user-selected Windows **Balanced** plan passed all four profiles. The plan GUID
+`381b4222-f694-41f0-9685-ff5bb260df2e` was confirmed before and after the run.
+Each profile contains 90 post-warmup windows and preserves complete PCM and
+final GB-state hashes against the original same-platform baseline:
+
+| Profile | p05 realtime | Worst window | Result |
+| --- | ---: | ---: | --- |
+| SGB1 native, 32 kHz | 1.427x | 1.378x | pass |
+| SGB1 combined, 48 kHz | 1.492x | 1.390x | pass |
+| SGB2 native, 32 kHz | 1.554x | 1.481x | pass |
+| SGB2 combined, 44.1 kHz | 1.511x | 1.425x | pass |
+
+This is one clean normal-profile qualification, not a repeated thermal soak or
+a guarantee of shipping frontend FPS. The preceding run spanned the user's
+ASUS Recommended-to-Balanced switch and is retained as mixed-profile diagnostic
+evidence only; it does not qualify Balanced playback. No affinity, priority,
+power settings or emulator quality were changed by the benchmark.
+
 Supported native release targets now enable IPO by default:
 
 ```sh

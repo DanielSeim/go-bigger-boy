@@ -13,6 +13,16 @@ import subprocess
 import sys
 
 
+def annotate_report(path, power_profile):
+    """Record caller-declared context, never infer or normalize measured speed."""
+    data = json.loads(path.read_text())
+    data["benchmark_context"] = {
+        "power_profile_label": power_profile,
+        "power_profile_source": "caller-declared" if power_profile else "unspecified",
+    }
+    path.write_text(json.dumps(data, indent=2) + "\n")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--runner", type=Path, required=True)
@@ -20,6 +30,8 @@ def main():
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--repeat", type=int, default=1,
                         help="serial complete four-profile repeats; every capture must pass (1-20)")
+    parser.add_argument("--power-profile", type=str,
+                        help="caller-declared power profile, recorded in each report; does not change settings or thresholds")
     args = parser.parse_args()
     if not 1 <= args.repeat <= 20:
         parser.error("repeat must be between 1 and 20")
@@ -67,6 +79,7 @@ def main():
             raise RuntimeError(f"{model}: playback changed the complete PCM baseline")
         if json.loads(report.read_text()).get("gb_state_hash") != expected_state:
             raise RuntimeError(f"{model}: playback changed final GB state/framebuffers")
+        annotate_report(report, args.power_profile)
         reports.append(str(report))
         print(f"round {round_index + 1}/{args.repeat}: {model}/{'combined' if combined else 'native'}: "
               "exact PCM and GB state PASS", flush=True)

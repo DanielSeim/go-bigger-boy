@@ -13,6 +13,9 @@ spec_diagnostics = importlib.util.spec_from_file_location("diagnostics", Path(ga
 sys.path.insert(0, str(Path(gate.__file__).parent))
 diagnostic = importlib.util.module_from_spec(spec_diagnostics)
 spec_diagnostics.loader.exec_module(diagnostic)
+spec_benchmark = importlib.util.spec_from_file_location("benchmark", Path(gate.__file__).with_name("benchmark_sgb_host.py"))
+benchmark = importlib.util.module_from_spec(spec_benchmark)
+spec_benchmark.loader.exec_module(benchmark)
 
 
 def report(model="sgb1", combined=True, ratio=2.0):
@@ -55,6 +58,15 @@ def main():
                 path.write_text(json.dumps(report(model, combined)))
                 paths.append(str(path))
         command=[sys.executable, str(Path(gate.__file__)), *paths]
+        original = json.loads(Path(paths[0]).read_text())
+        for label in (None, "balanced", "silent"):
+            benchmark.annotate_report(Path(paths[0]), label)
+            annotated = json.loads(Path(paths[0]).read_text())
+            context = annotated.pop("benchmark_context")
+            assert context == {"power_profile_label": label,
+                               "power_profile_source": "caller-declared" if label else "unspecified"}
+            assert annotated == original
+            assert gate.summarize(annotated) == gate.summarize(original)
         assert subprocess.run(command, capture_output=True).returncode == 0
         Path(paths[-1]).write_text(json.dumps(report("sgb2", True, 1.395)))
         marginal = subprocess.run(command, capture_output=True, text=True)
