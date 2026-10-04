@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <iostream>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 namespace {
@@ -83,6 +84,10 @@ void check_handoff(gameboy::Emulator& emulator, bool zero_checksum) {
           "LY zero on the final VBlank line hands off in mode 1, not pixel transfer");
     check(bus.debug_divider_counter() == 0xABC8 && bus.debug_ppu_dot() == 396,
           "both checksum paths establish the timer and LCD fast-start phase");
+    check(bus.serial_port().phase() == (bus.serial_port().has_endpoint() ? 0U : 452U) &&
+              bus.serial_port().bits_shifted() == 0 &&
+              !bus.serial_port().transfer_active(),
+          "ordinary CPU writes align idle serial while a preattached cable retains its held boundary");
     check(bus.debug_apu_clock_state()[6] == 0,
           "canonical readable pulse registers do not leave a startup tone running");
     const auto clocks = bus.debug_apu_clock_state();
@@ -257,6 +262,50 @@ void test_cartridge_divider_boundary() {
     }
 }
 
+void test_cartridge_serial_interrupt_and_resume() {
+    auto rom = cartridge();
+    rom[0x100] = 0xC3; rom[0x101] = 0x50; rom[0x102] = 0x01;
+    const std::vector<std::uint8_t> program{
+        0xF3, 0xAF, 0xE0, 0x0F,                 // DI; clear IF
+        0x3E, 0x08, 0xEA, 0xFF, 0xFF,           // enable serial interrupt only
+        0x3E, 0xA5, 0xE0, 0x01,                 // transmit A5
+        0x3E, 0x81, 0xE0, 0x02,                 // start internal transfer
+        0xFB, 0x00, 0x76, 0x18, 0xFD};          // EI; NOP; HALT loop
+    std::copy(program.begin(), program.end(), rom.begin() + 0x150);
+    const std::vector<std::uint8_t> handler{
+        0xF0, 0x01, 0xEA, 0x00, 0xC0,           // received SB -> C000
+        0xFA, 0x01, 0xC0, 0x3C, 0xEA, 0x01, 0xC0, 0xD9}; // increment ISR count; RETI
+    std::copy(handler.begin(), handler.end(), rom.begin() + 0x58);
+    for (const auto mode : {gameboy::BootRomMode::post_boot, gameboy::BootRomMode::replacement_dmg}) {
+        gameboy::Emulator original(gameboy::Cartridge(rom), gameboy::HardwareModel::dmg, mode);
+        check(finish_boot(original), "serial homebrew boots without a proprietary logo");
+        unsigned instructions = 0;
+        while (original.bus().serial_port().bits_shifted() < 3 && instructions++ < 2000) {
+            (void)original.step();
+            check(original.bus().read8(0xC001) == 0, "serial ISR cannot run before the eighth bit");
+        }
+        check(original.bus().serial_port().bits_shifted() == 3 &&
+                  original.bus().serial_port().transfer_active(),
+              "CPU-written SC reaches a partial transfer before save");
+        gameboy::Emulator restored(gameboy::Cartridge(rom), gameboy::HardwareModel::dmg);
+        restored.load_state(original.save_state());
+        for (unsigned step = 0; step < 1200; ++step) {
+            check(original.step() == restored.step(), "resumed serial ISR retains CPU cycle timing");
+            check(original.cpu().registers().pc == restored.cpu().registers().pc &&
+                      original.bus().read8(0xC000) == restored.bus().read8(0xC000) &&
+                      original.bus().read8(0xC001) == restored.bus().read8(0xC001),
+                  "guest handler and HALT wakeup remain identical after a partial-byte save");
+        }
+        check(original.bus().read8(0xC000) == 0xFF && original.bus().read8(0xC001) == 1 &&
+                  !original.bus().serial_port().transfer_active() &&
+                  !(original.bus().read8(0xFF0F) & 8),
+              "CPU handles exactly one completed pull-up byte and acknowledges its serial interrupt");
+        check(original.bus().take_serial_output() == std::string(1, static_cast<char>(0xA5)) &&
+                  restored.bus().take_serial_output() == std::string(1, static_cast<char>(0xA5)),
+              "guest serial completion publishes one transmitted byte before and after restore");
+    }
+}
+
 void test_envelope_settle_resume() {
     gameboy::Emulator emulator(gameboy::Cartridge(cartridge()),
         gameboy::HardwareModel::dmg, gameboy::BootRomMode::replacement_dmg);
@@ -285,6 +334,7 @@ int main() {
         test_state_resume();
         test_silent_handoff_and_later_audio();
         test_cartridge_divider_boundary();
+        test_cartridge_serial_interrupt_and_resume();
         test_envelope_settle_resume();
     } catch (const std::exception& error) {
         std::cerr << "Unexpected exception: " << error.what() << '\n'; return 1;

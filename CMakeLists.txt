@@ -649,6 +649,11 @@ if(GAMEBOY_BUILD_TESTS)
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/dmg_boot_audio_tests.py
                          $<TARGET_FILE:gameboy_dmg_boot_probe>)
         set_tests_properties(gameboy_dmg_boot_audio PROPERTIES LABELS "firmware;boot;audio")
+        add_test(NAME gameboy_dmg_boot_serial
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/dmg_boot_serial_tests.py
+                         $<TARGET_FILE:gameboy_dmg_boot_probe>)
+        set_tests_properties(gameboy_dmg_boot_serial PROPERTIES LABELS "firmware;boot;link")
         add_test(NAME gameboy_dmg_firmware_source
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_dmg_boot_rom.py --check-source)

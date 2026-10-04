@@ -48,6 +48,7 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(len(data["handoff"]["apu_clocks"]), 18)
         self.assertEqual(data["handoff"]["divider_counter"], 0xABC8)
         self.assertEqual(data["handoff"]["ppu_dot"], 396)
+        self.assertEqual(data["handoff"]["serial_phase"], 452)
         clocks = data["handoff"]["apu_clocks"]
         self.assertEqual((clocks[0], clocks[3], clocks[4], clocks[6]), (1, 30, 2, 0))
         self.assertGreater(data["audio"]["boot"]["samples"], 0)

@@ -400,6 +400,45 @@ void test_serial_save_state_round_trip() {
           "restored serial transfers complete with identical guest-visible data");
 }
 
+void test_external_serial_save_state_after_peer_edge() {
+    for (const auto model : {gameboy::HardwareModel::dmg, gameboy::HardwareModel::cgb_e,
+                            gameboy::HardwareModel::sgb, gameboy::HardwareModel::sgb2}) {
+        for (unsigned saved_bits = 1; saved_bits < 8; ++saved_bits) {
+            const auto rom = model == gameboy::HardwareModel::cgb_e ? cgb_test_rom() : test_rom();
+            gameboy::Emulator original{gameboy::Cartridge(rom), model};
+            gameboy::Emulator restored{gameboy::Cartridge(rom), model};
+            auto& bus = original.bus();
+            bus.write8(0xFF0F, 0);
+            bus.write8(0xFF01, 0x3C);
+            bus.write8(0xFF02, 0x80);
+            for (unsigned bit = 0; bit < saved_bits; ++bit)
+                (void)bus.serial_port().clock_external_bit((0xA5U & (0x80U >> bit)) != 0);
+            // Deliberately no bus.tick(): the peer edge has changed live SB
+            // but this console has not yet synchronized its I/O cache.
+            restored.load_state(original.save_state());
+            check(restored.bus().read8(0xFF01) == bus.read8(0xFF01) &&
+                      restored.bus().serial_port().bits_shifted() == saved_bits &&
+                      restored.bus().serial_port().link_state_signature() ==
+                          bus.serial_port().link_state_signature(),
+                  "saving immediately after an external edge preserves the live shift register");
+            for (unsigned bit = saved_bits; bit < 8; ++bit) {
+                const bool incoming = (0xA5U & (0x80U >> bit)) != 0;
+                const bool outgoing = bus.serial_port().clock_external_bit(incoming);
+                check(restored.bus().serial_port().clock_external_bit(incoming) == outgoing,
+                      "restored external transfer emits the same remaining bits");
+                check((restored.bus().read8(0xFF0F) & 8) == (bit == 7 ? 8 : 0),
+                      "restored external transfer requests its interrupt only at the eighth edge");
+            }
+            check(bus.read8(0xFF01) == 0xA5 && restored.bus().read8(0xFF01) == 0xA5 &&
+                      restored.bus().read8(0xFF02) == bus.read8(0xFF02) &&
+                      !restored.bus().serial_port().transfer_active() &&
+                      restored.bus().take_serial_output() == bus.take_serial_output() &&
+                      restored.bus().take_serial_output().empty(),
+                  "partial external saves complete with identical bytes and one completion");
+        }
+    }
+}
+
 void test_serial_link_interrupt_handshake() {
     // A tiny ROM-level probe matching Pokémon's external-then-internal
     // connection routine. The ISR copies the received SB byte into the HRAM
@@ -1761,6 +1800,7 @@ int main() {
     test_serial_link_cable();
     test_cgb_fast_serial_starts_on_divider_subperiod();
     test_serial_save_state_round_trip();
+    test_external_serial_save_state_after_peer_edge();
     test_serial_link_interrupt_handshake();
     test_serial_link_interrupt_rearm();
     test_serial_link_asymmetric_scheduling();

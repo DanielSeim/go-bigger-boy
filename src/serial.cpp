@@ -80,9 +80,9 @@ void SerialPort::write_control(const std::uint8_t value) noexcept {
 }
 
 void SerialPort::initialize_post_boot(const HardwareModel model) noexcept {
-    // The boot ROM leaves SB cleared. Keep the serial divider phase from the
-    // handoff as well; the DMG/MGB boot ROMs reach the cartridge 460 clocks
-    // into a serial bit, which is observable when the first transfer starts.
+    // Preserve the legacy fast-start profile: SB cleared and DMG/MGB phase
+    // 460. This is not the phase of every executed boot ROM; cold firmware
+    // advances the clock and SC writes normally instead of using this value.
     data_ = 0x00;
     external_data_ = data_;
     transfer_byte_ = data_;

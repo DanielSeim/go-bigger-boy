@@ -177,6 +177,11 @@ state and validates actual cartridge output; see
 timer/LCD and quiet-handoff gates above; the resampler phase and the original
 cold-reset discrepancy remain distinct limitations.
 
+Revision 4 aligns the standalone serial handoff/first-transfer phase with the
+unchanged cold reference and fixes stale external shift-register saves; see
+[serial validation](dmg-boot-serial-validation.md). Shared serial timing, the
+production post-boot phase and attached cable policy are unchanged.
+
 The replacement remains opt-in. Cold reset provenance, broader title-level
 sound comparisons, and model-specific MGB/CGB implementations remain separate
 gates. The outstanding STAT interrupt-clear/retrigger race above is unchanged.

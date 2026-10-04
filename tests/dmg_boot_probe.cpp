@@ -1,5 +1,6 @@
 // Execution-only boot reference probe. Never disassembles or exports firmware.
 #include "gameboy/emulator.hpp"
+#include "dmg_boot_serial_probe.hpp"
 
 #include <algorithm>
 #include <array>
@@ -113,16 +114,17 @@ void snapshot(gameboy::Emulator& emulator) {
 int main(int argc, char** argv) {
     try {
         if (argc < 2) throw std::runtime_error(
-            "usage: gbb_dmg_boot_probe CARTRIDGE [--boot-rom FILE] [--max-cycles N] [--run-cycles N] [--align-frame] [--cold-clock-cycles N] [--audio-directory NEW_DIRECTORY] [--press-start-cycle N]");
+            "usage: gbb_dmg_boot_probe CARTRIDGE [--boot-rom FILE] [--max-cycles N] [--run-cycles N] [--align-frame] [--cold-clock-cycles N] [--audio-directory NEW_DIRECTORY] [--press-start-cycle N] [--serial-check]");
         std::string reference;
         std::string audio_directory;
         std::vector<std::uint64_t> start_presses;
-        bool align_frame = false;
+        bool align_frame = false, serial_check = false;
         std::uint64_t max_cycles = 40'000'000, run_cycles = 0;
         unsigned cold_clock_cycles = 0;
         for (int i = 2; i < argc; ++i) {
             const std::string option = argv[i];
             if (option == "--align-frame") { align_frame = true; continue; }
+            if (option == "--serial-check") { serial_check = true; continue; }
             if (i + 1 >= argc) throw std::runtime_error("missing option value");
             const std::string value = argv[++i];
             if (option == "--boot-rom") reference = value;
@@ -150,7 +152,8 @@ int main(int argc, char** argv) {
         }
         // Bytes-only cartridge construction avoids adjacent save/RTC reads and
         // persistence writes. Both runs use exactly the same cold baseline.
-        gameboy::Emulator emulator(gameboy::Cartridge(read_file(argv[1])),
+        const auto cartridge_bytes = read_file(argv[1]);
+        gameboy::Emulator emulator(gameboy::Cartridge(cartridge_bytes),
             gameboy::HardwareModel::dmg, gameboy::BootRomMode::replacement_dmg);
         if (!reference.empty()) {
             const auto bytes = read_file(reference);
@@ -171,6 +174,7 @@ int main(int argc, char** argv) {
         if (emulator.bus().boot_rom_enabled()) throw std::runtime_error("boot handoff timed out");
         if (emulator.cpu().registers().pc != 0x100)
             throw std::runtime_error("boot did not hand off at PC=0100");
+        const auto serial_handoff = serial_check ? emulator.save_state() : std::vector<std::uint8_t>{};
         std::ofstream pcm_output;
         if (!audio_directory.empty()) {
             // Reserve a fresh directory rather than truncate an existing file.
@@ -258,7 +262,12 @@ int main(int argc, char** argv) {
             first = false;
             array(event);
         }
-        std::cout << "]}\n";
+        std::cout << ']';
+        if (serial_check) {
+            std::cout << ",\"serial_check\":";
+            dmg_serial_probe::print(std::cout, cartridge_bytes, serial_handoff);
+        }
+        std::cout << "}\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

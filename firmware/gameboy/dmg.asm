@@ -1,5 +1,5 @@
 ; SPDX-License-Identifier: GPL-3.0-or-later
-; Original GBB DMG cold-start firmware, revision 3.
+; Original GBB DMG cold-start firmware, revision 4.
 ; Written from the public hardware contract, not a Nintendo disassembly.
 ; Intentionally no Nintendo logo, trademark tile, animation or logo check.
 
@@ -8,12 +8,17 @@ DmgBoot:
     di
     ld sp, $FFFE
     xor a
+    ; Clear SC early so the remaining ordinary CPU clocks leave serial phase
+    ; 452 at handoff, as observed on the unchanged opaque cold reference.
+    ; The NOP and 12-clock LDH IE below preserve the original 96-clock prefix:
+    ; later APU, DIV and LCD initialization timings are unchanged.
+    nop
+    ldh [$FF02], a
     ldh [$FF40], a                ; LCD off while VRAM is initialized
     ldh [$FF26], a                ; reset APU registers/channels
-    ld [$FFFF], a                 ; interrupts remain disabled
+    ldh [$FFFF], a                ; interrupts remain disabled
     ldh [$FF00], a                ; select both JOYP groups
     ldh [$FF01], a
-    ldh [$FF02], a
     ldh [$FF05], a
     ldh [$FF06], a
     ldh [$FF07], a

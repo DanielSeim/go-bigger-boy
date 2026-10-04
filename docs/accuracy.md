@@ -228,6 +228,13 @@ loadable with the previous restart-at-boundary behavior. CGB SCY's pending
 two-T-cycle latch is preserved by save-state version 25 for the same reason:
 restoring during a mode-3 write must not expose the new scroll value early.
 
+Saves now capture live SB/SC rather than their backing I/O cache, so saving
+immediately after an external peer edge (before the receiver's bus tick)
+preserves the actual partial byte. No payload/version change is required.
+[DMG replacement serial validation](dmg-boot-serial-validation.md) covers its
+first-transfer phase, mixed boot/default links, interrupt timing and restoration;
+it does not establish physical reset equivalence or title-level trading coverage.
+
 ## Accuracy status
 
 The visual harness runs a ROM to a deterministic frame, writes a dependency-free

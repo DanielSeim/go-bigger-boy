@@ -5,7 +5,7 @@ It does **not** contain Nintendo boot ROMs, disassemblies, logos, sound assets,
 SNES program ROMs, or SPC700 IPL dumps. Sources and generated images use the
 repository's GPL-3.0-or-later license.
 
-## DMG revision 3
+## DMG revision 4
 
 `gameboy/dmg.asm` is an original, 256-byte **fast cold-start** implementation.
 It is opt-in, DMG-only, and not a cycle-exact recreation of Nintendo's startup.
@@ -26,6 +26,10 @@ state through ordinary writes/delays, fixing measured Pokémon audio differences
 without changing the readable register contract. See
 [cartridge audio validation](../docs/dmg-boot-audio-validation.md) for commands,
 coverage and limitations.
+Revision 4 aligns the idle serial phase with opaque cold-reference execution
+using an earlier ordinary SC clear, while preserving subsequent initialization
+timing. It also adds first-transfer/link/restore validation; see
+[serial validation](../docs/dmg-boot-serial-validation.md).
 The `LDH [FF50],A` at `00FE` unmaps the image; the next instruction is fetched
 from the cartridge at `0100`. The checksum determines whether F is `80` or `B0`.
 An invalid checksum keeps execution inside the boot ROM with the LCD off.
@@ -99,7 +103,7 @@ user-provided local original as an opaque behavioral reference; it never
 disassembles, exports or incorporates its instructions into the replacement.
 
 This first milestone is hardware initialization and deterministic handoff, not
-100% behavioral equivalence. In particular, startup duration, DIV/serial/APU
+100% behavioral equivalence. In particular, startup duration, cold DIV/resampler
 phase, logo tiles/tile maps, trademark graphics, animation and chime differ
 from the original. Games or power-up conformance tests that depend on those
 details may fail; the existing post-boot path remains the production default.
@@ -109,8 +113,10 @@ waiting until pixel transfer. Local same-core reference runs match the stable
 CPU/I/O/RAM contract for Pokémon Blue, Super Mario Land, Tetris and Donkey Kong,
 with matching framebuffer hashes after a short followup run. They do not
 prove physical hardware equivalence; the cold original's DIV phase is four clocks
-behind the hardware-test-backed fast-start phase, and serial/resampler phase
-still differ. The firmware hands off with channel 1's envelope at
+behind the hardware-test-backed fast-start phase, and resampler phase
+still differs. Serial phase now matches that cold reference, but the unchanged
+production post-boot profile and attached-cable policy remain distinct.
+The firmware hands off with channel 1's envelope at
 zero while retaining the canonical readable sound registers and an active DAC.
 Logo-free cartridges that never write the APU stay below -72 dBFS in the
 automated one-second quiet-output check; retriggering produces normal sound.

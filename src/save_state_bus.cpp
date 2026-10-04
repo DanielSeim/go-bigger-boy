@@ -25,7 +25,15 @@ void SaveStateBusCodec::write(save_state_format::Writer& writer,
                               const MemoryBus& bus) {
     SaveStateCartridgeCodec::write(writer, bus.cartridge_);
     write_bytes(writer, bus.wram_);
-    write_bytes(writer, bus.io_);
+    // A peer can clock the external serial port between this bus's ticks.
+    // SB/SC reads already use the live port, but the backing I/O cache may
+    // still precede that edge. Persist the authoritative shift register so
+    // loading immediately after a peer edge cannot replay an old bit.
+    auto io = bus.io_;
+    io[0x01] = bus.serial_.read_data();
+    io[0x02] = static_cast<std::uint8_t>(bus.serial_.read_control() &
+                                      (bus.cgb_mode_ ? 0x83 : 0x81));
+    write_bytes(writer, io);
     write_bytes(writer, bus.hram_);
     writer.u8(bus.interrupt_enable_);
     SaveStateJoypadCodec::write(writer, bus.joypad_);
