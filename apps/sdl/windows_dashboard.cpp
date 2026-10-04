@@ -1611,11 +1611,13 @@ void layout_dashboard(State& state) {
                         section_width[index], available_width)),
                     34, 0);
     }
-    place_child(state.settings_section_description, 32, 280, 916, 38, 0);
+    place_child(state.settings_section_description, 32, 280,
+                static_cast<int>(std::min(916L, layout_width - 32L)), 38, 0);
 
     // General settings stay deliberately small and understandable: one
     // choice per row, with the technical controls kept out of the way.
-    place_child(state.settings_status, 510, 112, 440, 20, 0);
+    place_child(state.settings_status, 510, 112,
+                static_cast<int>(std::min(440L, layout_width - 510L)), 20, 0);
     place_child(state.settings_apply, 650, 140, 140, 40, 0);
     place_child(state.settings_cancel, 802, 140, 126, 40, 0);
     place_child(state.palette_label, 32, 350, 150, 26, offset);

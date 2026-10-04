@@ -120,7 +120,7 @@ def run(binary, data, resumable=False):
                             capture_output=True, timeout=30)
     if result.returncode:
         raise AssertionError(f"bus runner failed: {result.returncode}: {result.stdout!r}")
-    return result.stdout
+    return result.stdout.replace(b"\r\n", b"\n")
 
 
 def main():

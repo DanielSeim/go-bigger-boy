@@ -471,6 +471,21 @@ jobs:
           install-linux-dependencies: true
           add-to-environment: true
 
+      # CMake's Visual Studio generator supplies its own build environment,
+      # but Python's standalone probe compiler invocations need it too.
+      - name: Set up MSVC probe environment
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $installation = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $installation) { throw 'MSVC installation not found' }
+          $devcmd = Join-Path $installation 'Common7\Tools\VsDevCmd.bat'
+          $environment = & cmd.exe /s /c "`"$devcmd`" -arch=x64 -host_arch=x64 >nul && set"
+          if ($LASTEXITCODE -ne 0) { throw 'MSVC environment setup failed' }
+          $environment | Where-Object { $_ -match '^(INCLUDE|LIB|LIBPATH|PATH)=' } |
+            ForEach-Object { Add-Content -Path $env:GITHUB_ENV -Value $_ -Encoding utf8 }
+
       - name: Configure
         run: >-
           cmake -S . -B build

@@ -78,7 +78,9 @@ def run(binary, data):
     result = subprocess.run([str(binary)], input=data, capture_output=True, timeout=30)
     if result.returncode:
         raise AssertionError(f"runner failed ({result.returncode}): {result.stderr!r}")
-    return result.stdout
+    # These are textual traces. Windows' CRT emits CRLF; keep the same
+    # independently checked corpus hash and byte comparison on every host.
+    return result.stdout.replace(b"\r\n", b"\n")
 
 
 def main():

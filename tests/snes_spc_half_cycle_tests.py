@@ -36,7 +36,7 @@ def run(binary, data):
                             capture_output=True, timeout=30)
     if result.returncode:
         raise AssertionError(f"half-clock runner failed: {result.stdout!r} {result.stderr!r}")
-    return result.stdout
+    return result.stdout.replace(b"\r\n", b"\n")
 
 
 def main():

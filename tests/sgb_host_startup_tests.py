@@ -136,7 +136,9 @@ int main() {
             msvc = Path(COMPILER).name.lower() in ("cl", "cl.exe", "clang-cl", "clang-cl.exe")
             command = ([COMPILER, "/nologo", "/std:c++17", str(cpp), "/Fe:" + str(exe)] if msvc else
                        [COMPILER, "-std=c++17", str(cpp), "-o", str(exe)])
-            subprocess.run(command, cwd=root, check=True, capture_output=True, timeout=30)
+            result = subprocess.run(command, cwd=root, capture_output=True, text=True,
+                                    errors="replace", timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             subprocess.run([str(exe)], check=True, capture_output=True, timeout=10)
 
 
