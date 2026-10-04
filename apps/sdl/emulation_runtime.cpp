@@ -827,7 +827,15 @@ int run_emulation(int argc, char** argv) {
         DesktopMenuBar desktop_menu;
         desktop_menu.attach(sdl.window);
 #endif
-        const auto preference_path = preference_directory();
+        const auto preference_path = [&] {
+            const auto* test_path = std::getenv("GBB_FRONTEND_TEST_DIRECTORY");
+            if (launch_options.smoke_frames && test_path && *test_path) {
+                const auto path = std::filesystem::u8path(test_path);
+                std::filesystem::create_directories(path);
+                return path;
+            }
+            return preference_directory();
+        }();
         const auto frame_timing_enabled = frame_timing_trace_enabled();
         FrameTimingTrace frame_timing_trace(frame_timing_enabled);
         if (frame_timing_enabled) {
@@ -1027,6 +1035,14 @@ int run_emulation(int argc, char** argv) {
         std::uint64_t frontend_frame = 0;
         unsigned smoke_completed_frames{};
         std::optional<std::chrono::steady_clock::time_point> smoke_started;
+        // Buffer qualification samples: no per-frame file I/O in the measured
+        // path. Ordinary playback neither allocates nor records these samples.
+        struct PlaybackSample {
+            std::int64_t elapsed_us, work_us, events_us, emulation_us, present_us;
+        };
+        std::vector<PlaybackSample> playback_samples;
+        if (launch_options.smoke_frames && frame_timing_trace.enabled())
+            playback_samples.reserve(launch_options.smoke_frames);
         std::uint64_t rewind_capture_count = 0;
         std::uint64_t rewind_capture_total_us = 0;
         std::uint64_t rewind_capture_max_us = 0;
@@ -2180,6 +2196,12 @@ int run_emulation(int argc, char** argv) {
             const auto pacing_finished = std::chrono::steady_clock::now();
             if(launch_options.smoke_frames && core && execution_plan.should_run()) {
                 if(!smoke_started) smoke_started=frame_started;
+                if (frame_timing_trace.enabled())
+                    playback_samples.push_back({microseconds_between(*smoke_started, pacing_finished),
+                        microseconds_between(frame_started, presentation_finished),
+                        microseconds_between(frame_started, events_finished),
+                        microseconds_between(events_finished, audio_started),
+                        microseconds_between(presentation_started, presentation_finished)});
                 if(++smoke_completed_frames==launch_options.smoke_frames) {
                     const auto seconds=std::chrono::duration<double>(pacing_finished-*smoke_started).count();
                     std::cout << "firmware_frontend_smoke frames=" << smoke_completed_frames
@@ -2187,6 +2209,24 @@ int run_emulation(int argc, char** argv) {
                               << " audio_available=" << sdl.audio.available()
                               << " audio_empty_queue_events=" << sdl.audio.empty_queue_events()
                               << " audio_latency_resets=" << sdl.audio.latency_resets() << '\n';
+                    if (frame_timing_trace.enabled()) {
+                        const auto* driver = SDL_GetCurrentAudioDriver();
+                        frame_timing_trace.write("firmware_qualification version=1 model=" + launch_options.firmware_model +
+                            " frames=" + std::to_string(smoke_completed_frames) +
+                            " audio_available=" + std::to_string(sdl.audio.available()) +
+                            " audio_enabled=" + std::to_string(sdl.audio.enabled()) +
+                            " audio_driver=" + (driver ? std::string(driver) : "none") +
+                            " audio_empty_queue_events=" + std::to_string(sdl.audio.empty_queue_events()) +
+                            " audio_latency_resets=" + std::to_string(sdl.audio.latency_resets()));
+                        for (std::size_t n=0; n<playback_samples.size(); ++n)
+                            frame_timing_trace.write("firmware_frame index=" + std::to_string(n+1) +
+                                " elapsed_us=" + std::to_string(playback_samples[n].elapsed_us) +
+                                " work_us=" + std::to_string(playback_samples[n].work_us) +
+                                " events_us=" + std::to_string(playback_samples[n].events_us) +
+                                " emulation_us=" + std::to_string(playback_samples[n].emulation_us) +
+                                " present_us=" + std::to_string(playback_samples[n].present_us));
+                        frame_timing_trace.write("firmware_qualification_complete frames=" + std::to_string(playback_samples.size()));
+                    }
                     running=false;
                 }
             }

@@ -9,6 +9,11 @@ real input and lifecycle:
 | Web | Headless Chromium + Playwright | WASM startup, settings persistence across reload, ROM picker, ROM boot, save controls |
 | Android | Espresso on an API 35 emulator | Library launch, settings navigation, audio toggle persistence path, link-settings visibility, return navigation |
 | Desktop SDL | Xvfb + XTest/xdotool smoke | Window creation, dashboard keyboard input, shortcuts modal, focus, clean shutdown |
+| Experimental Windows SGB firmware | Local PowerShell runner + caller-owned images | Real SDL window/WASAPI playback, frame-time tails, native menu pause/resume/reset/save/load in isolated model slots |
+
+The Windows firmware runner is an optional local qualification, not a CI job
+requiring private dumps. See [native Windows device qualification](sgb-host.md#native-windows-device-qualification)
+for the commands, limits, and separate physical listening check.
 
 The Web test creates a tiny looping ROM in memory. It does not contain a game
 dump and is intentionally limited to startup and presentation flow; gameplay

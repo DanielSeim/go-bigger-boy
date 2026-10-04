@@ -93,6 +93,83 @@ events and latency resets. Empty-queue events are not hardware underrun
 interrupts. Use isolated preferences for automated tests. A virtual display or
 dummy audio driver validates plumbing, not physical display/audio quality.
 
+### Native Windows device qualification
+
+Build the Release SDL frontend, then run the opt-in host against caller-owned
+images with the reproducible runner. It refuses an existing output directory,
+copies the game and optional initial battery save into separate model slots,
+uses isolated preferences, and restores its process environment afterward:
+
+```powershell
+scripts/run_windows_sgb_playback.ps1 -Executable C:\build\gbb.exe `
+  -Rom C:\private\game.gb -FirmwareDirectory C:\private\firmware `
+  -InitialSave C:\private\game.sav -OutputDirectory C:\captures\sgb-playback `
+  -Frames 7200
+```
+
+Each model runs about two minutes, with a real native window and WASAPI device.
+Keep these runs uninterrupted; record what you hear separately. Provenance
+includes the executable/input hashes and current Windows power scheme; the
+runner never changes that scheme. Captures contain private ROM/save copies and
+must not be committed or distributed.
+
+```sh
+python3 scripts/check_sgb_frontend_playback.py \
+  /path/to/captures/sgb/frame-timing.log \
+  /path/to/captures/sgb2/frame-timing.log
+```
+
+The checker requires completed Release traces for both models, ten seconds of
+warmup and at least sixty measured seconds per model. Defaults require average
+FPS 59.5..60.5 (the unchanged host cadence is about 60.098 Hz), p99 frame interval
+<= 25 ms, worst interval <= 100 ms, enabled/available real audio, and no latency
+resets. It rejects truncated/duplicate/malformed traces. Frame intervals include
+time between loop iterations, so a pause or isolated stall cannot disappear in
+an average. Per-frame samples are buffered and written after measurement;
+ordinary playback does not collect them. The smoke bound is 1..36000 frames.
+`--allow-dummy` explicitly permits plumbing-only tests; it does not qualify a
+physical audio device. Work time includes presentation and is diagnostic, not
+an unpaced core headroom measurement. Empty-input-queue observations remain
+distinct from hardware underruns; neither a passing gate nor a WASAPI backend
+establishes audible fidelity.
+
+Run lifecycle checks separately, in another fresh output directory:
+
+```powershell
+scripts/run_windows_sgb_playback.ps1 -Executable C:\build\gbb.exe `
+  -Rom C:\private\game.gb -FirmwareDirectory C:\private\firmware `
+  -OutputDirectory C:\captures\sgb-lifecycle -Frames 1800 -Lifecycle
+```
+
+This posts native menu commands only to the new test process's verified window:
+pause/resume, isolated manual save, cold reset and load. It requires a paused
+timing window, a model-specific firmware snapshot, and completed playback after
+restoration. These intentionally interrupted traces are **not** steady-state
+performance evidence. Physical listening remains a separate human check.
+`GBB_FRONTEND_TEST_DIRECTORY` selects a separate frontend preference directory
+only for a bounded smoke launch; on Windows this also isolates `settings.ini`.
+The Windows runner sets it automatically. Linux portable settings still live
+beside the executable; use a separate executable directory for Linux smoke tests.
+
+Local native MSVC Release qualification on 2026-10-04 used Donkey Kong (JU)
+v1.1, the same initial battery RAM, Windows Balanced, Direct3D11 and WASAPI.
+The final uninterrupted 7200-frame runs passed after ten seconds of warmup:
+
+| Model | Measured FPS | Frame p99 | Worst frame | Median work | Latency resets |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| SGB1 | 60.0985 | 17.49 ms | 22.67 ms | 14.30 ms | 0 |
+| SGB2 | 60.0985 | 17.38 ms | 25.34 ms | 14.17 ms | 0 |
+
+They recorded 7 and 0 empty-input-queue observations respectively. Both models
+also passed separate native-menu lifecycle checks. User listening during the
+preceding two-model run reported no crackling, gaps or unusual volume changes;
+an audible difference between the models was noted, without a validated cause.
+The original battery save's SHA-256 remained unchanged.
+
+These are bounded local checks, **not** proof of hard realtime, universal
+title/device performance, hardware-perfect audio, or large end-to-end headroom.
+The separately qualified host-only headroom is not a frontend headroom claim.
+
 Local integration checks on 2026-10-04 passed seven targeted Linux contracts
 and the native MSVC firmware-adapter contract. Original ROM-free fixtures compare
 single-host state, PCM and framebuffer pixels, and cover live input, cold reset,

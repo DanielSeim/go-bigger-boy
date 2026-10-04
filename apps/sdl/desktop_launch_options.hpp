@@ -25,7 +25,7 @@ inline DesktopLaunchOptions desktop_launch_options(int argc,char** argv) {
         } else if(option=="--frontend-smoke-frames") {
             std::size_t consumed{};
             const auto frames=std::stoul(value,&consumed);
-            if(consumed!=value.size() || frames<1 || frames>1800) throw std::invalid_argument("Smoke frame count must be 1..1800");
+            if(consumed!=value.size() || frames<1 || frames>36000) throw std::invalid_argument("Smoke frame count must be 1..36000");
             result.smoke_frames=static_cast<unsigned>(frames);
         } else throw std::invalid_argument("Unknown desktop launch option: " + std::string(option));
     }

@@ -664,6 +664,11 @@ if(GAMEBOY_BUILD_TESTS)
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_host_performance_gate_tests.py)
         set_tests_properties(gameboy_sgb_host_performance_gate
                              PROPERTIES LABELS "performance;sgb")
+        add_test(NAME gameboy_sgb_frontend_playback_gate
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_frontend_playback_gate_tests.py)
+        set_tests_properties(gameboy_sgb_frontend_playback_gate
+                             PROPERTIES LABELS "performance;sgb")
         add_test(NAME gameboy_sgb_command_report
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_command_report_tests.py)

@@ -156,6 +156,11 @@ int main() {
         check(launch.firmware_model=="sgb" && launch.firmware_directory=="firmware","desktop opt-in parsed");
         check(gbb::sdl::desktop_launch_options(2,args).firmware_directory.empty(),"ordinary launch unchanged");
         rejects([&]{gbb::sdl::desktop_launch_options(3,args);},"missing launch value rejected");
+        char smoke_flag[]="--frontend-smoke-frames", smoke_count[]="36000", excessive[]="36001";
+        char* smoke_args[]{app,rom,flag,dir,smoke_flag,smoke_count};
+        check(gbb::sdl::desktop_launch_options(6,smoke_args).smoke_frames==36000,"bounded ten-minute qualification parsed");
+        smoke_args[5]=excessive;
+        rejects([&]{gbb::sdl::desktop_launch_options(6,smoke_args);},"unbounded qualification rejected");
         std::filesystem::remove_all(root); return 0;
     } catch(const std::exception& e) {
         std::cerr<<e.what()<<'\n'; std::filesystem::remove_all(root); return 1;
