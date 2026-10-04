@@ -2,6 +2,53 @@
 
 ## [Unreleased]
 
+## [0.36.0] - 2026-10-04
+
+### Experimental Super Game Boy firmware playback
+
+- Add an opt-in desktop SGB1/SGB2 firmware host with independently implemented
+  SNES CPU, ICD/Game Boy bridge, SPC700, and DSP components, plus combined
+  Game Boy and SNES-side audio through the existing SDL playback path.
+- Expose firmware playback settings in the Windows and Linux library dashboards,
+  with model/directory validation and explicit command-line overrides. Changes
+  apply to the next ROM launch; reset retains the running backend and model.
+- Support pause/resume, cold reset, and whole-host manual snapshots. Keep
+  firmware battery saves and quick states separate from ordinary HLE saves,
+  with firmware/model-bound state validation and staged save replacement.
+- Optimize exact host execution, audio mixing, and replay caches without
+  changing validated output. Add headroom gates, benchmark provenance, and
+  native Windows playback/audio qualification tools.
+- HLE remains the default on every frontend. Experimental firmware playback
+  requires legally obtained user-supplied images; no firmware or external
+  emulator core is bundled. Android and Web do not expose this playback path.
+- Retain the existing SGB color/border compositor: full SNES graphics/menu
+  rendering is not implemented. Voxel presentation, link sessions, debugger,
+  cheats, automatic rewind, and unsupported cartridge peripherals remain
+  unavailable in the experimental firmware backend.
+
+### SGB accuracy and diagnostics
+
+- Add deterministic title/gameplay replay and independent frame/audio comparison
+  tools, with explicit input, clock, boot, upload, and scene provenance.
+- Correct SGB LCD restart frames and diagnostic cold-boot/input replay timing.
+  Expand host startup, PPU/DMA, APU upload, port rendezvous, and shared-bus traces.
+- Add ROM-free SPC700/DSP timing and PCM contracts covering BRR decoding,
+  interpolation, envelopes, key polling, noise, pitch modulation, echo/FIR,
+  register writes, and resumable cycle execution.
+- Preserve unresolved boot/fade/handshake and title-reference mismatches as
+  documented limitations; these tools do not establish complete SGB accuracy.
+
+### Desktop, CI, and documentation
+
+- Fix Windows dashboard control-ID collisions, unsupported native-menu actions,
+  settings bounds, and modal completion. Exercise clipped scrolling controls
+  and short-window layouts in the native dashboard smoke test.
+- Stabilize TCP diagnostic replay and make SGB trace contracts portable across
+  platforms, including Windows line endings, compiler setup, and stack usage.
+- Correct CI regression-report artifact paths and update GitHub Pages actions.
+- Add Android and voxel screenshots to the README and document experimental
+  firmware setup, backend restrictions, diagnostics, and measured qualification.
+
 ## [0.35.25] - 2026-09-25
 
 ### Super Game Boy
