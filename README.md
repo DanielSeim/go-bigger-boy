@@ -178,6 +178,7 @@ covers Linux, Android, and Web builds.
 
 - [Accuracy and compatibility report](docs/accuracy.md)
 - [Build and testing](docs/build-and-testing.md)
+- [Original replacement firmware (experimental DMG cold-start)](firmware/README.md)
 - [Desktop frontend and tools](docs/desktop.md)
 - [Platform guides](docs/platforms.md)
 - [Link cable diagnostics](docs/link-cable.md)

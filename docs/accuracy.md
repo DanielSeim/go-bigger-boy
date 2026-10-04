@@ -35,6 +35,15 @@ boot-ROM mapping and handoff harness, not a claim of compatibility with
 Nintendo's proprietary boot ROM; hardware initialization remains provided by the
 existing model profile until a complete boot-ROM implementation is validated.
 
+The separate `--dmg-boot --model dmg` option now runs the original DMG
+replacement firmware from a deterministic cold machine, without post-boot
+register or VRAM seeding. This opt-in fast-start implementation validates the
+header checksum and establishes the DMG register handoff, but does not reproduce
+Nintendo's animation, logo/trademark tiles, chime, or exact divider/APU timing.
+See [replacement firmware](../firmware/README.md) for its scope, reproducible
+build, state/reset contracts, and remaining validation work. It is not used to
+inflate the existing post-boot conformance results.
+
 ### Additional pinned-bundle suites
 
 The v7.0 archive is also treated as a source of matrix cases rather than only a

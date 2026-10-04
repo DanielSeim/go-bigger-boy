@@ -117,6 +117,15 @@ void SerialPort::reset_link() noexcept {
     transfer_byte_ = data_;
 }
 
+void SerialPort::initialize_dmg_power_on() noexcept {
+    reset_link();
+    cgb_mode_ = false;
+    data_ = 0;
+    external_data_ = 0;
+    transfer_byte_ = 0;
+    reset_diagnostics();
+}
+
 unsigned SerialPort::cycles_per_bit() const noexcept {
     // DMG serial transfers run at 8192 Hz (512 CPU clocks per bit). CGB fast
     // mode runs at 262144 Hz (16 clocks per bit at normal CPU speed).

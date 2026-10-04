@@ -137,6 +137,53 @@ void MemoryBus::initialize_post_boot(const HardwareModel model) noexcept {
     ppu_.initialize_post_boot_phase(model);
 }
 
+void MemoryBus::initialize_dmg_power_on() {
+    // Allocate the replacement PPU first, before modifying the live machine.
+    Ppu fresh_ppu;
+    fresh_ppu.set_dmg_palette(ppu_.dmg_palette());
+    ppu_ = std::move(fresh_ppu);
+    const auto audio_enabled = apu_.audio_enabled();
+    apu_ = Apu{};
+    apu_.set_audio_enabled(audio_enabled);
+    timer_ = Timer{};
+    joypad_ = Joypad{};
+    sgb_adapter_ = SgbAdapter{};
+    sgb_host_audio_.clear();
+    serial_.initialize_dmg_power_on();
+    serial_.set_completion_callback(this, &MemoryBus::serial_transfer_complete);
+    serial_.reset_diagnostics();
+    serial_output_.clear();
+    boot_rom_enabled_ = false;
+    wram_.fill(0);
+    cgb_wram_->fill(0);
+    io_.fill(0);
+    hram_.fill(0);
+    interrupt_enable_ = 0;
+    serial_cycles_remaining_ = 0;
+    serial_clock_ = 0;
+    oam_dma_source_ = 0;
+    oam_dma_index_ = 0;
+    oam_dma_cycle_ = 0;
+    oam_dma_active_ = false;
+    oam_dma_pending_source_ = 0;
+    oam_dma_start_delay_ = 0;
+    wram_bank_ = 1;
+    cgb_mode_ = false;
+    cgb_hardware_ = false;
+    apu_cycle_phase_ = false;
+    hdma_source_ = 0;
+    hdma_destination_ = 0x8000;
+    hdma_blocks_remaining_ = 0;
+    hdma_active_ = false;
+    double_speed_ = false;
+    speed_switch_requested_ = false;
+    last_ppu_requests_ = 0;
+    debug_bus_cycles_ = 0;
+    timer_paused_ = false;
+    debug_io_trace_.clear();
+    if (printer_connected_) printer_.reset();
+}
+
 void MemoryBus::install_boot_rom(const DiagnosticBootRom& rom) noexcept {
     boot_rom_ = rom;
     boot_rom_enabled_ = true;

@@ -598,6 +598,9 @@ void SaveStateBusCodec::read(save_state_format::Reader& reader,
             throw SaveStateError("Save state contains SGB sound request without SGB mode");
         }
     }
+    if (version >= 40 && bus.boot_rom_enabled_) {
+        read_bytes(reader, bus.boot_rom_);
+    }
     if ((bus.last_ppu_requests_ & ~0x2FU) != 0) {
         throw SaveStateError("Save state contains invalid PPU request state");
     }

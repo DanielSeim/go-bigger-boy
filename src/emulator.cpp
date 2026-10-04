@@ -1,5 +1,6 @@
 #include "gameboy/emulator.hpp"
 
+#include <stdexcept>
 #include <utility>
 
 namespace gameboy {
@@ -16,6 +17,15 @@ Emulator::Emulator(Cartridge cartridge, const HardwareModel model,
                           : model;
     automatic_dmg_palette_ = cgb_compatibility_palette(
         bus_.cartridge().cgb_compatibility_palette_id());
+    if (boot_rom_mode_ == BootRomMode::replacement_dmg) {
+        if (hardware_model_ != HardwareModel::dmg) {
+            throw std::invalid_argument("DMG replacement boot requires the DMG hardware model");
+        }
+        bus_.initialize_dmg_power_on();
+        bus_.install_boot_rom(dmg_boot_rom());
+        cpu_.reset_boot();
+        return;
+    }
     bus_.initialize_post_boot(hardware_model_);
     if (boot_rom_mode_ == BootRomMode::diagnostic) {
         bus_.install_boot_rom(diagnostic_boot_rom(hardware_model_));
@@ -32,11 +42,22 @@ Emulator Emulator::from_file(const std::filesystem::path& path,
 }
 
 void Emulator::reset() noexcept {
-    if (boot_rom_mode_ == BootRomMode::diagnostic) {
+    if (boot_rom_mode_ == BootRomMode::replacement_dmg) {
+        bus_.initialize_dmg_power_on();
+        bus_.install_boot_rom(dmg_boot_rom());
+        cpu_.reset_boot();
+    } else if (boot_rom_mode_ == BootRomMode::diagnostic) {
         bus_.initialize_post_boot(hardware_model_);
         bus_.install_boot_rom(diagnostic_boot_rom(hardware_model_));
         cpu_.reset_boot();
     } else {
+        // A version-40 state may have restored an in-progress firmware boot
+        // into a post-boot emulator. Reset follows the configured mode: do
+        // not leave the lower cartridge vectors covered by that image.
+        if (bus_.boot_rom_enabled()) {
+            bus_.write8(0xFF50, 1);
+            bus_.initialize_post_boot(hardware_model_);
+        }
         cpu_.reset(hardware_model_);
     }
 }

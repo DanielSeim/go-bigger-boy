@@ -55,6 +55,7 @@ struct Options {
     bool sgb_frame{};
     bool frame_state_series{};
     bool diagnostic_boot{};
+    bool dmg_boot{};
 };
 
 void usage() {
@@ -73,7 +74,7 @@ void usage() {
                  "[--sgb-trace PATH] [--replay-sgb-trace PATH] "
                  "[--sgb-sound-report PATH] "
                  "[--frame-on-ld-bb --frame-output capture.ppm] "
-                 "[--dmg-compatibility-colors] [--diagnostic-boot]\n";
+                 "[--dmg-compatibility-colors] [--diagnostic-boot | --dmg-boot]\n";
 }
 
 gameboy::HardwareModel parse_model(const std::string& value) {
@@ -171,9 +172,14 @@ Options parse_options(const int argc, char** argv) {
             options.watch_wram_from_start = true;
         } else if (argument == "--diagnostic-boot") {
             options.diagnostic_boot = true;
+        } else if (argument == "--dmg-boot") {
+            options.dmg_boot = true;
         } else {
             throw std::invalid_argument("unknown or incomplete option: " + argument);
         }
+    }
+    if (options.dmg_boot && options.diagnostic_boot) {
+        throw std::invalid_argument("--dmg-boot and --diagnostic-boot are mutually exclusive");
     }
     if ((options.frames != 0 && options.frame_on_ld_bb) ||
         (options.frame_series_last != 0 &&
@@ -619,8 +625,9 @@ int main(int argc, char** argv) {
         // pass without executing the test.
         auto emulator = gameboy::Emulator{
             gameboy::Cartridge{std::move(rom)}, options.model,
-            options.diagnostic_boot ? gameboy::BootRomMode::diagnostic
-                                    : gameboy::BootRomMode::post_boot};
+            options.dmg_boot ? gameboy::BootRomMode::replacement_dmg
+                : options.diagnostic_boot ? gameboy::BootRomMode::diagnostic
+                                          : gameboy::BootRomMode::post_boot};
         if (options.sgb_frame &&
             emulator.hardware_model() != gameboy::HardwareModel::sgb &&
             emulator.hardware_model() != gameboy::HardwareModel::sgb2) {

@@ -213,6 +213,9 @@ void SaveStateBusCodec::write(save_state_format::Writer& writer,
     }
     writer.u64(bus.ppu_.sgb_sound_request_revision_);
     write_bytes(writer, bus.ppu_.sgb_sound_request_);
+    // Version 40 preserves the actually mapped image, not a constructor's
+    // assumed diagnostic ROM. Completed boots add no bytes to the payload.
+    if (bus.boot_rom_enabled_) write_bytes(writer, bus.boot_rom_);
 }
 
 } // namespace gameboy

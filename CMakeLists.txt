@@ -636,6 +636,27 @@ if(GAMEBOY_BUILD_TESTS)
     enable_testing()
     find_package(Python3 COMPONENTS Interpreter QUIET)
     if(Python3_Interpreter_FOUND)
+        add_test(NAME gameboy_dmg_firmware_source
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_dmg_boot_rom.py --check-source)
+        set_tests_properties(gameboy_dmg_firmware_source PROPERTIES LABELS "firmware;boot")
+        if(TARGET gameboy_test_runner)
+            add_test(NAME gameboy_dmg_boot_cli
+                     COMMAND ${Python3_EXECUTABLE}
+                             ${CMAKE_CURRENT_SOURCE_DIR}/tests/dmg_boot_cli_tests.py
+                             $<TARGET_FILE:gameboy_test_runner>)
+            set_tests_properties(gameboy_dmg_boot_cli PROPERTIES LABELS "firmware;boot")
+        endif()
+        find_program(GBB_RGBASM rgbasm)
+        find_program(GBB_RGBLINK rgblink)
+        if(GBB_RGBASM AND GBB_RGBLINK)
+            add_test(NAME gameboy_dmg_firmware_reproducible
+                     COMMAND ${Python3_EXECUTABLE}
+                             ${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_dmg_boot_rom.py --check
+                             --rgbasm ${GBB_RGBASM} --rgblink ${GBB_RGBLINK})
+            set_tests_properties(gameboy_dmg_firmware_reproducible
+                                 PROPERTIES LABELS "firmware;boot")
+        endif()
         add_test(NAME gameboy_audio_reference_tool
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/audio_reference_tool_tests.py)
@@ -715,6 +736,10 @@ if(GAMEBOY_BUILD_TESTS)
         endif()
     endif()
     add_executable(gameboy_tests tests/core_tests.cpp)
+    add_executable(gameboy_dmg_boot_tests tests/dmg_boot_tests.cpp)
+    target_link_libraries(gameboy_dmg_boot_tests PRIVATE gameboy_core)
+    add_test(NAME gameboy_dmg_boot COMMAND gameboy_dmg_boot_tests)
+    set_tests_properties(gameboy_dmg_boot PROPERTIES LABELS "firmware;boot")
     target_link_libraries(gameboy_tests PRIVATE gbb_core_api)
     add_custom_command(TARGET gameboy_tests POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory

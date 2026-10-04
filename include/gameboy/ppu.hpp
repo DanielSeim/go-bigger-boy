@@ -45,6 +45,7 @@ public:
     // visible PPU is already in mode 0. LCD startup is deliberately excluded.
     [[nodiscard]] bool hblank_dma_available() const noexcept;
     void set_dmg_palette(const DmgPalette& palette) noexcept;
+    [[nodiscard]] const DmgPalette& dmg_palette() const noexcept { return dmg_palette_; }
     void initialize_post_boot_phase(HardwareModel model) noexcept;
     void apply_sgb_command(
         const std::array<std::uint8_t, 16 * 7>& packet,

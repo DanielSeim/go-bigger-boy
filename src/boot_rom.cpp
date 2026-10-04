@@ -1,8 +1,14 @@
 #include "gameboy/boot_rom.hpp"
+#include "../firmware/gameboy/dmg_boot_image.hpp"
 
 #include <cstddef>
 
 namespace gameboy {
+
+const DiagnosticBootRom& dmg_boot_rom() noexcept {
+    return firmware::dmg_boot_image;
+}
+
 namespace {
 
 struct HandoffRegisters {

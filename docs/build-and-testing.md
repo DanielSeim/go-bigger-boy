@@ -233,6 +233,11 @@ For boot-path diagnostics, add `--diagnostic-boot`; this runs GBB's original
 diagnostic boot ROM, records a handoff marker in HRAM, validates the CPU
 handoff state, and then continues at the cartridge entry point. Normal
 emulator construction continues to use the existing post-boot path.
+For the experimental original DMG cold-start replacement, use
+`--dmg-boot --model dmg` instead. It initializes hardware through emulated CPU
+writes and validates the header checksum, but deliberately differs in startup
+graphics and timing. See [replacement firmware](../firmware/README.md) for
+rebuilding and testing it; RGBDS is not required for normal builds.
 
 The APU passes all 12 upstream Blargg `dmg_sound` tests and all 12 `cgb_sound`
 tests, including model-specific power behavior, active wave-RAM access, and the

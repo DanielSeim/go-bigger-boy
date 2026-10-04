@@ -709,7 +709,7 @@ void test_save_state_round_trip_and_validation() {
           "version 17 save states remain loadable after adding object deadlines");
 
     auto future_version = saved;
-    future_version[8] = 40;
+    write_little_u32(future_version, 8, UINT32_C(0xFFFFFFFF));
     auto rejected_version = false;
     try {
         emulator.load_state(future_version);

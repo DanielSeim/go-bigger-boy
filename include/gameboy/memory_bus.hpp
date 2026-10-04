@@ -37,6 +37,9 @@ public:
 
     explicit MemoryBus(Cartridge cartridge);
     void initialize_post_boot(HardwareModel model = HardwareModel::dmg) noexcept;
+    // Deterministic DMG power-on state: no post-boot register/VRAM seeding.
+    // Cartridge/mapper/battery data and host serial attachment are retained.
+    void initialize_dmg_power_on();
     void install_boot_rom(const DiagnosticBootRom& rom) noexcept;
     [[nodiscard]] bool boot_rom_enabled() const noexcept;
 

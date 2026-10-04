@@ -135,6 +135,8 @@ public:
     // boundary. This does not reset CPU, memory, or cartridge state and is
     // used when a host retries a link session after a timeout.
     void reset_link() noexcept;
+    // Cold DMG reset while retaining the host endpoint and callback.
+    void initialize_dmg_power_on() noexcept;
 
     void restore_state(std::uint8_t data, std::uint8_t control,
                        std::uint32_t phase, std::uint8_t bits_shifted,
