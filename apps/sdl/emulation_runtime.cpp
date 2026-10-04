@@ -25,6 +25,7 @@
 #include "android_touch_renderer.hpp"
 #endif
 #include "emulation_policy.hpp"
+#include "desktop_launch_options.hpp"
 #include "event_dispatch.hpp"
 #include "event_policy.hpp"
 #include "emulation_session.hpp"
@@ -805,6 +806,12 @@ int run_emulation(int argc, char** argv) {
         }
 #endif
         DialogState dialog;
+#if !defined(__ANDROID__) && !defined(__EMSCRIPTEN__)
+        const auto launch_options=gbb::sdl::desktop_launch_options(argc,argv);
+        if(!launch_options.firmware_directory.empty()) argc=2;
+#else
+        const gbb::sdl::DesktopLaunchOptions launch_options{};
+#endif
 #ifdef _WIN32
         const auto start_with_library = argc != 2;
 #else
@@ -1018,6 +1025,8 @@ int run_emulation(int argc, char** argv) {
         auto cycles_per_frame = 70224U;
         gbb::sdl::FramePacer frame_pacer(cycles_per_frame);
         std::uint64_t frontend_frame = 0;
+        unsigned smoke_completed_frames{};
+        std::optional<std::chrono::steady_clock::time_point> smoke_started;
         std::uint64_t rewind_capture_count = 0;
         std::uint64_t rewind_capture_total_us = 0;
         std::uint64_t rewind_capture_max_us = 0;
@@ -1625,8 +1634,13 @@ int run_emulation(int argc, char** argv) {
                              core_registry,
                              gameboy::display_palettes[display_palette], sdl,
                              preference_path,
-                             std::string{gameboy::hardware_model_id(hardware_model)});
+                             launch_options.firmware_directory.empty()
+                                 ? std::string{gameboy::hardware_model_id(hardware_model)}
+                                 : launch_options.firmware_model,
+                             launch_options.firmware_directory);
                     emulator = gbb::gameboy_emulator(core.get());
+                    if(!launch_options.firmware_directory.empty())
+                        gbb::log_frontend_info("Experimental SGB firmware playback: one host, combined audio, model-isolated firmware saves; link/debugger/background rewind unavailable");
                     const auto updated_settings = load_app_settings(preference_path);
                     audio_enabled = updated_settings.audio_enabled;
                     show_fps = updated_settings.show_fps;
@@ -1800,6 +1814,8 @@ int run_emulation(int argc, char** argv) {
 #endif
                 fast_forward});
             auto emulated_frame_batch_factor = 1U;
+            if(!launch_options.firmware_directory.empty() && !execution_plan.should_run())
+                sdl.audio.clear();
             if (execution_plan.should_run()) {
                 if (execution_plan.restores_rewind_state()) {
                     if (!rewind_history.empty()) {
@@ -2105,6 +2121,7 @@ int run_emulation(int argc, char** argv) {
                 !execution_plan.restores_rewind_state() &&
                 link_emulator == nullptr && !remote_transport_connected &&
                 !fast_forward && core != nullptr &&
+                launch_options.firmware_directory.empty() &&
                 emulated_frame_batch_factor == 1) {
                 const auto pacing_remaining =
                     frame_pacer.deadline() - std::chrono::steady_clock::now();
@@ -2161,6 +2178,18 @@ int run_emulation(int argc, char** argv) {
                 frame_pacer.wait();
             }
             const auto pacing_finished = std::chrono::steady_clock::now();
+            if(launch_options.smoke_frames && core && execution_plan.should_run()) {
+                if(!smoke_started) smoke_started=frame_started;
+                if(++smoke_completed_frames==launch_options.smoke_frames) {
+                    const auto seconds=std::chrono::duration<double>(pacing_finished-*smoke_started).count();
+                    std::cout << "firmware_frontend_smoke frames=" << smoke_completed_frames
+                              << " seconds=" << seconds << " fps=" << smoke_completed_frames/seconds
+                              << " audio_available=" << sdl.audio.available()
+                              << " audio_empty_queue_events=" << sdl.audio.empty_queue_events()
+                              << " audio_latency_resets=" << sdl.audio.latency_resets() << '\n';
+                    running=false;
+                }
+            }
             if (frame_timing_enabled && frontend_frame % 60U == 0U) {
                 const auto timing_window_us = static_cast<std::uint64_t>(
                     microseconds_between(frame_timing_window_start,
@@ -2177,6 +2206,9 @@ int run_emulation(int argc, char** argv) {
                     " emulation_us=" +
                     std::to_string(microseconds_between(
                         events_finished, audio_started)) +
+                    " audio_empty_queue_events=" + std::to_string(sdl.audio.empty_queue_events()) +
+                    " audio_latency_resets=" + std::to_string(sdl.audio.latency_resets()) +
+                    " firmware_playback=" + (launch_options.firmware_directory.empty() ? "off" : "on") +
                     " rewind_captures=" +
                     std::to_string(rewind_capture_count) +
                     " rewind_capture_avg_us=" +

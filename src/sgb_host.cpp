@@ -210,6 +210,12 @@ std::size_t SgbHost::pending_samples() const noexcept {
 SgbHost::Status SgbHost::status() const noexcept { return impl_->status; }
 const SnesHostCpu& SgbHost::cpu() const noexcept { return impl_->cpu; }
 const SgbIcdGbSource& SgbHost::icd() const noexcept { return impl_->icd; }
+void SgbHost::set_button(Button button, bool pressed) noexcept {
+    impl_->icd.set_live_button(button, pressed);
+}
+void SgbHost::import_battery_ram(const std::vector<std::uint8_t>& bytes) {
+    impl_->icd.import_battery_ram(bytes);
+}
 std::uint64_t SgbHost::apu_half_clocks() const noexcept { return impl_->apu.cpu().half_cycles(); }
 std::uint64_t SgbHost::samples_produced() const noexcept {
     return impl_->combined ? impl_->mixer->samples_produced() : impl_->produced;

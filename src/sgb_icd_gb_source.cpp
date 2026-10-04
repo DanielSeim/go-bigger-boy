@@ -58,6 +58,19 @@ void SgbIcdGbSource::set_input_events(const std::vector<InputEvent>& events) {
     apply_input(0);
 }
 
+void SgbIcdGbSource::set_live_button(Button button, bool pressed) noexcept {
+    // Live frontend input and deterministic replay are mutually exclusive.
+    if (!input_events_.empty()) return;
+    const auto bit = static_cast<unsigned>(button);
+    if (bit >= 8) return;
+    const auto flag = static_cast<std::uint8_t>(1U << bit);
+    const auto mask = static_cast<std::uint8_t>(pressed ? held_buttons_ | flag
+                                                      : held_buttons_ & ~flag);
+    frame_input_.hold(mask);
+    set_input_buttons(mask);
+    next_gb_clock_known_=false;
+}
+
 void SgbIcdGbSource::initialize_external_boot_bus() noexcept {
     // An external boot ROM executes from reset, not from a post-boot LCD/DIV
     // image. Otherwise frames can elapse before its first LCD-enable write.
@@ -308,6 +321,7 @@ bool SgbIcdGbSource::write(const std::uint16_t address,
         ++control_writes_;
         last_control_ = value;
         if (!run) {
+            const auto live_held=held_buttons_;
             released_ = false;
             gb_->reset();
             if (audio_sink_) {
@@ -329,6 +343,10 @@ bool SgbIcdGbSource::write(const std::uint16_t address,
             frame_input_.reset();
             if (native_gb_input_) set_input_buttons(0);
             apply_input(0);
+            if (input_events_.empty()) {
+                frame_input_.hold(live_held);
+                set_input_buttons(live_held);
+            }
             last_ly_ = gb_->bus().read8(0xFF44);
             row_valid_.fill(false);
             row_stream_offset_ = 0;

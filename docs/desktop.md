@@ -12,6 +12,12 @@ without arguments opens the game library dashboard:
 ./build/gbb
 ```
 
+An opt-in [experimental SGB firmware playback path](sgb-host.md#experimental-desktop-playback)
+accepts user-owned firmware via `--sgb-firmware DIRECTORY --sgb-model sgb2`
+after the ROM argument. Ordinary launches continue to use HLE. This path keeps
+experimental saves separate and currently excludes link/debugger, voxel
+presentation and background rewind.
+
 On Windows, the running-game window uses a native menu bar instead of drawing
 a hamburger button over the Game Boy framebuffer. Its File, Emulation, View,
 Tools, and Help menus expose ROM/library navigation, save states, pause/reset,

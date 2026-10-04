@@ -26,6 +26,9 @@ class AudioOutput {
     [[nodiscard]] bool available() const noexcept { return stream_ != nullptr; }
     [[nodiscard]] int queued_bytes() const noexcept;
     [[nodiscard]] bool enabled() const noexcept { return enabled_; }
+    // Submission-boundary observations, not hardware underrun interrupts.
+    [[nodiscard]] std::uint64_t empty_queue_events() const noexcept { return empty_queue_events_; }
+    [[nodiscard]] std::uint64_t latency_resets() const noexcept { return latency_resets_; }
 
   private:
     SDL_AudioStream* stream_{};
@@ -35,6 +38,8 @@ class AudioOutput {
     // become audible underruns.
     bool playback_started_{};
     bool enabled_{true};
+    std::uint64_t empty_queue_events_{};
+    std::uint64_t latency_resets_{};
 };
 
 } // namespace gbb::sdl

@@ -1,6 +1,7 @@
 #include "gbb/gameboy_core_factory.hpp"
 #include "gbb/gameboy_core.hpp"
 #include "gbb/gameboy_scene.hpp"
+#include "gbb/sgb_firmware_core.hpp"
 
 #include "gameboy/cartridge.hpp"
 #include "gameboy/emulator.hpp"
@@ -211,6 +212,9 @@ CoreFactory gameboy_core_factory() {
         "gb", "Game Boy / Game Boy Color", probe_game_boy,
         [](std::vector<std::uint8_t> rom,
            const CoreLoadOptions& options) -> std::unique_ptr<EmulatorCore> {
+            if (!options.sgb_firmware_directory.empty()) {
+                return create_sgb_firmware_core(std::move(rom), options);
+            }
             gameboy::Cartridge cartridge(std::move(rom));
             if (!options.persistence_path.empty()) {
                 cartridge.set_persistence_path(options.persistence_path);

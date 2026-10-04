@@ -526,7 +526,8 @@ void load_rom(const std::string& path,
               const gbb::CoreRegistry& registry,
               const gameboy::DisplayPalette& palette, SdlResources& sdl,
               const std::filesystem::path& preference_path,
-              std::string hardware_model) {
+              std::string hardware_model,
+              const std::filesystem::path& firmware_directory) {
 #ifdef __ANDROID__
     std::size_t byte_count{};
     void* loaded = SDL_LoadFile(path.c_str(), &byte_count);
@@ -543,6 +544,7 @@ void load_rom(const std::string& path,
     auto metadata = registry.create(bytes);
     gbb::CoreLoadOptions options;
     options.hardware_model = std::move(hardware_model);
+    options.sgb_firmware_directory = firmware_directory;
     if (metadata->descriptor().has_battery && !preference_path.empty()) {
         const auto save_directory = preference_path / "saves";
         std::filesystem::create_directories(save_directory);
@@ -554,10 +556,18 @@ void load_rom(const std::string& path,
     auto replacement = registry.create(std::move(bytes), options);
 #else
     static_cast<void>(preference_path);
+    // A same-ROM cold reset/reopen must load the RAM just produced by the
+    // running firmware host, not the previous on-disk save. If saving fails,
+    // retain the live session rather than replacing it with stale RAM.
+    if (!firmware_directory.empty() && core) core->flush_persistent_data();
     gbb::CoreLoadOptions options;
     options.hardware_model = std::move(hardware_model);
-    auto replacement = registry.create_from_file(std::filesystem::u8path(path),
-                                                 options);
+    options.sgb_firmware_directory = firmware_directory;
+    // An explicit firmware launch must not be intercepted by a plug-in probe.
+    const auto& selected_registry = firmware_directory.empty()
+                                        ? registry : gbb::built_in_core_registry();
+    auto replacement = selected_registry.create_from_file(std::filesystem::u8path(path),
+                                                           options);
 #endif
     if (gbb::has_capability(replacement->descriptor().capabilities,
                             gbb::CoreCapability::printer)) {

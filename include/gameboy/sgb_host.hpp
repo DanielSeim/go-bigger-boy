@@ -25,7 +25,7 @@ struct SgbHostConfig {
 };
 
 // Bounded original firmware host, not a full SNES/PPU emulator. This opt-in
-// component is not connected to any shipping frontend. Defaults to SNES PCM;
+// component has an opt-in experimental desktop adapter. Defaults to SNES PCM;
 // the explicit combined mode adds GB capture and bounded rate conversion.
 // Single-threaded. Mutable processors are deliberately not exposed.
 class SgbHost final {
@@ -51,6 +51,8 @@ public:
     [[nodiscard]] Status status() const noexcept;
     [[nodiscard]] const SnesHostCpu& cpu() const noexcept;
     [[nodiscard]] const SgbIcdGbSource& icd() const noexcept;
+    void set_button(Button button, bool pressed) noexcept;
+    void import_battery_ram(const std::vector<std::uint8_t>& bytes);
     [[nodiscard]] std::uint64_t apu_half_clocks() const noexcept;
     [[nodiscard]] std::uint64_t samples_produced() const noexcept;
     [[nodiscard]] std::uint64_t snes_samples_produced() const noexcept;

@@ -396,7 +396,7 @@ void handle_desktop_menu_event(SdlEventContext& context) {
         }
         break;
     case DesktopMenuCommand::reset:
-        if (emulator && !input_movie_active) context.reset_requested = true;
+        if (core && !input_movie_active) context.reset_requested = true;
         break;
     case DesktopMenuCommand::link_session:
         if (has_capability(CoreCapability::link_cable)) {

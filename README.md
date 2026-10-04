@@ -47,7 +47,8 @@ What works well:
   JOYP command framing, color palettes, tile attribute mapping, screen-data
   CHR_TRN/PCT_TRN/PAL_TRN/ATTR_TRN transfer latches, a
   deterministic 256×224 SNES border framebuffer, and MASK_EN viewport masking
-  (SNES audio and boot animation remain future work)
+  (ordinary launches use HLE; [experimental desktop firmware playback](docs/sgb-host.md#experimental-desktop-playback)
+  adds opt-in combined audio using user-owned images)
 - Active-low joypad matrix with keyboard/gamepad input and interrupts
 - Cycle-timed OAM DMA with source-bus conflicts and an optional SDL3 desktop frontend
 - Four-channel DMG/CGB audio with a cycle-integrated high-pass mixer and 48 kHz
@@ -78,8 +79,9 @@ Known limitations:
 - Compatibility is still incomplete, especially for untested commercial games
   and revision-specific hardware edge cases.
 - The Super Game Boy implementation is a deterministic clean-room adapter,
-  not a full SNES emulator or Nintendo BIOS replacement; SNES audio, boot
-  animation, fade timing, and the complete boot handshake remain out of scope.
+  not a full SNES emulator or Nintendo BIOS replacement. The opt-in desktop
+  firmware host adds experimental SNES audio, but full SNES graphics/menu
+  rendering and unresolved boot/fade/handshake accuracy remain limitations.
 - Web link sessions are not exposed yet. Desktop local/TCP link sessions work,
   but Pokémon can spend a long time in some trade or battle transition states;
   improving that wait-state/audio behavior is still planned.

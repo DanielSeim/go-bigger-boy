@@ -28,7 +28,8 @@ void load_rom(const std::string& path,
               const gameboy::DisplayPalette& palette,
               SdlResources& sdl,
               const std::filesystem::path& preference_path,
-              std::string hardware_model = "auto");
+              std::string hardware_model = "auto",
+              const std::filesystem::path& firmware_directory = {});
 
 void start_link_trace(const std::filesystem::path& preference_path,
                       const char* role_suffix = nullptr,

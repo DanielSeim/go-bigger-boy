@@ -2,7 +2,8 @@
 
 `gameboy::SgbHost` coordinates our original bounded SNES CPU, ICD/Game Boy
 bridge and SPC700/DSP engine in `gameboy_core`. It is an opt-in core component,
-**not enabled in shipping frontends**. No bsnes code, external emulator core,
+**not enabled by default in shipping frontends**. Desktop firmware playback
+is an explicit experimental launch option (see below). No bsnes code, external emulator core,
 Nintendo firmware, ROM, captured audio or private state is bundled.
 
 The existing diagnostic CPU/ICD headers are compatibility adapters to the same
@@ -49,9 +50,60 @@ have original ROM-free contract tests. The reserve is tied to the current
 bounded CPU/DMA implementation and must be revisited if that model expands.
 
 The default output remains **SNES-side PCM only**, with the unused GB analog
-mixer/output queue disabled. The existing frontend rendering/presentation paths
-are unchanged. Combined output is a separate explicit configuration below;
-device playback remains future work.
+mixer/output queue disabled. Combined output is a separate explicit configuration
+below; the experimental desktop adapter selects it at 48 kHz.
+
+## Experimental desktop playback
+
+```sh
+./build-desktop/gbb game.gb --sgb-firmware /path/to/private/firmware --sgb-model sgb2
+```
+
+The directory must contain `sgb2.program.rom`, `sgb2.boot.rom` (256 bytes), and
+`spc700.rom` (64 bytes). For `--sgb-model sgb`, supply `sgb1.program.rom` and
+`sgb.boot.rom` instead. The default experimental model is SGB2. Files are loaded
+only after this explicit opt-in; missing/invalid images fail without an HLE
+fallback. No images are downloaded, bundled, or added to releases.
+
+A single `SgbHost` owns GB execution, live input, and combined GB/SNES audio.
+SDL consumes its 48 kHz stereo samples through the existing bounded playback
+policy; muted audio is still drained. Video and read-only scene metadata come
+from that same GB instance. Existing GB-side SGB color/border composition is
+retained: this is **not** a newly implemented SNES PPU or firmware-rendered
+SNES menu. HLE remains the ordinary launch path.
+
+Pause/resume, cold reset, and model/firmware-bound manual snapshots work through
+the generic core interface. A terminal host/APU/ICD fault stops playback with
+diagnostic status/address context rather than switching engines or lowering
+quality. Link, debugger, cheats, camera, RTC, rumble and background rewind are
+not enabled for this path. Unsupported cartridge peripherals and CGB-only
+software are rejected. Desktop voxel presentation is not integrated with the
+firmware adapter; use the existing 2D presentation for this experiment.
+
+Battery RAM uses separate `.sgb-firmware.sav` / `.sgb2-firmware.sav` files; it
+does not automatically read or overwrite the ordinary `.sav`. Quick states also
+use separate model-specific `-firmware.gbbs` filenames. State contents include
+private firmware and must not be redistributed. Save replacement uses a sibling
+`.pending` staging directory; a pre-existing staging directory fails closed and
+is not erased. Successful saves remove their own staging directory.
+
+`--frontend-smoke-frames 600` runs a bounded full-window smoke test, then exits
+and reports observed FPS, audio availability, submission-boundary empty-queue
+events and latency resets. Empty-queue events are not hardware underrun
+interrupts. Use isolated preferences for automated tests. A virtual display or
+dummy audio driver validates plumbing, not physical display/audio quality.
+
+Local integration checks on 2026-10-04 passed seven targeted Linux contracts
+and the native MSVC firmware-adapter contract. Original ROM-free fixtures compare
+single-host state, PCM and framebuffer pixels, and cover live input, cold reset,
+cross-model/corrupt snapshots, terminal faults, isolated saves, and failed-save
+preservation; the adapter contract also passed ASan/UBSan (leak detection disabled
+for the ptrace environment). An isolated X11 interaction run exercised pause/resume, reset and
+manual save/load. Serial Vulkan/Xvfb + dummy-audio Donkey Kong runs of 600 frames
+averaged 59.90 FPS (SGB1) and 59.84 FPS (SGB2), including startup; warmed timing
+windows were about 60.1 FPS, with zero latency resets. They recorded 8 and 6
+empty-input-queue observations respectively. Those observations are retained,
+not presented as zero physical underruns or proof of audible-device quality.
 
 ## Experimental combined audio
 

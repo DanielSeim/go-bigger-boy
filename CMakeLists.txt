@@ -201,6 +201,7 @@ add_library(gbb_core_api
     src/core_contributors.cpp
     src/core_registry.cpp
     src/gameboy_core_factory.cpp
+    src/sgb_firmware_core.cpp
     src/core_runtime.cpp
     src/plugin_loader.cpp
     src/plugin_discovery.cpp
@@ -1146,6 +1147,12 @@ if(GAMEBOY_BUILD_TESTS)
     add_test(NAME gameboy_snes_audio_host_contract
              COMMAND gameboy_snes_audio_host_tests)
     add_executable(gameboy_sgb_host_tests tests/sgb_host_tests.cpp)
+    if(NOT ANDROID AND NOT EMSCRIPTEN)
+        add_executable(gameboy_sgb_firmware_core_tests tests/sgb_firmware_core_tests.cpp)
+        target_include_directories(gameboy_sgb_firmware_core_tests PRIVATE apps/sdl)
+        target_link_libraries(gameboy_sgb_firmware_core_tests PRIVATE gbb_core_api)
+        add_test(NAME gameboy_sgb_firmware_core_contract COMMAND gameboy_sgb_firmware_core_tests)
+    endif()
     target_link_libraries(gameboy_sgb_host_tests PRIVATE gameboy_core)
     add_test(NAME gameboy_sgb_host_contract COMMAND gameboy_sgb_host_tests)
     add_executable(gameboy_apu_mixer_cache_tests tests/apu_mixer_cache_tests.cpp)

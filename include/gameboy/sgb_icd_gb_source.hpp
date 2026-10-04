@@ -71,6 +71,8 @@ public:
                              const gameboy::DiagnosticBootRom& boot_rom,
                              gameboy::HardwareModel model);
     void import_battery_ram(const std::vector<std::uint8_t>& bytes) { gb_->import_battery_ram(bytes); }
+    [[nodiscard]] const Emulator& emulator() const noexcept { return *gb_; }
+    void set_live_button(Button button, bool pressed) noexcept;
 
     [[nodiscard]] bool read(std::uint16_t address, std::uint64_t master_clocks,
                             std::uint8_t& value) noexcept override;

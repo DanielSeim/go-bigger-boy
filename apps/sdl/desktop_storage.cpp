@@ -1,4 +1,5 @@
 #include "desktop_storage.hpp"
+#include "gbb/sgb_firmware_core.hpp"
 
 #ifndef __ANDROID__
 #include "dialogs.hpp"
@@ -237,7 +238,10 @@ std::filesystem::path quick_state_path(
     }
     std::ostringstream name;
     name << std::hex << std::setw(16) << std::setfill('0')
-         << core.rom_fingerprint() << ".gbbs";
+         << core.rom_fingerprint();
+    const auto firmware_model=gbb::sgb_firmware_model(core);
+    if(!firmware_model.empty()) name << '.' << firmware_model << "-firmware";
+    name << ".gbbs";
     return preference_path / "states" / name.str();
 }
 

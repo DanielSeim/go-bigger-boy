@@ -82,11 +82,14 @@ void AudioOutput::submit(gbb::EmulatorCore* core,
     }
     if (stream_ == nullptr) return;
 
+    if (playback_started_ && !samples.empty() && queued_bytes() == 0) ++empty_queue_events_;
+
     const auto& descriptor = core->descriptor();
     const auto maximum_queued_bytes =
         gbb::audio_queue_bytes(descriptor.audio_sample_rate,
                                descriptor.audio_channels, 200);
     if (queued_bytes() > static_cast<int>(maximum_queued_bytes)) {
+        ++latency_resets_;
         // A debugger pause, window drag, suspended mobile activity, or a link
         // wait with no newly generated samples can leave stale audio behind.
         // Recover latency rather than playing an old buffer seconds after its

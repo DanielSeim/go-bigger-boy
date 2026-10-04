@@ -23,6 +23,7 @@ public:
         return true;
     }
     std::uint8_t held() const noexcept { return held_; }
+    void hold(std::uint8_t mask) noexcept { held_ = mask; }
     std::size_t applied() const noexcept { return next_; }
     std::size_t size() const noexcept { return size_; }
     std::uint8_t controller(unsigned player, std::uint8_t host, bool enabled) const noexcept {

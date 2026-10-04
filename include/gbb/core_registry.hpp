@@ -21,6 +21,8 @@ struct CoreLoadOptions {
     // built-in Game Boy enum. Built-in cores interpret this value; plugins
     // may ignore it or expose their own model vocabulary.
     std::string hardware_model{"auto"};
+    // Explicit experimental built-in desktop path; never auto-discovered.
+    std::filesystem::path sgb_firmware_directory;
 };
 
 struct CoreProbeResult {

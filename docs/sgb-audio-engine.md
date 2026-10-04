@@ -2,7 +2,8 @@
 
 The [bounded SGB firmware host](sgb-host.md) now owns the CPU, ICD/Game Boy
 and APU scheduler together, with coordinated snapshots and bounded PCM output.
-It remains opt-in and does not enable frontend playback.
+It remains opt-in; the desktop now has an explicit experimental firmware
+playback adapter. Ordinary frontend launches still use HLE.
 Its explicit combined-audio configuration now captures raw GB audio and
 area-resamples the two sources on the host timeline. Gains remain provisional;
 see the host document for buffering, snapshot and accuracy limitations.
@@ -14,10 +15,11 @@ fixtures and independent title captures exercise the same core implementation.
 The extraction changes neither the renderer arithmetic nor the phase order.
 
 `gameboy::SnesDspAudioEngine` adds a bounded, caller-clocked wrapper around
-those components. It is **not a running SGB SNES host**, and no frontend
-instantiates it yet. This work does not enable SGB music/effects in releases,
-replace the Game Boy APU, load firmware automatically, or add a bsnes runtime
-dependency. It is a building block for a future original sound host.
+those components. It is **not a running SGB SNES host by itself**; `SgbHost`
+coordinates it with the CPU and GB bridge for experimental desktop playback.
+It does not replace the Game Boy APU, load firmware automatically, or add a
+bsnes runtime dependency. SGB music/effects require explicit user-owned firmware
+and the experimental adapter; they are not enabled in ordinary launches.
 
 ## Integrated SPC700/APU scheduler
 
@@ -27,7 +29,7 @@ SPC700 constructor attaches to a caller-owned CPU and its actual bus **at
 reset**, for diagnostic host integration. Those external objects must outlive
 the engine. A legally obtained IPL must be supplied by the caller; missing
 IPL is reported explicitly without executing zero-filled memory. This still
-does not execute a SNES CPU or enable frontend SGB playback.
+does not execute a SNES CPU by itself; the bounded host supplies that scheduler.
 
 `clock_half()` advances one physical SPC half clock. Input-port reads latch
 on the first half; timers and one DSP phase advance on each completed full
@@ -200,4 +202,5 @@ frame rates or evidence that Android/web already have sufficient headroom.
 
 See [SGB validation](sgb-validation.md) for the independent capture evidence
 and remaining timing/host limitations. These tests do not establish complete
-S-DSP hardware accuracy or enable audible SGB sound in shipping frontends.
+S-DSP hardware accuracy or validate physical audio-device playback. Experimental
+desktop firmware playback has its own integration checks in the host document.
