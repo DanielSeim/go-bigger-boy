@@ -106,7 +106,11 @@ def compare(candidate: dict, reference: dict) -> dict:
             "followup_framebuffer_hash_match":
                 candidate["followup"]["framebuffer_fnv64"] == reference["followup"]["framebuffer_fnv64"],
             "io_mismatches": io, "ie": {"replacement": a["ie"], "reference": b["ie"]},
-            "ram": ram, "phase": phase, "followup": followup}
+            "ram": ram, "phase": phase, "followup": followup,
+            "audio": {"replacement": candidate.get("audio"),
+                      "reference": reference.get("audio")},
+            "cold_clock_cycles": {"replacement": candidate.get("cold_clock_cycles", 0),
+                                  "reference": reference.get("cold_clock_cycles", 0)}}
 
 
 def run_probe(probe, rom, boot, max_cycles, run_cycles, align_frame=False):

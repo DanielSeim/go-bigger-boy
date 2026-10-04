@@ -5,7 +5,7 @@ It does **not** contain Nintendo boot ROMs, disassemblies, logos, sound assets,
 SNES program ROMs, or SPC700 IPL dumps. Sources and generated images use the
 repository's GPL-3.0-or-later license.
 
-## DMG revision 1
+## DMG revision 2
 
 `gameboy/dmg.asm` is an original, 256-byte **fast cold-start** implementation.
 It is opt-in, DMG-only, and not a cycle-exact recreation of Nintendo's startup.
@@ -14,8 +14,13 @@ The production startup selection and existing diagnostic ROM are unchanged.
 The firmware executes on the emulated CPU from `0000`, with the LCD and APU
 off and the divider starting at zero. It establishes the stack, disables
 interrupts, clears all 8 KiB of VRAM, validates the header checksum, initializes
-the visible DMG sound/display/input/timer/serial registers, enables the LCD,
-waits for LY=0 after the first rendered frame, and establishes the documented CPU handoff state.
+the visible DMG sound/display/input/timer/serial registers, and lets channel 1's
+envelope decay with the mixer disconnected. It then reconnects the mixer,
+settles the DC transient, enables the LCD, waits for LY=0 after the first
+rendered frame, and establishes the documented CPU handoff state. Startup takes
+about 1.03 emulated seconds; it deliberately omits the original animation/chime.
+CPU-written DIV reset and bounded delay loops establish divider `ABC8` and
+internal LCD line 153, dot 396 (visible LY=0, STAT=`85`), for either checksum path.
 The `LDH [FF50],A` at `00FE` unmaps the image; the next instruction is fetched
 from the cartridge at `0100`. The checksum determines whether F is `80` or `B0`.
 An invalid checksum keeps execution inside the boot ROM with the LCD off.
@@ -73,7 +78,8 @@ mode; restoring a state does not silently change its startup preference.
 ### Provenance and remaining work
 
 Local execution checks passed the synthetic cold-state/handoff/reset/state
-contracts and the v7.0 test bundle's Mooneye `boot_regs-dmgABC` plus Blargg
+contracts and the v7.0 test bundle's Mooneye `boot_regs-dmgABC`,
+`boot_div-dmgABCmgb`, and `boot_hwio-dmgABCmgb`, plus Blargg
 `cpu_instrs`, `instr_timing`, and `mem_timing`, all with `--model dmg --dmg-boot`.
 Those external tests are behavioral validation, not firmware build inputs.
 They do not establish equivalence of every power-on or title-level behavior.
@@ -97,7 +103,14 @@ enters the cartridge with LY=0 and STAT=`85` (VBlank), rather than erroneously
 waiting until pixel transfer. Local same-core reference runs match the stable
 CPU/I/O/RAM contract for Pokémon Blue, Super Mario Land, Tetris and Donkey Kong,
 with matching framebuffer hashes after a short followup run. They do not
-prove physical hardware equivalence; DIV, serial and APU phase still differ.
+prove physical hardware equivalence; the cold original's DIV phase is four clocks
+behind the hardware-test-backed fast-start phase, and serial/APU waveform and
+resampler phase still differ. Revision 2 hands off with channel 1's envelope at
+zero while retaining the canonical readable sound registers and an active DAC.
+Logo-free cartridges that never write the APU stay below -72 dBFS in the
+automated one-second quiet-output check; retriggering produces normal sound.
+There is a DAC/mixer power-on DC transient during boot, not a replacement chime.
+No host mute or private post-boot state injection is used.
 An original GBB splash/chime, broader title-level and independent-hardware validation,
 and model-specific boot implementations remain future milestones. SNES-side
 SGB1/SGB2 and SPC700 replacement firmware are not implemented here yet.

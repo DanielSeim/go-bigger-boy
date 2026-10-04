@@ -1,5 +1,5 @@
 ; SPDX-License-Identifier: GPL-3.0-or-later
-; Original GBB DMG cold-start firmware, revision 1.
+; Original GBB DMG cold-start firmware, revision 2.
 ; Written from the public hardware contract, not a Nintendo disassembly.
 ; Intentionally no Nintendo logo, trademark tile, animation or logo check.
 
@@ -63,6 +63,41 @@ DmgBoot:
     ldh [c], a
     dec b
     jr nz, .init_io
+
+    ; Keep the mixer disconnected while the canonical F3 envelope decays.
+    ; Two 65535-iteration loops take over 48 envelope clock ticks (64 Hz).
+    ; This uses normal APU clocks, not model-dependent envelope-write quirks.
+    ld d, 2
+.settle_envelope
+    ld bc, $FFFF
+.settle_loop
+    dec bc
+    ld a, b
+    or c
+    jr nz, .settle_loop
+    dec d
+    jr nz, .settle_envelope
+    ld a, $F3
+    ldh [$FF25], a
+
+    ; Establish a repeatable fast-start divider phase using only CPU writes.
+    ; Leave time for the mixer high-pass filter and a completed LCD frame.
+    xor a
+    ldh [$FF04], a
+    ; 6085 iterations: 28*N+8 clocks including LD BC, then four NOPs.
+    ; The LCD poll/phase-alignment/handoff path takes 70180 clocks.
+    ; (170388 + 16 + 70180) modulo 65536 = ABC8.
+    ; The extra two divider wraps settle the analog DC transient before entry.
+    ld bc, 6085
+.divider_delay
+    dec bc
+    ld a, b
+    or c
+    jr nz, .divider_delay
+    nop
+    nop
+    nop
+    nop
     ld a, $91
     ldh [$FF40], a
 
@@ -76,12 +111,27 @@ DmgBoot:
     and a
     jr nz, .wait_line_zero
 
+    ; Finish on internal line 153, dot 396 (LY=0, mode 1).
+    ld b, 11
+.lcd_phase
+    dec b
+    jr nz, .lcd_phase
+    nop
+    nop
+
     ; The documented DMG flags depend on the header checksum being zero.
     ld a, [$014D]
     and a
     ld bc, $0080
-    jr z, .flags_ready
+    jr nz, .nonzero_checksum
+    nop
+    nop
+    nop
+    nop
+    jr .flags_ready
+.nonzero_checksum
     ld bc, $00B0
+    jr .flags_ready
 .flags_ready
     push bc
     pop af
@@ -95,7 +145,7 @@ DmgBoot:
 
 .io_values
     db $26, $80, $10, $80, $11, $80, $12, $F3
-    db $13, $00, $14, $80, $1C, $80, $24, $77, $25, $F3
+    db $13, $00, $14, $80, $1C, $80, $24, $77, $25, $00
     db $47, $FC, $48, $FF, $49, $FF
 .io_end
     ASSERT @ <= $00FE, "DMG startup must fit below the unmap instruction"

@@ -31,7 +31,7 @@ class DmgBootCliTests(unittest.TestCase):
 
     def run_rom(self, *args):
         return subprocess.run([RUNNER, str(self.rom), "--protocol", "serial",
-                               "--max-cycles", "2000000", *args],
+                               "--max-cycles", "6000000", *args],
                               capture_output=True, text=True, timeout=30)
 
     def test_cartridge_runs_from_cold_boot(self):

@@ -41,7 +41,7 @@ std::vector<std::uint8_t> cartridge(bool zero_checksum = false, bool battery = f
 }
 
 bool finish_boot(gameboy::Emulator& emulator) {
-    for (unsigned step = 0; step < 200000 && emulator.bus().boot_rom_enabled(); ++step)
+    for (unsigned step = 0; step < 1'000'000 && emulator.bus().boot_rom_enabled(); ++step)
         static_cast<void>(emulator.step());
     return !emulator.bus().boot_rom_enabled();
 }
@@ -81,6 +81,12 @@ void check_handoff(gameboy::Emulator& emulator, bool zero_checksum) {
     }
     check(bus.read8(0xFF41) == 0x85,
           "LY zero on the final VBlank line hands off in mode 1, not pixel transfer");
+    check(bus.debug_divider_counter() == 0xABC8 && bus.debug_ppu_dot() == 396,
+          "both checksum paths establish the timer and LCD fast-start phase");
+    check(bus.debug_apu_clock_state()[6] == 0,
+          "canonical readable pulse registers do not leave a startup tone running");
+    check(emulator.cpu().total_cycles() < 4'400'000,
+          "silent fast startup remains below 1.05 emulated seconds");
     check(bus.read8(0xFF80) == 0, "replacement does not write the diagnostic HRAM marker");
     emulator.bus().write8(0xFF50, 0);
     check(!bus.boot_rom_enabled(), "FF50 cannot remap firmware after handoff");
@@ -187,6 +193,80 @@ void test_state_resume() {
     check(finish_boot(restored) && restored.bus().read8(0xFF80) == 'G',
           "restored diagnostic image executes its own handoff behavior");
 }
+
+void test_silent_handoff_and_later_audio() {
+    for (bool checksum_zero : {false, true}) {
+        gameboy::Emulator emulator(gameboy::Cartridge(cartridge(checksum_zero)),
+            gameboy::HardwareModel::dmg, gameboy::BootRomMode::replacement_dmg);
+        check_handoff(emulator, checksum_zero);
+        (void)emulator.take_audio_samples(); // exclude the boot's DAC power-on transient
+        const auto state = emulator.save_state();
+        const auto start = emulator.cpu().total_cycles();
+        while (emulator.cpu().total_cycles() - start < 4'194'304)
+            (void)emulator.step(); // homebrew HALTs without writing any sound register
+        const auto quiet = emulator.take_audio_samples();
+        check(quiet.size() >= 95'998 &&
+              std::all_of(quiet.begin(), quiet.end(), [](auto x) { return x >= -8 && x <= 8; }),
+              "a cartridge that never touches the APU stays below -72 dBFS for a full second");
+        gameboy::Emulator restored(gameboy::Cartridge(cartridge(checksum_zero)),
+                                   gameboy::HardwareModel::dmg);
+        restored.load_state(state);
+        while (restored.cpu().total_cycles() < emulator.cpu().total_cycles())
+            (void)restored.step();
+        check(restored.take_audio_samples() == quiet,
+              "save/load preserves the settled audio handoff and sample timing");
+        // A cartridge can retrigger the canonical channel normally: no host mute,
+        // private state patch, or DAC disable was used to obtain silence.
+        emulator.bus().write8(0xFF13, 0x80);
+        emulator.bus().write8(0xFF14, 0x87);
+        const auto tone_start = emulator.cpu().total_cycles();
+        while (emulator.cpu().total_cycles() - tone_start < 70'224)
+            (void)emulator.step();
+        const auto tone = emulator.take_audio_samples();
+        check(std::any_of(tone.begin(), tone.end(), [](auto x) { return x > 1000 || x < -1000; }),
+              "cartridge-triggered sound remains audible after silent startup");
+    }
+}
+
+void test_cartridge_divider_boundary() {
+    for (bool checksum_zero : {false, true}) {
+        auto rom = cartridge(checksum_zero);
+        // An original fixture: eight NOPs, then two consecutive DIV reads.
+        // ABC8 + 32 + 12 = ABF4; the second read hits AC00 exactly.
+        std::fill(rom.begin() + 0x100, rom.begin() + 0x108, 0);
+        rom[0x108] = 0xF0; rom[0x109] = 0x04;
+        rom[0x10A] = 0xF0; rom[0x10B] = 0x04;
+        gameboy::Emulator emulator(gameboy::Cartridge(std::move(rom)),
+            gameboy::HardwareModel::dmg, gameboy::BootRomMode::replacement_dmg);
+        check_handoff(emulator, checksum_zero);
+        for (unsigned instruction = 0; instruction < 9; ++instruction)
+            (void)emulator.step();
+        check(emulator.cpu().registers().a == 0xAB,
+              "cartridge reads DIV before its first increment");
+        (void)emulator.step();
+        check(emulator.cpu().registers().a == 0xAC &&
+              emulator.bus().debug_divider_counter() == 0xAC00,
+              "cartridge sees the DIV increment on the exact read boundary");
+    }
+}
+
+void test_envelope_settle_resume() {
+    gameboy::Emulator emulator(gameboy::Cartridge(cartridge()),
+        gameboy::HardwareModel::dmg, gameboy::BootRomMode::replacement_dmg);
+    while (emulator.cpu().total_cycles() < 3'000'000) (void)emulator.step();
+    check(emulator.bus().boot_rom_enabled() && emulator.bus().read8(0xFF25) == 0,
+          "mid-envelope state is still a muted boot, not a cartridge snapshot");
+    (void)emulator.take_audio_samples();
+    const auto state = emulator.save_state();
+    gameboy::Emulator restored(gameboy::Cartridge(cartridge()), gameboy::HardwareModel::dmg);
+    restored.load_state(state);
+    check_handoff(emulator, false);
+    check_handoff(restored, false);
+    check(emulator.take_audio_samples() == restored.take_audio_samples(),
+          "envelope/filter startup resume preserves every PCM sample");
+    check(emulator.save_state() == restored.save_state(),
+          "envelope/filter startup resume preserves the exact handoff state");
+}
 } // namespace
 
 int main() {
@@ -196,6 +276,9 @@ int main() {
         test_power_on_and_reset();
         test_checksum_and_model_guards();
         test_state_resume();
+        test_silent_handoff_and_later_audio();
+        test_cartridge_divider_boundary();
+        test_envelope_settle_resume();
     } catch (const std::exception& error) {
         std::cerr << "Unexpected exception: " << error.what() << '\n'; return 1;
     }

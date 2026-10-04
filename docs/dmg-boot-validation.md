@@ -34,8 +34,13 @@ two boot paths have different LCD dot phases.
 The probe stops at the instruction that unmaps the boot ROM and requires
 PC=`0100`, **before executing the cartridge**. It observes CPU registers, all
 128 I/O bytes, IE, unrestricted VRAM/OAM, WRAM/HRAM, the full divider counter,
-LCD dot/mode, serial clock phase and selected internal APU clocks. Its JSON
-stdout includes RAM snapshots for the local comparator only; do not publish
+LCD dot/mode, serial clock phase and selected internal APU clocks. It also
+records stereo PCM sample counts, nonzero counts, peak, RMS and a
+little-endian int16 PCM hash separately for boot and followup. These are
+observations, not an audio-equivalence gate: games can start sound at different
+sample phases even when their visuals match. No PCM or firmware bytes enter
+the comparison report. Its JSON stdout includes RAM snapshots for the local
+comparator only; do not publish
 raw probe output, which can contain original logo tiles. The final comparison
 report contains memory hashes and mismatch address ranges, not ROM or RAM
 contents. Existing report files are never overwritten.
@@ -59,7 +64,7 @@ Followup CPU state, framebuffer hashes and memory hashes are observational: diff
 and phase can affect title execution, so followup divergence is not suppressed
 or interpreted automatically as a cartridge failure.
 
-## Local findings (2026-10-04)
+## Revision 1 findings (2026-10-04)
 
 Using the locally supplied original DMG image, SHA-256
 `cf053eccb4ccafff9e67339d4e78e98dce7d1ed59be819d2a1ba2232c6fce1c7`,
@@ -101,27 +106,77 @@ expected visible result. `lycint152_lyc153irq_late_retrigger_2` still produces
 `E2` instead of `E0`; the interrupt-clear/retrigger race needs separate work.
 This is reported rather than silently treated as passing.
 
+## Revision 2: timer and quiet-audio handoff (2026-10-04)
+
+The firmware now establishes a hardware-test-backed **fast-start** contract:
+raw divider `ABC8`, visible LY=0 / STAT=`85`, internal LCD line 153 dot 396,
+and channel 1 envelope volume zero. Both checksum branches have equal timing.
+DIV is reset by a CPU instruction; counted firmware delays and LCD polling
+establish the phase. There is no hidden timer seed or post-boot state injection.
+The readable sound registers remain canonical (`NR12=F3`, `NR52=F1`). Normal
+64 Hz envelope clocks decay the channel with `NR51=0`; reconnecting the mixer
+and waiting for its high-pass filter settles the DC transient before handoff.
+This avoids dependence on partly model-specific envelope-write quirks.
+Startup takes about 1.03 emulated seconds, versus about 5.59 for the local
+original. It does not recreate the original animation or chime.
+
+Mooneye `boot_regs-dmgABC`, `boot_div-dmgABCmgb` and
+`boot_hwio-dmgABCmgb` now pass through the replacement. The divider and boot-I/O
+tests exercise more than just DIV's visible high byte: they check increment
+phase and later LCD/I/O reads. Offline synthetic tests independently cover an
+exact cartridge DIV-read boundary, both header flag paths, a full second of
+quiet output (peak <= 8 int16 counts, below -72 dBFS), normal subsequent channel
+retrigger, and byte-exact state/PCM resume during envelope settling.
+The small quiet-output residual is the current float high-pass filter's DC
+rounding floor, not an active pulse tone; this is not advertised as zero PCM.
+The DAC/mixer power-on transient occurs during boot and is measured separately.
+Changing the shared audio filter to conceal it would risk unrelated SGB output.
+
+Validation also passed Blargg `cpu_instrs` (all eleven subtests), `instr_timing`
+and `mem_timing` through the replacement. The optimized full CTest run passed
+158 entries, with three network-dependent entries skipped in the sandbox;
+SGB combined-title and audio PCM baselines passed. All six focused boot/PPU
+checks passed again on the final generated image, and the three selected
+boot/probe/PPU sanitizer checks passed with ASan/UBSan (LeakSanitizer disabled
+because the sandbox cannot support its ptrace checks).
+
+Fresh revision-2 comparisons still pass the stable CPU/I/O/RAM contract for all
+four titles above. After 60 million followup cycles and completed-frame alignment,
+their framebuffer hashes all match. Envelope volume is zero at handoff in both
+paths. Serial, APU sequencer, pulse waveform and resampler phases still differ;
+equal register values or framebuffer hashes do not establish audio equivalence.
+
+### Cold original's four-clock discrepancy
+
+The original still hands off at raw DIV `ABC4` on the unchanged deterministic
+cold baseline; the production post-boot path and hardware-test-backed replacement
+use `ABC8`. The test-only probe accepts `--cold-clock-cycles N` (0..16), recording
+that offset explicitly and advancing the cold peripheral clock before any boot
+instruction. It is a sensitivity experiment, not a production reset option.
+With `N=4`, opaque original execution reaches `ABC8` and Mooneye's divider
+test produces its passing result registers. CPU boot instruction totals remain
+23,440,324 and the handoff LCD phase remains dot 396. This isolates the issue
+to reset/clock origin sensitivity; it does **not** establish whether physical
+hardware has an initial CPU fetch delay, a timer reset offset, or another reset
+sequence difference. The core baseline has not been changed to fit this result.
+An independently verified reset trace is still needed before declaring the
+original cold path hardware-correct.
+
+The envelope policy follows the public
+[Pan Docs DIV-APU and mixer description](https://gbdev.io/pandocs/Audio_details.html).
+The phase gates come from the hardware-verified
+[Mooneye boot-divider](https://github.com/Gekkio/mooneye-test-suite/blob/main/acceptance/boot_div-dmgABCmgb.s)
+and [boot-I/O tests](https://github.com/Gekkio/mooneye-test-suite/blob/main/acceptance/boot_hwio-dmgABCmgb.s),
+not Nintendo instruction listings.
+
 ## Remaining differences and next gates
 
-DIV's value and low-byte phase differ between fast startup and the original;
-serial's free-running phase and APU sequencer, envelope, waveform and resampler
-phase differ too. The original's completed chime leaves a different envelope
-state from the fast-start active channel. Identical readable sound registers
-are therefore insufficient to establish identical subsequent audio.
-
-Mooneye `boot_regs-dmgABC` passes through both paths. `boot_hwio-dmgABCmgb`
-passes through the original but fails through fast startup because the expected
-DIV value is animation-duration-dependent. `boot_div-dmgABCmgb` fails through
-both paths on this deterministic cold baseline: even executing the original
-does not yet reproduce the hardware-observed divider phase. That is a remaining
-core power-on/timing question as well as a fast-firmware policy question, not
-evidence that copying the original firmware would solve startup accuracy.
-
-Do not fix these by copying original code/assets, forcing post-boot register
-snapshots, or tuning a hidden divider seed just to match one ROM. The next
-milestone is a hardware-test-backed timer/audio handoff policy for fast startup,
-with explicit treatment of the omitted animation/chime. Logo-free homebrew
-must continue to boot, and no external firmware becomes a release dependency.
+The replacement remains opt-in. Cold reset provenance, broader title-level
+sound comparisons, and model-specific MGB/CGB implementations remain separate
+gates. The outstanding STAT interrupt-clear/retrigger race above is unchanged.
+Do not copy original code/assets or force private snapshots to hide these
+differences. Logo-free homebrew must continue to boot, and no external firmware
+becomes a release dependency. SGB's coupled host timing and audio are unchanged.
 
 The probe and comparator's own tests require only original synthetic fixtures:
 

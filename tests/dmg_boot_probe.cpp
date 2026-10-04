@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <cmath>
 #include <fstream>
 #include <iostream>
 #include <iterator>
@@ -12,6 +13,31 @@
 #include <vector>
 
 namespace {
+struct AudioStats {
+    std::uint64_t samples = 0, nonzero = 0, hash = 14695981039346656037ULL;
+    unsigned peak = 0;
+    double squares = 0;
+    void consume(const std::vector<std::int16_t>& pcm) {
+        for (const auto sample : pcm) {
+            const auto magnitude = static_cast<unsigned>(std::abs(static_cast<int>(sample)));
+            ++samples;
+            nonzero += sample != 0;
+            peak = std::max(peak, magnitude);
+            squares += static_cast<double>(sample) * sample;
+            const auto bits = static_cast<std::uint16_t>(sample);
+            for (unsigned byte = 0; byte < 2; ++byte) {
+                hash ^= (bits >> (8 * byte)) & 255U;
+                hash *= 1099511628211ULL;
+            }
+        }
+    }
+    void print() const {
+        std::cout << "{\"samples\":" << samples << ",\"nonzero_samples\":" << nonzero
+                  << ",\"peak\":" << peak << ",\"rms\":"
+                  << (samples ? std::sqrt(squares / samples) : 0)
+                  << ",\"pcm_fnv64\":" << hash << '}';
+    }
+};
 std::vector<std::uint8_t> read_file(const std::string& path) {
     std::ifstream stream(path, std::ios::binary);
     if (!stream) throw std::runtime_error("cannot open input: " + path);
@@ -86,24 +112,29 @@ void snapshot(gameboy::Emulator& emulator) {
 int main(int argc, char** argv) {
     try {
         if (argc < 2) throw std::runtime_error(
-            "usage: gbb_dmg_boot_probe CARTRIDGE [--boot-rom FILE] [--max-cycles N] [--run-cycles N] [--align-frame]");
+            "usage: gbb_dmg_boot_probe CARTRIDGE [--boot-rom FILE] [--max-cycles N] [--run-cycles N] [--align-frame] [--cold-clock-cycles N]");
         std::string reference;
         bool align_frame = false;
         std::uint64_t max_cycles = 40'000'000, run_cycles = 0;
+        unsigned cold_clock_cycles = 0;
         for (int i = 2; i < argc; ++i) {
             const std::string option = argv[i];
             if (option == "--align-frame") { align_frame = true; continue; }
             if (i + 1 >= argc) throw std::runtime_error("missing option value");
             const std::string value = argv[++i];
             if (option == "--boot-rom") reference = value;
-            else if (option == "--max-cycles" || option == "--run-cycles") {
+            else if (option == "--max-cycles" || option == "--run-cycles" || option == "--cold-clock-cycles") {
                 std::size_t used = 0;
                 if (value.empty() || value[0] == '-') throw std::runtime_error("invalid cycle count");
                 const auto count = std::stoull(value, &used);
                 if (used != value.size() || count > 1'000'000'000ULL)
                     throw std::runtime_error("invalid cycle count");
                 if (option == "--max-cycles") max_cycles = count;
-                else run_cycles = count;
+                else if (option == "--run-cycles") run_cycles = count;
+                else {
+                    if (count > 16) throw std::runtime_error("cold clock offset must be 0..16");
+                    cold_clock_cycles = static_cast<unsigned>(count);
+                }
             } else throw std::runtime_error("unknown option: " + option);
         }
         // Bytes-only cartridge construction avoids adjacent save/RTC reads and
@@ -118,19 +149,24 @@ int main(int argc, char** argv) {
             std::copy(bytes.begin(), bytes.end(), image.begin());
             emulator.bus().install_boot_rom(image);
         }
+        // Diagnostic sensitivity experiment, not a production reset change.
+        // Record it explicitly; CPU instruction cycle totals exclude this offset.
+        emulator.bus().tick(cold_clock_cycles);
+        AudioStats boot_audio, followup_audio;
         while (emulator.bus().boot_rom_enabled() && emulator.cpu().total_cycles() < max_cycles) {
             (void)emulator.step();
-            (void)emulator.take_audio_samples();
+            boot_audio.consume(emulator.take_audio_samples());
         }
         if (emulator.bus().boot_rom_enabled()) throw std::runtime_error("boot handoff timed out");
         if (emulator.cpu().registers().pc != 0x100)
             throw std::runtime_error("boot did not hand off at PC=0100");
-        std::cout << "{\"schema\":1,\"handoff\":";
+        std::cout << "{\"schema\":1,\"cold_clock_cycles\":" << cold_clock_cycles
+                  << ",\"handoff\":";
         snapshot(emulator);
         const auto start = emulator.cpu().total_cycles();
         while (emulator.cpu().total_cycles() - start < run_cycles) {
             (void)emulator.step();
-            (void)emulator.take_audio_samples();
+            followup_audio.consume(emulator.take_audio_samples());
         }
         if (align_frame) {
             emulator.consume_frame();
@@ -138,13 +174,15 @@ int main(int argc, char** argv) {
             while (!emulator.frame_ready() &&
                    emulator.cpu().total_cycles() - alignment_start < 2 * 70'224) {
                 (void)emulator.step();
-                (void)emulator.take_audio_samples();
+                followup_audio.consume(emulator.take_audio_samples());
             }
             if (!emulator.frame_ready())
                 throw std::runtime_error("followup frame alignment timed out");
         }
         std::cout << ",\"followup\":"; snapshot(emulator);
-        std::cout << "}\n";
+        std::cout << ",\"audio\":{\"boot\":"; boot_audio.print();
+        std::cout << ",\"followup\":"; followup_audio.print();
+        std::cout << "}}\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

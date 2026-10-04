@@ -46,6 +46,11 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(data["followup"]["wram"][0], 0x42)
         self.assertEqual(data["handoff"]["io"][0x41], 0x85)
         self.assertEqual(len(data["handoff"]["apu_clocks"]), 18)
+        self.assertEqual(data["handoff"]["divider_counter"], 0xABC8)
+        self.assertEqual(data["handoff"]["ppu_dot"], 396)
+        self.assertGreater(data["audio"]["boot"]["samples"], 0)
+        self.assertGreater(data["audio"]["followup"]["samples"], 0)
+        self.assertLessEqual(data["audio"]["followup"]["peak"], 8)
 
     def test_opaque_reference_execution(self):
         # Original three-instruction fixture, not any downloaded firmware.
@@ -60,6 +65,14 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(data["cycles"], 36)
         self.assertEqual(data["cpu"]["pc"], 256)
         self.assertEqual(data["io"][0], 0xCF)
+
+        offset = self.probe("--boot-rom", str(path), "--cold-clock-cycles", "4")
+        self.assertEqual(offset.returncode, 0, offset.stderr)
+        experiment = json.loads(offset.stdout)
+        self.assertEqual(experiment["cold_clock_cycles"], 4)
+        self.assertEqual(experiment["handoff"]["cycles"], 36)
+        self.assertEqual(experiment["handoff"]["divider_counter"], data["divider_counter"] + 4)
+        self.assertEqual(experiment["handoff"]["cpu"], data["cpu"])
 
     def test_completed_frame_alignment_leaves_handoff_untouched(self):
         unaligned = self.snapshot()
@@ -81,7 +94,8 @@ class ProbeTests(unittest.TestCase):
 
     def test_failures_are_not_partial_success(self):
         for arguments in (("--max-cycles", "1"), ("--max-cycles", "-1"),
-                          ("--run-cycles", "12x"), ("--unknown", "0")):
+                          ("--run-cycles", "12x"), ("--cold-clock-cycles", "17"),
+                          ("--unknown", "0")):
             result = self.probe(*arguments)
             self.assertEqual(result.returncode, 2)
             self.assertEqual(result.stdout, "")
