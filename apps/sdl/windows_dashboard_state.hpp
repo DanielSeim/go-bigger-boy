@@ -72,6 +72,9 @@ struct DashboardState {
     HWND hardware_model_label{};
     HWND audio_enabled{};
     HWND show_fps{};
+    HWND firmware_enabled{}, firmware_model{}, firmware_directory{}, firmware_browse{}, firmware_status{};
+    bool firmware_active{};
+    std::vector<gameboy::VideoMode> video_choices;
     HWND controls_label{};
     HWND controls_instruction{};
     HWND actions_label{};

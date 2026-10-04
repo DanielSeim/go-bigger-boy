@@ -1,6 +1,7 @@
 #pragma once
 
 #include "settings_model.hpp"
+#include "desktop_firmware_settings.hpp"
 
 #include "gameboy/video_pipeline.hpp"
 #include "gameboy/hardware_model.hpp"
@@ -20,6 +21,7 @@ struct AppSettings {
     bool show_fps{};
     bool link_diagnostics{};
     bool sgb_trace_capture{};
+    gbb::sdl::DesktopFirmwareSettings sgb_firmware;
     bool plugin_discovery{};
     std::vector<std::filesystem::path> plugin_paths;
     std::vector<std::string> plugin_allowed_core_ids;
@@ -73,7 +75,9 @@ void append_missing_portable_settings(
     bool has_plugin_require_capability_allowlist,
     bool has_plugin_allow_capability,
     const std::array<bool, touch_layout_count * touch_control_count>&
-        has_touch_positions);
+        has_touch_positions,
+    bool has_firmware_enabled = false, bool has_firmware_directory = false,
+    bool has_firmware_model = false);
 
 [[nodiscard]] AppSettings load_portable_settings(
     const std::filesystem::path& preference_directory);

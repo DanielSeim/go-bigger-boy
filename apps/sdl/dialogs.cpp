@@ -1,4 +1,5 @@
 #include "dialogs.hpp"
+#include "desktop_storage.hpp"
 
 #include "core_capability.hpp"
 #include "emulation_session.hpp"
@@ -283,32 +284,31 @@ void update_window_title(
 }
 
 void choose_video_mode(SdlResources& sdl,
-                       const std::filesystem::path& preference_path) {
+                       const std::filesystem::path& preference_path,gbb::EmulatorCore* core) {
 #ifndef __ANDROID__
-    const auto current = std::distance(
-        gameboy::video_modes.begin(),
-        std::find_if(gameboy::video_modes.begin(), gameboy::video_modes.end(),
-                     [mode = sdl.video_mode](const auto& info) {
-                         return info.mode == mode;
-                     }));
+    const bool firmware=core && !gbb::sgb_firmware_model(*core).empty();
+    std::vector<gameboy::VideoMode> modes;
+    std::size_t current{};
     std::vector<std::string> choices;
     choices.reserve(gameboy::video_modes.size());
     for (const auto& info : gameboy::video_modes) {
+        if(firmware && !firmware_video_supported(info.mode)) continue;
+        if(info.mode==sdl.video_mode) current=modes.size();
+        modes.push_back(info.mode);
         choices.emplace_back(info.name);
     }
     open_desktop_choice_dialog(
         sdl.window, "Video pipeline",
         "Choose how Go Bigger Boy presents the Game Boy framebuffer.",
-        std::move(choices), static_cast<std::size_t>(std::max<std::ptrdiff_t>(
-                                    0, current)),
-        [&sdl, preference_path](const std::size_t index) {
-            if (index >= gameboy::video_modes.size()) return;
-            if (!configure_video_pipeline(sdl, gameboy::video_modes[index].mode)) {
+        std::move(choices), current,
+        [&sdl, preference_path,modes](const std::size_t index) {
+            if (index >= modes.size()) return;
+            if (!configure_video_pipeline(sdl, modes[index])) {
                 show_error(sdl.window,
                            "Could not configure the selected video pipeline.");
                 return;
             }
-            save_video_mode(preference_path, gameboy::video_modes[index].mode);
+            save_video_mode(preference_path, modes[index]);
         });
 #else
     const auto selected = show_video_dialog(sdl.window, sdl.video_mode);
@@ -318,6 +318,25 @@ void choose_video_mode(SdlResources& sdl,
         return;
     }
     save_video_mode(preference_path, *selected);
+#endif
+}
+
+void choose_firmware_playback(DialogState& dialog,SdlResources& sdl,const std::filesystem::path& preference_path) {
+#ifndef __ANDROID__
+    const auto settings=load_app_settings(preference_path).sgb_firmware;
+    open_desktop_choice_dialog(sdl.window,"Experimental SGB firmware playback",
+        "Next ROM launch only; reset keeps the current backend. Caller-owned images only. No voxel, link, debugger, cheats or automatic rewind. Separate firmware saves; full SNES menus are not implemented.",
+        {"HLE (default)","SGB1 firmware: choose directory...","SGB2 firmware: choose directory..."},
+        settings.enabled?(settings.model=="sgb"?1:2):0,
+        [&dialog,&sdl,preference_path](std::size_t selected) {
+            if(selected==0) {
+                auto updated=load_app_settings(preference_path); updated.sgb_firmware.enabled=false;
+                write_portable_settings(preference_path,updated);
+                show_desktop_notification(sdl.window,"HLE selected for the next ROM launch.");
+            } else if(selected<3) show_firmware_directory_dialog(dialog,sdl.window,selected==1?"sgb":"sgb2");
+        });
+#else
+    static_cast<void>(dialog);static_cast<void>(sdl);static_cast<void>(preference_path);
 #endif
 }
 

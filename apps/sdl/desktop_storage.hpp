@@ -21,6 +21,7 @@ struct DialogState {
     bool active{};
     std::optional<std::string> selected_path;
     std::optional<std::string> error;
+    std::optional<std::string> firmware_model;
     // SDL invokes the file-dialog callback asynchronously (and potentially
     // from a different thread). Keep the initiating frame/ROM metadata with
     // the request so callback diagnostics can be correlated with the UI
@@ -29,10 +30,12 @@ struct DialogState {
 };
 
 void show_rom_dialog(DialogState& state, SDL_Window* window);
+void show_firmware_directory_dialog(DialogState& state,SDL_Window* window,const std::string& model);
 [[nodiscard]] bool dialog_active(DialogState& state);
 void collect_dialog_result(DialogState& state,
                            std::optional<std::string>& path,
-                           std::optional<std::string>& error);
+                           std::optional<std::string>& error,
+                           std::optional<std::string>* firmware_model=nullptr);
 
 struct WindowGeometry {
     int x{};

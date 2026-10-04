@@ -47,7 +47,7 @@ What works well:
   JOYP command framing, color palettes, tile attribute mapping, screen-data
   CHR_TRN/PCT_TRN/PAL_TRN/ATTR_TRN transfer latches, a
   deterministic 256×224 SNES border framebuffer, and MASK_EN viewport masking
-  (ordinary launches use HLE; [experimental desktop firmware playback](docs/sgb-host.md#experimental-desktop-playback)
+  (HLE is the default; [experimental desktop firmware playback](docs/sgb-host.md#experimental-desktop-playback)
   adds opt-in combined audio using user-owned images)
 - Active-low joypad matrix with keyboard/gamepad input and interrupts
 - Cycle-timed OAM DMA with source-bus conflicts and an optional SDL3 desktop frontend

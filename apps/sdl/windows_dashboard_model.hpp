@@ -6,6 +6,7 @@
 #include "gbb/core.hpp"
 #include "gbb/plugin_discovery.hpp"
 #include "gbb/voxel_profile.hpp"
+#include "desktop_firmware_settings.hpp"
 
 #include <array>
 #include <cstddef>
@@ -59,6 +60,8 @@ struct DashboardResult {
     bool video_mode_changed{};
     gameboy::HardwareModel hardware_model{gameboy::HardwareModel::automatic};
     bool hardware_model_changed{};
+    gbb::sdl::DesktopFirmwareSettings firmware;
+    bool firmware_changed{};
     bool audio_enabled{true};
     bool audio_enabled_changed{};
     bool show_fps{};

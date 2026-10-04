@@ -439,6 +439,12 @@ void test_dashboard_navigation() {
           "dashboard recents preserve their source order");
 
     const auto with_resume = gbb::desktop::dashboard_navigation_items(true, 0);
+    const auto desktop_firmware = gbb::desktop::dashboard_navigation_items(false, 2, true);
+    check(desktop_firmware.size() == 8 &&
+              desktop_firmware[4].action == DashboardAction::firmware_settings &&
+              desktop_firmware[5].action == DashboardAction::recent_rom &&
+              desktop_firmware[5].recent_index == 0,
+          "desktop firmware settings preserve recent ordering and mobile defaults");
     check(with_resume.size() == 6 &&
               with_resume.front().action == DashboardAction::resume,
           "dashboard puts Resume first when a game can resume");

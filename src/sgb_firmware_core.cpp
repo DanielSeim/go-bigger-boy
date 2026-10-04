@@ -241,6 +241,15 @@ std::unique_ptr<EmulatorCore> create_sgb_firmware_core(
     return std::make_unique<FirmwareCore>(std::move(config),std::move(save));
 #endif
 }
+void validate_sgb_firmware_images(const std::filesystem::path& directory, std::string_view model) {
+    if(model!="sgb" && model!="sgb2") throw std::invalid_argument("Firmware model must be sgb or sgb2");
+    const bool sgb2=model=="sgb2";
+    const auto program=read_image(directory/(sgb2?"sgb2.program.rom":"sgb1.program.rom"),0x80000);
+    if(gameboy::SgbProgramRom::validate(program)!=gameboy::SgbProgramRom::Error::none)
+        throw std::invalid_argument("Unsupported SGB program image format");
+    static_cast<void>(fixed_image<256>(directory/(sgb2?"sgb2.boot.rom":"sgb.boot.rom")));
+    static_cast<void>(fixed_image<64>(directory/"spc700.rom"));
+}
 std::string_view sgb_firmware_model(const EmulatorCore& core) noexcept {
     const auto* adapter=dynamic_cast<const FirmwareCore*>(&core);
     return adapter ? adapter->model() : std::string_view{};

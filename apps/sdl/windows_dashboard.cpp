@@ -19,6 +19,7 @@
 #include <commdlg.h>
 #include <bluetoothapis.h>
 #include <wincodec.h>
+#include <shlobj.h>
 
 #include <algorithm>
 #include <atomic>
@@ -71,7 +72,10 @@ constexpr int id_voxel_preview = 115;
 constexpr int id_plugin_discovery = 116;
 constexpr int id_plugin_require_allowlist = 117;
 constexpr int id_plugin_require_capability_allowlist = 118;
-constexpr int id_voxel_first_edit = 120;
+// Keep this range separate from navigation, settings and binding commands.
+// With scene-layer capability, a collision swallowed Apply/Discard and link
+// notifications even when the voxel profile section was hidden.
+constexpr int id_voxel_first_edit = 300;
 constexpr int id_link_transport = 121;
 constexpr int id_link_remote_host = 122;
 constexpr int id_link_remote_bind = 123;
@@ -86,12 +90,17 @@ constexpr int id_settings_cancel = 132;
 constexpr int id_search_clear = 133;
 constexpr int id_artwork_retry = 134;
 constexpr int id_settings_section_first = 136;
+constexpr int id_firmware_enabled=140, id_firmware_model=141,
+              id_firmware_directory=142, id_firmware_browse=143;
 constexpr int id_binding_first = 200;
 constexpr int id_action_first = 220;
 
 static_assert(id_show_fps < id_settings_section_first ||
                   id_show_fps >= id_settings_section_first + 4,
               "FPS checkbox ID must not overlap settings section IDs");
+static_assert(id_voxel_first_edit > id_action_first + 4 &&
+                  id_voxel_first_edit > id_firmware_browse,
+              "Voxel edit range must not overlap dashboard command IDs");
 constexpr UINT artwork_ready = WM_APP + 1;
 constexpr UINT update_poll_timer = 2;
 constexpr int dashboard_width = 980;
@@ -174,7 +183,7 @@ using State = DashboardState;
 long settings_content_bottom(const State& state) {
     switch (state.settings_section) {
     case State::SettingsSection::general:
-        return 548;
+        return 800;
     case State::SettingsSection::controls:
         // The last control in this section ends at y=830. Keep the small
         // bottom margin out of the scroll range so a normal-sized dashboard
@@ -416,6 +425,45 @@ void mark_settings_dirty(State& state) {
     }
 }
 
+void refresh_firmware_controls(State& state) {
+    const bool enabled=state.result.firmware.enabled;
+    EnableWindow(state.firmware_model,enabled);
+    EnableWindow(state.firmware_directory,enabled);
+    EnableWindow(state.firmware_browse,enabled);
+    EnableWindow(state.hardware_model,!enabled);
+    SetWindowTextW(state.firmware_status,
+        L"Experimental, next ROM launch only. Caller-owned images; no firmware is bundled.\r\n"
+        L"Separate firmware saves. No voxel modes, link, debugger, cheats or automatic rewind.\r\n"
+        L"Existing SGB border/color composition is retained; full SNES menus are not implemented.");
+    state.video_choices.clear();
+    SendMessageW(state.video,CB_RESETCONTENT,0,0);
+    int selected=-1;
+    for(const auto& info:gameboy::video_modes) {
+        if((enabled||state.firmware_active) && !gbb::sdl::firmware_video_supported(info.mode)) continue;
+        if(info.mode==state.result.video_mode) selected=static_cast<int>(state.video_choices.size());
+        state.video_choices.push_back(info.mode);
+        const auto name=widen(std::string{info.name});
+        SendMessageW(state.video,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(name.c_str()));
+    }
+    SendMessageW(state.video,CB_SETCURSEL,static_cast<WPARAM>(selected),0);
+}
+
+bool collect_firmware_settings(State& state) {
+    try {
+        state.result.firmware.directory=std::filesystem::u8path(narrow(edit_value(state.firmware_directory)));
+        if(!state.result.firmware.directory.empty()) state.result.firmware.directory=std::filesystem::absolute(state.result.firmware.directory).lexically_normal();
+        state.result.firmware_changed=!(state.result.firmware==state.initial_result.firmware);
+        gbb::sdl::validate_desktop_firmware(state.result.firmware);
+        if((state.result.firmware.enabled||state.firmware_active) && !gbb::sdl::firmware_video_supported(state.result.video_mode))
+            throw std::invalid_argument("Select a 2D video mode; voxel presentation is unavailable for firmware playback.");
+        return true;
+    } catch(const std::exception& error) {
+        state.settings_section=State::SettingsSection::general;
+        SetWindowTextW(state.settings_status,widen(error.what()).c_str());
+        return false;
+    }
+}
+
 void update_link_control_state(State& state) {
     const auto link_section =
         state.page == State::Page::settings &&
@@ -498,6 +546,8 @@ void show_settings_section(State& state) {
     show(state.hardware_model, State::SettingsSection::general);
     show(state.audio_enabled, State::SettingsSection::general);
     show(state.show_fps, State::SettingsSection::general);
+    for(const auto control:{state.firmware_enabled,state.firmware_model,state.firmware_directory,state.firmware_browse,state.firmware_status})
+        show(control,State::SettingsSection::general);
 
     show(state.controls_label, State::SettingsSection::controls);
     show(state.controls_instruction, State::SettingsSection::controls);
@@ -1576,6 +1626,11 @@ void layout_dashboard(State& state) {
     place_child(state.hardware_model, 200, 435, 320, 28, offset);
     place_child(state.audio_enabled, 32, 490, 360, 34, offset);
     place_child(state.show_fps, 400, 490, 360, 34, offset);
+    place_child(state.firmware_enabled,32,540,600,34,offset);
+    place_child(state.firmware_model,32,585,160,28,offset);
+    place_child(state.firmware_directory,210,585,530,28,offset);
+    place_child(state.firmware_browse,755,585,173,30,offset);
+    place_child(state.firmware_status,32,630,896,150,offset);
 
     // Controls use a literal table instead of placing buttons over a
     // decorative controller illustration.
@@ -1690,6 +1745,10 @@ void scroll_settings(State& state, const int wheel_delta) {
 
 void finish(State& state, const DashboardResultAction action,
             const std::string& path = {}, const bool collect_settings = true) {
+    if(collect_settings && state.settings_dirty && !collect_firmware_settings(state)) {
+        show_page(state,State::Page::settings);
+        return;
+    }
     if (collect_settings && state.link_transport != nullptr) {
         collect_link_settings(state);
     }
@@ -1711,6 +1770,11 @@ void finish(State& state, const DashboardResultAction action,
     state.done = true;
     if (state.window != nullptr) KillTimer(state.window, update_poll_timer);
     DestroyWindow(state.window);
+    // A synchronous accessibility/test command can run inside GetMessage's
+    // sent-message dispatch. Destroying the last window does not make that
+    // call return. Wake the modal loop without posting WM_QUIT into SDL's
+    // shared thread queue or relying on an artwork/update timer.
+    PostThreadMessageW(GetCurrentThreadId(),WM_NULL,0,0);
 }
 
 void cancel_settings(State& state, const DashboardResultAction action) {
@@ -2062,9 +2126,8 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                 const auto selected = SendMessageW(state->video, CB_GETCURSEL,
                                                    0, 0);
                 if (selected >= 0 &&
-                    selected < static_cast<LRESULT>(gameboy::video_modes.size())) {
-                    state->result.video_mode = gameboy::video_modes[
-                        static_cast<std::size_t>(selected)].mode;
+                    selected < static_cast<LRESULT>(state->video_choices.size())) {
+                    state->result.video_mode = state->video_choices[static_cast<std::size_t>(selected)];
                     state->result.video_mode_changed = true;
                     mark_settings_dirty(*state);
                 }
@@ -2100,6 +2163,37 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
                 mark_settings_dirty(*state);
             }
             return 0;
+        case id_firmware_enabled:
+            if(HIWORD(wparam)==BN_CLICKED) {
+                toggle_dashboard_checkbox(state->firmware_enabled);
+                state->result.firmware.enabled=dashboard_checkbox_checked(state->firmware_enabled);
+                mark_settings_dirty(*state); refresh_firmware_controls(*state);
+            }
+            return 0;
+        case id_firmware_model:
+            if(HIWORD(wparam)==CBN_SELCHANGE) {
+                state->result.firmware.model=SendMessageW(state->firmware_model,CB_GETCURSEL,0,0)==0?"sgb":"sgb2";
+                mark_settings_dirty(*state);
+            }
+            return 0;
+        case id_firmware_directory:
+            if(HIWORD(wparam)==EN_CHANGE) mark_settings_dirty(*state);
+            return 0;
+        case id_firmware_browse: {
+            const auto initialized=CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);
+            BROWSEINFOW browse{};
+            browse.hwndOwner=window;
+            browse.lpszTitle=L"Select your caller-owned SGB firmware directory";
+            browse.ulFlags=BIF_RETURNONLYFSDIRS|BIF_NEWDIALOGSTYLE;
+            auto* folder=SHBrowseForFolderW(&browse);
+            if(folder) {
+                std::array<wchar_t,MAX_PATH> path{};
+                if(SHGetPathFromIDListW(folder,path.data())) SetWindowTextW(state->firmware_directory,path.data());
+                CoTaskMemFree(folder);
+            }
+            if(SUCCEEDED(initialized)) CoUninitialize();
+            return 0;
+        }
         case id_show_fps:
             if (HIWORD(wparam) == BN_CLICKED) {
                 toggle_dashboard_checkbox(state->show_fps);
@@ -2853,6 +2947,8 @@ DashboardResult show_windows_dashboard(
     const gbb::CoreCapability capabilities,
     const std::size_t palette, const gameboy::VideoMode video_mode,
     const gameboy::HardwareModel hardware_model,
+    const gbb::sdl::DesktopFirmwareSettings& firmware,
+    const bool firmware_active,
     const bool audio_enabled,
     const bool show_fps,
     const KeyboardBindings& keyboard_bindings,
@@ -2888,7 +2984,8 @@ DashboardResult show_windows_dashboard(
     state.library = &library;
     state.can_resume = can_resume;
     state.voxel_available =
-        gbb::has_capability(capabilities, gbb::CoreCapability::scene_layers);
+        !firmware_active && gbb::has_capability(capabilities, gbb::CoreCapability::scene_layers);
+    state.firmware_active=firmware_active;
     state.voxel_fingerprint = current_fingerprint;
     state.voxel_profile_path = preference_directory.empty()
                                    ? std::filesystem::path{}
@@ -2899,6 +2996,7 @@ DashboardResult show_windows_dashboard(
     state.result.palette = palette;
     state.result.video_mode = video_mode;
     state.result.hardware_model = hardware_model;
+    state.result.firmware=firmware;
     state.result.audio_enabled = audio_enabled;
     state.result.show_fps = show_fps;
     state.result.keyboard_bindings = keyboard_bindings;
@@ -3136,6 +3234,17 @@ DashboardResult show_windows_dashboard(
         state, L"BUTTON", L"Show FPS counter",
         WS_TABSTOP | BS_AUTOCHECKBOX, 510, 305, 300, 34, id_show_fps);
     set_dashboard_checkbox_checked(state.show_fps, show_fps);
+    state.firmware_enabled=control(state,L"BUTTON",L"Experimental SGB firmware playback (HLE is the default)",
+        WS_TABSTOP|BS_AUTOCHECKBOX,32,540,600,34,id_firmware_enabled);
+    set_dashboard_checkbox_checked(state.firmware_enabled,firmware.enabled);
+    state.firmware_model=control(state,L"COMBOBOX",L"",CBS_DROPDOWNLIST|WS_TABSTOP,32,585,160,100,id_firmware_model);
+    SendMessageW(state.firmware_model,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(L"SGB1"));
+    SendMessageW(state.firmware_model,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(L"SGB2"));
+    SendMessageW(state.firmware_model,CB_SETCURSEL,firmware.model=="sgb"?0:1,0);
+    state.firmware_directory=control(state,L"EDIT",firmware.directory.wstring().c_str(),WS_TABSTOP|ES_AUTOHSCROLL,210,585,530,28,id_firmware_directory);
+    state.firmware_browse=control(state,L"BUTTON",L"Choose directory...",WS_TABSTOP,755,585,173,30,id_firmware_browse);
+    state.firmware_status=control(state,L"STATIC",L"",0,32,630,896,150,0);
+    refresh_firmware_controls(state);
     state.controls_label = control(state, L"STATIC", L"Keyboard controls",
         0, 510, 200, 240, 30, 0);
     SendMessageW(state.controls_label, WM_SETFONT,
@@ -3333,6 +3442,7 @@ DashboardResult show_windows_dashboard(
         state.hardware_model,
         state.audio_enabled,
         state.show_fps,
+        state.firmware_enabled,state.firmware_model,state.firmware_directory,state.firmware_browse,state.firmware_status,
         state.controls_label,
         state.controls_instruction,
         state.actions_label,

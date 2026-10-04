@@ -43,6 +43,14 @@ void test_audio_round_trip_and_migration() {
           "audio enabled value survives settings round trip");
     check(load_app_settings(directory).sgb_trace_capture,
           "SGB trace capture value survives settings round trip");
+    settings.sgb_firmware={true,std::filesystem::u8path(u8"firmware #; ünicode"),"sgb"};
+    write_portable_settings(directory,settings);
+    check(load_app_settings(directory).sgb_firmware==settings.sgb_firmware,
+          "firmware settings and UTF-8/comment-character path round trip");
+    settings.sgb_firmware.enabled=false;
+    write_portable_settings(directory,settings);
+    check(!load_app_settings(directory).sgb_firmware.enabled,
+          "switching back to HLE preserves disabled firmware preference");
 
     const auto path = portable_settings_path(directory);
     {
@@ -50,6 +58,12 @@ void test_audio_round_trip_and_migration() {
         output << "palette = classic\nvideo.Mode = nearest\n";
     }
     const auto migrated = load_app_settings(directory);
+    check(!migrated.sgb_firmware.enabled && migrated.sgb_firmware.directory.empty() && migrated.sgb_firmware.model=="sgb2",
+          "older settings retain HLE default and safe firmware defaults");
+    const auto first_migration=gbb::read_settings_file(path).entries.size();
+    static_cast<void>(load_app_settings(directory));
+    check(gbb::read_settings_file(path).entries.size()==first_migration,
+          "firmware migration is idempotent");
     check(migrated.audio_enabled,
           "settings without audio key retain the safe enabled default");
     check(!migrated.sgb_trace_capture,

@@ -1,4 +1,5 @@
 #include "event_dispatch.hpp"
+#include "desktop_firmware_settings.hpp"
 #include "dialogs.hpp"
 #include "emulation_session.hpp"
 #include "gbb/dashboard_navigation.hpp"
@@ -344,6 +345,11 @@ void handle_desktop_menu_event(SdlEventContext& context) {
     if (menu_value >= video_first &&
         menu_value < video_first +
                          static_cast<int>(gameboy::video_modes.size())) {
+        if(core && !gbb::sgb_firmware_model(*core).empty() &&
+            !firmware_video_supported(gameboy::video_modes[static_cast<std::size_t>(menu_value-video_first)].mode)) {
+            show_desktop_notification(sdl.window,"Voxel presentation is unavailable for experimental SGB firmware playback.",true);
+            return;
+        }
         sdl.video_mode = gameboy::video_modes[
             static_cast<std::size_t>(menu_value - video_first)].mode;
         save_video_mode(preference_path, sdl.video_mode);

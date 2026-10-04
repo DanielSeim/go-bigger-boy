@@ -7,6 +7,7 @@
 
 #include "gbb/frontend_logging.hpp"
 #include "gbb/log.hpp"
+#include "gbb/sgb_firmware_core.hpp"
 
 #ifdef __ANDROID__
 #include "android_bridge.hpp"
@@ -53,7 +54,8 @@ void process_events(SdlEventContext& context) {
                              : gbb::CoreCapability::none,
                         paused, fullscreen,
                         input_movie.recording(), display_palette, sdl.video_mode,
-                        link_emulator != nullptr, remote_link_active);
+                        link_emulator != nullptr, remote_link_active,
+                        core && !gbb::sgb_firmware_model(*core).empty());
     handle_desktop_menu_event(context);
 #endif
     bool close_prompt_shown = false;

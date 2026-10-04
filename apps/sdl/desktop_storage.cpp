@@ -201,6 +201,7 @@ void show_rom_dialog(DialogState& state, SDL_Window* window) {
         state.active = true;
         state.selected_path.reset();
         state.error.reset();
+        state.firmware_model.reset();
         state.log_context = gbb::current_log_context();
     }
     static constexpr SDL_DialogFileFilter filters[] = {
@@ -215,11 +216,24 @@ bool dialog_active(DialogState& state) {
     std::lock_guard<std::mutex> lock(state.mutex);
     return state.active;
 }
+void show_firmware_directory_dialog(DialogState& state,SDL_Window* window,const std::string& model) {
+    {
+        std::lock_guard<std::mutex> lock(state.mutex);
+        if(state.active) return;
+        state.active=true; state.selected_path.reset(); state.error.reset();
+        state.firmware_model=model; state.log_context=gbb::current_log_context();
+    }
+    SDL_ShowOpenFolderDialog(file_dialog_callback,&state,window,nullptr,false);
+}
 
 void collect_dialog_result(DialogState& state,
                            std::optional<std::string>& path,
-                           std::optional<std::string>& error) {
+                           std::optional<std::string>& error,
+                           std::optional<std::string>* firmware_model) {
     std::lock_guard<std::mutex> lock(state.mutex);
+    if(firmware_model && !state.active && state.firmware_model) {
+        *firmware_model=std::move(state.firmware_model); state.firmware_model.reset();
+    }
     if (state.selected_path) {
         path = std::move(*state.selected_path);
         state.selected_path.reset();

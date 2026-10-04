@@ -2,6 +2,8 @@
 #include "gbb/core_registry.hpp"
 
 namespace gbb {
+// Validate only caller-owned images; does not execute firmware or load a game.
+void validate_sgb_firmware_images(const std::filesystem::path& directory, std::string_view model);
 [[nodiscard]] std::unique_ptr<EmulatorCore> create_sgb_firmware_core(
     std::vector<std::uint8_t> rom, const CoreLoadOptions& options);
 // Read-only identity for segregating experimental frontend storage.

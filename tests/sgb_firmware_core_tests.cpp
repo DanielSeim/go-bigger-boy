@@ -4,6 +4,7 @@
 #include "gbb/core_contract.hpp"
 #include "gameboy/sgb_host.hpp"
 #include "desktop_launch_options.hpp"
+#include "desktop_firmware_settings.hpp"
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
@@ -156,7 +157,38 @@ int main() {
         check(launch.firmware_model=="sgb" && launch.firmware_directory=="firmware","desktop opt-in parsed");
         check(gbb::sdl::desktop_launch_options(2,args).firmware_directory.empty(),"ordinary launch unchanged");
         rejects([&]{gbb::sdl::desktop_launch_options(3,args);},"missing launch value rejected");
+        gbb::sdl::DesktopFirmwareSettings pending;
+        check(gbb::sdl::desktop_core_load_options(pending,"auto").sgb_firmware_directory.empty(),"HLE remains default");
+        pending={true,root,"sgb2"};
+        rejects([&]{gbb::sdl::validate_desktop_firmware(pending);},"settings validate wrong-size IPL before launch");
+        write(root/"spc700.rom",std::vector<std::uint8_t>(cfg.spc_ipl.begin(),cfg.spc_ipl.end()));
+        gbb::sdl::validate_desktop_firmware(pending);
+        auto invalid_settings=pending;
+        invalid_settings.model="auto";
+        rejects([&]{gbb::sdl::validate_desktop_firmware(invalid_settings);},"invalid persisted model does not fall back to HLE");
+        invalid_settings=pending;
+        invalid_settings.directory=root/"missing";
+        rejects([&]{gbb::sdl::validate_desktop_firmware(invalid_settings);},"missing firmware directory rejected before launch");
+        const auto firmware_launch=gbb::sdl::desktop_core_load_options(pending,"auto");
+        check(firmware_launch.hardware_model=="sgb2" && firmware_launch.sgb_firmware_directory==root,"persisted settings choose firmware and explicit model");
+        const auto override_launch=gbb::sdl::desktop_core_load_options(pending,"auto",{true,root,"sgb"});
+        check(override_launch.hardware_model=="sgb","explicit CLI overrides persisted settings");
+        auto settings_core=gbb::create_core(cfg.game_rom,firmware_launch);
+        check(gbb::gameboy_emulator(settings_core.get())==nullptr,"settings launch owns firmware core");
+        pending.enabled=false;
+        const auto hle_launch=gbb::sdl::desktop_core_load_options(pending,"auto");
+        auto hle_core=gbb::create_core(cfg.game_rom,hle_launch);
+        check(gbb::gameboy_emulator(hle_core.get())!=nullptr,"disabled setting returns next launch to HLE");
+        check(gbb::gameboy_emulator(settings_core.get())==nullptr,"settings change does not replace running firmware core");
+        check(!gbb::sdl::firmware_video_supported(gameboy::VideoMode::voxel_diorama) &&
+              !gbb::sdl::firmware_video_supported(gameboy::VideoMode::voxel_shape) &&
+              !gbb::sdl::firmware_video_supported(gameboy::VideoMode::voxel_popup) &&
+              gbb::sdl::firmware_video_supported(gameboy::VideoMode::nearest),"all unsupported voxel modes excluded without changing 2D visuals");
         char smoke_flag[]="--frontend-smoke-frames", smoke_count[]="36000", excessive[]="36001";
+        char* preference_smoke[]{app,rom,smoke_flag,smoke_count};
+        check(gbb::sdl::desktop_launch_options(4,preference_smoke).firmware_directory.empty(),"bounded preferences smoke does not override backend");
+        char* model_without_directory[]{app,rom,model_flag,model};
+        rejects([&]{gbb::sdl::desktop_launch_options(4,model_without_directory);},"model-only override still rejected");
         char* smoke_args[]{app,rom,flag,dir,smoke_flag,smoke_count};
         check(gbb::sdl::desktop_launch_options(6,smoke_args).smoke_frames==36000,"bounded ten-minute qualification parsed");
         smoke_args[5]=excessive;

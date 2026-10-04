@@ -16,13 +16,15 @@
 #include <vector>
 
 namespace gbb::sdl {
+struct DialogState;
 
 void update_window_title(
     SDL_Window* window, const std::string& current_rom, bool paused,
     const std::optional<BindingConfiguration>& configuring);
 
 void choose_video_mode(SdlResources& sdl,
-                       const std::filesystem::path& preference_path);
+                       const std::filesystem::path& preference_path,gbb::EmulatorCore* core=nullptr);
+void choose_firmware_playback(DialogState& dialog,SdlResources& sdl,const std::filesystem::path& preference_path);
 
 void choose_display_palette(gbb::EmulatorCore* core, SdlResources& sdl,
                             const std::filesystem::path& preference_path,

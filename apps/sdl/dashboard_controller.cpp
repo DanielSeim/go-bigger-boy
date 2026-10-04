@@ -80,7 +80,13 @@ std::vector<DashboardItem> dashboard_items(
     const auto visible_recent = filtered_recent(recent, filter, library);
     std::vector<DashboardItem> items;
     const auto navigation = gbb::desktop::dashboard_navigation_items(
-        can_resume, visible_recent.size());
+        can_resume, visible_recent.size(),
+#ifdef __ANDROID__
+        false
+#else
+        true
+#endif
+        );
     items.reserve(navigation.size() + 1);
     for (const auto& item : navigation) {
         if (item.action == gbb::desktop::DashboardAction::quit &&
@@ -104,6 +110,9 @@ std::vector<DashboardItem> dashboard_items(
             break;
         case gbb::desktop::DashboardAction::shortcuts:
             label = "Keyboard shortcuts";
+            break;
+        case gbb::desktop::DashboardAction::firmware_settings:
+            label="SGB firmware settings (experimental)";
             break;
         case gbb::desktop::DashboardAction::recent_rom:
             label = rom_display_name(visible_recent[item.recent_index]);
@@ -177,10 +186,15 @@ void activate_dashboard_selection(
         choose_display_palette(core, sdl, preference_path, display_palette);
         break;
     case gbb::desktop::DashboardAction::video:
-        choose_video_mode(sdl, preference_path);
+        choose_video_mode(sdl, preference_path,core);
         break;
     case gbb::desktop::DashboardAction::shortcuts:
         show_help(sdl.window, bindings);
+        break;
+    case gbb::desktop::DashboardAction::firmware_settings:
+#ifndef __ANDROID__
+        choose_firmware_playback(dialog,sdl,preference_path);
+#endif
         break;
     case gbb::desktop::DashboardAction::recent_rom:
         if (item.recent_index < visible_recent.size()) {

@@ -118,8 +118,9 @@ void append_missing_portable_settings(
     const bool has_plugin_require_capability_allowlist,
     const bool has_plugin_allow_capability,
     const std::array<bool, touch_layout_count * touch_control_count>&
-        has_touch_positions) {
-    const auto complete = has_palette && has_hardware_model &&
+        has_touch_positions, const bool has_firmware_enabled,
+    const bool has_firmware_directory, const bool has_firmware_model) {
+    const auto complete = has_firmware_enabled && has_firmware_directory && has_firmware_model && has_palette && has_hardware_model &&
         std::all_of(has_keyboard.begin(), has_keyboard.end(),
                     [](const bool value) { return value; }) &&
         std::all_of(has_gamepad.begin(), has_gamepad.end(),
@@ -144,6 +145,9 @@ void append_missing_portable_settings(
         return;
     }
     output << "\n# Missing entries added automatically by GBB\n";
+    if(!has_firmware_enabled) output << "sgb.FirmwarePlayback = " << (settings.sgb_firmware.enabled?"true":"false") << '\n';
+    if(!has_firmware_directory) output << "sgb.FirmwareDirectory = " << gbb::sdl::firmware_directory_setting(settings.sgb_firmware.directory) << '\n';
+    if(!has_firmware_model) output << "sgb.FirmwareModel = " << settings.sgb_firmware.model << '\n';
     if (!has_palette) {
         output << "palette = "
                << gameboy::display_palettes[settings.palette].id << '\n';
@@ -301,6 +305,10 @@ void write_portable_settings(const std::filesystem::path& preference_directory,
            << (settings.link_diagnostics ? "true" : "false") << "\n\n";
     output << "sgb.TraceCapture = "
            << (settings.sgb_trace_capture ? "true" : "false") << "\n\n";
+    output << "# Experimental desktop-only playback. HLE remains the default.\n"
+           << "sgb.FirmwarePlayback = " << (settings.sgb_firmware.enabled?"true":"false") << '\n'
+           << "sgb.FirmwareDirectory = " << gbb::sdl::firmware_directory_setting(settings.sgb_firmware.directory) << '\n'
+           << "sgb.FirmwareModel = " << settings.sgb_firmware.model << "\n\n";
     output << "plugin.Discovery = "
            << (settings.plugin_discovery ? "true" : "false") << '\n';
     output << "plugin.RequireAllowlist = "
@@ -514,6 +522,7 @@ AppSettings load_portable_settings(
     std::array<bool, 8> has_legacy_touch_positions{};
     bool has_palette = false;
     bool has_hardware_model = false;
+    bool has_firmware_enabled=false, has_firmware_directory=false, has_firmware_model=false;
     bool has_video_mode = false;
     bool has_audio_enabled = false;
     bool has_show_fps = false;
@@ -562,6 +571,21 @@ AppSettings load_portable_settings(
                     break;
                 }
             }
+            continue;
+        }
+        if(key=="sgb.FirmwarePlayback") {
+            has_firmware_enabled=true;
+            settings.sgb_firmware.enabled=parse_bool_setting(value,false);
+            continue;
+        }
+        if(key=="sgb.FirmwareDirectory") {
+            has_firmware_directory=true;
+            settings.sgb_firmware.directory=gbb::sdl::firmware_directory_from_setting(value);
+            continue;
+        }
+        if(key=="sgb.FirmwareModel") {
+            has_firmware_model=true;
+            settings.sgb_firmware.model=value; // Invalid models fail at validation, never HLE fallback.
             continue;
         }
         if (key == "video.Mode") {
@@ -864,7 +888,8 @@ AppSettings load_portable_settings(
                                      has_plugin_path, has_plugin_allow_core,
                                      has_plugin_require_capability_allowlist,
                                      has_plugin_allow_capability,
-                                     has_touch_positions);
+                                     has_touch_positions, has_firmware_enabled,
+                                     has_firmware_directory, has_firmware_model);
     return settings;
 }
 

@@ -53,7 +53,7 @@ public:
     void update(bool has_rom, gbb::CoreCapability capabilities, bool paused,
                 bool fullscreen, bool recording,
                 std::size_t palette, gameboy::VideoMode video,
-                bool link_active, bool remote_link_active);
+                bool link_active, bool remote_link_active, bool firmware_active = false);
 
 private:
     struct Impl;

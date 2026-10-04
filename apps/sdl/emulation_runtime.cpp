@@ -808,7 +808,7 @@ int run_emulation(int argc, char** argv) {
         DialogState dialog;
 #if !defined(__ANDROID__) && !defined(__EMSCRIPTEN__)
         const auto launch_options=gbb::sdl::desktop_launch_options(argc,argv);
-        if(!launch_options.firmware_directory.empty()) argc=2;
+        if(!launch_options.firmware_directory.empty() || launch_options.smoke_frames) argc=2;
 #else
         const gbb::sdl::DesktopLaunchOptions launch_options{};
 #endif
@@ -865,6 +865,12 @@ int run_emulation(int argc, char** argv) {
         }
         const auto app_settings = load_app_settings(preference_path);
         auto hardware_model = app_settings.hardware_model;
+        auto firmware_settings = app_settings.sgb_firmware;
+        const gbb::sdl::DesktopFirmwareSettings cli_firmware{
+            !launch_options.firmware_directory.empty(), launch_options.firmware_directory,
+            launch_options.firmware_model};
+        gbb::CoreLoadOptions active_load_options;
+        bool pending_reset{};
         RemoteLinkOptions remote_link_options;
         remote_link_options.transport = app_settings.link_transport;
         remote_link_options.host = app_settings.link_remote_host;
@@ -1171,6 +1177,8 @@ int run_emulation(int argc, char** argv) {
                     display_palette,
                     sdl.video_mode,
                     hardware_model,
+                    firmware_settings,
+                    !active_load_options.sgb_firmware_directory.empty(),
                     audio_enabled,
                     show_fps,
                     dashboard_bindings, dashboard_actions,
@@ -1230,6 +1238,12 @@ int run_emulation(int argc, char** argv) {
                     auto settings = load_app_settings(preference_path);
                     settings.hardware_model = hardware_model;
                     write_portable_settings(preference_path, settings);
+                }
+                if(result.firmware_changed) {
+                    firmware_settings=result.firmware;
+                    auto settings=load_app_settings(preference_path);
+                    settings.sgb_firmware=firmware_settings;
+                    write_portable_settings(preference_path,settings);
                 }
                 if (result.voxel_profile_changed) {
                     sdl.voxel_profile_loaded = false;
@@ -1521,11 +1535,26 @@ int run_emulation(int argc, char** argv) {
 #endif
 
             std::optional<std::string> dialog_error;
-            collect_dialog_result(dialog, pending_rom, dialog_error);
+            std::optional<std::string> dialog_path, dialog_firmware_model;
+            collect_dialog_result(dialog, dialog_path, dialog_error,&dialog_firmware_model);
+            if(dialog_firmware_model && dialog_path) {
+                try {
+                    auto settings=load_app_settings(preference_path);
+                    settings.sgb_firmware={true,std::filesystem::u8path(*dialog_path),*dialog_firmware_model};
+                    gbb::sdl::validate_desktop_firmware(settings.sgb_firmware);
+                    if(!gbb::sdl::firmware_video_supported(sdl.video_mode))
+                        throw std::runtime_error("Choose a 2D video mode before enabling firmware playback; voxel presentation is not supported.");
+                    write_portable_settings(preference_path,settings);
+                    firmware_settings=settings.sgb_firmware;
+#ifndef __ANDROID__
+                    gbb::sdl::show_desktop_notification(sdl.window,"Firmware playback configured for the next ROM launch.");
+#endif
+                } catch(const std::exception& error) { dialog_error=error.what(); }
+            } else if(!dialog_firmware_model && dialog_path) pending_rom=std::move(dialog_path);
             if (dialog_error) show_error(sdl.window, *dialog_error);
 
             if (reset_requested) {
-                if (!current_rom.empty()) pending_rom = current_rom;
+                if (!current_rom.empty()) { pending_rom = current_rom; pending_reset=true; }
                 reset_requested = false;
 }
 
@@ -1589,6 +1618,7 @@ int run_emulation(int argc, char** argv) {
                 if (tas_editor.visible() &&
                     !tas_editor.close_with_confirmation()) {
                     pending_rom.reset();
+                    pending_reset=false;
                     pending_rom_from_dashboard = false;
                     frame_pacer.reset();
                     continue;
@@ -1611,6 +1641,7 @@ int run_emulation(int argc, char** argv) {
                     if (!emulator) open_android_library(true, current_rom);
 #endif
                 };
+                const bool resetting = std::exchange(pending_reset,false);
                 try {
                     if (remote_link.active() && emulator != nullptr) {
                         stop_remote_link_session(*emulator, remote_link,
@@ -1640,22 +1671,36 @@ int run_emulation(int argc, char** argv) {
                                             pending_rom_name);
 #endif
                     const bool reopening_current =
-                        emulator && requested_rom == current_rom;
+                        core && requested_rom == current_rom;
                     // Settings can be changed from the native Android
                     // dashboard while the SDL loop is paused. Read the
                     // selected profile at the actual construction boundary
                     // so the next ROM launch always uses the latest choice.
                     hardware_model = load_hardware_model(preference_path);
+                    firmware_settings=load_app_settings(preference_path).sgb_firmware;
+                    auto load_options=active_load_options;
+#ifdef __ANDROID__
+                    // Preserve Android's existing reset/profile semantics;
+                    // firmware preferences are desktop-only.
+                    load_options.hardware_model=std::string{gameboy::hardware_model_id(hardware_model)};
+                    load_options.sgb_firmware_directory.clear();
+#else
+                    if(!resetting) {
+                        load_options=gbb::sdl::desktop_core_load_options(firmware_settings,
+                            std::string{gameboy::hardware_model_id(hardware_model)},cli_firmware);
+                    }
+#endif
+                    if(!load_options.sgb_firmware_directory.empty() && !gbb::sdl::firmware_video_supported(sdl.video_mode))
+                        throw std::runtime_error("Experimental SGB firmware playback does not support voxel presentation. Choose a 2D video mode before launching the game.");
                     load_rom(requested_rom, core,
                              core_registry,
                              gameboy::display_palettes[display_palette], sdl,
                              preference_path,
-                             launch_options.firmware_directory.empty()
-                                 ? std::string{gameboy::hardware_model_id(hardware_model)}
-                                 : launch_options.firmware_model,
-                             launch_options.firmware_directory);
+                             load_options.hardware_model,
+                             load_options.sgb_firmware_directory);
+                    active_load_options=std::move(load_options);
                     emulator = gbb::gameboy_emulator(core.get());
-                    if(!launch_options.firmware_directory.empty())
+                    if(!active_load_options.sgb_firmware_directory.empty())
                         gbb::log_frontend_info("Experimental SGB firmware playback: one host, combined audio, model-isolated firmware saves; link/debugger/background rewind unavailable");
                     const auto updated_settings = load_app_settings(preference_path);
                     audio_enabled = updated_settings.audio_enabled;
@@ -1830,7 +1875,7 @@ int run_emulation(int argc, char** argv) {
 #endif
                 fast_forward});
             auto emulated_frame_batch_factor = 1U;
-            if(!launch_options.firmware_directory.empty() && !execution_plan.should_run())
+            if(!active_load_options.sgb_firmware_directory.empty() && !execution_plan.should_run())
                 sdl.audio.clear();
             if (execution_plan.should_run()) {
                 if (execution_plan.restores_rewind_state()) {
@@ -2137,7 +2182,7 @@ int run_emulation(int argc, char** argv) {
                 !execution_plan.restores_rewind_state() &&
                 link_emulator == nullptr && !remote_transport_connected &&
                 !fast_forward && core != nullptr &&
-                launch_options.firmware_directory.empty() &&
+                active_load_options.sgb_firmware_directory.empty() &&
                 emulated_frame_batch_factor == 1) {
                 const auto pacing_remaining =
                     frame_pacer.deadline() - std::chrono::steady_clock::now();
@@ -2211,7 +2256,7 @@ int run_emulation(int argc, char** argv) {
                               << " audio_latency_resets=" << sdl.audio.latency_resets() << '\n';
                     if (frame_timing_trace.enabled()) {
                         const auto* driver = SDL_GetCurrentAudioDriver();
-                        frame_timing_trace.write("firmware_qualification version=1 model=" + launch_options.firmware_model +
+                        frame_timing_trace.write("firmware_qualification version=1 model=" + active_load_options.hardware_model +
                             " frames=" + std::to_string(smoke_completed_frames) +
                             " audio_available=" + std::to_string(sdl.audio.available()) +
                             " audio_enabled=" + std::to_string(sdl.audio.enabled()) +
@@ -2248,7 +2293,7 @@ int run_emulation(int argc, char** argv) {
                         events_finished, audio_started)) +
                     " audio_empty_queue_events=" + std::to_string(sdl.audio.empty_queue_events()) +
                     " audio_latency_resets=" + std::to_string(sdl.audio.latency_resets()) +
-                    " firmware_playback=" + (launch_options.firmware_directory.empty() ? "off" : "on") +
+                    " firmware_playback=" + (active_load_options.sgb_firmware_directory.empty() ? "off" : "on") +
                     " rewind_captures=" +
                     std::to_string(rewind_capture_count) +
                     " rewind_capture_avg_us=" +

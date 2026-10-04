@@ -17,6 +17,7 @@ enum class DashboardAction {
     palette,
     video,
     shortcuts,
+    firmware_settings,
     recent_rom,
     no_matching_games,
     quit,
@@ -28,7 +29,7 @@ struct DashboardNavigationItem {
 };
 
 inline std::vector<DashboardNavigationItem> dashboard_navigation_items(
-    const bool can_resume, const std::size_t recent_count) {
+    const bool can_resume, const std::size_t recent_count, const bool firmware_settings=false) {
     std::vector<DashboardNavigationItem> items;
     items.reserve(recent_count + 6);
     if (can_resume) items.push_back({DashboardAction::resume, 0});
@@ -36,6 +37,7 @@ inline std::vector<DashboardNavigationItem> dashboard_navigation_items(
     items.push_back({DashboardAction::palette, 0});
     items.push_back({DashboardAction::video, 0});
     items.push_back({DashboardAction::shortcuts, 0});
+    if(firmware_settings) items.push_back({DashboardAction::firmware_settings,0});
     for (std::size_t index = 0; index < recent_count; ++index) {
         items.push_back({DashboardAction::recent_rom, index});
     }

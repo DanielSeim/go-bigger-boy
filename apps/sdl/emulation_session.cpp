@@ -9,6 +9,7 @@
 #include "pokemon_link_diagnostics.hpp"
 #include "gameboy/sgb_trace.hpp"
 #include "gbb/frontend_logging.hpp"
+#include "gbb/sgb_firmware_core.hpp"
 
 #ifdef __ANDROID__
 #include "android_bridge.hpp"
@@ -559,7 +560,7 @@ void load_rom(const std::string& path,
     // A same-ROM cold reset/reopen must load the RAM just produced by the
     // running firmware host, not the previous on-disk save. If saving fails,
     // retain the live session rather than replacing it with stale RAM.
-    if (!firmware_directory.empty() && core) core->flush_persistent_data();
+    if (core && (!firmware_directory.empty() || !gbb::sgb_firmware_model(*core).empty())) core->flush_persistent_data();
     gbb::CoreLoadOptions options;
     options.hardware_model = std::move(hardware_model);
     options.sgb_firmware_directory = firmware_directory;

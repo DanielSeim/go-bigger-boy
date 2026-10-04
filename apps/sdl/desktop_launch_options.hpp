@@ -12,6 +12,7 @@ struct DesktopLaunchOptions {
 };
 inline DesktopLaunchOptions desktop_launch_options(int argc,char** argv) {
     DesktopLaunchOptions result;
+    bool explicit_model{};
     for(int n=2;n<argc;++n) {
         const std::string_view option=argv[n];
         if(n+1==argc) throw std::invalid_argument("Missing desktop launch option value");
@@ -22,6 +23,7 @@ inline DesktopLaunchOptions desktop_launch_options(int argc,char** argv) {
         } else if(option=="--sgb-model") {
             if(value!="sgb" && value!="sgb2") throw std::invalid_argument("Firmware model must be sgb or sgb2");
             result.firmware_model=value;
+            explicit_model=true;
         } else if(option=="--frontend-smoke-frames") {
             std::size_t consumed{};
             const auto frames=std::stoul(value,&consumed);
@@ -29,7 +31,7 @@ inline DesktopLaunchOptions desktop_launch_options(int argc,char** argv) {
             result.smoke_frames=static_cast<unsigned>(frames);
         } else throw std::invalid_argument("Unknown desktop launch option: " + std::string(option));
     }
-    if(argc>2 && result.firmware_directory.empty()) throw std::invalid_argument("Experimental launch options require --sgb-firmware DIRECTORY");
+    if(explicit_model && result.firmware_directory.empty()) throw std::invalid_argument("--sgb-model requires --sgb-firmware DIRECTORY");
     if(argc>2 && std::string_view(argv[1]).substr(0,2)=="--") throw std::invalid_argument("Specify the game ROM before experimental options");
     return result;
 }

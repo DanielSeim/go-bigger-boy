@@ -263,7 +263,7 @@ bool check_settings_sections(HWND dashboard) {
                                    advanced == (expected == 3);
         passed &= visibility_ok;
         const auto scrollbar = vertical_scrollbar_visible(dashboard);
-        const auto scrollbar_ok = expected == 1 || expected == 3 || !scrollbar;
+        const auto scrollbar_ok = expected != 2 || !scrollbar;
         passed &= scrollbar_ok;
         if (!section_ready || !visibility_ok || !scrollbar_ok) {
             std::fprintf(stderr,
@@ -291,8 +291,8 @@ bool check_settings_sections(HWND dashboard) {
                 }
             }
         }
-        // The controls page may need scrolling on a short display. The other
-        // sections fit in the fixed viewport and must not create a scrollbar.
+        // General, Controls and Advanced can need scrolling on a short
+        // display. Link must still fit without an unnecessary scrollbar.
     }
     return passed;
 }
@@ -488,10 +488,16 @@ DashboardResult invoke_dashboard(const bool can_resume,
     gbb::PluginCatalog plugin_catalog;
     return show_windows_dashboard(
         nullptr, invocation.library, can_resume, 0,
-        gbb::CoreCapability::none, 0, gameboy::default_video_mode,
-        gameboy::HardwareModel::automatic, true, false, keyboard, actions,
+        // A running GB core exposes scene layers even with 2D presentation.
+        // Exercise its voxel-profile handler too: its old ID range swallowed
+        // Apply/Discard and link commands while the section was hidden.
+        can_resume ? gbb::CoreCapability::scene_layers : gbb::CoreCapability::none,
+        0, gameboy::default_video_mode,
+        gameboy::HardwareModel::automatic, {}, false, true, false, keyboard, actions,
         link_settings, plugin_options, plugin_catalog, {}, {});
 }
+
+bool check_firmware_settings(HWND dashboard);
 
 bool run_dashboard_case(const bool can_resume, const bool discard,
                         const bool inspect_controls,
@@ -567,7 +573,9 @@ bool run_dashboard_case(const bool can_resume, const bool discard,
         const auto controls_ok = sections_ok &&
                                  check_native_controls_and_layout(dashboard);
         const auto render_ok = check_rendered_dashboard(dashboard);
-        passed = pages_ok && sections_ok && controls_ok && render_ok;
+        const auto firmware_ok = pages_ok && sections_ok && controls_ok &&
+                                 check_firmware_settings(dashboard);
+        passed = pages_ok && sections_ok && controls_ok && render_ok && firmware_ok;
         if (!passed) {
             std::fprintf(stderr,
                          "dashboard smoke: pages=%d sections=%d controls=%d "
@@ -614,6 +622,20 @@ bool run_dashboard_case(const bool can_resume, const bool discard,
         wait_for([&] { return dashboard_completed(invocation); });
     std::fprintf(stderr, "dashboard smoke: dashboard completed=%d\n", completed);
     if (!completed) {
+        EnumChildWindows(dashboard,[](HWND child,LPARAM)->BOOL {
+            wchar_t text[512]{};
+            GetWindowTextW(child,text,512);
+            const std::wstring_view value{text};
+            if(value.find(L"firmware")!=value.npos || value.find(L"Unsaved")!=value.npos || value.find(L"2D")!=value.npos)
+                std::fprintf(stderr,"dashboard smoke: pending status %ls\n",text);
+            return TRUE;
+        },0);
+        std::fprintf(stderr,"dashboard smoke: pending firmware enabled=%d video-selection=%lld\n",
+            IsWindowEnabled(GetDlgItem(dashboard,142)),
+            static_cast<long long>(SendMessageW(GetDlgItem(dashboard,109),CB_GETCURSEL,0,0)));
+        // Teardown must not try to validate/apply the very settings whose
+        // failure this smoke is reporting.
+        send_dashboard_command(dashboard,132);
         close_dashboard(dashboard_window());
     }
     worker.join();
@@ -629,7 +651,7 @@ bool run_dashboard_case(const bool can_resume, const bool discard,
                      passed, static_cast<int>(invocation.result.action),
                      static_cast<int>(expected));
     }
-    return passed && result_matches;
+    return passed && completed && result_matches;
 }
 
 bool check_unreachable_rom_error() {
@@ -645,6 +667,31 @@ bool check_unreachable_rom_error() {
         return true;
     }
     return false;
+}
+
+bool check_firmware_settings(HWND dashboard) {
+    send_dashboard_command(dashboard,101);
+    send_dashboard_command(dashboard,136);
+    const auto enabled=GetDlgItem(dashboard,140);
+    const auto model=GetDlgItem(dashboard,141);
+    const auto directory=GetDlgItem(dashboard,142);
+    const auto video=GetDlgItem(dashboard,109);
+    if(!enabled || !model || !directory) return false;
+    bool passed=!IsWindowEnabled(directory) && !IsWindowEnabled(model);
+    SendMessageW(dashboard,WM_COMMAND,MAKEWPARAM(140,BN_CLICKED),reinterpret_cast<LPARAM>(enabled));
+    passed &= IsWindowEnabled(directory) && IsWindowEnabled(model);
+    passed &= SendMessageW(video,CB_GETCOUNT,0,0)==5;
+    passed &= !IsWindowEnabled(GetDlgItem(dashboard,130));
+    passed &= visible_child(dashboard,L"Display palette") && !visible_child(dashboard,L"Keyboard controls");
+    // No images: applying must keep the dashboard open with a useful error,
+    // rather than silently saving an unusable backend or falling back to HLE.
+    SetWindowTextW(directory,L"");
+    send_dashboard_command(dashboard,129);
+    passed &= IsWindow(dashboard) && visible_child(dashboard,L"Select a caller-owned SGB firmware directory before enabling firmware playback.");
+    SendMessageW(dashboard,WM_COMMAND,MAKEWPARAM(140,BN_CLICKED),reinterpret_cast<LPARAM>(enabled));
+    passed &= !IsWindowEnabled(directory) && !IsWindowEnabled(model);
+    passed &= SendMessageW(video,CB_GETCOUNT,0,0)==8;
+    return passed;
 }
 
 } // namespace
@@ -663,6 +710,7 @@ int run_windows_dashboard_smoke() {
     // Closing the dashboard with dirty settings must terminate the app rather
     // than return to the active game and reopen the dashboard indefinitely.
     if (!run_dashboard_case(true, true, false, true)) return 6;
+    if (!run_dashboard_case(true, false, true)) return 7;
     return 0;
 }
 

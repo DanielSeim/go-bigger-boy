@@ -529,7 +529,7 @@ if(GAMEBOY_BUILD_SDL)
             )
             if(WIN32)
                 target_link_libraries(gameboy_sdl PRIVATE
-                    winhttp bcrypt comctl32 comdlg32 ole32
+                    winhttp bcrypt comctl32 comdlg32 ole32 shell32
                     windowscodecs winmm)
                 target_include_directories(gameboy_sdl PRIVATE
                     "${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows"

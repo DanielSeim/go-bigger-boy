@@ -13,9 +13,15 @@ without arguments opens the game library dashboard:
 ```
 
 An opt-in [experimental SGB firmware playback path](sgb-host.md#experimental-desktop-playback)
-accepts user-owned firmware via `--sgb-firmware DIRECTORY --sgb-model sgb2`
-after the ROM argument. Ordinary launches continue to use HLE. This path keeps
-experimental saves separate and currently excludes link/debugger, voxel
+is available in **Settings → General** on Windows, or the **SGB firmware
+settings (experimental)** entry in the SDL library dashboard on Linux. Select
+SGB1 or SGB2 and the directory containing your own firmware images. HLE remains
+the default.
+Changes apply when you next open a ROM; reset retains the running backend.
+Invalid images are reported rather than silently falling back to HLE.
+The CLI also accepts `--sgb-firmware DIRECTORY --sgb-model sgb2`
+after the ROM argument and overrides the saved choice for that invocation.
+This path keeps experimental saves separate and currently excludes link/debugger, voxel
 presentation and background rewind.
 
 On Windows, the running-game window uses a native menu bar instead of drawing

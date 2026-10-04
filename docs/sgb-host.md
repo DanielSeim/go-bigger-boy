@@ -3,7 +3,8 @@
 `gameboy::SgbHost` coordinates our original bounded SNES CPU, ICD/Game Boy
 bridge and SPC700/DSP engine in `gameboy_core`. It is an opt-in core component,
 **not enabled by default in shipping frontends**. Desktop firmware playback
-is an explicit experimental launch option (see below). No bsnes code, external emulator core,
+requires an explicit experimental opt-in through desktop settings or CLI
+(see below). No bsnes code, external emulator core,
 Nintendo firmware, ROM, captured audio or private state is bundled.
 
 The existing diagnostic CPU/ICD headers are compatibility adapters to the same
@@ -55,6 +56,24 @@ below; the experimental desktop adapter selects it at 48 kHz.
 
 ## Experimental desktop playback
 
+Windows: open the library's **Settings → General**, enable experimental SGB
+firmware playback, select SGB1/SGB2, and enter or browse to your firmware
+directory. Linux: choose **SGB firmware settings (experimental)** in the SDL
+library dashboard, then select the model and directory. Choose **HLE (default)**
+to disable it.
+Android does not expose or use these desktop firmware settings.
+
+The selected backend is saved in `settings.ini` and applies only to the next
+ROM launch. Applying settings does not replace a running core, and reset keeps
+that session's backend and model. Reopening a ROM uses the new settings.
+Unsupported voxel modes are excluded while firmware playback is active;
+select a 2D mode before enabling it. Unsupported tools stay disabled by the
+active core's capabilities. Firmware validation checks the files before applying
+settings and again at launch; invalid images never trigger a silent HLE fallback.
+
+For scripted launches, the explicit CLI override takes priority over saved
+preferences for that process:
+
 ```sh
 ./build-desktop/gbb game.gb --sgb-firmware /path/to/private/firmware --sgb-model sgb2
 ```
@@ -70,7 +89,25 @@ SDL consumes its 48 kHz stereo samples through the existing bounded playback
 policy; muted audio is still drained. Video and read-only scene metadata come
 from that same GB instance. Existing GB-side SGB color/border composition is
 retained: this is **not** a newly implemented SNES PPU or firmware-rendered
-SNES menu. HLE remains the ordinary launch path.
+SNES menu. HLE remains the default launch path.
+
+The persisted keys are `sgb.FirmwarePlayback`, `sgb.FirmwareDirectory` and
+`sgb.FirmwareModel`. The directory is written as hex-encoded UTF-8 (`hex:`)
+so spaces, Unicode and INI comment characters survive round trips. A plain
+path is accepted on read, subject to the usual INI comment rules. Disabling
+playback retains the chosen directory/model for later use.
+
+Settings validation has ROM-free contracts for HLE defaults, migration,
+Unicode/comment-character directory round trips, missing/invalid images,
+model selection and CLI precedence. The native Windows dashboard smoke also
+checks apply/discard with scene-layer capability, firmware checkbox routing,
+2D-only mode choices and invalid-directory rejection. Local caller-owned
+Donkey Kong validation on 2026-10-04 exercised HLE → SGB2 → SGB1 → HLE library
+launches, reset retaining the running backend/model, separate model-specific
+snapshots, disabled unsupported menus, preference persistence across restart
+and CLI precedence. The Linux SDL dialog was checked separately with isolated
+portable settings. These are frontend lifecycle checks, not new audio/accuracy
+or performance claims.
 
 Pause/resume, cold reset, and model/firmware-bound manual snapshots work through
 the generic core interface. A terminal host/APU/ICD fault stops playback with

@@ -15,6 +15,8 @@ DashboardResult show_windows_dashboard(
     gbb::CoreCapability capabilities,
     std::size_t palette, gameboy::VideoMode video_mode,
     gameboy::HardwareModel hardware_model,
+    const gbb::sdl::DesktopFirmwareSettings& firmware,
+    bool firmware_active,
     bool audio_enabled,
     bool show_fps,
     const KeyboardBindings& keyboard_bindings,

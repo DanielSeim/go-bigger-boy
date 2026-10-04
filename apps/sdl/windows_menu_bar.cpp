@@ -1,4 +1,5 @@
 #include "windows_menu_bar.hpp"
+#include "desktop_firmware_settings.hpp"
 
 #ifdef _WIN32
 
@@ -135,7 +136,7 @@ struct DesktopMenuBar::Impl {
                 const bool paused, const bool fullscreen,
                 const bool recording, const std::size_t palette,
                 const gameboy::VideoMode video, const bool link_active,
-                const bool remote_link_active) {
+                const bool remote_link_active, const bool firmware_active) {
         if (root_ == nullptr) return;
         // Updating a native Win32 menu is not a cheap draw-only operation:
         // each enable/check/modify call can invalidate the window and wake
@@ -148,11 +149,12 @@ struct DesktopMenuBar::Impl {
             fullscreen == last_fullscreen_ && recording == last_recording_ &&
             palette == last_palette_ && video == last_video_ &&
             link_active == last_link_active_ &&
-            remote_link_active == last_remote_link_active_) {
+            remote_link_active == last_remote_link_active_ && firmware_active==last_firmware_active_) {
             return;
         }
         state_valid_ = true;
         last_has_rom_ = has_rom;
+        last_firmware_active_=firmware_active;
         last_capabilities_ = capabilities;
         last_paused_ = paused;
         last_fullscreen_ = fullscreen;
@@ -168,8 +170,8 @@ struct DesktopMenuBar::Impl {
         const auto has = [&](const gbb::CoreCapability capability) {
             return has_rom && gbb::has_capability(capabilities, capability);
         };
-        enable(DesktopMenuCommand::link_session,
-               has(gbb::CoreCapability::link_cable) && !remote_link_active);
+        const bool can_start_link = has(gbb::CoreCapability::link_cable) &&
+                                    !remote_link_active;
         enable(DesktopMenuCommand::link_retry,
                link_active || remote_link_active);
         enable(DesktopMenuCommand::remote_host,
@@ -182,7 +184,7 @@ struct DesktopMenuBar::Impl {
                has(gbb::CoreCapability::link_cable) && !remote_link_active);
         enable(DesktopMenuCommand::remote_stop, remote_link_active);
         ModifyMenuW(emulation_, command_id(DesktopMenuCommand::link_session),
-                    MF_BYCOMMAND | MF_STRING,
+                    MF_BYCOMMAND | MF_STRING | (can_start_link ? MF_ENABLED : MF_GRAYED),
                     command_id(DesktopMenuCommand::link_session),
                     link_active ? L"Stop Local &Link Session\tCtrl+Shift+L"
                                 : L"Start Local &Link Session\tCtrl+Shift+L");
@@ -198,6 +200,9 @@ struct DesktopMenuBar::Impl {
                has(gbb::CoreCapability::debugger));
         enable(DesktopMenuCommand::sprite_editor,
                has(gbb::CoreCapability::sprite_editor));
+        for(std::size_t n=0;n<gameboy::video_modes.size();++n)
+            enable(static_cast<DesktopMenuCommand>(command_id(DesktopMenuCommand::video_first)+n),
+                !firmware_active || gbb::sdl::firmware_video_supported(gameboy::video_modes[n].mode));
         check(DesktopMenuCommand::pause, paused);
         check(DesktopMenuCommand::fullscreen, fullscreen);
         check(DesktopMenuCommand::record_input, recording);
@@ -264,6 +269,7 @@ private:
     HMENU tools_{};
     HMENU help_{};
     bool state_valid_{};
+    bool last_firmware_active_{};
     bool last_has_rom_{};
     gbb::CoreCapability last_capabilities_{};
     bool last_paused_{};
@@ -294,9 +300,9 @@ void DesktopMenuBar::update(const bool has_rom,
                             const std::size_t palette,
                             const gameboy::VideoMode video,
                             const bool link_active,
-                            const bool remote_link_active) {
+                            const bool remote_link_active, const bool firmware_active) {
     impl_->update(has_rom, capabilities, paused, fullscreen, recording,
-                  palette, video, link_active, remote_link_active);
+                  palette, video, link_active, remote_link_active, firmware_active);
 }
 
 #endif // _WIN32
