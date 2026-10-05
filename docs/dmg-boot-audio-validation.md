@@ -5,6 +5,17 @@ comparison of cartridge sound after two different CPU-executed boots, not an
 independent hardware audio reference. Nintendo firmware is an opaque local
 input; no instructions, graphics or sound assets are incorporated into GBB.
 
+Current DMG firmware is revision 4, which preserves revision 3's APU alignment
+and changes idle serial initialization; see
+[serial validation](dmg-boot-serial-validation.md). The findings and full-suite
+totals below are historical revision-3 captures. The revision-4 record reports
+unchanged replacement PCM hashes and passing audio gates, not sample equality
+to original boot. No private audio comparison was rerun for this audit.
+Generic startup IDs, version-42 ordinary snapshots and bundled model scope are
+summarized in [boot validation](dmg-boot-validation.md#current-contract-and-historical-evidence-audited-2026-10-05)
+and [firmware](../firmware/README.md). SGB firmware-host pins and performance
+are separate [host evidence](sgb-host.md#current-evidence-status-audited-2026-10-05).
+
 ## Local comparison
 
 Build the test-only probe in an optimized configuration:
@@ -81,7 +92,7 @@ Shorter-than-window defects or very quiet effects can escape these gates.
 These are regression checks, not proof of perceptual or sample-exact equality;
 listening and independent hardware/reference captures remain useful.
 
-## Revision 3 findings (2026-10-04)
+## Historical revision 3 findings (2026-10-04)
 
 The first 30-second check with Start at four seconds failed Pokémon Blue:
 commands matched, but inherited APU state produced excessive window-level and
@@ -144,7 +155,7 @@ command-timing errors, and require each corresponding gate to fail. Silent or
 truncated captures cannot pass, PCM tampering is detected, files are not
 overwritten, and enabling capture/trace does not alter emulated state or PCM.
 
-Final validation on 2026-10-04: the full optimized suite completed with 159
+Historical revision-3 validation on 2026-10-04: the full optimized suite completed with 159
 passing tests and three network-related skips. All seven focused firmware/PPU
 checks and all four focused ASan/UBSan checks passed (LeakSanitizer disabled
 for the sandbox). The four-title audio comparison was rerun with the final

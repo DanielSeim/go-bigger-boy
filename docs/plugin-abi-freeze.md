@@ -4,6 +4,12 @@ Status: **approved and frozen**
 Effective date: 2026-09-05  
 Baseline: the freeze commit on `main` (immediately after `86129ee`)
 
+This is an archived approval record. The baseline description and check results
+below are historical evidence, not current test counts or a claim that these
+checks were rerun. Local documentation review on 2026-10-05 confirmed the header
+still declares ABI 1.0 and CMake still registers the header/fixture/loader tests;
+it did not repeat the recorded builds or establish a new freeze baseline.
+
 This record approves the public C dynamic-core ABI as the Go Bigger Boy v1.0
 plug-in contract. The freeze covers `include/gbb/plugin_abi.h`, its numeric
 identifiers, structure layouts, required prefixes, calling convention, and the

@@ -4,15 +4,21 @@ The automated baseline uses the pinned
 [`c-sp/game-boy-test-roms` v7.0](https://github.com/c-sp/game-boy-test-roms/releases/tag/v7.0)
 bundle. GitHub Actions verifies the archive checksum before running any ROM.
 
-## Current automated baseline
+## Reviewed automated baseline
 
-| Suite | Passing | Coverage |
+These are registered release-gate cases, not a fresh test run or a complete
+commercial-game compatibility list. Definitions live in
+[`ConformanceTests.cmake`](../cmake/ConformanceTests.cmake); current results are
+reported by the Desktop builds workflow. The full CTest total varies with
+optional suites, local firmware/reference files and frontend dependencies.
+
+| Suite | Required cases | Coverage |
 | --- | ---: | --- |
-| Mooneye acceptance | 75/75 | Complete acceptance directory, with model-specific boot profiles |
-| Mooneye CGB misc | 6/6 | Every CGB/CGB0 ROM applicable to emulated Game Boy Color hardware |
-| Mooneye emulator-only | 28/28 | Complete MBC1, MBC2, and MBC5 mapper directories |
-| Blargg | 38/38 | CPU/timing baseline plus all 12 DMG and all 12 CGB sound ROMs |
-| Visual PPU | 21/21 | Acid2, Scribbltests, Mealybug, and Gambatte framebuffer comparisons |
+| Mooneye acceptance | 75 | Complete acceptance directory, with model-specific boot profiles |
+| Mooneye CGB misc | 6 | Reviewed CGB/CGB0 ROMs applicable to emulated Game Boy Color hardware |
+| Mooneye emulator-only | 28 | Complete MBC1, MBC2, and MBC5 mapper directories |
+| Blargg | 38 | CPU/timing baseline plus all 12 DMG and all 12 CGB sound ROMs |
+| Visual PPU | 21 | Acid2, Scribbltests, Mealybug, and Gambatte framebuffer comparisons |
 | GBMicrotest | matrix-only | HRAM self-checking cycle-accuracy ROMs from the pinned v7.0 bundle |
 | Mooneye-wilbertpol | matrix-only | Extended Mooneye acceptance/misc/emulator-only ROMs (manual-only cases excluded) |
 | AGE and SameSuite | research report | AGE screenshot references plus SameSuite hardware diagnostics, outside the release gate |
@@ -21,7 +27,9 @@ bundle. GitHub Actions verifies the archive checksum before running any ROM.
 The acceptance figure covers every acceptance ROM in the pinned bundle. Tests with
 mutually exclusive boot-ROM expectations run under explicit DMG0, DMG/MGB,
 SGB, SGB2, CGB0, CGB-C, or CGB-E post-boot hardware profiles. Mooneye's two AGB-only
-misc ROMs are excluded because GBB does not emulate Game Boy Advance hardware.
+misc ROMs remain excluded from this silicon-accuracy gate. The selectable
+`agb0`/`agb` profiles provide GB/GBC-on-GBA startup compatibility using the
+CGB-E runtime baseline, not native GBA emulation or complete AGB silicon accuracy.
 
 ### Diagnostic boot path
 
@@ -33,13 +41,20 @@ ROM through `FF50`, and hands control to the cartridge at `0100`. This path is
 intentionally opt-in and does not replace the production startup path. It is a
 boot-ROM mapping and handoff harness, not a claim of compatibility with
 Nintendo's proprietary boot ROM; hardware initialization remains provided by the
-existing model profile until a complete boot-ROM implementation is validated.
+existing model profile in this diagnostic path. Separate original replacement
+firmware now performs cold startup for the supported models.
 
 The separate `--dmg-boot --model dmg` option now runs the original DMG
 replacement firmware from a deterministic cold machine, without post-boot
 register or VRAM seeding. This opt-in fast-start implementation validates the
 header checksum and establishes the DMG register handoff, but does not reproduce
-Nintendo's animation, logo/trademark tiles, chime, or exact divider/APU timing.
+Nintendo logo/trademark tiles or complete physical reset equivalence.
+Frontend settings expose `instant` (default), `replacement` and `animated`;
+the same hardware-neutral modes choose bundled firmware for DMG0, DMG,
+Pocket, CGB/CGB0, AGB/AGB0 startup profiles, SGB and SGB2. Animated monochrome
+and color boots use original GBB lettering and an APU-synthesized chime;
+SGB/SGB2 use their header bootstrap without that intro. Old DMG-specific
+setting IDs are not migrated and fall back to instant startup.
 See [replacement firmware](../firmware/README.md) for its scope, reproducible
 build and state/reset contracts, and [DMG boot validation](dmg-boot-validation.md)
 for the execution-only local comparison, verified LCD fixes and remaining
@@ -53,7 +68,7 @@ collection of hand-maintained paths. The matrix runner discovers every
 machine-readable `.gb` in the supported suite directories below, so a new ROM
 cannot be silently omitted from the opt-in matrix. Upstream helper/manual
 directories are intentionally excluded, as are GBMicrotest power-on fixtures
-until the emulator can run an actual boot ROM; those images do not implement
+from this post-boot matrix; those images do not implement
 the result protocol from a post-boot run. Mooneye `boot_*` and `boot-*` images
 are excluded for the same reason. Individual discovered CTest cases
 are available only with `-DGAMEBOY_ENABLE_DISCOVERED_CONFORMANCE=ON` and are
@@ -116,8 +131,9 @@ registers, DIV handoff value, serial-divider phase, JOYP selection, APU channel
 startup state, CGB register defaults, and save-state round trips. Automatic
 selection is also checked for ordinary DMG, SGB-capable, and CGB-capable
 cartridges. This is a digital profile contract; it does not claim to model
-analog clock tolerance, LCD response, DAC variation, or Game Boy Advance/Game
-Boy Player hardware.
+analog clock tolerance, LCD response, DAC variation, or full Game Boy
+Advance/Game Boy Player hardware. Separate boot contracts cover the AGB
+startup profiles; they are not added to the eight-model silicon matrix.
 
 The revision matrix is intentionally explicit: `dmg0`, `dmg` (DMG-B), `mgb`,
 `sgb`, `sgb2`, `cgb0`, `cgb-c`, and `cgb-e` are selectable in the test runner. The historical
@@ -188,7 +204,8 @@ four-player polling IDs with independent button states. SDL maps keyboard and
 the primary gamepad to player 1, and additional gamepads to players 2-4; a
 second desktop keyboard layout controls player 2 when SGB multiplayer is
 active. These behaviors are covered by core tests, adapter diagnostics, and
-save states (version 37). The NTSC SGB1 profile now uses its approximately
+save states (multiplayer fields were introduced in version 37; the ordinary
+GB container is currently version 42). The NTSC SGB1 profile uses its approximately
 4.295 MHz Game Boy clock for both frontend pacing and 48 kHz audio resampling;
 SGB2 stays at 4.194304 MHz
 ([Pan Docs SGB clock](https://gbdev.io/pandocs/SGB_Functions.html)).
@@ -201,9 +218,19 @@ side execution, graphics, and audio ([Pan Docs SGB overview](https://gbdev.io/pa
 require either those SNES subsystems or an equivalent dedicated host model.
 The frontend-neutral SDL and web presentation paths now consume the SGB frame
 dimensions from the core descriptor, so desktop, Android, and browser builds
-can display the border without a frontend-specific decoder. SNES audio, fade
-timing, and the complete SGB boot/header handshake remain deferred. These
-limitations do not affect ordinary DMG or CGB emulation.
+can display the border without a frontend-specific decoder. HLE does not
+execute SNES-side sound commands. Experimental desktop firmware playback
+adds combined GB/SNES audio using user-owned program and SPC IPL images;
+Android and Web still use HLE. Bundled SGB/SGB2 replacement boots provide
+the GB-side header bootstrap, not a replacement for those SNES-side images.
+Full SNES graphics/menu rendering, the four deferred title-reference frames,
+and independently validated host/adapter timing remain limitations. The
+clocked LCD bridge improves transfer availability but its producer/read
+collision behavior is not hardware-qualified. Current host headroom is also
+unqualified: the latest serial measurement failed the unchanged gate. See
+[SGB boot/bridge evidence](sgb-boot-validation.md#clocked-lcd-bridge) and the
+[firmware playback guide](sgb-host.md#experimental-desktop-playback).
+These limitations do not imply failures of ordinary DMG or CGB emulation.
 The opt-in [SGB command inventory](sgb-validation.md) identifies unimplemented
 SNES-side commands in traces without claiming to emulate their effects.
 The spec-derived SGB reference checks and performance procedures are recorded
@@ -349,8 +376,9 @@ The SameBoy release and immutable commit used by this workflow are pinned in
 [`sameboy-reference-pin.json`](../tests/fixtures/audio-external/sameboy-reference-pin.json).
 
 The release accuracy workflow runs the external gate automatically whenever
-reviewed `*.txt` files are present in that directory. Until captures are
-reviewed, CI continues using the deterministic software fixtures. SameBoy is a
+reviewed `*.txt` files are present in that directory. Six reviewed normalized
+SameBoy references are checked in and therefore enable that CI gate; the
+deterministic software fixtures remain a separate baseline. SameBoy is a
 trusted digital reference only; it does not validate hardware DAC levels,
 analog high-pass response, amplifier noise, or LCD/audio coupling. The
 official SameBoy project documents revision-specific models and sample-

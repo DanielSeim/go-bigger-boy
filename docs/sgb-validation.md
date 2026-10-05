@@ -5,8 +5,40 @@ caller-clocked audio engine and versioned component snapshots. An integrated
 SPC700/APU scheduler now preserves half-clock accesses and bounded PCM, with
 complete APU-component restore and local firmware/title integration parity. See
 [SGB audio engine](sgb-audio-engine.md) for its API, buffering/reset/state
-contracts and limitations. Frontend SGB sound remains disabled; the bounded
-SNES diagnostic host has not been promoted into release execution.
+contracts and limitations. Version 0.36.0 ships an explicit experimental desktop
+firmware backend. Ordinary launches default to HLE without SNES-side SGB sound;
+Android and web do not expose firmware playback. See
+[desktop firmware playback](sgb-host.md#experimental-desktop-playback).
+
+## Current implementation and evidence (audited 2026-10-05)
+
+`SgbHost` coordinates the bounded 65C816, ICD/Game Boy and SPC700/DSP path.
+Desktop playback combines GB and SNES audio at 48 kHz and retains GB-side
+color/border composition; it does not implement a graphical SNES PPU/menu.
+It requires caller-owned `sgb1.program.rom` or `sgb2.program.rom` and a 64-byte
+`spc700.rom`. The original GBB GB-side bootstrap is bundled; optional 256-byte
+`sgb.boot.rom` / `sgb2.boot.rom` overrides are validated. Missing/invalid inputs
+fail explicitly. Selecting bundled fast/animated startup alone does not enable
+SNES sound or require those private files. Generic startup IDs are `instant`,
+`replacement`, and `animated`; see [firmware](../firmware/README.md).
+
+Current host reports require `cold-sgb-v1` and `clocked-pixel-v1`.
+[SGB boot validation](sgb-boot-validation.md#current-test-pins-and-provenance-audited-2026-10-05)
+identifies the exact native/combined WAV pins and their test sources.
+Host snapshots are `GBBSHOST` version 3; versions 1/2 are rejected.
+Ordinary GB states are version 42, while DSP/APU component states remain
+version 1. These are distinct formats, not interchangeable whole-system states.
+
+Independent emulator captures below establish bounded comparisons, not
+physical-hardware or complete-title fidelity. The four extended Donkey Kong
+visual mismatches remain deferred. Unsupported CPU operations, ICD timing
+limits, absent SNES graphics and unsupported frontend peripherals still bound
+the experimental backend; HLE command triage is not its capability inventory.
+The latest documented clocked-bridge Linux host-only run fails all four
+unchanged 1.40x p05 / 1.20x worst-window gates. Earlier Windows/tablet passes
+and desktop device captures do not qualify that bridge; see
+[current performance status](sgb-host.md#current-evidence-status-audited-2026-10-05).
+This audit checked source/test definitions, not new private or device runs.
 
 The SGB contract checks use hand-authored expectations from
 [Pan Docs' border format](https://gbdev.io/pandocs/SGB_Command_Border.html)
@@ -70,7 +102,15 @@ player-1 binding while multiplayer is active. Disconnecting a controller or
 losing window focus releases its held buttons. This is SGB `MLT_REQ`
 multiplayer, not Game Boy link-cable multiplayer.
 
-## SNES-side command triage
+## Historical SNES-side command triage and capture progression
+
+The remainder of this document preserves the archived development/capture record.
+Present-tense statements about diagnostic-only sound, runtime integration,
+state versions and outstanding implementation work describe their milestone,
+not today's backend. Hashes, timings, failures and results retain their original
+capture meaning; use the current summary above and linked boot/host documents
+for current pins and runtime requirements. The visual replays below are separate
+from firmware-host audio qualification and retain their unresolved exceptions.
 
 `SOUND` requests are retained and can be decoded from the opt-in JOYP command trace. `SOU_TRN`
 now latches the 4 KiB indexed-screen payload after the standard five-frame

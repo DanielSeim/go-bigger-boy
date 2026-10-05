@@ -1,8 +1,15 @@
 # Voxel rendering research and design proposal
 
-Status: research/design note. This document does not change the emulator or renderer by itself.
+Status: research/design note with a limited implemented prototype. Local source
+review: 2026-10-05. The research, proposed representation, implementation plan,
+and acceptance criteria below describe intended work, not completed features.
+The implementation notes starting at “Observation tooling prototype” describe
+the current partial implementation in `src/voxel_scene.cpp`,
+`apps/sdl/voxel_renderer.cpp`, `apps/web/main.cpp`, and `scripts/voxel_*.py`.
+Collision/map decoders, universal building recognition, temporal semantic
+tracking, and automatic promotion of generated templates are still proposals.
 
-## Executive summary
+## Original research motivation
 
 The current voxel mode is too close to a *pixel relief*: it starts with the complete 160×144 framebuffer and turns many individual pixels into independent extrusions. That makes the output expensive, noisy, and difficult to compose. It also gives every pixel the same geometric meaning even though a Game Boy pixel may belong to a HUD, a background tile, a platform, or a moving character.
 
@@ -56,8 +63,9 @@ The signals should be considered in this order, from strongest to weakest:
    separate. This is substantially better than starting with an RGB image and
    trying to reconstruct the map afterward. The current `SceneSnapshot` already
    exposes most of the required tile-map, tile-data, attribute, scroll and OAM
-   data; the missing piece is a visible-screen mapping from pixels/cells back to
-   BG map coordinates.
+   data. The proposed visible-screen mapping is now implemented as
+   `SceneSnapshot::visible_tile_cells` for the native Game Boy viewport; this
+   does not provide game-specific map semantics or SGB border mapping.
 2. **Game map/block structure.** If a profile can expose a map block or metatile
    grid, use it before individual 8×8 tiles. Buildings are normally assembled
    from repeated local arrangements: roof or eave rows, side walls, a base, a
@@ -690,13 +698,15 @@ rejected, and a confidence score combines compactness, repetition, boundary,
 ground contact and aspect ratio. Ambiguous regions remain flat unless a ROM
 profile opts in.
 
-The Super Mario Land profile is the first profile to opt into this detector.
-The SDL pop-up renderer consumes its object ownership map while other ROMs
-retain the existing heuristic path. SGB-sized snapshots are excluded from this
+The Super Mario Land profile was the first profile to opt into this detector.
+In the current source, `built_in_voxel_profile()` enables background detection
+by default for all fingerprints; profiles can disable it. SDL and Web pop-up
+renderers both consume the ownership map for native 160×144 snapshots.
+SGB-sized snapshots are excluded from this
 native 160×144 integration until their border/game-area coordinate mapping is
 represented explicitly. The scene builder itself remains independent of SDL
-and is covered by the frontend contract tests, so it can later be shared with
-the web and Android presentation backends.
+and is covered by the frontend contract tests. Web already shares the builder;
+Android shares the SDL presentation code, without implying device validation.
 
 This is deliberately not a universal building detector yet. Profiles can now
 add `background_object_template=WxH:tile,...` entries; `*` matches any tile
@@ -710,7 +720,7 @@ for authoring and review, not as a default end-user visual.
 The remaining practical step is to capture reviewed template decisions from
 the Mario and Pokémon-style corpus and add them as small ROM-specific
 fixtures. Those fixtures should verify scrolling, partial visibility and
-false-positive rejection before any broader automatic detector is enabled.
+false-positive rejection before claiming broader game-specific recognition.
 
 ### Automated template authoring assistant
 
@@ -728,9 +738,10 @@ evidence, confidence, and explicit risk notes such as weak ground contact,
 single-location observation, or excessive repetition across the map. The
 analyzer writes these under `template_proposals` in
 `gbb.voxel.proposals.v2`. `voxel_review_report.py` displays them alongside the
-scene frames and clearly labels them as manual-review-only. It limits the
-template section to the top 32 ranked candidates while retaining the complete
-component proposal set for diagnostics; no proposal is automatically enabled
+scene frames and clearly labels them as manual-review-only. The analyzer limits
+template output to 32 ranked candidates; the HTML report shows at
+most 20 template rows per ROM. Component proposals remain available in JSON
+for diagnostics; no proposal is automatically enabled
 in the live renderer.
 
 The normal corpus command now produces the suggestions as part of every

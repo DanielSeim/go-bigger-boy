@@ -53,7 +53,9 @@ handling, and frame validation. It enables TCP's low-latency mode for the
 small serial request and response frames, avoiding packet coalescing delays
 while leaving the socket non-blocking.
 
-`gameboy::TcpSerialEndpoint` is the corresponding remote-edge adapter. It
+`gameboy::LinkSerialEndpoint` is the shared remote-edge adapter for TCP and
+Bluetooth packet channels; `gameboy::TcpSerialEndpoint` remains a source alias
+in the historical `tcp_serial_endpoint.hpp` header. It
 queues an outgoing bit during `prepare_bit`, holds the local internal clock at
 the next edge until a response arrives, and services incoming requests by
 clocking the local external port from `poll()`. This keeps socket latency out
@@ -78,7 +80,8 @@ digest are retransmitted until both peers confirm receipt, so one lost setup
 frame cannot leave connected peers waiting forever. Serial retry deadlines use
 monotonic time and adapt to measured round-trip time and jitter rather than
 depending on frontend poll frequency. A transient remote disconnect gets up
-to three bounded automatic reconnect attempts; after that, the failed state
+to three bounded automatic reconnect attempts when no serial transfer was
+interrupted; after that, the failed state
 remains visible for manual recovery.
 
 Diagnostics also expose a compact serial-boundary fingerprint captured when
@@ -110,9 +113,11 @@ the low-latency cadence as soon as a peer request is observed. This avoids a
 steady stream of Windows socket calls (and the resulting audio/frame jitter)
 without delaying an in-flight byte or clock handoff.
 
-Before serial traffic, endpoints send a five-part hello containing the local
-link-compatibility ID (two bytes per part) and the host/join role. A link
-becomes ready only after all parts arrive and the IDs match. The exact ROM
+Before serial traffic, endpoints send a five-part base hello containing the
+local link-compatibility ID (two bytes in each of four payload parts) and the
+host/join role. Known Pokémon profiles add an optional sixth part with
+generation, region, supported modes, and profile version. A link becomes ready
+after compatible hello negotiation and state-digest acknowledgement. The exact ROM
 fingerprint remains separate for save-state validation and diagnostics. The
 SDL frontend derives the ID from the loaded cartridge; unknown software falls
 back to its exact fingerprint and therefore remains strict. Endpoints created
@@ -123,8 +128,12 @@ Silver, and Crystal for transport discovery because Gen II's Time Capsule is a
 Gen I/Gen II trade path. The game still controls which room and operation are
 valid: a cross-generation trade must be initiated through Time Capsule, and
 the emulator does not claim that every cross-generation battle mode is valid.
-Japanese Gen I/II releases use a separate profile; unknown language or hacked
-ROMs remain exact-match only.
+Recognized Japanese Gen I/II headers use a separate profile. Recognition uses
+title prefixes and the destination byte (`0x14A`), not a verified retail-ROM
+hash list or language detector. Unrecognized titles remain exact-match only;
+a hack retaining a recognized header can inherit its family profile. The
+region type includes Korean, but cartridge inference currently emits only
+Japanese/Western profiles. See [compatibility limits](link_compatibility.md).
 
 The printer and test-ROM serial-output paths remain available through the
 `MemoryBus` adapter. A serial endpoint is deliberately not embedded in a save
@@ -322,8 +331,9 @@ the compatibility ID used for matching and the exact ROM fingerprint for
 operator diagnostics. Discovery is not authentication, and should only be
 enabled on a trusted LAN.
 
-Link tracing is opt-in. On desktop, add `link.Diagnostics = true` to the portable
-`settings.ini` beside the executable; on Android, enable **Write link
+Link tracing is opt-in. On desktop, add `link.Diagnostics = true` to
+`settings.ini` at the platform's
+[settings location](platforms.md#linux-desktop); on Android, enable **Write link
 diagnostics trace** in the in-game **Link settings** dialog. Normal users
 therefore get no diagnostic popup and no trace file. When enabled, the trace is
 reset for each local session. It begins with a `session_start` marker and ends
@@ -408,9 +418,10 @@ servicing the link or advancing the guest. Pokémon battle entry additionally
 emits `event=pokemon_battle` with the previous and current battle markers and
 the frame/time delta between transitions.
 
-WebRTC, Bluetooth, and USB transports can reuse the same packet and serial-edge
-seams; each should preserve the non-blocking poll boundary and add its own
-capability and security review before being exposed by a frontend.
+Bluetooth already uses these packet and serial-edge seams on Windows and
+Android. Linux and macOS do not implement the RFCOMM backend; use TCP there.
+Future WebRTC and USB transports should preserve the non-blocking poll boundary
+and receive capability and security review before frontend exposure.
 
 ## Headless integration harness
 
@@ -441,9 +452,12 @@ per player while each game is positioned at the same prompt, then add:
   --state2 /path/to/player2.gbbs
 ```
 
-The two state files must be made from the same ROM and should be captured
-before attaching the link. The harness still imports the supplied battery
-saves, so save-state loading does not overwrite the originals.
+The harness accepts one `--rom` for both cores, so it cannot qualify mixed-ROM
+or cross-generation Time Capsule pairs. The two state files must be made from
+that ROM and should be captured
+before attaching the link. Battery saves are imported first, then the full
+states are loaded; the states' embedded RAM determines the running parties
+when states are supplied. Neither operation writes back to the original files.
 
 A disconnected pre-link lobby state (localized map `0x29`, such as
 `player1_cable_club_disconnected.gbbs`) is valid for manually exercising the
@@ -582,8 +596,8 @@ To capture the same run for frame-by-frame analysis:
 ```
 
 The harness constructs cartridges from memory and imports each save, so the
-original `.sav` files remain unchanged. A nonzero exit status means that the
-TCP handshake could not be established or a supplied file was invalid.
+original `.sav` files remain unchanged. A nonzero exit status can indicate
+invalid inputs, transport setup failure, or a missing expected semantic result.
 The semantic failure code distinguishes unchanged party snapshots, an
 incomplete trade after the shared menu, and a battle that never started after
 both players reached that menu.

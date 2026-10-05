@@ -29,7 +29,11 @@ revisions support both native color games and GB compatibility mode.
 startup with the GBA detection registers. They share the CGB-E runtime baseline;
 they do not emulate native GBA games or claim full AGB hardware accuracy.
 The setting applies on the next
-ROM start/restart, not to an already running core. No download is required.
+ROM start/restart, not to an already running core. The persisted generic
+`StartupMode` IDs are `instant`, `replacement`, and `animated`, mapped to the
+core's corresponding `BootRomMode`. Retired `replacement-dmg` and
+`animated-dmg` values select instant startup without compatibility migration.
+No download is required.
 See [replacement firmware](../firmware/README.md) for the fast-start contract
 and limitations.
 
@@ -40,10 +44,19 @@ SGB1 or SGB2 and the directory containing your own firmware images. HLE remains
 the default.
 Changes apply when you next open a ROM; reset retains the running backend.
 Invalid images are reported rather than silently falling back to HLE.
-The CLI also accepts `--sgb-firmware DIRECTORY --sgb-model sgb2`
-after the ROM argument and overrides the saved choice for that invocation.
+The desktop executable also accepts
+`gbb path/to/game.gb --sgb-firmware DIRECTORY --sgb-model sgb2`
+and overrides the saved choice for that invocation (`sgb` selects SGB1;
+`sgb2` is the default when the model option is omitted). These options belong
+to `gbb`, not `gbb_cli`.
 This path keeps experimental saves separate and currently excludes link/debugger, voxel
-presentation and background rewind.
+presentation, cheats, input movies/TAS/sprite tools and background rewind.
+Whole-host snapshots use firmware/model-bound `GBBSHOST` v3 states, including
+the clocked LCD bridge. The latest clocked-bridge Linux measurements preserve
+exact audio/state pins but fail all four host-only headroom profiles; this
+backend remains unqualified for performance. Historical passing captures do
+not qualify the new bridge. See the
+[boot validation evidence](sgb-boot-validation.md#playback-baseline-evidence).
 
 On Windows, the running-game window uses a native menu bar instead of drawing
 a hamburger button over the Game Boy framebuffer. Its File, Emulation, View,
@@ -75,8 +88,10 @@ recording and `F6` again to stop and save it; press `F7` to replay the latest
 recording. A recording includes its starting emulator state, ROM fingerprint,
 and cycle-timestamped Game Boy button transitions, so replay starts from the
 same state and rejects a different ROM. The latest movie is stored as
-`replays/last-input.gbbmovie` in GBB's settings directory (beside the executable
-in the portable Windows build).
+`replays/last-input.gbbmovie` in GBB's per-user app data directory on all desktop
+platforms. Windows also loads `settings.ini` there; Linux/macOS load it from
+the installation location described in
+[platform storage](platforms.md#linux-desktop).
 
 An input movie is a binary `GBBMOV1` file. For reference, the following is an
 annotated, human-readable representation of a short sample recording (the

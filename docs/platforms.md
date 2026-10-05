@@ -1,7 +1,8 @@
 # Platform guides
 
-This guide covers the Linux, Android, and Web frontends, including packaging,
-local development builds, persistence, and platform-specific limitations.
+This guide covers native desktop storage/settings, Linux packaging, and the
+Android and Web frontends, including local builds and platform limitations.
+See [desktop tools](desktop.md) for Windows build commands.
 
 ## Linux desktop
 
@@ -30,8 +31,8 @@ Release builds for Linux are distributed as an x86_64 AppImage. Download it,
 make it executable, and launch it directly:
 
 ```sh
-chmod +x go-bigger-boy-*.AppImage
-./go-bigger-boy-*.AppImage
+chmod +x go-bigger-boy-linux-x64.AppImage
+./go-bigger-boy-linux-x64.AppImage
 ```
 
 Keyboard controls are arrows for the D-pad, X for A, Z for B, Enter for
@@ -43,12 +44,19 @@ between Grayscale, Classic green, Game Boy Pocket, Amber, and the automatic
 Game Boy Color compatibility palette,
 the configurable SaveState, LoadState, FastForward, and Rewind shortcuts, and
 F1 for help. Recent ROMs,
-window positions, and per-ROM quick saves are stored with the desktop data. On
-Windows, all desktop data (including saves, recent-ROM metadata, quick states,
-printer output, updater files, and settings) is kept beside `gbb.exe`, making
-the extracted folder portable. Linux and macOS continue to use SDL's per-user
-preferences directory. Desktop keyboard/gamepad bindings and the display palette
-are stored in the human-readable `settings.ini` at the data root. Each
+window positions, and per-ROM quick saves are stored with the desktop data.
+Windows, Linux, and macOS use SDL's per-user preferences directory
+(`SDL_GetPrefPath("Go Bigger Boy", "GBB")`) for app metadata, quick states,
+player-two link saves, printer output, movies, and voxel profiles. Ordinary
+cartridge `.sav`/`.rtc` files remain beside the ROM. Copying the executable
+folder alone does not move this data or the external ROM/save files.
+Desktop keyboard/gamepad bindings and the display palette are stored in
+`settings.ini`: in that per-user directory on Windows, at the installation prefix when
+the Linux executable is in `bin/` (otherwise beside the executable), and beside
+the `.app` bundle on macOS. This settings location is separate from the
+Linux/macOS per-user data directory. The Windows ZIP contains a default
+`settings.ini`, but current runtime settings are loaded from the per-user
+directory. Each
 Game Boy button accepts up to two space-separated keyboard keys (for example,
 `keyboard.B = Z Y`). Copy the file to another GBB installation to share the
 same setup. On Windows, the native Settings page is organized into General,
@@ -63,7 +71,8 @@ generates a complete default
 `settings.ini` at startup whenever it is missing and appends defaults for any
 recognized entries omitted from an existing file. Older `controls.txt` and
 `palette.txt` preferences migrate automatically when `settings.ini` is first
-created, and automatic updates preserve an existing portable file. On Android,
+created, and automatic updates preserve an existing packaged settings file;
+on Windows, the active per-user settings are separate from that package. On Android,
 tap the in-game menu button in its configured corner and choose
 `Display palette` to select and persist the same five palette options. The
 Android Settings page also provides touch-control size and opacity sliders;
@@ -89,9 +98,13 @@ individually beside or below the emulation screen. Positions are stored as
 normalized `touch.Portrait.*` and `touch.Landscape.*` coordinates.
 
 Desktop, Android and web expose a **Startup** selector: **Instant startup**
-remains the default; **GBB fast boot** runs the bundled, original DMG0/DMG/MGB/CGB/SGB/SGB2
-firmware without a download. The preference is saved as `boot.Startup` on
-desktop/Android and `gbb-startup-mode` in browser storage. It applies on the next
+remains the default; **GBB fast boot** runs the bundled, original DMG0/DMG/MGB,
+CGB/CGB0, AGB/AGB0 startup-compatibility and SGB/SGB2 firmware without a
+download. The preference is saved as `boot.Startup` on
+desktop/Android and `gbb-startup-mode` in browser storage. The stable IDs are
+`instant`, `replacement`, and `animated`; retired `replacement-dmg` and
+`animated-dmg` IDs and unknown values select instant startup without compatibility
+migration. It applies on the next
 ROM start or frontend restart, not while a core is running. DMG0, DMG, MGB (Pocket)
 and CGB use their respective firmware images; SGB/SGB2 run their header bootstrap.
 Automatic model selection is unchanged; a CGB-capable title automatically uses
@@ -165,7 +178,8 @@ depth and stronger per-layer volume so sprites read as compact 3D forms. Its fla
 framebuffer is batched as a textured plane to keep native detail responsive. Desktop and web
 provide camera controls; all voxel modes share profiles, layer ordering, and the
 optional framebuffer facade, and can be switched while a ROM is running.
-Android currently uses the configured profile defaults. `voxel_popup` (shown as “Voxel
+Android starts from the configured profile defaults and supports touch-drag
+orbiting when `touch.VoxelOrbit` is enabled. `voxel_popup` (shown as “Voxel
 pop-up book”) lays the framebuffer out as a horizontal page, raises the window
 layer above it, and renders OAM sprites plus substantial connected tile-layer
 shapes as upright, page-anchored cuboids. Small isolated texture/dither pixels
@@ -175,8 +189,9 @@ Unsupported frontends fall back to the regular 2D presentation.
 In the web build, drag the voxel canvas horizontally to orbit around the
 center axis and vertically to adjust the pitch. Angles are clamped to keep the
 scene readable; double-click (or double-tap where supported) resets the camera.
-Per-ROM depth and camera tuning can be supplied in `voxel-profiles.ini` beside
-`settings.ini`; use `[default]` and a hexadecimal ROM fingerprint section with
+Per-ROM depth and camera tuning can be supplied in `voxel-profiles.ini` in
+the app data directory (which also holds `settings.ini` on Windows/Android);
+use `[default]` and a hexadecimal ROM fingerprint section with
 `depth_scale`, `camera_pitch`, `camera_yaw`, `zoom`, `perspective`,
 `sprite_depth`, `lighting`, `background_depth_far`,
 `background_depth_near`, `background_transparent_depth`, `window_depth_far`,
@@ -192,11 +207,12 @@ sprite ordering (larger depth values are farther from the viewer). Set
 `framebuffer_facade=0` to inspect the fully voxelized mesh (the default); set it to `1` to draw the
 normal framebuffer as a front-facing reference facade. The default mesh camera is centered and
 slightly zoomed out so the scene remains inside the viewport. GBB creates this file with documented
-defaults on first startup, so it can be copied alongside a portable install.
+defaults on first startup, so it can be copied to another installation's app
+data directory.
 Set `background_debug_overlay=1` while tuning to draw candidate bounds and
 write accepted-object, candidate, vertex and index counts to the frontend
 diagnostic log.
-The supplied Super Mario Land dump (`0x7eafc0023b31d850`) receives a built-in
+The measured Super Mario Land ROM fingerprint (`0x7eafc0023b31d850`) receives a built-in
 profile tuned for its flat sky, layered platforms, and sparse foreground
 sprites; the profile is added to existing installations without overwriting
 user settings.
@@ -266,7 +282,8 @@ to use.
 
 ## Android build
 
-The Android project in `android/` uses SDL3's official Android AAR and the same
+The Android project in `android/` requires Android 7.0/API 24 or newer and
+packages `arm64-v8a` and `x86_64`. It uses SDL3's official Android AAR and the same
 C++ core/frontend as desktop. It currently supports the Android document
 picker, portrait and landscape multitouch controls, external gamepads, audio, rumble,
 battery saves, and optional camera permission. ROMs selected through Android's
@@ -291,8 +308,9 @@ scripts/bootstrap-android.sh
 scripts/build-android.sh debug
 ```
 
-Do not mix Windows Java or Gradle with a WSL build. The scripts detect that
-configuration and stop with an actionable error. A release build can be made
+Do not mix Windows Java or Gradle with a WSL build. The build script rejects
+Java executables under `/mnt/` and uses a repository-local Gradle cache
+(`GBB_GRADLE_USER_HOME` overrides it). A release build can be made
 with `scripts/build-android.sh release` after setting
 `GBB_ANDROID_KEYSTORE_FILE`, `GBB_ANDROID_KEYSTORE_PASSWORD`, and
 `GBB_ANDROID_KEY_PASSWORD`; the PKCS12 keystore must contain the `gbb` alias.
@@ -301,7 +319,11 @@ The wrapper can also be invoked directly from the Android directory with
 command prompt).
 
 The debug APK is written to
-`android/app/build/outputs/apk/debug/app-debug.apk`.
+`android/app/build/outputs/apk/debug/app-debug.apk`; its package is
+`com.danielseim.gbb.debug`, separate from the release app. The release helper
+builds both `android/app/build/outputs/apk/release/app-release.apk` and
+`android/app/build/outputs/bundle/release/app-release.aab`. `VERSION` supplies
+the version name and the numeric version code.
 The app opens on a native Android game library. Its recent cards are deduplicated
 by ROM fingerprint and show the cartridge title, Game Boy platform, inferred
 language, last-played time, and cached cover artwork. Entries can be removed
@@ -310,7 +332,8 @@ against a cached copy of Libretro's No-Intro metadata, which also provides the
 exact canonical artwork name. The separate Settings screen controls the
 display palette and whether artwork may be downloaded from Libretro's public
 thumbnail service; ROM contents are never sent to that service. Tapping the menu
-button in the upper-left returns to the library while preserving the running
+button in the configured top-left or top-right corner and choosing the library
+returns to it while preserving the running
 game. The library and settings screens use a native toolbar with explicit Back
 navigation; Back from Settings returns to the library, Back from a library
 opened over a running game resumes that game, and only the root library asks
@@ -319,7 +342,7 @@ provide a D-pad, A, B, Select, and Start; Bluetooth and USB gamepads continue
 to work through SDL. Android's Back button asks for confirmation before closing
 the emulator; Back from the library resumes a game underneath it.
 Game Boy Camera input follows the phone's physical
-orientation even though the emulator interface remains in landscape. The
+orientation independently of the SDL emulation window's display rotation. The
 `Android build` GitHub Actions workflow runs
 pull requests as an automatically debug-signed APK. Pushes to the repository
 use encrypted GitHub secrets to produce a consistently signed release APK and
@@ -347,8 +370,11 @@ adb shell chmod 755 /data/local/tmp/gbb-link-e2e
 adb shell /data/local/tmp/gbb-link-e2e
 ```
 
-The Android workflow performs this cross-compilation gate on every change. The
-test binary is intentionally not packaged into the user-facing APK.
+The Android workflow performs this cross-compilation gate on every change,
+but does not execute this binary on a device. Android does not register these
+cases with CTest; the `adb` commands above are a separate device qualification.
+The standalone test's API 21 target is not the app's API 24 minimum.
+The test binary is intentionally not packaged into the user-facing APK.
 
 ## Web build
 
@@ -375,8 +401,10 @@ transport (for example WebRTC or a relay-backed WebSocket) and a browser test
 runner are required before cross-device Web link testing can be meaningful.
 
 The repository bootstrap installs the pinned Emscripten 4.0.15 and SDL 3.4.2
-toolchains below the ignored `.cache/toolchains/` directory. Build and optionally
-serve the site with:
+toolchains below the ignored `.cache/toolchains/` directory and fetches external
+dependencies. The build helper uses `cmake --fresh`, requiring CMake 3.24 or
+newer, and rebuilds the Release `gameboy_web` target with tests disabled.
+Build and optionally serve the site with:
 
 ```sh
 scripts/bootstrap-web.sh
@@ -388,7 +416,9 @@ If Emscripten and SDL3 are already installed, activate Emscripten, set
 `SDL3_DIR` to the Emscripten SDL3 CMake package, and run
 `scripts/build-web.sh`; the bootstrap step may be skipped.
 
-The `Web build and Pages` workflow repeats this build on every push to `main`
-and deploys the result to GitHub Pages. Pull requests build the WebAssembly site
-without deploying it. The repository's Pages source must be set to **GitHub
+The `Web build and Pages` workflow builds on pushes to `main`, `v*` tags,
+pull requests, and manual dispatch. It runs browser and visual gates and
+uploads artifacts; only non-PR runs on `refs/heads/main` deploy to GitHub Pages.
+Tag builds supply the Web release artifact without deploying Pages.
+The repository's Pages source must be set to **GitHub
 Actions** before the first deployment.

@@ -6,6 +6,40 @@ or establish complete physical-hardware equivalence. Source and generated
 images are original GPL-3.0-or-later GBB code. Private inputs and captures remain
 in ignored directories and are not release assets.
 
+## Current test pins and provenance (audited 2026-10-05)
+
+The committed host uses `cold-sgb-v1` plus `clocked-pixel-v1` and saves
+`GBBSHOST` version 3; host versions 1/2 are rejected. Current private Donkey
+Kong v1.1 replays use 60 million host instructions, eleven inputs, three SOUND
+deliveries and two audible commands. These are implementation regression pins,
+not independently established hardware audio. The complete WAV hashes are:
+
+| Model | Native SNES, 32 kHz | Combined GB+SNES |
+| --- | --- | --- |
+| SGB1 | `1b4cc438b6aadcf0916912698fede5396386c6f2656b3c5853c71ca971260311` | 48 kHz: `9a9b1d035d4867a73927725498fb082ae7f9b57d7f9a6b6e05d66fe384cd8a59` |
+| SGB2 | `d9211313e26aa4c200d40df114b711a564ecd7418063747579bedbb0c21d096e` | 44.1 kHz: `f7b183e755d3f46f6d6438beda320798156bdde319a17aeb0aeac223ccfdc341` |
+
+Sources: [native title tests](../tests/sgb_host_local_title_tests.py),
+[combined/restore/scalar tests](../tests/sgb_host_combined_title_tests.py), and
+[serial benchmark](../scripts/benchmark_sgb_host.py). The benchmark additionally
+pins final GB-state hashes: SGB1 native `17273510614454273623`, combined
+`2188253438664865528`; SGB2 native `17670032470297762322`, combined
+`9371530888034411371`. The benchmark pins the initial battery save too.
+These suites explicitly supply private GB-side boot overrides; desktop playback
+instead uses the bundled bootstrap when no override exists. Desktop always
+mixes at 48 kHz, so its SGB2 output is not the 44.1 kHz diagnostic pin.
+Combined pins are Linux/GCC-specific; other compiler/architecture captures
+require the documented same-platform comparison.
+
+The latest bridge capture retains every prior production PCM sample and appends
+only endpoint frames; see [playback evidence](#playback-baseline-evidence).
+All four exact current WAV/state pins pass there, but all four Linux headroom
+profiles fail (p05 1.153–1.228x, worst 0.931–1.071x). Earlier Balanced Windows
+and awake Android measurements do not qualify the new bridge. No private,
+expensive or device tests were rerun for this documentation audit.
+See [runtime firmware requirements](sgb-host.md#experimental-desktop-playback)
+and [generic startup IDs](../firmware/README.md).
+
 ## Automated ROM-free contracts
 
 `gameboy_sgb_replacement_boot` exercises both models and both replacement
@@ -95,7 +129,12 @@ original-override title suite passed its exact audio hashes, including mid-strea
 save/restore, for both SGB models. Those observations predate the exact-timing
 refinement; current refinement results are recorded separately below.
 
-## Exact-timing refinement validation
+## Historical exact-timing refinement validation
+
+This capture milestone predates complete cold reset and the clocked LCD bridge.
+Its test counts, endpoint observations and passing results are archived evidence;
+current test pins are listed above. Earlier integration observations in the
+limits section likewise retain their stated pre-refinement scope.
 
 The refined bootstrap passed 46 original/replacement comparisons: twenty
 synthetic headers and local Tetris, Donkey Kong and Pokémon Blue cartridges,
@@ -148,6 +187,10 @@ Neither milestone establishes analog audio or complete physical-hardware
 equivalence.
 
 ## Whole-host cold-reset validation
+
+The reset contract here remains current. Capture hashes and test counts in this
+section record the pre-clocked-bridge milestone; later endpoint changes and
+current performance evidence are recorded under Clocked LCD bridge below.
 
 `SgbIcdGbSource` now uses the same complete SGB/SGB2 cold-power-on path as the
 standalone replacement boot, then installs the caller's GB-side image. Both

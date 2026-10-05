@@ -8,6 +8,24 @@ Its explicit combined-audio configuration now captures raw GB audio and
 area-resamples the two sources on the host timeline. Gains remain provisional;
 see the host document for buffering, snapshot and accuracy limitations.
 
+## Current scope and snapshot formats (audited 2026-10-05)
+
+Version 0.36.0 includes experimental desktop firmware playback; Android/web
+do not expose it and ordinary launches default to HLE. The bundled GB bootstrap
+does not supply the required private SNES program ROM or 64-byte SPC700 IPL;
+see [runtime inputs](sgb-host.md#experimental-desktop-playback).
+DSP (`GBBSDSP` + byte `1`) and APU (`GBBSAPU` + byte `1`) component formats
+remain version 1. Each signature/version pair is eight bytes in total.
+The complete host uses `GBBSHOST` version 3 and ordinary GB states use version
+42; neither component snapshot substitutes for coordinated host restoration.
+
+Isolated APU throughput and historical DSP/title comparisons below do not
+qualify the current clocked-pixel host. The latest host-only Linux capture
+fails all four headroom profiles despite exact PCM/state pins; see
+[current host evidence](sgb-host.md#current-evidence-status-audited-2026-10-05).
+Current title pins and cold-reset/LCD provenance are indexed in
+[boot validation](sgb-boot-validation.md#current-test-pins-and-provenance-audited-2026-10-05).
+
 GBB's validated DSP PCM renderer and 32-phase driver now live in
 `gameboy_core`: `gameboy::SnesDspPcmRenderer` and `gameboy::SnesDspClock`.
 The old diagnostic headers are compatibility aliases, so the synthetic
@@ -83,7 +101,7 @@ An empty pop returns false without altering the destination sample.
 Clocking and draining use fixed storage and do not allocate. State export is
 an allocating, off-audio-path operation. The engine is **single-threaded**:
 callers must coordinate bus writes, clocking, draining and state operations;
-it is not an audio-thread synchronization primitive. A future host must stop
+it is not an audio-thread synchronization primitive. An owning host must stop
 or drain this DSP together with its CPU scheduling when backpressure occurs.
 
 `write_dsp()` is for standalone callers; it writes the APU ports and updates
@@ -102,7 +120,7 @@ replace SNES CPU/SPC700 hardware reset sequencing.
 
 The component's `save_state()` returns a version-1 little-endian byte stream:
 
-- Eight-byte signature `GBBSDSP` followed by version byte `1`.
+- Seven-byte signature `GBBSDSP` followed by version byte `1` (eight bytes total).
 - Shared APU RAM, DSP registers, communication ports, timer state, supplied
   IPL bytes and overlay/selector flags. Observers and callback contexts are
   deliberately excluded.
@@ -126,7 +144,7 @@ This is structural validation, not a cryptographic integrity check.
 
 This is **not an application save state**: it does not include SPC700 or
 65C816 registers/in-flight instructions, ICD/GB scheduling or frontend audio
-queues. A future live host must coordinate these with this component snapshot
+queues. An owning live host must coordinate these with this component snapshot
 at a common boundary. The emulator's existing save-state format is unchanged.
 
 ## Verification
@@ -194,7 +212,7 @@ measures the real firmware/SOUND workload in isolation: no GB/SNES host CPU,
 future host commands, frontend, audio device or resampling. Measured ratios
 are reported, not used as a machine-dependent CI speed threshold.
 
-One local Release run, concurrent with the regression suite, measured SGB1
+One historical local Release run, concurrent with the regression suite, measured SGB1
 at 3.07×, 2.94× and 3.07× realtime, and SGB2 at 2.80×, 2.97× and 3.23×.
 Both produced 64,000 native stereo outputs per trial with repeatable hashes.
 These are host-specific isolated APU measurements, not end-to-end emulator

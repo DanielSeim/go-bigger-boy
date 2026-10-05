@@ -3,6 +3,23 @@
 Date: 2026-09-06
 ABI freeze update: 2026-09-05
 
+Status: archived audit and incremental progress record. The findings, line
+counts, test counts, build results, and “now”/“complete” statements below belong
+to the recorded passes; they are not a fresh validation of this checkout.
+Progress bullets preserve successive intermediate states and can supersede one
+another. Use [`architecture.md`](architecture.md) for the maintained overview.
+
+Local source review on 2026-10-05 confirms the static registry still contributes
+only the Game Boy factory (`src/core_contributors.cpp`). Scene snapshots retain
+Game Boy-shaped compatibility fields (`include/gbb/scene.hpp`). Native plugin
+loading and configured directory scans exist, but signed manifests and
+interactive trust prompts remain deferred. `src/plugin_discovery.cpp` applies
+identity/capability allowlists and the trust callback after native loading/query;
+`validate_core_contract` runs when `PluginLoader::create` creates a core. The
+Settings controls are Windows dashboard controls, not a cross-platform UI claim.
+No builds, CI runs, ROM captures, or device validation were repeated for this
+documentation review.
+
 ## Summary
 
 The project has a sound first abstraction in `gbb::EmulatorCore`, and the
@@ -175,7 +192,7 @@ is frozen against the settled core contract; future work may add signed trust,
 interactive trust prompts, and isolation based on the policy in
 `docs/plugin-security.md`.
 
-## Progress
+## Historical progress (successive implementation passes)
 
 The first guardrail pass is implemented:
 

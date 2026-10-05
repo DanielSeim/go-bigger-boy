@@ -6,6 +6,15 @@ the JOYP writes presented to the clean-room SGB adapter, their bus-cycle
 positions, decoded command packets, and checkpoints containing the SGB
 framebuffer hash, complete diagnostic state hash, and adapter counters.
 
+This JOYP/HLE trace is separate from firmware-host boot/APU/LCD timelines and
+from save-state formats. The text trace format remains version 1. A matching
+replay proves the recorded GBB contract,
+not SNES audio fidelity, full host restoration or physical-hardware parity.
+Version 0.36.0 desktop firmware playback is an explicit experimental backend;
+ordinary launches default to HLE and Android/web do not expose that backend.
+See [runtime requirements and limits](sgb-host.md#experimental-desktop-playback)
+and [current boot/test provenance](sgb-boot-validation.md#current-test-pins-and-provenance-audited-2026-10-05).
+
 `gameboy::SgbTrace::Recorder` is used by tests and diagnostic frontends:
 
 1. Construct it with the source emulator's ROM fingerprint and hardware model.
@@ -54,9 +63,11 @@ reports the first framebuffer, state, diagnostic, or decoded-command mismatch.
 The parser and replay path have bounded write, checkpoint, line, and file sizes;
 malformed traces are rejected before they can allocate unbounded storage.
 
-The trace stores a ROM fingerprint, not the ROM itself. This keeps diagnostic
-artifacts suitable for sharing while requiring the investigator to provide a
-legally obtained copy of the matching cartridge. The format is intentionally
+The trace stores a ROM fingerprint, not the ROM itself, but JOYP packet payloads
+can contain cartridge-derived data, including boot header packets. Review
+captures before sharing; private firmware-host snapshots, graphics and PCM
+remain private. Replay requires a legally obtained copy of the matching
+cartridge. The format is intentionally
 text-based so a failing packet sequence can be inspected in a code review.
 To count the decoded commands across one or more opt-in captures, run
 `python3 scripts/report_sgb_commands.py capture-a.trace capture-b.trace`.

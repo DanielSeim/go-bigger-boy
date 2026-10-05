@@ -44,13 +44,17 @@ or unadvertised formats before a frontend consumes the snapshot.
 can provide scene data advertise `CoreCapability::scene_layers`. The Game Boy
 adapter currently exposes both
 32x32 background/window maps, both CGB VRAM banks, CGB palette RAM, and decoded
-OAM coordinates. No renderer-specific or Game Boy-specific types cross the
-frontend boundary.
+OAM coordinates and visible tile provenance. No PPU implementation types cross
+the frontend boundary, but the legacy scene fields and `SceneVisibleTileCell`
+still encode Game Boy register, OAM, and 160x144 viewport conventions. Opaque
+layers are the extension path for other cores; the current voxel consumers are
+not generic renderers for those layers.
 
 Scene snapshots are refreshed on request and are read-only; they do not alter
 emulation state or save-state data. The SDL voxel renderer consumes this API
 to build a perspective mesh and submits it through `SDL_RenderGeometry`, which
-uses the active D3D/OpenGL/Metal/Vulkan backend where available. Per-ROM depth
+uses the active SDL renderer backend (including the software backend). This is
+not a separate Vulkan or SDL GPU pipeline. Per-ROM depth
 profiles are loaded by the frontend from `voxel-profiles.ini`, leaving the core
 independent of presentation tuning. The native Windows dashboard exposes the
 active ROM fingerprint and profile fields, and writes only that ROM's section
@@ -110,7 +114,7 @@ negotiation.
 1. Add an independent `gba_core` library with no SDL, Android, or browser code.
 2. Implement an `EmulatorCore` adapter and a conservative GBA ROM probe.
 3. Register its `CoreFactory` in the application registry and link the target.
-4. Describe 240x160 video, GBA timing/audio, and the additional X/Y/L/R inputs
+4. Describe 240x160 video, GBA timing/audio, and the additional L/R inputs
    in its `CoreDescriptor`.
 5. Add adapter contract tests, persistence/state tests, and conformance ROMs.
 6. Enable only the tools represented by the adapter's capability mask.
@@ -127,15 +131,24 @@ tables; exporting `EmulatorCore` directly would make STL and compiler-runtime
 details part of the binary contract. The approved v1.0 contract, fixture, and
 loader limits are documented in [`plugin-abi.md`](plugin-abi.md) and its
 [`freeze record`](plugin-abi-freeze.md). Explicit settings-controlled desktop
-discovery is now implemented by `PluginCatalog`; automatic loading remains
-disabled by default, and signed/trusted plugin policy is still required before
-broad enablement.
+discovery is implemented by `PluginCatalog`: it scans only configured files or
+directories when enabled. Discovery is disabled by default; identity and
+capability policies gate registry admission after the library has executed its
+initialization/query code. Signed manifests and interactive trust prompts remain
+proposals, not implemented protection. Native Settings controls are in the
+Windows dashboard; other native desktop builds can use `settings.ini`.
 
 Save-state framing and checksum validation are isolated from hardware field
 serialization. CPU, cartridge, joypad, timer, PPU, and APU fields are delegated
 through private codec boundaries, so changes to those state groups do not
 require editing the public emulator entry points. The complete bus payload,
 including version-gated migrations, is delegated to `SaveStateBusCodec`.
+
+The post-boot GB save-state container is currently version 42
+(`src/save_state_container.hpp`). The experimental SGB host uses a separate
+`GBBSHOST` v3 container (`src/sgb_host.cpp`), not that GB state format. Its native
+desktop SNES audio path is implemented; this does not establish complete SGB
+host compatibility or platform parity.
 
 ## Migration status
 

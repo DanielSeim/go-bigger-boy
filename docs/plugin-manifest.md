@@ -5,6 +5,12 @@ plug-in ABI. It is a design contract, not an implementation claim: loading
 remains opt-in and unsigned libraries remain subject to the current identity,
 capability, and host trust policies.
 
+Status checked against local source on 2026-10-05: no manifest parser, Ed25519
+verification, release trust store, revocation handling, or signed-manifest mode
+is implemented. The rejection and verification rules below are proposed
+requirements. Current `PluginCatalog` policy runs after library loading/query;
+the proposed pre-load signature/digest checks would be a new boundary.
+
 ## Canonical payload
 
 The signed payload is UTF-8 text with LF line endings and no trailing blank
@@ -12,14 +18,14 @@ line. Fields are sorted lexicographically by name and encoded as one
 `name=value` record per line:
 
 ```text
-format=1
-core_id=example-core
 abi_major=1
 abi_minor=0
-sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 capabilities=persistent_memory,rtc
+core_id=example-core
+format=1
 platforms=linux-x86_64,windows-x86_64
 publisher_key_id=example-release-2026
+sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 ```
 
 `sha256` is the lowercase digest of the exact native library bytes. Capability
@@ -47,6 +53,10 @@ The signature record is never included in the signed payload.
   until their stated retirement or revocation time.
 - Missing trust-store entries, revoked keys, expired manifests, signature
   failures, and digest mismatches all fail closed.
+
+Expiry and revocation record schemas, time handling, and the stable platform
+vocabulary still need specification. The example payload has no expiry field;
+the rules above must not be read as a complete executable format.
 
 The trust store must be delivered through the signed application release or a
 separately authenticated update channel. A plug-in must never be allowed to

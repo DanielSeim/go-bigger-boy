@@ -1,5 +1,14 @@
 # SameBoy revision matrix review
 
+Status: archived review of the pinned capture/probe run. The take counts,
+signatures, and measured boundaries below preserve that run's observations;
+they were not recaptured during the local documentation review on 2026-10-05.
+The six existing DMG/CGB startup waveform references are separate from this
+matrix; “no external waveform files were added” below refers specifically to
+this revision-matrix result. Local source still contains the focused contracts
+in `tests/apu_hardware_contract_tests.cpp`, including
+`test_cgb_revision_boundary_fixtures`; this is not a new external validation.
+
 This review uses the immutable SameBoy v1.0.3 commit recorded in
 [`sameboy-reference-pin.json`](sameboy-reference-pin.json):
 `208ba4afabffab9edde416f2dbb8ae459e34adb8`.

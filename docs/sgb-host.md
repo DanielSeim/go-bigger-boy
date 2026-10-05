@@ -11,6 +11,31 @@ The existing diagnostic CPU/ICD headers are compatibility adapters to the same
 core implementation. Legacy timing profiles and tests remain available;
 moving the code does not make it a complete SNES emulator.
 
+## Current evidence status (audited 2026-10-05)
+
+Version 0.36.0 ships the desktop opt-in adapter; HLE remains the default and
+Android/web do not expose firmware playback. Bundled startup and this runtime
+backend are separate selections; see [firmware startup](../firmware/README.md).
+The implementation uses complete `cold-sgb-v1` reset and a `clocked-pixel-v1`
+LCD bridge. Current exact WAV/state pins are shared by the local title tests
+and serial benchmark; see
+[test pins and provenance](sgb-boot-validation.md#current-test-pins-and-provenance-audited-2026-10-05).
+`GBBSHOST` version 3 is the current host snapshot; the desktop wrapper is
+`GBBFW001`, and the nested ordinary GB state is version 42. Older host
+versions 1/2 cannot restore pending LCD events and are rejected.
+
+The latest recorded clocked-bridge Release/IPO Linux host-only measurement
+preserves all four prior production PCM prefixes with appended endpoints and
+passes current complete WAV/final-state pins, but fails all four 1.40x p05 /
+1.20x worst-window gates (p05 1.153–1.228x, worst 0.931–1.071x). See
+[bridge playback evidence](sgb-boot-validation.md#playback-baseline-evidence)
+for conditions and the full table. Current bridge headroom is unqualified.
+The historical Balanced Windows qualification, awake-tablet soaks and native
+Windows frontend captures below predate this bridge and do not qualify it.
+There is no same-host pre/post bridge A/B in that run, so its cost cannot be
+isolated from host-capacity variation. No new benchmark/device run was made
+for this source/documentation audit.
+
 ## Inputs and scheduling
 
 The caller supplies `SgbHostConfig`: program ROM bytes, game ROM bytes, GB boot
@@ -145,7 +170,9 @@ events and latency resets. Empty-queue events are not hardware underrun
 interrupts. Use isolated preferences for automated tests. A virtual display or
 dummy audio driver validates plumbing, not physical display/audio quality.
 
-### Native Windows device qualification
+<a id="native-windows-device-qualification"></a>
+
+### Native Windows device qualification procedure and historical captures
 
 Build the Release SDL frontend, then run the opt-in host against caller-owned
 images with the reproducible runner. It refuses an existing output directory,
@@ -200,8 +227,10 @@ restoration. These intentionally interrupted traces are **not** steady-state
 performance evidence. Physical listening remains a separate human check.
 `GBB_FRONTEND_TEST_DIRECTORY` selects a separate frontend preference directory
 only for a bounded smoke launch; on Windows this also isolates `settings.ini`.
-The Windows runner sets it automatically. Linux portable settings still live
-beside the executable; use a separate executable directory for Linux smoke tests.
+The Windows runner sets it automatically. On Linux, settings remain at the
+installation prefix for a `bin/` executable, otherwise beside the executable;
+use an isolated installation location for Linux smoke tests. See
+[platform storage](platforms.md#linux-desktop).
 
 Local native MSVC Release qualification on 2026-10-04 used Donkey Kong (JU)
 v1.1, the same initial battery RAM, Windows Balanced, Direct3D11 and WASAPI.
@@ -328,7 +357,7 @@ The runner also reports process CPU time on POSIX systems (null where not
 available), separating execution cost from wall time lost to contention. A
 CPU-time ratio above unity does not override a wall-time realtime failure.
 
-Before combined audio was added, the local Release 60-million-instruction runs measured 1.19×
+Historical pre-combined-audio captures: the local Release 60-million-instruction runs measured 1.19×
 realtime for SGB1 and 1.24× for SGB2. Runs restoring the complete host 391 times
 measured 1.02× and 1.15× respectively. All four complete WAVs matched their
 established model-specific baselines byte for byte. This is limited headroom:
@@ -339,8 +368,8 @@ models for 60 million instructions at 48/44.1 kHz, comparing normal output with
 whole-host restoration and 257-sample consumer chunks. It requires unchanged
 native WAV baselines and processor/SOUND counters, exact rational output counts,
 audible GB capture and no clipping at default gains. It checks continuity and
-integration, not fidelity to real hardware. Combined WAV hashes also pin the
-initial uncached implementation so later optimizations must preserve every
+integration, not fidelity to real hardware. Combined WAV hashes pin the current
+cold-reset/clocked-pixel baseline so later optimizations must preserve every
 sample, independently of the save/restore comparison. Captures remain private temporary
 files and are removed by the test.
 
@@ -412,7 +441,7 @@ and border pixels and full-width oscillator conversions.
 ### Repeatable playback headroom gate
 
 Run benchmarks **serially**, with compilation and other test jobs finished.
-The original private PCM baselines are checked before accepting performance:
+The current private PCM/state pins are checked before accepting performance:
 
 ```sh
 python3 scripts/benchmark_sgb_host.py \
@@ -520,16 +549,23 @@ configuration; constructor limits therefore remain valid after restoration.
 
 These are **host-only** headroom thresholds. Frontend rendering, audio-device
 latency, browser execution and Android thermal behavior need separate device
-measurement before enabling firmware playback in shipping frontends.
+measurement. The shipped desktop backend remains experimental and opt-in;
+historical frontend checks do not qualify the current clocked bridge.
 
-### Measured headroom and build profile
+### Historical measured headroom and build profile (before clocked-pixel-v1)
+
+The captures and optimization progression in this section, including the
+accepted target and Balanced qualification below, predate the clocked LCD
+bridge. Their original hashes, thresholds, passes and failures are retained;
+they do not qualify current bridge performance. See the current evidence
+summary above for the later failing measurement.
 
 The 60-million-instruction local captures below use the same initial save,
 provisional gains and 48/44.1 kHz combined rates above. Ratios compare emulated
 time to wall time; 1.5x means the host consumes at most about two thirds of the
 realtime wall-time budget. Each row contains 90 post-warmup one-second windows:
 
-The latest desktop captures use the unchanged **Silent** Windows power profile
+The desktop captures at this historical milestone use the unchanged **Silent** Windows power profile
 on an i7-12650H (Linux runs under WSL2). No governor, affinity or power-plan
 changes, relaxed thresholds, sample/frame skipping or calibration scaling are
 used. Passing captures below are not a repeatability qualification: subsequent
@@ -659,7 +695,7 @@ the failing desktop series under the original 1.50x target. A later direct
 host/APU binding experiment preserved exact output but showed only small,
 mixed timing gains; it was removed in favor of the verified implementation.
 
-### Accepted performance target (2026-10-03)
+### Accepted performance target and historical qualification (2026-10-03)
 
 The practical default p05 target is now **1.40x**, with the **1.20x worst-window**
 floor unchanged. The historical results above used the stricter 1.50x target;

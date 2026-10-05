@@ -5,6 +5,35 @@ It does **not** contain Nintendo boot ROMs, disassemblies, logos, sound assets,
 SNES program ROMs, or SPC700 IPL dumps. Sources and generated images use the
 repository's GPL-3.0-or-later license.
 
+## Current startup and runtime scope (audited 2026-10-05)
+
+Bundled fast/animated startup covers DMG0, DMG, MGB, CGB-0/later CGB,
+AGB-0/AGB startup compatibility, SGB and SGB2. Core API names are
+`BootRomMode::replacement` and `BootRomMode::animated`; old DMG-specific aliases
+do not exist. Frontend setting IDs are `instant` (default), `replacement`, and
+`animated`; unknown/old IDs fall back to instant. SGB's two preferences run
+the same GB-side header bootstrap without a DMG splash. Automatic selection
+never chooses AGB profiles.
+
+Bundled startup needs no external boot firmware. Version 0.36.0's separate
+experimental desktop SGB audio backend requires a caller-owned SGB1/SGB2
+SNES program ROM and 64-byte SPC700 IPL; an optional 256-byte GB boot override
+replaces the bundled bootstrap. HLE remains the ordinary-launch default;
+Android/web do not expose this backend. See
+[runtime requirements](../docs/sgb-host.md#experimental-desktop-playback).
+
+Ordinary GB save states are version 42 (mapped image from version 40, STAT
+acknowledgment from 41, presentation state from 42). Whole firmware-host
+snapshots instead use `GBBSHOST` version 3 inside the desktop `GBBFW001`
+wrapper; host versions 1/2 are rejected. DSP/APU components remain version 1.
+Historical validation counts/hashes in the linked research documents retain
+their capture scope and are not new audit runs. Current SGB
+[test pins](../docs/sgb-boot-validation.md#current-test-pins-and-provenance-audited-2026-10-05)
+include `cold-sgb-v1` and `clocked-pixel-v1`; the new bridge preserves previous
+production PCM prefixes with appended endpoints but fails all four measured
+Linux headroom profiles. Earlier Balanced Windows/Android measurements do not
+qualify it; see [performance status](../docs/sgb-host.md#current-evidence-status-audited-2026-10-05).
+
 ## SGB/SGB2 Game Boy-side bootstrap
 
 `gameboy/sgb.asm` builds original 256-byte SGB and SGB2 images. Both clear VRAM,
@@ -225,7 +254,8 @@ cycle-exact equivalence to physical Pocket cold startup or its original ROM.
 ### Rebuild and verify
 
 Normal builds consume the checked-in fast and animated `*_boot_image.hpp`
-images for DMG0, DMG, MGB and CGB; they do not
+images for DMG0, DMG, MGB, CGB/AGB revisions, and the shared fast/animated
+SGB/SGB2 bootstrap; they do not
 require RGBDS, Python, downloaded ROMs, or network access. With RGBDS (`rgbasm`
 and `rgblink`; tested with 1.0.1) and Python installed:
 
@@ -242,7 +272,8 @@ python3 scripts/build_dmg_boot_rom.py --animated --check
 python3 scripts/build_dmg_boot_rom.py --model mgb --animated --check
 ```
 
-The generator assembles only `dmg.asm`, verifies the 256-byte size and final
+For DMG/MGB variants, the generator assembles `dmg.asm`; CGB/AGB variants use
+`cgb.asm`, and SGB variants use `sgb.asm`. It verifies the 256-byte size and final
 unmap instruction, and records source and image SHA-256 hashes in the generated header.
 It refuses to overwrite an existing `--output` image. CTest checks source/image
 reproducibility when RGBDS and Python are available, and checks source/image
@@ -357,6 +388,6 @@ In the fast replacement mode there is a DAC/mixer power-on DC transient during
 boot, not a chime. That mode uses no host mute or private post-boot state
 injection. The optional animated mode replaces only the returned pre-handoff
 PCM with its separately synthesized chime, without changing the game APU state.
-Broader title-level and independent-hardware validation and model-specific boot
-implementations remain future milestones. SNES-side
+Broader title-level and independent-hardware validation remain future
+milestones for the bundled model-specific boot implementations. SNES-side
 SGB1/SGB2 program ROM and SPC700 IPL replacements are not implemented here yet.

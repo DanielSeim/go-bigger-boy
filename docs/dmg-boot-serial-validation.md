@@ -5,6 +5,15 @@ execution of the original boot on GBB's unchanged cold baseline. This is a
 same-core contract, **not** proof of physical reset/serial-clock equivalence.
 The original cold path's four-clock DIV discrepancy remains unresolved.
 
+This is the current DMG fast-firmware revision; the dated title captures and
+suite totals below are historical validation, not tests rerun for this audit.
+Ordinary GB states remain version 42. The serial cache fix changed the writer's
+values in existing fields without a format bump; it cannot repair already
+lost bits in old saves. Host `GBBSHOST` version 3 is a separate container.
+See [current startup/state summary](dmg-boot-validation.md#current-contract-and-historical-evidence-audited-2026-10-05)
+and [firmware](../firmware/README.md) for generic `replacement` / `animated`
+names and IDs, bundled models and the default instant path.
+
 ## Findings and correction
 
 Before the change, replacement handoff phase was 392 of 512 T-cycles; the cold
@@ -86,7 +95,7 @@ checks pass. Exit 1 records a mismatch; exit 2 indicates invalid input or a
 tool failure. Neither a pass nor the phase correction resolves hardware reset
 provenance or validates a Pokémon trading/battle session.
 
-Local checks on 2026-10-04 pass for Pokémon Blue (UE), Super Mario Land v1.1,
+Historical local checks on 2026-10-04 pass for Pokémon Blue (UE), Super Mario Land v1.1,
 Tetris v1.0 and Donkey Kong (JU) v1.1: phase 452, first standalone edge at 60
 clocks, completion at 3,644 clocks. Every bit, interrupt and linked case matches.
 

@@ -2,6 +2,40 @@
 
 ## [Unreleased]
 
+### Original replacement startup firmware
+
+- Add bundled, independently written cold-start firmware for DMG, DMG0,
+  Game Boy Pocket, CGB/CGB0, AGB/AGB0 startup-compatibility profiles, SGB and
+  SGB2. Instant post-boot startup remains the default; no external boot image
+  is required for these modes.
+- Add original animated GBB lettering and an APU-synthesized two-note chime
+  with monochrome scrolling or color fading. A/Start hides the presentation,
+  not the firmware wait. SGB/SGB2 run their header bootstrap without that intro.
+- Expose hardware-neutral `replacement` and `animated` startup IDs and core
+  API names. Remove DMG-specific mode aliases; old setting IDs fall back to
+  instant startup without migration.
+- Add execution-only private-reference validation and ROM-free boot, handoff,
+  reset, state, audio and serial contracts. Correct DMG startup LCD/STAT and
+  serial timing and refine SGB header-transfer/peripheral handoff timing.
+- Keep AGB profiles explicitly limited to GB/GBC startup compatibility on the
+  CGB-E runtime baseline; this is not native GBA emulation or full AGB accuracy.
+
+### SGB firmware host correctness
+
+- Correct complete cold reset and restore destination-owned audio callbacks.
+- Clock raw ICD LCD pixel and physical-line availability at PPU emission
+  boundaries instead of publishing whole rows at the next scanline. Preserve
+  initialized ring RAM on reuse/LCD restart and queue instruction-tail output
+  until its host rendezvous. Concurrent producer reads remain an explicitly
+  unqualified deterministic approximation.
+- Add LCD timing observations, transfer-fault context and boundary contracts.
+  Experimental whole-host snapshots advance to `GBBSHOST` version 3; previous
+  host containers are rejected, while ordinary GB save-state format remains
+  separate.
+- Validate exact native/restored/scalar playback and production PCM-prefix
+  parity. Record failed clocked-bridge headroom measurements without relaxing
+  thresholds or reducing output quality; performance qualification remains open.
+
 ## [0.36.0] - 2026-10-04
 
 ### Experimental Super Game Boy firmware playback

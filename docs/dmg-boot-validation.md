@@ -6,6 +6,32 @@ This tool compares two CPU-executed
 cold starts on the same GBB core; it is not an independent emulator or a claim
 of complete hardware equivalence.
 
+## Current contract and historical evidence (audited 2026-10-05)
+
+DMG fast firmware is revision 4: DIV=`ABC8`, internal LCD line 153 dot 396,
+quiet CH1 envelope zero, revision-3 inherited APU alignment and standalone
+serial phase 452. The original cold path's four-clock DIV discrepancy and
+resampler phase difference remain open. Cartridge audio and serial claims have
+separate gates; see [audio](dmg-boot-audio-validation.md) and
+[serial](dmg-boot-serial-validation.md).
+
+The current core names are `BootRomMode::replacement` and
+`BootRomMode::animated`, with no old DMG-specific aliases. Frontend IDs are
+`instant` (default), `replacement`, and `animated`; unknown/old IDs fall back
+to instant. Bundled images cover DMG0, DMG, MGB, CGB/AGB revisions and SGB/SGB2;
+see [firmware scope and startup](../firmware/README.md).
+Ordinary GB snapshots are version 42: version 40 added mapped firmware,
+41 added STAT acknowledgment and 42 added animation state. Older supported
+versions retain their compatibility paths. Firmware-host `GBBSHOST` version
+3 is a separate format, not a revision of these ordinary states.
+
+Revision findings and test totals below are historical captures, not a fresh
+full-suite result or necessarily current executable endpoints. The documented
+DMG acknowledgment/first-line IF corrections resolved the reported STAT race;
+broader CGB conformance and physical reset equivalence remain unproven.
+This audit verified implementation/test definitions without rerunning private,
+expensive or device tests.
+
 ## Running the local comparison
 
 Build the test-only probe with core tests enabled:
@@ -65,7 +91,7 @@ Followup CPU state, framebuffer hashes and memory hashes are observational: diff
 and phase can affect title execution, so followup divergence is not suppressed
 or interpreted automatically as a cartridge failure.
 
-## Revision 1 findings (2026-10-04)
+## Historical revision 1 findings (2026-10-04)
 
 Using the locally supplied original DMG image, SHA-256
 `cf053eccb4ccafff9e67339d4e78e98dce7d1ed59be819d2a1ba2232c6fce1c7`,
@@ -106,7 +132,7 @@ The initial twelve-fixture check passed eleven cases. The previously failing
 `lycint152_lyc153irq_late_retrigger_2` acknowledgment race is now fixed; the
 expanded check and its remaining limitations are recorded below.
 
-## STAT acknowledgment regression (2026-10-04)
+## STAT acknowledgment regression: historical validation (2026-10-04)
 
 The standalone DMG/MGB CPU now retains a STAT acknowledgment phase across
 vector entry and the first vector opcode fetch. An overlapping STAT edge is
@@ -211,7 +237,7 @@ The final optimized 165-entry CTest run passes 162 entries with three
 network-dependent skips and no failures, including the local SGB combined-title
 and audio regressions. Skipped network tests are not reported as passing.
 
-## Revision 2: timer and quiet-audio handoff (2026-10-04)
+## Historical revision 2: timer and quiet-audio handoff (2026-10-04)
 
 The firmware now establishes a hardware-test-backed **fast-start** contract:
 raw divider `ABC8`, visible LY=0 / STAT=`85`, internal LCD line 153 dot 396,
@@ -288,11 +314,15 @@ unchanged cold reference and fixes stale external shift-register saves; see
 production post-boot phase and attached cable policy are unchanged.
 
 The replacement remains opt-in. Cold reset provenance, broader title-level
-sound comparisons, and model-specific MGB/CGB implementations remain separate
-gates. The outstanding STAT interrupt-clear/retrigger race above is unchanged.
+sound comparisons and independent model-specific hardware validation remain
+separate gates. MGB/CGB replacements are now bundled; their existence does not
+establish original-firmware equivalence. The DMG STAT acknowledgment and
+first-line IF corrections above resolve the previously reported race; the
+historical CGB-C 19/63 result still does not establish CGB conformance.
 Do not copy original code/assets or force private snapshots to hide these
 differences. Logo-free homebrew must continue to boot, and no external firmware
-becomes a release dependency. SGB's coupled host timing and audio are unchanged.
+becomes a dependency of bundled startup. The later coupled SGB cold-reset/LCD
+work has its own [validation and current pins](sgb-boot-validation.md).
 
 The probe and comparator's own tests require only original synthetic fixtures:
 

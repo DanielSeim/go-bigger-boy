@@ -18,18 +18,23 @@
 </p>
 
 A portable C++17 Game Boy and Game Boy Color emulator core with desktop,
-Android, and Web frontends. The core is shared across those frontends; native
-Switch support is not currently part of the project.
+Android, and Web frontends. The core is shared across those frontends.
 
 ## Current status
 
 Go Bigger Boy is usable for development, testing, and many real Game Boy and
 Game Boy Color sessions, but it is not yet a claim of complete commercial-game
-compatibility. The checked-in release gate currently passes **168/168 cases**
-covering conformance ROMs, framebuffer comparisons, and core contracts. A full
-local CTest run currently reports **226/226 tests passing**, with three
-network-dependent tests intentionally skipped when no peer is available. See
-the [accuracy report](docs/accuracy.md) for the suite-by-suite breakdown.
+compatibility. The pinned release conformance baseline contains **168 cases**
+covering CPU/timer/mapper/audio ROMs and framebuffer comparisons; separate
+core, frontend and tooling contracts run alongside it. Test totals and skips
+depend on build options, available references, devices and network access, so
+they are not a permanent pass count. Use the linked CI runs for current
+results and the [accuracy report](docs/accuracy.md) for coverage and limits.
+
+The [version file](VERSION) records the checked-in version. The
+[Unreleased changelog](CHANGELOG.md#unreleased)
+describes subsequent main-branch changes; they are not automatically available
+in the latest tagged downloads.
 
 What works well:
 
@@ -53,6 +58,11 @@ What works well:
 - Cycle-timed OAM DMA with source-bus conflicts and an optional SDL3 desktop frontend
 - Four-channel DMG/CGB audio with a cycle-integrated high-pass mixer and 48 kHz
   stereo SDL3 playback
+- Optional bundled, original replacement boot firmware for DMG0, DMG, Pocket,
+  CGB/CGB0, AGB/AGB0 startup-compatibility profiles, SGB and SGB2; instant
+  post-boot startup remains the default. Animated modes use GBB lettering and
+  a synthesized chime on monochrome/color models; SGB uses its header bootstrap
+  without that intro ([firmware guide](firmware/README.md)).
 - ROM-only, MBC1/MBC1M, MBC2, MBC3 (including RTC), and MBC5 banking
 - Persistent battery-backed `.sav` RAM and MBC3 `.rtc` clock state
 - Table-driven CPU tests for opcode matrices, timing, flags, PC, stack, and memory effects
@@ -64,7 +74,7 @@ What works well:
 - Emscripten/WebAssembly browser frontend with IndexedDB cartridge saves
 - Android native library/settings dashboard with SDL3 gameplay and multitouch controls
 - Shared desktop/Android ROM catalog with fingerprint-deduplicated history and metadata
-- Portable desktop `settings.ini` with shareable palette, keyboard, and gamepad mappings
+- Shareable desktop `settings.ini` with palette, keyboard, and gamepad mappings
 - Game Boy Printer serial protocol with automatic desktop image export
 - Game Boy Camera cartridge support with live SDL3 webcam input on desktop
 - MBC5 rumble output through compatible SDL3 gamepads on desktop
@@ -78,10 +88,15 @@ Known limitations:
 
 - Compatibility is still incomplete, especially for untested commercial games
   and revision-specific hardware edge cases.
-- The Super Game Boy implementation is a deterministic clean-room adapter,
-  not a full SNES emulator or Nintendo BIOS replacement. The opt-in desktop
-  firmware host adds experimental SNES audio, but full SNES graphics/menu
+- The default Super Game Boy implementation is a deterministic clean-room
+  HLE adapter, not a full SNES emulator. Bundled replacement SGB/SGB2 boots
+  replace only the Game Boy-side bootstrap, not the SNES firmware or SPC IPL.
+  The opt-in desktop firmware host adds experimental SNES audio, but full SNES graphics/menu
   rendering and unresolved boot/fade/handshake accuracy remain limitations.
+- Firmware playback and voxel performance are not universal 60 FPS guarantees.
+  The latest clocked-ICD host benchmark failed the existing headroom gate;
+  historical device results do not qualify that newer path. See the
+  [current SGB measurement](docs/sgb-boot-validation.md#playback-baseline-evidence).
 - Web link sessions are not exposed yet. Desktop local/TCP link sessions work,
   but Pokémon can spend a long time in some trade or battle transition states;
   improving that wait-state/audio behavior is still planned.
@@ -136,11 +151,14 @@ Nintendo source code, proprietary SDK code, proprietary boot ROM, game ROM,
 artwork, audio, font, or other Nintendo-owned asset was copied into or
 distributed with this repository. Emulator behavior is implemented from
 publicly available technical research, independent testing, and independently
-written code and tests. The repository's diagnostic boot ROM is original
-project code and is not a Nintendo boot ROM.
+written code and tests. The repository's diagnostic and replacement boot
+firmware is original project code and is not Nintendo boot firmware.
 
-Users must provide their own legally obtained ROMs and save data. No Nintendo
-software or game content is bundled, downloaded, or distributed by this
+Users must provide their own legally obtained cartridge ROMs and save data;
+experimental desktop SGB firmware playback also requires user-owned SNES-side
+program and SPC IPL images. Ordinary HLE and bundled replacement startup do
+not require an external boot ROM. No Nintendo software or game content is
+bundled, downloaded, or distributed by this
 project. This notice describes the project's provenance and is not a guarantee
 of legal status in every jurisdiction; users are responsible for complying
 with applicable law.
@@ -176,9 +194,10 @@ covers Linux, Android, and Web builds.
 
 ## Documentation
 
+- [Documentation index: current guides, validation evidence, and research](docs/README.md)
 - [Accuracy and compatibility report](docs/accuracy.md)
 - [Build and testing](docs/build-and-testing.md)
-- [Original replacement firmware (experimental DMG cold-start)](firmware/README.md)
+- [Original replacement boot firmware and startup options](firmware/README.md)
 - [Desktop frontend and tools](docs/desktop.md)
 - [Platform guides](docs/platforms.md)
 - [Link cable diagnostics](docs/link-cable.md)
@@ -207,9 +226,10 @@ platform. The Windows and macOS archives include the SDL3 runtime. The Linux
 artifact is a self-contained AppImage with SDL3, the desktop launcher, and the
 icon. ROM files are never included in CI artifacts.
 
-Pushing a version tag such as `v0.35.21` waits for every platform build to pass,
-then automatically creates a GitHub Release with all four platform artifacts and
-generated release notes. Tagged builds derive their displayed version from the
+Pushing a version tag such as `vX.Y.Z` starts platform builds. The release
+workflow waits for matching Desktop, Android and Web/Pages runs to succeed,
+checks their packaged assets, then creates a GitHub Release with desktop,
+Android and web artifacts and generated release notes. Tagged builds derive their displayed version from the
 tag so the startup update comparison remains accurate. A failed platform build
 prevents the release.
 
@@ -227,8 +247,9 @@ warning for other users.
 ## Layout
 
 The project provides a system-neutral core registry so future systems such as
-Game Boy Advance can be added as separate cores. The browser and CLI already
-consume this boundary; the SDL shell migration is tracked explicitly. See the
+Game Boy Advance can be added as separate cores. The browser, CLI and SDL
+single-player path already consume this boundary; optional GB-specific tools
+and linked paths retain explicit adapter access. See the
 [multi-core architecture](docs/architecture.md) for the boundary and extension
 steps.
 

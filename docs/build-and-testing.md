@@ -12,6 +12,12 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
+Use CMake 3.20 or newer and a C++17 compiler. Tests and optional SDL3
+discovery are enabled by default; without SDL3 the native headless tools and
+core tests still build. Use `-DGAMEBOY_BUILD_SDL=OFF` for an explicit headless
+build. Multi-configuration generators need `cmake --build build --config
+Release` and `ctest --test-dir build -C Release --output-on-failure`.
+
 For playback measurements, use `-DCMAKE_BUILD_TYPE=Release`. Supported native
 release builds enable cross-module link-time optimization by default via
 `GAMEBOY_ENABLE_RELEASE_IPO`; unsupported compiler/linker combinations fall
@@ -31,9 +37,7 @@ audio samples, and FPS measurement windows:
 
 ```sh
 cmake -S . -B build-performance -DCMAKE_BUILD_TYPE=Release
-cmake --build build-performance --target \
-  gameboy_frame_rate_metrics_tests gameboy_emulation_performance_tests \
-  gameboy_sgb_performance_tests
+cmake --build build-performance --parallel
 ctest --test-dir build-performance -L performance --output-on-failure
 ```
 
@@ -85,8 +89,12 @@ for diagnostic runs. For on-device SGB/voxel timing and the Android gate, see
 
 The experimental firmware-driven SGB1/SGB2 host has a separate serial
 playback benchmark and exact-audio regression gate. It measures native and
-combined audio in one-second windows, requiring 1.5x p05 and 1.2x worst-window
-host headroom. See [bounded SGB host](sgb-host.md#repeatable-playback-headroom-gate)
+combined audio in one-second windows, requiring 1.4x p05 and 1.2x worst-window
+host headroom. The latest clocked-bridge Linux run fails all four headroom
+profiles despite exact audio/state output; historical passing runs do not
+qualify this implementation. See
+[boot validation evidence](sgb-boot-validation.md#playback-baseline-evidence)
+and [bounded SGB host](sgb-host.md#repeatable-playback-headroom-gate)
 for caller-owned firmware requirements and commands. This does not replace
 frontend FPS or on-device validation.
 
@@ -101,7 +109,7 @@ cmake -S . -B build-fuzz -G Ninja \
   -DCMAKE_CXX_COMPILER=clang++ \
   -DGAMEBOY_BUILD_SDL=OFF \
   -DGAMEBOY_BUILD_FUZZERS=ON
-cmake --build build-fuzz --target gameboy_parser_fuzzers
+cmake --build build-fuzz --target gameboy_parser_fuzzers gameboy_parser_review
 mkdir -p fuzz-corpus
 ./build-fuzz/gameboy_parser_fuzzers fuzz-corpus -max_total_time=60
 ```
@@ -131,11 +139,15 @@ in seeds with a dry run first, then explicitly approve the promotion:
 
 ```sh
 bash tests/fuzz/promote_corpus.sh fuzz-corpus-run tests/fuzz/corpus
+bash tests/fuzz/review_corpus.sh fuzz-corpus-run
+# Inspect fuzz-corpus-run.semantic-review.tsv before approving promotion.
 bash tests/fuzz/promote_corpus.sh fuzz-corpus-run tests/fuzz/corpus --approve
 ```
 
-The promotion command uses libFuzzer's merge mode in a temporary directory and
-never changes the reviewed corpus during the dry run.
+The dry run reports the required review step without minimizing or modifying
+the corpus. Approved promotion verifies the semantic review against the input
+hashes, uses libFuzzer's merge mode in a temporary directory, copies minimized
+inputs into the reviewed corpus, and updates its checksum manifest.
 
 The target feeds bounded inputs through settings, trace, save-state,
 link-packet, and SGB parsing boundaries. Fuzzing is deliberately separate from
@@ -146,8 +158,10 @@ free.
 
 The CI ThreadSanitizer job also builds the SDL frontend with SDL enabled,
 runs the display-independent contract tests, and performs a bounded dashboard
-window smoke under Xvfb. Longer interactive sessions remain part of the normal
-desktop build because they require a display server and user input.
+window and debugger smoke under Xvfb, driven by `tests/sdl_tsan_smoke.sh` with a
+synthetic ROM and checked debugger captures. Longer interactive sessions
+remain part of the normal desktop build because they require a display server
+and user input.
 
 To reproduce that check locally on a native Linux host with SDL3 installed:
 
@@ -162,16 +176,19 @@ TSAN_OPTIONS=halt_on_error=1:second_deadlock_stack=1 \
   ctest --test-dir build-tsan-sdl --output-on-failure --parallel 2
 ```
 
-For a local dashboard smoke, use an Xvfb display and stop after a short bounded
-run:
+For the bounded dashboard input smoke, install Xvfb and xdotool, then run:
 
 ```sh
 SDL_AUDIODRIVER=dummy SDL_VIDEODRIVER=x11 WAYLAND_DISPLAY= \
   SDL_RENDER_DRIVER=software \
   TSAN_OPTIONS=halt_on_error=1 \
-  timeout --signal=INT --kill-after=5s 12s \
-  xvfb-run -a ./build-tsan-sdl/gbb
+  bash tests/sdl_tsan_smoke.sh ./build-tsan-sdl/gbb
 ```
+
+Pass a synthetic ROM path as the second argument to exercise debugger input;
+CI checks the resulting captures with `tests/check_desktop_debugger_captures.py`.
+The helper retains logs under `tsan-gui-artifacts/` and interprets its bounded
+timeout. A raw `timeout` command alone is not a clean-shutdown assertion.
 
 The Web frontend has a browser-level smoke that loads the real WebAssembly
 bundle, changes the persisted display/audio settings, reloads the page, and
@@ -179,11 +196,19 @@ opens a small synthetic ROM. CI runs it with headless Chromium. With Node.js
 and Playwright available locally:
 
 ```sh
-python3 -m http.server 8765 --directory build-web/web
-npx --yes @playwright/test@1.52.0 install chromium
-npx --yes @playwright/test@1.52.0 test \
+# In one terminal; leave this server running while the tests execute.
+python3 -m http.server 8765 --bind 127.0.0.1 --directory build-web/web
+# In another terminal, from the repository root:
+npm install --no-save --no-package-lock @playwright/test@1.52.0
+npx playwright install chromium
+npx playwright test \
   --config=tests/web/playwright.config.mjs tests/web/frontend.spec.mjs
 ```
+
+Build the bundle first with `scripts/build-web.sh`. Set `GBB_WEB_BASE_URL`
+to test a different server and `GBB_WEB_CAPTURE_DIR` to retain voxel PNGs.
+These setup commands can download packages and browsers; use an existing local
+installation for an offline run. CI also applies the Web visual regression gate.
 
 Android UI coverage runs the same library-to-settings flow through Espresso on
 an emulator. The workflow invokes `connectedDebugAndroidTest`; locally use:
@@ -227,22 +252,26 @@ GBMicrotest's HRAM result protocol (`FF80`/`FF81`/`FF82`) is available through
 opcode via `--protocol mooneye-wilbertpol`. Use `--protocol mooneye`,
 `--protocol serial`, or `--protocol blargg` to disable automatic protocol
 detection. Model-specific post-boot tests can select
-`--model dmg0`, `dmg`, `mgb`, `sgb`, `sgb2`, `cgb0`, `cgb-c`, or `cgb-e`.
+`--model auto`, `dmg0`, `dmg`, `mgb`, `sgb`, `sgb2`, `cgb0`, `cgb-c`, `cgb-e`,
+`agb0`, or `agb`. The AGB profiles provide startup compatibility with the
+CGB-E runtime baseline, not native GBA emulation.
 The historical `cgb` spelling remains accepted as the late CGB-E profile.
 For boot-path diagnostics, add `--diagnostic-boot`; this runs GBB's original
 diagnostic boot ROM, records a handoff marker in HRAM, validates the CPU
 handoff state, and then continues at the cartridge entry point. Normal
 emulator construction continues to use the existing post-boot path.
-For the experimental original DMG cold-start replacement, use
-`--dmg-boot --model dmg` instead. It initializes hardware through emulated CPU
-writes and validates the header checksum, but deliberately differs in startup
-graphics and timing. See [replacement firmware](../firmware/README.md) for
+For the bundled original cold-start replacement, use the historical CLI flag
+`--dmg-boot` with the desired model, for example `--dmg-boot --model dmg`.
+Despite its name, this flag selects the model's generic replacement path.
+It initializes hardware through emulated CPU writes; validation and handoff
+details vary by model. Its branded presentation is not Nintendo artwork.
+See [replacement firmware](../firmware/README.md) for
 rebuilding and testing it; RGBDS is not required for normal builds.
 
-The APU passes all 12 upstream Blargg `dmg_sound` tests and all 12 `cgb_sound`
+The recorded APU baseline passed all 12 upstream Blargg `dmg_sound` tests and all 12 `cgb_sound`
 tests, including model-specific power behavior, active wave-RAM access, and the
 original DMG hardware's channel 3 retrigger corruption.
-The current headless CI accuracy gate passes all 75 Mooneye acceptance ROMs,
+The recorded headless accuracy baseline passed all 75 Mooneye acceptance ROMs,
 all 6 applicable CGB misc ROMs, all 28 emulator-only mapper ROMs, 38 curated
 Blargg ROMs, and 21 exact Acid2/Scribbltests/Mealybug/Gambatte framebuffer
 comparisons. The separate [hardware-model matrix workflow](https://github.com/DanielSeim/go-bigger-boy/actions/workflows/hardware-model-matrix.yml)
@@ -252,6 +281,9 @@ AGE screenshot references, applies its DMG-compatibility color rules, maps
 SameSuite diagnostics to documented hardware profiles, and keeps exploratory
 failures outside the release gate (see the [accuracy report](accuracy.md)).
 Each run publishes the full Markdown reports as downloadable artifacts.
+These counts preserve the measured baseline; confirm the current registered
+cases in `cmake/ConformanceTests.cmake` and the report for the candidate commit
+rather than treating them as a fresh run.
 
 To register the pinned v7.0 bundle locally, download and extract
 `c-sp/game-boy-test-roms`, then set its root as the opt-in cache path. The

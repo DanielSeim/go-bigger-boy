@@ -13,11 +13,20 @@ The handshake carries an optional `LinkCompatibilityProfile` extension:
 | Gen II + Gen II | Gen II Cable Club/Trade Center |
 | Gen I + Gen II | Gen II Time Capsule bridge |
 
-Profiles also include a region encoding. Japanese (and future Korean) builds
-must not be mixed with Western builds because their text and party encodings
-are different. Older GBB peers do not send the extension; they continue to
-use the legacy compatibility ID and can still connect to current builds when
-that ID matches.
+Profiles also include a region encoding; different known regions are rejected.
+Cartridge inference recognizes Pokémon title prefixes and treats destination
+byte `0x14A == 0` as Japanese and other values as Western. The region enum
+includes Korean, but automatic inference does not identify it separately.
+This is a header heuristic, not proof of language, retail identity, or gameplay
+compatibility: hacks retaining recognized headers can inherit their profile.
+Unrecognized titles fall back to their exact ROM fingerprint.
+
+Older peers using the same packet framing may omit the optional profile
+extension; they continue to use the legacy compatibility ID when it matches.
+This does not provide compatibility with unsupported packet protocol versions.
+Known profiles check version, region and supported modes, allowing Gen I/II
+entry only when the Gen II profile advertises Time Capsule. The ROM still
+decides whether the selected room and party are valid for the operation.
 
 The emulator's serial implementation models SB/SC and CGB clock selection,
 including the double-speed clock bit. Pokémon's retail protocol normally
@@ -37,3 +46,11 @@ forever.
 The protocol behavior was cross-checked against the pret disassemblies:
 [pokecrystal link code](https://github.com/pret/pokecrystal/tree/master/engine/link)
 and [pokered Cable Club code](https://github.com/pret/pokered/blob/master/engine/link/cable_club.asm).
+
+That historical source comparison is distinct from current end-to-end
+qualification. Local profile/packet contracts check negotiation and framing;
+the headless `gbb_link_harness` accepts a single ROM for both players and cannot
+validate a mixed-ROM Time Capsule pair. Record a real two-peer trade result
+before claiming a specific language/version pair works. Web has no link
+transport; native TCP is available on desktop/Android and Bluetooth Classic
+RFCOMM is implemented on Windows/Android.

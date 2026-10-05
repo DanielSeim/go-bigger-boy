@@ -2,9 +2,9 @@
 
 Status: **frozen and approved** as of 2026-09-05. The public C declarations,
 isolated fixture plug-in, native loader, and contract tests define the v1.0
-compatibility boundary. Loading remains explicit and opt-in; automatic
-production scanning and broad frontend enablement are intentionally still out
-of scope. The reference desktop catalog and Settings controls are available
+compatibility boundary. Loading remains explicit and opt-in; implicit
+system/working-directory scanning and broad frontend enablement are still out
+of scope. The reference desktop catalog and Windows Settings controls are available
 for explicitly configured native plug-ins. The approval record and immutable
 baseline are documented in
 [`plugin-abi-freeze.md`](plugin-abi-freeze.md).
@@ -34,7 +34,7 @@ The current trust and desktop UX rules are recorded in
   Windows build matrix exercises the same suite under MSVC. The GCC job also
   loads a fixture built with Clang to catch compiler-boundary assumptions.
 - ABI v1.0 is a stable plug-in contract. The reference `PluginCatalog` and
-  desktop Settings integration are separate, opt-in migration work and do not
+  Windows dashboard Settings integration are separate, opt-in migration work and do not
   change the frozen boundary. The catalog supports explicit paths
   and deterministic directory scans for native desktop builds; it never scans
   implicit system or working-directory locations. A descriptor identity
@@ -92,7 +92,7 @@ reference C header test asserts the v1 structure sizes and selected offsets on
 64-bit targets; changing field order, packing, or pointer-bearing prefixes is
 an ABI break and requires a new major version.
 
-## Proposed entry point
+## Frozen entry point
 
 ```c
 GBB_PLUGIN_EXPORT gbb_plugin_result GBB_PLUGIN_CALL
@@ -130,7 +130,7 @@ callers must branch on the result code.
 
 ## Core v1 surface
 
-The initial function table should contain:
+The implemented v1 function table contains:
 
 - `create(rom, options, out_handle)` and `destroy(handle)`;
 - `reset(handle)`;
@@ -140,6 +140,7 @@ The initial function table should contain:
 - `audio_read(handle, caller_buffer, capacity, out_sample_count)`;
 - `set_input(handle, input_id, pressed)`;
 - `save_state(handle, host_allocator, out_blob)` and `load_state(handle, blob)`;
+- `release_blob(handle, host, blob)` for plug-in-owned result storage;
 - `rom_fingerprint(handle, out_fingerprint)`;
 - persistent-data query/read/write operations;
 - persistent-data flush;
@@ -205,10 +206,20 @@ The loader must reject unsupported major versions, oversized counts, invalid
 UTF-8/unterminated strings, unknown mandatory capability bits, missing required
 function pointers, contradictory metadata, and results that exceed declared
 buffers. Plug-ins are untrusted native code: loading is opt-in, paths are
-explicit, and malformed plug-ins must fail closed without entering the SDL
-frontend. A future sandbox or out-of-process mode is outside ABI v1.
+explicit, and invalid descriptors/tables are rejected before registry admission.
+Native initializers and `gbb_plugin_query` already execute during loading,
+before catalog allowlists or the trust callback. Full core-contract validation
+runs on core creation, not catalog registration. A future sandbox or
+out-of-process mode is outside ABI v1.
 
-## Required fixture and test plan
+## Original required fixture and test plan
+
+The following is the acceptance plan retained with the freeze, not a claim
+that the host can safely exercise arbitrary hostile native code. The loader
+currently adapts only `persistent_memory` and `rtc` capability bits and rejects
+the other advertised bits; there are no advanced extension adapters or C ABI
+ROM-probe callback. Catalog probe policy is host-side. The single-owner-thread
+rule is a caller obligation, not a general loader concurrency guard.
 
 Before shipping a stable loader, test a tiny fixture plug-in on every
 supported native toolchain. The fixture suite must cover:
@@ -250,7 +261,7 @@ the compatibility baseline throughout this work.
 The static API remains the default in-process extension mechanism. The frozen
 ABI may be consumed by explicitly configured native plug-ins through the
 reference loader; the host-side catalog now supports identity/capability
-allowlists and a pre-registration trust callback. Automatic scanning, signed
+allowlists and a pre-registration trust callback. Implicit scanning, signed
 trust, and broad distribution remain deferred pending the manifest contract in
 [`docs/plugin-manifest.md`](plugin-manifest.md) and the security policy in
 `docs/plugin-security.md`.

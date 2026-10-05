@@ -6,18 +6,31 @@ must remain optional and offline-first. The first implementation step is the
 provider-neutral manifest contract in `include/gbb/save_sync.hpp`; it does not
 perform network I/O and it never uploads ROM contents.
 
+Implemented scope: `src/save_sync.cpp` validates metadata, computes a 64-bit
+FNV-1a content hash, classifies reconciliation, and serializes/writes JSON.
+`tests/save_sync_contract_tests.cpp` covers this contract. There is no manifest
+reader, cloud provider, upload/download queue, account UI, or frontend sync
+integration. The rollout and conflict UI below are requirements for future work.
+
 ## Scope and identity
 
 Each save payload is stored separately from a manifest entry. An entry is
-identified by:
+conceptually identified by:
 
 ```text
 system_id + rom_fingerprint + artifact_kind + slot
 ```
 
+The implemented `artifact_key()` currently returns only
+`0x<rom_fingerprint>/<artifact_kind>/<slot>`. Manifest duplicate validation also
+uses fingerprint/kind/slot, while `reconcile()` additionally compares
+`system_id`. A future provider must address this system namespace mismatch
+before using these keys across cores.
+
 The current artifact kinds are `battery-save`, `rtc`, and `save-state`.
 Battery saves and RTC data always use slot zero; save states have numbered
-slots. `rom_fingerprint` is the exact ROM identity already used by the core,
+slots (currently 0–99). Payload metadata is limited to 32 MiB per artifact.
+`rom_fingerprint` is the ROM identity already used by the core,
 so localized or modified ROMs do not accidentally share save data.
 
 The manifest uses the versioned `gbb.save-sync.v1` JSON schema. Each entry
@@ -27,8 +40,10 @@ revision values are encoded as hexadecimal JSON strings so web clients cannot
 lose precision. The manifest device ID identifies the writer; entries may have
 originated on another device after a cloud merge. Save-state metadata is
 intentionally more specific because a state is coupled to the emulator format
-and hardware configuration. The payload is still validated by the existing
-save-state container when it is loaded.
+and hardware configuration. The manifest does not include a save-state
+format/version field or validate payload bytes. Existing core save-state loading
+validates its own container; future sync integration must arrange that
+validation before restoring a state.
 
 The content hash is for change detection, not authentication. A future
 provider must use authenticated transport and should support optional
@@ -37,8 +52,11 @@ not part of cloud saves.
 
 ## Conflict policy
 
-Identical content is silently deduplicated. A newer revision replaces an older
-one only when it names that exact record as its parent. Two devices that edit
+`reconcile()` returns `identical` when byte size and content hash match; it does
+not compare payload bytes or perform deduplication. It returns `local_newer` or
+`remote_newer` only for a higher revision whose `base_revision` and
+`base_content_hash` name the other record. It does not replace files. Two devices
+that edit
 the same revision independently produce a conflict; the client must never
 silently discard either copy. The UI should offer the local copy, the cloud
 copy, and a backup of the losing copy before resolving.
