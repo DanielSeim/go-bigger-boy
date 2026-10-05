@@ -61,8 +61,8 @@ int main() {
                                       : crossings >= 39 && crossings <= 44,
                     "chime pitch differs from the reference pulse periods");
         }
-        Emulator fast(cartridge(), HardwareModel::dmg, BootRomMode::replacement_dmg);
-        Emulator animated(cartridge(), HardwareModel::dmg, BootRomMode::animated_dmg);
+        Emulator fast(cartridge(), HardwareModel::dmg, BootRomMode::replacement);
+        Emulator animated(cartridge(), HardwareModel::dmg, BootRomMode::animated);
         while (fast.bus().boot_rom_enabled()) static_cast<void>(fast.step());
         unsigned instructions = 0;
         bool saw_frame = false, saw_audio = false, restored = false;
@@ -141,8 +141,8 @@ int main() {
         animated.reset();
         animated.set_player_button(0, Button::a, true);
         require(!animated.startup_animation_active() && animated.bus().boot_rom_enabled(), "A skip bypassed firmware");
-        Emulator muted(cartridge(), HardwareModel::dmg, BootRomMode::animated_dmg);
-        Emulator muted_fast(cartridge(), HardwareModel::dmg, BootRomMode::replacement_dmg);
+        Emulator muted(cartridge(), HardwareModel::dmg, BootRomMode::animated);
+        Emulator muted_fast(cartridge(), HardwareModel::dmg, BootRomMode::replacement);
         muted.set_audio_enabled(false); muted_fast.set_audio_enabled(false);
         while (muted_fast.bus().boot_rom_enabled()) static_cast<void>(muted_fast.step());
         while (muted.bus().boot_rom_enabled()) {
@@ -155,8 +155,8 @@ int main() {
         }
         require(muted.take_audio_samples() == muted_fast.take_audio_samples(), "unmute replayed chime");
         // Different drain cadences must generate the same original chime.
-        Emulator frequent(cartridge(), HardwareModel::dmg, BootRomMode::animated_dmg);
-        Emulator batched(cartridge(), HardwareModel::dmg, BootRomMode::animated_dmg);
+        Emulator frequent(cartridge(), HardwareModel::dmg, BootRomMode::animated);
+        Emulator batched(cartridge(), HardwareModel::dmg, BootRomMode::animated);
         std::vector<std::int16_t> chunks, batches;
         for (unsigned i = 0; frequent.cpu().total_cycles() < boot_splash_second_note_cycle + 1000000; ++i) {
             static_cast<void>(frequent.step()); static_cast<void>(batched.step());

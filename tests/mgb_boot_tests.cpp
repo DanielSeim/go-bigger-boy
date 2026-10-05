@@ -58,7 +58,7 @@ int main() {
         Emulator instant(Cartridge(rom()), HardwareModel::mgb);
         check(!instant.bus().boot_rom_enabled() && instant.cpu().registers().a == 0xff,
               "default Pocket startup no longer uses its instant profile");
-        for (bool zero : {false, true}) for (auto mode : {BootRomMode::replacement_mgb, BootRomMode::animated_mgb}) {
+        for (bool zero : {false, true}) for (auto mode : {BootRomMode::replacement, BootRomMode::animated}) {
             Emulator pocket(Cartridge(rom(zero)), HardwareModel::mgb, mode);
             Emulator baseline(Cartridge(rom(zero)), HardwareModel::dmg, mode);
             check(pocket.cpu().registers().pc == 0 && pocket.bus().boot_rom_enabled(), "Pocket bypassed CPU boot");
@@ -97,15 +97,15 @@ int main() {
             check(pocket.cpu().registers().a == 0xff, "Pocket reset used DMG image");
         }
         auto invalid = rom(); invalid[0x14d] ^= 1;
-        Emulator rejected(Cartridge(invalid), HardwareModel::mgb, BootRomMode::replacement_mgb);
+        Emulator rejected(Cartridge(invalid), HardwareModel::mgb, BootRomMode::replacement);
         for (unsigned i = 0; i < 50000; ++i) static_cast<void>(rejected.step());
         check(rejected.bus().boot_rom_enabled() && rejected.bus().read8(0xff40) == 0, "Pocket accepts invalid checksum");
-        for (auto startup : {gbb::StartupMode::replacement_dmg, gbb::StartupMode::animated_dmg}) {
+        for (auto startup : {gbb::StartupMode::replacement, gbb::StartupMode::animated}) {
             gbb::CoreLoadOptions options; options.hardware_model = "mgb"; options.startup_mode = startup;
             auto core = gbb::built_in_core_registry().create(rom(false, true), options);
             auto* pocket = gbb::gameboy_emulator(core.get());
             check(pocket && pocket->hardware_model() == HardwareModel::mgb && pocket->bus().boot_rom_enabled(), "factory ignores Pocket startup");
-            check(pocket->startup_animation_active() == (startup == gbb::StartupMode::animated_dmg), "Pocket animation selection differs");
+            check(pocket->startup_animation_active() == (startup == gbb::StartupMode::animated), "Pocket animation selection differs");
             finish(*pocket);
             check(pocket->cpu().registers().a == 0xff, "factory used wrong firmware");
         }

@@ -103,7 +103,7 @@ void check_handoff(gameboy::Emulator& emulator, bool zero_checksum) {
 void test_power_on_and_reset() {
     Endpoint endpoint;
     gameboy::Emulator emulator(gameboy::Cartridge(cartridge(false, true, true)),
-        gameboy::HardwareModel::dmg, gameboy::BootRomMode::replacement_dmg);
+        gameboy::HardwareModel::dmg, gameboy::BootRomMode::replacement);
     check(emulator.cpu().registers().pc == 0 && emulator.cpu().registers().sp == 0,
           "CPU begins at reset, not cartridge entry");
     check(emulator.bus().read8(0xFF40) == 0 && emulator.bus().read8(0xFF04) == 0 &&
@@ -146,19 +146,19 @@ void test_power_on_and_reset() {
 
 void test_checksum_and_model_guards() {
     gameboy::Emulator zero(gameboy::Cartridge(cartridge(true)),
-        gameboy::HardwareModel::dmg, gameboy::BootRomMode::replacement_dmg);
+        gameboy::HardwareModel::dmg, gameboy::BootRomMode::replacement);
     check_handoff(zero, true);
     auto corrupt = cartridge();
     ++corrupt[0x14D];
     gameboy::Emulator invalid(gameboy::Cartridge(std::move(corrupt)),
-        gameboy::HardwareModel::dmg, gameboy::BootRomMode::replacement_dmg);
+        gameboy::HardwareModel::dmg, gameboy::BootRomMode::replacement);
     check(!finish_boot(invalid) && invalid.cpu().registers().pc < 0x100,
           "invalid header checksum keeps the boot image mapped, never starts cartridge");
     check(invalid.bus().read8(0xFF40) == 0, "failed checksum leaves LCD disabled");
     for (auto model : {gameboy::HardwareModel::sgb,
                       gameboy::HardwareModel::sgb2}) {
         gameboy::Emulator sgb(gameboy::Cartridge(cartridge()), model,
-                             gameboy::BootRomMode::replacement_dmg);
+                             gameboy::BootRomMode::replacement);
         check(finish_boot(sgb) && sgb.cpu().registers().c == 0x14 &&
               sgb.cpu().registers().h == 0xc0, "SGB selects its own firmware, never DMG firmware");
     }
@@ -166,7 +166,7 @@ void test_checksum_and_model_guards() {
 
 void test_state_resume() {
     gameboy::Emulator original(gameboy::Cartridge(cartridge()),
-        gameboy::HardwareModel::dmg, gameboy::BootRomMode::replacement_dmg);
+        gameboy::HardwareModel::dmg, gameboy::BootRomMode::replacement);
     for (unsigned step = 0; step < 137; ++step) static_cast<void>(original.step());
     auto state = original.save_state();
     gameboy::Emulator restored(gameboy::Cartridge(cartridge()), gameboy::HardwareModel::dmg);
@@ -202,7 +202,7 @@ void test_state_resume() {
 void test_silent_handoff_and_later_audio() {
     for (bool checksum_zero : {false, true}) {
         gameboy::Emulator emulator(gameboy::Cartridge(cartridge(checksum_zero)),
-            gameboy::HardwareModel::dmg, gameboy::BootRomMode::replacement_dmg);
+            gameboy::HardwareModel::dmg, gameboy::BootRomMode::replacement);
         check_handoff(emulator, checksum_zero);
         for (unsigned instruction = 0; instruction < 25; ++instruction) (void)emulator.step();
         check(emulator.bus().debug_apu_clock_state()[3] == 182 &&
@@ -246,7 +246,7 @@ void test_cartridge_divider_boundary() {
         rom[0x108] = 0xF0; rom[0x109] = 0x04;
         rom[0x10A] = 0xF0; rom[0x10B] = 0x04;
         gameboy::Emulator emulator(gameboy::Cartridge(std::move(rom)),
-            gameboy::HardwareModel::dmg, gameboy::BootRomMode::replacement_dmg);
+            gameboy::HardwareModel::dmg, gameboy::BootRomMode::replacement);
         check_handoff(emulator, checksum_zero);
         for (unsigned instruction = 0; instruction < 9; ++instruction)
             (void)emulator.step();
@@ -273,7 +273,7 @@ void test_cartridge_serial_interrupt_and_resume() {
         0xF0, 0x01, 0xEA, 0x00, 0xC0,           // received SB -> C000
         0xFA, 0x01, 0xC0, 0x3C, 0xEA, 0x01, 0xC0, 0xD9}; // increment ISR count; RETI
     std::copy(handler.begin(), handler.end(), rom.begin() + 0x58);
-    for (const auto mode : {gameboy::BootRomMode::post_boot, gameboy::BootRomMode::replacement_dmg}) {
+    for (const auto mode : {gameboy::BootRomMode::post_boot, gameboy::BootRomMode::replacement}) {
         gameboy::Emulator original(gameboy::Cartridge(rom), gameboy::HardwareModel::dmg, mode);
         check(finish_boot(original), "serial homebrew boots without a proprietary logo");
         unsigned instructions = 0;
@@ -305,7 +305,7 @@ void test_cartridge_serial_interrupt_and_resume() {
 
 void test_envelope_settle_resume() {
     gameboy::Emulator emulator(gameboy::Cartridge(cartridge()),
-        gameboy::HardwareModel::dmg, gameboy::BootRomMode::replacement_dmg);
+        gameboy::HardwareModel::dmg, gameboy::BootRomMode::replacement);
     while (emulator.cpu().total_cycles() < 3'000'000) (void)emulator.step();
     check(emulator.bus().boot_rom_enabled() && emulator.bus().read8(0xFF25) == 0,
           "mid-envelope state is still a muted boot, not a cartridge snapshot");

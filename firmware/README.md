@@ -254,18 +254,18 @@ build/gbb_test_runner /path/to/homebrew.gb --model dmg --dmg-boot --protocol ser
 ctest --test-dir build -R 'gameboy_dmg_' --output-on-failure
 ```
 
-The firmware is also available through `BootRomMode::replacement_dmg` in the
-core API (also named `replacement_mgb` for Pocket and `replacement_dmg0` for early DMG). The selected monochrome
-hardware profile chooses its matching image; other profiles are rejected by
-the raw emulator API rather than silently receiving monochrome initialization.
+The firmware is also available through `BootRomMode::replacement` in the
+core API. The selected hardware profile chooses its matching image on DMG0,
+DMG, MGB (Pocket), CGB/AGB revisions, SGB and SGB2.
 Desktop, Android and web settings expose **Startup** with
 **Instant startup** (default), **GBB fast boot**, and **GBB animated boot**. Desktop and Android
-persist `boot.Startup = instant`, `replacement-dmg`, or `animated-dmg` in `settings.ini`; web
+persist `boot.Startup = instant`, `replacement`, or `animated` in `settings.ini`; web
 persists the choice in browser local storage. No external firmware download is
 required: the image is bundled in every build.
 
-The existing `replacement-dmg` and `animated-dmg` setting IDs are retained for
-compatibility; they select matching firmware on DMG0, DMG, MGB and CGB.
+The setting IDs are hardware-neutral: `replacement` and `animated` select
+matching firmware for the chosen model. Old DMG-specific IDs are not supported;
+unrecognized saved values fall back to instant startup until reselected.
 
 For DMG/MGB, the animated option selects a separate original 256-byte firmware variant. Its
 CPU-executed wait adds exactly 19,136,512 clocks (292 whole DIV wraps), making

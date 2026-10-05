@@ -627,7 +627,7 @@ int main(int argc, char** argv) {
         // pass without executing the test.
         auto emulator = gameboy::Emulator{
             gameboy::Cartridge{std::move(rom)}, options.model,
-            options.dmg_boot ? gameboy::BootRomMode::replacement_dmg
+            options.dmg_boot ? gameboy::BootRomMode::replacement
                 : options.diagnostic_boot ? gameboy::BootRomMode::diagnostic
                                           : gameboy::BootRomMode::post_boot};
         if (options.sgb_frame &&

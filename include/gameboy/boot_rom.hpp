@@ -10,19 +10,9 @@ namespace gameboy {
 enum class BootRomMode {
     post_boot,
     diagnostic,
-    replacement_dmg,
+    replacement,
     // Original-cadence firmware, with a host-rendered GBB splash and chime.
-    animated_dmg,
-    // Legacy DMG mode names select the corresponding hardware's image.
-    replacement_mgb = replacement_dmg,
-    animated_mgb = animated_dmg,
-    replacement_dmg0 = replacement_dmg,
-    animated_dmg0 = animated_dmg,
-    replacement_cgb = replacement_dmg,
-    animated_cgb = animated_dmg,
-    replacement_agb = replacement_dmg,
-    animated_agb = animated_dmg,
-    replacement_sgb = replacement_dmg,
+    animated,
 };
 
 constexpr std::size_t diagnostic_boot_rom_size = 0x100;

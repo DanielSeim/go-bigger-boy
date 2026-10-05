@@ -162,7 +162,7 @@ int main(int argc, char** argv) {
         // persistence writes. Both runs use exactly the same cold baseline.
         const auto cartridge_bytes = read_file(argv[1]);
         gameboy::Emulator emulator(gameboy::Cartridge(cartridge_bytes),
-            model, gameboy::BootRomMode::replacement_dmg);
+            model, gameboy::BootRomMode::replacement);
         if (!reference.empty()) {
             const auto bytes = read_file(reference);
             if (bytes.size() != gameboy::diagnostic_boot_rom_size)

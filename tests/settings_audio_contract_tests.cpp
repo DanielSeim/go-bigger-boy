@@ -20,6 +20,14 @@ void check(const bool condition, const char* message) {
 }
 
 void test_audio_round_trip_and_migration() {
+    for (const auto mode : gbb::startup_modes) {
+        check(gbb::startup_mode_from_setting(gbb::startup_mode_id(mode)) == mode,
+              "hardware-neutral startup IDs round trip");
+    }
+    for (const auto retired : {"replacement-dmg", "animated-dmg"}) {
+        check(gbb::startup_mode_from_setting(retired) == gbb::StartupMode::instant,
+              "retired DMG-specific startup IDs are not accepted");
+    }
     const auto directory = std::filesystem::temp_directory_path() /
                            "gbb-settings-audio-contract-test";
     std::error_code error;
@@ -30,11 +38,11 @@ void test_audio_round_trip_and_migration() {
     AppSettings settings;
     check(settings.startup_mode == gbb::StartupMode::instant,
           "instant startup remains the default");
-    settings.startup_mode = gbb::StartupMode::replacement_dmg;
+    settings.startup_mode = gbb::StartupMode::replacement;
     settings.audio_enabled = false;
     settings.show_fps = true;
     write_portable_settings(directory, settings);
-    check(load_app_settings(directory).startup_mode == gbb::StartupMode::replacement_dmg,
+    check(load_app_settings(directory).startup_mode == gbb::StartupMode::replacement,
           "replacement startup survives settings round trip");
     check(!load_app_settings(directory).audio_enabled,
           "audio disabled value survives settings round trip");
@@ -46,7 +54,7 @@ void test_audio_round_trip_and_migration() {
     write_portable_settings(directory, settings);
     check(load_app_settings(directory).audio_enabled,
           "audio enabled value survives settings round trip");
-    check(load_app_settings(directory).startup_mode == gbb::StartupMode::replacement_dmg,
+    check(load_app_settings(directory).startup_mode == gbb::StartupMode::replacement,
           "changing other settings preserves startup preference");
     check(load_app_settings(directory).sgb_trace_capture,
           "SGB trace capture value survives settings round trip");
@@ -121,9 +129,17 @@ void test_audio_round_trip_and_migration() {
     }
     check(load_app_settings(directory).startup_mode == gbb::StartupMode::instant,
           "unknown startup values safely fall back to instant");
-    settings.startup_mode = gbb::StartupMode::animated_dmg;
+    for (const auto retired : {"replacement-dmg", "animated-dmg"}) {
+        {
+            std::ofstream output(path, std::ios::trunc);
+            output << "boot.Startup = " << retired << '\n';
+        }
+        check(load_app_settings(directory).startup_mode == gbb::StartupMode::instant,
+              "persisted retired startup values fall back without migration");
+    }
+    settings.startup_mode = gbb::StartupMode::animated;
     write_portable_settings(directory, settings);
-    check(load_app_settings(directory).startup_mode == gbb::StartupMode::animated_dmg,
+    check(load_app_settings(directory).startup_mode == gbb::StartupMode::animated,
           "animated startup survives settings round trip");
     settings.startup_mode = gbb::StartupMode::instant;
     write_portable_settings(directory, settings);

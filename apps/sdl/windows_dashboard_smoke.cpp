@@ -675,7 +675,7 @@ bool run_dashboard_case(const bool can_resume, const bool discard,
                               : can_resume ? DashboardResultAction::resume
                                             : DashboardResultAction::library;
     const auto result_matches = invocation.result.action == expected &&
-        invocation.result.startup_mode == (discard ? gbb::StartupMode::instant : gbb::StartupMode::animated_dmg) &&
+        invocation.result.startup_mode == (discard ? gbb::StartupMode::instant : gbb::StartupMode::animated) &&
         invocation.result.startup_mode_changed == !discard;
     if (!passed || !result_matches) {
         std::fprintf(stderr,

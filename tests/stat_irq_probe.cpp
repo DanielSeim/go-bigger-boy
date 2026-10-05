@@ -28,7 +28,7 @@ int main(int argc, char** argv) {
         if (input.bad()) throw std::runtime_error("cannot read fixture");
         // Bytes-only construction never imports/persists adjacent save files.
         gameboy::Emulator emulator(gameboy::Cartridge(std::move(rom)), hardware,
-            argc == 4 ? gameboy::BootRomMode::replacement_dmg : gameboy::BootRomMode::post_boot);
+            argc == 4 ? gameboy::BootRomMode::replacement : gameboy::BootRomMode::post_boot);
         while (emulator.cpu().total_cycles() < 20'000'000) {
             if (!emulator.bus().boot_rom_enabled() && emulator.cpu().registers().pc == 0x7000) {
                 std::cout << "{\"schema\":1,\"result\":" << +emulator.cpu().registers().a

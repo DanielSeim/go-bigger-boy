@@ -172,7 +172,7 @@ int main() {
         check(sgb_boot_rom().size()==256 && sgb2_boot_rom().size()==256,"256-byte images");
         verify_icd_scanline(HardwareModel::sgb); verify_icd_scanline(HardwareModel::sgb2);
         for(auto model:{HardwareModel::sgb,HardwareModel::sgb2})
-        for(auto mode:{BootRomMode::replacement_sgb,BootRomMode::animated_dmg})
+        for(auto mode:{BootRomMode::replacement,BootRomMode::animated})
         for(unsigned pattern:{0U,1U,255U,256U,257U,258U,259U,260U,261U,262U,263U,
                               264U,265U,266U,267U,268U,269U,270U,271U}) {
             auto bytes=rom(pattern);

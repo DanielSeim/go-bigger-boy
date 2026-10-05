@@ -19,7 +19,7 @@ SgbIcdGbSource::SgbIcdGbSource(gameboy::Cartridge cartridge,
                                  const gameboy::HardwareModel model)
     : gb_(std::make_unique<gameboy::Emulator>(
           std::move(cartridge), model,
-          gameboy::BootRomMode::replacement_sgb)),
+          gameboy::BootRomMode::replacement)),
       boot_image_(boot_rom), model_(model) {
     gb_->bus().install_boot_rom(boot_image_);
     gb_->bus().debug_enable_io_trace(true);

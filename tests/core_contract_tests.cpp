@@ -416,7 +416,7 @@ int main() {
         auto instant = registry.create(rom, options);
         check(!gbb::gameboy_emulator(instant.get())->bus().boot_rom_enabled(),
               "factory default keeps instant startup");
-        options.startup_mode = gbb::StartupMode::replacement_dmg;
+        options.startup_mode = gbb::StartupMode::replacement;
         auto cold = registry.create(rom, options);
         auto* emulator = gbb::gameboy_emulator(cold.get());
         check(emulator->bus().boot_rom_enabled() && emulator->cpu().registers().pc == 0,
@@ -443,7 +443,7 @@ int main() {
         instant->reset();
         check(!gbb::gameboy_emulator(instant.get())->bus().boot_rom_enabled(),
               "instant receiver reset keeps its selected startup after loading cold state");
-        options.startup_mode = gbb::StartupMode::animated_dmg;
+        options.startup_mode = gbb::StartupMode::animated;
         auto animated = registry.create(rom, options);
         check(gbb::gameboy_emulator(animated.get())->startup_animation_active(),
               "factory exposes original animated DMG startup");

@@ -57,7 +57,7 @@ void clocked_lcd_rows() {
         const std::uint8_t boot[]{0x21,0,0x80,0x06,8,0x3e,0x55,0x22,0x3e,0x33,0x22,
             0x05,0x20,0xf7,0x3e,0xe4,0xe0,0x47,0x3e,0x91,0xe0,0x40,0xc3,0,1};
         std::copy(std::begin(boot),std::end(boot),cfg.gb_boot_rom.begin());
-        gameboy::Emulator oracle(gameboy::Cartridge(cfg.game_rom),model,gameboy::BootRomMode::replacement_sgb);
+        gameboy::Emulator oracle(gameboy::Cartridge(cfg.game_rom),model,gameboy::BootRomMode::replacement);
         oracle.bus().install_boot_rom(cfg.gb_boot_rom);
         std::vector<Event> expected;
         oracle.bus().set_sgb_lcd_sink(observer,&expected);
@@ -170,7 +170,7 @@ void cold_gb_reset() {
         cfg.game_rom[loop+2]=static_cast<std::uint8_t>(loop>>8);
         const std::vector<std::uint8_t> battery(8192,0x5a);
         gameboy::Emulator oracle(gameboy::Cartridge(cfg.game_rom),model,
-                                 gameboy::BootRomMode::replacement_sgb);
+                                 gameboy::BootRomMode::replacement);
         oracle.bus().install_boot_rom(cfg.gb_boot_rom);
         oracle.import_battery_ram(battery);
         gameboy::SgbIcdGbSource source(cfg.game_rom,cfg.gb_boot_rom,model);
@@ -222,7 +222,7 @@ void cold_audio_oracle() {
         auto cfg=config(model);
         gameboy::SgbIcdGbSource source(cfg.game_rom,cfg.gb_boot_rom,model);
         gameboy::Emulator oracle(gameboy::Cartridge(cfg.game_rom),model,
-                                 gameboy::BootRomMode::replacement_sgb);
+                                 gameboy::BootRomMode::replacement);
         oracle.bus().install_boot_rom(cfg.gb_boot_rom);
         std::vector<std::int16_t> raw;
         source.set_audio_sink([](void* context,std::uint64_t,std::int16_t left,std::int16_t right) noexcept {

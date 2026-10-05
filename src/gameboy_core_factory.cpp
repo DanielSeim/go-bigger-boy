@@ -229,11 +229,11 @@ CoreFactory gameboy_core_factory() {
             const auto model = gameboy::resolve_hardware_model(
                 hardware_model_from_option(options.hardware_model),
                 cartridge.supports_cgb(), cartridge.supports_sgb());
-            const auto boot_mode = (options.startup_mode == StartupMode::replacement_dmg ||
-                                   options.startup_mode == StartupMode::animated_dmg) &&
+            const auto boot_mode = (options.startup_mode == StartupMode::replacement ||
+                                   options.startup_mode == StartupMode::animated) &&
                 (model == gameboy::HardwareModel::dmg0 || model == gameboy::HardwareModel::dmg || model == gameboy::HardwareModel::mgb || gameboy::is_cgb_hardware(model) || model == gameboy::HardwareModel::sgb || model == gameboy::HardwareModel::sgb2)
-                ? (options.startup_mode == StartupMode::animated_dmg ? gameboy::BootRomMode::animated_dmg
-                    : gameboy::BootRomMode::replacement_dmg) : gameboy::BootRomMode::post_boot;
+                ? (options.startup_mode == StartupMode::animated ? gameboy::BootRomMode::animated
+                    : gameboy::BootRomMode::replacement) : gameboy::BootRomMode::post_boot;
             return std::make_unique<GameBoyCore>(std::move(cartridge), model, boot_mode);
         }};
 }

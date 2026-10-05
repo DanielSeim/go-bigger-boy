@@ -82,11 +82,11 @@
           <select id="hardware-model" disabled></select>
         </label>
         <label class="palette" for="startup-mode" title="Bundled DMG0/DMG/MGB/CGB/SGB/SGB2 boot firmware. Animated boot uses scrolling monochrome or fading color GBB lettering and an APU-synthesized chime; SGB uses its header bootstrap without a DMG intro. A/Start hides the presentation; firmware still runs. Applies on ROM reload. No boot download needed.">
-          Startup (GB / Pocket / Color)
+          Startup
           <select id="startup-mode" disabled>
             <option value="instant">Instant startup</option>
-            <option value="replacement-dmg">GBB fast boot</option>
-            <option value="animated-dmg">GBB animated boot</option>
+            <option value="replacement">GBB fast boot</option>
+            <option value="animated">GBB animated boot</option>
           </select>
         </label>
         <label class="audio-toggle" for="audio-enabled">
@@ -925,7 +925,7 @@
       try {
         localStorage.setItem('gbb-startup-mode', startupModePicker.value);
       } catch (error) {}
-      Module.gbbSetStatus('Startup setting saved. Reload the ROM to apply it (GB / Pocket / Color).', false);
+      Module.gbbSetStatus('Startup setting saved. Reload the ROM to apply it.', false);
     });
     audioEnabledPicker.addEventListener('change', () => {
       Module._gbb_set_audio_enabled(audioEnabledPicker.checked);

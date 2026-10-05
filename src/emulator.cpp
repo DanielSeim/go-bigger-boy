@@ -43,9 +43,9 @@ Emulator::Emulator(Cartridge cartridge, const HardwareModel model,
                                              bus_.cartridge().supports_sgb());
     automatic_dmg_palette_ = cgb_compatibility_palette(
         bus_.cartridge().cgb_compatibility_palette_id());
-    splash_enabled_ = boot_rom_mode_ == BootRomMode::animated_dmg &&
+    splash_enabled_ = boot_rom_mode_ == BootRomMode::animated &&
         hardware_model_ != HardwareModel::sgb && hardware_model_ != HardwareModel::sgb2;
-    if (boot_rom_mode_ == BootRomMode::replacement_dmg || boot_rom_mode_ == BootRomMode::animated_dmg) {
+    if (boot_rom_mode_ == BootRomMode::replacement || boot_rom_mode_ == BootRomMode::animated) {
         if (is_cgb_hardware(hardware_model_)) bus_.initialize_cgb_power_on(hardware_model_);
         else if (hardware_model_ == HardwareModel::sgb || hardware_model_ == HardwareModel::sgb2) bus_.initialize_sgb_power_on(hardware_model_);
         else bus_.initialize_dmg_power_on();
@@ -74,12 +74,12 @@ Emulator Emulator::from_file(const std::filesystem::path& path,
 }
 
 void Emulator::reset() noexcept {
-    splash_enabled_ = boot_rom_mode_ == BootRomMode::animated_dmg &&
+    splash_enabled_ = boot_rom_mode_ == BootRomMode::animated &&
         hardware_model_ != HardwareModel::sgb && hardware_model_ != HardwareModel::sgb2;
     splash_skipped_ = false;
     splash_consumed_frame_ = splash_handoff_cycles_ = splash_audio_cursor_ = 0;
     splash_cached_frame_ = UINT64_MAX;
-    if (boot_rom_mode_ == BootRomMode::replacement_dmg || boot_rom_mode_ == BootRomMode::animated_dmg) {
+    if (boot_rom_mode_ == BootRomMode::replacement || boot_rom_mode_ == BootRomMode::animated) {
         if (is_cgb_hardware(hardware_model_)) bus_.initialize_cgb_power_on(hardware_model_);
         else if (hardware_model_ == HardwareModel::sgb || hardware_model_ == HardwareModel::sgb2) bus_.initialize_sgb_power_on(hardware_model_);
         else bus_.initialize_dmg_power_on();

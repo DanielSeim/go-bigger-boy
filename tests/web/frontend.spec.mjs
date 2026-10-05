@@ -44,6 +44,18 @@ function makeLoopingRom() {
   return rom;
 }
 
+for (const retired of ['replacement-dmg', 'animated-dmg']) {
+  test(`retired ${retired} startup ID falls back to instant without migration`, async ({page}) => {
+    await page.addInitScript(value => localStorage.setItem('gbb-startup-mode', value), retired);
+    await page.goto('/');
+    await expect(page.locator('#startup-mode')).toBeEnabled({timeout: 90_000});
+    await expect(page.locator('#startup-mode')).toHaveValue('instant');
+    expect(await page.evaluate(() => localStorage.getItem('gbb-startup-mode'))).toBe(retired);
+    await page.locator('#startup-mode').selectOption('animated');
+    expect(await page.evaluate(() => localStorage.getItem('gbb-startup-mode'))).toBe('animated');
+  });
+}
+
 test('loads a ROM and persists the primary display settings', async ({page}) => {
   const pageErrors = [];
   page.on('pageerror', error => pageErrors.push(error));
@@ -57,8 +69,8 @@ test('loads a ROM and persists the primary display settings', async ({page}) => 
   await expect(page.locator('#hardware-model')).toBeEnabled();
   await expect(page.locator('#startup-mode')).toBeEnabled();
   await expect(page.locator('#startup-mode')).toHaveValue('instant');
-  await page.locator('#startup-mode').selectOption('replacement-dmg');
-  await expect(await page.evaluate(() => localStorage.getItem('gbb-startup-mode'))).toBe('replacement-dmg');
+  await page.locator('#startup-mode').selectOption('replacement');
+  await expect(await page.evaluate(() => localStorage.getItem('gbb-startup-mode'))).toBe('replacement');
 
   await page.locator('#audio-enabled').uncheck();
   await page.locator('#display-palette').selectOption('3');
@@ -75,7 +87,7 @@ test('loads a ROM and persists the primary display settings', async ({page}) => 
   await expect(page.locator('#status')).toHaveText(
     'Ready. Choose a Game Boy ROM to begin.', {timeout: 90_000});
   await expect(page.locator('#audio-enabled')).not.toBeChecked();
-  await expect(page.locator('#startup-mode')).toHaveValue('replacement-dmg');
+  await expect(page.locator('#startup-mode')).toHaveValue('replacement');
   await expect(page.locator('#display-palette')).toHaveValue('3');
   await expect(page.locator('#video-mode')).toHaveValue('2');
   await expect(page.locator('#hardware-model')).toHaveValue('cgb-e');
@@ -118,7 +130,7 @@ test('bundled DMG boot reaches a logo-free cartridge and unknown preferences fal
   await expect(page.locator('#startup-mode')).toHaveValue('instant');
   await page.locator('#audio-enabled').uncheck();
   await page.locator('#hardware-model').selectOption('dmg');
-  await page.locator('#startup-mode').selectOption('replacement-dmg');
+  await page.locator('#startup-mode').selectOption('replacement');
 
   const rom = new Uint8Array(0x8000);
   // JP 0150; cartridge writes a unique scroll marker after boot handoff.
@@ -148,7 +160,7 @@ test('animated DMG splash stays flat with voxel selected and hands off', async (
   await expect(page.locator('#startup-mode')).toBeEnabled({timeout: 90_000});
   await page.locator('#audio-enabled').uncheck();
   await page.locator('#hardware-model').selectOption('dmg');
-  await page.locator('#startup-mode').selectOption('animated-dmg');
+  await page.locator('#startup-mode').selectOption('animated');
   await page.locator('#video-mode').selectOption('5');
   const rom = new Uint8Array(0x8000);
   rom.set([0xc3, 0x50, 0x01], 0x100);
@@ -175,9 +187,9 @@ test('animated DMG splash stays flat with voxel selected and hands off', async (
   await expect.poll(async () => page.evaluate(() =>
     JSON.parse(UTF8ToString(Module._gbb_export_scene_snapshot())).scx
   ), {timeout: 30000}).toBe(42);
-  await expect(page.locator('#startup-mode')).toHaveValue('animated-dmg');
+  await expect(page.locator('#startup-mode')).toHaveValue('animated');
   await expect(page.locator('#video-mode')).toHaveValue('5');
-  expect(await page.evaluate(() => localStorage.getItem('gbb-startup-mode'))).toBe('animated-dmg');
+  expect(await page.evaluate(() => localStorage.getItem('gbb-startup-mode'))).toBe('animated');
 });
 
 test('Pocket fast and animated boot expose FF to a dual-mode cartridge', async ({page}) => {
@@ -193,7 +205,7 @@ test('Pocket fast and animated boot expose FF to a dual-mode cartridge', async (
   let sum = 0;
   for (let i = 0x134; i <= 0x14c; ++i) sum = (sum - rom[i] - 1) & 0xff;
   rom[0x14d] = sum;
-  for (const mode of ['replacement-dmg', 'animated-dmg']) {
+  for (const mode of ['replacement', 'animated']) {
     await page.locator('#startup-mode').selectOption(mode);
     await page.locator('#rom-file').setInputFiles({
       name: `gbb-pocket-${mode}.gb`, mimeType: 'application/octet-stream', buffer: Buffer.from(rom),
@@ -216,7 +228,7 @@ test('DMG0 fast and animated boot expose the early B register', async ({page}) =
   let sum = 0;
   for (let i = 0x134; i <= 0x14c; ++i) sum = (sum - rom[i] - 1) & 0xff;
   rom[0x14d] = sum;
-  for (const mode of ['replacement-dmg', 'animated-dmg']) {
+  for (const mode of ['replacement', 'animated']) {
     await page.locator('#startup-mode').selectOption(mode);
     await page.locator('#rom-file').setInputFiles({
       name: `gbb-dmg0-${mode}.gb`, mimeType: 'application/octet-stream', buffer: Buffer.from(rom),
@@ -242,7 +254,7 @@ test('Color boot fades GBB lettering and hands off native and compatibility regi
     let sum = 0;
     for (let i = 0x134; i <= 0x14c; ++i) sum = (sum - rom[i] - 1) & 0xff;
     rom[0x14d] = sum;
-    for (const mode of ['replacement-dmg', 'animated-dmg']) {
+    for (const mode of ['replacement', 'animated']) {
       await page.locator('#startup-mode').selectOption(mode);
       await page.locator('#rom-file').setInputFiles({
         name: `gbb-color-${native}-${mode}.gbc`, mimeType: 'application/octet-stream', buffer: Buffer.from(rom),
@@ -252,7 +264,7 @@ test('Color boot fades GBB lettering and hands off native and compatibility regi
       await expect.poll(async () => page.evaluate(() =>
         JSON.parse(UTF8ToString(Module._gbb_export_scene_snapshot())).emulation_cycles
       ), {intervals: [10], timeout: 30000}).toBeLessThan(2000000);
-      if (native && mode === 'animated-dmg') {
+      if (native && mode === 'animated') {
         await expect.poll(async () => page.evaluate(() => {
           const state = JSON.parse(UTF8ToString(Module._gbb_export_scene_snapshot()));
           if (state.emulation_cycles >= 8000000 && state.emulation_cycles < 9500000) {
@@ -304,7 +316,7 @@ test('SGB profiles run their bundled header bootstrap without a DMG intro', asyn
   await page.locator('#audio-enabled').uncheck();
   for (const profile of ['sgb', 'sgb2', 'auto']) {
     await page.locator('#hardware-model').selectOption(profile);
-    for (const mode of ['instant', 'replacement-dmg', 'animated-dmg']) {
+    for (const mode of ['instant', 'replacement', 'animated']) {
       await page.locator('#startup-mode').selectOption(mode);
       const rom = new Uint8Array(0x8000);
       rom.set([0xc3, 0x50, 0x01], 0x100);
@@ -349,7 +361,7 @@ test('AGB profiles expose GBA detection registers in all startup modes', async (
       let sum = 0;
       for (let i = 0x134; i <= 0x14c; ++i) sum = (sum - rom[i] - 1) & 0xff;
       rom[0x14d] = sum;
-      for (const mode of ['instant', 'replacement-dmg', 'animated-dmg']) {
+      for (const mode of ['instant', 'replacement', 'animated']) {
         await page.locator('#startup-mode').selectOption(mode);
         const name = `gbb-${profile}-${color}-${mode}.gbc`;
         await page.locator('#rom-file').setInputFiles({
@@ -363,7 +375,7 @@ test('AGB profiles expose GBA detection registers in all startup modes', async (
           ), {intervals: [10], timeout: 30000}).toBeLessThan(2000000);
           await expect.poll(async () => page.evaluate(() =>
             JSON.parse(UTF8ToString(Module._gbb_export_scene_snapshot())).emulation_cycles
-          ), {timeout: 30000}).toBeGreaterThan(mode === 'animated-dmg' ? 13000000 : 4300000);
+          ), {timeout: 30000}).toBeGreaterThan(mode === 'animated' ? 13000000 : 4300000);
         }
         await expect.poll(async () => page.evaluate(() =>
           JSON.parse(UTF8ToString(Module._gbb_export_scene_snapshot())).scx

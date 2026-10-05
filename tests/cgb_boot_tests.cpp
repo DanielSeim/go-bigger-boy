@@ -41,7 +41,7 @@ int main() {
         using namespace gameboy;
         for (auto model : {HardwareModel::cgb0, HardwareModel::cgb_c, HardwareModel::cgb_e, HardwareModel::cgb,
                            HardwareModel::agb0, HardwareModel::agb}) {
-            for (bool color : {false, true}) for (auto mode : {BootRomMode::replacement_cgb, BootRomMode::animated_cgb}) {
+            for (bool color : {false, true}) for (auto mode : {BootRomMode::replacement, BootRomMode::animated}) {
                 auto bytes = rom(color);
                 Emulator emulator(Cartridge(bytes), model, mode);
                 check(emulator.cpu().registers().pc == 0 && emulator.bus().boot_rom_enabled(), "CGB did not start cold");
@@ -62,7 +62,7 @@ int main() {
                 check(emulator.bus().cgb_mode() == color && emulator.bus().read8(0xff40) == 0x91,
                     "CGB compatibility/LCD handoff differs");
                 check(!emulator.startup_animation_active(), "CGB splash outlived firmware");
-                if (mode == BootRomMode::animated_cgb) {
+                if (mode == BootRomMode::animated) {
                     check(heard, "CGB intro has no chime");
                     check(emulator.cpu().total_cycles() > 168 * boot_splash_frame_cycles &&
                           emulator.cpu().total_cycles() < 200 * boot_splash_frame_cycles, "CGB intro duration outside design bounds");
@@ -84,7 +84,7 @@ int main() {
                 const auto checksum = license ? title : 0;
                 const auto expected_b = static_cast<std::uint8_t>(checksum + 1);
                 const auto expected_f = (expected_b == 0 ? 0x80 : 0) | ((checksum & 15) == 15 ? 0x20 : 0);
-                for (auto mode : {BootRomMode::post_boot, BootRomMode::replacement_agb}) {
+                for (auto mode : {BootRomMode::post_boot, BootRomMode::replacement}) {
                     Emulator emulator(Cartridge(rom(false, license, title)), model, mode);
                     finish(emulator);
                     const auto& r = emulator.cpu().registers();
@@ -95,7 +95,7 @@ int main() {
                           "AGB compatibility INC/title/legacy handoff differs");
                 }
             }
-            for (auto mode : {BootRomMode::post_boot, BootRomMode::replacement_agb}) {
+            for (auto mode : {BootRomMode::post_boot, BootRomMode::replacement}) {
                 Emulator emulator(Cartridge(rom(true)), model, mode);
                 finish(emulator);
                 const auto& r = emulator.cpu().registers();
@@ -108,16 +108,16 @@ int main() {
             for (unsigned address = 0x134; address <= 0x14c; ++address)
                 sum = (sum - unlicensed[address] - 1) & 255;
             unlicensed[0x14d] = static_cast<std::uint8_t>(sum);
-            Emulator rejected_license(Cartridge(unlicensed), model, BootRomMode::replacement_agb);
+            Emulator rejected_license(Cartridge(unlicensed), model, BootRomMode::replacement);
             finish(rejected_license);
             check(rejected_license.cpu().registers().b == 1 && rejected_license.cpu().registers().f == 0,
                   "AGB must not checksum non-Nintendo new-license titles");
             auto invalid_rom = rom(true); invalid_rom[0x14d] ^= 1;
-            Emulator invalid_agb(Cartridge(invalid_rom), model, BootRomMode::replacement_agb);
+            Emulator invalid_agb(Cartridge(invalid_rom), model, BootRomMode::replacement);
             for (unsigned i = 0; i < 100000; ++i) (void)invalid_agb.step();
             check(invalid_agb.bus().boot_rom_enabled() && invalid_agb.bus().read8(0xff40) == 0,
                   "AGB invalid checksum entered cartridge");
-            Emulator muted(Cartridge(rom(true)), model, BootRomMode::animated_agb);
+            Emulator muted(Cartridge(rom(true)), model, BootRomMode::animated);
             muted.set_audio_enabled(false);
             finish(muted);
             check(muted.take_audio_samples().empty(), "muted AGB intro generated audio");
@@ -126,22 +126,22 @@ int main() {
                   "AGB skip changed firmware mapping");
         }
         for (auto license : {1U, 0x33U}) for (auto title : {0x43U, 0x58U, 0x12U}) {
-            Emulator emulator(Cartridge(rom(false, license, title)), HardwareModel::cgb_e, BootRomMode::replacement_cgb);
+            Emulator emulator(Cartridge(rom(false, license, title)), HardwareModel::cgb_e, BootRomMode::replacement);
             finish(emulator);
             check(emulator.cpu().registers().b == title &&
                 emulator.cpu().registers().h == (title == 0x12 ? 0 : 0x99) &&
                 emulator.cpu().registers().l == (title == 0x12 ? 0x7c : 0x1a), "licensed compatibility handoff differs");
         }
         for (auto profile : {"cgb-e", "agb0", "agb"})
-        for (bool color : {false, true}) for (auto mode : {gbb::StartupMode::replacement_dmg, gbb::StartupMode::animated_dmg}) {
+        for (bool color : {false, true}) for (auto mode : {gbb::StartupMode::replacement, gbb::StartupMode::animated}) {
             gbb::CoreLoadOptions options; options.hardware_model = profile; options.startup_mode = mode;
             auto core = gbb::built_in_core_registry().create(rom(color), options);
             check(gbb::gameboy_emulator(core.get())->bus().boot_rom_enabled(), "factory ignored CGB boot");
-            if (mode == gbb::StartupMode::animated_dmg)
+            if (mode == gbb::StartupMode::animated)
                 check(core->video_frame_native_colors(), "color intro must bypass monochrome palette mapping");
         }
         auto broken = rom(true); broken[0x14d] ^= 1;
-        Emulator invalid(Cartridge(broken), HardwareModel::cgb_e, BootRomMode::animated_cgb);
+        Emulator invalid(Cartridge(broken), HardwareModel::cgb_e, BootRomMode::animated);
         for (unsigned i = 0; i < 100000; ++i) (void)invalid.step();
         check(invalid.bus().boot_rom_enabled() && invalid.bus().read8(0xff40) == 0, "invalid CGB checksum entered cartridge");
 
@@ -182,7 +182,7 @@ int main() {
             check(note == cgb_splash_first_note_cycle ? crossings >= 19 && crossings <= 23
                   : crossings >= 39 && crossings <= 44, "CGB two-note chime pitch differs");
         }
-        Emulator audible(Cartridge(rom(true)), HardwareModel::cgb_e, BootRomMode::animated_cgb);
+        Emulator audible(Cartridge(rom(true)), HardwareModel::cgb_e, BootRomMode::animated);
         while (audible.cpu().total_cycles() < cgb_splash_first_note_cycle + 10000) {
             (void)audible.step();
             if (audible.frame_ready()) { (void)audible.take_audio_samples(); audible.consume_frame(); }
@@ -195,7 +195,7 @@ int main() {
         check(receiver.take_audio_samples() == audible.take_audio_samples(), "CGB restored chime differs");
         audible.set_audio_enabled(false); audible.reset(); finish(audible);
         check(audible.take_audio_samples().empty(), "muted CGB intro generated audio");
-        Emulator skipped(Cartridge(rom(true)), HardwareModel::cgb_e, BootRomMode::animated_cgb);
+        Emulator skipped(Cartridge(rom(true)), HardwareModel::cgb_e, BootRomMode::animated);
         skipped.set_button(Button::start, true);
         check(!skipped.startup_animation_active() && skipped.bus().boot_rom_enabled(), "skip altered firmware startup");
         std::cout << "CGB/AGB firmware, compatibility, reveal, chime, restore and reset passed\n";

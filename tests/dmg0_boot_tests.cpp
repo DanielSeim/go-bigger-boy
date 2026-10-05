@@ -33,7 +33,7 @@ void finish(gameboy::Emulator& emulator, bool* heard = nullptr) {
 int main() {
     try {
         using namespace gameboy;
-        for (bool zero : {false, true}) for (auto mode : {BootRomMode::replacement_dmg0, BootRomMode::animated_dmg0}) {
+        for (bool zero : {false, true}) for (auto mode : {BootRomMode::replacement, BootRomMode::animated}) {
             Emulator emulator(Cartridge(rom(zero)), HardwareModel::dmg0, mode);
             check(emulator.bus().boot_rom_enabled() && emulator.cpu().registers().pc == 0, "DMG0 did not cold boot");
             for (unsigned i = 0; i < 137; ++i) (void)emulator.step();
@@ -43,17 +43,17 @@ int main() {
             check(restored.save_state() == saved, "DMG0 state roundtrip differs");
             bool heard = false;
             finish(emulator, &heard); finish(restored);
-            if (mode == BootRomMode::animated_dmg0) check(heard, "DMG0 animated boot has no chime");
+            if (mode == BootRomMode::animated) check(heard, "DMG0 animated boot has no chime");
             check(restored.save_state() == emulator.save_state(), "DMG0 continuation differs");
             const auto& r = emulator.cpu().registers();
             check(r.a == 1 && r.f == 0 && r.b == 255 && r.c == 0x13 && r.d == 0 && r.e == 0xc1 && r.h == 0x84 && r.l == 3 && r.pc == 0x100 && r.sp == 0xfffe, "DMG0 CPU handoff differs");
             std::cout << "handoff clocks=" << emulator.cpu().total_cycles() << " divider=" << emulator.bus().debug_divider_counter() << " LY=" << unsigned(emulator.bus().read8(0xff44)) << " dot=" << emulator.bus().debug_ppu_dot() << '\n';
             check(emulator.bus().debug_divider_counter() == 0x1828 && emulator.bus().read8(0xff44) == 0x91 && emulator.bus().read8(0xff41) == 0x81 && emulator.bus().debug_ppu_dot() == 92, "DMG0 divider/LCD handoff differs");
-            check(emulator.cpu().total_cycles() == (mode == BootRomMode::animated_dmg0 ? 24863304U : 4285000U), "DMG0 boot duration changed");
+            check(emulator.cpu().total_cycles() == (mode == BootRomMode::animated ? 24863304U : 4285000U), "DMG0 boot duration changed");
             emulator.reset(); finish(emulator);
             check(emulator.cpu().registers().b == 255 && emulator.cpu().registers().f == 0, "DMG0 reset used later firmware");
         }
-        for (auto mode : {BootRomMode::replacement_dmg0, BootRomMode::animated_dmg0}) {
+        for (auto mode : {BootRomMode::replacement, BootRomMode::animated}) {
             auto bytes = rom(); bytes[0x14d] ^= 1;
             Emulator invalid(Cartridge(bytes), HardwareModel::dmg0, mode);
             bool white = false, black = false;
@@ -68,7 +68,7 @@ int main() {
             }
             check(invalid.bus().boot_rom_enabled() && white && black && !invalid.startup_animation_active(), "DMG0 failed checksum must blink, not launch cartridge or GBB intro");
         }
-        for (auto mode : {gbb::StartupMode::replacement_dmg, gbb::StartupMode::animated_dmg}) {
+        for (auto mode : {gbb::StartupMode::replacement, gbb::StartupMode::animated}) {
             gbb::CoreLoadOptions options; options.hardware_model = "dmg0"; options.startup_mode = mode;
             auto core = gbb::built_in_core_registry().create(rom(), options);
             auto* emulator = gbb::gameboy_emulator(core.get());
@@ -76,7 +76,7 @@ int main() {
             finish(*emulator);
             check(emulator->cpu().registers().b == 255, "factory selects wrong boot image");
         }
-        Emulator audible(Cartridge(rom()), HardwareModel::dmg0, BootRomMode::animated_dmg0);
+        Emulator audible(Cartridge(rom()), HardwareModel::dmg0, BootRomMode::animated);
         while (audible.cpu().total_cycles() < 18'600'000) {
             (void)audible.step();
             if (audible.frame_ready()) { (void)audible.take_audio_samples(); audible.consume_frame(); }
