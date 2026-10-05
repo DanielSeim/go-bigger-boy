@@ -1275,9 +1275,27 @@ if(GAMEBOY_BUILD_TESTS)
     add_executable(gameboy_sgb_host_tests tests/sgb_host_tests.cpp)
     if(NOT ANDROID AND NOT EMSCRIPTEN)
         add_executable(gameboy_sgb_firmware_core_tests tests/sgb_firmware_core_tests.cpp)
-        target_include_directories(gameboy_sgb_firmware_core_tests PRIVATE apps/sdl)
+        target_include_directories(gameboy_sgb_firmware_core_tests PRIVATE apps/sdl scripts)
         target_link_libraries(gameboy_sgb_firmware_core_tests PRIVATE gbb_core_api)
         add_test(NAME gameboy_sgb_firmware_core_contract COMMAND gameboy_sgb_firmware_core_tests)
+        if(Python3_Interpreter_FOUND)
+            add_test(NAME gameboy_sgb_production_report_contract
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_production_report_tests.py)
+        endif()
+        if(Python3_Interpreter_FOUND AND
+           EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb1.program.rom" AND
+           EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.program.rom" AND
+           EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/spc700.rom" AND
+           EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/Donkey Kong (JU) (V1.1) [S][!].gb" AND
+           EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/Donkey Kong (JU) (V1.1) [S][!].sav")
+            add_test(NAME gameboy_sgb_production_local_titles
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_production_local_title_tests.py
+                --runner $<TARGET_FILE:gameboy_sgb_firmware_core_tests>
+                --roms ${CMAKE_CURRENT_SOURCE_DIR}/roms)
+            # Allow the subprocess timeout to reap its runner and remove private
+            # temporary images before CTest's outer watchdog expires.
+            set_tests_properties(gameboy_sgb_production_local_titles PROPERTIES TIMEOUT 960 LABELS "sgb;private")
+        endif()
     endif()
     target_link_libraries(gameboy_sgb_host_tests PRIVATE gameboy_core)
     add_test(NAME gameboy_sgb_host_contract COMMAND gameboy_sgb_host_tests)

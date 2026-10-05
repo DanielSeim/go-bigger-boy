@@ -14,6 +14,11 @@ real input and lifecycle:
 The Windows firmware runner is an optional local qualification, not a CI job
 requiring private dumps. See [native Windows device qualification](sgb-host.md#native-windows-device-qualification)
 for the commands, limits, and separate physical listening check.
+Use its `-BundledBootstrap` option to exclude optional private GB boot overrides
+without modifying the original firmware directory. The separate local
+`gameboy_sgb_production_local_titles` contract checks exact stereo 48 kHz
+adapter/host output and state/reset behavior with caller-owned Donkey Kong
+inputs; it does not replace native-window or physical listening checks.
 
 The Web test creates a tiny looping ROM in memory. It does not contain a game
 dump and is intentionally limited to startup and presentation flow; gameplay

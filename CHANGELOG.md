@@ -22,6 +22,10 @@
 
 ### SGB firmware host correctness
 
+- Extend bundled SGB1/SGB2 desktop adapter regression coverage through boot
+  handoff, stereo 48 kHz audio, viewport output, reset and snapshot restoration.
+  Add an optional private-title production replay and a Windows playback mode
+  that excludes external GB boot overrides using isolated firmware copies.
 - Correct complete cold reset and restore destination-owned audio callbacks.
 - Clock raw ICD LCD pixel and physical-line availability at PPU emission
   boundaries instead of publishing whole rows at the next scanline. Preserve

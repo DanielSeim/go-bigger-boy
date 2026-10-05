@@ -188,8 +188,38 @@ uses isolated preferences, and restores its process environment afterward:
 scripts/run_windows_sgb_playback.ps1 -Executable C:\build\gbb.exe `
   -Rom C:\private\game.gb -FirmwareDirectory C:\private\firmware `
   -InitialSave C:\private\game.sav -OutputDirectory C:\captures\sgb-playback `
-  -Frames 7200
+  -Frames 7200 -BundledBootstrap
 ```
+
+`-BundledBootstrap` exercises the normal bundled SGB/SGB2 Game Boy-side
+bootstrap even when the input directory contains private GB boot overrides.
+The runner copies only the two SNES program images and SPC IPL into a fresh
+subdirectory of the capture directory; originals are untouched. Provenance
+records each model's bundled/override selection. Without this switch, absent
+GB boot overrides are also supported, matching the desktop loader.
+
+The optional `gameboy_sgb_production_local_titles` CTest uses the local Donkey
+Kong v1.1 ROM and pinned initial save with those same three private firmware
+images. It runs both actual desktop adapters at stereo 48 kHz with bundled
+bootstrap, comparing every frame's PCM and full border/viewport against a
+same-platform host, checking unread-audio/frame-cursor restoration repeatedly,
+and replaying cold reset while preserving battery RAM. Script input is sampled
+at frontend presentation boundaries, unlike the raw host's native GB LCD-frame
+script. This is an implementation regression, not an independent accuracy
+reference. ROM-free CI also compares both bundled adapter paths through boot
+handoff into an original audible cartridge fixture.
+
+With the pinned private inputs present when CMake is configured:
+
+```sh
+ctest --test-dir build-desktop -R 'sgb_(firmware_core|production)' --output-on-failure
+```
+
+The private replay runs 3,600 presentation frames per model and pins PCM, full
+video and final GB state on Linux/GCC. Other compilers still require exact
+same-platform adapter/host parity rather than assuming floating-point audio
+hashes are portable. The report validator has separate ROM-free rejection
+tests, and private staging images are removed when the replay exits.
 
 Each model runs about two minutes, with a real native window and WASAPI device.
 Keep these runs uninterrupted; record what you hear separately. Provenance
@@ -222,7 +252,7 @@ Run lifecycle checks separately, in another fresh output directory:
 ```powershell
 scripts/run_windows_sgb_playback.ps1 -Executable C:\build\gbb.exe `
   -Rom C:\private\game.gb -FirmwareDirectory C:\private\firmware `
-  -OutputDirectory C:\captures\sgb-lifecycle -Frames 1800 -Lifecycle
+  -OutputDirectory C:\captures\sgb-lifecycle -Frames 1800 -Lifecycle -BundledBootstrap
 ```
 
 This posts native menu commands only to the new test process's verified window:
@@ -246,11 +276,26 @@ The final uninterrupted 7200-frame runs passed after ten seconds of warmup:
 | SGB1 | 60.0985 | 17.49 ms | 22.67 ms | 14.30 ms | 0 |
 | SGB2 | 60.0985 | 17.38 ms | 25.34 ms | 14.17 ms | 0 |
 
-They recorded 7 and 0 empty-input-queue observations respectively. Both models
-also passed separate native-menu lifecycle checks. User listening during the
-preceding two-model run reported no crackling, gaps or unusual volume changes;
-an audible difference between the models was noted, without a validated cause.
-The original battery save's SHA-256 remained unchanged.
+Those October 4 runs recorded 7 and 0 empty-input-queue observations
+respectively. Both models also passed separate native-menu lifecycle checks.
+User listening during the preceding two-model run reported no crackling, gaps
+or unusual volume changes; an audible difference between the models was noted,
+without a validated cause. The original battery save's SHA-256 remained unchanged.
+
+A fresh MinGW Release build executed on Windows on 2026-10-05 also passed
+7,200 frames per model using **bundled GB bootstraps**, the pinned initial save,
+Balanced, Direct3D11 and WASAPI. These are paced frontend results, not renewed
+unpaced headroom qualification:
+
+| Model | Measured FPS | Frame p99 | Worst frame | Median work | Latency resets |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| SGB1 | 60.0985 | 18.34 ms | 22.85 ms | 14.21 ms | 0 |
+| SGB2 | 60.0985 | 18.00 ms | 33.19 ms | 14.05 ms | 0 |
+
+Empty-input-queue observations were 2 and 4; these are not hardware underrun
+counts. Both bundled models passed separate 1,800-frame native menu
+pause/resume, model-isolated save, cold reset and load checks. Physical
+listening for this fresh run is not recorded.
 
 These are bounded local checks, **not** proof of hard realtime, universal
 title/device performance, hardware-perfect audio, or large end-to-end headroom.

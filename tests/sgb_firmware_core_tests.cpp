@@ -5,12 +5,14 @@
 #include "gameboy/sgb_host.hpp"
 #include "desktop_launch_options.hpp"
 #include "desktop_firmware_settings.hpp"
+#include "sgb_input_script.h"
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include <string_view>
 
 namespace {
 void check(bool value,const char* what) { if(!value) throw std::runtime_error(what); }
@@ -39,8 +41,122 @@ gameboy::SgbHostConfig fixture() {
     c.spc_ipl[0]=0x2f; c.spc_ipl[1]=0xfe;
     return c;
 }
+std::vector<std::uint8_t> read(const std::filesystem::path& path) {
+    std::ifstream file(path,std::ios::binary|std::ios::ate);
+    check(bool(file),"private input opens");
+    const auto size=file.tellg();
+    check(size>=0 && size<=1024*1024,"private input size bounded");
+    std::vector<std::uint8_t> bytes(static_cast<std::size_t>(size));
+    file.seekg(0); file.read(reinterpret_cast<char*>(bytes.data()),bytes.size());
+    check(bool(file),"private input read complete"); return bytes;
 }
-int main() {
+void hash_word(std::uint64_t& hash,std::uint64_t value,unsigned bytes) {
+    for(unsigned n=0;n<bytes;++n) { hash^=static_cast<std::uint8_t>(value>>(8*n)); hash*=1099511628211ULL; }
+}
+void production_titles(const char* directory,const char* game,const char* save,const char* script_path) {
+    const std::filesystem::path firmware=directory;
+    check(!std::filesystem::exists(firmware/"sgb.boot.rom") &&
+          !std::filesystem::exists(firmware/"sgb2.boot.rom"),"production fixture has no GB boot overrides");
+    const auto rom=read(game), battery=read(save), ipl=read(firmware/"spc700.rom");
+    check(ipl.size()==64,"production IPL size");
+    gbb_sgb_input_script script{}; char error[128]{};
+    check(gbb_sgb_input_load(script_path,&script,error,sizeof(error)),error);
+    constexpr gbb::InputId input[]{gbb::InputId::right,gbb::InputId::left,gbb::InputId::up,gbb::InputId::down,
+        gbb::InputId::a,gbb::InputId::b,gbb::InputId::select,gbb::InputId::start};
+    for(const auto model:{gameboy::HardwareModel::sgb,gameboy::HardwareModel::sgb2}) {
+        const bool sgb2=model==gameboy::HardwareModel::sgb2;
+        gbb::CoreLoadOptions options; options.hardware_model=sgb2?"sgb2":"sgb";
+        options.sgb_firmware_directory=firmware; // No source/persistence path: never write original saves.
+        auto core=gbb::create_core(rom,options);
+        check(core->descriptor().audio_sample_rate==48000 && core->descriptor().audio_channels==2,
+              "production adapter uses stereo 48 kHz");
+        core->import_persistent_data(gbb::PersistentDataKind::battery_ram,battery);
+        gameboy::SgbHostConfig cfg; cfg.model=model; cfg.game_rom=rom; cfg.combined_audio=true; cfg.output_hz=48000;
+        cfg.program_rom=read(firmware/(sgb2?"sgb2.program.rom":"sgb1.program.rom"));
+        cfg.gb_boot_rom=sgb2?gameboy::sgb2_boot_rom():gameboy::sgb_boot_rom();
+        std::copy(ipl.begin(),ipl.end(),cfg.spc_ipl.begin());
+        gameboy::SgbHost oracle(cfg); oracle.import_battery_ram(battery);
+        std::uint64_t audio_hash=14695981039346656037ULL, video_hash=audio_hash, samples=0, nonzero=0;
+        unsigned restores=0; std::size_t next_input=0;
+        const auto advance=[&](bool capture,bool restore=false) {
+            while(!core->frame_ready()) {
+                const auto before=oracle.cpu().timing().clocks();
+                const auto clocks=core->step_instruction();
+                check(oracle.step(),"production oracle instruction supported");
+                check(clocks==oracle.cpu().timing().clocks()-before,"adapter/host instruction clocks exact");
+            }
+            if(restore) {
+                check(oracle.pending_samples()>0,"production snapshot contains unread PCM");
+                const auto snapshot=core->save_state();
+                // Pause is frontend policy: queries must not clock the core.
+                (void)core->video_frame(); (void)core->frame_ready();
+                check(core->save_state()==snapshot,"paused queries cannot advance production state");
+                (void)core->step_instruction(); core->load_state(snapshot);
+                check(core->frame_ready() && core->save_state()==snapshot,
+                      "production wrapper restores ready frame cursor and unread PCM"); ++restores;
+            }
+            const auto actual=core->take_audio_samples(); std::vector<std::int16_t> expected;
+            gameboy::SgbHost::StereoSample sample;
+            while(oracle.pop_sample(sample)) { expected.push_back(sample.left); expected.push_back(sample.right); }
+            check(actual==expected,"production adapter PCM exact at every frame boundary");
+            check(core->take_audio_samples().empty(),"production audio drains once");
+            const auto view=core->video_frame(); const auto& pixels=oracle.icd().emulator().sgb_framebuffer();
+            check(view.width==256 && view.height==224 && view.pixel_count==pixels.size() &&
+                  std::equal(pixels.begin(),pixels.end(),view.pixels),"production border/viewport exact");
+            if(capture) {
+                for(auto value:actual) { hash_word(audio_hash,static_cast<std::uint16_t>(value),2); if(value) ++nonzero; }
+                samples+=actual.size()/2;
+                for(auto pixel:pixels) hash_word(video_hash,pixel,4);
+            }
+            core->consume_frame(); check(!core->frame_ready(),"production frame consumes once");
+        };
+        for(unsigned frame=0;frame<3600;++frame) {
+            // Real frontends sample live input at presentation boundaries,
+            // not at the raw host runner's native GB LCD-frame boundaries.
+            if(next_input<script.count && script.events[next_input].frame==frame) {
+                const auto mask=script.events[next_input++].mask;
+                for(unsigned n=0;n<8;++n) {
+                    core->set_input(input[n],(mask&(1U<<n))!=0);
+                    oracle.set_button(static_cast<gameboy::Button>(n),(mask&(1U<<n))!=0);
+                }
+            }
+            advance(true,frame%137==0);
+            if(frame%120==0) {
+                const auto state=core->save_state();
+                check(std::vector<std::uint8_t>(state.begin()+16,state.end()-8)==oracle.save_state(),
+                      "production wrapper owns exactly one matching host");
+            }
+        }
+        check(next_input==script.count && !oracle.icd().emulator().bus().boot_rom_enabled(),"production replay completes input and bundled bootstrap");
+        check(oracle.icd().sound_packets_delivered()>0 && samples>0 && nonzero>0,"production replay has SOUND delivery and audible digital output");
+        std::uint64_t state_hash=14695981039346656037ULL;
+        for(auto byte:oracle.icd().emulator().save_state()) hash_word(state_hash,byte,1);
+        const auto live_ram=core->export_persistent_data(gbb::PersistentDataKind::battery_ram);
+        core->reset(); oracle.reset(); oracle.import_battery_ram(live_ram);
+        check(!core->frame_ready() && core->take_audio_samples().empty(),"production cold reset clears queued presentation");
+        check(core->export_persistent_data(gbb::PersistentDataKind::battery_ram)==live_ram,"production reset keeps live battery RAM");
+        for(unsigned n=0;n<64;++n) advance(false);
+        const auto reset_state=core->save_state();
+        check(std::vector<std::uint8_t>(reset_state.begin()+16,reset_state.end()-8)==oracle.save_state(),"production reset replays bundled startup exactly");
+        std::cout<<"{\"format\":\"gbb-sgb-production-v1\",\"model\":\""<<(sgb2?"sgb2":"sgb1")
+                 <<"\",\"boot\":\"bundled\",\"input_clock\":\"presentation-frame\",\"output_hz\":48000,\"frames\":3600,\"samples\":"<<samples
+                 <<",\"nonzero\":"<<nonzero<<",\"audio_hash\":"<<audio_hash<<",\"video_hash\":"<<video_hash
+                 <<",\"gb_state_hash\":"<<state_hash<<",\"restores\":"<<restores<<",\"inputs\":"<<next_input
+#if defined(__linux__) && defined(__GNUC__) && !defined(__clang__)
+                 <<",\"pin_profile\":\"linux-gcc\""
+#else
+                 <<",\"pin_profile\":\"same-platform\""
+#endif
+                 <<"}\n"<<std::flush;
+    }
+}
+}
+int main(int argc,char** argv) {
+    if(argc>1) {
+        if(argc!=6 || std::string_view(argv[1])!="--local-production") return 2;
+        try { production_titles(argv[2],argv[3],argv[4],argv[5]); return 0; }
+        catch(const std::exception& e) { std::cerr<<e.what()<<'\n'; return 1; }
+    }
     const auto root=std::filesystem::temp_directory_path()/
         ("gbb-firmware-contract-"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     try {
@@ -196,13 +312,42 @@ int main() {
         // GB-side images are optional; private program and SPC IPL stay required.
         std::filesystem::remove(root/"sgb.boot.rom");
         std::filesystem::remove(root/"sgb2.boot.rom");
+        // An original audible cartridge fixture, not a private game dump.
+        auto audible=cfg.game_rom;
+        std::copy_n(cfg.gb_boot_rom.begin(),35,audible.begin()+0x150);
+        audible[0x150+33]=0x70; audible[0x150+34]=1; // JP to its own final instruction.
         for (const auto name : {"sgb", "sgb2"}) {
             gbb::validate_sgb_firmware_images(root,name);
             options.hardware_model=name;
-            auto bundled=gbb::create_core(cfg.game_rom,options);
-            check(gbb::advance_to_frame(*bundled,bundled->descriptor().nominal_cycles_per_frame).frame_ready,
-                  "bundled GB bootstrap works with synthetic SNES host");
-            bundled->consume_frame();
+            auto bundled=gbb::create_core(audible,options);
+            auto reference_cfg=cfg; reference_cfg.game_rom=audible;
+            reference_cfg.model=std::string_view(name)=="sgb2"?gameboy::HardwareModel::sgb2:gameboy::HardwareModel::sgb;
+            reference_cfg.gb_boot_rom=reference_cfg.model==gameboy::HardwareModel::sgb2?
+                gameboy::sgb2_boot_rom():gameboy::sgb_boot_rom();
+            gameboy::SgbHost reference(reference_cfg);
+            bool nonzero=false;
+            for(unsigned frame=0;frame<64;++frame) {
+                while(!bundled->frame_ready()) {
+                    const auto before=reference.cpu().timing().clocks();
+                    check(reference.step(),"synthetic bundled oracle step");
+                    check(bundled->step_instruction()==reference.cpu().timing().clocks()-before,"bundled instruction timing exact");
+                }
+                if(frame%17==0) {
+                    check(reference.pending_samples()>0,"ROM-free snapshot has unread PCM");
+                    const auto queued=bundled->save_state();
+                    (void)bundled->step_instruction(); bundled->load_state(queued);
+                    check(bundled->frame_ready() && bundled->save_state()==queued,"bundled ready-frame and unread PCM restore exactly");
+                }
+                std::vector<std::int16_t> expected;
+                gameboy::SgbHost::StereoSample sample;
+                while(reference.pop_sample(sample)) { expected.push_back(sample.left); expected.push_back(sample.right); }
+                check(bundled->take_audio_samples()==expected,"bundled 48 kHz stereo PCM exact");
+                nonzero|=std::any_of(expected.begin(),expected.end(),[](auto value){return value!=0;});
+                const auto view=bundled->video_frame(); const auto& pixels=reference.icd().emulator().sgb_framebuffer();
+                check(view.pixel_count==pixels.size() && std::equal(pixels.begin(),pixels.end(),view.pixels),"bundled full viewport exact");
+                bundled->consume_frame();
+            }
+            check(!reference.icd().emulator().bus().boot_rom_enabled() && nonzero,"bundled bootstrap hands off to audible cartridge");
             const auto state=bundled->save_state(); bundled->load_state(state);
             check(bundled->save_state()==state,"bundled firmware snapshot roundtrip");
             bundled->reset();

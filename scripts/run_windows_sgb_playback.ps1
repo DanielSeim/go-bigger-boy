@@ -5,7 +5,8 @@ param(
     [Parameter(Mandatory=$true)][string]$OutputDirectory,
     [string]$InitialSave,
     [ValidateRange(1,36000)][int]$Frames=7200,
-    [switch]$Lifecycle
+    [switch]$Lifecycle,
+    [switch]$BundledBootstrap
 )
 # Caller-owned inputs only. A fresh output directory isolates preferences and
 # battery saves; neither installed settings nor original saves are modified.
@@ -40,12 +41,28 @@ try {
     $env:GBB_FRAME_TIMING='1'
     $env:SDL_AUDIODRIVER='wasapi'
     $hashes=@{}
-    foreach($name in @('sgb1.program.rom','sgb2.program.rom','sgb.boot.rom','sgb2.boot.rom','spc700.rom')) {
+    if($BundledBootstrap) {
+        $bundledDirectory=Join-Path $OutputDirectory 'firmware-bundled'
+        New-Item -ItemType Directory -Path $bundledDirectory | Out-Null
+        foreach($name in @('sgb1.program.rom','sgb2.program.rom','spc700.rom')) {
+            Copy-Item -LiteralPath (Join-Path $FirmwareDirectory $name) -Destination (Join-Path $bundledDirectory $name)
+        }
+        $FirmwareDirectory=$bundledDirectory
+    }
+    foreach($name in @('sgb1.program.rom','sgb2.program.rom','spc700.rom')) {
         $hashes[$name]=(Get-FileHash -LiteralPath (Join-Path $FirmwareDirectory $name) -Algorithm SHA256).Hash
+    }
+    $bootModes=@{}
+    foreach($name in @('sgb.boot.rom','sgb2.boot.rom')) {
+        $path=Join-Path $FirmwareDirectory $name
+        if(Test-Path -LiteralPath $path) {
+            $hashes[$name]=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
+            $bootModes[$name]='external override'
+        } else { $bootModes[$name]='bundled' }
     }
     $metadata=@{executable_sha256=(Get-FileHash -LiteralPath $Executable -Algorithm SHA256).Hash;
         rom_sha256=(Get-FileHash -LiteralPath $Rom -Algorithm SHA256).Hash;
-        firmware_sha256=$hashes; frames=$Frames; utc_started=[DateTime]::UtcNow.ToString('o');
+        firmware_sha256=$hashes; gb_boot_modes=$bootModes; frames=$Frames; utc_started=[DateTime]::UtcNow.ToString('o');
         power_profile=(& powercfg.exe /getactivescheme | Out-String).Trim();
         audio_backend='wasapi'; lifecycle=[bool]$Lifecycle; physical_listening='not recorded; report separately'}
     if ($InitialSave) { $metadata.initial_save_sha256=(Get-FileHash -LiteralPath $InitialSave -Algorithm SHA256).Hash }
