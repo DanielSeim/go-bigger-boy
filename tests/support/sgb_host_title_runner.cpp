@@ -245,9 +245,18 @@ int main(int argc,char** argv) {
             }
         };
         for(std::uint64_t n=0;n<steps;++n) {
-            if(!host.step()) throw std::runtime_error("host stopped at step "+std::to_string(n)+
-                " status "+std::to_string(static_cast<unsigned>(host.status()))+
-                " address "+std::to_string(host.fault().address));
+            if(!host.step()) {
+                const auto lcd=host.icd().lcd_diagnostics();
+                throw std::runtime_error("host stopped at step "+std::to_string(n)+
+                    " status "+std::to_string(static_cast<unsigned>(host.status()))+
+                    " address "+std::to_string(host.fault().address)+
+                    " LCD line="+std::to_string(lcd.physical_line)+
+                    " bank="+std::to_string(lcd.selected_bank)+
+                    " offset="+std::to_string(lcd.stream_offset)+
+                    " valid_mask="+std::to_string(lcd.valid_banks)+
+                    " complete_mask="+std::to_string(lcd.complete_banks)+
+                    " pending="+std::to_string(lcd.pending_events));
+            }
             consume(false);
             const auto clock=host.cpu().timing().clocks();
             if(clock>=next_window) {
@@ -272,7 +281,7 @@ int main(int argc,char** argv) {
         write_pcm_wav(argv[7],pcm,host.sample_rate());
         std::ofstream report(argv[8]);
         report<<std::setprecision(10);
-        report<<"{\"format\":\"gbb-sgb-host-performance-v1\",\"gb_reset_profile\":\"cold-sgb-v1\",\"model\":\""<<model<<"\",\"steps\":"<<host.cpu().steps()
+        report<<"{\"format\":\"gbb-sgb-host-performance-v1\",\"gb_reset_profile\":\"cold-sgb-v1\",\"gb_lcd_profile\":\"clocked-pixel-v1\",\"model\":\""<<model<<"\",\"steps\":"<<host.cpu().steps()
               <<",\"master_clocks\":"<<host.cpu().timing().clocks()<<",\"apu_half_clocks\":"<<host.apu_half_clocks()
               <<",\"samples\":"<<pcm.size()<<",\"nonzero\":"<<nonzero<<",\"gb_frames\":"<<host.icd().completed_frames()
               <<",\"inputs\":"<<host.icd().input_events_applied()<<",\"sound_delivered\":"<<host.icd().sound_packets_delivered()

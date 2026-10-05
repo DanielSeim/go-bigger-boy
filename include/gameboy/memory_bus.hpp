@@ -52,6 +52,9 @@ public:
     void write8(std::uint16_t address, std::uint8_t value) noexcept;
     void write16(std::uint16_t address, std::uint16_t value) noexcept;
     void tick(unsigned cycles) noexcept;
+    void set_sgb_lcd_sink(Ppu::SgbLcdSink sink, void* context) noexcept {
+        ppu_.set_sgb_lcd_sink(sink, context);
+    }
     void request_interrupt(unsigned index) noexcept;
     void set_button(Button button, bool pressed) noexcept;
     void set_player_button(std::uint8_t player, Button button,

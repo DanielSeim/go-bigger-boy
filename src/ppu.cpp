@@ -321,9 +321,11 @@ std::uint8_t Ppu::read_register(const std::uint16_t address) const noexcept {
 }
 
 bool Ppu::write_register(const std::uint16_t address,
-                         const std::uint8_t value) noexcept {
+                         const std::uint8_t value, const std::uint64_t clock) noexcept {
     switch (address) {
     case 0xFF40: {
+        if (sgb_lcd_sink_ && sgb_mode_ && ((lcdc_ ^ value) & 0x80))
+            sgb_lcd_sink_(sgb_lcd_context_, clock, 161, 0, (value >> 7) & 1U);
         const auto was_enabled = lcd_enabled();
         if (sgb_mode_ && was_enabled && (value & 0x80U) == 0) {
             sgb_lcd_frozen_ = true;

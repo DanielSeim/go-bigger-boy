@@ -34,6 +34,13 @@ public:
     // earlier CGB revisions also re-sample it for both bitplanes.
     void set_cgb_late_revision(bool enabled) noexcept;
     void set_sgb_mode(bool enabled) noexcept;
+    // Physical LCD output only, before SNES palettes/masking. x=160 marks a
+    // physical line boundary; x=161 marks LCD enable/disable (value=1/0).
+    // Clock base is supplied by the bus; callback bindings are never saved.
+    using SgbLcdSink = void (*)(void*, std::uint64_t, unsigned, unsigned, std::uint8_t) noexcept;
+    void set_sgb_lcd_sink(SgbLcdSink sink, void* context) noexcept {
+        sgb_lcd_sink_ = sink; sgb_lcd_context_ = context;
+    }
     void debug_set_sgb_palette_cache_enabled(bool enabled) noexcept { sgb_palette_cache_enabled_ = enabled; }
     [[nodiscard]] bool cgb_mode() const noexcept;
     [[nodiscard]] unsigned debug_dot() const noexcept { return dot_; }
@@ -111,10 +118,10 @@ public:
     [[nodiscard]] std::uint8_t read_register(std::uint16_t address) const noexcept;
     // Returns true when the write raises the STAT interrupt line.
     [[nodiscard]] bool write_register(std::uint16_t address,
-                                      std::uint8_t value) noexcept;
+                                      std::uint8_t value, std::uint64_t clock = 0) noexcept;
 
     // Returns IF-compatible request bits: bit 0 VBlank, bit 1 STAT.
-    [[nodiscard]] std::uint8_t tick(unsigned cycles) noexcept;
+    [[nodiscard]] std::uint8_t tick(unsigned cycles, std::uint64_t clock_base = 0) noexcept;
 
     [[nodiscard]] const Framebuffer& framebuffer() const noexcept;
     [[nodiscard]] const SgbFramebuffer& sgb_framebuffer() const noexcept;
@@ -148,7 +155,7 @@ private:
     [[nodiscard]] bool window_active_on_line() const noexcept;
     void begin_visible_line() noexcept;
     void begin_mode3() noexcept;
-    void tick_mode3() noexcept;
+    void tick_mode3(std::uint64_t clock) noexcept;
     void tick_background_fetcher() noexcept;
     void begin_window_fetch() noexcept;
     void resume_background_fetch() noexcept;
@@ -159,7 +166,9 @@ private:
     void activate_object_pixel(unsigned x) noexcept;
     void deactivate_object_pixel(unsigned x) noexcept;
     void rebuild_object_pixel_deadline_index() noexcept;
-    void emit_pixel() noexcept;
+    void emit_pixel(std::uint64_t clock) noexcept;
+    SgbLcdSink sgb_lcd_sink_{};
+    void* sgb_lcd_context_{};
     [[nodiscard]] BackgroundPixel pop_background_pixel() noexcept;
     [[nodiscard]] BackgroundPixel background_pixel_at_screen(
         unsigned x) const noexcept;

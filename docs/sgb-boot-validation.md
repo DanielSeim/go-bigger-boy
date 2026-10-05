@@ -71,8 +71,9 @@ not publish a second frame or start rendering line zero early.
 ICD scanline status and tile-row completion use the physical PPU scanline,
 not CPU-visible LY. Thus the early LY=0 alias cannot expose visible row zero
 to the SNES host while internal line 153 is still in VBlank. A ROM-free
-boundary test covers both models. This remains the existing scanline-granular
-ICD approximation, not a claim of cycle-exact ICD2 pixel transfer.
+boundary test covers both models. The subsequent clocked LCD bridge below
+replaces whole-scanline row publication; this is still not a claim of complete
+cycle-exact ICD2 hardware behavior.
 
 The replacement deliberately leaves VRAM clear instead of reproducing Nintendo
 logo tiles. The report's `cycle_exact=true` now means the measured boot I/O
@@ -211,3 +212,110 @@ Android debug build/unit tests and all eight browser tests pass. The three
 WebGL voxel visual comparisons report zero mismatched pixels. These runs verify
 software reset/playback invariants, not a new device-performance or physical
 audio assessment.
+
+## Clocked LCD bridge
+
+The PPU sends raw two-bit pixels at their actual FIFO emission clocks, before
+SNES masking, palette mapping or presentation. The ICD packs those bits directly
+into its four 320-byte planar banks. A row first becomes initialized/complete at
+pixel 159 of its eighth physical line, rather than at the following scanline.
+`$6000` status follows timestamped physical line boundaries, never the CPU's
+early LY=0 alias or an instruction's future PPU state.
+
+GB execution is still instruction-granular. A fixed 32-event queue holds only
+LCD output beyond the requested host/GB rendezvous; cached rendezvous calls
+drain due events even when no new GB instruction executes. STOP gaps are
+included in the GB clock epoch. There is no per-pixel allocation. Pending
+events and partial planar banks are saved in experimental host state version 3;
+callback bindings and derived clock caches are rebuilt on the destination.
+
+Initialized and complete are distinct. Completed RAM survives LCD off. Reusing
+a bank marks its current generation incomplete but retains known earlier bits,
+overwriting only bits that have physically arrived. Real SGB firmware reads
+such initialized in-progress banks after LCD restart; rejecting those reads
+breaks otherwise working firmware playback. Never-initialized bank reads still
+fail closed. This deterministic read/write-collision model is **not independently
+validated hardware behavior**: the [ICD2 register documentation](https://gbdev.gg8.se/wiki/articles/ICD2)
+explicitly describes reading the producer's incomplete buffer as unpredictable.
+No analog LCD timing or undocumented ICD propagation delay is invented here.
+
+`SgbIcdGbSource::set_lcd_observer` provides opt-in timing observations without
+changing transfer behavior. Events contain GB clock, x, physical y and raw
+pixel; x=160 denotes a physical line boundary and x=161 an LCD enable/disable
+edge (pixel=1/0). `lcd_diagnostics()` distinguishes initialized and completed
+banks and reports the stream offset and pending event count. The private title
+runner includes that context in transfer faults. Captures can contain cartridge
+graphics and must remain private.
+
+ROM-free contracts cover one-clock-before/at-completion reads, status edges,
+changed tile bits on bank reuse, planar packing, register aliases, the 192-byte
+FF tail and 512-byte stream wrap. A literal-dot oracle checks batched timing
+through fine-scroll, window and OBJ stalls and all four SNES mask modes; LCD
+off emits no fake pixels. Whole-host continuation tests retain pending output
+and destination-owned callbacks across same/cross-instance restores. The four
+deferred title-level visual mismatches remain outside this milestone.
+
+### Playback baseline evidence
+
+Private Donkey Kong captures retain every interleaved PCM sample from the
+preceding cold-reset native/combined baselines, bit for bit. Clocked `$6000`
+polling changes where the fixed 60-million-instruction budget ends: SGB1 ends
+11,392 master clocks later (about 0.530 ms), SGB2 3,470 clocks later (about
+0.162 ms). Only the following stereo frames are appended; WAV hashes also
+change because their length headers change.
+
+| Model | Native SNES frames appended | Combined frames appended |
+| --- | ---: | ---: |
+| SGB1 | 17 | 25 at 48 kHz |
+| SGB2 | 6 | 7 at 44.1 kHz |
+
+GB frame counts remain 5,419/5,360, with 11 scripted inputs and three SOUND
+packets on each model. Final GB-state pins change with the new endpoint, not
+with a rendering or audio-quality change. New whole-host reports identify
+`gb_lcd_profile: clocked-pixel-v1`; the exact WAV/state pins in the title tests
+and serial benchmark refer to that profile together with `cold-sgb-v1`.
+
+The older synthetic-input SOUND diagnostic models are a separate claim.
+Their selected rendezvous timing changes KON observations to 37/39 in
+cycle-bus/shared/fractional modes and 41/44 in exact integer APU mode. First
+audible packet capture/delivery frames remain 2472 and 2472/2522; fractional
+positive timer polls retain 558/2876 spacing, 2/1 ticks and phases 124→212→0.
+The fractional diagnostic WAV SHA-256 is now
+`823ceeb4a785cf531ccc63ce9d106a834a794350dd0e96cb7634e6683d0b9133`.
+Unlike production native/combined playback, those diagnostic PCM payloads
+can differ after the changed port rendezvous. Their independent upload
+digests and startup/music timing bounds remain unchanged. No timing offset,
+PCM tolerance relaxation, sample reduction or presentation downgrade is used.
+
+Clocked-bridge validation passes all 174 standard nonlocal/non-performance
+CTest regressions, the performance-report gate, all three private playback
+suites and all eleven selected local diagnostic profiles. Native, restored
+and scalar playback agree exactly on both models, including 586 SGB1 and
+538 SGB2 combined restores and 257-sample consumer partitions. Expanded
+ROM-free LCD tests cover both models at all four ICD dividers and STOP/resume.
+Native and Windows host tests pass, as do Windows replacement-boot tests,
+Android debug build/unit tests, the WebAssembly build and all eight browser
+tests. Three WebGL voxel visual comparisons have zero mismatched pixels.
+These checks do not resolve the four deferred visual mismatches or certify
+physical ICD read/write collisions.
+
+The fresh serial Release/IPO Linux host-only measurement uses one run per
+profile, 90 post-warmup windows each, no competing build/test jobs, and an
+unspecified power profile. All four complete WAV and final GB-state pins pass;
+all four fail the unchanged 1.40x p05 / 1.20x worst-window headroom gate:
+
+| Profile | Median realtime | p05 realtime | Worst window |
+| --- | ---: | ---: | ---: |
+| SGB1 native, 32 kHz | 1.314x | 1.228x | 0.986x |
+| SGB1 combined, 48 kHz | 1.244x | 1.153x | 1.025x |
+| SGB2 native, 32 kHz | 1.321x | 1.192x | 0.931x |
+| SGB2 combined, 44.1 kHz | 1.231x | 1.159x | 1.071x |
+
+Thus this milestone establishes clocked transfer correctness, **not restored
+performance qualification**. Historical Balanced Windows/tablet measurements
+do not qualify the new bridge. There is no same-host pre-change A/B capture
+in this run to isolate bridge cost from host-capacity variation. Profiling
+and an equivalent-output A/B measurement are needed before attributing or
+fixing that cost. No gate, power setting, affinity, oscillator or quality
+setting was changed to conceal these results. These ratios exclude frontend
+rendering and physical audio-device playback; they are not device FPS claims.

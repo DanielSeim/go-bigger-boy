@@ -279,7 +279,7 @@ allow saturation and report clipped stereo frames.
 
 ## Whole-host snapshots
 
-`save_state()` and `load_state()` use `GBBSHOST`, version 2, with explicit
+`save_state()` and `load_state()` use `GBBSHOST`, version 3, with explicit
 little-endian scalar fields and a 16 MiB maximum. No object padding, callbacks,
 addresses or filesystem paths are serialized. A configuration fingerprint
 binds the images, model, clock profile, initial save, input script, audio mode,
@@ -288,7 +288,8 @@ payload checksum catches accidental corruption; neither is a security boundary.
 
 Snapshots include host CPU registers, WRAM, DMA, interrupt/math/PPU timing;
 the complete APU state; GB emulator state; ICD packet assembly, queued and
-latched packets, indexed LCD/row buffers, release clock and input cursor; and
+latched packets, indexed LCD/row buffers, initialized/completed bank flags,
+pending clocked LCD events, release clock and input cursor; and
 unread host PCM. Combined snapshots additionally retain both timestamped source
 queues, held DAC values, partial output-interval areas, rational time, clipping
 and output counters, and GB sample/reset epochs. Derived fast-path caches and
@@ -303,8 +304,10 @@ State operations and reset allocate and belong off any realtime audio callback.
 The host is single-threaded and is not an audio-thread synchronization primitive.
 Snapshots can contain private firmware/sample/save data: do not distribute them.
 This container does not change the application's existing save-state format.
-Version 1 diagnostic host containers are rejected; this opt-in container has
-not been a frontend save format.
+Version 1/2 host containers are rejected: they cannot retain pending LCD output
+at a partially synchronized GB instruction. Existing experimental firmware-host
+manual snapshots need to be recreated. Regular GB application states are
+unchanged.
 
 ## Verification
 
@@ -719,7 +722,7 @@ device-specific instruction set, fast-math or oscillator changes are used.
 State/reset operations still allocate off the audio callback; repeated
 restoration is measured separately from steady state.
 
-The host still inherits the bounded CPU, scanline-granular ICD and timing-only
+The host still inherits the bounded CPU, bounded ICD and timing-only
 SNES PPU/DMA limitations described in [SGB validation](sgb-validation.md).
 Deferred visual mismatches and independent timing differences remain deferred.
 See [APU components](sgb-audio-engine.md) for DSP/audio accuracy evidence.

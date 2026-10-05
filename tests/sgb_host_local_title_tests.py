@@ -24,8 +24,8 @@ def main():
         raise AssertionError("unexpected local game image")
     with tempfile.TemporaryDirectory(prefix="gbb-whole-host-title-") as directory:
         for model, baseline in (
-                ("sgb1", "56aa9bc74cdbe70711c43eadbdf809f39e6c63c207a83f6f08a1f0f595e3c7e3"),
-                ("sgb2", "8d2b85cfceb9b744e03946794da7ba0705a836436b0d444d7bed2907e8fce8ea")):
+                ("sgb1", "1b4cc438b6aadcf0916912698fede5396386c6f2656b3c5853c71ca971260311"),
+                ("sgb2", "d9211313e26aa4c200d40df114b711a564ecd7418063747579bedbb0c21d096e")):
             wavs = []
             reports = []
             for restore in (False, True):
@@ -41,6 +41,7 @@ def main():
                 data = json.loads(report.read_text())
                 if (data["format"] != "gbb-sgb-host-performance-v1" or
                         data.get("gb_reset_profile") != "cold-sgb-v1" or data["model"] != model or
+                        data.get("gb_lcd_profile") != "clocked-pixel-v1" or
                         data["steps"] != 60000000 or data["inputs"] != 11 or
                         data["sound_delivered"] != 3 or data["audible_delivered"] != 2 or
                         data["nonzero"] <= 0 or data["gb_frames"] < 5000 or

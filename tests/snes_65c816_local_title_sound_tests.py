@@ -94,8 +94,8 @@ def main() -> int:
                       for event in event_rows if event["kind"] == "Q"]
             # Synthetic-input diagnostic baseline with complete cold GB reset.
             # This is not the native-input production/hardware reference pin.
-            expected_phases = ([(39, 4), (42, 4)] if args.cycle_apu_sync and
-                               not args.fractional_apu_sync else [(39, 4), (41, 4)])
+            expected_phases = ([(41, 4), (44, 4)] if args.cycle_apu_sync and
+                               not args.fractional_apu_sync else [(37, 4), (39, 4)])
             if phases[:2] != expected_phases:
                 raise AssertionError(f"title KON bus phases changed: {phases[:2]} != {expected_phases}")
         if args.cycle_apu_sync:
@@ -135,9 +135,9 @@ def main() -> int:
             if not any(e["kind"] == "W" and e["address"] == 0xfa and e["value"] == 16
                        for e in data["events"]):
                 raise AssertionError("timer configuration was not captured")
-            # Fixed-instruction synthetic-input PCM pin for cold-sgb-v1.
+            # Synthetic-input endpoint for cold reset plus clocked LCD output.
             if hashlib.sha256(pcm_path.read_bytes()).hexdigest() != \
-                    "605fd6bdd74d2a76a24dd275552e6d988658d38a899a991a403fdb4057f199dd":
+                    "823ceeb4a785cf531ccc63ce9d106a834a794350dd0e96cb7634e6683d0b9133":
                 raise AssertionError("timer observation changed title PCM")
         if len(packets) != 1 or len(hosts) < 4 or len(dsp) < 10 or \
                 [(int(event["address"]), int(event["value"]))

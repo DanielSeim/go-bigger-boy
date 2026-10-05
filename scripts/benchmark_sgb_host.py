@@ -39,13 +39,13 @@ def main():
     runner, roms = args.runner.resolve(), args.roms.resolve()
     game = roms / "Donkey Kong (JU) (V1.1) [S][!].gb"
     initial_save = game.with_suffix(".sav")
-    # Exact PCM/state endpoints for complete GB cold reset (cold-sgb-v1);
+    # Exact PCM/state endpoints for cold-sgb-v1 with clocked-pixel-v1 LCD;
     # see docs/sgb-boot-validation.md for parity and baseline-update evidence.
     profiles = (
-        ("sgb1", False, 32000, "56aa9bc74cdbe70711c43eadbdf809f39e6c63c207a83f6f08a1f0f595e3c7e3", 11547665018114310950),
-        ("sgb1", True, 48000, "087e630782f1cc647832393f3d5095bc0efac09fa63b7fdda2d6337fc38d0542", 16015197661753030498),
-        ("sgb2", False, 32000, "8d2b85cfceb9b744e03946794da7ba0705a836436b0d444d7bed2907e8fce8ea", 3180249233533125658),
-        ("sgb2", True, 44100, "c12a40101bde006f414f7e112c32e02345d83ab68c4c5d5dce0a998f741456f1", 8729706138122423209),
+        ("sgb1", False, 32000, "1b4cc438b6aadcf0916912698fede5396386c6f2656b3c5853c71ca971260311", 17273510614454273623),
+        ("sgb1", True, 48000, "9a9b1d035d4867a73927725498fb082ae7f9b57d7f9a6b6e05d66fe384cd8a59", 2188253438664865528),
+        ("sgb2", False, 32000, "d9211313e26aa4c200d40df114b711a564ecd7418063747579bedbb0c21d096e", 17670032470297762322),
+        ("sgb2", True, 44100, "f7b183e755d3f46f6d6438beda320798156bdde319a17aeb0aeac223ccfdc341", 9371530888034411371),
     )
     required = (runner, game, initial_save, roms / "sgb1.program.rom", roms / "sgb2.program.rom",
                 roms / "sgb.boot.rom", roms / "sgb2.boot.rom", roms / "spc700.rom")
@@ -82,6 +82,8 @@ def main():
         data = json.loads(report.read_text())
         if data.get("gb_reset_profile") != "cold-sgb-v1":
             raise RuntimeError(f"{model}: benchmark lacks complete cold-reset provenance")
+        if data.get("gb_lcd_profile") != "clocked-pixel-v1":
+            raise RuntimeError(f"{model}: benchmark lacks clocked LCD provenance")
         if data.get("gb_state_hash") != expected_state:
             raise RuntimeError(f"{model}: playback changed final GB state/framebuffers")
         annotate_report(report, args.power_profile)

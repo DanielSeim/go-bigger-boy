@@ -27,7 +27,7 @@ bool sgb_palette_is_default(
 
 } // namespace
 
-std::uint8_t Ppu::tick(const unsigned cycles) noexcept {
+std::uint8_t Ppu::tick(const unsigned cycles, const std::uint64_t clock_base) noexcept {
     if (!lcd_enabled()) {
         return 0;
     }
@@ -96,7 +96,7 @@ std::uint8_t Ppu::tick(const unsigned cycles) noexcept {
                 mode_ = 3;
             }
 
-            if (stat_mode_ == 3 && dot_ < mode3_end_dot_) tick_mode3();
+            if (stat_mode_ == 3 && dot_ < mode3_end_dot_) tick_mode3(clock_base + cycle + 1);
 
             if (stat_mode_ == 3) trace_window_state("dot");
 
@@ -202,6 +202,8 @@ std::uint8_t Ppu::tick(const unsigned cycles) noexcept {
                 stat_mode_ = 2;
                 begin_visible_line();
             }
+            if (sgb_lcd_sink_ && sgb_mode_)
+                sgb_lcd_sink_(sgb_lcd_context_, clock_base + cycle + 1, 160, ly_, 0);
             if (update_stat_line()) requests |= 0x02;
         }
     }
@@ -355,7 +357,7 @@ void Ppu::rebuild_object_pixel_deadline_index() noexcept {
     }
 }
 
-void Ppu::tick_mode3() noexcept {
+void Ppu::tick_mode3(const std::uint64_t clock) noexcept {
     tick_background_fetcher();
 
     if (startup_delay_ != 0) {
@@ -440,7 +442,7 @@ void Ppu::tick_mode3() noexcept {
     }
     if (background_fifo_size_ == 0) return;
 
-    emit_pixel();
+    emit_pixel(clock);
     if (output_x_ == screen_width) {
         mode3_end_dot_ = dot_ + 1;
     }
@@ -820,7 +822,7 @@ void Ppu::fetch_object(const unsigned index) noexcept {
     }
 }
 
-void Ppu::emit_pixel() noexcept {
+void Ppu::emit_pixel(const std::uint64_t clock) noexcept {
     const auto insert_window_glitch =
         window_glitch_pending_ && output_x_ == window_glitch_x_;
     const auto window_background_prefix =
@@ -861,6 +863,8 @@ void Ppu::emit_pixel() noexcept {
         result = compose_pixel(output_x_, background);
     }
     if (sgb_mode_) {
+        if (sgb_lcd_sink_) sgb_lcd_sink_(sgb_lcd_context_, clock, output_x_, ly_,
+            (*sgb_screen_buffer_)[static_cast<std::size_t>(ly_) * screen_width + output_x_]);
         if (sgb_mask_mode_ == 1) {
             // Freeze leaves the existing SNES framebuffer untouched while
             // the Game Boy continues to advance its link/PPU state.

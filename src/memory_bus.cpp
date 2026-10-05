@@ -407,7 +407,7 @@ void MemoryBus::write8(const std::uint16_t address, const std::uint8_t value) no
         apu_.write_register(address, value,
                             address == 0xFF26 ? timer_.apu_signal() : false);
     } else if (Ppu::handles_register(address)) {
-        if (ppu_.write_register(address, value)) {
+        if (ppu_.write_register(address, value, debug_bus_cycles_)) {
             request_interrupt(1);
         }
     } else if (address <= 0xFF7F) {
@@ -476,9 +476,9 @@ void MemoryBus::tick(const unsigned cycles) noexcept {
         // With no HDMA consumer, PPU::tick already ORs precisely the same
         // per-dot notifications. Preserve all dots, but avoid a cross-module
         // function call for every one of them.
-        ppu_requests = ppu_.tick(peripheral_cycles);
+        ppu_requests = ppu_.tick(peripheral_cycles, debug_bus_cycles_ - cycles);
     } else for (unsigned cycle = 0; cycle < peripheral_cycles; ++cycle) {
-        const auto requests = ppu_.tick(1);
+        const auto requests = ppu_.tick(1, debug_bus_cycles_ - cycles + cycle);
         ppu_requests = static_cast<std::uint8_t>(ppu_requests | requests);
         if ((requests & 0x04) != 0 && hdma_active_) {
             transfer_hdma_block();

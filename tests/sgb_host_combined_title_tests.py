@@ -24,10 +24,10 @@ def main():
         # Cold-reset baselines pin this bounded implementation, not independent
         # hardware fidelity. Scalar playback and restore must preserve its PCM.
         for model, rate, baseline, combined_baseline in (
-                ("sgb1", 48000, "56aa9bc74cdbe70711c43eadbdf809f39e6c63c207a83f6f08a1f0f595e3c7e3",
-                 "087e630782f1cc647832393f3d5095bc0efac09fa63b7fdda2d6337fc38d0542"),
-                ("sgb2", 44100, "8d2b85cfceb9b744e03946794da7ba0705a836436b0d444d7bed2907e8fce8ea",
-                 "c12a40101bde006f414f7e112c32e02345d83ab68c4c5d5dce0a998f741456f1")):
+                ("sgb1", 48000, "1b4cc438b6aadcf0916912698fede5396386c6f2656b3c5853c71ca971260311",
+                 "9a9b1d035d4867a73927725498fb082ae7f9b57d7f9a6b6e05d66fe384cd8a59"),
+                ("sgb2", 44100, "d9211313e26aa4c200d40df114b711a564ecd7418063747579bedbb0c21d096e",
+                 "f7b183e755d3f46f6d6438beda320798156bdde319a17aeb0aeac223ccfdc341")):
             reports, outputs = [], []
             for mode in ("native", "combined", "restored", "scalar"):
                 prefix = Path(directory) / f"{model}-{mode}"
@@ -51,6 +51,7 @@ def main():
                 payload = wav.read_bytes()
                 native = mode == "native"
                 if (data.get("gb_reset_profile") != "cold-sgb-v1" or
+                        data.get("gb_lcd_profile") != "clocked-pixel-v1" or
                         data["steps"] != 60000000 or data["inputs"] != 11 or data["gb_frames"] < 5000 or
                         data["sound_delivered"] != 3 or data["audible_delivered"] != 2 or
                         data["combined"] == native or data["output_hz"] != (32000 if native else rate) or

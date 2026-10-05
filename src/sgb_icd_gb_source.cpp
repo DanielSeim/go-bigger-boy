@@ -23,6 +23,55 @@ SgbIcdGbSource::SgbIcdGbSource(gameboy::Cartridge cartridge,
       boot_image_(boot_rom), model_(model) {
     gb_->bus().install_boot_rom(boot_image_);
     gb_->bus().debug_enable_io_trace(true);
+    bind_lcd_sink();
+}
+
+void SgbIcdGbSource::bind_lcd_sink() noexcept {
+    gb_->bus().ppu_.set_sgb_lcd_sink([](void* context, std::uint64_t clock,
+                                       unsigned x, unsigned y, std::uint8_t pixel) noexcept {
+        auto& self = *static_cast<SgbIcdGbSource*>(context);
+        self.receive_lcd_event({clock + self.lcd_clock_bias_,
+            static_cast<std::uint8_t>(x), static_cast<std::uint8_t>(y), pixel});
+    }, this);
+}
+
+void SgbIcdGbSource::receive_lcd_event(LcdEvent event) noexcept {
+    if (event.clock <= lcd_target_) { apply_lcd_event(event); return; }
+    // Only the tail of one GB instruction can lie beyond a rendezvous. The
+    // longest instruction is 24 clocks: fixed storage, no per-pixel allocation.
+    if (pending_lcd_count_ == pending_lcd_.size()) { missing_address_ = 0x7800; return; }
+    pending_lcd_[(pending_lcd_head_ + pending_lcd_count_++) % pending_lcd_.size()] = event;
+}
+
+void SgbIcdGbSource::drain_lcd_events(const std::uint64_t target) noexcept {
+    while (pending_lcd_count_ && pending_lcd_[pending_lcd_head_].clock <= target) {
+        apply_lcd_event(pending_lcd_[pending_lcd_head_]);
+        pending_lcd_[pending_lcd_head_] = {};
+        pending_lcd_head_ = (pending_lcd_head_ + 1) % pending_lcd_.size();
+        --pending_lcd_count_;
+    }
+    if (!pending_lcd_count_) pending_lcd_head_ = 0;
+}
+
+void SgbIcdGbSource::apply_lcd_event(const LcdEvent& e) noexcept {
+    if (e.x >= 160) {
+        last_ly_ = e.y;
+        // LCD off stops the producer, not the SNES-side ring RAM. Retain
+        // complete banks while off; an interrupted active bank stays incomplete.
+        if (e.x == 160 && e.y < 144 && (e.y & 7U) == 0)
+            row_complete_[(e.y / 8U) & 3U] = false;
+        if (e.x == 161 && e.pixel) row_complete_[0] = false;
+    } else {
+        const auto bank = (e.y / 8U) & 3U;
+        if (e.x == 0 && (e.y & 7U) == 0) row_complete_[bank] = false;
+        auto& row = rows_[bank];
+        const auto offset = (e.x / 8U) * 16U + (e.y & 7U) * 2U;
+        const auto bit = static_cast<std::uint8_t>(1U << (7U - (e.x & 7U)));
+        row[offset] = static_cast<std::uint8_t>((row[offset] & ~bit) | ((e.pixel & 1U) ? bit : 0));
+        row[offset + 1] = static_cast<std::uint8_t>((row[offset + 1] & ~bit) | ((e.pixel & 2U) ? bit : 0));
+        if (e.x == 159 && (e.y & 7U) == 7) row_valid_[bank] = row_complete_[bank] = true;
+    }
+    if (lcd_observer_) lcd_observer_(lcd_observer_context_, e.clock, e.x, e.y, e.pixel);
 }
 
 void SgbIcdGbSource::set_audio_sink(AudioSink sink, AudioResetSink reset, void* context) noexcept {
@@ -166,39 +215,23 @@ void SgbIcdGbSource::joyp_write(const std::uint8_t value) noexcept {
     }
 }
 
-void SgbIcdGbSource::complete_tile_row(const unsigned tile_row) noexcept {
-    if (tile_row >= 18) return;
-    auto& row = rows_[tile_row & 3U];
-    for (unsigned tile = 0; tile < 20; ++tile) {
-        for (unsigned line = 0; line < 8; ++line) {
-            std::uint8_t low{};
-            std::uint8_t high{};
-            for (unsigned x = 0; x < 8; ++x) {
-                const auto pixel = gb_->bus().debug_sgb_source_pixel(
-                    tile * 8 + x, tile_row * 8 + line);
-                low |= static_cast<std::uint8_t>((pixel & 1U) << (7U - x));
-                high |= static_cast<std::uint8_t>(((pixel >> 1) & 1U) << (7U - x));
-            }
-            row[tile * 16 + line * 2] = low;
-            row[tile * 16 + line * 2 + 1] = high;
-        }
-    }
-    row_valid_[tile_row & 3U] = true;
-}
-
 void SgbIcdGbSource::synchronize(const std::uint64_t master_clocks) noexcept {
     master_snapshot_ = master_clocks;
     if (!released_ || master_clocks < release_clock_) return;
-    if (next_gb_clock_known_ && master_clocks < next_gb_clock_) return;
+    if (!pending_lcd_count_ && next_gb_clock_known_ && master_clocks < next_gb_clock_) return;
     // SGB1 divides the SNES CPU oscillator. SGB2 has a dedicated
     // 20,971,520 Hz oscillator; at the normal /5 setting this yields the
     // GB's 4,194,304 Hz. Use a rational conversion to avoid accumulated
     // per-step rounding drift relative to the SNES master clock.
     const auto target = sgb_icd_target_gb_cycles(
         master_clocks - release_clock_, divider_, model_);
+    lcd_target_ = target;
+    drain_lcd_events(target);
+    if (next_gb_clock_known_ && master_clocks < next_gb_clock_) return;
     while (gb_cycles_ < target && missing_address_ == 0) {
         const bool stopped = audio_sink_ && gb_->cpu().stopped() &&
             (gb_->bus().read8(0xff0f) & gb_->bus().read8(0xffff) & 0x1f) == 0;
+        lcd_clock_bias_ = gb_cycles_ - gb_->bus().debug_bus_cycles_;
         const auto cycles = gb_->step();
         gb_cycles_ += cycles;
         // STOP consumes scheduler time but no peripheral/APU clocks. Keep
@@ -212,12 +245,6 @@ void SgbIcdGbSource::synchronize(const std::uint64_t master_clocks) noexcept {
             ++completed_frames_;
             gb_->consume_frame();
             apply_input(completed_frames_);
-        }
-        const auto ly = gb_->bus().debug_ppu_scanline();
-        if (ly != last_ly_) {
-            if (ly <= 144 && ly != 0 && (ly & 7U) == 0)
-                complete_tile_row(ly / 8U - 1U);
-            last_ly_ = ly;
         }
         // Consume at the same instruction boundary, but retain storage rather
         // than allocating a new trace vector for the next IO write.
@@ -251,7 +278,7 @@ bool SgbIcdGbSource::read(const std::uint16_t address,
     switch (address) {
     case 0x6000: {
         // ICD status follows pixel scanlines, not the CPU's early LY=0 alias.
-        const auto ly = gb_->bus().debug_ppu_scanline();
+        const auto ly = last_ly_;
         value = static_cast<std::uint8_t>(
             ((ly >= 144 ? 0x11U : ly / 8U) << 3) | ((ly / 8U) & 3U));
         return true;
@@ -320,6 +347,9 @@ bool SgbIcdGbSource::write(const std::uint16_t address,
             // Cold reset rebuilds the APU. Restore destination-owned callback
             // bindings, never a pointer inherited from a saved machine.
             set_audio_sink(audio_sink_, audio_reset_sink_, audio_context_);
+            bind_lcd_sink();
+            pending_lcd_.fill({}); pending_lcd_head_ = pending_lcd_count_ = 0;
+            lcd_target_ = lcd_clock_bias_ = 0;
             audio_samples_ = 0;
             audio_gap_cycles_ = 0;
             if (audio_sink_) {
@@ -341,6 +371,8 @@ bool SgbIcdGbSource::write(const std::uint16_t address,
             }
             last_ly_ = gb_->bus().debug_ppu_scanline();
             row_valid_.fill(false);
+            row_complete_.fill(false);
+            for (auto& row : rows_) row.fill(0);
             row_stream_offset_ = 0;
             queued_.clear();
             bit_count_ = 0;

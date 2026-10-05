@@ -47,8 +47,9 @@ constexpr std::uint64_t sgb_icd_target_gb_cycles(
 }
 
 // Live GB input for the bounded firmware host. The GB clock is anchored
-// to ICD reset release; status is scanline-granular, not a cycle-exact ICD2
-// model. Unknown row-buffer data deliberately fails closed.
+// to ICD reset release. LCD events are clocked at physical pixel/line edges;
+// uninitialized ring-buffer reads deliberately fail closed. Read/write collision
+// behavior on an initialized bank is a deterministic model, not hardware proof.
 class SgbIcdGbSource : public SnesIcdSource {
 public:
     void set_native_gb_input(bool enabled) noexcept {
@@ -62,6 +63,22 @@ public:
     void set_boot_observer(BootObserver observer, void* context = nullptr) noexcept {
         boot_observer_ = observer;
         boot_observer_context_ = context;
+    }
+    using LcdObserver = Ppu::SgbLcdSink;
+    // Opt-in raw LCD timing trace. Coordinates have Ppu::SgbLcdSink semantics.
+    void set_lcd_observer(LcdObserver observer, void* context = nullptr) noexcept {
+        lcd_observer_ = observer; lcd_observer_context_ = context;
+    }
+    struct LcdDiagnostics {
+        unsigned physical_line, selected_bank, stream_offset, valid_banks, complete_banks, pending_events;
+    };
+    [[nodiscard]] LcdDiagnostics lcd_diagnostics() const noexcept {
+        unsigned mask = 0, complete = 0;
+        for (unsigned n = 0; n < 4; ++n) {
+            if (row_valid_[n]) mask |= 1U << n;
+            if (row_complete_[n]) complete |= 1U << n;
+        }
+        return {last_ly_, selected_row_, row_stream_offset_, mask, complete, pending_lcd_count_};
     }
     explicit SgbIcdGbSource(std::vector<std::uint8_t> rom,
                              const gameboy::DiagnosticBootRom& boot_rom,
@@ -152,7 +169,20 @@ private:
     void synchronize(std::uint64_t master_clocks) noexcept;
     void joyp_write(std::uint8_t value) noexcept;
     void complete_packet() noexcept;
-    void complete_tile_row(unsigned tile_row) noexcept;
+    void bind_lcd_sink() noexcept;
+    struct LcdEvent {
+        std::uint64_t clock{};
+        std::uint8_t x{}, y{}, pixel{};
+    };
+    void receive_lcd_event(LcdEvent event) noexcept;
+    void apply_lcd_event(const LcdEvent& event) noexcept;
+    void drain_lcd_events(std::uint64_t target) noexcept;
+    std::array<LcdEvent, 32> pending_lcd_{};
+    unsigned pending_lcd_head_{}, pending_lcd_count_{};
+    // Derived for each synchronization/CPU instruction; never serialized.
+    std::uint64_t lcd_target_{}, lcd_clock_bias_{};
+    LcdObserver lcd_observer_{};
+    void* lcd_observer_context_{};
     void apply_input(std::uint64_t frame) noexcept;
 
 
@@ -200,6 +230,7 @@ private:
     unsigned row_stream_offset_{};
     std::array<std::array<std::uint8_t, 320>, 4> rows_{};
     std::array<bool, 4> row_valid_{};
+    std::array<bool, 4> row_complete_{};
     std::array<std::uint8_t, 16> building_{};
     std::array<std::uint8_t, 16> latched_{};
     std::deque<std::array<std::uint8_t, 16>> queued_;

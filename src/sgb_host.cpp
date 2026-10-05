@@ -247,6 +247,7 @@ class SgbHostStateCodec {
         template<class T> void value(std::deque<T>& x) { out.u64(x.size()); for(auto& v:x) value(v); }
         void value(SnesHostCpu::ApuWrite& x) { (*this)(x.step,x.port,x.value); }
         void value(SgbIcdGbSource::InputEvent& x) { (*this)(x.frame,x.mask); }
+        void value(SgbIcdGbSource::LcdEvent& x) { (*this)(x.clock,x.x,x.y,x.pixel); }
         void value(SgbHost::StereoSample& x) { (*this)(x.left,x.right); }
         void value(SgbAudioMixer::Event& x) { (*this)(x.clock,x.sample); }
         void value(SgbAudioMixer::Stream& x) { (*this)(x.events,x.head,x.count,x.last_clock,x.held); }
@@ -277,6 +278,7 @@ class SgbHostStateCodec {
         }
         void value(SnesHostCpu::ApuWrite& x) { (*this)(x.step,x.port,x.value); }
         void value(SgbIcdGbSource::InputEvent& x) { (*this)(x.frame,x.mask); }
+        void value(SgbIcdGbSource::LcdEvent& x) { (*this)(x.clock,x.x,x.y,x.pixel); }
         void value(SgbHost::StereoSample& x) { (*this)(x.left,x.right); }
         void value(SgbAudioMixer::Event& x) { (*this)(x.clock,x.sample); }
         void value(SgbAudioMixer::Stream& x) { (*this)(x.events,x.head,x.count,x.last_clock,x.held); }
@@ -310,8 +312,9 @@ class SgbHostStateCodec {
         c(s.native_gb_input_,s.transfer_commands_,s.missing_address_,s.control_writes_,s.last_control_,
           s.divider_,s.model_,s.released_,s.boot_reported_,s.pulse_armed_,s.receiving_,s.packet_pending_,
           s.audible_sound_substitution_,s.bit_count_,s.continuation_packets_,s.last_ly_,s.selected_row_,
-          s.row_stream_offset_,s.rows_,s.row_valid_,s.building_,s.latched_,s.queued_,
-          s.audio_samples_,s.audio_captured_,s.audio_gap_cycles_);
+          s.row_stream_offset_,s.rows_,s.row_valid_,s.row_complete_,s.building_,s.latched_,s.queued_,
+          s.audio_samples_,s.audio_captured_,s.audio_gap_cycles_,
+          s.pending_lcd_,s.pending_lcd_head_,s.pending_lcd_count_);
     }
     static std::uint64_t hash(const std::uint8_t* data, std::size_t n) {
         std::uint64_t h=14695981039346656037ULL;
@@ -354,6 +357,7 @@ class SgbHostStateCodec {
            (i.divider_!=4 && i.divider_!=5 && i.divider_!=7 && i.divider_!=9) ||
            i.release_clock_>t.clocks_ || i.master_snapshot_>t.clocks_ || i.bit_count_>128 ||
            i.continuation_packets_>6 || i.last_ly_>153 || i.selected_row_>3 || i.row_stream_offset_>511 ||
+           i.pending_lcd_head_>=i.pending_lcd_.size() || i.pending_lcd_count_>i.pending_lcd_.size() ||
            i.next_input_event_>i.input_events_.size() || i.input_events_.size()>1024 ||
            f.size_!=i.input_events_.size() || f.next_>f.size_ || f.size_>1024 ||
            f.next_!=i.next_input_event_ || f.held_!=i.held_buttons_ ||
@@ -361,6 +365,20 @@ class SgbHostStateCodec {
            i.packets_delivered_>i.packets_completed_ || i.sound_packets_delivered_>i.packets_delivered_ ||
            i.audible_sound_packets_delivered_>i.sound_packets_delivered_)
             throw SaveStateError("invalid SGB host state");
+        const auto lcd_target = i.master_snapshot_ < i.release_clock_ ? 0 :
+            sgb_icd_target_gb_cycles(i.master_snapshot_ - i.release_clock_, i.divider_, i.model_);
+        std::uint64_t previous_clock = lcd_target;
+        for (unsigned bank = 0; bank < 4; ++bank)
+            if (i.row_complete_[bank] && !i.row_valid_[bank])
+                throw SaveStateError("complete LCD bank lacks initialized data");
+        for (unsigned n = 0; n < i.pending_lcd_count_; ++n) {
+            const auto& e = i.pending_lcd_[(i.pending_lcd_head_ + n) % i.pending_lcd_.size()];
+            if (e.clock <= lcd_target || e.clock < previous_clock || e.clock > i.gb_cycles_ || e.x > 161 || e.y > 153 ||
+                (e.x < 160 && (e.y >= 144 || e.pixel > 3)) ||
+                (e.x == 160 && e.pixel != 0) || (e.x == 161 && (e.y != 0 || e.pixel > 1)))
+                throw SaveStateError("invalid pending LCD event");
+            previous_clock = e.clock;
+        }
         SgbFrameInput input;
         for(std::size_t n=0;n<i.input_events_.size();++n) {
             const auto& e=i.input_events_[n];
@@ -392,7 +410,7 @@ class SgbHostStateCodec {
 public:
     static std::vector<std::uint8_t> save(const SgbHost& host) {
         Writer w; const std::array<std::uint8_t,8> signature{'G','B','B','S','H','O','S','T'};
-        w.out.bytes(signature.data(),signature.size()); w.out.u8(2);
+        w.out.bytes(signature.data(),signature.size()); w.out.u8(3);
         auto id=identity(host.config_); w(id);
         auto& s=*host.impl_; components(w,s);
         auto apu=s.apu.save_state(), gb=s.icd.gb_->save_state(); w(apu,gb);
@@ -403,7 +421,7 @@ public:
     static bool load(SgbHost& host,const std::vector<std::uint8_t>& state) noexcept {
         try {
             if(state.size()<25 || state.size()>limit ||
-               std::memcmp(state.data(),"GBBSHOST",8)!=0 || state[8]!=2) return false;
+               std::memcmp(state.data(),"GBBSHOST",8)!=0 || state[8]!=3) return false;
             save_state_format::Reader tail(state,state.size()-8,8);
             if(tail.u64()!=hash(state.data(),state.size()-8)) return false;
             Reader r(state); std::uint64_t id{}; r(id);
@@ -417,6 +435,7 @@ public:
             std::vector<std::uint8_t> apu,gb; r(apu,gb); r.in.finish();
             if(!candidate->apu.load_state(apu)) return false;
             candidate->icd.gb_->load_state(gb);
+            candidate->icd.bind_lcd_sink();
             (void)candidate->icd.gb_->bus().debug_take_io_trace();
             validate(host.config_,*candidate);
             if (candidate->combined) candidate->mixer->refresh_cache();

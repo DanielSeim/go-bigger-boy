@@ -252,10 +252,15 @@ An opt-in **local-only** `--sync-gb-sgb1 GB-ROM GB-BOOT` or
 `--sync-gb-sgb2 GB-ROM GB-BOOT` mode connects the bounded host trace to a
 running GB emulator. It requires a local 256-byte GB-side SGB boot ROM, honors
 the host ICD reset/release and clock divider, captures JOYP packets, and
-exposes only completed 2-bit GB tile rows. Missing packet/row data and
-unmodeled ICD accesses stop the trace rather than returning fabricated data.
-This is an instruction/scanline-granular test seam, **not** a cycle-accurate
-ICD2 implementation; firmware, title ROMs, and captured pixels are not stored
+packs timestamped raw LCD pixels into four planar ring banks. Never-initialized
+row data, missing packets and unmodeled ICD accesses stop the trace rather
+than returning fabricated data. Previously initialized banks retain their
+bits while new pixels arrive; concurrent producer reads are a deterministic
+approximation, not independently validated hardware behavior. See the
+[clocked LCD bridge](sgb-boot-validation.md#clocked-lcd-bridge) for boundaries
+and validation. GB execution and JOYP capture remain instruction-granular;
+this is **not** a complete cycle-accurate ICD2 implementation.
+Firmware, title ROMs, and captured pixels are not stored
 in the repository. The optional local Donkey Kong/SGB2 check runs as
 `gameboy_snes_65c816_local_icd_sound_handoff` when all local files exist.
 

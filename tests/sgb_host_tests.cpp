@@ -35,6 +35,126 @@ bool equal(const std::vector<Host::StereoSample>& a,const std::vector<Host::Ster
     return a.size()==b.size() && std::equal(a.begin(),a.end(),b.begin(),
         [](auto x,auto y){ return x.left==y.left && x.right==y.right; });
 }
+void clocked_lcd_rows() {
+    struct Event {
+        std::uint64_t clock; unsigned x,y; std::uint8_t pixel;
+        bool operator==(const Event& b) const noexcept {
+            return clock==b.clock && x==b.x && y==b.y && pixel==b.pixel;
+        }
+    };
+    const auto observer=[](void* c,std::uint64_t clock,unsigned x,unsigned y,std::uint8_t pixel) noexcept {
+        static_cast<std::vector<Event>*>(c)->push_back({clock,x,y,pixel});
+    };
+    for(auto model:{gameboy::HardwareModel::sgb,gameboy::HardwareModel::sgb2}) for(unsigned control=0;control<4;++control) {
+        auto cfg=config(model);
+        // Change tile data before bank zero is reused; distinguishes arrived
+        // new pixels from retained old data and from future instruction output.
+        const std::uint8_t palette_change[]{0xf0,0x44,0xfe,32,0x20,0xfa,
+            0x3e,0xaa,0xea,0,0x80,0x3e,0xcc,0xea,1,0x80,0x18,0xfe};
+        std::copy(std::begin(palette_change),std::end(palette_change),cfg.game_rom.begin()+0x150);
+        cfg.gb_boot_rom.fill(0);
+        // Original tile pattern: eight repetitions of low=55, high=33.
+        const std::uint8_t boot[]{0x21,0,0x80,0x06,8,0x3e,0x55,0x22,0x3e,0x33,0x22,
+            0x05,0x20,0xf7,0x3e,0xe4,0xe0,0x47,0x3e,0x91,0xe0,0x40,0xc3,0,1};
+        std::copy(std::begin(boot),std::end(boot),cfg.gb_boot_rom.begin());
+        gameboy::Emulator oracle(gameboy::Cartridge(cfg.game_rom),model,gameboy::BootRomMode::replacement_sgb);
+        oracle.bus().install_boot_rom(cfg.gb_boot_rom);
+        std::vector<Event> expected;
+        oracle.bus().set_sgb_lcd_sink(observer,&expected);
+        while(oracle.cpu().total_cycles()<35000) (void)oracle.step();
+        auto completion=std::find_if(expected.begin(),expected.end(),[](auto e){return e.x==159 && e.y==7;});
+        auto wrap=std::find_if(expected.begin(),expected.end(),[](auto e){return e.x==160 && e.y==32;});
+        check(completion!=expected.end() && wrap!=expected.end(),"LCD oracle reaches row completion and bank wrap");
+        if(completion==expected.end() || wrap==expected.end()) continue;
+        const auto host_clock=[&](std::uint64_t cycles) {
+            constexpr unsigned dividers[]{4,5,7,9};
+            const auto scale=21477273ULL*dividers[control];
+            return model==gameboy::HardwareModel::sgb ? cycles*dividers[control] : (cycles*scale+20971519)/20971520;
+        };
+        gameboy::SgbIcdGbSource source(cfg.game_rom,cfg.gb_boot_rom,model);
+        std::vector<Event> actual;
+        source.set_lcd_observer(observer,&actual);
+        check(source.write(0x6003,0,static_cast<std::uint8_t>(0x80|control)),"clocked pixel fixture releases GB");
+        source.advance_to(host_clock(completion->clock-1));
+        check(std::all_of(actual.begin(),actual.end(),[&](auto e){return e.clock<completion->clock;}),
+              "instruction overshoot cannot expose future LCD pixels");
+        source.advance_to(host_clock(completion->clock));
+        check(actual==std::vector<Event>(expected.begin(),completion+1),"clocked LCD trace agrees with standalone physical emission");
+        std::uint8_t value{};
+        check(source.read(0x6000,host_clock(completion->clock),value) && value==0,
+              "complete first row is published during line-seven HBlank, before tile-row status changes");
+        check(source.write(0x6001,host_clock(completion->clock),0),"select complete row");
+        for(unsigned n=0;n<512;++n) {
+            check(source.read(0x7800+(n&15),host_clock(completion->clock),value) &&
+                  value==(n<320 ? ((n&1)?0x33:0x55) : 0xff),"exact planar row, register aliases and FF tail");
+        }
+        check(source.read(0x7800,host_clock(completion->clock),value) && value==0x55,"row stream wraps after 512 bytes");
+        source.advance_to(host_clock(wrap->clock-1));
+        check(source.read(0x6000,host_clock(wrap->clock-1),value) && value==0x1b,
+              "status does not jump ahead across a CPU instruction's future line boundary");
+        source.advance_to(host_clock(wrap->clock));
+        check(source.read(0x6000,host_clock(wrap->clock),value) && value==0x20,"status changes at exact physical boundary");
+        check(source.lcd_diagnostics().valid_banks==15 && source.lcd_diagnostics().complete_banks==14,
+              "bank reuse retains initialized RAM but distinguishes incomplete current generation");
+        check(source.write(0x6001,host_clock(wrap->clock),0) &&
+              source.read(0x7800,host_clock(wrap->clock),value) && value==0x55,
+              "before overwrite, a reused initialized bank retains known previous pixels");
+        const auto byte_edge=std::find_if(expected.begin(),expected.end(),[](auto e){return e.x==7 && e.y==32;});
+        check(byte_edge!=expected.end(),"oracle reaches first overwritten byte");
+        if(byte_edge!=expected.end()) {
+            std::uint8_t before=0x55;
+            for(auto i=wrap;i!=byte_edge;++i) if(i->x<8 && i->y==32) {
+                const auto bit=static_cast<std::uint8_t>(1U<<(7-i->x));
+                before=static_cast<std::uint8_t>((before&~bit)|((i->pixel&1)?bit:0));
+            }
+            check(source.write(0x6001,host_clock(byte_edge->clock-1),0) &&
+                  source.read(0x7800,host_clock(byte_edge->clock-1),value) && value==before,
+                  "initialized bank contains only physically arrived bits, never future instruction pixels");
+            check(source.write(0x6001,host_clock(byte_edge->clock),0) &&
+                  source.read(0x7800,host_clock(byte_edge->clock),value) && value==0xaa,
+                  "last bit of a changed tile byte becomes visible at its exact LCD clock");
+        }
+        gameboy::SgbIcdGbSource early(cfg.game_rom,cfg.gb_boot_rom,model);
+        check(early.write(0x6003,0,static_cast<std::uint8_t>(0x80|control)) && early.write(0x6001,0,0),"early-read fixture");
+        check(!early.read(0x7800,host_clock(completion->clock-1),value),"row remains unavailable one GB clock before last pixel");
+    }
+}
+void lcd_sink_batch_oracle() {
+    struct Event { std::uint64_t clock; unsigned x,y; std::uint8_t pixel; };
+    const auto sink=[](void* c,std::uint64_t clock,unsigned x,unsigned y,std::uint8_t pixel) noexcept {
+        static_cast<std::vector<Event>*>(c)->push_back({clock,x,y,pixel});
+    };
+    for(unsigned fine_scroll:{0U,7U}) for(unsigned mask:{0U,1U,2U,3U}) {
+        gameboy::Ppu batched, scalar;
+        std::vector<Event> a,b;
+        for(auto* p:{&batched,&scalar}) {
+            p->set_sgb_mode(true);
+            // Disable the power-on LCD before configuring FIFO delays.
+            (void)p->write_register(0xff40,0);
+            for(unsigned n=0;n<16;++n) p->write_vram(0x8000+n,(n&1)?0x33:0x55);
+            p->write_oam(0xfe00,16); p->write_oam(0xfe01,24);
+            (void)p->write_register(0xff47,0xe4);
+            (void)p->write_register(0xff43,static_cast<std::uint8_t>(fine_scroll));
+            (void)p->write_register(0xff4a,0); (void)p->write_register(0xff4b,6);
+            std::array<std::uint8_t,112> packet{}; packet[0]=0xb9; packet[1]=mask;
+            p->apply_sgb_command(packet,16);
+        }
+        batched.set_sgb_lcd_sink(sink,&a); scalar.set_sgb_lcd_sink(sink,&b);
+        (void)batched.write_register(0xff40,0xb3,100);
+        (void)scalar.write_register(0xff40,0xb3,100);
+        (void)batched.tick(4000,100);
+        for(unsigned n=0;n<4000;++n) (void)scalar.tick(1,100+n);
+        check(!a.empty() && a.size()==b.size() && std::equal(a.begin(),a.end(),b.begin(),[](auto x,auto y){
+            return x.clock==y.clock && x.x==y.x && x.y==y.y && x.pixel==y.pixel;
+        }),"batched and literal LCD clocks agree with SCX/window/OBJ stalls and all SNES masks");
+        check(batched.framebuffer()==scalar.framebuffer(),"LCD sink cannot change framebuffer composition");
+        const auto count=a.size();
+        (void)batched.write_register(0xff40,0,4100);
+        (void)batched.tick(4000,4100);
+        check(a.size()==count+1 && a.back().x==161 && a.back().pixel==0 && a.back().clock==4100,
+              "LCD off is timestamped and emits no fictitious pixels or scanlines");
+    }
+}
 void cold_gb_reset() {
     for (auto model : {gameboy::HardwareModel::sgb, gameboy::HardwareModel::sgb2}) {
         auto cfg=config(model);
@@ -151,6 +271,8 @@ void snapshots(bool combined=false, unsigned rate=48000) {
         }
         auto bad=live; bad[8]=255;
         check(!h.load_state(bad) && h.save_state()==live,"unknown version rejected atomically");
+        bad=live; bad[8]=2; checksum(bad);
+        check(!h.load_state(bad) && h.save_state()==live,"legacy host snapshot without pending LCD events is rejected atomically");
         bad=live; bad[30]^=1;
         check(!h.load_state(bad) && h.save_state()==live,"corrupt payload rejected atomically");
         bad=live; bad.push_back(0);
@@ -405,18 +527,26 @@ void stop_timeline() {
         gameboy::SgbIcdGbSource source(cfg.game_rom,cfg.gb_boot_rom,model);
         source.set_native_gb_input(true); source.set_native_gb_input(false);
         std::vector<std::uint64_t> times;
+        std::vector<std::uint64_t> lcd_times;
+        source.set_lcd_observer([](void* context,std::uint64_t clock,unsigned x,unsigned,std::uint8_t) noexcept {
+            if(x<160) static_cast<std::vector<std::uint64_t>*>(context)->push_back(clock);
+        },&lcd_times);
         source.set_audio_sink([](void* context,std::uint64_t clock,std::int16_t,std::int16_t) noexcept {
             static_cast<std::vector<std::uint64_t>*>(context)->push_back(clock);
         },nullptr,&times);
         check(source.write(0x6003,0,0x81),"STOP fixture releases GB");
         source.advance_to(60000);
         const auto paused=times.size(); check(paused>0,"STOP follows audible APU clocking");
+        const auto lcd_paused=lcd_times.size(); check(lcd_paused>0,"STOP follows physical pixel output");
         source.advance_to(80000);
         check(times.size()==paused,"STOP pauses APU sampling without dropping host time");
+        check(lcd_times.size()==lcd_paused,"STOP emits no fabricated LCD pixels");
         check(source.write(0x6004,80000,0xef),"host A press wakes stopped GB");
         source.advance_to(90000);
         check(times.size()>paused && times[paused]>=80000 && std::is_sorted(times.begin(),times.end()),
               "resumed samples include stopped-clock gap, never timestamps in the past");
+        check(lcd_times.size()>lcd_paused && lcd_times[lcd_paused]>=gameboy::sgb_icd_target_gb_cycles(80000,5,model)
+              && std::is_sorted(lcd_times.begin(),lcd_times.end()),"resumed LCD timestamps retain STOP gap in their GB epoch");
         // Native host input cannot wake this fixture, so also exercise snapshots
         // while STOP is held and the host is continuing to emit output.
         cfg.combined_audio=true; Host host(cfg);
@@ -510,6 +640,8 @@ void batch_fault_phase_oracle() {
 }
 }
 int main() {
+    clocked_lcd_rows();
+    lcd_sink_batch_oracle();
     cold_gb_reset();
     cold_audio_oracle();
     batch_oracle();
