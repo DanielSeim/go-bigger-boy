@@ -52,10 +52,9 @@ constexpr std::uint64_t sgb_icd_target_gb_cycles(
 class SgbIcdGbSource : public SnesIcdSource {
 public:
     void set_native_gb_input(bool enabled) noexcept {
-        // Configure before release. Native replay executes an external boot
-        // from LCD/DIV reset rather than inheriting a post-boot bus image.
+        // Configure before release. Input policy only: both replay policies
+        // use the same complete cold GB reset.
         native_gb_input_ = enabled;
-        if (enabled) initialize_external_boot_bus();
     }
     [[nodiscard]] std::uint8_t diagnostic_joypad_read() noexcept { return gb_->bus().read8(0xff00); }
     [[nodiscard]] std::uint8_t diagnostic_io_read(std::uint16_t address) noexcept { return gb_->bus().read8(address); }
@@ -151,7 +150,6 @@ private:
     void* audio_context_{};
     std::uint64_t audio_samples_{}, audio_captured_{}, audio_gap_cycles_{};
     void synchronize(std::uint64_t master_clocks) noexcept;
-    void initialize_external_boot_bus() noexcept;
     void joyp_write(std::uint8_t value) noexcept;
     void complete_packet() noexcept;
     void complete_tile_row(unsigned tile_row) noexcept;

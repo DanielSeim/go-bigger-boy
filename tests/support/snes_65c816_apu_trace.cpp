@@ -1257,7 +1257,7 @@ int main(int argc, char** argv) {
                 << (native_gb_input ? "gb-lcd-frame-held-v1" : "legacy-direct-gb-v1")
                 << "\",\"ppu_dma_timing\":" << (ppu_dma_timing ? "true" : "false")
                 << ",\"host_bus_timing\":" << (host_bus_timing ? "true" : "false")
-                << ",\"external_boot_reset\":" << (native_gb_input ? "true" : "false") << ",\"events\":[";
+                << ",\"external_boot_reset\":true,\"gb_reset_profile\":\"cold-sgb-v1\",\"events\":[";
             for (std::size_t index = 0; index < boot_timeline.events.size(); ++index) {
                 const auto& e = boot_timeline.events[index];
                 if (index) output << ',';

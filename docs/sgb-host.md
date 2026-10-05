@@ -36,6 +36,19 @@ terminal until reset. `fault()` retains host instruction/address context;
 `status()` distinguishes host, APU and ICD failures. `reset()` reconstructs a
 cold host using the same configured images, input script and initial save RAM.
 
+The GB-side source is constructed and reset from the complete deterministic
+SGB/SGB2 power-on baseline, not a diagnostic post-boot machine with selected
+registers cleared. CPU, PPU, APU, timer, serial, interrupt, DMA and volatile RAM
+state match standalone cold execution before the caller's GB boot image runs.
+Input replay policy does not select or mutate this reset baseline. An ICD
+CPU reset preserves the cartridge's current battery RAM and held live input;
+a full `SgbHost::reset()` reconstructs the configured initial save and script.
+Cold reset rebinds destination-owned audio callbacks, retains the frontend
+audio-enable preference, and starts a new absolute sample epoch at release.
+The cold APUs and volatile RAM are deterministic emulation baselines, not a
+claim about physical power-on RAM randomness. See
+[cold-reset validation](sgb-boot-validation.md#whole-host-cold-reset-validation).
+
 ## Backpressure
 
 Unread SNES-side PCM lives in a fixed 16,384-sample stereo ring. Before starting

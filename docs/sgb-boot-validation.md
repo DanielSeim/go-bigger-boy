@@ -140,7 +140,74 @@ chunk size to 257 also preserves output. The final run used workspace scratch
 storage for the large private WAVs. Set `TMPDIR` to a sufficiently spacious
 scratch directory when running these local suites on a small `/tmp` filesystem.
 
-This work does not replace the SNES program ROM or SPC IPL. The experimental
-whole-host adapter still uses its existing external-boot bus reset baseline;
-matching the standalone cold-boot contract does not establish equivalence of
-every host reset state or analog audio characteristic.
+This work does not replace the SNES program ROM or SPC IPL. The boot refinement
+above originally retained the adapter's limited LCD/DIV/interrupt reset; that
+limitation is addressed by the subsequent complete cold-reset work below.
+Neither milestone establishes analog audio or complete physical-hardware
+equivalence.
+
+## Whole-host cold-reset validation
+
+`SgbIcdGbSource` now uses the same complete SGB/SGB2 cold-power-on path as the
+standalone replacement boot, then installs the caller's GB-side image. Both
+native and legacy input policies use it. Policy selection no longer performs
+register writes or resets a running GB. Every asserted ICD reset reconstructs
+CPU and all GB peripherals and volatile RAM, preserves battery RAM and the
+audio-enable preference, rebinds the raw-APU sink, and clears the sample epoch
+before the next release. Presentation reset notifications retain the actual
+host-bus timestamp. Whole-host reset retains its separately documented
+configured-initial-save behavior.
+
+The ROM-free host contracts compare complete serialized GB state with a
+standalone cold oracle at construction and after dirtying CPU, PPU, APU,
+WRAM/HRAM, wave RAM, serial, timer, interrupts and DMA. Persistent RAM survives,
+supplied boot images remain mapped, callbacks keep their destination owner,
+muted resets stay muted, and new-release sample timestamps remain monotonic.
+Held live buttons survive reset and remain releasable afterward.
+A separate raw-audio oracle compares exact PCM and final GB state against
+standalone cold execution on both models, without relying on the previous
+warm-audio hashes.
+
+Fresh local Donkey Kong native SNES WAVs, host clocks, input/SOUND counts and
+final GB states match the preceding baseline exactly on both models. Combined
+GB+SNES WAVs change only during startup: differing interleaved samples span
+approximately 1.93–7.25 seconds in SGB1 and 1.73–5.95 seconds in SGB2;
+all later samples and total lengths match. Combined final GB states also match.
+These corrections remove the inherited warm APU state, not change the audio
+renderer or lower quality. Exact updated combined pins are checked separately
+against restoration and scalar playback; historical captures above retain
+their original meaning.
+
+New host-runner reports and native diagnostic boot timelines identify
+`gb_reset_profile: cold-sgb-v1`. The comparison tool preserves this provenance
+and labels older captures without it `unspecified-legacy`; the old
+`external_boot_reset: true` flag alone did not certify a complete reset.
+Firmware, cartridge, waveform and saved-state inputs remain private and
+untracked. Independent hardware reset/RAM and analog-output evidence remains
+outside this software-baseline claim.
+
+The older synthetic-input, 40-million-instruction SOUND diagnostics also use
+the cold reset now. Their first audible packet is still captured at GB frame
+2472, but host deliveries occur at frames 2472 and 2522 instead of the inherited
+warm-start 2473 and 2521. Cycle-bus/shared/fractional KON observations are now
+39/41; exact integer rendezvous observes 39/42. Fractional positive timer polls
+retain the same 558/2876 half-clock spacing and 2/1 tick counts, with driver
+phases 124→212→0. The updated fractional WAV SHA-256 is
+`605fd6bdd74d2a76a24dd275552e6d988658d38a899a991a403fdb4057f199dd`.
+These are explicitly synthetic-input diagnostic pins, not the unchanged
+native-input playback/reference baselines and not evidence of hardware parity.
+No fitted timing offsets or relaxed PCM tolerances were introduced.
+
+The cold-reset validation run passes all 174 nonlocal/non-performance CTests,
+the performance-report gate, and the local native host, reusable APU-engine and
+combined host suites. Combined native/restored/scalar output agrees exactly on
+both models, including 586 SGB1 and 538 SGB2 combined restores and the 257-sample
+consumer partition. All four native diagnostic replay profiles and host
+startup pass without changing their existing native PCM/timeline pins.
+All six synthetic-input SOUND diagnostic profiles pass their cold-reset
+expectations, including exact fractional PCM and cross-processor clock spacing.
+Windows host, replacement-boot, firmware-core and core-contract tests pass;
+Android debug build/unit tests and all eight browser tests pass. The three
+WebGL voxel visual comparisons report zero mismatched pixels. These runs verify
+software reset/playback invariants, not a new device-performance or physical
+audio assessment.

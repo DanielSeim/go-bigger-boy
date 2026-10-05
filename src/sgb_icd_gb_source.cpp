@@ -19,7 +19,7 @@ SgbIcdGbSource::SgbIcdGbSource(gameboy::Cartridge cartridge,
                                  const gameboy::HardwareModel model)
     : gb_(std::make_unique<gameboy::Emulator>(
           std::move(cartridge), model,
-          gameboy::BootRomMode::diagnostic)),
+          gameboy::BootRomMode::replacement_sgb)),
       boot_image_(boot_rom), model_(model) {
     gb_->bus().install_boot_rom(boot_image_);
     gb_->bus().debug_enable_io_trace(true);
@@ -69,15 +69,6 @@ void SgbIcdGbSource::set_live_button(Button button, bool pressed) noexcept {
     frame_input_.hold(mask);
     set_input_buttons(mask);
     next_gb_clock_known_=false;
-}
-
-void SgbIcdGbSource::initialize_external_boot_bus() noexcept {
-    // An external boot ROM executes from reset, not from a post-boot LCD/DIV
-    // image. Otherwise frames can elapse before its first LCD-enable write.
-    gb_->bus().write8(0xFF40, 0);
-    gb_->bus().write8(0xFF04, 0);
-    gb_->bus().write8(0xFF0F, 0);
-    gb_->bus().write8(0xFFFF, 0);
 }
 
 void SgbIcdGbSource::apply_input(const std::uint64_t frame) noexcept {
@@ -326,16 +317,15 @@ bool SgbIcdGbSource::write(const std::uint16_t address,
             const auto live_held=held_buttons_;
             released_ = false;
             gb_->reset();
+            // Cold reset rebuilds the APU. Restore destination-owned callback
+            // bindings, never a pointer inherited from a saved machine.
+            set_audio_sink(audio_sink_, audio_reset_sink_, audio_context_);
+            audio_samples_ = 0;
+            audio_gap_cycles_ = 0;
             if (audio_sink_) {
-                // Reset the presentation accumulator too, without changing
-                // channel/register-visible behavior in the legacy path.
-                gb_->set_audio_enabled(false); gb_->set_audio_enabled(true);
-                audio_samples_ = 0;
-                audio_gap_cycles_ = 0;
                 if (audio_reset_sink_) audio_reset_sink_(audio_context_, master_clocks);
             }
             gb_->bus().install_boot_rom(boot_image_);
-            if (native_gb_input_) initialize_external_boot_bus();
             gb_->bus().debug_enable_io_trace(true);
             gb_cycles_ = 0;
             boot_reported_ = false;

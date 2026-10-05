@@ -35,6 +35,92 @@ bool equal(const std::vector<Host::StereoSample>& a,const std::vector<Host::Ster
     return a.size()==b.size() && std::equal(a.begin(),a.end(),b.begin(),
         [](auto x,auto y){ return x.left==y.left && x.right==y.right; });
 }
+void cold_gb_reset() {
+    for (auto model : {gameboy::HardwareModel::sgb, gameboy::HardwareModel::sgb2}) {
+        auto cfg=config(model);
+        cfg.game_rom[0x147]=9; cfg.game_rom[0x149]=2; // RAM/battery, no mapper.
+        // Deliberately dirty WRAM/HRAM, wave RAM, serial, timer, IRQs and DMA.
+        // Battery RAM is persistent and must survive the ICD's CPU reset.
+        const std::uint8_t poison[]{0x3e,0xa5,0xea,0,0xc0,0xea,0,0xa0,
+            0xe0,0x80,0xe0,0x30,0xe0,1,0x3e,5,0xe0,7,0x3e,0x83,0xe0,2,
+            0x3e,0x1f,0xe0,0xff,0xe0,0x0f,0x3e,0xc0,0xe0,0x46};
+        std::copy(std::begin(poison),std::end(poison),cfg.game_rom.begin()+0x150);
+        const auto loop=0x150+sizeof(poison);
+        cfg.game_rom[loop]=0xc3; cfg.game_rom[loop+1]=static_cast<std::uint8_t>(loop);
+        cfg.game_rom[loop+2]=static_cast<std::uint8_t>(loop>>8);
+        const std::vector<std::uint8_t> battery(8192,0x5a);
+        gameboy::Emulator oracle(gameboy::Cartridge(cfg.game_rom),model,
+                                 gameboy::BootRomMode::replacement_sgb);
+        oracle.bus().install_boot_rom(cfg.gb_boot_rom);
+        oracle.import_battery_ram(battery);
+        gameboy::SgbIcdGbSource source(cfg.game_rom,cfg.gb_boot_rom,model);
+        source.import_battery_ram(battery);
+        auto cold=oracle.save_state();
+        check(source.emulator().save_state()==cold,"ICD construction matches complete standalone cold state");
+        source.set_native_gb_input(true);
+        source.set_native_gb_input(false);
+        check(source.emulator().save_state()==cold,"input-policy selection cannot reset or prime peripherals");
+        std::vector<std::uint64_t> samples, resets;
+        struct Capture { std::vector<std::uint64_t>& samples; std::vector<std::uint64_t>& resets; } capture{samples,resets};
+        source.set_audio_sink([](void* context,std::uint64_t clock,std::int16_t,std::int16_t) noexcept {
+            static_cast<Capture*>(context)->samples.push_back(clock);
+        },[](void* context,std::uint64_t clock) noexcept {
+            static_cast<Capture*>(context)->resets.push_back(clock);
+        },&capture);
+        check(source.write(0x6003,100,0x81),"cold reset fixture releases custom boot");
+        source.advance_to(300000);
+        check(!samples.empty() && source.emulator().save_state()!=cold,"custom firmware dirties live CPU/peripherals");
+        check(source.emulator().export_battery_ram()[0]==0xa5,"cartridge changed persistent RAM before reset");
+        oracle.bus().write8(0xa000,0xa5);
+        cold=oracle.save_state();
+        check(source.write(0x6003,300000,1),"ICD asserted reset rebuilds cold peripherals");
+        check(source.emulator().save_state()==cold,"ICD reset clears all serialized transient GB state and preserves battery RAM");
+        check(resets==std::vector<std::uint64_t>{300000},"presentation reset callback has exact bus timestamp");
+        const auto previous=samples.size();
+        check(source.write(0x6003,310000,0x81),"second release retains supplied boot image");
+        source.advance_to(360000);
+        check(samples.size()>previous && samples[previous]>=310000 && std::is_sorted(samples.begin(),samples.end()),
+              "fresh APU retains destination callback and new absolute sample epoch");
+        source.set_audio_enabled(false); oracle.set_audio_enabled(false);
+        check(source.write(0x6003,360000,1) && source.emulator().save_state()==oracle.save_state(),
+              "cold reset preserves frontend mute policy without warm sampler state");
+        const auto muted=samples.size();
+        check(source.write(0x6003,370000,0x81),"muted release remains supported");
+        source.advance_to(420000);
+        check(samples.size()==muted,"reset cannot unmute a disabled GB audio source");
+        source.set_live_button(gameboy::Button::a,true);
+        oracle.set_button(gameboy::Button::a,true);
+        check(source.write(0x6003,420000,1) && source.emulator().save_state()==oracle.save_state(),
+              "cold ICD reset preserves held live input without inheriting peripheral state");
+        source.set_live_button(gameboy::Button::a,false);
+        oracle.set_button(gameboy::Button::a,false);
+        check(source.emulator().save_state()==oracle.save_state(),"held live input remains releasable after reset");
+    }
+}
+void cold_audio_oracle() {
+    for (auto model : {gameboy::HardwareModel::sgb,gameboy::HardwareModel::sgb2}) {
+        auto cfg=config(model);
+        gameboy::SgbIcdGbSource source(cfg.game_rom,cfg.gb_boot_rom,model);
+        gameboy::Emulator oracle(gameboy::Cartridge(cfg.game_rom),model,
+                                 gameboy::BootRomMode::replacement_sgb);
+        oracle.bus().install_boot_rom(cfg.gb_boot_rom);
+        std::vector<std::int16_t> raw;
+        source.set_audio_sink([](void* context,std::uint64_t,std::int16_t left,std::int16_t right) noexcept {
+            auto& out=*static_cast<std::vector<std::int16_t>*>(context);
+            out.push_back(left); out.push_back(right);
+        },nullptr,&raw);
+        check(source.write(0x6003,0,0x81),"raw cold oracle releases GB");
+        source.advance_to(1000000);
+        while(oracle.cpu().total_cycles()<source.gb_cycles()) {
+            (void)oracle.step();
+            if(oracle.frame_ready()) oracle.consume_frame();
+        }
+        check(raw==oracle.take_audio_samples() && !raw.empty(),
+              "ICD cold raw PCM matches standalone cold execution, not a warm audio pin");
+        check(source.emulator().save_state()==oracle.save_state(),
+              "raw sink and standalone sample-vector paths retain identical CPU/peripheral state");
+    }
+}
 void checksum(std::vector<std::uint8_t>& state) {
     std::uint64_t h=14695981039346656037ULL;
     for(std::size_t n=0;n<state.size()-8;++n) { h^=state[n]; h*=1099511628211ULL; }
@@ -424,6 +510,8 @@ void batch_fault_phase_oracle() {
 }
 }
 int main() {
+    cold_gb_reset();
+    cold_audio_oracle();
     batch_oracle();
     batch_fault_phase_oracle();
     mixer(); raw_apu_sink(); snapshots(); backpressure(); maximum_dma(); faults();

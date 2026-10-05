@@ -92,20 +92,22 @@ def main() -> int:
         if args.cycle_bus_dsp or args.shared_bus_dsp:
             phases = [(int(event["address"]), int(event["value"]))
                       for event in event_rows if event["kind"] == "Q"]
-            # Shared instruction-rendezvous baseline matches reference 37/41.
-            # Exact rendezvous removes overshoot but produces 34/38: pin that
-            # diagnostic result without claiming it matches hardware/reference.
-            expected_phases = ([(34, 4), (38, 4)] if args.cycle_apu_sync and
-                               not args.fractional_apu_sync else [(37, 4), (41, 4)])
+            # Synthetic-input diagnostic baseline with complete cold GB reset.
+            # This is not the native-input production/hardware reference pin.
+            expected_phases = ([(39, 4), (42, 4)] if args.cycle_apu_sync and
+                               not args.fractional_apu_sync else [(39, 4), (41, 4)])
             if phases[:2] != expected_phases:
-                raise AssertionError("title KON bus phases changed for the selected diagnostic mode")
+                raise AssertionError(f"title KON bus phases changed: {phases[:2]} != {expected_phases}")
         if args.cycle_apu_sync:
             boundary = re.search(r"APU rendezvous target=(\d+) completed=(\d+) SPC_completed=(\d+)", output)
             if "Cycle-level SNES/SPC APU rendezvous enabled" not in output or \
                     boundary is None or len(set(boundary.groups())) != 1:
                 raise AssertionError("title rendezvous did not stop at its exact SPC target")
         if args.fractional_apu_sync:
-            boot = validate_boot(json.loads(boot_path.read_text()), "gbb")
+            boot_data = json.loads(boot_path.read_text())
+            if boot_data.get("gb_reset_profile") != "cold-sgb-v1":
+                raise AssertionError("title diagnostic lacks complete cold-reset provenance")
+            boot = validate_boot(boot_data, "gbb")
             ready = [e for e in boot if e["kind"] == "I"]
             uploads = [e for e in boot if e["kind"] == "U"]
             inputs = [e for e in boot if e["kind"] == "N"]
@@ -128,14 +130,14 @@ def main() -> int:
             if "Timer polling and bounded driver-state trace enabled" not in output or \
                     [(p["half_clocks_after_kon"], p["ticks"], p.get("phase_before"),
                       p.get("phase_after")) for p in positive] != \
-                    [(558, 2, 164, 252), (2876, 1, 252, 40)]:
+                    [(558, 2, 124, 212), (2876, 1, 212, 0)]:
                 raise AssertionError("bounded timer/driver-state capture changed")
             if not any(e["kind"] == "W" and e["address"] == 0xfa and e["value"] == 16
                        for e in data["events"]):
                 raise AssertionError("timer configuration was not captured")
-            # Fixed-instruction PCM pin after the final-VBlank LY correction.
+            # Fixed-instruction synthetic-input PCM pin for cold-sgb-v1.
             if hashlib.sha256(pcm_path.read_bytes()).hexdigest() != \
-                    "b32472b7f639f562f8fac49b05d668e276b890183bf91a5525596b8b5e28db58":
+                    "605fd6bdd74d2a76a24dd275552e6d988658d38a899a991a403fdb4057f199dd":
                 raise AssertionError("timer observation changed title PCM")
         if len(packets) != 1 or len(hosts) < 4 or len(dsp) < 10 or \
                 [(int(event["address"]), int(event["value"]))
@@ -153,12 +155,12 @@ def main() -> int:
     if [int(event[0]) for event in deliveries] != [0, 1, 2]:
         raise AssertionError("host SOUND delivery timeline is incomplete")
     first_music, second_music = deliveries[1:]
-    if [int(first_music[1]), int(second_music[1])] != [2473, 2521] or \
+    if [int(first_music[1]), int(second_music[1])] != [2472, 2522] or \
             first_music[5] != second_music[5] or \
             not first_music[5].startswith("41 00 00 00 01") or \
-            not 0.8 * 32000 < int(second_music[4]) - int(first_music[4]) \
-            < 0.83 * 32000:
-        raise AssertionError("repeated title SOUND packets differ or lack PCM anchors")
+            not 0.83 * 32000 < int(second_music[4]) - int(first_music[4]) \
+            < 0.84 * 32000:
+        raise AssertionError(f"repeated title SOUND packets differ or lack cold PCM anchors: {deliveries}")
     gb_cycles = int(second_music[2]) - int(first_music[2])
     master_clocks = int(second_music[3]) - int(first_music[3])
     pcm_seconds = (int(second_music[4]) - int(first_music[4])) / 32000

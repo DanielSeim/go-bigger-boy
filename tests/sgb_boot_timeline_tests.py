@@ -26,6 +26,15 @@ def capture(source):
 
 
 class Contracts(unittest.TestCase):
+    def test_reset_profile_provenance(self):
+        g=capture("gbb"); r=capture("reference")
+        self.assertEqual(compare(g,r)["gbb_reset_profile"],"unspecified-legacy")
+        g["gb_reset_profile"]="cold-sgb-v1"
+        self.assertEqual(compare(g,r)["gbb_reset_profile"],"cold-sgb-v1")
+        for bad in (True,0,{},"partial-reset"):
+            g["gb_reset_profile"]=bad
+            with self.assertRaises(ValueError): validate(g,"gbb")
+
     def test_matching_preconditions(self):
         self.assertTrue(compare(capture("gbb"), capture("reference"))["input_and_upload_preconditions_met"])
 

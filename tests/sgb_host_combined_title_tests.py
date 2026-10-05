@@ -21,13 +21,13 @@ def main():
             "b490c89efe718633b07381def66ce0ed58a5075aabe40c6e644baf2b408a76f4":
         raise AssertionError("unexpected private game image")
     with tempfile.TemporaryDirectory(prefix="gbb-combined-host-title-") as directory:
-        # Phase-correct baselines pin this bounded implementation, not independent
+        # Cold-reset baselines pin this bounded implementation, not independent
         # hardware fidelity. Scalar playback and restore must preserve its PCM.
         for model, rate, baseline, combined_baseline in (
                 ("sgb1", 48000, "56aa9bc74cdbe70711c43eadbdf809f39e6c63c207a83f6f08a1f0f595e3c7e3",
-                 "bfb70ddb9b22ed3c4618cf9e64fd4b399ffd6cf9e717c1ffdcac4898b9d6824d"),
+                 "087e630782f1cc647832393f3d5095bc0efac09fa63b7fdda2d6337fc38d0542"),
                 ("sgb2", 44100, "8d2b85cfceb9b744e03946794da7ba0705a836436b0d444d7bed2907e8fce8ea",
-                 "10f1d1c7ef4aa1e1f460c74804f7bdf8b98e27eda17aa7a79a6d01e900ed9a5f")):
+                 "c12a40101bde006f414f7e112c32e02345d83ab68c4c5d5dce0a998f741456f1")):
             reports, outputs = [], []
             for mode in ("native", "combined", "restored", "scalar"):
                 prefix = Path(directory) / f"{model}-{mode}"
@@ -50,7 +50,8 @@ def main():
                     raise AssertionError("invalid process CPU timing")
                 payload = wav.read_bytes()
                 native = mode == "native"
-                if (data["steps"] != 60000000 or data["inputs"] != 11 or data["gb_frames"] < 5000 or
+                if (data.get("gb_reset_profile") != "cold-sgb-v1" or
+                        data["steps"] != 60000000 or data["inputs"] != 11 or data["gb_frames"] < 5000 or
                         data["sound_delivered"] != 3 or data["audible_delivered"] != 2 or
                         data["combined"] == native or data["output_hz"] != (32000 if native else rate) or
                         data["clipped_samples"] != 0 or data["nonzero"] <= 0 or

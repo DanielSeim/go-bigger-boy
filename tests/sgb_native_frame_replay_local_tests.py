@@ -47,6 +47,8 @@ def main():
             raise AssertionError("unmarked PPU DMA timing mode")
         if data.get("host_bus_timing") is not host_bus_timing or data.get("external_boot_reset") is not True:
             raise AssertionError("unmarked host timing or external boot reset")
+        if data.get("gb_reset_profile") != "cold-sgb-v1":
+            raise AssertionError("native replay must start from complete GB cold state")
         if data["apu_half_hz"] != (2050560 if reference_clock else 2048000):
             raise AssertionError("unmarked diagnostic oscillator profile")
         actual = [(e["count"], e["value"]) for e in rows if e["kind"] == "N"]

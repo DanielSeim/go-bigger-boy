@@ -39,7 +39,8 @@ def main():
                     command.append("--restore")
                 subprocess.run(command, check=True, timeout=360)
                 data = json.loads(report.read_text())
-                if (data["format"] != "gbb-sgb-host-performance-v1" or data["model"] != model or
+                if (data["format"] != "gbb-sgb-host-performance-v1" or
+                        data.get("gb_reset_profile") != "cold-sgb-v1" or data["model"] != model or
                         data["steps"] != 60000000 or data["inputs"] != 11 or
                         data["sound_delivered"] != 3 or data["audible_delivered"] != 2 or
                         data["nonzero"] <= 0 or data["gb_frames"] < 5000 or

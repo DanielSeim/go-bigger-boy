@@ -39,13 +39,13 @@ def main():
     runner, roms = args.runner.resolve(), args.roms.resolve()
     game = roms / "Donkey Kong (JU) (V1.1) [S][!].gb"
     initial_save = game.with_suffix(".sav")
-    # Exact PCM/state endpoints after the SGB final-VBlank LY correction;
+    # Exact PCM/state endpoints for complete GB cold reset (cold-sgb-v1);
     # see docs/sgb-boot-validation.md for parity and baseline-update evidence.
     profiles = (
         ("sgb1", False, 32000, "56aa9bc74cdbe70711c43eadbdf809f39e6c63c207a83f6f08a1f0f595e3c7e3", 11547665018114310950),
-        ("sgb1", True, 48000, "bfb70ddb9b22ed3c4618cf9e64fd4b399ffd6cf9e717c1ffdcac4898b9d6824d", 16015197661753030498),
+        ("sgb1", True, 48000, "087e630782f1cc647832393f3d5095bc0efac09fa63b7fdda2d6337fc38d0542", 16015197661753030498),
         ("sgb2", False, 32000, "8d2b85cfceb9b744e03946794da7ba0705a836436b0d444d7bed2907e8fce8ea", 3180249233533125658),
-        ("sgb2", True, 44100, "10f1d1c7ef4aa1e1f460c74804f7bdf8b98e27eda17aa7a79a6d01e900ed9a5f", 8729706138122423209),
+        ("sgb2", True, 44100, "c12a40101bde006f414f7e112c32e02345d83ab68c4c5d5dce0a998f741456f1", 8729706138122423209),
     )
     required = (runner, game, initial_save, roms / "sgb1.program.rom", roms / "sgb2.program.rom",
                 roms / "sgb.boot.rom", roms / "sgb2.boot.rom", roms / "spc700.rom")
@@ -79,7 +79,10 @@ def main():
         subprocess.run(command, check=True, cwd=root)
         if hashlib.sha256(wav.read_bytes()).hexdigest() != expected:
             raise RuntimeError(f"{model}: playback changed the complete PCM baseline")
-        if json.loads(report.read_text()).get("gb_state_hash") != expected_state:
+        data = json.loads(report.read_text())
+        if data.get("gb_reset_profile") != "cold-sgb-v1":
+            raise RuntimeError(f"{model}: benchmark lacks complete cold-reset provenance")
+        if data.get("gb_state_hash") != expected_state:
             raise RuntimeError(f"{model}: playback changed final GB state/framebuffers")
         annotate_report(report, args.power_profile)
         reports.append(str(report))

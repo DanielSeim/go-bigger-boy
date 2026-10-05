@@ -19,6 +19,8 @@ def validate(data, source):
     for field in ("ppu_dma_timing", "host_bus_timing", "external_boot_reset"):
         if field in data and type(data[field]) is not bool:
             raise ValueError("invalid diagnostic timing/reset mode")
+    if "gb_reset_profile" in data and data["gb_reset_profile"] != "cold-sgb-v1":
+        raise ValueError("invalid GB reset profile")
     if not isinstance(events, list) or not 0 < len(events) <= 128:
         raise ValueError("empty or oversized boot timeline")
     for e in events:
@@ -60,6 +62,7 @@ def compare(gbb, reference):
             "apu_half_hz": [gbb["apu_half_hz"], reference["apu_half_hz"]],
             "gbb_host_bus_timing": gbb.get("host_bus_timing", False),
             "gbb_external_boot_reset": gbb.get("external_boot_reset", False),
+            "gbb_reset_profile": gbb.get("gb_reset_profile", "unspecified-legacy"),
             "input_and_upload_preconditions_met": eligible,
             "input_modes": modes,
             "upload_fingerprints_match": bool(uploads[0]) and uploads[0] == uploads[1],
