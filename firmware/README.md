@@ -40,6 +40,31 @@ No boot logo or trademark tile is installed in VRAM. WRAM and cartridge RAM
 are not modified by the firmware. Its stack uses two bytes at `FFFC`–`FFFD`;
 it does not write the diagnostic `GBB` HRAM marker.
 
+### Early Game Boy (DMG0)
+
+The DMG0 variant is also built from this original source (`GBB_DMG0=1`).
+It hands off `AF=0100`, `BC=FF13`, `DE=00C1`, `HL=8403`, `SP=FFFE`,
+and `PC=0100` for either valid checksum path. Ordinary CPU writes and waits
+establish DIV=`1828`, LY=`91`, STAT=`81`, and LCD dot 92. Failed checksums
+leave the firmware mapped and blink a white/black screen instead of starting
+the game or showing the GBB animation. Nintendo-logo authentication remains
+intentionally absent, so logo-free homebrew with a valid checksum works.
+
+Fast startup takes about 1.02 seconds. Animated DMG0 adds 314 whole DIV wraps
+(20,578,304 clocks), taking about 5.93 seconds. It uses the original GBB lettering
+with the early model's slower approximate scroll cadence and separately
+APU-synthesized note triggers at clocks 18,523,904 and 18,875,268. The local
+opaque reference handed off at clock 24,844,328; this variant is within one
+video frame. These measurements establish specific observed behavior, not
+complete equivalence to physical DMG0 hardware, its APU phase, or its boot ROM.
+DMG and Pocket images remain byte-for-byte unchanged.
+
+```sh
+python3 scripts/build_dmg_boot_rom.py --model dmg0 --check
+python3 scripts/build_dmg_boot_rom.py --model dmg0 --animated --check
+ctest --test-dir build -R gameboy_dmg0 --output-on-failure
+```
+
 ### Game Boy Pocket (MGB)
 
 The MGB image is built from the same original source with `GBB_HANDOFF_A=$FF`.
@@ -59,7 +84,7 @@ cycle-exact equivalence to physical Pocket cold startup or its original ROM.
 ### Rebuild and verify
 
 Normal builds consume the checked-in fast and animated `*_boot_image.hpp`
-images for DMG and MGB; they do not
+images for DMG0, DMG and MGB; they do not
 require RGBDS, Python, downloaded ROMs, or network access. With RGBDS (`rgbasm`
 and `rgblink`; tested with 1.0.1) and Python installed:
 
@@ -89,7 +114,7 @@ ctest --test-dir build -R 'gameboy_dmg_' --output-on-failure
 ```
 
 The firmware is also available through `BootRomMode::replacement_dmg` in the
-core API (also named `replacement_mgb` for Pocket). The selected DMG/MGB
+core API (also named `replacement_mgb` for Pocket and `replacement_dmg0` for early DMG). The selected monochrome
 hardware profile chooses its matching image; other profiles are rejected by
 the raw emulator API rather than silently receiving monochrome initialization.
 Desktop, Android and web settings expose **Startup** with
@@ -99,9 +124,9 @@ persists the choice in browser local storage. No external firmware download is
 required: the image is bundled in every build.
 
 The existing `replacement-dmg` and `animated-dmg` setting IDs are retained for
-compatibility; they select the matching firmware on both DMG and MGB.
+compatibility; they select matching firmware on DMG0, DMG and MGB.
 
-The animated option selects a separate original 256-byte firmware variant. Its
+For DMG/MGB, the animated option selects a separate original 256-byte firmware variant. Its
 CPU-executed wait adds exactly 19,136,512 clocks (292 whole DIV wraps), making
 startup about **5.59 seconds**, while preserving the fast boot's eventual
 CPU/register/timer/LCD/APU handoff apart from the elapsed clock. Fast mode stays

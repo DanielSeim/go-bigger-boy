@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rebuild/check original DMG/MGB firmware; never reads reference ROMs."""
+"""Rebuild/check original DMG0/DMG/MGB firmware; never reads reference ROMs."""
 
 import argparse
 import hashlib
@@ -19,6 +19,8 @@ def render(image, model="dmg", animated=False):
     rows = ["    " + ", ".join(f"0x{byte:02X}" for byte in image[i:i + 16]) + ","
             for i in range(0, len(image), 16)]
     definition = "// Build definition: GBB_HANDOFF_A=255 (MGB).\n" if model == "mgb" else ""
+    if model == "dmg0":
+        definition += "// Build definition: GBB_DMG0=1.\n"
     if animated:
         definition += "// Build definition: GBB_ANIMATED=1.\n"
     name = model + ("_animated" if animated else "")
@@ -36,7 +38,7 @@ def render(image, model="dmg", animated=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model", choices=("dmg", "mgb"), default="dmg")
+    parser.add_argument("--model", choices=("dmg0", "dmg", "mgb"), default="dmg")
     parser.add_argument("--animated", action="store_true", help="build the original-cadence intro variant")
     checks = parser.add_mutually_exclusive_group()
     checks.add_argument("--check", action="store_true",
@@ -57,6 +59,8 @@ def main():
             obj = Path(directory) / "dmg.o"
             binary = Path(directory) / "dmg.bin"
             definitions = ["-DGBB_HANDOFF_A=255"] if args.model == "mgb" else []
+            if args.model == "dmg0":
+                definitions.append("-DGBB_DMG0=1")
             if args.animated:
                 definitions.append("-DGBB_ANIMATED=1")
             subprocess.run([args.rgbasm, "-Wall", "-Wextra", *definitions, "-o", str(obj), str(SOURCE)],

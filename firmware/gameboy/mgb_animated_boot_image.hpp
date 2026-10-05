@@ -3,7 +3,7 @@
 // Build definition: GBB_HANDOFF_A=255 (MGB).
 // Build definition: GBB_ANIMATED=1.
 // SHA-256: 4595c54d09ac397efc376c197b818f9e3541c144621670f48c9dee6547eaba05
-// Source SHA-256 (LF): 5f266c4aca359ba05977a80846c031c045e851ab6894d9eb04f31d7679e63574
+// Source SHA-256 (LF): 1a5e1dc59c6e16f2fe26cd65fe13bfdcc09086a834102e4ef5f8fd71814faa03
 #pragma once
 
 #include <array>

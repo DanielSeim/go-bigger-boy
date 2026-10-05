@@ -43,6 +43,11 @@ class DmgBootCliTests(unittest.TestCase):
         result = self.run_rom("--model", "dmg")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_dmg0_cartridge_runs_from_cold_boot(self):
+        result = self.run_rom("--model", "dmg0", "--dmg-boot")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("PASS (serial)", result.stdout)
+
     def test_invalid_checksum_never_executes_cartridge(self):
         rom = cartridge()
         rom[0x14D] ^= 1
@@ -60,7 +65,7 @@ class DmgBootCliTests(unittest.TestCase):
     def test_sgb_is_not_treated_as_dmg(self):
         result = self.run_rom("--model", "sgb", "--dmg-boot")
         self.assertEqual(result.returncode, 2)
-        self.assertIn("requires DMG or MGB", result.stderr)
+        self.assertIn("requires DMG0, DMG or MGB", result.stderr)
 
 
 if __name__ == "__main__":

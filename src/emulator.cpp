@@ -5,6 +5,13 @@
 #include <utility>
 
 namespace gameboy {
+namespace {
+const DiagnosticBootRom& replacement_image(HardwareModel model, bool animated) noexcept {
+    if (model == HardwareModel::dmg0) return animated ? dmg0_animated_boot_rom() : dmg0_boot_rom();
+    if (model == HardwareModel::mgb) return animated ? mgb_animated_boot_rom() : mgb_boot_rom();
+    return animated ? dmg_animated_boot_rom() : dmg_boot_rom();
+}
+}
 
 Emulator::Emulator(Cartridge cartridge, const HardwareModel model,
                    const BootRomMode boot_rom_mode)
@@ -15,18 +22,16 @@ Emulator::Emulator(Cartridge cartridge, const HardwareModel model,
         bus_.cartridge().cgb_compatibility_palette_id());
     splash_enabled_ = boot_rom_mode_ == BootRomMode::animated_dmg;
     if (boot_rom_mode_ == BootRomMode::replacement_dmg || splash_enabled_) {
-        if (hardware_model_ != HardwareModel::dmg && hardware_model_ != HardwareModel::mgb) {
-            throw std::invalid_argument("Monochrome replacement boot requires DMG or MGB hardware");
+        if (hardware_model_ != HardwareModel::dmg0 && hardware_model_ != HardwareModel::dmg && hardware_model_ != HardwareModel::mgb) {
+            throw std::invalid_argument("Monochrome replacement boot requires DMG0, DMG or MGB hardware");
         }
         bus_.initialize_dmg_power_on();
-        bus_.install_boot_rom(hardware_model_ == HardwareModel::mgb
-            ? (splash_enabled_ ? mgb_animated_boot_rom() : mgb_boot_rom())
-            : (splash_enabled_ ? dmg_animated_boot_rom() : dmg_boot_rom()));
+        bus_.install_boot_rom(replacement_image(hardware_model_, splash_enabled_));
         cpu_.reset_boot();
         // Precompute outside the playback loop, not at the first audible note.
         if (splash_enabled_) {
             splash_pixels_ = std::make_unique<Ppu::Framebuffer>();
-            prepare_boot_splash_audio();
+            prepare_boot_splash_audio(hardware_model_);
         }
         return;
     }
@@ -52,9 +57,7 @@ void Emulator::reset() noexcept {
     splash_cached_frame_ = UINT64_MAX;
     if (boot_rom_mode_ == BootRomMode::replacement_dmg || splash_enabled_) {
         bus_.initialize_dmg_power_on();
-        bus_.install_boot_rom(hardware_model_ == HardwareModel::mgb
-            ? (splash_enabled_ ? mgb_animated_boot_rom() : mgb_boot_rom())
-            : (splash_enabled_ ? dmg_animated_boot_rom() : dmg_boot_rom()));
+        bus_.install_boot_rom(replacement_image(hardware_model_, splash_enabled_));
         cpu_.reset_boot();
     } else if (boot_rom_mode_ == BootRomMode::diagnostic) {
         bus_.initialize_post_boot(hardware_model_);
@@ -99,7 +102,7 @@ const Ppu::Framebuffer& Emulator::framebuffer() const noexcept {
     if (startup_animation_active()) {
         const auto frame = cpu_.total_cycles() / boot_splash_frame_cycles;
         if (frame != splash_cached_frame_) {
-            render_boot_splash(*splash_pixels_, frame);
+            render_boot_splash(*splash_pixels_, frame, hardware_model_);
             splash_cached_frame_ = frame;
         }
         return *splash_pixels_;
@@ -112,7 +115,8 @@ const Ppu::SgbFramebuffer& Emulator::sgb_framebuffer() const noexcept {
 }
 
 bool Emulator::startup_animation_active() const noexcept {
-    return splash_enabled_ && !splash_skipped_ && bus_.boot_rom_enabled();
+    return splash_enabled_ && !splash_skipped_ && bus_.boot_rom_enabled() &&
+        !(hardware_model_ == HardwareModel::dmg0 && bus_.read8(0xff40) == 0x81);
 }
 
 bool Emulator::frame_ready() const noexcept {
@@ -133,7 +137,8 @@ std::vector<std::int16_t> Emulator::take_audio_samples() {
         for (std::size_t index = 0; index < samples.size() / 2; ++index) {
             const auto time = splash_audio_cursor_ + index;
             if (time >= cutoff) break;
-            const auto value = splash_skipped_ ? 0 : boot_splash_sample(time);
+            const auto failed = hardware_model_ == HardwareModel::dmg0 && bus_.read8(0xff40) == 0x81;
+            const auto value = splash_skipped_ || failed ? 0 : boot_splash_sample(time, hardware_model_);
             samples[index * 2] = samples[index * 2 + 1] = value;
         }
         // APU buffers are bounded. Advance to now even if undrained samples

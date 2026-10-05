@@ -17,9 +17,11 @@ dashboard, offers **Instant startup** (default), **GBB fast boot** (~1.03 second
 **GBB animated boot** (~5.59 seconds, original-style scrolling and APU-synthesized
 chime with GBB lettering; A or Start hides the presentation, not the firmware wait).
 Both boot options run bundled
-original firmware on DMG and MGB (Game Boy Pocket) hardware profiles;
+original firmware on DMG0, DMG and MGB (Game Boy Pocket) hardware profiles;
 other profiles remain instant. Automatic model selection is unchanged, so use
-the explicit DMG or MGB profile for dual-mode titles. The setting applies on the next
+the explicit DMG0, DMG or MGB profile for dual-mode titles. DMG0 animated startup
+takes about 5.93 seconds and has its own early-model handoff and failure blink.
+The setting applies on the next
 ROM start/restart, not to an already running core. No download is required.
 See [replacement firmware](../firmware/README.md) for the fast-start contract
 and limitations.

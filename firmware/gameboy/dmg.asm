@@ -9,16 +9,19 @@ ENDC
 ASSERT GBB_HANDOFF_A == $01 || GBB_HANDOFF_A == $FF
 
 SECTION "DMG startup", ROM0[$0000]
-DmgBoot:
-    di
-IF DEF(GBB_ANIMATED)
+MACRO IntroWait
     ; Original delay code, not extracted from any reference firmware.
-    ; Exactly 292 DIV wraps (19,136,512 clocks = 4.5625 seconds).
+    ; Exactly 292 DIV wraps (19,136,512 clocks) for DMG/MGB;
+    ; DMG0 uses 314 wraps (20,578,304 clocks) for its longer presentation.
     ; Keeping a whole number of wraps preserves the fast firmware's later
     ; DIV/APU/serial phase. The shared host presentation runs during this wait.
     ld d, 12
 .intro_outer
+IF DEF(GBB_DMG0)
+    ld bc, 61243
+ELSE
     ld bc, 56952
+ENDC
 .intro_inner
     dec bc
     ld a, b
@@ -32,6 +35,17 @@ IF DEF(GBB_ANIMATED)
     jr nz, .intro_tail
     nop
     nop
+IF DEF(GBB_DMG0)
+    nop
+    nop
+    nop
+    nop
+ENDC
+ENDM
+DmgBoot:
+    di
+IF DEF(GBB_ANIMATED) && !DEF(GBB_DMG0)
+    IntroWait
 ENDC
     ld sp, $FFFE
     xor a
@@ -84,6 +98,10 @@ ENDC
     ld a, [hl]
     cp c
     jp nz, .invalid_header
+IF DEF(GBB_ANIMATED) && DEF(GBB_DMG0)
+    ; Early DMG checks before presentation, unlike the later boot.
+    IntroWait
+ENDC
 
     ; Initialize sound using CPU-visible writes, not a post-boot snapshot.
     ld hl, .io_values
@@ -143,7 +161,11 @@ ENDC
     ; The LCD poll/phase-alignment/handoff path takes 70180 clocks.
     ; (170388 + 16 + 70180) modulo 65536 = ABC8.
     ; The extra two divider wraps settle the analog DC transient before entry.
+IF DEF(GBB_DMG0)
+    ld bc, 4876
+ELSE
     ld bc, 6085
+ENDC
 .divider_delay
     dec bc
     ld a, b
@@ -153,8 +175,32 @@ ENDC
     nop
     nop
     nop
+IF DEF(GBB_DMG0)
+    nop
+    nop
+    nop
+ENDC
     ld a, $91
     ldh [$FF40], a
+
+IF DEF(GBB_DMG0)
+    ld bc, $FF13
+    ld de, $00C1
+    ld hl, $8403
+.wait_dmg0_line
+    ldh a, [$FF44]
+    cp $91
+    jr nz, .wait_dmg0_line
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
+    ld a, $01
+    or a                          ; DMG0 always hands off F=00
+    jp $00FE
+ELSE
 
     ; Let the LCD produce one complete frame before entering the cartridge.
 .wait_vblank
@@ -195,8 +241,27 @@ ENDC
     ld de, $00D8
     ld hl, $014D
     jp $00FE
+ENDC
 .invalid_header
+IF DEF(GBB_DMG0)
+    ld a, $81                     ; distinct from successful LCDC=$91
+    ldh [$FF40], a
+    ld e, $00
+.blink
+    ld a, e
+    ldh [$FF47], a
+    cpl
+    ld e, a
+    ld bc, $FFFF
+.blink_wait
+    dec bc
+    ld a, b
+    or c
+    jr nz, .blink_wait
+    jr .blink
+ELSE
     jr .invalid_header
+ENDC
 
 .io_values
     db $26, $80, $10, $80, $11, $80, $12, $F3

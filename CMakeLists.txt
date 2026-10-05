@@ -670,7 +670,10 @@ if(GAMEBOY_BUILD_TESTS)
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_dmg_boot_rom.py --model mgb --check-source)
         set_tests_properties(gameboy_mgb_firmware_source PROPERTIES LABELS "firmware;boot")
-        foreach(boot_model dmg mgb)
+        add_test(NAME gameboy_dmg0_firmware_source
+                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_dmg_boot_rom.py --model dmg0 --check-source)
+        set_tests_properties(gameboy_dmg0_firmware_source PROPERTIES LABELS "firmware;boot")
+        foreach(boot_model dmg0 dmg mgb)
             add_test(NAME gameboy_${boot_model}_animated_firmware_source
                      COMMAND ${Python3_EXECUTABLE}
                              ${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_dmg_boot_rom.py
@@ -698,7 +701,11 @@ if(GAMEBOY_BUILD_TESTS)
                              ${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_dmg_boot_rom.py --model mgb --check
                              --rgbasm ${GBB_RGBASM} --rgblink ${GBB_RGBLINK})
             set_tests_properties(gameboy_mgb_firmware_reproducible PROPERTIES LABELS "firmware;boot")
-            foreach(boot_model dmg mgb)
+            add_test(NAME gameboy_dmg0_firmware_reproducible
+                     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_dmg_boot_rom.py --model dmg0 --check
+                             --rgbasm ${GBB_RGBASM} --rgblink ${GBB_RGBLINK})
+            set_tests_properties(gameboy_dmg0_firmware_reproducible PROPERTIES LABELS "firmware;boot")
+            foreach(boot_model dmg0 dmg mgb)
                 add_test(NAME gameboy_${boot_model}_animated_firmware_reproducible
                          COMMAND ${Python3_EXECUTABLE}
                                  ${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_dmg_boot_rom.py
@@ -793,6 +800,10 @@ if(GAMEBOY_BUILD_TESTS)
     target_link_libraries(gameboy_boot_splash_tests PRIVATE gameboy_core)
     add_test(NAME gameboy_boot_splash COMMAND gameboy_boot_splash_tests)
     add_executable(gameboy_mgb_boot_tests tests/mgb_boot_tests.cpp)
+    add_executable(gameboy_dmg0_boot_tests tests/dmg0_boot_tests.cpp)
+    target_link_libraries(gameboy_dmg0_boot_tests PRIVATE gbb_core_api)
+    add_test(NAME gameboy_dmg0_boot COMMAND gameboy_dmg0_boot_tests)
+    set_tests_properties(gameboy_dmg0_boot PROPERTIES LABELS "firmware;boot")
     target_link_libraries(gameboy_mgb_boot_tests PRIVATE gbb_core_api)
     add_test(NAME gameboy_mgb_boot COMMAND gameboy_mgb_boot_tests)
     set_tests_properties(gameboy_mgb_boot PROPERTIES LABELS "firmware;boot")

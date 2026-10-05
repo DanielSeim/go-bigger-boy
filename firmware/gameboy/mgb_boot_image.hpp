@@ -2,7 +2,7 @@
 // Generated from dmg.asm by scripts/build_dmg_boot_rom.py.
 // Build definition: GBB_HANDOFF_A=255 (MGB).
 // SHA-256: dfa53c0108557def8c3486bfde2a70dc6d70a7805d36626b15c89ef9eb208fbd
-// Source SHA-256 (LF): 5f266c4aca359ba05977a80846c031c045e851ab6894d9eb04f31d7679e63574
+// Source SHA-256 (LF): 1a5e1dc59c6e16f2fe26cd65fe13bfdcc09086a834102e4ef5f8fd71814faa03
 #pragma once
 
 #include <array>

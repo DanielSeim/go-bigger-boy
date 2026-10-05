@@ -204,3 +204,26 @@ test('Pocket fast and animated boot expose FF to a dual-mode cartridge', async (
     await expect(page.locator('#hardware-model')).toHaveValue('mgb');
   }
 });
+
+test('DMG0 fast and animated boot expose the early B register', async ({page}) => {
+  await page.goto('/');
+  await expect(page.locator('#startup-mode')).toBeEnabled({timeout: 90_000});
+  await page.locator('#audio-enabled').uncheck();
+  await page.locator('#hardware-model').selectOption('dmg0');
+  const rom = new Uint8Array(0x8000);
+  rom.set([0xc3, 0x50, 0x01], 0x100);
+  rom.set([0x78, 0xe0, 0x43, 0x18, 0xfe], 0x150); // LD A,B; publish B in SCX
+  let sum = 0;
+  for (let i = 0x134; i <= 0x14c; ++i) sum = (sum - rom[i] - 1) & 0xff;
+  rom[0x14d] = sum;
+  for (const mode of ['replacement-dmg', 'animated-dmg']) {
+    await page.locator('#startup-mode').selectOption(mode);
+    await page.locator('#rom-file').setInputFiles({
+      name: `gbb-dmg0-${mode}.gb`, mimeType: 'application/octet-stream', buffer: Buffer.from(rom),
+    });
+    await expect.poll(async () => page.evaluate(() =>
+      JSON.parse(UTF8ToString(Module._gbb_export_scene_snapshot())).scx
+    ), {timeout: 30000}).toBe(255);
+    await expect(page.locator('#hardware-model')).toHaveValue('dmg0');
+  }
+});

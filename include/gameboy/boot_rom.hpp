@@ -16,6 +16,8 @@ enum class BootRomMode {
     // Legacy DMG mode names also select the MGB image on Pocket hardware.
     replacement_mgb = replacement_dmg,
     animated_mgb = animated_dmg,
+    replacement_dmg0 = replacement_dmg,
+    animated_dmg0 = animated_dmg,
 };
 
 constexpr std::size_t diagnostic_boot_rom_size = 0x100;
@@ -27,9 +29,11 @@ using DiagnosticBootRom = std::array<std::uint8_t, diagnostic_boot_rom_size>;
 // to the cartridge entry point at 0100.
 [[nodiscard]] DiagnosticBootRom diagnostic_boot_rom(HardwareModel model) noexcept;
 
-// Original cold-start firmware for the DMG and MGB profiles.
+// Original cold-start firmware for the DMG0, DMG and MGB profiles.
 // Unlike the diagnostic ROM, this image initializes peripherals itself.
 [[nodiscard]] const DiagnosticBootRom& dmg_boot_rom() noexcept;
+[[nodiscard]] const DiagnosticBootRom& dmg0_boot_rom() noexcept;
+[[nodiscard]] const DiagnosticBootRom& dmg0_animated_boot_rom() noexcept;
 [[nodiscard]] const DiagnosticBootRom& mgb_boot_rom() noexcept;
 [[nodiscard]] const DiagnosticBootRom& dmg_animated_boot_rom() noexcept;
 [[nodiscard]] const DiagnosticBootRom& mgb_animated_boot_rom() noexcept;
