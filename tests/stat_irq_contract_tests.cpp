@@ -72,7 +72,11 @@ void test_save_and_reset() {
           "save/load between dispatch and vector fetch restores the acknowledgment phase exactly");
 
     auto decoded = gameboy::save_state_container::decode(pending, emulator.rom_fingerprint());
-    decoded.payload.back() = 2; // Invalid boolean, with a valid container checksum.
+    // Version 42 appends flags and three u64 startup-presentation fields
+    // after the version-41 acknowledgment boolean. Mutate that boolean,
+    // not the last byte of the presentation audio cursor.
+    constexpr std::size_t presentation_bytes = 1 + 3 * sizeof(std::uint64_t);
+    decoded.payload[decoded.payload.size() - presentation_bytes - 1] = 2;
     const auto malformed = gameboy::save_state_container::encode(
         emulator.rom_fingerprint(), decoded.payload);
     emulator.load_state(pending);
@@ -82,7 +86,17 @@ void test_save_and_reset() {
     check(rejected && emulator.save_state() == pending,
           "malformed acknowledgment phase is rejected and rolls back atomically");
 
-    decoded.payload.pop_back(); // The pre-extension payload is still version 40.
+    decoded = gameboy::save_state_container::decode(pending, emulator.rom_fingerprint());
+    decoded.payload.resize(decoded.payload.size() - presentation_bytes);
+    auto version41 = gameboy::save_state_container::encode(
+        emulator.rom_fingerprint(), decoded.payload);
+    version41[8] = 41;
+    emulator.load_state(version41);
+    (void)emulator.step();
+    check(emulator.save_state() == completed,
+          "version-41 state retains its acknowledgment phase without presentation fields");
+
+    decoded.payload.pop_back(); // Version 40 predates the acknowledgment boolean too.
     auto legacy = gameboy::save_state_container::encode(
         emulator.rom_fingerprint(), decoded.payload);
     legacy[8] = 40;

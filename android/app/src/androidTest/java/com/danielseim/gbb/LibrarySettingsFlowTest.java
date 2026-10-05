@@ -38,7 +38,11 @@ public final class LibrarySettingsFlowTest {
         onView(withText("Recently played")).check(matches(isDisplayed()));
         onView(withContentDescription("Settings")).perform(click());
         onView(withText("Display")).check(matches(isDisplayed()));
-        onView(withText(AudioSettingModel.LABEL)).check(matches(isDisplayed()));
+        // Longer startup help can place audio below the fold on small screens.
+        // Exercise its real scrollable reachability rather than assuming a
+        // fixed initial viewport height.
+        onView(withText(AudioSettingModel.LABEL)).perform(scrollTo())
+                .check(matches(isDisplayed()));
 
         // Two clicks exercise the persisted setting without leaving the test
         // device with a modified preference, regardless of its initial value.
