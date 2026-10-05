@@ -24,7 +24,10 @@ Emulator::Emulator(Cartridge cartridge, const HardwareModel model,
             : (splash_enabled_ ? dmg_animated_boot_rom() : dmg_boot_rom()));
         cpu_.reset_boot();
         // Precompute outside the playback loop, not at the first audible note.
-        if (splash_enabled_) prepare_boot_splash_audio();
+        if (splash_enabled_) {
+            splash_pixels_ = std::make_unique<Ppu::Framebuffer>();
+            prepare_boot_splash_audio();
+        }
         return;
     }
     bus_.initialize_post_boot(hardware_model_);
@@ -96,10 +99,10 @@ const Ppu::Framebuffer& Emulator::framebuffer() const noexcept {
     if (startup_animation_active()) {
         const auto frame = cpu_.total_cycles() / boot_splash_frame_cycles;
         if (frame != splash_cached_frame_) {
-            render_boot_splash(splash_pixels_, frame);
+            render_boot_splash(*splash_pixels_, frame);
             splash_cached_frame_ = frame;
         }
-        return splash_pixels_;
+        return *splash_pixels_;
     }
     return bus_.framebuffer();
 }

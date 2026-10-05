@@ -68,6 +68,11 @@ public:
                 throw SaveStateError("Invalid startup presentation state");
         }
         payload.finish();
+        if (emulator.splash_enabled_) {
+            if (!emulator.splash_pixels_)
+                emulator.splash_pixels_ = std::make_unique<Ppu::Framebuffer>();
+            prepare_boot_splash_audio();
+        }
     }
 
 private:

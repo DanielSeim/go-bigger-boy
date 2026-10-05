@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <memory>
 #include <vector>
 
 namespace gameboy {
@@ -82,7 +83,9 @@ private:
     std::uint64_t splash_handoff_cycles_{};
     std::uint64_t splash_audio_cursor_{};
     mutable std::uint64_t splash_cached_frame_{UINT64_MAX};
-    mutable Ppu::Framebuffer splash_pixels_{};
+    // Presentation storage must not inflate every core's stack footprint.
+    // Allocate only for animated startup (including restored animated states).
+    std::unique_ptr<Ppu::Framebuffer> splash_pixels_;
 };
 
 } // namespace gameboy

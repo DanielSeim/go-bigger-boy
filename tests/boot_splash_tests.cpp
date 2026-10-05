@@ -7,6 +7,8 @@
 #include <vector>
 
 namespace {
+static_assert(sizeof(gameboy::Emulator) < 64 * 1024,
+              "presentation buffers must not inflate the core's stack footprint");
 void require(bool value, const char* message) {
     if (!value) throw std::runtime_error(message);
 }
