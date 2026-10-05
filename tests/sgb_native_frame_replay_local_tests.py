@@ -72,10 +72,12 @@ def main():
                 raise AssertionError("independent upload fingerprints changed")
             if [e["value"] for e in rows if e["kind"] == "S"] != [9207936, 16777216, 16777216]:
                 raise AssertionError("independent SOUND parameters changed")
-        expected_pcm = ("26fa4738f2f99ac6b0c611a8417acea683667a1140269c60bd60d3748bbdac78" if reference_clock else
-                        "d430fa49f199df87fc20b6465cba0fff0e89daf6b446a9a07159b90b188e4bc9" if host_bus_timing else
-                        "15059e74817aeb5287062b903b71bccd58e4197f0c781129f907760fb5c518e0" if ppu_dma_timing else
-                        "964da6c4780c053d5beb24d0eee75d2e9efd569c9f5aa729bd8715f1deabc847")
+        # Fixed-instruction endpoints after the SGB physical/CPU LY separation.
+        # Startup snapshots, uploads, input events and SOUND guards stay unchanged.
+        expected_pcm = ("991086701828994803a7709f6e1ca1f89d24f44329b60b1c3bdf75bf1c9581ab" if reference_clock else
+                        "8d2b85cfceb9b744e03946794da7ba0705a836436b0d444d7bed2907e8fce8ea" if host_bus_timing else
+                        "6a5dc1abdc3b50f77a60135f71129b06945fee7e5c44181130bdddf04fb49a61" if ppu_dma_timing else
+                        "a88ff97237a28e88a0161acba88fb2e0bbe5ecf86ef1808d94a2f22a507cc683")
         if hashlib.sha256(pcm.read_bytes()).hexdigest() != expected_pcm:
             raise AssertionError("native input title PCM changed")
     print("All 11 LCD-frame input events and native PCM baseline match")

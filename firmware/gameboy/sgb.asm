@@ -6,29 +6,41 @@ IF !DEF(GBB_HANDOFF_A)
 ENDC
 SECTION "SGB bootstrap", ROM0[$0000]
 SgbBoot:
-    di
     ld sp, $FFFE
-    xor a
-    ldh [$FF40], a
-    ldh [$FF26], a
-    ldh [$FFFF], a
-    ldh [$FF0F], a
+    ld a, $30
+    ldh [$FF00], a
     ld hl, $8000
-    ld bc, $2000
-.clear
+    ld d, 32
     xor a
+.page
+    ld b, 0
+.clear
     ld [hli], a
+    dec b
+    jr nz, .clear
+    dec d
+    jr nz, .page
+    ; Original observable initialization boundary, without logo rendering.
+    ld bc, 1146
+.settle
     dec bc
     ld a, b
     or c
-    jr nz, .clear
+    jr nz, .settle
+    nop
+    nop
+    nop
+    ld hl, $FF25
+    ld c, $11
+    ld b, $77
     ld a, $80
     ldh [$FF26], a
-    ldh [$FF11], a
+    ldh [c], a
+    inc c
     ld a, $F3
-    ldh [$FF12], a
-    ldh [$FF25], a
-    ld a, $77
+    ldh [c], a
+    ld [hl], a
+    ld a, b
     ldh [$FF24], a
     ld a, $FC
     ldh [$FF47], a
@@ -71,77 +83,90 @@ SgbBoot:
     ld a, c
     cp $FD
     jr nz, .packet
+    ; Keep LCD enable at the measured boundary; no proprietary VRAM assets.
+    ld bc, 1209
+.header_settle
+    dec bc
+    ld a, b
+    or c
+    jr nz, .header_settle
+    nop
+    nop
+    nop
+    nop
+    nop
     ld a, $91
     ldh [$FF40], a
     ld hl, $C000
-    ld d, 6
-    ld a, $30
-    ldh [$FF00], a
-    ; Idle-high guard before the first reset pulse (at least 15 M-cycles).
-    nop
-    nop
-    nop
-    nop
-    nop
+    ld c, 0
     nop
 .send_packet
     xor a
-    call .pulse
-    ld e, 16
+    ldh [c], a
+    ld a, $30
+    ldh [c], a
+    ld b, 16
 .byte
     ld a, [hli]
-    ld c, a
-    ld b, 8
+    ld d, a
+    ld e, 8
 .bit
-    rrc c
+    rrc d
     ld a, $10
     jr c, .one
     ld a, $20
 .one
-    call .pulse
-    dec b
-    jr nz, .bit
+    ldh [c], a
+    ld a, $30
+    ldh [c], a
+    nop
+    nop
     dec e
+    jr nz, .bit
+    dec b
     jr nz, .byte
     ld a, $20
-    call .pulse
-    ; Four complete VBlank-to-line-zero intervals, including after packet 6.
+    ldh [c], a
+    ld a, $30
+    ldh [c], a
+    ; Four VBlank observations, separated by a fixed 4,092-clock idle.
+    ; The reference polls LY every 32 clocks and does not poll line zero.
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
     ld b, 4
 .vblank
     ldh a, [$FF44]
     cp 144
     jr nz, .vblank
-.line_zero
-    ldh a, [$FF44]
-    and a
-    jr nz, .line_zero
+    ld d, 0
+.vblank_idle
+    dec d
+    jr nz, .vblank_idle
     dec b
     jr nz, .vblank
-    dec d
-    jr nz, .send_packet
+    ld a, l
+    cp $60
+    jr z, .finish
+    nop
+    nop
+    nop
+    jr .send_packet
+.finish
+    nop
+    ld c, $14
     ld a, $C1
+    or a
     ldh [$FF13], a
     ld a, $07
     ldh [$FF14], a
-    ld bc, $0014
-    ld de, 0
-    xor a
     ld a, GBB_HANDOFF_A
-    or a
-    jp $00FE
-.pulse
-    ldh [$FF00], a
-    nop
-    nop
-    ld a, $30
-    ldh [$FF00], a
-    ; With CALL/RET and caller work, high spaces exceed 15 M-cycles.
-    nop
-    nop
-    nop
-    nop
-    ret
+    jr .unmap
     ASSERT @ <= $00FE
     ds $00FE - @, 0
+.unmap
     ldh [$FF50], a
     ASSERT @ == $0100

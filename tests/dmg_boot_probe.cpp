@@ -79,6 +79,7 @@ void snapshot(gameboy::Emulator& emulator) {
     std::cout << ",\"ie\":" << +bus.read8(0xFFFF)
               << ",\"divider_counter\":" << bus.debug_divider_counter()
               << ",\"ppu_dot\":" << bus.debug_ppu_dot()
+              << ",\"ppu_scanline\":" << +bus.debug_ppu_scanline()
               << ",\"ppu_mode\":" << +bus.debug_ppu_mode()
               << ",\"serial_phase\":" << bus.serial_port().phase()
               << ",\"serial_bits\":" << +bus.serial_port().bits_shifted()

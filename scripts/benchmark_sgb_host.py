@@ -39,11 +39,13 @@ def main():
     runner, roms = args.runner.resolve(), args.roms.resolve()
     game = roms / "Donkey Kong (JU) (V1.1) [S][!].gb"
     initial_save = game.with_suffix(".sav")
+    # Exact PCM/state endpoints after the SGB final-VBlank LY correction;
+    # see docs/sgb-boot-validation.md for parity and baseline-update evidence.
     profiles = (
-        ("sgb1", False, 32000, "553c8992a2de7dbc86eac6de3132000299f2fcb7e73fbe8ef0d03f9c8ec6856f", 6717456860480117116),
-        ("sgb1", True, 48000, "53d94251ed69f1edbd8875088b6670fdf97633c9474fde8c18a45081faacdd06", 7214238551188074392),
-        ("sgb2", False, 32000, "d430fa49f199df87fc20b6465cba0fff0e89daf6b446a9a07159b90b188e4bc9", 3340490035328936425),
-        ("sgb2", True, 44100, "8854bc396db0a99828d2e34fefba362498d2cab21039b5bb0e2bbb795fdc3071", 1311356025276262707),
+        ("sgb1", False, 32000, "56aa9bc74cdbe70711c43eadbdf809f39e6c63c207a83f6f08a1f0f595e3c7e3", 11547665018114310950),
+        ("sgb1", True, 48000, "bfb70ddb9b22ed3c4618cf9e64fd4b399ffd6cf9e717c1ffdcac4898b9d6824d", 16015197661753030498),
+        ("sgb2", False, 32000, "8d2b85cfceb9b744e03946794da7ba0705a836436b0d444d7bed2907e8fce8ea", 3180249233533125658),
+        ("sgb2", True, 44100, "10f1d1c7ef4aa1e1f460c74804f7bdf8b98e27eda17aa7a79a6d01e900ed9a5f", 8729706138122423209),
     )
     required = (runner, game, initial_save, roms / "sgb1.program.rom", roms / "sgb2.program.rom",
                 roms / "sgb.boot.rom", roms / "sgb2.boot.rom", roms / "spc700.rom")

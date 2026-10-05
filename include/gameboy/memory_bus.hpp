@@ -61,6 +61,7 @@ public:
     [[nodiscard]] Cartridge& cartridge() noexcept;
     [[nodiscard]] bool cgb_mode() const noexcept;
     [[nodiscard]] unsigned debug_ppu_dot() const noexcept;
+    [[nodiscard]] std::uint8_t debug_ppu_scanline() const noexcept { return ppu_.debug_scanline(); }
     [[nodiscard]] std::uint16_t debug_divider_counter() const noexcept {
         return timer_.debug_divider_counter();
     }

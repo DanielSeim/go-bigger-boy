@@ -222,7 +222,7 @@ void SgbIcdGbSource::synchronize(const std::uint64_t master_clocks) noexcept {
             gb_->consume_frame();
             apply_input(completed_frames_);
         }
-        const auto ly = gb_->bus().read8(0xFF44);
+        const auto ly = gb_->bus().debug_ppu_scanline();
         if (ly != last_ly_) {
             if (ly <= 144 && ly != 0 && (ly & 7U) == 0)
                 complete_tile_row(ly / 8U - 1U);
@@ -259,7 +259,8 @@ bool SgbIcdGbSource::read(const std::uint16_t address,
     if (missing_address_ != 0) return false;
     switch (address) {
     case 0x6000: {
-        const auto ly = gb_->bus().read8(0xFF44);
+        // ICD status follows pixel scanlines, not the CPU's early LY=0 alias.
+        const auto ly = gb_->bus().debug_ppu_scanline();
         value = static_cast<std::uint8_t>(
             ((ly >= 144 ? 0x11U : ly / 8U) << 3) | ((ly / 8U) & 3U));
         return true;
@@ -348,7 +349,7 @@ bool SgbIcdGbSource::write(const std::uint16_t address,
                 frame_input_.hold(live_held);
                 set_input_buttons(live_held);
             }
-            last_ly_ = gb_->bus().read8(0xFF44);
+            last_ly_ = gb_->bus().debug_ppu_scanline();
             row_valid_.fill(false);
             row_stream_offset_ = 0;
             queued_.clear();

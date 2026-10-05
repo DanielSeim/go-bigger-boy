@@ -133,9 +133,9 @@ def main() -> int:
             if not any(e["kind"] == "W" and e["address"] == 0xfa and e["value"] == 16
                        for e in data["events"]):
                 raise AssertionError("timer configuration was not captured")
-            # Opt-in observation must not alter the established native PCM.
+            # Fixed-instruction PCM pin after the final-VBlank LY correction.
             if hashlib.sha256(pcm_path.read_bytes()).hexdigest() != \
-                    "ed07e3f031130c20fd2f8eb5ac12599fbea4a3eb4501e90a1e955a97f89d8d10":
+                    "b32472b7f639f562f8fac49b05d668e276b890183bf91a5525596b8b5e28db58":
                 raise AssertionError("timer observation changed title PCM")
         if len(packets) != 1 or len(hosts) < 4 or len(dsp) < 10 or \
                 [(int(event["address"]), int(event["value"]))

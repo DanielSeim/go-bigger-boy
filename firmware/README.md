@@ -9,10 +9,13 @@ repository's GPL-3.0-or-later license.
 
 `gameboy/sgb.asm` builds original 256-byte SGB and SGB2 images. Both clear VRAM,
 initialize audio/LCD, construct six header packets in `C000–C05F`, send them
-through ordinary JOYP writes, wait for four VBlanks after each packet, and unmap
+through ordinary JOYP writes, observe four VBlanks after each packet, and unmap
 at `00FE`. Each packet contains its ID (`F1/F3/F5/F7/F9/FB`), a modulo-256 payload
 sum and fourteen header bytes; the final payload is zero-padded. Pulses follow
-the documented minimum five-M-cycle low / fifteen-M-cycle high spacing.
+the original boot's execution-measured timing: four-M-cycle low pulses,
+data-dependent high spaces and a shorter stop-bit high space. These bootstrap
+observations differ from the general packet protocol's conservative minimums;
+they do not redefine timing requirements for ordinary game commands.
 Handoff is `PC=0100, SP=FFFE, BC=0014, DE=0000, HL=C060, F=00`, with `A=01`
 for SGB and `A=FF` for SGB2. No header validity check or proprietary logo is
 embedded in this GB-side firmware. A real SNES-side program still performs its
@@ -31,10 +34,12 @@ python3 scripts/build_dmg_boot_rom.py --model sgb --check
 python3 scripts/build_dmg_boot_rom.py --model sgb2 --check
 ```
 
-Builds never read reference firmware. `--check-source` works without RGBDS;
+Initialization writes, every packet edge and handoff divider/PPU/APU phases
+are guarded by exact timing contracts across varied headers. Builds never read
+reference firmware. `--check-source` works without RGBDS;
 `--output NEW_FILE.bin` exports our original image for local execution tests.
 See [SGB boot validation](../docs/sgb-boot-validation.md) for scope, repeatable
-opaque comparisons, independent handoff checks and known timing differences.
+opaque comparisons, independent handoff checks and remaining scope limits.
 
 ## CGB replacement startup
 

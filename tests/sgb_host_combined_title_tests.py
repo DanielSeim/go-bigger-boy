@@ -21,15 +21,15 @@ def main():
             "b490c89efe718633b07381def66ce0ed58a5075aabe40c6e644baf2b408a76f4":
         raise AssertionError("unexpected private game image")
     with tempfile.TemporaryDirectory(prefix="gbb-combined-host-title-") as directory:
-        # Combined hashes pin the original uncached prototype, not independent
-        # hardware fidelity. They prevent optimization from changing its PCM.
+        # Phase-correct baselines pin this bounded implementation, not independent
+        # hardware fidelity. Scalar playback and restore must preserve its PCM.
         for model, rate, baseline, combined_baseline in (
-                ("sgb1", 48000, "553c8992a2de7dbc86eac6de3132000299f2fcb7e73fbe8ef0d03f9c8ec6856f",
-                 "53d94251ed69f1edbd8875088b6670fdf97633c9474fde8c18a45081faacdd06"),
-                ("sgb2", 44100, "d430fa49f199df87fc20b6465cba0fff0e89daf6b446a9a07159b90b188e4bc9",
-                 "8854bc396db0a99828d2e34fefba362498d2cab21039b5bb0e2bbb795fdc3071")):
+                ("sgb1", 48000, "56aa9bc74cdbe70711c43eadbdf809f39e6c63c207a83f6f08a1f0f595e3c7e3",
+                 "bfb70ddb9b22ed3c4618cf9e64fd4b399ffd6cf9e717c1ffdcac4898b9d6824d"),
+                ("sgb2", 44100, "8d2b85cfceb9b744e03946794da7ba0705a836436b0d444d7bed2907e8fce8ea",
+                 "10f1d1c7ef4aa1e1f460c74804f7bdf8b98e27eda17aa7a79a6d01e900ed9a5f")):
             reports, outputs = [], []
-            for mode in ("native", "combined", "restored"):
+            for mode in ("native", "combined", "restored", "scalar"):
                 prefix = Path(directory) / f"{model}-{mode}"
                 wav, report = prefix.with_suffix(".wav"), prefix.with_suffix(".json")
                 command = [str(args.runner), model, str(args.roms / f"{model}.program.rom"),
@@ -40,6 +40,8 @@ def main():
                     command.extend(["--combined", "--output-hz", str(rate)])
                 if mode == "restored":
                     command.extend(["--restore", "--chunk", "257"])
+                if mode == "scalar":
+                    command.extend(["--scalar-apu", "--scalar-spc", "--scalar-dsp", "--callback-dsp"])
                 subprocess.run(command, check=True, timeout=600)
                 data = json.loads(report.read_text())
                 if data["cpu_seconds"] is not None and (
@@ -76,9 +78,10 @@ def main():
                         "inputs", "sound_delivered", "audible_delivered")
             if any(reports[0][key] != data[key] for data in reports[1:] for key in counters):
                 raise AssertionError("combined presentation changed processor or SOUND timing")
-            if outputs[1] != outputs[2] or any(reports[1][key] != reports[2][key] for key in
-                    ("samples", "nonzero", "gb_samples", "clipped_samples")):
-                raise AssertionError("restoration/consumer partitions changed combined output")
+            if any(outputs[1] != outputs[i] or any(reports[1][key] != reports[i][key] for key in
+                    ("samples", "nonzero", "gb_samples", "clipped_samples", "gb_state_hash"))
+                    for i in (2, 3)):
+                raise AssertionError("restoration/consumer partitions/scalar playback changed combined output")
     return 0
 
 

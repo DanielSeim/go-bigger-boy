@@ -105,12 +105,45 @@ void test_dmg_final_vblank_line() {
           batched.debug_ppu_dot() == literal.debug_ppu_dot(),
           "batched and literal final-line clocks retain identical STAT/LY/IF edges");
 
-    gameboy::Emulator sgb{gameboy::Cartridge{test_rom()}, gameboy::HardwareModel::sgb};
-    sgb.bus().write8(0xFF40, 0);
-    sgb.bus().write8(0xFF40, 0x80);
-    sgb.bus().tick(153U * 456U - 4U + 12U);
-    check(sgb.bus().read8(0xFF44) == 153 && sgb.bus().debug_ppu_mode() == 1,
-          "standalone DMG timing changes do not migrate SGB host audio timing implicitly");
+    for (const auto model : {gameboy::HardwareModel::sgb, gameboy::HardwareModel::sgb2}) {
+        gameboy::Emulator sgb{gameboy::Cartridge{test_rom()}, model};
+        auto& host = sgb.bus();
+        host.write8(0xFF40, 0);
+        host.write8(0xFF45, 153);
+        host.write8(0xFF41, 0x40);
+        host.write8(0xFF40, 0x80);
+        host.tick(153U * 456U - 4U + 3U);
+        check(host.read8(0xFF44) == 153, "SGB LY remains 153 until dot four");
+        const auto state = sgb.save_state();
+        host.tick(1);
+        check(host.read8(0xFF44) == 0 && (host.read8(0xFF41) & 7) == 5,
+              "SGB dot four exposes LY zero with LYC 153 coincidence");
+        host.tick(4);
+        check((host.read8(0xFF41) & 7) == 1, "SGB dot eight clears coincidence");
+        host.write8(0xFF45, 0);
+        host.write8(0xFF0F, 0);
+        host.tick(4);
+        check((host.read8(0xFF41) & 7) == 5 && (host.read8(0xFF0F) & 2),
+              "SGB dot twelve compares zero without leaving VBlank");
+        host.consume_frame();
+        host.tick(443);
+        check(host.debug_ppu_mode() == 1 && !host.frame_ready(),
+              "SGB early LY zero neither publishes nor renders another frame");
+        sgb.load_state(state);
+        host.tick(9);
+        check(host.debug_ppu_dot() == 12 && host.read8(0xFF44) == 0,
+              "SGB saved internal scanline restores early LY edges");
+        gameboy::Emulator literal_sgb{gameboy::Cartridge{test_rom()},model};
+        literal_sgb.load_state(state);
+        literal_sgb.bus().debug_set_peripheral_batch_enabled(false);
+        for(unsigned i=0;i<9;++i) literal_sgb.bus().tick(1);
+        check(literal_sgb.bus().read8(0xff41)==host.read8(0xff41) &&
+              literal_sgb.bus().read8(0xff44)==host.read8(0xff44) &&
+              literal_sgb.bus().read8(0xff0f)==host.read8(0xff0f) &&
+              literal_sgb.bus().debug_ppu_dot()==host.debug_ppu_dot() &&
+              literal_sgb.bus().debug_apu_clock_state()==host.debug_apu_clock_state(),
+              "SGB batched and literal clocks preserve final-line edges and APU phases");
+    }
 }
 
 void test_ppu_modes_and_memory_access() {

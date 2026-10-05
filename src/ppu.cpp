@@ -513,7 +513,7 @@ bool Ppu::write_register(const std::uint16_t address,
     case 0xFF45:
         lyc_ = value;
         if (lcd_enabled()) {
-            if (!cgb_hardware_ && !sgb_mode_ && ly_ == 153) {
+            if (!cgb_hardware_ && ly_ == 153) {
                 coincidence_ = dot_ >= 12 ? lyc_ == 0
                     : (dot_ >= 4 && dot_ < 8 && lyc_ == 153);
             } else coincidence_ = ly_ == lyc_;

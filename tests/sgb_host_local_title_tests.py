@@ -24,8 +24,8 @@ def main():
         raise AssertionError("unexpected local game image")
     with tempfile.TemporaryDirectory(prefix="gbb-whole-host-title-") as directory:
         for model, baseline in (
-                ("sgb1", "553c8992a2de7dbc86eac6de3132000299f2fcb7e73fbe8ef0d03f9c8ec6856f"),
-                ("sgb2", "d430fa49f199df87fc20b6465cba0fff0e89daf6b446a9a07159b90b188e4bc9")):
+                ("sgb1", "56aa9bc74cdbe70711c43eadbdf809f39e6c63c207a83f6f08a1f0f595e3c7e3"),
+                ("sgb2", "8d2b85cfceb9b744e03946794da7ba0705a836436b0d444d7bed2907e8fce8ea")):
             wavs = []
             reports = []
             for restore in (False, True):

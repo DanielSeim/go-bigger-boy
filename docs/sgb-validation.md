@@ -1559,6 +1559,11 @@ the default nominal-clock result above already resolves the large gap.
 
 Reproducibility anchors for the corrected 60-million-instruction native replay:
 
+These historical captures predate the SGB final-VBlank LY correction. Current
+phase-correct boot and playback checks are documented in
+[SGB boot validation](sgb-boot-validation.md); the hashes below describe the
+earlier capture, not the current executable's fixed-instruction endpoint.
+
 | Diagnostic profile | WAV SHA-256 |
 | --- | --- |
 | Cold reset, legacy PPU/host timing | `964da6c4780c053d5beb24d0eee75d2e9efd569c9f5aa729bd8715f1deabc847` |

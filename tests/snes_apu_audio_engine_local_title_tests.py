@@ -51,8 +51,8 @@ def main():
                         raise AssertionError("title audio was silent")
             if files[0] != files[1]:
                 raise AssertionError(f"{model}: reusable core scheduler altered native title PCM")
-            pinned = ("553c8992a2de7dbc86eac6de3132000299f2fcb7e73fbe8ef0d03f9c8ec6856f" if model == "sgb1" else
-                      "d430fa49f199df87fc20b6465cba0fff0e89daf6b446a9a07159b90b188e4bc9")
+            pinned = ("56aa9bc74cdbe70711c43eadbdf809f39e6c63c207a83f6f08a1f0f595e3c7e3" if model == "sgb1" else
+                      "8d2b85cfceb9b744e03946794da7ba0705a836436b0d444d7bed2907e8fce8ea")
             if hashlib.sha256(files[1]).hexdigest() != pinned:
                 raise AssertionError(f"{model}: native WAV baseline changed in both paths")
             print(f"{model}: title gameplay native WAV parity {hashlib.sha256(files[1]).hexdigest()}", flush=True)

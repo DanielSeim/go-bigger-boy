@@ -37,13 +37,15 @@ public:
     void debug_set_sgb_palette_cache_enabled(bool enabled) noexcept { sgb_palette_cache_enabled_ = enabled; }
     [[nodiscard]] bool cgb_mode() const noexcept;
     [[nodiscard]] unsigned debug_dot() const noexcept { return dot_; }
+    // Physical scanline for pixel-side consumers (ICD), not CPU-visible LY.
+    [[nodiscard]] std::uint8_t debug_scanline() const noexcept { return ly_; }
     [[nodiscard]] unsigned debug_mode3_end_dot() const noexcept {
         return mode3_end_dot_;
     }
     [[nodiscard]] std::uint8_t debug_mode() const noexcept { return mode_; }
     // Internal scanline 153 remains in VBlank after the CPU-visible LY wraps.
     [[nodiscard]] std::uint8_t visible_ly() const noexcept {
-        return !cgb_hardware_ && !sgb_mode_ && ly_ == 153 && dot_ >= 4 ? 0 : ly_;
+        return !cgb_hardware_ && ly_ == 153 && dot_ >= 4 ? 0 : ly_;
     }
     // HBlank DMA may begin immediately only while the LCD is off or the
     // visible PPU is already in mode 0. LCD startup is deliberately excluded.
