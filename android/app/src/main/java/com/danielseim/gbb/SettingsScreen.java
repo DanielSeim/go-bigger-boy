@@ -48,11 +48,12 @@ final class SettingsScreen {
     };
     private static final String[] HARDWARE_MODEL_NAMES = {
             "Automatic (cartridge)", "DMG-0", "DMG-B / DMG", "MGB",
-            "SGB", "SGB2", "CGB-0", "CGB-C", "CGB-E"
+            "SGB", "SGB2", "CGB-0", "CGB-C", "CGB-E",
+            "AGB-0 (startup compatibility)", "AGB (startup compatibility)"
     };
     private static final String[] HARDWARE_MODEL_IDS = {
             "auto", "dmg0", "dmg", "mgb", "sgb", "sgb2", "cgb0",
-            "cgb-c", "cgb-e"
+            "cgb-c", "cgb-e", "agb0", "agb"
     };
     private static final String[] MENU_POSITION_NAMES = {
             "Top left", "Top right"

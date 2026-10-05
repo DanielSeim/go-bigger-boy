@@ -59,6 +59,8 @@ gameboy::HardwareModel hardware_model_from_option(const std::string& value) {
     if (value == "sgb") return gameboy::HardwareModel::sgb;
     if (value == "sgb2") return gameboy::HardwareModel::sgb2;
     if (value == "cgb0") return gameboy::HardwareModel::cgb0;
+    if (value == "agb0") return gameboy::HardwareModel::agb0;
+    if (value == "agb") return gameboy::HardwareModel::agb;
     if (value == "cgb-c" || value == "cgbc") return gameboy::HardwareModel::cgb_c;
     if (value == "cgb-e" || value == "cgbe") return gameboy::HardwareModel::cgb_e;
     if (value == "cgb") return gameboy::HardwareModel::cgb;

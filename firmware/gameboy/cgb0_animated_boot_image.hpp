@@ -3,7 +3,7 @@
 // Build definition: GBB_CGB0=1.
 // Build definition: GBB_ANIMATED=1.
 // SHA-256: 0f7c79d881f180510a46a32f10d9ab2d911141d9abfba2caecda56970c2ebd65
-// Source SHA-256 (LF): 7e249962faba2e0376c3182b96d64f075502745e6bd37e955534fda9f1d3a955
+// Source SHA-256 (LF): 34a9b53ce6c327bf956c9957c706fe07163e01383a816d6036913ddb8b07f525
 #pragma once
 
 #include <array>

@@ -58,7 +58,20 @@ class DmgBootCliTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("PASS (serial)", result.stdout)
 
+    def test_agb_cartridge_runs_from_cold_boot(self):
+        for model in ("agb0", "agb"):
+            for color in (False, True):
+                with self.subTest(model=model, color=color):
+                    rom = cartridge()
+                    rom[0x143] = 0x80 if color else 0
+                    rom[0x14D] = (-sum(rom[0x134:0x14D]) - 25) & 0xFF
+                    self.rom.write_bytes(rom)
+                    result = self.run_rom("--model", model, "--dmg-boot")
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn("PASS (serial)", result.stdout)
+
     def test_invalid_checksum_never_executes_cartridge(self):
+        # Logo-free cartridges are intentionally accepted by our own firmware.
         rom = cartridge()
         rom[0x14D] ^= 1
         self.rom.write_bytes(rom)

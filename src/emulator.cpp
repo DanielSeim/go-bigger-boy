@@ -6,7 +6,26 @@
 
 namespace gameboy {
 namespace {
+void reset_post_boot_cpu(Cpu& cpu, MemoryBus& bus, HardwareModel model) noexcept {
+    cpu.reset(model);
+    if (!is_agb_hardware(model)) return;
+    std::uint8_t title = 0;
+    if (!bus.cgb_mode()) {
+        const auto license = bus.read8(0x14b);
+        if (license == 1 || (license == 0x33 && bus.read8(0x144) == '0' && bus.read8(0x145) == '1'))
+            for (unsigned address = 0x134; address <= 0x143; ++address)
+                title = static_cast<std::uint8_t>(title + bus.read8(static_cast<std::uint16_t>(address)));
+    }
+    const auto b = static_cast<std::uint8_t>(title + 1);
+    const auto flags = static_cast<std::uint8_t>((b == 0 ? 0x80 : 0) | ((title & 15) == 15 ? 0x20 : 0));
+    const bool legacy = title == 0x43 || title == 0x58;
+    cpu.load_registers({0x11, flags, b, 0, static_cast<std::uint8_t>(bus.cgb_mode() ? 0xff : 0),
+        static_cast<std::uint8_t>(bus.cgb_mode() ? 0x56 : 8), static_cast<std::uint8_t>(legacy ? 0x99 : 0),
+        static_cast<std::uint8_t>(bus.cgb_mode() ? 0x0d : legacy ? 0x1a : 0x7c), 0xfffe, 0x100});
+}
 const DiagnosticBootRom& replacement_image(HardwareModel model, bool animated) noexcept {
+    if (model == HardwareModel::agb0) return animated ? agb0_animated_boot_rom() : agb0_boot_rom();
+    if (model == HardwareModel::agb) return animated ? agb_animated_boot_rom() : agb_boot_rom();
     if (model == HardwareModel::cgb0) return animated ? cgb0_animated_boot_rom() : cgb0_boot_rom();
     if (is_cgb_hardware(model)) return animated ? cgb_animated_boot_rom() : cgb_boot_rom();
     if (model == HardwareModel::dmg0) return animated ? dmg0_animated_boot_rom() : dmg0_boot_rom();
@@ -43,7 +62,7 @@ Emulator::Emulator(Cartridge cartridge, const HardwareModel model,
         bus_.install_boot_rom(diagnostic_boot_rom(hardware_model_));
         cpu_.reset_boot();
     } else {
-        cpu_.reset(hardware_model_);
+        reset_post_boot_cpu(cpu_, bus_, hardware_model_);
     }
 }
 
@@ -75,7 +94,7 @@ void Emulator::reset() noexcept {
             bus_.write8(0xFF50, 1);
             bus_.initialize_post_boot(hardware_model_);
         }
-        cpu_.reset(hardware_model_);
+        reset_post_boot_cpu(cpu_, bus_, hardware_model_);
     }
 }
 

@@ -297,3 +297,46 @@ test('Color boot fades GBB lettering and hands off native and compatibility regi
     }
   }
 });
+
+test('AGB profiles expose GBA detection registers in all startup modes', async ({page}) => {
+  await page.goto('/');
+  await expect(page.locator('#startup-mode')).toBeEnabled({timeout: 90_000});
+  await page.locator('#audio-enabled').uncheck();
+  for (const profile of ['agb0', 'agb']) {
+    await page.locator('#hardware-model').selectOption(profile);
+    for (const color of [false, true]) {
+      const rom = new Uint8Array(0x8000);
+      rom.set([0xc3, 0x50, 0x01], 0x100);
+      rom.set([0x78, 0xe0, 0x43, 0x18, 0xfe], 0x150); // Publish handoff B in SCX
+      rom[0x134] = 0x0f;
+      rom[0x143] = color ? 0x80 : 0;
+      rom[0x14b] = 1;
+      let sum = 0;
+      for (let i = 0x134; i <= 0x14c; ++i) sum = (sum - rom[i] - 1) & 0xff;
+      rom[0x14d] = sum;
+      for (const mode of ['instant', 'replacement-dmg', 'animated-dmg']) {
+        await page.locator('#startup-mode').selectOption(mode);
+        const name = `gbb-${profile}-${color}-${mode}.gbc`;
+        await page.locator('#rom-file').setInputFiles({
+          name,
+          mimeType: 'application/octet-stream', buffer: Buffer.from(rom),
+        });
+        await expect(page).toHaveTitle(`${name} — Go Bigger Boy`);
+        if (mode !== 'instant') {
+          await expect.poll(async () => page.evaluate(() =>
+            JSON.parse(UTF8ToString(Module._gbb_export_scene_snapshot())).emulation_cycles
+          ), {intervals: [10], timeout: 30000}).toBeLessThan(2000000);
+          await expect.poll(async () => page.evaluate(() =>
+            JSON.parse(UTF8ToString(Module._gbb_export_scene_snapshot())).emulation_cycles
+          ), {timeout: 30000}).toBeGreaterThan(mode === 'animated-dmg' ? 13000000 : 4300000);
+        }
+        await expect.poll(async () => page.evaluate(() =>
+          JSON.parse(UTF8ToString(Module._gbb_export_scene_snapshot())).scx
+        ), {timeout: 30000}).toBe(color ? 1 : 0x10);
+        await expect(page.locator('#hardware-model')).toHaveValue(profile);
+      }
+    }
+  }
+  await page.reload();
+  await expect(page.locator('#hardware-model')).toHaveValue('agb', {timeout: 90_000});
+});

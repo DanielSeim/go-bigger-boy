@@ -21,11 +21,19 @@ enum class HardwareModel {
     cgb_c = 8,
     // CGB-E represents the late CGB hardware used by the generic CGB profile.
     cgb_e = 9,
+    // Startup-compatible GB/GBC-on-GBA profiles; runtime uses the CGB-E
+    // baseline, not a claim of full AGB silicon accuracy or native GBA support.
+    agb0 = 10,
+    agb = 11,
 };
+
+[[nodiscard]] constexpr bool is_agb_hardware(HardwareModel model) noexcept {
+    return model == HardwareModel::agb0 || model == HardwareModel::agb;
+}
 
 [[nodiscard]] constexpr bool is_cgb_hardware(HardwareModel model) noexcept {
     return model == HardwareModel::cgb0 || model == HardwareModel::cgb ||
-           model == HardwareModel::cgb_c || model == HardwareModel::cgb_e;
+           model == HardwareModel::cgb_c || model == HardwareModel::cgb_e || is_agb_hardware(model);
 }
 
 [[nodiscard]] constexpr HardwareModel resolve_hardware_model(
@@ -46,15 +54,17 @@ enum class HardwareModel {
 // Concrete machine profiles exposed by the frontends and the conformance
 // matrix.  `automatic` is intentionally not included: it is a cartridge
 // detection policy, not a hardware revision.
+// AGB startup-only profiles remain outside this silicon-accuracy matrix.
 inline constexpr std::array<HardwareModel, 8> concrete_hardware_models{{
     HardwareModel::dmg0, HardwareModel::dmg, HardwareModel::mgb,
     HardwareModel::sgb, HardwareModel::sgb2, HardwareModel::cgb0,
     HardwareModel::cgb_c, HardwareModel::cgb_e,
 }};
-inline constexpr std::array<HardwareModel, 9> selectable_hardware_models{{
+inline constexpr std::array<HardwareModel, 11> selectable_hardware_models{{
     HardwareModel::automatic, HardwareModel::dmg0, HardwareModel::dmg,
     HardwareModel::mgb, HardwareModel::sgb, HardwareModel::sgb2,
     HardwareModel::cgb0, HardwareModel::cgb_c, HardwareModel::cgb_e,
+    HardwareModel::agb0, HardwareModel::agb,
 }};
 
 [[nodiscard]] constexpr std::string_view hardware_model_id(
@@ -69,6 +79,8 @@ inline constexpr std::array<HardwareModel, 9> selectable_hardware_models{{
     case HardwareModel::cgb0: return "cgb0";
     case HardwareModel::cgb_c: return "cgb-c";
     case HardwareModel::cgb_e: return "cgb-e";
+    case HardwareModel::agb0: return "agb0";
+    case HardwareModel::agb: return "agb";
     case HardwareModel::cgb: return "cgb";
     }
     return "auto";
@@ -86,6 +98,8 @@ inline constexpr std::array<HardwareModel, 9> selectable_hardware_models{{
     case HardwareModel::cgb0: return "CGB-0";
     case HardwareModel::cgb_c: return "CGB-C";
     case HardwareModel::cgb_e: return "CGB-E";
+    case HardwareModel::agb0: return "AGB-0 (startup compatibility)";
+    case HardwareModel::agb: return "AGB (startup compatibility)";
     case HardwareModel::cgb: return "CGB (generic)";
     }
     return "Automatic (cartridge)";

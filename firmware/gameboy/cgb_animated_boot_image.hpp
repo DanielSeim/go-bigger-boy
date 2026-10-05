@@ -2,7 +2,7 @@
 // Generated from cgb.asm by scripts/build_dmg_boot_rom.py.
 // Build definition: GBB_ANIMATED=1.
 // SHA-256: 70a5266cad332619346ba7f0b0f0f85ee8af80d154f0754200522dc3df3389a1
-// Source SHA-256 (LF): 7e249962faba2e0376c3182b96d64f075502745e6bd37e955534fda9f1d3a955
+// Source SHA-256 (LF): 34a9b53ce6c327bf956c9957c706fe07163e01383a816d6036913ddb8b07f525
 #pragma once
 
 #include <array>

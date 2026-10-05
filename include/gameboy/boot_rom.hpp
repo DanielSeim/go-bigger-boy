@@ -20,6 +20,8 @@ enum class BootRomMode {
     animated_dmg0 = animated_dmg,
     replacement_cgb = replacement_dmg,
     animated_cgb = animated_dmg,
+    replacement_agb = replacement_dmg,
+    animated_agb = animated_dmg,
 };
 
 constexpr std::size_t diagnostic_boot_rom_size = 0x100;
@@ -43,5 +45,9 @@ using DiagnosticBootRom = std::array<std::uint8_t, diagnostic_boot_rom_size>;
 [[nodiscard]] const DiagnosticBootRom& cgb_animated_boot_rom() noexcept;
 [[nodiscard]] const DiagnosticBootRom& cgb0_boot_rom() noexcept;
 [[nodiscard]] const DiagnosticBootRom& cgb0_animated_boot_rom() noexcept;
+[[nodiscard]] const DiagnosticBootRom& agb_boot_rom() noexcept;
+[[nodiscard]] const DiagnosticBootRom& agb_animated_boot_rom() noexcept;
+[[nodiscard]] const DiagnosticBootRom& agb0_boot_rom() noexcept;
+[[nodiscard]] const DiagnosticBootRom& agb0_animated_boot_rom() noexcept;
 
 } // namespace gameboy

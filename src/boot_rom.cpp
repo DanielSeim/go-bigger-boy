@@ -9,10 +9,18 @@
 #include "../firmware/gameboy/cgb_animated_boot_image.hpp"
 #include "../firmware/gameboy/cgb0_boot_image.hpp"
 #include "../firmware/gameboy/cgb0_animated_boot_image.hpp"
+#include "../firmware/gameboy/agb_boot_image.hpp"
+#include "../firmware/gameboy/agb_animated_boot_image.hpp"
+#include "../firmware/gameboy/agb0_boot_image.hpp"
+#include "../firmware/gameboy/agb0_animated_boot_image.hpp"
 
 #include <cstddef>
 
 namespace gameboy {
+const DiagnosticBootRom& agb_boot_rom() noexcept { return firmware::agb_boot_image; }
+const DiagnosticBootRom& agb_animated_boot_rom() noexcept { return firmware::agb_animated_boot_image; }
+const DiagnosticBootRom& agb0_boot_rom() noexcept { return firmware::agb0_boot_image; }
+const DiagnosticBootRom& agb0_animated_boot_rom() noexcept { return firmware::agb0_animated_boot_image; }
 const DiagnosticBootRom& cgb_boot_rom() noexcept { return firmware::cgb_boot_image; }
 const DiagnosticBootRom& cgb_animated_boot_rom() noexcept { return firmware::cgb_animated_boot_image; }
 const DiagnosticBootRom& cgb0_boot_rom() noexcept { return firmware::cgb0_boot_image; }
@@ -59,6 +67,9 @@ HandoffRegisters handoff_registers(const HardwareModel model) noexcept {
     case HardwareModel::cgb_c:
     case HardwareModel::cgb_e:
         return {0x11, 0x80, 0x00, 0x00, 0x00, 0x08, 0x00, 0x7C};
+    case HardwareModel::agb0:
+    case HardwareModel::agb:
+        return {0x11, 0x00, 0x01, 0x00, 0x00, 0x08, 0x00, 0x7C};
     case HardwareModel::automatic:
     case HardwareModel::dmg:
         return {0x01, 0xB0, 0x00, 0x13, 0x00, 0xD8, 0x01, 0x4D};
@@ -92,6 +103,8 @@ DiagnosticBootRom diagnostic_boot_rom(const HardwareModel model) noexcept {
         case HardwareModel::cgb0: return std::uint8_t{5};
         case HardwareModel::cgb_c: return std::uint8_t{6};
         case HardwareModel::cgb_e: return std::uint8_t{7};
+        case HardwareModel::agb0: return std::uint8_t{9};
+        case HardwareModel::agb: return std::uint8_t{10};
         case HardwareModel::automatic:
         case HardwareModel::cgb: return std::uint8_t{8};
         }

@@ -673,13 +673,13 @@ if(GAMEBOY_BUILD_TESTS)
         add_test(NAME gameboy_dmg0_firmware_source
                  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_dmg_boot_rom.py --model dmg0 --check-source)
         set_tests_properties(gameboy_dmg0_firmware_source PROPERTIES LABELS "firmware;boot")
-        foreach(boot_model cgb0 cgb)
+        foreach(boot_model cgb0 cgb agb0 agb)
             add_test(NAME gameboy_${boot_model}_firmware_source
                      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_dmg_boot_rom.py
                              --model ${boot_model} --check-source)
             set_tests_properties(gameboy_${boot_model}_firmware_source PROPERTIES LABELS "firmware;boot")
         endforeach()
-        foreach(boot_model dmg0 dmg mgb cgb0 cgb)
+        foreach(boot_model dmg0 dmg mgb cgb0 cgb agb0 agb)
             add_test(NAME gameboy_${boot_model}_animated_firmware_source
                      COMMAND ${Python3_EXECUTABLE}
                              ${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_dmg_boot_rom.py
@@ -711,13 +711,13 @@ if(GAMEBOY_BUILD_TESTS)
                      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_dmg_boot_rom.py --model dmg0 --check
                              --rgbasm ${GBB_RGBASM} --rgblink ${GBB_RGBLINK})
             set_tests_properties(gameboy_dmg0_firmware_reproducible PROPERTIES LABELS "firmware;boot")
-            foreach(boot_model cgb0 cgb)
+            foreach(boot_model cgb0 cgb agb0 agb)
                 add_test(NAME gameboy_${boot_model}_firmware_reproducible
                          COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_dmg_boot_rom.py
                                  --model ${boot_model} --check --rgbasm ${GBB_RGBASM} --rgblink ${GBB_RGBLINK})
                 set_tests_properties(gameboy_${boot_model}_firmware_reproducible PROPERTIES LABELS "firmware;boot")
             endforeach()
-            foreach(boot_model dmg0 dmg mgb cgb0 cgb)
+            foreach(boot_model dmg0 dmg mgb cgb0 cgb agb0 agb)
                 add_test(NAME gameboy_${boot_model}_animated_firmware_reproducible
                          COMMAND ${Python3_EXECUTABLE}
                                  ${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_dmg_boot_rom.py

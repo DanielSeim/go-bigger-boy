@@ -25,6 +25,9 @@ CGB animated startup takes about 3.2 seconds, with bold italic **GO BIGGER BOY**
 lettering revealing in rainbow colors, settling to blue, an APU-synthesized
 two-note chime, and a fade to white. CGB fast boot omits that presentation. All selectable CGB
 revisions support both native color games and GB compatibility mode.
+**AGB** and **AGB-0 (startup compatibility)** also provide fast/animated GB/GBC
+startup with the GBA detection registers. They share the CGB-E runtime baseline;
+they do not emulate native GBA games or claim full AGB hardware accuracy.
 The setting applies on the next
 ROM start/restart, not to an already running core. No download is required.
 See [replacement firmware](../firmware/README.md) for the fast-start contract

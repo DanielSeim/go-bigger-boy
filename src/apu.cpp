@@ -39,12 +39,9 @@ constexpr std::array<std::array<std::uint8_t, 8>, 4> duty_patterns{{
 
 void Apu::initialize_power_on(const HardwareModel model) noexcept {
     master_clock_hz_ = hardware_clock_rate_hz(model);
-    cgb_hardware_ = model == HardwareModel::cgb0 ||
-                    model == HardwareModel::cgb ||
-                    model == HardwareModel::cgb_c ||
-                    model == HardwareModel::cgb_e;
-    modern_cgb_ = model == HardwareModel::cgb || model == HardwareModel::cgb_e;
-    cgb_e_revision_ = model == HardwareModel::cgb_e;
+    cgb_hardware_ = is_cgb_hardware(model);
+    modern_cgb_ = model == HardwareModel::cgb || model == HardwareModel::cgb_e || is_agb_hardware(model);
+    cgb_e_revision_ = model == HardwareModel::cgb_e || is_agb_hardware(model);
     cgb_e_power_cycle_startup_ = false;
     power_off();
 }

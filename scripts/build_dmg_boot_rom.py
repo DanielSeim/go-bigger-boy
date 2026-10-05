@@ -23,6 +23,8 @@ def render(image, model="dmg", animated=False):
         definition += "// Build definition: GBB_DMG0=1.\n"
     if model == "cgb0":
         definition += "// Build definition: GBB_CGB0=1.\n"
+    if model in ("agb", "agb0"):
+        definition += "// Build definition: GBB_AGB=1.\n"
     if animated:
         definition += "// Build definition: GBB_ANIMATED=1.\n"
     name = model + ("_animated" if animated else "")
@@ -41,7 +43,7 @@ def render(image, model="dmg", animated=False):
 def main():
     global SOURCE
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model", choices=("dmg0", "dmg", "mgb", "cgb", "cgb0"), default="dmg")
+    parser.add_argument("--model", choices=("dmg0", "dmg", "mgb", "cgb", "cgb0", "agb", "agb0"), default="dmg")
     parser.add_argument("--animated", action="store_true", help="build the original-cadence intro variant")
     checks = parser.add_mutually_exclusive_group()
     checks.add_argument("--check", action="store_true",
@@ -52,7 +54,7 @@ def main():
     parser.add_argument("--rgblink", default="rgblink")
     parser.add_argument("--output", type=Path, help="write an original 256-byte boot image")
     args = parser.parse_args()
-    if args.model in ("cgb", "cgb0"):
+    if args.model in ("cgb", "cgb0", "agb", "agb0"):
         SOURCE = ROOT / "firmware/gameboy/cgb.asm"
     name = args.model + ("_animated" if args.animated else "")
     header_path = ROOT / f"firmware/gameboy/{name}_boot_image.hpp"
@@ -68,6 +70,8 @@ def main():
                 definitions.append("-DGBB_DMG0=1")
             if args.model == "cgb0":
                 definitions.append("-DGBB_CGB0=1")
+            if args.model in ("agb", "agb0"):
+                definitions.append("-DGBB_AGB=1")
             if args.animated:
                 definitions.append("-DGBB_ANIMATED=1")
             subprocess.run([args.rgbasm, "-Wall", "-Wextra", *definitions, "-o", str(obj), str(SOURCE)],

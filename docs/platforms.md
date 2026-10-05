@@ -106,12 +106,15 @@ CGB animated boot (~3.2 seconds) instead reveals bold italic **GO BIGGER BOY**
 lettering in rainbow colors, settles to blue, then fades to white, with a
 two-note APU-synthesized chime. Native CGB and GB
 compatibility cartridges are supported on CGB-0, CGB-C, CGB-E and generic CGB.
+**AGB** and **AGB-0 (startup compatibility)** add the GBA-specific GB/GBC
+handoff in instant, fast and animated startup. Runtime still uses the CGB-E
+baseline: native GBA games and full AGB silicon accuracy are not supported.
 See [replacement firmware](../firmware/README.md) for limitations and validation.
 
 The desktop and Android settings pages also expose a **Hardware model**
 selector. `Automatic (cartridge)` preserves normal header-based selection;
 the explicit profiles are DMG-0, DMG-B/DMG, MGB, SGB, SGB2, CGB-0, CGB-C, and
-CGB-E. The choice is stored as `hardware.Model` in `settings.ini` and applies
+CGB-E, plus AGB-0/AGB startup-compatibility profiles. The choice is stored as `hardware.Model` in `settings.ini` and applies
 when the ROM is started again. The test runner accepts the same IDs through
 `--model`, so a result can be reproduced against a named hardware revision.
 

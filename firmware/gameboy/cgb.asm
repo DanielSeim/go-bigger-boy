@@ -135,6 +135,11 @@ ENDC
 .handoff
     xor a
     ldh [$FF0F], a
+IF DEF(GBB_AGB)
+    ; Publicly documented AGB detection: increment title checksum B last,
+    ; preserving INC's Z/H flags and the already cleared N/C flags.
+    inc b
+ENDC
     ld a, $11
     jp $00FE
 .failed

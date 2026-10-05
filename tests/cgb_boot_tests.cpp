@@ -39,7 +39,8 @@ void finish(gameboy::Emulator& emulator, bool* heard = nullptr) {
 int main() {
     try {
         using namespace gameboy;
-        for (auto model : {HardwareModel::cgb0, HardwareModel::cgb_c, HardwareModel::cgb_e, HardwareModel::cgb}) {
+        for (auto model : {HardwareModel::cgb0, HardwareModel::cgb_c, HardwareModel::cgb_e, HardwareModel::cgb,
+                           HardwareModel::agb0, HardwareModel::agb}) {
             for (bool color : {false, true}) for (auto mode : {BootRomMode::replacement_cgb, BootRomMode::animated_cgb}) {
                 auto bytes = rom(color);
                 Emulator emulator(Cartridge(bytes), model, mode);
@@ -53,7 +54,8 @@ int main() {
                 finish(emulator, &heard); finish(restored);
                 check(emulator.save_state() == restored.save_state(), "CGB continuation differs after restore");
                 const auto& r = emulator.cpu().registers();
-                check(r.a == 0x11 && r.f == 0x80 && r.b == 0 && r.c == 0 &&
+                check(r.a == 0x11 && r.f == (is_agb_hardware(model) ? 0 : 0x80) &&
+                    r.b == (is_agb_hardware(model) ? 1 : 0) && r.c == 0 &&
                     r.d == (color ? 0xff : 0) && r.e == (color ? 0x56 : 8) &&
                     r.h == 0 && r.l == (color ? 0x0d : 0x7c) && r.sp == 0xfffe && r.pc == 0x100,
                     "CGB cartridge register handoff differs");
@@ -76,6 +78,53 @@ int main() {
                 check(emulator.cpu().total_cycles() == clocks, "CGB reset changed firmware timing");
             }
         }
+        for (auto model : {HardwareModel::agb0, HardwareModel::agb}) {
+            for (unsigned license : {0U, 1U, 0x33U})
+            for (unsigned title : {0U, 0x0fU, 0x12U, 0x43U, 0x58U, 0xffU}) {
+                const auto checksum = license ? title : 0;
+                const auto expected_b = static_cast<std::uint8_t>(checksum + 1);
+                const auto expected_f = (expected_b == 0 ? 0x80 : 0) | ((checksum & 15) == 15 ? 0x20 : 0);
+                for (auto mode : {BootRomMode::post_boot, BootRomMode::replacement_agb}) {
+                    Emulator emulator(Cartridge(rom(false, license, title)), model, mode);
+                    finish(emulator);
+                    const auto& r = emulator.cpu().registers();
+                    const bool legacy = checksum == 0x43 || checksum == 0x58;
+                    check(r.a == 0x11 && r.b == expected_b && r.f == expected_f && r.c == 0 &&
+                          r.d == 0 && r.e == 8 && r.h == (legacy ? 0x99 : 0) &&
+                          r.l == (legacy ? 0x1a : 0x7c) && r.sp == 0xfffe && r.pc == 0x100,
+                          "AGB compatibility INC/title/legacy handoff differs");
+                }
+            }
+            for (auto mode : {BootRomMode::post_boot, BootRomMode::replacement_agb}) {
+                Emulator emulator(Cartridge(rom(true)), model, mode);
+                finish(emulator);
+                const auto& r = emulator.cpu().registers();
+                check(r.a == 0x11 && r.f == 0 && r.b == 1 && r.c == 0 && r.d == 0xff &&
+                      r.e == 0x56 && r.h == 0 && r.l == 0x0d, "AGB native handoff differs");
+            }
+            auto unlicensed = rom(false, 0x33, 0xff);
+            unlicensed[0x145] = '2';
+            unsigned sum = 0;
+            for (unsigned address = 0x134; address <= 0x14c; ++address)
+                sum = (sum - unlicensed[address] - 1) & 255;
+            unlicensed[0x14d] = static_cast<std::uint8_t>(sum);
+            Emulator rejected_license(Cartridge(unlicensed), model, BootRomMode::replacement_agb);
+            finish(rejected_license);
+            check(rejected_license.cpu().registers().b == 1 && rejected_license.cpu().registers().f == 0,
+                  "AGB must not checksum non-Nintendo new-license titles");
+            auto invalid_rom = rom(true); invalid_rom[0x14d] ^= 1;
+            Emulator invalid_agb(Cartridge(invalid_rom), model, BootRomMode::replacement_agb);
+            for (unsigned i = 0; i < 100000; ++i) (void)invalid_agb.step();
+            check(invalid_agb.bus().boot_rom_enabled() && invalid_agb.bus().read8(0xff40) == 0,
+                  "AGB invalid checksum entered cartridge");
+            Emulator muted(Cartridge(rom(true)), model, BootRomMode::animated_agb);
+            muted.set_audio_enabled(false);
+            finish(muted);
+            check(muted.take_audio_samples().empty(), "muted AGB intro generated audio");
+            muted.reset(); muted.set_button(Button::start, true);
+            check(!muted.startup_animation_active() && muted.bus().boot_rom_enabled(),
+                  "AGB skip changed firmware mapping");
+        }
         for (auto license : {1U, 0x33U}) for (auto title : {0x43U, 0x58U, 0x12U}) {
             Emulator emulator(Cartridge(rom(false, license, title)), HardwareModel::cgb_e, BootRomMode::replacement_cgb);
             finish(emulator);
@@ -83,8 +132,9 @@ int main() {
                 emulator.cpu().registers().h == (title == 0x12 ? 0 : 0x99) &&
                 emulator.cpu().registers().l == (title == 0x12 ? 0x7c : 0x1a), "licensed compatibility handoff differs");
         }
+        for (auto profile : {"cgb-e", "agb0", "agb"})
         for (bool color : {false, true}) for (auto mode : {gbb::StartupMode::replacement_dmg, gbb::StartupMode::animated_dmg}) {
-            gbb::CoreLoadOptions options; options.hardware_model = "cgb-e"; options.startup_mode = mode;
+            gbb::CoreLoadOptions options; options.hardware_model = profile; options.startup_mode = mode;
             auto core = gbb::built_in_core_registry().create(rom(color), options);
             check(gbb::gameboy_emulator(core.get())->bus().boot_rom_enabled(), "factory ignored CGB boot");
             if (mode == gbb::StartupMode::animated_dmg)
@@ -148,6 +198,6 @@ int main() {
         Emulator skipped(Cartridge(rom(true)), HardwareModel::cgb_e, BootRomMode::animated_cgb);
         skipped.set_button(Button::start, true);
         check(!skipped.startup_animation_active() && skipped.bus().boot_rom_enabled(), "skip altered firmware startup");
-        std::cout << "CGB firmware, compatibility, fade, chime, restore and reset passed\n";
+        std::cout << "CGB/AGB firmware, compatibility, reveal, chime, restore and reset passed\n";
     } catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }
 }

@@ -62,7 +62,7 @@ void usage() {
     std::cerr << "Usage: gbb_test_runner <rom.gb> "
                  "[--max-cycles N] [--protocol auto|mooneye|"
                  "mooneye-wilbertpol|serial|blargg|gbmicrotest] "
-                 "[--model auto|dmg0|dmg|mgb|sgb|sgb2|cgb0|cgb-c|cgb-e] "
+                 "[--model auto|dmg0|dmg|mgb|sgb|sgb2|cgb0|cgb-c|cgb-e|agb0|agb] "
                  "[--frames N --frame-output capture.ppm [--sgb-frame]] "
                  "[--frame-series FIRST LAST PREFIX [--sgb-frame]] "
                  "[--frame-state-series] "
@@ -85,6 +85,8 @@ gameboy::HardwareModel parse_model(const std::string& value) {
     if (value == "sgb") return gameboy::HardwareModel::sgb;
     if (value == "sgb2") return gameboy::HardwareModel::sgb2;
     if (value == "cgb0") return gameboy::HardwareModel::cgb0;
+    if (value == "agb0") return gameboy::HardwareModel::agb0;
+    if (value == "agb") return gameboy::HardwareModel::agb;
     if (value == "cgb-c" || value == "cgbc") return gameboy::HardwareModel::cgb_c;
     if (value == "cgb-e" || value == "cgb" || value == "cgbe") return gameboy::HardwareModel::cgb_e;
     throw std::invalid_argument("unknown hardware model: " + value);

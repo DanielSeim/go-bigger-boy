@@ -74,6 +74,42 @@ captures in an ignored build directory. Neither firmware contents nor reference
 artwork are decoded, bundled, or used by the replacement renderer. Both capture
 tools refuse to overwrite existing images.
 
+## AGB / AGB-0 startup compatibility
+
+Select **AGB** or **AGB-0 (startup compatibility)** to run GB/GBC cartridges
+with the documented Game Boy Advance boot handoff. Both fast and animated
+variants are bundled; animated startup uses the same original GBB Color intro.
+Automatic selection is unchanged and never selects these profiles.
+
+Native color games receive `A=$11`, `B=$01`, `F=$00`, `DE=$FF56`, `HL=$000D`.
+For monochrome games, the licensed title checksum is incremented in `B`;
+zero/half-carry flags follow that increment, including `$FF` wraparound.
+Legacy `$43`/`$58` title checksums retain `HL=$991A` before the increment.
+Instant startup uses the same cartridge-dependent registers. These conventions
+follow [Pan Docs](https://gbdev.io/pandocs/Power_Up_Sequence.html).
+
+These are **startup compatibility profiles**, not native GBA emulation or a
+fully validated AGB hardware core. Runtime timing, PPU and APU currently use
+the CGB-E baseline. Full AGB-specific audio/display behavior and exact original
+boot memory/divider state remain unimplemented. The profiles are intentionally
+not added to the silicon-accuracy conformance matrix yet.
+
+AGB-0 and AGB have separate generated firmware names but identical replacement
+bytes: the original later revision's logo-check hardening has no counterpart in
+our deliberately logo-free boot. Both initialize wave RAM, unlike CGB-0.
+Rebuild/check with `scripts/build_dmg_boot_rom.py --model agb` or `--model agb0`,
+adding `--animated`, `--check`, or `--check-source` as needed.
+
+The optional `scripts/agb_boot_handoff_reference.c` executes a user-provided
+cartridge header and boot image in a local SameBoy core (`GB_MODEL_AGB`), then
+reports 36 native/compatibility/license/checksum handoffs as CSV. Header variants
+exist only in memory. Firmware instructions and logo assets are not decoded or
+emitted. Compile against SameBoy's public headers and `libsameboy.a` with
+`-lm -ldl`; arguments are `USER_CARTRIDGE USER_BOOT_ROM`.
+`scripts/agb_boot_handoff_preview.cpp` emits the equivalent logo-free GBB matrix;
+compile like the visual preview above and pass `agb|agb0` and
+`instant|fast|animated`. Keep captures and user-owned inputs out of Git.
+
 ## DMG revision 4
 
 `gameboy/dmg.asm` is an original, 256-byte **fast cold-start** implementation.

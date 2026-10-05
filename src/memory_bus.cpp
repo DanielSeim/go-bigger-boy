@@ -89,25 +89,19 @@ void MemoryBus::initialize_post_boot(const HardwareModel model) noexcept {
     // cartridge can advertise CGB compatibility while still being run in an
     // explicit SGB profile; in that case the game must see DMG/SGB hardware
     // so it takes its SGB command path instead of the CGB path.
-    const auto cgb_profile = model == HardwareModel::cgb0 ||
-                             model == HardwareModel::cgb ||
-                             model == HardwareModel::cgb_c ||
-                             model == HardwareModel::cgb_e;
+    const auto cgb_profile = is_cgb_hardware(model);
     cgb_mode_ = cgb_profile && cartridge_.supports_cgb();
     ppu_.set_cgb_mode(cgb_mode_);
     serial_ = SerialPort{cgb_mode_};
     serial_.set_completion_callback(this, &MemoryBus::serial_transfer_complete);
-    cgb_hardware_ = model == HardwareModel::cgb0 ||
-                    model == HardwareModel::cgb ||
-                    model == HardwareModel::cgb_c ||
-                    model == HardwareModel::cgb_e;
+    cgb_hardware_ = is_cgb_hardware(model);
     // The APU's 1 MHz alignment divider starts in its low phase at the boot
     // handoff.  It is intentionally independent of the free-running DIV
     // counter: normal-speed APU clocks are already one tick per bus cycle.
     apu_cycle_phase_ = false;
     ppu_.set_cgb_hardware(cgb_hardware_);
     ppu_.set_cgb_late_revision(model == HardwareModel::cgb ||
-                               model == HardwareModel::cgb_e);
+                               model == HardwareModel::cgb_e || is_agb_hardware(model));
     timer_.initialize_post_boot(model);
     // The serial divider is reset-derived and is not synchronized when a
     // transfer starts. Preserve the phase at the boot-ROM handoff.
@@ -194,7 +188,7 @@ void MemoryBus::initialize_cgb_power_on(const HardwareModel model) {
     cgb_mode_ = cartridge_.supports_cgb();
     ppu_.set_cgb_mode(cgb_mode_);
     ppu_.set_cgb_hardware(true);
-    ppu_.set_cgb_late_revision(model == HardwareModel::cgb || model == HardwareModel::cgb_e);
+    ppu_.set_cgb_late_revision(model == HardwareModel::cgb || model == HardwareModel::cgb_e || is_agb_hardware(model));
     serial_.initialize_cgb_power_on(cgb_mode_);
     static_cast<void>(joypad_.write(0x30));
 }
