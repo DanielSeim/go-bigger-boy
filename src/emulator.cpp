@@ -7,6 +7,8 @@
 namespace gameboy {
 namespace {
 const DiagnosticBootRom& replacement_image(HardwareModel model, bool animated) noexcept {
+    if (model == HardwareModel::cgb0) return animated ? cgb0_animated_boot_rom() : cgb0_boot_rom();
+    if (is_cgb_hardware(model)) return animated ? cgb_animated_boot_rom() : cgb_boot_rom();
     if (model == HardwareModel::dmg0) return animated ? dmg0_animated_boot_rom() : dmg0_boot_rom();
     if (model == HardwareModel::mgb) return animated ? mgb_animated_boot_rom() : mgb_boot_rom();
     return animated ? dmg_animated_boot_rom() : dmg_boot_rom();
@@ -22,10 +24,11 @@ Emulator::Emulator(Cartridge cartridge, const HardwareModel model,
         bus_.cartridge().cgb_compatibility_palette_id());
     splash_enabled_ = boot_rom_mode_ == BootRomMode::animated_dmg;
     if (boot_rom_mode_ == BootRomMode::replacement_dmg || splash_enabled_) {
-        if (hardware_model_ != HardwareModel::dmg0 && hardware_model_ != HardwareModel::dmg && hardware_model_ != HardwareModel::mgb) {
-            throw std::invalid_argument("Monochrome replacement boot requires DMG0, DMG or MGB hardware");
+        if (hardware_model_ != HardwareModel::dmg0 && hardware_model_ != HardwareModel::dmg && hardware_model_ != HardwareModel::mgb && !is_cgb_hardware(hardware_model_)) {
+            throw std::invalid_argument("Replacement boot requires DMG0, DMG, MGB or CGB hardware");
         }
-        bus_.initialize_dmg_power_on();
+        if (is_cgb_hardware(hardware_model_)) bus_.initialize_cgb_power_on(hardware_model_);
+        else bus_.initialize_dmg_power_on();
         bus_.install_boot_rom(replacement_image(hardware_model_, splash_enabled_));
         cpu_.reset_boot();
         // Precompute outside the playback loop, not at the first audible note.
@@ -56,7 +59,8 @@ void Emulator::reset() noexcept {
     splash_consumed_frame_ = splash_handoff_cycles_ = splash_audio_cursor_ = 0;
     splash_cached_frame_ = UINT64_MAX;
     if (boot_rom_mode_ == BootRomMode::replacement_dmg || splash_enabled_) {
-        bus_.initialize_dmg_power_on();
+        if (is_cgb_hardware(hardware_model_)) bus_.initialize_cgb_power_on(hardware_model_);
+        else bus_.initialize_dmg_power_on();
         bus_.install_boot_rom(replacement_image(hardware_model_, splash_enabled_));
         cpu_.reset_boot();
     } else if (boot_rom_mode_ == BootRomMode::diagnostic) {

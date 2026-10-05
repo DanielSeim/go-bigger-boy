@@ -8,8 +8,8 @@ enum class StartupMode { instant, replacement_dmg, animated_dmg };
 inline constexpr std::array<StartupMode, 3> startup_modes{
     StartupMode::instant, StartupMode::replacement_dmg, StartupMode::animated_dmg};
 inline constexpr std::string_view startup_description =
-    "GBB replacement boot uses bundled firmware on DMG0, DMG and MGB (Pocket); other models use instant startup. "
-    "Animated boot uses original-style timing and an APU-synthesized chime with GBB lettering; A or Start hides the splash. "
+    "GBB replacement boot uses bundled firmware on DMG0, DMG, MGB (Pocket) and CGB; SGB models use instant startup. "
+    "Animated boot uses scrolling monochrome or fading color GBB lettering and an APU-synthesized chime; A or Start hides the splash. "
     "Applies when the ROM is started again. No firmware download needed.";
 [[nodiscard]] constexpr std::string_view startup_mode_id(StartupMode mode) noexcept {
     return mode == StartupMode::animated_dmg ? "animated-dmg"

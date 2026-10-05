@@ -17,6 +17,8 @@ public:
 
     void initialize_post_boot(HardwareModel model,
                               bool divider_apu_signal = false) noexcept;
+    // Configure revision behavior on an otherwise fresh, powered-off APU.
+    void initialize_power_on(HardwareModel model) noexcept;
 
     [[nodiscard]] static bool handles_register(std::uint16_t address) noexcept;
     [[nodiscard]] std::uint8_t read_register(std::uint16_t address) const noexcept;

@@ -187,6 +187,18 @@ void MemoryBus::initialize_dmg_power_on() {
     if (printer_connected_) printer_.reset();
 }
 
+void MemoryBus::initialize_cgb_power_on(const HardwareModel model) {
+    initialize_dmg_power_on();
+    apu_.initialize_power_on(model);
+    cgb_hardware_ = true;
+    cgb_mode_ = cartridge_.supports_cgb();
+    ppu_.set_cgb_mode(cgb_mode_);
+    ppu_.set_cgb_hardware(true);
+    ppu_.set_cgb_late_revision(model == HardwareModel::cgb || model == HardwareModel::cgb_e);
+    serial_.initialize_cgb_power_on(cgb_mode_);
+    static_cast<void>(joypad_.write(0x30));
+}
+
 void MemoryBus::install_boot_rom(const DiagnosticBootRom& rom) noexcept {
     boot_rom_ = rom;
     boot_rom_enabled_ = true;

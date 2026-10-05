@@ -5,6 +5,75 @@ It does **not** contain Nintendo boot ROMs, disassemblies, logos, sound assets,
 SNES program ROMs, or SPC700 IPL dumps. Sources and generated images use the
 repository's GPL-3.0-or-later license.
 
+## CGB replacement startup
+
+`gameboy/cgb.asm` provides original 256-byte fast and animated images for
+CGB-0 and later CGB profiles. GBB's deterministic cold bus selects native CGB
+or GB compatibility mode from the cartridge before firmware execution; the
+firmware establishes the stack, clears accessible VRAM banks, checks the
+cartridge header checksum, initializes audio/palettes, and unmaps itself at
+`00FE`, transferring execution to `0100` with `SP=FFFE`, `A=11`, and `F=80`.
+Native color games receive `BC=0000, DE=FF56, HL=000D`. Monochrome games receive
+`C=00, DE=0008`, with the documented licensee/title-dependent `B` and `HL`
+values. CGB-0 preserves cold wave RAM; later profiles initialize it with
+alternating `00/FF` bytes. GBB's existing automatic compatibility colorization
+remains in use for monochrome games.
+
+Select a **CGB** hardware profile and **GBB animated boot** for a roughly
+3.2-second color-model intro: bold oblique **GO BIGGER BOY** lettering appears
+letter by letter, cycles through saturated rainbow colors, settles to blue,
+and fades to white, above a small original **GBB** footer. A two-note pulse
+chime accompanies the reveal. The lettering is original GBB artwork. Like the monochrome
+intro, graphics are host-rendered and audio is synthesized by a separate GBB
+APU; they do not write animation assets into cartridge-visible VRAM or disturb
+the emulated APU. Pause, mute, save/restore, and A/Start presentation hiding are
+supported. **GBB fast boot** omits the presentation and its longer wait.
+
+This is an original, GBB-assisted replacement, **not** a portable reproduction
+of the original 2048-byte CGB firmware. Layout, color phases, fade and approximate
+chime timing follow execution-only observations of a local reference; the longer
+replacement wording has its own glyphs and reveal spacing. This is not a
+pixel-identical or cycle-exact animation. It does not
+implement the original KEY0/PGB boot transition, interactive boot palette
+selection, legacy Nintendo logo tilemap, or exact original divider/APU phase.
+No Nintendo code, logo, typeface, or recorded audio is included. Header checksum
+failure leaves the LCD off and firmware mapped rather than launching the game.
+
+Build and check each of the four variants with:
+
+```sh
+python3 scripts/build_dmg_boot_rom.py --model cgb --check
+python3 scripts/build_dmg_boot_rom.py --model cgb --animated --check
+python3 scripts/build_dmg_boot_rom.py --model cgb0 --check
+python3 scripts/build_dmg_boot_rom.py --model cgb0 --animated --check
+```
+
+Use `--output NEW_FILE.bin` to export a generated image for local testing.
+`--check-source` verifies source/image provenance without RGBDS. CPU-visible
+contracts follow [Pan Docs](https://gbdev.io/pandocs/Power_Up_Sequence.html).
+The `gameboy_cgb_boot` tests cover all four CGB profiles, both cartridge modes,
+both startup modes, checksum rejection, fade/chime, mute/skip, and mid-boot
+save/restore. Firmware source and RGBDS reproducibility checks cover all images.
+
+For visual review (no ROM needed), render the original GBB artwork into a new
+ignored build directory:
+
+```sh
+mkdir -p build-cgb-preview/frames
+c++ -std=c++20 -Iinclude scripts/cgb_boot_visual_preview.cpp \
+  build-desktop/libgameboy_core.a -o build-cgb-preview/preview
+build-cgb-preview/preview build-cgb-preview/frames
+```
+
+The optional `scripts/cgb_boot_visual_reference.c` captures output from a local
+SameBoy core through its public API, executing a user-provided cartridge and
+boot image as opaque inputs. It also reports approximate pulse-trigger times.
+Compile with the local SameBoy include root and `libsameboy.a`, linking `-lm -ldl`;
+arguments are `CARTRIDGE BOOT_ROM NEW_OUTPUT_DIRECTORY FRAMES`. Keep reference
+captures in an ignored build directory. Neither firmware contents nor reference
+artwork are decoded, bundled, or used by the replacement renderer. Both capture
+tools refuse to overwrite existing images.
+
 ## DMG revision 4
 
 `gameboy/dmg.asm` is an original, 256-byte **fast cold-start** implementation.
@@ -84,7 +153,7 @@ cycle-exact equivalence to physical Pocket cold startup or its original ROM.
 ### Rebuild and verify
 
 Normal builds consume the checked-in fast and animated `*_boot_image.hpp`
-images for DMG0, DMG and MGB; they do not
+images for DMG0, DMG, MGB and CGB; they do not
 require RGBDS, Python, downloaded ROMs, or network access. With RGBDS (`rgbasm`
 and `rgblink`; tested with 1.0.1) and Python installed:
 
@@ -124,7 +193,7 @@ persists the choice in browser local storage. No external firmware download is
 required: the image is bundled in every build.
 
 The existing `replacement-dmg` and `animated-dmg` setting IDs are retained for
-compatibility; they select matching firmware on DMG0, DMG and MGB.
+compatibility; they select matching firmware on DMG0, DMG, MGB and CGB.
 
 For DMG/MGB, the animated option selects a separate original 256-byte firmware variant. Its
 CPU-executed wait adds exactly 19,136,512 clocks (292 whole DIV wraps), making
@@ -153,7 +222,8 @@ The choice applies when a ROM is started again (including frontend restart),
 not to an already running core. It does not force a hardware model. Automatic
 selection still prefers CGB for CGB-capable titles and SGB for SGB-capable titles;
 select the **DMG** hardware profile explicitly if you want to use the replacement
-with a dual-mode title, or **MGB** for Pocket. Other profiles retain instant startup. Experimental
+with a dual-mode title, or **MGB** for Pocket. CGB profiles now select their own
+replacement described above; SGB profiles retain instant startup. Experimental
 SNES-side SGB firmware playback remains separate and still needs user firmware.
 
 ### State and reset contracts

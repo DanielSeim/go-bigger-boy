@@ -48,6 +48,16 @@ class DmgBootCliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("PASS (serial)", result.stdout)
 
+    def test_cgb_cartridge_runs_from_cold_boot(self):
+        for color in (False, True):
+            rom = cartridge()
+            rom[0x143] = 0x80 if color else 0
+            rom[0x14D] = (-sum(rom[0x134:0x14D]) - 25) & 0xFF
+            self.rom.write_bytes(rom)
+            result = self.run_rom("--model", "cgb-e", "--dmg-boot")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("PASS (serial)", result.stdout)
+
     def test_invalid_checksum_never_executes_cartridge(self):
         rom = cartridge()
         rom[0x14D] ^= 1
@@ -65,7 +75,7 @@ class DmgBootCliTests(unittest.TestCase):
     def test_sgb_is_not_treated_as_dmg(self):
         result = self.run_rom("--model", "sgb", "--dmg-boot")
         self.assertEqual(result.returncode, 2)
-        self.assertIn("requires DMG0, DMG or MGB", result.stderr)
+        self.assertIn("requires DMG0, DMG, MGB or CGB", result.stderr)
 
 
 if __name__ == "__main__":

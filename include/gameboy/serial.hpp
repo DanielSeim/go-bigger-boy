@@ -137,6 +137,10 @@ public:
     void reset_link() noexcept;
     // Cold DMG reset while retaining the host endpoint and callback.
     void initialize_dmg_power_on() noexcept;
+    void initialize_cgb_power_on(bool native_color) noexcept {
+        initialize_dmg_power_on();
+        cgb_mode_ = native_color;
+    }
 
     void restore_state(std::uint8_t data, std::uint8_t control,
                        std::uint32_t phase, std::uint8_t bits_shifted,

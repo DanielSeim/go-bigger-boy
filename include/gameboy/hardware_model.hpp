@@ -23,6 +23,11 @@ enum class HardwareModel {
     cgb_e = 9,
 };
 
+[[nodiscard]] constexpr bool is_cgb_hardware(HardwareModel model) noexcept {
+    return model == HardwareModel::cgb0 || model == HardwareModel::cgb ||
+           model == HardwareModel::cgb_c || model == HardwareModel::cgb_e;
+}
+
 [[nodiscard]] constexpr HardwareModel resolve_hardware_model(
     HardwareModel requested, bool supports_cgb, bool supports_sgb) noexcept {
     return requested != HardwareModel::automatic ? requested

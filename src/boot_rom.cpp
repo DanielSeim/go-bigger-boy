@@ -5,10 +5,18 @@
 #include "../firmware/gameboy/mgb_boot_image.hpp"
 #include "../firmware/gameboy/dmg_animated_boot_image.hpp"
 #include "../firmware/gameboy/mgb_animated_boot_image.hpp"
+#include "../firmware/gameboy/cgb_boot_image.hpp"
+#include "../firmware/gameboy/cgb_animated_boot_image.hpp"
+#include "../firmware/gameboy/cgb0_boot_image.hpp"
+#include "../firmware/gameboy/cgb0_animated_boot_image.hpp"
 
 #include <cstddef>
 
 namespace gameboy {
+const DiagnosticBootRom& cgb_boot_rom() noexcept { return firmware::cgb_boot_image; }
+const DiagnosticBootRom& cgb_animated_boot_rom() noexcept { return firmware::cgb_animated_boot_image; }
+const DiagnosticBootRom& cgb0_boot_rom() noexcept { return firmware::cgb0_boot_image; }
+const DiagnosticBootRom& cgb0_animated_boot_rom() noexcept { return firmware::cgb0_animated_boot_image; }
 const DiagnosticBootRom& dmg0_boot_rom() noexcept { return firmware::dmg0_boot_image; }
 const DiagnosticBootRom& dmg0_animated_boot_rom() noexcept { return firmware::dmg0_animated_boot_image; }
 

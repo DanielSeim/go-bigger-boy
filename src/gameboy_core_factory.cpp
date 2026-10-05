@@ -134,7 +134,9 @@ public:
     }
     bool video_frame_native_colors() const noexcept override {
         return emulator_.hardware_model() == gameboy::HardwareModel::sgb ||
-               emulator_.hardware_model() == gameboy::HardwareModel::sgb2;
+               emulator_.hardware_model() == gameboy::HardwareModel::sgb2 ||
+               (gameboy::is_cgb_hardware(emulator_.hardware_model()) &&
+                emulator_.startup_animation_active());
     }
     const SceneSnapshot& scene_snapshot() const noexcept override {
         populate_gameboy_scene_snapshot(emulator_, scene_);
@@ -227,7 +229,7 @@ CoreFactory gameboy_core_factory() {
                 cartridge.supports_cgb(), cartridge.supports_sgb());
             const auto boot_mode = (options.startup_mode == StartupMode::replacement_dmg ||
                                    options.startup_mode == StartupMode::animated_dmg) &&
-                                   (model == gameboy::HardwareModel::dmg0 || model == gameboy::HardwareModel::dmg || model == gameboy::HardwareModel::mgb)
+                (model == gameboy::HardwareModel::dmg0 || model == gameboy::HardwareModel::dmg || model == gameboy::HardwareModel::mgb || gameboy::is_cgb_hardware(model))
                 ? (options.startup_mode == StartupMode::animated_dmg ? gameboy::BootRomMode::animated_dmg
                     : gameboy::BootRomMode::replacement_dmg) : gameboy::BootRomMode::post_boot;
             return std::make_unique<GameBoyCore>(std::move(cartridge), model, boot_mode);

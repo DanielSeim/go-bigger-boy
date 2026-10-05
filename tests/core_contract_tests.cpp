@@ -449,7 +449,7 @@ int main() {
               "factory exposes original animated DMG startup");
         for (const auto model : gameboy::selectable_hardware_models) {
             if (model == gameboy::HardwareModel::automatic || model == gameboy::HardwareModel::dmg ||
-                model == gameboy::HardwareModel::mgb || model == gameboy::HardwareModel::dmg0) continue;
+                model == gameboy::HardwareModel::mgb || model == gameboy::HardwareModel::dmg0 || gameboy::is_cgb_hardware(model)) continue;
             options.hardware_model = std::string{gameboy::hardware_model_id(model)};
             auto other = registry.create(rom, options);
             check(!gbb::gameboy_emulator(other.get())->bus().boot_rom_enabled(),
@@ -469,8 +469,8 @@ int main() {
               "automatic SGB does not receive DMG firmware");
         rom[0x143] = 0x80;
         auto cgb = registry.create(rom, options);
-        check(!gbb::gameboy_emulator(cgb.get())->bus().boot_rom_enabled(),
-              "automatic CGB takes precedence over SGB and ignores DMG firmware");
+        check(gbb::gameboy_emulator(cgb.get())->bus().boot_rom_enabled(),
+              "automatic CGB takes precedence over SGB and selects CGB firmware");
         options.hardware_model = "dmg";
         auto forced = registry.create(rom, options);
         check(gbb::gameboy_emulator(forced.get())->bus().boot_rom_enabled(),

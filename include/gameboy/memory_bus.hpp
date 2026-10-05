@@ -40,6 +40,9 @@ public:
     // Deterministic DMG power-on state: no post-boot register/VRAM seeding.
     // Cartridge/mapper/battery data and host serial attachment are retained.
     void initialize_dmg_power_on();
+    // Deterministic CGB power-on in the cartridge's selected compatibility
+    // mode; no post-boot peripheral snapshot is applied.
+    void initialize_cgb_power_on(HardwareModel model);
     void install_boot_rom(const DiagnosticBootRom& rom) noexcept;
     [[nodiscard]] bool boot_rom_enabled() const noexcept;
 

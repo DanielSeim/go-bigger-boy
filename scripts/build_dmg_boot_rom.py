@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rebuild/check original DMG0/DMG/MGB firmware; never reads reference ROMs."""
+"""Rebuild/check original GBB boot firmware; never reads reference ROMs."""
 
 import argparse
 import hashlib
@@ -21,11 +21,13 @@ def render(image, model="dmg", animated=False):
     definition = "// Build definition: GBB_HANDOFF_A=255 (MGB).\n" if model == "mgb" else ""
     if model == "dmg0":
         definition += "// Build definition: GBB_DMG0=1.\n"
+    if model == "cgb0":
+        definition += "// Build definition: GBB_CGB0=1.\n"
     if animated:
         definition += "// Build definition: GBB_ANIMATED=1.\n"
     name = model + ("_animated" if animated else "")
     return ("// SPDX-License-Identifier: GPL-3.0-or-later\n"
-            "// Generated from dmg.asm by scripts/build_dmg_boot_rom.py.\n"
+            f"// Generated from {SOURCE.name} by scripts/build_dmg_boot_rom.py.\n"
             f"{definition}"
             f"// SHA-256: {digest}\n"
             f"// Source SHA-256 (LF): {source_digest}\n"
@@ -37,8 +39,9 @@ def render(image, model="dmg", animated=False):
 
 
 def main():
+    global SOURCE
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model", choices=("dmg0", "dmg", "mgb"), default="dmg")
+    parser.add_argument("--model", choices=("dmg0", "dmg", "mgb", "cgb", "cgb0"), default="dmg")
     parser.add_argument("--animated", action="store_true", help="build the original-cadence intro variant")
     checks = parser.add_mutually_exclusive_group()
     checks.add_argument("--check", action="store_true",
@@ -49,6 +52,8 @@ def main():
     parser.add_argument("--rgblink", default="rgblink")
     parser.add_argument("--output", type=Path, help="write an original 256-byte boot image")
     args = parser.parse_args()
+    if args.model in ("cgb", "cgb0"):
+        SOURCE = ROOT / "firmware/gameboy/cgb.asm"
     name = args.model + ("_animated" if args.animated else "")
     header_path = ROOT / f"firmware/gameboy/{name}_boot_image.hpp"
     if args.check_source:
@@ -61,6 +66,8 @@ def main():
             definitions = ["-DGBB_HANDOFF_A=255"] if args.model == "mgb" else []
             if args.model == "dmg0":
                 definitions.append("-DGBB_DMG0=1")
+            if args.model == "cgb0":
+                definitions.append("-DGBB_CGB0=1")
             if args.animated:
                 definitions.append("-DGBB_ANIMATED=1")
             subprocess.run([args.rgbasm, "-Wall", "-Wextra", *definitions, "-o", str(obj), str(SOURCE)],

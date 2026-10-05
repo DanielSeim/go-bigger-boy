@@ -37,8 +37,7 @@ constexpr std::array<std::array<std::uint8_t, 8>, 4> duty_patterns{{
 }};
 } // namespace
 
-void Apu::initialize_post_boot(const HardwareModel model,
-                               const bool divider_apu_signal) noexcept {
+void Apu::initialize_power_on(const HardwareModel model) noexcept {
     master_clock_hz_ = hardware_clock_rate_hz(model);
     cgb_hardware_ = model == HardwareModel::cgb0 ||
                     model == HardwareModel::cgb ||
@@ -48,6 +47,11 @@ void Apu::initialize_post_boot(const HardwareModel model,
     cgb_e_revision_ = model == HardwareModel::cgb_e;
     cgb_e_power_cycle_startup_ = false;
     power_off();
+}
+
+void Apu::initialize_post_boot(const HardwareModel model,
+                               const bool divider_apu_signal) noexcept {
+    initialize_power_on(model);
     powered_ = true;
     // If the APU is enabled while the DIV/APU input is high, hardware skips
     // the first falling-edge event.  The timer supplies the phase at boot.
