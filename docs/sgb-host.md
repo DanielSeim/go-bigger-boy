@@ -24,7 +24,7 @@ and serial benchmark; see
 `GBBFW001`, and the nested ordinary GB state is version 42. Older host
 versions 1/2 cannot restore pending LCD events and are rejected.
 
-The latest recorded clocked-bridge Release/IPO Linux host-only measurement
+The initial recorded clocked-bridge Release/IPO Linux host-only measurement
 preserves all four prior production PCM prefixes with appended endpoints and
 passes current complete WAV/final-state pins, but fails all four 1.40x p05 /
 1.20x worst-window gates (p05 1.153–1.228x, worst 0.931–1.071x). See
@@ -33,8 +33,13 @@ for conditions and the full table. Current bridge headroom is unqualified.
 The historical Balanced Windows qualification, awake-tablet soaks and native
 Windows frontend captures below predate this bridge and do not qualify it.
 There is no same-host pre/post bridge A/B in that run, so its cost cannot be
-isolated from host-capacity variation. No new benchmark/device run was made
-for this source/documentation audit.
+isolated from host-capacity variation. The subsequent
+[bounded deadline-cache investigation](sgb-boot-validation.md#bounded-deadline-cache-investigation-2026-10-05)
+retains exact complete WAV/state pins and improves the observed windows, but
+its four-profile run still fails every p05 bound (1.272–1.365x). A later passing
+SGB1 combined pair is not all-profile repeatability qualification. Current
+bridge headroom therefore remains unqualified; no new device qualification
+is claimed.
 
 ## Inputs and scheduling
 

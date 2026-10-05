@@ -113,6 +113,22 @@ void clocked_lcd_rows() {
             check(source.write(0x6001,host_clock(byte_edge->clock),0) &&
                   source.read(0x7800,host_clock(byte_edge->clock),value) && value==0xaa,
                   "last bit of a changed tile byte becomes visible at its exact LCD clock");
+            // Exercise cached deadlines with many rendezvous between physical
+            // edges, including the fractional SGB2 oscillator. A queued pixel
+            // must wake the bridge before the next whole GB instruction.
+            gameboy::SgbIcdGbSource dense(cfg.game_rom,cfg.gb_boot_rom,model);
+            std::vector<Event> dense_events;
+            dense.set_lcd_observer(observer,&dense_events);
+            check(dense.write(0x6003,0,static_cast<std::uint8_t>(0x80|control)),
+                  "dense-rendezvous fixture releases GB");
+            const auto end=host_clock(byte_edge->clock);
+            for(std::uint64_t clock=1;clock<=end;++clock) dense.advance_to(clock);
+            check(dense_events==std::vector<Event>(expected.begin(),byte_edge+1),
+                  "every-master-clock rendezvous preserves all physical LCD edges");
+            check(dense.gb_cycles()==source.gb_cycles() &&
+                  dense.emulator().save_state()==source.emulator().save_state() &&
+                  dense.write(0x6001,end,0) && dense.read(0x7800,end,value) && value==0xaa,
+                  "dense and sparse rendezvous expose identical CPU and ring RAM state");
         }
         gameboy::SgbIcdGbSource early(cfg.game_rom,cfg.gb_boot_rom,model);
         check(early.write(0x6003,0,static_cast<std::uint8_t>(0x80|control)) && early.write(0x6001,0,0),"early-read fixture");

@@ -31,12 +31,14 @@ mixes at 48 kHz, so its SGB2 output is not the 44.1 kHz diagnostic pin.
 Combined pins are Linux/GCC-specific; other compiler/architecture captures
 require the documented same-platform comparison.
 
-The latest bridge capture retains every prior production PCM sample and appends
+The first clocked-bridge capture retains every prior production PCM sample and appends
 only endpoint frames; see [playback evidence](#playback-baseline-evidence).
 All four exact current WAV/state pins pass there, but all four Linux headroom
-profiles fail (p05 1.153–1.228x, worst 0.931–1.071x). Earlier Balanced Windows
-and awake Android measurements do not qualify the new bridge. No private,
-expensive or device tests were rerun for this documentation audit.
+profiles fail (p05 1.153–1.228x, worst 0.931–1.071x). The subsequent
+[deadline-cache investigation](#bounded-deadline-cache-investigation-2026-10-05)
+preserves the complete pins, but its four-profile p05 bounds still fail.
+Earlier Balanced Windows and awake Android measurements do not qualify the
+new bridge or the cache; no new device qualification is claimed.
 See [runtime firmware requirements](sgb-host.md#experimental-desktop-playback)
 and [generic startup IDs](../firmware/README.md).
 
@@ -362,3 +364,63 @@ and an equivalent-output A/B measurement are needed before attributing or
 fixing that cost. No gate, power setting, affinity, oscillator or quality
 setting was changed to conceal these results. These ratios exclude frontend
 rendering and physical audio-device playback; they are not device FPS claims.
+
+### Bounded deadline-cache investigation (2026-10-05)
+
+A fresh same-machine Release/IPO WSL2 investigation retained the `4858434`
+baseline executable and compared it with a derived ICD rendezvous cache.
+Windows' active power scheme was read as Balanced; no system power setting,
+affinity, clock, output rate or gate was changed. There were no competing build,
+test or profiling jobs during the serial timing captures. Each profile executes
+60 million host instructions and supplies 90 post-warmup one-second windows.
+
+The cache now wakes at the earlier of the next GB instruction and the first
+queued physical LCD edge. Previously, a nonempty future-pixel queue defeated
+the early-return cache on every host rendezvous. This removes redundant clock
+conversion, not pixels, GB instructions, SPC halves, DSP phases or samples.
+The deadline is derived, invalidated on live input/control changes and rebuilt
+after restoration; the version-3 host snapshot layout is unchanged.
+
+| Profile | Baseline p05 / worst | Cached deadline p05 / worst |
+| --- | ---: | ---: |
+| SGB1 native, 32 kHz | 1.262x / 1.243x | 1.365x / 1.328x |
+| SGB1 combined, 48 kHz | 1.178x / 1.145x | 1.279x / 1.235x |
+| SGB2 native, 32 kHz | 1.297x / 1.273x | 1.354x / 1.273x |
+| SGB2 combined, 44.1 kHz | 1.215x / 1.190x | 1.272x / 1.217x |
+
+All eight captures match the complete current WAV and final GB-state pins.
+The candidate meets every worst-window bound, but **all four p05 bounds still
+fail**. It is not repeatability-qualified and does not restore the headroom
+gate. The reports and private WAVs remain in ignored
+`build-local-evidence/sgb-performance-{baseline,deadline}-20261005/` directories.
+
+A further uninterrupted SGB1 combined baseline/candidate pair also matches the
+same full pins: baseline median/p05/worst **1.477/1.356/1.276x**, candidate
+**1.671/1.538/1.471x**. Its raw candidate passes the individual thresholds, but
+cannot substitute for passing both models and audio modes repeatedly. The
+unchanged baseline itself moved substantially between captures; calibration
+and scheduling diagnostics confirm host-capacity variation. These data support
+retaining the bounded optimization, not promising a fixed percentage speedup.
+Paired reports remain in `build-local-evidence/sgb-performance-paired-20261005/`.
+
+The rebuilt host, execution-cache, firmware-adapter and metrics contracts pass.
+The new ROM-free dense-rendezvous test compares every emitted LCD edge, final
+GB state and visible ring RAM against sparse stepping for both models at all
+four dividers. Additional 12-million-instruction combined title runs compare
+the retained baseline with candidate playback using 257-sample consumer chunks
+and whole-host restoration: complete WAVs and final GB state match exactly,
+including 103 SGB1 and 96 SGB2 restores. These shorter runs are restoration
+checks, not performance qualification. Reports and WAVs remain in
+`build-local-evidence/sgb-deadline-restore-20261005/`.
+
+Exploratory CPU sampling points to shared GB PPU, SPC continuation, DSP and
+host-synchronization costs rather than a single removable LCD callback. Its
+limited WSL/LTO sampling coverage is not a quantitative bottleneck budget.
+Further work needs a separately scoped execution-path optimization and fresh
+raw qualification; no timing accuracy or output quality was traded away to
+make this attempt pass. Native Windows/frontend and Android qualification
+were not repeated for this still-failing host-only gate.
+
+The current measured headroom is accepted as sufficient for now; further
+optimization is deferred. This is a project scope decision, not a passing
+1.40x p05 qualification or a change to the automated thresholds.

@@ -35,6 +35,9 @@
 - Validate exact native/restored/scalar playback and production PCM-prefix
   parity. Record failed clocked-bridge headroom measurements without relaxing
   thresholds or reducing output quality; performance qualification remains open.
+- Cache the earliest deferred LCD/CPU rendezvous to avoid redundant GB clock
+  conversion. Preserve complete audio/state pins and add dense-master-clock
+  LCD equivalence checks; the measured four-profile p05 headroom gate still fails.
 
 ## [0.36.0] - 2026-10-04
 

@@ -2,6 +2,7 @@
 
 #include "gameboy/cartridge.hpp"
 
+#include <algorithm>
 #include <fstream>
 #include <string>
 #include <stdexcept>
@@ -117,7 +118,7 @@ void SgbIcdGbSource::set_live_button(Button button, bool pressed) noexcept {
                                                       : held_buttons_ & ~flag);
     frame_input_.hold(mask);
     set_input_buttons(mask);
-    next_gb_clock_known_=false;
+    next_sync_clock_known_=false;
 }
 
 void SgbIcdGbSource::apply_input(const std::uint64_t frame) noexcept {
@@ -218,7 +219,10 @@ void SgbIcdGbSource::joyp_write(const std::uint8_t value) noexcept {
 void SgbIcdGbSource::synchronize(const std::uint64_t master_clocks) noexcept {
     master_snapshot_ = master_clocks;
     if (!released_ || master_clocks < release_clock_) return;
-    if (!pending_lcd_count_ && next_gb_clock_known_ && master_clocks < next_gb_clock_) return;
+    // The cached deadline covers both the next CPU instruction and the first
+    // deferred physical LCD edge. Between these edges no observable work is
+    // due, even when an instruction has left future pixels in the queue.
+    if (next_sync_clock_known_ && master_clocks < next_sync_clock_) return;
     // SGB1 divides the SNES CPU oscillator. SGB2 has a dedicated
     // 20,971,520 Hz oscillator; at the normal /5 setting this yields the
     // GB's 4,194,304 Hz. Use a rational conversion to avoid accumulated
@@ -227,7 +231,6 @@ void SgbIcdGbSource::synchronize(const std::uint64_t master_clocks) noexcept {
         master_clocks - release_clock_, divider_, model_);
     lcd_target_ = target;
     drain_lcd_events(target);
-    if (next_gb_clock_known_ && master_clocks < next_gb_clock_) return;
     while (gb_cycles_ < target && missing_address_ == 0) {
         const bool stopped = audio_sink_ && gb_->cpu().stopped() &&
             (gb_->bus().read8(0xff0f) & gb_->bus().read8(0xffff) & 0x1f) == 0;
@@ -254,20 +257,22 @@ void SgbIcdGbSource::synchronize(const std::uint64_t master_clocks) noexcept {
         }
         trace.clear();
     }
-    const auto next = gb_cycles_ + 1;
+    auto next = gb_cycles_ + 1;
+    if (pending_lcd_count_)
+        next = std::min(next, pending_lcd_[pending_lcd_head_].clock);
     if (model_ != HardwareModel::sgb2) {
-        next_gb_clock_known_ = next && next <=
+        next_sync_clock_known_ = next && next <=
             (std::numeric_limits<std::uint64_t>::max() - release_clock_) / divider_;
-        if (next_gb_clock_known_) next_gb_clock_ = release_clock_ + next * divider_;
+        if (next_sync_clock_known_) next_sync_clock_ = release_clock_ + next * divider_;
         return;
     }
     constexpr auto oscillator = 20971520ULL;
     const auto scale = 21477273ULL * divider_;
     const auto tail = (next % oscillator * scale + oscillator - 1) / oscillator;
     const auto quotient = next / oscillator;
-    next_gb_clock_known_ = next && tail <= std::numeric_limits<std::uint64_t>::max() - release_clock_ && quotient <=
+    next_sync_clock_known_ = next && tail <= std::numeric_limits<std::uint64_t>::max() - release_clock_ && quotient <=
         (std::numeric_limits<std::uint64_t>::max() - release_clock_ - tail) / scale;
-    if (next_gb_clock_known_) next_gb_clock_ = release_clock_ + quotient * scale + tail;
+    if (next_sync_clock_known_) next_sync_clock_ = release_clock_ + quotient * scale + tail;
 }
 
 bool SgbIcdGbSource::read(const std::uint16_t address,
@@ -386,7 +391,7 @@ bool SgbIcdGbSource::write(const std::uint16_t address,
             release_clock_ = master_clocks;
         }
         divider_ = next_divider;
-        next_gb_clock_known_ = false;
+        next_sync_clock_known_ = false;
         return true;
     }
     synchronize(master_clocks);

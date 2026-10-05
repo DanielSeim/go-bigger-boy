@@ -159,8 +159,8 @@ public:
     }
 
 private:
-    std::uint64_t next_gb_clock_{};
-    bool next_gb_clock_known_{}; // Derived rendezvous cache, not serialized.
+    std::uint64_t next_sync_clock_{};
+    bool next_sync_clock_known_{}; // Earliest CPU/LCD rendezvous; not serialized.
     friend class SgbHostStateCodec;
     AudioSink audio_sink_{};
     AudioResetSink audio_reset_sink_{};
