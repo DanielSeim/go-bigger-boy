@@ -81,11 +81,11 @@
           Hardware model
           <select id="hardware-model" disabled></select>
         </label>
-        <label class="palette" for="startup-mode" title="Bundled DMG firmware only; other models use instant startup. Animated boot adds original GBB lettering and a chime; A/Start skips the intro. Applies on ROM reload. No download needed.">
-          Startup (DMG only)
+        <label class="palette" for="startup-mode" title="Bundled DMG/MGB firmware; other models use instant startup. Animated boot uses original-style timing, GBB lettering and an APU-synthesized chime. A/Start hides the presentation; firmware still runs. Applies on ROM reload. No download needed.">
+          Startup (DMG / Pocket)
           <select id="startup-mode" disabled>
             <option value="instant">Instant startup</option>
-            <option value="replacement-dmg">GBB replacement boot</option>
+            <option value="replacement-dmg">GBB fast boot</option>
             <option value="animated-dmg">GBB animated boot</option>
           </select>
         </label>
@@ -925,7 +925,7 @@
       try {
         localStorage.setItem('gbb-startup-mode', startupModePicker.value);
       } catch (error) {}
-      Module.gbbSetStatus('Startup setting saved. Reload the ROM to apply it (DMG only).', false);
+      Module.gbbSetStatus('Startup setting saved. Reload the ROM to apply it (DMG / Pocket).', false);
     });
     audioEnabledPicker.addEventListener('change', () => {
       Module._gbb_set_audio_enabled(audioEnabledPicker.checked);

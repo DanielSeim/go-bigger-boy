@@ -162,7 +162,7 @@ test('animated DMG splash stays flat with voxel selected and hands off', async (
   // Pause at a known emulated time rather than relying on screenshot wall time.
   await expect.poll(async () => page.evaluate(() => {
     const state = JSON.parse(UTF8ToString(Module._gbb_export_scene_snapshot()));
-    if (state.emulation_cycles >= 2700000 && state.emulation_cycles < 4200000) {
+    if (state.emulation_cycles >= 18000000 && state.emulation_cycles < 23000000) {
       Module._gbb_pause_rom();
       return true;
     }
@@ -178,4 +178,29 @@ test('animated DMG splash stays flat with voxel selected and hands off', async (
   await expect(page.locator('#startup-mode')).toHaveValue('animated-dmg');
   await expect(page.locator('#video-mode')).toHaveValue('5');
   expect(await page.evaluate(() => localStorage.getItem('gbb-startup-mode'))).toBe('animated-dmg');
+});
+
+test('Pocket fast and animated boot expose FF to a dual-mode cartridge', async ({page}) => {
+  await page.goto('/');
+  await expect(page.locator('#startup-mode')).toBeEnabled({timeout: 90_000});
+  await page.locator('#audio-enabled').uncheck();
+  await page.locator('#hardware-model').selectOption('mgb');
+  const rom = new Uint8Array(0x8000);
+  rom.set([0xc3, 0x50, 0x01], 0x100);
+  // Write the untouched handoff A into SCX, then loop forever.
+  rom.set([0xe0, 0x43, 0x18, 0xfe], 0x150);
+  rom[0x143] = 0x80;
+  let sum = 0;
+  for (let i = 0x134; i <= 0x14c; ++i) sum = (sum - rom[i] - 1) & 0xff;
+  rom[0x14d] = sum;
+  for (const mode of ['replacement-dmg', 'animated-dmg']) {
+    await page.locator('#startup-mode').selectOption(mode);
+    await page.locator('#rom-file').setInputFiles({
+      name: `gbb-pocket-${mode}.gb`, mimeType: 'application/octet-stream', buffer: Buffer.from(rom),
+    });
+    await expect.poll(async () => page.evaluate(() =>
+      JSON.parse(UTF8ToString(Module._gbb_export_scene_snapshot())).scx
+    ), {timeout: 30000}).toBe(255);
+    await expect(page.locator('#hardware-model')).toHaveValue('mgb');
+  }
 });

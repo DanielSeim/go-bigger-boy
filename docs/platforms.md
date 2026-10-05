@@ -89,14 +89,15 @@ individually beside or below the emulation screen. Positions are stored as
 normalized `touch.Portrait.*` and `touch.Landscape.*` coordinates.
 
 Desktop, Android and web expose a **Startup** selector: **Instant startup**
-remains the default; **GBB replacement boot** runs the bundled, original DMG
+remains the default; **GBB fast boot** runs the bundled, original DMG/MGB
 firmware without a download. The preference is saved as `boot.Startup` on
 desktop/Android and `gbb-startup-mode` in browser storage. It applies on the next
-ROM start or frontend restart, not while a core is running. Only the DMG profile
-uses this firmware; other profiles retain instant startup. Automatic model
-selection is unchanged, so select DMG explicitly for dual-mode CGB/SGB titles.
-**GBB animated boot** adds original descending pixel lettering and a synthesized
-two-note chime over the same firmware; A or Start skips the presentation.
+ROM start or frontend restart, not while a core is running. DMG and MGB (Pocket)
+use their respective firmware images; other profiles retain instant startup. Automatic model
+selection is unchanged, so select DMG or MGB explicitly for dual-mode CGB/SGB titles.
+**GBB animated boot** uses a longer firmware variant (~5.59 seconds) with
+original-style scrolling, GBB lettering and an APU-synthesized chime.
+A or Start hides the presentation, not the firmware wait. Fast boot stays ~1.03 seconds.
 See [replacement firmware](../firmware/README.md) for limitations and validation.
 
 The desktop and Android settings pages also expose a **Hardware model**

@@ -132,7 +132,7 @@ final class SettingsScreen {
                 ViewGroup.LayoutParams.WRAP_CONTENT));
 
         final String settingsDirectory = activity.getFilesDir().getAbsolutePath();
-        display.addView(settingLabel("Startup (DMG only)"));
+        display.addView(settingLabel("Startup (DMG / Game Boy Pocket)"));
         final Spinner startup = new Spinner(activity);
         final StartupSettingModel startupSetting = new StartupSettingModel(new StartupSettingModel.Store() {
             @Override public String read() { return LibraryActivity.nativeStartupMode(settingsDirectory); }
@@ -154,7 +154,7 @@ final class SettingsScreen {
             @Override public void onNothingSelected(AdapterView<?> parent) {}
         });
         display.addView(startup);
-        display.addView(settingLabel("Bundled DMG firmware; other models use instant startup. Animated boot adds an original GBB splash/chime. A or Start skips the splash. No download needed."));
+        display.addView(settingLabel("Bundled DMG and MGB (Pocket) firmware; other models use instant startup. Animated boot uses original-style timing and an APU-synthesized chime with GBB lettering. A or Start hides the splash; firmware still runs. No download needed."));
         final AudioSettingModel audioSetting = new AudioSettingModel(
                 new AudioSettingModel.Store() {
                     @Override

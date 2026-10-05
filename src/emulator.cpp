@@ -15,12 +15,16 @@ Emulator::Emulator(Cartridge cartridge, const HardwareModel model,
         bus_.cartridge().cgb_compatibility_palette_id());
     splash_enabled_ = boot_rom_mode_ == BootRomMode::animated_dmg;
     if (boot_rom_mode_ == BootRomMode::replacement_dmg || splash_enabled_) {
-        if (hardware_model_ != HardwareModel::dmg) {
-            throw std::invalid_argument("DMG replacement boot requires the DMG hardware model");
+        if (hardware_model_ != HardwareModel::dmg && hardware_model_ != HardwareModel::mgb) {
+            throw std::invalid_argument("Monochrome replacement boot requires DMG or MGB hardware");
         }
         bus_.initialize_dmg_power_on();
-        bus_.install_boot_rom(dmg_boot_rom());
+        bus_.install_boot_rom(hardware_model_ == HardwareModel::mgb
+            ? (splash_enabled_ ? mgb_animated_boot_rom() : mgb_boot_rom())
+            : (splash_enabled_ ? dmg_animated_boot_rom() : dmg_boot_rom()));
         cpu_.reset_boot();
+        // Precompute outside the playback loop, not at the first audible note.
+        if (splash_enabled_) prepare_boot_splash_audio();
         return;
     }
     bus_.initialize_post_boot(hardware_model_);
@@ -45,7 +49,9 @@ void Emulator::reset() noexcept {
     splash_cached_frame_ = UINT64_MAX;
     if (boot_rom_mode_ == BootRomMode::replacement_dmg || splash_enabled_) {
         bus_.initialize_dmg_power_on();
-        bus_.install_boot_rom(dmg_boot_rom());
+        bus_.install_boot_rom(hardware_model_ == HardwareModel::mgb
+            ? (splash_enabled_ ? mgb_animated_boot_rom() : mgb_boot_rom())
+            : (splash_enabled_ ? dmg_animated_boot_rom() : dmg_boot_rom()));
         cpu_.reset_boot();
     } else if (boot_rom_mode_ == BootRomMode::diagnostic) {
         bus_.initialize_post_boot(hardware_model_);

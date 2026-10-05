@@ -227,7 +227,7 @@ CoreFactory gameboy_core_factory() {
                 cartridge.supports_cgb(), cartridge.supports_sgb());
             const auto boot_mode = (options.startup_mode == StartupMode::replacement_dmg ||
                                    options.startup_mode == StartupMode::animated_dmg) &&
-                                   model == gameboy::HardwareModel::dmg
+                                   (model == gameboy::HardwareModel::dmg || model == gameboy::HardwareModel::mgb)
                 ? (options.startup_mode == StartupMode::animated_dmg ? gameboy::BootRomMode::animated_dmg
                     : gameboy::BootRomMode::replacement_dmg) : gameboy::BootRomMode::post_boot;
             return std::make_unique<GameBoyCore>(std::move(cartridge), model, boot_mode);

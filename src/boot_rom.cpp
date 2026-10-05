@@ -1,5 +1,8 @@
 #include "gameboy/boot_rom.hpp"
 #include "../firmware/gameboy/dmg_boot_image.hpp"
+#include "../firmware/gameboy/mgb_boot_image.hpp"
+#include "../firmware/gameboy/dmg_animated_boot_image.hpp"
+#include "../firmware/gameboy/mgb_animated_boot_image.hpp"
 
 #include <cstddef>
 
@@ -8,6 +11,13 @@ namespace gameboy {
 const DiagnosticBootRom& dmg_boot_rom() noexcept {
     return firmware::dmg_boot_image;
 }
+
+const DiagnosticBootRom& mgb_boot_rom() noexcept {
+    return firmware::mgb_boot_image;
+}
+
+const DiagnosticBootRom& dmg_animated_boot_rom() noexcept { return firmware::dmg_animated_boot_image; }
+const DiagnosticBootRom& mgb_animated_boot_rom() noexcept { return firmware::mgb_animated_boot_image; }
 
 namespace {
 

@@ -155,7 +155,7 @@ void test_checksum_and_model_guards() {
     check(!finish_boot(invalid) && invalid.cpu().registers().pc < 0x100,
           "invalid header checksum keeps the boot image mapped, never starts cartridge");
     check(invalid.bus().read8(0xFF40) == 0, "failed checksum leaves LCD disabled");
-    for (auto model : {gameboy::HardwareModel::dmg0, gameboy::HardwareModel::mgb,
+    for (auto model : {gameboy::HardwareModel::dmg0,
                       gameboy::HardwareModel::cgb, gameboy::HardwareModel::sgb,
                       gameboy::HardwareModel::sgb2}) {
         bool rejected = false;

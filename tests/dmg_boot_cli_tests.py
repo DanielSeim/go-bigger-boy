@@ -60,7 +60,7 @@ class DmgBootCliTests(unittest.TestCase):
     def test_sgb_is_not_treated_as_dmg(self):
         result = self.run_rom("--model", "sgb", "--dmg-boot")
         self.assertEqual(result.returncode, 2)
-        self.assertIn("requires the DMG", result.stderr)
+        self.assertIn("requires DMG or MGB", result.stderr)
 
 
 if __name__ == "__main__":

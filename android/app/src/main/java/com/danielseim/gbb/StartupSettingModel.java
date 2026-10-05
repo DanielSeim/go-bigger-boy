@@ -3,7 +3,7 @@ package com.danielseim.gbb;
 /** Startup preferences change the next core construction, never a running core. */
 final class StartupSettingModel {
     static final String[] IDS = {"instant", "replacement-dmg", "animated-dmg"};
-    static final String[] NAMES = {"Instant startup", "GBB replacement boot", "GBB animated boot"};
+    static final String[] NAMES = {"Instant startup", "GBB fast boot", "GBB animated boot"};
     interface Store {
         String read();
         void write(String mode);

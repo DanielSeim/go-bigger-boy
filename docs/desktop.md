@@ -13,12 +13,13 @@ without arguments opens the game library dashboard:
 ```
 
 **Settings → General → Startup** on Windows, or **Startup** in the Linux SDL
-dashboard, offers **Instant startup** (default), **GBB replacement boot**, and
-**GBB animated boot** (original descending GBB lettering and two-note chime;
-A or Start skips the presentation). Both boot options run the same bundled
-original firmware only on the DMG hardware profile;
+dashboard, offers **Instant startup** (default), **GBB fast boot** (~1.03 seconds), and
+**GBB animated boot** (~5.59 seconds, original-style scrolling and APU-synthesized
+chime with GBB lettering; A or Start hides the presentation, not the firmware wait).
+Both boot options run bundled
+original firmware on DMG and MGB (Game Boy Pocket) hardware profiles;
 other profiles remain instant. Automatic model selection is unchanged, so use
-the explicit DMG profile for dual-mode titles. The setting applies on the next
+the explicit DMG or MGB profile for dual-mode titles. The setting applies on the next
 ROM start/restart, not to an already running core. No download is required.
 See [replacement firmware](../firmware/README.md) for the fast-start contract
 and limitations.

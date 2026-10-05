@@ -114,17 +114,18 @@ void snapshot(gameboy::Emulator& emulator) {
 int main(int argc, char** argv) {
     try {
         if (argc < 2) throw std::runtime_error(
-            "usage: gbb_dmg_boot_probe CARTRIDGE [--boot-rom FILE] [--max-cycles N] [--run-cycles N] [--align-frame] [--cold-clock-cycles N] [--audio-directory NEW_DIRECTORY] [--press-start-cycle N] [--serial-check]");
+            "usage: gbb_dmg_boot_probe CARTRIDGE [--boot-rom FILE] [--max-cycles N] [--run-cycles N] [--align-frame] [--cold-clock-cycles N] [--audio-directory NEW_DIRECTORY] [--press-start-cycle N] [--serial-check] [--boot-trace]");
         std::string reference;
         std::string audio_directory;
         std::vector<std::uint64_t> start_presses;
-        bool align_frame = false, serial_check = false;
+        bool align_frame = false, serial_check = false, boot_trace = false;
         std::uint64_t max_cycles = 40'000'000, run_cycles = 0;
         unsigned cold_clock_cycles = 0;
         for (int i = 2; i < argc; ++i) {
             const std::string option = argv[i];
             if (option == "--align-frame") { align_frame = true; continue; }
             if (option == "--serial-check") { serial_check = true; continue; }
+            if (option == "--boot-trace") { boot_trace = true; continue; }
             if (i + 1 >= argc) throw std::runtime_error("missing option value");
             const std::string value = argv[++i];
             if (option == "--boot-rom") reference = value;
@@ -167,6 +168,7 @@ int main(int argc, char** argv) {
         // Record it explicitly; CPU instruction cycle totals exclude this offset.
         emulator.bus().tick(cold_clock_cycles);
         AudioStats boot_audio, followup_audio;
+        if (boot_trace) emulator.bus().debug_enable_io_trace(true);
         while (emulator.bus().boot_rom_enabled() && emulator.cpu().total_cycles() < max_cycles) {
             (void)emulator.step();
             boot_audio.consume(emulator.take_audio_samples());
@@ -174,6 +176,9 @@ int main(int argc, char** argv) {
         if (emulator.bus().boot_rom_enabled()) throw std::runtime_error("boot handoff timed out");
         if (emulator.cpu().registers().pc != 0x100)
             throw std::runtime_error("boot did not hand off at PC=0100");
+        const auto boot_writes = boot_trace ? emulator.bus().debug_take_io_trace()
+                                           : std::vector<gameboy::MemoryBus::IoTraceEvent>{};
+        emulator.bus().debug_enable_io_trace(false);
         const auto serial_handoff = serial_check ? emulator.save_state() : std::vector<std::uint8_t>{};
         std::ofstream pcm_output;
         if (!audio_directory.empty()) {
@@ -246,7 +251,13 @@ int main(int argc, char** argv) {
             if (!pcm_output) throw std::runtime_error("audio capture write failed");
         }
         std::cout << ",\"followup\":"; snapshot(emulator);
-        std::cout << ",\"audio\":{\"boot\":"; boot_audio.print();
+        std::cout << ",\"boot_writes\":[";
+        for (std::size_t index = 0; index < boot_writes.size(); ++index) {
+            if (index) std::cout << ',';
+            const auto& event = boot_writes[index];
+            std::cout << '[' << event.cycle << ',' << event.address << ',' << +event.value << ']';
+        }
+        std::cout << "],\"audio\":{\"boot\":"; boot_audio.print();
         std::cout << ",\"followup\":"; followup_audio.print();
         std::cout << "},\"apu_writes\":[";
         bool first = true;

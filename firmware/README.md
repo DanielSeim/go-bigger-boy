@@ -8,7 +8,7 @@ repository's GPL-3.0-or-later license.
 ## DMG revision 4
 
 `gameboy/dmg.asm` is an original, 256-byte **fast cold-start** implementation.
-It is opt-in, DMG-only, and not a cycle-exact recreation of Nintendo's startup.
+It is opt-in and not a cycle-exact recreation of Nintendo's startup.
 Instant startup remains the default; the existing diagnostic ROM is unchanged.
 
 The firmware executes on the emulated CPU from `0000`, with the LCD and APU
@@ -40,9 +40,26 @@ No boot logo or trademark tile is installed in VRAM. WRAM and cartridge RAM
 are not modified by the firmware. Its stack uses two bytes at `FFFC`–`FFFD`;
 it does not write the diagnostic `GBB` HRAM marker.
 
+### Game Boy Pocket (MGB)
+
+The MGB image is built from the same original source with `GBB_HANDOFF_A=$FF`.
+It differs from the DMG image by exactly one byte: the immediate in the final
+`LD A` instruction. Both execute the same instructions for the same number of
+clocks; Pocket hands the cartridge `A=FF` rather than `01`, including the
+`FF50` unmap write. This follows the documented [Pocket handoff contract](https://gbdev.io/pandocs/Power_Up_Sequence.html).
+Both checksum-dependent flag paths, peripheral initialization, quiet audio,
+reset and mapped-image save-state behavior are retained. The optional original
+GBB animation/chime is also available on MGB.
+
+Tests use synthetic logo-free cartridges and verify image differences, CPU
+registers, timer/LCD/APU state, cartridge-visible detection, checksum rejection,
+reset, mid-boot restore and frontend core selection. They do not establish
+cycle-exact equivalence to physical Pocket cold startup or its original ROM.
+
 ### Rebuild and verify
 
-Normal builds consume the checked-in `gameboy/dmg_boot_image.hpp`; they do not
+Normal builds consume the checked-in fast and animated `*_boot_image.hpp`
+images for DMG and MGB; they do not
 require RGBDS, Python, downloaded ROMs, or network access. With RGBDS (`rgbasm`
 and `rgblink`; tested with 1.0.1) and Python installed:
 
@@ -51,6 +68,12 @@ python3 scripts/build_dmg_boot_rom.py
 python3 scripts/build_dmg_boot_rom.py --check
 python3 scripts/build_dmg_boot_rom.py --check-source # provenance check, no RGBDS required
 python3 scripts/build_dmg_boot_rom.py --check --output /tmp/gbb-dmg-boot.bin
+python3 scripts/build_dmg_boot_rom.py --model mgb
+python3 scripts/build_dmg_boot_rom.py --model mgb --check
+python3 scripts/build_dmg_boot_rom.py --model mgb --check-source
+python3 scripts/build_dmg_boot_rom.py --model mgb --check --output /tmp/gbb-mgb-boot.bin
+python3 scripts/build_dmg_boot_rom.py --animated --check
+python3 scripts/build_dmg_boot_rom.py --model mgb --animated --check
 ```
 
 The generator assembles only `dmg.asm`, verifies the 256-byte size and final
@@ -66,28 +89,46 @@ ctest --test-dir build -R 'gameboy_dmg_' --output-on-failure
 ```
 
 The firmware is also available through `BootRomMode::replacement_dmg` in the
-core API. Other hardware profiles are rejected rather than silently receiving
-DMG initialization. Desktop, Android and web settings expose **Startup** with
-**Instant startup** (default), **GBB replacement boot**, and **GBB animated boot**. Desktop and Android
+core API (also named `replacement_mgb` for Pocket). The selected DMG/MGB
+hardware profile chooses its matching image; other profiles are rejected by
+the raw emulator API rather than silently receiving monochrome initialization.
+Desktop, Android and web settings expose **Startup** with
+**Instant startup** (default), **GBB fast boot**, and **GBB animated boot**. Desktop and Android
 persist `boot.Startup = instant`, `replacement-dmg`, or `animated-dmg` in `settings.ini`; web
 persists the choice in browser local storage. No external firmware download is
 required: the image is bundled in every build.
 
-The animated option runs the exact same 256-byte replacement firmware, with
-a shared host presentation layered over it: original descending **Go Bigger Boy**
-pixel lettering and an original synthesized two-note pulse chime. No Nintendo
-logo, sound recording or firmware instructions are included. This is not an
-animation encoded inside the boot ROM. It fits the existing approximately
-1.03-second boot, without adding emulated cycles or modifying RAM, VRAM or APU
-state. **A or Start** skips the presentation and chime, not firmware execution
-or header validation. The startup screen stays flat even if voxel rendering is
-selected; the chosen renderer resumes at cartridge handoff. Muted audio stays muted.
+The existing `replacement-dmg` and `animated-dmg` setting IDs are retained for
+compatibility; they select the matching firmware on both DMG and MGB.
+
+The animated option selects a separate original 256-byte firmware variant. Its
+CPU-executed wait adds exactly 19,136,512 clocks (292 whole DIV wraps), making
+startup about **5.59 seconds**, while preserving the fast boot's eventual
+CPU/register/timer/LCD/APU handoff apart from the elapsed clock. Fast mode stays
+about 1.03 seconds. No gameplay runs behind the intro.
+
+The shared presentation keeps original descending **Go Bigger Boy** lettering,
+moving one pixel on alternating 3/2-VBlank waits, then holding. The chime is
+synthesized by a separate GBB APU, using the observable DMG/MGB duty, envelope,
+period and trigger timings: approximately 1048.576 Hz followed by 2080.508 Hz,
+about 84 ms apart, with the hardware's stepped decay. It is cached before
+playback so generation cannot stall the first note. An execution-only local
+reference measured the first triggers at clocks 17,467,324 and 17,818,480 and
+original handoff at 23,440,324; replacement handoff is within one video frame.
+No Nintendo logo, recorded audio, ROM instructions or extracted graphics are
+included. This aligns presentation behavior, not physical-speaker frequency
+response or cycle-exact original firmware execution.
+
+**A or Start** hides the presentation and chime, not the firmware wait or header
+validation; use fast/instant mode to avoid the wait. The startup screen stays
+flat even with voxel rendering selected, and the chosen renderer resumes at
+cartridge handoff. Muted audio stays muted.
 
 The choice applies when a ROM is started again (including frontend restart),
 not to an already running core. It does not force a hardware model. Automatic
 selection still prefers CGB for CGB-capable titles and SGB for SGB-capable titles;
 select the **DMG** hardware profile explicitly if you want to use the replacement
-with a dual-mode title. Non-DMG profiles retain instant startup. Experimental
+with a dual-mode title, or **MGB** for Pocket. Other profiles retain instant startup. Experimental
 SNES-side SGB firmware playback remains separate and still needs user firmware.
 
 ### State and reset contracts
@@ -127,9 +168,10 @@ user-provided local original as an opaque behavioral reference; it never
 disassembles, exports or incorporates its instructions into the replacement.
 
 This first milestone is hardware initialization and deterministic handoff, not
-100% behavioral equivalence. In particular, startup duration, cold DIV/resampler
-phase, logo tiles/tile maps, trademark graphics, animation and chime differ
-from the original. Games or power-up conformance tests that depend on those
+100% behavioral equivalence. Fast mode deliberately shortens startup; animated
+mode now follows the measured scroll cadence and synthesized chime parameters.
+Cold DIV/resampler phase, original logo tiles/tile maps and trademark graphics
+still differ from the original. Games or power-up conformance tests that depend on those
 details may fail; the existing post-boot path remains the production default.
 The core now models DMG's early LY wrap on the final VBlank line, so fast-start
 enters the cartridge with LY=0 and STAT=`85` (VBlank), rather than erroneously
@@ -147,7 +189,7 @@ automated one-second quiet-output check; retriggering produces normal sound.
 In the fast replacement mode there is a DAC/mixer power-on DC transient during
 boot, not a chime. That mode uses no host mute or private post-boot state
 injection. The optional animated mode replaces only the returned pre-handoff
-PCM with its original chime, without changing the emulated APU state.
+PCM with its separately synthesized chime, without changing the game APU state.
 Broader title-level and independent-hardware validation and model-specific boot
 implementations remain future milestones. SNES-side
 SGB1/SGB2 and SPC700 replacement firmware are not implemented here yet.

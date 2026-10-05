@@ -2,10 +2,37 @@
 ; Original GBB DMG cold-start firmware, revision 4.
 ; Written from the public hardware contract, not a Nintendo disassembly.
 ; Intentionally no Nintendo logo, trademark tile, animation or logo check.
+; The MGB build changes only the final accumulator immediate to $FF.
+IF !DEF(GBB_HANDOFF_A)
+    DEF GBB_HANDOFF_A EQU $01
+ENDC
+ASSERT GBB_HANDOFF_A == $01 || GBB_HANDOFF_A == $FF
 
 SECTION "DMG startup", ROM0[$0000]
 DmgBoot:
     di
+IF DEF(GBB_ANIMATED)
+    ; Original delay code, not extracted from any reference firmware.
+    ; Exactly 292 DIV wraps (19,136,512 clocks = 4.5625 seconds).
+    ; Keeping a whole number of wraps preserves the fast firmware's later
+    ; DIV/APU/serial phase. The shared host presentation runs during this wait.
+    ld d, 12
+.intro_outer
+    ld bc, 56952
+.intro_inner
+    dec bc
+    ld a, b
+    or c
+    jr nz, .intro_inner
+    dec d
+    jr nz, .intro_outer
+    ld b, 21
+.intro_tail
+    dec b
+    jr nz, .intro_tail
+    nop
+    nop
+ENDC
     ld sp, $FFFE
     xor a
     ; Clear SC early so the remaining ordinary CPU clocks leave serial phase
@@ -163,7 +190,7 @@ DmgBoot:
 .flags_ready
     push bc
     pop af
-    ld a, $01
+    ld a, GBB_HANDOFF_A
     ld bc, $0013
     ld de, $00D8
     ld hl, $014D

@@ -666,6 +666,17 @@ if(GAMEBOY_BUILD_TESTS)
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_dmg_boot_rom.py --check-source)
         set_tests_properties(gameboy_dmg_firmware_source PROPERTIES LABELS "firmware;boot")
+        add_test(NAME gameboy_mgb_firmware_source
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_dmg_boot_rom.py --model mgb --check-source)
+        set_tests_properties(gameboy_mgb_firmware_source PROPERTIES LABELS "firmware;boot")
+        foreach(boot_model dmg mgb)
+            add_test(NAME gameboy_${boot_model}_animated_firmware_source
+                     COMMAND ${Python3_EXECUTABLE}
+                             ${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_dmg_boot_rom.py
+                             --model ${boot_model} --animated --check-source)
+            set_tests_properties(gameboy_${boot_model}_animated_firmware_source PROPERTIES LABELS "firmware;boot")
+        endforeach()
         if(TARGET gameboy_test_runner)
             add_test(NAME gameboy_dmg_boot_cli
                      COMMAND ${Python3_EXECUTABLE}
@@ -682,6 +693,19 @@ if(GAMEBOY_BUILD_TESTS)
                              --rgbasm ${GBB_RGBASM} --rgblink ${GBB_RGBLINK})
             set_tests_properties(gameboy_dmg_firmware_reproducible
                                  PROPERTIES LABELS "firmware;boot")
+            add_test(NAME gameboy_mgb_firmware_reproducible
+                     COMMAND ${Python3_EXECUTABLE}
+                             ${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_dmg_boot_rom.py --model mgb --check
+                             --rgbasm ${GBB_RGBASM} --rgblink ${GBB_RGBLINK})
+            set_tests_properties(gameboy_mgb_firmware_reproducible PROPERTIES LABELS "firmware;boot")
+            foreach(boot_model dmg mgb)
+                add_test(NAME gameboy_${boot_model}_animated_firmware_reproducible
+                         COMMAND ${Python3_EXECUTABLE}
+                                 ${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_dmg_boot_rom.py
+                                 --model ${boot_model} --animated --check
+                                 --rgbasm ${GBB_RGBASM} --rgblink ${GBB_RGBLINK})
+                set_tests_properties(gameboy_${boot_model}_animated_firmware_reproducible PROPERTIES LABELS "firmware;boot")
+            endforeach()
         endif()
         add_test(NAME gameboy_audio_reference_tool
                  COMMAND ${Python3_EXECUTABLE}
@@ -768,6 +792,10 @@ if(GAMEBOY_BUILD_TESTS)
     add_executable(gameboy_boot_splash_tests tests/boot_splash_tests.cpp)
     target_link_libraries(gameboy_boot_splash_tests PRIVATE gameboy_core)
     add_test(NAME gameboy_boot_splash COMMAND gameboy_boot_splash_tests)
+    add_executable(gameboy_mgb_boot_tests tests/mgb_boot_tests.cpp)
+    target_link_libraries(gameboy_mgb_boot_tests PRIVATE gbb_core_api)
+    add_test(NAME gameboy_mgb_boot COMMAND gameboy_mgb_boot_tests)
+    set_tests_properties(gameboy_mgb_boot PROPERTIES LABELS "firmware;boot")
     set_tests_properties(gameboy_dmg_boot gameboy_boot_splash PROPERTIES LABELS "firmware;boot")
     target_link_libraries(gameboy_tests PRIVATE gbb_core_api)
     add_custom_command(TARGET gameboy_tests POST_BUILD

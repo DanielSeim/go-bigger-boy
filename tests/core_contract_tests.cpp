@@ -448,7 +448,8 @@ int main() {
         check(gbb::gameboy_emulator(animated.get())->startup_animation_active(),
               "factory exposes original animated DMG startup");
         for (const auto model : gameboy::selectable_hardware_models) {
-            if (model == gameboy::HardwareModel::automatic || model == gameboy::HardwareModel::dmg) continue;
+            if (model == gameboy::HardwareModel::automatic || model == gameboy::HardwareModel::dmg ||
+                model == gameboy::HardwareModel::mgb) continue;
             options.hardware_model = std::string{gameboy::hardware_model_id(model)};
             auto other = registry.create(rom, options);
             check(!gbb::gameboy_emulator(other.get())->bus().boot_rom_enabled(),
