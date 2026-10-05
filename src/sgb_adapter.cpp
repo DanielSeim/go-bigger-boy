@@ -145,7 +145,8 @@ void SgbAdapter::apply_command(const Packet& packet, const std::size_t size,
         return;
     }
     const auto encoded_packets = static_cast<std::size_t>(packet[0] & 0x07U);
-    const auto expected_packets = encoded_packets == 0 ? 1 : encoded_packets;
+    const bool bootstrap = packet[0] >= 0xF1 && packet[0] <= 0xFB && (packet[0] & 1U);
+    const auto expected_packets = bootstrap ? 1 : encoded_packets == 0 ? 1 : encoded_packets;
     if (expected_packets * Joypad::sgb_packet_size != size) {
         ++diagnostics_.malformed_packets;
         return;

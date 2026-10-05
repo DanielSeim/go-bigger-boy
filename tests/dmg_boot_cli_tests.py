@@ -86,9 +86,10 @@ class DmgBootCliTests(unittest.TestCase):
         self.assertIn("mutually exclusive", result.stderr)
 
     def test_sgb_is_not_treated_as_dmg(self):
-        result = self.run_rom("--model", "sgb", "--dmg-boot")
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("requires DMG0, DMG, MGB or CGB", result.stderr)
+        for model in ("sgb", "sgb2"):
+            result = self.run_rom("--model", model, "--dmg-boot")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("PASS (serial)", result.stdout)
 
 
 if __name__ == "__main__":

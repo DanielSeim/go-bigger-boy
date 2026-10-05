@@ -452,21 +452,24 @@ int main() {
                 model == gameboy::HardwareModel::mgb || model == gameboy::HardwareModel::dmg0 || gameboy::is_cgb_hardware(model)) continue;
             options.hardware_model = std::string{gameboy::hardware_model_id(model)};
             auto other = registry.create(rom, options);
-            check(!gbb::gameboy_emulator(other.get())->bus().boot_rom_enabled(),
-                  "non-DMG profiles safely retain instant startup");
+            check(gbb::gameboy_emulator(other.get())->bus().boot_rom_enabled(),
+                  "SGB profiles select their bundled bootstrap");
+            check(!gbb::gameboy_emulator(other.get())->startup_animation_active(),
+                  "SGB animated preference never shows the DMG intro");
             check(gbb::gameboy_emulator(other.get())->hardware_model() == model,
                   "startup preference never overrides explicit hardware profile");
             auto baseline_options = options;
             baseline_options.startup_mode = gbb::StartupMode::instant;
             auto baseline = registry.create(rom, baseline_options);
-            check(other->save_state() == baseline->save_state(),
-                  "non-DMG fallback is identical to its existing instant state");
+            check(!gbb::gameboy_emulator(baseline.get())->bus().boot_rom_enabled(),
+                  "SGB instant startup remains available");
         }
         options.hardware_model = std::string{gameboy::hardware_model_id(gameboy::HardwareModel::automatic)};
         rom[0x146] = 3;
         auto sgb = registry.create(rom, options);
-        check(!gbb::gameboy_emulator(sgb.get())->bus().boot_rom_enabled(),
-              "automatic SGB does not receive DMG firmware");
+        check(gbb::gameboy_emulator(sgb.get())->bus().boot_rom_enabled() &&
+              !gbb::gameboy_emulator(sgb.get())->startup_animation_active(),
+              "automatic SGB receives its own bootstrap, not DMG firmware");
         rom[0x143] = 0x80;
         auto cgb = registry.create(rom, options);
         check(gbb::gameboy_emulator(cgb.get())->bus().boot_rom_enabled(),

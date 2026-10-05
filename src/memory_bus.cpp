@@ -193,6 +193,14 @@ void MemoryBus::initialize_cgb_power_on(const HardwareModel model) {
     static_cast<void>(joypad_.write(0x30));
 }
 
+void MemoryBus::initialize_sgb_power_on(const HardwareModel model) {
+    initialize_dmg_power_on();
+    apu_.initialize_power_on(model);
+    ppu_.set_sgb_mode(true);
+    static_cast<void>(joypad_.write(0x30));
+    sgb_adapter_.set_enabled(true);
+}
+
 void MemoryBus::install_boot_rom(const DiagnosticBootRom& rom) noexcept {
     boot_rom_ = rom;
     boot_rom_enabled_ = true;

@@ -673,12 +673,15 @@ if(GAMEBOY_BUILD_TESTS)
         add_test(NAME gameboy_dmg0_firmware_source
                  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_dmg_boot_rom.py --model dmg0 --check-source)
         set_tests_properties(gameboy_dmg0_firmware_source PROPERTIES LABELS "firmware;boot")
-        foreach(boot_model cgb0 cgb agb0 agb)
+        foreach(boot_model cgb0 cgb agb0 agb sgb sgb2)
             add_test(NAME gameboy_${boot_model}_firmware_source
                      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_dmg_boot_rom.py
                              --model ${boot_model} --check-source)
             set_tests_properties(gameboy_${boot_model}_firmware_source PROPERTIES LABELS "firmware;boot")
         endforeach()
+        add_test(NAME gameboy_sgb_boot_validation_tool
+                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_boot_validation_tests.py)
+        set_tests_properties(gameboy_sgb_boot_validation_tool PROPERTIES LABELS "firmware;boot;sgb")
         foreach(boot_model dmg0 dmg mgb cgb0 cgb agb0 agb)
             add_test(NAME gameboy_${boot_model}_animated_firmware_source
                      COMMAND ${Python3_EXECUTABLE}
@@ -813,6 +816,10 @@ if(GAMEBOY_BUILD_TESTS)
     add_test(NAME gameboy_boot_splash COMMAND gameboy_boot_splash_tests)
     add_executable(gameboy_mgb_boot_tests tests/mgb_boot_tests.cpp)
     add_executable(gameboy_cgb_boot_tests tests/cgb_boot_tests.cpp)
+    add_executable(gameboy_sgb_replacement_boot_tests tests/sgb_replacement_boot_tests.cpp)
+    target_link_libraries(gameboy_sgb_replacement_boot_tests PRIVATE gbb_core_api)
+    add_test(NAME gameboy_sgb_replacement_boot COMMAND gameboy_sgb_replacement_boot_tests)
+    set_tests_properties(gameboy_sgb_replacement_boot PROPERTIES LABELS "firmware;boot;sgb")
     target_link_libraries(gameboy_cgb_boot_tests PRIVATE gbb_core_api)
     add_test(NAME gameboy_cgb_boot COMMAND gameboy_cgb_boot_tests)
     set_tests_properties(gameboy_cgb_boot PROPERTIES LABELS "firmware;boot")

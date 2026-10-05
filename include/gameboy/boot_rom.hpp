@@ -22,6 +22,7 @@ enum class BootRomMode {
     animated_cgb = animated_dmg,
     replacement_agb = replacement_dmg,
     animated_agb = animated_dmg,
+    replacement_sgb = replacement_dmg,
 };
 
 constexpr std::size_t diagnostic_boot_rom_size = 0x100;
@@ -36,6 +37,8 @@ using DiagnosticBootRom = std::array<std::uint8_t, diagnostic_boot_rom_size>;
 // Original cold-start firmware for the monochrome and color profiles.
 // Unlike the diagnostic ROM, this image initializes peripherals itself.
 [[nodiscard]] const DiagnosticBootRom& dmg_boot_rom() noexcept;
+[[nodiscard]] const DiagnosticBootRom& sgb_boot_rom() noexcept;
+[[nodiscard]] const DiagnosticBootRom& sgb2_boot_rom() noexcept;
 [[nodiscard]] const DiagnosticBootRom& dmg0_boot_rom() noexcept;
 [[nodiscard]] const DiagnosticBootRom& dmg0_animated_boot_rom() noexcept;
 [[nodiscard]] const DiagnosticBootRom& mgb_boot_rom() noexcept;

@@ -157,12 +157,10 @@ void test_checksum_and_model_guards() {
     check(invalid.bus().read8(0xFF40) == 0, "failed checksum leaves LCD disabled");
     for (auto model : {gameboy::HardwareModel::sgb,
                       gameboy::HardwareModel::sgb2}) {
-        bool rejected = false;
-        try {
-            gameboy::Emulator wrong(gameboy::Cartridge(cartridge()), model,
-                                   gameboy::BootRomMode::replacement_dmg);
-        } catch (const std::invalid_argument&) { rejected = true; }
-        check(rejected, "unsupported model cannot silently execute DMG firmware");
+        gameboy::Emulator sgb(gameboy::Cartridge(cartridge()), model,
+                             gameboy::BootRomMode::replacement_dmg);
+        check(finish_boot(sgb) && sgb.cpu().registers().c == 0x14 &&
+              sgb.cpu().registers().h == 0xc0, "SGB selects its own firmware, never DMG firmware");
     }
 }
 

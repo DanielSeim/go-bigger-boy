@@ -78,11 +78,13 @@ preferences for that process:
 ./build-desktop/gbb game.gb --sgb-firmware /path/to/private/firmware --sgb-model sgb2
 ```
 
-The directory must contain `sgb2.program.rom`, `sgb2.boot.rom` (256 bytes), and
-`spc700.rom` (64 bytes). For `--sgb-model sgb`, supply `sgb1.program.rom` and
-`sgb.boot.rom` instead. The default experimental model is SGB2. Files are loaded
+The directory must contain `sgb2.program.rom` and `spc700.rom` (64 bytes).
+For `--sgb-model sgb`, supply `sgb1.program.rom` instead. The original GBB
+256-byte SGB/SGB2 bootstrap is bundled. An optional `sgb2.boot.rom` or
+`sgb.boot.rom` in the directory overrides it; malformed overrides fail rather
+than silently falling back. The default experimental model is SGB2. Private files are loaded
 only after this explicit opt-in; missing/invalid images fail without an HLE
-fallback. No images are downloaded, bundled, or added to releases.
+fallback. No proprietary images are downloaded, bundled, or added to releases.
 
 A single `SgbHost` owns GB execution, live input, and combined GB/SNES audio.
 SDL consumes its 48 kHz stereo samples through the existing bounded playback

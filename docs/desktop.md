@@ -17,8 +17,8 @@ dashboard, offers **Instant startup** (default), **GBB fast boot** (~1.03 second
 **GBB animated boot** (~5.59 seconds, original-style scrolling and APU-synthesized
 chime with GBB lettering; A or Start hides the presentation, not the firmware wait).
 Both boot options run bundled
-original firmware on DMG0, DMG, MGB (Game Boy Pocket) and CGB hardware profiles;
-SGB profiles remain instant. Automatic model selection is unchanged, so use
+original firmware on DMG0, DMG, MGB (Game Boy Pocket), CGB, SGB and SGB2 profiles.
+SGB models use their header bootstrap without the DMG animation. Automatic model selection is unchanged, so use
 the explicit DMG0, DMG or MGB profile for dual-mode titles. DMG0 animated startup
 takes about 5.93 seconds and has its own early-model handoff and failure blink.
 CGB animated startup takes about 3.2 seconds, with bold italic **GO BIGGER BOY**

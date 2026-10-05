@@ -119,6 +119,7 @@ int main(int argc, char** argv) {
         std::string audio_directory;
         std::vector<std::uint64_t> start_presses;
         bool align_frame = false, serial_check = false, boot_trace = false;
+        auto model = gameboy::HardwareModel::dmg;
         std::uint64_t max_cycles = 40'000'000, run_cycles = 0;
         unsigned cold_clock_cycles = 0;
         for (int i = 2; i < argc; ++i) {
@@ -128,7 +129,12 @@ int main(int argc, char** argv) {
             if (option == "--boot-trace") { boot_trace = true; continue; }
             if (i + 1 >= argc) throw std::runtime_error("missing option value");
             const std::string value = argv[++i];
-            if (option == "--boot-rom") reference = value;
+            if (option == "--model") {
+                if (value == "sgb") model = gameboy::HardwareModel::sgb;
+                else if (value == "sgb2") model = gameboy::HardwareModel::sgb2;
+                else if (value != "dmg") throw std::runtime_error("probe model must be dmg, sgb or sgb2");
+            }
+            else if (option == "--boot-rom") reference = value;
             else if (option == "--audio-directory") audio_directory = value;
             else if (option == "--max-cycles" || option == "--run-cycles" || option == "--cold-clock-cycles" || option == "--press-start-cycle") {
                 std::size_t used = 0;
@@ -155,7 +161,7 @@ int main(int argc, char** argv) {
         // persistence writes. Both runs use exactly the same cold baseline.
         const auto cartridge_bytes = read_file(argv[1]);
         gameboy::Emulator emulator(gameboy::Cartridge(cartridge_bytes),
-            gameboy::HardwareModel::dmg, gameboy::BootRomMode::replacement_dmg);
+            model, gameboy::BootRomMode::replacement_dmg);
         if (!reference.empty()) {
             const auto bytes = read_file(reference);
             if (bytes.size() != gameboy::diagnostic_boot_rom_size)

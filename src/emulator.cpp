@@ -24,6 +24,8 @@ void reset_post_boot_cpu(Cpu& cpu, MemoryBus& bus, HardwareModel model) noexcept
         static_cast<std::uint8_t>(bus.cgb_mode() ? 0x0d : legacy ? 0x1a : 0x7c), 0xfffe, 0x100});
 }
 const DiagnosticBootRom& replacement_image(HardwareModel model, bool animated) noexcept {
+    if (model == HardwareModel::sgb) return sgb_boot_rom();
+    if (model == HardwareModel::sgb2) return sgb2_boot_rom();
     if (model == HardwareModel::agb0) return animated ? agb0_animated_boot_rom() : agb0_boot_rom();
     if (model == HardwareModel::agb) return animated ? agb_animated_boot_rom() : agb_boot_rom();
     if (model == HardwareModel::cgb0) return animated ? cgb0_animated_boot_rom() : cgb0_boot_rom();
@@ -41,12 +43,11 @@ Emulator::Emulator(Cartridge cartridge, const HardwareModel model,
                                              bus_.cartridge().supports_sgb());
     automatic_dmg_palette_ = cgb_compatibility_palette(
         bus_.cartridge().cgb_compatibility_palette_id());
-    splash_enabled_ = boot_rom_mode_ == BootRomMode::animated_dmg;
-    if (boot_rom_mode_ == BootRomMode::replacement_dmg || splash_enabled_) {
-        if (hardware_model_ != HardwareModel::dmg0 && hardware_model_ != HardwareModel::dmg && hardware_model_ != HardwareModel::mgb && !is_cgb_hardware(hardware_model_)) {
-            throw std::invalid_argument("Replacement boot requires DMG0, DMG, MGB or CGB hardware");
-        }
+    splash_enabled_ = boot_rom_mode_ == BootRomMode::animated_dmg &&
+        hardware_model_ != HardwareModel::sgb && hardware_model_ != HardwareModel::sgb2;
+    if (boot_rom_mode_ == BootRomMode::replacement_dmg || boot_rom_mode_ == BootRomMode::animated_dmg) {
         if (is_cgb_hardware(hardware_model_)) bus_.initialize_cgb_power_on(hardware_model_);
+        else if (hardware_model_ == HardwareModel::sgb || hardware_model_ == HardwareModel::sgb2) bus_.initialize_sgb_power_on(hardware_model_);
         else bus_.initialize_dmg_power_on();
         bus_.install_boot_rom(replacement_image(hardware_model_, splash_enabled_));
         cpu_.reset_boot();
@@ -73,12 +74,14 @@ Emulator Emulator::from_file(const std::filesystem::path& path,
 }
 
 void Emulator::reset() noexcept {
-    splash_enabled_ = boot_rom_mode_ == BootRomMode::animated_dmg;
+    splash_enabled_ = boot_rom_mode_ == BootRomMode::animated_dmg &&
+        hardware_model_ != HardwareModel::sgb && hardware_model_ != HardwareModel::sgb2;
     splash_skipped_ = false;
     splash_consumed_frame_ = splash_handoff_cycles_ = splash_audio_cursor_ = 0;
     splash_cached_frame_ = UINT64_MAX;
-    if (boot_rom_mode_ == BootRomMode::replacement_dmg || splash_enabled_) {
+    if (boot_rom_mode_ == BootRomMode::replacement_dmg || boot_rom_mode_ == BootRomMode::animated_dmg) {
         if (is_cgb_hardware(hardware_model_)) bus_.initialize_cgb_power_on(hardware_model_);
+        else if (hardware_model_ == HardwareModel::sgb || hardware_model_ == HardwareModel::sgb2) bus_.initialize_sgb_power_on(hardware_model_);
         else bus_.initialize_dmg_power_on();
         bus_.install_boot_rom(replacement_image(hardware_model_, splash_enabled_));
         cpu_.reset_boot();

@@ -193,6 +193,24 @@ int main() {
         check(gbb::sdl::desktop_launch_options(6,smoke_args).smoke_frames==36000,"bounded ten-minute qualification parsed");
         smoke_args[5]=excessive;
         rejects([&]{gbb::sdl::desktop_launch_options(6,smoke_args);},"unbounded qualification rejected");
+        // GB-side images are optional; private program and SPC IPL stay required.
+        std::filesystem::remove(root/"sgb.boot.rom");
+        std::filesystem::remove(root/"sgb2.boot.rom");
+        for (const auto name : {"sgb", "sgb2"}) {
+            gbb::validate_sgb_firmware_images(root,name);
+            options.hardware_model=name;
+            auto bundled=gbb::create_core(cfg.game_rom,options);
+            check(gbb::advance_to_frame(*bundled,bundled->descriptor().nominal_cycles_per_frame).frame_ready,
+                  "bundled GB bootstrap works with synthetic SNES host");
+            bundled->consume_frame();
+            const auto state=bundled->save_state(); bundled->load_state(state);
+            check(bundled->save_state()==state,"bundled firmware snapshot roundtrip");
+            bundled->reset();
+            check(gbb::advance_to_frame(*bundled,bundled->descriptor().nominal_cycles_per_frame).frame_ready,
+                  "bundled firmware reset resumes");
+        }
+        write(root/"sgb2.boot.rom",std::array<std::uint8_t,1>{0});
+        rejects([&]{gbb::validate_sgb_firmware_images(root,"sgb2");},"malformed boot override does not fall back");
         std::filesystem::remove_all(root); return 0;
     } catch(const std::exception& e) {
         std::cerr<<e.what()<<'\n'; std::filesystem::remove_all(root); return 1;

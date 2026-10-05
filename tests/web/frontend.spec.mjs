@@ -298,6 +298,41 @@ test('Color boot fades GBB lettering and hands off native and compatibility regi
   }
 });
 
+test('SGB profiles run their bundled header bootstrap without a DMG intro', async ({page}) => {
+  await page.goto('/');
+  await expect(page.locator('#startup-mode')).toBeEnabled({timeout: 90_000});
+  await page.locator('#audio-enabled').uncheck();
+  for (const profile of ['sgb', 'sgb2', 'auto']) {
+    await page.locator('#hardware-model').selectOption(profile);
+    for (const mode of ['instant', 'replacement-dmg', 'animated-dmg']) {
+      await page.locator('#startup-mode').selectOption(mode);
+      const rom = new Uint8Array(0x8000);
+      rom.set([0xc3, 0x50, 0x01], 0x100);
+      // Publish boot ID in SCY, and the first header-packet ID in SCX.
+      rom.set([0x47, 0xfa, 0x00, 0xc0, 0xe0, 0x43, 0x78, 0xe0, 0x42, 0x18, 0xfe], 0x150);
+      rom[0x146] = 3;
+      rom[0x14d] = 0x42; // Deliberately invalid: SGB GB-side boot performs no checks.
+      const name = `gbb-${profile}-${mode}.gb`;
+      await page.locator('#rom-file').setInputFiles({
+        name, mimeType: 'application/octet-stream', buffer: Buffer.from(rom),
+      });
+      await expect(page).toHaveTitle(`${name} — Go Bigger Boy`);
+      if (mode !== 'instant') {
+        await expect.poll(async () => page.evaluate(() =>
+          JSON.parse(UTF8ToString(Module._gbb_export_scene_snapshot())).emulation_cycles
+        ), {intervals: [10], timeout: 30000}).toBeLessThan(1000000);
+      }
+      await expect.poll(async () => page.evaluate(() => {
+        const scene = JSON.parse(UTF8ToString(Module._gbb_export_scene_snapshot()));
+        return [scene.scx, scene.scy];
+      }), {timeout: 30000}).toEqual([mode === 'instant' ? 0 : 0xf1, profile === 'sgb2' ? 255 : 1]);
+      await expect.poll(async () => page.evaluate(() =>
+        JSON.parse(UTF8ToString(Module._gbb_export_scene_snapshot())).emulation_cycles
+      ), {timeout: 30000}).toBeGreaterThan(mode === 'instant' ? 1000 : 2000000);
+    }
+  }
+});
+
 test('AGB profiles expose GBA detection registers in all startup modes', async ({page}) => {
   await page.goto('/');
   await expect(page.locator('#startup-mode')).toBeEnabled({timeout: 90_000});

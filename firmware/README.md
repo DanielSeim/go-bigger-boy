@@ -5,6 +5,37 @@ It does **not** contain Nintendo boot ROMs, disassemblies, logos, sound assets,
 SNES program ROMs, or SPC700 IPL dumps. Sources and generated images use the
 repository's GPL-3.0-or-later license.
 
+## SGB/SGB2 Game Boy-side bootstrap
+
+`gameboy/sgb.asm` builds original 256-byte SGB and SGB2 images. Both clear VRAM,
+initialize audio/LCD, construct six header packets in `C000–C05F`, send them
+through ordinary JOYP writes, wait for four VBlanks after each packet, and unmap
+at `00FE`. Each packet contains its ID (`F1/F3/F5/F7/F9/FB`), a modulo-256 payload
+sum and fourteen header bytes; the final payload is zero-padded. Pulses follow
+the documented minimum five-M-cycle low / fifteen-M-cycle high spacing.
+Handoff is `PC=0100, SP=FFFE, BC=0014, DE=0000, HL=C060, F=00`, with `A=01`
+for SGB and `A=FF` for SGB2. No header validity check or proprietary logo is
+embedded in this GB-side firmware. A real SNES-side program still performs its
+own cartridge checks; bundling this bootstrap does not bypass those checks.
+
+**GBB fast boot** selects these images for SGB profiles, including automatic
+selection of SGB-capable monochrome titles. The animated preference uses the
+same bootstrap: SGB's original introduction is SNES-side, not a DMG animation.
+Instant startup remains the default. Experimental desktop firmware playback
+uses the bundled image when no GB-side override is present; supplying
+`sgb.boot.rom` / `sgb2.boot.rom` still explicitly overrides it. Invalid overrides
+are rejected. Private SNES program ROM and SPC700 IPL are still required.
+
+```sh
+python3 scripts/build_dmg_boot_rom.py --model sgb --check
+python3 scripts/build_dmg_boot_rom.py --model sgb2 --check
+```
+
+Builds never read reference firmware. `--check-source` works without RGBDS;
+`--output NEW_FILE.bin` exports our original image for local execution tests.
+See [SGB boot validation](../docs/sgb-boot-validation.md) for scope, repeatable
+opaque comparisons, independent handoff checks and known timing differences.
+
 ## CGB replacement startup
 
 `gameboy/cgb.asm` provides original 256-byte fast and animated images for
@@ -259,7 +290,7 @@ not to an already running core. It does not force a hardware model. Automatic
 selection still prefers CGB for CGB-capable titles and SGB for SGB-capable titles;
 select the **DMG** hardware profile explicitly if you want to use the replacement
 with a dual-mode title, or **MGB** for Pocket. CGB profiles now select their own
-replacement described above; SGB profiles retain instant startup. Experimental
+replacement described above; SGB profiles select their bundled header bootstrap. Experimental
 SNES-side SGB firmware playback remains separate and still needs user firmware.
 
 ### State and reset contracts
@@ -323,4 +354,4 @@ injection. The optional animated mode replaces only the returned pre-handoff
 PCM with its separately synthesized chime, without changing the game APU state.
 Broader title-level and independent-hardware validation and model-specific boot
 implementations remain future milestones. SNES-side
-SGB1/SGB2 and SPC700 replacement firmware are not implemented here yet.
+SGB1/SGB2 program ROM and SPC700 IPL replacements are not implemented here yet.

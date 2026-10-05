@@ -40,6 +40,7 @@ public:
     // Deterministic DMG power-on state: no post-boot register/VRAM seeding.
     // Cartridge/mapper/battery data and host serial attachment are retained.
     void initialize_dmg_power_on();
+    void initialize_sgb_power_on(HardwareModel model);
     // Deterministic CGB power-on in the cartridge's selected compatibility
     // mode; no post-boot peripheral snapshot is applied.
     void initialize_cgb_power_on(HardwareModel model);

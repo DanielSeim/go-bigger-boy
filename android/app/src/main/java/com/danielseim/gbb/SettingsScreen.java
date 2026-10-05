@@ -155,7 +155,7 @@ final class SettingsScreen {
             @Override public void onNothingSelected(AdapterView<?> parent) {}
         });
         display.addView(startup);
-        display.addView(settingLabel("Bundled DMG0, DMG, MGB (Pocket) and CGB firmware; SGB models use instant startup. Animated boot uses scrolling monochrome or fading color GBB lettering and an APU-synthesized chime. A or Start hides the splash; firmware still runs. No download needed."));
+        display.addView(settingLabel("Bundled DMG0, DMG, MGB (Pocket), CGB, SGB and SGB2 boot firmware. Animated boot uses scrolling monochrome or fading color GBB lettering and an APU-synthesized chime; SGB models run the header bootstrap without a DMG intro. A or Start hides the splash; firmware still runs. No boot download needed."));
         final AudioSettingModel audioSetting = new AudioSettingModel(
                 new AudioSettingModel.Store() {
                     @Override

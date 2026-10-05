@@ -113,7 +113,8 @@ void SgbIcdGbSource::complete_packet() noexcept {
     if (continuation_packets_ == 0) {
         const auto command = static_cast<std::uint8_t>(building_[0] >> 3);
         const auto encoded = static_cast<unsigned>(building_[0] & 7U);
-        continuation_packets_ = (encoded == 0 ? 1U : encoded) - 1U;
+        const bool bootstrap = building_[0] >= 0xF1 && building_[0] <= 0xFB && (building_[0] & 1U);
+        continuation_packets_ = bootstrap ? 0 : (encoded == 0 ? 1U : encoded) - 1U;
         if (command == 0x08) {
             if (sound_commands_ == 0 && audible_sound_substitution_) {
                 building_[1] = 0x03;

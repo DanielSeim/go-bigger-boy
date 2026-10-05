@@ -1,4 +1,6 @@
 #include "gameboy/boot_rom.hpp"
+#include "../firmware/gameboy/sgb_boot_image.hpp"
+#include "../firmware/gameboy/sgb2_boot_image.hpp"
 #include "../firmware/gameboy/dmg_boot_image.hpp"
 #include "../firmware/gameboy/dmg0_boot_image.hpp"
 #include "../firmware/gameboy/dmg0_animated_boot_image.hpp"
@@ -17,6 +19,8 @@
 #include <cstddef>
 
 namespace gameboy {
+const DiagnosticBootRom& sgb_boot_rom() noexcept { return firmware::sgb_boot_image; }
+const DiagnosticBootRom& sgb2_boot_rom() noexcept { return firmware::sgb2_boot_image; }
 const DiagnosticBootRom& agb_boot_rom() noexcept { return firmware::agb_boot_image; }
 const DiagnosticBootRom& agb_animated_boot_rom() noexcept { return firmware::agb_animated_boot_image; }
 const DiagnosticBootRom& agb0_boot_rom() noexcept { return firmware::agb0_boot_image; }

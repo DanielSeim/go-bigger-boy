@@ -89,14 +89,14 @@ individually beside or below the emulation screen. Positions are stored as
 normalized `touch.Portrait.*` and `touch.Landscape.*` coordinates.
 
 Desktop, Android and web expose a **Startup** selector: **Instant startup**
-remains the default; **GBB fast boot** runs the bundled, original DMG0/DMG/MGB/CGB
+remains the default; **GBB fast boot** runs the bundled, original DMG0/DMG/MGB/CGB/SGB/SGB2
 firmware without a download. The preference is saved as `boot.Startup` on
 desktop/Android and `gbb-startup-mode` in browser storage. It applies on the next
 ROM start or frontend restart, not while a core is running. DMG0, DMG, MGB (Pocket)
-and CGB use their respective firmware images; SGB profiles retain instant startup.
+and CGB use their respective firmware images; SGB/SGB2 run their header bootstrap.
 Automatic model selection is unchanged; a CGB-capable title automatically uses
-the color boot, while SGB-capable monochrome titles need an explicit GB/Pocket/Color
-profile to use a replacement boot.
+the color boot, while SGB-capable monochrome titles use the SGB bootstrap.
+The animated preference uses the same non-animated SGB bootstrap, not the DMG intro.
 The DMG0 animated variant takes about 5.93 seconds and retains its early-model
 CPU/divider/LCD handoff and blinking checksum failure behavior.
 **GBB animated boot** uses a longer firmware variant (~5.59 seconds) with

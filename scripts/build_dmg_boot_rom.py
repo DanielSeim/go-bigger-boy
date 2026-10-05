@@ -18,7 +18,7 @@ def render(image, model="dmg", animated=False):
     source_digest = hashlib.sha256(SOURCE.read_text(encoding="utf-8").encode("utf-8")).hexdigest()
     rows = ["    " + ", ".join(f"0x{byte:02X}" for byte in image[i:i + 16]) + ","
             for i in range(0, len(image), 16)]
-    definition = "// Build definition: GBB_HANDOFF_A=255 (MGB).\n" if model == "mgb" else ""
+    definition = f"// Build definition: GBB_HANDOFF_A=255 ({model.upper()}).\n" if model in ("mgb", "sgb2") else ""
     if model == "dmg0":
         definition += "// Build definition: GBB_DMG0=1.\n"
     if model == "cgb0":
@@ -43,7 +43,7 @@ def render(image, model="dmg", animated=False):
 def main():
     global SOURCE
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model", choices=("dmg0", "dmg", "mgb", "cgb", "cgb0", "agb", "agb0"), default="dmg")
+    parser.add_argument("--model", choices=("dmg0", "dmg", "mgb", "cgb", "cgb0", "agb", "agb0", "sgb", "sgb2"), default="dmg")
     parser.add_argument("--animated", action="store_true", help="build the original-cadence intro variant")
     checks = parser.add_mutually_exclusive_group()
     checks.add_argument("--check", action="store_true",
@@ -56,6 +56,10 @@ def main():
     args = parser.parse_args()
     if args.model in ("cgb", "cgb0", "agb", "agb0"):
         SOURCE = ROOT / "firmware/gameboy/cgb.asm"
+    if args.model in ("sgb", "sgb2"):
+        SOURCE = ROOT / "firmware/gameboy/sgb.asm"
+        if args.animated:
+            parser.error("SGB presentation belongs to the SNES host, not the GB bootstrap")
     name = args.model + ("_animated" if args.animated else "")
     header_path = ROOT / f"firmware/gameboy/{name}_boot_image.hpp"
     if args.check_source:
@@ -65,7 +69,7 @@ def main():
         with tempfile.TemporaryDirectory(prefix="gbb-dmg-firmware-") as directory:
             obj = Path(directory) / "dmg.o"
             binary = Path(directory) / "dmg.bin"
-            definitions = ["-DGBB_HANDOFF_A=255"] if args.model == "mgb" else []
+            definitions = ["-DGBB_HANDOFF_A=255"] if args.model in ("mgb", "sgb2") else []
             if args.model == "dmg0":
                 definitions.append("-DGBB_DMG0=1")
             if args.model == "cgb0":
