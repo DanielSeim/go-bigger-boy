@@ -1,6 +1,7 @@
 #include "gameboy/emulator.hpp"
 #include "gameboy/hardware_model.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -178,8 +179,30 @@ void test_automatic_selection() {
 }
 
 void test_public_model_catalog() {
-    check(gameboy::selectable_hardware_models.size() == 9,
-          "public hardware model catalog includes automatic plus eight profiles");
+    using gameboy::HardwareModel;
+    constexpr std::array expected_catalog{
+        HardwareModel::automatic, HardwareModel::dmg0, HardwareModel::dmg,
+        HardwareModel::mgb, HardwareModel::sgb, HardwareModel::sgb2,
+        HardwareModel::cgb0, HardwareModel::cgb_c, HardwareModel::cgb_e,
+        HardwareModel::agb0, HardwareModel::agb};
+    check(gameboy::selectable_hardware_models == expected_catalog,
+          "public catalog preserves existing selections and appends AGB startup profiles");
+    check(gameboy::concrete_hardware_models.size() == 8,
+          "silicon-accuracy matrix retains its eight validated profiles");
+    for (auto model : {HardwareModel::agb0, HardwareModel::agb}) {
+        check(std::find(gameboy::concrete_hardware_models.begin(),
+                        gameboy::concrete_hardware_models.end(), model) ==
+                  gameboy::concrete_hardware_models.end(),
+              "startup-only AGB profiles must not imply silicon-accuracy validation");
+        check(gameboy::is_agb_hardware(model) && gameboy::is_cgb_hardware(model),
+              "AGB startup profiles use the color-compatible runtime");
+    }
+    check(gameboy::hardware_model_id(HardwareModel::agb0) == "agb0" &&
+              gameboy::hardware_model_id(HardwareModel::agb) == "agb" &&
+              static_cast<int>(HardwareModel::cgb_e) == 9 &&
+              static_cast<int>(HardwareModel::agb0) == 10 &&
+              static_cast<int>(HardwareModel::agb) == 11,
+          "AGB IDs are appended without changing persisted CGB revision IDs");
     check(gameboy::hardware_model_id(gameboy::HardwareModel::cgb_c) == "cgb-c" &&
               gameboy::hardware_model_id(gameboy::HardwareModel::cgb_e) == "cgb-e",
           "CGB revision IDs are stable for settings and runner reports");
