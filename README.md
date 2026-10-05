@@ -176,6 +176,9 @@ where they are used.
 
 ## Build and development
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for bug reports, pull requests,
+validation expectations, and our use of AI-assisted development tools.
+
 A basic native build and test run is:
 
 ```sh

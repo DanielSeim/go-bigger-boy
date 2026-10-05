@@ -8,6 +8,7 @@ an installed release.
 ## Start here
 
 - [Project overview, supported features and limitations](../README.md)
+- [Contributing and AI-assisted development](../CONTRIBUTING.md)
 - [Build and testing](build-and-testing.md)
 - [Desktop settings, controls and tools](desktop.md)
 - [Platform builds, packaging and storage](platforms.md)
