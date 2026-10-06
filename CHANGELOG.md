@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- Add original GBS6 per-track signed transpose with mailbox v10, limited to
+  -12..12 semitones and validated effective pitch indices 0..31. Preserve held
+  pitch on ties, reset transpose on phrase/repeat/restart boundaries, and reject
+  unsupported older envelopes before readiness. Validate real two-model octave,
+  tie, independent-track, endpoint, scalar audio, reset and save/load behavior.
+  Vendor title formats remain unsupported.
+
 - Add original GBS5 bounded phrase-sequence repeats with mailbox v9: require one
   to four total plays, validate all patterns before readiness, restore defaults
   on each pass and preserve the repeat counter in save states. Validate real

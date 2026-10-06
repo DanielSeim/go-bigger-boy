@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Pack original GBS1/GBS2/GBS3/GBS4/GBS5 scores for the resident SPC renderer."""
+"""Pack original GBS1/GBS2/GBS3/GBS4/GBS5/GBS6 scores for the resident SPC renderer."""
 import argparse
 import json
 from pathlib import Path
@@ -9,20 +9,25 @@ from build_sgb_score_transfer import unique_object
 from decode_sgb_score import decode
 
 
-def encode_track(events, controls_allowed):
+def encode_track(events, controls_allowed, transpose_allowed=False):
     if not isinstance(events, list) or not 1 <= len(events) <= 111:
         raise ValueError('expected 1..111 events per track')
     track = bytearray()
+    transpose = 0
     for event in events:
         if isinstance(event, dict) and len(event) == 1:
             key, value = next(iter(event.items()))
-            controls = {'instrument': (0xE0, 3), 'pan': (0xE1, 20), 'volume': (0xED, 127)}
+            controls = {'instrument': (0xE0, 0, 3), 'pan': (0xE1, 0, 20), 'volume': (0xED, 0, 127)}
+            if transpose_allowed:
+                controls['transpose'] = (0xEA, -12, 12)
             if not controls_allowed or key not in controls:
-                raise ValueError('controls require GBS2/GBS3/GBS4 and instrument/pan/volume')
-            opcode, maximum = controls[key]
-            if type(value) is not int or not 0 <= value <= maximum:
-                raise ValueError(f'{key} must be an integer from 0 to {maximum}')
-            track.extend((opcode, value))
+                raise ValueError('control is unavailable in this format')
+            opcode, minimum, maximum = controls[key]
+            if type(value) is not int or not minimum <= value <= maximum:
+                raise ValueError(f'{key} must be an integer from {minimum} to {maximum}')
+            if key == 'transpose':
+                transpose = value
+            track.extend((opcode, value & 255))
             continue
         if not isinstance(event, dict) or len(event) != 2 or 'ticks' not in event:
             raise ValueError('event must contain ticks and exactly one of note/tie/rest')
@@ -30,6 +35,8 @@ def encode_track(events, controls_allowed):
         if type(ticks) is not int or not 1 <= ticks <= 127:
             raise ValueError('ticks must be an integer from 1 to 127')
         if 'note' in event and type(event['note']) is int and 0 <= event['note'] < 32:
+            if not 0 <= event['note'] + transpose < 32:
+                raise ValueError('transposed note must fit pitch indices 0..31')
             opcode = 0x80 + event['note']
         elif event.get('tie') is True:
             opcode = 0xC8
@@ -49,20 +56,20 @@ def transport(bank):
 
 def build_phrases(patterns, format_name='GBS4', plays=1):
     if not isinstance(patterns, list) or not 1 <= len(patterns) <= 4:
-        raise ValueError('GBS4/GBS5 require 1..4 patterns')
+        raise ValueError('GBS4/GBS5/GBS6 require 1..4 patterns')
     if type(plays) is not int or not 1 <= plays <= 4:
         raise ValueError('plays must be an integer from 1 to 4')
     streams = []
     for pattern in patterns:
         if not isinstance(pattern, list) or len(pattern) != 2:
             raise ValueError('each pattern requires exactly two tracks')
-        streams.append([encode_track(events, True) for events in pattern])
+        streams.append([encode_track(events, True, format_name == 'GBS6') for events in pattern])
     size = 32 + 16*len(patterns) + sum(len(track) for pair in streams for track in pair)
     if size > 255:
         raise ValueError('combined score bank must fit 255 bytes')
     bank = bytearray(32 + 16*len(patterns))
     bank[:6] = format_name.encode('ascii') + bytes((size, len(patterns)))
-    if format_name == 'GBS5':
+    if format_name in ('GBS5', 'GBS6'):
         bank[6] = plays
     for index, pair in enumerate(streams):
         table = 32 + 16*index
@@ -83,11 +90,11 @@ def build(document):
     if not isinstance(document, dict):
         raise ValueError('expected score object')
     format_name = document.get('format', 'GBS1')
-    if format_name not in ('GBS1', 'GBS2', 'GBS3', 'GBS4', 'GBS5'):
-        raise ValueError('format must be GBS1, GBS2, GBS3, GBS4 or GBS5')
-    if format_name == 'GBS5':
+    if format_name not in ('GBS1', 'GBS2', 'GBS3', 'GBS4', 'GBS5', 'GBS6'):
+        raise ValueError('format must be GBS1, GBS2, GBS3, GBS4, GBS5 or GBS6')
+    if format_name in ('GBS5', 'GBS6'):
         if set(document) != {'format', 'patterns', 'plays'}:
-            raise ValueError('GBS5 requires format, patterns and plays')
+            raise ValueError('GBS5/GBS6 require format, patterns and plays')
         return build_phrases(document['patterns'], format_name, document['plays'])
     if format_name == 'GBS4':
         if set(document) != {'format', 'patterns'}:

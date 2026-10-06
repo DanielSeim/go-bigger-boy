@@ -1,0 +1,19 @@
+{
+  "format": "GBS6",
+  "plays": 2,
+  "patterns": [
+    [
+      [{"instrument": 0}, {"pan": 0}, {"volume": 64},
+       {"note": 12, "ticks": 4}, {"transpose": 12}, {"tie": true, "ticks": 4},
+       {"note": 12, "ticks": 4}, {"transpose": -12}, {"note": 12, "ticks": 4}],
+      [{"instrument": 1}, {"pan": 20}, {"volume": 64},
+       {"transpose": -12}, {"note": 24, "ticks": 16}]
+    ],
+    [
+      [{"instrument": 0}, {"pan": 0}, {"volume": 64},
+       {"note": 12, "ticks": 4}, {"transpose": 12}],
+      [{"instrument": 1}, {"pan": 20}, {"volume": 64},
+       {"note": 24, "ticks": 4}, {"transpose": 12}]
+    ]
+  ]
+}

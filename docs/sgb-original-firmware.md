@@ -64,7 +64,7 @@ the effect module at `$0640..06AA`, and score module at `$0700..07DF`
 remain at their fixed addresses. Uploaded
 code/data must preserve them to use this original bank.
 After initial startup or an uploaded program's jump, the complete readiness signature is **output ports 0/1/3 =
-5A/version/A5**. C1 identifies v1, C2 identifies v2, C3 identifies v3 and C4 identifies v4 and C5/C6/C7/C8/C9 identify validated original GBS1/GBS2/GBS3/GBS4/GBS5 banks; the host does not infer
+5A/version/A5**. C1 identifies v1, C2 identifies v2, C3 identifies v3 and C4 identifies v4 and C5/C6/C7/C8/C9/CA identify validated original GBS1/GBS2/GBS3/GBS4/GBS5/GBS6 banks; the host does not infer
 compatibility from a jump address, previous ownership, or a partial readiness signature.
 Unknown versions and drivers without the signature remain external.
 
@@ -358,7 +358,7 @@ The [resident score contract](sgb-resident-score-contract.md) provides the next
 layout/restart design and an offline data-subset oracle using original fixtures.
 Its acceptance does not establish SPC playback or mailbox ownership.
 The driver now resides at `$1000`, with a legacy `$0200` trampoline. The `$0400` entry validates the explicit
-[GBS1/GBS2 subsets](sgb-uploaded-score-v5.md) and [GBS3 two-track subset](sgb-uploaded-score-tracks.md) and [GBS4 phrase subset](sgb-uploaded-score-phrases.md) and [GBS5 bounded repeats](sgb-uploaded-score-repeats.md) before advertising v5/v6/v7/v8/v9; other data remains
+[GBS1/GBS2 subsets](sgb-uploaded-score-v5.md) and [GBS3 two-track subset](sgb-uploaded-score-tracks.md) and [GBS4 phrase subset](sgb-uploaded-score-phrases.md) and [GBS5 bounded repeats](sgb-uploaded-score-repeats.md) and [GBS6 transpose](sgb-uploaded-score-transpose.md) before advertising v5/v6/v7/v8/v9/v10; other data remains
 silent and external with E1/E2 diagnostics. Vendor title-score rendering remains
 unsupported.
 

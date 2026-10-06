@@ -45,7 +45,7 @@ score from leaking into the legacy mode.
 
 The dispatcher and context copies live at `$1C00`, dynamic DSP register selection
 at `$1F00`, and the shared single-track player at `$2000` (with a `$1600`
-trampoline). Contexts use direct-page `$50..58` and `$60..68`; `$43..45` select
+trampoline). Contexts use direct-page `$50..59` and `$60..69` (including the GBS6 transpose slots); `$43..45` select
 the current voice, `$48` stores key-off bits, and `$4B/$4C` hold track ends.
 The original contiguous startup payload is 9525 bytes from `$0200`; the generated
 image remains reproducible and separate from production firmware selection.

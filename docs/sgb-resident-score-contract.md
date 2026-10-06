@@ -3,7 +3,7 @@
 This document records the resident memory layout and broader **offline syntax
 oracle**. The explicit original [GBS1/GBS2 subsets](sgb-uploaded-score-v5.md),
 [GBS3 tracks](sgb-uploaded-score-tracks.md) and [GBS4 phrases](sgb-uploaded-score-phrases.md)
-and [GBS5 repeats](sgb-uploaded-score-repeats.md) now render on SPC; the broader grammar remains offline. No proprietary title,
+and [GBS5 repeats](sgb-uploaded-score-repeats.md) and [GBS6 transpose](sgb-uploaded-score-transpose.md) now render on SPC; the broader grammar remains offline. No proprietary title,
 PCM, instrument-bank or firmware bytes are checked in, and passing the oracle
 does not qualify playback.
 
@@ -18,16 +18,16 @@ SPC ranges. These are our allocations, not a reconstruction of vendor firmware.
 | `$0100..01FF` | Stack |
 | `$0200..02FF` | Cold entry and legacy restart trampoline |
 | `$0300..03FF` | Reserved resident workspace |
-| `$0400..04FF` | GBS1/GBS2/GBS3/GBS4/GBS5 validation entry and silent rejection handler |
+| `$0400..04FF` | GBS1/GBS2/GBS3/GBS4/GBS5/GBS6 validation entry and silent rejection handler |
 | `$0500..07FF` | Original directory, samples, effect module and legacy motifs |
-| `$0800..0FFF` | Reserved workspace; current track contexts use direct page `$50..68` |
+| `$0800..0FFF` | Reserved workspace; current track contexts use direct page `$50..69` |
 | `$1000..2AFF` | Resident driver and decoder code |
 | `$2B00..4AFF` | Uploaded score data |
 | `$4B00..FFBF` | Unallocated; echo writes remain disabled |
 | `$FFC0..FFFF` | IPL overlay |
 
 The driver lives at `$1000`; `$0200` selects legacy v4 and jumps there. `$0400`
-validates explicit GBS1/GBS2/GBS3/GBS4/GBS5 banks before selecting v5/v6/v7/v8/v9. Its rejection handler
+validates explicit GBS1/GBS2/GBS3/GBS4/GBS5/GBS6 banks before selecting v5/v6/v7/v8/v9/v10. Its rejection handler
 clears output readiness/version/signature, reports E1/E2 on output port 2, stops
 timer 0 and mutes/resets the DSP. It loops without advertising compatibility.
 The host observes the code in WRAM `$28` and remains external; a later SOUND or SOU_TRN
@@ -53,7 +53,7 @@ uploaded bytes. It must reset musical controls to documented independent default
 and validate the selected score before enabling voices. A malformed or unsupported
 score must remain silent with a bounded diagnostic; it must not advertise success.
 
-The implemented GBS1/GBS2/GBS3/GBS4/GBS5 renderer advertises mailbox v5/v6/v7/v8/v9 only after validation.
+The implemented GBS1/GBS2/GBS3/GBS4/GBS5/GBS6 renderer advertises mailbox v5/v6/v7/v8/v9/v10 only after validation.
 The host must require a fresh signature and zero-token arm before it treats SOUND
 as resident-owned again. Offline acceptance or arrival at `$0400` cannot establish
 ownership. Song-ID table placement, built-in score selection and instrument-ID

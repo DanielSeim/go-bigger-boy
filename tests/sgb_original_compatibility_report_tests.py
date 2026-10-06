@@ -59,7 +59,8 @@ class DemandContracts(unittest.TestCase):
             self.assertIn('unsupported score 0x02', audit(path, 7)['parameter_gaps'])
             self.assertIn('unsupported score 0x02', audit(path, 8)['parameter_gaps'])
             self.assertIn('unsupported score 0x02', audit(path, 9)['parameter_gaps'])
-            for version in (0, 10, True):
+            self.assertIn('unsupported score 0x02', audit(path, 10)['parameter_gaps'])
+            for version in (0, 11, True):
                 with self.assertRaises(ValueError):
                     audit(path, version)
 

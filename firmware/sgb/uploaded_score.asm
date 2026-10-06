@@ -1,5 +1,5 @@
 ; SPDX-License-Identifier: GPL-3.0-or-later
-; Original GBS1/GBS2 single-track, GBS3 two-track and GBS4/GBS5 finite-phrase subsets.
+; Original GBS1/GBS2 single-track, GBS3 two-track and GBS4/GBS5/GBS6 finite-phrase subsets.
 ; Canonical bounded headers/pointers; bank length <=255. No vendor table guesses.
 ; $30 mode, $31 end, $32 cursor, $33 duration, $34 countdown, $35 held-note flag.
 ; $36/$37 validation duration/held flag. Validate the entire stream before readiness.
@@ -18,6 +18,8 @@
     mov a, $2b03
     cmp a, #$31
     beq format_one
+    cmp a, #$36
+    beq transposed_phrases
     cmp a, #$35
     beq repeated_phrases
     cmp a, #$34
@@ -28,6 +30,9 @@
     bne header_error
     mov $3f, #$02
     bra bank_length
+transposed_phrases:
+    mov $3f, #$06
+    jmp $2200
 repeated_phrases:
     mov $3f, #$05
     jmp $2200
@@ -90,6 +95,7 @@ syntax_early:
 validate:
     mov $36, #$00
     mov $37, #$00
+    mov $3a, #$00
     mov x, $4e
 next:
     mov a, x
@@ -121,6 +127,8 @@ event:
     beq control
     cmp a, #$ed
     beq control
+    cmp a, #$ea
+    beq control
     mov a, $36
     beq syntax_error
     mov a, $38
@@ -130,6 +138,7 @@ event:
     beq rest
     cmp a, #$a0
     bcs syntax_error
+    call $2160
     mov $37, #$01
     bra next
 tie:
@@ -153,6 +162,7 @@ terminated:
     mov $4d, #$01
     mov $36, #$00
     mov $37, #$00
+    mov $3a, #$00
     mov x, $4b
     mov a, $4c
     mov $31, a
@@ -186,6 +196,8 @@ syntax_error:
     beq instrument
     cmp a, #$e1
     beq pan
+    cmp a, #$ea
+    beq transpose
     mov a, $39
     mov $42, a
     mov a, #$07
@@ -193,6 +205,8 @@ syntax_error:
     mov a, $39
     mov $f3, a
     ret
+transpose:
+    jmp $2100
 instrument:
     mov a, $39
     mov $40, a
@@ -219,6 +233,7 @@ pan:
     mov $40, #$01
     mov $41, #$0a
     mov $42, #$50
+    mov $46, #$00
     mov a, #$04
     call $1f00
     mov $f3, #$01
@@ -263,10 +278,14 @@ pan:
     beq instrument_limit
     cmp a, #$e1
     beq pan_limit
+    cmp a, #$ea
+    beq transpose_limit
     mov a, $39
     cmp a, #$80
     bcs control_error
     jmp next
+transpose_limit:
+    jmp $2120
 instrument_limit:
     mov a, $39
     cmp a, #$04
@@ -413,6 +432,8 @@ save_track_zero:
     mov $57, a
     mov a, $1f
     mov $58, a
+    mov a, $46
+    mov $59, a
     ret
 load_track_zero:
     mov a, $50
@@ -433,6 +454,8 @@ load_track_zero:
     mov $42, a
     mov a, $58
     mov $1f, a
+    mov a, $59
+    mov $46, a
     ret
 save_track_one:
     mov a, $31
@@ -453,6 +476,8 @@ save_track_one:
     mov $67, a
     mov a, $1f
     mov $68, a
+    mov a, $46
+    mov $69, a
     ret
 load_track_one:
     mov a, $60
@@ -473,6 +498,8 @@ load_track_one:
     mov $42, a
     mov a, $68
     mov $1f, a
+    mov a, $69
+    mov $46, a
     ret
 
 .org $1f00
@@ -532,6 +559,8 @@ event_note:
     cmp a, #$c9
     beq rest_note
     and a, #$1f
+    clrc
+    adc a, $46
     mov $38, a
     clrc
     adc a, $38
@@ -584,8 +613,39 @@ stop:
     mov $f3, a
     ret
 
+.org $2100
+; A transpose command affects subsequent notes only; ties keep the held pitch.
+    mov a, $39
+    mov $46, a
+    ret
+.org $2120
+; Signed two-complement semitones -12..12, only in explicit GBS6 banks.
+    mov a, $3f
+    cmp a, #$06
+    bne transpose_error
+    mov a, $39
+    cmp a, #$0d
+    bcc transpose_valid
+    cmp a, #$f4
+    bcc transpose_error
+transpose_valid:
+    mov $3a, a
+    jmp next
+transpose_error:
+    jmp syntax_error
+.org $2160
+; Every effective note must fit our existing 32-entry pitch table. X stays intact.
+    and a, #$1f
+    clrc
+    adc a, $3a
+    cmp a, #$20
+    bcs transpose_note_error
+    ret
+transpose_note_error:
+    jmp syntax_error
+
 .org $2200
-; GBS4/GBS5 finite phrase list: 1..4 canonical two-track pattern tables at $2B20.
+; GBS4/GBS5/GBS6 finite phrase list: 1..4 canonical two-track pattern tables at $2B20.
     mov a, $2b04
     cmp a, #$36
     bcc phrase_header_error
@@ -734,11 +794,11 @@ phrase_pattern_error:
     jmp header_error
 
 .org $2500
-; GBS4 reserves byte 6; GBS5 defines 1..4 total sequence plays.
+; GBS4 reserves byte 6; GBS5/GBS6 define 1..4 total sequence plays.
     mov $7d, #$01
     mov a, $3f
     cmp a, #$05
-    beq repeat_count
+    bcs repeat_count
     mov a, $2b06
     bne repeat_header_error
     ret

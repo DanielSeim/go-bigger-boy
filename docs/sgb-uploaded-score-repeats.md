@@ -3,6 +3,7 @@
 GBS5 extends [GBS4 finite phrases](sgb-uploaded-score-phrases.md) with a bounded
 whole-sequence repeat count. Its header uses ASCII `GBS5`, and byte `06` contains
 **1..4 total plays, including the initial pass**. Byte `07` remains zero.
+[GBS6](sgb-uploaded-score-transpose.md) adds bounded per-track transpose.
 All other pointers, count limits, canonical tables, contiguous tracks and
 instrument/pan/gain grammar remain unchanged. The bank still fits 255 bytes.
 GBS4 continues to require zero at byte `06` and performs exactly one pass.

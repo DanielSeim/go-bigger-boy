@@ -20,6 +20,7 @@ CONTROLS_EXAMPLE = ROOT / 'firmware/sgb/resident_controls_example.json'
 TRACKS_EXAMPLE = ROOT / 'firmware/sgb/resident_tracks_example.json'
 PHRASES_EXAMPLE = ROOT / 'firmware/sgb/resident_phrases_example.json'
 REPEATS_EXAMPLE = ROOT / 'firmware/sgb/resident_repeats_example.json'
+TRANSPOSE_EXAMPLE = ROOT / 'firmware/sgb/resident_transpose_example.json'
 RUNNER = None
 
 
@@ -119,6 +120,32 @@ class ResidentScoreContracts(unittest.TestCase):
         with self.assertRaises(ValueError):
             build(document)
 
+    def test_transpose_bounds_effective_notes_and_fresh_state(self):
+        payload = build(json.loads(TRANSPOSE_EXAMPLE.read_text()))
+        size = struct.unpack_from('<H', payload)[0]
+        self.assertEqual(payload[4:11], b'GBS6\x74\x02\x02')
+        events = decode(payload[4:4+size], 0x2B08)['patterns'][0]['tracks'][0]['events']
+        self.assertEqual([e['value'] for e in events if e['kind'] == 'transpose'], [12, -12])
+        for value in (-13, 13, 128, True, 1.0, '1'):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                build({'format': 'GBS6', 'plays': 1, 'patterns': [[[{'transpose': value}], [{'rest': True, 'ticks': 1}]]]})
+        for note, transpose in ((0, -1), (31, 1), (11, -12), (20, 12)):
+            with self.subTest(note=note, transpose=transpose), self.assertRaises(ValueError):
+                build({'format': 'GBS6', 'plays': 1, 'patterns': [[[{'transpose': transpose}, {'note': note, 'ticks': 1}], [{'rest': True, 'ticks': 1}]]]})
+        for note, transpose in ((12, -12), (19, 12)):
+            build({'format': 'GBS6', 'plays': 1, 'patterns': [[[{'transpose': transpose}, {'note': note, 'ticks': 1}], [{'rest': True, 'ticks': 1}]]]})
+        old = json.loads(TRANSPOSE_EXAMPLE.read_text())
+        old['format'] = 'GBS5'
+        with self.assertRaises(ValueError):
+            build(old)
+        # A transpose change on a tie does not re-evaluate or retune the held note.
+        build({'format': 'GBS6', 'plays': 1, 'patterns': [[[{'note': 31, 'ticks': 1}, {'transpose': 12}, {'tie': True, 'ticks': 1}], [{'note': 0, 'ticks': 1}]]]})
+        # Transpose resets at each new track and phrase.
+        build({'format': 'GBS6', 'plays': 1, 'patterns': [
+            [[{'transpose': -12}, {'note': 12, 'ticks': 1}], [{'note': 0, 'ticks': 1}]],
+            [[{'note': 0, 'ticks': 1}], [{'note': 31, 'ticks': 1}]]
+        ]})
+
     def test_exact_bank_and_oracle(self):
         payload = build(json.loads(EXAMPLE.read_text()))
         self.assertEqual(len(payload), 4096)
@@ -204,6 +231,14 @@ class ResidentScoreContracts(unittest.TestCase):
             path = Path(directory) / 'repeats.bin'
             path.write_bytes(build(json.loads(REPEATS_EXAMPLE.read_text())))
             subprocess.run([str(RUNNER), '--resident-repeats', str(path)], check=True)
+
+    def test_real_uploaded_transpose(self):
+        if RUNNER is None:
+            self.skipTest('supply --runner for SPC/DSP integration')
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'transpose.bin'
+            path.write_bytes(build(json.loads(TRANSPOSE_EXAMPLE.read_text())))
+            subprocess.run([str(RUNNER), '--resident-transpose', str(path)], check=True)
 
 
 if __name__ == '__main__':

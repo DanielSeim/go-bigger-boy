@@ -780,6 +780,112 @@ void resident_repeats(gameboy::HardwareModel model,const Payload& p) {
             repeated.cpu().debug_wram_byte(0x2b)==0xc4 && repeated.cpu().debug_wram_byte(0x20)==1,
             "repeated v9 uploads rearm and legacy restart returns to v4");
 }
+void resident_transpose(gameboy::HardwareModel model,const Payload& p) {
+    for(bool combined:{false,true}) {
+        auto c=config(model,p,5);c.combined_audio=combined;
+        Host h(c),scalar(c),peer(c);scalar.debug_set_apu_batch_enabled(false);
+        const auto boot=advance(h,16'000'000),reference=advance(scalar,16'000'000);
+        require(equal(boot,reference) && h.save_state()==scalar.save_state(),"transpose native/combined scalar parity");
+        require(h.cpu().debug_wram_byte(0x2b)==0xca && h.cpu().debug_wram_byte(0x2a)==2,
+                "all effective pitches validate before v10 adoption");
+        h.reset();require(equal(boot,advance(h,16'000'000)),"reset repeats transposed playback and phrase repeats");
+        Host measured(c);resident_ready(measured,0xca);(void)advance(measured,100'000);
+        const auto first=advance(measured,1'000'000);
+        const auto low=crossings(first),right=crossings(first,true);
+        require(low>5 && std::abs(double(right)/low-1)<0.15,"negative transpose makes right base octave match left note");
+        require(peer.load_state(measured.save_state()),"snapshot before transpose command and held tie");
+        const auto paired=[&](std::uint64_t clocks) {
+            const auto pcm=advance(measured,clocks);
+            require(equal(pcm,advance(peer,clocks)) && measured.save_state()==peer.save_state(),
+                    "per-track transpose and held DSP pitch restore through controls phrases and wrap");
+            return pcm;
+        };
+        (void)paired(600'000);
+        const auto tie=paired(800'000);
+        require(std::abs(double(crossings(tie))/low/0.8-1)<0.15,"transpose command on held tie keeps previous pitch");
+        (void)paired(400'000);
+        const auto octave=paired(800'000);
+        require(std::abs(double(crossings(octave))/low/0.8-2)<0.2 &&
+                std::abs(double(crossings(octave,true))/right/0.8-1)<0.15,
+                "positive transpose affects next left note while right track remains independent");
+        (void)paired(700'000);
+        const auto down=paired(800'000);
+        require(std::abs(double(crossings(down))/low/0.8-0.5)<0.15 &&
+                std::abs(double(crossings(down,true))/right/0.8-1)<0.15,
+                "negative transpose lowers next left note without changing right pitch");
+        (void)paired(500'000);
+        const auto fresh=paired(800'000);
+        require(std::abs(double(crossings(fresh))/low/0.8-1)<0.15 &&
+                std::abs(double(crossings(fresh,true))/right/0.8-2)<0.2,
+                "phrase boundary resets transpose independently on both tracks");
+        (void)paired(600'000);
+        const auto wrapped=paired(800'000);
+        require(std::abs(double(crossings(wrapped))/low/0.8-1)<0.15 &&
+                std::abs(double(crossings(wrapped,true))/right/0.8-1)<0.15,
+                "whole-sequence wrap clears trailing transpose before the first note");
+        (void)paired(6'000'000);
+        const auto ended=paired(200'000);
+        require(channel_rms(ended)==0 && channel_rms(ended,true)==0,"transposed repeated score remains finite");
+    }
+    std::vector<std::uint8_t> edge_bank(48);
+    edge_bank[0]='G';edge_bank[1]='B';edge_bank[2]='S';edge_bank[3]='6';edge_bank[5]=1;edge_bank[6]=1;
+    edge_bank[8]=0x20;edge_bank[9]=0x2b;
+    for(unsigned channel=0;channel<2;++channel) {
+        edge_bank[32+2*channel]=edge_bank.size();edge_bank[33+2*channel]=0x2b;
+        append(edge_bank,{0xe0,static_cast<std::uint8_t>(channel),0xe1,static_cast<std::uint8_t>(20*channel),0xed,64,
+            0xea,static_cast<std::uint8_t>(channel==0 ? 0xf4 : 12),16,static_cast<std::uint8_t>(channel==0 ? 0x8c : 0x93),0});
+    }
+    edge_bank[4]=edge_bank.size();
+    Host edge(config(model,program_payload(edge_bank,0x2b00,0x0400),5));resident_ready(edge,0xca);
+    (void)advance(edge,100'000);const auto limits=advance(edge,2'000'000);
+    require(crossings(limits)>5 && std::abs(double(crossings(limits,true))/crossings(limits)-6)<0.35,
+            "transpose boundaries render pitch indices zero and thirty-one without wrap or clamp");
+    (void)advance(edge,4'000'000);const auto edge_ended=advance(edge,200'000);
+    require(channel_rms(edge_ended)==0 && channel_rms(edge_ended,true)==0,"boundary pitches terminate silently");
+    std::vector<Payload> invalid;
+    const unsigned start=p[4+0x20],other=p[4+0x22];
+    auto changed=p;changed[7]='5';invalid.push_back(changed); // older envelope rejects EA
+    changed=p;changed[4+start+9]=13;invalid.push_back(changed); // positive limit
+    changed=p;changed[4+start+15]=0xf3;invalid.push_back(changed); // negative limit
+    changed=p;changed[4+start+9]=0x80;invalid.push_back(changed); // signed -128
+    changed=p;changed[4+start+13]=0x9f;invalid.push_back(changed); // effective note above 31
+    changed=p;changed[4+other+9]=0x80;invalid.push_back(changed); // effective note below zero
+    changed=p;changed[4+p[8]-1]=0xea;invalid.push_back(changed); // missing operand/terminator
+    for(const auto& payload:invalid) {
+        Host rejected(config(model,payload));(void)advance(rejected,11'000'000);
+        require(rejected.cpu().debug_wram_byte(0x24)==1 && rejected.cpu().debug_wram_byte(0x2a)==1 &&
+                rejected.cpu().debug_wram_byte(0x28)==0xe2 && rejected.cpu().debug_wram_byte(0x29)==0,
+                "bad transpose or effective pitch rejects the whole bank before readiness");
+    }
+    for(unsigned followup:{9U,10U,12U}) {
+        Host commanded(config(model,p,followup));Host::StereoSample sample;
+        const unsigned token=followup==9 ? 3 : 4;
+        while((commanded.icd().sound_packets_delivered()!=2 ||
+               commanded.cpu().debug_wram_byte(0x20)!=(followup==9 ? 0xff : 1) ||
+               commanded.cpu().debug_wram_byte(0x23)!=token) && commanded.cpu().timing().clocks()<18'000'000) {
+            require(commanded.step(),"reach transpose stop/restart acknowledgment");while(commanded.pop_sample(sample)) {}
+        }
+        require(commanded.cpu().debug_wram_byte(0x2b)==0xca && commanded.cpu().debug_wram_byte(0x23)==token,
+                "v10 keeps score limits and acknowledges transpose stop/restart");
+        (void)advance(commanded,200'000);
+        if(followup==12) {
+            const auto restarted=advance(commanded,800'000);
+            require(crossings(restarted)>5 && std::abs(double(crossings(restarted,true))/crossings(restarted)-1)<0.2,
+                    "music restart clears both transposes and returns to authored initial pitches");
+            (void)advance(commanded,14'000'000);
+        } else {
+            const auto quiet=advance(commanded,500'000);
+            require(channel_rms(quiet)==0 && channel_rms(quiet,true)==0,"transpose stop and invalid score silence music/effects");
+            (void)advance(commanded,14'000'000);
+        }
+        const auto ended=advance(commanded,200'000);
+        require(channel_rms(ended)==0 && channel_rms(ended,true)==0,"stopped or restarted transpose score remains finite");
+    }
+    Host repeated(sequence(model,{p,p,program_payload({},0x0200)}));(void)advance(repeated,20'000'000);
+    require(repeated.cpu().debug_wram_byte(0x26)==3 && repeated.cpu().debug_wram_byte(0x2a)==4 &&
+            repeated.cpu().debug_wram_byte(0x2b)==0xc4 && repeated.cpu().debug_wram_byte(0x20)==1,
+            "repeated v10 uploads rearm and legacy restart returns to v4");
+}
 void uploaded_scores(gameboy::HardwareModel model,const Payload& p) {
     auto parsed=gameboy::SgbSoundTransfer::parse(p);
     require(parsed.valid() && parsed.writes.size()==1 && parsed.writes[0].destination==0x07d0 &&
@@ -818,7 +924,7 @@ void uploaded_scores(gameboy::HardwareModel model,const Payload& p) {
 void incompatible(gameboy::HardwareModel model) {
     // Original test stubs explicitly advertise wrong versions or violate one
     // advertised operation. They execute normally; the host must fail boundedly.
-    std::vector<std::uint8_t> wrong_version{0x8f,0xca,0xf5,0x8f,0xa5,0xf7,0x8f,0x5a,0xf4,
+    std::vector<std::uint8_t> wrong_version{0x8f,0xcb,0xf5,0x8f,0xa5,0xf7,0x8f,0x5a,0xf4,
         0xe4,0xf5,0xc4,0xf6,0x2f,0xfa}; // observe input 1; host must never write it
     Host unknown(config(model,program_payload(wrong_version,0x0800),1));
     (void)advance(unknown,10'000'000);
@@ -887,11 +993,12 @@ void invalid(gameboy::HardwareModel model) {
 }
 int main(int argc,char** argv) {
     try {
-        if(argc==3 && (std::string(argv[1])=="--score-transfer" || std::string(argv[1])=="--resident-score" || std::string(argv[1])=="--resident-controls" || std::string(argv[1])=="--resident-tracks" || std::string(argv[1])=="--resident-phrases" || std::string(argv[1])=="--resident-repeats")) {
+        if(argc==3 && (std::string(argv[1])=="--score-transfer" || std::string(argv[1])=="--resident-score" || std::string(argv[1])=="--resident-controls" || std::string(argv[1])=="--resident-tracks" || std::string(argv[1])=="--resident-phrases" || std::string(argv[1])=="--resident-repeats" || std::string(argv[1])=="--resident-transpose")) {
             Payload p{};std::ifstream input(argv[2],std::ios::binary);
             require(bool(input.read(reinterpret_cast<char*>(p.data()),p.size())) && input.peek()==std::char_traits<char>::eof(),"score transfer file must contain exactly 4096 bytes");
             for(auto model:{gameboy::HardwareModel::sgb,gameboy::HardwareModel::sgb2}) {
-                if(std::string(argv[1])=="--resident-repeats") resident_repeats(model,p);
+                if(std::string(argv[1])=="--resident-transpose") resident_transpose(model,p);
+                else if(std::string(argv[1])=="--resident-repeats") resident_repeats(model,p);
                 else if(std::string(argv[1])=="--resident-phrases") resident_phrases(model,p);
                 else if(std::string(argv[1])=="--resident-tracks") resident_tracks(model,p);
                 else if(std::string(argv[1])=="--resident-controls") resident_controls(model,p);

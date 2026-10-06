@@ -20,7 +20,7 @@ HOST_GAPS = {0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x12, 0x18, 0x19}
 def sound_gaps(packet: bytes, version: int) -> list[str]:
     if len(packet) != 16 or packet[0] != 0x41:
         return ['unsupported SOUND framing']
-    effect_limit = {1: 1, 2: 1, 3: 3, 4: 5, 5: 5, 6: 5, 7: 5, 8: 5, 9: 5}[version]
+    effect_limit = {1: 1, 2: 1, 3: 3, 4: 5, 5: 5, 6: 5, 7: 5, 8: 5, 9: 5, 10: 5}[version]
     gaps = []
     for label, value in zip(('A', 'B'), packet[1:3]):
         if value not in (0, 0x80) and not 1 <= value <= effect_limit:
@@ -36,8 +36,8 @@ def sound_gaps(packet: bytes, version: int) -> list[str]:
 
 
 def audit(path: Path, version=4) -> dict:
-    if type(version) is not int or version not in (1, 2, 3, 4, 5, 6, 7, 8, 9):
-        raise ValueError('mailbox version must be 1..9')
+    if type(version) is not int or version not in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10):
+        raise ValueError('mailbox version must be 1..10')
     records = read_commands(path)
     if any(a.sequence >= b.sequence for a, b in zip(records, records[1:])):
         raise ValueError('command sequences must increase for ownership analysis')
@@ -97,7 +97,7 @@ def describe(result: dict) -> str:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('traces', nargs='+', type=Path)
-    parser.add_argument('--mailbox-version', type=int, choices=(1, 2, 3, 4, 5, 6, 7, 8, 9), default=4)
+    parser.add_argument('--mailbox-version', type=int, choices=(1, 2, 3, 4, 5, 6, 7, 8, 9, 10), default=4)
     parser.add_argument('--json', action='store_true', help='Emit bounded metadata, never raw JOYP packets')
     args = parser.parse_args()
     try:
