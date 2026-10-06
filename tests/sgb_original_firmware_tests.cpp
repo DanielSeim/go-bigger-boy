@@ -149,7 +149,7 @@ void attributes(gameboy::HardwareModel model) {
     for(unsigned volume=0;volume<3;++volume) {
         Host h(config(model,{Packet{0x41,0x80,1,static_cast<std::uint8_t>(volume<<6)}}));
         ready_sound(h,1);(void)advance(h,100'000);levels[volume]=rms(advance(h,1'000'000));
-        require(h.cpu().debug_wram_byte(0x2b)==0xc3,"v3 driver explicitly negotiated");
+        require(h.cpu().debug_wram_byte(0x2b)==0xc4,"v4 driver explicitly negotiated");
     }
     require(levels[0]>levels[1]*1.3 && levels[1]>levels[2]*1.8,"independent B volume levels are ordered");
     std::array<unsigned,4> pitches{};
@@ -210,7 +210,7 @@ void modulation_state(gameboy::HardwareModel model) {
 void bank_and_scores(gameboy::HardwareModel model) {
     for(unsigned port=1;port<=2;++port) {
         std::vector<std::vector<Host::StereoSample>> clips;
-        for(unsigned preset=1;preset<=3;++preset) {
+        for(unsigned preset=1;preset<=5;++preset) {
             Packet p{0x41};p[port]=preset;
             Host h(config(model,{p}));ready_sound(h,1);
             clips.push_back(advance(h,500'000));
@@ -261,12 +261,53 @@ void bank_and_scores(gameboy::HardwareModel model) {
     Host mute(config(model,{Packet{0x41,0,0,0,1},Packet{0x41,0,0,0x0c}},false,false,8));
     ready_sound(mute,2);(void)advance(mute,6'000'000);
     require(!audible(advance(mute,1'000'000)),"global fade also mutes score playback");
-    Host invalid(config(model,{Packet{0x41,0,0,0,1},Packet{0x41,4}},false,false,8));
+    Host invalid(config(model,{Packet{0x41,0,0,0,1},Packet{0x41,6}},false,false,8));
     (void)advance(invalid,8'000'000);
     require(invalid.cpu().debug_wram_byte(0x20)==0xff && !audible(advance(invalid,500'000)),"unsupported commands silence an active score before halting");
 }
+void modulation_effects(gameboy::HardwareModel model) {
+    for(unsigned preset:{4U,5U}) {
+        Host h(config(model,{Packet{0x41,static_cast<std::uint8_t>(preset)}}));ready_sound(h,1);
+        const auto opening=crossings(advance(h,1'000'000));
+        (void)advance(h,1'000'000);
+        const auto later=crossings(advance(h,1'000'000));
+        require(preset==4 ? later>opening*1.4 : later<opening*0.7,
+                "A presets render rising and falling pitch over physical ticks");
+        (void)advance(h,7'000'000);
+        require(!audible(advance(h,500'000)),"modulated A decays to silence without pitch wrap");
+    }
+    Host vibrato(config(model,{Packet{0x41,0,4}}));ready_sound(vibrato,1);
+    std::vector<unsigned> pitch;
+    for(unsigned i=0;i<12;++i) pitch.push_back(crossings(advance(vibrato,500'000)));
+    auto [lowest,highest]=std::minmax_element(pitch.begin(),pitch.end());
+    require(*highest>*lowest*1.25 && pitch.back()>0,"B vibrato alternates pitch and sustains");
+    Host tremolo(config(model,{Packet{0x41,0,5}}));ready_sound(tremolo,1);
+    std::vector<double> amplitude;
+    for(unsigned i=0;i<12;++i) amplitude.push_back(rms(advance(tremolo,500'000)));
+    auto [quiet,loud]=std::minmax_element(amplitude.begin(),amplitude.end());
+    require(*loud>*quiet*1.7 && amplitude.back()>100,"B tremolo alternates gain and sustains");
+    Host replaced(config(model,{Packet{0x41,0,5},Packet{0x41,0,1}},false,false,8));ready_sound(replaced,2);
+    (void)advance(replaced,100'000);
+    const auto steady=rms(advance(replaced,1'000'000));
+    require(std::abs(rms(advance(replaced,1'000'000))/steady-1)<0.03,"changing B preset restores steady gain and cancels tremolo");
+    for(bool combined:{false,true}) {
+        auto c=config(model,{Packet{0x41,4,4,0,1},Packet{0x41,5,5,0x11},
+                            Packet{0x41},Packet{0x41,0x80,0x80,0,0x80}},combined,false,4);
+        Host h(c),scalar(c),peer(c);scalar.debug_set_apu_batch_enabled(false);
+        const auto pcm=advance(h,7'000'000,true);
+        require(equal(pcm,advance(scalar,7'000'000)) && h.save_state()==scalar.save_state(),"modulated effects with music match scalar native/combined PCM and state");
+        require(h.icd().sound_packets_delivered()==4 && h.cpu().debug_wram_byte(0x23)==8 &&
+                !audible(advance(h,500'000)),"new effect and score stops are acknowledged and silent");
+        h.reset();require(equal(pcm,advance(h,7'000'000)),"reset repeats dynamic effect sequence");
+        Host active(config(model,{Packet{0x41,4,5,0,1}},combined));ready_sound(active,1);
+        (void)advance(active,1'000'000);
+        auto active_config=config(model,{Packet{0x41,4,5,0,1}},combined);Host restored(active_config);
+        require(restored.load_state(active.save_state()),"restore pitch cursor, tremolo phase and active score");
+        require(equal(advance(active,3'000'000),advance(restored,3'000'000)) && active.save_state()==restored.save_state(),"in-flight dynamic effects continue exactly after restore");
+    }
+}
 void unsupported(gameboy::HardwareModel model) {
-    for (const Packet p: {Packet{0x41,1,0,0xc0}, Packet{0x41,1,0,0,3}, Packet{0x42,1}, Packet{0x4a}, Packet{0x41,4}, Packet{0x41,0,4}}) {
+    for (const Packet p: {Packet{0x41,1,0,0xc0}, Packet{0x41,1,0,0,3}, Packet{0x42,1}, Packet{0x4a}, Packet{0x41,6}, Packet{0x41,0,6}}) {
         Host h(config(model,{Packet{0x41,1,1},p}));
         (void)advance(h,2'000'000,true);
         require(h.cpu().debug_wram_byte(0x20)==0xff,"unsupported audio command halts prototype");
@@ -278,7 +319,7 @@ void unsupported(gameboy::HardwareModel model) {
 int main() {
     try {
         for(auto model:{gameboy::HardwareModel::sgb,gameboy::HardwareModel::sgb2}) {
-            startup(model); instruments(model); sound(model,false); sound(model,true); attributes(model); modulation_state(model); bank_and_scores(model); unsupported(model);
+            startup(model); instruments(model); sound(model,false); sound(model,true); attributes(model); modulation_state(model); bank_and_scores(model); modulation_effects(model); unsupported(model);
         }
         std::cout<<"Original SGB1/SGB2 firmware: upload, boot packets, two voices, stop, unsupported audio, reset, restore, scalar/combined playback passed\n";
     } catch(const std::exception& e) { std::cerr<<e.what()<<'\n'; return 1; }

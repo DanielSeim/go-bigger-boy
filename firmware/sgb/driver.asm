@@ -1,7 +1,7 @@
 ; SPDX-License-Identifier: GPL-3.0-or-later
-; Original position-independent SPC driver. Mailbox v3: 5A/C3/A5 readiness.
+; Original position-independent SPC driver. Mailbox v4: 5A/C4/A5 readiness.
 ; Control port 3: 0 effects, 1 return to IPL, 2 stage attributes/score from ports 1/2, 3 silence all.
-; Effects 00 retrigger remembered instrument, 01..03 select original preset, 80 stop and forget.
+; Effects 00 retrigger remembered instrument, 01..05 select original preset, 80 stop and forget.
     mov $f2, #$6c
     mov $f3, #$20
     mov $f2, #$0c
@@ -49,9 +49,13 @@
     mov $d8, #$00
     mov $d9, #$02
     mov $da, #$03
+    mov $db, #$03
     mov $dc, #$01
-    mov $dd, #$02
-    mov $de, #$03
+    mov $e1, #$01
+    mov $e2, #$02
+    mov $e3, #$03
+    mov $e4, #$01
+    mov $e5, #$00
     mov $1b, #$00
     mov $1e, #$00
     mov $1f, #$00
@@ -78,7 +82,7 @@
 ; Timer 0: 128 SPC clocks prescale, target 128 -> 16 ms at 1.024 MHz.
     mov $fa, #$80
     mov $f1, #$81
-    mov $f5, #$c3
+    mov $f5, #$c4
     mov $f7, #$a5
     mov $f4, #$5a
 await_arm:
@@ -92,6 +96,7 @@ poll:
     beq token
     mov $19, a
 tick:
+    call $0640
     call $0700
 ; Instrument A decays by four direct-gain units per physical timer tick.
     mov a, $14
@@ -145,6 +150,8 @@ check_stage:
     cmp a, #$03
     bne stage_or_effects
     mov $1f, #$00
+    mov $15, #$00
+    mov $18, #$00
     mov $14, #$00
     mov $f2, #$67
     mov $f3, #$00
@@ -172,6 +179,7 @@ effects:
     and a, #$03
     mov x, a
     mov a, $d0+x
+    mov $21, a
     mov $f2, #$63
     mov $f3, a
     mov a, $13
@@ -179,6 +187,7 @@ effects:
     and a, #$03
     mov x, a
     mov a, $d0+x
+    mov $22, a
     mov $f2, #$53
     mov $f3, a
 ; A volume 3 requests global fade-out and retains A's previous voice level.
@@ -229,6 +238,8 @@ start_a:
     mov a, $d7+x
     mov $f2, #$64
     mov $f3, a
+    mov a, $21
+    mov $26, a
     mov $14, #$60
     mov $f2, #$67
     mov $f3, #$60
@@ -238,6 +249,9 @@ stop_a:
     mov $15, #$00
     mov $14, #$00
     mov $12, #$40
+    bra effect_b
+return_lower:
+    bra return_middle
 effect_b:
     mov a, $f6
     beq retrigger_b
@@ -249,9 +263,12 @@ retrigger_b:
     beq apply
 start_b:
     mov x, a
-    mov a, $db+x
+    mov a, $e0+x
     mov $f2, #$54
     mov $f3, a
+    mov $27, #$00
+    mov $f2, #$57
+    mov $f3, #$60
     mov a, $11
     or a, #$20
     mov $11, a
@@ -277,4 +294,4 @@ apply:
 effect_echo:
     mov a, $10
     mov $f4, a
-    bra return_middle
+    bra return_lower

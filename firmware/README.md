@@ -413,10 +413,10 @@ Broader title-level and independent-hardware validation remain future
 milestones for the bundled model-specific boot implementations. SNES-side
 SGB1/SGB2 production program ROM replacements are not implemented here yet.
 The original [SNES-side diagnostic prototype](../docs/sgb-original-firmware.md)
-now establishes reproducible startup, three presets per effect voice, two original looping scores and
+now establishes reproducible startup, five presets per effect voice, two original looping scores and
 next-frame SOU_TRN capture/upload/handoff, with repeated transfers and SOUND
 after versioned driver adoption, plus original pitch/volume, A decay and
-mute/unmute controls with mailbox v3 (retaining v1/v2). A strict JSON score
+mute/unmute controls, plus rising/falling pitch, vibrato and tremolo with mailbox v4 (retaining v1/v2/v3). A strict JSON score
 packer and authored example exercise data-only SOU_TRN upload and score playback;
 it is not a bundled program-ROM default. The original
 SPC700 IPL replacement is described in [IPL validation](../docs/spc700-ipl-validation.md).

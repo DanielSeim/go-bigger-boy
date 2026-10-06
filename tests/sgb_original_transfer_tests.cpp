@@ -54,7 +54,9 @@ gameboy::SgbHostConfig config(gameboy::HardwareModel model,const Payload& payloa
             followup==3 ? Packet{0x41,1,0,1} :
             followup==4 ? Packet{0x41,2} :
             followup==5 ? Packet{0x41,0,0,0,1} :
-            followup==6 ? Packet{0x41,0,0,0,2} : Packet{0x49});
+            followup==6 ? Packet{0x41,0,0,0,2} :
+            followup==7 ? Packet{0x41,4} :
+            followup==8 ? Packet{0x41,3,3,0,2} : Packet{0x49});
     }
     append(code,{0x18,0xfe});
     require(code.size()+0x150<0x4000,"original fixture code does not overlap transfer data");
@@ -283,7 +285,7 @@ void uploaded_scores(gameboy::HardwareModel model,const Payload& p) {
         const auto boot=advance(h,6'000'000,true);
         require(h.cpu().debug_wram_byte(0x20)==1 && h.cpu().debug_wram_byte(0x24)==0 &&
                 h.cpu().debug_wram_byte(0x26)==1 && h.cpu().debug_wram_byte(0x2a)==2 &&
-                h.cpu().debug_wram_byte(0x2b)==0xc3,"data-only transfer restarts and adopts original v3 driver");
+                h.cpu().debug_wram_byte(0x2b)==0xc4,"data-only transfer restarts and adopts original v4 driver");
         latched(h,p);
         require(equal(boot,advance(scalar,6'000'000)) && h.save_state()==scalar.save_state(),
                 "uploaded scores match scalar native/combined audio and state");
@@ -310,7 +312,7 @@ void uploaded_scores(gameboy::HardwareModel model,const Payload& p) {
 void incompatible(gameboy::HardwareModel model) {
     // Original test stubs explicitly advertise wrong versions or violate one
     // advertised operation. They execute normally; the host must fail boundedly.
-    std::vector<std::uint8_t> wrong_version{0x8f,0xc4,0xf5,0x8f,0xa5,0xf7,0x8f,0x5a,0xf4,
+    std::vector<std::uint8_t> wrong_version{0x8f,0xc5,0xf5,0x8f,0xa5,0xf7,0x8f,0x5a,0xf4,
         0xe4,0xf5,0xc4,0xf6,0x2f,0xfa}; // observe input 1; host must never write it
     Host unknown(config(model,program_payload(wrong_version,0x0800),1));
     (void)advance(unknown,6'000'000);
@@ -344,6 +346,11 @@ void incompatible(gameboy::HardwareModel model) {
         Host limited(config(model,program_payload(v2,0x0800),followup));(void)advance(limited,6'000'000);
         require(limited.cpu().debug_wram_byte(0x20)==0xff && limited.cpu().debug_wram_byte(0x23)==1,"v2 rejects v3 presets/scores before staging and acknowledges legacy stop");
     }
+    auto v3=no_loader;v3[1]=0xc3;
+    Host old_bank(config(model,program_payload(v3,0x0800),8));(void)advance(old_bank,6'000'000);
+    require(old_bank.cpu().debug_wram_byte(0x20)==1 && old_bank.cpu().debug_wram_byte(0x2b)==0xc3 && old_bank.cpu().debug_wram_byte(0x23)==2,"v3 retains original bank and score command staging");
+    Host old_limit(config(model,program_payload(v3,0x0800),7));(void)advance(old_limit,6'000'000);
+    require(old_limit.cpu().debug_wram_byte(0x20)==0xff && old_limit.cpu().debug_wram_byte(0x23)==1,"v3 rejects v4 presets before staging and acknowledges silence-all");
     Host loader(config(model,program_payload(no_loader,0x0800),2));(void)advance(loader,10'000'000);
     require(loader.cpu().debug_wram_byte(0x20)==0xff && loader.cpu().debug_wram_byte(0x27)==5 &&
             loader.cpu().debug_wram_byte(0x25)==2 && loader.cpu().debug_wram_byte(0x26)==1,

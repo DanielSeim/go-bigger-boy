@@ -11,7 +11,7 @@ Performance work remains deferred.
 ## Reproducible build and provenance
 
 Sources live in [`firmware/sgb/`](../firmware/sgb/): `host.asm`, `driver.asm`,
-`samples.asm`, and `music.asm`. The dependency-free Python assembler has a strict, fixed-width
+`samples.asm`, `effects.asm`, and `music.asm`. The dependency-free Python assembler has a strict, fixed-width
 instruction subset, resolves branches, rejects range errors and overlapping
 sections, and writes a deterministic 256 KiB LoROM image with header/checksum.
 The checked-in `prototype_image.hpp` holds the host, payload and ROM header;
@@ -45,25 +45,26 @@ to its sound bank.
 | IPL readiness | Wait for AA/BB before publishing destination, mode and CC token | Implemented |
 | SPC upload | Transfer original code, directory and samples to $0200; echo every byte index; handle counter/page wraps | Implemented, 1504-byte contiguous payload |
 | SPC handoff | Mode zero with a forward token enters $0200; wait for driver readiness | Implemented |
-| DSP startup | Driver initializes its voices and master volume before publishing 5A/C3/A5 | Implemented |
+| DSP startup | Driver initializes its voices and master volume before publishing 5A/C4/A5 | Implemented |
 | ICD release | Release GB through $6003 with divider 5 after SPC readiness | Implemented on SGB1/SGB2 |
 | GB bootstrap packets | Consume the six original GBB GB-side header packets | Implemented |
 | ICD packets | Poll $6002; read $7000 exactly once to pop; copy the remaining latched bytes | Implemented |
-| SOUND | Support two independent original instruments, explicit start/stop and acknowledgment after DSP writes | Three presets per effect voice plus two original looping scores; controls and restricted codes below |
+| SOUND | Support two independent original instruments, explicit start/stop and acknowledgment after DSP writes | Five presets per effect voice plus two original looping scores; controls and restricted codes below |
 | Unsupported audio | Retain the offending header and halt packet consumption; stop a compatible driver with a bounded acknowledgment | Implemented; unrecognized drivers are never sent our stop protocol |
 | LCD transfers | Capture a full 4096-byte screen through completed ICD planar rows at physical boundaries | Implemented for SOU_TRN, next complete frame |
-| SOU_TRN | Validate the complete block list; upload each block; honor the zero-length jump; reacquire compatible drivers | Implemented, including repeated transfers with mailbox v1/v2/v3; transport restrictions below |
+| SOU_TRN | Validate the complete block list; upload each block; honor the zero-length jump; reacquire compatible drivers | Implemented, including repeated transfers with mailbox v1/v2/v3/v4; transport restrictions below |
 | Lifecycle | Restore the actual CPU/WRAM/ICD/APU/DSP/PCM state, including upload; cold reset repeats firmware | Implemented with existing whole-host state codec |
 
-## GBB SPC mailbox versions 1, 2 and 3
+## GBB SPC mailbox versions 1 through 4
 
 The original driver is position independent and explicitly advertises mailbox
-version 3 after initializing DSP state. The host retains versions 1 and 2.
+version 4 after initializing DSP state. The host retains versions 1, 2 and 3.
 The main driver can be relocated; the sample directory/data at `$0500/$0600`
-and score module at `$0700..07DF` remain at their fixed addresses. Uploaded
+the effect module at `$0640..06AA`, and score module at `$0700..07DF`
+remain at their fixed addresses. Uploaded
 code/data must preserve them to use this original bank.
 After initial startup or an uploaded program's jump, the complete readiness signature is **output ports 0/1/3 =
-5A/version/A5**. C1 identifies v1, C2 identifies v2, C3 identifies v3; the host does not infer
+5A/version/A5**. C1 identifies v1, C2 identifies v2, C3 identifies v3 and C4 identifies v4; the host does not infer
 compatibility from a jump address, previous ownership, or a partial readiness signature.
 Unknown versions and drivers without the signature remain external.
 
@@ -111,7 +112,8 @@ retain their two-effect stop command and reject v3 presets/scores before staging
 
 ## Original SOUND instruments and controls
 
-Command header `41` accepts A/B values `00`, `01..03`, `80` with v3.
+Command header `41` accepts A/B values `00`, `01..05`, `80` with v4.
+Version 3 remains limited to `00`, `01..03`, `80`.
 The original effect bank uses voice 6 for A and voice 5 for B:
 
 | Preset | A waveform | B waveform |
@@ -119,10 +121,12 @@ The original effect bank uses voice 6 for A and voice 5 for B:
 | 01 | Square | Stepped triangle |
 | 02 | Narrow pulse | Narrow pulse |
 | 03 | Saw | Saw |
+| 04 (v4) | Rising saw | Triangle with vibrato |
+| 05 (v4) | Falling triangle | Square with tremolo |
 
 These are authored diagnostic presets, not reproductions of the proprietary
-SGB effect names/assets at those IDs. Each uses a distinct looping BRR sample;
-A applies its decaying gain and B sustains. Code 00 retriggers the remembered
+SGB effect names/assets at those IDs. The presets use authored looping BRR samples and, for 04/05,
+timer-driven modulation. A applies its decaying gain and B sustains. Code 00 retriggers the remembered
 preset, and 80 stops it and clears that memory. Dummy code 00 does nothing if
 there is no remembered preset; it can retrigger A after its envelope reaches
 zero. V1/v2 remain limited to codes 00/01/80 and music zero; v1 accepts only
@@ -138,7 +142,7 @@ Effect commands do not advance the score clock. Effect and music stops are
 independent; the existing master-volume fade applies to all three voices.
 DSP levels and command codes here are hexadecimal; tick counts/times are decimal.
 
-| Attribute field | v2/v3 behavior |
+| Attribute field | v2/v3/v4 behavior |
 | --- | --- |
 | Bits 0..1 | A pitch: DSP 0800, 0C00, 1000, 1800, from low to high |
 | Bits 2..3 = 0/1/2 | A voice volume: 40, 28, 10; also request fade-in |
@@ -157,6 +161,18 @@ before it completes. DSP register values in the table and gain/master-volume
 value 60 are hexadecimal; prescales, tick counts and elapsed times are decimal. These are newly authored sound parameters,
 not measurements or copied presets from a proprietary SGB sound bank.
 
+Version 4 advances A04/A05 pitch by one high-byte unit per timer tick, starting
+at the selected A attribute pitch and clamping to `$0100..3F00`. Both retain the
+24-tick decay; retrigger resets the pitch cursor to the selected base. B04
+alternates pitch between the selected base plus/minus two high-byte units.
+B05 alternates direct gain 60/20. Each B phase lasts two physical ticks (32 ms
+at the default SPC clock, for a 64-ms period). Retrigger resets the B phase;
+changing back to a steady B preset restores direct gain 60. Stop cancels the
+modulation, and silence-all also clears the remembered effects. All values
+are authored diagnostic parameters, not measurements of proprietary effects.
+Version 4 adds no mailbox fields; its version advertises the expanded code range.
+Version 3 rejects new presets before staging, while retaining its score controls.
+
 All parameter/envelope/fade work runs in the SPC firmware and writes the real
 DSP registers. There is no host gain ramp or generated replacement PCM. At
 other configured APU clock rates, durations follow the hardware timer clock.
@@ -172,7 +188,7 @@ prototype and must be audited before production integration.
 
 ## Authoring and uploading score data
 
-The v3 score table is sixteen pitch high bytes at `$07D0..07DF`: eight notes
+The v3/v4 score table is sixteen pitch high bytes at `$07D0..07DF`: eight notes
 for score 01 followed by eight for score 02. Each note retains the interpreter's
 16-tick duration; the selected motif loops on the music voice. The original
 [`score_example.json`](../firmware/sgb/score_example.json) contains two authored
@@ -204,7 +220,7 @@ driver. The tool checks transport address bounds and excludes the score table;
 it does not install a driver or establish compatibility. The host still requires
 the complete readiness signature and arm acknowledgment. Keep the fixed sample
 and interpreter addresses intact. This is an authoring path for the original
-GBB v3 bank, not a Nintendo N-SPC score decoder or proprietary title-data format.
+GBB v3/v4 bank, not a Nintendo N-SPC score decoder or proprietary title-data format.
 
 ## Screen capture, upload and ownership
 
@@ -267,9 +283,9 @@ Diagnostic WRAM bytes:
 | `$27` | 01 malformed/range error, 03 transport-reserved address, 04 LCD timeout/missed row, 05 driver-arm/command/loader/upload timeout |
 | `$28`, `$29` | Last observed external-program output ports 2/3 |
 | `$2A` | Completed supported-version adoptions modulo 256, including cold startup |
-| `$2B` | Version from the most recent adoption attempt (C1/C2/C3) |
+| `$2B` | Version from the most recent adoption attempt (C1/C2/C3/C4) |
 | `$40..43`, `$44..45` | Current block size/destination; validated jump address |
-| `$2C` | Current effect-code upper bound, exclusive (02 legacy, 04 v3) |
+| `$2C` | Current effect-code upper bound, exclusive (02 v1/v2, 04 v3, 06 v4) |
 | `$0100..010F` | Last packet |
 | `$1000..1FFF` | Exact captured 4096-byte payload |
 
@@ -302,10 +318,14 @@ A/B pitch and amplitude ordering, A decay/retrigger, sustained B and mute/unmute
 fades in real PCM. Native/combined scalar parity, reset and cross-instance restore
 cover modulation and an attribute stage pending its effect command. Legacy v1
 command dispatch succeeds without staging and rejects new attributes explicitly.
-V2 stubs accept attribute staging but reject v3 presets/scores. The original
+V2 stubs accept attribute staging but reject v3 presets/scores; v3 stubs accept
+their original bank/score controls and reject v4 presets before staging. The original
 bank checks distinct rendered presets, remembered preset retriggers, timer-driven
 score changes, score-only output, concurrent effects/music, independent stops,
-global music mute, and silence after unsupported commands. The score-authoring
+global music mute, and silence after unsupported commands. Dynamic effect
+checks measure rising/falling A pitch, decay to silence, B vibrato frequency
+changes, tremolo amplitude changes, cancellation on preset replacement, and
+native/combined scalar parity, reset and restoration of in-flight modulation. The score-authoring
 contract generates an actual payload with the CLI, then verifies exact ICD
 capture, data-only upload/rearming, both score selections, measured pitch ratios
 against the bundled motifs, native/combined scalar parity, reset and active-score

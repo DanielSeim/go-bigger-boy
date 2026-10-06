@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Expand the original SGB diagnostic bank to five presets per effect voice with
+  timer-driven rising/falling A pitch and B vibrato/tremolo. Mailbox v4 advertises
+  the new effects while preserving v1/v2/v3 command limits, score uploads and
+  relocated-driver adoption. Validate rendered modulation, cancellation, scalar
+  audio, reset and save/load; the program prototype remains opt-in.
+
 - Add strict JSON authoring and SOU_TRN packaging for the original SGB v3 score
   bank, with two authored example motifs. Validate actual data-only upload and
   driver rearming on SGB1/SGB2, rendered note pitches, native/combined scalar

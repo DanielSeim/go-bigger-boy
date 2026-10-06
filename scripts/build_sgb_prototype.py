@@ -113,6 +113,9 @@ def assemble(source, cpu, origin, constants=None):
                 operand(left, 1)
             elif mnemonic == 'mov' and left == 'x' and right == 'a':
                 code.append(0x5d)
+            elif mnemonic == 'mov' and left == 'a' and right.startswith('#'):
+                code.append(0xe8)
+                operand(right[1:], 1)
             elif mnemonic == 'mov' and left == 'a':
                 address = right.removesuffix('+x')
                 absolute = int(address[1:], 16) > 255
@@ -156,9 +159,11 @@ def build():
     if len(driver) > 0x300:
         raise ValueError('driver overlaps sample directory')
     music = assemble((FIRMWARE / 'music.asm').read_text(), 'spc', 0x700)
-    if len(samples) > 0x200 or len(music) > 0x100:
-        raise ValueError('sample/music sections overlap relocation area')
+    effects = assemble((FIRMWARE / 'effects.asm').read_text(), 'spc', 0x640)
+    if len(samples) > 0x140 or len(effects) > 0xc0 or len(music) > 0x100:
+        raise ValueError('sample/effects/music sections overlap')
     payload = driver + bytes(0x300-len(driver)) + samples
+    payload += bytes(0x440-len(payload)) + effects
     payload += bytes(0x500-len(payload)) + music
     host = assemble((FIRMWARE / 'host.asm').read_text(), 'host', 0x8000,
                     {'payload_size': len(payload), 'entry_token': ((len(payload)+2) | 1) & 255})

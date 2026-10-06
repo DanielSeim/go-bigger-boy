@@ -825,7 +825,8 @@ and lifecycle contracts run on both models. Versioned driver adoption permits
 repeated transfers and SOUND after compatible driver handoff. Mailbox v2 adds
 independent pitch/volume, A decay/retrigger and timer-driven mute/unmute fades;
 Mailbox v3 adds three presets per effect voice and two timer-driven scores;
-v1/v2 retain their restricted command paths. An original score-authoring tool
+Mailbox v4 expands to five presets per effect voice with rising/falling A pitch
+and B vibrato/tremolo; v1/v2/v3 retain their previous command paths. An original score-authoring tool
 packages motif data for SOU_TRN upload and validates actual playback after
 data-only handoff. It is not a
 production default: general driver/sound-bank compatibility, complete sound/music

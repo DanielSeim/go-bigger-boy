@@ -62,7 +62,7 @@ driver_ready:
     cmp #$a5
     bne driver_ready
     lda $2141
-    cmp #$c3
+    cmp #$c4
     bne driver_ready
     lda $2140
     cmp #$5a
@@ -87,6 +87,8 @@ poll:
     cmp #$c2
     beq driver_version_known
     cmp #$c3
+    beq driver_version_known
+    cmp #$c4
     bne poll_packets
 driver_version_known:
     lda $2140
@@ -130,6 +132,8 @@ own_sound:
     lda $2b
     cmp #$c3
     beq validate_score
+    cmp #$c4
+    beq validate_score
 ; Older contracts retain their original effect and music limits.
     lda $0104
     bne unsupported_early
@@ -154,6 +158,12 @@ validate_effects:
     lda #$02
     sta $2c
     lda $2b
+    cmp #$c4
+    bne check_v3_limit
+    lda #$06
+    sta $2c
+    bra effect_limit
+check_v3_limit:
     cmp #$c3
     bne effect_limit
     lda #$04
@@ -197,7 +207,7 @@ send_effects:
     jmp poll
 unsupported:
 ; Diagnostic $21 holds the unsupported command header; $20=FF means halted.
-; Silence all v3 voices (legacy contracts stop their two effect voices).
+; Silence all v3/v4 voices (legacy contracts stop their two effect voices).
     lda $0100
     sta $21
     lda $24
@@ -208,7 +218,10 @@ unsupported:
     stz $2143
     lda $2b
     cmp #$c3
+    beq stop_all_control
+    cmp #$c4
     bne stop_control_ready
+stop_all_control:
     lda #$03
     sta $2143
 stop_control_ready:
