@@ -114,6 +114,12 @@ The [resident score contract](sgb-resident-score-contract.md) now defines a
 resident layout and restart requirements plus a bounded offline grammar oracle.
 The current SPC firmware still does not decode these uploaded scores.
 
+The [vendor score-demand follow-up](sgb-vendor-score-demand.md) refreshes this
+failure on the current GBS6 prototype and inventories explicit candidate roots
+with a bounded, metadata-only structural scanner. It identifies required tempo,
+articulation, instrument, echo and larger-score contracts without treating root
+inference or linear scan completion as title qualification.
+
 ## Automated checks
 
 ```sh

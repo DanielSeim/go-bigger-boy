@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Add bounded, metadata-only vendor score-demand inventory with explicit roots
+  and a limited common N-SPC command-width profile. Stop at unknown commands,
+  subroutines and phrase controls; keep title qualification false. Refresh the
+  private two-model Donkey Kong transfer failure and document the concrete
+  scheduler, instrument, echo and larger-score gaps without committing assets.
+
 - Add deterministic inspection of canonical original GBS1..GBS6 score uploads,
   reporting phrase barriers, finite repeats, track endings, control defaults and
   effective pitches with held-tie semantics. Validate transport integrity and

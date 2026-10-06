@@ -374,3 +374,9 @@ driver; its following SOU_TRN halts. This prioritizes a resident uploaded-score
 restart/format contract before further diagnostic presets. The audit and probe
 are inventory tools, with explicit post-transfer evidence limits and no title
 qualification claim.
+
+The [vendor score-demand follow-up](sgb-vendor-score-demand.md) confirms the same
+failure on the GBS6 prototype and inventories private candidate phrase roots.
+Even the short entries need vendor song selection, tempo/articulation,
+instrument mapping and echo contracts. The larger entry exposes eight channels
+and subroutines. These are structural requirements, not validated playback.
