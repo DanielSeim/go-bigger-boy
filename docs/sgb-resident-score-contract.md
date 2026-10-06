@@ -2,8 +2,8 @@
 
 This is the design and executable **offline syntax oracle** for the next original
 SPC score interpreter. GBB v4 now implements the entry/code allocations below;
-the track workspace remains reserved and the uploaded-score grammar is offline
-only. No proprietary title, PCM, instrument-bank or firmware bytes are checked
+the track workspace remains reserved. The broader grammar oracle remains offline;
+the explicit original [GBS1 subset](sgb-uploaded-score-v5.md) now renders on SPC. No proprietary title, PCM, instrument-bank or firmware bytes are checked
 in, and passing the oracle does not qualify playback.
 
 ## Resident memory layout
@@ -17,7 +17,7 @@ SPC ranges. These are our allocations, not a reconstruction of vendor firmware.
 | `$0100..01FF` | Stack |
 | `$0200..02FF` | Cold entry and legacy restart trampoline |
 | `$0300..03FF` | Reserved resident workspace |
-| `$0400..04FF` | Reserved score restart: mute, report unsupported and remain external |
+| `$0400..04FF` | GBS1 validation entry and silent rejection handler |
 | `$0500..07FF` | Original directory, samples, effect module and legacy motifs |
 | `$0800..0FFF` | Per-track cursors, durations, controls and scheduler state |
 | `$1000..2AFF` | Resident driver and decoder code |
@@ -25,14 +25,14 @@ SPC ranges. These are our allocations, not a reconstruction of vendor firmware.
 | `$4B00..FFBF` | Unallocated; echo writes remain disabled |
 | `$FFC0..FFFF` | IPL overlay |
 
-The driver now lives at `$1000`; `$0200` jumps there. The reserved `$0400` entry
-clears output readiness/version/signature, reports E1 on output port 2, stops
+The driver lives at `$1000`; `$0200` selects legacy v4 and jumps there. `$0400`
+validates the explicit GBS1 bank before selecting v5. Its rejection handler
+clears output readiness/version/signature, reports E1/E2 on output port 2, stops
 timer 0 and mutes/resets the DSP. It loops without advertising compatibility.
-The host observes E1 in WRAM `$28` and remains external; a later SOUND or SOU_TRN
-halts explicitly under the existing external ownership contract. This is an
-unsupported-format guard, not a completed decoder or score validation.
+The host observes the code in WRAM `$28` and remains external; a later SOUND or SOU_TRN
+halts explicitly under the existing external ownership contract. This guard does not claim vendor score compatibility.
 
-The generated payload contains 4214 contiguous bytes starting at `$0200`.
+The generated payload contains 5440 contiguous bytes starting at `$0200`.
 Relocation tests extract the actual driver rather than copying the entry stubs,
 preserving the 766-byte token-alias case. The larger upload delays GB release;
 tests wait for completed SOUND handshakes before measuring individual voices,
@@ -52,7 +52,7 @@ uploaded bytes. It must reset musical controls to documented independent default
 and validate the selected score before enabling voices. A malformed or unsupported
 score must remain silent with a bounded diagnostic; it must not advertise success.
 
-Only an implemented SPC renderer may advertise the next GBB mailbox version.
+The implemented GBS1 renderer advertises mailbox v5 only after validation.
 The host must require a fresh signature and zero-token arm before it treats SOUND
 as resident-owned again. Offline acceptance or arrival at `$0400` cannot establish
 ownership. Song-ID table placement, built-in score selection and instrument-ID
@@ -115,7 +115,7 @@ absence of adoption, rejection of subsequent SOUND, scalar parity, reset and
 save/load during upload and after handoff. The full legacy firmware, relocated
 uploads and motif-rendering tests remain the regression gates.
 
-Next, implement the first real SPC rendering subset against these fixtures and
-replace the unsupported restart guard with bounded validation. The title-demand blocker remains open until the
+Next, extend the rendering grammar and define instrument/song-table contracts
+with independent fixtures and private reference evidence. The title-demand blocker remains open until the
 required score grammar, original bank behavior and private reference playback
 have been validated.

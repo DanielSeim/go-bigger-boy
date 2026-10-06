@@ -201,7 +201,7 @@ void modulation_state(gameboy::HardwareModel model) {
         h.reset();require(equal(pcm,advance(h,8'000'000)),"reset reproduces modulated and fading audio");
         Host stage(c),restored(c);Host::StereoSample sample;
         while(!(stage.icd().sound_packets_delivered()==1 && stage.cpu().debug_wram_byte(0x23)==1)
-              && stage.cpu().timing().clocks()<3'000'000) {
+              && stage.cpu().timing().clocks()<5'000'000) {
             require(stage.step(),"reach attribute staging boundary");while(stage.pop_sample(sample)) {}
         }
         require(stage.cpu().debug_wram_byte(0x23)==1,"snapshot between attribute and effect tokens");
@@ -250,7 +250,7 @@ void bank_and_scores(gameboy::HardwareModel model) {
         require(!audible(advance(h,500'000)),"music stop silences a score independently of stopped effects");
         h.reset();require(equal(pcm,advance(h,14'000'000)),"reset repeats effect and score sequence");
         Host staged(c),restored(c);Host::StereoSample sample;
-        while(staged.cpu().debug_wram_byte(0x23)!=1 && staged.cpu().timing().clocks()<3'000'000) {
+        while(staged.cpu().debug_wram_byte(0x23)!=1 && staged.cpu().timing().clocks()<5'000'000) {
             require(staged.step(),"reach pending score staging");while(staged.pop_sample(sample)) {}
         }
         require(staged.cpu().debug_wram_byte(0x23)==1 && restored.load_state(staged.save_state()),"restore staged attributes and score before effect commit");

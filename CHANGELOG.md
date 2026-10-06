@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Add real SPC/DSP playback of original GBS1 uploaded scores with mailbox v5,
+  complete bounded validation before adoption, one-voice notes/ties/rests and
+  finite termination. Add strict authoring and actual two-model pitch, silence,
+  scalar, reset, save/load and repeated-upload checks; vendor title data remains
+  unsupported and legacy cold startup keeps mailbox v4.
+
 - Relocate the original SGB resident driver to `$1000`, retaining the `$0200`
   legacy entry and reserving `$0400` with a silent unsupported-score diagnostic.
   Keep mailbox v4 and external ownership until an uploaded-score renderer exists;

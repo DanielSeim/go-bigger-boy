@@ -1284,6 +1284,9 @@ if(GAMEBOY_BUILD_TESTS)
     if(Python3_Interpreter_FOUND)
         add_test(NAME gameboy_sgb_score_decoder_contract
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_score_decoder_tests.py)
+        add_test(NAME gameboy_sgb_resident_score_contract
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_resident_score_tests.py
+                    --runner $<TARGET_FILE:gameboy_sgb_original_transfer_tests>)
         add_test(NAME gameboy_sgb_original_compatibility_report
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_original_compatibility_report_tests.py
                     --probe $<TARGET_FILE:gameboy_sgb_original_title_probe>)

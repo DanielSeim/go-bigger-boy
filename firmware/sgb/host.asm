@@ -89,6 +89,8 @@ poll:
     cmp #$c3
     beq driver_version_known
     cmp #$c4
+    beq driver_version_known
+    cmp #$c5
     bne poll_packets
 driver_version_known:
     lda $2140
@@ -130,6 +132,8 @@ sound:
     jmp unsupported_owned
 own_sound:
     lda $2b
+    cmp #$c5
+    beq validate_uploaded_score
     cmp #$c3
     beq validate_score
     cmp #$c4
@@ -149,6 +153,13 @@ validate_score:
     beq validate_attributes
     cmp #$03
     bcs unsupported_early
+    bra validate_attributes
+validate_uploaded_score:
+    lda $0104
+    cmp #$80
+    beq validate_attributes
+    cmp #$02
+    bcs unsupported_early
 validate_attributes:
     lda $0103
     and #$c0
@@ -159,7 +170,10 @@ validate_effects:
     sta $2c
     lda $2b
     cmp #$c4
+    beq new_effect_limit
+    cmp #$c5
     bne check_v3_limit
+new_effect_limit:
     lda #$06
     sta $2c
     bra effect_limit
@@ -220,6 +234,8 @@ unsupported:
     cmp #$c3
     beq stop_all_control
     cmp #$c4
+    beq stop_all_control
+    cmp #$c5
     bne stop_control_ready
 stop_all_control:
     lda #$03

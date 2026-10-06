@@ -21,7 +21,7 @@ def assemble(source, cpu, origin, constants=None):
                 'rts': 0x60, 'iny': 0xc8, 'dex': 0xca}
                if cpu == 'host' else {'clrc': 0x60, 'lsr a': 0x5c, 'xcn a': 0x9f, 'ret': 0x6f})
     branches = ({'bne': 0xd0, 'beq': 0xf0, 'bra': 0x80, 'bcs': 0xb0, 'bcc': 0x90} if cpu == 'host'
-                else {'bne': 0xd0, 'beq': 0xf0, 'bmi': 0x30, 'bra': 0x2f})
+                else {'bne': 0xd0, 'beq': 0xf0, 'bmi': 0x30, 'bra': 0x2f, 'bcs': 0xb0, 'bcc': 0x90})
     labels = dict(constants or {})
     code, fixups = bytearray(), []
 
@@ -98,8 +98,8 @@ def assemble(source, cpu, origin, constants=None):
             code.append(opcode)
             operand(args.removeprefix('#').removesuffix(',x'), width)
         elif cpu == 'spc':
-            if mnemonic == 'dec':
-                code.append(0x8b)
+            if mnemonic in {'dec', 'inc'}:
+                code.append(0x8b if mnemonic == 'dec' else 0xab)
                 operand(args, 1)
                 continue
             if mnemonic in {'jmp', 'call'}:
@@ -116,6 +116,11 @@ def assemble(source, cpu, origin, constants=None):
                 operand(left, 1)
             elif mnemonic == 'mov' and left == 'x' and right == 'a':
                 code.append(0x5d)
+            elif mnemonic == 'mov' and left == 'a' and right == 'x':
+                code.append(0x7d)
+            elif mnemonic == 'mov' and left == 'x':
+                code.append(0xf8)
+                operand(right, 1)
             elif mnemonic == 'mov' and left == 'a' and right.startswith('#'):
                 code.append(0xe8)
                 operand(right[1:], 1)
@@ -170,6 +175,12 @@ def build():
     payload += bytes(0x440-len(payload)) + effects
     payload += bytes(0x500-len(payload)) + music
     payload += bytes(DRIVER_OFFSET-len(payload)) + driver
+    score = assemble((FIRMWARE / 'uploaded_score.asm').read_text(), 'spc', 0x1400)
+    pitches = [round(440 * 2 ** ((note-21)/12) * 4096 * 16 / 32000) for note in range(32)]
+    score += b''.join(pitch.to_bytes(2, 'little') for pitch in pitches)
+    if DRIVER_ADDRESS + len(driver) > 0x1400 or len(score) > 0x1700:
+        raise ValueError('resident driver/score sections overlap')
+    payload += bytes(0x1200-len(payload)) + score
     host = assemble((FIRMWARE / 'host.asm').read_text(), 'host', 0x8000,
                     {'payload_size': len(payload), 'entry_token': ((len(payload)+2) | 1) & 255})
     if len(host) > 0x1000 or len(payload) > 0x6fc0:
@@ -197,7 +208,7 @@ def render(rom, host, payload):
             '#pragma once\n#include <algorithm>\n#include <array>\n#include <cstdint>\n#include <vector>\n'
             'namespace gameboy::firmware {\n'
             f'inline constexpr std::size_t sgb_prototype_driver_offset = {DRIVER_OFFSET};\n'
-            f'inline constexpr std::size_t sgb_prototype_driver_size = {len(payload)-DRIVER_OFFSET};\n'
+            f'inline constexpr std::size_t sgb_prototype_driver_size = {len(assemble((FIRMWARE / "driver.asm").read_text(), "spc", DRIVER_ADDRESS))};\n'
             + array('sgb_prototype_host', host)
             + array('sgb_prototype_spc', payload) + array('sgb_prototype_header', rom[0x7fc0:0x8000])
             + 'inline std::vector<std::uint8_t> sgb_prototype_rom() {\n'

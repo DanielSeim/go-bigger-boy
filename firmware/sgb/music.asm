@@ -4,6 +4,10 @@
 ; $1B pending score: 00 keep, 01/02 restart, 80 stop. $1F enabled.
 ; $1C countdown, $1D note index, $20 table offset. No borrowed score data.
 .org $0700
+    mov a, $30
+    beq legacy_music
+    jmp $1600
+legacy_music:
     mov a, $1b
     beq playing
     bmi stop

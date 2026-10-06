@@ -316,6 +316,71 @@ void ready_score(Host& h) {
     require(h.icd().sound_packets_delivered()==1 && h.cpu().debug_wram_byte(0x23)==2 &&
             h.cpu().debug_wram_byte(0x20)==1,"uploaded score selected after v3 arm and acknowledgment");
 }
+void resident_score(gameboy::HardwareModel model,const Payload& p) {
+    for(bool combined:{false,true}) {
+        auto c=config(model,p,5);c.combined_audio=combined;
+        Host h(c),scalar(c),peer(c);scalar.debug_set_apu_batch_enabled(false);
+        const auto boot=advance(h,10'000'000),reference=advance(scalar,10'000'000);
+        require(equal(boot,reference) && h.save_state()==scalar.save_state(),"resident score native/combined scalar parity");
+        if(!(h.cpu().debug_wram_byte(0x2b)==0xc5 && h.cpu().debug_wram_byte(0x2a)==2 &&
+                h.cpu().debug_wram_byte(0x20)==1 && h.cpu().debug_wram_byte(0x23)==2))
+            throw std::runtime_error("resident readiness: state="+std::to_string(h.cpu().debug_wram_byte(0x20))+
+                " version="+std::to_string(h.cpu().debug_wram_byte(0x2b))+
+                " diagnostic="+std::to_string(h.cpu().debug_wram_byte(0x28))+
+                " adoptions="+std::to_string(h.cpu().debug_wram_byte(0x2a))+
+                " token="+std::to_string(h.cpu().debug_wram_byte(0x23)));
+        require(peer.load_state(h.save_state()),"restore resident score while active");
+        require(equal(advance(h,1'000'000),advance(peer,1'000'000)) && h.save_state()==peer.save_state(),
+                "resident note/countdown and DSP continuation restore exactly");
+        h.reset();require(equal(boot,advance(h,10'000'000)),"resident score reset repeats upload and playback");
+        Host measured(c);Host::StereoSample sample;
+        while((measured.icd().sound_packets_delivered()!=1 || measured.cpu().debug_wram_byte(0x23)!=2)
+              && measured.cpu().timing().clocks()<12'000'000) {
+            require(measured.step(),"reach resident score first note");while(measured.pop_sample(sample)) {}
+        }
+        require(measured.cpu().debug_wram_byte(0x23)==2,"resident score start acknowledged");
+        (void)advance(measured,100'000);
+        const auto first=crossings(advance(measured,1'000'000));
+        (void)advance(measured,1'800'000);
+        const auto octave=crossings(advance(measured,1'000'000));
+        require(first>5 && std::abs(double(octave)/first-2)<0.18,"uploaded octave notes render real DSP pitch ratio");
+        (void)advance(measured,2'000'000);
+        const auto tied=crossings(advance(measured,1'000'000));
+        require(std::abs(double(tied)/octave-1)<0.12,"tie keeps uploaded pitch for another duration");
+        (void)advance(measured,1'600'000);
+        const auto rest=advance(measured,1'000'000);
+        require(std::all_of(rest.begin(),rest.end(),[](auto s){return s.left==0 && s.right==0;}),"uploaded rest keys off music voice");
+        (void)advance(measured,1'800'000);
+        require(crossings(advance(measured,1'000'000))>5,"note after rest resumes playback");
+        (void)advance(measured,4'000'000);
+        const auto ended=advance(measured,200'000);
+        require(std::all_of(ended.begin(),ended.end(),[](auto s){return s.left==0 && s.right==0;}),"finite uploaded score ends silently");
+    }
+    for(unsigned followup:{6U,8U}) {
+        Host invalid(config(model,p,followup));(void)advance(invalid,10'000'000);
+        require(invalid.cpu().debug_wram_byte(0x20)==0xff && invalid.cpu().debug_wram_byte(0x2b)==0xc5,
+                "v5 rejects score two and silences all voices");
+        const auto quiet=advance(invalid,500'000);
+        require(std::all_of(quiet.begin(),quiet.end(),[](auto s){return s.left==0 && s.right==0;}),"invalid v5 command stays silent");
+    }
+    std::vector<Payload> invalid;
+    auto changed=p;changed[4]='X';invalid.push_back(changed); // header
+    changed=p;changed[8]=0xff;invalid.push_back(changed); // missing terminal at declared end
+    changed=p;changed[4+0x12]=1;invalid.push_back(changed); // other channel
+    changed=p;changed[4+0x21]=0xe0;invalid.push_back(changed); // unsupported control
+    changed=p;changed[4+0x21]=0xc8;invalid.push_back(changed); // tie before note
+    for(const auto& payload:invalid) {
+        Host rejected(config(model,payload));(void)advance(rejected,6'000'000);
+        require(rejected.cpu().debug_wram_byte(0x24)==1 && rejected.cpu().debug_wram_byte(0x2a)==1 &&
+                rejected.cpu().debug_wram_byte(0x28)>=0xe1 && rejected.cpu().debug_wram_byte(0x29)==0,
+                "bad bank rejected before v5 readiness without false adoption");
+    }
+    Host repeated(sequence(model,{p,p,program_payload({},0x0200)}));
+    (void)advance(repeated,16'000'000);
+    require(repeated.cpu().debug_wram_byte(0x26)==3 && repeated.cpu().debug_wram_byte(0x2a)==4 &&
+            repeated.cpu().debug_wram_byte(0x2b)==0xc4 && repeated.cpu().debug_wram_byte(0x20)==1,
+            "repeated v5 bank uploads rearm and legacy restart returns to v4");
+}
 void uploaded_scores(gameboy::HardwareModel model,const Payload& p) {
     auto parsed=gameboy::SgbSoundTransfer::parse(p);
     require(parsed.valid() && parsed.writes.size()==1 && parsed.writes[0].destination==0x07d0 &&
@@ -354,7 +419,7 @@ void uploaded_scores(gameboy::HardwareModel model,const Payload& p) {
 void incompatible(gameboy::HardwareModel model) {
     // Original test stubs explicitly advertise wrong versions or violate one
     // advertised operation. They execute normally; the host must fail boundedly.
-    std::vector<std::uint8_t> wrong_version{0x8f,0xc5,0xf5,0x8f,0xa5,0xf7,0x8f,0x5a,0xf4,
+    std::vector<std::uint8_t> wrong_version{0x8f,0xc6,0xf5,0x8f,0xa5,0xf7,0x8f,0x5a,0xf4,
         0xe4,0xf5,0xc4,0xf6,0x2f,0xfa}; // observe input 1; host must never write it
     Host unknown(config(model,program_payload(wrong_version,0x0800),1));
     (void)advance(unknown,8'000'000);
@@ -423,10 +488,13 @@ void invalid(gameboy::HardwareModel model) {
 }
 int main(int argc,char** argv) {
     try {
-        if(argc==3 && std::string(argv[1])=="--score-transfer") {
+        if(argc==3 && (std::string(argv[1])=="--score-transfer" || std::string(argv[1])=="--resident-score")) {
             Payload p{};std::ifstream input(argv[2],std::ios::binary);
             require(bool(input.read(reinterpret_cast<char*>(p.data()),p.size())) && input.peek()==std::char_traits<char>::eof(),"score transfer file must contain exactly 4096 bytes");
-            for(auto model:{gameboy::HardwareModel::sgb,gameboy::HardwareModel::sgb2}) uploaded_scores(model,p);
+            for(auto model:{gameboy::HardwareModel::sgb,gameboy::HardwareModel::sgb2}) {
+                if(std::string(argv[1])=="--resident-score") resident_score(model,p);
+                else uploaded_scores(model,p);
+            }
             std::cout<<"Original SGB1/SGB2 uploaded scores: data-only handoff, note pitches, native/combined scalar PCM, reset and restore passed\n";
             return 0;
         }

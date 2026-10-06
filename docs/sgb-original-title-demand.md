@@ -101,8 +101,8 @@ entry. Together with the transfer metadata, that supports the **inference** that
 this title expects a resident score engine at `$0400`, rather than installing a
 complete replacement driver in this upload. At the audited revision, GBB v4
 lived at `$0200` and occupied `$0400`. It has since moved to `$1000`, with an
-unsupported-score guard at `$0400`, but still uses the different sixteen-byte
-motif format at `$07D0`. Redirecting that jump or acknowledging the score code would
+GBS1 validator at `$0400`, but vendor title data is still unsupported. Legacy
+v4 uses the different sixteen-byte motif format at `$07D0`. Redirecting that jump or acknowledging the score code would
 not supply the required decoder or original sound-bank behavior.
 
 Kirby and Tetris reaching their clock bounds does not qualify their startup,

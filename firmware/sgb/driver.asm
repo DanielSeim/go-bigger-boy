@@ -84,6 +84,10 @@
     mov $fa, #$80
     mov $f1, #$81
     mov $f5, #$c4
+    mov a, $30
+    beq publish_ready
+    mov $f5, #$c5
+publish_ready:
     mov $f7, #$a5
     mov $f4, #$5a
 await_arm:
@@ -144,6 +148,7 @@ command:
     mov $f5, #$00
     mov $f7, #$00
     mov $f1, #$80
+    mov $30, #$00
     jmp $ffc0
 return_top:
     bra poll

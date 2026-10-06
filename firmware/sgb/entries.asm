@@ -1,14 +1,17 @@
 ; SPDX-License-Identifier: GPL-3.0-or-later
 ; Original resident entry layout. Legacy $0200 restarts mailbox-v4 code at $1000.
+    mov $30, #$00
     jmp $1000
 
-; Uploaded N-SPC score restart is reserved but playback is not implemented yet.
-; Fail silent, withdraw readiness, report E1 on output port 2, and remain external.
-; Never advertise mailbox ownership merely because an upload jumps here.
+; Uploaded original score restart validates the explicit GBS1 subset at $1400.
+; Only complete validation may select v5. Rejection remains silent and external.
     .org $0400
+    jmp $1400
+    .org $0410
+; Validator rejection entry, A contains diagnostic E1/E2.
     mov $f4, #$00
     mov $f5, #$00
-    mov $f6, #$e1
+    mov $f6, a
     mov $f7, #$00
     mov $f2, #$5c
     mov $f3, #$ff

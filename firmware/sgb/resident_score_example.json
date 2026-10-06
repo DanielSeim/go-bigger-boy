@@ -1,0 +1,9 @@
+{
+  "events": [
+    {"note": 12, "ticks": 8},
+    {"note": 24, "ticks": 8},
+    {"tie": true, "ticks": 8},
+    {"rest": true, "ticks": 8},
+    {"note": 19, "ticks": 8}
+  ]
+}
