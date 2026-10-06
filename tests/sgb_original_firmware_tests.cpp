@@ -244,11 +244,11 @@ void bank_and_scores(gameboy::HardwareModel model) {
         auto c=config(model,{Packet{0x41,2,3,0,1},Packet{0x41,0x80,0x80},
                             Packet{0x41,0,0,0,2},Packet{0x41,0,0,0,0x80}},combined,false,8);
         Host h(c),scalar(c);scalar.debug_set_apu_batch_enabled(false);
-        const auto pcm=advance(h,14'000'000,true);
-        require(audible(pcm) && equal(pcm,advance(scalar,14'000'000)) && h.save_state()==scalar.save_state(),"concurrent bank/music playback matches scalar execution");
+        const auto pcm=advance(h,16'000'000,true);
+        require(audible(pcm) && equal(pcm,advance(scalar,16'000'000)) && h.save_state()==scalar.save_state(),"concurrent bank/music playback matches scalar execution");
         require(h.icd().sound_packets_delivered()==4 && h.cpu().debug_wram_byte(0x23)==8,"all effect/score commands acknowledged before testing stop");
         require(!audible(advance(h,500'000)),"music stop silences a score independently of stopped effects");
-        h.reset();require(equal(pcm,advance(h,14'000'000)),"reset repeats effect and score sequence");
+        h.reset();require(equal(pcm,advance(h,16'000'000)),"reset repeats effect and score sequence");
         Host staged(c),restored(c);Host::StereoSample sample;
         while(staged.cpu().debug_wram_byte(0x23)!=1 && staged.cpu().timing().clocks()<7'000'000) {
             require(staged.step(),"reach pending score staging");while(staged.pop_sample(sample)) {}
@@ -264,7 +264,7 @@ void bank_and_scores(gameboy::HardwareModel model) {
     ready_sound(mute,2);(void)advance(mute,6'000'000);
     require(!audible(advance(mute,1'000'000)),"global fade also mutes score playback");
     Host invalid(config(model,{Packet{0x41,0,0,0,1},Packet{0x41,6}},false,false,8));
-    (void)advance(invalid,8'000'000);
+    (void)advance(invalid,10'000'000);
     require(invalid.cpu().debug_wram_byte(0x20)==0xff && !audible(advance(invalid,500'000)),"unsupported commands silence an active score before halting");
 }
 void modulation_effects(gameboy::HardwareModel model) {
@@ -296,11 +296,11 @@ void modulation_effects(gameboy::HardwareModel model) {
         auto c=config(model,{Packet{0x41,4,4,0,1},Packet{0x41,5,5,0x11},
                             Packet{0x41},Packet{0x41,0x80,0x80,0,0x80}},combined,false,4);
         Host h(c),scalar(c),peer(c);scalar.debug_set_apu_batch_enabled(false);
-        const auto pcm=advance(h,9'000'000,true);
-        require(equal(pcm,advance(scalar,9'000'000)) && h.save_state()==scalar.save_state(),"modulated effects with music match scalar native/combined PCM and state");
+        const auto pcm=advance(h,11'000'000,true);
+        require(equal(pcm,advance(scalar,11'000'000)) && h.save_state()==scalar.save_state(),"modulated effects with music match scalar native/combined PCM and state");
         require(h.icd().sound_packets_delivered()==4 && h.cpu().debug_wram_byte(0x23)==8 &&
                 !audible(advance(h,500'000)),"new effect and score stops are acknowledged and silent");
-        h.reset();require(equal(pcm,advance(h,9'000'000)),"reset repeats dynamic effect sequence");
+        h.reset();require(equal(pcm,advance(h,11'000'000)),"reset repeats dynamic effect sequence");
         Host active(config(model,{Packet{0x41,4,5,0,1}},combined));ready_sound(active,1);
         (void)advance(active,1'000'000);
         auto active_config=config(model,{Packet{0x41,4,5,0,1}},combined);Host restored(active_config);
@@ -311,7 +311,7 @@ void modulation_effects(gameboy::HardwareModel model) {
 void unsupported(gameboy::HardwareModel model) {
     for (const Packet p: {Packet{0x41,1,0,0xc0}, Packet{0x41,1,0,0,3}, Packet{0x42,1}, Packet{0x4a}, Packet{0x41,6}, Packet{0x41,0,6}}) {
         Host h(config(model,{Packet{0x41,1,1},p}));
-        (void)advance(h,6'000'000,true);
+        (void)advance(h,8'000'000,true);
         require(h.cpu().debug_wram_byte(0x20)==0xff,"unsupported audio command halts prototype");
         require(h.cpu().debug_wram_byte(0x21)==p[0],"unsupported header retained for diagnosis");
         require(!audible(advance(h,500'000)),"unsupported audio silences both voices");

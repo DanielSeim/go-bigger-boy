@@ -95,6 +95,8 @@ poll:
     cmp #$c6
     beq driver_version_known
     cmp #$c7
+    beq driver_version_known
+    cmp #$c8
     bne poll_packets
 driver_version_known:
     lda $2140
@@ -142,6 +144,8 @@ own_sound:
     beq validate_uploaded_score
     cmp #$c7
     beq validate_uploaded_score
+    cmp #$c8
+    beq validate_uploaded_score
     cmp #$c3
     beq validate_score
     cmp #$c4
@@ -184,6 +188,8 @@ validate_effects:
     cmp #$c6
     beq new_effect_limit
     cmp #$c7
+    beq new_effect_limit
+    cmp #$c8
     bne check_v3_limit
 new_effect_limit:
     lda #$06
@@ -252,6 +258,8 @@ unsupported:
     cmp #$c6
     beq stop_all_control
     cmp #$c7
+    beq stop_all_control
+    cmp #$c8
     bne stop_control_ready
 stop_all_control:
     lda #$03

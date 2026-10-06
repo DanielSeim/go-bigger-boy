@@ -56,7 +56,7 @@ State lives in SPC direct page: `$30` mode, `$31` end, `$32` cursor, `$33` durat
 `$34` countdown, `$35` held-note flag, `$36..38` validation/temporary values.
 Existing whole-host states preserve these bytes, the uploaded bank and DSP
 history; no serialization changes are needed. Reset recreates the initial bank.
-The generated contiguous startup payload is now 7879 bytes, so tests allow its
+The generated contiguous startup payload is now 9511 bytes, so tests allow its
 upload before checking complete command sequences.
 
 ```sh

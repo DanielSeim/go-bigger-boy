@@ -1,10 +1,11 @@
 ; SPDX-License-Identifier: GPL-3.0-or-later
-; Independently written GBS1/GBS2 single-channel and GBS3 two-track subsets. No vendor song-table guesses.
-; Fixed header/phrase/pattern locations; length <=255, track begins at $2B20.
+; Original GBS1/GBS2 single-track, GBS3 two-track and GBS4 finite-phrase subsets.
+; Canonical bounded headers/pointers; bank length <=255. No vendor table guesses.
 ; $30 mode, $31 end, $32 cursor, $33 duration, $34 countdown, $35 held-note flag.
 ; $36/$37 validation duration/held flag. Validate the entire stream before readiness.
 .org $1400
     mov $30, #$00
+    mov $4e, #$20
     mov a, $2b00
     cmp a, #$47
     bne header_error
@@ -17,12 +18,16 @@
     mov a, $2b03
     cmp a, #$31
     beq format_one
+    cmp a, #$34
+    beq phrases
     cmp a, #$33
     beq two_tracks
     cmp a, #$32
     bne header_error
     mov $3f, #$02
     bra bank_length
+phrases:
+    jmp $2200
 two_tracks:
     jmp $1b00
 format_one:
@@ -72,15 +77,16 @@ skip_track:
 header_error:
     mov a, #$e1
     jmp $0410
+syntax_early:
+    jmp syntax_error
 validate:
     mov $36, #$00
     mov $37, #$00
-    mov a, #$20
-    mov x, a
+    mov x, $4e
 next:
     mov a, x
     cmp a, $31
-    bcs syntax_error
+    bcs syntax_early
     mov a, $2b00+x
     mov $38, a
     mov a, x
@@ -94,10 +100,10 @@ next:
     mov $36, a
     mov a, x
     cmp a, $31
-    bcs syntax_error
+    bcs syntax_early
     mov a, $2b00+x
     cmp a, #$80
-    bcc syntax_error
+    bcc syntax_early
     bra next
 event:
     mov a, $38
@@ -133,7 +139,7 @@ terminated:
     bne syntax_error
     mov a, $3f
     cmp a, #$03
-    bne validation_done
+    bcc validation_done
     mov a, $4d
     bne validation_done
     mov $4d, #$01
@@ -145,6 +151,10 @@ terminated:
     jmp next
 validation_done:
     mov a, $3f
+    cmp a, #$04
+    bne publish_format
+    jmp $2300
+publish_format:
     mov $30, a
     jmp $1000
 syntax_error:
@@ -158,7 +168,7 @@ syntax_error:
 .org $1740
 
 .org $1800
-; Apply one prevalidated GBS2/GBS3 control, preserving score time and held note.
+; Apply one prevalidated uploaded-score control, preserving score time and held note.
     mov x, $32
     mov a, $2b00+x
     mov $39, a
@@ -340,11 +350,18 @@ scheduler_done:
     ret
 dispatch_command:
     mov $49, a
+    cmp a, #$01
+    bne dispatch
+    mov a, $30
+    cmp a, #$04
+    bne dispatch
+    call $2680
 dispatch:
     mov $43, #$40
     mov $44, #$10
     mov $45, #$ef
-    mov $4a, #$20
+    mov a, $4e
+    mov $4a, a
     call load_track_zero
     mov a, $4b
     mov $31, a
@@ -368,7 +385,7 @@ dispatch:
     clrc
     adc a, $68
     mov $1f, a
-    ret
+    jmp $2700
 save_track_zero:
     mov a, $31
     mov $50, a
@@ -557,4 +574,206 @@ stop:
     mov $48, a
     mov $f2, #$5c
     mov $f3, a
+    ret
+
+.org $2200
+; GBS4 finite phrase list: 1..4 canonical two-track pattern tables at $2B20.
+    mov $3f, #$04
+    mov a, $2b04
+    cmp a, #$36
+    bcc phrase_header_error
+    mov $77, a
+    mov a, $2b05
+    beq phrase_header_error
+    cmp a, #$05
+    bcs phrase_header_error
+    mov $70, a
+    mov a, $2b06
+    bne phrase_header_error
+    mov a, $2b07
+    bne phrase_header_error
+    mov $71, #$00
+    mov $72, #$20
+    mov $7a, #$08
+phrase_words:
+    mov x, $7a
+    mov a, $2b00+x
+    cmp a, $72
+    bne phrase_header_error
+    mov a, $2b01+x
+    cmp a, #$2b
+    bne phrase_header_error
+    inc $7a
+    inc $7a
+    mov a, $72
+    clrc
+    adc a, #$10
+    mov $72, a
+    inc $71
+    mov a, $71
+    cmp a, $70
+    bne phrase_words
+    mov a, $72
+    mov $78, a
+    mov $79, a
+phrase_reserved:
+    mov x, $7a
+    mov a, $2b00+x
+    bne phrase_header_error
+    inc $7a
+    mov a, $7a
+    cmp a, #$20
+    bne phrase_reserved
+    bra phrase_header_bounds
+phrase_header_error:
+    jmp header_error
+phrase_header_bounds:
+    mov a, $79
+    clrc
+    adc a, #$06
+    mov $7c, a
+    mov a, $77
+    cmp a, $7c
+    bcc phrase_header_error
+    mov $71, #$00
+    mov $72, #$20
+    jmp $2400
+
+.org $2300
+; Called only after both streams in the current phrase validate completely.
+    inc $71
+    mov a, $71
+    cmp a, $70
+    bne validate_another_phrase
+    call $2680
+    mov $30, #$04
+    jmp $1000
+validate_another_phrase:
+    mov a, $72
+    clrc
+    adc a, #$10
+    mov $72, a
+    jmp $2400
+
+.org $2400
+; Canonical contiguous streams; fresh duration and held-note state per track/phrase.
+    mov a, $78
+    mov $4e, a
+    clrc
+    adc a, #$03
+    bcs phrase_pattern_error
+    mov $7c, a
+    mov x, $72
+    mov a, $2b00+x
+    cmp a, $78
+    bne phrase_pattern_error
+    mov a, $2b01+x
+    cmp a, #$2b
+    bne phrase_pattern_error
+    mov a, $2b02+x
+    cmp a, $7c
+    bcc phrase_pattern_error
+    mov $4b, a
+    mov a, $2b03+x
+    cmp a, #$2b
+    bne phrase_pattern_error
+    mov a, $72
+    clrc
+    adc a, #$10
+    mov $7b, a
+    mov a, $72
+    clrc
+    adc a, #$04
+    mov $7a, a
+pattern_reserved:
+    mov x, $7a
+    mov a, $2b00+x
+    bne phrase_pattern_error
+    inc $7a
+    mov a, $7a
+    cmp a, $7b
+    bne pattern_reserved
+    mov a, $71
+    clrc
+    adc a, #$01
+    cmp a, $70
+    beq final_pattern_end
+    mov x, $7b
+    mov a, $2b00+x
+    bra pattern_end
+final_pattern_end:
+    mov a, $77
+pattern_end:
+    mov $4c, a
+    cmp a, $77
+    bcc pattern_in_bank
+    beq pattern_in_bank
+    bra phrase_pattern_error
+pattern_in_bank:
+    mov a, $4b
+    clrc
+    adc a, #$03
+    bcs phrase_pattern_error
+    mov $7c, a
+    mov a, $4c
+    cmp a, $7c
+    bcc phrase_pattern_error
+    mov $78, a
+    mov a, $4b
+    mov $31, a
+    mov $4d, #$00
+    jmp validate
+phrase_pattern_error:
+    jmp header_error
+
+.org $2600
+; Runtime bounds come only from fully prevalidated canonical pattern pointers.
+    mov x, $72
+    mov a, $2b00+x
+    mov $4e, a
+    mov a, $2b02+x
+    mov $4b, a
+    mov a, $71
+    clrc
+    adc a, #$01
+    cmp a, $70
+    beq runtime_final_end
+    mov a, $72
+    clrc
+    adc a, #$10
+    mov x, a
+    mov a, $2b00+x
+    bra runtime_end
+runtime_final_end:
+    mov a, $77
+runtime_end:
+    mov $4c, a
+    ret
+.org $2680
+    mov $71, #$00
+    mov $72, #$20
+    call $2600
+    ret
+
+.org $2700
+; Barrier: wait for BOTH tracks, then start the next phrase in this same tick.
+    mov a, $30
+    cmp a, #$04
+    bne phrase_tick_done
+    mov a, $1f
+    bne phrase_tick_done
+    mov a, $49
+    bmi phrase_tick_done
+    inc $71
+    mov a, $71
+    cmp a, $70
+    beq phrase_tick_done
+    mov a, $72
+    clrc
+    adc a, #$10
+    mov $72, a
+    call $2600
+    mov $49, #$01
+    jmp dispatch
+phrase_tick_done:
     ret

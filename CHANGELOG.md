@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Add original GBS4 finite phrase sequencing with mailbox v8: validate one to four
+  two-track patterns before readiness, wait for both tracks at each transition,
+  and reset timing and controls per phrase. Add strict authoring and real SGB1/SGB2
+  barrier, stereo, pitch, gain, stop/restart, scalar, reset and save/load checks.
+  Vendor title data remains unsupported.
+
 - Add original GBS3 two-track SPC playback with mailbox v7, independent durations,
   cursors, instruments, pan and gain. Validate both tracks before readiness and
   retain each voice's key-off state. Add strict authoring, real stereo timing,
