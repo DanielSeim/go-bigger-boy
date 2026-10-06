@@ -49,7 +49,9 @@ gameboy::SgbHostConfig config(gameboy::HardwareModel model,const Payload& payloa
         for(unsigned n=0;n<8;++n) append(code,{0xf0,0x44,0xfe,0x90,0x30,0xfa,
             0xf0,0x44,0xfe,0x90,0x38,0xfa});
         packet(code,followup==1 ? Packet{0x41,1} :
-            followup==3 ? Packet{0x41,1,0,1} : Packet{0x49});
+            followup==3 ? Packet{0x41,1,0,1} :
+            followup==4 ? Packet{0x41,2} :
+            followup==5 ? Packet{0x41,0,0,0,1} : Packet{0x49});
     }
     append(code,{0x18,0xfe});
     require(code.size()+0x150<0x4000,"original fixture code does not overlap transfer data");
@@ -255,7 +257,7 @@ void interoperability(gameboy::HardwareModel model) {
 void incompatible(gameboy::HardwareModel model) {
     // Original test stubs explicitly advertise wrong versions or violate one
     // advertised operation. They execute normally; the host must fail boundedly.
-    std::vector<std::uint8_t> wrong_version{0x8f,0xc3,0xf5,0x8f,0xa5,0xf7,0x8f,0x5a,0xf4,
+    std::vector<std::uint8_t> wrong_version{0x8f,0xc4,0xf5,0x8f,0xa5,0xf7,0x8f,0x5a,0xf4,
         0xe4,0xf5,0xc4,0xf6,0x2f,0xfa}; // observe input 1; host must never write it
     Host unknown(config(model,program_payload(wrong_version,0x0800),1));
     (void)advance(unknown,6'000'000);
@@ -263,7 +265,7 @@ void incompatible(gameboy::HardwareModel model) {
             unknown.cpu().debug_wram_byte(0x2a)==1,"unknown mailbox version remains external");
     require(unknown.cpu().debug_wram_byte(0x28)==0,"unknown driver receives no SOUND parameters");
     std::vector<std::uint8_t> no_arm{0x8f,0xc1,0xf5,0x8f,0xa5,0xf7,0x8f,0x5a,0xf4,0x2f,0xfe};
-    Host arm(config(model,program_payload(no_arm,0x0800)));(void)advance(arm,8'000'000);
+    Host arm(config(model,program_payload(no_arm,0x0800)));(void)advance(arm,12'000'000);
     require(arm.cpu().debug_wram_byte(0x20)==0xff && arm.cpu().debug_wram_byte(0x27)==5 &&
             arm.cpu().debug_wram_byte(0x2a)==1,"missing arm acknowledgment times out before adoption");
     auto no_sound=no_arm;no_sound.resize(9);
@@ -282,6 +284,13 @@ void incompatible(gameboy::HardwareModel model) {
     Host legacy_attributes(config(model,program_payload(no_loader,0x0800),3));(void)advance(legacy_attributes,6'000'000);
     require(legacy_attributes.cpu().debug_wram_byte(0x20)==0xff && legacy_attributes.cpu().debug_wram_byte(0x24)==0 &&
             legacy_attributes.cpu().debug_wram_byte(0x23)==1,"legacy v1 rejects new attributes and acknowledges ordinary stop");
+    auto v2=no_loader;v2[1]=0xc2;
+    Host attributes(config(model,program_payload(v2,0x0800),3));(void)advance(attributes,6'000'000);
+    require(attributes.cpu().debug_wram_byte(0x20)==1 && attributes.cpu().debug_wram_byte(0x2b)==0xc2 && attributes.cpu().debug_wram_byte(0x23)==2,"v2 adoption retains two-phase attribute commands");
+    for(unsigned followup:{4U,5U}) {
+        Host limited(config(model,program_payload(v2,0x0800),followup));(void)advance(limited,6'000'000);
+        require(limited.cpu().debug_wram_byte(0x20)==0xff && limited.cpu().debug_wram_byte(0x23)==1,"v2 rejects v3 presets/scores before staging and acknowledges legacy stop");
+    }
     Host loader(config(model,program_payload(no_loader,0x0800),2));(void)advance(loader,10'000'000);
     require(loader.cpu().debug_wram_byte(0x20)==0xff && loader.cpu().debug_wram_byte(0x27)==5 &&
             loader.cpu().debug_wram_byte(0x25)==2 && loader.cpu().debug_wram_byte(0x26)==1,

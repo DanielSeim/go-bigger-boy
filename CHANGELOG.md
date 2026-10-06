@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Add an original SGB diagnostic effect bank and two looping score motifs with
+  mailbox v3. Real SPC/DSP playback supports concurrent effects/music, remembered
+  preset retriggers, independent stops and global fades; retain v1/v2 contracts
+  and validate scalar audio, relocation, reset and score save/load. The program
+  ROM prototype remains opt-in pending broader bank and title compatibility.
+
 - Extend the original SGB SOUND prototype with mailbox-v2 attribute staging,
   independent pitch/volume, a decaying A instrument, remembered-instrument
   retrigger and SPC-timer mute/unmute fades. Keep v1 command compatibility and

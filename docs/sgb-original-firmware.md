@@ -10,8 +10,8 @@ Performance work remains deferred.
 
 ## Reproducible build and provenance
 
-Sources live in [`firmware/sgb/`](../firmware/sgb/): `host.asm`, `driver.asm`, and
-`samples.asm`. The dependency-free Python assembler has a strict, fixed-width
+Sources live in [`firmware/sgb/`](../firmware/sgb/): `host.asm`, `driver.asm`,
+`samples.asm`, and `music.asm`. The dependency-free Python assembler has a strict, fixed-width
 instruction subset, resolves branches, rejects range errors and overlapping
 sections, and writes a deterministic 256 KiB LoROM image with header/checksum.
 The checked-in `prototype_image.hpp` holds the host, payload and ROM header;
@@ -27,8 +27,9 @@ The export refuses to overwrite a file. For explicit diagnostic playback it
 can be supplied as `SgbHostConfig.program_rom`. The same image serves both
 models; select the matching `HardwareModel` and GB bootstrap normally.
 No user-owned firmware or sound bank is a build/test input. The BRR fixtures
-are newly authored square and stepped-triangle waveforms, not extracted or
-recorded assets. Sources/images use GPL-3.0-or-later.
+are newly authored square, stepped-triangle, narrow-pulse and saw waveforms.
+Both score motifs are independently composed; no samples or scores are extracted
+or recorded assets. Sources/images use GPL-3.0-or-later.
 
 The public [Pan Docs SOUND/SOU_TRN protocol](https://gbdev.io/pandocs/SGB_Command_Sound.html)
 defines command framing and parameter layout. GBB's existing ICD and IPL
@@ -42,24 +43,27 @@ to its sound bank.
 | --- | --- | --- |
 | Cold host entry | Valid LoROM reset vector; disable interrupts; establish register widths | Implemented |
 | IPL readiness | Wait for AA/BB before publishing destination, mode and CC token | Implemented |
-| SPC upload | Transfer original code, directory and samples to $0200; echo every byte index; handle counter/page wraps | Implemented, 1042-byte contiguous payload |
+| SPC upload | Transfer original code, directory and samples to $0200; echo every byte index; handle counter/page wraps | Implemented, 1504-byte contiguous payload |
 | SPC handoff | Mode zero with a forward token enters $0200; wait for driver readiness | Implemented |
-| DSP startup | Driver initializes its voices and master volume before publishing 5A/C2/A5 | Implemented |
+| DSP startup | Driver initializes its voices and master volume before publishing 5A/C3/A5 | Implemented |
 | ICD release | Release GB through $6003 with divider 5 after SPC readiness | Implemented on SGB1/SGB2 |
 | GB bootstrap packets | Consume the six original GBB GB-side header packets | Implemented |
 | ICD packets | Poll $6002; read $7000 exactly once to pop; copy the remaining latched bytes | Implemented |
-| SOUND | Support two independent original instruments, explicit start/stop and acknowledgment after DSP writes | Two authored instruments with pitch, level, decay and fade; restricted codes below |
+| SOUND | Support two independent original instruments, explicit start/stop and acknowledgment after DSP writes | Three presets per effect voice plus two original looping scores; controls and restricted codes below |
 | Unsupported audio | Retain the offending header and halt packet consumption; stop a compatible driver with a bounded acknowledgment | Implemented; unrecognized drivers are never sent our stop protocol |
 | LCD transfers | Capture a full 4096-byte screen through completed ICD planar rows at physical boundaries | Implemented for SOU_TRN, next complete frame |
-| SOU_TRN | Validate the complete block list; upload each block; honor the zero-length jump; reacquire compatible drivers | Implemented, including repeated transfers with mailbox v1/v2; transport restrictions below |
+| SOU_TRN | Validate the complete block list; upload each block; honor the zero-length jump; reacquire compatible drivers | Implemented, including repeated transfers with mailbox v1/v2/v3; transport restrictions below |
 | Lifecycle | Restore the actual CPU/WRAM/ICD/APU/DSP/PCM state, including upload; cold reset repeats firmware | Implemented with existing whole-host state codec |
 
-## GBB SPC mailbox versions 1 and 2
+## GBB SPC mailbox versions 1, 2 and 3
 
 The original driver is position independent and explicitly advertises mailbox
-version 2 after initializing DSP state. The host retains version 1 support.
+version 3 after initializing DSP state. The host retains versions 1 and 2.
+The main driver can be relocated; the sample directory/data at `$0500/$0600`
+and score module at `$0700..07DF` remain at their fixed addresses. Uploaded
+code/data must preserve them to use this original bank.
 After initial startup or an uploaded program's jump, the complete readiness signature is **output ports 0/1/3 =
-5A/version/A5**. C1 identifies v1, C2 identifies v2; the host does not infer
+5A/version/A5**. C1 identifies v1, C2 identifies v2, C3 identifies v3; the host does not infer
 compatibility from a jump address, previous ownership, or a partial readiness signature.
 Unknown versions and drivers without the signature remain external.
 
@@ -99,17 +103,42 @@ them to DSP sound state. After that acknowledgment, the host sends A/B codes wit
 acknowledging. This separates attributes (which can themselves contain 01/02)
 from loader control, and lets save/load retain a partially staged command.
 
+Version 3 adds effect presets and scores. It stages attributes in input port 1
+and the score code in input port 2 using control 02, then commits both with the
+A/B effect phase. Pending music cannot take effect during staging. Control 03
+silences all three voices before an unsupported command halts the host; v1/v2
+retain their two-effect stop command and reject v3 presets/scores before staging.
+
 ## Original SOUND instruments and controls
 
-Only command header `41`, music `00`, and instrument values `00`, `01`, `80`
-are supported. The original v2 driver uses A = a square BRR instrument on voice 6
-and B = a stepped-triangle BRR instrument on voice 5. Code 01 starts the
-instrument, 00 retriggers its remembered instrument, and 80 stops it and clears
-that memory. Dummy code 00 does nothing if there is no remembered instrument;
-it can retrigger A after its envelope has naturally reached zero. Legacy v1
-keeps its previous driver-defined zero-code behavior.
+Command header `41` accepts A/B values `00`, `01..03`, `80` with v3.
+The original effect bank uses voice 6 for A and voice 5 for B:
 
-| Attribute field | v2 behavior |
+| Preset | A waveform | B waveform |
+| --- | --- | --- |
+| 01 | Square | Stepped triangle |
+| 02 | Narrow pulse | Narrow pulse |
+| 03 | Saw | Saw |
+
+These are authored diagnostic presets, not reproductions of the proprietary
+SGB effect names/assets at those IDs. Each uses a distinct looping BRR sample;
+A applies its decaying gain and B sustains. Code 00 retriggers the remembered
+preset, and 80 stops it and clears that memory. Dummy code 00 does nothing if
+there is no remembered preset; it can retrigger A after its envelope reaches
+zero. V1/v2 remain limited to codes 00/01/80 and music zero; v1 accepts only
+zero attributes and keeps its previous driver-defined zero-code behavior.
+
+Music byte 4 accepts 00 (keep current score), 01/02 (restart one of two newly
+composed eight-note motifs), and 80 (stop music). Voice 4 plays the triangle
+sample at fixed volume 30 and direct gain 50. The separate score interpreter
+advances notes every 16 timer ticks (256 ms at the default SPC clock), loops
+after eight notes, and keeps its countdown/cursor in SPC RAM. Pitch units are
+explicitly authored data in `music.asm`; this is not an N-SPC score decoder.
+Effect commands do not advance the score clock. Effect and music stops are
+independent; the existing master-volume fade applies to all three voices.
+DSP levels and command codes here are hexadecimal; tick counts/times are decimal.
+
+| Attribute field | v2/v3 behavior |
 | --- | --- |
 | Bits 0..1 | A pitch: DSP 0800, 0C00, 1000, 1800, from low to high |
 | Bits 2..3 = 0/1/2 | A voice volume: 40, 28, 10; also request fade-in |
@@ -131,8 +160,8 @@ not measurements or copied presets from a proprietary SGB sound bank.
 All parameter/envelope/fade work runs in the SPC firmware and writes the real
 DSP registers. There is no host gain ramp or generated replacement PCM. At
 other configured APU clock rates, durations follow the hardware timer clock.
-Original effect tables, score playback and broader sound-bank compatibility
-remain pending. Other effect IDs, nonzero music, malformed SOUND/SOU_TRN framing,
+Broader effect coverage and sound-bank compatibility remain pending. Other
+effect/score IDs, malformed SOUND/SOU_TRN framing,
 reserved B volume, and nonzero attributes sent to a v1 driver halt explicitly.
 
 Other commands are consumed by the prototype; GB-side visual commands continue
@@ -202,8 +231,9 @@ Diagnostic WRAM bytes:
 | `$27` | 01 malformed/range error, 03 transport-reserved address, 04 LCD timeout/missed row, 05 driver-arm/command/loader/upload timeout |
 | `$28`, `$29` | Last observed external-program output ports 2/3 |
 | `$2A` | Completed supported-version adoptions modulo 256, including cold startup |
-| `$2B` | Version from the most recent adoption attempt (C1/C2) |
+| `$2B` | Version from the most recent adoption attempt (C1/C2/C3) |
 | `$40..43`, `$44..45` | Current block size/destination; validated jump address |
+| `$2C` | Current effect-code upper bound, exclusive (02 legacy, 04 v3) |
 | `$0100..010F` | Last packet |
 | `$1000..1FFF` | Exact captured 4096-byte payload |
 
@@ -236,6 +266,11 @@ A/B pitch and amplitude ordering, A decay/retrigger, sustained B and mute/unmute
 fades in real PCM. Native/combined scalar parity, reset and cross-instance restore
 cover modulation and an attribute stage pending its effect command. Legacy v1
 command dispatch succeeds without staging and rejects new attributes explicitly.
+V2 stubs accept attribute staging but reject v3 presets/scores. The original
+bank checks distinct rendered presets, remembered preset retriggers, timer-driven
+score changes, score-only output, concurrent effects/music, independent stops,
+global music mute, and silence after unsupported commands. Native/combined
+scalar parity, cross-instance continuation and reset cover active scores.
 These tests establish an original functioning pipeline, not title
 compatibility or parity with the proprietary program ROMs.
 

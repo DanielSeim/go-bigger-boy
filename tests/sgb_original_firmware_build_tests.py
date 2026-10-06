@@ -25,9 +25,18 @@ class BuildContracts(unittest.TestCase):
         self.assertEqual(rom, prototype.build()[0])
         self.assertGreater(len(payload), 256, 'exercise real upload counter wraps')
         # Directory and authored BRR blocks remain disjoint from program code.
-        self.assertEqual(payload[0x300:0x308], bytes.fromhex('0006000609060906'))
+        self.assertEqual(payload[0x300:0x310], bytes.fromhex('0006000609060906120612061b061b06'))
         self.assertEqual(payload[0x400] & 3, 3, 'square BRR end+loop')
         self.assertEqual(payload[0x409] & 3, 3, 'triangle BRR end+loop')
+        self.assertEqual(payload[0x412] & 3, 3, 'pulse BRR end+loop')
+        self.assertEqual(payload[0x41b] & 3, 3, 'saw BRR end+loop')
+        self.assertEqual(payload[0x5d0:0x5e0], bytes.fromhex('04050608060504030806040609060403'))
+        self.assertLessEqual(len(prototype.assemble((prototype.FIRMWARE/'driver.asm').read_text(), 'spc', 0x200)), 766,
+                             'driver must fit transfer fixtures without fixed assets')
+
+    def test_score_interpreter_encodings(self):
+        source = 'call $0700\nmov a, $07d0+x\nadc a, $20\nret'
+        self.assertEqual(prototype.assemble(source, 'spc', 0x200), bytes.fromhex('3f0007f5d00784206f'))
 
     def test_reject_unsafe_encodings(self):
         cases = [
@@ -35,6 +44,9 @@ class BuildContracts(unittest.TestCase):
             ('lda #$100', 'host', 0x8000),
             ('ldx #$10000', 'host', 0x8000),
             ('mov $100, a', 'spc', 0x200),
+            ('mov a, $10000+x', 'spc', 0x200),
+            ('call $10000', 'spc', 0x200),
+            ('adc a, $100', 'spc', 0x200),
             ('.org $01ff', 'spc', 0x200),
             ('bra far\n.org $8100\nfar:', 'host', 0x8000),
             ('bra $7f81', 'host', 0x8000),

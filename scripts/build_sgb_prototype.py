@@ -16,7 +16,7 @@ def assemble(source, cpu, origin, constants=None):
     implied = ({'sei': 0x78, 'clc': 0x18, 'xce': 0xfb, 'txa': 0x8a,
                 'inx': 0xe8, 'dey': 0x88, 'tax': 0xaa, 'tya': 0x98,
                 'rts': 0x60, 'iny': 0xc8, 'dex': 0xca}
-               if cpu == 'host' else {'clrc': 0x60, 'lsr a': 0x5c, 'xcn a': 0x9f})
+               if cpu == 'host' else {'clrc': 0x60, 'lsr a': 0x5c, 'xcn a': 0x9f, 'ret': 0x6f})
     branches = ({'bne': 0xd0, 'beq': 0xf0, 'bra': 0x80, 'bcs': 0xb0, 'bcc': 0x90} if cpu == 'host'
                 else {'bne': 0xd0, 'beq': 0xf0, 'bmi': 0x30, 'bra': 0x2f})
     labels = dict(constants or {})
@@ -99,8 +99,8 @@ def assemble(source, cpu, origin, constants=None):
                 code.append(0x8b)
                 operand(args, 1)
                 continue
-            if mnemonic == 'jmp':
-                code.append(0x5f)
+            if mnemonic in {'jmp', 'call'}:
+                code.append(0x5f if mnemonic == 'jmp' else 0x3f)
                 operand(args, 2)
                 continue
             parts = [v.strip() for v in args.split(',')]
@@ -114,8 +114,10 @@ def assemble(source, cpu, origin, constants=None):
             elif mnemonic == 'mov' and left == 'x' and right == 'a':
                 code.append(0x5d)
             elif mnemonic == 'mov' and left == 'a':
-                code.append(0xf4 if right.endswith('+x') else 0xe4)
-                operand(right.removesuffix('+x'), 1)
+                address = right.removesuffix('+x')
+                absolute = int(address[1:], 16) > 255
+                code.append((0xf5 if absolute else 0xf4) if right.endswith('+x') else (0xe5 if absolute else 0xe4))
+                operand(address, 2 if absolute else 1)
             elif mnemonic == 'mov' and right == 'a':
                 code.append(0xc4)
                 operand(left, 1)
@@ -125,6 +127,9 @@ def assemble(source, cpu, origin, constants=None):
             elif mnemonic == 'cmp' and left == 'a':
                 code.append(0x68 if right.startswith('#') else 0x64)
                 operand(right.removeprefix('#'), 1)
+            elif mnemonic == 'adc' and left == 'a' and not right.startswith('#'):
+                code.append(0x84)
+                operand(right, 1)
             elif mnemonic in {'or', 'and', 'adc'} and left == 'a' and right.startswith('#'):
                 code.append({'or': 0x08, 'and': 0x28, 'adc': 0x88}[mnemonic])
                 operand(right[1:], 1)
@@ -150,7 +155,11 @@ def build():
     samples = assemble((FIRMWARE / 'samples.asm').read_text(), 'spc', 0x500)
     if len(driver) > 0x300:
         raise ValueError('driver overlaps sample directory')
+    music = assemble((FIRMWARE / 'music.asm').read_text(), 'spc', 0x700)
+    if len(samples) > 0x200 or len(music) > 0x100:
+        raise ValueError('sample/music sections overlap relocation area')
     payload = driver + bytes(0x300-len(driver)) + samples
+    payload += bytes(0x500-len(payload)) + music
     host = assemble((FIRMWARE / 'host.asm').read_text(), 'host', 0x8000,
                     {'payload_size': len(payload), 'entry_token': ((len(payload)+2) | 1) & 255})
     if len(host) > 0x1000 or len(payload) > 0x6fc0:

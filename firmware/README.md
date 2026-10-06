@@ -413,9 +413,9 @@ Broader title-level and independent-hardware validation remain future
 milestones for the bundled model-specific boot implementations. SNES-side
 SGB1/SGB2 production program ROM replacements are not implemented here yet.
 The original [SNES-side diagnostic prototype](../docs/sgb-original-firmware.md)
-now establishes reproducible startup, restricted two-voice playback and
+now establishes reproducible startup, three presets per effect voice, two original looping scores and
 next-frame SOU_TRN capture/upload/handoff, with repeated transfers and SOUND
 after versioned driver adoption, plus original pitch/volume, A decay and
-mute/unmute controls;
+mute/unmute controls with mailbox v3 (retaining v1/v2);
 it is not a bundled program-ROM default. The original
 SPC700 IPL replacement is described in [IPL validation](../docs/spc700-ipl-validation.md).

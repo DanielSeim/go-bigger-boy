@@ -1,7 +1,7 @@
 ; SPDX-License-Identifier: GPL-3.0-or-later
-; Original position-independent SPC driver. Mailbox v2: 5A/C2/A5 readiness.
-; Control port 3: 0 effects, 1 return to IPL, 2 stage attributes from port 1.
-; Effects 00 retrigger remembered instrument, 01 start, 80 stop and forget.
+; Original position-independent SPC driver. Mailbox v3: 5A/C3/A5 readiness.
+; Control port 3: 0 effects, 1 return to IPL, 2 stage attributes/score from ports 1/2, 3 silence all.
+; Effects 00 retrigger remembered instrument, 01..03 select original preset, 80 stop and forget.
     mov $f2, #$6c
     mov $f3, #$20
     mov $f2, #$0c
@@ -46,6 +46,28 @@
     mov $d4, #$40
     mov $d5, #$28
     mov $d6, #$10
+    mov $d8, #$00
+    mov $d9, #$02
+    mov $da, #$03
+    mov $dc, #$01
+    mov $dd, #$02
+    mov $de, #$03
+    mov $1b, #$00
+    mov $1e, #$00
+    mov $1f, #$00
+; Music uses voice 4, leaving effect voices 6 and 5 independent.
+    mov $f2, #$40
+    mov $f3, #$30
+    mov $f2, #$41
+    mov $f3, #$30
+    mov $f2, #$42
+    mov $f3, #$00
+    mov $f2, #$44
+    mov $f3, #$01
+    mov $f2, #$45
+    mov $f3, #$00
+    mov $f2, #$47
+    mov $f3, #$50
     mov $13, #$00
     mov $14, #$00
     mov $15, #$00
@@ -56,7 +78,7 @@
 ; Timer 0: 128 SPC clocks prescale, target 128 -> 16 ms at 1.024 MHz.
     mov $fa, #$80
     mov $f1, #$81
-    mov $f5, #$c2
+    mov $f5, #$c3
     mov $f7, #$a5
     mov $f4, #$5a
 await_arm:
@@ -70,6 +92,7 @@ poll:
     beq token
     mov $19, a
 tick:
+    call $0700
 ; Instrument A decays by four direct-gain units per physical timer tick.
     mov a, $14
     beq fade
@@ -116,15 +139,31 @@ command:
     mov $f7, #$00
     mov $f1, #$80
     jmp $ffc0
+return_top:
+    bra poll
 check_stage:
+    cmp a, #$03
+    bne stage_or_effects
+    mov $1f, #$00
+    mov $14, #$00
+    mov $f2, #$67
+    mov $f3, #$00
+    mov $f2, #$5c
+    mov $f3, #$ff
+    mov a, $10
+    mov $f4, a
+    bra return_top
+stage_or_effects:
     cmp a, #$02
     bne effects
     mov a, $f5
     mov $13, a
+    mov a, $f6
+    mov $1e, a
     mov a, $10
     mov $f4, a
-return_top:
-    bra poll
+return_upper:
+    bra return_top
 effects:
     mov $11, #$00
     mov $12, #$00
@@ -175,17 +214,21 @@ volume_a:
     mov $f3, a
     bra effect_a
 return_middle:
-    bra return_top
+    bra return_upper
 effect_a:
     mov a, $f5
     beq retrigger_a
     bmi stop_a
-    mov $15, #$01
+    mov $15, a
     bra start_a
 retrigger_a:
     mov a, $15
     beq effect_b
 start_a:
+    mov x, a
+    mov a, $d7+x
+    mov $f2, #$64
+    mov $f3, a
     mov $14, #$60
     mov $f2, #$67
     mov $f3, #$60
@@ -199,12 +242,16 @@ effect_b:
     mov a, $f6
     beq retrigger_b
     bmi stop_b
-    mov $18, #$01
+    mov $18, a
     bra start_b
 retrigger_b:
     mov a, $18
     beq apply
 start_b:
+    mov x, a
+    mov a, $db+x
+    mov $f2, #$54
+    mov $f3, a
     mov a, $11
     or a, #$20
     mov $11, a
@@ -221,6 +268,13 @@ apply:
     mov $f2, #$4c
     mov a, $11
     mov $f3, a
+    mov a, $1e
+    mov $1b, a
+    mov $1e, #$00
+    cmp a, #$00
+    beq effect_echo
+    call $0700
+effect_echo:
     mov a, $10
     mov $f4, a
     bra return_middle

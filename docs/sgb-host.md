@@ -819,12 +819,13 @@ See [APU components](sgb-audio-engine.md) for DSP/audio accuracy evidence.
 ### Original program-firmware project
 
 An opt-in [original SNES-side diagnostic prototype](sgb-original-firmware.md)
-now builds a LoROM, SPC driver and two authored BRR instruments without private
+now builds a LoROM, SPC driver, four authored BRR samples and two original score motifs without private
 firmware. Its restricted SOUND, next-frame ICD transfer capture, SOU_TRN upload/handoff
 and lifecycle contracts run on both models. Versioned driver adoption permits
 repeated transfers and SOUND after compatible driver handoff. Mailbox v2 adds
 independent pitch/volume, A decay/retrigger and timer-driven mute/unmute fades;
-v1 retains its restricted command path. It is not a
+Mailbox v3 adds three presets per effect voice and two timer-driven scores;
+v1/v2 retain their restricted command paths. It is not a
 production default: general driver/sound-bank compatibility, complete sound/music
 behavior and title validation remain required before removing the program-ROM
 dependency.

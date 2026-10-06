@@ -62,7 +62,7 @@ driver_ready:
     cmp #$a5
     bne driver_ready
     lda $2141
-    cmp #$c2
+    cmp #$c3
     bne driver_ready
     lda $2140
     cmp #$5a
@@ -85,6 +85,8 @@ poll:
     cmp #$c1
     beq driver_version_known
     cmp #$c2
+    beq driver_version_known
+    cmp #$c3
     bne poll_packets
 driver_version_known:
     lda $2140
@@ -113,49 +115,69 @@ not_transfer:
 ; Recognize SOUND framing errors and SOU_TRN as unsupported, never ignore them.
     and #$f8
     cmp #$40
-    beq unsupported
+    beq unsupported_early
     cmp #$48
-    beq unsupported
+    beq unsupported_early
 ; Other commands remain handled by the GB display's existing SGB adapter.
     bra poll
+unsupported_early:
+    jmp unsupported
 sound:
     lda $24
     beq own_sound
     jmp unsupported_owned
 own_sound:
-; Music remains unsupported. v1 accepts attributes zero; v2 stages attributes.
+    lda $2b
+    cmp #$c3
+    beq validate_score
+; Older contracts retain their original effect and music limits.
     lda $0104
-    bne unsupported
+    bne unsupported_early
     lda $2b
     cmp #$c2
     beq validate_attributes
     lda $0103
-    bne unsupported
+    bne unsupported_early
     bra validate_effects
+validate_score:
+    lda $0104
+    cmp #$80
+    beq validate_attributes
+    cmp #$03
+    bcs unsupported_early
 validate_attributes:
     lda $0103
     and #$c0
     cmp #$c0
-    beq unsupported
+    beq unsupported_early
 validate_effects:
+    lda #$02
+    sta $2c
+    lda $2b
+    cmp #$c3
+    bne effect_limit
+    lda #$04
+    sta $2c
+effect_limit:
     lda $0101
     cmp #$80
     beq valid_a
-    cmp #$02
+    cmp $2c
     bcs unsupported
 valid_a:
     lda $0102
     cmp #$80
     beq valid_b
-    cmp #$02
+    cmp $2c
     bcs unsupported
 valid_b:
     lda $2b
-    cmp #$c2
-    bne send_effects
+    cmp #$c1
+    beq send_effects
     lda $0103
     sta $2141
-    stz $2142
+    lda $0104
+    sta $2142
     lda #$02
     sta $2143
     inc $23
@@ -175,7 +197,7 @@ send_effects:
     jmp poll
 unsupported:
 ; Diagnostic $21 holds the unsupported command header; $20=FF means halted.
-; Silence both prototype voices before stopping packet consumption.
+; Silence all v3 voices (legacy contracts stop their two effect voices).
     lda $0100
     sta $21
     lda $24
@@ -184,6 +206,12 @@ unsupported:
     sta $2141
     sta $2142
     stz $2143
+    lda $2b
+    cmp #$c3
+    bne stop_control_ready
+    lda #$03
+    sta $2143
+stop_control_ready:
     lda #$06
     sta $20
     inc $23
