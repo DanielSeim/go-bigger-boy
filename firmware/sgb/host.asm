@@ -62,7 +62,7 @@ driver_ready:
     cmp #$a5
     bne driver_ready
     lda $2141
-    cmp #$c1
+    cmp #$c2
     bne driver_ready
     lda $2140
     cmp #$5a
@@ -72,7 +72,7 @@ driver_ready:
     lda #$81
     sta $6003
 poll:
-; Observe external drivers. Only the complete v1 advertisement permits adoption.
+; Observe external drivers. Only a complete supported-version advertisement permits adoption.
     lda $24
     beq poll_packets
     lda $2142
@@ -83,7 +83,10 @@ poll:
     bne poll_packets
     lda $2141
     cmp #$c1
+    beq driver_version_known
+    cmp #$c2
     bne poll_packets
+driver_version_known:
     lda $2140
     cmp #$5a
     bne poll_packets
@@ -120,24 +123,51 @@ sound:
     beq own_sound
     jmp unsupported_owned
 own_sound:
-; Prototype accepts unchanged attributes and no music score only.
-    lda $0103
-    ora $0104
+; Music remains unsupported. v1 accepts attributes zero; v2 stages attributes.
+    lda $0104
     bne unsupported
+    lda $2b
+    cmp #$c2
+    beq validate_attributes
+    lda $0103
+    bne unsupported
+    bra validate_effects
+validate_attributes:
+    lda $0103
+    and #$c0
+    cmp #$c0
+    beq unsupported
+validate_effects:
     lda $0101
     cmp #$80
     beq valid_a
     cmp #$02
     bcs unsupported
 valid_a:
-    sta $2141
     lda $0102
     cmp #$80
     beq valid_b
     cmp #$02
     bcs unsupported
 valid_b:
+    lda $2b
+    cmp #$c2
+    bne send_effects
+    lda $0103
+    sta $2141
+    stz $2142
+    lda #$02
+    sta $2143
+    inc $23
+    lda $23
+    sta $2140
+    jsr wait_echo
+send_effects:
+    lda $0101
+    sta $2141
+    lda $0102
     sta $2142
+    stz $2143
     inc $23
     lda $23
     sta $2140
@@ -153,6 +183,7 @@ unsupported:
     lda #$80
     sta $2141
     sta $2142
+    stz $2143
     lda #$06
     sta $20
     inc $23
@@ -389,6 +420,8 @@ transfer_jump:
     sta $20
     jmp poll
 adopt_driver:
+    lda $2141
+    sta $2b
 ; Reset parameters before the token, then wait for a fresh zero acknowledgment.
 ; The driver is waiting at its arm gate, not running SOUND on stale IPL ports.
     lda #$05

@@ -105,7 +105,7 @@ std::vector<std::uint8_t> diagnostic() {
     };
     hash(0x95,0xf6);hash(0xf5,0xf7);
     // Sound the preserved authored square instrument, proving actual handoff.
-    append(code,{0x8f,0x5c,0xf2,0x8f,0,0xf3,0x8f,0x4c,0xf2,0x8f,0x40,0xf3,0x2f,0xfe});
+    append(code,{0x8f,0x67,0xf2,0x8f,0x60,0xf3,0x8f,0x5c,0xf2,0x8f,0,0xf3,0x8f,0x4c,0xf2,0x8f,0x40,0xf3,0x2f,0xfe});
     return code;
 }
 Payload valid(std::uint8_t& sum,std::uint8_t& xor_sum) {
@@ -224,7 +224,7 @@ void interoperability(gameboy::HardwareModel model) {
     require(h.cpu().debug_wram_byte(0x20)==1 && h.cpu().debug_wram_byte(0x24)==0,"compatible uploaded driver reacquires mailbox ownership");
     require(h.cpu().debug_wram_byte(0x25)==3 && h.cpu().debug_wram_byte(0x26)==3 &&
             h.cpu().debug_wram_byte(0x2a)==4,"three transfers, two relocated drivers and resident restart adopted");
-    require(h.icd().sound_packets_delivered()==6 && h.cpu().debug_wram_byte(0x23)==2,"SOUND starts and stops after every handoff");
+    require(h.icd().sound_packets_delivered()==6 && h.cpu().debug_wram_byte(0x23)==4,"SOUND starts and stops after every handoff");
     require(h.cpu().dma_destination_count(0x80)==39,"all three complete transfer screens captured");
     for(unsigned i=0;i<4096;++i) require(h.cpu().debug_wram_byte(0x1000+i)==payloads.back()[i],"final repeated-transfer latch exact");
     require(std::any_of(pcm.begin(),pcm.end(),[](auto s){return s.left>100 || s.left < -100;}),"compatible uploaded drivers sound real instruments");
@@ -248,14 +248,14 @@ void interoperability(gameboy::HardwareModel model) {
         Host wrapped(sequence(model,{payloads.front()},true));(void)advance(wrapped,13'000'000);
         require(wrapped.cpu().debug_wram_byte(0x20)==1 && wrapped.cpu().debug_wram_byte(0x27)==0,
                 "ordinary mailbox token zero is valid after counter rollover");
-        require(wrapped.icd().sound_packets_delivered()==258 && wrapped.cpu().debug_wram_byte(0x23)==2,
-                "256 further SOUND packets cross token rollover exactly once");
+        require(wrapped.icd().sound_packets_delivered()==258 && wrapped.cpu().debug_wram_byte(0x23)==4,
+                "256 further SOUND packets cross v2 token rollover exactly twice");
     }
 }
 void incompatible(gameboy::HardwareModel model) {
     // Original test stubs explicitly advertise wrong versions or violate one
     // advertised operation. They execute normally; the host must fail boundedly.
-    std::vector<std::uint8_t> wrong_version{0x8f,0xc2,0xf5,0x8f,0xa5,0xf7,0x8f,0x5a,0xf4,
+    std::vector<std::uint8_t> wrong_version{0x8f,0xc3,0xf5,0x8f,0xa5,0xf7,0x8f,0x5a,0xf4,
         0xe4,0xf5,0xc4,0xf6,0x2f,0xfa}; // observe input 1; host must never write it
     Host unknown(config(model,program_payload(wrong_version,0x0800),1));
     (void)advance(unknown,6'000'000);
@@ -276,6 +276,12 @@ void incompatible(gameboy::HardwareModel model) {
             stop.cpu().debug_wram_byte(0x24)==1,"failed stop acknowledgment halts without retry recursion");
     auto no_loader=no_sound;no_loader.resize(no_loader.size()-2);
     append(no_loader,{0xe4,0xf4,0xc4,0xf4,0x2f,0xfa}); // echo tokens but never return to IPL
+    Host legacy(config(model,program_payload(no_loader,0x0800),1));(void)advance(legacy,6'000'000);
+    require(legacy.cpu().debug_wram_byte(0x20)==1 && legacy.cpu().debug_wram_byte(0x2b)==0xc1 &&
+            legacy.cpu().debug_wram_byte(0x23)==1,"legacy v1 SOUND dispatch uses one token without attribute staging");
+    Host legacy_attributes(config(model,program_payload(no_loader,0x0800),3));(void)advance(legacy_attributes,6'000'000);
+    require(legacy_attributes.cpu().debug_wram_byte(0x20)==0xff && legacy_attributes.cpu().debug_wram_byte(0x24)==0 &&
+            legacy_attributes.cpu().debug_wram_byte(0x23)==1,"legacy v1 rejects new attributes and acknowledges ordinary stop");
     Host loader(config(model,program_payload(no_loader,0x0800),2));(void)advance(loader,10'000'000);
     require(loader.cpu().debug_wram_byte(0x20)==0xff && loader.cpu().debug_wram_byte(0x27)==5 &&
             loader.cpu().debug_wram_byte(0x25)==2 && loader.cpu().debug_wram_byte(0x26)==1,

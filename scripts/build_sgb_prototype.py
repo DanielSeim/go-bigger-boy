@@ -16,7 +16,7 @@ def assemble(source, cpu, origin, constants=None):
     implied = ({'sei': 0x78, 'clc': 0x18, 'xce': 0xfb, 'txa': 0x8a,
                 'inx': 0xe8, 'dey': 0x88, 'tax': 0xaa, 'tya': 0x98,
                 'rts': 0x60, 'iny': 0xc8, 'dex': 0xca}
-               if cpu == 'host' else {})
+               if cpu == 'host' else {'clrc': 0x60, 'lsr a': 0x5c, 'xcn a': 0x9f})
     branches = ({'bne': 0xd0, 'beq': 0xf0, 'bra': 0x80, 'bcs': 0xb0, 'bcc': 0x90} if cpu == 'host'
                 else {'bne': 0xd0, 'beq': 0xf0, 'bmi': 0x30, 'bra': 0x2f})
     labels = dict(constants or {})
@@ -39,8 +39,8 @@ def assemble(source, cpu, origin, constants=None):
             continue
         mnemonic, _, args = line.partition(' ')
         args = args.strip()
-        if mnemonic in implied and not args:
-            code.append(implied[mnemonic])
+        if line in implied:
+            code.append(implied[line])
         elif mnemonic in branches:
             code.append(branches[mnemonic])
             operand(args, 1, True)
@@ -95,6 +95,10 @@ def assemble(source, cpu, origin, constants=None):
             code.append(opcode)
             operand(args.removeprefix('#').removesuffix(',x'), width)
         elif cpu == 'spc':
+            if mnemonic == 'dec':
+                code.append(0x8b)
+                operand(args, 1)
+                continue
             if mnemonic == 'jmp':
                 code.append(0x5f)
                 operand(args, 2)
@@ -107,17 +111,22 @@ def assemble(source, cpu, origin, constants=None):
                 code.append(0x8f)
                 operand(right[1:], 1)
                 operand(left, 1)
+            elif mnemonic == 'mov' and left == 'x' and right == 'a':
+                code.append(0x5d)
             elif mnemonic == 'mov' and left == 'a':
-                code.append(0xe4)
-                operand(right, 1)
+                code.append(0xf4 if right.endswith('+x') else 0xe4)
+                operand(right.removesuffix('+x'), 1)
             elif mnemonic == 'mov' and right == 'a':
                 code.append(0xc4)
                 operand(left, 1)
+            elif mnemonic == 'cmp' and left == 'x' and right.startswith('#'):
+                code.append(0xc8)
+                operand(right[1:], 1)
             elif mnemonic == 'cmp' and left == 'a':
                 code.append(0x68 if right.startswith('#') else 0x64)
                 operand(right.removeprefix('#'), 1)
-            elif mnemonic == 'or' and left == 'a' and right.startswith('#'):
-                code.append(0x08)
+            elif mnemonic in {'or', 'and', 'adc'} and left == 'a' and right.startswith('#'):
+                code.append({'or': 0x08, 'and': 0x28, 'adc': 0x88}[mnemonic])
                 operand(right[1:], 1)
             else:
                 raise ValueError(f'unsupported SPC instruction {number}: {line}')

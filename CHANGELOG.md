@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Extend the original SGB SOUND prototype with mailbox-v2 attribute staging,
+  independent pitch/volume, a decaying A instrument, remembered-instrument
+  retrigger and SPC-timer mute/unmute fades. Keep v1 command compatibility and
+  validate rendered audio, modulation, reset and partially staged save/load.
+
 - Add explicit mailbox-v1 adoption to the original SGB firmware prototype,
   enabling repeated SOU_TRN transfers and SOUND after compatible SPC driver
   handoff. Unknown versions remain external; arm, command and loader waits are

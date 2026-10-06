@@ -1,8 +1,7 @@
 ; SPDX-License-Identifier: GPL-3.0-or-later
-; Original diagnostic SPC700 driver, entry $0200. Never reads reference assets.
-; Ports: host token, effect A, effect B; SPC echoes token only after DSP writes.
-; Host validates codes: 00 keep voice; 01 trigger our tone; 80 stop it.
-; This is an original test instrument, not the proprietary SGB sound bank.
+; Original position-independent SPC driver. Mailbox v2: 5A/C2/A5 readiness.
+; Control port 3: 0 effects, 1 return to IPL, 2 stage attributes from port 1.
+; Effects 00 retrigger remembered instrument, 01 start, 80 stop and forget.
     mov $f2, #$6c
     mov $f3, #$20
     mov $f2, #$0c
@@ -11,7 +10,6 @@
     mov $f3, #$60
     mov $f2, #$5d
     mov $f3, #$05
-; Voice 6: original square BRR at directory entry 0.
     mov $f2, #$60
     mov $f3, #$40
     mov $f2, #$61
@@ -19,14 +17,13 @@
     mov $f2, #$62
     mov $f3, #$00
     mov $f2, #$63
-    mov $f3, #$10
+    mov $f3, #$08
     mov $f2, #$64
     mov $f3, #$00
     mov $f2, #$65
     mov $f3, #$00
     mov $f2, #$67
-    mov $f3, #$60
-; Voice 5: original stepped triangle BRR at directory entry 1.
+    mov $f3, #$00
     mov $f2, #$50
     mov $f3, #$40
     mov $f2, #$51
@@ -41,10 +38,25 @@
     mov $f3, #$00
     mov $f2, #$57
     mov $f3, #$60
-; Mailbox v1 readiness: output ports 0/1/3 = 5A/C1/A5.
-; The host clears all incoming parameters and writes token zero to arm us.
-; No command is executed until that reset is observed and acknowledged.
-    mov $f5, #$c1
+; Fixed direct-page tables make code relocatable without absolute references.
+    mov $d0, #$08
+    mov $d1, #$0c
+    mov $d2, #$10
+    mov $d3, #$18
+    mov $d4, #$40
+    mov $d5, #$28
+    mov $d6, #$10
+    mov $13, #$00
+    mov $14, #$00
+    mov $15, #$00
+    mov $16, #$60
+    mov $17, #$60
+    mov $18, #$00
+    mov $1a, #$40
+; Timer 0: 128 SPC clocks prescale, target 128 -> 16 ms at 1.024 MHz.
+    mov $fa, #$80
+    mov $f1, #$81
+    mov $f5, #$c2
     mov $f7, #$a5
     mov $f4, #$5a
 await_arm:
@@ -54,35 +66,151 @@ await_arm:
     mov $10, #$00
     mov $f4, #$00
 poll:
+    mov a, $fd
+    beq token
+    mov $19, a
+tick:
+; Instrument A decays by four direct-gain units per physical timer tick.
+    mov a, $14
+    beq fade
+    clrc
+    adc a, #$fc
+    mov $14, a
+    mov $f2, #$67
+    mov $f3, a
+fade:
+    mov a, $16
+    cmp a, $17
+    beq tick_done
+    bmi fade_up
+    clrc
+    adc a, #$f8
+    bra fade_write
+fade_up:
+    clrc
+    adc a, #$08
+fade_write:
+    mov $16, a
+    mov $f2, #$0c
+    mov $f3, a
+    mov $f2, #$1c
+    mov $f3, a
+tick_done:
+    dec $19
+    bne tick
+token:
     mov a, $f4
     cmp a, $10
-    beq poll
+    bne command
+    bra poll
+command:
     mov $10, a
     mov a, $f7
     cmp a, #$01
-    beq return_ipl
+    bne check_stage
+; Loader return stops voices and timer, clears all readiness fields.
+    mov $f2, #$5c
+    mov $f3, #$ff
+    mov $f4, #$00
+    mov $f5, #$00
+    mov $f7, #$00
+    mov $f1, #$80
+    jmp $ffc0
+check_stage:
+    cmp a, #$02
+    bne effects
+    mov a, $f5
+    mov $13, a
+    mov a, $10
+    mov $f4, a
+return_top:
+    bra poll
+effects:
     mov $11, #$00
     mov $12, #$00
+; Independent pitches: 0800, 0C00, 1000, 1800; low bytes remain zero.
+    mov a, $13
+    and a, #$03
+    mov x, a
+    mov a, $d0+x
+    mov $f2, #$63
+    mov $f3, a
+    mov a, $13
+    xcn a
+    and a, #$03
+    mov x, a
+    mov a, $d0+x
+    mov $f2, #$53
+    mov $f3, a
+; A volume 3 requests global fade-out and retains A's previous voice level.
+    mov a, $13
+    lsr a
+    lsr a
+    and a, #$03
+    mov x, a
+    cmp x, #$03
+    beq mute
+    mov a, $d4+x
+    mov $1a, a
+    mov $17, #$60
+    bra volume_a
+mute:
+    mov $17, #$00
+volume_a:
+    mov a, $1a
+    mov $f2, #$60
+    mov $f3, a
+    mov $f2, #$61
+    mov $f3, a
+    mov a, $13
+    xcn a
+    lsr a
+    lsr a
+    and a, #$03
+    mov x, a
+    mov a, $d4+x
+    mov $f2, #$50
+    mov $f3, a
+    mov $f2, #$51
+    mov $f3, a
+    bra effect_a
+return_middle:
+    bra return_top
+effect_a:
     mov a, $f5
-    beq effect_b
+    beq retrigger_a
     bmi stop_a
-    mov a, $11
-    or a, #$40
-    mov $11, a
+    mov $15, #$01
+    bra start_a
+retrigger_a:
+    mov a, $15
+    beq effect_b
+start_a:
+    mov $14, #$60
+    mov $f2, #$67
+    mov $f3, #$60
+    mov $11, #$40
     bra effect_b
 stop_a:
-    mov a, $12
-    or a, #$40
-    mov $12, a
+    mov $15, #$00
+    mov $14, #$00
+    mov $12, #$40
 effect_b:
     mov a, $f6
-    beq apply
+    beq retrigger_b
     bmi stop_b
+    mov $18, #$01
+    bra start_b
+retrigger_b:
+    mov a, $18
+    beq apply
+start_b:
     mov a, $11
     or a, #$20
     mov $11, a
     bra apply
 stop_b:
+    mov $18, #$00
     mov a, $12
     or a, #$20
     mov $12, a
@@ -95,15 +223,4 @@ apply:
     mov $f3, a
     mov a, $10
     mov $f4, a
-    bra poll
-
-return_ipl:
-; Cooperative ownership release: stop all voices, clear ready signatures,
-; enable the original IPL overlay and enter its ordinary AA/BB upload loop.
-    mov $f2, #$5c
-    mov $f3, #$ff
-    mov $f4, #$00
-    mov $f5, #$00
-    mov $f7, #$00
-    mov $f1, #$80
-    jmp $ffc0
+    bra return_middle
