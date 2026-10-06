@@ -4,6 +4,7 @@
 #include "snes_dsp_clock.hpp"
 #include "gameboy/snes_apu_audio_engine.hpp"
 #include "snes_apu_firmware_benchmark.hpp"
+#include "sgb_score_table_reads.hpp"
 #include "gameboy/snes_spc700.hpp"
 
 #include <array>
@@ -97,6 +98,7 @@ int main(int argc, char** argv) {
     bool native_gb_input = false;
     std::array<std::uint64_t, 2> history_window{};
     std::filesystem::path apu_bus_output_path;
+    std::filesystem::path score_table_output_path;
     std::filesystem::path boot_timeline_path;
     std::filesystem::path host_startup_path;
     std::filesystem::path input_script_path;
@@ -134,6 +136,8 @@ int main(int argc, char** argv) {
                 cycle_apu_sync = shared_bus_dsp = cycle_bus_dsp = bus_clocked_dsp = clocked_dsp = true;
             } else if (option == "--fractional-apu-sync" && !fractional_apu_sync) {
                 fractional_apu_sync = cycle_apu_sync = shared_bus_dsp = cycle_bus_dsp = bus_clocked_dsp = clocked_dsp = true;
+            } else if (option == "--score-table-read-output" && score_table_output_path.empty() && index + 1 < argc) {
+                score_table_output_path = argv[++index];
             } else if (option == "--apu-bus-output" && apu_bus_output_path.empty() && index + 1 < argc) {
                 apu_bus_output_path = argv[++index];
             } else if (option == "--boot-timeline-output" && boot_timeline_path.empty() && index + 1 < argc) {
@@ -202,7 +206,7 @@ int main(int argc, char** argv) {
         return 2;
     }
     if (core_apu_engine && (timer_poll_trace || history_window[1] ||
-        !apu_bus_output_path.empty() || !boot_timeline_path.empty() ||
+        !score_table_output_path.empty() || !apu_bus_output_path.empty() || !boot_timeline_path.empty() ||
         !sound_event_trace_path.empty() || !host_startup_path.empty())) {
         std::cerr << "core APU engine mode currently exports PCM/RAM only, not legacy observer traces\n";
         return 2;
@@ -238,6 +242,7 @@ int main(int argc, char** argv) {
                      " [--native-gb-input] [--ppu-dma-timing] [--host-bus-timing]"
                      " [--apu-clock-hz HZ] [--host-startup-output JSON]"
                      " [--apu-bus-output JSON]"
+                     " [--score-table-read-output JSON]"
                      " [--boot-timeline-output JSON]"
                      " [--timer-poll-trace]"
                      " [--apu-history-window-half START END]"
@@ -336,6 +341,7 @@ int main(int argc, char** argv) {
             std::uint32_t value{};
         };
         std::vector<SoundTraceEvent> sound_trace;
+        sgb_test::ScoreTableReads score_table_reads;
         struct ApuBusEvent {
             char kind;
             std::uint64_t master_clock, spc_half_clock, pcm_sample;
@@ -344,6 +350,19 @@ int main(int argc, char** argv) {
             unsigned dsp_clock64;
         };
         std::vector<ApuBusEvent> apu_trace;
+        if (!score_table_output_path.empty()) {
+            if (!fractional_apu_sync || core_apu_engine)
+                throw std::runtime_error("score-table reads require legacy fractional APU synchronization");
+            if (std::filesystem::exists(score_table_output_path) ||
+                score_table_output_path == apu_bus_output_path ||
+                score_table_output_path == boot_timeline_path ||
+                score_table_output_path == host_startup_path ||
+                score_table_output_path == pcm_output_path ||
+                score_table_output_path == sound_event_trace_path ||
+                score_table_output_path == apu_ram_output_path ||
+                score_table_output_path == input_script_path)
+                throw std::runtime_error("score-table output requires an unused, distinct path");
+        }
         if (!boot_timeline_path.empty() && (!fractional_apu_sync || apu_bus_output_path.empty()))
             throw std::runtime_error("boot timeline requires fractional APU synchronization and APU bus output");
         if (native_gb_input && input_script_path.empty())
@@ -404,6 +423,7 @@ int main(int argc, char** argv) {
             sgb_test::Snes65c816TraceCpu* cpu{};
             gameboy::SnesSpc700* spc{};
             std::vector<ApuBusEvent>* apu_trace{};
+            sgb_test::ScoreTableReads* score_table_reads{};
             BootTimeline* boot_timeline{};
             bool apu_trace_overflow{};
             const sgb_test::SnesIcdGbSource* icd{};
@@ -422,6 +442,9 @@ int main(int argc, char** argv) {
             sgb_test::Snes65c816TraceCpu::SpcStepObserver advance{};
             void record_bus(char kind, std::uint64_t half_clock,
                             std::uint16_t address, std::uint8_t value) noexcept {
+                if (score_table_reads)
+                    score_table_reads->record(kind, cpu->timing().clocks(), half_clock,
+                                              address, icd ? icd->audible_sound_packets_delivered() : 0);
                 if (boot_timeline && kind == 'h' &&
                     ((address == 0x2140 && value == 0xaa) || (address == 0x2141 && value == 0xbb))) {
                     const unsigned flag = 1U << (address - 0x2140);
@@ -508,6 +531,7 @@ int main(int argc, char** argv) {
         std::vector<std::pair<std::uint16_t, std::size_t>> uploaded_ranges;
         std::uint8_t expected_index = 0;
         std::uint16_t destination = 0;
+        dsp_observation.score_table_reads = score_table_output_path.empty() ? nullptr : &score_table_reads;
         std::vector<std::uint8_t> transferred;
         const unsigned instruction_bound = requested_instruction_limit != 0
             ? requested_instruction_limit : sync_gb ? 20000000U :
@@ -1295,6 +1319,14 @@ int main(int argc, char** argv) {
             }
             output << "]}\n";
             if (!output) throw std::runtime_error("could not finish APU bus trace");
+        }
+        if (!score_table_output_path.empty()) {
+            if (std::filesystem::exists(score_table_output_path))
+                throw std::runtime_error("score-table output already exists");
+            std::ofstream output(score_table_output_path);
+            if (!output) throw std::runtime_error("could not create score-table output");
+            score_table_reads.write_json(output);
+            if (!output) throw std::runtime_error("could not finish score-table output");
         }
         if (!apu_ram_output_path.empty()) {
             if (std::filesystem::exists(apu_ram_output_path))

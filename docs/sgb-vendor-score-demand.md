@@ -74,6 +74,13 @@ The first three words in the bank point to candidate phrase roots `$2B06`,
 common format and the bounded structural walks. The SOUND-code-to-entry mapping
 still requires black-box reference evidence.
 
+The [address-only selection observer](sgb-song-selection-observation.md) supplies
+a bounded native reference capture for that evidence. It distinguishes prior
+base writes and nonzero SOUND delivery counts without exporting directory bytes;
+dummy reads during uploads must be excluded from selection inferences. Fresh
+private original runs on both models support code 1 selecting the first word
+at `$2B00`; codes 2 and 3 and the broader selection contract remain unvalidated.
+
 | Explicit candidate root | Patterns / track references | Channels observed | Scan boundary |
 | --- | --- | --- | --- |
 | `$2B06` | 1 / 1 | 2 | Linear paths end |

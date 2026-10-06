@@ -1508,6 +1508,14 @@ if(GAMEBOY_BUILD_TESTS)
         tests/support/snes_65c816_trace_cpu.cpp)
     target_include_directories(gameboy_snes_65c816_apu_trace PRIVATE tests/support scripts)
     target_link_libraries(gameboy_snes_65c816_apu_trace PRIVATE gameboy_core)
+    add_executable(gameboy_sgb_score_table_read_tests tests/sgb_score_table_read_tests.cpp)
+    target_link_libraries(gameboy_sgb_score_table_read_tests PRIVATE gameboy_core)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME gameboy_sgb_score_table_reads
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_score_table_read_tests.py
+                --runner $<TARGET_FILE:gameboy_sgb_score_table_read_tests>
+                --trace $<TARGET_FILE:gameboy_snes_65c816_apu_trace>)
+    endif()
     add_executable(gameboy_snes_icd_gb_title_probe
         tests/support/snes_icd_gb_title_probe.cpp
         tests/support/snes_icd_gb_source.cpp)

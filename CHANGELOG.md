@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- Add address-only observation of the first three candidate vendor song-table
+  words to the native fractional APU trace helper. Bound stored reads, retain
+  write-order and nonzero SOUND delivery metadata, and exclude score values.
+  Validate real SPC dummy reads, filtering, overflow and CLI output protection;
+  private two-model original runs support music code 1 selecting the first word
+  at `$2B00`. Broader song selection and playback remain separate gates.
+
 - Add bounded, metadata-only vendor score-demand inventory with explicit roots
   and a limited common N-SPC command-width profile. Stop at unknown commands,
   subroutines and phrase controls; keep title qualification false. Refresh the
