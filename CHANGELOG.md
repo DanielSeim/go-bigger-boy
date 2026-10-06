@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Add independently authored single-note cartridges and a bounded private
+  original-firmware DSP reference gate. Pin channel-2 pitch/source/envelope
+  setup for three notes and instruments 2/10 across SGB1/SGB2; validate transport,
+  sanitization and fail-closed reporting without copying samples or enabling
+  vendor score playback.
+
 - Add an original empty-song cartridge and optional private-reference gate for
   vendor directory selection. Validate codes 1..3, reordered and repeated
   requests on SGB1/SGB2 originals using address-only observations. Add ROM-free

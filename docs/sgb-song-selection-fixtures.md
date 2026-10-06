@@ -108,3 +108,7 @@ This resolves the directory-indexing uncertainty for codes 1..3. The prototype
 still rejects vendor score banks. The next renderer contracts remain vendor
 pitch/instrument mapping, tempo and articulation, volume/pan behavior and echo;
 larger scores also require additional channels and subroutines.
+
+The subsequent [pitch/instrument fixture](sgb-pitch-instrument-fixtures.md)
+measures three notes and two resident instruments on logical channel 2, with
+matching two-model DSP setup. Broader renderer contracts remain open.

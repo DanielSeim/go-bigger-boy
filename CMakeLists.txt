@@ -1294,6 +1294,8 @@ if(GAMEBOY_BUILD_TESTS)
             add_test(NAME gameboy_sgb_song_selection_fixture
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_song_selection_fixture_tests.py)
         endif()
+        add_test(NAME gameboy_sgb_pitch_fixture
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_pitch_fixture_tests.py)
         add_test(NAME gameboy_sgb_resident_score_inspection
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_resident_score_inspection_tests.py)
         add_test(NAME gameboy_sgb_resident_score_contract
@@ -1532,6 +1534,12 @@ if(GAMEBOY_BUILD_TESTS)
                     --firmware-dir ${CMAKE_CURRENT_SOURCE_DIR}/roms --order 3,1,2,2,1,3)
             set_tests_properties(gameboy_sgb_song_selection_local_reference PROPERTIES
                 LABELS "local;private-reference" TIMEOUT 420)
+            add_test(NAME gameboy_sgb_pitch_local_reference
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_pitch_reference.py
+                    --trace $<TARGET_FILE:gameboy_snes_65c816_apu_trace>
+                    --firmware-dir ${CMAKE_CURRENT_SOURCE_DIR}/roms)
+            set_tests_properties(gameboy_sgb_pitch_local_reference PROPERTIES
+                LABELS "local;private-reference" TIMEOUT 840)
         endif()
     endif()
     add_executable(gameboy_snes_icd_gb_title_probe

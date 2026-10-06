@@ -17,6 +17,12 @@ def score_payload():
 
 
 def build(order=(1, 2, 3)):
+    return build_cartridge(score_payload(), order)
+
+
+def build_cartridge(payload, order):
+    if not isinstance(payload, bytes) or len(payload) != 4096:
+        raise ValueError('fixture transfer must contain exactly 4096 bytes')
     if not isinstance(order, (tuple, list)) or not 1 <= len(order) <= 8:
         raise ValueError('order requires 1..8 song IDs')
     if any(type(code) is not int or code not in (1, 2, 3) for code in order):
@@ -31,7 +37,7 @@ def build(order=(1, 2, 3)):
     rom[0x134:0x13E] = b'GBB SELECT'
     rom[0x146] = 3
     rom[0x14B] = 0x33
-    rom[0x4000:0x5000] = score_payload()
+    rom[0x4000:0x5000] = payload
     code = bytearray.fromhex('f3afe0401100402100800100101a22130b78b120f8')
     for row in range(13):
         address = 0x9800 + row * 32

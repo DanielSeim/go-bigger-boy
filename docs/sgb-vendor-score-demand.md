@@ -84,7 +84,9 @@ word at `$2B00`; those title captures do not validate codes 2 and 3.
 The subsequent [controlled directory fixture](sgb-song-selection-fixtures.md)
 also validates codes 2 and 3, including reordered and repeated requests, against
 both private original program images. Other selection and rendering contracts
-remain open.
+remain open. The [controlled note fixture](sgb-pitch-instrument-fixtures.md)
+now pins three notes and instruments 2/10 on channel 2 against both originals;
+it does not supply an instrument table, samples or a vendor renderer.
 
 | Explicit candidate root | Patterns / track references | Channels observed | Scan boundary |
 | --- | --- | --- | --- |
