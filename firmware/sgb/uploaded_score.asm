@@ -1,5 +1,5 @@
 ; SPDX-License-Identifier: GPL-3.0-or-later
-; Independently written GBS1/GBS2 single-channel subset. No vendor song-table guesses.
+; Independently written GBS1/GBS2 single-channel and GBS3 two-track subsets. No vendor song-table guesses.
 ; Fixed header/phrase/pattern locations; length <=255, track begins at $2B20.
 ; $30 mode, $31 end, $32 cursor, $33 duration, $34 countdown, $35 held-note flag.
 ; $36/$37 validation duration/held flag. Validate the entire stream before readiness.
@@ -17,10 +17,14 @@
     mov a, $2b03
     cmp a, #$31
     beq format_one
+    cmp a, #$33
+    beq two_tracks
     cmp a, #$32
     bne header_error
     mov $3f, #$02
     bra bank_length
+two_tracks:
+    jmp $1b00
 format_one:
     mov $3f, #$01
 bank_length:
@@ -128,6 +132,19 @@ terminated:
     cmp a, $31
     bne syntax_error
     mov a, $3f
+    cmp a, #$03
+    bne validation_done
+    mov a, $4d
+    bne validation_done
+    mov $4d, #$01
+    mov $36, #$00
+    mov $37, #$00
+    mov x, $4b
+    mov a, $4c
+    mov $31, a
+    jmp next
+validation_done:
+    mov a, $3f
     mov $30, a
     jmp $1000
 syntax_error:
@@ -135,93 +152,13 @@ syntax_error:
     jmp $0410
 
 .org $1600
-    mov a, $1b
-    beq playing
-    bmi early_stop
-    mov $1b, #$00
-    mov $1f, #$01
-    mov $32, #$20
-    mov $33, #$00
-    mov $34, #$00
-    mov $35, #$00
-    call $1840
-    bra read
-early_stop:
-    jmp stop
-playing:
-    mov a, $1f
-    beq done
-    mov a, $34
-    beq read
-    dec $34
-    mov a, $34
-    bne done
-read:
-    mov x, $32
-    mov a, x
-    cmp a, $31
-    bcs stop
-    mov a, $2b00+x
-    mov $38, a
-    inc $32
-    mov a, $38
-    beq stop
-    cmp a, #$e0
-    bcs control_event
-    cmp a, #$80
-    bcs event_note
-    mov $33, a
-    bra read
-control_event:
-    call $1800
-    bra read
-event_note:
-    cmp a, #$c8
-    beq duration
-    cmp a, #$c9
-    beq rest_note
-    and a, #$1f
-    mov $38, a
-    clrc
-    adc a, $38
-    mov x, a
-    mov $f2, #$5c
-    mov $f3, #$10
-    mov a, $1700+x
-    mov $f2, #$42
-    mov $f3, a
-    mov a, $1701+x
-    mov $f2, #$43
-    mov $f3, a
-    mov $f2, #$5c
-    mov $f3, #$00
-    mov $f2, #$4c
-    mov $f3, #$10
-    mov $35, #$01
-    bra duration
-rest_note:
-    mov $f2, #$5c
-    mov $f3, #$10
-    mov $35, #$00
-duration:
-    mov a, $33
-    mov $34, a
-done:
-    ret
-stop:
-    mov $1b, #$00
-    mov $1f, #$00
-    mov $f2, #$47
-    mov $f3, #$00
-    mov $f2, #$5c
-    mov $f3, #$10
-    ret
+    jmp $2000
 .org $1700
 ; Pitch words are generated from 440 Hz tuning and our 16-sample BRR loop.
 .org $1740
 
 .org $1800
-; Apply one prevalidated GBS2 control, preserving score time and held note.
+; Apply one prevalidated GBS2/GBS3 control, preserving score time and held note.
     mov x, $32
     mov a, $2b00+x
     mov $39, a
@@ -233,46 +170,67 @@ stop:
     beq pan
     mov a, $39
     mov $42, a
-    mov $f2, #$47
+    mov a, #$07
+    call $1f00
+    mov a, $39
     mov $f3, a
     ret
 instrument:
     mov a, $39
     mov $40, a
-    mov $f2, #$44
+    mov a, #$04
+    call $1f00
+    mov a, $39
     mov $f3, a
     ret
 pan:
     mov a, $39
     mov $41, a
     mov x, a
+    mov a, #$00
+    call $1f00
     mov a, $1a00+x
-    mov $f2, #$40
     mov $f3, a
+    mov a, #$01
+    call $1f00
     mov a, $1a15+x
-    mov $f2, #$41
     mov $f3, a
     ret
-.org $1840
-; Restart restores independent original defaults for both GBS1 and GBS2.
+.org $1880
+; Restart restores independent original defaults for all uploaded formats.
     mov $40, #$01
     mov $41, #$0a
     mov $42, #$50
-    mov $f2, #$44
+    mov a, #$04
+    call $1f00
     mov $f3, #$01
-    mov $f2, #$40
+    mov a, #$00
+    call $1f00
     mov $f3, #$30
-    mov $f2, #$41
+    mov a, #$01
+    call $1f00
     mov $f3, #$30
-    mov $f2, #$47
+    mov a, #$07
+    call $1f00
     mov $f3, #$50
+    mov a, #$05
+    call $1f00
+    mov $f3, #$00
+    mov a, #$06
+    call $1f00
+    mov $f3, #$00
+    mov a, $48
+    and a, $45
+    mov $48, a
+    mov $f2, #$5c
+    mov $f3, a
     ret
 
 .org $1900
 ; Check format, complete operand and independent parameter limits before readiness.
     mov a, $3f
     cmp a, #$02
-    bne control_error
+    bcc control_error
     mov a, x
     cmp a, $31
     bcs control_error
@@ -307,3 +265,296 @@ control_error:
 ; Original linear pan law: center is 48/48, endpoints 96/0 and 0/96.
 .byte $60,$5b,$56,$52,$4d,$48,$43,$3e,$3a,$35,$30,$2b,$26,$22,$1d,$18,$13,$0e,$0a,$05,$00
 .byte $00,$05,$0a,$0e,$13,$18,$1d,$22,$26,$2b,$30,$35,$3a,$3e,$43,$48,$4d,$52,$56,$5b,$60
+
+
+.org $1b00
+; GBS3 fixed two-track header. Both streams are validated before readiness.
+    mov $3f, #$03
+    mov $4d, #$00
+    mov a, $2b04
+    cmp a, #$26
+    bcc bank_error
+    mov $4c, a
+    mov a, $2b05
+    cmp a, #$23
+    bcc bank_error
+    cmp a, $4c
+    bcs bank_error
+    mov $4b, a
+    mov $31, a
+    mov a, $2b12
+    cmp a, $4b
+    bne bank_error
+    mov a, $2b13
+    cmp a, #$2b
+    bne bank_error
+    mov a, $2b08
+    cmp a, #$10
+    bne bank_error
+    mov a, $2b09
+    cmp a, #$2b
+    bne bank_error
+    mov a, $2b10
+    cmp a, #$20
+    bne bank_error
+    mov a, $2b11
+    cmp a, #$2b
+    bne bank_error
+    mov a, #$06
+    mov x, a
+bank_reserved:
+    cmp x, #$08
+    beq bank_skip_phrase
+    cmp x, #$10
+    beq bank_skip_tracks
+    mov a, $2b00+x
+    cmp a, #$00
+    bne bank_error
+    mov a, x
+    clrc
+    adc a, #$01
+    mov x, a
+    cmp x, #$20
+    bne bank_reserved
+    jmp validate
+bank_skip_phrase:
+    mov a, #$0a
+    mov x, a
+    bra bank_reserved
+bank_skip_tracks:
+    mov a, #$14
+    mov x, a
+    bra bank_reserved
+bank_error:
+    jmp header_error
+
+.org $1c00
+; One physical timer tick advances each track once. Pending command applies to both.
+    mov a, $1b
+    bne dispatch_command
+    mov a, $1f
+    beq scheduler_done
+    mov $49, #$00
+    bra dispatch
+scheduler_done:
+    ret
+dispatch_command:
+    mov $49, a
+dispatch:
+    mov $43, #$40
+    mov $44, #$10
+    mov $45, #$ef
+    mov $4a, #$20
+    call load_track_zero
+    mov a, $4b
+    mov $31, a
+    mov a, $49
+    mov $1b, a
+    call $2000
+    call save_track_zero
+    mov $43, #$30
+    mov $44, #$08
+    mov $45, #$f7
+    mov a, $4b
+    mov $4a, a
+    call load_track_one
+    mov a, $4c
+    mov $31, a
+    mov a, $49
+    mov $1b, a
+    call $2000
+    call save_track_one
+    mov a, $58
+    clrc
+    adc a, $68
+    mov $1f, a
+    ret
+save_track_zero:
+    mov a, $31
+    mov $50, a
+    mov a, $32
+    mov $51, a
+    mov a, $33
+    mov $52, a
+    mov a, $34
+    mov $53, a
+    mov a, $35
+    mov $54, a
+    mov a, $40
+    mov $55, a
+    mov a, $41
+    mov $56, a
+    mov a, $42
+    mov $57, a
+    mov a, $1f
+    mov $58, a
+    ret
+load_track_zero:
+    mov a, $50
+    mov $31, a
+    mov a, $51
+    mov $32, a
+    mov a, $52
+    mov $33, a
+    mov a, $53
+    mov $34, a
+    mov a, $54
+    mov $35, a
+    mov a, $55
+    mov $40, a
+    mov a, $56
+    mov $41, a
+    mov a, $57
+    mov $42, a
+    mov a, $58
+    mov $1f, a
+    ret
+save_track_one:
+    mov a, $31
+    mov $60, a
+    mov a, $32
+    mov $61, a
+    mov a, $33
+    mov $62, a
+    mov a, $34
+    mov $63, a
+    mov a, $35
+    mov $64, a
+    mov a, $40
+    mov $65, a
+    mov a, $41
+    mov $66, a
+    mov a, $42
+    mov $67, a
+    mov a, $1f
+    mov $68, a
+    ret
+load_track_one:
+    mov a, $60
+    mov $31, a
+    mov a, $61
+    mov $32, a
+    mov a, $62
+    mov $33, a
+    mov a, $63
+    mov $34, a
+    mov a, $64
+    mov $35, a
+    mov a, $65
+    mov $40, a
+    mov a, $66
+    mov $41, a
+    mov a, $67
+    mov $42, a
+    mov a, $68
+    mov $1f, a
+    ret
+
+.org $1f00
+; Select a voice register: A is offset, $43 is voice base. X stays intact.
+    clrc
+    adc a, $43
+    mov $f2, a
+    ret
+
+.org $2000
+    mov a, $1b
+    beq playing
+    bmi early_stop
+    mov $1b, #$00
+    mov $1f, #$01
+    mov a, $4a
+    mov $32, a
+    mov $33, #$00
+    mov $34, #$00
+    mov $35, #$00
+    call $1880
+    bra read
+early_stop:
+    jmp stop
+early_done:
+    ret
+playing:
+    mov a, $1f
+    beq early_done
+    mov a, $34
+    beq read
+    dec $34
+    mov a, $34
+    bne early_done
+read:
+    mov x, $32
+    mov a, x
+    cmp a, $31
+    bcs early_stop
+    mov a, $2b00+x
+    mov $38, a
+    inc $32
+    mov a, $38
+    beq early_stop
+    cmp a, #$e0
+    bcs control_event
+    cmp a, #$80
+    bcs event_note
+    mov $33, a
+    bra read
+control_event:
+    call $1800
+    bra read
+event_note:
+    cmp a, #$c8
+    beq duration
+    cmp a, #$c9
+    beq rest_note
+    and a, #$1f
+    mov $38, a
+    clrc
+    adc a, $38
+    mov x, a
+    mov $f2, #$5c
+    mov a, $48
+    or a, $44
+    mov $f3, a
+    mov a, #$02
+    call $1f00
+    mov a, $1700+x
+    mov $f3, a
+    mov a, #$03
+    call $1f00
+    mov a, $1701+x
+    mov $f3, a
+    mov a, $48
+    and a, $45
+    mov $48, a
+    mov $f2, #$5c
+    mov $f3, a
+    mov $f2, #$4c
+    mov a, $44
+    mov $f3, a
+    mov $35, #$01
+    bra duration
+rest_note:
+    mov $f2, #$5c
+    mov a, $48
+    or a, $44
+    mov $48, a
+    mov $f3, a
+    mov $35, #$00
+duration:
+    mov a, $33
+    mov $34, a
+done:
+    ret
+stop:
+    mov $1b, #$00
+    mov $1f, #$00
+    mov $35, #$00
+    mov a, #$07
+    call $1f00
+    mov $f3, #$00
+    mov a, $48
+    or a, $44
+    mov $48, a
+    mov $f2, #$5c
+    mov $f3, a
+    ret

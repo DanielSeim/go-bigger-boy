@@ -1,5 +1,5 @@
 ; SPDX-License-Identifier: GPL-3.0-or-later
-; Original position-independent SPC driver. Mailbox v4: 5A/C4/A5 readiness.
+; Original position-independent SPC driver. Legacy v4; validated scores v5/v6/v7.
 ; Resident code is assembled at $1000; $0200 is its legacy entry trampoline.
 ; Control port 3: 0 effects, 1 return to IPL, 2 stage attributes/score from ports 1/2, 3 silence all.
 ; Effects 00 retrigger remembered instrument, 01..05 select original preset, 80 stop and forget.
@@ -60,7 +60,12 @@
     mov $1b, #$00
     mov $1e, #$00
     mov $1f, #$00
-; Music uses voice 4, leaving effect voices 6 and 5 independent.
+    mov $43, #$40
+    mov $44, #$10
+    mov $45, #$ef
+    mov $48, #$00
+    mov $4a, #$20
+; Music uses voice 4 (plus voice 3 for GBS3), separate from effect voices 6/5.
     mov $f2, #$40
     mov $f3, #$30
     mov $f2, #$41
@@ -72,7 +77,9 @@
     mov $f2, #$45
     mov $f3, #$00
     mov $f2, #$47
-    mov $f3, #$50
+    mov $f3, #$00
+    mov $f2, #$37
+    mov $f3, #$00
     mov $13, #$00
     mov $14, #$00
     mov $15, #$00
@@ -90,6 +97,9 @@
     cmp a, #$01
     beq publish_ready
     mov $f5, #$c6
+    cmp a, #$02
+    beq publish_ready
+    mov $f5, #$c7
 publish_ready:
     mov $f7, #$a5
     mov $f4, #$5a
@@ -160,6 +170,13 @@ check_stage:
     bne stage_or_effects
     mov $1f, #$00
     mov $15, #$00
+    mov $48, #$00
+    mov $58, #$00
+    mov $68, #$00
+    mov $f2, #$47
+    mov $f3, #$00
+    mov $f2, #$37
+    mov $f3, #$00
     mov $18, #$00
     mov $14, #$00
     mov $f2, #$67
@@ -290,6 +307,7 @@ stop_b:
 apply:
     mov $f2, #$5c
     mov a, $12
+    or a, $48
     mov $f3, a
     mov $f2, #$4c
     mov a, $11

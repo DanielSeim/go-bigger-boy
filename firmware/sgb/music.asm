@@ -6,7 +6,11 @@
 .org $0700
     mov a, $30
     beq legacy_music
+    cmp a, #$03
+    beq two_tracks
     jmp $1600
+two_tracks:
+    jmp $1c00
 legacy_music:
     mov a, $1b
     beq playing

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Add original GBS3 two-track SPC playback with mailbox v7, independent durations,
+  cursors, instruments, pan and gain. Validate both tracks before readiness and
+  retain each voice's key-off state. Add strict authoring, real stereo timing,
+  independent gain, finite endings, stop, scalar, reset and save/load checks on
+  SGB1/SGB2. Vendor title data remains unsupported.
+
 - Add original GBS2 uploaded-score instrument, pan and direct-gain controls,
   with mailbox v6 and full operand validation before readiness. Preserve GBS1
   limits, restore control defaults on restart, and validate real two-model stereo,

@@ -141,6 +141,9 @@ def assemble(source, cpu, origin, constants=None):
             elif mnemonic == 'adc' and left == 'a' and not right.startswith('#'):
                 code.append(0x84)
                 operand(right, 1)
+            elif mnemonic in {'or', 'and'} and left == 'a' and not right.startswith('#'):
+                code.append(0x04 if mnemonic == 'or' else 0x24)
+                operand(right, 1)
             elif mnemonic in {'or', 'and', 'adc'} and left == 'a' and right.startswith('#'):
                 code.append({'or': 0x08, 'and': 0x28, 'adc': 0x88}[mnemonic])
                 operand(right[1:], 1)

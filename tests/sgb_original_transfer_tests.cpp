@@ -57,11 +57,12 @@ gameboy::SgbHostConfig config(gameboy::HardwareModel model,const Payload& payloa
             followup==6 ? Packet{0x41,0,0,0,2} :
             followup==7 ? Packet{0x41,4} :
             followup==8 ? Packet{0x41,3,3,0,2} :
-            followup==9 ? Packet{0x41,1,1,0,1} : Packet{0x49});
-        if(followup==9) {
+            followup==9 ? Packet{0x41,1,1,0,1} :
+            followup==10 ? Packet{0x41,0,0,0,1} : Packet{0x49});
+        if(followup==9 || followup==10) {
             for(unsigned n=0;n<8;++n) append(code,{0xf0,0x44,0xfe,0x90,0x30,0xfa,
                 0xf0,0x44,0xfe,0x90,0x38,0xfa});
-            packet(code,Packet{0x41,0,0,0,2});
+            packet(code,followup==10 ? Packet{0x41,0,0,0,0x80} : Packet{0x41,0,0,0,2});
         }
     }
     append(code,{0x18,0xfe});
@@ -172,7 +173,7 @@ void upload(gameboy::HardwareModel model) {
     // Stop assumptions at the ownership boundary: unsupported SOUND must not
     // send our mailbox token or stop codes to an unrelated uploaded program.
     for(unsigned command:{1U,2U}) {
-        Host external(config(model,p,command));(void)advance(external,8'000'000);
+        Host external(config(model,p,command));(void)advance(external,10'000'000);
         require(external.cpu().debug_wram_byte(0x20)==0xff &&
                 external.cpu().debug_wram_byte(0x21)==(command==1 ? 0x41 : 0x49),
                 "external SOUND/SOU_TRN rejected explicitly");
@@ -215,7 +216,7 @@ void unsupported_score_restart(gameboy::HardwareModel model) {
     require(std::all_of(quiet.begin(),quiet.end(),[](auto s){return s.left==0 && s.right==0;}),
             "unsupported score restart leaves DSP silent");
     h.reset();require(equal(pcm,advance(h,8'000'000)),"reset reproduces score restart");
-    Host rejected(config(model,payload,1));(void)advance(rejected,8'000'000);
+    Host rejected(config(model,payload,1));(void)advance(rejected,10'000'000);
     require(rejected.cpu().debug_wram_byte(0x20)==0xff && rejected.cpu().debug_wram_byte(0x21)==0x41 &&
             rejected.cpu().debug_wram_byte(0x2a)==1 && rejected.cpu().debug_wram_byte(0x28)==0xe1,
             "SOUND after unimplemented restart halts explicitly without reacquiring ownership");
@@ -307,15 +308,15 @@ void interoperability(gameboy::HardwareModel model) {
                 "256 further SOUND packets cross v2 token rollover exactly twice");
     }
 }
-unsigned crossings(const std::vector<Host::StereoSample>& pcm) {
+unsigned crossings(const std::vector<Host::StereoSample>& pcm,bool right=false) {
     unsigned count=0;
-    for(unsigned i=1;i<pcm.size();++i) if(pcm[i-1].left<0 && pcm[i].left>=0) ++count;
+    for(unsigned i=1;i<pcm.size();++i) if((right ? pcm[i-1].right : pcm[i-1].left)<0 && (right ? pcm[i].right : pcm[i].left)>=0) ++count;
     return count;
 }
 void ready_score(Host& h) {
     Host::StereoSample sample;
     while((h.icd().sound_packets_delivered()!=1 || h.cpu().debug_wram_byte(0x23)!=2)
-          && h.cpu().timing().clocks()<8'000'000) {
+          && h.cpu().timing().clocks()<12'000'000) {
         require(h.step(),"reach score command after data-only handoff");
         while(h.pop_sample(sample)) {}
     }
@@ -376,7 +377,7 @@ void resident_score(gameboy::HardwareModel model,const Payload& p) {
     changed=p;changed[4+0x21]=0xe0;invalid.push_back(changed); // unsupported control
     changed=p;changed[4+0x21]=0xc8;invalid.push_back(changed); // tie before note
     for(const auto& payload:invalid) {
-        Host rejected(config(model,payload));(void)advance(rejected,6'000'000);
+        Host rejected(config(model,payload));(void)advance(rejected,9'000'000);
         require(rejected.cpu().debug_wram_byte(0x24)==1 && rejected.cpu().debug_wram_byte(0x2a)==1 &&
                 rejected.cpu().debug_wram_byte(0x28)>=0xe1 && rejected.cpu().debug_wram_byte(0x29)==0,
                 "bad bank rejected before v5 readiness without false adoption");
@@ -392,14 +393,14 @@ double channel_rms(const std::vector<Host::StereoSample>& pcm,bool right=false) 
     for(auto sample:pcm) {const double level=right ? sample.right : sample.left;sum+=level*level;}
     return std::sqrt(sum/pcm.size());
 }
-void resident_ready(Host& h) {
+void resident_ready(Host& h,std::uint8_t version=0xc6) {
     Host::StereoSample sample;
     while((h.icd().sound_packets_delivered()!=1 || h.cpu().debug_wram_byte(0x23)!=2)
           && h.cpu().timing().clocks()<12'000'000) {
         require(h.step(),"reach controlled score start");while(h.pop_sample(sample)) {}
     }
-    require(h.cpu().debug_wram_byte(0x2b)==0xc6 && h.cpu().debug_wram_byte(0x23)==2,
-            "GBS2 validation advertises v6 and arms before SOUND");
+    require(h.cpu().debug_wram_byte(0x2b)==version && h.cpu().debug_wram_byte(0x23)==2,
+            "score validation advertises expected version and arms before SOUND");
 }
 void resident_controls(gameboy::HardwareModel model,const Payload& p) {
     for(bool combined:{false,true}) {
@@ -473,6 +474,86 @@ void resident_controls(gameboy::HardwareModel model,const Payload& p) {
     require(repeated.cpu().debug_wram_byte(0x26)==3 && repeated.cpu().debug_wram_byte(0x2a)==4 &&
             repeated.cpu().debug_wram_byte(0x2b)==0xc4,"repeated v6 banks rearm and legacy entry returns v4");
 }
+void resident_tracks(gameboy::HardwareModel model,const Payload& p) {
+    for(bool combined:{false,true}) {
+        auto c=config(model,p,5);c.combined_audio=combined;
+        Host h(c),scalar(c),peer(c);scalar.debug_set_apu_batch_enabled(false);
+        const auto boot=advance(h,12'000'000),reference=advance(scalar,12'000'000);
+        require(equal(boot,reference) && h.save_state()==scalar.save_state(),"two-track native/combined scalar parity");
+        require(h.cpu().debug_wram_byte(0x2b)==0xc7 && h.cpu().debug_wram_byte(0x2a)==2,
+                "two complete tracks adopt v7 after validation");
+        h.reset();require(equal(boot,advance(h,12'000'000)),"reset repeats two-track upload and playback");
+        Host measured(c);resident_ready(measured,0xc7);(void)advance(measured,100'000);
+        const auto initial=advance(measured,1'000'000);
+        const auto low=crossings(initial),high=crossings(initial,true);
+        if(!(low>5 && std::abs(double(high)/low-2)<0.2))
+            throw std::runtime_error("two-track octave: left="+std::to_string(low)+" right="+std::to_string(high)+
+                " rms="+std::to_string(channel_rms(initial))+"/"+std::to_string(channel_rms(initial,true)));
+        (void)advance(measured,600'000);
+        require(peer.load_state(measured.save_state()),"snapshot during left rest and right note");
+        const auto rest=advance(measured,500'000);
+        require(equal(rest,advance(peer,500'000)),"rest continuation restores exactly");
+        require(channel_rms(rest)==0 && crossings(rest,true)>5,"left rest preserves right note");
+        (void)advance(measured,700'000);(void)advance(peer,700'000);
+        const auto resumed=advance(measured,600'000);
+        require(equal(resumed,advance(peer,600'000)),"resumed note and other track tie restore exactly");
+        require(crossings(resumed)>5 && std::abs(double(crossings(resumed,true))/high/0.6-1)<0.15,
+                "left resumes while right holds its independent tie");
+        require(std::abs(channel_rms(resumed)/channel_rms(initial)-0.5)<0.04 &&
+                std::abs(channel_rms(resumed,true)/channel_rms(initial,true)-1)<0.04,
+                "first track gain change leaves second track gain unchanged");
+        (void)advance(measured,1'000'000);(void)advance(peer,1'000'000);
+        const auto left_ended=advance(measured,600'000);
+        require(equal(left_ended,advance(peer,600'000)),"first track end restores exactly");
+        require(channel_rms(left_ended)==0 && crossings(left_ended,true)>5,"first track end leaves second track active");
+        const auto continuation=advance(measured,600'000);
+        require(equal(continuation,advance(peer,600'000)) && measured.save_state()==peer.save_state(),
+                "both cursors/countdowns and DSP restore exactly through rest tie and first end");
+        const auto changed=advance(measured,600'000);
+        require(channel_rms(changed)==0 && std::abs(double(crossings(changed,true))/high/0.6-0.75)<0.15,
+                "second track advances to its own later note after first ends");
+        (void)advance(measured,3'000'000);
+        const auto ended=advance(measured,200'000);
+        require(channel_rms(ended)==0 && channel_rms(ended,true)==0,"both finite tracks end silently");
+    }
+    for(unsigned followup:{9U,10U}) {
+        Host stopped(config(model,p,followup));Host::StereoSample sample;
+        while((stopped.icd().sound_packets_delivered()!=2 ||
+               stopped.cpu().debug_wram_byte(0x20)!=(followup==9 ? 0xff : 1) ||
+               stopped.cpu().debug_wram_byte(0x23)!=(followup==9 ? 3 : 4)) &&
+              stopped.cpu().timing().clocks()<12'000'000) {
+            require(stopped.step(),"reach completed stop before natural track end");
+            while(stopped.pop_sample(sample)) {}
+        }
+        // Direct-gain effect envelopes can release for up to eight milliseconds.
+        (void)advance(stopped,200'000);
+        require(stopped.cpu().debug_wram_byte(0x2b)==0xc7 && stopped.icd().sound_packets_delivered()==2 &&
+                stopped.cpu().debug_wram_byte(0x20)==(followup==9 ? 0xff : 1),
+                "v7 rejects score two and accepts explicit music stop");
+        const auto quiet=advance(stopped,500'000);
+        require(channel_rms(quiet)==0 && channel_rms(quiet,true)==0,"stop silences both tracks and rejected command silences effects");
+    }
+    std::vector<Payload> invalid;
+    const auto split=p[9],size=p[8];
+    auto changed=p;changed[4+0x12]++;invalid.push_back(changed); // pointer differs from split
+    changed=p;changed[9]=0x22;invalid.push_back(changed); // first track cannot fit event and terminator
+    changed=p;changed[4+split+1]=4;invalid.push_back(changed); // second instrument out of range
+    changed=p;changed[4+split+7]=0xc8;invalid.push_back(changed); // second track tie without own note
+    changed=p;changed[4+size-1]=0xe0;invalid.push_back(changed); // truncated second track
+    changed=p;changed[4+0x14]=1;invalid.push_back(changed); // third channel
+    for(const auto& payload:invalid) {
+        Host rejected(config(model,payload));(void)advance(rejected,9'000'000);
+        require(rejected.cpu().debug_wram_byte(0x24)==1 && rejected.cpu().debug_wram_byte(0x2a)==1 &&
+                rejected.cpu().debug_wram_byte(0x28)>=0xe1 && rejected.cpu().debug_wram_byte(0x29)==0,
+                "malformed track or header rejected before any v7 readiness");
+        const auto quiet=advance(rejected,200'000);
+        require(channel_rms(quiet)==0 && channel_rms(quiet,true)==0,"rejected two-track bank stays silent");
+    }
+    Host repeated(sequence(model,{p,p,program_payload({},0x0200)}));(void)advance(repeated,18'000'000);
+    require(repeated.cpu().debug_wram_byte(0x26)==3 && repeated.cpu().debug_wram_byte(0x2a)==4 &&
+            repeated.cpu().debug_wram_byte(0x2b)==0xc4 && repeated.cpu().debug_wram_byte(0x20)==1,
+            "repeated v7 banks rearm and legacy entry returns to v4");
+}
 void uploaded_scores(gameboy::HardwareModel model,const Payload& p) {
     auto parsed=gameboy::SgbSoundTransfer::parse(p);
     require(parsed.valid() && parsed.writes.size()==1 && parsed.writes[0].destination==0x07d0 &&
@@ -511,10 +592,10 @@ void uploaded_scores(gameboy::HardwareModel model,const Payload& p) {
 void incompatible(gameboy::HardwareModel model) {
     // Original test stubs explicitly advertise wrong versions or violate one
     // advertised operation. They execute normally; the host must fail boundedly.
-    std::vector<std::uint8_t> wrong_version{0x8f,0xc7,0xf5,0x8f,0xa5,0xf7,0x8f,0x5a,0xf4,
+    std::vector<std::uint8_t> wrong_version{0x8f,0xc8,0xf5,0x8f,0xa5,0xf7,0x8f,0x5a,0xf4,
         0xe4,0xf5,0xc4,0xf6,0x2f,0xfa}; // observe input 1; host must never write it
     Host unknown(config(model,program_payload(wrong_version,0x0800),1));
-    (void)advance(unknown,8'000'000);
+    (void)advance(unknown,10'000'000);
     require(unknown.cpu().debug_wram_byte(0x20)==0xff && unknown.cpu().debug_wram_byte(0x24)==1 &&
             unknown.cpu().debug_wram_byte(0x2a)==1,"unknown mailbox version remains external");
     require(unknown.cpu().debug_wram_byte(0x28)==0,"unknown driver receives no SOUND parameters");
@@ -532,23 +613,23 @@ void incompatible(gameboy::HardwareModel model) {
             stop.cpu().debug_wram_byte(0x24)==1,"failed stop acknowledgment halts without retry recursion");
     auto no_loader=no_sound;no_loader.resize(no_loader.size()-2);
     append(no_loader,{0xe4,0xf4,0xc4,0xf4,0x2f,0xfa}); // echo tokens but never return to IPL
-    Host legacy(config(model,program_payload(no_loader,0x0800),1));(void)advance(legacy,8'000'000);
+    Host legacy(config(model,program_payload(no_loader,0x0800),1));(void)advance(legacy,10'000'000);
     require(legacy.cpu().debug_wram_byte(0x20)==1 && legacy.cpu().debug_wram_byte(0x2b)==0xc1 &&
             legacy.cpu().debug_wram_byte(0x23)==1,"legacy v1 SOUND dispatch uses one token without attribute staging");
-    Host legacy_attributes(config(model,program_payload(no_loader,0x0800),3));(void)advance(legacy_attributes,8'000'000);
+    Host legacy_attributes(config(model,program_payload(no_loader,0x0800),3));(void)advance(legacy_attributes,10'000'000);
     require(legacy_attributes.cpu().debug_wram_byte(0x20)==0xff && legacy_attributes.cpu().debug_wram_byte(0x24)==0 &&
             legacy_attributes.cpu().debug_wram_byte(0x23)==1,"legacy v1 rejects new attributes and acknowledges ordinary stop");
     auto v2=no_loader;v2[1]=0xc2;
-    Host attributes(config(model,program_payload(v2,0x0800),3));(void)advance(attributes,8'000'000);
+    Host attributes(config(model,program_payload(v2,0x0800),3));(void)advance(attributes,10'000'000);
     require(attributes.cpu().debug_wram_byte(0x20)==1 && attributes.cpu().debug_wram_byte(0x2b)==0xc2 && attributes.cpu().debug_wram_byte(0x23)==2,"v2 adoption retains two-phase attribute commands");
     for(unsigned followup:{4U,5U}) {
-        Host limited(config(model,program_payload(v2,0x0800),followup));(void)advance(limited,8'000'000);
+        Host limited(config(model,program_payload(v2,0x0800),followup));(void)advance(limited,10'000'000);
         require(limited.cpu().debug_wram_byte(0x20)==0xff && limited.cpu().debug_wram_byte(0x23)==1,"v2 rejects v3 presets/scores before staging and acknowledges legacy stop");
     }
     auto v3=no_loader;v3[1]=0xc3;
-    Host old_bank(config(model,program_payload(v3,0x0800),8));(void)advance(old_bank,8'000'000);
+    Host old_bank(config(model,program_payload(v3,0x0800),8));(void)advance(old_bank,10'000'000);
     require(old_bank.cpu().debug_wram_byte(0x20)==1 && old_bank.cpu().debug_wram_byte(0x2b)==0xc3 && old_bank.cpu().debug_wram_byte(0x23)==2,"v3 retains original bank and score command staging");
-    Host old_limit(config(model,program_payload(v3,0x0800),7));(void)advance(old_limit,8'000'000);
+    Host old_limit(config(model,program_payload(v3,0x0800),7));(void)advance(old_limit,10'000'000);
     require(old_limit.cpu().debug_wram_byte(0x20)==0xff && old_limit.cpu().debug_wram_byte(0x23)==1,"v3 rejects v4 presets before staging and acknowledges silence-all");
     Host loader(config(model,program_payload(no_loader,0x0800),2));(void)advance(loader,12'000'000);
     require(loader.cpu().debug_wram_byte(0x20)==0xff && loader.cpu().debug_wram_byte(0x27)==5 &&
@@ -574,17 +655,18 @@ void invalid(gameboy::HardwareModel model) {
         require(h.cpu().debug_wram_byte(0x26)==0 && h.cpu().debug_wram_byte(0x24)==0,"invalid list never releases SPC ownership or uploads");
     }
     std::uint8_t sum=0,x=0;Host lcd_off(config(model,valid(sum,x),false,false));
-    (void)advance(lcd_off,7'000'000);
+    (void)advance(lcd_off,9'000'000);
     require(lcd_off.cpu().debug_wram_byte(0x20)==0xff && lcd_off.cpu().debug_wram_byte(0x27)==4,"LCD-off transfer fails within bounded wait");
 }
 }
 int main(int argc,char** argv) {
     try {
-        if(argc==3 && (std::string(argv[1])=="--score-transfer" || std::string(argv[1])=="--resident-score" || std::string(argv[1])=="--resident-controls")) {
+        if(argc==3 && (std::string(argv[1])=="--score-transfer" || std::string(argv[1])=="--resident-score" || std::string(argv[1])=="--resident-controls" || std::string(argv[1])=="--resident-tracks")) {
             Payload p{};std::ifstream input(argv[2],std::ios::binary);
             require(bool(input.read(reinterpret_cast<char*>(p.data()),p.size())) && input.peek()==std::char_traits<char>::eof(),"score transfer file must contain exactly 4096 bytes");
             for(auto model:{gameboy::HardwareModel::sgb,gameboy::HardwareModel::sgb2}) {
-                if(std::string(argv[1])=="--resident-controls") resident_controls(model,p);
+                if(std::string(argv[1])=="--resident-tracks") resident_tracks(model,p);
+                else if(std::string(argv[1])=="--resident-controls") resident_controls(model,p);
                 else if(std::string(argv[1])=="--resident-score") resident_score(model,p);
                 else uploaded_scores(model,p);
             }

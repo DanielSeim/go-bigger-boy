@@ -105,7 +105,7 @@ void sound(gameboy::HardwareModel model, bool combined) {
     Host h(c), scalar(c);
     scalar.debug_set_apu_batch_enabled(false);
     // Compare ordinary scalar and optimized playback including upload/commands.
-    const auto pcm=advance(h,5'000'000,true), expected=advance(scalar,5'000'000);
+    const auto pcm=advance(h,7'000'000,true), expected=advance(scalar,7'000'000);
     require(equal(pcm,expected),"scalar/optimized prototype PCM agree");
     require(h.save_state()==scalar.save_state(),"scalar/optimized prototype state agree");
     require(h.icd().sound_packets_delivered()==3,"all start/stop SOUND packets delivered");
@@ -113,7 +113,7 @@ void sound(gameboy::HardwareModel model, bool combined) {
     require(audible(pcm),"SOUND runs original SPC code and produces DSP audio");
     require(!audible(advance(h,1'000'000)),"stop command silences both voices after release tail");
     h.reset();
-    require(equal(pcm,advance(h,5'000'000)),"reset reproduces original sound playback");
+    require(equal(pcm,advance(h,7'000'000)),"reset reproduces original sound playback");
 }
 void ready_sound(Host& h,unsigned count);
 void instruments(gameboy::HardwareModel model) {
@@ -201,7 +201,7 @@ void modulation_state(gameboy::HardwareModel model) {
         h.reset();require(equal(pcm,advance(h,8'000'000)),"reset reproduces modulated and fading audio");
         Host stage(c),restored(c);Host::StereoSample sample;
         while(!(stage.icd().sound_packets_delivered()==1 && stage.cpu().debug_wram_byte(0x23)==1)
-              && stage.cpu().timing().clocks()<5'000'000) {
+              && stage.cpu().timing().clocks()<7'000'000) {
             require(stage.step(),"reach attribute staging boundary");while(stage.pop_sample(sample)) {}
         }
         require(stage.cpu().debug_wram_byte(0x23)==1,"snapshot between attribute and effect tokens");
@@ -250,7 +250,7 @@ void bank_and_scores(gameboy::HardwareModel model) {
         require(!audible(advance(h,500'000)),"music stop silences a score independently of stopped effects");
         h.reset();require(equal(pcm,advance(h,14'000'000)),"reset repeats effect and score sequence");
         Host staged(c),restored(c);Host::StereoSample sample;
-        while(staged.cpu().debug_wram_byte(0x23)!=1 && staged.cpu().timing().clocks()<5'000'000) {
+        while(staged.cpu().debug_wram_byte(0x23)!=1 && staged.cpu().timing().clocks()<7'000'000) {
             require(staged.step(),"reach pending score staging");while(staged.pop_sample(sample)) {}
         }
         require(staged.cpu().debug_wram_byte(0x23)==1 && restored.load_state(staged.save_state()),"restore staged attributes and score before effect commit");

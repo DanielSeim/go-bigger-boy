@@ -33,7 +33,7 @@ The control helper starts at `$1800`, operand validation at `$1900` and pan
 tables at `$1A00`. SPC direct page `$39` holds an operand, `$3F` the format,
 and `$40..42` the current instrument/pan/gain. These bytes, the cursor/countdown,
 bank and DSP history are covered by existing whole-host save states. The
-contiguous startup payload is now 6186 bytes; audio measurement waits for SOUND
+contiguous startup payload is now 7879 bytes; audio measurement waits for SOUND
 acknowledgment and full sequences allow time for the upload.
 
 ```sh
@@ -53,4 +53,4 @@ all four BRR instruments at the same note/pan/gain, restore across a pending pan
 change, and check reset, scalar PCM/state parity and repeated v6 adoption with
 legacy restart. Malformed bounds, truncated controls, unsupported opcodes and
 GBS1 control rejection fail before adoption. These are ROM-free checks, not
-private title PCM comparisons. Multiple-track scheduling remains the next step.
+private title PCM comparisons. [GBS3](sgb-uploaded-score-tracks.md) adds two independently timed tracks.

@@ -17,6 +17,7 @@ from decode_sgb_score import decode
 
 EXAMPLE = ROOT / 'firmware/sgb/resident_score_example.json'
 CONTROLS_EXAMPLE = ROOT / 'firmware/sgb/resident_controls_example.json'
+TRACKS_EXAMPLE = ROOT / 'firmware/sgb/resident_tracks_example.json'
 RUNNER = None
 
 
@@ -40,6 +41,33 @@ class ResidentScoreContracts(unittest.TestCase):
                          {'format': [], 'events': []},
                          {'format': 'GBS2', 'events': [{'tempo': 4}]}):
             with self.assertRaises(ValueError):
+                build(document)
+
+    def test_two_tracks_and_independent_oracle(self):
+        payload = build(json.loads(TRACKS_EXAMPLE.read_text()))
+        size, address = struct.unpack_from('<HH', payload)
+        self.assertEqual((size, address), (60, 0x2B00))
+        bank = payload[4:4+size]
+        self.assertEqual(bank[:6], b'GBS3\x3c\x2f')
+        self.assertEqual(struct.unpack_from('<HH', bank, 16), (0x2B20, 0x2B2F))
+        tracks = decode(bank, 0x2B08)['patterns'][0]['tracks']
+        self.assertEqual(len(tracks), 2)
+        self.assertEqual([[e['tick'] for e in t['events'] if e['kind'] in ('note', 'rest', 'tie')] for t in tracks],
+                         [[0, 4, 8], [0, 8, 16]])
+        note = {'note': 0, 'ticks': 1}
+        maximum = build({'format': 'GBS3', 'tracks': [[note] * 109, [note]]})
+        self.assertEqual(struct.unpack_from('<H', maximum)[0], 254)
+        for document in (
+            {'format': 'GBS3', 'tracks': [[note] * 110, [note]]},
+            {'format': 'GBS3', 'tracks': [[note], []]},
+            {'format': 'GBS3', 'tracks': [[note]]},
+            {'format': 'GBS3', 'tracks': [[note], [note], [note]]},
+            {'format': 'GBS3', 'tracks': [[note], [{'tie': True, 'ticks': 1}]]},
+            {'format': 'GBS3', 'tracks': [[note], [{'pan': 21}]]},
+            {'format': 'GBS2', 'tracks': [[note], [note]]},
+            {'tracks': [[note], [note]]},
+        ):
+            with self.subTest(document=document), self.assertRaises(ValueError):
                 build(document)
 
     def test_exact_bank_and_oracle(self):
@@ -103,6 +131,14 @@ class ResidentScoreContracts(unittest.TestCase):
             path = Path(directory) / 'controls.bin'
             path.write_bytes(build(json.loads(CONTROLS_EXAMPLE.read_text())))
             subprocess.run([str(RUNNER), '--resident-controls', str(path)], check=True)
+
+    def test_real_uploaded_tracks(self):
+        if RUNNER is None:
+            self.skipTest('supply --runner for SPC/DSP integration')
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'tracks.bin'
+            path.write_bytes(build(json.loads(TRACKS_EXAMPLE.read_text())))
+            subprocess.run([str(RUNNER), '--resident-tracks', str(path)], check=True)
 
 
 if __name__ == '__main__':

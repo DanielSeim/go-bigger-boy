@@ -3,6 +3,7 @@
 GBB mailbox v5 renders a bounded, independently authored GBS1 bank on the actual
 SPC/DSP. This explicit envelope supplies the data entry point without guessing
 a vendor song table. Nintendo N-SPC title data remains unsupported.
+The [GBS3 extension](sgb-uploaded-score-tracks.md) adds two independent tracks.
 The [GBS2 extension](sgb-uploaded-score-controls.md) adds original instrument,
 pan and direct-gain controls with mailbox v6; GBS1 retains the limits below.
 
@@ -44,7 +45,7 @@ and its legacy motifs. Cold startup also remains v4.
 
 ## Rendering and authoring
 
-The renderer at `$1600` uses DSP voice 4 and the original triangle BRR loop.
+The `$1600` trampoline enters the shared renderer at `$2000`, using DSP voice 4 and the original triangle BRR loop.
 One tick is 16 ms at the default 1.024 MHz SPC clock. Notes cover C3 through G5;
 pitch words at `$1700` derive from 440 Hz tuning and the 16-sample loop. Ties
 retain the voice without KON, rests KOF it, and termination disables music and
@@ -55,7 +56,7 @@ State lives in SPC direct page: `$30` mode, `$31` end, `$32` cursor, `$33` durat
 `$34` countdown, `$35` held-note flag, `$36..38` validation/temporary values.
 Existing whole-host states preserve these bytes, the uploaded bank and DSP
 history; no serialization changes are needed. Reset recreates the initial bank.
-The generated contiguous startup payload is now 6186 bytes, so tests allow its
+The generated contiguous startup payload is now 7879 bytes, so tests allow its
 upload before checking complete command sequences.
 
 ```sh

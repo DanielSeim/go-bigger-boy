@@ -1,0 +1,15 @@
+{
+  "format": "GBS3",
+  "tracks": [
+    [
+      {"instrument": 0}, {"pan": 0}, {"volume": 64},
+      {"note": 12, "ticks": 4}, {"rest": true, "ticks": 4},
+      {"volume": 32}, {"note": 12, "ticks": 4}
+    ],
+    [
+      {"instrument": 1}, {"pan": 20}, {"volume": 64},
+      {"note": 24, "ticks": 8}, {"tie": true, "ticks": 8},
+      {"note": 19, "ticks": 8}
+    ]
+  ]
+}
