@@ -351,3 +351,14 @@ sound assets cannot satisfy proprietary waveform hashes; retain those existing
 hashes as regression gates for external-image playback and define separate
 reviewable expectations for the new firmware. Preserve explicit program-ROM
 overrides and state-image identity checks when integrating a default.
+
+## Title demand and next compatibility priority
+
+A [title-demand audit and bounded native probe](sgb-original-title-demand.md)
+cover local Donkey Kong, Kirby's Dream Land 2 and Tetris Attack runs on both
+models. Their recorded SOUND operands fit the current subset, but Donkey Kong
+uploads 1619 bytes to `$2B00`, jumps to `$0400`, and never adopts a compatible
+driver; its following SOU_TRN halts. This prioritizes a resident uploaded-score
+restart/format contract before further diagnostic presets. The audit and probe
+are inventory tools, with explicit post-transfer evidence limits and no title
+qualification claim.

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Add original SGB title-demand reporting and a bounded native firmware probe.
+  Keep SOUND parameter coverage separate from post-SOU_TRN driver evidence,
+  record metadata-only failure diagnostics, and document local two-model title
+  runs identifying the `$2B00` score-upload / `$0400` restart compatibility gap.
+  ROM-free checks cover inventory limits, real halt/capture outcomes and errors.
+
 - Expand the original SGB diagnostic bank to five presets per effect voice with
   timer-driven rising/falling A pitch and B vibrato/tremolo. Mailbox v4 advertises
   the new effects while preserving v1/v2/v3 command limits, score uploads and

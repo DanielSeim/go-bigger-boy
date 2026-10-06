@@ -77,3 +77,11 @@ For a locally supplied title, the SHA-pinned manifest workflow described
 there also captures the full SGB frame and marks whether an independent
 visual reference was actually compared. Command recognition alone is not
 visual or audio validation.
+
+For the opt-in original program prototype, use
+`python3 scripts/report_sgb_original_compatibility.py capture.trace` to compare
+requested SOUND fields with mailbox limits. The first SOU_TRN requires separate
+payload/driver evidence; matching command values cannot establish later audio
+compatibility. A [bounded native title probe](sgb-original-title-demand.md)
+records the actual prototype's diagnostic outcome without emitting ROM/score
+bytes, PCM or snapshots.
