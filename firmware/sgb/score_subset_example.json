@@ -1,0 +1,14 @@
+{
+  "provenance": "Independently authored data for the offline GBB subset oracle; no title or firmware bytes.",
+  "base": 11008,
+  "phrase": 11024,
+  "size": 128,
+  "segments": [
+    {"address": 11024, "hex": "202b302b0000"},
+    {"address": 11040, "hex": "402b602b000000000000000000000000"},
+    {"address": 11056, "hex": "702b0000000000000000000000000000"},
+    {"address": 11072, "hex": "e000e10aed60e780041f98c8c9029c00"},
+    {"address": 11104, "hex": "e001ea fe088cc900"},
+    {"address": 11120, "hex": "9e00"}
+  ]
+}

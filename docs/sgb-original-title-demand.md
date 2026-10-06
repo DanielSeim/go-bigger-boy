@@ -109,6 +109,9 @@ visuals, assets or audio. These probes compare no proprietary PCM or independent
 hardware/reference output and do not cover later gameplay. The next firmware
 milestone should define a reviewable resident restart/layout and uploaded score
 format contract, with original fixtures, before attempting title score playback.
+The [resident score contract](sgb-resident-score-contract.md) now defines a
+proposed layout and restart requirements plus a bounded offline grammar oracle.
+The current SPC firmware still does not decode these uploaded scores.
 
 ## Automated checks
 

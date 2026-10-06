@@ -354,6 +354,10 @@ overrides and state-image identity checks when integrating a default.
 
 ## Title demand and next compatibility priority
 
+The [resident score contract](sgb-resident-score-contract.md) provides the next
+layout/restart design and an offline data-subset oracle using original fixtures.
+Its acceptance does not establish SPC playback or mailbox ownership.
+
 A [title-demand audit and bounded native probe](sgb-original-title-demand.md)
 cover local Donkey Kong, Kirby's Dream Land 2 and Tetris Attack runs on both
 models. Their recorded SOUND operands fit the current subset, but Donkey Kong

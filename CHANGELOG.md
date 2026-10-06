@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Define the original SGB resident score layout and restart requirements, with
+  a bounded offline N-SPC subset decoder and independently authored fixtures.
+  Test pointer/truncation errors, unsupported commands and expansion limits;
+  the current SPC firmware still does not render uploaded title scores.
+
 - Add original SGB title-demand reporting and a bounded native firmware probe.
   Keep SOUND parameter coverage separate from post-SOU_TRN driver evidence,
   record metadata-only failure diagnostics, and document local two-model title

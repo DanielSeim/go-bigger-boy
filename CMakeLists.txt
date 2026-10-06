@@ -1282,6 +1282,8 @@ if(GAMEBOY_BUILD_TESTS)
     target_link_libraries(gameboy_sgb_original_firmware_tests PRIVATE gameboy_core)
     add_test(NAME gameboy_sgb_original_firmware_contract COMMAND gameboy_sgb_original_firmware_tests)
     if(Python3_Interpreter_FOUND)
+        add_test(NAME gameboy_sgb_score_decoder_contract
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_score_decoder_tests.py)
         add_test(NAME gameboy_sgb_original_compatibility_report
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_original_compatibility_report_tests.py
                     --probe $<TARGET_FILE:gameboy_sgb_original_title_probe>)
