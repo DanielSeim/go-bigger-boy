@@ -43,7 +43,7 @@ to its sound bank.
 | --- | --- | --- |
 | Cold host entry | Valid LoROM reset vector; disable interrupts; establish register widths | Implemented |
 | IPL readiness | Wait for AA/BB before publishing destination, mode and CC token | Implemented |
-| SPC upload | Transfer original entries, code, directory and samples starting at $0200; echo every byte index; handle counter/page wraps | Implemented, 5440-byte contiguous payload; resident code at $1000 |
+| SPC upload | Transfer original entries, code, directory and samples starting at $0200; echo every byte index; handle counter/page wraps | Implemented, 6186-byte contiguous payload; resident code at $1000 |
 | SPC handoff | Mode zero with a forward token enters $0200; wait for driver readiness | Implemented |
 | DSP startup | Driver initializes its voices and master volume before publishing 5A/C4/A5 | Implemented |
 | ICD release | Release GB through $6003 with divider 5 after SPC readiness | Implemented on SGB1/SGB2 |
@@ -64,7 +64,7 @@ the effect module at `$0640..06AA`, and score module at `$0700..07DF`
 remain at their fixed addresses. Uploaded
 code/data must preserve them to use this original bank.
 After initial startup or an uploaded program's jump, the complete readiness signature is **output ports 0/1/3 =
-5A/version/A5**. C1 identifies v1, C2 identifies v2, C3 identifies v3 and C4 identifies v4 and C5 identifies the validated original uploaded-score subset; the host does not infer
+5A/version/A5**. C1 identifies v1, C2 identifies v2, C3 identifies v3 and C4 identifies v4 and C5/C6 identify validated original GBS1/GBS2 banks; the host does not infer
 compatibility from a jump address, previous ownership, or a partial readiness signature.
 Unknown versions and drivers without the signature remain external.
 
@@ -358,7 +358,7 @@ The [resident score contract](sgb-resident-score-contract.md) provides the next
 layout/restart design and an offline data-subset oracle using original fixtures.
 Its acceptance does not establish SPC playback or mailbox ownership.
 The driver now resides at `$1000`, with a legacy `$0200` trampoline. The `$0400` entry validates the explicit
-[GBS1 subset](sgb-uploaded-score-v5.md) before advertising v5; other data remains
+[GBS1/GBS2 subset](sgb-uploaded-score-v5.md) before advertising v5/v6; other data remains
 silent and external with E1/E2 diagnostics. Vendor title-score rendering remains
 unsupported.
 

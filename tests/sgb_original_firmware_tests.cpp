@@ -311,7 +311,7 @@ void modulation_effects(gameboy::HardwareModel model) {
 void unsupported(gameboy::HardwareModel model) {
     for (const Packet p: {Packet{0x41,1,0,0xc0}, Packet{0x41,1,0,0,3}, Packet{0x42,1}, Packet{0x4a}, Packet{0x41,6}, Packet{0x41,0,6}}) {
         Host h(config(model,{Packet{0x41,1,1},p}));
-        (void)advance(h,4'000'000,true);
+        (void)advance(h,6'000'000,true);
         require(h.cpu().debug_wram_byte(0x20)==0xff,"unsupported audio command halts prototype");
         require(h.cpu().debug_wram_byte(0x21)==p[0],"unsupported header retained for diagnosis");
         require(!audible(advance(h,500'000)),"unsupported audio silences both voices");

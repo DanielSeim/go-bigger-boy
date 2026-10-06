@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Add original GBS2 uploaded-score instrument, pan and direct-gain controls,
+  with mailbox v6 and full operand validation before readiness. Preserve GBS1
+  limits, restore control defaults on restart, and validate real two-model stereo,
+  gain, waveform selection, scalar audio, reset and save/load. Vendor title data
+  remains unsupported.
+
 - Add real SPC/DSP playback of original GBS1 uploaded scores with mailbox v5,
   complete bounded validation before adoption, one-voice notes/ties/rests and
   finite termination. Add strict authoring and actual two-model pitch, silence,

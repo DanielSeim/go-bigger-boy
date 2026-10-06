@@ -3,6 +3,8 @@
 GBB mailbox v5 renders a bounded, independently authored GBS1 bank on the actual
 SPC/DSP. This explicit envelope supplies the data entry point without guessing
 a vendor song table. Nintendo N-SPC title data remains unsupported.
+The [GBS2 extension](sgb-uploaded-score-controls.md) adds original instrument,
+pan and direct-gain controls with mailbox v6; GBS1 retains the limits below.
 
 ## Bank and restart
 
@@ -53,7 +55,7 @@ State lives in SPC direct page: `$30` mode, `$31` end, `$32` cursor, `$33` durat
 `$34` countdown, `$35` held-note flag, `$36..38` validation/temporary values.
 Existing whole-host states preserve these bytes, the uploaded bank and DSP
 history; no serialization changes are needed. Reset recreates the initial bank.
-The generated contiguous startup payload is now 5440 bytes, so tests allow its
+The generated contiguous startup payload is now 6186 bytes, so tests allow its
 upload before checking complete command sequences.
 
 ```sh
@@ -77,5 +79,5 @@ native/combined scalar PCM/state equality, reset and active-note save/load.
 
 The broader grammar oracle and resident layout remain documented in the
 [resident score contract](sgb-resident-score-contract.md). Instrument mapping,
-song tables, multiple tracks, controls and loops still need independent contracts
+song tables, multiple tracks, additional controls and loops still need independent contracts
 and reference evidence. No private title PCM parity is claimed by this milestone.

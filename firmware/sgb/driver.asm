@@ -87,6 +87,9 @@
     mov a, $30
     beq publish_ready
     mov $f5, #$c5
+    cmp a, #$01
+    beq publish_ready
+    mov $f5, #$c6
 publish_ready:
     mov $f7, #$a5
     mov $f4, #$5a

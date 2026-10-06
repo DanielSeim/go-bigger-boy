@@ -16,10 +16,32 @@ from build_sgb_resident_score import build
 from decode_sgb_score import decode
 
 EXAMPLE = ROOT / 'firmware/sgb/resident_score_example.json'
+CONTROLS_EXAMPLE = ROOT / 'firmware/sgb/resident_controls_example.json'
 RUNNER = None
 
 
 class ResidentScoreContracts(unittest.TestCase):
+    def test_controls_bank_and_limits(self):
+        payload = build(json.loads(CONTROLS_EXAMPLE.read_text()))
+        size = struct.unpack_from('<H', payload)[0]
+        self.assertEqual(payload[4:8], b'GBS2')
+        events = decode(payload[4:4+size], 0x2B08)['patterns'][0]['tracks'][0]['events']
+        self.assertEqual([(e['kind'], e.get('value')) for e in events[:3]],
+                         [('instrument', 0), ('pan', 10), ('volume', 64)])
+        self.assertEqual([e['tick'] for e in events if e['kind'] == 'pan'], [0, 16, 24, 32])
+        for key, maximum in (('instrument', 3), ('pan', 20), ('volume', 127)):
+            for value in (-1, maximum+1, True, 1.0, '1'):
+                with self.subTest(key=key, value=value), self.assertRaises(ValueError):
+                    build({'format': 'GBS2', 'events': [{key: value}]})
+            build({'format': 'GBS2', 'events': [{key: maximum}]})
+            with self.assertRaises(ValueError):
+                build({'events': [{key: 0}]})
+        for document in ({'format': 'GBS3', 'events': [{'rest': True, 'ticks': 1}]},
+                         {'format': [], 'events': []},
+                         {'format': 'GBS2', 'events': [{'tempo': 4}]}):
+            with self.assertRaises(ValueError):
+                build(document)
+
     def test_exact_bank_and_oracle(self):
         payload = build(json.loads(EXAMPLE.read_text()))
         self.assertEqual(len(payload), 4096)
@@ -73,6 +95,14 @@ class ResidentScoreContracts(unittest.TestCase):
             path = Path(directory) / 'score.bin'
             path.write_bytes(build(json.loads(EXAMPLE.read_text())))
             subprocess.run([str(RUNNER), '--resident-score', str(path)], check=True)
+
+    def test_real_uploaded_controls(self):
+        if RUNNER is None:
+            self.skipTest('supply --runner for SPC/DSP integration')
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'controls.bin'
+            path.write_bytes(build(json.loads(CONTROLS_EXAMPLE.read_text())))
+            subprocess.run([str(RUNNER), '--resident-controls', str(path)], check=True)
 
 
 if __name__ == '__main__':

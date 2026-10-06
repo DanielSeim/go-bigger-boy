@@ -177,7 +177,9 @@ def build():
     payload += bytes(DRIVER_OFFSET-len(payload)) + driver
     score = assemble((FIRMWARE / 'uploaded_score.asm').read_text(), 'spc', 0x1400)
     pitches = [round(440 * 2 ** ((note-21)/12) * 4096 * 16 / 32000) for note in range(32)]
-    score += b''.join(pitch.to_bytes(2, 'little') for pitch in pitches)
+    score = bytearray(score)
+    score[0x300:0x340] = b''.join(pitch.to_bytes(2, 'little') for pitch in pitches)
+    score = bytes(score)
     if DRIVER_ADDRESS + len(driver) > 0x1400 or len(score) > 0x1700:
         raise ValueError('resident driver/score sections overlap')
     payload += bytes(0x1200-len(payload)) + score

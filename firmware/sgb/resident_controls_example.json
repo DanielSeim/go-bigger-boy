@@ -1,0 +1,20 @@
+{
+  "format": "GBS2",
+  "events": [
+    {"instrument": 0},
+    {"pan": 10},
+    {"volume": 64},
+    {"note": 12, "ticks": 8},
+    {"volume": 32},
+    {"note": 12, "ticks": 8},
+    {"pan": 0},
+    {"tie": true, "ticks": 8},
+    {"pan": 20},
+    {"tie": true, "ticks": 8},
+    {"instrument": 1},
+    {"pan": 10},
+    {"volume": 80},
+    {"note": 12, "ticks": 8},
+    {"rest": true, "ticks": 8}
+  ]
+}

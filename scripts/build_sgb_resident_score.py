@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Pack original GBS1 one-voice notes/ties/rests for resident mailbox v5."""
+"""Pack original GBS1/GBS2 scores for the resident SPC renderer."""
 import argparse
 import json
 from pathlib import Path
@@ -10,13 +10,26 @@ from decode_sgb_score import decode
 
 
 def build(document):
-    if not isinstance(document, dict) or set(document) != {'events'}:
-        raise ValueError('expected only an events array')
+    if not isinstance(document, dict) or set(document) not in ({'events'}, {'format', 'events'}):
+        raise ValueError('expected events and optional format')
+    format_name = document.get('format', 'GBS1')
+    if format_name not in ('GBS1', 'GBS2'):
+        raise ValueError('format must be GBS1 or GBS2')
     events = document['events']
     if not isinstance(events, list) or not 1 <= len(events) <= 111:
         raise ValueError('expected 1..111 events')
     track = bytearray()
     for event in events:
+        if isinstance(event, dict) and len(event) == 1:
+            key, value = next(iter(event.items()))
+            controls = {'instrument': (0xE0, 3), 'pan': (0xE1, 20), 'volume': (0xED, 127)}
+            if format_name != 'GBS2' or key not in controls:
+                raise ValueError('controls require GBS2 and instrument/pan/volume')
+            opcode, maximum = controls[key]
+            if type(value) is not int or not 0 <= value <= maximum:
+                raise ValueError(f'{key} must be an integer from 0 to {maximum}')
+            track.extend((opcode, value))
+            continue
         if not isinstance(event, dict) or len(event) != 2 or 'ticks' not in event:
             raise ValueError('event must contain ticks and exactly one of note/tie/rest')
         ticks = event['ticks']
@@ -33,7 +46,7 @@ def build(document):
         track.extend((ticks, opcode))
     track.append(0)
     bank = bytearray(32)
-    bank[:4] = b'GBS1'
+    bank[:4] = format_name.encode('ascii')
     bank[4] = len(bank) + len(track)
     bank[8:10] = struct.pack('<H', 0x2B10)
     bank[16:18] = struct.pack('<H', 0x2B20)

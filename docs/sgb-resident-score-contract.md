@@ -3,7 +3,7 @@
 This is the design and executable **offline syntax oracle** for the next original
 SPC score interpreter. GBB v4 now implements the entry/code allocations below;
 the track workspace remains reserved. The broader grammar oracle remains offline;
-the explicit original [GBS1 subset](sgb-uploaded-score-v5.md) now renders on SPC. No proprietary title, PCM, instrument-bank or firmware bytes are checked
+the explicit original [GBS1/GBS2 subsets](sgb-uploaded-score-v5.md) now render on SPC. No proprietary title, PCM, instrument-bank or firmware bytes are checked
 in, and passing the oracle does not qualify playback.
 
 ## Resident memory layout
@@ -17,7 +17,7 @@ SPC ranges. These are our allocations, not a reconstruction of vendor firmware.
 | `$0100..01FF` | Stack |
 | `$0200..02FF` | Cold entry and legacy restart trampoline |
 | `$0300..03FF` | Reserved resident workspace |
-| `$0400..04FF` | GBS1 validation entry and silent rejection handler |
+| `$0400..04FF` | GBS1/GBS2 validation entry and silent rejection handler |
 | `$0500..07FF` | Original directory, samples, effect module and legacy motifs |
 | `$0800..0FFF` | Per-track cursors, durations, controls and scheduler state |
 | `$1000..2AFF` | Resident driver and decoder code |
@@ -26,13 +26,13 @@ SPC ranges. These are our allocations, not a reconstruction of vendor firmware.
 | `$FFC0..FFFF` | IPL overlay |
 
 The driver lives at `$1000`; `$0200` selects legacy v4 and jumps there. `$0400`
-validates the explicit GBS1 bank before selecting v5. Its rejection handler
+validates the explicit GBS1/GBS2 bank before selecting v5/v6. Its rejection handler
 clears output readiness/version/signature, reports E1/E2 on output port 2, stops
 timer 0 and mutes/resets the DSP. It loops without advertising compatibility.
 The host observes the code in WRAM `$28` and remains external; a later SOUND or SOU_TRN
 halts explicitly under the existing external ownership contract. This guard does not claim vendor score compatibility.
 
-The generated payload contains 5440 contiguous bytes starting at `$0200`.
+The generated payload contains 6186 contiguous bytes starting at `$0200`.
 Relocation tests extract the actual driver rather than copying the entry stubs,
 preserving the 766-byte token-alias case. The larger upload delays GB release;
 tests wait for completed SOUND handshakes before measuring individual voices,
@@ -52,7 +52,7 @@ uploaded bytes. It must reset musical controls to documented independent default
 and validate the selected score before enabling voices. A malformed or unsupported
 score must remain silent with a bounded diagnostic; it must not advertise success.
 
-The implemented GBS1 renderer advertises mailbox v5 only after validation.
+The implemented GBS1/GBS2 renderer advertises mailbox v5/v6 only after validation.
 The host must require a fresh signature and zero-token arm before it treats SOUND
 as resident-owned again. Offline acceptance or arrival at `$0400` cannot establish
 ownership. Song-ID table placement, built-in score selection and instrument-ID
