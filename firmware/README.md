@@ -17,7 +17,8 @@ never chooses AGB profiles.
 
 Bundled startup needs no external boot firmware. Version 0.36.0's separate
 experimental desktop SGB audio backend requires a caller-owned SGB1/SGB2
-SNES program ROM and 64-byte SPC700 IPL; an optional 256-byte GB boot override
+SNES program ROM. The original SPC700 IPL is bundled; an optional 64-byte
+`spc700.rom` overrides it. An optional 256-byte GB boot override
 replaces the bundled bootstrap. HLE remains the ordinary-launch default;
 Android/web do not expose this backend. See
 [runtime requirements](../docs/sgb-host.md#experimental-desktop-playback).
@@ -33,6 +34,25 @@ include `cold-sgb-v1` and `clocked-pixel-v1`; the new bridge preserves previous
 production PCM prefixes with appended endpoints but fails all four measured
 Linux headroom profiles. Earlier Balanced Windows/Android measurements do not
 qualify it; see [performance status](../docs/sgb-host.md#current-evidence-status-audited-2026-10-05).
+
+## SPC700 IPL
+
+`spc700/ipl.asm` implements the original GBB 64-byte port-protocol loader.
+`spc700/ipl_image.hpp` is bundled by the SGB firmware host. Desktop firmware
+playback no longer requires `spc700.rom`; an existing file remains an explicit,
+validated 64-byte override. The selected SGB1/SGB2 SNES program ROM remains
+required. The source and generated image contain no reference dump or SGB
+audio driver. Normal builds need no assembler or Python.
+
+```sh
+python3 scripts/build_spc700_ipl.py --check
+python3 scripts/build_spc700_ipl.py --check --output NEW_IMAGE.bin
+```
+
+The strict Python assembler resolves the source's instruction subset and
+records source/image hashes. See [IPL validation](../docs/spc700-ipl-validation.md)
+for the execution-only reference checks, exact playback gates, reset and
+snapshot identity contracts, and scope limits.
 
 ## SGB/SGB2 Game Boy-side bootstrap
 
@@ -56,7 +76,8 @@ same bootstrap: SGB's original introduction is SNES-side, not a DMG animation.
 Instant startup remains the default. Experimental desktop firmware playback
 uses the bundled image when no GB-side override is present; supplying
 `sgb.boot.rom` / `sgb2.boot.rom` still explicitly overrides it. Invalid overrides
-are rejected. Private SNES program ROM and SPC700 IPL are still required.
+are rejected. Private SNES program ROMs are still required; the SPC700 IPL
+is bundled with an optional external override.
 
 ```sh
 python3 scripts/build_dmg_boot_rom.py --model sgb --check
@@ -390,4 +411,5 @@ injection. The optional animated mode replaces only the returned pre-handoff
 PCM with its separately synthesized chime, without changing the game APU state.
 Broader title-level and independent-hardware validation remain future
 milestones for the bundled model-specific boot implementations. SNES-side
-SGB1/SGB2 program ROM and SPC700 IPL replacements are not implemented here yet.
+SGB1/SGB2 program ROM replacements are not implemented here yet. The original
+SPC700 IPL replacement is described in [IPL validation](../docs/spc700-ipl-validation.md).

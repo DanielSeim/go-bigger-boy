@@ -15,8 +15,9 @@ Android and web do not expose firmware playback. See
 `SgbHost` coordinates the bounded 65C816, ICD/Game Boy and SPC700/DSP path.
 Desktop playback combines GB and SNES audio at 48 kHz and retains GB-side
 color/border composition; it does not implement a graphical SNES PPU/menu.
-It requires caller-owned `sgb1.program.rom` or `sgb2.program.rom` and a 64-byte
-`spc700.rom`. The original GBB GB-side bootstrap is bundled; optional 256-byte
+It requires caller-owned `sgb1.program.rom` or `sgb2.program.rom`. An original
+[SPC700 IPL](spc700-ipl-validation.md) is bundled; an optional 64-byte
+`spc700.rom` overrides it. The original GBB GB-side bootstrap is bundled; optional 256-byte
 `sgb.boot.rom` / `sgb2.boot.rom` overrides are validated. Missing/invalid inputs
 fail explicitly. Selecting bundled fast/animated startup alone does not enable
 SNES sound or require those private files. Generic startup IDs are `instant`,

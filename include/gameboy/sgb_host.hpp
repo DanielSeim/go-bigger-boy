@@ -7,14 +7,15 @@
 
 namespace gameboy {
 
-// Caller-owned, legally obtained images only. No filesystem or external core
-// dependency. Input events are held at native GB LCD-frame boundaries.
+// Caller-owned program/game images and a bundled original SPC IPL default.
+// No filesystem or external core dependency. Input events are held at native
+// GB LCD-frame boundaries.
 struct SgbHostConfig {
     std::vector<std::uint8_t> program_rom;
     std::vector<std::uint8_t> game_rom;
     std::vector<std::uint8_t> battery_ram; // Optional initial save, never loaded/written automatically.
     DiagnosticBootRom gb_boot_rom{};
-    SnesApuBus::IplRom spc_ipl{};
+    SnesApuBus::IplRom spc_ipl{spc700_ipl_rom()}; // Explicit images override the default.
     HardwareModel model{HardwareModel::sgb2};
     unsigned apu_clock_hz{1024000};
     std::vector<SgbIcdGbSource::InputEvent> input_events;

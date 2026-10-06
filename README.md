@@ -90,7 +90,8 @@ Known limitations:
   and revision-specific hardware edge cases.
 - The default Super Game Boy implementation is a deterministic clean-room
   HLE adapter, not a full SNES emulator. Bundled replacement SGB/SGB2 boots
-  replace only the Game Boy-side bootstrap, not the SNES firmware or SPC IPL.
+  replace the Game Boy-side bootstrap. An original SPC IPL is also bundled
+  for firmware playback; the SNES program ROM remains caller-owned.
   The opt-in desktop firmware host adds experimental SNES audio, but full SNES graphics/menu
   rendering and unresolved boot/fade/handshake accuracy remain limitations.
 - Firmware playback and voxel performance are not universal 60 FPS guarantees.
@@ -156,7 +157,7 @@ firmware is original project code and is not Nintendo boot firmware.
 
 Users must provide their own legally obtained cartridge ROMs and save data;
 experimental desktop SGB firmware playback also requires user-owned SNES-side
-program and SPC IPL images. Ordinary HLE and bundled replacement startup do
+program images; the original SPC IPL is bundled, with an optional external override. Ordinary HLE and bundled replacement startup do
 not require an external boot ROM. No Nintendo software or game content is
 bundled, downloaded, or distributed by this
 project. This notice describes the project's provenance and is not a guarantee

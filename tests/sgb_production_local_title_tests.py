@@ -43,6 +43,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--runner', required=True, type=Path)
     parser.add_argument('--roms', required=True, type=Path)
+    parser.add_argument('--bundled-ipl', action='store_true')
     args = parser.parse_args()
     game = args.roms / 'Donkey Kong (JU) (V1.1) [S][!].gb'
     save = game.with_suffix('.sav')
@@ -57,7 +58,10 @@ def main():
     # override images: this test specifically exercises the bundled bootstrap.
     with tempfile.TemporaryDirectory(prefix='sgb-production-', dir=args.runner.resolve().parent) as temporary:
         firmware = Path(temporary)
-        for name in ('sgb1.program.rom', 'sgb2.program.rom', 'spc700.rom'):
+        names = ['sgb1.program.rom', 'sgb2.program.rom']
+        if not args.bundled_ipl:
+            names.append('spc700.rom')
+        for name in names:
             shutil.copyfile(args.roms / name, firmware / name)
         result = subprocess.run([str(args.runner.resolve()), '--local-production', str(firmware),
                                  str(game.resolve()), str(save.resolve()), str(script.resolve())],

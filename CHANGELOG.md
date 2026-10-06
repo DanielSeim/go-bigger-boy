@@ -22,6 +22,11 @@
 
 ### SGB firmware host correctness
 
+- Bundle an independently written 64-byte SPC700 IPL with reproducible source
+  under `firmware/spc700/`. Desktop firmware playback now needs only the selected
+  SGB1/SGB2 program ROM; `spc700.rom` remains an optional validated override.
+  Add opaque-reference upload/timing, reset and restore contracts and exact
+  native/combined/scalar and production-adapter playback gates.
 - Extend bundled SGB1/SGB2 desktop adapter regression coverage through boot
   handoff, stereo 48 kHz audio, viewport output, reset and snapshot restoration.
   Add an optional private-title production replay and a Windows playback mode

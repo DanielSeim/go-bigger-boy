@@ -1285,16 +1285,22 @@ if(GAMEBOY_BUILD_TESTS)
         if(Python3_Interpreter_FOUND AND
            EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb1.program.rom" AND
            EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.program.rom" AND
-           EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/spc700.rom" AND
            EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/Donkey Kong (JU) (V1.1) [S][!].gb" AND
            EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/Donkey Kong (JU) (V1.1) [S][!].sav")
-            add_test(NAME gameboy_sgb_production_local_titles
+            if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/spc700.rom")
+                add_test(NAME gameboy_sgb_production_local_titles
+                    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_production_local_title_tests.py
+                    --runner $<TARGET_FILE:gameboy_sgb_firmware_core_tests>
+                    --roms ${CMAKE_CURRENT_SOURCE_DIR}/roms)
+                # Allow the subprocess timeout to reap its runner and remove private
+                # temporary images before CTest's outer watchdog expires.
+                set_tests_properties(gameboy_sgb_production_local_titles PROPERTIES TIMEOUT 960 LABELS "sgb;private")
+            endif()
+            add_test(NAME gameboy_sgb_production_bundled_ipl_local_titles
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_production_local_title_tests.py
                 --runner $<TARGET_FILE:gameboy_sgb_firmware_core_tests>
-                --roms ${CMAKE_CURRENT_SOURCE_DIR}/roms)
-            # Allow the subprocess timeout to reap its runner and remove private
-            # temporary images before CTest's outer watchdog expires.
-            set_tests_properties(gameboy_sgb_production_local_titles PROPERTIES TIMEOUT 960 LABELS "sgb;private")
+                --roms ${CMAKE_CURRENT_SOURCE_DIR}/roms --bundled-ipl)
+            set_tests_properties(gameboy_sgb_production_bundled_ipl_local_titles PROPERTIES TIMEOUT 960 LABELS "sgb;private")
         endif()
     endif()
     target_link_libraries(gameboy_sgb_host_tests PRIVATE gameboy_core)
@@ -1319,20 +1325,27 @@ if(GAMEBOY_BUILD_TESTS)
     if(Python3_Interpreter_FOUND AND
        EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb1.program.rom" AND
        EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.program.rom" AND
-       EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/spc700.rom" AND
        EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb.boot.rom" AND
        EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.boot.rom" AND
        EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/Donkey Kong (JU) (V1.1) [S][!].gb")
-        add_test(NAME gameboy_sgb_host_local_titles
-                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_host_local_title_tests.py
-                         $<TARGET_FILE:gameboy_sgb_host_title_runner> ${CMAKE_CURRENT_SOURCE_DIR}/roms
-                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/sgb/titles/donkey-kong-gameplay.script)
-        set_tests_properties(gameboy_sgb_host_local_titles PROPERTIES TIMEOUT 1500)
-        add_test(NAME gameboy_sgb_host_combined_local_titles
+        if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/spc700.rom")
+            add_test(NAME gameboy_sgb_host_local_titles
+                     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_host_local_title_tests.py
+                             $<TARGET_FILE:gameboy_sgb_host_title_runner> ${CMAKE_CURRENT_SOURCE_DIR}/roms
+                             ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/sgb/titles/donkey-kong-gameplay.script)
+            set_tests_properties(gameboy_sgb_host_local_titles PROPERTIES TIMEOUT 1500)
+            add_test(NAME gameboy_sgb_host_combined_local_titles
+                     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_host_combined_title_tests.py
+                             $<TARGET_FILE:gameboy_sgb_host_title_runner> ${CMAKE_CURRENT_SOURCE_DIR}/roms
+                             ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/sgb/titles/donkey-kong-gameplay.script)
+            set_tests_properties(gameboy_sgb_host_combined_local_titles PROPERTIES TIMEOUT 3700)
+        endif()
+        add_test(NAME gameboy_sgb_replacement_ipl_combined_local_titles
                  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_host_combined_title_tests.py
                          $<TARGET_FILE:gameboy_sgb_host_title_runner> ${CMAKE_CURRENT_SOURCE_DIR}/roms
-                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/sgb/titles/donkey-kong-gameplay.script)
-        set_tests_properties(gameboy_sgb_host_combined_local_titles PROPERTIES TIMEOUT 3700)
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/sgb/titles/donkey-kong-gameplay.script
+                         --replacement-ipl)
+        set_tests_properties(gameboy_sgb_replacement_ipl_combined_local_titles PROPERTIES TIMEOUT 3700 LABELS "sgb;private")
     endif()
 
     add_executable(gameboy_snes_spc700_tests
@@ -1444,6 +1457,22 @@ if(GAMEBOY_BUILD_TESTS)
     add_executable(gameboy_snes_spc700_ipl_probe
         tests/support/snes_spc700_ipl_probe.cpp)
     target_link_libraries(gameboy_snes_spc700_ipl_probe PRIVATE gameboy_core)
+    add_executable(gameboy_spc700_replacement_ipl_tests tests/spc700_replacement_ipl_tests.cpp)
+    target_link_libraries(gameboy_spc700_replacement_ipl_tests PRIVATE gameboy_core)
+    add_test(NAME gameboy_spc700_replacement_ipl_contract COMMAND gameboy_spc700_replacement_ipl_tests)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME gameboy_spc700_replacement_ipl_reproducible
+                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_spc700_ipl.py --check)
+        add_test(NAME gameboy_spc700_replacement_ipl_pcm
+                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/spc700_replacement_ipl_pcm_tests.py
+                         $<TARGET_FILE:gameboy_snes_spc700_ipl_probe>
+                         $<TARGET_FILE:gameboy_snes_spc700_dsp_timeline_tests>
+                         $<TARGET_FILE:gameboy_snes_dsp_pcm_fixture_runner>)
+    endif()
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/spc700.rom")
+        add_test(NAME gameboy_spc700_replacement_local_reference_contract
+                 COMMAND gameboy_spc700_replacement_ipl_tests ${CMAKE_CURRENT_SOURCE_DIR}/roms/spc700.rom)
+    endif()
     add_executable(gameboy_snes_65c816_apu_trace
         tests/support/snes_65c816_apu_trace.cpp
         tests/support/snes_icd_gb_source.cpp

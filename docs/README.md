@@ -20,7 +20,8 @@ bundled, original firmware for the chosen hardware model; old DMG-specific
 setting IDs are not migrated. AGB/AGB0 mean GB/GBC startup compatibility,
 not native GBA emulation. SGB/SGB2 replacement boots cover only the GB-side
 bootstrap. Ordinary HLE needs no proprietary firmware; experimental desktop
-SNES-side playback still requires user-owned program and SPC IPL images.
+SNES-side playback still requires user-owned program ROMs. The original SPC
+IPL is bundled; see [replacement IPL validation](spc700-ipl-validation.md).
 
 ## Compatibility and validation
 

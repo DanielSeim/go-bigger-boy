@@ -102,4 +102,7 @@ private:
     void* ram_write_context_{};
 };
 
+// Original bundled port-protocol firmware; callers may install another image.
+[[nodiscard]] SnesApuBus::IplRom spc700_ipl_rom() noexcept;
+
 } // namespace gameboy

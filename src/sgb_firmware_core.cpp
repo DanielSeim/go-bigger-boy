@@ -54,6 +54,12 @@ gameboy::DiagnosticBootRom gb_boot_image(const std::filesystem::path& directory,
     if (std::filesystem::exists(path) || std::filesystem::is_symlink(path)) return fixed_image<256>(path);
     return sgb2 ? gameboy::sgb2_boot_rom() : gameboy::sgb_boot_rom();
 }
+gameboy::SnesApuBus::IplRom spc_ipl_image(const std::filesystem::path& directory) {
+    const auto path=directory/"spc700.rom";
+    // Missing overrides select the bundle; supplied invalid images fail closed.
+    if(std::filesystem::exists(path) || std::filesystem::is_symlink(path)) return fixed_image<64>(path);
+    return gameboy::spc700_ipl_rom();
+}
 std::uint64_t hash(const std::vector<std::uint8_t>& bytes, std::size_t size) {
     std::uint64_t h=14695981039346656037ULL;
     for (std::size_t n=0;n<size;++n) { h^=bytes[n]; h*=1099511628211ULL; }
@@ -241,7 +247,7 @@ std::unique_ptr<EmulatorCore> create_sgb_firmware_core(
     const auto& dir=options.sgb_firmware_directory;
     config.program_rom=read_image(dir/(sgb2?"sgb2.program.rom":"sgb1.program.rom"),0x80000);
     config.gb_boot_rom=gb_boot_image(dir,sgb2);
-    config.spc_ipl=fixed_image<64>(dir/"spc700.rom");
+    config.spc_ipl=spc_ipl_image(dir);
     auto save=options.persistence_path.empty()?options.source_path:options.persistence_path;
     if(!save.empty()) save.replace_extension(sgb2?".sgb2-firmware.sav":".sgb-firmware.sav");
     return std::make_unique<FirmwareCore>(std::move(config),std::move(save));
@@ -254,7 +260,7 @@ void validate_sgb_firmware_images(const std::filesystem::path& directory, std::s
     if(gameboy::SgbProgramRom::validate(program)!=gameboy::SgbProgramRom::Error::none)
         throw std::invalid_argument("Unsupported SGB program image format");
     static_cast<void>(gb_boot_image(directory,sgb2));
-    static_cast<void>(fixed_image<64>(directory/"spc700.rom"));
+    static_cast<void>(spc_ipl_image(directory));
 }
 std::string_view sgb_firmware_model(const EmulatorCore& core) noexcept {
     const auto* adapter=dynamic_cast<const FirmwareCore*>(&core);

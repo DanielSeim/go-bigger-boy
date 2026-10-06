@@ -57,7 +57,10 @@ void production_titles(const char* directory,const char* game,const char* save,c
     const std::filesystem::path firmware=directory;
     check(!std::filesystem::exists(firmware/"sgb.boot.rom") &&
           !std::filesystem::exists(firmware/"sgb2.boot.rom"),"production fixture has no GB boot overrides");
-    const auto rom=read(game), battery=read(save), ipl=read(firmware/"spc700.rom");
+    const auto bundled_ipl=gameboy::spc700_ipl_rom();
+    const auto rom=read(game), battery=read(save);
+    const auto ipl=std::filesystem::exists(firmware/"spc700.rom")?read(firmware/"spc700.rom"):
+        std::vector<std::uint8_t>(bundled_ipl.begin(),bundled_ipl.end());
     check(ipl.size()==64,"production IPL size");
     gbb_sgb_input_script script{}; char error[128]{};
     check(gbb_sgb_input_load(script_path,&script,error,sizeof(error)),error);
@@ -309,9 +312,10 @@ int main(int argc,char** argv) {
         check(gbb::sdl::desktop_launch_options(6,smoke_args).smoke_frames==36000,"bounded ten-minute qualification parsed");
         smoke_args[5]=excessive;
         rejects([&]{gbb::sdl::desktop_launch_options(6,smoke_args);},"unbounded qualification rejected");
-        // GB-side images are optional; private program and SPC IPL stay required.
+        // Both boot images are optional; private SNES program images stay required.
         std::filesystem::remove(root/"sgb.boot.rom");
         std::filesystem::remove(root/"sgb2.boot.rom");
+        std::filesystem::remove(root/"spc700.rom");
         // An original audible cartridge fixture, not a private game dump.
         auto audible=cfg.game_rom;
         std::copy_n(cfg.gb_boot_rom.begin(),35,audible.begin()+0x150);
@@ -321,6 +325,7 @@ int main(int argc,char** argv) {
             options.hardware_model=name;
             auto bundled=gbb::create_core(audible,options);
             auto reference_cfg=cfg; reference_cfg.game_rom=audible;
+            reference_cfg.spc_ipl=gameboy::spc700_ipl_rom();
             reference_cfg.model=std::string_view(name)=="sgb2"?gameboy::HardwareModel::sgb2:gameboy::HardwareModel::sgb;
             reference_cfg.gb_boot_rom=reference_cfg.model==gameboy::HardwareModel::sgb2?
                 gameboy::sgb2_boot_rom():gameboy::sgb_boot_rom();

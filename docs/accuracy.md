@@ -220,7 +220,8 @@ The frontend-neutral SDL and web presentation paths now consume the SGB frame
 dimensions from the core descriptor, so desktop, Android, and browser builds
 can display the border without a frontend-specific decoder. HLE does not
 execute SNES-side sound commands. Experimental desktop firmware playback
-adds combined GB/SNES audio using user-owned program and SPC IPL images;
+adds combined GB/SNES audio using user-owned program images and a bundled
+original SPC IPL (with an external-image override);
 Android and Web still use HLE. Bundled SGB/SGB2 replacement boots provide
 the GB-side header bootstrap, not a replacement for those SNES-side images.
 Full SNES graphics/menu rendering, the four deferred title-reference frames,

@@ -44,13 +44,23 @@ try {
     if($BundledBootstrap) {
         $bundledDirectory=Join-Path $OutputDirectory 'firmware-bundled'
         New-Item -ItemType Directory -Path $bundledDirectory | Out-Null
-        foreach($name in @('sgb1.program.rom','sgb2.program.rom','spc700.rom')) {
+        foreach($name in @('sgb1.program.rom','sgb2.program.rom')) {
             Copy-Item -LiteralPath (Join-Path $FirmwareDirectory $name) -Destination (Join-Path $bundledDirectory $name)
+        }
+        $iplPath=Join-Path $FirmwareDirectory 'spc700.rom'
+        if(Test-Path -LiteralPath $iplPath) {
+            Copy-Item -LiteralPath $iplPath -Destination (Join-Path $bundledDirectory 'spc700.rom')
         }
         $FirmwareDirectory=$bundledDirectory
     }
-    foreach($name in @('sgb1.program.rom','sgb2.program.rom','spc700.rom')) {
+    foreach($name in @('sgb1.program.rom','sgb2.program.rom')) {
         $hashes[$name]=(Get-FileHash -LiteralPath (Join-Path $FirmwareDirectory $name) -Algorithm SHA256).Hash
+    }
+    $iplMode='bundled'
+    $iplPath=Join-Path $FirmwareDirectory 'spc700.rom'
+    if(Test-Path -LiteralPath $iplPath) {
+        $hashes['spc700.rom']=(Get-FileHash -LiteralPath $iplPath -Algorithm SHA256).Hash
+        $iplMode='external override'
     }
     $bootModes=@{}
     foreach($name in @('sgb.boot.rom','sgb2.boot.rom')) {
@@ -62,7 +72,7 @@ try {
     }
     $metadata=@{executable_sha256=(Get-FileHash -LiteralPath $Executable -Algorithm SHA256).Hash;
         rom_sha256=(Get-FileHash -LiteralPath $Rom -Algorithm SHA256).Hash;
-        firmware_sha256=$hashes; gb_boot_modes=$bootModes; frames=$Frames; utc_started=[DateTime]::UtcNow.ToString('o');
+        firmware_sha256=$hashes; gb_boot_modes=$bootModes; spc_ipl_mode=$iplMode; frames=$Frames; utc_started=[DateTime]::UtcNow.ToString('o');
         power_profile=(& powercfg.exe /getactivescheme | Out-String).Trim();
         audio_backend='wasapi'; lifecycle=[bool]$Lifecycle; physical_listening='not recorded; report separately'}
     if ($InitialSave) { $metadata.initial_save_sha256=(Get-FileHash -LiteralPath $InitialSave -Algorithm SHA256).Hash }

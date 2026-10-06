@@ -345,7 +345,7 @@ void choose_firmware_playback(DialogState& dialog,SdlResources& sdl,const std::f
 #ifndef __ANDROID__
     const auto settings=load_app_settings(preference_path).sgb_firmware;
     open_desktop_choice_dialog(sdl.window,"Experimental SGB firmware playback",
-        "Next ROM launch only; reset keeps the current backend. Caller-owned images only. No voxel, link, debugger, cheats or automatic rewind. Separate firmware saves; full SNES menus are not implemented.",
+        "Next ROM launch only; reset keeps the current backend. Requires caller-owned SGB program ROMs. No voxel, link, debugger, cheats or automatic rewind. Separate firmware saves; full SNES menus are not implemented.",
         {"HLE (default)","SGB1 firmware: choose directory...","SGB2 firmware: choose directory..."},
         settings.enabled?(settings.model=="sgb"?1:2):0,
         [&dialog,&sdl,preference_path](std::size_t selected) {

@@ -1,4 +1,5 @@
 #include "gameboy/snes_audio_host.hpp"
+#include "../firmware/spc700/ipl_image.hpp"
 
 #include <fstream>
 #include <iterator>
@@ -6,6 +7,8 @@
 #include <utility>
 
 namespace gameboy {
+
+SnesApuBus::IplRom spc700_ipl_rom() noexcept { return firmware::spc700_ipl_image; }
 
 SgbProgramRom::Error SgbProgramRom::validate(
     const std::vector<std::uint8_t>& bytes) noexcept {

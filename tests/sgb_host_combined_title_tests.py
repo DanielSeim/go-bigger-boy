@@ -7,6 +7,7 @@ import math
 from pathlib import Path
 import struct
 import subprocess
+import sys
 import tempfile
 
 
@@ -15,12 +16,20 @@ def main():
     parser.add_argument("runner", type=Path)
     parser.add_argument("roms", type=Path)
     parser.add_argument("script", type=Path)
+    parser.add_argument("--replacement-ipl", action="store_true",
+                        help="rebuild the original GBB IPL and require the same private-original PCM pins")
     args = parser.parse_args()
     game = args.roms / "Donkey Kong (JU) (V1.1) [S][!].gb"
     if hashlib.sha256(game.read_bytes()).hexdigest() != \
             "b490c89efe718633b07381def66ce0ed58a5075aabe40c6e644baf2b408a76f4":
         raise AssertionError("unexpected private game image")
     with tempfile.TemporaryDirectory(prefix="gbb-combined-host-title-") as directory:
+        ipl = args.roms / "spc700.rom"
+        if args.replacement_ipl:
+            ipl = Path(directory) / "gbb-ipl.bin"
+            subprocess.run([sys.executable,
+                            str(Path(__file__).resolve().parents[1] / "scripts/build_spc700_ipl.py"),
+                            "--check", "--output", str(ipl)], check=True)
         # Cold-reset baselines pin this bounded implementation, not independent
         # hardware fidelity. Scalar playback and restore must preserve its PCM.
         for model, rate, baseline, combined_baseline in (
@@ -33,7 +42,7 @@ def main():
                 prefix = Path(directory) / f"{model}-{mode}"
                 wav, report = prefix.with_suffix(".wav"), prefix.with_suffix(".json")
                 command = [str(args.runner), model, str(args.roms / f"{model}.program.rom"),
-                           str(args.roms / "spc700.rom"), str(game),
+                           str(ipl), str(game),
                            str(args.roms / ("sgb.boot.rom" if model == "sgb1" else "sgb2.boot.rom")),
                            str(args.script), str(wav), str(report)]
                 if mode != "native":

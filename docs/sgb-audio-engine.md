@@ -12,7 +12,8 @@ see the host document for buffering, snapshot and accuracy limitations.
 
 Version 0.36.0 includes experimental desktop firmware playback; Android/web
 do not expose it and ordinary launches default to HLE. The bundled GB bootstrap
-does not supply the required private SNES program ROM or 64-byte SPC700 IPL;
+is accompanied by an original bundled SPC700 IPL; the private SNES program
+ROM is still required and `spc700.rom` remains an optional 64-byte override;
 see [runtime inputs](sgb-host.md#experimental-desktop-playback).
 DSP (`GBBSDSP` + byte `1`) and APU (`GBBSAPU` + byte `1`) component formats
 remain version 1. Each signature/version pair is eight bytes in total.

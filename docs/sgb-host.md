@@ -121,7 +121,10 @@ preferences for that process:
 ./build-desktop/gbb game.gb --sgb-firmware /path/to/private/firmware --sgb-model sgb2
 ```
 
-The directory must contain `sgb2.program.rom` and `spc700.rom` (64 bytes).
+The directory must contain `sgb2.program.rom` (or `sgb1.program.rom` for SGB1).
+The original SPC700 IPL is bundled; an optional exactly 64-byte `spc700.rom`
+overrides it. Supplied invalid overrides fail explicitly. See
+[IPL provenance and validation](spc700-ipl-validation.md).
 For `--sgb-model sgb`, supply `sgb1.program.rom` instead. The original GBB
 256-byte SGB/SGB2 bootstrap is bundled. An optional `sgb2.boot.rom` or
 `sgb.boot.rom` in the directory overrides it; malformed overrides fail rather
@@ -193,7 +196,7 @@ scripts/run_windows_sgb_playback.ps1 -Executable C:\build\gbb.exe `
 
 `-BundledBootstrap` exercises the normal bundled SGB/SGB2 Game Boy-side
 bootstrap even when the input directory contains private GB boot overrides.
-The runner copies only the two SNES program images and SPC IPL into a fresh
+The runner copies the two SNES program images and any supplied SPC IPL override into a fresh
 subdirectory of the capture directory; originals are untouched. Provenance
 records each model's bundled/override selection. Without this switch, absent
 GB boot overrides are also supported, matching the desktop loader.
