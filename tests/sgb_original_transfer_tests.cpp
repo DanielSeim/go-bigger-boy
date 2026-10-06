@@ -2,6 +2,8 @@
 #include "gameboy/sgb_sound.hpp"
 #include "../firmware/sgb/prototype_image.hpp"
 #include <iostream>
+#include <fstream>
+#include <cmath>
 #include <stdexcept>
 
 namespace {
@@ -51,7 +53,8 @@ gameboy::SgbHostConfig config(gameboy::HardwareModel model,const Payload& payloa
         packet(code,followup==1 ? Packet{0x41,1} :
             followup==3 ? Packet{0x41,1,0,1} :
             followup==4 ? Packet{0x41,2} :
-            followup==5 ? Packet{0x41,0,0,0,1} : Packet{0x49});
+            followup==5 ? Packet{0x41,0,0,0,1} :
+            followup==6 ? Packet{0x41,0,0,0,2} : Packet{0x49});
     }
     append(code,{0x18,0xfe});
     require(code.size()+0x150<0x4000,"original fixture code does not overlap transfer data");
@@ -254,6 +257,56 @@ void interoperability(gameboy::HardwareModel model) {
                 "256 further SOUND packets cross v2 token rollover exactly twice");
     }
 }
+unsigned crossings(const std::vector<Host::StereoSample>& pcm) {
+    unsigned count=0;
+    for(unsigned i=1;i<pcm.size();++i) if(pcm[i-1].left<0 && pcm[i].left>=0) ++count;
+    return count;
+}
+void ready_score(Host& h) {
+    Host::StereoSample sample;
+    while((h.icd().sound_packets_delivered()!=1 || h.cpu().debug_wram_byte(0x23)!=2)
+          && h.cpu().timing().clocks()<6'000'000) {
+        require(h.step(),"reach score command after data-only handoff");
+        while(h.pop_sample(sample)) {}
+    }
+    require(h.icd().sound_packets_delivered()==1 && h.cpu().debug_wram_byte(0x23)==2 &&
+            h.cpu().debug_wram_byte(0x20)==1,"uploaded score selected after v3 arm and acknowledgment");
+}
+void uploaded_scores(gameboy::HardwareModel model,const Payload& p) {
+    auto parsed=gameboy::SgbSoundTransfer::parse(p);
+    require(parsed.valid() && parsed.writes.size()==1 && parsed.writes[0].destination==0x07d0 &&
+            parsed.writes[0].size==16 && parsed.jump_address==0x0200,
+            "packer output is exactly one score-table block and a resident restart");
+    for(unsigned score=0;score<2;++score) for(bool combined:{false,true}) {
+        auto c=config(model,p,5+score);c.combined_audio=combined;
+        Host h(c),scalar(c),peer(c);scalar.debug_set_apu_batch_enabled(false);
+        const auto boot=advance(h,6'000'000,true);
+        require(h.cpu().debug_wram_byte(0x20)==1 && h.cpu().debug_wram_byte(0x24)==0 &&
+                h.cpu().debug_wram_byte(0x26)==1 && h.cpu().debug_wram_byte(0x2a)==2 &&
+                h.cpu().debug_wram_byte(0x2b)==0xc3,"data-only transfer restarts and adopts original v3 driver");
+        latched(h,p);
+        require(equal(boot,advance(scalar,6'000'000)) && h.save_state()==scalar.save_state(),
+                "uploaded scores match scalar native/combined audio and state");
+        require(peer.load_state(h.save_state()),"restore uploaded score table and active note countdown");
+        require(equal(advance(h,1'000'000),advance(peer,1'000'000)) && h.save_state()==peer.save_state(),
+                "uploaded score state continues identically across instances");
+        h.reset();require(equal(boot,advance(h,6'000'000)),"reset reproduces score capture, data upload and music");
+        // Measure the first note in isolation, against an independently packed
+        // transfer of the built-in motifs. This detects a driver ignoring the
+        // uploaded data even if its built-in music remains audible.
+        Host measured(c);ready_score(measured);(void)advance(measured,100'000);
+        const auto actual=crossings(advance(measured,1'000'000));
+        auto defaults=p;
+        const std::array<std::uint8_t,16> pitches{4,5,6,8,6,5,4,3,8,6,4,6,9,6,4,3};
+        std::copy(pitches.begin(),pitches.end(),defaults.begin()+4);
+        auto reference_config=config(model,defaults,5+score);reference_config.combined_audio=combined;
+        Host reference(reference_config);ready_score(reference);(void)advance(reference,100'000);
+        const auto expected=crossings(advance(reference,1'000'000));
+        const double ratio=double(p[4+score*8])/pitches[score*8];
+        require(actual>0 && expected>0 && std::abs(double(actual)/expected-ratio)<ratio*0.08,
+                "rendered first note follows the uploaded pitch instead of the bundled score");
+    }
+}
 void incompatible(gameboy::HardwareModel model) {
     // Original test stubs explicitly advertise wrong versions or violate one
     // advertised operation. They execute normally; the host must fail boundedly.
@@ -319,8 +372,16 @@ void invalid(gameboy::HardwareModel model) {
     require(lcd_off.cpu().debug_wram_byte(0x20)==0xff && lcd_off.cpu().debug_wram_byte(0x27)==4,"LCD-off transfer fails within bounded wait");
 }
 }
-int main() {
+int main(int argc,char** argv) {
     try {
+        if(argc==3 && std::string(argv[1])=="--score-transfer") {
+            Payload p{};std::ifstream input(argv[2],std::ios::binary);
+            require(bool(input.read(reinterpret_cast<char*>(p.data()),p.size())) && input.peek()==std::char_traits<char>::eof(),"score transfer file must contain exactly 4096 bytes");
+            for(auto model:{gameboy::HardwareModel::sgb,gameboy::HardwareModel::sgb2}) uploaded_scores(model,p);
+            std::cout<<"Original SGB1/SGB2 uploaded scores: data-only handoff, note pitches, native/combined scalar PCM, reset and restore passed\n";
+            return 0;
+        }
+        require(argc==1,"expected --score-transfer FILE or no arguments");
         for(auto model:{gameboy::HardwareModel::sgb,gameboy::HardwareModel::sgb2}) { upload(model);invalid(model);interoperability(model);incompatible(model); }
         std::cout<<"Original SGB1/SGB2: exact 4K ICD capture, validated multi-block SOU_TRN, upper-RAM upload, SPC handoff/audio, versioned driver adoption, repeated transfers, SOUND, timeouts, reset and restore passed\n";
     } catch(const std::exception& e) {std::cerr<<e.what()<<'\n';return 1;}

@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Add strict JSON authoring and SOU_TRN packaging for the original SGB v3 score
+  bank, with two authored example motifs. Validate actual data-only upload and
+  driver rearming on SGB1/SGB2, rendered note pitches, native/combined scalar
+  audio, reset and save/load; reject invalid input and existing output files.
+
 - Add an original SGB diagnostic effect bank and two looping score motifs with
   mailbox v3. Real SPC/DSP playback supports concurrent effects/music, remembered
   preset retriggers, independent stops and global fades; retain v1/v2 contracts

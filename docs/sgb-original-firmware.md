@@ -170,6 +170,42 @@ transfers/JUMP execution, controller negotiation and a hardware SNES PPU are
 outside this diagnostic milestone. Such commands are not validated by this
 prototype and must be audited before production integration.
 
+## Authoring and uploading score data
+
+The v3 score table is sixteen pitch high bytes at `$07D0..07DF`: eight notes
+for score 01 followed by eight for score 02. Each note retains the interpreter's
+16-tick duration; the selected motif loops on the music voice. The original
+[`score_example.json`](../firmware/sgb/score_example.json) contains two authored
+variations with different opening pitches from the bundled motifs. The samples,
+interpreter and timing remain those of the original diagnostic firmware.
+
+```sh
+python3 scripts/build_sgb_score_transfer.py firmware/sgb/score_example.json --output /tmp/gbb-sgb-scores.bin
+```
+
+The JSON schema is exactly `{"scores": [[eight integers], [eight integers]]}`.
+Pitch units must be integers 1..63, representing DSP pitches `$0100..3F00`;
+these are hardware pitch units, not MIDI note numbers. Booleans, floating-point
+values, missing/extra fields, duplicate keys and malformed JSON are rejected.
+There is no rest or tempo field in this format. Validation completes before an
+output file is created, and the tool refuses to overwrite an existing file.
+
+The output is a raw 4096-byte **VRAM transfer payload**, not a ROM: a 16-byte
+block for `$07D0`, a zero-length jump to `$0200`, then zero padding. A GB program
+must prepare its unsigned tiles/map and identity palette while LCD is off as
+described below, enable LCD, send SOU_TRN `49`, and allow capture/upload/rearming
+to finish before selecting score 01 or 02 through SOUND `41` byte 4. Restarting
+the driver clears active effects/music; a subsequent SOUND explicitly starts
+playback. The updated score table survives this restart, while a host cold reset
+reloads the bundled table before the GB program repeats its transfer.
+
+`--driver-entry 0x0800` can target an **already installed** relocated compatible
+driver. The tool checks transport address bounds and excludes the score table;
+it does not install a driver or establish compatibility. The host still requires
+the complete readiness signature and arm acknowledgment. Keep the fixed sample
+and interpreter addresses intact. This is an authoring path for the original
+GBB v3 bank, not a Nintendo N-SPC score decoder or proprietary title-data format.
+
 ## Screen capture, upload and ownership
 
 A valid `49` SOU_TRN packet starts capture. The host waits for VBlank and the
@@ -245,7 +281,7 @@ ultimately overflow the bounded ICD queue.
 
 ```sh
 cmake --build build-dmg-firmware --target gameboy_sgb_original_firmware_tests gameboy_sgb_original_transfer_tests
-ctest --test-dir build-dmg-firmware -R 'gameboy_sgb_original_(firmware|transfer)' --output-on-failure
+ctest --test-dir build-dmg-firmware -R 'gameboy_sgb_original_' --output-on-failure
 ```
 
 The ROM-free executable uses real JOYP transactions from an original homebrew
@@ -269,13 +305,19 @@ command dispatch succeeds without staging and rejects new attributes explicitly.
 V2 stubs accept attribute staging but reject v3 presets/scores. The original
 bank checks distinct rendered presets, remembered preset retriggers, timer-driven
 score changes, score-only output, concurrent effects/music, independent stops,
-global music mute, and silence after unsupported commands. Native/combined
-scalar parity, cross-instance continuation and reset cover active scores.
+global music mute, and silence after unsupported commands. The score-authoring
+contract generates an actual payload with the CLI, then verifies exact ICD
+capture, data-only upload/rearming, both score selections, measured pitch ratios
+against the bundled motifs, native/combined scalar parity, reset and active-score
+restore on both models. It also rejects malformed authoring data and preserves
+existing output files. Native/combined scalar parity, cross-instance continuation
+and reset also cover the built-in active scores.
 These tests establish an original functioning pipeline, not title
 compatibility or parity with the proprietary program ROMs.
 
-Validation on 2026-10-06: all four prototype CTest checks passed in the Release
-build. The regression run (`-E 'local|performance|gameboy_sgb_original_(firmware|transfer)'`)
+Validation on 2026-10-06: all five prototype CTest checks passed in the Release
+build. The preceding core regression run, before the score-authoring test was added,
+(`-E 'local|performance|gameboy_sgb_original_(firmware|transfer)'`)
 reported 169 tests, zero failures and three skipped network tests. Export checks
 confirmed the exact 262144-byte image, matching generated SHA-256, and refusal
 to overwrite an existing image. Private-title, physical-device and performance
