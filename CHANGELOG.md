@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Add deterministic inspection of canonical original GBS1..GBS6 score uploads,
+  reporting phrase barriers, finite repeats, track endings, control defaults and
+  effective pitches with held-tie semantics. Validate transport integrity and
+  reject malformed or noncanonical input; reports remain static authoring
+  evidence without playback or vendor-title qualification.
+
 - Add original GBS6 per-track signed transpose with mailbox v10, limited to
   -12..12 semitones and validated effective pitch indices 0..31. Preserve held
   pitch on ties, reset transpose on phrase/repeat/restart boundaries, and reject

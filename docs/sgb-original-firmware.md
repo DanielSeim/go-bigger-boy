@@ -354,6 +354,10 @@ overrides and state-image identity checks when integrating a default.
 
 ## Title demand and next compatibility priority
 
+The [packed-score inspector](sgb-resident-score-inspection.md) reports canonical
+original scores as a finite static timeline with phrase barriers, repeats and
+effective pitches, separately from real SPC/DSP playback validation.
+
 The [resident score contract](sgb-resident-score-contract.md) provides the next
 layout/restart design and an offline data-subset oracle using original fixtures.
 Its acceptance does not establish SPC playback or mailbox ownership.

@@ -54,3 +54,8 @@ A separate fixture renders effective indices 0 and 31. Invalid signed operands,
 effective pitches and older-envelope controls reject before readiness; stop,
 restart, finite termination, repeated uploads and legacy restart remain covered.
 No proprietary firmware, title-score or recorded-audio inputs are used.
+
+The [packed-score inspector](sgb-resident-score-inspection.md) reports canonical
+GBS1..GBS6 phrase barriers, repeats, control defaults and effective pitches as
+deterministic JSON before an upload, including retained tie pitch and transpose
+reset in this fixture.
