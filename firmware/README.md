@@ -414,6 +414,7 @@ milestones for the bundled model-specific boot implementations. SNES-side
 SGB1/SGB2 production program ROM replacements are not implemented here yet.
 The original [SNES-side diagnostic prototype](../docs/sgb-original-firmware.md)
 now establishes reproducible startup, restricted two-voice playback and
-next-frame SOU_TRN capture/upload/handoff;
+next-frame SOU_TRN capture/upload/handoff, with repeated transfers and SOUND
+after versioned driver adoption;
 it is not a bundled program-ROM default. The original
 SPC700 IPL replacement is described in [IPL validation](../docs/spc700-ipl-validation.md).

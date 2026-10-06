@@ -41,10 +41,18 @@
     mov $f3, #$00
     mov $f2, #$57
     mov $f3, #$60
-    mov a, $f4
-    mov $10, a
+; Mailbox v1 readiness: output ports 0/1/3 = 5A/C1/A5.
+; The host clears all incoming parameters and writes token zero to arm us.
+; No command is executed until that reset is observed and acknowledged.
+    mov $f5, #$c1
     mov $f7, #$a5
     mov $f4, #$5a
+await_arm:
+    mov a, $f4
+    cmp a, #$00
+    bne await_arm
+    mov $10, #$00
+    mov $f4, #$00
 poll:
     mov a, $f4
     cmp a, $10

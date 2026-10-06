@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Add explicit mailbox-v1 adoption to the original SGB firmware prototype,
+  enabling repeated SOU_TRN transfers and SOUND after compatible SPC driver
+  handoff. Unknown versions remain external; arm, command and loader waits are
+  bounded, with reset and save/load coverage across driver ownership changes.
+
 - Extend the original SGB firmware prototype with exact 4 KiB ICD screen capture,
   complete-list validation, multi-block SOU_TRN upload and SPC handoff. ROM-free
   tests cover both models, upper APU RAM, invalid transfers and lifecycle state;

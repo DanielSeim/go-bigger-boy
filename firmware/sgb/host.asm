@@ -12,6 +12,7 @@
     stz $25
     stz $26
     stz $27
+    stz $2a
 ready:
     lda $2140
     cmp #$aa
@@ -60,23 +61,33 @@ driver_ready:
     lda $2143
     cmp #$a5
     bne driver_ready
+    lda $2141
+    cmp #$c1
+    bne driver_ready
     lda $2140
     cmp #$5a
     bne driver_ready
-    stz $23
-    lda #$01
-    sta $20
+    jsr adopt_driver
 ; Both models use their existing ICD oscillator profiles, divider 5.
     lda #$81
     sta $6003
 poll:
-; External-driver diagnostics observe its output only; never send mailbox data.
+; Observe external drivers. Only the complete v1 advertisement permits adoption.
     lda $24
     beq poll_packets
     lda $2142
     sta $28
     lda $2143
     sta $29
+    cmp #$a5
+    bne poll_packets
+    lda $2141
+    cmp #$c1
+    bne poll_packets
+    lda $2140
+    cmp #$5a
+    bne poll_packets
+    jsr adopt_driver
 poll_packets:
     lda $6002
     beq poll
@@ -130,9 +141,7 @@ valid_b:
     inc $23
     lda $23
     sta $2140
-sound_ack:
-    cmp $2140
-    bne sound_ack
+    jsr wait_echo
     jmp poll
 unsupported:
 ; Diagnostic $21 holds the unsupported command header; $20=FF means halted.
@@ -144,12 +153,12 @@ unsupported:
     lda #$80
     sta $2141
     sta $2142
+    lda #$06
+    sta $20
     inc $23
     lda $23
     sta $2140
-stop_ack:
-    cmp $2140
-    bne stop_ack
+    jsr wait_echo
 unsupported_owned:
     lda $0100
     sta $21
@@ -379,6 +388,23 @@ transfer_jump:
     lda #$02
     sta $20
     jmp poll
+adopt_driver:
+; Reset parameters before the token, then wait for a fresh zero acknowledgment.
+; The driver is waiting at its arm gate, not running SOUND on stale IPL ports.
+    lda #$05
+    sta $20
+    stz $2141
+    stz $2142
+    stz $2143
+    stz $2140
+    lda #$00
+    jsr wait_echo
+    stz $23
+    stz $24
+    inc $2a
+    lda #$01
+    sta $20
+    rts
 wait_echo:
 ; Each upload acknowledgment is bounded. Preserve payload index Y.
     stx $4c

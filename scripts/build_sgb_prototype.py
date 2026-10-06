@@ -143,7 +143,7 @@ def build():
         raise ValueError('driver overlaps sample directory')
     payload = driver + bytes(0x300-len(driver)) + samples
     host = assemble((FIRMWARE / 'host.asm').read_text(), 'host', 0x8000,
-                    {'payload_size': len(payload), 'entry_token': (len(payload)+2) & 255})
+                    {'payload_size': len(payload), 'entry_token': ((len(payload)+2) | 1) & 255})
     if len(host) > 0x1000 or len(payload) > 0x6fc0:
         raise ValueError('ROM sections overlap')
     rom = bytearray(0x40000)

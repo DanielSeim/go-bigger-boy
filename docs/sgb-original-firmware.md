@@ -49,18 +49,46 @@ to its sound bank.
 | GB bootstrap packets | Consume the six original GBB GB-side header packets | Implemented |
 | ICD packets | Poll $6002; read $7000 exactly once to pop; copy the remaining latched bytes | Implemented |
 | SOUND | Support two independent original instruments, explicit start/stop and acknowledgment after DSP writes | Restricted diagnostic subset below |
-| Unsupported audio | Retain the offending header and halt packet consumption; silence the original driver while we own it | Implemented; external drivers are never sent our stop protocol |
+| Unsupported audio | Retain the offending header and halt packet consumption; stop a compatible driver with a bounded acknowledgment | Implemented; unrecognized drivers are never sent our stop protocol |
 | LCD transfers | Capture a full 4096-byte screen through completed ICD planar rows at physical boundaries | Implemented for SOU_TRN, next complete frame |
-| SOU_TRN | Validate the complete block list; upload each block; honor the zero-length jump; record driver ownership changes | Implemented for one transfer from the original resident driver; transport restrictions below |
+| SOU_TRN | Validate the complete block list; upload each block; honor the zero-length jump; reacquire compatible drivers | Implemented, including repeated transfers with mailbox v1; transport restrictions below |
 | Lifecycle | Restore the actual CPU/WRAM/ICD/APU/DSP/PCM state, including upload; cold reset repeats firmware | Implemented with existing whole-host state codec |
 
-The private host/SPC command protocol is token on port 0, instrument A on
-port 1, instrument B on port 2. The SPC echoes port 0 only after writing KOF/KON.
-The SNES host waits for that echo before submitting another command. SPC port 3
-publishes A5 readiness. Host port 3 = 01 with a new token requests cooperative
-return to the IPL loader; normal SOUND leaves the transfer request unset. The two-port boot
-readiness signature is distinct from the IPL signature and cannot be mistaken
-for an upload token echo.
+## GBB SPC mailbox version 1
+
+The original driver is position independent and explicitly advertises mailbox
+version 1 after initializing DSP state. After initial startup or an uploaded
+program's jump, the complete readiness signature is **output ports 0/1/3 =
+5A/C1/A5**. C1 identifies this version; the host does not infer compatibility
+from a jump address, previous ownership, or a partial readiness signature.
+Unknown versions and drivers without the signature remain external.
+
+To adopt a v1 driver, the host clears input ports 1, 2 and 3, then writes input
+token 0. The driver waits at an arm gate, initializes its last-token value to
+zero, and acknowledges with output port 0 = 0. It executes no SOUND command
+while waiting for this reset. Only a fresh acknowledged reset grants mailbox
+ownership and resets the host counter to zero. This prevents stale IPL inputs
+from triggering an effect, and prevents the jump token from aliasing the first
+SOUND token (especially a jump token of 1).
+
+Input port 0 subsequently holds the command token; input ports 1/2 hold
+instrument A/B. Input port 3 remains zero for SOUND. The driver processes each
+changed token, writes KOF/KON, then echoes that token on output port 0. The host
+waits before sending the next command. Ordinary token rollover FF to 00 is
+valid after arming; the reset protocol is used only during adoption.
+
+Input port 3 = 01 with a changed token requests cooperative return to the IPL
+loader. A v1 driver must stop its voices, clear its output readiness/version
+fields, select direct page zero, enable the IPL overlay and enter `$FFC0`.
+The original implementation already runs with direct page zero. The host waits
+for AA/BB before any upload. The driver can be uploaded to another RAM address
+or restarted in place; adoption still requires the complete signature and reset.
+The contract is GBB-specific, not a claim of compatibility with Nintendo N-SPC
+or arbitrary third-party drivers.
+
+Arm, SOUND, stop and loader/upload acknowledgments use bounded polling. A
+driver that advertises v1 but fails an operation halts the host with timeout
+code 05, without continuing under an unverified mailbox assumption.
 
 Only command header `41`, attributes `00`, music `00`, and instrument values
 `00` (leave this voice), `01` (trigger its new looping tone), and `80` (stop)
@@ -100,7 +128,7 @@ Writes beneath the IPL overlay remain allowed; an uploaded program can disable
 the overlay to read that physical RAM. A block ending exactly at `$FFFF` is
 validated and tested. Bytes after the terminating jump are unused.
 
-On successful validation, host port 3 requests transfer ownership. The original
+On successful validation, host port 3 requests transfer ownership. The compatible
 SPC driver keys off all voices, clears its output signatures, enables the IPL
 overlay and jumps to `$FFC0`. The host waits for AA/BB, uploads each block through
 normal IPL counter/acknowledgment handshakes, then sends the mode-zero jump.
@@ -111,28 +139,33 @@ failure keeps the resident driver in place and sends its ordinary stop command;
 a loader/acknowledgment failure halts with an error without pretending that the
 resident mailbox still exists.
 
-The jump hands APU ownership to the uploaded program. The host observes output
-ports 2/3 for diagnostics, but does not infer that the new program understands
-our private SOUND or return-to-IPL protocol. A subsequent SOUND or SOU_TRN
-request halts packet consumption explicitly without sending commands to that
-program. Its audio can continue; arbitrary drivers cannot safely be silenced
-through our former mailbox. Repeated transfers and SOUND after handoff require
-a defined resident-loader/driver interoperability contract and remain pending.
-Even a jump back into the resident address is conservatively treated as an
-ownership change: transferred data could have overwritten the original driver.
-Unsupported SPC opcodes retain the existing bounded-host fault behavior.
+The jump initially hands APU ownership to the uploaded program. During polling,
+the host observes output ports 2/3 and checks for the complete v1 readiness
+advertisement. It adopts only after a successful arm handshake. Compatible
+uploaded drivers then accept the restricted SOUND subset and further SOU_TRN
+requests. Tests upload the original driver to `$0800` and `$0C00`, then restart
+the resident driver at `$0200`, with SOUND start/stop after each handoff.
+
+Unrecognized drivers remain external. A subsequent SOUND or SOU_TRN request
+halts packet consumption without sending commands to them. Their audio can
+continue; unknown drivers cannot safely be silenced through our former mailbox.
+A jump to the former resident address alone does not confer ownership, because
+transferred data could have overwritten its code. Unsupported SPC opcodes
+retain the existing bounded-host fault behavior. General N-SPC/third-party
+interoperability and title sound-bank compatibility remain pending.
 
 Diagnostic WRAM bytes:
 
 | Address | Meaning |
 | --- | --- |
-| `$20` | 00 startup, 01 resident driver, 02 uploaded driver, 03 capture/validation, 04 IPL upload, FF halted |
+| `$20` | 00 startup, 01 resident driver, 02 uploaded driver, 03 capture/validation, 04 IPL upload, 05 driver arm, 06 stop, FF halted |
 | `$21` | Offending audio command header |
 | `$22`, `$23` | Packet count modulo 256; resident mailbox token |
-| `$24` | Zero while the resident mailbox is owned; one after release |
+| `$24` | Zero while a verified v1 mailbox is owned; one after release |
 | `$25`, `$26` | Completed captures; acknowledged uploads/jumps, modulo 256 |
-| `$27` | 01 malformed/range error, 03 transport-reserved address, 04 LCD timeout/missed row, 05 loader/ack timeout |
-| `$28`, `$29` | Observed uploaded-program output ports 2/3 |
+| `$27` | 01 malformed/range error, 03 transport-reserved address, 04 LCD timeout/missed row, 05 driver-arm/command/loader/upload timeout |
+| `$28`, `$29` | Last observed external-program output ports 2/3 |
+| `$2A` | Completed v1 adoptions modulo 256, including cold startup |
 | `$40..43`, `$44..45` | Current block size/destination; validated jump address |
 | `$0100..010F` | Last packet |
 | `$1000..1FFF` | Exact captured 4096-byte payload |
@@ -157,6 +190,11 @@ updates after command delivery, multiple uploaded blocks, counter/page rollover,
 upper RAM through `$FFFF`, execution and audio from an uploaded SPC diagnostic,
 invalid source/destination/header/jump cases, bounded LCD-off failure, ownership
 changes, and cross-instance restoration during capture/upload/after handoff.
+It also checks repeated transfers, actual relocated driver execution, resident
+restart, SOUND after every jump, ordinary token rollover, exact scalar PCM/state,
+reset replay, and cross-instance restore during the arm handshake. Independent
+SPC stubs check unknown versions, missing arm/SOUND acknowledgments, and a
+claimed v1 driver that never returns to IPL.
 These tests establish an original functioning pipeline, not title
 compatibility or parity with the proprietary program ROMs.
 
@@ -167,7 +205,7 @@ confirmed the exact 262144-byte image, matching generated SHA-256, and refusal
 to overwrite an existing image. Private-title, physical-device and performance
 qualification were not run for this prototype.
 
-Before bundling a program default, define repeated-transfer and uploaded-driver
+Before bundling a program default, define general uploaded-driver and sound-bank
 interoperability, complete the original sound/music bank and command semantics,
 cover controller/display interactions, and validate real SGB1/SGB2
 titles with original-vs-replacement **behavioral** gates. Different original
