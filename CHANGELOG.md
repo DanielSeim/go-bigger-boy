@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Extend the original SGB firmware prototype with exact 4 KiB ICD screen capture,
+  complete-list validation, multi-block SOU_TRN upload and SPC handoff. ROM-free
+  tests cover both models, upper APU RAM, invalid transfers and lifecycle state;
+  arbitrary uploaded drivers have an explicit ownership boundary.
+
 - Start the original SNES-side SGB firmware project with reproducible LoROM/SPC
   sources, two newly authored BRR instruments and ROM-free SGB1/SGB2 startup,
   restricted SOUND, reset and save/load contracts. The diagnostic prototype is

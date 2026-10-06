@@ -13,9 +13,11 @@ HEADER = FIRMWARE / 'prototype_image.hpp'
 
 def assemble(source, cpu, origin, constants=None):
     """Strict two-pass subset; all instruction widths are explicit/fixed here."""
-    implied = ({'sei': 0x78, 'clc': 0x18, 'xce': 0xfb, 'txa': 0x8a, 'inx': 0xe8}
+    implied = ({'sei': 0x78, 'clc': 0x18, 'xce': 0xfb, 'txa': 0x8a,
+                'inx': 0xe8, 'dey': 0x88, 'tax': 0xaa, 'tya': 0x98,
+                'rts': 0x60, 'iny': 0xc8, 'dex': 0xca}
                if cpu == 'host' else {})
-    branches = ({'bne': 0xd0, 'beq': 0xf0, 'bra': 0x80, 'bcs': 0xb0} if cpu == 'host'
+    branches = ({'bne': 0xd0, 'beq': 0xf0, 'bra': 0x80, 'bcs': 0xb0, 'bcc': 0x90} if cpu == 'host'
                 else {'bne': 0xd0, 'beq': 0xf0, 'bmi': 0x30, 'bra': 0x2f})
     labels = dict(constants or {})
     code, fixups = bytearray(), []
@@ -51,15 +53,28 @@ def assemble(source, cpu, origin, constants=None):
             for value in args.split(','):
                 operand(value.strip(), 1)
         elif cpu == 'host':
+            wide = mnemonic.endswith('.w')
+            mnemonic = mnemonic.removesuffix('.w')
             immediate = args.startswith('#')
             indexed = args.endswith(',x')
             forms = {
                 ('rep', True, False): (0xc2, 1),
+                ('sep', True, False): (0xe2, 1),
+                ('ldy', True, False): (0xa0, 2),
+                ('adc', True, False): (0x69, 1),
+                ('jmp', False, False): (0x4c, 2),
+                ('jsr', False, False): (0x20, 2),
+                ('ldy', False, True): (0xbc, 2),
+                ('sty', False, False): (0x8c, 2),
+                ('stx', False, False): (0x8e, 2),
+                ('ldx', False, False): (0xae, 2),
+                ('adc', False, False): (0x6d, 2),
                 ('lda', True, False): (0xa9, 1),
                 ('ldx', True, False): (0xa2, 2),
                 ('cmp', True, False): (0xc9, 1),
                 ('cpx', True, False): (0xe0, 2),
                 ('and', True, False): (0x29, 1),
+                ('ora', True, False): (0x09, 1),
                 ('lda', False, False): (0xad, 2),
                 ('lda', False, True): (0xbd, 2),
                 ('sta', False, False): (0x8d, 2),
@@ -73,9 +88,17 @@ def assemble(source, cpu, origin, constants=None):
             if key not in forms:
                 raise ValueError(f'unsupported host instruction {number}: {line}')
             opcode, width = forms[key]
+            if wide and immediate:
+                if mnemonic not in {'lda', 'cmp', 'adc'}:
+                    raise ValueError(f'invalid wide immediate: {line}')
+                width = 2
             code.append(opcode)
             operand(args.removeprefix('#').removesuffix(',x'), width)
         elif cpu == 'spc':
+            if mnemonic == 'jmp':
+                code.append(0x5f)
+                operand(args, 2)
+                continue
             parts = [v.strip() for v in args.split(',')]
             if len(parts) != 2:
                 raise ValueError(f'unsupported SPC instruction: {line}')
@@ -91,8 +114,8 @@ def assemble(source, cpu, origin, constants=None):
                 code.append(0xc4)
                 operand(left, 1)
             elif mnemonic == 'cmp' and left == 'a':
-                code.append(0x64)
-                operand(right, 1)
+                code.append(0x68 if right.startswith('#') else 0x64)
+                operand(right.removeprefix('#'), 1)
             elif mnemonic == 'or' and left == 'a' and right.startswith('#'):
                 code.append(0x08)
                 operand(right[1:], 1)

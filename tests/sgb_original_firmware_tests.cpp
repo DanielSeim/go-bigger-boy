@@ -122,7 +122,7 @@ void instruments(gameboy::HardwareModel model) {
     require(!changed.load_state(a.save_state()),"different program-image identity rejected");
 }
 void unsupported(gameboy::HardwareModel model) {
-    for (const Packet p: {Packet{0x49}, Packet{0x41,1,0,1}, Packet{0x41,1,0,0,1}, Packet{0x42,1}, Packet{0x41,2}, Packet{0x41,0,2}}) {
+    for (const Packet p: {Packet{0x41,1,0,1}, Packet{0x41,1,0,0,1}, Packet{0x42,1}, Packet{0x4a}, Packet{0x41,2}, Packet{0x41,0,2}}) {
         Host h(config(model,{Packet{0x41,1,1},p}));
         (void)advance(h,2'000'000,true);
         require(h.cpu().debug_wram_byte(0x20)==0xff,"unsupported audio command halts prototype");

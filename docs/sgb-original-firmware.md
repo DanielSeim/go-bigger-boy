@@ -1,6 +1,6 @@
 # Original SNES-side SGB firmware
 
-This is the first original **diagnostic playback prototype**, not a production
+This is an original **diagnostic playback and transfer prototype**, not a production
 SGB program-ROM replacement. It runs an original 65C816 host and an original
 SPC700 driver through GBB's existing CPU, ICD, APU and DSP implementation.
 There are no firmware interception hooks or host-generated replacement samples.
@@ -36,7 +36,7 @@ contracts define register access and upload behavior. This milestone does not
 claim cycle equivalence to the proprietary SNES host or acoustic equivalence
 to its sound bank.
 
-## First milestone contracts
+## Prototype contracts
 
 | Boundary | Required behavior | Prototype |
 | --- | --- | --- |
@@ -49,15 +49,16 @@ to its sound bank.
 | GB bootstrap packets | Consume the six original GBB GB-side header packets | Implemented |
 | ICD packets | Poll $6002; read $7000 exactly once to pop; copy the remaining latched bytes | Implemented |
 | SOUND | Support two independent original instruments, explicit start/stop and acknowledgment after DSP writes | Restricted diagnostic subset below |
-| Unsupported audio | Silence voices and retain the offending command header; halt packet consumption | Implemented |
-| LCD transfers | Capture full 4096-byte transfer screens through completed ICD planar rows at physical boundaries | Next milestone; existing ICD row contracts already tested separately |
-| SOU_TRN | Parse length/destination packets; upload all data; honor the zero-length jump; handle driver ownership changes | Next milestone; deliberately rejected here |
+| Unsupported audio | Retain the offending header and halt packet consumption; silence the original driver while we own it | Implemented; external drivers are never sent our stop protocol |
+| LCD transfers | Capture a full 4096-byte screen through completed ICD planar rows at physical boundaries | Implemented for SOU_TRN, next complete frame |
+| SOU_TRN | Validate the complete block list; upload each block; honor the zero-length jump; record driver ownership changes | Implemented for one transfer from the original resident driver; transport restrictions below |
 | Lifecycle | Restore the actual CPU/WRAM/ICD/APU/DSP/PCM state, including upload; cold reset repeats firmware | Implemented with existing whole-host state codec |
 
 The private host/SPC command protocol is token on port 0, instrument A on
 port 1, instrument B on port 2. The SPC echoes port 0 only after writing KOF/KON.
 The SNES host waits for that echo before submitting another command. SPC port 3
-publishes A5 readiness; host port 3 is reserved after upload. The two-port boot
+publishes A5 readiness. Host port 3 = 01 with a new token requests cooperative
+return to the IPL loader; normal SOUND leaves the transfer request unset. The two-port boot
 readiness signature is distinct from the IPL signature and cannot be mistaken
 for an upload token echo.
 
@@ -66,8 +67,8 @@ Only command header `41`, attributes `00`, music `00`, and instrument values
 are accepted. A uses voice 6, B voice 5. They have fixed tuning/level and
 sustain until stopped; original effect indexing, A's decrescendo, pitch/volume,
 mute/fade, music and retrigger timing are not yet implemented. Other SOUND
-codes, malformed SOUND framing, nonzero attributes/music and any SOU_TRN
-request cause the unsupported path. This keeps unknown audio observable
+codes, malformed SOUND/SOU_TRN framing and nonzero attributes/music cause the
+unsupported path. This keeps unknown audio observable
 instead of substituting a generic tone for every original effect.
 
 Other commands are consumed by the prototype; GB-side visual commands continue
@@ -76,37 +77,99 @@ transfers/JUMP execution, controller negotiation and a hardware SNES PPU are
 outside this diagnostic milestone. Such commands are not validated by this
 prototype and must be audited before production integration.
 
-Diagnostic WRAM bytes: `$20` = 00 during startup, 01 running, FF unsupported
-halt; `$21` = offending audio command header; `$22` = packets copied modulo
-256; `$23` = host/SPC command token. `$0100..010F` retain the last packet.
-Unsupported halt keeps the GB and DSP clocks running, but stops processing
-new packets; this is a diagnostic state, not a playable fallback. Further
-packet production can eventually overflow the bounded ICD queue.
+## Screen capture, upload and ownership
+
+A valid `49` SOU_TRN packet starts capture. The host waits for VBlank and the
+following frame, then waits for each completed eight-line ICD row. Thirteen
+fixed-source `$7800` to `$2180` DMAs store twelve 320-byte rows and a final
+256-byte row at WRAM `$1000..1FFF`. This reconstructs the first 256 tiles,
+including the partial last visible tile row. Selection/readout stays ahead of
+ring-bank reuse. Missed row boundaries and LCD-off waits fail explicitly;
+there is no direct GB VRAM read or host-side screen synthesis. The cartridge
+must prepare the normal unsigned, consecutive-tile, unscrolled, identity-palette
+transfer display before sending SOU_TRN.
+
+The 65C816 validates the **entire** captured block list before stopping the
+resident driver or writing any transferred data. Each four-byte header must fit,
+all source data must fit within 4096 bytes, destinations must not wrap past
+64 KiB, and a zero-length jump must terminate the list. The transport reserves
+`$0000..00FF` for IPL scratch and I/O, so write destinations must be at least
+`$0100`. Jump addresses must be `$0100..FFBF`, excluding I/O and the active IPL
+overlay. This is stricter than the generic `SgbSoundTransfer` syntax parser.
+Writes beneath the IPL overlay remain allowed; an uploaded program can disable
+the overlay to read that physical RAM. A block ending exactly at `$FFFF` is
+validated and tested. Bytes after the terminating jump are unused.
+
+On successful validation, host port 3 requests transfer ownership. The original
+SPC driver keys off all voices, clears its output signatures, enables the IPL
+overlay and jumps to `$FFC0`. The host waits for AA/BB, uploads each block through
+normal IPL counter/acknowledgment handshakes, then sends the mode-zero jump.
+Block-transition tokens advance by at least two and are forced odd so an echoed
+command cannot alias the first data-byte index zero.
+Loader readiness and each acknowledgment have bounded polling loops. Validation
+failure keeps the resident driver in place and sends its ordinary stop command;
+a loader/acknowledgment failure halts with an error without pretending that the
+resident mailbox still exists.
+
+The jump hands APU ownership to the uploaded program. The host observes output
+ports 2/3 for diagnostics, but does not infer that the new program understands
+our private SOUND or return-to-IPL protocol. A subsequent SOUND or SOU_TRN
+request halts packet consumption explicitly without sending commands to that
+program. Its audio can continue; arbitrary drivers cannot safely be silenced
+through our former mailbox. Repeated transfers and SOUND after handoff require
+a defined resident-loader/driver interoperability contract and remain pending.
+Even a jump back into the resident address is conservatively treated as an
+ownership change: transferred data could have overwritten the original driver.
+Unsupported SPC opcodes retain the existing bounded-host fault behavior.
+
+Diagnostic WRAM bytes:
+
+| Address | Meaning |
+| --- | --- |
+| `$20` | 00 startup, 01 resident driver, 02 uploaded driver, 03 capture/validation, 04 IPL upload, FF halted |
+| `$21` | Offending audio command header |
+| `$22`, `$23` | Packet count modulo 256; resident mailbox token |
+| `$24` | Zero while the resident mailbox is owned; one after release |
+| `$25`, `$26` | Completed captures; acknowledged uploads/jumps, modulo 256 |
+| `$27` | 01 malformed/range error, 03 transport-reserved address, 04 LCD timeout/missed row, 05 loader/ack timeout |
+| `$28`, `$29` | Observed uploaded-program output ports 2/3 |
+| `$40..43`, `$44..45` | Current block size/destination; validated jump address |
+| `$0100..010F` | Last packet |
+| `$1000..1FFF` | Exact captured 4096-byte payload |
+
+Halt keeps GB/DSP clocks running and stops processing new packets. It is a
+diagnostic state, not a playable fallback; further packet production can
+ultimately overflow the bounded ICD queue.
 
 ## Validation and remaining gates
 
 ```sh
-cmake --build build-dmg-firmware --target gameboy_sgb_original_firmware_tests
-ctest --test-dir build-dmg-firmware -R gameboy_sgb_original_firmware --output-on-failure
+cmake --build build-dmg-firmware --target gameboy_sgb_original_firmware_tests gameboy_sgb_original_transfer_tests
+ctest --test-dir build-dmg-firmware -R 'gameboy_sgb_original_(firmware|transfer)' --output-on-failure
 ```
 
 The ROM-free executable uses real JOYP transactions from an original homebrew
 cartridge. It checks both models, the bundled GB boot/IPL, sound output and
 stopping, native and combined audio, scalar/optimized agreement, snapshots
 during execution, cross-instance continuation, cold reset and unsupported
-audio. These tests establish an original functioning pipeline, not title
+audio. The transfer contract additionally checks all 4096 latch bytes, VBlank
+updates after command delivery, multiple uploaded blocks, counter/page rollover,
+upper RAM through `$FFFF`, execution and audio from an uploaded SPC diagnostic,
+invalid source/destination/header/jump cases, bounded LCD-off failure, ownership
+changes, and cross-instance restoration during capture/upload/after handoff.
+These tests establish an original functioning pipeline, not title
 compatibility or parity with the proprietary program ROMs.
 
-Validation on 2026-10-06: all three prototype CTest checks passed in the Release
-build. The existing regression run (`-E 'local|performance|gameboy_sgb_original_firmware'`)
+Validation on 2026-10-06: all four prototype CTest checks passed in the Release
+build. The regression run (`-E 'local|performance|gameboy_sgb_original_(firmware|transfer)'`)
 reported 169 tests, zero failures and three skipped network tests. Export checks
 confirmed the exact 262144-byte image, matching generated SHA-256, and refusal
 to overwrite an existing image. Private-title, physical-device and performance
 qualification were not run for this prototype.
 
-Before bundling a program default, implement complete transfer capture and
-SOU_TRN driver handoff, define the original sound/music bank and command
-semantics, cover controller/display interactions, and validate real SGB1/SGB2
+Before bundling a program default, define repeated-transfer and uploaded-driver
+interoperability, complete the original sound/music bank and command semantics,
+cover controller/display interactions, and validate real SGB1/SGB2
 titles with original-vs-replacement **behavioral** gates. Different original
 sound assets cannot satisfy proprietary waveform hashes; retain those existing
 hashes as regression gates for external-image playback and define separate

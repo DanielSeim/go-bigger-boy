@@ -820,6 +820,8 @@ See [APU components](sgb-audio-engine.md) for DSP/audio accuracy evidence.
 
 An opt-in [original SNES-side diagnostic prototype](sgb-original-firmware.md)
 now builds a LoROM, SPC driver and two authored BRR instruments without private
-firmware. Its restricted SOUND and lifecycle contracts run on both models.
-It is not a production default: transfer upload, complete sound/music behavior
-and title validation remain required before removing the program-ROM dependency.
+firmware. Its restricted SOUND, next-frame ICD transfer capture, SOU_TRN upload/handoff
+and lifecycle contracts run on both models. It is not a production default:
+repeated transfers and uploaded-driver interoperability, complete sound/music
+behavior and title validation remain required before removing the program-ROM
+dependency.

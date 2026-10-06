@@ -50,6 +50,9 @@ poll:
     cmp a, $10
     beq poll
     mov $10, a
+    mov a, $f7
+    cmp a, #$01
+    beq return_ipl
     mov $11, #$00
     mov $12, #$00
     mov a, $f5
@@ -85,3 +88,14 @@ apply:
     mov a, $10
     mov $f4, a
     bra poll
+
+return_ipl:
+; Cooperative ownership release: stop all voices, clear ready signatures,
+; enable the original IPL overlay and enter its ordinary AA/BB upload loop.
+    mov $f2, #$5c
+    mov $f3, #$ff
+    mov $f4, #$00
+    mov $f5, #$00
+    mov $f7, #$00
+    mov $f1, #$80
+    jmp $ffc0
