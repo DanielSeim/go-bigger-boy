@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Add an original empty-song cartridge and optional private-reference gate for
+  vendor directory selection. Validate codes 1..3, reordered and repeated
+  requests on SGB1/SGB2 originals using address-only observations. Add ROM-free
+  checksum, transport, JOYP and fail-closed reporting checks; vendor score
+  rendering and title/audio qualification remain unsupported.
+
 - Add address-only observation of the first three candidate vendor song-table
   words to the native fractional APU trace helper. Bound stored reads, retain
   write-order and nonzero SOUND delivery metadata, and exclude score values.

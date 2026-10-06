@@ -90,10 +90,14 @@ This supports a **limited black-box contract**: in these runs, music code 1
 selects the first directory word at `$2B00`, rather than the word at `$2B02`.
 Combining this with the previously captured bank supports candidate root
 `$2B06` for that request. The pointer value is inferred from the separately
-captured upload, not emitted by the address observer. A general one-based rule
-for codes 2 and 3 remains unvalidated. Stop/restart semantics, empty entries,
+captured upload, not emitted by the address observer. This title capture alone
+does not validate codes 2 and 3. Stop/restart semantics, empty-entry completion,
 out-of-range codes, other bank variants, instrument mapping, tempo, articulation,
 echo and replacement PCM behavior also remain unqualified.
+
+The subsequent [controlled fixture gate](sgb-song-selection-fixtures.md) validates
+word indexing for codes 1..3 with independently authored empty roots and reordered
+requests. It extends the selection evidence without qualifying vendor playback.
 
 Reference image SHA-256 pins:
 

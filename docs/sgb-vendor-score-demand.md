@@ -78,8 +78,13 @@ The [address-only selection observer](sgb-song-selection-observation.md) supplie
 a bounded native reference capture for that evidence. It distinguishes prior
 base writes and nonzero SOUND delivery counts without exporting directory bytes;
 dummy reads during uploads must be excluded from selection inferences. Fresh
-private original runs on both models support code 1 selecting the first word
-at `$2B00`; codes 2 and 3 and the broader selection contract remain unvalidated.
+private original title runs on both models support code 1 selecting the first
+word at `$2B00`; those title captures do not validate codes 2 and 3.
+
+The subsequent [controlled directory fixture](sgb-song-selection-fixtures.md)
+also validates codes 2 and 3, including reordered and repeated requests, against
+both private original program images. Other selection and rendering contracts
+remain open.
 
 | Explicit candidate root | Patterns / track references | Channels observed | Scan boundary |
 | --- | --- | --- | --- |

@@ -1286,6 +1286,14 @@ if(GAMEBOY_BUILD_TESTS)
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_score_decoder_tests.py)
         add_test(NAME gameboy_sgb_score_demand_inventory
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_score_inventory_tests.py)
+        if(TARGET gameboy_test_runner)
+            add_test(NAME gameboy_sgb_song_selection_fixture
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_song_selection_fixture_tests.py
+                    --runner $<TARGET_FILE:gameboy_test_runner>)
+        else()
+            add_test(NAME gameboy_sgb_song_selection_fixture
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_song_selection_fixture_tests.py)
+        endif()
         add_test(NAME gameboy_sgb_resident_score_inspection
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_resident_score_inspection_tests.py)
         add_test(NAME gameboy_sgb_resident_score_contract
@@ -1515,6 +1523,16 @@ if(GAMEBOY_BUILD_TESTS)
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_score_table_read_tests.py
                 --runner $<TARGET_FILE:gameboy_sgb_score_table_read_tests>
                 --trace $<TARGET_FILE:gameboy_snes_65c816_apu_trace>)
+        if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb1.program.rom" AND
+           EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.program.rom" AND
+           EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/spc700.rom")
+            add_test(NAME gameboy_sgb_song_selection_local_reference
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_song_selection_reference.py
+                    --trace $<TARGET_FILE:gameboy_snes_65c816_apu_trace>
+                    --firmware-dir ${CMAKE_CURRENT_SOURCE_DIR}/roms --order 3,1,2,2,1,3)
+            set_tests_properties(gameboy_sgb_song_selection_local_reference PROPERTIES
+                LABELS "local;private-reference" TIMEOUT 420)
+        endif()
     endif()
     add_executable(gameboy_snes_icd_gb_title_probe
         tests/support/snes_icd_gb_title_probe.cpp
