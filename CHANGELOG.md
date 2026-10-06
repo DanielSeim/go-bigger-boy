@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- Add original GBS5 bounded phrase-sequence repeats with mailbox v9: require one
+  to four total plays, validate all patterns before readiness, restore defaults
+  on each pass and preserve the repeat counter in save states. Validate real
+  two-model repeat pitch/gain, stop/restart, finite and immediate transitions,
+  scalar audio, reset, restore and existing score-format behavior.
+  Vendor title formats remain unsupported.
+
 - Add original GBS4 finite phrase sequencing with mailbox v8: validate one to four
   two-track patterns before readiness, wait for both tracks at each transition,
   and reset timing and controls per phrase. Add strict authoring and real SGB1/SGB2

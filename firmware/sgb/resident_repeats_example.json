@@ -1,0 +1,14 @@
+{
+  "format": "GBS5",
+  "plays": 2,
+  "patterns": [
+    [
+      [{"instrument": 0}, {"pan": 0}, {"volume": 64}, {"note": 12, "ticks": 4}],
+      [{"rest": true, "ticks": 8}]
+    ],
+    [
+      [{"instrument": 0}, {"pan": 0}, {"volume": 32}, {"note": 24, "ticks": 4}],
+      [{"rest": true, "ticks": 4}]
+    ]
+  ]
+}

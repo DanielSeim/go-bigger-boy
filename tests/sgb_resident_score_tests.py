@@ -19,6 +19,7 @@ EXAMPLE = ROOT / 'firmware/sgb/resident_score_example.json'
 CONTROLS_EXAMPLE = ROOT / 'firmware/sgb/resident_controls_example.json'
 TRACKS_EXAMPLE = ROOT / 'firmware/sgb/resident_tracks_example.json'
 PHRASES_EXAMPLE = ROOT / 'firmware/sgb/resident_phrases_example.json'
+REPEATS_EXAMPLE = ROOT / 'firmware/sgb/resident_repeats_example.json'
 RUNNER = None
 
 
@@ -95,6 +96,28 @@ class ResidentScoreContracts(unittest.TestCase):
                          {'format': 'GBS4', 'patterns': [[note, note]], 'tempo': 1}):
             with self.assertRaises(ValueError):
                 build(document)
+
+    def test_bounded_repeats_and_strict_play_count(self):
+        document = json.loads(REPEATS_EXAMPLE.read_text())
+        payload = build(document)
+        size = struct.unpack_from('<H', payload)[0]
+        self.assertEqual(payload[4:11], b'GBS5\x58\x02\x02')
+        self.assertEqual(size, 88)
+        self.assertEqual(len(decode(payload[4:4+size], 0x2B08)['patterns']), 2)
+        for plays in range(1, 5):
+            result = build(dict(document, plays=plays))
+            self.assertEqual(result[10], plays)
+        for plays in (0, 5, 128, True, 1.0, '2', None):
+            with self.subTest(plays=plays), self.assertRaises(ValueError):
+                build(dict(document, plays=plays))
+        for changed in ({k: v for k, v in document.items() if k != 'plays'},
+                        dict(document, format='GBS4'), dict(document, repeat=2)):
+            with self.assertRaises(ValueError):
+                build(changed)
+        # Repeats do not weaken fresh per-pattern tie validation.
+        document['patterns'][1][0] = [{'tie': True, 'ticks': 1}]
+        with self.assertRaises(ValueError):
+            build(document)
 
     def test_exact_bank_and_oracle(self):
         payload = build(json.loads(EXAMPLE.read_text()))
@@ -173,6 +196,14 @@ class ResidentScoreContracts(unittest.TestCase):
             path = Path(directory) / 'phrases.bin'
             path.write_bytes(build(json.loads(PHRASES_EXAMPLE.read_text())))
             subprocess.run([str(RUNNER), '--resident-phrases', str(path)], check=True)
+
+    def test_real_uploaded_repeats(self):
+        if RUNNER is None:
+            self.skipTest('supply --runner for SPC/DSP integration')
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'repeats.bin'
+            path.write_bytes(build(json.loads(REPEATS_EXAMPLE.read_text())))
+            subprocess.run([str(RUNNER), '--resident-repeats', str(path)], check=True)
 
 
 if __name__ == '__main__':

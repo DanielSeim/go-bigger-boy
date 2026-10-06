@@ -1,5 +1,5 @@
 ; SPDX-License-Identifier: GPL-3.0-or-later
-; Original GBS1/GBS2 single-track, GBS3 two-track and GBS4 finite-phrase subsets.
+; Original GBS1/GBS2 single-track, GBS3 two-track and GBS4/GBS5 finite-phrase subsets.
 ; Canonical bounded headers/pointers; bank length <=255. No vendor table guesses.
 ; $30 mode, $31 end, $32 cursor, $33 duration, $34 countdown, $35 held-note flag.
 ; $36/$37 validation duration/held flag. Validate the entire stream before readiness.
@@ -8,16 +8,18 @@
     mov $4e, #$20
     mov a, $2b00
     cmp a, #$47
-    bne header_error
+    bne magic_error
     mov a, $2b01
     cmp a, #$42
-    bne header_error
+    bne magic_error
     mov a, $2b02
     cmp a, #$53
-    bne header_error
+    bne magic_error
     mov a, $2b03
     cmp a, #$31
     beq format_one
+    cmp a, #$35
+    beq repeated_phrases
     cmp a, #$34
     beq phrases
     cmp a, #$33
@@ -26,8 +28,14 @@
     bne header_error
     mov $3f, #$02
     bra bank_length
-phrases:
+repeated_phrases:
+    mov $3f, #$05
     jmp $2200
+phrases:
+    mov $3f, #$04
+    jmp $2200
+magic_error:
+    jmp header_error
 two_tracks:
     jmp $1b00
 format_one:
@@ -152,7 +160,7 @@ terminated:
 validation_done:
     mov a, $3f
     cmp a, #$04
-    bne publish_format
+    bcc publish_format
     jmp $2300
 publish_format:
     mov $30, a
@@ -354,7 +362,7 @@ dispatch_command:
     bne dispatch
     mov a, $30
     cmp a, #$04
-    bne dispatch
+    bcc dispatch
     call $2680
 dispatch:
     mov $43, #$40
@@ -577,8 +585,7 @@ stop:
     ret
 
 .org $2200
-; GBS4 finite phrase list: 1..4 canonical two-track pattern tables at $2B20.
-    mov $3f, #$04
+; GBS4/GBS5 finite phrase list: 1..4 canonical two-track pattern tables at $2B20.
     mov a, $2b04
     cmp a, #$36
     bcc phrase_header_error
@@ -588,8 +595,7 @@ stop:
     cmp a, #$05
     bcs phrase_header_error
     mov $70, a
-    mov a, $2b06
-    bne phrase_header_error
+    call $2500
     mov a, $2b07
     bne phrase_header_error
     mov $71, #$00
@@ -646,7 +652,8 @@ phrase_header_bounds:
     cmp a, $70
     bne validate_another_phrase
     call $2680
-    mov $30, #$04
+    mov a, $3f
+    mov $30, a
     jmp $1000
 validate_another_phrase:
     mov a, $72
@@ -726,6 +733,25 @@ pattern_in_bank:
 phrase_pattern_error:
     jmp header_error
 
+.org $2500
+; GBS4 reserves byte 6; GBS5 defines 1..4 total sequence plays.
+    mov $7d, #$01
+    mov a, $3f
+    cmp a, #$05
+    beq repeat_count
+    mov a, $2b06
+    bne repeat_header_error
+    ret
+repeat_count:
+    mov a, $2b06
+    beq repeat_header_error
+    cmp a, #$05
+    bcs repeat_header_error
+    mov $7d, a
+    ret
+repeat_header_error:
+    jmp header_error
+
 .org $2600
 ; Runtime bounds come only from fully prevalidated canonical pattern pointers.
     mov x, $72
@@ -750,6 +776,8 @@ runtime_end:
     mov $4c, a
     ret
 .org $2680
+    mov a, $7d
+    mov $7e, a
     mov $71, #$00
     mov $72, #$20
     call $2600
@@ -759,7 +787,7 @@ runtime_end:
 ; Barrier: wait for BOTH tracks, then start the next phrase in this same tick.
     mov a, $30
     cmp a, #$04
-    bne phrase_tick_done
+    bcc phrase_tick_done
     mov a, $1f
     bne phrase_tick_done
     mov a, $49
@@ -767,11 +795,19 @@ runtime_end:
     inc $71
     mov a, $71
     cmp a, $70
-    beq phrase_tick_done
+    beq sequence_finished
     mov a, $72
     clrc
     adc a, #$10
     mov $72, a
+    bra start_phrase
+sequence_finished:
+    dec $7e
+    mov a, $7e
+    beq phrase_tick_done
+    mov $71, #$00
+    mov $72, #$20
+start_phrase:
     call $2600
     mov $49, #$01
     jmp dispatch

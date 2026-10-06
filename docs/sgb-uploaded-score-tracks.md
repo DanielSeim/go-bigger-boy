@@ -47,7 +47,7 @@ The dispatcher and context copies live at `$1C00`, dynamic DSP register selectio
 at `$1F00`, and the shared single-track player at `$2000` (with a `$1600`
 trampoline). Contexts use direct-page `$50..58` and `$60..68`; `$43..45` select
 the current voice, `$48` stores key-off bits, and `$4B/$4C` hold track ends.
-The original contiguous startup payload is 9511 bytes from `$0200`; the generated
+The original contiguous startup payload is 9525 bytes from `$0200`; the generated
 image remains reproducible and separate from production firmware selection.
 
 The strict packer requires `"format": "GBS3"` and `"tracks": [events0, events1]`.

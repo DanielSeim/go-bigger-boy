@@ -3,6 +3,7 @@
 GBS4 extends [GBS3 two-track playback](sgb-uploaded-score-tracks.md) with one to
 four finite phrases. Each phrase refers to one canonical pattern containing two
 contiguous tracks. The complete bank must validate before mailbox v8 readiness.
+[GBS5](sgb-uploaded-score-repeats.md) adds a bounded total sequence play count.
 These are independent diagnostic semantics; vendor title data and vendor phrase
 termination, instrument mappings and song tables remain unsupported.
 
@@ -64,7 +65,7 @@ and the barrier at `$2700`. Direct-page `$70..79` holds count/index, pattern off
 bank length and validation bounds; `$7A..7C` is scratch. Existing track contexts
 and key-off masking remain shared with GBS3. Whole-host save states already
 include these RAM bytes, uploaded bank, timers, staged mailbox state and DSP
-history. The reproducible contiguous startup payload is 9511 bytes from `$0200`.
+history. The reproducible contiguous startup payload is 9525 bytes from `$0200`.
 The prototype remains opt-in and separate from production firmware selection.
 
 ## Authoring and validation

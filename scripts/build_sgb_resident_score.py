@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Pack original GBS1/GBS2/GBS3/GBS4 scores for the resident SPC renderer."""
+"""Pack original GBS1/GBS2/GBS3/GBS4/GBS5 scores for the resident SPC renderer."""
 import argparse
 import json
 from pathlib import Path
@@ -47,9 +47,11 @@ def transport(bank):
     return payload + bytes(4096-len(payload))
 
 
-def build_phrases(patterns):
+def build_phrases(patterns, format_name='GBS4', plays=1):
     if not isinstance(patterns, list) or not 1 <= len(patterns) <= 4:
-        raise ValueError('GBS4 requires 1..4 patterns')
+        raise ValueError('GBS4/GBS5 require 1..4 patterns')
+    if type(plays) is not int or not 1 <= plays <= 4:
+        raise ValueError('plays must be an integer from 1 to 4')
     streams = []
     for pattern in patterns:
         if not isinstance(pattern, list) or len(pattern) != 2:
@@ -59,7 +61,9 @@ def build_phrases(patterns):
     if size > 255:
         raise ValueError('combined score bank must fit 255 bytes')
     bank = bytearray(32 + 16*len(patterns))
-    bank[:6] = b'GBS4' + bytes((size, len(patterns)))
+    bank[:6] = format_name.encode('ascii') + bytes((size, len(patterns)))
+    if format_name == 'GBS5':
+        bank[6] = plays
     for index, pair in enumerate(streams):
         table = 32 + 16*index
         struct.pack_into('<H', bank, 8 + 2*index, 0x2B00 + table)
@@ -79,8 +83,12 @@ def build(document):
     if not isinstance(document, dict):
         raise ValueError('expected score object')
     format_name = document.get('format', 'GBS1')
-    if format_name not in ('GBS1', 'GBS2', 'GBS3', 'GBS4'):
-        raise ValueError('format must be GBS1, GBS2, GBS3 or GBS4')
+    if format_name not in ('GBS1', 'GBS2', 'GBS3', 'GBS4', 'GBS5'):
+        raise ValueError('format must be GBS1, GBS2, GBS3, GBS4 or GBS5')
+    if format_name == 'GBS5':
+        if set(document) != {'format', 'patterns', 'plays'}:
+            raise ValueError('GBS5 requires format, patterns and plays')
+        return build_phrases(document['patterns'], format_name, document['plays'])
     if format_name == 'GBS4':
         if set(document) != {'format', 'patterns'}:
             raise ValueError('GBS4 requires format and patterns')

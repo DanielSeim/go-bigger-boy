@@ -58,12 +58,12 @@ gameboy::SgbHostConfig config(gameboy::HardwareModel model,const Payload& payloa
             followup==7 ? Packet{0x41,4} :
             followup==8 ? Packet{0x41,3,3,0,2} :
             followup==9 ? Packet{0x41,1,1,0,1} :
-            followup==10 || followup==11 ? Packet{0x41,0,0,0,1} : Packet{0x49});
-        if(followup==9 || followup==10 || followup==11) {
-            for(unsigned n=0;n<8;++n) append(code,{0xf0,0x44,0xfe,0x90,0x30,0xfa,
+            followup==10 || followup==11 || followup==12 ? Packet{0x41,0,0,0,1} : Packet{0x49});
+        if(followup==9 || followup==10 || followup==11 || followup==12) {
+            for(unsigned n=0;n<(followup==12 ? 16U : 8U);++n) append(code,{0xf0,0x44,0xfe,0x90,0x30,0xfa,
                 0xf0,0x44,0xfe,0x90,0x38,0xfa});
             packet(code,followup==10 ? Packet{0x41,0,0,0,0x80} :
-                followup==11 ? Packet{0x41,0,0,0,1} : Packet{0x41,0,0,0,2});
+                followup==11 || followup==12 ? Packet{0x41,0,0,0,1} : Packet{0x41,0,0,0,2});
         }
     }
     append(code,{0x18,0xfe});
@@ -672,6 +672,114 @@ void resident_phrases(gameboy::HardwareModel model,const Payload& p) {
             repeated.cpu().debug_wram_byte(0x2b)==0xc4 && repeated.cpu().debug_wram_byte(0x20)==1,
             "repeated v8 uploads rearm and legacy restart returns to v4");
 }
+void resident_repeats(gameboy::HardwareModel model,const Payload& p) {
+    for(bool combined:{false,true}) {
+        auto c=config(model,p,5);c.combined_audio=combined;
+        Host h(c),scalar(c),peer(c);scalar.debug_set_apu_batch_enabled(false);
+        const auto boot=advance(h,14'000'000),reference=advance(scalar,14'000'000);
+        require(equal(boot,reference) && h.save_state()==scalar.save_state(),"bounded repeats native/combined scalar parity");
+        require(h.cpu().debug_wram_byte(0x2b)==0xc9 && h.cpu().debug_wram_byte(0x2a)==2,
+                "repeat header and all patterns validate before v9 adoption");
+        h.reset();require(equal(boot,advance(h,14'000'000)),"reset repeats upload and bounded sequence playback");
+        Host measured(c);resident_ready(measured,0xc9);(void)advance(measured,100'000);
+        const auto first=advance(measured,800'000);
+        const auto low=crossings(first);const auto level=channel_rms(first);
+        require(low>5 && level>100 && channel_rms(first,true)==0,"repeat fixture begins at authored pitch and left pan");
+        (void)advance(measured,800'000);
+        const auto waiting=advance(measured,500'000);
+        require(channel_rms(waiting)==0 && channel_rms(waiting,true)==0,"longer first-phrase rest holds repeat barrier");
+        (void)advance(measured,700'000);
+        const auto high=advance(measured,800'000);
+        require(std::abs(double(crossings(high))/low-2)<0.2 && std::abs(channel_rms(high)/level-0.5)<0.04,
+                "last phrase in first pass changes pitch and gain");
+        require(peer.load_state(measured.save_state()),"snapshot before whole-sequence wrap");
+        const auto paired=[&](std::uint64_t clocks) {
+            const auto pcm=advance(measured,clocks);
+            require(equal(pcm,advance(peer,clocks)) && measured.save_state()==peer.save_state(),
+                    "remaining play count phrase index and DSP restore exactly across wrap and termination");
+            return pcm;
+        };
+        (void)paired(700'000);
+        const auto repeated=paired(800'000);
+        require(std::abs(double(crossings(repeated))/low-1)<0.2 && std::abs(channel_rms(repeated)/level-1)<0.04 &&
+                channel_rms(repeated,true)==0,"second pass returns to first phrase and restores authored gain");
+        (void)paired(600'000);
+        const auto second_wait=paired(500'000);
+        require(channel_rms(second_wait)==0 && channel_rms(second_wait,true)==0,"second pass retains longer rest barrier");
+        (void)paired(800'000);
+        const auto final=paired(700'000);
+        require(std::abs(double(crossings(final))/low/0.875-2)<0.2 && std::abs(channel_rms(final)/level-0.5)<0.04,
+                "second pass reaches final phrase without skipping tracks");
+        (void)paired(1'000'000);
+        const auto ended=paired(200'000);
+        require(channel_rms(ended)==0 && channel_rms(ended,true)==0,"two total plays terminate without infinite loop");
+    }
+    for(unsigned count:{1U,4U}) {
+        std::vector<std::uint8_t> bank(32+16*count);
+        bank[0]='G';bank[1]='B';bank[2]='S';bank[3]='5';bank[5]=count;bank[6]=4;
+        for(unsigned pattern=0;pattern<count;++pattern) {
+            const unsigned table=32+16*pattern;
+            bank[8+2*pattern]=table;bank[9+2*pattern]=0x2b;
+            for(unsigned channel=0;channel<2;++channel) {
+                bank[table+2*channel]=bank.size();bank[table+2*channel+1]=0x2b;
+                if(count==4) append(bank,{0xed,0,0}); // all sixteen transitions are immediate
+                else append(bank,{8,static_cast<std::uint8_t>(channel==0 ? 0x8c : 0xc9),0});
+            }
+        }
+        bank[4]=bank.size();
+        Host edge(config(model,program_payload(bank,0x2b00,0x0400),5));resident_ready(edge,0xc9);
+        if(count==1) {
+            (void)advance(edge,8'800'000);
+            require(channel_rms(advance(edge,600'000))>100,"four-play maximum reaches its fourth audible pass");
+            (void)advance(edge,3'000'000);
+        }
+        const auto ended=advance(edge,200'000);
+        require(channel_rms(ended)==0 && channel_rms(ended,true)==0,"four-play maximum and sixteen immediate phases terminate");
+    }
+    for(unsigned followup:{9U,10U,12U}) {
+        Host commanded(config(model,p,followup));Host::StereoSample sample;
+        const unsigned token=followup==9 ? 3 : 4;
+        while((commanded.icd().sound_packets_delivered()!=2 ||
+               commanded.cpu().debug_wram_byte(0x20)!=(followup==9 ? 0xff : 1) ||
+               commanded.cpu().debug_wram_byte(0x23)!=token) && commanded.cpu().timing().clocks()<18'000'000) {
+            require(commanded.step(),"reach repeat stop/restart acknowledgment");while(commanded.pop_sample(sample)) {}
+        }
+        require(commanded.cpu().debug_wram_byte(0x2b)==0xc9 && commanded.cpu().debug_wram_byte(0x23)==token,
+                "v9 keeps score limits and acknowledges repeat stop/restart");
+        (void)advance(commanded,200'000);
+        if(followup==12) {
+            const auto restarted=advance(commanded,800'000);
+            require(crossings(restarted)>5 && channel_rms(restarted)>100 && channel_rms(restarted,true)==0,
+                    "restart returns to first phrase with fresh track clocks");
+            (void)advance(commanded,3'400'000);
+            require(channel_rms(advance(commanded,600'000))>100,"restart replenishes remaining plays for another pass");
+            (void)advance(commanded,4'000'000);
+        } else {
+            const auto quiet=advance(commanded,500'000);
+            require(channel_rms(quiet)==0 && channel_rms(quiet,true)==0,"repeat stop and invalid score silence music/effects");
+            (void)advance(commanded,10'000'000);
+        }
+        const auto ended=advance(commanded,200'000);
+        require(channel_rms(ended)==0 && channel_rms(ended,true)==0,"stopped or restarted bounded sequence remains finite");
+    }
+    std::vector<Payload> invalid;
+    for(unsigned plays:{0U,5U,128U}) {auto changed=p;changed[10]=plays;invalid.push_back(changed);}
+    auto changed=p;changed[7]='4';invalid.push_back(changed); // GBS4 reserves count byte
+    changed=p;changed[11]=1;invalid.push_back(changed); // reserved header
+    const unsigned later=p[4+0x30];
+    changed=p;changed[4+later+7]=0xc8;invalid.push_back(changed); // later phrase initial tie
+    changed=p;changed[4+p[8]-1]=0xe0;invalid.push_back(changed); // final stream truncation
+    for(const auto& payload:invalid) {
+        Host rejected(config(model,payload));(void)advance(rejected,11'000'000);
+        require(rejected.cpu().debug_wram_byte(0x24)==1 && rejected.cpu().debug_wram_byte(0x2a)==1 &&
+                rejected.cpu().debug_wram_byte(0x28)>=0xe1 && rejected.cpu().debug_wram_byte(0x29)==0,
+                "bad repeat count or later stream rejects entire bank before v9 readiness");
+    }
+    Host repeated(sequence(model,{p,p,program_payload({},0x0200)}));(void)advance(repeated,20'000'000);
+    require(repeated.cpu().debug_wram_byte(0x26)==3 && repeated.cpu().debug_wram_byte(0x2a)==4 &&
+            repeated.cpu().debug_wram_byte(0x2b)==0xc4 && repeated.cpu().debug_wram_byte(0x20)==1,
+            "repeated v9 uploads rearm and legacy restart returns to v4");
+}
 void uploaded_scores(gameboy::HardwareModel model,const Payload& p) {
     auto parsed=gameboy::SgbSoundTransfer::parse(p);
     require(parsed.valid() && parsed.writes.size()==1 && parsed.writes[0].destination==0x07d0 &&
@@ -710,7 +818,7 @@ void uploaded_scores(gameboy::HardwareModel model,const Payload& p) {
 void incompatible(gameboy::HardwareModel model) {
     // Original test stubs explicitly advertise wrong versions or violate one
     // advertised operation. They execute normally; the host must fail boundedly.
-    std::vector<std::uint8_t> wrong_version{0x8f,0xc9,0xf5,0x8f,0xa5,0xf7,0x8f,0x5a,0xf4,
+    std::vector<std::uint8_t> wrong_version{0x8f,0xca,0xf5,0x8f,0xa5,0xf7,0x8f,0x5a,0xf4,
         0xe4,0xf5,0xc4,0xf6,0x2f,0xfa}; // observe input 1; host must never write it
     Host unknown(config(model,program_payload(wrong_version,0x0800),1));
     (void)advance(unknown,10'000'000);
@@ -779,11 +887,12 @@ void invalid(gameboy::HardwareModel model) {
 }
 int main(int argc,char** argv) {
     try {
-        if(argc==3 && (std::string(argv[1])=="--score-transfer" || std::string(argv[1])=="--resident-score" || std::string(argv[1])=="--resident-controls" || std::string(argv[1])=="--resident-tracks" || std::string(argv[1])=="--resident-phrases")) {
+        if(argc==3 && (std::string(argv[1])=="--score-transfer" || std::string(argv[1])=="--resident-score" || std::string(argv[1])=="--resident-controls" || std::string(argv[1])=="--resident-tracks" || std::string(argv[1])=="--resident-phrases" || std::string(argv[1])=="--resident-repeats")) {
             Payload p{};std::ifstream input(argv[2],std::ios::binary);
             require(bool(input.read(reinterpret_cast<char*>(p.data()),p.size())) && input.peek()==std::char_traits<char>::eof(),"score transfer file must contain exactly 4096 bytes");
             for(auto model:{gameboy::HardwareModel::sgb,gameboy::HardwareModel::sgb2}) {
-                if(std::string(argv[1])=="--resident-phrases") resident_phrases(model,p);
+                if(std::string(argv[1])=="--resident-repeats") resident_repeats(model,p);
+                else if(std::string(argv[1])=="--resident-phrases") resident_phrases(model,p);
                 else if(std::string(argv[1])=="--resident-tracks") resident_tracks(model,p);
                 else if(std::string(argv[1])=="--resident-controls") resident_controls(model,p);
                 else if(std::string(argv[1])=="--resident-score") resident_score(model,p);
