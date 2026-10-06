@@ -815,3 +815,11 @@ The host still inherits the bounded CPU, bounded ICD and timing-only
 SNES PPU/DMA limitations described in [SGB validation](sgb-validation.md).
 Deferred visual mismatches and independent timing differences remain deferred.
 See [APU components](sgb-audio-engine.md) for DSP/audio accuracy evidence.
+
+### Original program-firmware project
+
+An opt-in [original SNES-side diagnostic prototype](sgb-original-firmware.md)
+now builds a LoROM, SPC driver and two authored BRR instruments without private
+firmware. Its restricted SOUND and lifecycle contracts run on both models.
+It is not a production default: transfer upload, complete sound/music behavior
+and title validation remain required before removing the program-ROM dependency.

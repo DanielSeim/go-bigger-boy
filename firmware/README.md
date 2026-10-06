@@ -2,8 +2,8 @@
 
 This directory contains GBB's original firmware sources and generated images.
 It does **not** contain Nintendo boot ROMs, disassemblies, logos, sound assets,
-SNES program ROMs, or SPC700 IPL dumps. Sources and generated images use the
-repository's GPL-3.0-or-later license.
+proprietary SNES program ROMs, or SPC700 IPL dumps. Sources and generated images
+use the repository's GPL-3.0-or-later license.
 
 ## Current startup and runtime scope (audited 2026-10-05)
 
@@ -411,5 +411,8 @@ injection. The optional animated mode replaces only the returned pre-handoff
 PCM with its separately synthesized chime, without changing the game APU state.
 Broader title-level and independent-hardware validation remain future
 milestones for the bundled model-specific boot implementations. SNES-side
-SGB1/SGB2 program ROM replacements are not implemented here yet. The original
+SGB1/SGB2 production program ROM replacements are not implemented here yet.
+The original [SNES-side diagnostic prototype](../docs/sgb-original-firmware.md)
+now establishes reproducible startup, upload and restricted two-voice playback;
+it is not a bundled program-ROM default. The original
 SPC700 IPL replacement is described in [IPL validation](../docs/spc700-ipl-validation.md).

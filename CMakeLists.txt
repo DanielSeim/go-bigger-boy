@@ -1273,6 +1273,15 @@ if(GAMEBOY_BUILD_TESTS)
     add_test(NAME gameboy_snes_audio_host_contract
              COMMAND gameboy_snes_audio_host_tests)
     add_executable(gameboy_sgb_host_tests tests/sgb_host_tests.cpp)
+    add_executable(gameboy_sgb_original_firmware_tests tests/sgb_original_firmware_tests.cpp)
+    target_link_libraries(gameboy_sgb_original_firmware_tests PRIVATE gameboy_core)
+    add_test(NAME gameboy_sgb_original_firmware_contract COMMAND gameboy_sgb_original_firmware_tests)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME gameboy_sgb_original_firmware_build
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_original_firmware_build_tests.py)
+        add_test(NAME gameboy_sgb_original_firmware_reproducible
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_sgb_prototype.py --check)
+    endif()
     if(NOT ANDROID AND NOT EMSCRIPTEN)
         add_executable(gameboy_sgb_firmware_core_tests tests/sgb_firmware_core_tests.cpp)
         target_include_directories(gameboy_sgb_firmware_core_tests PRIVATE apps/sdl scripts)

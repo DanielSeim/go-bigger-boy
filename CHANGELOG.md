@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Start the original SNES-side SGB firmware project with reproducible LoROM/SPC
+  sources, two newly authored BRR instruments and ROM-free SGB1/SGB2 startup,
+  restricted SOUND, reset and save/load contracts. The diagnostic prototype is
+  opt-in; external SGB program ROMs remain required for production playback.
+
 ### Original replacement startup firmware
 
 - Add bundled, independently written cold-start firmware for DMG, DMG0,
