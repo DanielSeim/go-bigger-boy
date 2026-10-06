@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Relocate the original SGB resident driver to `$1000`, retaining the `$0200`
+  legacy entry and reserving `$0400` with a silent unsupported-score diagnostic.
+  Keep mailbox v4 and external ownership until an uploaded-score renderer exists;
+  validate both-model handoff, reset, save/load and existing audio/upload behavior.
+
 - Define the original SGB resident score layout and restart requirements, with
   a bounded offline N-SPC subset decoder and independently authored fixtures.
   Test pointer/truncation errors, unsupported commands and expansion limits;

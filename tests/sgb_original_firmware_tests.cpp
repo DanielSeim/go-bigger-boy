@@ -89,7 +89,7 @@ void startup(gameboy::HardwareModel model) {
     require(equal(advance(upload,200'000),advance(uploaded,200'000)),"mid-upload continuation PCM");
     require(upload.save_state()==uploaded.save_state(),"mid-upload continuation state");
     Host h(c), other(c);
-    const auto pcm=advance(h,12'000'000,true);
+    const auto pcm=advance(h,14'000'000,true);
     require(h.cpu().debug_wram_byte(0x20)==1,"SPC ready precedes GB release");
     require(h.icd().packets_delivered()>=6,"bundled GB bootstrap packets consumed without originals");
     require(!audible(pcm),"untriggered original sound bank stays silent");
@@ -97,7 +97,7 @@ void startup(gameboy::HardwareModel model) {
     require(equal(advance(h,500'000),advance(other,500'000)),"cross-instance continuation PCM");
     require(h.save_state()==other.save_state(),"cross-instance continuation state");
     h.reset();
-    require(equal(pcm,advance(h,12'000'000)),"cold reset reproduces bundled boot and silence");
+    require(equal(pcm,advance(h,14'000'000)),"cold reset reproduces bundled boot and silence");
 }
 void sound(gameboy::HardwareModel model, bool combined) {
     const Packet a{0x41,1}, b{0x41,0,1}, stop{0x41,0x80,0x80};
@@ -105,7 +105,7 @@ void sound(gameboy::HardwareModel model, bool combined) {
     Host h(c), scalar(c);
     scalar.debug_set_apu_batch_enabled(false);
     // Compare ordinary scalar and optimized playback including upload/commands.
-    const auto pcm=advance(h,3'000'000,true), expected=advance(scalar,3'000'000);
+    const auto pcm=advance(h,5'000'000,true), expected=advance(scalar,5'000'000);
     require(equal(pcm,expected),"scalar/optimized prototype PCM agree");
     require(h.save_state()==scalar.save_state(),"scalar/optimized prototype state agree");
     require(h.icd().sound_packets_delivered()==3,"all start/stop SOUND packets delivered");
@@ -113,10 +113,12 @@ void sound(gameboy::HardwareModel model, bool combined) {
     require(audible(pcm),"SOUND runs original SPC code and produces DSP audio");
     require(!audible(advance(h,1'000'000)),"stop command silences both voices after release tail");
     h.reset();
-    require(equal(pcm,advance(h,3'000'000)),"reset reproduces original sound playback");
+    require(equal(pcm,advance(h,5'000'000)),"reset reproduces original sound playback");
 }
+void ready_sound(Host& h,unsigned count);
 void instruments(gameboy::HardwareModel model) {
     Host a(config(model,{Packet{0x41,1}})), b(config(model,{Packet{0x41,0,1}}));
+    ready_sound(a,1);ready_sound(b,1);
     const auto left=advance(a,2'000'000), right=advance(b,2'000'000);
     require(audible(left) && audible(right),"each SPC voice sounds independently");
     require(!equal(left,right),"two authored instruments have distinct PCM");
@@ -242,11 +244,11 @@ void bank_and_scores(gameboy::HardwareModel model) {
         auto c=config(model,{Packet{0x41,2,3,0,1},Packet{0x41,0x80,0x80},
                             Packet{0x41,0,0,0,2},Packet{0x41,0,0,0,0x80}},combined,false,8);
         Host h(c),scalar(c);scalar.debug_set_apu_batch_enabled(false);
-        const auto pcm=advance(h,12'000'000,true);
-        require(audible(pcm) && equal(pcm,advance(scalar,12'000'000)) && h.save_state()==scalar.save_state(),"concurrent bank/music playback matches scalar execution");
+        const auto pcm=advance(h,14'000'000,true);
+        require(audible(pcm) && equal(pcm,advance(scalar,14'000'000)) && h.save_state()==scalar.save_state(),"concurrent bank/music playback matches scalar execution");
         require(h.icd().sound_packets_delivered()==4 && h.cpu().debug_wram_byte(0x23)==8,"all effect/score commands acknowledged before testing stop");
         require(!audible(advance(h,500'000)),"music stop silences a score independently of stopped effects");
-        h.reset();require(equal(pcm,advance(h,12'000'000)),"reset repeats effect and score sequence");
+        h.reset();require(equal(pcm,advance(h,14'000'000)),"reset repeats effect and score sequence");
         Host staged(c),restored(c);Host::StereoSample sample;
         while(staged.cpu().debug_wram_byte(0x23)!=1 && staged.cpu().timing().clocks()<3'000'000) {
             require(staged.step(),"reach pending score staging");while(staged.pop_sample(sample)) {}
@@ -273,7 +275,7 @@ void modulation_effects(gameboy::HardwareModel model) {
         const auto later=crossings(advance(h,1'000'000));
         require(preset==4 ? later>opening*1.4 : later<opening*0.7,
                 "A presets render rising and falling pitch over physical ticks");
-        (void)advance(h,7'000'000);
+        (void)advance(h,9'000'000);
         require(!audible(advance(h,500'000)),"modulated A decays to silence without pitch wrap");
     }
     Host vibrato(config(model,{Packet{0x41,0,4}}));ready_sound(vibrato,1);
@@ -294,11 +296,11 @@ void modulation_effects(gameboy::HardwareModel model) {
         auto c=config(model,{Packet{0x41,4,4,0,1},Packet{0x41,5,5,0x11},
                             Packet{0x41},Packet{0x41,0x80,0x80,0,0x80}},combined,false,4);
         Host h(c),scalar(c),peer(c);scalar.debug_set_apu_batch_enabled(false);
-        const auto pcm=advance(h,7'000'000,true);
-        require(equal(pcm,advance(scalar,7'000'000)) && h.save_state()==scalar.save_state(),"modulated effects with music match scalar native/combined PCM and state");
+        const auto pcm=advance(h,9'000'000,true);
+        require(equal(pcm,advance(scalar,9'000'000)) && h.save_state()==scalar.save_state(),"modulated effects with music match scalar native/combined PCM and state");
         require(h.icd().sound_packets_delivered()==4 && h.cpu().debug_wram_byte(0x23)==8 &&
                 !audible(advance(h,500'000)),"new effect and score stops are acknowledged and silent");
-        h.reset();require(equal(pcm,advance(h,7'000'000)),"reset repeats dynamic effect sequence");
+        h.reset();require(equal(pcm,advance(h,9'000'000)),"reset repeats dynamic effect sequence");
         Host active(config(model,{Packet{0x41,4,5,0,1}},combined));ready_sound(active,1);
         (void)advance(active,1'000'000);
         auto active_config=config(model,{Packet{0x41,4,5,0,1}},combined);Host restored(active_config);
@@ -309,7 +311,7 @@ void modulation_effects(gameboy::HardwareModel model) {
 void unsupported(gameboy::HardwareModel model) {
     for (const Packet p: {Packet{0x41,1,0,0xc0}, Packet{0x41,1,0,0,3}, Packet{0x42,1}, Packet{0x4a}, Packet{0x41,6}, Packet{0x41,0,6}}) {
         Host h(config(model,{Packet{0x41,1,1},p}));
-        (void)advance(h,2'000'000,true);
+        (void)advance(h,4'000'000,true);
         require(h.cpu().debug_wram_byte(0x20)==0xff,"unsupported audio command halts prototype");
         require(h.cpu().debug_wram_byte(0x21)==p[0],"unsupported header retained for diagnosis");
         require(!audible(advance(h,500'000)),"unsupported audio silences both voices");

@@ -32,8 +32,15 @@ class BuildContracts(unittest.TestCase):
         self.assertEqual(payload[0x41b] & 3, 3, 'saw BRR end+loop')
         self.assertEqual(payload[0x440:0x442], bytes.fromhex('e414'), 'fixed effect module precedes music')
         self.assertEqual(payload[0x5d0:0x5e0], bytes.fromhex('04050608060504030806040609060403'))
-        self.assertLessEqual(len(prototype.assemble((prototype.FIRMWARE/'driver.asm').read_text(), 'spc', 0x200)), 766,
+        driver = prototype.assemble((prototype.FIRMWARE/'driver.asm').read_text(), 'spc', prototype.DRIVER_ADDRESS)
+        self.assertEqual(payload[:3], bytes.fromhex('5f0010'), 'legacy entry jumps to relocated resident')
+        self.assertEqual(payload[prototype.DRIVER_OFFSET:], driver)
+        self.assertLessEqual(len(driver), 766,
                              'driver must fit transfer fixtures without fixed assets')
+        entries = prototype.assemble((prototype.FIRMWARE/'entries.asm').read_text(), 'spc', 0x200)
+        self.assertEqual(payload[0x200:len(entries)], entries[0x200:])
+        self.assertEqual(payload[0x600:prototype.DRIVER_OFFSET], bytes(prototype.DRIVER_OFFSET-0x600),
+                         'future track workspace must be disjoint from resident code')
 
     def test_score_interpreter_encodings(self):
         source = 'call $0700\nmov a, $07d0+x\nadc a, $20\nmov a, #$60\nret'

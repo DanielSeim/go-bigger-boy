@@ -99,9 +99,10 @@ The public [Pan Docs sound contract](https://gbdev.io/pandocs/SGB_Command_Sound.
 identifies `$2B00..4AFF` as score memory and `$0400` as the original N-SPC restart
 entry. Together with the transfer metadata, that supports the **inference** that
 this title expects a resident score engine at `$0400`, rather than installing a
-complete replacement driver in this upload. The GBB v4 driver lives at `$0200`
-and has a different sixteen-byte motif format at `$07D0`; its program also
-occupies `$0400`. Redirecting that jump or acknowledging the score code would
+complete replacement driver in this upload. At the audited revision, GBB v4
+lived at `$0200` and occupied `$0400`. It has since moved to `$1000`, with an
+unsupported-score guard at `$0400`, but still uses the different sixteen-byte
+motif format at `$07D0`. Redirecting that jump or acknowledging the score code would
 not supply the required decoder or original sound-bank behavior.
 
 Kirby and Tetris reaching their clock bounds does not qualify their startup,
@@ -110,7 +111,7 @@ hardware/reference output and do not cover later gameplay. The next firmware
 milestone should define a reviewable resident restart/layout and uploaded score
 format contract, with original fixtures, before attempting title score playback.
 The [resident score contract](sgb-resident-score-contract.md) now defines a
-proposed layout and restart requirements plus a bounded offline grammar oracle.
+resident layout and restart requirements plus a bounded offline grammar oracle.
 The current SPC firmware still does not decode these uploaded scores.
 
 ## Automated checks

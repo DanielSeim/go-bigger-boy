@@ -1,5 +1,6 @@
 ; SPDX-License-Identifier: GPL-3.0-or-later
 ; Original position-independent SPC driver. Mailbox v4: 5A/C4/A5 readiness.
+; Resident code is assembled at $1000; $0200 is its legacy entry trampoline.
 ; Control port 3: 0 effects, 1 return to IPL, 2 stage attributes/score from ports 1/2, 3 silence all.
 ; Effects 00 retrigger remembered instrument, 01..05 select original preset, 80 stop and forget.
     mov $f2, #$6c

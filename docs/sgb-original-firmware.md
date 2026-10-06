@@ -43,7 +43,7 @@ to its sound bank.
 | --- | --- | --- |
 | Cold host entry | Valid LoROM reset vector; disable interrupts; establish register widths | Implemented |
 | IPL readiness | Wait for AA/BB before publishing destination, mode and CC token | Implemented |
-| SPC upload | Transfer original code, directory and samples to $0200; echo every byte index; handle counter/page wraps | Implemented, 1504-byte contiguous payload |
+| SPC upload | Transfer original entries, code, directory and samples starting at $0200; echo every byte index; handle counter/page wraps | Implemented, 4214-byte contiguous payload; resident code at $1000 |
 | SPC handoff | Mode zero with a forward token enters $0200; wait for driver readiness | Implemented |
 | DSP startup | Driver initializes its voices and master volume before publishing 5A/C4/A5 | Implemented |
 | ICD release | Release GB through $6003 with divider 5 after SPC readiness | Implemented on SGB1/SGB2 |
@@ -261,7 +261,7 @@ the host observes output ports 2/3 and checks for the complete supported readine
 advertisement. It adopts only after a successful arm handshake. Compatible
 uploaded drivers then accept the restricted SOUND subset and further SOU_TRN
 requests. Tests upload the original driver to `$0800` and `$0C00`, then restart
-the resident driver at `$0200`, with SOUND start/stop after each handoff.
+the resident driver through its `$0200` entry, with SOUND start/stop after each handoff.
 
 Unrecognized drivers remain external. A subsequent SOUND or SOU_TRN request
 halts packet consumption without sending commands to them. Their audio can
@@ -357,6 +357,9 @@ overrides and state-image identity checks when integrating a default.
 The [resident score contract](sgb-resident-score-contract.md) provides the next
 layout/restart design and an offline data-subset oracle using original fixtures.
 Its acceptance does not establish SPC playback or mailbox ownership.
+The driver now resides at `$1000`, with a legacy `$0200` trampoline and a reserved
+`$0400` entry that mutes the DSP, clears readiness and reports E1 on output port 2.
+This entry remains external until uploaded-score rendering is implemented.
 
 A [title-demand audit and bounded native probe](sgb-original-title-demand.md)
 cover local Donkey Kong, Kirby's Dream Land 2 and Tetris Attack runs on both
