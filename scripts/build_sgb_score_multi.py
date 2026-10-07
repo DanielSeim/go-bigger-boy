@@ -8,7 +8,7 @@ from build_sgb_prototype import assemble
 from build_sgb_score_phrase import ROOT, source as phrase_source
 
 
-def build():
+def source():
     source = phrase_source()
     hooks = {
         '    mov $47, #$00\n': '    mov $60, #$00\n',
@@ -30,7 +30,11 @@ def build():
             raise ValueError('experimental multi-track routine order changed')
         source = source[:start] + source[end:]
     source += '\n' + (ROOT/'firmware/sgb/score_multi.asm').read_text()
-    image = bytes(assemble(source, 'spc', 0x0800))
+    return source
+
+
+def build():
+    image = bytes(assemble(source(), 'spc', 0x0800))
     if len(image) > 1024:
         raise ValueError('experimental multi-track exceeds code bound')
     return image

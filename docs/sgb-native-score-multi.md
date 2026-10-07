@@ -88,6 +88,6 @@ external. Comparison reports use `gbb-score-multi-reference-v1` with qualificati
 and playback false. Original PCM, gate/release timing, broader control grammar,
 whole-system boot and production integration remain outside this milestone.
 
-Next is integrating these independent track cursors with owned DSP rendering,
-including re-keying one voice while preserving a sounding peer, followed by
-separate calibrated polyphonic gate validation.
+The separate [independent owned renderer](sgb-native-score-poly.md) now re-keys
+due voices while preserving sounding peers. Independently gated polyphonic
+notes using measured profiles remain next.

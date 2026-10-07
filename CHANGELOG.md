@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- Add isolated owned audio for bounded multi-event tracks, releasing/re-keying
+  only due voices while preserving sounding peers. Check actual KON/KOF masks,
+  held rests, peer ENVX continuity, clipped release and exact reset/save-load PCM.
+  Six fresh private SGB1/SGB2 runs match simultaneous onset masks/pitches within
+  3802 SPC cycles. Keep gates diagnostic, asynchronous reference behavior
+  unqualified and bundled firmware unchanged.
+
 - Add isolated muted native multi-event tracks with independent cursors,
   duration/articulation inheritance and whole-timeline prevalidation. Bound
   execution to four events per track and reject ambiguous end/new-event ordering
