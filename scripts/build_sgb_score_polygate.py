@@ -8,7 +8,7 @@ from build_sgb_prototype import assemble
 from build_sgb_score_poly import ROOT, source as poly_source
 
 
-def build():
+def source():
     source = poly_source()
     hooks = {
         '    cmp a, #$7f\n    bne multi_parse_bad\n    mov $69, #$01\n':
@@ -36,7 +36,11 @@ def build():
         if source.count(old) != 1:
             raise ValueError('experimental polyphonic gate hook changed')
         source = source.replace(old, new)
-    image = bytes(assemble(source, 'spc', 0x0800))
+    return source
+
+
+def build():
+    image = bytes(assemble(source(), 'spc', 0x0800))
     if len(image) > 4096:
         raise ValueError('experimental polyphonic gate image exceeds code/source bound')
     return image

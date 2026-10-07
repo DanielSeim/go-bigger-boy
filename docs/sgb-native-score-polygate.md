@@ -117,5 +117,7 @@ Only sanitized register/timing metadata, hashes and owned PCM statistics are
 exported; proprietary assets remain external. Schemas are
 `gbb-spc-score-polygate-v1` and `gbb-score-polygate-reference-v1`, retaining
 `qualification: false` and `playback: false`. The bundled prototype remains
-unchanged. Broader grammar and separate production integration evidence remain
-ahead; these ten points do not establish a general gate law.
+unchanged. The separate [gated finite-call integration](sgb-native-score-callgate.md)
+now covers bounded repeats and caller returns. Broader grammar and separate
+production integration evidence remain ahead; these ten points do not establish
+a general gate law.

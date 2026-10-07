@@ -95,5 +95,7 @@ fewer than 32768 rows. Only sanitized register/timing metadata and hashes are
 exported. Schemas are `gbb-spc-score-calls-v1` and
 `gbb-score-calls-reference-v1`, with qualification and playback false.
 
-Next is integration of this validated call parser with the independently gated
-renderer, preserving voice state and validating repetition/return key edges.
+The separate [gated native call integration](sgb-native-score-callgate.md) now
+preserves voice state and validates repetition/return key edges. This original
+muted layer remains unchanged; broader grammar and production integration
+are still outside both experiments.

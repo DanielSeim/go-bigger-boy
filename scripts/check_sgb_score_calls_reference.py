@@ -58,7 +58,7 @@ def run(trace, firmware_dir, model, case):
                       pattern_durations=None)
 
 
-def compare(candidates, references):
+def compare(candidates, references, *, fixture_bank=bank):
     if not isinstance(candidates, dict) or set(candidates) != set(CASES):
         raise ValueError('require all native finite-call cases')
     if not isinstance(references, list) or len(references) != 6:
@@ -78,7 +78,7 @@ def compare(candidates, references):
             raise ValueError('finite-call original repeat/return sequence differs')
         contract(reference, case)
         report = candidates[case]
-        align(report, bank(case))
+        align(report, fixture_bank(case))
         onsets = [event['half_cycle'] for event in report['events'] if event['channel'] == 2]
         intervals = [(b-a)/2 for a, b in zip(onsets, onsets[1:])]
         actual = reference['onset_intervals_spc_cycles']

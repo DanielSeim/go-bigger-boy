@@ -9,6 +9,13 @@
 
 namespace {
 using Engine = gameboy::SnesApuAudioEngine;
+#ifdef GBB_SCORE_CALLGATE_PROBE
+constexpr auto schema = "gbb-spc-score-callgate-v1";
+constexpr unsigned log_bound = 160, second_pattern_offset = 64;
+#else
+constexpr auto schema = "gbb-spc-score-polygate-v1";
+constexpr unsigned log_bound = 80, second_pattern_offset = 32;
+#endif
 void require(bool ok, const char* message) {
     if (!ok) throw std::runtime_error(message);
 }
@@ -171,14 +178,14 @@ Result exercise(Engine& engine, bool restore) {
         previous_kof = kof;
         const auto written = bus.dsp_read_ram(0x28);
         if (written != offset && written % 5 == 0) {
-            require(written == offset+5 && written <= 80, "polyphonic event log overflow");
+            require(written == offset+5 && written <= log_bound, "polyphonic event log overflow");
             for (unsigned i = offset; i < written; ++i) result.events.push_back(bus.dsp_read_ram(0x3000+i));
             result.halves.push_back(engine.cpu().half_cycles());
             result.articulations.push_back(bus.dsp_read_ram(0x7b));
             offset = written;
             require(result.events[written-1] == 2 || result.events[written-1] == 3, "invalid event channel");
             latest_opcodes[result.events[written-1]-2] = result.events[written-3];
-            if (bus.dsp_read_ram(0x30) == 32 && second_start == 0) {
+            if (bus.dsp_read_ram(0x30) == second_pattern_offset && second_start == 0) {
                 second_start = engine.cpu().half_cycles();
                 result.second_tick = bus.dsp_read_ram(0x10) | bus.dsp_read_ram(0x11) << 8;
             }
@@ -245,7 +252,7 @@ int main(int argc, char** argv) {
         require(exercise(engine, true) == expected, "restore altered polyphonic timeline/PCM");
         setup(engine, program, bank, tempo);
         require(exercise(engine, false) == expected, "reset altered polyphonic timeline/PCM");
-        std::cout << "{\"schema\":\"gbb-spc-score-polygate-v1\",\"qualification\":false,\"playback\":false,"
+        std::cout << "{\"schema\":\"" << schema << "\",\"qualification\":false,\"playback\":false,"
             "\"reset_equal\":true,\"restore_equal\":true,\"tempo\":" << tempo << ",\"status\":" << expected.status
             << ",\"second_pattern_tick\":" << expected.second_tick << ",\"end_tick\":" << expected.end_tick << ",\"completion_half_cycle\":" << expected.completion_half
             << ",\"events\":[";

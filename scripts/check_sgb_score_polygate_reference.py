@@ -19,23 +19,23 @@ import csv
 import io
 
 
-def multi_report(report):
-    if not isinstance(report, dict) or report.get('schema') != 'gbb-spc-score-polygate-v1':
+def multi_report(report, schema='gbb-spc-score-polygate-v1'):
+    if not isinstance(report, dict) or report.get('schema') != schema:
         raise ValueError('invalid polyphonic schema')
     return {**report, 'schema': 'gbb-spc-score-multi-v1'}
 
 
-def validate(report):
-    multi_validate(multi_report(report))
+def validate(report, *, schema='gbb-spc-score-polygate-v1', max_events=16, max_ticks=1016):
+    multi_validate(multi_report(report, schema), max_events=max_events, max_ticks=max_ticks)
     if (not integer(report.get('tempo'), 0, 255)
             or not integer(report.get('completion_half_cycle'), 1, 30_000_000)
-            or not integer(report.get('second_pattern_tick'), 0, 1016)
+            or not integer(report.get('second_pattern_tick'), 0, max_ticks)
             or not isinstance(report.get('peer_checks'), list) or len(report['peer_checks']) != 2
             or any(not integer(value, 0, 30_000_000) for value in report['peer_checks'])):
         raise ValueError('invalid polyphonic metadata')
     for name in ('keyons', 'keyoffs'):
         values, previous = report.get(name), 0
-        if not isinstance(values, list) or len(values) > 16:
+        if not isinstance(values, list) or len(values) > max_events:
             raise ValueError('invalid polyphonic edges')
         for edge in values:
             if (not isinstance(edge, dict) or not integer(edge.get('half_cycle'), previous+1, report['completion_half_cycle'])
@@ -154,9 +154,9 @@ def validate(report):
             raise ValueError('rest-only voice produced PCM')
 
 
-def align(report, data):
-    validate(report)
-    multi_align(multi_report(report), data)
+def align(report, data, *, schema='gbb-spc-score-polygate-v1', max_events=16, max_ticks=1016):
+    validate(report, schema=schema, max_events=max_events, max_ticks=max_ticks)
+    multi_align(multi_report(report, schema), data, max_events=max_events, max_ticks=max_ticks)
     expected = schedule(data, int.from_bytes(data[:2], 'little'))
     timed = [event for event in expected['events'] if event['kind'] in ('note', 'rest')]
     if [event['articulation'] for event in report['events']] != [event['articulation'] for event in timed]:
@@ -165,17 +165,17 @@ def align(report, data):
         raise ValueError('gated second pattern differs from symbolic score')
 
 
-def native(probe, data, tempo=96):
+def native(probe, data, tempo=96, *, builder=build, validator=validate, output_bound=16384):
     with tempfile.TemporaryDirectory(prefix='gbb-score-polygate-') as directory:
         program, stream = Path(directory)/'program.bin', Path(directory)/'bank.bin'
-        program.write_bytes(build())
+        program.write_bytes(builder())
         stream.write_bytes(data)
         result = subprocess.run([str(probe), str(program), str(stream), str(tempo)],
                                 capture_output=True, text=True, timeout=60)
-        if result.returncode or len(result.stdout) > 16384:
+        if result.returncode or len(result.stdout) > output_bound:
             raise ValueError(f'native polyphonic gate probe failed: {result.stderr[:1000]}')
         report = json.loads(result.stdout)
-    validate(report)
+    validator(report)
     return report
 
 
@@ -198,11 +198,11 @@ def native_gates(report):
     return notes
 
 
-def observe(source):
+def observe(source, *, onset_observer=multi_observe, expected_notes=6, handoff_note_count=4):
     text = source.read(16*1024*1024+1)
     if len(text) > 16*1024*1024:
         raise ValueError('gated reference trace exceeds byte bound')
-    result = multi_observe(io.StringIO(text))
+    result = onset_observer(io.StringIO(text))
     notes, active = [], [None, None]
     for row in csv.DictReader(io.StringIO(text)):
         if row['kind'] != 'D':
@@ -217,7 +217,7 @@ def observe(source):
                         raise ValueError('nonpositive original polyphonic gate')
                     active[voice] = None
         if address == 0x4C and value:
-            pattern_handoff = len(notes) == 4
+            pattern_handoff = handoff_note_count is not None and len(notes) == handoff_note_count
             for voice in range(2):
                 if active[voice] is not None:
                     if not pattern_handoff:
@@ -230,8 +230,8 @@ def observe(source):
                 note = {'voice': voice+2, 'on': cycle}
                 notes.append(note)
                 active[voice] = note
-    if len(notes) != 6 or any('gate_spc_cycles' not in note for note in notes):
-        raise ValueError('expected six complete reference gates')
+    if len(notes) != expected_notes or any('gate_spc_cycles' not in note for note in notes):
+        raise ValueError(f'expected {expected_notes} complete reference gates')
     result['note_gates'] = notes
     return result
 

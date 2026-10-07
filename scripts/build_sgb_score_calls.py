@@ -8,12 +8,7 @@ from build_sgb_prototype import assemble
 from build_sgb_score_multi import ROOT, source as multi_source
 
 
-def source():
-    text = multi_source()
-    first, last = 'phrase_track:\n', 'multi_start:\n'
-    if text.count(first) != 1 or text.count(last) != 1 or text.index(first) >= text.index(last):
-        raise ValueError('experimental native call parser boundary changed')
-    text = text[:text.index(first)] + (ROOT/'firmware/sgb/score_calls.asm').read_text() + '\n' + text[text.index(last):]
+def expand_cache(text):
     hooks = {
         '    xcn a\n    mov $47, a\n':
             '    xcn a\n    mov $47, a\n    clrc\n    adc a, $47\n    mov $47, a\n',
@@ -27,6 +22,15 @@ def source():
             raise ValueError('experimental native call cache hook changed')
         text = text.replace(old, new)
     return text
+
+
+def source():
+    text = multi_source()
+    first, last = 'phrase_track:\n', 'multi_start:\n'
+    if text.count(first) != 1 or text.count(last) != 1 or text.index(first) >= text.index(last):
+        raise ValueError('experimental native call parser boundary changed')
+    text = text[:text.index(first)] + (ROOT/'firmware/sgb/score_calls.asm').read_text() + '\n' + text[text.index(last):]
+    return expand_cache(text)
 
 
 def build():
