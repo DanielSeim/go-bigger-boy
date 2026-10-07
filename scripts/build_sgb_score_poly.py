@@ -8,7 +8,7 @@ from build_sgb_prototype import assemble
 from build_sgb_score_multi import ROOT, source as multi_source
 
 
-def build():
+def source():
     source = multi_source()
     hooks = {
         'multi_duration:\n': 'multi_duration:\n    cmp a, #$02\n    bcs poly_duration_ok\n    jmp pair_reject\npoly_duration_ok:\n',
@@ -28,7 +28,11 @@ def build():
         source = source.replace(old, new)
     source += '\n' + (ROOT/'firmware/sgb/score_poly.asm').read_text()
     source += '\n' + (ROOT/'firmware/sgb/score_duet.asm').read_text()
-    image = bytes(assemble(source, 'spc', 0x0800))
+    return source
+
+
+def build():
+    image = bytes(assemble(source(), 'spc', 0x0800))
     if len(image) > 4096:
         raise ValueError('experimental polyphonic image exceeds code/source bound')
     return image

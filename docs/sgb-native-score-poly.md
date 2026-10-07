@@ -97,7 +97,8 @@ phrase-fixture suite passed. The bundled SHA-256 is
 `8222797ddeec5681af61fda28c6afc241898887cd0f254ce2f691f30d4b13482`.
 
 Schemas are `gbb-spc-score-poly-v1` and `gbb-score-poly-reference-v1`; reports
-retain `qualification: false` and `playback: false`. Next is independently gated
-polyphonic notes using explicitly measured profiles, with peer-preservation and
-clipping checks. Broader controls, general phrases, boot/upload and production
+retain `qualification: false` and `playback: false`. The separate
+[measured independent gates](sgb-native-score-polygate.md) now cover five
+articulation-127 profiles with peer-preservation and clipping checks.
+Short-articulation profiles remain next. Broader controls, general phrases, boot/upload and production
 integration remain outside this milestone.

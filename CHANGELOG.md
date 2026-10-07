@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- Add five measured articulation-127 profiles to isolated independent voice
+  gates, with native pulse caches, selective expiry and counter cancellation.
+  Check peer continuity, settled silence, clipping and reset/save-load PCM.
+  Six fresh private SGB1/SGB2 runs compare 32 direct KOF gates and four explicitly
+  labeled re-key handoffs; retain unqualified original key-off equivalence and
+  unchanged bundled firmware.
+
 - Add isolated owned audio for bounded multi-event tracks, releasing/re-keying
   only due voices while preserving sounding peers. Check actual KON/KOF masks,
   held rests, peer ENVX continuity, clipped release and exact reset/save-load PCM.
