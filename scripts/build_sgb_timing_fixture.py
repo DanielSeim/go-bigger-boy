@@ -17,12 +17,20 @@ def score_payload(case='baseline'):
     if case not in CASES:
         raise ValueError('unknown timing fixture case')
     tempo, articulation = CASES[case]
+    return timing_payload(tempo, articulation, DURATION)
+
+
+def timing_payload(tempo, articulation, duration):
+    if (type(tempo) is not int or not 1 <= tempo <= 255 or
+            type(articulation) is not int or not 0 <= articulation <= 127 or
+            type(duration) is not int or not 1 <= duration <= 127):
+        raise ValueError('invalid owned timing parameters')
     bank = bytearray(36)
     struct.pack_into('<H', bank, 0, 0x2B10)
     struct.pack_into('<HH', bank, 16, 0x2B14, 0)
     struct.pack_into('<H', bank, 24, 0x2B24)  # Pattern channel 2 only.
     bank.extend((0xE0, 2, 0xE1, 10, 0xE5, 160, 0xED, 127, 0xE7, tempo,
-                 DURATION, articulation))
+                 duration, articulation))
     bank.extend(0x80 + note for note in NOTES)
     bank.extend((1, 0xC9, 0))
     data = struct.pack('<HH', len(bank), 0x2B00) + bank + struct.pack('<HH', 0, 0x0400)

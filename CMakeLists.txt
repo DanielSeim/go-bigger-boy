@@ -1296,6 +1296,8 @@ if(GAMEBOY_BUILD_TESTS)
         endif()
         add_test(NAME gameboy_sgb_pitch_fixture
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_pitch_fixture_tests.py)
+        add_test(NAME gameboy_sgb_gate_timing_fixture
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_gate_timing_fixture_tests.py)
         add_test(NAME gameboy_sgb_timing_fixture
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_timing_fixture_tests.py)
         add_test(NAME gameboy_sgb_volume_pan_fixture
@@ -1574,6 +1576,12 @@ if(GAMEBOY_BUILD_TESTS)
                     --firmware-dir ${CMAKE_CURRENT_SOURCE_DIR}/roms)
             set_tests_properties(gameboy_sgb_pitch_local_reference PROPERTIES
                 LABELS "local;private-reference" TIMEOUT 840)
+            add_test(NAME gameboy_sgb_gate_timing_local_reference
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_gate_timing_reference.py
+                    --trace $<TARGET_FILE:gameboy_snes_65c816_apu_trace>
+                    --firmware-dir ${CMAKE_CURRENT_SOURCE_DIR}/roms)
+            set_tests_properties(gameboy_sgb_gate_timing_local_reference PROPERTIES
+                LABELS "local;private-reference" TIMEOUT 3000)
             add_test(NAME gameboy_sgb_score_gate_local_reference
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_score_gate_reference.py
                     --probe $<TARGET_FILE:gameboy_sgb_score_gate_probe>

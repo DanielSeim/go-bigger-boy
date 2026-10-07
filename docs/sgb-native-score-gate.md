@@ -79,3 +79,6 @@ other durations or tempo combinations, whole SGB boot, or complete vendor
 playback. Broader timing needs additional controlled fixtures before expanding
 this profile; instrument/control mapping and multi-track integration also
 remain separate work.
+
+The [expanded controlled timing matrix](sgb-expanded-gate-timing.md) measures
+additional durations/tempos separately from this native profile.

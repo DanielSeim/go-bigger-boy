@@ -114,12 +114,18 @@ def check_matrix(results):
 
 
 def run(trace, firmware_directory, model, case):
+    tempo, articulation = CASES[case]
+    return run_fixture(trace, firmware_directory, model, case, build(case), tempo, articulation, DURATION)
+
+
+def run_fixture(trace, firmware_directory, model, case, image, tempo, articulation, duration):
+    if model not in ('sgb', 'sgb2'):
+        raise ValueError('unknown timing reference model')
     program = firmware_directory / ('sgb1.program.rom' if model == 'sgb' else 'sgb2.program.rom')
     ipl = firmware_directory / 'spc700.rom'
     with tempfile.TemporaryDirectory(prefix='gbb-timing-reference-') as directory:
         base = Path(directory)
         game, boot, inputs, output = [base / name for name in ('timing.gb', 'boot.rom', 'none.script', 'dsp.csv')]
-        image = build(case)
         game.write_bytes(image)
         header = (ROOT / f'firmware/gameboy/{model}_boot_image.hpp').read_text()
         boot_image = bytes(int(value, 16) for value in re.findall(r'0x([0-9A-F]{2})', header))
@@ -139,9 +145,8 @@ def run(trace, firmware_directory, model, case):
             raise ValueError('reference DSP trace exceeds the byte bound')
         with output.open() as source:
             result = observe(source)
-        tempo, articulation = CASES[case]
         return {'model': model, 'case': case, 'tempo': tempo, 'articulation': articulation,
-                'duration': DURATION, **result,
+                'duration': duration, **result,
                 'fixture_sha256': hashlib.sha256(image).hexdigest(),
                 'gb_boot_sha256': hashlib.sha256(boot_image).hexdigest(),
                 'program_sha256': hashlib.sha256(program.read_bytes()).hexdigest(),

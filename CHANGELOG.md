@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Add owned duration/tempo gate timing fixtures for durations 8/24, tempo 128
+  and short articulation at tempo 192, retaining a byte-identical baseline
+  control. Validate parameter isolation, symbolic timelines and sixteen private
+  SGB1/SGB2 timing observations; leave native support and bundled firmware
+  unchanged until additional bounded profiles are validated.
+
 - Add explicit calibrated duration-16 native articulation gates for the three
   measured tempo/articulation profiles. Validate DSP key-off timing, unchanged
   note spacing, active-gate save/load and fail-closed profile rejection against
