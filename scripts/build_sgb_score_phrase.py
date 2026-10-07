@@ -9,7 +9,7 @@ from build_sgb_prototype import assemble
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def build():
+def source():
     clock = (ROOT/'firmware/sgb/score_clock.asm').read_text()
     hooks = {
         'clock_start:\n': 'clock_start:\n    call pair_start\n',
@@ -33,7 +33,11 @@ def build():
         raise ValueError('experimental event writer hook changed')
     source = clock + '\n' + (ROOT/'firmware/sgb/score_phrase.asm').read_text()
     source += '\n' + pair + '\ntrack_emit:\n' + track.split('track_emit:\n')[1]
-    image = bytes(assemble(source, 'spc', 0x0800))
+    return source
+
+
+def build():
+    image = bytes(assemble(source(), 'spc', 0x0800))
     if len(image) > 1024:
         raise ValueError('experimental phrase program exceeds code bound')
     return image

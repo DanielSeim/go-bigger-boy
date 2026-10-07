@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- Add isolated owned two-voice audio to the bounded native phrase parser, with
+  combined key-ons and release of both voices at the first track end. Check
+  clipped voices settling to silence while a peer plays, rests, rejection and
+  exact reset/save-load timing and PCM. Six fresh private SGB1/SGB2 runs match
+  onset masks/pitches within 1417 SPC cycles; retain full-duration diagnostic
+  gates, unqualified original timbre and unchanged bundled firmware.
+
 - Add isolated native parsing of bounded N-SPC song roots, two pattern tables
   and channel-2/3 streams before muted scheduling. Validate pointers, setup
   values and all four tracks before emitting events; cover relocated/shared

@@ -88,6 +88,7 @@ final 16-tick pattern. All eight native score CTest suites passed, including the
 seven-case phrase suite; the bundled prototype reproducibility check retained
 SHA-256 `8222797ddeec5681af61fda28c6afc241898887cd0f254ce2f691f30d4b13482`.
 
-Next is owned two-voice rendering with separate gate/release and clipped-note
-checks. General phrase lists, richer per-track execution, upload/whole-system
+The separate [owned two-voice renderer](sgb-native-score-duet.md) now checks
+combined onsets and clipped-note release using diagnostic full-duration gates.
+General phrase lists, richer per-track execution, upload/whole-system
 boot and production playback remain outside this diagnostic milestone.
