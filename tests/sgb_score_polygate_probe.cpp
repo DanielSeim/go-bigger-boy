@@ -9,7 +9,10 @@
 
 namespace {
 using Engine = gameboy::SnesApuAudioEngine;
-#ifdef GBB_SCORE_CALLGATE_PROBE
+#ifdef GBB_SCORE_CHROMATIC_PROBE
+constexpr auto schema = "gbb-spc-score-chromatic-v1";
+constexpr unsigned log_bound = 160, second_pattern_offset = 64;
+#elif defined(GBB_SCORE_CALLGATE_PROBE)
 constexpr auto schema = "gbb-spc-score-callgate-v1";
 constexpr unsigned log_bound = 160, second_pattern_offset = 64;
 #else

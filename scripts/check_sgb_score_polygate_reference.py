@@ -25,7 +25,7 @@ def multi_report(report, schema='gbb-spc-score-polygate-v1'):
     return {**report, 'schema': 'gbb-spc-score-multi-v1'}
 
 
-def validate(report, *, schema='gbb-spc-score-polygate-v1', max_events=16, max_ticks=1016):
+def validate(report, *, schema='gbb-spc-score-polygate-v1', max_events=16, max_ticks=1016, pitch_table=PITCH):
     multi_validate(multi_report(report, schema), max_events=max_events, max_ticks=max_ticks)
     if (not integer(report.get('tempo'), 0, 255)
             or not integer(report.get('completion_half_cycle'), 1, 30_000_000)
@@ -80,7 +80,7 @@ def validate(report, *, schema='gbb-spc-score-polygate-v1', max_events=16, max_t
     groups = []
     for event in report['events']:
         profile = (report['tempo'], event.get('articulation'), event['duration'])
-        if not integer(event.get('articulation'), 63, 127) or event['articulation'] not in (63, 127) or event['duration'] < 2 or event['opcode'] not in (*PITCH, 0xC9) or (
+        if not integer(event.get('articulation'), 63, 127) or event['articulation'] not in (63, 127) or event['duration'] < 2 or event['opcode'] not in (*pitch_table, 0xC9) or (
                 event['opcode'] != 0xC9 and profile not in PULSES):
             raise ValueError('accepted unmeasured note profile')
         if not groups or groups[-1][0]['tick'] != event['tick']:
@@ -113,7 +113,7 @@ def validate(report, *, schema='gbb-spc-score-polygate-v1', max_events=16, max_t
                     pulses = PULSES[(report['tempo'], event['articulation'], event['duration'])]
                     if edge['pending_pulses'][voice] != pulses:
                         raise ValueError('gated onset selected wrong pulse profile')
-                    pitches[voice] = PITCH[event['opcode']]
+                    pitches[voice] = pitch_table[event['opcode']]
                     active[voice] = (half, event, pulses)
             if edge['held_mask'] != held or edge['pitches'] != pitches:
                 raise ValueError('gated onset held state or pitch differs')
@@ -154,8 +154,8 @@ def validate(report, *, schema='gbb-spc-score-polygate-v1', max_events=16, max_t
             raise ValueError('rest-only voice produced PCM')
 
 
-def align(report, data, *, schema='gbb-spc-score-polygate-v1', max_events=16, max_ticks=1016):
-    validate(report, schema=schema, max_events=max_events, max_ticks=max_ticks)
+def align(report, data, *, schema='gbb-spc-score-polygate-v1', max_events=16, max_ticks=1016, pitch_table=PITCH):
+    validate(report, schema=schema, max_events=max_events, max_ticks=max_ticks, pitch_table=pitch_table)
     multi_align(multi_report(report, schema), data, max_events=max_events, max_ticks=max_ticks)
     expected = schedule(data, int.from_bytes(data[:2], 'little'))
     timed = [event for event in expected['events'] if event['kind'] in ('note', 'rest')]

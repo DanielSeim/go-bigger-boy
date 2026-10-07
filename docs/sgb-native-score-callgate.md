@@ -106,5 +106,7 @@ register/timing metadata and hashes are exported.
 
 Reports use `gbb-spc-score-callgate-v1` and `gbb-score-callgate-reference-v1`
 with qualification and playback false. The bundled prototype remains
-unchanged. Broader phrase/channel grammar, instrument/control compatibility
-and whole-system production integration remain ahead.
+unchanged. The separate [measured chromatic renderer](sgb-native-score-chromatic.md)
+now supports base notes 24..36 through gates, repeats and returns. Broader
+phrase/channel grammar, instrument/control compatibility and whole-system
+production integration remain ahead.

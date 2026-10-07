@@ -84,3 +84,7 @@ owned sample strategy remains necessary for a distributable replacement.
 
 The subsequent [tempo/articulation fixture](sgb-tempo-articulation-fixtures.md)
 measures onset and key-off intervals with isolated control changes on channel 2.
+
+The subsequent [chromatic octave measurements and native renderer](sgb-native-score-chromatic.md)
+pin instrument-2 pitch words for base notes 24..36 on both voices and both
+original models. Instrument 10 and general tuning remain outside that extension.
