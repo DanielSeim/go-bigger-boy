@@ -140,3 +140,8 @@ Schemas are `gbb-sgb-chromatic-reference-v1`, `gbb-spc-score-chromatic-v1` and
 `gbb-score-chromatic-reference-v1`, all with qualification and playback false.
 Broader pitch/instrument coverage, controls, phrase/channel grammar and
 production integration remain ahead. The bundled prototype is unchanged.
+
+The separate [per-voice mix integration](sgb-native-score-mix.md) now applies
+measured instrument-2 pan/volume points to chromatic two-voice playback, with
+finite-call inheritance and fresh coupled reference checks. It remains
+experimental and does not extend production firmware qualification.

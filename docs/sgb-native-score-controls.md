@@ -114,3 +114,8 @@ the first-ending-track pattern rule while muted. The
 [native phrase-bank parser](sgb-native-score-phrase.md) adds bounded pointer
 traversal; two-voice renderer integration remains next. Broader instruments, volume
 curves and production vendor playback still need separate evidence.
+
+The separate [per-voice mix integration](sgb-native-score-mix.md) now applies
+measured instrument-2 pan/volume points to chromatic two-voice playback, with
+finite-call inheritance and fresh coupled reference checks. It remains
+experimental and does not extend production firmware qualification.

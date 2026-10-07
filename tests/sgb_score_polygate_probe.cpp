@@ -9,7 +9,10 @@
 
 namespace {
 using Engine = gameboy::SnesApuAudioEngine;
-#ifdef GBB_SCORE_CHROMATIC_PROBE
+#ifdef GBB_SCORE_MIX_PROBE
+constexpr auto schema = "gbb-spc-score-mix-v1";
+constexpr unsigned log_bound = 160, second_pattern_offset = 64;
+#elif defined(GBB_SCORE_CHROMATIC_PROBE)
 constexpr auto schema = "gbb-spc-score-chromatic-v1";
 constexpr unsigned log_bound = 160, second_pattern_offset = 64;
 #elif defined(GBB_SCORE_CALLGATE_PROBE)
@@ -106,8 +109,9 @@ struct Edge {
     unsigned tick, mask, affected, held, cause;
     std::array<unsigned,2> pending;
     std::array<unsigned, 2> pitches;
+    std::array<std::array<unsigned,2>,2> volumes;
     bool operator==(const Edge& other) const {
-        return half == other.half && tick == other.tick && mask == other.mask && affected == other.affected && held == other.held && cause == other.cause && pending == other.pending && pitches == other.pitches;
+        return half == other.half && tick == other.tick && mask == other.mask && affected == other.affected && held == other.held && cause == other.cause && pending == other.pending && pitches == other.pitches && volumes == other.volumes;
     }
 };
 struct Result {
@@ -115,14 +119,16 @@ struct Result {
     std::uint64_t completion_half = 0;
     std::vector<unsigned char> events;
     std::vector<unsigned char> articulations;
+    std::vector<std::array<unsigned,5>> controls;
     std::vector<std::uint64_t> halves;
     std::vector<Edge> keyons, keyoffs;
     Audio audio, steady;
     std::array<unsigned,2> peer_checks{}, settled_frames{}, peer_pcm{};
+    std::array<unsigned,2> settled_envelopes{};
     bool operator==(const Result& other) const {
         return status == other.status && end_tick == other.end_tick && second_tick == other.second_tick && completion_half == other.completion_half &&
-            events == other.events && articulations == other.articulations && halves == other.halves && keyons == other.keyons && keyoffs == other.keyoffs &&
-            audio == other.audio && steady == other.steady && peer_checks == other.peer_checks && settled_frames == other.settled_frames && peer_pcm == other.peer_pcm;
+            events == other.events && articulations == other.articulations && controls == other.controls && halves == other.halves && keyons == other.keyons && keyoffs == other.keyoffs &&
+            audio == other.audio && steady == other.steady && peer_checks == other.peer_checks && settled_frames == other.settled_frames && peer_pcm == other.peer_pcm && settled_envelopes == other.settled_envelopes;
     }
 };
 Edge edge(Engine& engine, unsigned mask) {
@@ -130,7 +136,8 @@ Edge edge(Engine& engine, unsigned mask) {
     return {engine.cpu().half_cycles(), unsigned(bus.dsp_read_ram(0x10) | bus.dsp_read_ram(0x11) << 8), mask, bus.dsp_read_ram(0x70), bus.dsp_register(0x5c), bus.dsp_read_ram(0x7a),
             {bus.dsp_read_ram(0x78), bus.dsp_read_ram(0x79)},
             {unsigned(bus.dsp_register(0x22) | bus.dsp_register(0x23) << 8),
-             unsigned(bus.dsp_register(0x32) | bus.dsp_register(0x33) << 8)}};
+             unsigned(bus.dsp_register(0x32) | bus.dsp_register(0x33) << 8)},
+            {{{bus.dsp_register(0x20),bus.dsp_register(0x21)}, {bus.dsp_register(0x30),bus.dsp_register(0x31)}}}};
 }
 Result exercise(Engine& engine, bool restore) {
     Result result;
@@ -138,6 +145,8 @@ Result exercise(Engine& engine, bool restore) {
     std::array<unsigned,2> latest_opcodes{0xc9,0xc9};
     std::uint64_t second_start = 0;
     std::array<std::uint64_t,2> expired_since{};
+    std::array<std::uint64_t,2> latest_on{};
+    std::array<std::array<unsigned,2>,2> latest_volumes{};
     for (unsigned half = 0; half < 30'000'000; ++half) {
         const bool steady = second_start != 0 && engine.cpu().half_cycles() >= second_start + 20000;
         unsigned settled = 0;
@@ -145,7 +154,22 @@ Result exercise(Engine& engine, bool restore) {
             const auto& current = engine.bus();
             if (expired_since[channel] && engine.cpu().half_cycles() >= expired_since[channel]+20000 &&
                 current.dsp_read_ram(0x72+channel) == 0 && current.dsp_read_ram(0x72+(1-channel)) > 0 &&
-                (current.dsp_register(0x5c) & (4U << channel))) settled |= 4U << channel;
+                (current.dsp_register(0x5c) & (4U << channel))) {
+#ifdef GBB_SCORE_MIX_PROBE
+                const unsigned own = (channel+2)*16, peer = (3-channel)*16;
+                if (engine.cpu().half_cycles() >= latest_on[1-channel]+2000) {
+                    require(current.dsp_register(own+8) == 0 && current.dsp_register(peer+8) == 127,
+                            "expired mix envelope or active peer differs");
+                    ++result.settled_envelopes[channel];
+                    if (current.dsp_register(own) && !current.dsp_register(own+1) &&
+                        !current.dsp_register(peer) && current.dsp_register(peer+1)) settled |= 4;
+                    if (current.dsp_register(own+1) && !current.dsp_register(own) &&
+                        !current.dsp_register(peer+1) && current.dsp_register(peer)) settled |= 8;
+                }
+#else
+                settled |= 4U << channel;
+#endif
+            }
         }
         clock(engine, result.audio, steady ? &result.steady : nullptr,
               settled, &result.settled_frames, &result.peer_pcm);
@@ -158,15 +182,23 @@ Result exercise(Engine& engine, bool restore) {
                 "polyphonic global DSP setup differs");
             for (unsigned channel : {2U, 3U}) {
                 const unsigned base = channel * 16;
+#ifdef GBB_SCORE_MIX_PROBE
+                require(bus.dsp_register(base) <= 11 && bus.dsp_register(base+1) <= 11 &&
+#else
                 require(bus.dsp_register(base) == (channel == 2 ? 80 : 0) &&
                     bus.dsp_register(base+1) == (channel == 3 ? 80 : 0) &&
+#endif
                     bus.dsp_register(base+4) == 0 && bus.dsp_register(base+5) == 0 &&
                     bus.dsp_register(base+6) == 0 && bus.dsp_register(base+7) == 127,
                     "polyphonic owned source/envelope/routing differs");
             }
             result.keyons.push_back(edge(engine, kon));
             for (unsigned channel = 0; channel < 2; ++channel)
-                if (kon & (4U << channel)) expired_since[channel] = 0;
+                if (kon & (4U << channel)) {
+                    expired_since[channel] = 0;
+                    latest_on[channel] = engine.cpu().half_cycles();
+                    latest_volumes[channel] = {bus.dsp_register((channel+2)*16),bus.dsp_register((channel+2)*16+1)};
+                }
         }
         const unsigned asserted = (kof & ~previous_kof) & 12;
         if (asserted && !result.events.empty()) {
@@ -185,6 +217,9 @@ Result exercise(Engine& engine, bool restore) {
             for (unsigned i = offset; i < written; ++i) result.events.push_back(bus.dsp_read_ram(0x3000+i));
             result.halves.push_back(engine.cpu().half_cycles());
             result.articulations.push_back(bus.dsp_read_ram(0x7b));
+#ifdef GBB_SCORE_MIX_PROBE
+            result.controls.push_back({bus.dsp_read_ram(0x89),bus.dsp_read_ram(0x8a),bus.dsp_read_ram(0x8b),bus.dsp_read_ram(0x8c),bus.dsp_read_ram(0x8d)});
+#endif
             offset = written;
             require(result.events[written-1] == 2 || result.events[written-1] == 3, "invalid event channel");
             latest_opcodes[result.events[written-1]-2] = result.events[written-3];
@@ -208,6 +243,10 @@ Result exercise(Engine& engine, bool restore) {
             if (latest_opcodes[peer] != 0xc9 && bus.dsp_read_ram(0x72+peer) > 0) {
                 require((kof & (4U << peer)) == 0, "single-track update keyed off its peer");
                 require(bus.dsp_register((peer+2)*16+8) == 127, "single-track update restarted peer envelope");
+#ifdef GBB_SCORE_MIX_PROBE
+                require(latest_volumes[peer] == std::array<unsigned,2>{bus.dsp_register((peer+2)*16),bus.dsp_register((peer+2)*16+1)},
+                        "single-track mix update changed peer volumes");
+#endif
                 ++result.peer_checks[peer];
             }
         }
@@ -237,7 +276,11 @@ void edges(const std::vector<Edge>& values) {
         if (i) std::cout << ',';
         const auto& value = values[i];
         std::cout << "{\"half_cycle\":" << value.half << ",\"tick\":" << value.tick
-            << ",\"mask\":" << value.mask << ",\"affected_mask\":" << value.affected << ",\"held_mask\":" << value.held << ",\"cause\":" << value.cause << ",\"pending_pulses\":[" << value.pending[0] << "," << value.pending[1] << "]" << ",\"pitches\":[" << value.pitches[0] << ',' << value.pitches[1] << "]}";
+            << ",\"mask\":" << value.mask << ",\"affected_mask\":" << value.affected << ",\"held_mask\":" << value.held << ",\"cause\":" << value.cause << ",\"pending_pulses\":[" << value.pending[0] << "," << value.pending[1] << "]" << ",\"pitches\":[" << value.pitches[0] << ',' << value.pitches[1] << "]";
+#ifdef GBB_SCORE_MIX_PROBE
+        std::cout << ",\"volumes\":[[" << value.volumes[0][0] << ',' << value.volumes[0][1] << "],[" << value.volumes[1][0] << ',' << value.volumes[1][1] << "]]";
+#endif
+        std::cout << '}';
     }
     std::cout << ']';
 }
@@ -265,11 +308,20 @@ int main(int argc, char** argv) {
             std::cout << "{\"tick\":" << (expected.events[base] | expected.events[base+1] << 8)
                 << ",\"opcode\":" << unsigned(expected.events[base+2]) << ",\"duration\":" << unsigned(expected.events[base+3])
                 << ",\"articulation\":" << unsigned(expected.articulations[i])
-                << ",\"channel\":" << unsigned(expected.events[base+4]) << ",\"half_cycle\":" << expected.halves[i] << '}';
+                << ",\"channel\":" << unsigned(expected.events[base+4]) << ",\"half_cycle\":" << expected.halves[i];
+#ifdef GBB_SCORE_MIX_PROBE
+            const auto& control = expected.controls[i];
+            std::cout << ",\"volumes\":[" << control[0] << ',' << control[1] << "],\"pan\":" << control[2]
+                      << ",\"track_volume\":" << control[3] << ",\"song_volume\":" << control[4];
+#endif
+            std::cout << '}';
         }
         std::cout << "],\"keyons\":"; edges(expected.keyons);
         std::cout << ",\"keyoffs\":"; edges(expected.keyoffs);
         std::cout << ",\"peer_checks\":[" << expected.peer_checks[0] << "," << expected.peer_checks[1] << "]";
+#ifdef GBB_SCORE_MIX_PROBE
+        std::cout << ",\"settled_envelope_checks\":[" << expected.settled_envelopes[0] << ',' << expected.settled_envelopes[1] << ']';
+#endif
         std::cout << ",\"settled_gate_frames\":[" << expected.settled_frames[0] << "," << expected.settled_frames[1] << "]"
             << ",\"settled_peer_nonzero_frames\":[" << expected.peer_pcm[0] << "," << expected.peer_pcm[1] << "]";
         std::cout << ",\"second_tail_pcm\":{\"frames\":" << expected.steady.frames
@@ -279,7 +331,12 @@ int main(int argc, char** argv) {
             << ",\"peak\":" << expected.audio.peak << ",\"fnv1a64\":" << expected.audio.hash
             << ",\"quiet_tail_frames\":" << expected.audio.quiet_tail
             << ",\"left_nonzero_frames\":" << expected.audio.left_nonzero
-            << ",\"right_nonzero_frames\":" << expected.audio.right_nonzero << "}}\n";
+            << ",\"right_nonzero_frames\":" << expected.audio.right_nonzero
+#ifdef GBB_SCORE_MIX_PROBE
+            << ",\"left_peak\":" << expected.audio.left_peak << ",\"right_peak\":" << expected.audio.right_peak
+            << ",\"stereo_equal\":" << (expected.audio.stereo_equal ? "true" : "false")
+#endif
+            << "}}\n";
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n'; return 1;
     }

@@ -25,7 +25,7 @@ def multi_report(report, schema='gbb-spc-score-polygate-v1'):
     return {**report, 'schema': 'gbb-spc-score-multi-v1'}
 
 
-def validate(report, *, schema='gbb-spc-score-polygate-v1', max_events=16, max_ticks=1016, pitch_table=PITCH):
+def validate(report, *, schema='gbb-spc-score-polygate-v1', max_events=16, max_ticks=1016, pitch_table=PITCH, isolated_voices=True):
     multi_validate(multi_report(report, schema), max_events=max_events, max_ticks=max_ticks)
     if (not integer(report.get('tempo'), 0, 255)
             or not integer(report.get('completion_half_cycle'), 1, 30_000_000)
@@ -149,13 +149,13 @@ def validate(report, *, schema='gbb-spc-score-polygate-v1', max_events=16, max_t
         raise ValueError('native note has no complete release')
     if bool(pcm['nonzero_frames']) != bool(sounding) or bool(pcm['peak']) != bool(sounding):
         raise ValueError('gated PCM activity differs')
-    for channel, key in ((2, 'left_nonzero_frames'), (3, 'right_nonzero_frames')):
+    for channel, key in (((2, 'left_nonzero_frames'), (3, 'right_nonzero_frames')) if isolated_voices else ()):
         if not any(event['channel'] == channel and event['opcode'] != 0xC9 for event in report['events']) and pcm[key]:
             raise ValueError('rest-only voice produced PCM')
 
 
-def align(report, data, *, schema='gbb-spc-score-polygate-v1', max_events=16, max_ticks=1016, pitch_table=PITCH):
-    validate(report, schema=schema, max_events=max_events, max_ticks=max_ticks, pitch_table=pitch_table)
+def align(report, data, *, schema='gbb-spc-score-polygate-v1', max_events=16, max_ticks=1016, pitch_table=PITCH, isolated_voices=True):
+    validate(report, schema=schema, max_events=max_events, max_ticks=max_ticks, pitch_table=pitch_table, isolated_voices=isolated_voices)
     multi_align(multi_report(report, schema), data, max_events=max_events, max_ticks=max_ticks)
     expected = schedule(data, int.from_bytes(data[:2], 'little'))
     timed = [event for event in expected['events'] if event['kind'] in ('note', 'rest')]
