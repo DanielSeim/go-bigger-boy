@@ -89,7 +89,9 @@ now pins three notes and instruments 2/10 on channel 2 against both originals;
 it does not supply an instrument table, samples or a vendor renderer. The
 [tempo/articulation fixture](sgb-tempo-articulation-fixtures.md) additionally
 measures duration-16 onset and key-off timing for two tempos and articulations,
-with bounded two-model reference comparisons.
+with bounded two-model reference comparisons. The
+[volume/pan fixtures](sgb-volume-pan-fixtures.md) now also pin center/endpoints
+and reduced song/track volume register values; full curves and echo remain open.
 
 | Explicit candidate root | Patterns / track references | Channels observed | Scan boundary |
 | --- | --- | --- | --- |

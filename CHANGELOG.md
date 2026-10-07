@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Add independently authored pan and volume note fixtures and a bounded private
+  original-firmware gate. Pin centered/endpoint pan and reduced song/track volume
+  register setup across SGB1/SGB2, with ROM-free isolation, checksum, sanitization
+  and failure tests; complete curves and vendor playback remain unsupported.
+
 - Add owned three-note tempo/articulation fixtures and a bounded private
   original-firmware timing matrix. Validate double-tempo onset spacing and
   shorter articulation gates across SGB1/SGB2 using sanitized DSP write timing;

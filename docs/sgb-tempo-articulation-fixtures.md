@@ -101,3 +101,6 @@ velocity, tie behavior, multi-channel phase, instrument tuning/sample ownership,
 volume/pan and echo remain open. No physical-device or independent-emulator
 comparison was performed. The prototype renderer is unchanged and continues to
 reject vendor banks; commercial-title playback remains unsupported.
+
+The subsequent [volume/pan fixtures](sgb-volume-pan-fixtures.md) pin centered and
+endpoint pan plus reduced song/track volume register setup on both originals.
