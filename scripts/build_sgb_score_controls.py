@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Build isolated native instrument and volume controls with an owned BRR source."""
+"""Build isolated native instrument, volume and pan controls with an owned BRR source."""
 import argparse
 import hashlib
 from pathlib import Path
@@ -18,7 +18,7 @@ def build():
     assembly = assembly[:start] + 'render_event:\n    jmp controls_render_event\n' + assembly[end:]
     hooks = {
         '    cmp a, #$80\n    beq clock_start\n    cmp a, #$c0\n    beq clock_start\n': '',
-        'track_clear:\n': 'track_clear:\n    mov $30, #$02\n    mov $31, #$a0\n    mov $32, #$7f\n',
+        'track_clear:\n': 'track_clear:\n    mov $30, #$02\n    mov $31, #$a0\n    mov $32, #$7f\n    mov $33, #$0a\n',
         'track_opcode:\n    mov $26, a\n':
             'track_opcode:\n    mov $26, a\n    cmp a, #$e0\n    bcc controls_timed_dispatch\n'
             '    call controls_command\n    jmp track_next\ncontrols_timed_dispatch:\n',

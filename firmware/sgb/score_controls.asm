@@ -1,11 +1,13 @@
 ; SPDX-License-Identifier: GPL-3.0-or-later
-; Bounded E0/E5/ED controls. Private $30 instrument, $31 song volume, $32 track volume.
+; Bounded E0/E1/E5/ED controls. Private $30 instrument, $31 song, $32 track, $33 pan, $34 scratch.
 ; Instrument 2: full pair (160,127), reduced song (80,127), reduced track (160,64).
 ; Instrument 10: full pair only. Native notes require tempo96/duration16/art7F.
 controls_command:
     mov a, $26
     cmp a, #$e0
     beq controls_instrument
+    cmp a, #$e1
+    beq controls_pan
     cmp a, #$e5
     beq controls_song
     cmp a, #$ed
@@ -38,6 +40,17 @@ controls_track:
 controls_track_ok:
     mov $32, a
     ret
+controls_pan:
+    call track_read
+    cmp a, #$00
+    beq controls_pan_ok
+    cmp a, #$0a
+    beq controls_pan_ok
+    cmp a, #$14
+    bne controls_reject
+controls_pan_ok:
+    mov $33, a
+    ret
 controls_reject:
     jmp track_reject
 controls_validate:
@@ -47,6 +60,19 @@ controls_validate:
     mov a, $26
     cmp a, #$c9
     beq controls_gate_validate
+    mov a, $33
+    cmp a, #$0a
+    beq controls_pan_valid
+    mov a, $30
+    cmp a, #$02
+    bne controls_reject
+    mov a, $31
+    cmp a, #$a0
+    bne controls_reject
+    mov a, $32
+    cmp a, #$7f
+    bne controls_reject
+controls_pan_valid:
     mov a, $22
     cmp a, #$10
     bne controls_reject
@@ -81,7 +107,7 @@ controls_release_wait:
     dec $2c
     mov a, $2c
     bne controls_release_wait
-    ; Bounded centered voice-volume pairs from sanitized observations.
+    ; Bounded voice-volume and pan points from sanitized observations.
     mov a, $31
     cmp a, #$a0
     bne controls_low_volume
@@ -93,10 +119,30 @@ controls_release_wait:
 controls_low_volume:
     mov a, #$01
 controls_volume:
+    mov $34, a
+    mov a, $33
+    cmp a, #$0a
+    beq controls_center
+    cmp a, #$00
+    beq controls_right
+    mov $f2, #$20
+    mov $f3, #$0b
+    mov $f2, #$21
+    mov $f3, #$00
+    bra controls_volume_done
+controls_right:
+    mov $f2, #$20
+    mov $f3, #$00
+    mov $f2, #$21
+    mov $f3, #$0b
+    bra controls_volume_done
+controls_center:
+    mov a, $34
     mov $f2, #$20
     mov $f3, a
     mov $f2, #$21
     mov $f3, a
+controls_volume_done:
     mov $f2, #$24
     mov a, $30
     mov $f3, a

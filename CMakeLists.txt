@@ -1596,7 +1596,7 @@ if(GAMEBOY_BUILD_TESTS)
                     --trace $<TARGET_FILE:gameboy_snes_65c816_apu_trace>
                     --firmware-dir ${CMAKE_CURRENT_SOURCE_DIR}/roms)
             set_tests_properties(gameboy_sgb_score_controls_local_reference PROPERTIES
-                LABELS "local;private-reference" TIMEOUT 1500)
+                LABELS "local;private-reference" TIMEOUT 1800)
             add_test(NAME gameboy_sgb_expanded_score_gate_local_reference
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_expanded_score_gate_reference.py
                     --probe $<TARGET_FILE:gameboy_sgb_score_gate_probe>

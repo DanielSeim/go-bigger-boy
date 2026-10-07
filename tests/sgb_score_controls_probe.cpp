@@ -23,21 +23,30 @@ std::vector<unsigned char> read(const char* path, unsigned bound) {
 struct Audio {
     std::uint64_t hash = 14695981039346656037ULL;
     unsigned frames = 0, nonzero = 0, peak = 0, quiet_tail = 0;
+    unsigned left_nonzero = 0, right_nonzero = 0, left_peak = 0, right_peak = 0;
+    bool stereo_equal = true;
     bool operator==(const Audio& other) const {
         return hash == other.hash && frames == other.frames && nonzero == other.nonzero &&
-               peak == other.peak && quiet_tail == other.quiet_tail;
+               peak == other.peak && quiet_tail == other.quiet_tail && left_nonzero == other.left_nonzero &&
+               right_nonzero == other.right_nonzero && left_peak == other.left_peak &&
+               right_peak == other.right_peak && stereo_equal == other.stereo_equal;
     }
 };
 void clock(Engine& engine, Audio& audio) {
     Engine::StereoSample sample;
     while (engine.pop_sample(sample)) {
-        require(sample.left == sample.right, "centered owned source must have equal stereo output");
+        audio.stereo_equal = audio.stereo_equal && sample.left == sample.right;
+        if (sample.left) ++audio.left_nonzero;
+        if (sample.right) ++audio.right_nonzero;
         ++audio.frames;
         require(audio.frames <= 500000, "owned PCM frame bound");
         if (sample.left || sample.right) { ++audio.nonzero; audio.quiet_tail = 0; }
         else ++audio.quiet_tail;
         const auto magnitude = unsigned(sample.left < 0 ? -int(sample.left) : int(sample.left));
-        if (magnitude > audio.peak) audio.peak = magnitude;
+        if (magnitude > audio.left_peak) audio.left_peak = magnitude;
+        const auto right_magnitude = unsigned(sample.right < 0 ? -int(sample.right) : int(sample.right));
+        if (right_magnitude > audio.right_peak) audio.right_peak = right_magnitude;
+        audio.peak = audio.left_peak > audio.right_peak ? audio.left_peak : audio.right_peak;
         for (const auto channel : {sample.left, sample.right}) {
             const auto value = static_cast<std::uint16_t>(channel);
             for (unsigned shift : {0U, 8U}) {
@@ -61,12 +70,12 @@ void setup(Engine& engine, const std::vector<unsigned char>& program,
 }
 struct KeyOn {
     std::uint64_t half;
-    unsigned tick, opcode, pitch, quiet_tail, instrument, song_volume, track_volume;
+    unsigned tick, opcode, pitch, quiet_tail, instrument, song_volume, track_volume, pan;
     std::array<unsigned,6> setup;
     bool operator==(const KeyOn& other) const {
         return half == other.half && tick == other.tick && opcode == other.opcode &&
                pitch == other.pitch && quiet_tail == other.quiet_tail && instrument == other.instrument &&
-               song_volume == other.song_volume && track_volume == other.track_volume && setup == other.setup;
+               song_volume == other.song_volume && track_volume == other.track_volume && pan == other.pan && setup == other.setup;
     }
 };
 struct Result {
@@ -107,7 +116,7 @@ Result exercise(Engine& engine, bool restore) {
             result.keyons.push_back({engine.cpu().half_cycles(),
                 unsigned(bus.dsp_read_ram(0x10) | bus.dsp_read_ram(0x11) << 8),
                 bus.dsp_read_ram(0x26), unsigned(bus.dsp_register(0x22) | bus.dsp_register(0x23) << 8),
-                result.audio.quiet_tail, bus.dsp_read_ram(0x30), bus.dsp_read_ram(0x31), bus.dsp_read_ram(0x32),
+                result.audio.quiet_tail, bus.dsp_read_ram(0x30), bus.dsp_read_ram(0x31), bus.dsp_read_ram(0x32), bus.dsp_read_ram(0x33),
                 {bus.dsp_register(0x20), bus.dsp_register(0x21), bus.dsp_register(0x24),
                  bus.dsp_register(0x25), bus.dsp_register(0x26), bus.dsp_register(0x27)}});
         }
@@ -161,7 +170,7 @@ int main(int argc, char** argv) {
         require(exercise(engine, true) == expected, "restore altered track timeline");
         setup(engine, program, track, tempo);
         require(exercise(engine, false) == expected, "reset altered track timeline");
-        std::cout << "{\"schema\":\"gbb-spc-score-controls-v1\",\"qualification\":false,\"playback\":false,"
+        std::cout << "{\"schema\":\"gbb-spc-score-controls-v2\",\"qualification\":false,\"playback\":false,"
                      "\"reset_equal\":true,\"restore_equal\":true,\"status\":" << expected.status
                   << ",\"tempo\":" << tempo << ",\"end_tick\":" << expected.end_tick << ",\"events\":[";
         for (unsigned i = 0; i < expected.halves.size(); ++i) {
@@ -181,7 +190,7 @@ int main(int argc, char** argv) {
                       << ",\"pitch\":" << keyon.pitch << ",\"half_cycle\":" << keyon.half
                       << ",\"quiet_tail_frames\":" << keyon.quiet_tail
                       << ",\"instrument\":" << keyon.instrument << ",\"song_volume\":" << keyon.song_volume
-                      << ",\"track_volume\":" << keyon.track_volume
+                      << ",\"track_volume\":" << keyon.track_volume << ",\"pan\":" << keyon.pan
                       << ",\"voll\":" << keyon.setup[0] << ",\"volr\":" << keyon.setup[1]
                       << ",\"srcn\":" << keyon.setup[2] << ",\"adsr1\":" << keyon.setup[3]
                       << ",\"adsr2\":" << keyon.setup[4] << ",\"gain\":" << keyon.setup[5] << '}';
@@ -194,7 +203,10 @@ int main(int argc, char** argv) {
         std::cout << "],\"pcm\":{\"frames\":" << expected.audio.frames
                   << ",\"nonzero_frames\":" << expected.audio.nonzero << ",\"peak\":" << expected.audio.peak
                   << ",\"fnv1a64\":" << expected.audio.hash << ",\"quiet_tail_frames\":" << expected.audio.quiet_tail
-                  << "}}\n";
+                  << ",\"left_nonzero_frames\":" << expected.audio.left_nonzero
+                  << ",\"right_nonzero_frames\":" << expected.audio.right_nonzero
+                  << ",\"left_peak\":" << expected.audio.left_peak << ",\"right_peak\":" << expected.audio.right_peak
+                  << ",\"stereo_equal\":" << (expected.audio.stereo_equal ? "true" : "false") << "}}\n";
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;

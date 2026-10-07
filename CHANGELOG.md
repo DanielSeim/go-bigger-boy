@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Add native E1 pan center/endpoints for instrument 2 at full volume, with
+  inherited state and silent rejection of unsupported combinations. Match
+  twenty-four note setup snapshots from eight private SGB1/SGB2 runs and check
+  inactive-channel silence, centered stereo equality, reset/save-load and
+  per-channel PCM metadata. Keep bundled firmware unchanged and original timbre unqualified.
+
 - Add isolated native E0/E5/ED instrument and volume controls for measured
   values, with full validation, inherited state and owned BRR audio. Match
   eighteen instrument/volume setup snapshots from six private SGB1/SGB2 runs;
