@@ -105,3 +105,6 @@ boundaries, zero-duration or empty tracks, phrase repeats, subroutines and
 control inheritance remain open. No physical-device or independent-emulator
 comparison was performed. The prototype renderer is unchanged and still rejects
 vendor banks; commercial-title playback remains unsupported.
+
+The subsequent [finite subroutine fixtures](sgb-subroutine-fixtures.md) measure
+EF counts 1..3, repetition, caller continuation and duration reuse on channel 2.

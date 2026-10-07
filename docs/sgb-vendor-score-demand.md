@@ -97,7 +97,9 @@ and filter-0 setup with explicit rests; full curves, echo PCM and immediate
 setup timing remain open. The [two-channel phrase fixtures](sgb-phrase-fixtures.md)
 now support early phrase advancement when either of channels 2/3 ends, with
 swapped durations and an equal-long control; broader channel behavior remains
-unqualified.
+unqualified. The [finite subroutine fixtures](sgb-subroutine-fixtures.md) also
+validate EF counts 1..3, a two-note body and return to the caller on channel 2.
+The inventory intentionally retains its conservative EF scan boundaries.
 
 | Explicit candidate root | Patterns / track references | Channels observed | Scan boundary |
 | --- | --- | --- | --- |

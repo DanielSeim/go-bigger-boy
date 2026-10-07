@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Add owned finite subroutine fixtures and a bounded private original-firmware
+  gate. Validate EF counts 1..3 as total body executions, return to a distinct
+  caller continuation and duration-16 onset spacing across SGB1/SGB2, with
+  sanitized reports and ROM-free checks. Nested calls and vendor playback
+  remain unsupported.
+
 - Add owned two-channel phrase fixtures and a bounded private original-firmware
   gate. Validate combined voice-2/3 key-ons and early phrase advancement for
   swapped unequal durations, with an equal-long-duration control on SGB1/SGB2.

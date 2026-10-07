@@ -1304,6 +1304,8 @@ if(GAMEBOY_BUILD_TESTS)
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_echo_fixture_tests.py)
         add_test(NAME gameboy_sgb_phrase_fixture
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_phrase_fixture_tests.py)
+        add_test(NAME gameboy_sgb_subroutine_fixture
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_subroutine_fixture_tests.py)
         add_test(NAME gameboy_sgb_resident_score_inspection
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_resident_score_inspection_tests.py)
         add_test(NAME gameboy_sgb_resident_score_contract
@@ -1571,6 +1573,12 @@ if(GAMEBOY_BUILD_TESTS)
                     --trace $<TARGET_FILE:gameboy_snes_65c816_apu_trace>
                     --firmware-dir ${CMAKE_CURRENT_SOURCE_DIR}/roms)
             set_tests_properties(gameboy_sgb_phrase_local_reference PROPERTIES
+                LABELS "local;private-reference" TIMEOUT 1200)
+            add_test(NAME gameboy_sgb_subroutine_local_reference
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_subroutine_reference.py
+                    --trace $<TARGET_FILE:gameboy_snes_65c816_apu_trace>
+                    --firmware-dir ${CMAKE_CURRENT_SOURCE_DIR}/roms)
+            set_tests_properties(gameboy_sgb_subroutine_local_reference PROPERTIES
                 LABELS "local;private-reference" TIMEOUT 1200)
         endif()
     endif()
