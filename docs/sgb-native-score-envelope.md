@@ -119,3 +119,7 @@ Schemas are `gbb-spc-score-envelope-v1` and `gbb-score-envelope-reference-v1`,
 with qualification and playback false. Installation remains an owned IPL
 trampoline/direct RAM diagnostic; whole-system upload, boot, title playback
 and production integration remain ahead.
+
+The subsequent [multi-page bank renderer](sgb-native-score-bank.md) separates
+uploaded source from caches and adds bounded full-address reads and call/return
+pointers for banks up to 2 KiB. The preceding envelope artifact remains unchanged.

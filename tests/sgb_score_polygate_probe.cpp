@@ -11,7 +11,11 @@
 
 namespace {
 using Engine = gameboy::SnesApuAudioEngine;
-#ifdef GBB_SCORE_ENVELOPE_PROBE
+#ifdef GBB_SCORE_BANK_PROBE
+constexpr auto schema = "gbb-spc-score-bank-v1";
+constexpr unsigned log_bound = 160, second_pattern_offset = 64;
+constexpr unsigned log_base = 0x4000, bank_input_bound = 2049;
+#elif defined(GBB_SCORE_ENVELOPE_PROBE)
 constexpr auto schema = "gbb-spc-score-envelope-v1";
 constexpr unsigned log_bound = 160, second_pattern_offset = 64;
 #elif defined(GBB_SCORE_MIX_PROBE)
@@ -26,6 +30,9 @@ constexpr unsigned log_bound = 160, second_pattern_offset = 64;
 #else
 constexpr auto schema = "gbb-spc-score-polygate-v1";
 constexpr unsigned log_bound = 80, second_pattern_offset = 32;
+#endif
+#ifndef GBB_SCORE_BANK_PROBE
+constexpr unsigned log_base = 0x3000, bank_input_bound = 255;
 #endif
 void require(bool ok, const char* message) {
     if (!ok) throw std::runtime_error(message);
@@ -95,6 +102,12 @@ void setup(Engine& engine, const std::vector<unsigned char>& program,
     engine.install_ipl(entry);
     engine.reset();
     for (unsigned i = 0; i < program.size(); ++i) engine.bus().dsp_write_ram(0x0800 + i, program[i]);
+#ifdef GBB_SCORE_BANK_PROBE
+    // Poison unprovided source bytes and guard the cache/source separation.
+    for (unsigned address = 0x2b00; address < 0x4000; ++address) engine.bus().dsp_write_ram(address, 0xa5);
+    for (unsigned address = 0x4900; address < 0x4a00; ++address) engine.bus().dsp_write_ram(address, 0xa5);
+    engine.bus().dsp_write_ram(0x8e, track.size() >> 8);
+#endif
     for (unsigned i = 0; i < track.size(); ++i) engine.bus().dsp_write_ram(0x2b00 + i, track[i]);
     engine.bus().dsp_write_ram(0x12, tempo);
     engine.bus().dsp_write_ram(0x20, track.size());
@@ -160,6 +173,10 @@ Edge edge(Engine& engine, unsigned mask) {
 }
 Result exercise(Engine& engine, bool restore) {
     Result result;
+#ifdef GBB_SCORE_BANK_PROBE
+    std::array<unsigned char,2049> source_before{};
+    for (unsigned i = 0; i < source_before.size(); ++i) source_before[i] = engine.bus().dsp_read_ram(0x2b00+i);
+#endif
     unsigned offset = 0, previous_kon = 0, previous_kof = 0;
     std::array<unsigned,2> latest_opcodes{0xc9,0xc9};
     std::uint64_t second_start = 0;
@@ -289,7 +306,7 @@ Result exercise(Engine& engine, bool restore) {
         const auto written = bus.dsp_read_ram(0x28);
         if (written != offset && written % 5 == 0) {
             require(written == offset+5 && written <= log_bound, "polyphonic event log overflow");
-            for (unsigned i = offset; i < written; ++i) result.events.push_back(bus.dsp_read_ram(0x3000+i));
+            for (unsigned i = offset; i < written; ++i) result.events.push_back(bus.dsp_read_ram(log_base+i));
             result.halves.push_back(engine.cpu().half_cycles());
             result.articulations.push_back(bus.dsp_read_ram(0x7b));
 #ifdef GBB_SCORE_MIX_PROBE
@@ -349,6 +366,14 @@ Result exercise(Engine& engine, bool restore) {
                 require(bus.host_read_port(port) == 0, "polyphonic advertised mailbox readiness");
             if (status != 2) require(result.events.empty() && result.keyons.empty() && result.keyoffs.empty() &&
                 result.end_tick == 0 && result.audio.nonzero == 0, "invalid bank rendered audio");
+#ifdef GBB_SCORE_BANK_PROBE
+            for (unsigned i = 0; i < source_before.size(); ++i)
+                require(engine.bus().dsp_read_ram(0x2b00+i) == source_before[i], "native cache overwrote score source");
+            for (unsigned address = 0x3301; address < 0x4000; ++address)
+                require(engine.bus().dsp_read_ram(address) == 0xa5, "native score touched lower cache guard");
+            for (unsigned address = 0x4900; address < 0x4a00; ++address)
+                require(engine.bus().dsp_read_ram(address) == 0xa5, "native score touched upper cache guard");
+#endif
             return result;
         }
     }
@@ -385,7 +410,7 @@ void edges(const std::vector<Edge>& values) {
 int main(int argc, char** argv) {
     try {
         require(argc == 4, "usage: score_polygate_probe owned-program.bin owned-bank.bin tempo");
-        const auto program = read(argv[1], 4096), bank = read(argv[2], 255);
+        const auto program = read(argv[1], 4096), bank = read(argv[2], bank_input_bound);
         const auto tempo = std::stoul(argv[3]);
         require(tempo <= 255, "tempo outside byte bound");
         Engine engine;
@@ -413,7 +438,12 @@ int main(int argc, char** argv) {
 #endif
             std::cout << '}';
         }
-        std::cout << "],\"keyons\":"; edges(expected.keyons);
+#ifdef GBB_SCORE_BANK_PROBE
+        std::cout << "],\"source_unmodified\":true,\"cache_guards_equal\":true,\"keyons\":";
+#else
+        std::cout << "],\"keyons\":";
+#endif
+        edges(expected.keyons);
         std::cout << ",\"keyoffs\":"; edges(expected.keyoffs);
 #ifdef GBB_SCORE_ENVELOPE_PROBE
         std::cout << ",\"envelopes\":[";
