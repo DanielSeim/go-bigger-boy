@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Add explicit calibrated duration-16 native articulation gates for the three
+  measured tempo/articulation profiles. Validate DSP key-off timing, unchanged
+  note spacing, active-gate save/load and fail-closed profile rejection against
+  ROM-free checks and six private SGB1/SGB2 runs. Keep general timing laws and
+  bundled vendor playback unqualified.
+
 - Add an isolated native SPC DSP renderer for three measured pitches and an
   owned looping BRR waveform. Check instrument setup, deterministic centered
   PCM, reset/save-load continuation, rests/release and fail-closed validation;

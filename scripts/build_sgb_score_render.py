@@ -5,11 +5,11 @@ import argparse
 import hashlib
 from pathlib import Path
 from build_sgb_prototype import assemble
-from build_sgb_score_track import ROOT, source
+from build_sgb_score_track import ROOT, source as track_source
 
 
-def build():
-    assembly = source()
+def source():
+    assembly = track_source()
     hooks = {
         '    mov $14, #$01\n    call track_next\n':
             '    call render_setup\n    mov $14, #$01\n    call track_next\n',
@@ -21,8 +21,11 @@ def build():
         if assembly.count(old) != 1:
             raise ValueError('experimental track renderer hook changed')
         assembly = assembly.replace(old, new)
-    assembly += '\n' + (ROOT/'firmware/sgb/score_render.asm').read_text()
-    image = bytes(assemble(assembly, 'spc', 0x0800))
+    return assembly + '\n' + (ROOT/'firmware/sgb/score_render.asm').read_text()
+
+
+def build():
+    image = bytes(assemble(source(), 'spc', 0x0800))
     if len(image) > 4096:
         raise ValueError('experimental renderer image exceeds code/source bound')
     return image

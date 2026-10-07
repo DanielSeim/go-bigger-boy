@@ -81,3 +81,6 @@ The next step is an independently specified bounded articulation gate backed
 by controlled timing evidence. Vendor instrument/sample mapping, controls,
 multiple tracks, calls, phrase transitions and production integration still
 need separate implementation and validation.
+
+The isolated [calibrated gate experiment](sgb-native-score-gate.md) now covers
+three duration-16 tempo/articulation profiles, preserving this renderer build.
