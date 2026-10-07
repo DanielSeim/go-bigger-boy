@@ -94,3 +94,6 @@ Volume/pan fades, velocity mapping, signed pan flags, other curve points, master
 volume, echo, multi-channel scheduling and independently owned sample mapping
 remain open. The prototype renderer is unchanged and still rejects vendor banks;
 commercial-title playback remains unsupported.
+
+The subsequent [echo fixtures](sgb-echo-fixtures.md) pin settled routing, delay,
+feedback, allocation and filter-0 register snapshots against both originals.

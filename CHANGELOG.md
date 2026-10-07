@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Add independently authored echo routing/setup fixtures and a bounded private
+  original-firmware gate. Pin settled EON/volume/feedback/delay/allocation/FIR
+  snapshots across SGB1/SGB2 before each note's first key-off, with explicit
+  settling rests, fail-closed reporting and ROM-free checks; echoed PCM and
+  vendor playback remain unqualified.
+
 - Add independently authored pan and volume note fixtures and a bounded private
   original-firmware gate. Pin centered/endpoint pan and reduced song/track volume
   register setup across SGB1/SGB2, with ROM-free isolation, checksum, sanitization

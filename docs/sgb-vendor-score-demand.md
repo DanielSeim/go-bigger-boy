@@ -91,7 +91,10 @@ it does not supply an instrument table, samples or a vendor renderer. The
 measures duration-16 onset and key-off timing for two tempos and articulations,
 with bounded two-model reference comparisons. The
 [volume/pan fixtures](sgb-volume-pan-fixtures.md) now also pin center/endpoints
-and reduced song/track volume register values; full curves and echo remain open.
+and reduced song/track volume register values. The
+[echo fixtures](sgb-echo-fixtures.md) pin settled routing, two delays, feedback
+and filter-0 setup with explicit rests; full curves, echo PCM and immediate
+setup timing remain open.
 
 | Explicit candidate root | Patterns / track references | Channels observed | Scan boundary |
 | --- | --- | --- | --- |
