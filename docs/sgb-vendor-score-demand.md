@@ -86,7 +86,10 @@ also validates codes 2 and 3, including reordered and repeated requests, against
 both private original program images. Other selection and rendering contracts
 remain open. The [controlled note fixture](sgb-pitch-instrument-fixtures.md)
 now pins three notes and instruments 2/10 on channel 2 against both originals;
-it does not supply an instrument table, samples or a vendor renderer.
+it does not supply an instrument table, samples or a vendor renderer. The
+[tempo/articulation fixture](sgb-tempo-articulation-fixtures.md) additionally
+measures duration-16 onset and key-off timing for two tempos and articulations,
+with bounded two-model reference comparisons.
 
 | Explicit candidate root | Patterns / track references | Channels observed | Scan boundary |
 | --- | --- | --- | --- |

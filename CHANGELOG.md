@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Add owned three-note tempo/articulation fixtures and a bounded private
+  original-firmware timing matrix. Validate double-tempo onset spacing and
+  shorter articulation gates across SGB1/SGB2 using sanitized DSP write timing;
+  retain explicit tolerances and unsupported vendor playback status.
+
 - Add independently authored single-note cartridges and a bounded private
   original-firmware DSP reference gate. Pin channel-2 pitch/source/envelope
   setup for three notes and instruments 2/10 across SGB1/SGB2; validate transport,

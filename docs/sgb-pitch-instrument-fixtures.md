@@ -81,3 +81,6 @@ scheduling remain open. No physical-device or independent-emulator comparison
 was performed. The prototype renderer is unchanged and still rejects vendor
 banks; this evidence does not enable commercial-title playback. An independently
 owned sample strategy remains necessary for a distributable replacement.
+
+The subsequent [tempo/articulation fixture](sgb-tempo-articulation-fixtures.md)
+measures onset and key-off intervals with isolated control changes on channel 2.
