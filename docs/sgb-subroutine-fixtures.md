@@ -98,3 +98,7 @@ frontiers; this gate does not make arbitrary private bodies safe to expand or
 qualify larger-title playback. No physical-device or independent-emulator
 comparison was performed. The prototype renderer is unchanged and still rejects
 vendor banks; commercial-title playback remains unsupported.
+
+The subsequent [symbolic scheduler](sgb-vendor-score-scheduler.md) executes a
+bounded call/phrase profile and aligns its own-fixture timelines with these
+original-program observations; it is not connected to native rendering.

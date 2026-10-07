@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Add an independent bounded symbolic vendor scheduler for channel 2 or channels
+  2/3, first-ending-track phrase transitions, clipped long notes and finite
+  nonnested EF calls. Align owned fixture timelines with twelve original-program
+  reference cases; reject ambiguous boundaries and unsupported grammar. Native
+  SPC rendering and vendor playback remain separate, unimplemented work.
+
 - Add owned finite subroutine fixtures and a bounded private original-firmware
   gate. Validate EF counts 1..3 as total body executions, return to a distinct
   caller continuation and duration-16 onset spacing across SGB1/SGB2, with

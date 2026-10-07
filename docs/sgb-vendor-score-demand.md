@@ -99,7 +99,10 @@ now support early phrase advancement when either of channels 2/3 ends, with
 swapped durations and an equal-long control; broader channel behavior remains
 unqualified. The [finite subroutine fixtures](sgb-subroutine-fixtures.md) also
 validate EF counts 1..3, a two-note body and return to the caller on channel 2.
-The inventory intentionally retains its conservative EF scan boundaries.
+The inventory intentionally retains its conservative EF scan boundaries. The
+[bounded symbolic scheduler](sgb-vendor-score-scheduler.md) now executes the
+measured phrase/call shape and aligns own-fixture timelines with twelve original
+reference runs; it does not enable uploaded SPC rendering.
 
 | Explicit candidate root | Patterns / track references | Channels observed | Scan boundary |
 | --- | --- | --- | --- |
@@ -119,8 +122,9 @@ the prototype's four direct SRCN choices. The scan intentionally cannot describe
 the unvisited subroutine bodies or continuation demand.
 
 The controlled gates now constrain selection and several short-entry renderer
-contracts. The next implementation target is bounded vendor scheduling with the
-measured phrase transition, an independently owned instrument/sample strategy
+contracts. A bounded symbolic execution oracle now covers the
+measured phrase transition and finite calls. The next implementation target is
+uploaded SPC scheduling with an independently owned instrument/sample strategy
 and lifecycle validation. The measured pitch/volume points do not qualify full
 curves. Larger-score channel allocation and subroutine execution remain separate
 work. Until these contracts and private
