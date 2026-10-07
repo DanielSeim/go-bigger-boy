@@ -73,3 +73,6 @@ Reports retain `qualification: false` and `playback: false` and export only
 owned event metadata, sanitized reference timing and input hashes. The next
 step is native instrument setup and DSP rendering for an owned single-track
 fixture; broader grammar and firmware integration require further validation.
+
+An isolated [native DSP renderer](sgb-native-score-render.md) now exercises
+three pitches with an owned waveform, separately from production ownership.

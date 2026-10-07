@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Add an isolated native SPC DSP renderer for three measured pitches and an
+  owned looping BRR waveform. Check instrument setup, deterministic centered
+  PCM, reset/save-load continuation, rests/release and fail-closed validation;
+  compare key-on spacing against six private SGB1/SGB2 reference cases. Keep
+  original gates, instrument mapping and bundled playback unqualified.
+
 - Connect an isolated bounded native SPC note/rest parser to the fractional
   score clock. Validate full streams before timing starts, align native events
   with the symbolic oracle and check reset/save-load timelines and six private
