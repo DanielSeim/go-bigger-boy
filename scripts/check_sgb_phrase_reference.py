@@ -73,7 +73,7 @@ def check_contract(result, case):
 
 
 def run(trace, firmware_directory, model, case, *, fixture_builder=build,
-        observer=observe, contract=check_contract):
+        observer=observe, contract=check_contract, pattern_durations=CASES):
     program = firmware_directory / ('sgb1.program.rom' if model == 'sgb' else 'sgb2.program.rom')
     ipl = firmware_directory / 'spc700.rom'
     with tempfile.TemporaryDirectory(prefix='gbb-phrase-reference-') as directory:
@@ -100,7 +100,8 @@ def run(trace, firmware_directory, model, case, *, fixture_builder=build,
         with output.open() as source:
             result = observer(source)
         contract(result, case)
-        result['first_pattern_durations'] = list(CASES[case])
+        if pattern_durations is not None:
+            result['first_pattern_durations'] = list(pattern_durations[case])
         return {'model': model, 'case': case, **result,
                 'fixture_sha256': hashlib.sha256(image).hexdigest(),
                 'gb_boot_sha256': hashlib.sha256(boot_image).hexdigest(),

@@ -8,7 +8,11 @@
 
 namespace {
 using Engine = gameboy::SnesApuAudioEngine;
-#ifdef GBB_SCORE_MULTI_PROBE
+#ifdef GBB_SCORE_CALLS_PROBE
+constexpr auto schema = "gbb-spc-score-calls-v1";
+constexpr auto final_field = "channel";
+constexpr unsigned log_bound = 160;
+#elif defined(GBB_SCORE_MULTI_PROBE)
 constexpr auto schema = "gbb-spc-score-multi-v1";
 constexpr auto final_field = "channel";
 #elif defined(GBB_SCORE_PHRASE_PROBE)
@@ -20,6 +24,9 @@ constexpr auto final_field = "channel";
 #else
 constexpr auto schema = "gbb-spc-score-track-v1";
 constexpr auto final_field = "articulation";
+#endif
+#ifndef GBB_SCORE_CALLS_PROBE
+constexpr unsigned log_bound = 80;
 #endif
 void require(bool ok, const char* message) {
     if (!ok) throw std::runtime_error(message);
@@ -74,7 +81,7 @@ Result exercise(Engine& engine, bool restore) {
         clock(engine);
         const auto written = engine.bus().dsp_read_ram(0x28);
         if (written != offset && written % 5 == 0) {
-            require(written == offset + 5 && written <= 80, "native event log overflow");
+            require(written == offset + 5 && written <= log_bound, "native event log overflow");
             for (unsigned i = offset; i < written; ++i)
                 result.events.push_back(engine.bus().dsp_read_ram(0x3000 + i));
             result.halves.push_back(engine.cpu().half_cycles());

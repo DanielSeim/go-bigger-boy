@@ -89,5 +89,6 @@ and playback false. Original PCM, gate/release timing, broader control grammar,
 whole-system boot and production integration remain outside this milestone.
 
 The separate [independent owned renderer](sgb-native-score-poly.md) now re-keys
-due voices while preserving sounding peers. Independently gated polyphonic
-notes using measured profiles remain next.
+due voices while preserving sounding peers. Its [measured gates](sgb-native-score-polygate.md)
+support articulations 63/127. The separate muted [native finite-call layer](sgb-native-score-calls.md)
+expands bounded repeats and caller returns; connecting calls to audio remains next.

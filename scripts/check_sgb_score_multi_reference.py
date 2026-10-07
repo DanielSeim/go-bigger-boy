@@ -29,12 +29,12 @@ def native(probe, data, tempo=96):
     return report
 
 
-def validate(report):
-    if (not isinstance(report, dict) or report.get('schema') != 'gbb-spc-score-multi-v1'
+def validate(report, *, schema='gbb-spc-score-multi-v1', max_events=16, max_ticks=1016):
+    if (not isinstance(report, dict) or report.get('schema') != schema
             or report.get('qualification') is not False or report.get('playback') is not False
             or report.get('reset_equal') is not True or report.get('restore_equal') is not True
             or type(report.get('status')) is not int or report['status'] not in (2, 0xE1, 0xE2)
-            or type(report.get('end_tick')) is not int or not 0 <= report['end_tick'] <= 1016
+            or type(report.get('end_tick')) is not int or not 0 <= report['end_tick'] <= max_ticks
             or not isinstance(report.get('events'), list)):
         raise ValueError('invalid multi-event report')
     events = report['events']
@@ -42,7 +42,7 @@ def validate(report):
         if events or report['end_tick']:
             raise ValueError('rejected bank emitted events')
         return
-    if not 4 <= len(events) <= 16:
+    if not 4 <= len(events) <= max_events:
         raise ValueError('multi-event count outside bound')
     last_tick, last_half = -1, -1
     for event in events:
@@ -59,8 +59,8 @@ def validate(report):
         raise ValueError('missing initial track pair')
 
 
-def align(report, data):
-    validate(report)
+def align(report, data, *, schema='gbb-spc-score-multi-v1', max_events=16, max_ticks=1016):
+    validate(report, schema=schema, max_events=max_events, max_ticks=max_ticks)
     expected = schedule(data, int.from_bytes(data[:2], 'little'))
     timed = [event for event in expected['events'] if event['kind'] in ('note', 'rest')]
     if report['status'] != 2 or report['end_tick'] != expected['ticks'] or len(timed) != len(report['events']):

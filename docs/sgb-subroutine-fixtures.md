@@ -101,4 +101,6 @@ vendor banks; commercial-title playback remains unsupported.
 
 The subsequent [symbolic scheduler](sgb-vendor-score-scheduler.md) executes a
 bounded call/phrase profile and aligns its own-fixture timelines with these
-original-program observations; it is not connected to native rendering.
+original-program observations. The separate [native finite-call scheduler](sgb-native-score-calls.md)
+now validates counts 1..3 on two channels and two patterns with new owned
+fixtures; it remains muted and outside native audio integration.
