@@ -83,4 +83,4 @@ multiple tracks, calls, phrase transitions and production integration still
 need separate implementation and validation.
 
 The isolated [calibrated gate experiment](sgb-native-score-gate.md) now covers
-three duration-16 tempo/articulation profiles, preserving this renderer build.
+ten measured tempo/articulation/duration profiles, preserving this renderer build.

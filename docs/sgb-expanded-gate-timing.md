@@ -1,8 +1,8 @@
 # Controlled duration and tempo gate observations
 
-The [native gate experiment](sgb-native-score-gate.md) currently supports three
-explicit duration-16 profiles. The next owned fixture matrix measures additional
-durations and tempos before changing native support. It uses independently
+The [native gate experiment](sgb-native-score-gate.md) supports ten
+explicit measured profiles. This owned fixture matrix measures additional
+durations and tempos to constrain native support. It uses independently
 authored three-note score banks with notes 24/25/36 and fixed channel-2
 instrument, pan and volume setup. Only tempo, duration and articulation vary.
 No program code, samples or private PCM are copied into these fixtures.
@@ -79,8 +79,8 @@ than the final audible release envelope. This matrix does not compare PCM or
 qualify every value between the tested parameters.
 
 Reports export sanitized interval metadata and input hashes and retain
-`qualification: false` and `playback: false`. Native gate constants, supported
-profiles, clock validation, bundled firmware, production ownership and external
-image requirements are unchanged. The next step is to use this evidence to
-validate additional explicitly bounded native gate profiles, with their own
-reset/save-load and owned PCM checks.
+`qualification: false` and `playback: false`. This fixture builder preserves
+bundled firmware, production ownership and external image requirements. The
+[native gate renderer](sgb-native-score-gate.md) now uses this evidence for
+additional explicit profiles, with separate reset/save-load and owned PCM
+checks.

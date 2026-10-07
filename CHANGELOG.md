@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Expand the isolated native gate renderer to ten measured profiles, including
+  durations 8/24, tempo 128 and short articulation at tempo 192. Use bounded
+  exact profile lookup, validate mixed/inherited state and silent rejection,
+  and compare all profiles against twenty private SGB1/SGB2 timing runs with
+  reset/save-load and owned PCM checks. Keep bundled firmware unchanged.
+
 - Add owned duration/tempo gate timing fixtures for durations 8/24, tempo 128
   and short articulation at tempo 192, retaining a byte-identical baseline
   control. Validate parameter isolation, symbolic timelines and sixteen private

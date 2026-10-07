@@ -24,7 +24,7 @@ class GateTests(unittest.TestCase):
     def test_reproducible(self):
         self.assertEqual(build(), build())
         self.assertEqual(hashlib.sha256(build()).hexdigest(),
-                         'd6d5e71c079c3d65db9c579a3735a802303712736f59626d13504a82e2b33fde')
+                         '31b3ac1435eaec562274803d7106ebd2bb0408478e4a469c81dadb0c90bdf5f9')
 
     def test_gates_and_onset_spacing(self):
         gates, intervals = {}, {}
@@ -58,9 +58,9 @@ class GateTests(unittest.TestCase):
             self.assertEqual(report['pcm']['nonzero_frames'], 0)
 
     def test_profile_rejects_before_audio(self):
-        tracks = [bytes((duration,127,0x98,0)) for duration in (1,2,8,15,17,127)]
+        tracks = [bytes((duration,127,0x98,0)) for duration in (1,2,7,15,17,25,127)]
         tracks += [bytes((16,art,0x98,0)) for art in (0,62,64,126)]
-        tracks += [bytes((16,127,0x98,8,63,0x99,0)), b'\0', bytes(129),
+        tracks += [bytes((16,127,0x98,9,63,0x99,0)), b'\0', bytes(129),
                    bytes((16,127,0x98,0x80,0)), bytes((16,127,0x98)),
                    bytes((16,127,*([0x98]*17),0))]
         for track in tracks:
@@ -70,7 +70,7 @@ class GateTests(unittest.TestCase):
                 self.assertEqual(report['keyons'], [])
                 self.assertEqual(report['keyoff_half_cycles'], [])
                 self.assertEqual(report['pcm']['nonzero_frames'], 0)
-        self.assertEqual(native(PROBE, fixture('short-gate'), 192)['status'], 0xE2)
+        align(native(PROBE, fixture('short-gate'), 192), fixture('short-gate'))
         for tempo in (0,95,193,255):
             self.assertEqual(native(PROBE, fixture('baseline'), tempo)['status'], 0xE1)
 

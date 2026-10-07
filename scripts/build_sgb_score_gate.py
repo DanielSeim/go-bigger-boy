@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Build isolated native calibrated duration-16 articulation gates."""
+"""Build isolated native calibrated articulation profiles."""
 import argparse
 import hashlib
 from pathlib import Path
@@ -11,6 +11,8 @@ from build_sgb_score_render import ROOT, source
 def build():
     assembly = source()
     hooks = {
+        '    cmp a, #$c0\n    beq clock_start\n':
+            '    cmp a, #$80\n    beq clock_start\n    cmp a, #$c0\n    beq clock_start\n',
         '    call render_validate\n': '    call gate_validate\n',
         'clock_pulse:\n': 'clock_pulse:\n    call gate_pulse\n',
         'render_setup:\n': 'render_setup:\n    mov $2d, #$00\n',

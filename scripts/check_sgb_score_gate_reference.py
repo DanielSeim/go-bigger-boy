@@ -12,7 +12,13 @@ from build_sgb_score_gate import build
 from check_sgb_score_render_reference import validate as validate_render, track_report, align_track
 from check_sgb_timing_reference import CASES, check_matrix, run
 
-PULSES = {(96, 127): 36, (192, 127): 18, (96, 63): 23}
+PULSES = {
+    (96, 127, 8): 15, (96, 63, 8): 10,
+    (96, 127, 16): 36, (96, 63, 16): 23,
+    (96, 127, 24): 58, (96, 63, 24): 37,
+    (128, 127, 16): 27, (128, 63, 16): 17,
+    (192, 127, 16): 18, (192, 63, 16): 11,
+}
 TOLERANCE = 2048
 
 
@@ -22,17 +28,17 @@ def validate(report):
     normalized = {**report, 'schema': 'gbb-spc-score-render-v1'}
     validate_render(normalized, articulations=(127, 63))
     tempo = report.get('tempo')
-    if type(tempo) is not int or not 0 <= tempo <= 255 or (report['status'] == 2 and tempo not in (96, 192)):
+    if type(tempo) is not int or not 0 <= tempo <= 255 or (report['status'] == 2 and tempo not in (96, 128, 192)):
         raise ValueError('invalid native gate tempo')
     keyoffs = report.get('keyoff_half_cycles')
     if not isinstance(keyoffs, list) or len(keyoffs) != len(report['keyons']):
         raise ValueError('native gate key-off count differs')
     notes = [event for event in report['events'] if event['opcode'] != 0xC9]
     for note, keyon, off in zip(notes, report['keyons'], keyoffs):
-        profile = (tempo, note['articulation'])
+        profile = (tempo, note['articulation'], note['duration'])
         following = next((event['half_cycle'] for event in report['events'] if event['tick'] > note['tick']),
                          30_000_000)
-        if (type(off) is not int or note['duration'] != 16 or profile not in PULSES or
+        if (type(off) is not int or profile not in PULSES or
                 not keyon['half_cycle'] < off < following):
             raise ValueError('invalid native gate profile or ordering')
         gate = (off-keyon['half_cycle'])/2
@@ -104,11 +110,11 @@ def main():
     except (OSError, ValueError, TypeError, KeyError, subprocess.TimeoutExpired) as error:
         parser.exit(1, f'native gate check failed: {error}\n')
     print(json.dumps({'schema': 'gbb-score-gate-reference-v1', 'qualification': False, 'playback': False,
-                      'evidence': 'calibrated_duration16_native_DSP_onsets_and_keyoffs',
+                      'evidence': 'calibrated_native_DSP_onsets_and_keyoffs',
                       'native_program_sha256': hashlib.sha256(build()).hexdigest(),
                       'tolerance_spc_cycles': TOLERANCE,
-                      'profiles': [{'tempo': tempo, 'articulation': art, 'timer_pulses': pulses}
-                                   for (tempo, art), pulses in PULSES.items()],
+                      'profiles': [{'tempo': tempo, 'articulation': art, 'duration': duration, 'timer_pulses': pulses}
+                                   for (tempo, art, duration), pulses in PULSES.items()],
                       'owned_pcm': {case: report['pcm'] for case, report in candidates.items()},
                       'comparisons': comparisons}, indent=2))
 
