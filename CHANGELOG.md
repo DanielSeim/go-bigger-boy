@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Add an isolated muted native two-track scheduler with independent countdowns
+  and first-ending-track pattern transitions. Check owned two-pattern inputs,
+  rests, bounds, rejection, reset/save-load and symbolic alignment; six fresh
+  private SGB1/SGB2 runs agree within 922 SPC cycles. Keep N-SPC table parsing,
+  two-voice rendering and bundled firmware outside this diagnostic milestone.
+
 - Add native E1 pan center/endpoints for instrument 2 at full volume, with
   inherited state and silent rejection of unsupported combinations. Match
   twenty-four note setup snapshots from eight private SGB1/SGB2 runs and check

@@ -8,6 +8,13 @@
 
 namespace {
 using Engine = gameboy::SnesApuAudioEngine;
+#ifdef GBB_SCORE_PAIR_PROBE
+constexpr auto schema = "gbb-spc-score-pair-v1";
+constexpr auto final_field = "channel";
+#else
+constexpr auto schema = "gbb-spc-score-track-v1";
+constexpr auto final_field = "articulation";
+#endif
 void require(bool ok, const char* message) {
     if (!ok) throw std::runtime_error(message);
 }
@@ -66,8 +73,14 @@ Result exercise(Engine& engine, bool restore) {
                 result.events.push_back(engine.bus().dsp_read_ram(0x3000 + i));
             result.halves.push_back(engine.cpu().half_cycles());
             offset = written;
+#ifdef GBB_SCORE_PAIR_PROBE
+            if (restore && (written == 10 || written == 20)) checkpoint(engine);
+#endif
         }
         if (restore && (half == 73 || half == 4097 || half == 10037 || half == 17005)) checkpoint(engine);
+#ifdef GBB_SCORE_PAIR_PROBE
+        if (restore && (half == 190001 || half == 270011)) checkpoint(engine);
+#endif
         const auto status = engine.bus().dsp_read_ram(0x14);
         if (status == 2 || status == 0xe1 || status == 0xe2) {
             result.status = status;
@@ -99,7 +112,7 @@ int main(int argc, char** argv) {
         require(exercise(engine, true) == expected, "restore altered track timeline");
         setup(engine, program, track, tempo);
         require(exercise(engine, false) == expected, "reset altered track timeline");
-        std::cout << "{\"schema\":\"gbb-spc-score-track-v1\",\"qualification\":false,\"playback\":false,"
+        std::cout << "{\"schema\":\"" << schema << "\",\"qualification\":false,\"playback\":false,"
                      "\"reset_equal\":true,\"restore_equal\":true,\"status\":" << expected.status
                   << ",\"end_tick\":" << expected.end_tick << ",\"events\":[";
         for (unsigned i = 0; i < expected.halves.size(); ++i) {
@@ -108,7 +121,7 @@ int main(int argc, char** argv) {
             std::cout << "{\"tick\":" << (expected.events[base] | expected.events[base + 1] << 8)
                       << ",\"opcode\":" << unsigned(expected.events[base + 2])
                       << ",\"duration\":" << unsigned(expected.events[base + 3])
-                      << ",\"articulation\":" << unsigned(expected.events[base + 4])
+                      << ",\"" << final_field << "\":" << unsigned(expected.events[base + 4])
                       << ",\"half_cycle\":" << expected.halves[i] << '}';
         }
         std::cout << "]}\n";

@@ -109,5 +109,7 @@ Native reports use `gbb-spc-score-controls-v2` and reference reports use
 `gbb-score-controls-reference-v2`. Per-channel frame counts, peaks and a stereo
 identity flag supplement the interleaved owned PCM fingerprint.
 
-The next step is controlled multi-track state and phrase integration. Broader instruments,
-volume curves and production vendor playback still need separate evidence.
+The separate [native two-track scheduler](sgb-native-score-pair.md) now checks
+the first-ending-track pattern rule while muted. Native phrase-table parsing
+and two-voice renderer integration remain next. Broader instruments, volume
+curves and production vendor playback still need separate evidence.
