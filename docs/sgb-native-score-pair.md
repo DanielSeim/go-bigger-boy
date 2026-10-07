@@ -64,7 +64,8 @@ The six checked runs agreed within 922 SPC cycles; unequal first patterns
 advanced at tick 16 and the equal long pattern at tick 32, all completing after
 the final 16-tick pattern.
 
-Next is bounded native phrase-pointer/track-stream parsing, then integration
-with the owned two-voice renderer and separate gate/release validation. General
+The separate [native phrase-bank parser](sgb-native-score-phrase.md) now follows
+bounded phrase/table/track pointers before running these countdowns. Next is
+integration with the owned two-voice renderer and separate gate/release validation. General
 N-SPC execution, live controls, calls, upload/boot and production audio remain
 outside this experiment.

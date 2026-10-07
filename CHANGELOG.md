@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Add isolated native parsing of bounded N-SPC song roots, two pattern tables
+  and channel-2/3 streams before muted scheduling. Validate pointers, setup
+  values and all four tracks before emitting events; cover relocated/shared
+  pointers, truncation, rests and reset/save-load. Six fresh private SGB1/SGB2
+  runs agree within 880 SPC cycles. Leave bundled firmware and DSP playback unchanged.
+
 - Add an isolated muted native two-track scheduler with independent countdowns
   and first-ending-track pattern transitions. Check owned two-pattern inputs,
   rests, bounds, rejection, reset/save-load and symbolic alignment; six fresh

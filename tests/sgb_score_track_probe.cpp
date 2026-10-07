@@ -8,7 +8,10 @@
 
 namespace {
 using Engine = gameboy::SnesApuAudioEngine;
-#ifdef GBB_SCORE_PAIR_PROBE
+#ifdef GBB_SCORE_PHRASE_PROBE
+constexpr auto schema = "gbb-spc-score-phrase-v1";
+constexpr auto final_field = "channel";
+#elif defined(GBB_SCORE_PAIR_PROBE)
 constexpr auto schema = "gbb-spc-score-pair-v1";
 constexpr auto final_field = "channel";
 #else
@@ -78,6 +81,9 @@ Result exercise(Engine& engine, bool restore) {
 #endif
         }
         if (restore && (half == 73 || half == 4097 || half == 10037 || half == 17005)) checkpoint(engine);
+#ifdef GBB_SCORE_PHRASE_PROBE
+        if (restore && (half == 1001 || half == 3001 || half == 5003)) checkpoint(engine);
+#endif
 #ifdef GBB_SCORE_PAIR_PROBE
         if (restore && (half == 190001 || half == 270011)) checkpoint(engine);
 #endif
