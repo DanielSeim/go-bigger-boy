@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- Add isolated muted native multi-event tracks with independent cursors,
+  duration/articulation inheritance and whole-timeline prevalidation. Bound
+  execution to four events per track and reject ambiguous end/new-event ordering
+  before live events. Seven ROM-free cases and six fresh private SGB1/SGB2 runs
+  check new three-onset fixtures within 3308 SPC cycles; leave rendering and
+  bundled firmware unchanged.
+
 - Add isolated owned two-voice audio to the bounded native phrase parser, with
   combined key-ons and release of both voices at the first track end. Check
   clipped voices settling to silence while a peer plays, rests, rejection and

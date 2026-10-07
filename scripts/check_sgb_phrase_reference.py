@@ -17,7 +17,7 @@ MAX_ROWS = 32768
 WATCHED = (0x22, 0x23, 0x24, 0x32, 0x33, 0x34, 0x3D)
 
 
-def observe(source):
+def observe(source, expected_pitches=((1068, 1132), (2140, 2140))):
     reader = csv.DictReader(source)
     if reader.fieldnames != ['kind', 'master_clock', 'spc_cycle', 'pcm_sample', 'address', 'value']:
         raise ValueError('incompatible reference trace header')
@@ -56,11 +56,14 @@ def observe(source):
             voices.append({'voice': voice, 'srcn': 2, 'pitch': pitch})
         keyons.append({'mask': value, 'voices': voices})
         cycles.append(cycle)
-    if len(keyons) != 2 or cycles[1] <= cycles[0]:
-        raise ValueError('expected two ordered two-channel pattern key-ons')
-    if [[voice['pitch'] for voice in event['voices']] for event in keyons] != [[1068,1132],[2140,2140]]:
+    if len(keyons) != len(expected_pitches) or any(b <= a for a, b in zip(cycles, cycles[1:])):
+        raise ValueError('expected ordered two-channel fixture key-ons')
+    if [[voice['pitch'] for voice in event['voices']] for event in keyons] != [list(pair) for pair in expected_pitches]:
         raise ValueError('reference pattern pitches differ from the fixture contract')
-    return {'keyons': keyons, 'pattern_interval_spc_cycles': cycles[1]-cycles[0]}
+    result = {'keyons': keyons, 'pattern_interval_spc_cycles': cycles[-1]-cycles[0]}
+    if len(expected_pitches) > 2:
+        result['onset_intervals_spc_cycles'] = [b-a for a, b in zip(cycles, cycles[1:])]
+    return result
 
 
 def check_contract(result, case):
@@ -69,13 +72,14 @@ def check_contract(result, case):
         raise ValueError('reference phrase timing differs from the observed contract')
 
 
-def run(trace, firmware_directory, model, case):
+def run(trace, firmware_directory, model, case, *, fixture_builder=build,
+        observer=observe, contract=check_contract):
     program = firmware_directory / ('sgb1.program.rom' if model == 'sgb' else 'sgb2.program.rom')
     ipl = firmware_directory / 'spc700.rom'
     with tempfile.TemporaryDirectory(prefix='gbb-phrase-reference-') as directory:
         base = Path(directory)
         game, boot, inputs, output = [base / name for name in ('phrase.gb', 'boot.rom', 'none.script', 'dsp.csv')]
-        image = build(case)
+        image = fixture_builder(case)
         game.write_bytes(image)
         header = (ROOT / f'firmware/gameboy/{model}_boot_image.hpp').read_text()
         boot_image = bytes(int(value, 16) for value in re.findall(r'0x([0-9A-F]{2})', header))
@@ -94,8 +98,8 @@ def run(trace, firmware_directory, model, case):
         if output.stat().st_size > 16 * 1024 * 1024:
             raise ValueError('reference DSP trace exceeds the byte bound')
         with output.open() as source:
-            result = observe(source)
-        check_contract(result, case)
+            result = observer(source)
+        contract(result, case)
         result['first_pattern_durations'] = list(CASES[case])
         return {'model': model, 'case': case, **result,
                 'fixture_sha256': hashlib.sha256(image).hexdigest(),

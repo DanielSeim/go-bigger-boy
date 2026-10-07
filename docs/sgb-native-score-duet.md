@@ -91,6 +91,7 @@ check retained SHA-256
 
 Native and comparison schemas are `gbb-spc-score-duet-v1` and
 `gbb-score-duet-reference-v1`. All reports retain `qualification: false` and
-`playback: false`. Next is bounded multi-event track execution, followed by
-separate calibrated polyphonic gate/release validation. General phrase lists,
+`playback: false`. The separate [muted multi-event scheduler](sgb-native-score-multi.md)
+now validates bounded independent track cursors; integrating them with owned
+DSP rendering and calibrated polyphonic gate/release validation remains next. General phrase lists,
 controls, upload/boot and production integration still need their own evidence.
