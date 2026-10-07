@@ -20,7 +20,7 @@ def track_report(report):
     return {**report, 'schema': 'gbb-spc-score-track-v1'}
 
 
-def validate(report, articulations=(127,)):
+def validate(report, articulations=(127,), pitch_lookup=None):
     if not isinstance(report, dict) or report.get('schema') != 'gbb-spc-score-render-v1':
         raise ValueError('invalid native renderer schema')
     validate_track(track_report(report))
@@ -44,7 +44,7 @@ def validate(report, articulations=(127,)):
         following = next((event['half_cycle'] for event in report['events'] if event['tick'] > note['tick']),
                          30_000_000)
         if (keyon['tick'] != note['tick'] or keyon['opcode'] != note['opcode'] or
-                keyon['pitch'] != PITCHES.get(note['opcode']) or
+                keyon['pitch'] != (PITCHES.get(note['opcode']) if pitch_lookup is None else pitch_lookup(keyon)) or
                 not note['half_cycle'] < keyon['half_cycle'] < following or
                 not 0 <= keyon['quiet_tail_frames'] <= pcm['frames']):
             raise ValueError('native key-on pitch or timing differs from scheduled note')

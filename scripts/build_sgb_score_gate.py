@@ -5,11 +5,11 @@ import argparse
 import hashlib
 from pathlib import Path
 from build_sgb_prototype import assemble
-from build_sgb_score_render import ROOT, source
+from build_sgb_score_render import ROOT, source as render_source
 
 
-def build():
-    assembly = source()
+def source():
+    assembly = render_source()
     hooks = {
         '    cmp a, #$c0\n    beq clock_start\n':
             '    cmp a, #$80\n    beq clock_start\n    cmp a, #$c0\n    beq clock_start\n',
@@ -25,7 +25,11 @@ def build():
         if assembly.count(old) != 1:
             raise ValueError('experimental articulation hook changed')
         assembly = assembly.replace(old, new)
-    image = bytes(assemble(assembly, 'spc', 0x0800))
+    return assembly
+
+
+def build():
+    image = bytes(assemble(source(), 'spc', 0x0800))
     if len(image) > 4096:
         raise ValueError('experimental gate image exceeds code/source bound')
     return image

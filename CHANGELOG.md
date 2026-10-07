@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Add isolated native E0/E5/ED instrument and volume controls for measured
+  values, with full validation, inherited state and owned BRR audio. Match
+  eighteen instrument/volume setup snapshots from six private SGB1/SGB2 runs;
+  check reset/save-load, reduced-volume PCM and silent rejection. Keep broader
+  controls, original timbre and bundled playback unqualified.
+
 - Expand the isolated native gate renderer to ten measured profiles, including
   durations 8/24, tempo 128 and short articulation at tempo 192. Use bounded
   exact profile lookup, validate mixed/inherited state and silent rejection,

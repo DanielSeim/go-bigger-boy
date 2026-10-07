@@ -97,3 +97,6 @@ statistics. Register timing agreement does not imply original PCM, envelope
 shape, startup phase, untested parameter combinations, whole SGB boot, or
 complete vendor playback. Instrument/control mapping and multi-track
 integration remain separate work.
+
+An isolated [instrument/volume control build](sgb-native-score-controls.md) now
+exercises measured register setup using owned audio, preserving this gate image.
