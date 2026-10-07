@@ -2,14 +2,19 @@
 #include "gameboy/snes_apu_audio_engine.hpp"
 
 #include <array>
+#include <algorithm>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <vector>
+#include <tuple>
 
 namespace {
 using Engine = gameboy::SnesApuAudioEngine;
-#ifdef GBB_SCORE_MIX_PROBE
+#ifdef GBB_SCORE_ENVELOPE_PROBE
+constexpr auto schema = "gbb-spc-score-envelope-v1";
+constexpr unsigned log_bound = 160, second_pattern_offset = 64;
+#elif defined(GBB_SCORE_MIX_PROBE)
 constexpr auto schema = "gbb-spc-score-mix-v1";
 constexpr unsigned log_bound = 160, second_pattern_offset = 64;
 #elif defined(GBB_SCORE_CHROMATIC_PROBE)
@@ -110,8 +115,19 @@ struct Edge {
     std::array<unsigned,2> pending;
     std::array<unsigned, 2> pitches;
     std::array<std::array<unsigned,2>,2> volumes;
+    std::array<std::array<unsigned,4>,2> instrument;
     bool operator==(const Edge& other) const {
-        return half == other.half && tick == other.tick && mask == other.mask && affected == other.affected && held == other.held && cause == other.cause && pending == other.pending && pitches == other.pitches && volumes == other.volumes;
+        return half == other.half && tick == other.tick && mask == other.mask && affected == other.affected && held == other.held && cause == other.cause && pending == other.pending && pitches == other.pitches && volumes == other.volumes && instrument == other.instrument;
+    }
+};
+struct Envelope {
+    unsigned voice;
+    std::uint64_t on, off = 0;
+    unsigned peak = 0, decay_min = 127, off_env = 0, release_steps = 0;
+    bool attack_zero = false, release_zero = false;
+    bool operator==(const Envelope& other) const {
+        return std::tie(voice,on,off,peak,decay_min,off_env,release_steps,attack_zero,release_zero) ==
+               std::tie(other.voice,other.on,other.off,other.peak,other.decay_min,other.off_env,other.release_steps,other.attack_zero,other.release_zero);
     }
 };
 struct Result {
@@ -122,12 +138,13 @@ struct Result {
     std::vector<std::array<unsigned,5>> controls;
     std::vector<std::uint64_t> halves;
     std::vector<Edge> keyons, keyoffs;
+    std::vector<Envelope> envelopes;
     Audio audio, steady;
     std::array<unsigned,2> peer_checks{}, settled_frames{}, peer_pcm{};
     std::array<unsigned,2> settled_envelopes{};
     bool operator==(const Result& other) const {
         return status == other.status && end_tick == other.end_tick && second_tick == other.second_tick && completion_half == other.completion_half &&
-            events == other.events && articulations == other.articulations && controls == other.controls && halves == other.halves && keyons == other.keyons && keyoffs == other.keyoffs &&
+            events == other.events && articulations == other.articulations && controls == other.controls && halves == other.halves && keyons == other.keyons && keyoffs == other.keyoffs && envelopes == other.envelopes &&
             audio == other.audio && steady == other.steady && peer_checks == other.peer_checks && settled_frames == other.settled_frames && peer_pcm == other.peer_pcm && settled_envelopes == other.settled_envelopes;
     }
 };
@@ -137,7 +154,9 @@ Edge edge(Engine& engine, unsigned mask) {
             {bus.dsp_read_ram(0x78), bus.dsp_read_ram(0x79)},
             {unsigned(bus.dsp_register(0x22) | bus.dsp_register(0x23) << 8),
              unsigned(bus.dsp_register(0x32) | bus.dsp_register(0x33) << 8)},
-            {{{bus.dsp_register(0x20),bus.dsp_register(0x21)}, {bus.dsp_register(0x30),bus.dsp_register(0x31)}}}};
+            {{{bus.dsp_register(0x20),bus.dsp_register(0x21)}, {bus.dsp_register(0x30),bus.dsp_register(0x31)}}},
+            {{{bus.dsp_register(0x24),bus.dsp_register(0x25),bus.dsp_register(0x26),bus.dsp_register(0x27)},
+              {bus.dsp_register(0x34),bus.dsp_register(0x35),bus.dsp_register(0x36),bus.dsp_register(0x37)}}}};
 }
 Result exercise(Engine& engine, bool restore) {
     Result result;
@@ -147,6 +166,37 @@ Result exercise(Engine& engine, bool restore) {
     std::array<std::uint64_t,2> expired_since{};
     std::array<std::uint64_t,2> latest_on{};
     std::array<std::array<unsigned,2>,2> latest_volumes{};
+    std::array<unsigned,2> envelope_index{}, previous_env{};
+#ifdef GBB_SCORE_ENVELOPE_PROBE
+    std::array<std::uint64_t,2> last_release_drop{};
+    const auto observe_envelopes = [&]() {
+        const auto& bus = engine.bus();
+        // Read-only ENVX observations, including while the other voice updates.
+        for (unsigned channel = 0; channel < 2; ++channel) if (latest_on[channel]) {
+            auto& envelope = result.envelopes[envelope_index[channel]];
+            const unsigned env = bus.dsp_register((channel+2)*16+8);
+            const auto age = engine.cpu().half_cycles()-envelope.on;
+            if (age <= 1024) envelope.attack_zero = envelope.attack_zero || env == 0;
+            if (envelope.attack_zero) envelope.peak = std::max(envelope.peak, env);
+            if (age > 1024) require(envelope.attack_zero && envelope.peak == 127, "instrument-2 attack failed to reach peak");
+            if (age > 1024 && !envelope.off) {
+                require(env > 0 && env <= previous_env[channel], "ADSR decay or untouched peer restarted");
+                envelope.decay_min = std::min(envelope.decay_min, env);
+            } else if (envelope.off && engine.cpu().half_cycles() > envelope.off+128) {
+                require(env <= previous_env[channel], "released ADSR envelope increased");
+                if (env < previous_env[channel]) {
+                    require(previous_env[channel]-env == 1, "ADSR release ENVX step differs");
+                    if (last_release_drop[channel]) require(engine.cpu().half_cycles()-last_release_drop[channel] == 128,
+                            "ADSR release rate differs");
+                    last_release_drop[channel] = engine.cpu().half_cycles();
+                    ++envelope.release_steps;
+                }
+                envelope.release_zero = envelope.release_zero || env == 0;
+            }
+            previous_env[channel] = env;
+        }
+    };
+#endif
     for (unsigned half = 0; half < 30'000'000; ++half) {
         const bool steady = second_start != 0 && engine.cpu().half_cycles() >= second_start + 20000;
         unsigned settled = 0;
@@ -158,7 +208,12 @@ Result exercise(Engine& engine, bool restore) {
 #ifdef GBB_SCORE_MIX_PROBE
                 const unsigned own = (channel+2)*16, peer = (3-channel)*16;
                 if (engine.cpu().half_cycles() >= latest_on[1-channel]+2000) {
-                    require(current.dsp_register(own+8) == 0 && current.dsp_register(peer+8) == 127,
+                    require(current.dsp_register(own+8) == 0 && current.dsp_register(peer+8)
+#ifdef GBB_SCORE_ENVELOPE_PROBE
+                            > 0,
+#else
+                            == 127,
+#endif
                             "expired mix envelope or active peer differs");
                     ++result.settled_envelopes[channel];
                     if (current.dsp_register(own) && !current.dsp_register(own+1) &&
@@ -188,8 +243,13 @@ Result exercise(Engine& engine, bool restore) {
                 require(bus.dsp_register(base) == (channel == 2 ? 80 : 0) &&
                     bus.dsp_register(base+1) == (channel == 3 ? 80 : 0) &&
 #endif
+#ifdef GBB_SCORE_ENVELOPE_PROBE
+                    bus.dsp_register(base+4) == 2 && bus.dsp_register(base+5) == 0x8f &&
+                    bus.dsp_register(base+6) == 0x6f && bus.dsp_register(base+7) == 0xb8,
+#else
                     bus.dsp_register(base+4) == 0 && bus.dsp_register(base+5) == 0 &&
                     bus.dsp_register(base+6) == 0 && bus.dsp_register(base+7) == 127,
+#endif
                     "polyphonic owned source/envelope/routing differs");
             }
             result.keyons.push_back(edge(engine, kon));
@@ -197,18 +257,33 @@ Result exercise(Engine& engine, bool restore) {
                 if (kon & (4U << channel)) {
                     expired_since[channel] = 0;
                     latest_on[channel] = engine.cpu().half_cycles();
+#ifdef GBB_SCORE_ENVELOPE_PROBE
+                    last_release_drop[channel] = 0;
+                    envelope_index[channel] = result.envelopes.size();
+                    result.envelopes.push_back({channel+2, latest_on[channel]});
+#endif
                     latest_volumes[channel] = {bus.dsp_register((channel+2)*16),bus.dsp_register((channel+2)*16+1)};
                 }
         }
         const unsigned asserted = (kof & ~previous_kof) & 12;
         if (asserted && !result.events.empty()) {
             result.keyoffs.push_back(edge(engine, asserted));
+#ifdef GBB_SCORE_ENVELOPE_PROBE
+            for (unsigned channel = 0; channel < 2; ++channel) if (asserted & (4U << channel)) {
+                auto& envelope = result.envelopes[envelope_index[channel]];
+                envelope.off = engine.cpu().half_cycles();
+                envelope.off_env = bus.dsp_register((channel+2)*16+8);
+            }
+#endif
             if (bus.dsp_read_ram(0x7a) == 1) {
                 for (unsigned channel = 0; channel < 2; ++channel)
                     if (asserted & (4U << channel)) expired_since[channel] = engine.cpu().half_cycles();
             }
             if (restore) checkpoint(engine);
         }
+#ifdef GBB_SCORE_ENVELOPE_PROBE
+        observe_envelopes();
+#endif
         previous_kon = kon;
         previous_kof = kof;
         const auto written = bus.dsp_read_ram(0x28);
@@ -242,7 +317,11 @@ Result exercise(Engine& engine, bool restore) {
             const unsigned peer = affected == 4 ? 1 : 0;
             if (latest_opcodes[peer] != 0xc9 && bus.dsp_read_ram(0x72+peer) > 0) {
                 require((kof & (4U << peer)) == 0, "single-track update keyed off its peer");
+#ifdef GBB_SCORE_ENVELOPE_PROBE
+                require(bus.dsp_register((peer+2)*16+8) > 0, "single-track update cut peer envelope");
+#else
                 require(bus.dsp_register((peer+2)*16+8) == 127, "single-track update restarted peer envelope");
+#endif
 #ifdef GBB_SCORE_MIX_PROBE
                 require(latest_volumes[peer] == std::array<unsigned,2>{bus.dsp_register((peer+2)*16),bus.dsp_register((peer+2)*16+1)},
                         "single-track mix update changed peer volumes");
@@ -254,7 +333,12 @@ Result exercise(Engine& engine, bool restore) {
             result.status = status;
             result.end_tick = bus.dsp_read_ram(0x10) | bus.dsp_read_ram(0x11) << 8;
             result.completion_half = engine.cpu().half_cycles();
-            for (unsigned i = 0; i < 40000; ++i) clock(engine, result.audio);
+            for (unsigned i = 0; i < 40000; ++i) {
+                clock(engine, result.audio);
+#ifdef GBB_SCORE_ENVELOPE_PROBE
+                observe_envelopes();
+#endif
+            }
             require(bus.dsp_read_ram(0x14) == status && bus.dsp_read_ram(0x28) == offset,
                     "halted polyphonic changed state");
             require(bus.dsp_register(0x6c) == (status == 2 ? 32 : 224), "polyphonic DSP flags differ");
@@ -279,6 +363,19 @@ void edges(const std::vector<Edge>& values) {
             << ",\"mask\":" << value.mask << ",\"affected_mask\":" << value.affected << ",\"held_mask\":" << value.held << ",\"cause\":" << value.cause << ",\"pending_pulses\":[" << value.pending[0] << "," << value.pending[1] << "]" << ",\"pitches\":[" << value.pitches[0] << ',' << value.pitches[1] << "]";
 #ifdef GBB_SCORE_MIX_PROBE
         std::cout << ",\"volumes\":[[" << value.volumes[0][0] << ',' << value.volumes[0][1] << "],[" << value.volumes[1][0] << ',' << value.volumes[1][1] << "]]";
+#endif
+#ifdef GBB_SCORE_ENVELOPE_PROBE
+        std::cout << ",\"instrument_setup\":[";
+        for (unsigned voice = 0; voice < 2; ++voice) {
+            if (voice) std::cout << ',';
+            std::cout << '[';
+            for (unsigned field = 0; field < 4; ++field) {
+                if (field) std::cout << ',';
+                std::cout << value.instrument[voice][field];
+            }
+            std::cout << ']';
+        }
+        std::cout << ']';
 #endif
         std::cout << '}';
     }
@@ -318,6 +415,18 @@ int main(int argc, char** argv) {
         }
         std::cout << "],\"keyons\":"; edges(expected.keyons);
         std::cout << ",\"keyoffs\":"; edges(expected.keyoffs);
+#ifdef GBB_SCORE_ENVELOPE_PROBE
+        std::cout << ",\"envelopes\":[";
+        for (unsigned i = 0; i < expected.envelopes.size(); ++i) {
+            if (i) std::cout << ',';
+            const auto& env = expected.envelopes[i];
+            std::cout << "{\"voice\":" << env.voice << ",\"on_half_cycle\":" << env.on << ",\"off_half_cycle\":" << env.off
+                << ",\"peak\":" << env.peak << ",\"decay_min\":" << env.decay_min << ",\"off_env\":" << env.off_env
+                << ",\"release_steps\":" << env.release_steps << ",\"attack_zero\":" << (env.attack_zero ? "true" : "false")
+                << ",\"release_zero\":" << (env.release_zero ? "true" : "false") << '}';
+        }
+        std::cout << ']';
+#endif
         std::cout << ",\"peer_checks\":[" << expected.peer_checks[0] << "," << expected.peer_checks[1] << "]";
 #ifdef GBB_SCORE_MIX_PROBE
         std::cout << ",\"settled_envelope_checks\":[" << expected.settled_envelopes[0] << ',' << expected.settled_envelopes[1] << ']';

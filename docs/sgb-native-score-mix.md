@@ -151,3 +151,8 @@ asynchronous updates have component evidence.
 Schemas are `gbb-spc-score-mix-v1` and `gbb-score-mix-reference-v1`, with
 qualification and playback false. Broader instruments, control transitions,
 channel/phrase grammar and production integration remain ahead.
+
+The subsequent [instrument-2 envelope integration](sgb-native-score-envelope.md)
+applies the measured source/ADSR/gain setup to both voices using the same owned
+sample, with envelope trajectory and fresh two-model checks. The mix artifact
+and its direct-gain diagnostic remain unchanged.
