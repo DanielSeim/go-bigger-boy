@@ -104,13 +104,14 @@ struct Result {
     unsigned status = 0, end_tick = 0, second_tick = 0;
     std::uint64_t completion_half = 0;
     std::vector<unsigned char> events;
+    std::vector<unsigned char> articulations;
     std::vector<std::uint64_t> halves;
     std::vector<Edge> keyons, keyoffs;
     Audio audio, steady;
     std::array<unsigned,2> peer_checks{}, settled_frames{}, peer_pcm{};
     bool operator==(const Result& other) const {
         return status == other.status && end_tick == other.end_tick && second_tick == other.second_tick && completion_half == other.completion_half &&
-            events == other.events && halves == other.halves && keyons == other.keyons && keyoffs == other.keyoffs &&
+            events == other.events && articulations == other.articulations && halves == other.halves && keyons == other.keyons && keyoffs == other.keyoffs &&
             audio == other.audio && steady == other.steady && peer_checks == other.peer_checks && settled_frames == other.settled_frames && peer_pcm == other.peer_pcm;
     }
 };
@@ -173,6 +174,7 @@ Result exercise(Engine& engine, bool restore) {
             require(written == offset+5 && written <= 80, "polyphonic event log overflow");
             for (unsigned i = offset; i < written; ++i) result.events.push_back(bus.dsp_read_ram(0x3000+i));
             result.halves.push_back(engine.cpu().half_cycles());
+            result.articulations.push_back(bus.dsp_read_ram(0x7b));
             offset = written;
             require(result.events[written-1] == 2 || result.events[written-1] == 3, "invalid event channel");
             latest_opcodes[result.events[written-1]-2] = result.events[written-3];
@@ -252,6 +254,7 @@ int main(int argc, char** argv) {
             const unsigned base = i*5;
             std::cout << "{\"tick\":" << (expected.events[base] | expected.events[base+1] << 8)
                 << ",\"opcode\":" << unsigned(expected.events[base+2]) << ",\"duration\":" << unsigned(expected.events[base+3])
+                << ",\"articulation\":" << unsigned(expected.articulations[i])
                 << ",\"channel\":" << unsigned(expected.events[base+4]) << ",\"half_cycle\":" << expected.halves[i] << '}';
         }
         std::cout << "],\"keyons\":"; edges(expected.keyons);

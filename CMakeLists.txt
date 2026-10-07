@@ -1647,6 +1647,13 @@ if(GAMEBOY_BUILD_TESTS)
                     --firmware-dir ${CMAKE_CURRENT_SOURCE_DIR}/roms)
             set_tests_properties(gameboy_sgb_score_polygate_local_reference PROPERTIES
                 LABELS "local;private-reference" TIMEOUT 1440)
+            add_test(NAME gameboy_sgb_score_polygate_short_local_reference
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_score_polygate_reference.py
+                    --probe $<TARGET_FILE:gameboy_sgb_score_polygate_probe>
+                    --trace $<TARGET_FILE:gameboy_snes_65c816_apu_trace>
+                    --firmware-dir ${CMAKE_CURRENT_SOURCE_DIR}/roms --articulation 63)
+            set_tests_properties(gameboy_sgb_score_polygate_short_local_reference PROPERTIES
+                LABELS "local;private-reference" TIMEOUT 1440)
             add_test(NAME gameboy_sgb_song_selection_local_reference
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_song_selection_reference.py
                     --trace $<TARGET_FILE:gameboy_snes_65c816_apu_trace>

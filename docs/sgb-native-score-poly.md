@@ -98,7 +98,7 @@ phrase-fixture suite passed. The bundled SHA-256 is
 
 Schemas are `gbb-spc-score-poly-v1` and `gbb-score-poly-reference-v1`; reports
 retain `qualification: false` and `playback: false`. The separate
-[measured independent gates](sgb-native-score-polygate.md) now cover five
-articulation-127 profiles with peer-preservation and clipping checks.
-Short-articulation profiles remain next. Broader controls, general phrases, boot/upload and production
+[measured independent gates](sgb-native-score-polygate.md) now cover ten
+articulation-63/127 profiles with inheritance, peer-preservation and clipping checks.
+Broader controls, general phrases, boot/upload and production
 integration remain outside this milestone.

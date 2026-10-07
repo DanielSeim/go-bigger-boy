@@ -24,23 +24,65 @@ class PolyGateTests(unittest.TestCase):
     def test_reproducible_and_source_profiles(self):
         self.assertEqual(build(), build())
         self.assertEqual(hashlib.sha256(build()).hexdigest(),
-                         '3b35adb6c845b3680922cb994814329b106e2f53ff55ae8038f4794509dd705e')
+                         '15ef967662b497ad4165414bd88441ee00143c2b1ab6a49ffaf4cb9948881f18')
         self.assertEqual(hashlib.sha256(poly_build()).hexdigest(),
                          '6202e7b38f6cee051d9cc0fa2eab64642ab99d8a19470ae7afb9e76a2e88b97c')
-        table = build()[0xF80-0x800:0xF80-0x800+15]
-        for offset in range(0, 15, 3):
-            tempo, duration, pulses = table[offset:offset+3]
-            self.assertEqual(pulses, PULSES[(tempo, 127, duration)])
+        table = build()[0xF80-0x800:0xF80-0x800+40]
+        profiles = {}
+        for offset in range(0, 40, 4):
+            tempo, articulation, duration, pulses = table[offset:offset+4]
+            profiles[tempo, articulation, duration] = pulses
+        self.assertEqual(profiles, PULSES)
 
-    def test_all_five_profiles_on_both_voices(self):
-        for tempo, duration in ((96, 8), (96, 16), (96, 24), (128, 16), (192, 16)):
-            stream = (duration, 127, 0x98, 0x99, 0)
+    def test_all_ten_profiles_on_both_voices(self):
+        for tempo, articulation, duration in PULSES:
+            stream = (duration, articulation, 0x98, 0x99, 0)
             data = authored((stream,)*4)
             report = native(PROBE, data, tempo)
             align(report, data)
             self.assertEqual(len(report['keyons']), 4)
             self.assertEqual(len(report['keyoffs']), 4)
             self.assertTrue(all(edge['cause'] == 1 and edge['mask'] == 12 for edge in report['keyoffs']))
+
+    def test_short_profiles_and_mixed_inherited_articulation(self):
+        for case in CASES:
+            data = bank(case, 63)
+            report = native(PROBE, data)
+            align(report, data)
+            self.assertEqual([event['articulation'] for event in report['events']], [63]*6)
+        short_then_long = (8, 63, 0x98, 16, 127, 0x99, 0xA4, 0)
+        long_then_short = (8, 127, 0x99, 16, 63, 0x98, 0xA4, 0)
+        data = authored((short_then_long, long_then_short, long_then_short, short_then_long), relocated=True)
+        report = native(PROBE, data)
+        align(report, data)
+        self.assertEqual([event['articulation'] for event in report['events']],
+                         [63, 127, 127, 63, 127, 63, 127, 63, 63, 127, 63, 127])
+        self.assertTrue(all(edge['cause'] == 1 for edge in report['keyoffs']))
+        self.assertGreater(min(report['settled_peer_nonzero_frames']), 64)
+
+    def test_short_asynchronous_peer_and_rests(self):
+        short_then_long = (8, 63, 0x98, 16, 0x99, 0)
+        long = (24, 127, 0xA4, 0)
+        data = authored((short_then_long, long, long, short_then_long), relocated=True)
+        report = native(PROBE, data)
+        align(report, data)
+        self.assertEqual([edge['mask'] for edge in report['keyons']], [12, 4, 12, 8])
+        self.assertGreater(min(report['peer_checks']), 100)
+        self.assertGreater(min(report['settled_peer_nonzero_frames']), 64)
+        for streams in (((127, 63, *([0xC9]*4), 0),)*4,
+                        ((8, 63, 0xC9, 0x98, 0),)*4):
+            data = authored(streams)
+            align(native(PROBE, data), data)
+
+    def test_different_voice_articulations_at_every_measured_tempo(self):
+        for tempo in (96, 128, 192):
+            short = (16, 63, 0x98, 0x99, 0)
+            long = (16, 127, 0x99, 0x98, 0)
+            data = authored((short, long, long, short))
+            report = native(PROBE, data, tempo)
+            align(report, data)
+            self.assertGreater(min(report['settled_peer_nonzero_frames']), 64)
+            self.assertTrue(all(edge['mask'] in (4, 8) for edge in report['keyoffs']))
 
     def test_expiring_voice_settles_while_peer_plays_and_clips_later(self):
         for case in CASES:
@@ -83,13 +125,21 @@ class PolyGateTests(unittest.TestCase):
     def test_unsupported_profiles_and_ambiguous_late_banks_reject(self):
         good = (16, 127, 0x98, 0)
         for bad in ((1, 127, 0x98, 0), (7, 127, 0x98, 0), (32, 127, 0x98, 0),
-                    (16, 63, 0x98, 0), (16, 127, 0x80, 0), (16, 127, *([0x98]*5), 0)):
+                    *((16, articulation, 0x98, 0) for articulation in (0, 62, 64, 126)),
+                    (16, 127, 0x80, 0), (16, 127, *([0x98]*5), 0)):
             for slot in range(4):
                 streams = [good]*4
                 streams[slot] = bad
                 self.assertEqual(native(PROBE, authored(streams))['status'], 0xE2)
         for tempo in (128, 192):
-            self.assertEqual(native(PROBE, authored(((8, 127, 0x98, 0),)*4), tempo)['status'], 0xE2)
+            for articulation in (63, 127):
+                self.assertEqual(native(PROBE, authored(((8, articulation, 0x98, 0),)*4), tempo)['status'], 0xE2)
+        for bad in ((8, 63, 0x98, 16, 64, 0x99, 0),
+                    (16, 127, 0x98, 24, 63, 0x99, 32, 0xA4, 0)):
+            for slot in range(4):
+                streams = [good]*4
+                streams[slot] = bad
+                self.assertEqual(native(PROBE, authored(streams))['status'], 0xE2)
         short, changed = (8, 127, 0x98, 0), (8, 127, 0x99, 0xA4, 0)
         for streams in ((short, changed, good, good), (good, good, changed, short)):
             self.assertEqual(native(PROBE, authored(streams))['status'], 0xE2)
@@ -113,7 +163,16 @@ class PolyGateTests(unittest.TestCase):
             changed[name][0][key] = value
             with self.assertRaises(ValueError):
                 validate(changed)
-        refs = [{'case': case, 'model': model,
+        for value in (None, True, 63.0, 62, 64):
+            changed = copy.deepcopy(report)
+            changed['events'][0]['articulation'] = value
+            with self.assertRaises(ValueError):
+                validate(changed)
+        changed = copy.deepcopy(report)
+        changed['events'][0]['articulation'] = 63
+        with self.assertRaises(ValueError):
+            align(changed, bank('short-first'))
+        refs = [{'case': case, 'model': model, 'articulation': 127,
                  'keyons': [{'mask': 12, 'voices': [{'voice': voice+2, 'srcn': 2, 'pitch': pitch}
                             for voice, pitch in enumerate(pitches)]} for pitches in PITCHES],
                  'onset_intervals_spc_cycles': [43500, 87000 if case == 'both-long' else 43500],
@@ -124,6 +183,10 @@ class PolyGateTests(unittest.TestCase):
         self.assertEqual(len(compare(candidates, refs)), 6)
         with self.assertRaises(ValueError):
             compare(candidates, refs[:-1])
+        changed = copy.deepcopy(refs)
+        changed[0]['articulation'] = 63
+        with self.assertRaises(ValueError):
+            compare(candidates, changed)
         changed = copy.deepcopy(refs)
         changed[0]['note_gates'][0]['gate_spc_cycles'] += 6000
         with self.assertRaises(ValueError):

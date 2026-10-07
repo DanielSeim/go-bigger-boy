@@ -1,7 +1,8 @@
 ; SPDX-License-Identifier: GPL-3.0-or-later
-; Independent measured articulation-127 gates. No interpolation/general law.
+; Independent measured articulation-63/127 gates. No interpolation/general law.
 ; $72/73 active pulse counters, $74/75 lookup cursor/expired mask,
-; $76 selected pulses, $77 duration, $78/79 pending pulses, $7A release cause.
+; $76 selected pulses, $77 duration, $78/79 pending pulses, $7A release cause,
+; $7B current event articulation. $69 holds inherited parser articulation.
 ; Cause 0 scheduler/transition; 1 timer gate. Preserve the unaffected held KOF bit.
 gates_init:
     mov $72, #$00
@@ -9,6 +10,7 @@ gates_init:
     mov $78, #$00
     mov $79, #$00
     mov $7a, #$00
+    mov $7b, #$00
     ret
 gates_validate:
     mov a, $68
@@ -19,7 +21,9 @@ gates_lookup:
     mov $76, #$00
     mov a, $26
     cmp a, #$c9
-    beq gates_return
+    bne gates_note
+    ret
+gates_note:
     mov $74, #$00
 gates_find:
     mov x, $74
@@ -27,17 +31,20 @@ gates_find:
     cmp a, $12
     bne gates_next
     mov a, $0f81+x
-    cmp a, $77
+    cmp a, $69
     bne gates_next
     mov a, $0f82+x
+    cmp a, $77
+    bne gates_next
+    mov a, $0f83+x
     mov $76, a
     ret
 gates_next:
     mov a, $74
     clrc
-    adc a, #$03
+    adc a, #$04
     mov $74, a
-    cmp a, #$0f
+    cmp a, #$28
     bcc gates_find
     jmp pair_reject
 gates_return:
@@ -47,6 +54,14 @@ gates_cache:
     mov a, $76
     ; Parallel native cache: pulse count at $3200 + duration/opcode pair offset.
     .byte $d5, $00, $32
+    mov a, $69
+    ; Parallel native cache: inherited articulation at $3300 + pair offset.
+    .byte $d5, $00, $33
+    ret
+gates_art_event:
+    mov x, $63
+    mov a, $32fe+x
+    mov $7b, a
     ret
 gates_event:
     mov x, $63
@@ -108,7 +123,9 @@ gates_pulse3:
     mov $75, a
 gates_expire:
     mov a, $75
-    beq gates_return
+    bne gates_expired
+    ret
+gates_expired:
     mov $7a, #$01
     mov $70, a
     mov $f2, #$4c

@@ -79,8 +79,8 @@ def validate(report):
         raise ValueError('invalid accepted gated tempo/pattern')
     groups = []
     for event in report['events']:
-        profile = (report['tempo'], 127, event['duration'])
-        if event['duration'] < 2 or event['opcode'] not in (*PITCH, 0xC9) or (
+        profile = (report['tempo'], event.get('articulation'), event['duration'])
+        if not integer(event.get('articulation'), 63, 127) or event['articulation'] not in (63, 127) or event['duration'] < 2 or event['opcode'] not in (*PITCH, 0xC9) or (
                 event['opcode'] != 0xC9 and profile not in PULSES):
             raise ValueError('accepted unmeasured note profile')
         if not groups or groups[-1][0]['tick'] != event['tick']:
@@ -110,7 +110,7 @@ def validate(report):
             for event in group:
                 if event['opcode'] != 0xC9:
                     voice = event['channel']-2
-                    pulses = PULSES[(report['tempo'], 127, event['duration'])]
+                    pulses = PULSES[(report['tempo'], event['articulation'], event['duration'])]
                     if edge['pending_pulses'][voice] != pulses:
                         raise ValueError('gated onset selected wrong pulse profile')
                     pitches[voice] = PITCH[event['opcode']]
@@ -158,6 +158,9 @@ def align(report, data):
     validate(report)
     multi_align(multi_report(report), data)
     expected = schedule(data, int.from_bytes(data[:2], 'little'))
+    timed = [event for event in expected['events'] if event['kind'] in ('note', 'rest')]
+    if [event['articulation'] for event in report['events']] != [event['articulation'] for event in timed]:
+        raise ValueError('gated articulation differs from symbolic score')
     if report['second_pattern_tick'] != expected['patterns'][1]['start_tick']:
         raise ValueError('gated second pattern differs from symbolic score')
 
@@ -239,18 +242,23 @@ def contract(result, case):
         raise ValueError('incomplete polyphonic gate reference')
 
 
-def run(trace, firmware_dir, model, case):
+def run(trace, firmware_dir, model, case, articulation=127):
     result = phrase_run(trace, firmware_dir, model, case,
-                        fixture_builder=fixture_build, observer=observe, contract=contract)
+                        fixture_builder=lambda name: fixture_build(name, articulation), observer=observe, contract=contract)
     result.pop('first_pattern_durations')
+    result['articulation'] = articulation
     return result
 
 
-def compare(candidates, references):
+def compare(candidates, references, articulation=127):
     if not isinstance(candidates, dict) or set(candidates) != set(CASES):
         raise ValueError('require all three native gated cases')
     for case, report in candidates.items():
-        align(report, bank(case))
+        align(report, bank(case, articulation))
+    if not isinstance(references, list) or any(not isinstance(reference, dict)
+            or not integer(reference.get('articulation'), 63, 127)
+            or reference['articulation'] != articulation for reference in references):
+        raise ValueError('reference articulation differs')
     comparisons = multi_compare({case: multi_report(report) for case, report in candidates.items()}, references)
     for comparison in comparisons:
         report = candidates[comparison['case']]
@@ -284,16 +292,17 @@ def main():
     parser.add_argument('--probe', type=Path, required=True)
     parser.add_argument('--trace', type=Path, required=True)
     parser.add_argument('--firmware-dir', type=Path, required=True)
+    parser.add_argument('--articulation', type=int, choices=(63, 127), default=127)
     args = parser.parse_args()
     try:
-        candidates = {case: native(args.probe.resolve(), bank(case)) for case in CASES}
-        references = [run(args.trace.resolve(), args.firmware_dir.resolve(), model, case)
+        candidates = {case: native(args.probe.resolve(), bank(case, args.articulation)) for case in CASES}
+        references = [run(args.trace.resolve(), args.firmware_dir.resolve(), model, case, args.articulation)
                       for case in CASES for model in ('sgb', 'sgb2')]
-        comparisons = compare(candidates, references)
+        comparisons = compare(candidates, references, args.articulation)
     except (OSError, ValueError, subprocess.TimeoutExpired) as error:
         parser.error(str(error))
     print(json.dumps({'schema': 'gbb-score-polygate-reference-v1', 'qualification': False, 'playback': False,
-                      'program_sha256': hashlib.sha256(build()).hexdigest(), 'native': candidates,
+                      'program_sha256': hashlib.sha256(build()).hexdigest(), 'articulation': args.articulation, 'native': candidates,
                       'reference': references, 'comparisons': comparisons}, indent=2))
 
 
