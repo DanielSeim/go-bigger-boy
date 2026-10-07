@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Connect an isolated bounded native SPC note/rest parser to the fractional
+  score clock. Validate full streams before timing starts, align native events
+  with the symbolic oracle and check reset/save-load timelines and six private
+  timing references. Keep DSP rendering and production ownership deferred.
+
 - Add an isolated original SPC fractional score clock for tempos 96/192, with
   native reset, save/load, low-byte carry and timer accumulation checks. Compare
   bounded duration-16 timing against six SGB1/SGB2 private-reference cases;

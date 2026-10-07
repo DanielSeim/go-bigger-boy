@@ -67,3 +67,6 @@ sample data and PCM are not exported. Reports explicitly retain
 `qualification: false` and `playback: false`. Native parsing, scheduling,
 instrument setup and rendering remain required before vendor score playback
 can be qualified or bundled.
+
+The [native single-track parser](sgb-native-score-track.md) now exercises this
+clock with bounded note/rest streams, separately from bundled playback.

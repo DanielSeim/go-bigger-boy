@@ -1508,9 +1508,14 @@ if(GAMEBOY_BUILD_TESTS)
     add_executable(gameboy_snes_spc700_ipl_probe
         tests/support/snes_spc700_ipl_probe.cpp)
     target_link_libraries(gameboy_snes_spc700_ipl_probe PRIVATE gameboy_core)
+    add_executable(gameboy_sgb_score_track_probe tests/sgb_score_track_probe.cpp)
+    target_link_libraries(gameboy_sgb_score_track_probe PRIVATE gameboy_core)
     add_executable(gameboy_sgb_score_clock_probe tests/sgb_score_clock_probe.cpp)
     target_link_libraries(gameboy_sgb_score_clock_probe PRIVATE gameboy_core)
     if(Python3_Interpreter_FOUND)
+        add_test(NAME gameboy_sgb_native_score_track
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_score_track_tests.py
+                --probe $<TARGET_FILE:gameboy_sgb_score_track_probe>)
         add_test(NAME gameboy_sgb_native_score_clock
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_score_clock_tests.py
                 --probe $<TARGET_FILE:gameboy_sgb_score_clock_probe>)
@@ -1559,6 +1564,13 @@ if(GAMEBOY_BUILD_TESTS)
                     --firmware-dir ${CMAKE_CURRENT_SOURCE_DIR}/roms)
             set_tests_properties(gameboy_sgb_pitch_local_reference PROPERTIES
                 LABELS "local;private-reference" TIMEOUT 840)
+            add_test(NAME gameboy_sgb_score_track_local_reference
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_score_track_reference.py
+                    --probe $<TARGET_FILE:gameboy_sgb_score_track_probe>
+                    --trace $<TARGET_FILE:gameboy_snes_65c816_apu_trace>
+                    --firmware-dir ${CMAKE_CURRENT_SOURCE_DIR}/roms)
+            set_tests_properties(gameboy_sgb_score_track_local_reference PROPERTIES
+                LABELS "local;private-reference" TIMEOUT 1200)
             add_test(NAME gameboy_sgb_score_clock_local_reference
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_score_clock_reference.py
                     --probe $<TARGET_FILE:gameboy_sgb_score_clock_probe>
