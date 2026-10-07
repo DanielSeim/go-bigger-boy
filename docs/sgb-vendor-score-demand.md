@@ -70,9 +70,9 @@ No original-program PCM, independent emulator or physical-device comparison
 was run for this milestone.
 
 The first three words in the bank point to candidate phrase roots `$2B06`,
-`$2B31` and `$2B5C`. Treating them as a song table is an **inference** from the
-common format and the bounded structural walks. The SOUND-code-to-entry mapping
-still requires black-box reference evidence.
+`$2B31` and `$2B5C`. Their initial identification as a song table was an
+**inference** from the common format and bounded structural walks. The
+subsequent black-box evidence below validates a limited selection contract.
 
 The [address-only selection observer](sgb-song-selection-observation.md) supplies
 a bounded native reference capture for that evidence. It distinguishes prior
@@ -94,7 +94,10 @@ with bounded two-model reference comparisons. The
 and reduced song/track volume register values. The
 [echo fixtures](sgb-echo-fixtures.md) pin settled routing, two delays, feedback
 and filter-0 setup with explicit rests; full curves, echo PCM and immediate
-setup timing remain open.
+setup timing remain open. The [two-channel phrase fixtures](sgb-phrase-fixtures.md)
+now support early phrase advancement when either of channels 2/3 ends, with
+swapped durations and an equal-long control; broader channel behavior remains
+unqualified.
 
 | Explicit candidate root | Patterns / track references | Channels observed | Scan boundary |
 | --- | --- | --- | --- |
@@ -113,10 +116,12 @@ all eight channel indices and subroutines. Its observed instrument IDs are not
 the prototype's four direct SRCN choices. The scan intentionally cannot describe
 the unvisited subroutine bodies or continuation demand.
 
-The next target is a reference-backed vendor song-selection and short-entry
-playback contract using independently authored fixtures, followed by the
-required scheduler/instrument behavior. Larger-score channel allocation and
-subroutine execution remain separate work. Until these contracts and private
+The controlled gates now constrain selection and several short-entry renderer
+contracts. The next implementation target is bounded vendor scheduling with the
+measured phrase transition, an independently owned instrument/sample strategy
+and lifecycle validation. The measured pitch/volume points do not qualify full
+curves. Larger-score channel allocation and subroutine execution remain separate
+work. Until these contracts and private
 behavioral gates pass, the prototype must keep rejecting vendor uploads; it
 must not acknowledge ownership or redirect `$0400` to diagnostic motifs.
 

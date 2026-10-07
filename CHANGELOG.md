@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Add owned two-channel phrase fixtures and a bounded private original-firmware
+  gate. Validate combined voice-2/3 key-ons and early phrase advancement for
+  swapped unequal durations, with an equal-long-duration control on SGB1/SGB2.
+  Preserve the separate GBS4 barrier contract and unsupported vendor playback.
+
 - Add independently authored echo routing/setup fixtures and a bounded private
   original-firmware gate. Pin settled EON/volume/feedback/delay/allocation/FIR
   snapshots across SGB1/SGB2 before each note's first key-off, with explicit

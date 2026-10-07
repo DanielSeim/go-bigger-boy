@@ -105,3 +105,6 @@ open. No physical-device or independent-emulator comparison was performed. The
 prototype renderer is unchanged and still rejects vendor banks; commercial-title
 playback remains unsupported. These observations constrain future implementation
 without supplying proprietary samples or a complete vendor renderer.
+
+The subsequent [two-channel phrase fixtures](sgb-phrase-fixtures.md) measure
+combined key-ons and phrase advancement with swapped unequal track durations.
