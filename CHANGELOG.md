@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Add an isolated original SPC fractional score clock for tempos 96/192, with
+  native reset, save/load, low-byte carry and timer accumulation checks. Compare
+  bounded duration-16 timing against six SGB1/SGB2 private-reference cases;
+  keep the experiment outside bundled firmware and playback ownership.
+
 - Add an independent bounded symbolic vendor scheduler for channel 2 or channels
   2/3, first-ending-track phrase transitions, clipped long notes and finite
   nonnested EF calls. Align owned fixture timelines with twelve original-program

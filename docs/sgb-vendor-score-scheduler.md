@@ -12,6 +12,9 @@ ownership/restart behavior.
 python3 scripts/schedule_sgb_score.py /tmp/owned-bank.bin --phrase 0x2B10
 ```
 
+The isolated [native score clock](sgb-native-score-clock.md) provides a tested
+SPC timing primitive for tempos 96/192. It is not yet connected to this parser.
+
 ## Supported execution profile
 
 The supplied bank must contain 1..8192 bytes based at `$2B00`. The phrase root
