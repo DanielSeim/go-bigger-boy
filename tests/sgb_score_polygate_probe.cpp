@@ -12,7 +12,9 @@
 namespace {
 using Engine = gameboy::SnesApuAudioEngine;
 #ifdef GBB_SCORE_RESELECT_PROBE
-#ifdef GBB_SCORE_TAIL_PROBE
+#ifdef GBB_SCORE_PEER_PROBE
+constexpr auto schema = "gbb-spc-score-peer-v1";
+#elif defined(GBB_SCORE_TAIL_PROBE)
 constexpr auto schema = "gbb-spc-score-tail-v1";
 #elif defined(GBB_SCORE_TIMING_PROBE)
 constexpr auto schema = "gbb-spc-score-timing-v1";
@@ -189,12 +191,12 @@ struct Edge {
 };
 struct Envelope {
     unsigned voice;
-    std::uint64_t on, off = 0;
+    std::uint64_t on, off = 0, retrigger = 0;
     unsigned peak = 0, decay_min = 127, off_env = 0, release_steps = 0;
     bool attack_zero = false, release_zero = false;
     bool operator==(const Envelope& other) const {
-        return std::tie(voice,on,off,peak,decay_min,off_env,release_steps,attack_zero,release_zero) ==
-               std::tie(other.voice,other.on,other.off,other.peak,other.decay_min,other.off_env,other.release_steps,other.attack_zero,other.release_zero);
+        return std::tie(voice,on,off,retrigger,peak,decay_min,off_env,release_steps,attack_zero,release_zero) ==
+               std::tie(other.voice,other.on,other.off,other.retrigger,other.peak,other.decay_min,other.off_env,other.release_steps,other.attack_zero,other.release_zero);
     }
 };
 struct Result {
@@ -212,11 +214,11 @@ struct Result {
     std::vector<Envelope> envelopes;
     Audio audio, steady;
     std::array<unsigned,2> peer_checks{}, settled_frames{}, peer_pcm{};
-    std::array<unsigned,2> settled_envelopes{};
+    std::array<unsigned,2> settled_envelopes{}, frozen_checks{};
     bool operator==(const Result& other) const {
         return status == other.status && end_tick == other.end_tick && second_tick == other.second_tick && completion_half == other.completion_half &&
             events == other.events && articulations == other.articulations && pattern_ticks == other.pattern_ticks && pattern_masks == other.pattern_masks && instrument_sets == other.instrument_sets && instrument_writes == other.instrument_writes && controls == other.controls && halves == other.halves && keyons == other.keyons && keyoffs == other.keyoffs && envelopes == other.envelopes &&
-            audio == other.audio && steady == other.steady && peer_checks == other.peer_checks && settled_frames == other.settled_frames && peer_pcm == other.peer_pcm && settled_envelopes == other.settled_envelopes;
+            audio == other.audio && steady == other.steady && peer_checks == other.peer_checks && settled_frames == other.settled_frames && peer_pcm == other.peer_pcm && settled_envelopes == other.settled_envelopes && frozen_checks == other.frozen_checks;
     }
 };
 Edge edge(Engine& engine, unsigned mask) {
@@ -248,6 +250,9 @@ Result exercise(Engine& engine, bool restore) {
 #endif
 #ifdef GBB_SCORE_SPARSE_PROBE
     std::array<std::uint64_t,2> inactive_since{};
+#ifdef GBB_SCORE_PEER_PROBE
+    std::array<unsigned,2> frozen_gate{};
+#endif
 #endif
     std::array<unsigned,2> latest_opcodes{0xc9,0xc9};
     std::uint64_t second_start = 0;
@@ -323,6 +328,19 @@ Result exercise(Engine& engine, bool restore) {
             for (unsigned voice = 0; voice < 2; ++voice) {
                 const unsigned bit = 4U << voice;
                 if (active & bit) { inactive_since[voice] = 0; continue; }
+#ifdef GBB_SCORE_PEER_PROBE
+                const unsigned gate = bus.dsp_read_ram(0x72+voice);
+                if (gate) {
+                    require(!(bus.dsp_register(0x5c) & bit), "frozen clipped peer was released");
+                    if (inactive_since[voice]) require(gate == frozen_gate[voice], "inactive peer gate countdown changed");
+                    ++result.frozen_checks[voice];
+                    frozen_gate[voice] = gate;
+                    if (!inactive_since[voice]) inactive_since[voice] = engine.cpu().half_cycles();
+                    if (engine.cpu().half_cycles() >= inactive_since[voice]+20000)
+                        require(bus.dsp_register((voice+2)*16+8)>0, "frozen peer envelope disappeared");
+                    continue;
+                }
+#endif
                 require(bus.dsp_read_ram(0x72+voice) == 0 && (bus.dsp_register(0x5c) & bit) &&
                         !(bus.dsp_register(0x4c) & bit), "sparse inactive voice has a gate/KON or released KOF");
                 if (!inactive_since[voice]) inactive_since[voice] = engine.cpu().half_cycles();
@@ -360,6 +378,11 @@ Result exercise(Engine& engine, bool restore) {
                     expired_since[channel] = 0;
                     latest_on[channel] = engine.cpu().half_cycles();
 #ifdef GBB_SCORE_ENVELOPE_PROBE
+#ifdef GBB_SCORE_PEER_PROBE
+                    if (!result.envelopes.empty() && result.envelopes[envelope_index[channel]].voice == channel+2 &&
+                            !result.envelopes[envelope_index[channel]].off)
+                        result.envelopes[envelope_index[channel]].retrigger = latest_on[channel];
+#endif
                     last_release_drop[channel] = 0;
                     envelope_index[channel] = result.envelopes.size();
                     result.envelopes.push_back({channel+2, latest_on[channel]});
@@ -597,7 +620,11 @@ int main(int argc, char** argv) {
             std::cout << "{\"voice\":" << env.voice << ",\"on_half_cycle\":" << env.on << ",\"off_half_cycle\":" << env.off
                 << ",\"peak\":" << env.peak << ",\"decay_min\":" << env.decay_min << ",\"off_env\":" << env.off_env
                 << ",\"release_steps\":" << env.release_steps << ",\"attack_zero\":" << (env.attack_zero ? "true" : "false")
-                << ",\"release_zero\":" << (env.release_zero ? "true" : "false") << '}';
+                << ",\"release_zero\":" << (env.release_zero ? "true" : "false")
+#ifdef GBB_SCORE_PEER_PROBE
+                << ",\"retrigger_half_cycle\":" << env.retrigger
+#endif
+                << '}';
         }
         std::cout << ']';
 #endif
@@ -626,6 +653,9 @@ int main(int argc, char** argv) {
             std::cout << "{\"half_cycle\":" << write[0] << ",\"register\":" << write[1] << ",\"value\":" << write[2] << ",\"held_mask\":" << write[3] << '}';
         }
         std::cout << ']';
+#endif
+#ifdef GBB_SCORE_PEER_PROBE
+        std::cout << ",\"frozen_peer_checks\":[" << expected.frozen_checks[0] << ',' << expected.frozen_checks[1] << ']';
 #endif
 #ifdef GBB_SCORE_MIX_PROBE
         std::cout << ",\"settled_envelope_checks\":[" << expected.settled_envelopes[0] << ',' << expected.settled_envelopes[1] << ']';

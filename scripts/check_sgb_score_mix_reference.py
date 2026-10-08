@@ -35,8 +35,8 @@ def selected(pan, track, song, rest=False):
     return [7, 7] if (song, track) == (160, 127) else [1, 1]
 
 
-def validate(report, *, max_events=32, max_ticks=2032, pattern_ticks=None, sparse=False):
-    gate_validate(report, schema=SCHEMA, max_events=max_events, max_ticks=max_ticks, pitch_table=PITCH, isolated_voices=False, pattern_ticks=pattern_ticks, sparse=sparse)
+def validate(report, *, max_events=32, max_ticks=2032, pattern_ticks=None, sparse=False, clipped_peer=False):
+    gate_validate(report, schema=SCHEMA, max_events=max_events, max_ticks=max_ticks, pitch_table=PITCH, isolated_voices=False, pattern_ticks=pattern_ticks, sparse=sparse, clipped_peer=clipped_peer)
     pcm = report['pcm']
     if type(pcm.get('stereo_equal')) is not bool or any(not integer(pcm.get(key), 0, pcm['peak']) for key in ('left_peak', 'right_peak')) or max(pcm['left_peak'], pcm['right_peak']) != pcm['peak']:
         raise ValueError('invalid mix stereo metrics')

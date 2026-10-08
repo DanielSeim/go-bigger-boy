@@ -27,8 +27,8 @@ def sparse_report(report):
     return {**report,'schema':SPARSE_SCHEMA}
 
 
-def validate(report):
-    sparse_validate(sparse_report(report))
+def validate(report, *, clipped_peer=False):
+    sparse_validate(sparse_report(report),clipped_peer=clipped_peer)
     writes=report.get('instrument_writes')
     if not isinstance(writes,list) or len(writes)>160: raise ValueError('invalid instrument write list')
     previous=0

@@ -25,7 +25,7 @@ def multi_report(report, schema='gbb-spc-score-polygate-v1'):
     return {**report, 'schema': 'gbb-spc-score-multi-v1'}
 
 
-def validate(report, *, schema='gbb-spc-score-polygate-v1', max_events=16, max_ticks=1016, pitch_table=PITCH, isolated_voices=True, pattern_ticks=None, sparse=False):
+def validate(report, *, schema='gbb-spc-score-polygate-v1', max_events=16, max_ticks=1016, pitch_table=PITCH, isolated_voices=True, pattern_ticks=None, sparse=False, clipped_peer=False):
     multi_validate(multi_report(report, schema), max_events=max_events, max_ticks=max_ticks, min_events=1 if sparse else 2 if pattern_ticks is not None else 4, initial_pair=not sparse)
     if (not integer(report.get('tempo'), 0, 255)
             or not integer(report.get('completion_half_cycle'), 1, 30_000_000)
@@ -101,6 +101,13 @@ def validate(report, *, schema='gbb-spc-score-polygate-v1', max_events=16, max_t
     edges = sorted([(edge['half_cycle'], True, edge) for edge in report['keyons']] +
                    [(edge['half_cycle'], False, edge) for edge in report['keyoffs']])
     boundaries = (*pattern_ticks[1:],report['end_tick']) if pattern_ticks is not None else (report['second_pattern_tick'],report['end_tick'])
+    if clipped_peer:
+        masks=report.get('pattern_masks')
+        if not isinstance(masks,list) or pattern_ticks is None or len(masks)!=len(pattern_ticks) or any(type(mask) is not int or mask not in (4,8,12) for mask in masks):
+            raise ValueError('invalid clipped-peer masks')
+        starts=[min(e['half_cycle'] for e in report['events'] if e['tick']==tick) for tick in pattern_ticks]
+    def was_clipped(event):
+        return any(event['tick'] < tick < event['tick']+event['duration'] for tick in boundaries)
     for half, is_on, edge in edges:
         if is_on:
             group = sounding[index]
@@ -109,7 +116,7 @@ def validate(report, *, schema='gbb-spc-score-polygate-v1', max_events=16, max_t
             notes = sum(1 << event['channel'] for event in group if event['opcode'] != 0xC9)
             if (edge['tick'] != group[0]['tick'] or edge['mask'] != notes or edge['affected_mask'] != affected
                     or edge['cause'] != 0 or not 0 <= half-group[-1]['half_cycle'] <= 4096
-                    or any(active[voice] is not None and affected & (4 << voice) for voice in range(2))):
+                    or any(active[voice] is not None and affected & (4 << voice) and not (clipped_peer and edge['tick'] in boundaries and was_clipped(active[voice][1])) for voice in range(2))):
                 raise ValueError('gated onset or prior release differs')
             held = (held | affected) & ~notes
             for event in group:
@@ -145,9 +152,14 @@ def validate(report, *, schema='gbb-spc-score-polygate-v1', max_events=16, max_t
                     raise ValueError('nonpositive native gate')
                 if edge['cause'] == 1:
                     cycles = (half-on)/2
+                    if clipped_peer:
+                        for i,mask in enumerate(masks):
+                            if mask & (4 << voice):continue
+                            stop=starts[i+1] if i+1<len(starts) else report['completion_half_cycle']
+                            cycles -= max(0,min(half,stop)-max(on,starts[i]))/2
                     if not pulses*2048-2048 <= cycles <= pulses*2048+512:
                         raise ValueError('native gate outside declared pulse profile')
-                elif event['tick']+event['duration'] <= edge['tick']:
+                elif event['tick']+event['duration'] <= edge['tick'] and not (clipped_peer and edge['tick']==report['end_tick'] and was_clipped(event)):
                     raise ValueError('scheduler substituted for a missing gate')
                 active[voice] = None
     if any(note is not None for note in active):
@@ -159,8 +171,8 @@ def validate(report, *, schema='gbb-spc-score-polygate-v1', max_events=16, max_t
             raise ValueError('rest-only voice produced PCM')
 
 
-def align(report, data, *, schema='gbb-spc-score-polygate-v1', max_events=16, max_ticks=1016, pitch_table=PITCH, isolated_voices=True, pattern_ticks=None, sparse=False, inherit_timing=False, end_priority=False):
-    validate(report, schema=schema, max_events=max_events, max_ticks=max_ticks, pitch_table=pitch_table, isolated_voices=isolated_voices, pattern_ticks=pattern_ticks, sparse=sparse)
+def align(report, data, *, schema='gbb-spc-score-polygate-v1', max_events=16, max_ticks=1016, pitch_table=PITCH, isolated_voices=True, pattern_ticks=None, sparse=False, inherit_timing=False, end_priority=False, clipped_peer=False):
+    validate(report, schema=schema, max_events=max_events, max_ticks=max_ticks, pitch_table=pitch_table, isolated_voices=isolated_voices, pattern_ticks=pattern_ticks, sparse=sparse, clipped_peer=clipped_peer)
     multi_align(multi_report(report, schema), data, max_events=max_events, max_ticks=max_ticks, min_events=1 if sparse else 2 if pattern_ticks is not None else 4, initial_pair=not sparse, inherit_timing=inherit_timing, end_priority=end_priority)
     expected = schedule(data, int.from_bytes(data[:2], 'little'), inherit_timing=inherit_timing, end_priority=end_priority)
     timed = [event for event in expected['events'] if event['kind'] in ('note', 'rest')]

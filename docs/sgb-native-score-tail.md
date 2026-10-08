@@ -1,5 +1,8 @@
 # Experimental trailing mix controls and end priority
 
+The subsequent [clipped-peer lifecycle diagnostic](sgb-native-score-peer.md)
+resolves the measured release/retrigger gap and inactive gate behavior.
+
 The isolated native renderer now accepts trailing E1 pan and ED track-volume
 commands after a track's final timed event. Opaque runs on both originals show
 that only the track that ends the pattern executes these commands. Channel 2
@@ -119,7 +122,5 @@ as did the bundled-image reproducibility check and `git diff --check`.
 
 Schemas are `gbb-spc-score-tail-v1` and `gbb-score-tail-reference-v1`. This remains
 an opt-in diagnostic with qualification and playback false, outside bundled and
-production selection. SGB1/SGB2 program ROMs remain required. Next, measure and
-implement clipped-peer voice release/retrigger behavior, including how gate
-countdowns behave while that channel is inactive, before qualifying these
-first-end cases.
+production selection. SGB1/SGB2 program ROMs remain required. The subsequent diagnostic qualifies the measured clipped-peer release and
+retrigger behavior, including inactive countdowns and rest reactivation.

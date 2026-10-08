@@ -26,12 +26,12 @@ def list_report(report):
     return {**report,'schema':LIST_SCHEMA}
 
 
-def validate(report):
+def validate(report, *, clipped_peer=False):
     list_report(report)
     ticks,masks=report.get('pattern_ticks'),report.get('pattern_masks')
     if not isinstance(ticks,list) or not isinstance(masks,list) or len(ticks)!=len(masks) or any(type(mask) is not int or mask not in (4,8,12) for mask in masks):
         raise ValueError('invalid sparse pattern masks')
-    envelope_validate({**report,'schema':ENVELOPE_SCHEMA},max_events=64,pattern_ticks=ticks,sparse=True)
+    envelope_validate({**report,'schema':ENVELOPE_SCHEMA},max_events=64,pattern_ticks=ticks,sparse=True,clipped_peer=clipped_peer)
     for index,(tick,mask) in enumerate(zip(ticks,masks)):
         end=ticks[index+1] if index+1<len(ticks) else report['end_tick']
         events=[event for event in report['events'] if tick<=event['tick']<end]
