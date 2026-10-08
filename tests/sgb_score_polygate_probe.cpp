@@ -11,10 +11,14 @@
 
 namespace {
 using Engine = gameboy::SnesApuAudioEngine;
-#ifdef GBB_SCORE_BANK_PROBE
+#ifdef GBB_SCORE_LIST_PROBE
+constexpr auto schema = "gbb-spc-score-list-v1";
+constexpr unsigned log_bound = 320, second_pattern_offset = 64;
+constexpr unsigned log_base = 0x4000, bank_input_bound = 2049, upper_guard = 0x4a00;
+#elif defined(GBB_SCORE_BANK_PROBE)
 constexpr auto schema = "gbb-spc-score-bank-v1";
 constexpr unsigned log_bound = 160, second_pattern_offset = 64;
-constexpr unsigned log_base = 0x4000, bank_input_bound = 2049;
+constexpr unsigned log_base = 0x4000, bank_input_bound = 2049, upper_guard = 0x4900;
 #elif defined(GBB_SCORE_ENVELOPE_PROBE)
 constexpr auto schema = "gbb-spc-score-envelope-v1";
 constexpr unsigned log_bound = 160, second_pattern_offset = 64;
@@ -105,12 +109,20 @@ void setup(Engine& engine, const std::vector<unsigned char>& program,
 #ifdef GBB_SCORE_BANK_PROBE
     // Poison unprovided source bytes and guard the cache/source separation.
     for (unsigned address = 0x2b00; address < 0x4000; ++address) engine.bus().dsp_write_ram(address, 0xa5);
-    for (unsigned address = 0x4900; address < 0x4a00; ++address) engine.bus().dsp_write_ram(address, 0xa5);
+    for (unsigned address = upper_guard; address < upper_guard+0x100; ++address) engine.bus().dsp_write_ram(address, 0xa5);
     engine.bus().dsp_write_ram(0x8e, track.size() >> 8);
 #endif
     for (unsigned i = 0; i < track.size(); ++i) engine.bus().dsp_write_ram(0x2b00 + i, track[i]);
     engine.bus().dsp_write_ram(0x12, tempo);
     engine.bus().dsp_write_ram(0x20, track.size());
+}
+unsigned log_count(Engine& engine) {
+    const auto& bus = engine.bus();
+#ifdef GBB_SCORE_LIST_PROBE
+    return bus.dsp_read_ram(0x28) | bus.dsp_read_ram(0x9b) << 8;
+#else
+    return bus.dsp_read_ram(0x28);
+#endif
 }
 void checkpoint(Engine& engine) {
     const auto saved = engine.save_state();
@@ -148,6 +160,7 @@ struct Result {
     std::uint64_t completion_half = 0;
     std::vector<unsigned char> events;
     std::vector<unsigned char> articulations;
+    std::vector<unsigned> pattern_ticks;
     std::vector<std::array<unsigned,5>> controls;
     std::vector<std::uint64_t> halves;
     std::vector<Edge> keyons, keyoffs;
@@ -157,7 +170,7 @@ struct Result {
     std::array<unsigned,2> settled_envelopes{};
     bool operator==(const Result& other) const {
         return status == other.status && end_tick == other.end_tick && second_tick == other.second_tick && completion_half == other.completion_half &&
-            events == other.events && articulations == other.articulations && controls == other.controls && halves == other.halves && keyons == other.keyons && keyoffs == other.keyoffs && envelopes == other.envelopes &&
+            events == other.events && articulations == other.articulations && pattern_ticks == other.pattern_ticks && controls == other.controls && halves == other.halves && keyons == other.keyons && keyoffs == other.keyoffs && envelopes == other.envelopes &&
             audio == other.audio && steady == other.steady && peer_checks == other.peer_checks && settled_frames == other.settled_frames && peer_pcm == other.peer_pcm && settled_envelopes == other.settled_envelopes;
     }
 };
@@ -178,6 +191,9 @@ Result exercise(Engine& engine, bool restore) {
     for (unsigned i = 0; i < source_before.size(); ++i) source_before[i] = engine.bus().dsp_read_ram(0x2b00+i);
 #endif
     unsigned offset = 0, previous_kon = 0, previous_kof = 0;
+#ifdef GBB_SCORE_LIST_PROBE
+    std::array<bool,3> log_carry_restored{};
+#endif
     std::array<unsigned,2> latest_opcodes{0xc9,0xc9};
     std::uint64_t second_start = 0;
     std::array<std::uint64_t,2> expired_since{};
@@ -303,14 +319,36 @@ Result exercise(Engine& engine, bool restore) {
 #endif
         previous_kon = kon;
         previous_kof = kof;
-        const auto written = bus.dsp_read_ram(0x28);
-        if (written != offset && written % 5 == 0) {
+        const auto written = log_count(engine);
+#ifdef GBB_SCORE_LIST_PROBE
+        const bool committed = bus.dsp_read_ram(0xa1) == 0;
+        if (restore && !committed && offset == 255) {
+            // Resume inside the record, on both sides of the low-byte carry
+            // and during its transient low=0/high=0 count. Publication waits
+            // for the complete record in all three saved continuations.
+            const int stage = written == 255 ? 0 : written == 0 ? 1 : written == 256 ? 2 : -1;
+            if (stage >= 0 && !log_carry_restored[stage]) {
+                checkpoint(engine);
+                log_carry_restored[stage] = true;
+            }
+        }
+#else
+        const bool committed = true;
+#endif
+        if (committed && written != offset && written % 5 == 0) {
             require(written == offset+5 && written <= log_bound, "polyphonic event log overflow");
             for (unsigned i = offset; i < written; ++i) result.events.push_back(bus.dsp_read_ram(log_base+i));
             result.halves.push_back(engine.cpu().half_cycles());
             result.articulations.push_back(bus.dsp_read_ram(0x7b));
 #ifdef GBB_SCORE_MIX_PROBE
             result.controls.push_back({bus.dsp_read_ram(0x89),bus.dsp_read_ram(0x8a),bus.dsp_read_ram(0x8b),bus.dsp_read_ram(0x8c),bus.dsp_read_ram(0x8d)});
+#endif
+#ifdef GBB_SCORE_LIST_PROBE
+            const unsigned pattern = bus.dsp_read_ram(0x9c);
+            if (pattern == result.pattern_ticks.size()) {
+                require(pattern < 4, "phrase-list pattern overflow");
+                result.pattern_ticks.push_back(bus.dsp_read_ram(0x10) | bus.dsp_read_ram(0x11) << 8);
+            } else require(pattern+1 == result.pattern_ticks.size(), "phrase-list skipped/repeated pattern entry");
 #endif
             offset = written;
             require(result.events[written-1] == 2 || result.events[written-1] == 3, "invalid event channel");
@@ -356,8 +394,13 @@ Result exercise(Engine& engine, bool restore) {
                 observe_envelopes();
 #endif
             }
-            require(bus.dsp_read_ram(0x14) == status && bus.dsp_read_ram(0x28) == offset,
+            require(bus.dsp_read_ram(0x14) == status && log_count(engine) == offset,
                     "halted polyphonic changed state");
+#ifdef GBB_SCORE_LIST_PROBE
+            if (restore && offset > 255)
+                require(std::all_of(log_carry_restored.begin(), log_carry_restored.end(), [](bool value) { return value; }),
+                        "phrase-list log carry restore stages missing");
+#endif
             require(bus.dsp_register(0x6c) == (status == 2 ? 32 : 224), "polyphonic DSP flags differ");
             require(result.audio.quiet_tail >= 64, "polyphonic failed to settle to silence");
             if (status == 2) require(bus.dsp_register(0x5c) == 12 && bus.dsp_register(0x4c) == 0,
@@ -371,7 +414,7 @@ Result exercise(Engine& engine, bool restore) {
                 require(engine.bus().dsp_read_ram(0x2b00+i) == source_before[i], "native cache overwrote score source");
             for (unsigned address = 0x3301; address < 0x4000; ++address)
                 require(engine.bus().dsp_read_ram(address) == 0xa5, "native score touched lower cache guard");
-            for (unsigned address = 0x4900; address < 0x4a00; ++address)
+            for (unsigned address = upper_guard; address < upper_guard+0x100; ++address)
                 require(engine.bus().dsp_read_ram(address) == 0xa5, "native score touched upper cache guard");
 #endif
             return result;
@@ -454,6 +497,14 @@ int main(int argc, char** argv) {
                 << ",\"peak\":" << env.peak << ",\"decay_min\":" << env.decay_min << ",\"off_env\":" << env.off_env
                 << ",\"release_steps\":" << env.release_steps << ",\"attack_zero\":" << (env.attack_zero ? "true" : "false")
                 << ",\"release_zero\":" << (env.release_zero ? "true" : "false") << '}';
+        }
+        std::cout << ']';
+#endif
+#ifdef GBB_SCORE_LIST_PROBE
+        std::cout << ",\"pattern_ticks\":[";
+        for (unsigned i = 0; i < expected.pattern_ticks.size(); ++i) {
+            if (i) std::cout << ',';
+            std::cout << expected.pattern_ticks[i];
         }
         std::cout << ']';
 #endif

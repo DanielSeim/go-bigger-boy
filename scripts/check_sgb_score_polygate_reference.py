@@ -25,8 +25,8 @@ def multi_report(report, schema='gbb-spc-score-polygate-v1'):
     return {**report, 'schema': 'gbb-spc-score-multi-v1'}
 
 
-def validate(report, *, schema='gbb-spc-score-polygate-v1', max_events=16, max_ticks=1016, pitch_table=PITCH, isolated_voices=True):
-    multi_validate(multi_report(report, schema), max_events=max_events, max_ticks=max_ticks)
+def validate(report, *, schema='gbb-spc-score-polygate-v1', max_events=16, max_ticks=1016, pitch_table=PITCH, isolated_voices=True, pattern_ticks=None):
+    multi_validate(multi_report(report, schema), max_events=max_events, max_ticks=max_ticks, min_events=2 if pattern_ticks is not None else 4)
     if (not integer(report.get('tempo'), 0, 255)
             or not integer(report.get('completion_half_cycle'), 1, 30_000_000)
             or not integer(report.get('second_pattern_tick'), 0, max_ticks)
@@ -69,13 +69,18 @@ def validate(report, *, schema='gbb-spc-score-polygate-v1', max_events=16, max_t
             raise ValueError('invalid settled-gate metadata')
     if any(a > b for a, b in zip(report['settled_peer_nonzero_frames'], report['settled_gate_frames'])):
         raise ValueError('invalid settled peer activity')
+    if pattern_ticks is not None:
+        if not isinstance(pattern_ticks, list) or (report['status'] != 2 and pattern_ticks) or (report['status'] == 2 and
+                (not 1 <= len(pattern_ticks) <= 4 or pattern_ticks[0] != 0 or any(not integer(tick, 0, report['end_tick']-1)
+                 for tick in pattern_ticks) or any(a >= b for a,b in zip(pattern_ticks,pattern_ticks[1:])))):
+            raise ValueError('invalid phrase-list pattern entries')
     if report['status'] != 2:
         if (report['keyons'] or report['keyoffs'] or pcm['nonzero_frames'] or pcm['peak']
                 or report['second_pattern_tick'] or tail['frames'] or any(report['peer_checks'])
                 or any(report['settled_gate_frames']) or any(report['settled_peer_nonzero_frames'])):
             raise ValueError('rejected bank rendered audio')
         return
-    if report['tempo'] not in (96, 128, 192) or not 0 < report['second_pattern_tick'] < report['end_tick']:
+    if report['tempo'] not in (96, 128, 192) or (pattern_ticks is None and not 0 < report['second_pattern_tick'] < report['end_tick']) or (pattern_ticks is not None and report['second_pattern_tick'] != (pattern_ticks[1] if len(pattern_ticks)>1 else 0)):
         raise ValueError('invalid accepted gated tempo/pattern')
     groups = []
     for event in report['events']:
@@ -95,7 +100,7 @@ def validate(report, *, schema='gbb-spc-score-polygate-v1', max_events=16, max_t
     pitches, held, active, index = [0, 0], 12, [None, None], 0
     edges = sorted([(edge['half_cycle'], True, edge) for edge in report['keyons']] +
                    [(edge['half_cycle'], False, edge) for edge in report['keyoffs']])
-    boundaries = (report['second_pattern_tick'], report['end_tick'])
+    boundaries = (*pattern_ticks[1:],report['end_tick']) if pattern_ticks is not None else (report['second_pattern_tick'],report['end_tick'])
     for half, is_on, edge in edges:
         if is_on:
             group = sounding[index]
@@ -154,14 +159,17 @@ def validate(report, *, schema='gbb-spc-score-polygate-v1', max_events=16, max_t
             raise ValueError('rest-only voice produced PCM')
 
 
-def align(report, data, *, schema='gbb-spc-score-polygate-v1', max_events=16, max_ticks=1016, pitch_table=PITCH, isolated_voices=True):
-    validate(report, schema=schema, max_events=max_events, max_ticks=max_ticks, pitch_table=pitch_table, isolated_voices=isolated_voices)
-    multi_align(multi_report(report, schema), data, max_events=max_events, max_ticks=max_ticks)
+def align(report, data, *, schema='gbb-spc-score-polygate-v1', max_events=16, max_ticks=1016, pitch_table=PITCH, isolated_voices=True, pattern_ticks=None):
+    validate(report, schema=schema, max_events=max_events, max_ticks=max_ticks, pitch_table=pitch_table, isolated_voices=isolated_voices, pattern_ticks=pattern_ticks)
+    multi_align(multi_report(report, schema), data, max_events=max_events, max_ticks=max_ticks, min_events=2 if pattern_ticks is not None else 4)
     expected = schedule(data, int.from_bytes(data[:2], 'little'))
     timed = [event for event in expected['events'] if event['kind'] in ('note', 'rest')]
     if [event['articulation'] for event in report['events']] != [event['articulation'] for event in timed]:
         raise ValueError('gated articulation differs from symbolic score')
-    if report['second_pattern_tick'] != expected['patterns'][1]['start_tick']:
+    if pattern_ticks is not None:
+        if pattern_ticks != [pattern['start_tick'] for pattern in expected['patterns']]:
+            raise ValueError('native phrase-list pattern entries differ from symbolic score')
+    elif report['second_pattern_tick'] != expected['patterns'][1]['start_tick']:
         raise ValueError('gated second pattern differs from symbolic score')
 
 

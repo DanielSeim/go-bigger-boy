@@ -1,7 +1,9 @@
 # Experimental multi-page score banks
 
 The isolated bank renderer removes the 128-byte, single-page source restriction
-from [two-voice instrument-2 playback](sgb-native-score-envelope.md). It accepts
+from [two-voice instrument-2 playback](sgb-native-score-envelope.md). The next
+diagnostic adds [one-to-four-pattern phrase lists](sgb-native-score-list.md).
+This bank milestone accepts
 1..2048 bytes at `$2B00`, with bounded 16-bit phrase, table, stream, call-target
 and return cursors. Its log and caches no longer overlap uploaded data.
 
