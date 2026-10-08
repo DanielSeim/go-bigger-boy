@@ -18,15 +18,18 @@ from check_sgb_score_duet_reference import integer
 SCHEMA='gbb-spc-score-final-return-v1'
 
 
-def identity(r):
+def identity(r,*,return_art=None):
     es=r['events']
     if len(es)!=9:raise ValueError('final return requires nine raw records')
     e=es[-1];c='return-rest' if e['opcode']==0xC9 else 'return-note';a=e['articulation'];d=e['duration'];s=es[6]['duration']
     if type(a) is not int or a not in (63,127) or type(d) is not int or d not in DURATIONS or type(s) is not int or s not in RESTS:raise ValueError('unmeasured final return profile')
+    if return_art is not None:
+        if return_art!=63 or a!=63 or es[0]['articulation']!=127:raise ValueError('invalid mixed returning articulation')
+        a=127
     return c,a,d,s
 
 
-def validate(r):
+def validate(r,*,return_art=None,fixture_bank=bank):
     multi_validate(r,schema=SCHEMA,max_events=64,max_ticks=2032,min_events=1,initial_pair=False,terminal_event=True)
     if r['status']!=2:
         validate_metadata(r,schema=SCHEMA)
@@ -35,13 +38,14 @@ def validate(r):
     if r.get('source_unmodified') is not True or r.get('cache_guards_equal') is not True or not integer(r.get('completion_half_cycle'),1,30000000) or not integer(r.get('tempo'),96,96):raise ValueError('invalid final return source/cache/clock')
     for k,v in (('final_mode',1),('final_return_mode',1),('final_peer_stop',0),('final_observation_half_cycles',600000)):
         if not integer(r.get(k),v,v):raise ValueError('invalid final return mode/tail')
-    c,a,d,s=identity(r)
+    c,a,d,s=identity(r,return_art=return_art)
     if r.get('pattern_ticks')!=[0,32,64] or r.get('pattern_masks')!=[12,8,12] or r.get('event_patterns')!=[0]*4+[1]*2+[2]*3 or not integer(r.get('end_tick'),64+s,64+s) or not integer(r.get('second_pattern_tick'),32,32):raise ValueError('final return pattern geometry differs')
     for k in ('pattern_ticks','pattern_masks','event_patterns'):
         if any(type(v) is not int for v in r[k]):raise ValueError('invalid final return pattern types')
-    for e in r['events']:
-        if any(type(e.get(k)) is not int for k in ('articulation','pan','track_volume','song_volume','instrument_sets')) or e['articulation']!=a or not isinstance(e.get('volumes'),list) or len(e['volumes'])!=2 or any(not integer(v,0,127) for v in e['volumes']):raise ValueError('invalid final return raw controls')
-    timed=align(r,bank(a,d,c,s));validate_writes(r)
+    for i,e in enumerate(r['events']):
+        wanted_art=return_art if return_art is not None and i>=6 else a
+        if any(type(e.get(k)) is not int for k in ('articulation','pan','track_volume','song_volume','instrument_sets')) or e['articulation']!=wanted_art or not isinstance(e.get('volumes'),list) or len(e['volumes'])!=2 or any(not integer(v,0,127) for v in e['volumes']):raise ValueError('invalid final return raw controls')
+    timed=align(r,fixture_bank(a,d,c,s));validate_writes(r)
     for name in ('keyons','keyoffs'):
         previous=0
         if not isinstance(r.get(name),list) or len(r[name])>64:raise ValueError('invalid final return edges')
@@ -98,7 +102,7 @@ def validate(r):
     for g in gates:
         if g['cause']!=1:raise ValueError('final return substituted scheduler release')
         if (g['onset_index'],g['voice'])==(1,2) and a==127:
-            pulses=5 if s==4 else 15
+            pulses=5 if s==4 else (9 if return_art==63 else 15)
             # Retain raw timestamps. Only this local profile check anchors
             # to the observed returning rest; the exported gate stays raw.
             rest_half=r['events'][6]['half_cycle'];release=next(e['half_cycle'] for e in r['keyoffs'] if e['mask']&4 and e['half_cycle']>r['keyons'][1]['half_cycle'])

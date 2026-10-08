@@ -19,10 +19,11 @@ def expected(case):
     return result
 
 
-def contract(r,case):
+def contract(r,case,*,return_art=None):
     a,d,s=(r.get(k) for k in ('articulation','boundary_duration','return_rest'))
     if type(a) is not int or a not in (63,127) or type(d) is not int or d not in DURATIONS or type(s) is not int or s not in RESTS or case not in CASES:
         raise ValueError('invalid final return profile')
+    if return_art is not None and (a!=127 or return_art!=63 or r.get('return_articulation')!=63):raise ValueError('invalid mixed returning articulation')
     if r.get('keyons')!=expected(case):raise ValueError('final return setup differs')
     for e in r['keyons']:
         if type(e['mask']) is not int or any(type(v) is not int for x in e['voices'] for k,v in x.items() if k!='volumes') or any(type(v) is not int for x in e['voices'] for v in x['volumes']):raise ValueError('invalid final return setup types')
@@ -39,7 +40,7 @@ def contract(r,case):
         if not integer(g.get('gate_spc_cycles'),low,high):raise ValueError('final return preceding gate differs')
     after=r.get('return_release_after_previous_onset_spc_cycles')
     if a==127:
-        pulses=5 if s==4 else PULSES[(96,127,8)]
+        pulses=5 if s==4 else (9 if return_art==63 else PULSES[(96,127,8)])
         if not integer(after,84000+2048*(pulses-2),92000+2048*pulses+4096):raise ValueError('return rest did not govern held release')
         if after!=gates[2]['gate_spc_cycles']-sum(intervals[1:3]):raise ValueError('return release interval is not bound to raw gate/onsets')
     elif after is not None:raise ValueError('already released voice claimed a returning-rest gate')
@@ -58,7 +59,7 @@ def contract(r,case):
     if not integer(r.get('post_stop_observation_spc_cycles'),200000,6000000):raise ValueError('final return observation window differs')
 
 
-def observe(source,case,art=127,duration=8,rest=4):
+def observe(source,case,art=127,duration=8,rest=4,*,return_art=None):
     text=source.read(16*1024*1024+1)
     if len(text)>16*1024*1024:raise ValueError('final return trace exceeds byte bound')
     r=onsets(io.StringIO(text),case,onset_validator=lambda r,c:None)
@@ -97,7 +98,8 @@ def observe(source,case,art=127,duration=8,rest=4):
              post_stop_nonzero_control_writes=[{'address':a,'value':v} for a,v,c in controls[3:] if v],post_stop_zero_control_write_count=sum(v==0 for a,v,c in controls[3:]),
              boundary_pitch_writes=pitch,boundary_pitch_to_stop_spc_cycles=pc,post_previous_onset_volume_writes=vol,
              final_volumes=[[regs[32],regs[33]],[regs[48],regs[49]]],post_stop_observation_spc_cycles=last-stop)
-    contract(r,case);return r
+    if return_art is not None:r['return_articulation']=return_art
+    contract(r,case,return_art=return_art);return r
 
 
 def run(trace,firmware_dir,model,art,duration,case,rest):

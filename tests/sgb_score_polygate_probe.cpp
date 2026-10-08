@@ -12,7 +12,9 @@
 namespace {
 using Engine = gameboy::SnesApuAudioEngine;
 #ifdef GBB_SCORE_RESELECT_PROBE
-#ifdef GBB_SCORE_FINAL_RETURN_PROBE
+#if defined(GBB_SCORE_FINAL_MIXED_PROBE)
+constexpr auto schema = "gbb-spc-score-final-mixed-v1";
+#elif defined(GBB_SCORE_FINAL_RETURN_PROBE)
 constexpr auto schema = "gbb-spc-score-final-return-v1";
 #elif defined(GBB_SCORE_FINAL_PEER_PROBE)
 constexpr auto schema = "gbb-spc-score-final-peer-v1";

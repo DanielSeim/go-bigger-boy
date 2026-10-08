@@ -42,8 +42,9 @@ The interval includes the 16 ticks leading to the returning rest. The checker
 binds this interval to the raw old-note gate and actual onset intervals; it
 does not invent an original timestamp for the rest. The duration-8 profile is
 the existing independently measured profile. Duration 4 is qualified here only
-as a rest acting on an already keyed articulation-127 voice. Duration-4 notes
-and a live voice returning with articulation 63 remain unqualified.
+as a rest acting on an already keyed articulation-127 voice. Duration-4 notes remain unqualified by this diagnostic. A live voice returning
+with articulation 63 is measured by the subsequent
+[mixed-articulation diagnostic](sgb-native-score-final-mixed.md).
 
 Every original case releases the old voice before final termination. The
 final pulse is KOF FF at offset 0, KOF zero at 117 SPC cycles and KON 4 for a
@@ -147,7 +148,7 @@ and playback false, outside bundled or production selection. SGB1/SGB2 program
 ROMs remain required. Hardware, original PCM equivalence and real-title firmware
 replacement qualification remain open.
 
-Next, measure mixed articulation when a voice held at articulation 127 returns
-with an articulation-63 rest, especially duration 4. The current uniform-63
-cases release before inactivity and cannot validate that live-voice profile.
-Use both originals before extending the matching-articulation guard.
+The subsequent [mixed-articulation diagnostic](sgb-native-score-final-mixed.md)
+measures a held articulation-127 voice returning through articulation-63 rests.
+It extends the cached guard and rest timing while preserving this independent
+uniform-articulation image and its original hash.
