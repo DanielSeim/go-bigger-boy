@@ -22,18 +22,20 @@ struct Result {
                   clocks = 0, last_nonzero_clock = 0;
     unsigned status = 0, transfers = 0, adoptions = 0, version = 0,
              bridge = 0, signature = 0, sounds = 0, error = 0, external = 0;
+    unsigned interruptions = 0, active_env = 0, interrupt_tick = 0, interrupt_count = 0, kof = 0, flg = 0, score_tick = 0;
     std::vector<std::uint8_t> state;
     bool operator==(const Result& other) const {
         return std::tie(hash, frames, nonzero, clocks, last_nonzero_clock, status,
                         transfers, adoptions, version, bridge, signature, sounds,
-                        error, external, state) ==
+                        error, external, interruptions, active_env, interrupt_tick, interrupt_count, kof, flg, score_tick, state) ==
                std::tie(other.hash, other.frames, other.nonzero, other.clocks,
                         other.last_nonzero_clock, other.status, other.transfers,
                         other.adoptions, other.version, other.bridge, other.signature,
-                        other.sounds, other.error, other.external, other.state);
+                        other.sounds, other.error, other.external, other.interruptions, other.active_env,
+                        other.interrupt_tick, other.interrupt_count, other.kof, other.flg, other.score_tick, other.state);
     }
 };
-struct Restores { unsigned count = 0, phases = 0; };
+struct Restores { unsigned count = 0, phases = 0, commands = 0; };
 Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
     Result result;
     unsigned steps = 0, previous = 0xffff;
@@ -56,12 +58,15 @@ Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
         if (restores) {
             auto status = host.cpu().debug_wram_byte(0x20);
             auto bridge = host.cpu().debug_wram_byte(0x31);
-            unsigned phase = status | (bridge << 8);
+            unsigned commands = host.debug_spc_ram_byte(0xd3);
+            unsigned phase = status | (bridge << 8) | (commands << 16) |
+                             (host.debug_spc_ram_byte(0xd6) << 24);
             if (++steps % 100003 == 0 || phase != previous) {
                 require(++restores->count <= 4096, "snapshot bound");
                 auto state = host.save_state();
                 require(host.load_state(state), "mid-execution restore");
                 require(host.save_state() == state, "exact state restoration");
+                restores->commands |= commands;
                 if (status == 4) restores->phases |= 1; // IPL upload
                 if (status == 2) restores->phases |= 2; // external restart
                 if (bridge == 1) restores->phases |= 4; // validated, silent
@@ -81,6 +86,13 @@ Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
     result.sounds = host.cpu().debug_wram_byte(0x23);
     result.error = host.cpu().debug_wram_byte(0x27);
     result.external = host.cpu().debug_wram_byte(0x24);
+    result.interruptions = host.debug_spc_ram_byte(0xd3);
+    result.active_env = host.debug_spc_ram_byte(0xd4);
+    result.interrupt_tick = host.debug_spc_ram_byte(0xd5);
+    result.interrupt_count = host.debug_spc_ram_byte(0xd6);
+    result.score_tick = host.debug_spc_ram_byte(0x10) | (host.debug_spc_ram_byte(0x11) << 8);
+    result.kof = host.debug_dsp_register(0x5c);
+    result.flg = host.debug_dsp_register(0x6c);
     result.state = host.save_state();
     return result;
 }
@@ -115,11 +127,16 @@ int main(int argc, char** argv) {
         std::cout << "{\"schema\":\"gbb-score-transport-v1\",\"qualification\":false,"
                   << "\"playback\":false,\"reset_equal\":true,\"restore_equal\":true,"
                   << "\"restore_count\":" << restores.count << ",\"restore_phases\":" << restores.phases
+                  << ",\"restore_commands\":" << restores.commands
                   << ",\"status\":" << result.status << ",\"transfers\":" << result.transfers
                   << ",\"adoptions\":" << result.adoptions << ",\"version\":" << result.version
                   << ",\"bridge\":" << result.bridge << ",\"signature\":" << result.signature
                   << ",\"sounds\":" << result.sounds << ",\"error\":" << result.error
                   << ",\"external\":" << result.external << ",\"clocks\":" << result.clocks
+                  << ",\"interruptions\":" << result.interruptions << ",\"active_env\":" << result.active_env
+                  << ",\"interrupt_tick\":" << result.interrupt_tick << ",\"interrupt_count\":" << result.interrupt_count
+                  << ",\"score_tick\":" << result.score_tick
+                  << ",\"kof\":" << result.kof << ",\"flg\":" << result.flg
                   << ",\"last_nonzero_clock\":" << result.last_nonzero_clock
                   << ",\"pcm\":{\"frames\":" << result.frames << ",\"nonzero_frames\":" << result.nonzero
                   << ",\"fnv1a64\":" << result.hash << "}}\n";

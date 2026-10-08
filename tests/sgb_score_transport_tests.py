@@ -25,14 +25,18 @@ class ScoreTransportTests(unittest.TestCase):
         self.assertEqual(len(image), 262144)
         self.assertEqual(image, program())
         self.assertEqual(hashlib.sha256(image).hexdigest(),
-                         '0cf3e20bb7386d3862260dad338e51da4153305380182f92b0c182981fe10db8')
+                         '220d292b4a41d07af3feb8e9375b57a78506b7a52bc2512d87ebc6de18d2850c')
         self.assertEqual(cartridge(), cartridge())
         self.assertEqual(len(cartridge((1, 1), repeat_upload=True)), 32768)
         from build_sgb_song_selection_fixture import build
         self.assertEqual(build(), build_cartridge(score_payload(), (1, 2, 3)))
         for options in ({'wait_frames': 15}, {'wait_frames': 129}, {'wait_frames': True},
                         {'repeat_upload': 1}, {'sound_fields': (0, 0)},
-                        {'sound_fields': (True, 0, 0)}, {'sound_fields': (256, 0, 0)}):
+                        {'sound_fields': (True, 0, 0)}, {'sound_fields': (256, 0, 0)},
+                        {'commands': []}, {'commands': [(0, b'\x41')]},
+                        {'commands': [(129, b'\x49')]}, {'commands': [(True, b'\x49')]},
+                        {'commands': [(8, b'\x00')]}, {'commands': [(8, [0x41])]},
+                        {'commands': [(8, b'\x41' * 17)]}):
             with self.subTest(options=options), self.assertRaises(ValueError):
                 build_cartridge(score_payload(), (1,), **options)
 
@@ -73,6 +77,7 @@ class ScoreTransportTests(unittest.TestCase):
                 self.ready(result, sounds=0, bridge=1)
                 self.assertEqual(result['pcm']['nonzero_frames'], 0)
                 self.assertEqual(result['restore_phases'] & 7, 7)
+                self.assertEqual(result['interruptions'], 0)
 
     def test_first_selection_audio_modes_and_lifecycle(self):
         for model in ('sgb', 'sgb2'):
@@ -106,6 +111,7 @@ class ScoreTransportTests(unittest.TestCase):
                     self.assertGreater(result['pcm']['nonzero_frames'], 20000)
                     self.assertGreater(result['clocks'] - result['last_nonzero_clock'], 1000000)
                     self.assertEqual(result['restore_phases'], 31)
+                    self.assertEqual(result['interruptions'], 0)
 
     def test_invalid_bank_does_not_advertise_readiness(self):
         for model in ('sgb', 'sgb2'):
@@ -126,6 +132,42 @@ class ScoreTransportTests(unittest.TestCase):
                     self.assertEqual((result['status'], result['transfers'], result['adoptions'],
                                       result['external'], result['error']), (0xFF, 1, 2, 0, 0))
                     self.assertEqual(result['pcm']['nonzero_frames'], 0)
+
+    def test_active_stop_reselection_and_upload(self):
+        for model in ('sgb', 'sgb2'):
+            for command, mask in (('stop', 1), ('stop-reselect', 1), ('reselect', 2), ('upload', 4), ('unsupported', 1)):
+                baseline = None
+                for mode in ('native', 'scalar', 'combined'):
+                    with self.subTest(model=model, command=command, mode=mode):
+                        result = self.probe(model, clocks=75000000 if command == 'upload' else 45000000,
+                                            mode=mode, interruption=command)
+                        if baseline is None:
+                            baseline = result
+                        elif mode == 'scalar':
+                            self.assertEqual(result['pcm'], baseline['pcm'])
+                        else:
+                            self.assertLessEqual(abs(result['pcm']['frames'] -
+                                                     baseline['pcm']['frames'] * 3 // 2), 2)
+                        self.assertEqual(result['interruptions'], mask)
+                        self.assertEqual(result['active_env'], mask)
+                        self.assertEqual(result['restore_commands'], mask)
+                        self.assertEqual(result['interrupt_count'], 1)
+                        self.assertGreater(result['interrupt_tick'], 0)
+                        self.assertLess(result['interrupt_tick'], 32)
+                        self.assertGreater(result['pcm']['nonzero_frames'], 1000)
+                        self.assertGreater(result['clocks'] - result['last_nonzero_clock'], 1000000)
+                        if command == 'unsupported':
+                            self.assertEqual((result['status'], result['error'], result['external']), (255, 0, 0))
+                        else:
+                            self.ready(result, transfers=2 if command == 'upload' else 1,
+                                       sounds=2 if command == 'upload' else 6 if command == 'stop-reselect' else 4,
+                                       bridge=1 if command == 'stop' else 2)
+                        if command in ('stop', 'unsupported'):
+                            self.assertEqual(result['kof'], 255)
+                            self.assertEqual(result['flg'], 224)
+                            self.assertEqual(result['score_tick'], result['interrupt_tick'])
+                        else:
+                            self.assertEqual(result['score_tick'], 72)
 
 
 if __name__ == '__main__':

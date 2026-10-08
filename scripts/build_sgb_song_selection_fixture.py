@@ -20,7 +20,7 @@ def build(order=(1, 2, 3)):
     return build_cartridge(score_payload(), order)
 
 
-def build_cartridge(payload, order, *, wait_frames=16, repeat_upload=False, sound_fields=(0, 0, 0)):
+def build_cartridge(payload, order, *, wait_frames=16, repeat_upload=False, sound_fields=(0, 0, 0), commands=None):
     if not isinstance(payload, bytes) or len(payload) != 4096:
         raise ValueError('fixture transfer must contain exactly 4096 bytes')
     if not isinstance(order, (tuple, list)) or not 1 <= len(order) <= 8:
@@ -32,6 +32,17 @@ def build_cartridge(payload, order, *, wait_frames=16, repeat_upload=False, soun
     if not isinstance(sound_fields, (tuple, list)) or len(sound_fields) != 3 or any(
             type(value) is not int or not 0 <= value <= 255 for value in sound_fields):
         raise ValueError('invalid SOUND effect/attribute fields')
+    if commands is not None:
+        if not isinstance(commands, (tuple, list)) or not 1 <= len(commands) <= 8:
+            raise ValueError('commands require 1..8 bounded operations')
+        for command in commands:
+            if not isinstance(command, (tuple, list)) or len(command) != 2:
+                raise ValueError('command requires frame delay and packet')
+            delay, values = command
+            if type(delay) is not int or not 1 <= delay <= 128 or not isinstance(values, bytes):
+                raise ValueError('invalid command spacing/packet')
+            if not 1 <= len(values) <= 16 or values[0] not in (0x41, 0x49):
+                raise ValueError('only bounded SOUND/SOU_TRN commands are admitted')
     rom = bytearray(32768)
     rom[0x100:0x103] = bytes.fromhex('c35001')
     # Fixed cartridge-header verification signature, already used by
@@ -69,12 +80,17 @@ def build_cartridge(payload, order, *, wait_frames=16, repeat_upload=False, soun
         joy(0x20); joy(0x30)
 
     packet([0x49])
-    for index, song in enumerate(order):
-        if repeat_upload and index:
+    if commands is not None:
+        for delay, values in commands:
+            frames(delay)
+            packet(values)
+    else:
+        for index, song in enumerate(order):
+            if repeat_upload and index:
+                frames(wait_frames)
+                packet([0x49])
             frames(wait_frames)
-            packet([0x49])
-        frames(wait_frames)
-        packet([0x41, *sound_fields, song])
+            packet([0x41, *sound_fields, song])
     code.extend(bytes.fromhex('18fe'))
     if 0x150 + len(code) > 0x4000:
         raise ValueError('fixture code overlaps transfer data')

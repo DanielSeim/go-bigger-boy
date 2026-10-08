@@ -134,6 +134,12 @@ SgbHost::SgbHost(SgbHostConfig config) : config_(std::move(config)) {
     reset();
 }
 SgbHost::~SgbHost() = default;
+std::uint8_t SgbHost::debug_spc_ram_byte(std::uint16_t address) const noexcept {
+    return impl_->apu.bus().dsp_read_ram(address);
+}
+std::uint8_t SgbHost::debug_dsp_register(std::uint8_t index) const noexcept {
+    return impl_->apu.bus().dsp_register(index);
+}
 void SgbHost::debug_set_apu_batch_enabled(bool enabled) noexcept {
     impl_->cpu.debug_set_apu_batch_enabled(enabled);
 }

@@ -123,8 +123,9 @@ The [owned upload/restart/selection diagnostic](sgb-native-score-transport.md)
 now exercises this engine through actual SOU_TRN, `$0400` restart and SOUND
 selection. It retains the admission guards, rejects malformed banks silently,
 and requires fresh ownership readiness. Its integration and lifecycle evidence
-is limited to independently authored fixtures. The next boundary is handling
-stop, reselection and IPL requests during active playback. Production selection
+is limited to independently authored fixtures. The integration now services
+stop, reselection and IPL requests during active playback at timer-poll
+boundaries. The next boundary is bounded multi-song directory selection. Production selection
 and general vendor-bank compatibility remain unqualified.
 
 The documented [title-demand inventory](sgb-vendor-score-demand.md) identifies
