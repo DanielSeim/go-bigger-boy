@@ -8,6 +8,11 @@ The generated image is used only by an explicit test/export; desktop selection
 and external SGB program-ROM overrides retain their existing behavior.
 Performance work remains deferred.
 
+The opt-in [owned native score integration](sgb-native-score-transport.md) adds
+an actual upload/restart/selection path around the guarded score engine in a
+separate diagnostic image. It does not change this bundled prototype or its
+production selection status.
+
 ## Reproducible build and provenance
 
 Sources live in [`firmware/sgb/`](../firmware/sgb/): `host.asm`, `driver.asm`,

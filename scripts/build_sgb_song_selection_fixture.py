@@ -20,13 +20,18 @@ def build(order=(1, 2, 3)):
     return build_cartridge(score_payload(), order)
 
 
-def build_cartridge(payload, order):
+def build_cartridge(payload, order, *, wait_frames=16, repeat_upload=False, sound_fields=(0, 0, 0)):
     if not isinstance(payload, bytes) or len(payload) != 4096:
         raise ValueError('fixture transfer must contain exactly 4096 bytes')
     if not isinstance(order, (tuple, list)) or not 1 <= len(order) <= 8:
         raise ValueError('order requires 1..8 song IDs')
     if any(type(code) is not int or code not in (1, 2, 3) for code in order):
         raise ValueError('song IDs must be integers 1, 2 or 3')
+    if type(wait_frames) is not int or not 16 <= wait_frames <= 128 or type(repeat_upload) is not bool:
+        raise ValueError('invalid bounded transfer spacing')
+    if not isinstance(sound_fields, (tuple, list)) or len(sound_fields) != 3 or any(
+            type(value) is not int or not 0 <= value <= 255 for value in sound_fields):
+        raise ValueError('invalid SOUND effect/attribute fields')
     rom = bytearray(32768)
     rom[0x100:0x103] = bytes.fromhex('c35001')
     # Fixed cartridge-header verification signature, already used by
@@ -64,9 +69,12 @@ def build_cartridge(payload, order):
         joy(0x20); joy(0x30)
 
     packet([0x49])
-    for song in order:
-        frames(16)
-        packet([0x41, 0, 0, 0, song])
+    for index, song in enumerate(order):
+        if repeat_upload and index:
+            frames(wait_frames)
+            packet([0x49])
+        frames(wait_frames)
+        packet([0x41, *sound_fields, song])
     code.extend(bytes.fromhex('18fe'))
     if 0x150 + len(code) > 0x4000:
         raise ValueError('fixture code overlaps transfer data')

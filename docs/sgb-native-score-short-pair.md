@@ -119,13 +119,13 @@ outside this evidence. The bundled prototype is unchanged at SHA-256
 
 ## Next integration milestone
 
-Next, exercise a bounded independently authored score bank through actual
-SOU_TRN upload, `$0400` restart and SOUND song selection with this engine.
-Keep the present admission guards, reject unsupported banks silently, require
-fresh ownership readiness, and validate repeated uploads, effects/music
-interaction, reset and save/load on both models. This diagnostic integration
-must not advertise general vendor-bank compatibility or replace production
-selection before its own gates pass.
+The [owned upload/restart/selection diagnostic](sgb-native-score-transport.md)
+now exercises this engine through actual SOU_TRN, `$0400` restart and SOUND
+selection. It retains the admission guards, rejects malformed banks silently,
+and requires fresh ownership readiness. Its integration and lifecycle evidence
+is limited to independently authored fixtures. The next boundary is handling
+stop, reselection and IPL requests during active playback. Production selection
+and general vendor-bank compatibility remain unqualified.
 
 The documented [title-demand inventory](sgb-vendor-score-demand.md) identifies
 additional title obstacles: instrument/sample mapping, echo, full control
