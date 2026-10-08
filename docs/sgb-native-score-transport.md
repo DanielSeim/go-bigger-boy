@@ -138,5 +138,7 @@ the test matrix uses at most 100 million clocks, caps output at 4096 bytes and
 The separate [CC directory diagnostic](sgb-native-score-directory.md) now admits
 three distinct owned song roots and supports selection/switching of songs 2/3.
 The CB image and its single-song contract remain reproducible as documented
-above. The next milestone is bounded uploaded instrument and BRR sample mapping
-with owned assets; general vendor-bank and real-title qualification remain open.
+above. The separate [two-instrument profile](sgb-native-score-dual-instrument.md)
+now adds owned uploaded samples, ordered E0 selection and voice-local inheritance.
+Next add bounded multi-block BRR samples and validated loop points; general
+vendor-bank and real-title qualification remain open.

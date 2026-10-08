@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "gameboy/sgb_host.hpp"
+#include <array>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
@@ -23,19 +24,21 @@ struct Result {
     unsigned status = 0, transfers = 0, adoptions = 0, version = 0,
              bridge = 0, signature = 0, sounds = 0, error = 0, external = 0;
     unsigned interruptions = 0, active_env = 0, interrupt_tick = 0, interrupt_count = 0, kof = 0, flg = 0, score_tick = 0, selected_song = 0, admitted_roots = 0;
+    unsigned instruments = 0, source2 = 0, source3 = 0;
+    std::array<unsigned, 9> prefix_ids{}, prefix_counts{};
     std::vector<std::uint8_t> state;
     bool operator==(const Result& other) const {
         return std::tie(hash, frames, nonzero, clocks, last_nonzero_clock, status,
                         transfers, adoptions, version, bridge, signature, sounds,
-                        error, external, interruptions, active_env, interrupt_tick, interrupt_count, kof, flg, score_tick, selected_song, admitted_roots, state) ==
+                        error, external, interruptions, active_env, interrupt_tick, interrupt_count, kof, flg, score_tick, selected_song, admitted_roots, instruments, source2, source3, prefix_ids, prefix_counts, state) ==
                std::tie(other.hash, other.frames, other.nonzero, other.clocks,
                         other.last_nonzero_clock, other.status, other.transfers,
                         other.adoptions, other.version, other.bridge, other.signature,
                         other.sounds, other.error, other.external, other.interruptions, other.active_env,
-                        other.interrupt_tick, other.interrupt_count, other.kof, other.flg, other.score_tick, other.selected_song, other.admitted_roots, other.state);
+                        other.interrupt_tick, other.interrupt_count, other.kof, other.flg, other.score_tick, other.selected_song, other.admitted_roots, other.instruments, other.source2, other.source3, other.prefix_ids, other.prefix_counts, other.state);
     }
 };
-struct Restores { unsigned count = 0, phases = 0, commands = 0, roots = 0; };
+struct Restores { unsigned count = 0, phases = 0, commands = 0, roots = 0, instruments = 0; };
 Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
     Result result;
     unsigned steps = 0;
@@ -56,6 +59,14 @@ Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
                 }
             }
         }
+        // Observe live source IDs only while this diagnostic bridge renders.
+        if (host.debug_spc_ram_byte(0xd2) == 2) {
+            for (unsigned voice = 2; voice <= 3; ++voice) {
+                const auto source = host.debug_dsp_register(voice * 16 + 4);
+                if ((source == 2 || source == 3) && host.debug_dsp_register(voice * 16 + 8) > 0)
+                    result.instruments |= 1U << ((voice - 2) * 2 + source - 2);
+            }
+        }
         if (restores) {
             auto status = host.cpu().debug_wram_byte(0x20);
             auto bridge = host.cpu().debug_wram_byte(0x31);
@@ -64,13 +75,15 @@ Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
             std::uint64_t phase = status | (bridge << 8) | (commands << 16) |
                                   (std::uint64_t(host.debug_spc_ram_byte(0xd6)) << 24) |
                                   (std::uint64_t(admitted) << 32) |
-                                  (std::uint64_t(host.debug_spc_ram_byte(0xdb)) << 40);
+                                  (std::uint64_t(host.debug_spc_ram_byte(0xdb)) << 40) |
+                                  (std::uint64_t(result.instruments) << 48);
             if (++steps % 100003 == 0 || phase != previous) {
                 require(++restores->count <= 4096, "snapshot bound");
                 auto state = host.save_state();
                 require(host.load_state(state), "mid-execution restore");
                 require(host.save_state() == state, "exact state restoration");
                 restores->commands |= commands;
+                restores->instruments |= result.instruments;
                 if (admitted > 0 && admitted <= 3) restores->roots |= (1U << admitted) - 1;
                 if (status == 4) restores->phases |= 1; // IPL upload
                 if (status == 2) restores->phases |= 2; // external restart
@@ -100,6 +113,16 @@ Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
     result.admitted_roots = host.debug_spc_ram_byte(0xdc);
     result.kof = host.debug_dsp_register(0x5c);
     result.flg = host.debug_dsp_register(0x6c);
+    result.source2 = host.debug_dsp_register(0x24);
+    result.source3 = host.debug_dsp_register(0x34);
+    constexpr std::array<unsigned, 9> ids{0x6000, 0x6100, 0x6200, 0x6002,
+                                          0x6020, 0x6120, 0x6220, 0x6022, 0x6024};
+    constexpr std::array<unsigned, 9> counts{0x4a00, 0x4a02, 0x4a20, 0x4a22,
+                                             0x4a60, 0x4a62, 0x4a80, 0x4a82, 0x4a24};
+    for (std::size_t i = 0; i < ids.size(); ++i) {
+        result.prefix_ids[i] = host.debug_spc_ram_byte(ids[i]);
+        result.prefix_counts[i] = host.debug_spc_ram_byte(counts[i]);
+    }
     result.state = host.save_state();
     return result;
 }
@@ -135,6 +158,7 @@ int main(int argc, char** argv) {
                   << "\"playback\":false,\"reset_equal\":true,\"restore_equal\":true,"
                   << "\"restore_count\":" << restores.count << ",\"restore_phases\":" << restores.phases
                   << ",\"restore_commands\":" << restores.commands << ",\"restore_roots\":" << restores.roots
+                  << ",\"restore_instruments\":" << restores.instruments
                   << ",\"status\":" << result.status << ",\"transfers\":" << result.transfers
                   << ",\"adoptions\":" << result.adoptions << ",\"version\":" << result.version
                   << ",\"bridge\":" << result.bridge << ",\"signature\":" << result.signature
@@ -146,6 +170,15 @@ int main(int argc, char** argv) {
                   << ",\"selected_song\":" << result.selected_song << ",\"admitted_roots\":" << result.admitted_roots
                   << ",\"kof\":" << result.kof << ",\"flg\":" << result.flg
                   << ",\"last_nonzero_clock\":" << result.last_nonzero_clock
+                  << ",\"instruments\":" << result.instruments
+                  << ",\"source2\":" << result.source2 << ",\"source3\":" << result.source3;
+        std::cout << ",\"prefix_ids\":[";
+        for (std::size_t i = 0; i < result.prefix_ids.size(); ++i)
+            std::cout << (i ? "," : "") << result.prefix_ids[i];
+        std::cout << "],\"prefix_counts\":[";
+        for (std::size_t i = 0; i < result.prefix_counts.size(); ++i)
+            std::cout << (i ? "," : "") << result.prefix_counts[i];
+        std::cout << "]"
                   << ",\"pcm\":{\"frames\":" << result.frames << ",\"nonzero_frames\":" << result.nonzero
                   << ",\"fnv1a64\":" << result.hash << "}}\n";
     } catch (const std::exception& error) {

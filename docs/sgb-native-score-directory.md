@@ -116,7 +116,9 @@ bundled prototype hash check and `git diff --check` pass.
 ## Next step
 
 The [bounded uploaded instrument profile](sgb-native-score-instrument.md) now
-maps instrument 2 to an owned uploaded descriptor and BRR sample. Next expand
-that profile to two instrument IDs with per-event selection and inheritance.
+maps instrument 2 to an owned uploaded descriptor and BRR sample. The separate
+[two-instrument profile](sgb-native-score-dual-instrument.md) adds ordered E0
+replay and voice-local inheritance. Next add bounded multi-block samples and
+validated loop points.
 Echo, broader controls, eight-channel scheduling and real-title qualification
 remain separate unfinished contracts.

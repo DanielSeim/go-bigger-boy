@@ -82,9 +82,7 @@ acoustic equivalence, hardware behavior or commercial titles.
 
 ## Next step
 
-Support two bounded uploaded instrument IDs and per-event instrument selection.
-Cache the selected ID rather than only the count of E0 prefixes, validate every
-referenced descriptor/sample, and test instrument changes and inheritance on
-both voices, including active switching, malformed references and lifecycle
-replay. Keep the existing CB/CC/CD diagnostics reproducible while adding that
-separate profile.
+The [two-instrument diagnostic profile](sgb-native-score-dual-instrument.md)
+now adds per-event selection, ordered E0 replay and voice-local inheritance.
+Next extend its single-block samples to bounded multi-block BRR data and
+validated loop points.

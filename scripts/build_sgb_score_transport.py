@@ -15,11 +15,13 @@ def replace_exact(text, before, after, count=1):
     return text.replace(before, after)
 
 
-def build(*, multisong=False, uploaded_instrument=False):
+def build(*, multisong=False, uploaded_instrument=False, two_instruments=False):
     if type(multisong) is not bool:
         raise ValueError("multisong flag must be boolean")
     if type(uploaded_instrument) is not bool or (uploaded_instrument and not multisong):
         raise ValueError("uploaded instrument requires a boolean flag and multisong")
+    if type(two_instruments) is not bool or (two_instruments and not uploaded_instrument):
+        raise ValueError("two instruments require a boolean flag and uploaded instrument")
     engine = engine_source()
     hooks = {
         'clock_poll:\n    mov a, $fd\n': 'clock_poll:\n    call bridge_service\n',
@@ -53,6 +55,22 @@ def build(*, multisong=False, uploaded_instrument=False):
         engine = replace_exact(engine, '    mov a, owned_instrument_descriptor+x\n', '    mov a, $5000+x\n')
         bridge = replace_exact(bridge, 'mov $f5, #$cc', 'mov $f5, #$cd')
         bridge = replace_exact(bridge, '    call poly_setup\n', '    call uploaded_setup\n')
+    if two_instruments:
+        bridge = replace_exact(bridge, 'mov $f5, #$cd', 'mov $f5, #$ce')
+        engine = replace_exact(engine, '    cmp a, #$ed\n    beq mix_control_dispatch\n',
+            '    cmp a, #$ed\n    beq mix_control_dispatch\n    cmp a, #$e0\n    beq mix_control_dispatch\n')
+        begin = engine.index('reselect_instrument:\n')
+        end = engine.index('reselect_cache:\n', begin)
+        engine = engine[:begin] + 'reselect_instrument:\n    jmp dual_instrument\n' + engine[end:]
+        begin = engine.index('reselect_field:\n')
+        end = engine.index('reselect_pending:\n', begin)
+        engine = engine[:begin] + 'reselect_field:\n    jmp dual_field\n' + engine[end:]
+        engine = replace_exact(engine, 'calls_track_end:\n    call mix_cache\n',
+            'calls_track_end:\n    call dual_end_cache\n')
+        engine = replace_exact(engine, 'tail_cursor:\n    mov $63, a\n',
+            'tail_cursor:\n    mov $63, a\n    call reselect_event\n')
+        engine = replace_exact(engine, 'reselect_event:\n', 'reselect_event:\n    mov $e6, #$00\n')
+        engine = replace_exact(engine, 'reselect_write:\n', 'reselect_write:\n    call dual_descriptor\n')
     branch_number = 0
     def bridge_branch(match):
         nonlocal branch_number
@@ -68,7 +86,8 @@ def build(*, multisong=False, uploaded_instrument=False):
         bridge = re.sub(r'    (bne|beq|bcc|bcs) (directory_bad)\n', bridge_branch, bridge)
     source = bridge + '\n' + engine
     if uploaded_instrument:
-        source += '\n' + (ROOT / 'firmware/sgb/score_uploaded_instrument.asm').read_text()
+        source += '\n' + (ROOT / ('firmware/sgb/score_dual_instrument.asm' if two_instruments else
+                                   'firmware/sgb/score_uploaded_instrument.asm')).read_text()
     payload = bytes(assemble(source, 'spc', 0x0200))
     if len(payload) > (0x1a00 if uploaded_instrument else 0x1600):
         raise ValueError('transport payload exceeds bridge/engine region')
@@ -91,6 +110,8 @@ def build(*, multisong=False, uploaded_instrument=False):
             '    cmp #$01\n    bcc unsupported_early\n    cmp #$04\n    bcs unsupported_early\nbridge_host_valid_score:')
     if uploaded_instrument:
         host = replace_exact(host, 'cmp #$cc', 'cmp #$cd', count=4)
+    if two_instruments:
+        host = replace_exact(host, 'cmp #$cd', 'cmp #$ce', count=4)
     # Expanded diagnostic guards need absolute failure jumps in the host variant.
     guard_number = 0
     def far_guard(match):
@@ -122,9 +143,11 @@ if __name__ == '__main__':
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--multisong', action='store_true')
     parser.add_argument('--uploaded-instrument', action='store_true')
+    parser.add_argument('--two-instruments', action='store_true')
     args = parser.parse_args()
     try:
-        image = build(multisong=args.multisong, uploaded_instrument=args.uploaded_instrument)
+        image = build(multisong=args.multisong, uploaded_instrument=args.uploaded_instrument,
+                      two_instruments=args.two_instruments)
         with args.output.open('xb') as output:
             output.write(image)
     except (OSError, ValueError) as error:
