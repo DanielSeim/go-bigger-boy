@@ -20,21 +20,30 @@ def expected(case):
     return result
 
 
-def contract(r,case):
+def contract(r,case,*,short_return=False):
     if not isinstance(r,dict):raise ValueError('invalid direct-return observation')
     a,d=(r.get(k) for k in ('return_articulation','return_duration'))
-    if case not in CASES or type(a) is not int or a not in ARTICULATIONS or type(d) is not int or d not in DURATIONS or not integer(r.get('initial_articulation'),127,127):raise ValueError('invalid direct-return profile')
+    if type(short_return) is not bool:raise ValueError('invalid short-return contract selector')
+    if short_return and (not integer(r.get('boundary_duration'),8,16) or r['boundary_duration'] not in DURATIONS):raise ValueError('invalid short-return pending duration')
+    if case not in CASES or type(a) is not int or a not in ARTICULATIONS or type(d) is not int or d not in ((4,) if short_return else DURATIONS) or not integer(r.get('initial_articulation'),127,127):raise ValueError('invalid direct-return profile')
     if r.get('keyons')!=expected(case):raise ValueError('direct-return owned setup differs')
     for e in r['keyons']:
         if type(e['mask']) is not int or any(type(v) is not int for voice in e['voices'] for k,v in voice.items() if k!='volumes') or any(type(v) is not int for voice in e['voices'] for v in voice['volumes']):raise ValueError('invalid direct-return setup types')
-    intervals=r.get('onset_intervals_spc_cycles');bounds=[(84000,92000)]*4+([(40*2048*d//16,46*2048*d//16+4096)] if case=='direct-note' else [])
+    intervals=r.get('onset_intervals_spc_cycles');stop_bounds=(8*2048,12*2048) if short_return else (40*2048*d//16-2048,46*2048*d//16)
+    final_bounds=(stop_bounds[0],stop_bounds[1]+4096) if short_return else (40*2048*d//16,46*2048*d//16+4096)
+    bounds=[(84000,92000)]*4+([final_bounds] if case=='direct-note' else [])
     if not isinstance(intervals,list) or len(intervals)!=len(bounds) or any(not integer(v,*b) for v,b in zip(intervals,bounds)):raise ValueError('direct-return onset spacing differs')
     gates=r.get('note_gates');identities=[(0,2),(0,3),(1,3),(2,3),(3,3),(4,2)]
     if not isinstance(gates,list) or len(gates)!=6:raise ValueError('direct-return release count differs')
     for g,identity in zip(gates,identities):
         if not isinstance(g,dict) or any(type(g.get(k)) is not int for k in ('voice','onset_index')) or (g['onset_index'],g['voice'])!=identity or g.get('release_kind')!='timer-keyoff':raise ValueError('direct-return release identity/source differs')
-        pulses=PULSES[(96,a,d)] if identity==(4,2) else PULSES[(96,127,16)]
-        if not integer(g.get('gate_spc_cycles'),2048*(pulses-2),2048*pulses+4096):raise ValueError('direct-return timer gate differs')
+        if short_return and identity==(4,2):
+            # Directly measured short-gate window, not a new note-pulse table.
+            low,high=3*2048,5*2048
+        else:
+            pulses=PULSES[(96,a,d)] if identity==(4,2) else PULSES[(96,127,16)]
+            low,high=2048*(pulses-2),2048*pulses+4096
+        if not integer(g.get('gate_spc_cycles'),low,high):raise ValueError('direct-return timer gate differs')
     retriggers=r.get('unreleased_retriggers')
     wanted={'voice':2,'onset_index':4,'previous_onset_index':1,'interval_spc_cycles':sum(intervals[1:4])}
     if retriggers!=[wanted] or any(type(v) is not int for v in retriggers[0].values()):raise ValueError('direct return did not retrigger the held voice')
@@ -50,7 +59,7 @@ def contract(r,case):
     stop=r.get('final_stop_interval_spc_cycles')
     # Returning KON setup follows the score boundary; allow one timer pulse
     # of phase in this raw KON-to-stop interval without changing timestamps.
-    if not integer(stop,40*2048*d//16-2048,46*2048*d//16) or gates[-1]['gate_spc_cycles']>=stop:raise ValueError('returning note was not released before final stop')
+    if not integer(stop,*stop_bounds) or gates[-1]['gate_spc_cycles']>=stop:raise ValueError('returning note was not released before final stop')
     controls=[{'address':92,'value':255},{'address':92,'value':0},{'address':76,'value':4 if case=='direct-note' else 0}]
     if r.get('final_control_writes')!=controls or any(type(v) is not int for w in r['final_control_writes'] for v in w.values()):raise ValueError('direct-return final pulse differs')
     offsets=r.get('final_control_offsets_spc_cycles')
@@ -65,7 +74,7 @@ def contract(r,case):
     if not integer(r.get('post_stop_observation_spc_cycles'),200000,6000000):raise ValueError('direct-return observation window differs')
 
 
-def observe(source,case,art=63,duration=8):
+def observe(source,case,art=63,duration=8,*,boundary_duration=None):
     text=source.read(16*1024*1024+1)
     if len(text)>16*1024*1024:raise ValueError('direct-return trace exceeds byte bound')
     r=onsets(io.StringIO(text),case,onset_validator=lambda r,c:None)
@@ -104,7 +113,8 @@ def observe(source,case,art=63,duration=8):
              final_stop_interval_spc_cycles=stop-cycles[4],final_control_writes=[{'address':a,'value':v} for a,v,c in controls[:3]],final_control_offsets_spc_cycles=[c-stop for a,v,c in controls[:3]],
              boundary_pitch_writes=pitch,boundary_pitch_to_stop_spc_cycles=pc,post_return_volume_writes=vol,post_stop_nonzero_control_writes=[{'address':a,'value':v} for a,v,c in controls[3:] if v],post_stop_zero_control_write_count=sum(v==0 for a,v,c in controls[3:]),
              final_volumes=[[regs[32],regs[33]],[regs[48],regs[49]]],post_stop_observation_spc_cycles=last-stop)
-    contract(r,case);return r
+    if boundary_duration is not None:r['boundary_duration']=boundary_duration
+    contract(r,case,short_return=boundary_duration is not None);return r
 
 
 def run(trace,firmware_dir,model,art,duration,case):

@@ -135,8 +135,8 @@ This remains an opt-in direct-RAM/IPL-trampoline diagnostic outside bundled and
 production selection. SGB1/SGB2 program ROMs are still required. Hardware,
 original PCM equivalence and real-title firmware replacement remain open.
 
-Next, measure duration-4 direct-note returns on both originals before extending
-the allowed durations. The returning-rest duration-4 evidence cannot establish
-a note gate, especially when the old held voice is retriggered at articulation
-63. Keep pending final events at independently known durations while measuring
-that shorter returning note.
+The subsequent [duration-4 observation corpus](sgb-score-short-return-observations.md)
+measures short direct returns on both originals, with pending final events at
+independently known durations 8/16. Both returning articulations produce nearly
+the same short gate. Native duration-4 gate and envelope qualification remain
+the next step; the current diagnostic still rejects these banks silently.
