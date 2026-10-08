@@ -130,8 +130,9 @@ boundaries. The separate
 multi-song selection. The separate [two-instrument profile](sgb-native-score-dual-instrument.md)
 adds owned uploaded samples and voice-local selection/inheritance. The
 [multi-block sample profile](sgb-native-score-brr-chain.md) adds bounded BRR
-chains and checked loops. The next boundary is uploaded per-instrument envelopes
-and tuning. Production selection and general vendor-bank compatibility remain
+chains and checked loops. The [D0 profile](sgb-native-score-instrument-profiles.md)
+adds bounded uploaded envelopes/direct GAIN and tuning. The next boundary is
+non-looping BRR samples. Production selection and general vendor-bank compatibility remain
 unqualified.
 
 The documented [title-demand inventory](sgb-vendor-score-demand.md) identifies

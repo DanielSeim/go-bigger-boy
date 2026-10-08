@@ -83,6 +83,6 @@ acoustic equivalence, hardware behavior or commercial titles.
 ## Next step
 
 The [multi-block sample profile](sgb-native-score-brr-chain.md) now adds one to
-four BRR blocks per source and validated loop points. Next add bounded uploaded
-per-instrument envelopes and tuning while keeping the existing lifecycle and
-sample guards.
+four BRR blocks per source and validated loop points. The [D0 profile](sgb-native-score-instrument-profiles.md)
+adds bounded uploaded envelopes/direct GAIN and tuning. Next add non-looping BRR
+samples while keeping the existing lifecycle and sample guards.

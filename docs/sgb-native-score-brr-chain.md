@@ -125,8 +125,8 @@ qualification remain outstanding.
 
 ## Next step
 
-Add bounded uploaded per-instrument envelope and tuning profiles. Replace the
-current shared fixed envelope/pitch profile with owned descriptor data, validate
-it before admission, and test different sustain/release behavior and pitch on
-both voices while retaining sample-loop and lifecycle checks. General vendor
-instrument maps remain a separate qualification boundary.
+Bounded uploaded envelope/direct-GAIN and tuning profiles are covered by the
+[next D0 diagnostic](sgb-native-score-instrument-profiles.md). The next extension
+is bounded non-looping BRR samples with physical natural-completion, gate,
+instrument-selection and lifecycle evidence. General vendor instrument maps
+remain a separate qualification boundary.

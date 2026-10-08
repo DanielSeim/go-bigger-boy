@@ -1304,6 +1304,10 @@ if(GAMEBOY_BUILD_TESTS)
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_score_brr_chain_tests.py
                 --probe $<TARGET_FILE:gameboy_sgb_score_transport_probe>)
         set_tests_properties(gameboy_sgb_score_brr_chain PROPERTIES TIMEOUT 900)
+        add_test(NAME gameboy_sgb_score_instrument_profiles
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_score_instrument_profiles_tests.py
+                --probe $<TARGET_FILE:gameboy_sgb_score_transport_probe>)
+        set_tests_properties(gameboy_sgb_score_instrument_profiles PROPERTIES TIMEOUT 900)
         add_test(NAME gameboy_sgb_score_decoder_contract
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_score_decoder_tests.py)
         add_test(NAME gameboy_sgb_score_demand_inventory
