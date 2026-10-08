@@ -133,6 +133,10 @@ pan/track controls, matching the preceding qualified fixtures. This limitation
 must be resolved before claiming general prefix-command timing or instrument
 transition compatibility.
 
+The subsequent [instrument-2 reselection diagnostic](sgb-native-score-reselect.md)
+executes the missing setup writes and qualifies one/two selections in later
+prefixes. Longer-prefix timing remains outside its original comparison profile.
+
 Private firmware remains opaque execution-only input. No original instructions,
 samples, scores or instrument tables are inspected or committed. Child runs
 retain their 8000000-instruction/180-second bounds, 16-MiB temporary trace limit

@@ -1557,6 +1557,9 @@ if(GAMEBOY_BUILD_TESTS)
     add_executable(gameboy_sgb_score_sparse_probe tests/sgb_score_polygate_probe.cpp)
     target_compile_definitions(gameboy_sgb_score_sparse_probe PRIVATE GBB_SCORE_MIX_PROBE GBB_SCORE_ENVELOPE_PROBE GBB_SCORE_BANK_PROBE GBB_SCORE_LIST_PROBE GBB_SCORE_SPARSE_PROBE)
     target_link_libraries(gameboy_sgb_score_sparse_probe PRIVATE gameboy_core)
+    add_executable(gameboy_sgb_score_reselect_probe tests/sgb_score_polygate_probe.cpp)
+    target_compile_definitions(gameboy_sgb_score_reselect_probe PRIVATE GBB_SCORE_MIX_PROBE GBB_SCORE_ENVELOPE_PROBE GBB_SCORE_BANK_PROBE GBB_SCORE_LIST_PROBE GBB_SCORE_SPARSE_PROBE GBB_SCORE_RESELECT_PROBE)
+    target_link_libraries(gameboy_sgb_score_reselect_probe PRIVATE gameboy_core)
     add_executable(gameboy_sgb_score_clock_probe tests/sgb_score_clock_probe.cpp)
     target_link_libraries(gameboy_sgb_score_clock_probe PRIVATE gameboy_core)
     if(Python3_Interpreter_FOUND)
@@ -1605,6 +1608,9 @@ if(GAMEBOY_BUILD_TESTS)
         add_test(NAME gameboy_sgb_native_score_sparse
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_score_sparse_tests.py
                 --probe $<TARGET_FILE:gameboy_sgb_score_sparse_probe>)
+        add_test(NAME gameboy_sgb_native_score_reselect
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_score_reselect_tests.py
+                --probe $<TARGET_FILE:gameboy_sgb_score_reselect_probe>)
         add_test(NAME gameboy_sgb_expanded_native_score_gate
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_expanded_score_gate_tests.py
                 --probe $<TARGET_FILE:gameboy_sgb_score_gate_probe>)
@@ -1761,6 +1767,13 @@ if(GAMEBOY_BUILD_TESTS)
                     --firmware-dir ${CMAKE_CURRENT_SOURCE_DIR}/roms)
             set_tests_properties(gameboy_sgb_score_sparse_local_reference PROPERTIES
                 LABELS "local;private-reference" TIMEOUT 2880)
+            add_test(NAME gameboy_sgb_score_reselect_local_reference
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_score_reselect_reference.py
+                    --probe $<TARGET_FILE:gameboy_sgb_score_reselect_probe>
+                    --trace $<TARGET_FILE:gameboy_snes_65c816_apu_trace>
+                    --firmware-dir ${CMAKE_CURRENT_SOURCE_DIR}/roms)
+            set_tests_properties(gameboy_sgb_score_reselect_local_reference PROPERTIES
+                LABELS "local;private-reference" TIMEOUT 1920)
             add_test(NAME gameboy_sgb_song_selection_local_reference
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_song_selection_reference.py
                     --trace $<TARGET_FILE:gameboy_snes_65c816_apu_trace>

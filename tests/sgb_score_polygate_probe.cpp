@@ -11,7 +11,28 @@
 
 namespace {
 using Engine = gameboy::SnesApuAudioEngine;
-#ifdef GBB_SCORE_SPARSE_PROBE
+#ifdef GBB_SCORE_RESELECT_PROBE
+constexpr auto schema = "gbb-spc-score-reselect-v1";
+constexpr unsigned log_bound = 320, second_pattern_offset = 64;
+constexpr unsigned log_base = 0x4000, bank_input_bound = 2049, upper_guard = 0x4c00;
+struct InstrumentObservation {
+    Engine* engine{};
+    gameboy::SnesSpc700* cpu{};
+    bool enabled = false, bad = false;
+    std::vector<std::array<std::uint64_t,4>> writes;
+} instrument_observation;
+void observe_instrument(void* context, std::uint64_t cycle, std::uint8_t,
+                        std::uint16_t address, std::uint8_t value, bool accepted) noexcept {
+    auto& observation = *static_cast<InstrumentObservation*>(context);
+    if (!observation.enabled || !accepted || address != 0xf3) return;
+    auto& engine = *observation.engine;
+    const unsigned reg = engine.bus().spc_read(0xf2) & 127;
+    if (engine.bus().dsp_read_ram(0x64) != 1 ||
+        !((reg >= 0x24 && reg <= 0x27) || (reg >= 0x34 && reg <= 0x37))) return;
+    if (!cycle || observation.writes.size() >= 160) { observation.bad = true; return; }
+    observation.writes.push_back({engine.cpu().half_cycles(),reg,value,engine.bus().dsp_register(0x5c)});
+}
+#elif defined(GBB_SCORE_SPARSE_PROBE)
 constexpr auto schema = "gbb-spc-score-sparse-v1";
 constexpr unsigned log_bound = 320, second_pattern_offset = 64;
 constexpr unsigned log_base = 0x4000, bank_input_bound = 2049, upper_guard = 0x4c00;
@@ -132,6 +153,9 @@ unsigned log_count(Engine& engine) {
 #endif
 }
 void checkpoint(Engine& engine) {
+#ifdef GBB_SCORE_RESELECT_PROBE
+    instrument_observation.enabled = false;
+#endif
     const auto saved = engine.save_state();
     Engine other;
     require(other.load_state(saved), "cross-instance track restore failed");
@@ -140,6 +164,9 @@ void checkpoint(Engine& engine) {
     require(first == second, "restored renderer PCM differs");
     require(engine.save_state() == other.save_state(), "native parser restore continuation differs");
     require(engine.load_state(saved) && engine.save_state() == saved, "track rewind failed");
+#ifdef GBB_SCORE_RESELECT_PROBE
+    instrument_observation.enabled = true;
+#endif
 }
 struct Edge {
     std::uint64_t half;
@@ -169,6 +196,8 @@ struct Result {
     std::vector<unsigned char> articulations;
     std::vector<unsigned> pattern_ticks;
     std::vector<unsigned> pattern_masks;
+    std::vector<unsigned> instrument_sets;
+    std::vector<std::array<std::uint64_t,4>> instrument_writes;
     std::vector<std::array<unsigned,5>> controls;
     std::vector<std::uint64_t> halves;
     std::vector<Edge> keyons, keyoffs;
@@ -178,7 +207,7 @@ struct Result {
     std::array<unsigned,2> settled_envelopes{};
     bool operator==(const Result& other) const {
         return status == other.status && end_tick == other.end_tick && second_tick == other.second_tick && completion_half == other.completion_half &&
-            events == other.events && articulations == other.articulations && pattern_ticks == other.pattern_ticks && pattern_masks == other.pattern_masks && controls == other.controls && halves == other.halves && keyons == other.keyons && keyoffs == other.keyoffs && envelopes == other.envelopes &&
+            events == other.events && articulations == other.articulations && pattern_ticks == other.pattern_ticks && pattern_masks == other.pattern_masks && instrument_sets == other.instrument_sets && instrument_writes == other.instrument_writes && controls == other.controls && halves == other.halves && keyons == other.keyons && keyoffs == other.keyoffs && envelopes == other.envelopes &&
             audio == other.audio && steady == other.steady && peer_checks == other.peer_checks && settled_frames == other.settled_frames && peer_pcm == other.peer_pcm && settled_envelopes == other.settled_envelopes;
     }
 };
@@ -194,6 +223,13 @@ Edge edge(Engine& engine, unsigned mask) {
 }
 Result exercise(Engine& engine, bool restore) {
     Result result;
+#ifdef GBB_SCORE_RESELECT_PROBE
+    instrument_observation.engine = &engine;
+    instrument_observation.enabled = true;
+    instrument_observation.bad = false;
+    instrument_observation.writes.clear();
+    instrument_observation.cpu->set_write_cycle_observer(observe_instrument, &instrument_observation);
+#endif
 #ifdef GBB_SCORE_BANK_PROBE
     std::array<unsigned char,2049> source_before{};
     for (unsigned i = 0; i < source_before.size(); ++i) source_before[i] = engine.bus().dsp_read_ram(0x2b00+i);
@@ -365,6 +401,9 @@ Result exercise(Engine& engine, bool restore) {
             for (unsigned i = offset; i < written; ++i) result.events.push_back(bus.dsp_read_ram(log_base+i));
             result.halves.push_back(engine.cpu().half_cycles());
             result.articulations.push_back(bus.dsp_read_ram(0x7b));
+#ifdef GBB_SCORE_RESELECT_PROBE
+            result.instrument_sets.push_back(bus.dsp_read_ram(0xa5));
+#endif
 #ifdef GBB_SCORE_MIX_PROBE
             result.controls.push_back({bus.dsp_read_ram(0x89),bus.dsp_read_ram(0x8a),bus.dsp_read_ram(0x8b),bus.dsp_read_ram(0x8c),bus.dsp_read_ram(0x8d)});
 #endif
@@ -448,11 +487,18 @@ Result exercise(Engine& engine, bool restore) {
             for (unsigned address = upper_guard; address < upper_guard+0x100; ++address)
                 require(engine.bus().dsp_read_ram(address) == 0xa5, "native score touched upper cache guard");
 #ifdef GBB_SCORE_SPARSE_PROBE
+#ifndef GBB_SCORE_RESELECT_PROBE
             for (unsigned address = 0x4a00; address < 0x4b00; ++address)
                 require(engine.bus().dsp_read_ram(address) == 0xa5, "sparse score touched cache/mask gap");
+#endif
             for (unsigned address = 0x4b04; address < 0x4c00; ++address)
                 require(engine.bus().dsp_read_ram(address) == 0xa5, "sparse score overflowed active-mask cache");
 #endif
+#endif
+#ifdef GBB_SCORE_RESELECT_PROBE
+            require(!instrument_observation.bad, "instrument write observation overflow/unknown cycle");
+            result.instrument_writes = instrument_observation.writes;
+            instrument_observation.enabled = false;
 #endif
             return result;
         }
@@ -493,7 +539,14 @@ int main(int argc, char** argv) {
         const auto program = read(argv[1], 4096), bank = read(argv[2], bank_input_bound);
         const auto tempo = std::stoul(argv[3]);
         require(tempo <= 255, "tempo outside byte bound");
+#ifdef GBB_SCORE_RESELECT_PROBE
+        gameboy::SnesApuBus observed_bus;
+        gameboy::SnesSpc700 observed_cpu(observed_bus);
+        Engine engine(observed_cpu);
+        instrument_observation.cpu = &observed_cpu;
+#else
         Engine engine;
+#endif
         setup(engine, program, bank, tempo);
         const auto expected = exercise(engine, false);
         setup(engine, program, bank, tempo);
@@ -515,6 +568,9 @@ int main(int argc, char** argv) {
             const auto& control = expected.controls[i];
             std::cout << ",\"volumes\":[" << control[0] << ',' << control[1] << "],\"pan\":" << control[2]
                       << ",\"track_volume\":" << control[3] << ",\"song_volume\":" << control[4];
+#endif
+#ifdef GBB_SCORE_RESELECT_PROBE
+            std::cout << ",\"instrument_sets\":" << expected.instrument_sets[i];
 #endif
             std::cout << '}';
         }
@@ -554,6 +610,15 @@ int main(int argc, char** argv) {
         std::cout << ']';
 #endif
         std::cout << ",\"peer_checks\":[" << expected.peer_checks[0] << "," << expected.peer_checks[1] << "]";
+#ifdef GBB_SCORE_RESELECT_PROBE
+        std::cout << ",\"instrument_writes\":[";
+        for (unsigned i = 0; i < expected.instrument_writes.size(); ++i) {
+            if (i) std::cout << ',';
+            const auto& write = expected.instrument_writes[i];
+            std::cout << "{\"half_cycle\":" << write[0] << ",\"register\":" << write[1] << ",\"value\":" << write[2] << ",\"held_mask\":" << write[3] << '}';
+        }
+        std::cout << ']';
+#endif
 #ifdef GBB_SCORE_MIX_PROBE
         std::cout << ",\"settled_envelope_checks\":[" << expected.settled_envelopes[0] << ',' << expected.settled_envelopes[1] << ']';
 #endif
