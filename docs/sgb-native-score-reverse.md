@@ -3,7 +3,9 @@
 The subsequent [pending-note observations](sgb-score-pending-observations.md)
 measure a following pattern with channel 2 inactive; those cases still reject
 in this renderer. A separate [pending-note renderer](sgb-native-score-pending.md)
-implements the measured inactive-pattern lifecycle.
+implements the measured inactive-pattern lifecycle. The subsequent
+[following-rest diagnostic](sgb-native-score-follow-rest.md) also implements
+an immediate channel-2 rest without changing this renderer's guards.
 
 The isolated renderer now executes a ready channel-2 note or rest before a
 same-tick channel-3 end. Its controls and timing become inherited state, and a

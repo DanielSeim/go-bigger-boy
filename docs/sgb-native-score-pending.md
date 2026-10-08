@@ -7,6 +7,9 @@ even when channel 2 is absent from that pattern. Its pitch changes immediately,
 its logical controls carry forward, and its actual DSP volume remains unchanged
 until a returning note. A returning rest controls the held note's release.
 
+The subsequent [following-rest diagnostic](sgb-native-score-follow-rest.md)
+implements the separately measured immediate-rest case in a new image.
+
 ## Execution and limits
 
 `scripts/build_sgb_score_pending.py` layers checked source hooks over the

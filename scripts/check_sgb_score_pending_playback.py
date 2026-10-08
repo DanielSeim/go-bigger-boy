@@ -53,8 +53,8 @@ def identity(report):
     return c,a,d
 
 
-def validate(report):
-    multi_validate(report,schema=SCHEMA,max_events=64,max_ticks=2032,min_events=1,initial_pair=False)
+def validate_metadata(report, *, schema=SCHEMA):
+    multi_validate(report,schema=schema,max_events=64,max_ticks=2032,min_events=1,initial_pair=False)
     if report.get('source_unmodified') is not True or report.get('cache_guards_equal') is not True:raise ValueError('pending source/cache guards differ')
     if not integer(report.get('completion_half_cycle'),1,30000000) or not integer(report.get('tempo'),0,255):raise ValueError('invalid pending completion/tempo')
     for name in ('peer_checks','frozen_peer_checks','settled_envelope_checks','settled_gate_frames','settled_peer_nonzero_frames'):
@@ -70,6 +70,11 @@ def validate(report):
         if any(report.get(k)!=[] for k in ('events','event_patterns','pattern_ticks','pattern_masks','keyons','keyoffs','voice_writes','instrument_writes','envelopes')) or pcm['nonzero_frames'] or pcm['peak'] or any(report['frozen_peer_checks']):raise ValueError('rejected pending bank rendered audio')
         return
     if report['tempo']!=96 or not pcm['nonzero_frames'] or pcm['peak']==0:raise ValueError('pending tempo/audio differs')
+
+
+def validate(report):
+    validate_metadata(report)
+    if report['status']!=2:return
     for e in report['events']:
         if any(type(e.get(k)) is not int for k in ('articulation','pan','track_volume','song_volume','instrument_sets')) or not isinstance(e.get('volumes'),list) or len(e['volumes'])!=2 or any(not integer(v,0,127) for v in e['volumes']):raise ValueError('invalid pending raw controls')
     patterns=report.get('event_patterns')
