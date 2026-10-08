@@ -1,5 +1,8 @@
 # Experimental clipped-peer voice lifecycle
 
+The subsequent [same-tick end-priority diagnostic](sgb-native-score-order.md)
+qualifies channel-2-first skipping and measures the reverse ordering separately.
+
 The isolated native renderer now preserves a clipped peer's voice across pattern
 changes. Owned score fixtures executed against both originals confirm that an
 inactive channel's gate countdown freezes. A returning note replaces the held
