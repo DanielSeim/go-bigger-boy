@@ -6,7 +6,10 @@ qualifies channel-2-first skipping and measures the reverse ordering separately.
 The isolated native renderer now preserves a clipped peer's voice across pattern
 changes. Owned score fixtures executed against both originals confirm that an
 inactive channel's gate countdown freezes. A returning note replaces the held
-note without an intervening KOF; a returning rest resumes the old countdown.
+note without an intervening KOF. The measured returning-rest cases have delayed
+releases; later [pending-note observations](sgb-score-pending-observations.md)
+show that new rest timing can govern release, so these cases do not establish
+a general original countdown-resume rule.
 The preceding [trailing-control diagnostic](sgb-native-score-tail.md) identified
 this gap and continues to build independently with its original hash.
 

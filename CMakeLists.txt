@@ -1629,6 +1629,9 @@ if(GAMEBOY_BUILD_TESTS)
         add_test(NAME gameboy_sgb_native_score_reselect
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_score_reselect_tests.py
                 --probe $<TARGET_FILE:gameboy_sgb_score_reselect_probe>)
+        add_test(NAME gameboy_sgb_native_score_pending_observation
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_score_pending_tests.py
+                --probe $<TARGET_FILE:gameboy_sgb_score_reverse_probe>)
         add_test(NAME gameboy_sgb_native_score_reverse
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_score_reverse_tests.py
                 --probe $<TARGET_FILE:gameboy_sgb_score_reverse_probe>)
@@ -1810,6 +1813,13 @@ if(GAMEBOY_BUILD_TESTS)
                     --firmware-dir ${CMAKE_CURRENT_SOURCE_DIR}/roms)
             set_tests_properties(gameboy_sgb_score_reselect_local_reference PROPERTIES
                 LABELS "local;private-reference" TIMEOUT 1920)
+            add_test(NAME gameboy_sgb_score_pending_local_reference
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_score_pending_reference.py
+                    --probe $<TARGET_FILE:gameboy_sgb_score_reverse_probe>
+                    --trace $<TARGET_FILE:gameboy_snes_65c816_apu_trace>
+                    --firmware-dir ${CMAKE_CURRENT_SOURCE_DIR}/roms)
+            set_tests_properties(gameboy_sgb_score_pending_local_reference PROPERTIES
+                LABELS "local;private-reference" TIMEOUT 7680)
             add_test(NAME gameboy_sgb_score_reverse_local_reference
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_score_reverse_reference.py
                     --probe $<TARGET_FILE:gameboy_sgb_score_reverse_probe>
