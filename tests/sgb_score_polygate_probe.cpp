@@ -12,7 +12,9 @@
 namespace {
 using Engine = gameboy::SnesApuAudioEngine;
 #ifdef GBB_SCORE_RESELECT_PROBE
-#ifdef GBB_SCORE_FINAL_PEER_PROBE
+#ifdef GBB_SCORE_FINAL_RETURN_PROBE
+constexpr auto schema = "gbb-spc-score-final-return-v1";
+#elif defined(GBB_SCORE_FINAL_PEER_PROBE)
 constexpr auto schema = "gbb-spc-score-final-peer-v1";
 #elif defined(GBB_SCORE_FINAL_PROBE)
 constexpr auto schema = "gbb-spc-score-final-v1";
@@ -261,10 +263,16 @@ struct Result {
 #ifdef GBB_SCORE_FINAL_PEER_PROBE
     unsigned final_peer_stop = 0;
 #endif
+#ifdef GBB_SCORE_FINAL_RETURN_PROBE
+    unsigned final_return_mode = 0;
+#endif
     Audio audio, steady;
     std::array<unsigned,2> peer_checks{}, settled_frames{}, peer_pcm{};
     std::array<unsigned,2> settled_envelopes{}, frozen_checks{};
     bool operator==(const Result& other) const {
+#ifdef GBB_SCORE_FINAL_RETURN_PROBE
+        if (final_return_mode != other.final_return_mode) return false;
+#endif
 #ifdef GBB_SCORE_FINAL_PEER_PROBE
         if (final_peer_stop != other.final_peer_stop) return false;
 #endif
@@ -591,12 +599,20 @@ Result exercise(Engine& engine, bool restore) {
             result.status = status;
             result.end_tick = bus.dsp_read_ram(0x10) | bus.dsp_read_ram(0x11) << 8;
             result.completion_half = engine.cpu().half_cycles();
+#ifdef GBB_SCORE_FINAL_RETURN_PROBE
+            result.final_return_mode = status == 2 ? bus.dsp_read_ram(0xbe) : 0;
+            require(result.final_return_mode <= 1, "invalid final return mode");
+#endif
 #ifdef GBB_SCORE_FINAL_PEER_PROBE
             result.final_peer_stop = status == 2 ? bus.dsp_read_ram(0xbb) : 0;
             require(result.final_peer_stop <= 1, "invalid final peer completion phase");
 #endif
             unsigned tail_half = 40000;
 #ifdef GBB_SCORE_FINAL_PROBE
+            bool final_held = result.keyons.size() == 3;
+#ifdef GBB_SCORE_FINAL_RETURN_PROBE
+            if (result.final_return_mode) final_held = result.keyons.size() == 5;
+#endif
             result.final_mode = status == 2 ? bus.dsp_read_ram(0xba) : 0;
             if (result.final_mode) {
                 require(status == 2 && result.final_mode == 1, "invalid final-ready mode");
@@ -618,7 +634,7 @@ Result exercise(Engine& engine, bool restore) {
                 if (result.final_mode) {
                     require(bus.dsp_register(0x5c) == 0 && bus.dsp_register(0x4c) == 0,
                             "final-ready halt changed key registers");
-                    if (result.keyons.size() == 3) require(bus.dsp_register(0x28) > 0,
+                    if (final_held) require(bus.dsp_register(0x28) > 0,
                             "final held envelope disappeared inside observation window");
                     if (restore && (i == 73 || i == 3001 || i == 190001 || i == 590003)) checkpoint(engine);
                 }
@@ -639,7 +655,7 @@ Result exercise(Engine& engine, bool restore) {
             if (result.final_mode) {
                 result.final_observation_half = tail_half;
                 result.final_env_end = bus.dsp_register(0x28);
-                if (result.keyons.size() == 3) require(result.final_env_start > 0 && result.final_env_end > 0 &&
+                if (final_held) require(result.final_env_start > 0 && result.final_env_end > 0 &&
                         result.final_tail_audio.nonzero > 0 && result.final_tail_audio.quiet_tail < 64,
                         "final KON did not leave a sounding held voice");
                 else require(result.audio.quiet_tail >= 64 && result.final_env_end == 0 && result.final_tail_audio.nonzero == 0,
@@ -854,6 +870,9 @@ int main(int argc, char** argv) {
 #endif
 #ifdef GBB_SCORE_FINAL_PEER_PROBE
         std::cout << ",\"final_peer_stop\":" << expected.final_peer_stop;
+#endif
+#ifdef GBB_SCORE_FINAL_RETURN_PROBE
+        std::cout << ",\"final_return_mode\":" << expected.final_return_mode;
 #endif
         std::cout << ",\"second_tail_pcm\":{\"frames\":" << expected.steady.frames
             << ",\"left_nonzero_frames\":" << expected.steady.left_nonzero

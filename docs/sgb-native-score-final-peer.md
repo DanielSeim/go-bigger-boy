@@ -137,7 +137,8 @@ ROMs remain required. The authored cases have no ready boundary event, so they
 do not qualify retriggering a held peer at the final tick. Original PCM
 equivalence, hardware and real-title replacement qualification remain open.
 
-Next, measure final termination when channel 2 returns from inactivity with a
-ready note or rest while channel 3 ends. This combines the newly measured
-stop release of its old held note with the earlier pending final KON behavior.
-Use those observations before extending the single-pattern final-ready guard.
+The subsequent [returning final note/rest diagnostic](sgb-native-score-final-return.md)
+measures channel 2 returning through a rest before channel 3's final end.
+That rest releases the old held voice before the final pulse; a pending note
+then starts a new held attack. Mixed articulation and an immediate returning
+note without that rest remain separate measurements.
