@@ -5,7 +5,9 @@ a duration-4 note, then release that returning note before final readiness.
 The gate is nearly identical at articulations 63 and 127. This adds the short
 note evidence needed after the
 [duration-8/16 native direct-return diagnostic](sgb-native-score-direct-return.md).
-A native short-note profile remains unimplemented and independently unqualified.
+These measurements preceded the
+[guarded native short-return diagnostic](sgb-native-score-short-return.md),
+which now implements and checks this bounded profile.
 
 ## Independently authored corpus
 
@@ -54,8 +56,9 @@ reject duration 4. The general native note table remains unchanged.
 All 96 observed releases in the matrix are timer KOFs: five preceding releases
 and the new returning-note release per execution. Every returning note releases
 before final termination, with no voice pending at the final FF write. The
-native gate count and owned envelope behavior of this shorter retrigger remain
-to be qualified.
+native gate count and owned envelope behavior were subsequently checked in
+the separate native diagnostic; these original-only measurements do not
+establish them.
 
 ## Actual setup and final readiness
 
@@ -121,14 +124,13 @@ fields: `return_duration` is 4 and `boundary_duration` is 8/16. Original childre
 retain the 8-million-instruction, 180-second, 16 MiB CSV and fewer-than-32768-row
 caps. Source and native bounds remain unchanged.
 
-All eight short-return banks remain silently rejected by the current native
-image: status 226, no accepted key writes and no nonzero owned PCM. The
+All eight short-return banks were silently rejected by the preceding native
+image: status 226, no accepted key writes and no nonzero owned PCM. That
 4089-byte program retains SHA-256
 `11eba7bf28920d59fd0278de5149263fc6803328554d4c030f8cd2e2f998440a`;
 the bundled prototype is unchanged. SGB1/SGB2 program ROMs remain required.
 
-Next, establish and implement the guarded duration-4 direct-note gate using
-this corpus. Preserve the independent duration-8/16 pending-final events and
-unreleased-retrigger ledger. Validate owned attack, decay and release, actual
-DSP setup/control writes, final held/silent audio and reset/save/load, then
-check all previously qualified profiles before extending any selection.
+The subsequent native diagnostic preserves these independent pending-final
+events and the unreleased-retrigger ledger. Its implementation and separate
+owned-envelope, audio and lifecycle evidence are documented in the linked
+native profile.

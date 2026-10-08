@@ -13,21 +13,22 @@ from check_sgb_score_duet_reference import integer
 SCHEMA='gbb-spc-score-direct-return-v1'
 
 
-def identity(r):
+def identity(r,*,short_return=False):
     es=r['events']
     if len(es)!=9:raise ValueError('direct return requires nine records')
-    a,d=es[6]['articulation'],es[6]['duration'];c='direct-rest' if es[-1]['opcode']==0xC9 else 'direct-note'
+    a,d=es[6]['articulation'],es[-1]['duration'] if short_return else es[6]['duration'];c='direct-rest' if es[-1]['opcode']==0xC9 else 'direct-note'
     if type(a) is not int or a not in ARTICULATIONS or type(d) is not int or d not in DURATIONS or es[6]['opcode']!=0xA0:raise ValueError('unmeasured direct return')
+    if short_return and es[6]['duration']!=4:raise ValueError('invalid short returning duration')
     return c,a,d
 
 
-def validate(r):
+def validate(r,*,short_return=False,fixture_bank=bank):
     if r.get('schema')!=SCHEMA:raise ValueError('invalid direct-return schema')
     if not integer(r.get('direct_return_mode'),1 if r.get('status')==2 else 0,1 if r.get('status')==2 else 0):raise ValueError('invalid direct-return mode')
     if r.get('status')!=2:
         prior_validate({**r,'schema':PRIOR_SCHEMA});return
-    c,a,d=identity(r)
-    prior_validate({**r,'schema':PRIOR_SCHEMA},direct_return=True,fixture_bank=lambda _a,_d,_c,_s:bank(a,d,c),expected_onsets=lambda _:expected(c))
+    c,a,d=identity(r,short_return=short_return)
+    prior_validate({**r,'schema':PRIOR_SCHEMA},direct_return=True,fixture_bank=lambda _a,_d,_c,_s:fixture_bank(a,d,c),expected_onsets=lambda _:expected(c),short_return=short_return)
     retriggers=[e for e in r['envelopes'] if e['retrigger_half_cycle']]
     if len(retriggers)!=1 or retriggers[0]['voice']!=2 or retriggers[0]['on_half_cycle']!=r['keyons'][1]['half_cycle'] or retriggers[0]['retrigger_half_cycle']!=r['keyons'][4]['half_cycle']:raise ValueError('direct-return envelope retrigger differs')
     if r['keyons'][4]['held_mask']!=0:raise ValueError('direct-return KOF retained a held peer bit')
@@ -41,13 +42,13 @@ def native(probe,data,tempo=96):
     return gate_native(probe,data,tempo,builder=program_build,validator=validate,output_bound=131072)
 
 
-def compare(candidates,refs):
-    agree(refs)
+def compare(candidates,refs,*,short_return=False,validator=validate,reference_agreement=agree):
+    reference_agreement(refs)
     if not isinstance(candidates,dict) or set(candidates)!={f'{c}-{a}-{d}' for c in CASES for a in ARTICULATIONS for d in DURATIONS}:raise ValueError('require complete native direct-return matrix')
     result=[]
     for ref in refs:
-        c,a,d,m=(ref[k] for k in ('case','return_articulation','return_duration','model'));r=candidates[f'{c}-{a}-{d}'];validate(r)
-        if identity(r)!=(c,a,d):raise ValueError('direct-return native identity differs')
+        c,a,d,m=(ref[k] for k in ('case','return_articulation','boundary_duration' if short_return else 'return_duration','model'));r=candidates[f'{c}-{a}-{d}'];validator(r)
+        if identity(r,short_return=short_return)!=(c,a,d):raise ValueError('direct-return native identity differs')
         gates,held=observation(r,allow_retrigger=True);controls=control_writes(r);stop=controls[0]['half_cycle'];kon=r['keyons'][4]['half_cycle']
         values={
             'note_gates':[(g['gate_spc_cycles']) for g in gates],
@@ -67,7 +68,7 @@ def compare(candidates,refs):
             if len(vs)!=len(wanted):raise ValueError('direct-return timing vector differs')
             diffs[field]=[abs(x-y) for x,y in zip(vs,wanted)]
         if held!=ref['unreleased_final_voices'] or any(v>4096 for vs in diffs.values() for v in vs):raise ValueError('direct return exceeds retained timing allowance')
-        result.append({'case':c,'return_articulation':a,'return_duration':d,'model':m,'absolute_differences_spc_cycles':diffs})
+        result.append({'case':c,'return_articulation':a,'return_duration':4 if short_return else d,'boundary_duration':d,'model':m,'absolute_differences_spc_cycles':diffs})
     return result
 
 

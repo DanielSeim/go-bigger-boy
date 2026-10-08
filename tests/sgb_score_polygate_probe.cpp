@@ -12,7 +12,9 @@
 namespace {
 using Engine = gameboy::SnesApuAudioEngine;
 #ifdef GBB_SCORE_RESELECT_PROBE
-#if defined(GBB_SCORE_DIRECT_RETURN_PROBE)
+#if defined(GBB_SCORE_SHORT_RETURN_PROBE)
+constexpr auto schema = "gbb-spc-score-short-return-v1";
+#elif defined(GBB_SCORE_DIRECT_RETURN_PROBE)
 constexpr auto schema = "gbb-spc-score-direct-return-v1";
 #elif defined(GBB_SCORE_FINAL_MIXED_PROBE)
 constexpr auto schema = "gbb-spc-score-final-mixed-v1";
@@ -271,6 +273,9 @@ struct Result {
     unsigned final_return_mode = 0;
 #ifdef GBB_SCORE_DIRECT_RETURN_PROBE
     unsigned direct_return_mode = 0;
+#ifdef GBB_SCORE_SHORT_RETURN_PROBE
+    unsigned short_return_mode = 0;
+#endif
 #endif
 #endif
     Audio audio, steady;
@@ -281,6 +286,9 @@ struct Result {
         if (final_return_mode != other.final_return_mode) return false;
 #ifdef GBB_SCORE_DIRECT_RETURN_PROBE
         if (direct_return_mode != other.direct_return_mode) return false;
+#ifdef GBB_SCORE_SHORT_RETURN_PROBE
+        if (short_return_mode != other.short_return_mode) return false;
+#endif
 #endif
 #endif
 #ifdef GBB_SCORE_FINAL_PEER_PROBE
@@ -622,6 +630,10 @@ Result exercise(Engine& engine, bool restore) {
 #ifdef GBB_SCORE_DIRECT_RETURN_PROBE
             result.direct_return_mode = status == 2 ? bus.dsp_read_ram(0xc3) : 0;
             require(result.direct_return_mode <= 1, "invalid direct return mode");
+#ifdef GBB_SCORE_SHORT_RETURN_PROBE
+            result.short_return_mode = status == 2 ? bus.dsp_read_ram(0xc4) : 0;
+            require(result.short_return_mode <= 1, "invalid short return mode");
+#endif
 #endif
 #endif
 #ifdef GBB_SCORE_FINAL_PEER_PROBE
@@ -899,6 +911,9 @@ int main(int argc, char** argv) {
         std::cout << ",\"final_return_mode\":" << expected.final_return_mode;
 #ifdef GBB_SCORE_DIRECT_RETURN_PROBE
         std::cout << ",\"direct_return_mode\":" << expected.direct_return_mode;
+#ifdef GBB_SCORE_SHORT_RETURN_PROBE
+        std::cout << ",\"short_return_mode\":" << expected.short_return_mode;
+#endif
 #endif
 #endif
         std::cout << ",\"second_tail_pcm\":{\"frames\":" << expected.steady.frames

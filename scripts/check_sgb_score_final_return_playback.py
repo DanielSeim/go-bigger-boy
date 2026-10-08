@@ -18,13 +18,13 @@ from check_sgb_score_duet_reference import integer
 SCHEMA='gbb-spc-score-final-return-v1'
 
 
-def identity(r,*,return_art=None,direct_return=False):
+def identity(r,*,return_art=None,direct_return=False,short_return=False):
     es=r['events']
     if len(es)!=9:raise ValueError('final return requires nine raw records')
     e=es[-1];c='return-rest' if e['opcode']==0xC9 else 'return-note';a=e['articulation'];d=e['duration'];s=es[6]['duration']
-    if type(a) is not int or a not in (63,127) or type(d) is not int or d not in DURATIONS or type(s) is not int or s not in (DURATIONS if direct_return else RESTS):raise ValueError('unmeasured final return profile')
+    if type(a) is not int or a not in (63,127) or type(d) is not int or d not in DURATIONS or type(s) is not int or s not in ((4,) if short_return else DURATIONS if direct_return else RESTS):raise ValueError('unmeasured final return profile')
     if direct_return:
-        if d!=s or es[0]['articulation']!=127:raise ValueError('invalid direct-return initial articulation/duration')
+        if (s!=4 if short_return else d!=s) or es[0]['articulation']!=127:raise ValueError('invalid direct-return initial articulation/duration')
         a=127
     elif return_art is not None:
         if return_art!=63 or a!=63 or es[0]['articulation']!=127:raise ValueError('invalid mixed returning articulation')
@@ -32,7 +32,7 @@ def identity(r,*,return_art=None,direct_return=False):
     return c,a,d,s
 
 
-def validate(r,*,return_art=None,fixture_bank=bank,direct_return=False,expected_onsets=None):
+def validate(r,*,return_art=None,fixture_bank=bank,direct_return=False,expected_onsets=None,short_return=False):
     multi_validate(r,schema=SCHEMA,max_events=64,max_ticks=2032,min_events=1,initial_pair=False,terminal_event=True)
     if r['status']!=2:
         validate_metadata(r,schema=SCHEMA)
@@ -41,7 +41,7 @@ def validate(r,*,return_art=None,fixture_bank=bank,direct_return=False,expected_
     if r.get('source_unmodified') is not True or r.get('cache_guards_equal') is not True or not integer(r.get('completion_half_cycle'),1,30000000) or not integer(r.get('tempo'),96,96):raise ValueError('invalid final return source/cache/clock')
     for k,v in (('final_mode',1),('final_return_mode',1),('final_peer_stop',0),('final_observation_half_cycles',600000)):
         if not integer(r.get(k),v,v):raise ValueError('invalid final return mode/tail')
-    c,a,d,s=identity(r,return_art=return_art,direct_return=direct_return)
+    c,a,d,s=identity(r,return_art=return_art,direct_return=direct_return,short_return=short_return)
     wanted=expected(c) if expected_onsets is None else expected_onsets(c)
     if r.get('pattern_ticks')!=[0,32,64] or r.get('pattern_masks')!=[12,8,12] or r.get('event_patterns')!=[0]*4+[1]*2+[2]*3 or not integer(r.get('end_tick'),64+s,64+s) or not integer(r.get('second_pattern_tick'),32,32):raise ValueError('final return pattern geometry differs')
     for k in ('pattern_ticks','pattern_masks','event_patterns'):
@@ -64,7 +64,7 @@ def validate(r,*,return_art=None,fixture_bank=bank,direct_return=False,expected_
         group=[x for x in r['events'] if x['tick']==tick]
         if e['tick']!=tick or e['mask']!=w['mask'] or e['affected_mask']!=(12 if direct_return and i==4 else w['mask']) or e['held_mask']&e['mask'] or not 0<e['half_cycle']-group[-1]['half_cycle']<=4096:raise ValueError('final return KON grouping differs')
         for v in w['voices']:
-            pulses=0 if i==len(wanted)-1 and c=='return-note' else PULSES[(96,r['events'][6]['articulation'],s)] if direct_return and i==4 else PULSES[(96,a,24 if i==1 and v['voice']==2 else 16)]
+            pulses=0 if i==len(wanted)-1 and c=='return-note' else (5 if short_return else PULSES[(96,r['events'][6]['articulation'],s)]) if direct_return and i==4 else PULSES[(96,a,24 if i==1 and v['voice']==2 else 16)]
             if e['pitches'][v['voice']-2]!=v['pitch'] or e['volumes'][v['voice']-2]!=v['volumes'] or e['pending_pulses'][v['voice']-2]!=pulses:raise ValueError('final return physical note/profile differs')
     writes=r.get('voice_writes');previous=0
     if not isinstance(writes,list) or len(writes)>256:raise ValueError('invalid final return VOL/pitch writes')
@@ -116,7 +116,7 @@ def validate(r,*,return_art=None,fixture_bank=bank,direct_return=False,expected_
             rest_half=r['events'][6]['half_cycle'];release=next(e['half_cycle'] for e in r['keyoffs'] if e['mask']&4 and e['half_cycle']>r['keyons'][1]['half_cycle'])
             if not pulses*2048-2048<=(release-rest_half)/2<=pulses*2048+4096:raise ValueError('returning rest did not rearm measured gate')
         else:
-            pulses=PULSES[(96,r['events'][6]['articulation'],s)] if direct_return and (g['onset_index'],g['voice'])==(4,2) else PULSES[(96,a,24 if (g['onset_index'],g['voice'])==(1,2) else 16)]
+            pulses=(5 if short_return else PULSES[(96,r['events'][6]['articulation'],s)]) if direct_return and (g['onset_index'],g['voice'])==(4,2) else PULSES[(96,a,24 if (g['onset_index'],g['voice'])==(1,2) else 16)]
             if not 2048*(pulses-1)<=g['gate_spc_cycles']<=2048*pulses+4096:raise ValueError('final return preceding timer profile differs')
     for name in ('peer_checks','frozen_peer_checks','settled_envelope_checks','settled_gate_frames','settled_peer_nonzero_frames'):
         if not isinstance(r.get(name),list) or len(r[name])!=2 or any(not integer(v,0,30000000) for v in r[name]):raise ValueError('invalid final return lifecycle counters')
