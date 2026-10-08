@@ -122,5 +122,6 @@ The bundled prototype remains unchanged at SHA-256
 
 The [consecutive duration-4 measurements](sgb-score-short-pair-observations.md)
 now establish the following short gate and deferred mix behavior. Those banks
-remain rejected by this image; guarded admission of a second short event is
-the next implementation step.
+remain rejected by this image; the separate
+[native short-pair diagnostic](sgb-native-score-short-pair.md) now implements
+the measured second short event.

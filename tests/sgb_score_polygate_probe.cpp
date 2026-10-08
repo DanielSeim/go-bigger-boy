@@ -12,7 +12,9 @@
 namespace {
 using Engine = gameboy::SnesApuAudioEngine;
 #ifdef GBB_SCORE_RESELECT_PROBE
-#if defined(GBB_SCORE_SHORT_CONTINUE_PROBE)
+#if defined(GBB_SCORE_SHORT_PAIR_PROBE)
+constexpr auto schema = "gbb-spc-score-short-pair-v1";
+#elif defined(GBB_SCORE_SHORT_CONTINUE_PROBE)
 constexpr auto schema = "gbb-spc-score-short-continue-v1";
 #elif defined(GBB_SCORE_SHORT_RETURN_PROBE)
 constexpr auto schema = "gbb-spc-score-short-return-v1";
@@ -279,6 +281,9 @@ struct Result {
     unsigned short_return_mode = 0;
 #ifdef GBB_SCORE_SHORT_CONTINUE_PROBE
     unsigned short_continue_mode = 0;
+#ifdef GBB_SCORE_SHORT_PAIR_PROBE
+    unsigned short_pair_mode = 0;
+#endif
 #endif
 #endif
 #endif
@@ -295,6 +300,9 @@ struct Result {
         if (short_return_mode != other.short_return_mode) return false;
 #ifdef GBB_SCORE_SHORT_CONTINUE_PROBE
         if (short_continue_mode != other.short_continue_mode) return false;
+#ifdef GBB_SCORE_SHORT_PAIR_PROBE
+        if (short_pair_mode != other.short_pair_mode) return false;
+#endif
 #endif
 #endif
 #endif
@@ -644,6 +652,9 @@ Result exercise(Engine& engine, bool restore) {
 #ifdef GBB_SCORE_SHORT_CONTINUE_PROBE
             result.short_continue_mode = status == 2 ? bus.dsp_read_ram(0xc5) : 0;
             require(result.short_continue_mode <= 1, "invalid short continuation mode");
+#ifdef GBB_SCORE_SHORT_PAIR_PROBE
+            result.short_pair_mode = result.short_continue_mode && bus.dsp_read_ram(0x4282) == 4;
+#endif
 #endif
 #endif
 #endif
@@ -933,6 +944,9 @@ int main(int argc, char** argv) {
         std::cout << ",\"short_return_mode\":" << expected.short_return_mode;
 #ifdef GBB_SCORE_SHORT_CONTINUE_PROBE
         std::cout << ",\"short_continue_mode\":" << expected.short_continue_mode;
+#ifdef GBB_SCORE_SHORT_PAIR_PROBE
+        std::cout << ",\"short_pair_mode\":" << expected.short_pair_mode;
+#endif
 #endif
 #endif
 #endif

@@ -18,15 +18,15 @@ from check_sgb_score_duet_reference import integer
 SCHEMA='gbb-spc-score-short-continue-v1'
 
 
-def identity(r):
+def identity(r,*,short_pair=False):
     es=r['events']
     if len(es)!=10:raise ValueError('short continuation requires ten records')
     c='continue-rest' if es[8]['opcode']==0xC9 else 'continue-note';a,d=es[8]['articulation'],es[8]['duration']
-    if type(a) is not int or a not in ARTICULATIONS or type(d) is not int or d not in DURATIONS:raise ValueError('unmeasured short continuation')
+    if type(a) is not int or a not in ARTICULATIONS or type(d) is not int or d not in ((4,) if short_pair else DURATIONS):raise ValueError('unmeasured short continuation')
     return c,a,d
 
 
-def validate(r):
+def validate(r,*,short_pair=False,fixture_bank=bank):
     multi_validate(r,schema=SCHEMA,max_events=64,max_ticks=2032,min_events=1,initial_pair=False)
     validate_metadata(r,schema=SCHEMA)
     modes=('final_return_mode','direct_return_mode','short_return_mode','short_continue_mode')
@@ -34,7 +34,7 @@ def validate(r):
         if r.get('key_writes')!=[] or any(not integer(r.get(k),0,0) for k in (*modes,'final_mode','final_observation_half_cycles')):raise ValueError('rejected short continuation wrote keys')
         return
     if any(not integer(r.get(k),1,1) for k in modes) or not integer(r.get('final_mode'),0,0) or not integer(r.get('final_peer_stop'),0,0) or not integer(r.get('final_observation_half_cycles'),600000,600000):raise ValueError('short continuation mode/tail differs')
-    c,a,d=identity(r);align(r,bank(a,d,c));validate_writes(r)
+    c,a,d=identity(r,short_pair=short_pair);align(r,fixture_bank(a,d,c));validate_writes(r)
     if r['pattern_ticks']!=[0,32,64] or r['pattern_masks']!=[12,8,12] or r['event_patterns']!=[0]*4+[1]*2+[2]*4 or r['end_tick']!=68+d or r['second_pattern_tick']!=32:raise ValueError('short continuation geometry differs')
     if [e['articulation'] for e in r['events']]!=[127]*6+[a]*4:raise ValueError('short continuation articulation differs')
     writes=r.get('voice_writes');previous=0
@@ -67,7 +67,7 @@ def validate(r):
         group=[x for x in r['events'] if x['tick']==t]
         if e['tick']!=t or e['mask']!=w['mask'] or e['affected_mask']!=(12 if i in (4,5) else w['mask']) or e['held_mask']&e['mask'] or not 0<e['half_cycle']-group[-1]['half_cycle']<=4096:raise ValueError('short continuation KON group differs')
         for v in w['voices']:
-            channel=v['voice']-2;pulses=5 if i==4 else PULSES[(96,a,d)] if i==5 else PULSES[(96,127,24 if i==1 and channel==0 else 16)]
+            channel=v['voice']-2;pulses=5 if i==4 else (5 if short_pair else PULSES[(96,a,d)]) if i==5 else PULSES[(96,127,24 if i==1 and channel==0 else 16)]
             if e['pitches'][channel]!=v['pitch'] or e['volumes'][channel]!=v['volumes'] or e['pending_pulses'][channel]!=pulses:raise ValueError('short continuation live setup/gate differs')
         if i in (4,5) and e['held_mask']!=0:raise ValueError('short continuation retained inactive KOF')
     keys=r.get('key_writes');previous=0
@@ -85,7 +85,7 @@ def validate(r):
     identities=[(0,2),(0,3),(1,3),(2,3),(3,3),(4,2)]+([(5,2)] if c=='continue-note' else [])
     if held or [(g['onset_index'],g['voice']) for g in gates]!=identities or any(g['cause']!=1 for g in gates):raise ValueError('short continuation timer release ledger differs')
     for g in gates:
-        i,v=g['onset_index'],g['voice'];pulses=5 if i==4 else PULSES[(96,a,d)] if i==5 else PULSES[(96,127,16)]
+        i,v=g['onset_index'],g['voice'];pulses=5 if i==4 else (5 if short_pair else PULSES[(96,a,d)]) if i==5 else PULSES[(96,127,16)]
         if not 2048*(pulses-1)<=g['gate_spc_cycles']<=2048*pulses+4096:raise ValueError('short continuation timer gate differs')
     controls=control_writes(r)
     if [(w['address'],w['value']) for w in controls]!=[(92,255),(92,0),(76,0)]:raise ValueError('short continuation final pulse differs')
@@ -105,13 +105,13 @@ def validate(r):
 def native(probe,data,tempo=96):return gate_native(probe,data,tempo,builder=program_build,validator=validate,output_bound=131072)
 
 
-def compare(candidates,refs):
-    agree(refs)
-    if not isinstance(candidates,dict) or set(candidates)!={f'{c}-{a}-{d}' for c in CASES for a in ARTICULATIONS for d in DURATIONS}:raise ValueError('incomplete short continuation native matrix')
+def compare(candidates,refs,*,short_pair=False,validator=validate,reference_agreement=agree):
+    reference_agreement(refs)
+    if not isinstance(candidates,dict) or set(candidates)!={f'{c}-{a}-{d}' for c in CASES for a in ARTICULATIONS for d in ((4,) if short_pair else DURATIONS)}:raise ValueError('incomplete short continuation native matrix')
     results=[]
     for ref in refs:
-        c,a,d,m=(ref[k] for k in ('case','return_articulation','continuation_duration','model'));r=candidates[f'{c}-{a}-{d}'];validate(r)
-        if identity(r)!=(c,a,d):raise ValueError('short continuation identity differs')
+        c,a,d,m=(ref[k] for k in ('case','return_articulation','continuation_duration','model'));r=candidates[f'{c}-{a}-{d}'];validator(r)
+        if identity(r,short_pair=short_pair)!=(c,a,d):raise ValueError('short continuation identity differs')
         gates,held=observation(r,allow_retrigger=True);controls=control_writes(r);stop=controls[0]['half_cycle'];ret=r['keyons'][4]['half_cycle'];following=r['keyons'][5]['half_cycle'] if c=='continue-note' else stop
         keys=r['key_writes'];rv=[w for w in r['voice_writes'] if r['keyons'][3]['half_cycle']<w['half_cycle']<=ret];cv=[w for w in r['voice_writes'] if ret<w['half_cycle']<stop]
         rc=[w for w in keys if w['half_cycle']<=ret][-3:];cc=[w for w in keys if w['half_cycle']<=following][-3:] if c=='continue-note' else []

@@ -5,7 +5,8 @@ with a different raw gate interval from the returning note. The following
 note applies the deferred ED 64 control and starts at actual volume 1/1.
 These observations extend the
 [native duration-8/16 continuation profile](sgb-native-score-short-continue.md);
-native admission of a second duration-4 event remains unimplemented.
+the subsequent [native short-pair diagnostic](sgb-native-score-short-pair.md)
+now implements and validates this bounded profile separately.
 
 ## Independently authored corpus
 
@@ -91,7 +92,7 @@ Seven public tests cover owned fixture/input bounds, symbolic geometry,
 synthetic release/retrigger ledgers, closed preceding defaults, forged gate,
 setup, duration, release and tail observations, model/hash completeness,
 intermodel drift and trace header/byte/row/order/value bounds. The native
-continuation suite additionally checks silent rejection of all four new banks:
+preceding continuation suite additionally checks silent rejection of all four new banks:
 status 226, no accepted key writes and no nonzero owned PCM. The preceding
 native image still passes its 16 retained continuation reference comparisons.
 All seven focused fixture, scheduler and native direct/short/continuation CTest
@@ -110,7 +111,7 @@ PCM equivalence, hardware behavior or real-title qualification. Private original
 instructions, scores, instrument tables, samples and PCM are not inspected or
 copied.
 
-Next, implement the guarded second duration-4 event using this corpus. Validate
-the following note's owned attack, timer release and deferred volume, retain
-the rest's actual volume, check final silence and reset/save/load, then rerun
-the 264 preceding reference comparisons before extending native admission.
+The subsequent native diagnostic validates owned attacks, timer releases,
+deferred volume, final silence and reset/save/load, and passes all 264 preceding
+reference comparisons. Its separate implementation evidence and next
+integration milestone are documented in the linked native profile.
