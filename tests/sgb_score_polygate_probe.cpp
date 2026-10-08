@@ -11,7 +11,11 @@
 
 namespace {
 using Engine = gameboy::SnesApuAudioEngine;
-#ifdef GBB_SCORE_LIST_PROBE
+#ifdef GBB_SCORE_SPARSE_PROBE
+constexpr auto schema = "gbb-spc-score-sparse-v1";
+constexpr unsigned log_bound = 320, second_pattern_offset = 64;
+constexpr unsigned log_base = 0x4000, bank_input_bound = 2049, upper_guard = 0x4c00;
+#elif defined(GBB_SCORE_LIST_PROBE)
 constexpr auto schema = "gbb-spc-score-list-v1";
 constexpr unsigned log_bound = 320, second_pattern_offset = 64;
 constexpr unsigned log_base = 0x4000, bank_input_bound = 2049, upper_guard = 0x4a00;
@@ -110,6 +114,9 @@ void setup(Engine& engine, const std::vector<unsigned char>& program,
     // Poison unprovided source bytes and guard the cache/source separation.
     for (unsigned address = 0x2b00; address < 0x4000; ++address) engine.bus().dsp_write_ram(address, 0xa5);
     for (unsigned address = upper_guard; address < upper_guard+0x100; ++address) engine.bus().dsp_write_ram(address, 0xa5);
+#ifdef GBB_SCORE_SPARSE_PROBE
+    for (unsigned address = 0x4a00; address < 0x4c00; ++address) engine.bus().dsp_write_ram(address, 0xa5);
+#endif
     engine.bus().dsp_write_ram(0x8e, track.size() >> 8);
 #endif
     for (unsigned i = 0; i < track.size(); ++i) engine.bus().dsp_write_ram(0x2b00 + i, track[i]);
@@ -161,6 +168,7 @@ struct Result {
     std::vector<unsigned char> events;
     std::vector<unsigned char> articulations;
     std::vector<unsigned> pattern_ticks;
+    std::vector<unsigned> pattern_masks;
     std::vector<std::array<unsigned,5>> controls;
     std::vector<std::uint64_t> halves;
     std::vector<Edge> keyons, keyoffs;
@@ -170,7 +178,7 @@ struct Result {
     std::array<unsigned,2> settled_envelopes{};
     bool operator==(const Result& other) const {
         return status == other.status && end_tick == other.end_tick && second_tick == other.second_tick && completion_half == other.completion_half &&
-            events == other.events && articulations == other.articulations && pattern_ticks == other.pattern_ticks && controls == other.controls && halves == other.halves && keyons == other.keyons && keyoffs == other.keyoffs && envelopes == other.envelopes &&
+            events == other.events && articulations == other.articulations && pattern_ticks == other.pattern_ticks && pattern_masks == other.pattern_masks && controls == other.controls && halves == other.halves && keyons == other.keyons && keyoffs == other.keyoffs && envelopes == other.envelopes &&
             audio == other.audio && steady == other.steady && peer_checks == other.peer_checks && settled_frames == other.settled_frames && peer_pcm == other.peer_pcm && settled_envelopes == other.settled_envelopes;
     }
 };
@@ -193,6 +201,9 @@ Result exercise(Engine& engine, bool restore) {
     unsigned offset = 0, previous_kon = 0, previous_kof = 0;
 #ifdef GBB_SCORE_LIST_PROBE
     std::array<bool,3> log_carry_restored{};
+#endif
+#ifdef GBB_SCORE_SPARSE_PROBE
+    std::array<std::uint64_t,2> inactive_since{};
 #endif
     std::array<unsigned,2> latest_opcodes{0xc9,0xc9};
     std::uint64_t second_start = 0;
@@ -262,6 +273,20 @@ Result exercise(Engine& engine, bool restore) {
         clock(engine, result.audio, steady ? &result.steady : nullptr,
               settled, &result.settled_frames, &result.peer_pcm);
         const auto& bus = engine.bus();
+#ifdef GBB_SCORE_SPARSE_PROBE
+        if (bus.dsp_read_ram(0x64) == 1) {
+            const unsigned active = bus.dsp_read_ram(0xa3);
+            for (unsigned voice = 0; voice < 2; ++voice) {
+                const unsigned bit = 4U << voice;
+                if (active & bit) { inactive_since[voice] = 0; continue; }
+                require(bus.dsp_read_ram(0x72+voice) == 0 && (bus.dsp_register(0x5c) & bit) &&
+                        !(bus.dsp_register(0x4c) & bit), "sparse inactive voice has a gate/KON or released KOF");
+                if (!inactive_since[voice]) inactive_since[voice] = engine.cpu().half_cycles();
+                if (engine.cpu().half_cycles() >= inactive_since[voice]+20000)
+                    require(bus.dsp_register((voice+2)*16+8) == 0, "sparse inactive envelope failed to settle");
+            }
+        }
+#endif
         const unsigned kon = bus.dsp_register(0x4c), kof = bus.dsp_register(0x5c);
         require((kon & ~12U) == 0, "polyphonic keyed unexpected voice");
         if (kon && previous_kon == 0) {
@@ -348,6 +373,12 @@ Result exercise(Engine& engine, bool restore) {
             if (pattern == result.pattern_ticks.size()) {
                 require(pattern < 4, "phrase-list pattern overflow");
                 result.pattern_ticks.push_back(bus.dsp_read_ram(0x10) | bus.dsp_read_ram(0x11) << 8);
+#ifdef GBB_SCORE_SPARSE_PROBE
+                const unsigned mask = bus.dsp_read_ram(0xa3);
+                require(mask == 4 || mask == 8 || mask == 12, "invalid sparse active mask");
+                require(mask == bus.dsp_read_ram(0x4b00+pattern), "sparse cached/runtime mask differs");
+                result.pattern_masks.push_back(mask);
+#endif
             } else require(pattern+1 == result.pattern_ticks.size(), "phrase-list skipped/repeated pattern entry");
 #endif
             offset = written;
@@ -416,6 +447,12 @@ Result exercise(Engine& engine, bool restore) {
                 require(engine.bus().dsp_read_ram(address) == 0xa5, "native score touched lower cache guard");
             for (unsigned address = upper_guard; address < upper_guard+0x100; ++address)
                 require(engine.bus().dsp_read_ram(address) == 0xa5, "native score touched upper cache guard");
+#ifdef GBB_SCORE_SPARSE_PROBE
+            for (unsigned address = 0x4a00; address < 0x4b00; ++address)
+                require(engine.bus().dsp_read_ram(address) == 0xa5, "sparse score touched cache/mask gap");
+            for (unsigned address = 0x4b04; address < 0x4c00; ++address)
+                require(engine.bus().dsp_read_ram(address) == 0xa5, "sparse score overflowed active-mask cache");
+#endif
 #endif
             return result;
         }
@@ -505,6 +542,14 @@ int main(int argc, char** argv) {
         for (unsigned i = 0; i < expected.pattern_ticks.size(); ++i) {
             if (i) std::cout << ',';
             std::cout << expected.pattern_ticks[i];
+        }
+        std::cout << ']';
+#endif
+#ifdef GBB_SCORE_SPARSE_PROBE
+        std::cout << ",\"pattern_masks\":[";
+        for (unsigned i = 0; i < expected.pattern_masks.size(); ++i) {
+            if (i) std::cout << ',';
+            std::cout << expected.pattern_masks[i];
         }
         std::cout << ']';
 #endif

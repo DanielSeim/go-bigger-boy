@@ -78,6 +78,15 @@ class SchedulerContracts(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'zero-length'):
             schedule(track_bank(bytes(1)),0x2B10)
 
+    def test_solo_channel_three_has_no_synthetic_peer(self):
+        data=bytearray(track_bank(bytes((16,63,0x98,0xA4,0))))
+        data[24:26]=bytes(2)
+        struct.pack_into('<H',data,26,0x2B24)
+        result=schedule(bytes(data),0x2B10)
+        self.assertEqual(result['patterns'][0]['channels'],[3])
+        self.assertEqual([(event['channel'],event['tick']) for event in notes(result)],[(3,0),(3,16)])
+        self.assertEqual(result['ticks'],32)
+
     def test_call_bounds_and_nested_or_empty_callees(self):
         data = bytearray(bank(call_fixture,'once'))
         for count in (0,4,127,255):
@@ -103,7 +112,7 @@ class SchedulerContracts(unittest.TestCase):
                 schedule(track_bank(stream),0x2B10)
         with self.assertRaisesRegex(ValueError,'after duration'):
             schedule(track_bank(bytes((16,0x7F,0x98,16,0x7F,0))),0x2B10)
-        for channel in (0,1,3,4,5,6,7):
+        for channel in (0,1,4,5,6,7):
             changed = bytearray(track_bank(bytes((16,0x7F,0x98,0))))
             changed[24:26]=bytes(2)
             struct.pack_into('<H',changed,20+2*channel,0x2B24)

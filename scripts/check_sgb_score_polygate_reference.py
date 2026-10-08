@@ -25,8 +25,8 @@ def multi_report(report, schema='gbb-spc-score-polygate-v1'):
     return {**report, 'schema': 'gbb-spc-score-multi-v1'}
 
 
-def validate(report, *, schema='gbb-spc-score-polygate-v1', max_events=16, max_ticks=1016, pitch_table=PITCH, isolated_voices=True, pattern_ticks=None):
-    multi_validate(multi_report(report, schema), max_events=max_events, max_ticks=max_ticks, min_events=2 if pattern_ticks is not None else 4)
+def validate(report, *, schema='gbb-spc-score-polygate-v1', max_events=16, max_ticks=1016, pitch_table=PITCH, isolated_voices=True, pattern_ticks=None, sparse=False):
+    multi_validate(multi_report(report, schema), max_events=max_events, max_ticks=max_ticks, min_events=1 if sparse else 2 if pattern_ticks is not None else 4, initial_pair=not sparse)
     if (not integer(report.get('tempo'), 0, 255)
             or not integer(report.get('completion_half_cycle'), 1, 30_000_000)
             or not integer(report.get('second_pattern_tick'), 0, max_ticks)
@@ -159,9 +159,9 @@ def validate(report, *, schema='gbb-spc-score-polygate-v1', max_events=16, max_t
             raise ValueError('rest-only voice produced PCM')
 
 
-def align(report, data, *, schema='gbb-spc-score-polygate-v1', max_events=16, max_ticks=1016, pitch_table=PITCH, isolated_voices=True, pattern_ticks=None):
-    validate(report, schema=schema, max_events=max_events, max_ticks=max_ticks, pitch_table=pitch_table, isolated_voices=isolated_voices, pattern_ticks=pattern_ticks)
-    multi_align(multi_report(report, schema), data, max_events=max_events, max_ticks=max_ticks, min_events=2 if pattern_ticks is not None else 4)
+def align(report, data, *, schema='gbb-spc-score-polygate-v1', max_events=16, max_ticks=1016, pitch_table=PITCH, isolated_voices=True, pattern_ticks=None, sparse=False):
+    validate(report, schema=schema, max_events=max_events, max_ticks=max_ticks, pitch_table=pitch_table, isolated_voices=isolated_voices, pattern_ticks=pattern_ticks, sparse=sparse)
+    multi_align(multi_report(report, schema), data, max_events=max_events, max_ticks=max_ticks, min_events=1 if sparse else 2 if pattern_ticks is not None else 4, initial_pair=not sparse)
     expected = schedule(data, int.from_bytes(data[:2], 'little'))
     timed = [event for event in expected['events'] if event['kind'] in ('note', 'rest')]
     if [event['articulation'] for event in report['events']] != [event['articulation'] for event in timed]:
@@ -227,6 +227,8 @@ def observe(source, *, onset_observer=multi_observe, expected_notes=6, handoff_n
         if address == 0x4C and value:
             pattern_handoff = handoff_note_count is not None and len(notes) == handoff_note_count
             for voice in range(2):
+                if not value & (4 << voice):
+                    continue
                 if active[voice] is not None:
                     if not pattern_handoff:
                         raise ValueError('reference voice retriggered without release')

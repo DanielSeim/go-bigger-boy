@@ -29,7 +29,7 @@ def native(probe, data, tempo=96):
     return report
 
 
-def validate(report, *, schema='gbb-spc-score-multi-v1', max_events=16, max_ticks=1016, min_events=4):
+def validate(report, *, schema='gbb-spc-score-multi-v1', max_events=16, max_ticks=1016, min_events=4, initial_pair=True):
     if (not isinstance(report, dict) or report.get('schema') != schema
             or report.get('qualification') is not False or report.get('playback') is not False
             or report.get('reset_equal') is not True or report.get('restore_equal') is not True
@@ -55,12 +55,12 @@ def validate(report, *, schema='gbb-spc-score-multi-v1', max_events=16, max_tick
                 or not last_half < event['half_cycle'] <= 30_000_000):
             raise ValueError('invalid multi-event order/bounds')
         last_tick, last_half = event['tick'], event['half_cycle']
-    if [(event['tick'], event['channel']) for event in events[:2]] != [(0, 2), (0, 3)]:
+    if initial_pair and [(event['tick'], event['channel']) for event in events[:2]] != [(0, 2), (0, 3)]:
         raise ValueError('missing initial track pair')
 
 
-def align(report, data, *, schema='gbb-spc-score-multi-v1', max_events=16, max_ticks=1016, min_events=4):
-    validate(report, schema=schema, max_events=max_events, max_ticks=max_ticks, min_events=min_events)
+def align(report, data, *, schema='gbb-spc-score-multi-v1', max_events=16, max_ticks=1016, min_events=4, initial_pair=True):
+    validate(report, schema=schema, max_events=max_events, max_ticks=max_ticks, min_events=min_events, initial_pair=initial_pair)
     expected = schedule(data, int.from_bytes(data[:2], 'little'))
     timed = [event for event in expected['events'] if event['kind'] in ('note', 'rest')]
     if report['status'] != 2 or report['end_tick'] != expected['ticks'] or len(timed) != len(report['events']):

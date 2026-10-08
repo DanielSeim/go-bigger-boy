@@ -3,6 +3,7 @@
 The isolated score renderer now accepts one to four patterns, replacing the
 exactly-two-pattern restriction of [multi-page score banks](sgb-native-score-bank.md).
 Each pattern still uses channels 2/3 with one to eight expanded events per track.
+The next diagnostic permits [solo tracks and sparse transitions](sgb-native-score-sparse.md).
 The complete phrase may contain up to 64 events; its total duration remains
 bounded to 2032 ticks. Both expanded tracks must be nonempty in every pattern.
 A zero table pointer terminates the phrase after its last pattern. Empty lists,

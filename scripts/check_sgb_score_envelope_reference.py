@@ -22,8 +22,8 @@ def mix_report(report):
     return {**report, 'schema': MIX_SCHEMA}
 
 
-def validate(report, *, max_events=32, max_ticks=2032, pattern_ticks=None):
-    mix_validate(mix_report(report), max_events=max_events, max_ticks=max_ticks, pattern_ticks=pattern_ticks)
+def validate(report, *, max_events=32, max_ticks=2032, pattern_ticks=None, sparse=False):
+    mix_validate(mix_report(report), max_events=max_events, max_ticks=max_ticks, pattern_ticks=pattern_ticks, sparse=sparse)
     envelopes = report.get('envelopes')
     if not isinstance(envelopes, list) or len(envelopes) > max_events:
         raise ValueError('invalid envelope trajectory list')
@@ -76,9 +76,9 @@ def validate(report, *, max_events=32, max_ticks=2032, pattern_ticks=None):
         raise ValueError('extra or unreleased envelope trajectories')
 
 
-def align(report, data, *, max_events=32, max_ticks=2032, pattern_ticks=None):
-    validate(report, max_events=max_events, max_ticks=max_ticks, pattern_ticks=pattern_ticks)
-    mix_align(mix_report(report), data, max_events=max_events, max_ticks=max_ticks, pattern_ticks=pattern_ticks)
+def align(report, data, *, max_events=32, max_ticks=2032, pattern_ticks=None, sparse=False):
+    validate(report, max_events=max_events, max_ticks=max_ticks, pattern_ticks=pattern_ticks, sparse=sparse)
+    mix_align(mix_report(report), data, max_events=max_events, max_ticks=max_ticks, pattern_ticks=pattern_ticks, sparse=sparse)
 
 
 def native(probe, data, tempo=96):

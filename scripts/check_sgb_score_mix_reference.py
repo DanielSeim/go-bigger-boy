@@ -35,8 +35,8 @@ def selected(pan, track, song, rest=False):
     return [7, 7] if (song, track) == (160, 127) else [1, 1]
 
 
-def validate(report, *, max_events=32, max_ticks=2032, pattern_ticks=None):
-    gate_validate(report, schema=SCHEMA, max_events=max_events, max_ticks=max_ticks, pitch_table=PITCH, isolated_voices=False, pattern_ticks=pattern_ticks)
+def validate(report, *, max_events=32, max_ticks=2032, pattern_ticks=None, sparse=False):
+    gate_validate(report, schema=SCHEMA, max_events=max_events, max_ticks=max_ticks, pitch_table=PITCH, isolated_voices=False, pattern_ticks=pattern_ticks, sparse=sparse)
     pcm = report['pcm']
     if type(pcm.get('stereo_equal')) is not bool or any(not integer(pcm.get(key), 0, pcm['peak']) for key in ('left_peak', 'right_peak')) or max(pcm['left_peak'], pcm['right_peak']) != pcm['peak']:
         raise ValueError('invalid mix stereo metrics')
@@ -76,9 +76,9 @@ def validate(report, *, max_events=32, max_ticks=2032, pattern_ticks=None):
         raise ValueError('centered mix produced unequal stereo')
 
 
-def align(report, data, *, max_events=32, max_ticks=2032, pattern_ticks=None):
-    validate(report, max_events=max_events, max_ticks=max_ticks, pattern_ticks=pattern_ticks)
-    gate_align(report, data, schema=SCHEMA, max_events=max_events, max_ticks=max_ticks, pitch_table=PITCH, isolated_voices=False, pattern_ticks=pattern_ticks)
+def align(report, data, *, max_events=32, max_ticks=2032, pattern_ticks=None, sparse=False):
+    validate(report, max_events=max_events, max_ticks=max_ticks, pattern_ticks=pattern_ticks, sparse=sparse)
+    gate_align(report, data, schema=SCHEMA, max_events=max_events, max_ticks=max_ticks, pitch_table=PITCH, isolated_voices=False, pattern_ticks=pattern_ticks, sparse=sparse)
     expected = schedule(data, int.from_bytes(data[:2], 'little'))
     song, actual = 160, iter(report['events'])
     # Schedule each pattern separately so zero-time commands at an old track's

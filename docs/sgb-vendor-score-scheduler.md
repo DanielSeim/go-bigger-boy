@@ -19,7 +19,7 @@ SPC timing primitive for tempos 96/192. It is not yet connected to this parser.
 
 The supplied bank must contain 1..8192 bytes based at `$2B00`. The phrase root
 is explicit; the tool does not guess a song directory. Pattern tables may use
-channel 2 alone or channels 2/3 together. Zero ends the phrase; phrase control
+channel 2 or 3 alone, or channels 2/3 together. Zero ends the phrase; phrase control
 words below `$0100`, including repeats, are rejected.
 
 Each new pattern starts fresh duration/articulation parser state and requires

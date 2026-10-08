@@ -122,8 +122,8 @@ def schedule(bank, phrase):
         table = read(pattern, 16)
         pointers = [int.from_bytes(table[i:i+2], 'little') for i in range(0, 16, 2)]
         channels = [i for i, pointer in enumerate(pointers) if pointer]
-        if channels not in ([2], [2, 3]):
-            raise ValueError('scheduler supports channel 2 alone or channels 2/3 together')
+        if channels not in ([2], [3], [2, 3]):
+            raise ValueError('scheduler supports channel 2 or 3 alone, or channels 2/3 together')
         tracks = [{'channel': channel, 'pc': pointers[channel], 'ready': now,
                    'duration': None, 'articulation': None, 'call': None} for channel in channels]
         start = now
