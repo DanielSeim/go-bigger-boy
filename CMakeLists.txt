@@ -1557,6 +1557,9 @@ if(GAMEBOY_BUILD_TESTS)
     add_executable(gameboy_sgb_score_sparse_probe tests/sgb_score_polygate_probe.cpp)
     target_compile_definitions(gameboy_sgb_score_sparse_probe PRIVATE GBB_SCORE_MIX_PROBE GBB_SCORE_ENVELOPE_PROBE GBB_SCORE_BANK_PROBE GBB_SCORE_LIST_PROBE GBB_SCORE_SPARSE_PROBE)
     target_link_libraries(gameboy_sgb_score_sparse_probe PRIVATE gameboy_core)
+    add_executable(gameboy_sgb_score_final_probe tests/sgb_score_polygate_probe.cpp)
+    target_compile_definitions(gameboy_sgb_score_final_probe PRIVATE GBB_SCORE_MIX_PROBE GBB_SCORE_ENVELOPE_PROBE GBB_SCORE_BANK_PROBE GBB_SCORE_LIST_PROBE GBB_SCORE_SPARSE_PROBE GBB_SCORE_RESELECT_PROBE GBB_SCORE_INHERIT_PROBE GBB_SCORE_TIMING_PROBE GBB_SCORE_TAIL_PROBE GBB_SCORE_PEER_PROBE GBB_SCORE_ORDER_PROBE GBB_SCORE_REVERSE_PROBE GBB_SCORE_PENDING_PROBE GBB_SCORE_FOLLOW_REST_PROBE GBB_SCORE_FINAL_PROBE)
+    target_link_libraries(gameboy_sgb_score_final_probe PRIVATE gameboy_core)
     add_executable(gameboy_sgb_score_follow_rest_probe tests/sgb_score_polygate_probe.cpp)
     target_compile_definitions(gameboy_sgb_score_follow_rest_probe PRIVATE GBB_SCORE_MIX_PROBE GBB_SCORE_ENVELOPE_PROBE GBB_SCORE_BANK_PROBE GBB_SCORE_LIST_PROBE GBB_SCORE_SPARSE_PROBE GBB_SCORE_RESELECT_PROBE GBB_SCORE_INHERIT_PROBE GBB_SCORE_TIMING_PROBE GBB_SCORE_TAIL_PROBE GBB_SCORE_PEER_PROBE GBB_SCORE_ORDER_PROBE GBB_SCORE_REVERSE_PROBE GBB_SCORE_PENDING_PROBE GBB_SCORE_FOLLOW_REST_PROBE)
     target_link_libraries(gameboy_sgb_score_follow_rest_probe PRIVATE gameboy_core)
@@ -1635,6 +1638,9 @@ if(GAMEBOY_BUILD_TESTS)
         add_test(NAME gameboy_sgb_native_score_reselect
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_score_reselect_tests.py
                 --probe $<TARGET_FILE:gameboy_sgb_score_reselect_probe>)
+        add_test(NAME gameboy_sgb_native_score_final
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_score_final_tests.py
+                --probe $<TARGET_FILE:gameboy_sgb_score_final_probe>)
         add_test(NAME gameboy_sgb_native_score_follow_rest
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_score_follow_rest_tests.py
                 --probe $<TARGET_FILE:gameboy_sgb_score_follow_rest_probe>)
@@ -1825,6 +1831,13 @@ if(GAMEBOY_BUILD_TESTS)
                     --firmware-dir ${CMAKE_CURRENT_SOURCE_DIR}/roms)
             set_tests_properties(gameboy_sgb_score_reselect_local_reference PROPERTIES
                 LABELS "local;private-reference" TIMEOUT 1920)
+            add_test(NAME gameboy_sgb_score_final_local_reference
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_score_final_playback.py
+                    --probe $<TARGET_FILE:gameboy_sgb_score_final_probe>
+                    --trace $<TARGET_FILE:gameboy_snes_65c816_apu_trace>
+                    --firmware-dir ${CMAKE_CURRENT_SOURCE_DIR}/roms)
+            set_tests_properties(gameboy_sgb_score_final_local_reference PROPERTIES
+                LABELS "local;private-reference" TIMEOUT 3840)
             add_test(NAME gameboy_sgb_score_follow_rest_local_reference
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_score_follow_rest_playback.py
                     --probe $<TARGET_FILE:gameboy_sgb_score_follow_rest_probe>

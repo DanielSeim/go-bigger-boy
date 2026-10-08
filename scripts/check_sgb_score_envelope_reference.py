@@ -27,7 +27,9 @@ def validate(report, *, max_events=32, max_ticks=2032, pattern_ticks=None, spars
     validate_trajectories(report, max_events=max_events, clipped_peer=clipped_peer)
 
 
-def validate_trajectories(report, *, max_events=32, clipped_peer=False):
+def validate_trajectories(report, *, max_events=32, clipped_peer=False, held_final=()):
+    def is_held(env):
+        return env.get('voice') in held_final and bool(report['keyons']) and env.get('on_half_cycle')==report['keyons'][-1]['half_cycle'] and report['keyons'][-1]['mask']==sum(1<<v for v in held_final)
     envelopes = report.get('envelopes')
     if not isinstance(envelopes, list) or len(envelopes) > max_events:
         raise ValueError('invalid envelope trajectory list')
@@ -42,7 +44,7 @@ def validate_trajectories(report, *, max_events=32, clipped_peer=False):
     if clipped_peer:
         for env in envelopes:
             retrigger=env.get('retrigger_half_cycle')
-            if not integer(retrigger,0,report['completion_half_cycle']) or (bool(retrigger)==bool(env['off_half_cycle'])) or (retrigger and retrigger<=env['on_half_cycle']):raise ValueError('invalid unreleased envelope retrigger')
+            if not integer(retrigger,0,report['completion_half_cycle']) or (bool(retrigger)==bool(env['off_half_cycle']) and not is_held(env)) or (retrigger and retrigger<=env['on_half_cycle']):raise ValueError('invalid unreleased envelope retrigger')
     active, index = {}, 0
     edges = sorted([(e['half_cycle'], True, e) for e in report['keyons']]+
                    [(e['half_cycle'], False, e) for e in report['keyoffs']])
@@ -63,7 +65,7 @@ def validate_trajectories(report, *, max_events=32, clipped_peer=False):
                         env.get('on_half_cycle'), half, half):
                     raise ValueError('envelope trajectory onset differs')
                 if env.get('attack_zero') is not True or not integer(env.get('peak'), 127, 127) or not integer(
-                        env.get('decay_min'), 1, 126) or not integer(env.get('off_env'), 0 if clipped_peer and env.get('retrigger_half_cycle') else 1, 127) or not integer(
+                        env.get('decay_min'), 1, 126) or not integer(env.get('off_env'), 0 if clipped_peer and (env.get('retrigger_half_cycle') or is_held(env)) else 1, 127) or not integer(
                         env.get('release_steps'), 0, env['off_env']) or type(env.get('release_zero')) is not bool:
                     raise ValueError('invalid ADSR attack/decay/release observations')
                 if voice in active:
@@ -83,7 +85,7 @@ def validate_trajectories(report, *, max_events=32, clipped_peer=False):
                     raise ValueError('timer-gated envelope did not release')
                 if next_on-half >= settle_bound and not env['release_zero']:
                     raise ValueError('uninterrupted envelope did not settle')
-    if active or index != len(envelopes):
+    if set(active)!=set(held_final) or any(not is_held(env) or env['off_half_cycle'] or env.get('retrigger_half_cycle') or env['off_env'] or env['release_steps'] or env['release_zero'] for env in active.values()) or index != len(envelopes):
         raise ValueError('extra or unreleased envelope trajectories')
 
 

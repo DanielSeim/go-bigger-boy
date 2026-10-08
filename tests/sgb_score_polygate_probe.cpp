@@ -12,7 +12,9 @@
 namespace {
 using Engine = gameboy::SnesApuAudioEngine;
 #ifdef GBB_SCORE_RESELECT_PROBE
-#ifdef GBB_SCORE_FOLLOW_REST_PROBE
+#ifdef GBB_SCORE_FINAL_PROBE
+constexpr auto schema = "gbb-spc-score-final-v1";
+#elif defined(GBB_SCORE_FOLLOW_REST_PROBE)
 constexpr auto schema = "gbb-spc-score-follow-rest-v1";
 #elif defined(GBB_SCORE_PENDING_PROBE)
 constexpr auto schema = "gbb-spc-score-pending-v1";
@@ -41,6 +43,9 @@ struct InstrumentObservation {
 #ifdef GBB_SCORE_REVERSE_PROBE
     std::vector<std::array<std::uint64_t,3>> voice_writes;
 #endif
+#ifdef GBB_SCORE_FINAL_PROBE
+    std::vector<std::array<std::uint64_t,3>> key_writes;
+#endif
 } instrument_observation;
 void observe_instrument(void* context, std::uint64_t cycle, std::uint8_t,
                         std::uint16_t address, std::uint8_t value, bool accepted) noexcept {
@@ -53,6 +58,12 @@ void observe_instrument(void* context, std::uint64_t cycle, std::uint8_t,
         ((reg >= 0x20 && reg <= 0x23) || (reg >= 0x30 && reg <= 0x33))) {
         if (!cycle || observation.voice_writes.size() >= 256) { observation.bad = true; return; }
         observation.voice_writes.push_back({engine.cpu().half_cycles(),reg,value});
+    }
+#endif
+#ifdef GBB_SCORE_FINAL_PROBE
+    if (engine.bus().dsp_read_ram(0x64) == 1 && (reg == 0x4c || reg == 0x5c)) {
+        if (!cycle || observation.key_writes.size() >= 1024) { observation.bad = true; return; }
+        observation.key_writes.push_back({engine.cpu().half_cycles(),reg,value});
     }
 #endif
     if (engine.bus().dsp_read_ram(0x64) != 1 ||
@@ -114,14 +125,39 @@ struct Audio {
                right_peak == other.right_peak && stereo_equal == other.stereo_equal;
     }
 };
+void record_audio(Audio& audio, const Engine::StereoSample& sample) {
+    audio.stereo_equal = audio.stereo_equal && sample.left == sample.right;
+    if (sample.left) ++audio.left_nonzero;
+    if (sample.right) ++audio.right_nonzero;
+    ++audio.frames;
+    require(audio.frames <= 500000, "owned PCM frame bound");
+    if (sample.left || sample.right) { ++audio.nonzero; audio.quiet_tail = 0; }
+    else ++audio.quiet_tail;
+    const auto magnitude = unsigned(sample.left < 0 ? -int(sample.left) : int(sample.left));
+    if (magnitude > audio.left_peak) audio.left_peak = magnitude;
+    const auto right_magnitude = unsigned(sample.right < 0 ? -int(sample.right) : int(sample.right));
+    if (right_magnitude > audio.right_peak) audio.right_peak = right_magnitude;
+    audio.peak = audio.left_peak > audio.right_peak ? audio.left_peak : audio.right_peak;
+    for (const auto channel : {sample.left, sample.right}) {
+        const auto value = static_cast<std::uint16_t>(channel);
+        for (unsigned shift : {0U, 8U}) {
+            audio.hash ^= (value >> shift) & 255;
+            audio.hash *= 1099511628211ULL;
+        }
+    }
+}
 void clock(Engine& engine, Audio& audio, Audio* steady = nullptr, unsigned settled = 0,
            std::array<unsigned,2>* settled_frames = nullptr, std::array<unsigned,2>* peer_pcm = nullptr) {
     Engine::StereoSample sample;
     while (engine.pop_sample(sample)) {
         if (steady) {
+#ifdef GBB_SCORE_FINAL_PROBE
+            record_audio(*steady, sample);
+#else
             ++steady->frames;
             if (sample.left) ++steady->left_nonzero;
             if (sample.right) ++steady->right_nonzero;
+#endif
         }
         for (unsigned channel = 0; channel < 2; ++channel) {
             if (settled & (4U << channel)) {
@@ -130,25 +166,7 @@ void clock(Engine& engine, Audio& audio, Audio* steady = nullptr, unsigned settl
                 if (channel == 0 ? sample.right != 0 : sample.left != 0) ++(*peer_pcm)[channel];
             }
         }
-        audio.stereo_equal = audio.stereo_equal && sample.left == sample.right;
-        if (sample.left) ++audio.left_nonzero;
-        if (sample.right) ++audio.right_nonzero;
-        ++audio.frames;
-        require(audio.frames <= 500000, "owned PCM frame bound");
-        if (sample.left || sample.right) { ++audio.nonzero; audio.quiet_tail = 0; }
-        else ++audio.quiet_tail;
-        const auto magnitude = unsigned(sample.left < 0 ? -int(sample.left) : int(sample.left));
-        if (magnitude > audio.left_peak) audio.left_peak = magnitude;
-        const auto right_magnitude = unsigned(sample.right < 0 ? -int(sample.right) : int(sample.right));
-        if (right_magnitude > audio.right_peak) audio.right_peak = right_magnitude;
-        audio.peak = audio.left_peak > audio.right_peak ? audio.left_peak : audio.right_peak;
-        for (const auto channel : {sample.left, sample.right}) {
-            const auto value = static_cast<std::uint16_t>(channel);
-            for (unsigned shift : {0U, 8U}) {
-                audio.hash ^= (value >> shift) & 255;
-                audio.hash *= 1099511628211ULL;
-            }
-        }
+        record_audio(audio, sample);
     }
     require(engine.clock_half(), "native renderer CPU stopped");
 }
@@ -232,10 +250,21 @@ struct Result {
     std::vector<std::uint64_t> halves;
     std::vector<Edge> keyons, keyoffs;
     std::vector<Envelope> envelopes;
+#ifdef GBB_SCORE_FINAL_PROBE
+    Audio final_tail_audio;
+    unsigned final_mode = 0, final_env_start = 0, final_env_end = 0;
+    std::uint64_t final_observation_half = 0;
+    std::vector<std::array<std::uint64_t,3>> key_writes;
+#endif
     Audio audio, steady;
     std::array<unsigned,2> peer_checks{}, settled_frames{}, peer_pcm{};
     std::array<unsigned,2> settled_envelopes{}, frozen_checks{};
     bool operator==(const Result& other) const {
+#ifdef GBB_SCORE_FINAL_PROBE
+        if (final_mode != other.final_mode || final_env_start != other.final_env_start ||
+            final_env_end != other.final_env_end || final_observation_half != other.final_observation_half ||
+            key_writes != other.key_writes || !(final_tail_audio == other.final_tail_audio)) return false;
+#endif
         return status == other.status && end_tick == other.end_tick && second_tick == other.second_tick && completion_half == other.completion_half &&
             events == other.events && event_patterns == other.event_patterns && voice_writes == other.voice_writes && articulations == other.articulations && pattern_ticks == other.pattern_ticks && pattern_masks == other.pattern_masks && instrument_sets == other.instrument_sets && instrument_writes == other.instrument_writes && controls == other.controls && halves == other.halves && keyons == other.keyons && keyoffs == other.keyoffs && envelopes == other.envelopes &&
             audio == other.audio && steady == other.steady && peer_checks == other.peer_checks && settled_frames == other.settled_frames && peer_pcm == other.peer_pcm && settled_envelopes == other.settled_envelopes && frozen_checks == other.frozen_checks;
@@ -258,6 +287,9 @@ Result exercise(Engine& engine, bool restore) {
     instrument_observation.enabled = true;
     instrument_observation.bad = false;
     instrument_observation.writes.clear();
+#ifdef GBB_SCORE_FINAL_PROBE
+    instrument_observation.key_writes.clear();
+#endif
 #ifdef GBB_SCORE_REVERSE_PROBE
     instrument_observation.voice_writes.clear();
 #endif
@@ -538,8 +570,31 @@ Result exercise(Engine& engine, bool restore) {
             result.status = status;
             result.end_tick = bus.dsp_read_ram(0x10) | bus.dsp_read_ram(0x11) << 8;
             result.completion_half = engine.cpu().half_cycles();
-            for (unsigned i = 0; i < 40000; ++i) {
+            unsigned tail_half = 40000;
+#ifdef GBB_SCORE_FINAL_PROBE
+            result.final_mode = status == 2 ? bus.dsp_read_ram(0xba) : 0;
+            if (result.final_mode) {
+                require(status == 2 && result.final_mode == 1, "invalid final-ready mode");
+                tail_half = 600000; // Longer than every admitted gate, within existing physical/PCM caps.
+                result.final_env_start = bus.dsp_register(0x28);
+                require(engine.cpu().half_cycles()+tail_half <= 30000000, "final tail exceeds physical bound");
+            }
+#endif
+            for (unsigned i = 0; i < tail_half; ++i) {
+#ifdef GBB_SCORE_FINAL_PROBE
+                clock(engine, result.audio, result.final_mode ? &result.final_tail_audio : nullptr);
+#else
                 clock(engine, result.audio);
+#endif
+#ifdef GBB_SCORE_FINAL_PROBE
+                if (result.final_mode) {
+                    require(bus.dsp_register(0x5c) == 0 && bus.dsp_register(0x4c) == 0,
+                            "final-ready halt changed key registers");
+                    if (result.keyons.size() == 3) require(bus.dsp_register(0x28) > 0,
+                            "final held envelope disappeared inside observation window");
+                    if (restore && (i == 73 || i == 3001 || i == 190001 || i == 590003)) checkpoint(engine);
+                }
+#endif
 #ifdef GBB_SCORE_ENVELOPE_PROBE
                 observe_envelopes();
 #endif
@@ -552,9 +607,23 @@ Result exercise(Engine& engine, bool restore) {
                         "phrase-list log carry restore stages missing");
 #endif
             require(bus.dsp_register(0x6c) == (status == 2 ? 32 : 224), "polyphonic DSP flags differ");
+#ifdef GBB_SCORE_FINAL_PROBE
+            if (result.final_mode) {
+                result.final_observation_half = tail_half;
+                result.final_env_end = bus.dsp_register(0x28);
+                if (result.keyons.size() == 3) require(result.final_env_start > 0 && result.final_env_end > 0 &&
+                        result.final_tail_audio.nonzero > 0 && result.final_tail_audio.quiet_tail < 64,
+                        "final KON did not leave a sounding held voice");
+                else require(result.audio.quiet_tail >= 64 && result.final_env_end == 0 && result.final_tail_audio.nonzero == 0,
+                        "final rest failed to stay silent");
+            } else {
+#endif
             require(result.audio.quiet_tail >= 64, "polyphonic failed to settle to silence");
             if (status == 2) require(bus.dsp_register(0x5c) == 12 && bus.dsp_register(0x4c) == 0,
                     "polyphonic failed to key off both voices");
+#ifdef GBB_SCORE_FINAL_PROBE
+            }
+#endif
             for (unsigned port = 0; port < 4; ++port)
                 require(bus.host_read_port(port) == 0, "polyphonic advertised mailbox readiness");
             if (status != 2) require(result.events.empty() && result.keyons.empty() && result.keyoffs.empty() &&
@@ -578,6 +647,9 @@ Result exercise(Engine& engine, bool restore) {
 #ifdef GBB_SCORE_RESELECT_PROBE
             require(!instrument_observation.bad, "instrument write observation overflow/unknown cycle");
             result.instrument_writes = instrument_observation.writes;
+#ifdef GBB_SCORE_FINAL_PROBE
+            result.key_writes = instrument_observation.key_writes;
+#endif
 #ifdef GBB_SCORE_REVERSE_PROBE
             result.voice_writes = instrument_observation.voice_writes;
 #endif
@@ -728,6 +800,24 @@ int main(int argc, char** argv) {
 #endif
         std::cout << ",\"settled_gate_frames\":[" << expected.settled_frames[0] << "," << expected.settled_frames[1] << "]"
             << ",\"settled_peer_nonzero_frames\":[" << expected.peer_pcm[0] << "," << expected.peer_pcm[1] << "]";
+#ifdef GBB_SCORE_FINAL_PROBE
+        std::cout << ",\"final_mode\":" << expected.final_mode
+            << ",\"final_observation_half_cycles\":" << expected.final_observation_half
+            << ",\"final_env_start\":" << expected.final_env_start
+            << ",\"final_env_end\":" << expected.final_env_end
+            << ",\"final_tail_pcm\":{\"frames\":" << expected.final_tail_audio.frames
+            << ",\"nonzero_frames\":" << expected.final_tail_audio.nonzero
+            << ",\"peak\":" << expected.final_tail_audio.peak
+            << ",\"fnv1a64\":" << expected.final_tail_audio.hash
+            << ",\"quiet_tail_frames\":" << expected.final_tail_audio.quiet_tail << '}'
+            << ",\"key_writes\":[";
+        for (unsigned i=0; i<expected.key_writes.size(); ++i) {
+            if (i) std::cout << ',';
+            const auto& w=expected.key_writes[i];
+            std::cout << "{\"half_cycle\":" << w[0] << ",\"address\":" << w[1] << ",\"value\":" << w[2] << '}';
+        }
+        std::cout << ']';
+#endif
         std::cout << ",\"second_tail_pcm\":{\"frames\":" << expected.steady.frames
             << ",\"left_nonzero_frames\":" << expected.steady.left_nonzero
             << ",\"right_nonzero_frames\":" << expected.steady.right_nonzero << '}'

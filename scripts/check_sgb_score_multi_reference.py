@@ -29,7 +29,7 @@ def native(probe, data, tempo=96):
     return report
 
 
-def validate(report, *, schema='gbb-spc-score-multi-v1', max_events=16, max_ticks=1016, min_events=4, initial_pair=True):
+def validate(report, *, schema='gbb-spc-score-multi-v1', max_events=16, max_ticks=1016, min_events=4, initial_pair=True, terminal_event=False):
     if (not isinstance(report, dict) or report.get('schema') != schema
             or report.get('qualification') is not False or report.get('playback') is not False
             or report.get('reset_equal') is not True or report.get('restore_equal') is not True
@@ -45,13 +45,13 @@ def validate(report, *, schema='gbb-spc-score-multi-v1', max_events=16, max_tick
     if not min_events <= len(events) <= max_events:
         raise ValueError('multi-event count outside bound')
     last_tick, last_half = -1, -1
-    for event in events:
+    for index,event in enumerate(events):
         if not isinstance(event, dict) or any(type(event.get(key)) is not int for key in
                 ('tick', 'opcode', 'duration', 'channel', 'half_cycle')):
             raise ValueError('invalid multi-event fields')
         if (event['channel'] not in (2, 3) or not 1 <= event['duration'] <= 127
                 or not (0x80 <= event['opcode'] < 0xC8 or event['opcode'] == 0xC9)
-                or not last_tick <= event['tick'] < report['end_tick']
+                or not last_tick <= event['tick'] <= report['end_tick']-(0 if terminal_event and index==len(events)-1 and event['channel']==2 else 1)
                 or not last_half < event['half_cycle'] <= 30_000_000):
             raise ValueError('invalid multi-event order/bounds')
         last_tick, last_half = event['tick'], event['half_cycle']

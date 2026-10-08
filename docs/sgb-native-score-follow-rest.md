@@ -8,6 +8,9 @@ boundary rest produces no channel-2 pitch write or KON. This extends the
 [pending-note diagnostic](sgb-native-score-pending.md) in a separate image;
 earlier independently buildable images and their rejection contracts remain intact.
 
+The subsequent [final-boundary diagnostic](sgb-native-score-final.md) implements
+the separately measured single-pattern final note/rest case in a new image.
+
 ## Owned measurements
 
 `build_sgb_score_follow_rest_fixture.py` creates 32 independently authored
