@@ -59,9 +59,9 @@ def validate(report, *, schema='gbb-spc-score-multi-v1', max_events=16, max_tick
         raise ValueError('missing initial track pair')
 
 
-def align(report, data, *, schema='gbb-spc-score-multi-v1', max_events=16, max_ticks=1016, min_events=4, initial_pair=True):
+def align(report, data, *, schema='gbb-spc-score-multi-v1', max_events=16, max_ticks=1016, min_events=4, initial_pair=True, inherit_timing=False):
     validate(report, schema=schema, max_events=max_events, max_ticks=max_ticks, min_events=min_events, initial_pair=initial_pair)
-    expected = schedule(data, int.from_bytes(data[:2], 'little'))
+    expected = schedule(data, int.from_bytes(data[:2], 'little'), inherit_timing=inherit_timing)
     timed = [event for event in expected['events'] if event['kind'] in ('note', 'rest')]
     if report['status'] != 2 or report['end_tick'] != expected['ticks'] or len(timed) != len(report['events']):
         raise ValueError('native/symbolic multi-event timeline differs')

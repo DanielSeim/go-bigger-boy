@@ -1,5 +1,8 @@
 # Experimental per-channel mix inheritance
 
+The subsequent [timing-inheritance diagnostic](sgb-native-score-timing.md)
+retains duration and articulation across patterns and inactive channels.
+
 The isolated native renderer now retains E1 pan and ED track volume between
 patterns. Owned fixtures executed against both opaque originals confirm that
 these controls survive a channel's inactive pattern as well. A control changes
@@ -113,6 +116,6 @@ check and `git diff --check`.
 
 This remains an opt-in diagnostic, with qualification and playback false. It is
 not bundled or selected by production playback. SGB1/SGB2 program ROMs remain
-required. Next, measure duration/articulation inheritance across pattern changes
-on both originals before extending that parser state. Trailing-control boundary
-ordering needs a separate owned reference experiment before it can be accepted.
+required. Duration/articulation inheritance is covered by the subsequent diagnostic.
+Trailing-control boundary ordering needs a separate owned reference experiment
+before it can be accepted.

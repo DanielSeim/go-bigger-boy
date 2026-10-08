@@ -12,7 +12,9 @@
 namespace {
 using Engine = gameboy::SnesApuAudioEngine;
 #ifdef GBB_SCORE_RESELECT_PROBE
-#ifdef GBB_SCORE_INHERIT_PROBE
+#ifdef GBB_SCORE_TIMING_PROBE
+constexpr auto schema = "gbb-spc-score-timing-v1";
+#elif defined(GBB_SCORE_INHERIT_PROBE)
 constexpr auto schema = "gbb-spc-score-inherit-v1";
 #else
 constexpr auto schema = "gbb-spc-score-reselect-v1";

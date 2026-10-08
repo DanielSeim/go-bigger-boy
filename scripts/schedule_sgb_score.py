@@ -15,11 +15,14 @@ CONTROLS = {0xE0: 'instrument', 0xE1: 'pan', 0xE5: 'song_volume',
             0xE7: 'tempo', 0xED: 'track_volume'}
 
 
-def schedule(bank, phrase):
+def schedule(bank, phrase, *, inherit_timing=False):
     if not isinstance(bank, bytes) or not 1 <= len(bank) <= MAX_BYTES:
         raise ValueError('bank must contain 1..8192 bytes based at $2B00')
     if type(phrase) is not int:
         raise ValueError('phrase must be an integer SPC address')
+    if type(inherit_timing) is not bool:
+        raise ValueError('inherit_timing must be boolean')
+    carry = {2: (None, None), 3: (None, None)}
     operations = 0
     events = []
     patterns = []
@@ -97,6 +100,8 @@ def schedule(bank, phrase):
                 raise ValueError('unsupported scheduler track opcode')
             if track['duration'] is None or track['articulation'] is None:
                 raise ValueError('timed event needs explicit duration and articulation in this pattern')
+            if inherit_timing:
+                carry[track['channel']] = (track['duration'], track['articulation'])
             end = tick+track['duration']
             if end > MAX_TICKS:
                 raise ValueError('score tick budget exceeded')
@@ -125,7 +130,8 @@ def schedule(bank, phrase):
         if channels not in ([2], [3], [2, 3]):
             raise ValueError('scheduler supports channel 2 or 3 alone, or channels 2/3 together')
         tracks = [{'channel': channel, 'pc': pointers[channel], 'ready': now,
-                   'duration': None, 'articulation': None, 'call': None} for channel in channels]
+                   'duration': carry[channel][0] if inherit_timing else None,
+                   'articulation': carry[channel][1] if inherit_timing else None, 'call': None} for channel in channels]
         start = now
         event_start = len(events)
         while True:
