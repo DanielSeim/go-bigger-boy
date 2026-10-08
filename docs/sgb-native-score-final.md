@@ -144,7 +144,8 @@ and playback false, outside bundled and production selection. SGB1/SGB2 program
 ROMs remain required. Hardware checks, original PCM equivalence, broader driver
 commands and real-title replacement qualification remain open.
 
-Next, measure final termination with an already sounding peer, especially a
-voice held across an inactive pattern. Determine which voices the FF/00 stop
-pulse actually releases and whether a pending note retriggers before extending
-the current preceding-release and single-pattern guards.
+The subsequent [final sounding-peer diagnostic](sgb-native-score-final-peer.md)
+measures and implements final release in both clipping directions, including a
+voice held through an inactive pattern. Combining that held voice with a ready
+final note/rest remains a separate measurement before extending this image's
+preceding-release and single-pattern guards.

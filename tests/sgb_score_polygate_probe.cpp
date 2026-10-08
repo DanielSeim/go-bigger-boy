@@ -12,7 +12,9 @@
 namespace {
 using Engine = gameboy::SnesApuAudioEngine;
 #ifdef GBB_SCORE_RESELECT_PROBE
-#ifdef GBB_SCORE_FINAL_PROBE
+#ifdef GBB_SCORE_FINAL_PEER_PROBE
+constexpr auto schema = "gbb-spc-score-final-peer-v1";
+#elif defined(GBB_SCORE_FINAL_PROBE)
 constexpr auto schema = "gbb-spc-score-final-v1";
 #elif defined(GBB_SCORE_FOLLOW_REST_PROBE)
 constexpr auto schema = "gbb-spc-score-follow-rest-v1";
@@ -256,10 +258,16 @@ struct Result {
     std::uint64_t final_observation_half = 0;
     std::vector<std::array<std::uint64_t,3>> key_writes;
 #endif
+#ifdef GBB_SCORE_FINAL_PEER_PROBE
+    unsigned final_peer_stop = 0;
+#endif
     Audio audio, steady;
     std::array<unsigned,2> peer_checks{}, settled_frames{}, peer_pcm{};
     std::array<unsigned,2> settled_envelopes{}, frozen_checks{};
     bool operator==(const Result& other) const {
+#ifdef GBB_SCORE_FINAL_PEER_PROBE
+        if (final_peer_stop != other.final_peer_stop) return false;
+#endif
 #ifdef GBB_SCORE_FINAL_PROBE
         if (final_mode != other.final_mode || final_env_start != other.final_env_start ||
             final_env_end != other.final_env_end || final_observation_half != other.final_observation_half ||
@@ -312,6 +320,9 @@ Result exercise(Engine& engine, bool restore) {
     std::array<unsigned,2> latest_opcodes{0xc9,0xc9};
 #ifdef GBB_SCORE_REVERSE_PROBE
     std::size_t voice_checkpoint_count = 0;
+#endif
+#ifdef GBB_SCORE_FINAL_PEER_PROBE
+    bool final_peer_checkpoint = false;
 #endif
     std::uint64_t second_start = 0;
     std::array<std::uint64_t,2> expired_since{};
@@ -381,7 +392,11 @@ Result exercise(Engine& engine, bool restore) {
               settled, &result.settled_frames, &result.peer_pcm);
         const auto& bus = engine.bus();
 #ifdef GBB_SCORE_SPARSE_PROBE
-        if (bus.dsp_read_ram(0x64) == 1) {
+        if (bus.dsp_read_ram(0x64) == 1
+#ifdef GBB_SCORE_FINAL_PEER_PROBE
+                && bus.dsp_read_ram(0xbb) == 0
+#endif
+                ) {
             const unsigned active = bus.dsp_read_ram(0xa3);
             for (unsigned voice = 0; voice < 2; ++voice) {
                 const unsigned bit = 4U << voice;
@@ -418,6 +433,12 @@ Result exercise(Engine& engine, bool restore) {
         }
 #endif
         const unsigned kon = bus.dsp_register(0x4c), kof = bus.dsp_register(0x5c);
+#ifdef GBB_SCORE_FINAL_PEER_PROBE
+        if (restore && !final_peer_checkpoint && bus.dsp_read_ram(0xbb) == 1) {
+            checkpoint(engine);
+            final_peer_checkpoint = true;
+        }
+#endif
         require((kon & ~12U) == 0, "polyphonic keyed unexpected voice");
         if (kon && previous_kon == 0) {
             require(bus.dsp_register(0x5d) == 16 && (kof & kon) == 0 && bus.dsp_register(0x6c) == 32 &&
@@ -570,6 +591,10 @@ Result exercise(Engine& engine, bool restore) {
             result.status = status;
             result.end_tick = bus.dsp_read_ram(0x10) | bus.dsp_read_ram(0x11) << 8;
             result.completion_half = engine.cpu().half_cycles();
+#ifdef GBB_SCORE_FINAL_PEER_PROBE
+            result.final_peer_stop = status == 2 ? bus.dsp_read_ram(0xbb) : 0;
+            require(result.final_peer_stop <= 1, "invalid final peer completion phase");
+#endif
             unsigned tail_half = 40000;
 #ifdef GBB_SCORE_FINAL_PROBE
             result.final_mode = status == 2 ? bus.dsp_read_ram(0xba) : 0;
@@ -581,6 +606,9 @@ Result exercise(Engine& engine, bool restore) {
             }
 #endif
             for (unsigned i = 0; i < tail_half; ++i) {
+#ifdef GBB_SCORE_FINAL_PEER_PROBE
+                if (restore && result.final_peer_stop && (i == 73 || i == 19001)) checkpoint(engine);
+#endif
 #ifdef GBB_SCORE_FINAL_PROBE
                 clock(engine, result.audio, result.final_mode ? &result.final_tail_audio : nullptr);
 #else
@@ -619,6 +647,12 @@ Result exercise(Engine& engine, bool restore) {
             } else {
 #endif
             require(result.audio.quiet_tail >= 64, "polyphonic failed to settle to silence");
+#ifdef GBB_SCORE_FINAL_PEER_PROBE
+            if (result.final_peer_stop) require(bus.dsp_register(0x5c) == 0 && bus.dsp_register(0x4c) == 0 &&
+                    bus.dsp_register(0x28) == 0 && bus.dsp_register(0x38) == 0,
+                    "final peer failed to latch release and settle");
+            else
+#endif
             if (status == 2) require(bus.dsp_register(0x5c) == 12 && bus.dsp_register(0x4c) == 0,
                     "polyphonic failed to key off both voices");
 #ifdef GBB_SCORE_FINAL_PROBE
@@ -817,6 +851,9 @@ int main(int argc, char** argv) {
             std::cout << "{\"half_cycle\":" << w[0] << ",\"address\":" << w[1] << ",\"value\":" << w[2] << '}';
         }
         std::cout << ']';
+#endif
+#ifdef GBB_SCORE_FINAL_PEER_PROBE
+        std::cout << ",\"final_peer_stop\":" << expected.final_peer_stop;
 #endif
         std::cout << ",\"second_tail_pcm\":{\"frames\":" << expected.steady.frames
             << ",\"left_nonzero_frames\":" << expected.steady.left_nonzero
