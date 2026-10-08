@@ -15,9 +15,11 @@ def replace_exact(text, before, after, count=1):
     return text.replace(before, after)
 
 
-def build(*, multisong=False):
+def build(*, multisong=False, uploaded_instrument=False):
     if type(multisong) is not bool:
         raise ValueError("multisong flag must be boolean")
+    if type(uploaded_instrument) is not bool or (uploaded_instrument and not multisong):
+        raise ValueError("uploaded instrument requires a boolean flag and multisong")
     engine = engine_source()
     hooks = {
         'clock_poll:\n    mov a, $fd\n': 'clock_poll:\n    call bridge_service\n',
@@ -46,6 +48,11 @@ def build(*, multisong=False):
         handlers, restart = handlers.split('.org $0400', 1)
         bridge = prefix + '.org $0400' + restart + '\n.org $0508\n; Diagnostic observations:' + handlers
         bridge += '\n' + (ROOT / 'firmware/sgb/score_directory_bridge.asm').read_text()
+    if uploaded_instrument:
+        engine = replace_exact(engine, '    call timing_init\n', '    call uploaded_timing_init\n')
+        engine = replace_exact(engine, '    mov a, owned_instrument_descriptor+x\n', '    mov a, $5000+x\n')
+        bridge = replace_exact(bridge, 'mov $f5, #$cc', 'mov $f5, #$cd')
+        bridge = replace_exact(bridge, '    call poly_setup\n', '    call uploaded_setup\n')
     branch_number = 0
     def bridge_branch(match):
         nonlocal branch_number
@@ -59,8 +66,11 @@ def build(*, multisong=False):
     bridge = re.sub(r'    (bne|beq) (' + targets + r')\n', bridge_branch, bridge)
     if multisong:
         bridge = re.sub(r'    (bne|beq|bcc|bcs) (directory_bad)\n', bridge_branch, bridge)
-    payload = bytes(assemble(bridge + '\n' + engine, 'spc', 0x0200))
-    if len(payload) > 0x1600:
+    source = bridge + '\n' + engine
+    if uploaded_instrument:
+        source += '\n' + (ROOT / 'firmware/sgb/score_uploaded_instrument.asm').read_text()
+    payload = bytes(assemble(source, 'spc', 0x0200))
+    if len(payload) > (0x1a00 if uploaded_instrument else 0x1600):
         raise ValueError('transport payload exceeds bridge/engine region')
     host = (ROOT / 'firmware/sgb/host.asm').read_text()
     hooks = {
@@ -79,6 +89,8 @@ def build(*, multisong=False):
         host = replace_exact(host, 'cmp #$cb', 'cmp #$cc', count=4)
         host = replace_exact(host, '    cmp #$01\n    bne unsupported_early\nbridge_host_valid_score:',
             '    cmp #$01\n    bcc unsupported_early\n    cmp #$04\n    bcs unsupported_early\nbridge_host_valid_score:')
+    if uploaded_instrument:
+        host = replace_exact(host, 'cmp #$cc', 'cmp #$cd', count=4)
     # Expanded diagnostic guards need absolute failure jumps in the host variant.
     guard_number = 0
     def far_guard(match):
@@ -109,9 +121,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--multisong', action='store_true')
+    parser.add_argument('--uploaded-instrument', action='store_true')
     args = parser.parse_args()
     try:
-        image = build(multisong=args.multisong)
+        image = build(multisong=args.multisong, uploaded_instrument=args.uploaded_instrument)
         with args.output.open('xb') as output:
             output.write(image)
     except (OSError, ValueError) as error:
