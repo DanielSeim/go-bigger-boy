@@ -113,5 +113,6 @@ This profile does not expand production selection or the general note table.
 The [continuing-profile measurements](sgb-score-short-continue-observations.md)
 now establish the deferred ED control, actual DSP setup and release sequence
 outside this immediate-final-ready topology. Their banks remain rejected by
-this immediate-final profile; guarded native continuation support is the next
-implementation step.
+this immediate-final profile; the separate
+[native continuation diagnostic](sgb-native-score-short-continue.md) now
+implements the measured continuation shape.

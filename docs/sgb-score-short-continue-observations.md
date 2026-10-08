@@ -7,6 +7,9 @@ or volume and retains channel-2 volume 7/7. This differs from the
 [immediate-final-ready profile](sgb-native-score-short-return.md), whose pending
 final note retains volume 7/7.
 
+The subsequent [native continuation diagnostic](sgb-native-score-short-continue.md)
+now implements and validates this bounded profile separately.
+
 ## Independently authored corpus
 
 `build_sgb_score_short_continue_fixture.py` derives the preceding owned short
@@ -94,7 +97,8 @@ Seven public tests cover reproducibility/input bounds, independent scheduler
 geometry, the synthetic two-model ledger, forged setup/control/gate/lifecycle
 observations, completeness/model/hash binding, intermodel drift and trace
 header/byte/row/order/value bounds. The native short-return suite additionally
-checks silent rejection of all eight continuing banks: status 226, no accepted
+checks silent rejection of all eight continuing banks by the preceding image:
+status 226, no accepted
 key writes and no nonzero owned PCM. The preceding native image still passes
 all 16 retained immediate-final short-return comparisons.
 All seven focused fixture, scheduler and native direct/mixed/short-return
@@ -114,8 +118,7 @@ ENVX, PCM equivalence, hardware behavior or real-title qualification. Private
 original instructions, scores, instrument tables, samples and PCM are not
 inspected or copied.
 
-Next, implement this guarded continuing profile: preserve the unreleased
-return, apply the deferred control when the following note starts, retain the
-following rest's actual volume, and release ordinary notes before final stop.
-Validate owned attack/release, audio, reset/save/load and the preceding
-reference corpus before extending selection.
+The subsequent native diagnostic preserves the unreleased return, applies the
+deferred control at the following note, and validates owned attack/release,
+audio, reset/save/load and the preceding reference corpus. Its separate
+implementation evidence is documented in the linked native profile.

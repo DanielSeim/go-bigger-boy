@@ -12,7 +12,9 @@
 namespace {
 using Engine = gameboy::SnesApuAudioEngine;
 #ifdef GBB_SCORE_RESELECT_PROBE
-#if defined(GBB_SCORE_SHORT_RETURN_PROBE)
+#if defined(GBB_SCORE_SHORT_CONTINUE_PROBE)
+constexpr auto schema = "gbb-spc-score-short-continue-v1";
+#elif defined(GBB_SCORE_SHORT_RETURN_PROBE)
 constexpr auto schema = "gbb-spc-score-short-return-v1";
 #elif defined(GBB_SCORE_DIRECT_RETURN_PROBE)
 constexpr auto schema = "gbb-spc-score-direct-return-v1";
@@ -275,6 +277,9 @@ struct Result {
     unsigned direct_return_mode = 0;
 #ifdef GBB_SCORE_SHORT_RETURN_PROBE
     unsigned short_return_mode = 0;
+#ifdef GBB_SCORE_SHORT_CONTINUE_PROBE
+    unsigned short_continue_mode = 0;
+#endif
 #endif
 #endif
 #endif
@@ -288,6 +293,9 @@ struct Result {
         if (direct_return_mode != other.direct_return_mode) return false;
 #ifdef GBB_SCORE_SHORT_RETURN_PROBE
         if (short_return_mode != other.short_return_mode) return false;
+#ifdef GBB_SCORE_SHORT_CONTINUE_PROBE
+        if (short_continue_mode != other.short_continue_mode) return false;
+#endif
 #endif
 #endif
 #endif
@@ -633,6 +641,10 @@ Result exercise(Engine& engine, bool restore) {
 #ifdef GBB_SCORE_SHORT_RETURN_PROBE
             result.short_return_mode = status == 2 ? bus.dsp_read_ram(0xc4) : 0;
             require(result.short_return_mode <= 1, "invalid short return mode");
+#ifdef GBB_SCORE_SHORT_CONTINUE_PROBE
+            result.short_continue_mode = status == 2 ? bus.dsp_read_ram(0xc5) : 0;
+            require(result.short_continue_mode <= 1, "invalid short continuation mode");
+#endif
 #endif
 #endif
 #endif
@@ -650,8 +662,14 @@ Result exercise(Engine& engine, bool restore) {
 #endif
 #endif
             result.final_mode = status == 2 ? bus.dsp_read_ram(0xba) : 0;
-            if (result.final_mode) {
-                require(status == 2 && result.final_mode == 1, "invalid final-ready mode");
+#ifdef GBB_SCORE_SHORT_CONTINUE_PROBE
+            if (result.short_continue_mode) final_held = false;
+            const bool observe_final = result.final_mode || result.short_continue_mode;
+#else
+            const bool observe_final = result.final_mode;
+#endif
+            if (observe_final) {
+                require(status == 2 && result.final_mode <= 1, "invalid final-ready mode");
                 tail_half = 600000; // Longer than every admitted gate, within existing physical/PCM caps.
                 result.final_env_start = bus.dsp_register(0x28);
                 require(engine.cpu().half_cycles()+tail_half <= 30000000, "final tail exceeds physical bound");
@@ -662,12 +680,12 @@ Result exercise(Engine& engine, bool restore) {
                 if (restore && result.final_peer_stop && (i == 73 || i == 19001)) checkpoint(engine);
 #endif
 #ifdef GBB_SCORE_FINAL_PROBE
-                clock(engine, result.audio, result.final_mode ? &result.final_tail_audio : nullptr);
+                clock(engine, result.audio, observe_final ? &result.final_tail_audio : nullptr);
 #else
                 clock(engine, result.audio);
 #endif
 #ifdef GBB_SCORE_FINAL_PROBE
-                if (result.final_mode) {
+                if (observe_final) {
                     require(bus.dsp_register(0x5c) == 0 && bus.dsp_register(0x4c) == 0,
                             "final-ready halt changed key registers");
                     if (final_held) require(bus.dsp_register(0x28) > 0,
@@ -688,7 +706,7 @@ Result exercise(Engine& engine, bool restore) {
 #endif
             require(bus.dsp_register(0x6c) == (status == 2 ? 32 : 224), "polyphonic DSP flags differ");
 #ifdef GBB_SCORE_FINAL_PROBE
-            if (result.final_mode) {
+            if (observe_final) {
                 result.final_observation_half = tail_half;
                 result.final_env_end = bus.dsp_register(0x28);
                 if (final_held) require(result.final_env_start > 0 && result.final_env_end > 0 &&
@@ -913,6 +931,9 @@ int main(int argc, char** argv) {
         std::cout << ",\"direct_return_mode\":" << expected.direct_return_mode;
 #ifdef GBB_SCORE_SHORT_RETURN_PROBE
         std::cout << ",\"short_return_mode\":" << expected.short_return_mode;
+#ifdef GBB_SCORE_SHORT_CONTINUE_PROBE
+        std::cout << ",\"short_continue_mode\":" << expected.short_continue_mode;
+#endif
 #endif
 #endif
 #endif

@@ -126,7 +126,7 @@ def assemble(source, cpu, origin, constants=None):
                 operand(right[1:], 1)
             elif mnemonic == 'mov' and left == 'a':
                 address = right.removesuffix('+x')
-                absolute = int(address[1:], 16) > 255
+                absolute = not address.startswith('$') or int(address[1:], 16) > 255
                 code.append((0xf5 if absolute else 0xf4) if right.endswith('+x') else (0xe5 if absolute else 0xe4))
                 operand(address, 2 if absolute else 1)
             elif mnemonic == 'mov' and right == 'a':
