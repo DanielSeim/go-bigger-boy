@@ -132,7 +132,8 @@ and playback false, outside bundled or production selection. The bundled
 prototype is unchanged; SGB1/SGB2 program ROMs remain required. Hardware,
 original PCM equivalence and real-title replacement qualification remain open.
 
-Next, measure a held voice returning directly with a note, without a preceding
-rest, especially when articulation changes from 127 to 63. Observe whether
-that return releases or retriggers the old voice, and bind the DSP writes and
-timer behavior before extending the renderer.
+The subsequent [direct-return observation corpus](sgb-score-direct-return-observations.md)
+measures a held voice returning directly with a note, without a preceding rest.
+Both originals issue KON while the old voice remains keyed, then give the
+returning note its own timer release. Native direct-return implementation and
+physical envelope qualification remain the next step.
