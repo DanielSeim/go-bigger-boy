@@ -12,7 +12,9 @@
 namespace {
 using Engine = gameboy::SnesApuAudioEngine;
 #ifdef GBB_SCORE_RESELECT_PROBE
-#if defined(GBB_SCORE_FINAL_MIXED_PROBE)
+#if defined(GBB_SCORE_DIRECT_RETURN_PROBE)
+constexpr auto schema = "gbb-spc-score-direct-return-v1";
+#elif defined(GBB_SCORE_FINAL_MIXED_PROBE)
 constexpr auto schema = "gbb-spc-score-final-mixed-v1";
 #elif defined(GBB_SCORE_FINAL_RETURN_PROBE)
 constexpr auto schema = "gbb-spc-score-final-return-v1";
@@ -267,6 +269,9 @@ struct Result {
 #endif
 #ifdef GBB_SCORE_FINAL_RETURN_PROBE
     unsigned final_return_mode = 0;
+#ifdef GBB_SCORE_DIRECT_RETURN_PROBE
+    unsigned direct_return_mode = 0;
+#endif
 #endif
     Audio audio, steady;
     std::array<unsigned,2> peer_checks{}, settled_frames{}, peer_pcm{};
@@ -274,6 +279,9 @@ struct Result {
     bool operator==(const Result& other) const {
 #ifdef GBB_SCORE_FINAL_RETURN_PROBE
         if (final_return_mode != other.final_return_mode) return false;
+#ifdef GBB_SCORE_DIRECT_RETURN_PROBE
+        if (direct_return_mode != other.direct_return_mode) return false;
+#endif
 #endif
 #ifdef GBB_SCORE_FINAL_PEER_PROBE
         if (final_peer_stop != other.final_peer_stop) return false;
@@ -489,7 +497,14 @@ Result exercise(Engine& engine, bool restore) {
                     latest_volumes[channel] = {bus.dsp_register((channel+2)*16),bus.dsp_register((channel+2)*16+1)};
                 }
         }
-        const unsigned asserted = (kof & ~previous_kof) & 12;
+        unsigned asserted = (kof & ~previous_kof) & 12;
+#ifdef GBB_SCORE_DIRECT_RETURN_PROBE
+        if (bus.dsp_read_ram(0xc3) && bus.dsp_read_ram(0xbe)) {
+            for (unsigned channel = 0; channel < 2; ++channel)
+                if (!latest_on[channel] || result.envelopes[envelope_index[channel]].off)
+                    asserted &= ~(4U << channel);
+        }
+#endif
         if (asserted && !result.events.empty()) {
             result.keyoffs.push_back(edge(engine, asserted));
 #ifdef GBB_SCORE_ENVELOPE_PROBE
@@ -604,6 +619,10 @@ Result exercise(Engine& engine, bool restore) {
 #ifdef GBB_SCORE_FINAL_RETURN_PROBE
             result.final_return_mode = status == 2 ? bus.dsp_read_ram(0xbe) : 0;
             require(result.final_return_mode <= 1, "invalid final return mode");
+#ifdef GBB_SCORE_DIRECT_RETURN_PROBE
+            result.direct_return_mode = status == 2 ? bus.dsp_read_ram(0xc3) : 0;
+            require(result.direct_return_mode <= 1, "invalid direct return mode");
+#endif
 #endif
 #ifdef GBB_SCORE_FINAL_PEER_PROBE
             result.final_peer_stop = status == 2 ? bus.dsp_read_ram(0xbb) : 0;
@@ -614,6 +633,9 @@ Result exercise(Engine& engine, bool restore) {
             bool final_held = result.keyons.size() == 3;
 #ifdef GBB_SCORE_FINAL_RETURN_PROBE
             if (result.final_return_mode) final_held = result.keyons.size() == 5;
+#ifdef GBB_SCORE_DIRECT_RETURN_PROBE
+            if (result.direct_return_mode) final_held = result.keyons.size() == 6;
+#endif
 #endif
             result.final_mode = status == 2 ? bus.dsp_read_ram(0xba) : 0;
             if (result.final_mode) {
@@ -875,6 +897,9 @@ int main(int argc, char** argv) {
 #endif
 #ifdef GBB_SCORE_FINAL_RETURN_PROBE
         std::cout << ",\"final_return_mode\":" << expected.final_return_mode;
+#ifdef GBB_SCORE_DIRECT_RETURN_PROBE
+        std::cout << ",\"direct_return_mode\":" << expected.direct_return_mode;
+#endif
 #endif
         std::cout << ",\"second_tail_pcm\":{\"frames\":" << expected.steady.frames
             << ",\"left_nonzero_frames\":" << expected.steady.left_nonzero

@@ -5,7 +5,8 @@ clipped voice remains keyed. There is no intervening channel-2 KOF. The
 returning note subsequently receives its own timer KOF before final score
 termination. This establishes the register-write behavior needed to extend
 the [mixed-articulation rest diagnostic](sgb-native-score-final-mixed.md).
-It does not yet implement or independently qualify native direct-note return.
+The subsequent [native diagnostic](sgb-native-score-direct-return.md) implements
+and validates this measured corpus; this page records the original-only evidence.
 
 ## Owned matrix
 
@@ -119,8 +120,8 @@ eight direct-return banks: status 226, no accepted key writes and no nonzero
 owned PCM. Its source/hash and the bundled prototype are unchanged. SGB1/SGB2
 program ROMs remain required.
 
-Next, implement a guarded direct-return diagnostic using this measured corpus.
-Preserve the unreleased-retrigger ledger and the pitch-before-volume setup,
-use the existing returning-note gate profiles, and separately validate owned
-DSP envelope behavior at the retrigger. Check final held/silent audio,
-reset/save/load, and all previously qualified profiles before any bundling.
+The subsequent [native direct-return diagnostic](sgb-native-score-direct-return.md)
+implements this guarded corpus, preserving the unreleased-retrigger ledger,
+pitch-before-volume ordering and measured timer profiles. It validates owned
+envelope behavior, final audio and reset/save/load while retaining this
+original-only observation entry point.

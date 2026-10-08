@@ -31,13 +31,13 @@ def control_writes(report):
     return rows[stops[0]:stops[0]+3]
 
 
-def observation(report):
+def observation(report,*,allow_retrigger=False):
     gates=[];pending={};index=0
     for half,is_on,e in sorted([(e['half_cycle'],True,e) for e in report['keyons']]+[(e['half_cycle'],False,e) for e in report['keyoffs']]):
         for voice in (2,3):
             if not e['mask']&(1<<voice):continue
             if is_on:
-                if voice in pending:raise ValueError('final native invented unreleased retrigger')
+                if voice in pending and not allow_retrigger:raise ValueError('final native invented unreleased retrigger')
                 pending[voice]=(index,half)
             else:
                 if voice not in pending:raise ValueError('final native released an unbound voice')
