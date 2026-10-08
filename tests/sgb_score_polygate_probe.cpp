@@ -12,7 +12,9 @@
 namespace {
 using Engine = gameboy::SnesApuAudioEngine;
 #ifdef GBB_SCORE_RESELECT_PROBE
-#ifdef GBB_SCORE_ORDER_PROBE
+#ifdef GBB_SCORE_REVERSE_PROBE
+constexpr auto schema = "gbb-spc-score-reverse-v1";
+#elif defined(GBB_SCORE_ORDER_PROBE)
 constexpr auto schema = "gbb-spc-score-order-v1";
 #elif defined(GBB_SCORE_PEER_PROBE)
 constexpr auto schema = "gbb-spc-score-peer-v1";
@@ -32,6 +34,9 @@ struct InstrumentObservation {
     gameboy::SnesSpc700* cpu{};
     bool enabled = false, bad = false;
     std::vector<std::array<std::uint64_t,4>> writes;
+#ifdef GBB_SCORE_REVERSE_PROBE
+    std::vector<std::array<std::uint64_t,3>> voice_writes;
+#endif
 } instrument_observation;
 void observe_instrument(void* context, std::uint64_t cycle, std::uint8_t,
                         std::uint16_t address, std::uint8_t value, bool accepted) noexcept {
@@ -39,6 +44,13 @@ void observe_instrument(void* context, std::uint64_t cycle, std::uint8_t,
     if (!observation.enabled || !accepted || address != 0xf3) return;
     auto& engine = *observation.engine;
     const unsigned reg = engine.bus().spc_read(0xf2) & 127;
+#ifdef GBB_SCORE_REVERSE_PROBE
+    if (engine.bus().dsp_read_ram(0x64) == 1 &&
+        ((reg >= 0x20 && reg <= 0x23) || (reg >= 0x30 && reg <= 0x33))) {
+        if (!cycle || observation.voice_writes.size() >= 256) { observation.bad = true; return; }
+        observation.voice_writes.push_back({engine.cpu().half_cycles(),reg,value});
+    }
+#endif
     if (engine.bus().dsp_read_ram(0x64) != 1 ||
         !((reg >= 0x24 && reg <= 0x27) || (reg >= 0x34 && reg <= 0x37))) return;
     if (!cycle || observation.writes.size() >= 160) { observation.bad = true; return; }
@@ -206,6 +218,8 @@ struct Result {
     std::uint64_t completion_half = 0;
     std::vector<unsigned char> events;
     std::vector<unsigned char> articulations;
+    std::vector<unsigned> event_patterns;
+    std::vector<std::array<std::uint64_t,3>> voice_writes;
     std::vector<unsigned> pattern_ticks;
     std::vector<unsigned> pattern_masks;
     std::vector<unsigned> instrument_sets;
@@ -219,7 +233,7 @@ struct Result {
     std::array<unsigned,2> settled_envelopes{}, frozen_checks{};
     bool operator==(const Result& other) const {
         return status == other.status && end_tick == other.end_tick && second_tick == other.second_tick && completion_half == other.completion_half &&
-            events == other.events && articulations == other.articulations && pattern_ticks == other.pattern_ticks && pattern_masks == other.pattern_masks && instrument_sets == other.instrument_sets && instrument_writes == other.instrument_writes && controls == other.controls && halves == other.halves && keyons == other.keyons && keyoffs == other.keyoffs && envelopes == other.envelopes &&
+            events == other.events && event_patterns == other.event_patterns && voice_writes == other.voice_writes && articulations == other.articulations && pattern_ticks == other.pattern_ticks && pattern_masks == other.pattern_masks && instrument_sets == other.instrument_sets && instrument_writes == other.instrument_writes && controls == other.controls && halves == other.halves && keyons == other.keyons && keyoffs == other.keyoffs && envelopes == other.envelopes &&
             audio == other.audio && steady == other.steady && peer_checks == other.peer_checks && settled_frames == other.settled_frames && peer_pcm == other.peer_pcm && settled_envelopes == other.settled_envelopes && frozen_checks == other.frozen_checks;
     }
 };
@@ -240,6 +254,9 @@ Result exercise(Engine& engine, bool restore) {
     instrument_observation.enabled = true;
     instrument_observation.bad = false;
     instrument_observation.writes.clear();
+#ifdef GBB_SCORE_REVERSE_PROBE
+    instrument_observation.voice_writes.clear();
+#endif
     instrument_observation.cpu->set_write_cycle_observer(observe_instrument, &instrument_observation);
 #endif
 #ifdef GBB_SCORE_BANK_PROBE
@@ -257,6 +274,9 @@ Result exercise(Engine& engine, bool restore) {
 #endif
 #endif
     std::array<unsigned,2> latest_opcodes{0xc9,0xc9};
+#ifdef GBB_SCORE_REVERSE_PROBE
+    std::size_t voice_checkpoint_count = 0;
+#endif
     std::uint64_t second_start = 0;
     std::array<std::uint64_t,2> expired_since{};
     std::array<std::uint64_t,2> latest_on{};
@@ -411,6 +431,16 @@ Result exercise(Engine& engine, bool restore) {
 #ifdef GBB_SCORE_ENVELOPE_PROBE
         observe_envelopes();
 #endif
+#ifdef GBB_SCORE_REVERSE_PROBE
+        // Save after each complete pitch write, including a boundary pitch
+        // that has not received KON and will be overwritten by the next track.
+        const auto voice_write_count = instrument_observation.voice_writes.size();
+        if (restore && voice_write_count != voice_checkpoint_count && voice_write_count &&
+            (instrument_observation.voice_writes.back()[1] & 15) == 3) {
+            checkpoint(engine);
+            voice_checkpoint_count = voice_write_count;
+        }
+#endif
         previous_kon = kon;
         previous_kof = kof;
         const auto written = log_count(engine);
@@ -442,6 +472,9 @@ Result exercise(Engine& engine, bool restore) {
 #endif
 #ifdef GBB_SCORE_LIST_PROBE
             const unsigned pattern = bus.dsp_read_ram(0x9c);
+#ifdef GBB_SCORE_REVERSE_PROBE
+            result.event_patterns.push_back(pattern);
+#endif
             if (pattern == result.pattern_ticks.size()) {
                 require(pattern < 4, "phrase-list pattern overflow");
                 result.pattern_ticks.push_back(bus.dsp_read_ram(0x10) | bus.dsp_read_ram(0x11) << 8);
@@ -531,6 +564,9 @@ Result exercise(Engine& engine, bool restore) {
 #ifdef GBB_SCORE_RESELECT_PROBE
             require(!instrument_observation.bad, "instrument write observation overflow/unknown cycle");
             result.instrument_writes = instrument_observation.writes;
+#ifdef GBB_SCORE_REVERSE_PROBE
+            result.voice_writes = instrument_observation.voice_writes;
+#endif
             instrument_observation.enabled = false;
 #endif
             return result;
@@ -657,6 +693,20 @@ int main(int argc, char** argv) {
         std::cout << ']';
 #endif
 #ifdef GBB_SCORE_PEER_PROBE
+#ifdef GBB_SCORE_REVERSE_PROBE
+        std::cout << ",\"event_patterns\":[";
+        for (unsigned i=0; i<expected.event_patterns.size(); ++i) {
+            if (i) std::cout << ',';
+            std::cout << expected.event_patterns[i];
+        }
+        std::cout << "],\"voice_writes\":[";
+        for (unsigned i=0; i<expected.voice_writes.size(); ++i) {
+            if (i) std::cout << ',';
+            const auto& write=expected.voice_writes[i];
+            std::cout << "{\"half_cycle\":" << write[0] << ",\"address\":" << write[1] << ",\"value\":" << write[2] << '}';
+        }
+        std::cout << ']';
+#endif
         std::cout << ",\"frozen_peer_checks\":[" << expected.frozen_checks[0] << ',' << expected.frozen_checks[1] << ']';
 #endif
 #ifdef GBB_SCORE_MIX_PROBE

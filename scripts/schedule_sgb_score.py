@@ -15,7 +15,7 @@ CONTROLS = {0xE0: 'instrument', 0xE1: 'pan', 0xE5: 'song_volume',
             0xE7: 'tempo', 0xED: 'track_volume'}
 
 
-def schedule(bank, phrase, *, inherit_timing=False, end_priority=False):
+def schedule(bank, phrase, *, inherit_timing=False, end_priority=False, boundary_events=False):
     if not isinstance(bank, bytes) or not 1 <= len(bank) <= MAX_BYTES:
         raise ValueError('bank must contain 1..8192 bytes based at $2B00')
     if type(phrase) is not int:
@@ -24,6 +24,8 @@ def schedule(bank, phrase, *, inherit_timing=False, end_priority=False):
         raise ValueError('inherit_timing must be boolean')
     if type(end_priority) is not bool:
         raise ValueError('end_priority must be boolean')
+    if type(boundary_events) is not bool or boundary_events and not end_priority:
+        raise ValueError('boundary_events requires boolean end priority')
     carry = {2: (None, None), 3: (None, None)}
     operations = 0
     events = []
@@ -56,6 +58,8 @@ def schedule(bank, phrase, *, inherit_timing=False, end_priority=False):
             opcode = read(address)[0]
             track['pc'] += 1
             context = {'tick': tick, 'channel': track['channel'], 'address': address}
+            if boundary_events:
+                context['pattern'] = len(patterns)
             if opcode == 0:
                 call = track['call']
                 if call is None:
@@ -153,11 +157,13 @@ def schedule(bank, phrase, *, inherit_timing=False, end_priority=False):
             if ended:
                 if tick == start:
                     raise ValueError('zero-length patterns are unsupported')
-                # Same-tick end/note ordering has not been qualified against the
-                # reference; do not guess whether that new note would key on.
-                if any(event['kind'] in ('note', 'rest') for event in pending):
+                # Default callers retain conservative rejection. The opt-in
+                # oracle records executed boundary events without claiming KON.
+                if not boundary_events and any(event['kind'] in ('note', 'rest') for event in pending):
                     raise ValueError('simultaneous track end and timed event is unsupported')
                 for event in pending:
+                    if event['kind'] in ('note', 'rest'):
+                        event['boundary_event'] = True
                     emit(event)
                 now = tick
                 for event in events[event_start:]:

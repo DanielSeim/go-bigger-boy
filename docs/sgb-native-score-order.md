@@ -1,5 +1,8 @@
 # Experimental same-tick track-end priority
 
+The subsequent [reverse-order diagnostic](sgb-native-score-reverse.md) executes
+channel 2 before a channel-3 end when the next pattern replaces its note.
+
 The isolated renderer now advances the pattern when channel 2 ends at the same
 score tick as channel 3 reaches another note or rest. Channel 3 does not execute
 that event or its preceding controls. This extends the
