@@ -12,7 +12,11 @@
 namespace {
 using Engine = gameboy::SnesApuAudioEngine;
 #ifdef GBB_SCORE_RESELECT_PROBE
+#ifdef GBB_SCORE_INHERIT_PROBE
+constexpr auto schema = "gbb-spc-score-inherit-v1";
+#else
 constexpr auto schema = "gbb-spc-score-reselect-v1";
+#endif
 constexpr unsigned log_bound = 320, second_pattern_offset = 64;
 constexpr unsigned log_base = 0x4000, bank_input_bound = 2049, upper_guard = 0x4c00;
 struct InstrumentObservation {

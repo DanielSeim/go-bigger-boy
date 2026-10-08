@@ -1,5 +1,8 @@
 # Experimental instrument-2 reselection
 
+The subsequent [per-channel mix inheritance diagnostic](sgb-native-score-inherit.md)
+retains pan and track volume across patterns and inactive channels.
+
 The isolated native renderer now executes E0 instrument-2 selections in track
 prefixes, including later pattern boundaries. The preceding
 [sparse-pattern renderer](sgb-native-score-sparse.md) validated the operand but

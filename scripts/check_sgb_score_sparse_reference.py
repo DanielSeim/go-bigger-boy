@@ -51,8 +51,8 @@ def native(probe,data,tempo=96):
     return gate_native(probe,data,tempo,builder=build,validator=validate,output_bound=131072)
 
 
-def onset_contract(result,case):
-    if not isinstance(result,dict) or result.get('keyons')!=expected(case):
+def onset_contract(result,case, *, expected_onsets=None):
+    if not isinstance(result,dict) or result.get('keyons')!=(expected(case) if expected_onsets is None else expected_onsets):
         raise ValueError('sparse original setup/onsets differ from owned contract')
     for edge in result['keyons']:
         if type(edge['mask']) is not int or any(type(value) is not int for voice in edge['voices'] for key,value in voice.items() if key!='volumes') or any(type(value) is not int for voice in edge['voices'] for value in voice['volumes']):
@@ -62,7 +62,7 @@ def onset_contract(result,case):
         raise ValueError('sparse original onset outside existing bounds')
 
 
-def onsets(source,case):
+def onsets(source,case, *, expected_onsets=None):
     reader=csv.DictReader(source)
     if reader.fieldnames!=['kind','master_clock','spc_cycle','pcm_sample','address','value']:
         raise ValueError('invalid sparse trace header')
@@ -88,7 +88,7 @@ def onsets(source,case):
                            'adsr1':registers[base+5],'adsr2':registers[base+6],'gain':registers[base+7]})
         edges.append({'mask':value,'voices':voices});cycles.append(cycle)
     result={'keyons':edges,'onset_intervals_spc_cycles':[b-a for a,b in zip(cycles,cycles[1:])]}
-    onset_contract(result,case)
+    onset_contract(result,case,expected_onsets=expected_onsets)
     return result
 
 
