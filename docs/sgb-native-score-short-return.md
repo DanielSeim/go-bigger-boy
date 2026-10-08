@@ -90,11 +90,13 @@ in SPC cycles are:
 The new image also passes all 232 retained preceding comparisons: pending 32,
 reverse 24, peer 16, follow-rest 64, final 16, final-peer 16, final-return 32,
 final-mixed 16 and direct-return 16. The unchanged intermodel allowance is
-2048 SPC cycles. Nine new public physical tests cover reproducibility,
+2048 SPC cycles. Ten public physical tests cover reproducibility,
 envelopes, actual setup and controls, final audio, rejection, predecessor
 behavior, fault injection and forged observations. The eight preceding short
-fixture/observation tests remain applicable. All 41 public score, fixture and
-scheduler CTest suites pass on the rebuilt probes.
+fixture/observation tests remain applicable. The continuing-profile rejection
+test checks all eight new banks. The preceding milestone passed all 41 public
+score, fixture and scheduler CTest suites on the rebuilt probes; the subsequent
+continuation measurement passes seven focused CTest suites.
 
 Original children retain the 8-million-instruction, 180-second, 16 MiB CSV
 and fewer-than-32768-row caps. Native bounds remain 4096 program bytes,
@@ -108,7 +110,8 @@ The bundled prototype is unchanged at SHA-256
 `8222797ddeec5681af61fda28c6afc241898887cd0f254ce2f691f30d4b13482`.
 This profile does not expand production selection or the general note table.
 
-Next, measure a duration-4 return followed by a continuing duration-8/16 note.
-That will establish the deferred ED control, actual DSP setup and release
-sequence outside this immediate-final-ready topology before extending native
-admission.
+The [continuing-profile measurements](sgb-score-short-continue-observations.md)
+now establish the deferred ED control, actual DSP setup and release sequence
+outside this immediate-final-ready topology. Their banks remain rejected by
+this immediate-final profile; guarded native continuation support is the next
+implementation step.

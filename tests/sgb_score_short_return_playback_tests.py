@@ -9,6 +9,7 @@ from build_sgb_score_short_return import build,source
 from build_sgb_score_direct_return import build as prior_build
 from build_sgb_score_short_return_fixture import bank,CASES,ARTICULATIONS,DURATIONS
 from build_sgb_score_direct_return_fixture import bank as prior_bank
+from build_sgb_score_short_continue_fixture import bank as continuing_bank,CASES as CONTINUING_CASES
 from check_sgb_score_short_return_playback import native,validate,identity
 from check_sgb_score_direct_return_playback import validate as prior_validate,SCHEMA as PRIOR_SCHEMA
 from check_sgb_score_final_playback import observation,control_writes
@@ -82,6 +83,15 @@ class ShortReturnPlaybackTests(unittest.TestCase):
             self.assertEqual(r['status'],226)
             r=gate_native(PROBE,prior_bank(case=c),builder=build,validator=lambda r:prior_validate({**r,'schema':PRIOR_SCHEMA}),output_bound=131072)
             self.assertEqual(r['short_return_mode'],0)
+
+    def test_continuing_profiles_remain_silently_rejected(self):
+        for c in CONTINUING_CASES:
+            for a in ARTICULATIONS:
+                for d in DURATIONS:
+                    r=native(PROBE,continuing_bank(a,d,c))
+                    self.assertEqual(r['status'],226)
+                    self.assertEqual(r['key_writes'],[])
+                    self.assertEqual(r['pcm']['nonzero_frames'],0)
 
     def test_profile_counter_retrigger_order_and_freeze_faults_fail(self):
         for before,after in (('    mov $76, #$05\n','    mov $76, #$0f\n'),
