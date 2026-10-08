@@ -62,7 +62,7 @@ def onset_contract(result,case, *, expected_onsets=None):
         raise ValueError('sparse original onset outside existing bounds')
 
 
-def onsets(source,case, *, expected_onsets=None):
+def onsets(source,case, *, expected_onsets=None, onset_validator=None):
     reader=csv.DictReader(source)
     if reader.fieldnames!=['kind','master_clock','spc_cycle','pcm_sample','address','value']:
         raise ValueError('invalid sparse trace header')
@@ -88,7 +88,10 @@ def onsets(source,case, *, expected_onsets=None):
                            'adsr1':registers[base+5],'adsr2':registers[base+6],'gain':registers[base+7]})
         edges.append({'mask':value,'voices':voices});cycles.append(cycle)
     result={'keyons':edges,'onset_intervals_spc_cycles':[b-a for a,b in zip(cycles,cycles[1:])]}
-    onset_contract(result,case,expected_onsets=expected_onsets)
+    if onset_validator is None:
+        onset_contract(result,case,expected_onsets=expected_onsets)
+    else:
+        onset_validator(result,case)
     return result
 
 

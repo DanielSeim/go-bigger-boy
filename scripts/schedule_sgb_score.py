@@ -15,13 +15,15 @@ CONTROLS = {0xE0: 'instrument', 0xE1: 'pan', 0xE5: 'song_volume',
             0xE7: 'tempo', 0xED: 'track_volume'}
 
 
-def schedule(bank, phrase, *, inherit_timing=False):
+def schedule(bank, phrase, *, inherit_timing=False, end_priority=False):
     if not isinstance(bank, bytes) or not 1 <= len(bank) <= MAX_BYTES:
         raise ValueError('bank must contain 1..8192 bytes based at $2B00')
     if type(phrase) is not int:
         raise ValueError('phrase must be an integer SPC address')
     if type(inherit_timing) is not bool:
         raise ValueError('inherit_timing must be boolean')
+    if type(end_priority) is not bool:
+        raise ValueError('end_priority must be boolean')
     carry = {2: (None, None), 3: (None, None)}
     operations = 0
     events = []
@@ -146,6 +148,8 @@ def schedule(bank, phrase, *, inherit_timing=False):
                 pending.extend(batch)
                 if finished:
                     ended.append(track['channel'])
+                    if end_priority:
+                        break
             if ended:
                 if tick == start:
                     raise ValueError('zero-length patterns are unsupported')

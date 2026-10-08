@@ -1,5 +1,8 @@
 # Experimental duration and articulation inheritance
 
+The subsequent [trailing-control diagnostic](sgb-native-score-tail.md)
+qualifies ending-channel mix commands and documents a clipped-peer release gap.
+
 The isolated native renderer now retains duration and articulation separately
 for channels 2 and 3 across pattern boundaries and inactive patterns. Opaque
 execution of owned fixtures on both originals confirms this behavior. A later
@@ -115,6 +118,5 @@ as did the bundled-image reproducibility check and `git diff --check`.
 
 This remains an opt-in diagnostic with qualification and playback false. It
 is not bundled or production-selected. SGB1/SGB2 program ROMs remain required.
-Next, measure trailing controls at track ends on both originals, including
-first-end clipping and simultaneous boundary ordering, before relaxing the
-current rejection rules.
+The subsequent diagnostic measures trailing mix controls and end priority.
+Clipped-peer release and simultaneous end/note ordering need further qualification.

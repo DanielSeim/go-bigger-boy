@@ -159,10 +159,10 @@ def validate(report, *, schema='gbb-spc-score-polygate-v1', max_events=16, max_t
             raise ValueError('rest-only voice produced PCM')
 
 
-def align(report, data, *, schema='gbb-spc-score-polygate-v1', max_events=16, max_ticks=1016, pitch_table=PITCH, isolated_voices=True, pattern_ticks=None, sparse=False, inherit_timing=False):
+def align(report, data, *, schema='gbb-spc-score-polygate-v1', max_events=16, max_ticks=1016, pitch_table=PITCH, isolated_voices=True, pattern_ticks=None, sparse=False, inherit_timing=False, end_priority=False):
     validate(report, schema=schema, max_events=max_events, max_ticks=max_ticks, pitch_table=pitch_table, isolated_voices=isolated_voices, pattern_ticks=pattern_ticks, sparse=sparse)
-    multi_align(multi_report(report, schema), data, max_events=max_events, max_ticks=max_ticks, min_events=1 if sparse else 2 if pattern_ticks is not None else 4, initial_pair=not sparse, inherit_timing=inherit_timing)
-    expected = schedule(data, int.from_bytes(data[:2], 'little'), inherit_timing=inherit_timing)
+    multi_align(multi_report(report, schema), data, max_events=max_events, max_ticks=max_ticks, min_events=1 if sparse else 2 if pattern_ticks is not None else 4, initial_pair=not sparse, inherit_timing=inherit_timing, end_priority=end_priority)
+    expected = schedule(data, int.from_bytes(data[:2], 'little'), inherit_timing=inherit_timing, end_priority=end_priority)
     timed = [event for event in expected['events'] if event['kind'] in ('note', 'rest')]
     if [event['articulation'] for event in report['events']] != [event['articulation'] for event in timed]:
         raise ValueError('gated articulation differs from symbolic score')
