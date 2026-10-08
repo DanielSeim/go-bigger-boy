@@ -12,7 +12,9 @@
 namespace {
 using Engine = gameboy::SnesApuAudioEngine;
 #ifdef GBB_SCORE_RESELECT_PROBE
-#ifdef GBB_SCORE_REVERSE_PROBE
+#ifdef GBB_SCORE_PENDING_PROBE
+constexpr auto schema = "gbb-spc-score-pending-v1";
+#elif defined(GBB_SCORE_REVERSE_PROBE)
 constexpr auto schema = "gbb-spc-score-reverse-v1";
 #elif defined(GBB_SCORE_ORDER_PROBE)
 constexpr auto schema = "gbb-spc-score-order-v1";
@@ -360,6 +362,16 @@ Result exercise(Engine& engine, bool restore) {
                     if (!inactive_since[voice]) inactive_since[voice] = engine.cpu().half_cycles();
                     if (engine.cpu().half_cycles() >= inactive_since[voice]+20000)
                         require(bus.dsp_register((voice+2)*16+8)>0, "frozen peer envelope disappeared");
+                    continue;
+                }
+#endif
+#ifdef GBB_SCORE_PENDING_PROBE
+                // A measured pending note joins this pattern's KON while its
+                // counter is armed immediately afterwards. Observe this narrow
+                // transition separately from a sounding frozen peer.
+                if (voice == 0 && bus.dsp_read_ram(0xb6) == 4) {
+                    require(bus.dsp_read_ram(0x51) & bit, "pending KON bit lost");
+                    require(bus.dsp_read_ram(0x78) > 0, "pending note lacks gate profile");
                     continue;
                 }
 #endif

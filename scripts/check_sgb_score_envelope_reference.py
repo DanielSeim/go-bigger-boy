@@ -24,6 +24,10 @@ def mix_report(report):
 
 def validate(report, *, max_events=32, max_ticks=2032, pattern_ticks=None, sparse=False, clipped_peer=False):
     mix_validate(mix_report(report), max_events=max_events, max_ticks=max_ticks, pattern_ticks=pattern_ticks, sparse=sparse, clipped_peer=clipped_peer)
+    validate_trajectories(report, max_events=max_events, clipped_peer=clipped_peer)
+
+
+def validate_trajectories(report, *, max_events=32, clipped_peer=False):
     envelopes = report.get('envelopes')
     if not isinstance(envelopes, list) or len(envelopes) > max_events:
         raise ValueError('invalid envelope trajectory list')

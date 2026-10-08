@@ -29,6 +29,10 @@ def sparse_report(report):
 
 def validate(report, *, clipped_peer=False):
     sparse_validate(sparse_report(report),clipped_peer=clipped_peer)
+    validate_writes(report)
+
+
+def validate_writes(report):
     writes=report.get('instrument_writes')
     if not isinstance(writes,list) or len(writes)>160: raise ValueError('invalid instrument write list')
     previous=0

@@ -6,6 +6,10 @@ inactive in the next pattern. This is an observation milestone following the
 [reverse-order renderer](sgb-native-score-reverse.md). The new cases remain
 unsupported by that renderer and reject before live playback.
 
+The subsequent [pending-note renderer](sgb-native-score-pending.md) implements
+these measured cases in a separate opt-in diagnostic; this document and its
+checker retain the earlier image's rejection contract.
+
 ## Fixture and transport
 
 `build_sgb_score_pending_fixture.py` uses an independently authored 2048-byte
