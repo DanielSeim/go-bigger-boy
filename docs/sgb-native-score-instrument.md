@@ -82,7 +82,7 @@ acoustic equivalence, hardware behavior or commercial titles.
 
 ## Next step
 
-The [two-instrument diagnostic profile](sgb-native-score-dual-instrument.md)
-now adds per-event selection, ordered E0 replay and voice-local inheritance.
-Next extend its single-block samples to bounded multi-block BRR data and
-validated loop points.
+The [multi-block sample profile](sgb-native-score-brr-chain.md) now adds one to
+four BRR blocks per source and validated loop points. Next add bounded uploaded
+per-instrument envelopes and tuning while keeping the existing lifecycle and
+sample guards.

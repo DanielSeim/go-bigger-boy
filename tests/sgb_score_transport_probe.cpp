@@ -26,16 +26,17 @@ struct Result {
     unsigned interruptions = 0, active_env = 0, interrupt_tick = 0, interrupt_count = 0, kof = 0, flg = 0, score_tick = 0, selected_song = 0, admitted_roots = 0;
     unsigned instruments = 0, source2 = 0, source3 = 0;
     std::array<unsigned, 9> prefix_ids{}, prefix_counts{};
+    std::array<unsigned, 2> sample_counts{}, sample_loops{};
     std::vector<std::uint8_t> state;
     bool operator==(const Result& other) const {
         return std::tie(hash, frames, nonzero, clocks, last_nonzero_clock, status,
                         transfers, adoptions, version, bridge, signature, sounds,
-                        error, external, interruptions, active_env, interrupt_tick, interrupt_count, kof, flg, score_tick, selected_song, admitted_roots, instruments, source2, source3, prefix_ids, prefix_counts, state) ==
+                        error, external, interruptions, active_env, interrupt_tick, interrupt_count, kof, flg, score_tick, selected_song, admitted_roots, instruments, source2, source3, prefix_ids, prefix_counts, sample_counts, sample_loops, state) ==
                std::tie(other.hash, other.frames, other.nonzero, other.clocks,
                         other.last_nonzero_clock, other.status, other.transfers,
                         other.adoptions, other.version, other.bridge, other.signature,
                         other.sounds, other.error, other.external, other.interruptions, other.active_env,
-                        other.interrupt_tick, other.interrupt_count, other.kof, other.flg, other.score_tick, other.selected_song, other.admitted_roots, other.instruments, other.source2, other.source3, other.prefix_ids, other.prefix_counts, other.state);
+                        other.interrupt_tick, other.interrupt_count, other.kof, other.flg, other.score_tick, other.selected_song, other.admitted_roots, other.instruments, other.source2, other.source3, other.prefix_ids, other.prefix_counts, other.sample_counts, other.sample_loops, other.state);
     }
 };
 struct Restores { unsigned count = 0, phases = 0, commands = 0, roots = 0, instruments = 0; };
@@ -123,6 +124,11 @@ Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
         result.prefix_ids[i] = host.debug_spc_ram_byte(ids[i]);
         result.prefix_counts[i] = host.debug_spc_ram_byte(counts[i]);
     }
+    for (unsigned i = 0; i < 2; ++i) {
+        result.sample_counts[i] = host.debug_spc_ram_byte(0x5010 + i);
+        result.sample_loops[i] = host.debug_spc_ram_byte(0x500a + 4 * i) |
+                                (unsigned(host.debug_spc_ram_byte(0x500b + 4 * i)) << 8);
+    }
     result.state = host.save_state();
     return result;
 }
@@ -178,7 +184,8 @@ int main(int argc, char** argv) {
         std::cout << "],\"prefix_counts\":[";
         for (std::size_t i = 0; i < result.prefix_counts.size(); ++i)
             std::cout << (i ? "," : "") << result.prefix_counts[i];
-        std::cout << "]"
+        std::cout << "],\"sample_counts\":[" << result.sample_counts[0] << ',' << result.sample_counts[1]
+                  << "],\"sample_loops\":[" << result.sample_loops[0] << ',' << result.sample_loops[1] << ']'
                   << ",\"pcm\":{\"frames\":" << result.frames << ",\"nonzero_frames\":" << result.nonzero
                   << ",\"fnv1a64\":" << result.hash << "}}\n";
     } catch (const std::exception& error) {

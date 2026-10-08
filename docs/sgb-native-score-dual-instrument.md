@@ -124,8 +124,7 @@ hardware qualification remains outstanding.
 
 ## Next step
 
-Add bounded multi-block uploaded BRR samples and validated loop points. Admit a
-small fixed maximum block count, require end/loop structure and loop alignment,
-and reject pointers into padding or another sample. Test distinct longer waves,
-malformed block chains, instrument changes, active upload and reset/save-load
-on both models before expanding sample-bank coverage.
+The [multi-block sample profile](sgb-native-score-brr-chain.md) now adds one to
+four BRR blocks per source and validated loop points. Next add bounded uploaded
+per-instrument envelopes and tuning while keeping the existing lifecycle and
+sample guards.

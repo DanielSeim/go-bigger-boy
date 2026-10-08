@@ -128,9 +128,11 @@ stop, reselection and IPL requests during active playback at timer-poll
 boundaries. The separate
 [CC directory diagnostic](sgb-native-score-directory.md) now adds bounded
 multi-song selection. The separate [two-instrument profile](sgb-native-score-dual-instrument.md)
-adds owned uploaded samples and voice-local selection/inheritance. The next
-boundary is bounded multi-block samples and validated loop points. Production
-selection and general vendor-bank compatibility remain unqualified.
+adds owned uploaded samples and voice-local selection/inheritance. The
+[multi-block sample profile](sgb-native-score-brr-chain.md) adds bounded BRR
+chains and checked loops. The next boundary is uploaded per-instrument envelopes
+and tuning. Production selection and general vendor-bank compatibility remain
+unqualified.
 
 The documented [title-demand inventory](sgb-vendor-score-demand.md) identifies
 additional title obstacles: instrument/sample mapping, echo, full control
