@@ -9,6 +9,7 @@ from build_sgb_score_short_continue import build,source
 from build_sgb_score_short_return import build as prior_build
 from build_sgb_score_short_continue_fixture import bank,CASES,ARTICULATIONS,DURATIONS
 from build_sgb_score_short_return_fixture import bank as prior_bank
+from build_sgb_score_short_pair_fixture import bank as pair_bank
 from check_sgb_score_short_continue_playback import native,validate,identity
 from check_sgb_score_short_return_playback import validate as prior_validate,SCHEMA as PRIOR_SCHEMA
 from check_sgb_score_polygate_reference import native as gate_native
@@ -79,6 +80,14 @@ class ShortContinuePlaybackTests(unittest.TestCase):
         for c in ('direct-note','direct-rest'):
             r=gate_native(PROBE,prior_bank(case=c),builder=build,validator=lambda r:prior_validate({**r,'schema':PRIOR_SCHEMA}),output_bound=131072)
             self.assertEqual(r['short_continue_mode'],0)
+
+    def test_two_short_event_profiles_remain_silently_rejected(self):
+        for c in CASES:
+            for a in ARTICULATIONS:
+                r=native(PROBE,pair_bank(a,c))
+                self.assertEqual(r['status'],226)
+                self.assertEqual(r['key_writes'],[])
+                self.assertEqual(r['pcm']['nonzero_frames'],0)
 
     def test_counter_order_completion_and_profile_flag_faults_fail(self):
         for before,after in (('    mov $76, #$05\n','    mov $76, #$0f\n'),('short_continue_voice:\n    call duet_voice\n    jmp pending_mix\n','short_continue_voice:\n    call pending_mix\n    jmp duet_voice\n'),('    mov $c5, #$01\n','    mov $c5, #$00\n'),('    mov $51, #$00\n    jmp final_ready\n','    mov $51, #$00\n    jmp poly_complete\n')):

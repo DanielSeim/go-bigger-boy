@@ -19,7 +19,7 @@ def expected(case):
     return result
 
 
-def observe(source,case,art=63,duration=8):
+def observe(source,case,art=63,duration=8,*,short_follow=False):
     text=source.read(16*1024*1024+1)
     if len(text)>16*1024*1024:raise ValueError('short continuation trace exceeds byte bound')
     result=onsets(io.StringIO(text),case,onset_validator=lambda r,c:None)
@@ -58,14 +58,15 @@ def observe(source,case,art=63,duration=8):
         continuation_voice_writes=writes(after),continuation_voice_offsets_spc_cycles=[c-following for a,v,c in after],
         final_stop_interval_spc_cycles=stop-ret,final_control_writes=writes(controls[:3]),final_control_offsets_spc_cycles=[c-stop for a,v,c in controls[:3]],
         final_volumes=[[regs[32],regs[33]],[regs[48],regs[49]]],post_stop_nonzero_control_writes=writes([w for w in controls[3:] if w[1]]),post_stop_zero_control_write_count=sum(v==0 for a,v,c in controls[3:]),post_stop_observation_spc_cycles=last-stop)
-    contract(result,case)
+    contract(result,case,short_follow=short_follow)
     return result
 
 
-def contract(r,case):
+def contract(r,case,*,short_follow=False):
+    if type(short_follow) is not bool:raise ValueError('invalid short continuation selector')
     if not isinstance(r,dict) or case not in CASES:raise ValueError('invalid short continuation observation')
     a,d=(r.get(k) for k in ('return_articulation','continuation_duration'))
-    if type(a) is not int or a not in ARTICULATIONS or type(d) is not int or d not in DURATIONS or not integer(r.get('return_duration'),4,4):raise ValueError('invalid short continuation profile')
+    if type(a) is not int or a not in ARTICULATIONS or type(d) is not int or d not in ((4,) if short_follow else DURATIONS) or not integer(r.get('return_duration'),4,4):raise ValueError('invalid short continuation profile')
     if r.get('keyons')!=expected(case):raise ValueError('short continuation onset setup differs')
     def exact(field,wanted):
         if r.get(field)!=wanted:raise ValueError('short continuation '+field+' differs')
@@ -83,7 +84,9 @@ def contract(r,case):
     if not isinstance(gates,list) or len(gates)!=len(identities):raise ValueError('short continuation release count differs')
     for g,identity in zip(gates,identities):
         if not isinstance(g,dict) or any(type(g.get(k)) is not int for k in ('voice','onset_index')) or (g['onset_index'],g['voice'])!=identity or g.get('release_kind')!='timer-keyoff':raise ValueError('short continuation release identity differs')
-        if identity==(4,2):low,high=6144,10240
+        if short_follow and identity==(4,2):low,high=6144,8192
+        elif short_follow and identity==(5,2):low,high=8192,10240
+        elif identity==(4,2):low,high=6144,10240
         else:
             pulses=PULSES[(96,a,d)] if identity==(5,2) else PULSES[(96,127,16)]
             low,high=2048*(pulses-2),2048*pulses+4096

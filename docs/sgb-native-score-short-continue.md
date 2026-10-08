@@ -103,12 +103,14 @@ direct-return 16 and immediate-final short-return 16. No timestamp shifting,
 fitted delay, restarted timer or dropped score pulse is used. The intermodel
 allowance remains 2048 cycles.
 
-Nine new public physical tests cover descriptor relocation/reproducibility,
+Ten public physical tests cover descriptor relocation/reproducibility,
 retrigger/release, deferred mix/existing gates, actual control/setup order,
 final silence/reset/save/load, malformed-profile rejection, predecessor
 rejection/preceding-profile survival, injected faults and forged reports.
 The seven preceding fixture/observation tests remain applicable.
-All 43 public score, fixture and scheduler CTest suites pass on the rebuilt
+The second-short-event rejection test checks all four new banks.
+The implementation milestone passed all 43 public score, fixture and scheduler
+CTest suites on the rebuilt
 probes. The bundled prototype hash check and `git diff --check` also pass.
 
 Original children retain the 8-million-instruction, 180-second, 16 MiB CSV and
@@ -118,7 +120,7 @@ equivalence, hardware behavior and real-title qualification are not established.
 The bundled prototype remains unchanged at SHA-256
 `8222797ddeec5681af61fda28c6afc241898887cd0f254ce2f691f30d4b13482`.
 
-Next, measure two consecutive duration-4 notes after the inactive voice returns.
-That will establish the short gate and ordinary progression at a second short
-note, including interaction with the deferred mix control, before extending
-native admission beyond a single short return.
+The [consecutive duration-4 measurements](sgb-score-short-pair-observations.md)
+now establish the following short gate and deferred mix behavior. Those banks
+remain rejected by this image; guarded admission of a second short event is
+the next implementation step.
