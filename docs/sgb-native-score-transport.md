@@ -133,10 +133,10 @@ the test matrix uses at most 100 million clocks, caps output at 4096 bytes and
 250000 PCM frames, and bounds each child to 90 seconds. The CTest suite has a
 600-second limit. Neither program images nor PCM artifacts are checked in.
 
-## Next step
+## Multi-song milestone
 
-Add a bounded owned multi-song directory and select songs 2/3 without weakening
-source bounds, silent admission or fresh readiness. Test distinct song roots,
-active switching, invalid IDs/roots and repeated upload on both models, retaining
-reset/save/load and scalar/combined checks. Instrument/sample mapping, echo,
-broader controls and real-title qualification remain separate unfinished work.
+The separate [CC directory diagnostic](sgb-native-score-directory.md) now admits
+three distinct owned song roots and supports selection/switching of songs 2/3.
+The CB image and its single-song contract remain reproducible as documented
+above. The next milestone is bounded uploaded instrument and BRR sample mapping
+with owned assets; general vendor-bank and real-title qualification remain open.

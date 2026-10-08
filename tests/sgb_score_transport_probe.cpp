@@ -22,23 +22,24 @@ struct Result {
                   clocks = 0, last_nonzero_clock = 0;
     unsigned status = 0, transfers = 0, adoptions = 0, version = 0,
              bridge = 0, signature = 0, sounds = 0, error = 0, external = 0;
-    unsigned interruptions = 0, active_env = 0, interrupt_tick = 0, interrupt_count = 0, kof = 0, flg = 0, score_tick = 0;
+    unsigned interruptions = 0, active_env = 0, interrupt_tick = 0, interrupt_count = 0, kof = 0, flg = 0, score_tick = 0, selected_song = 0, admitted_roots = 0;
     std::vector<std::uint8_t> state;
     bool operator==(const Result& other) const {
         return std::tie(hash, frames, nonzero, clocks, last_nonzero_clock, status,
                         transfers, adoptions, version, bridge, signature, sounds,
-                        error, external, interruptions, active_env, interrupt_tick, interrupt_count, kof, flg, score_tick, state) ==
+                        error, external, interruptions, active_env, interrupt_tick, interrupt_count, kof, flg, score_tick, selected_song, admitted_roots, state) ==
                std::tie(other.hash, other.frames, other.nonzero, other.clocks,
                         other.last_nonzero_clock, other.status, other.transfers,
                         other.adoptions, other.version, other.bridge, other.signature,
                         other.sounds, other.error, other.external, other.interruptions, other.active_env,
-                        other.interrupt_tick, other.interrupt_count, other.kof, other.flg, other.score_tick, other.state);
+                        other.interrupt_tick, other.interrupt_count, other.kof, other.flg, other.score_tick, other.selected_song, other.admitted_roots, other.state);
     }
 };
-struct Restores { unsigned count = 0, phases = 0, commands = 0; };
+struct Restores { unsigned count = 0, phases = 0, commands = 0, roots = 0; };
 Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
     Result result;
-    unsigned steps = 0, previous = 0xffff;
+    unsigned steps = 0;
+    std::uint64_t previous = ~std::uint64_t{0};
     Host::StereoSample sample;
     while (host.cpu().timing().clocks() < target) {
         require(host.step(), "whole-host execution fault");
@@ -59,14 +60,18 @@ Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
             auto status = host.cpu().debug_wram_byte(0x20);
             auto bridge = host.cpu().debug_wram_byte(0x31);
             unsigned commands = host.debug_spc_ram_byte(0xd3);
-            unsigned phase = status | (bridge << 8) | (commands << 16) |
-                             (host.debug_spc_ram_byte(0xd6) << 24);
+            const auto admitted = host.debug_spc_ram_byte(0xdc);
+            std::uint64_t phase = status | (bridge << 8) | (commands << 16) |
+                                  (std::uint64_t(host.debug_spc_ram_byte(0xd6)) << 24) |
+                                  (std::uint64_t(admitted) << 32) |
+                                  (std::uint64_t(host.debug_spc_ram_byte(0xdb)) << 40);
             if (++steps % 100003 == 0 || phase != previous) {
                 require(++restores->count <= 4096, "snapshot bound");
                 auto state = host.save_state();
                 require(host.load_state(state), "mid-execution restore");
                 require(host.save_state() == state, "exact state restoration");
                 restores->commands |= commands;
+                if (admitted > 0 && admitted <= 3) restores->roots |= (1U << admitted) - 1;
                 if (status == 4) restores->phases |= 1; // IPL upload
                 if (status == 2) restores->phases |= 2; // external restart
                 if (bridge == 1) restores->phases |= 4; // validated, silent
@@ -91,6 +96,8 @@ Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
     result.interrupt_tick = host.debug_spc_ram_byte(0xd5);
     result.interrupt_count = host.debug_spc_ram_byte(0xd6);
     result.score_tick = host.debug_spc_ram_byte(0x10) | (host.debug_spc_ram_byte(0x11) << 8);
+    result.selected_song = host.debug_spc_ram_byte(0xdb);
+    result.admitted_roots = host.debug_spc_ram_byte(0xdc);
     result.kof = host.debug_dsp_register(0x5c);
     result.flg = host.debug_dsp_register(0x6c);
     result.state = host.save_state();
@@ -127,7 +134,7 @@ int main(int argc, char** argv) {
         std::cout << "{\"schema\":\"gbb-score-transport-v1\",\"qualification\":false,"
                   << "\"playback\":false,\"reset_equal\":true,\"restore_equal\":true,"
                   << "\"restore_count\":" << restores.count << ",\"restore_phases\":" << restores.phases
-                  << ",\"restore_commands\":" << restores.commands
+                  << ",\"restore_commands\":" << restores.commands << ",\"restore_roots\":" << restores.roots
                   << ",\"status\":" << result.status << ",\"transfers\":" << result.transfers
                   << ",\"adoptions\":" << result.adoptions << ",\"version\":" << result.version
                   << ",\"bridge\":" << result.bridge << ",\"signature\":" << result.signature
@@ -136,6 +143,7 @@ int main(int argc, char** argv) {
                   << ",\"interruptions\":" << result.interruptions << ",\"active_env\":" << result.active_env
                   << ",\"interrupt_tick\":" << result.interrupt_tick << ",\"interrupt_count\":" << result.interrupt_count
                   << ",\"score_tick\":" << result.score_tick
+                  << ",\"selected_song\":" << result.selected_song << ",\"admitted_roots\":" << result.admitted_roots
                   << ",\"kof\":" << result.kof << ",\"flg\":" << result.flg
                   << ",\"last_nonzero_clock\":" << result.last_nonzero_clock
                   << ",\"pcm\":{\"frames\":" << result.frames << ",\"nonzero_frames\":" << result.nonzero

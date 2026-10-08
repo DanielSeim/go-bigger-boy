@@ -125,7 +125,9 @@ selection. It retains the admission guards, rejects malformed banks silently,
 and requires fresh ownership readiness. Its integration and lifecycle evidence
 is limited to independently authored fixtures. The integration now services
 stop, reselection and IPL requests during active playback at timer-poll
-boundaries. The next boundary is bounded multi-song directory selection. Production selection
+boundaries. The separate
+[CC directory diagnostic](sgb-native-score-directory.md) now adds bounded
+multi-song selection. The next boundary is uploaded instrument/sample mapping. Production selection
 and general vendor-bank compatibility remain unqualified.
 
 The documented [title-demand inventory](sgb-vendor-score-demand.md) identifies
