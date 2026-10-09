@@ -75,7 +75,7 @@ def payload(kind='full', *, replacement=False):
     return data + bytes(4096-len(data))
 
 
-def build_cartridge(payloads, commands):
+def build_cartridge(payloads, commands, *, io_writes=None):
     if not isinstance(payloads, (tuple, list)) or not 1 <= len(payloads) <= 3 or any(
             not isinstance(p, bytes) or len(p) != 4096 for p in payloads):
         raise ValueError('requires 1..3 physical payloads')
@@ -85,10 +85,20 @@ def build_cartridge(payloads, commands):
         if not isinstance(command, (tuple, list)) or len(command) != 3:
             raise ValueError('command requires delay, packet and optional payload index')
         delay, values, index = command
-        if type(delay) is not int or not 1 <= delay <= 128 or not isinstance(values, bytes) or not 1 <= len(values) <= 16 or values[0] not in (0x41, 0x49):
+        if type(delay) is not int or not 1 <= delay <= 128 or (values is not None and (not isinstance(values, bytes) or not 1 <= len(values) <= 16 or values[0] not in (0x41, 0x49))):
             raise ValueError('invalid command')
         if index is not None and (type(index) is not int or not 0 <= index < len(payloads)):
             raise ValueError('invalid payload index')
+    if io_writes is None:
+        io_writes = [()] * len(commands)
+    if not isinstance(io_writes,(tuple,list)) or len(io_writes)!=len(commands) or any(
+            not isinstance(writes,(tuple,list)) or len(writes)>12 or any(
+                not isinstance(pair,(tuple,list)) or len(pair)!=2 or
+                type(pair[0]) is not int or pair[0] not in (*range(0x10,0x27),0x80) or
+                type(pair[1]) is not int or not 0<=pair[1]<=255 for pair in writes) for writes in io_writes):
+        raise ValueError('invalid bounded APU/HRAM writes')
+    if any(values is None and (index is not None or not writes) for (_,values,index),writes in zip(commands,io_writes)):
+        raise ValueError('IO-only action requires writes and no upload')
     rom = bytearray(32768)
     rom[0x100:0x103] = bytes.fromhex('c35001')
     # Fixed cartridge-header verification signature, already used by
@@ -127,7 +137,7 @@ def build_cartridge(payloads, commands):
         joy(0x20); joy(0x30)
 
     packet([0x49])
-    for delay, values, index in commands:
+    for command_index,(delay, values, index) in enumerate(commands):
         frames(delay)
         if index is not None:
             # LCD is in VBlank after frames(); upload a different owned payload
@@ -138,7 +148,10 @@ def build_cartridge(payloads, commands):
             code.extend(bytes.fromhex('2100800100101a22130b78b120f8'))
             code.extend(bytes.fromhex('3e91e040'))
             frames(2)
-        packet(values)
+        for address,value in io_writes[command_index]:
+            code.extend((0x3E,value,0xE0,address))
+        if values is not None:
+            packet(values)
     code.extend(bytes.fromhex('18fe'))
     if 0x150 + len(code) > 0x4000:
         raise ValueError('fixture code overlaps transfer data')

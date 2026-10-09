@@ -1332,6 +1332,12 @@ if(GAMEBOY_BUILD_TESTS)
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_score_recovery_tests.py
                 --probe $<TARGET_FILE:gameboy_sgb_score_transport_probe>)
         set_tests_properties(gameboy_sgb_score_upload_recovery PROPERTIES TIMEOUT 2400 COST 800)
+        add_test(NAME gameboy_sgb_audio_transition_contract
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_audio_transition_tests.py)
+        add_test(NAME gameboy_sgb_audio_transitions
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_audio_transitions.py
+                --probe $<TARGET_FILE:gameboy_sgb_audio_transition_probe>)
+        set_tests_properties(gameboy_sgb_audio_transitions PROPERTIES TIMEOUT 1800 COST 900)
         add_test(NAME gameboy_sgb_combined_sample_pitch_contract
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_combined_sample_pitch_tests.py)
         add_test(NAME gameboy_sgb_combined_sample_pitch
@@ -1665,6 +1671,8 @@ if(GAMEBOY_BUILD_TESTS)
     add_executable(gameboy_sgb_score_callgate_probe tests/sgb_score_polygate_probe.cpp)
     target_compile_definitions(gameboy_sgb_score_callgate_probe PRIVATE GBB_SCORE_CALLGATE_PROBE)
     target_link_libraries(gameboy_sgb_score_callgate_probe PRIVATE gameboy_core)
+    add_executable(gameboy_sgb_audio_transition_probe tests/sgb_audio_transition_probe.cpp)
+    target_link_libraries(gameboy_sgb_audio_transition_probe PRIVATE gameboy_core)
     add_executable(gameboy_sgb_combined_sample_pitch_probe tests/sgb_score_transport_probe.cpp)
     target_compile_definitions(gameboy_sgb_combined_sample_pitch_probe PRIVATE GBB_SCORE_ADSR_PROBE GBB_SCORE_ACOUSTIC_PROBE GBB_SCORE_COMBINED_PITCH_PROBE)
     target_link_libraries(gameboy_sgb_combined_sample_pitch_probe PRIVATE gameboy_core)

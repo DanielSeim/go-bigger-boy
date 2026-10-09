@@ -127,9 +127,9 @@ not qualified by these steady-state captures.
 
 ## Next step
 
-Qualify combined-audio continuity during SOUND stop/restart and GB-APU mute/unmute,
-including save/load inside those transitions on both models. Use bounded owned
-inputs and actual stereo PCM so stale held source levels, lost resampler phase
-or duplicated output cannot hide behind correct steady-state pitch. Broader
-sample banks and real-title acoustic compatibility remain separate work;
-performance optimization remains deferred.
+The [combined source-transition gate](sgb-audio-transitions.md) now checks SOUND
+stop/restart and GB routing mute/unmute with matched owned controls and complete
+stereo replay. Next qualify overlapping owned SNES voices with active GB audio,
+including independent release and retrigger. Broader sample banks and real-title
+acoustic compatibility remain separate work; performance optimization remains
+deferred.
