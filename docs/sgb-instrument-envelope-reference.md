@@ -7,6 +7,8 @@ extension after [D7 exact-octave tuning](sgb-native-score-instrument-tuning.md);
 the [D8 diagnostic](sgb-native-score-instrument-adsr.md) now implements that
 exact descriptor with owned samples. Qualification and
 production playback remain false; SGB1/SGB2 program ROMs remain required.
+The subsequent [asynchronous reference](sgb-asynchronous-envelope-reference.md)
+extends these paired-note observations to independently active peers and clipping.
 
 ## Observation and provenance
 

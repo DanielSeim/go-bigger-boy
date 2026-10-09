@@ -152,9 +152,10 @@ expectations come from the preceding documented reference runs.
 
 ## Next step
 
-Qualify asynchronous envelope behavior against the originals with newly authored
-fixtures: hold one voice on the new profile while its peer retriggers, rests or
-changes its instrument selection, then reverse the voices. Check the held voice's
-setup, ENVX decay and release independently of peer activity, including clipped
-endings. This should extend the current paired-note reference before broadening
-instrument/sample compatibility or production integration.
+The [asynchronous original reference](sgb-asynchronous-envelope-reference.md)
+now measures a held voice while its peer retriggers, rests or changes instrument,
+including reversed voices and clipped endings. Next, add corresponding owned
+D8 whole-host fixtures, check the held setup/ENVX and clipped KOF against those
+measurements, and qualify exact within-image reset/save-load state and owned PCM.
+This should precede broader instrument/sample compatibility or production
+integration.
