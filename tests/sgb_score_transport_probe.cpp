@@ -9,6 +9,9 @@
 #ifdef GBB_SCORE_ADSR_PROBE
 #include "support/sgb_score_adsr_observer.hpp"
 #endif
+#ifdef GBB_SCORE_ACOUSTIC_PROBE
+#include "support/sgb_host_sample_pitch_observer.hpp"
+#endif
 using Host = gameboy::SgbHost;
 namespace {
 void require(bool value, const char* message) {
@@ -46,8 +49,14 @@ struct Result {
 #ifdef GBB_SCORE_ADSR_PROBE
     ScoreAdsrObserver envelopes;
 #endif
+#ifdef GBB_SCORE_ACOUSTIC_PROBE
+    HostSamplePitchObserver acoustic;
+#endif
     std::vector<std::uint8_t> state;
     bool operator==(const Result& other) const {
+#ifdef GBB_SCORE_ACOUSTIC_PROBE
+        if (!(acoustic == other.acoustic)) return false;
+#endif
 #ifdef GBB_SCORE_TUNING_PROBE
         if (tuning_seen != other.tuning_seen || tuning_pitches != other.tuning_pitches) return false;
 #endif
@@ -67,6 +76,10 @@ struct Result {
 struct Restores { unsigned count = 0, phases = 0, commands = 0, roots = 0, instruments = 0, ends = 0, rejections = 0, suppressed = 0, clears = 0; };
 Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
     Result result;
+#ifdef GBB_SCORE_ACOUSTIC_PROBE
+    result.acoustic.rate=host.sample_rate();
+    unsigned previous_acoustic_checkpoint=0;
+#endif
     unsigned steps = 0, previous_atomic = 0, previous_rejections = 0,
              previous_suppressed = 0, previous_clears = 0;
     std::uint64_t previous = ~std::uint64_t{0};
@@ -81,6 +94,9 @@ Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
         require(host.step(), "whole-host execution fault");
         while (host.pop_sample(sample)) {
             ++result.frames;
+#ifdef GBB_SCORE_ACOUSTIC_PROBE
+            result.acoustic.sample(result.frames,sample);
+#endif
             if (host.cpu().debug_wram_byte(0x56)) {
                 ++result.blocked_frames;
                 if (sample.left || sample.right) ++result.blocked_nonzero;
@@ -98,6 +114,9 @@ Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
         }
 #ifdef GBB_SCORE_ADSR_PROBE
         result.envelopes.capture(host);
+#ifdef GBB_SCORE_ACOUSTIC_PROBE
+        result.acoustic.sync(result.envelopes);
+#endif
 #endif
         // Observe live source IDs only while this diagnostic bridge renders.
         if (host.debug_spc_ram_byte(0xd2) == 2) {
@@ -219,6 +238,9 @@ Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
 #endif
 #ifdef GBB_SCORE_ADSR_PROBE
                 || result.envelopes.checkpoints != previous_envelope_checkpoints
+#ifdef GBB_SCORE_ACOUSTIC_PROBE
+                || result.acoustic.checkpoint() != previous_acoustic_checkpoint
+#endif
 #endif
                 ) {
                 require(++restores->count <= 4096, "snapshot bound");
@@ -243,6 +265,9 @@ Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
 #endif
 #ifdef GBB_SCORE_ADSR_PROBE
             previous_envelope_checkpoints = result.envelopes.checkpoints;
+#endif
+#ifdef GBB_SCORE_ACOUSTIC_PROBE
+            previous_acoustic_checkpoint=result.acoustic.checkpoint();
 #endif
             previous = phase;
             previous_rejections = rejections;
@@ -312,6 +337,9 @@ Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
     };
     result.score_hash = region_hash(0x2b00, 0x3300);
     result.asset_hash = region_hash(0x5000, 0x50c0);
+#ifdef GBB_SCORE_ACOUSTIC_PROBE
+    result.acoustic.validate(result.envelopes);
+#endif
     result.state = host.save_state();
     return result;
 }
@@ -332,6 +360,9 @@ int main(int argc, char** argv) {
         require(target > 0 && target <= 140000000, "clock bound");
         const auto mode = std::string(argv[5]);
         require(mode == "native" || mode == "combined" || mode == "scalar", "mode");
+#ifdef GBB_SCORE_ACOUSTIC_PROBE
+        require(mode != "combined", "native pitch capture requires native/scalar output");
+#endif
         config.combined_audio = mode == "combined";
         Host normal(config), restored(config);
         if (mode == "scalar") {
@@ -361,6 +392,9 @@ int main(int argc, char** argv) {
                   << ",\"last_nonzero_clock\":" << result.last_nonzero_clock
                   << ",\"instruments\":" << result.instruments
                   << ",\"source2\":" << result.source2 << ",\"source3\":" << result.source3;
+#ifdef GBB_SCORE_ACOUSTIC_PROBE
+        result.acoustic.emit();
+#endif
         std::cout << ",\"recovery_rejections\":" << result.recovery_rejections
                   << ",\"suppressed_sound\":" << result.suppressed_sound
                   << ",\"recovery_blocked\":" << result.recovery_blocked

@@ -108,8 +108,7 @@ Performance optimization remains deferred.
 
 ## Next step
 
-Capture bounded native PCM from the whole host for these authored waves and
-measure the full octave on both models, each voice and reversed slot mapping.
-Keep the 10-cent limit and exact reset/save-load replay; qualify combined-audio
-resampling separately. This will connect the isolated sample calibration to
-actual firmware playback before expanding the owned instrument bank.
+The [native whole-host pitch gate](sgb-host-sample-pitch.md) extends PCM
+measurement across the full octave, both models, both voices and reversed
+slot mapping. Combined-audio rate conversion and active GB mixing are the next
+acoustic gates before expanding the owned instrument bank.

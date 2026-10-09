@@ -46,17 +46,19 @@ def render(runner,fixture):
     return [left for left,_ in samples],hashlib.sha256(child.stdout).hexdigest()
 
 
-def audible_pitch(samples):
+def audible_pitch(samples, *, frames=FRAMES, warmup=WARMUP):
     """Measure known single-positive-crossing waves; reject irregular periods.
 
     This is deliberately not a general pitch detector for arbitrary BRR timbres.
     Flat zero runs yield only one rising crossing. End-to-end interpolation
     averages sample-grid quantization over at least twelve complete periods.
     """
-    if not isinstance(samples,list) or len(samples)!=FRAMES or any(
+    if type(frames) is not int or not 2048<=frames<=FRAMES or type(warmup) is not int or not 0<=warmup<frames:
+        raise ValueError('invalid bounded PCM measurement window')
+    if not isinstance(samples,list) or len(samples)!=frames or any(
             type(value) is not int or not -32768<=value<=32767 for value in samples):
         raise ValueError('invalid PCM capture')
-    values=samples[WARMUP:]
+    values=samples[warmup:]
     if min(values)>=-100 or max(values)<=100 or min(values)==-32768 or max(values)==32767:
         raise ValueError('silent, unipolar or clipped calibration capture')
     crossings=[i-1-values[i-1]/(values[i]-values[i-1]) for i in range(1,len(values))
