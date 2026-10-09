@@ -1,3 +1,4 @@
+#include <string>
 #include "gameboy/sgb_host.hpp"
 #include "sgb_input_script.h"
 #include <chrono>

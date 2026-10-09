@@ -4,6 +4,7 @@
 #include <iostream>
 #include <cmath>
 #include <stdexcept>
+#include <string>
 
 namespace {
 using Host = gameboy::SgbHost;

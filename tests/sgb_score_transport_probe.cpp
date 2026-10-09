@@ -4,6 +4,7 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include <string>
 #include <tuple>
 
 #ifdef GBB_SCORE_ADSR_PROBE
