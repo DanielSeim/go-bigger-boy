@@ -196,8 +196,8 @@ compatibility remain separate work.
 
 ## Next step
 
-Qualify audible one-shot completion and retrigger with an owned transient sample,
-alongside a looping peer and active GB audio. Reuse the admitted one-shot upload
-path and actual combined PCM so natural BRR completion is distinguished from
-note-gate release. Broader owned sample banks and real-title acoustic
-compatibility remain separate work.
+The [owned one-shot gate](sgb-one-shot-audio.md) now qualifies natural audible
+completion and repeated retriggers beside a looping peer and active GB audio.
+Next, exercise SOUND stop/restart during an audible transient, including queued
+output save/load at interruption and restart. Broader owned sample banks and
+real-title acoustic compatibility remain separate work.

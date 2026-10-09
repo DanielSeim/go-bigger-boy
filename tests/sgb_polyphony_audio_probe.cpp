@@ -21,20 +21,27 @@ struct Edge {
         return std::tie(stage,route,frame,clock)==std::tie(other.stage,other.route,other.frame,other.clock);
     }
 };
+struct Completion {
+    std::uint64_t end_half{},end_frame{},zero_half{},zero_frame{};
+    bool cleared{},active{};
+    auto fields() const { return std::tie(end_half,end_frame,zero_half,zero_frame,cleared,active); }
+    bool operator==(const Completion& other) const { return fields()==other.fields(); }
+};
 struct Result {
     std::vector<std::uint8_t> pcm,state;
     std::vector<Edge> edges;
     ScoreAdsrObserver envelopes;
+    std::vector<Completion> completions;
     std::vector<std::uint64_t> onset_frames,off_frames,zero_frames;
     std::uint64_t gb_samples{},native_samples{},clipped{},clocks{},sounds{};
     unsigned version{},env2{},env3{};
     bool operator==(const Result& other) const {
-        return std::tie(pcm,state,edges,onset_frames,off_frames,zero_frames,gb_samples,native_samples,clipped,clocks,sounds,version,env2,env3)==
-            std::tie(other.pcm,other.state,other.edges,other.onset_frames,other.off_frames,other.zero_frames,other.gb_samples,other.native_samples,other.clipped,other.clocks,other.sounds,other.version,other.env2,other.env3) && envelopes==other.envelopes;
+        return std::tie(pcm,state,edges,completions,onset_frames,off_frames,zero_frames,gb_samples,native_samples,clipped,clocks,sounds,version,env2,env3)==
+            std::tie(other.pcm,other.state,other.edges,other.completions,other.onset_frames,other.off_frames,other.zero_frames,other.gb_samples,other.native_samples,other.clipped,other.clocks,other.sounds,other.version,other.env2,other.env3) && envelopes==other.envelopes;
     }
 };
-struct Restores { unsigned count{},pending{},edges{},releases{},zeros{}; };
-Result run(Host& host,Restores* restores=nullptr) {
+struct Restores { unsigned count{},pending{},edges{},releases{},zeros{},ends{},natural_zeros{}; };
+Result run(Host& host,Restores* restores=nullptr,unsigned held_voice=0) {
     Result result;
     unsigned last_stage=0,last_checkpoint=0,last_envelope=0;
     std::uint64_t since_edge=~std::uint64_t{0};
@@ -52,17 +59,32 @@ Result run(Host& host,Restores* restores=nullptr) {
         result.envelopes.capture(host);
         while (result.onset_frames.size()<result.envelopes.notes.size()) {
             result.onset_frames.push_back(frames); result.off_frames.push_back(0); result.zero_frames.push_back(0);
+            result.completions.push_back({});
         }
-        bool release=false,zero=false;
+        bool release=false,zero=false,natural=false;
         for (unsigned i=0;i<result.envelopes.notes.size();++i) {
             const auto& note=result.envelopes.notes[i];
+            if (held_voice && note.voice!=held_voice) {
+                auto& completion=result.completions[i];
+                const auto env=host.debug_dsp_register(note.voice*16+8);
+                const bool end=host.debug_dsp_register(0x7c)&(1U<<note.voice);
+                if (!end) completion.cleared=true;
+                if (env && completion.cleared) completion.active=true;
+                if (end && completion.active && !completion.end_half) {
+                    completion.end_half=host.apu_half_clocks(); completion.end_frame=frames; natural=true;
+                }
+                if (completion.end_half && !env && !completion.zero_half) {
+                    require(!note.off_half,"natural completion must precede KOF");
+                    completion.zero_half=host.apu_half_clocks(); completion.zero_frame=frames; natural=true;
+                }
+            }
             if (note.off_half && !result.off_frames[i]) { result.off_frames[i]=frames; release=true; }
             if (note.zero_half && !result.zero_frames[i]) { result.zero_frames[i]=frames; zero=true; }
         }
         const auto offset=last_stage ? frames-since_edge : ~std::uint64_t{0};
         const unsigned checkpoint=unsigned(frames/512);
         // Save before draining, including queued output, at and around edges.
-        if (restores && (edge || release || zero || checkpoint!=last_checkpoint ||
+        if (restores && (edge || release || zero || natural || checkpoint!=last_checkpoint ||
             result.envelopes.checkpoints!=last_envelope ||
             (host.pending_samples() && (offset==1 || offset==2 || offset==3 || offset==4 ||
              offset==8 || offset==16 || offset==32 || offset==64 || offset==128)))) {
@@ -72,6 +94,8 @@ Result run(Host& host,Restores* restores=nullptr) {
             for (unsigned i=0;i<result.off_frames.size();++i) {
                 if (result.off_frames[i]==frames) restores->releases |= 1U<<i;
                 if (result.zero_frames[i]==frames) restores->zeros |= 1U<<i;
+                if (result.completions[i].end_frame==frames) restores->ends |= 1U<<i;
+                if (result.completions[i].zero_frame==frames) restores->natural_zeros |= 1U<<i;
             }
             const auto state=host.save_state();
             require(host.load_state(state) && host.save_state()==state,"exact queued-output restore");
@@ -106,7 +130,9 @@ Result run(Host& host,Restores* restores=nullptr) {
 }
 int main(int argc,char** argv) {
     try {
-        require(argc==7,"ROM GAME MODEL MODE PCM REPORT");
+        require(argc==7 || argc==8,"ROM GAME MODEL MODE PCM REPORT [ONE_SHOT_HELD_VOICE]");
+        const unsigned held_voice=argc==8 ? (std::string(argv[7])=="2" ? 2 : std::string(argv[7])=="3" ? 3 : 0) : 0;
+        require(argc==7 || held_voice,"one-shot held voice");
         gameboy::SgbHostConfig config;
         config.program_rom=read(argv[1],262144); config.game_rom=read(argv[2],32768);
         const std::string model=argv[3],mode=argv[4];
@@ -117,12 +143,23 @@ int main(int argc,char** argv) {
         config.gb_boot_rom[0]=0xc3; config.gb_boot_rom[2]=1;
         Host normal(config),restored(config);
         if (mode=="scalar") { normal.debug_set_apu_batch_enabled(false); restored.debug_set_apu_batch_enabled(false); }
-        const auto result=run(normal);
+        const auto result=run(normal,nullptr,held_voice);
         Restores restores;
-        require(result==run(restored,&restores),"whole state/PCM/edge restore parity");
-        normal.reset(); require(result==run(normal),"cold reset parity");
+        require(result==run(restored,&restores,held_voice),"whole state/PCM/edge restore parity");
+        normal.reset(); require(result==run(normal,nullptr,held_voice),"cold reset parity");
         require(restores.pending && restores.edges==3 && restores.releases==31 && restores.zeros==31,
                 "missing queued-output or release/zero restore coverage");
+        if (held_voice) {
+            unsigned mask=0;
+            for (unsigned i=0;i<result.envelopes.notes.size();++i) {
+                if (result.envelopes.notes[i].voice==held_voice) continue;
+                mask|=1U<<i;
+                const auto& c=result.completions[i];
+                require(c.end_half && c.zero_half>=c.end_half && c.zero_half<result.envelopes.notes[i].off_half,
+                        "missing natural one-shot completion");
+            }
+            require(restores.ends==mask && restores.natural_zeros==mask,"natural completion restore coverage");
+        }
         std::ofstream pcm(argv[5],std::ios::binary),report(argv[6]);
         require(bool(pcm) && bool(report),"output files");
         pcm.write(reinterpret_cast<const char*>(result.pcm.data()),result.pcm.size());
@@ -143,7 +180,17 @@ int main(int argc,char** argv) {
             const auto& n=result.envelopes.notes[i];
             report << (i ? "," : "") << '[' << n.voice << ',' << n.source << ',' << n.pitch << ',' << n.on_half << ',' << n.off_half << ',' << n.zero_half << ',' << result.onset_frames[i] << ',' << result.off_frames[i] << ',' << result.zero_frames[i] << ']';
         }
-        report << "]}";
+        report << ']';
+        if (held_voice) {
+            report << ",\"restore_ends\":" << restores.ends << ",\"restore_natural_zeros\":" << restores.natural_zeros
+                   << ",\"completions\":[";
+            for (unsigned i=0;i<result.completions.size();++i) {
+                const auto& c=result.completions[i];
+                report << (i ? "," : "") << '[' << c.end_half << ',' << c.end_frame << ',' << c.zero_half << ',' << c.zero_frame << ']';
+            }
+            report << ']';
+        }
+        report << '}';
         require(bool(pcm) && bool(report),"write failed");
     } catch (const std::exception& e) { std::cerr<<e.what()<<'\n'; return 1; }
 }

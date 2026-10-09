@@ -1338,6 +1338,12 @@ if(GAMEBOY_BUILD_TESTS)
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_polyphony_audio.py
                 --probe $<TARGET_FILE:gameboy_sgb_polyphony_audio_probe>)
         set_tests_properties(gameboy_sgb_polyphony_audio PROPERTIES TIMEOUT 2400 COST 950)
+        add_test(NAME gameboy_sgb_one_shot_audio_contract
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_one_shot_audio_tests.py)
+        add_test(NAME gameboy_sgb_one_shot_audio
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_one_shot_audio.py
+                --probe $<TARGET_FILE:gameboy_sgb_polyphony_audio_probe>)
+        set_tests_properties(gameboy_sgb_one_shot_audio PROPERTIES TIMEOUT 2400 COST 950)
         add_test(NAME gameboy_sgb_audio_transition_contract
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_audio_transition_tests.py)
         add_test(NAME gameboy_sgb_audio_transitions
