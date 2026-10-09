@@ -1,0 +1,51 @@
+name: SGB firmware diagnostics
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  matrix:
+    name: Full firmware matrices (${{ matrix.shard }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - name: Check out source
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+
+      - name: Configure owned firmware diagnostics
+        run: >-
+          cmake -S . -B build-firmware -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DGAMEBOY_BUILD_TESTS=ON
+          -DGAMEBOY_BUILD_SDL=OFF
+          -DGAMEBOY_BUILD_PERFORMANCE_TESTS=OFF
+
+      - name: Build probes and run complete shard
+        run: >-
+          python3 tests/run_sgb_firmware_shard.py
+          --build-dir build-firmware --shard-index ${{ matrix.shard }}
+          --shard-count 8 --parallel 2
+
+      - name: Upload shard plan and results
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: sgb-firmware-shard-${{ matrix.shard }}
+          path: |
+            build-firmware/sgb-firmware-shard.json
+            build-firmware/sgb-firmware-ctest.xml
+            build-firmware/Testing/Temporary/LastTest.log
+          if-no-files-found: error

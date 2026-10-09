@@ -1,0 +1,47 @@
+# SGB firmware diagnostics in CI
+
+The full public owned-firmware matrices run in the **SGB firmware diagnostics**
+workflow on Linux Release builds. Eight independent jobs partition all CTest
+tests labelled `sgb-firmware-extended`. Each complete matrix runs once; its
+fixtures, variants, lifecycle checks and acoustic assertions are unchanged.
+
+The desktop platform and ASan/UBSan/TSan jobs exclude this label and retain the
+shorter contracts, including the shard runner contract. Full matrices therefore
+have Linux Release coverage, while shorter contracts retain platform and
+sanitizer coverage. This avoids repeating hours of diagnostic playback within
+the desktop and sanitizer job limits. The initial Linux run spent over three
+minutes on each of its first two acoustic matrices alone.
+
+The label covers native score playback, score upload/instrument/transport
+matrices, and full host polyphony, one-shot and sample-pitch diagnostics. Fast
+fixture generators, scheduler tests and tests ending in `_contract` stay in the
+regular suite. Tests labelled `local` or `private-reference` are never included.
+Unfiltered local CTest still runs the full suite.
+
+`tests/run_sgb_firmware_shard.py` discovers tests from CTest metadata, balances
+their declared timeout budgets deterministically, and builds the probes needed
+by the selected shard. It rejects missing targets, empty shards and private
+inputs. Anchored, escaped CTest filters select exactly the shard's tests; CTest
+failures propagate to the job. Jobs run two tests in parallel, have a 90-minute
+limit, and continue independently after another shard fails.
+
+Reproduce one shard locally:
+
+```sh
+cmake -S . -B build-firmware -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DGAMEBOY_BUILD_TESTS=ON -DGAMEBOY_BUILD_SDL=OFF \
+  -DGAMEBOY_BUILD_PERFORMANCE_TESTS=OFF
+python3 tests/run_sgb_firmware_shard.py --build-dir build-firmware \
+  --shard-count 8 --shard-index 0 --parallel 2
+```
+
+Use indices 0 through 7 for the whole suite. Add `--plan-only` to inspect the
+partition without building or running probes. Each job uploads its complete
+partition plan, JUnit report and CTest log, using public owned inputs only.
+
+To reproduce the shorter CI suite after building all targets:
+
+```sh
+ctest --test-dir build-firmware --label-exclude sgb-firmware-extended \
+  --output-on-failure
+```

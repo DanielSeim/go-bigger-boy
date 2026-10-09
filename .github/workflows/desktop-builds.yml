@@ -255,6 +255,7 @@ jobs:
           GBB_REAL_LINK_ARTIFACT_DIR: ${{ github.workspace }}/build-sanitize/real-link-harness-results
         run: >-
           ctest --test-dir build-sanitize --output-on-failure --parallel 2
+          --label-exclude sgb-firmware-extended
           --output-junit sanitizer-ctest.xml
 
       - name: Upload sanitizer diagnostics
@@ -312,7 +313,9 @@ jobs:
       - name: Run ThreadSanitizer contracts
         env:
           TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1:history_size=7
-        run: ctest --test-dir build-tsan --output-on-failure --parallel 2 --output-junit tsan-ctest.xml
+        run: >-
+          ctest --test-dir build-tsan --output-on-failure --parallel 2
+          --label-exclude sgb-firmware-extended --output-junit tsan-ctest.xml
 
       - name: Install X11 input driver for GUI smoke
         run: sudo apt-get update && sudo apt-get install --no-install-recommends -y xdotool
@@ -506,6 +509,7 @@ jobs:
           GBB_RENDER_PERF_CAPTURE_DIR: ${{ github.workspace }}/render-captures
         run: >-
           ctest --test-dir build -C Release --output-on-failure
+          --label-exclude sgb-firmware-extended
           --output-junit ctest-results.xml
 
       - name: Test (Windows and macOS)
@@ -517,6 +521,7 @@ jobs:
           GBB_RENDER_PERF_CAPTURE_DIR: ${{ github.workspace }}/render-captures
         run: >-
           ctest --test-dir build -C Release --output-on-failure
+          --label-exclude sgb-firmware-extended
           --exclude-regex '^gameboy_serial_link_contract$'
           --output-junit ctest-results.xml
 

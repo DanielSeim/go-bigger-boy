@@ -643,6 +643,10 @@ if(GAMEBOY_BUILD_TESTS)
     set_target_properties(gameboy_stat_irq_probe PROPERTIES OUTPUT_NAME gbb_stat_irq_probe)
     find_package(Python3 COMPONENTS Interpreter QUIET)
     if(Python3_Interpreter_FOUND)
+        add_test(NAME gameboy_sgb_firmware_shard_contract
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_firmware_shard_tests.py)
+    endif()
+    if(Python3_Interpreter_FOUND)
         add_test(NAME gameboy_stat_irq_tool
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/stat_irq_tool_tests.py
@@ -2904,6 +2908,26 @@ if(GAMEBOY_BUILD_TESTS)
                                  PROPERTIES TIMEOUT 45)
         endif()
     endif()
+
+    # Full owned-firmware matrices remain in the default local CTest suite.
+    # CI runs them once in dedicated Linux shards instead of repeating hours
+    # of diagnostic playback in every platform and sanitizer job.
+    get_property(_gbb_registered_tests DIRECTORY PROPERTY TESTS)
+    foreach(_gbb_test IN LISTS _gbb_registered_tests)
+        if((_gbb_test MATCHES "^gameboy_sgb_(score_|native_score_)" OR
+            _gbb_test MATCHES "^gameboy_sgb_(polyphony_audio|one_shot_audio|one_shot_interrupt|combined_sample_pitch|host_sample_pitch|owned_sample_pitch_transport)$") AND
+           NOT _gbb_test MATCHES "_contract$" AND
+           NOT _gbb_test MATCHES "^gameboy_sgb_score_(demand_inventory|short_return_fixture|short_continue_fixture|short_pair_fixture|direct_return_fixture|scheduler)$")
+            get_test_property(${_gbb_test} LABELS _gbb_test_labels)
+            if(NOT "local" IN_LIST _gbb_test_labels AND NOT "private-reference" IN_LIST _gbb_test_labels)
+                set_property(TEST ${_gbb_test} APPEND PROPERTY LABELS "sgb-firmware-extended")
+                get_test_property(${_gbb_test} TIMEOUT _gbb_test_timeout)
+                if(NOT _gbb_test_timeout)
+                    set_property(TEST ${_gbb_test} PROPERTY TIMEOUT 600)
+                endif()
+            endif()
+        endif()
+    endforeach()
 
     if(GAMEBOY_TEST_ROM_DIR OR GAMEBOY_SAMESUITE_DIR OR
        GAMEBOY_ENABLE_EXTERNAL_SUITES)

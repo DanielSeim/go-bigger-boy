@@ -18,6 +18,11 @@ core tests still build. Use `-DGAMEBOY_BUILD_SDL=OFF` for an explicit headless
 build. Multi-configuration generators need `cmake --build build --config
 Release` and `ctest --test-dir build -C Release --output-on-failure`.
 
+Full public SGB firmware matrices run in dedicated Linux CI shards; platform
+and sanitizer jobs retain the shorter contracts. Local CTest defaults include
+the full matrices. See [SGB firmware CI](sgb-firmware-ci.md) for coverage and
+reproduction commands.
+
 For playback measurements, use `-DCMAKE_BUILD_TYPE=Release`. Supported native
 release builds enable cross-module link-time optimization by default via
 `GAMEBOY_ENABLE_RELEASE_IPO`; unsupported compiler/linker combinations fall
