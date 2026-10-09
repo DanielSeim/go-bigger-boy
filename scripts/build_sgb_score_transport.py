@@ -16,7 +16,7 @@ def replace_exact(text, before, after, count=1):
 
 
 def build(*, multisong=False, uploaded_instrument=False, two_instruments=False,
-          multiblock=False, instrument_profiles=False, one_shot=False, brr_profiles=False, relocatable=False, atomic_upload=False, upload_recovery=False, instrument_mapping=False, instrument_tuning=False, instrument_envelope=False, initial_score_tick=False):
+          multiblock=False, instrument_profiles=False, one_shot=False, brr_profiles=False, relocatable=False, atomic_upload=False, upload_recovery=False, instrument_mapping=False, instrument_tuning=False, instrument_envelope=False, initial_score_tick=False, peer_gate_timing=False):
     if type(multisong) is not bool:
         raise ValueError("multisong flag must be boolean")
     if type(uploaded_instrument) is not bool or (uploaded_instrument and not multisong):
@@ -45,6 +45,8 @@ def build(*, multisong=False, uploaded_instrument=False, two_instruments=False,
         raise ValueError("instrument envelope requires a boolean flag and instrument tuning")
     if type(initial_score_tick) is not bool or (initial_score_tick and not instrument_envelope):
         raise ValueError("initial score tick requires a boolean flag and instrument envelope")
+    if type(peer_gate_timing) is not bool or (peer_gate_timing and not initial_score_tick):
+        raise ValueError("peer gate timing requires a boolean flag and initial score tick")
     engine = engine_source()
     hooks = {
         'clock_poll:\n    mov a, $fd\n': 'clock_poll:\n    call bridge_service\n',
@@ -68,6 +70,11 @@ def build(*, multisong=False, uploaded_instrument=False, two_instruments=False,
     if initial_score_tick:
         engine = replace_exact(engine, '    mov $64, #$01\n    call multi_begin\n    ret\n',
             '    mov $64, #$01\n    call initial_score_start\n    ret\n')
+    if peer_gate_timing:
+        # Independently calibrated finite gate: one additional timer pulse for
+        # tempo 96, articulation 127, duration 16. No general interpolation.
+        engine = replace_exact(engine, '.byte $60, $7f, $10, $24, $60, $3f, $10, $17\n',
+                               '.byte $60, $7f, $10, $25, $60, $3f, $10, $17\n')
     bridge = (ROOT / 'firmware/sgb/score_transport_bridge.asm').read_text()
     if multisong:
         bridge = replace_exact(bridge, 'mov $f5, #$cb', 'mov $f5, #$cc')
@@ -139,6 +146,8 @@ def build(*, multisong=False, uploaded_instrument=False, two_instruments=False,
         bridge = replace_exact(bridge, 'mov $f5, #$d7', 'mov $f5, #$d8')
     if initial_score_tick:
         bridge = replace_exact(bridge, 'mov $f5, #$d8', 'mov $f5, #$d9')
+    if peer_gate_timing:
+        bridge = replace_exact(bridge, 'mov $f5, #$d9', 'mov $f5, #$da')
     branch_number = 0
     def bridge_branch(match):
         nonlocal branch_number
@@ -201,6 +210,8 @@ def build(*, multisong=False, uploaded_instrument=False, two_instruments=False,
                 recovery = replace_exact(recovery, 'mov $f5, #$d7', 'mov $f5, #$d8')
             if initial_score_tick:
                 recovery = replace_exact(recovery, 'mov $f5, #$d8', 'mov $f5, #$d9')
+            if peer_gate_timing:
+                recovery = replace_exact(recovery, 'mov $f5, #$d9', 'mov $f5, #$da')
             helper += '\n' + recovery
         if instrument_mapping:
             helper += '\n' + (ROOT / 'firmware/sgb/score_instrument_mapping.asm').read_text()
@@ -277,6 +288,8 @@ def build(*, multisong=False, uploaded_instrument=False, two_instruments=False,
         host = replace_exact(host, 'cmp #$d7', 'cmp #$d8', count=5)
     if initial_score_tick:
         host = replace_exact(host, 'cmp #$d8', 'cmp #$d9', count=5)
+    if peer_gate_timing:
+        host = replace_exact(host, 'cmp #$d9', 'cmp #$da', count=5)
     # Expanded diagnostic guards need absolute failure jumps in the host variant.
     guard_number = 0
     def far_guard(match):
@@ -320,12 +333,13 @@ if __name__ == '__main__':
     parser.add_argument('--instrument-tuning', action='store_true')
     parser.add_argument('--instrument-envelope', action='store_true')
     parser.add_argument('--initial-score-tick', action='store_true')
+    parser.add_argument('--peer-gate-timing', action='store_true')
     args = parser.parse_args()
     try:
         image = build(multisong=args.multisong, uploaded_instrument=args.uploaded_instrument,
                       two_instruments=args.two_instruments, multiblock=args.multiblock,
                       instrument_profiles=args.instrument_profiles, one_shot=args.one_shot,
-                      brr_profiles=args.brr_profiles, relocatable=args.relocatable, atomic_upload=args.atomic_upload, upload_recovery=args.upload_recovery, instrument_mapping=args.instrument_mapping, instrument_tuning=args.instrument_tuning, instrument_envelope=args.instrument_envelope, initial_score_tick=args.initial_score_tick)
+                      brr_profiles=args.brr_profiles, relocatable=args.relocatable, atomic_upload=args.atomic_upload, upload_recovery=args.upload_recovery, instrument_mapping=args.instrument_mapping, instrument_tuning=args.instrument_tuning, instrument_envelope=args.instrument_envelope, initial_score_tick=args.initial_score_tick, peer_gate_timing=args.peer_gate_timing)
         with args.output.open('xb') as output:
             output.write(image)
     except (OSError, ValueError) as error:

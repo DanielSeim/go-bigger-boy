@@ -1332,6 +1332,14 @@ if(GAMEBOY_BUILD_TESTS)
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_score_recovery_tests.py
                 --probe $<TARGET_FILE:gameboy_sgb_score_transport_probe>)
         set_tests_properties(gameboy_sgb_score_upload_recovery PROPERTIES TIMEOUT 2400 COST 800)
+        add_test(NAME gameboy_sgb_score_peer_gate
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_score_peer_gate_tests.py
+                --probe $<TARGET_FILE:gameboy_sgb_score_adsr_probe>)
+        set_tests_properties(gameboy_sgb_score_peer_gate PROPERTIES TIMEOUT 2400 COST 850)
+        add_test(NAME gameboy_sgb_score_peer_gate_lifecycle
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_score_peer_gate_lifecycle_tests.py
+                --probe $<TARGET_FILE:gameboy_sgb_score_adsr_probe>)
+        set_tests_properties(gameboy_sgb_score_peer_gate_lifecycle PROPERTIES TIMEOUT 2400 COST 850)
         add_test(NAME gameboy_sgb_score_initial_tick_reference_contract
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_score_initial_tick_reference_tests.py)
         add_test(NAME gameboy_sgb_score_initial_tick
@@ -2129,6 +2137,13 @@ if(GAMEBOY_BUILD_TESTS)
                     --firmware-dir ${CMAKE_CURRENT_SOURCE_DIR}/roms)
             set_tests_properties(gameboy_sgb_score_initial_tick_local_reference PROPERTIES
                 LABELS "local;private-reference" TIMEOUT 1800)
+            add_test(NAME gameboy_sgb_score_peer_gate_local_reference
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_score_initial_tick_reference.py
+                    --probe $<TARGET_FILE:gameboy_sgb_score_adsr_probe>
+                    --trace $<TARGET_FILE:gameboy_snes_65c816_apu_trace>
+                    --firmware-dir ${CMAKE_CURRENT_SOURCE_DIR}/roms --peer-gate-timing)
+            set_tests_properties(gameboy_sgb_score_peer_gate_local_reference PROPERTIES
+                LABELS "local;private-reference" TIMEOUT 7200)
             add_test(NAME gameboy_sgb_async_envelope_local_reference
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_async_envelope_reference.py
                     --trace $<TARGET_FILE:gameboy_snes_65c816_apu_trace>

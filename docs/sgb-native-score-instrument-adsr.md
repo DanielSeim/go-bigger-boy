@@ -158,6 +158,7 @@ including reversed voices and clipped endings. The new
 [D8 whole-host checks](sgb-native-asynchronous-adsr.md) cover owned held/peer
 envelopes and exact reset/save-load/PCM replay, while retaining an explicit
 clipped song-end timing mismatch. The [D9 initial-tick successor](sgb-native-score-initial-tick.md)
-corrects that offset while keeping D8 frozen. Next, extend fresh direct original
-timing comparisons across the remaining asymmetric cases before broader
-instrument/sample compatibility or production integration.
+corrects that offset while keeping D8 frozen. The [DA peer-gate successor](sgb-native-score-peer-gate.md)
+adds full fresh onset/gate comparisons across the asymmetric cases and corrects
+a further last-peer gate miss. Audible sample pitch, broader instrument/sample
+compatibility and production integration remain separate work.

@@ -84,6 +84,15 @@ general qualification/playback remain false.
 
 ## Fresh exact original comparisons
 
+The checker also accepts `--all-cases` for fresh direct comparisons of
+retriggers, inserted rests, instrument switches and clipping together. This
+requires 32 native runs and 16 original cases, with 120 notes checked for both
+onset and gate differences. D9 does not pass that stronger full matrix: its
+last peer note in SGB1 retrigger/switch cases can end more than 4096 cycles early.
+The [DA peer-gate diagnostic](sgb-native-score-peer-gate.md) adds a separate
+bounded correction. Default D9 execution and its private CTest retain the
+preceding clipped-only gate; `--all-cases` keeps the stronger failure visible.
+
 `check_sgb_score_initial_tick_reference.py` runs the eight D9 clipped
 model/voice/slot cases, then executes four newly authored clipped fixtures on
 the private originals. Original source/pitch/envelope setup, complete published
@@ -98,8 +107,8 @@ the peer's ordinary timer-driven KOF, maximum difference is 1420.5 cycles.
 This fixes the preceding held-note miss of roughly 5800 cycles without expanding
 the timing allowance. Half-cycle precision is retained in native observations.
 
-The checker accepts only a successful, bounded, complete eight-run native
-report for the pinned D9 image. It rejects missing/duplicate cases, wrong versions
+In clipped-only mode the checker accepts only a successful, bounded, complete
+eight-run native report for the pinned D9 image. It rejects missing/duplicate cases, wrong versions
 or image hashes, incorrect reset/save-load metadata, invalid numeric types,
 changed original envelope summaries and direct gate differences over 4096.
 Native execution retains 70 million clocks, 90 seconds per probe, 16-KiB probe
@@ -161,9 +170,7 @@ their image hashes and frozen clipped controls remain checked.
 
 ## Next step
 
-Extend fresh direct original/native timing comparisons to the remaining
-asynchronous retrigger, rest and instrument-switch cases. The current whole-host
-suite checks their pinned original windows; only clipping has fresh direct
-timestamp comparisons in this milestone. Keep the 4096-cycle allowance, compare
-each peer gate/onset independently and address any remaining misses before
-expanding instrument/sample coverage or production integration.
+The [DA peer-gate diagnostic](sgb-native-score-peer-gate.md) addresses the
+additional last-peer gate miss exposed by fresh direct timestamp comparisons.
+Use its complete four-case matrix before expanding instrument/sample coverage
+or production integration. D9 remains frozen as a control.
