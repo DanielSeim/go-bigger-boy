@@ -1332,6 +1332,21 @@ if(GAMEBOY_BUILD_TESTS)
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_score_recovery_tests.py
                 --probe $<TARGET_FILE:gameboy_sgb_score_transport_probe>)
         set_tests_properties(gameboy_sgb_score_upload_recovery PROPERTIES TIMEOUT 2400 COST 800)
+        add_test(NAME gameboy_sgb_owned_sample_pitch_contract
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_owned_sample_pitch_tests.py
+                --runner $<TARGET_FILE:gameboy_snes_dsp_pcm_fixture_runner>
+                OwnedSamplePitchTests.test_asset_geometry_and_independent_single_cycle_waves
+                OwnedSamplePitchTests.test_estimator_frequency_and_capture_rejections
+                OwnedSamplePitchTests.test_stimulus_bounds_and_exporter
+                OwnedSamplePitchTests.test_pcm_calibration_on_both_slots_envelopes_and_full_octave
+                OwnedSamplePitchTests.test_pcm_wrong_tuning_and_shorter_wave_reject
+                OwnedSamplePitchTests.test_stress_assets_reject_as_known_single_cycle_calibration)
+        set_tests_properties(gameboy_sgb_owned_sample_pitch_contract PROPERTIES TIMEOUT 120)
+        add_test(NAME gameboy_sgb_owned_sample_pitch_transport
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_owned_sample_pitch_tests.py
+                --probe $<TARGET_FILE:gameboy_sgb_score_adsr_probe>
+                OwnedSamplePitchTests.test_real_upload_reset_save_load_and_scalar_parity)
+        set_tests_properties(gameboy_sgb_owned_sample_pitch_transport PROPERTIES TIMEOUT 600 COST 850)
         add_test(NAME gameboy_sgb_score_peer_gate
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_score_peer_gate_tests.py
                 --probe $<TARGET_FILE:gameboy_sgb_score_adsr_probe>)

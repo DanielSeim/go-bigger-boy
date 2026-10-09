@@ -121,8 +121,9 @@ real-title qualification were not performed.
 
 ## Next step
 
-Measure the audible fundamental frequency of independently authored BRR samples
-for the supported instruments and notes, then define a bounded sample/tuning
-contract with explicit pitch tolerance. DSP register agreement alone does not
-establish acoustic pitch. Broader instrument banks, score grammar, echo and
-production title integration remain separate work.
+The [owned-sample pitch calibration](sgb-owned-sample-pitch.md) now measures
+an independently authored periodic pair across the supported octave and
+qualifies normal tuning within 10 cents in isolated DSP PCM. Whole-host
+upload/replay checks pass; next measure actual whole-host native PCM across
+models, voices and slot mappings. Broader instrument banks, score grammar,
+echo and production title integration remain separate work.
