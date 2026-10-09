@@ -148,8 +148,8 @@ broader banks, other presentation rates and title compatibility remain separate.
 
 ## Next step
 
-Qualify SOUND stop/restart while an owned one-shot is still audible, with the
-looping voice and GB pulse active. Observe the actual interruption and fresh
-retrigger, including save/load with queued output at both edges. This extends
-the earlier looping-source stop/restart gate to terminal BRR playback rather
-than adding broader bank or title claims.
+The [audible interruption gate](sgb-one-shot-interruption.md) now covers SOUND
+stop/restart during an owned transient with a looping peer and active GB pulse,
+including queued-output replay at native interruption and restart. Next, qualify
+audible loop/one-shot/loop instrument changes on one voice while its peer and
+GB audio continue. Broader banks and title compatibility remain separate.

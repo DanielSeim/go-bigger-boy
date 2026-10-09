@@ -75,7 +75,7 @@ def payload(kind='full', *, replacement=False):
     return data + bytes(4096-len(data))
 
 
-def build_cartridge(payloads, commands, *, io_writes=None):
+def build_cartridge(payloads, commands, *, io_writes=None, spin_delays=None):
     if not isinstance(payloads, (tuple, list)) or not 1 <= len(payloads) <= 3 or any(
             not isinstance(p, bytes) or len(p) != 4096 for p in payloads):
         raise ValueError('requires 1..3 physical payloads')
@@ -99,6 +99,11 @@ def build_cartridge(payloads, commands, *, io_writes=None):
         raise ValueError('invalid bounded APU/HRAM writes')
     if any(values is None and (index is not None or not writes) for (_,values,index),writes in zip(commands,io_writes)):
         raise ValueError('IO-only action requires writes and no upload')
+    if spin_delays is None:
+        spin_delays = [0] * len(commands)
+    if not isinstance(spin_delays,(tuple,list)) or len(spin_delays)!=len(commands) or any(
+            type(value) is not int or not 0<=value<=2499 for value in spin_delays):
+        raise ValueError('requires bounded subframe spin counts 0..2499')
     rom = bytearray(32768)
     rom[0x100:0x103] = bytes.fromhex('c35001')
     # Fixed cartridge-header verification signature, already used by
@@ -148,6 +153,11 @@ def build_cartridge(payloads, commands, *, io_writes=None):
             code.extend(bytes.fromhex('2100800100101a22130b78b120f8'))
             code.extend(bytes.fromhex('3e91e040'))
             frames(2)
+        spins=spin_delays[command_index]
+        if spins:
+            # LD BC,n; DEC BC / LD A,B / OR C / JR NZ: 28*n+8 GB clocks.
+            # The upper bound remains below one 70224-clock GB frame.
+            code.extend((0x01,spins&255,spins>>8,0x0B,0x78,0xB1,0x20,0xFB))
         for address,value in io_writes[command_index]:
             code.extend((0x3E,value,0xE0,address))
         if values is not None:

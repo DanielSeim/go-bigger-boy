@@ -1344,6 +1344,12 @@ if(GAMEBOY_BUILD_TESTS)
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_one_shot_audio.py
                 --probe $<TARGET_FILE:gameboy_sgb_polyphony_audio_probe>)
         set_tests_properties(gameboy_sgb_one_shot_audio PROPERTIES TIMEOUT 2400 COST 950)
+        add_test(NAME gameboy_sgb_one_shot_interrupt_contract
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_one_shot_interrupt_tests.py)
+        add_test(NAME gameboy_sgb_one_shot_interrupt
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_one_shot_interrupt.py
+                --probe $<TARGET_FILE:gameboy_sgb_one_shot_interrupt_probe>)
+        set_tests_properties(gameboy_sgb_one_shot_interrupt PROPERTIES TIMEOUT 2400 COST 950)
         add_test(NAME gameboy_sgb_audio_transition_contract
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_audio_transition_tests.py)
         add_test(NAME gameboy_sgb_audio_transitions
@@ -1685,6 +1691,8 @@ if(GAMEBOY_BUILD_TESTS)
     target_link_libraries(gameboy_sgb_score_callgate_probe PRIVATE gameboy_core)
     add_executable(gameboy_sgb_polyphony_audio_probe tests/sgb_polyphony_audio_probe.cpp)
     target_link_libraries(gameboy_sgb_polyphony_audio_probe PRIVATE gameboy_core)
+    add_executable(gameboy_sgb_one_shot_interrupt_probe tests/sgb_one_shot_interrupt_probe.cpp)
+    target_link_libraries(gameboy_sgb_one_shot_interrupt_probe PRIVATE gameboy_core)
     add_executable(gameboy_sgb_audio_transition_probe tests/sgb_audio_transition_probe.cpp)
     target_link_libraries(gameboy_sgb_audio_transition_probe PRIVATE gameboy_core)
     add_executable(gameboy_sgb_combined_sample_pitch_probe tests/sgb_score_transport_probe.cpp)
