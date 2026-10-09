@@ -160,10 +160,9 @@ D8 lifecycle qualification remains separate.
 
 ## Next step
 
-Correct the bounded clipped song-end scheduling offset in an opt-in
-successor while keeping D8 frozen. Reuse these exact fixtures and the original
-4096-cycle comparison allowance, including both clipping orientations and slot
-maps. Require the timing report to pass along with the existing envelope,
-reset/save-load and owned-PCM checks before extending active interruption or
-instrument/sample coverage. This is timing correctness work; broader performance
-optimization remains deferred.
+D8 remains frozen with its documented clipped timing miss. The
+[D9 initial-tick diagnostic](sgb-native-score-initial-tick.md)
+now implements that correction and directly compares fresh original clipped
+gates within the retained 4096-cycle allowance. Next, extend those fresh direct
+comparisons to the remaining asymmetric peer cases before broader coverage or
+production integration. Performance optimization remains deferred.

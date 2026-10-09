@@ -45,12 +45,19 @@ def reference_timing(rows,case,held_voice):
 
 
 class AsyncAdsrTests(unittest.TestCase):
+    VERSION=0xD8
+    BUILD_OPTIONS={**prior.OPTIONS,'instrument_envelope':True}
+    EXPECTED_IMAGE_HASH=prior.IMAGE_HASH
+    RELEASE_PHASE_PROFILES={(2,'switch')}
+
     def probe(self,model,case,voice,slots=(2,3),mode='native'):
         if PROBE is None:
             self.skipTest('whole-host probe required')
         with tempfile.TemporaryDirectory() as directory:
             host,game=Path(directory)/'host.rom',Path(directory)/'game.gb'
-            host.write_bytes(program(**prior.OPTIONS,instrument_envelope=True))
+            image=program(**self.BUILD_OPTIONS)
+            self.assertEqual(hashlib.sha256(image).hexdigest(),self.EXPECTED_IMAGE_HASH)
+            host.write_bytes(image)
             game.write_bytes(build(case,voice,slots))
             child=subprocess.run([str(PROBE),str(host),str(game),model,'70000000',mode],
                                  capture_output=True,text=True,timeout=90)
@@ -68,7 +75,7 @@ class AsyncAdsrTests(unittest.TestCase):
         self.assertEqual((result['status'],result['transfers'],result['adoptions'],result['version'],
                           result['bridge'],result['signature'],result['error'],result['external'],
                           result['selected_song'],result['admitted_roots'],result['sounds']),
-                         (1,1,2,0xD8,2,0xA5,0,0,1,3,2))
+                         (1,1,2,self.VERSION,2,0xA5,0,0,1,3,2))
         self.assertEqual(result['score_tick'],32 if case=='clipped' else 80)
         self.assertEqual(result['restore_roots'],7)
         self.assertEqual(result['atomic_phase'],0xA5)
@@ -80,7 +87,7 @@ class AsyncAdsrTests(unittest.TestCase):
         self.assertEqual(result['score_hash'],fnv(score))
         self.assertEqual(result['asset_hash'],fnv(assets))
         self.trajectories(result,case,voice,slots)
-        EVIDENCE.append({'model':model,'case':case,'held_voice':voice,'slots':slots,'mode':mode,
+        EVIDENCE.append({'model':model,'version':self.VERSION,'case':case,'held_voice':voice,'slots':slots,'mode':mode,
                          'restore_count':result['restore_count'],'reset_equal':True,'restore_equal':True,
                          'timing':reference_timing(result['envelope_notes'],case,voice),
                          'release_cadence_exceptions':[row[12] for row in result['envelope_notes']]})
@@ -117,7 +124,7 @@ class AsyncAdsrTests(unittest.TestCase):
                 self.assertIn(intervals[0],(2,3))
                 self.assertEqual(row[12],phase_exception)
                 if phase_exception:
-                    self.assertEqual((instrument,case),(2,'switch'))
+                    self.assertIn((instrument,case),self.RELEASE_PHASE_PROFILES)
                 self.assertGreater(row[17],row[16])
                 self.assertGreater(row[18],row[17])
                 self.assertEqual(row[11],row[10])

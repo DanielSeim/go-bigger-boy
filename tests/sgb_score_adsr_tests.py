@@ -30,12 +30,15 @@ def pitch(note, selector):
 
 
 class AdsrTests(unittest.TestCase):
+    VERSION=0xD8
+    EXTRA_OPTIONS={}
+
     def probe(self, model, order=(1,), clocks=45000000, mode='native', envelope_image=True, **fixture):
         if PROBE is None:
             self.skipTest('whole-host probe required')
         with tempfile.TemporaryDirectory() as directory:
             rom,game = Path(directory)/'host.rom',Path(directory)/'game.gb'
-            rom.write_bytes(program(**OPTIONS,instrument_envelope=envelope_image))
+            rom.write_bytes(program(**OPTIONS,instrument_envelope=envelope_image,**self.EXTRA_OPTIONS))
             game.write_bytes(cartridge(order,**fixture))
             child = subprocess.run([str(PROBE),str(rom),str(game),model,str(clocks),mode],
                                    capture_output=True,text=True,timeout=90)
@@ -64,7 +67,7 @@ class AdsrTests(unittest.TestCase):
                           result['error'],result['external'],result['selected_song'],
                           result['admitted_roots'],result['sounds']),
                          (1,transfers,transfers+1 if adoptions is None else adoptions,
-                          0xD8,2,0xA5,0,0,song,3,sounds))
+                          self.VERSION,2,0xA5,0,0,song,3,sounds))
         self.assertEqual(result['score_tick'],48 if case == 'retrigger' else 80 if case else 76 if song == 3 else 72)
         self.assertEqual(result['restore_roots'],7)
         self.assertEqual(result['atomic_phase'],0xA5)

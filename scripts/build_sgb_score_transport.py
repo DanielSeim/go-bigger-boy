@@ -16,7 +16,7 @@ def replace_exact(text, before, after, count=1):
 
 
 def build(*, multisong=False, uploaded_instrument=False, two_instruments=False,
-          multiblock=False, instrument_profiles=False, one_shot=False, brr_profiles=False, relocatable=False, atomic_upload=False, upload_recovery=False, instrument_mapping=False, instrument_tuning=False, instrument_envelope=False):
+          multiblock=False, instrument_profiles=False, one_shot=False, brr_profiles=False, relocatable=False, atomic_upload=False, upload_recovery=False, instrument_mapping=False, instrument_tuning=False, instrument_envelope=False, initial_score_tick=False):
     if type(multisong) is not bool:
         raise ValueError("multisong flag must be boolean")
     if type(uploaded_instrument) is not bool or (uploaded_instrument and not multisong):
@@ -43,6 +43,8 @@ def build(*, multisong=False, uploaded_instrument=False, two_instruments=False,
         raise ValueError("instrument tuning requires a boolean flag and instrument mapping")
     if type(instrument_envelope) is not bool or (instrument_envelope and not instrument_tuning):
         raise ValueError("instrument envelope requires a boolean flag and instrument tuning")
+    if type(initial_score_tick) is not bool or (initial_score_tick and not instrument_envelope):
+        raise ValueError("initial score tick requires a boolean flag and instrument envelope")
     engine = engine_source()
     hooks = {
         'clock_poll:\n    mov a, $fd\n': 'clock_poll:\n    call bridge_service\n',
@@ -63,6 +65,9 @@ def build(*, multisong=False, uploaded_instrument=False, two_instruments=False,
             '.byte $c0, $7f, $10, $12, $c0, $3f, $10, $0b\n'
             '; Measured tempo-96 duration-64 held/early-release profiles.\n'
             '.byte $60, $7f, $40, $a4, $60, $3f, $40, $64\n')
+    if initial_score_tick:
+        engine = replace_exact(engine, '    mov $64, #$01\n    call multi_begin\n    ret\n',
+            '    mov $64, #$01\n    call initial_score_start\n    ret\n')
     bridge = (ROOT / 'firmware/sgb/score_transport_bridge.asm').read_text()
     if multisong:
         bridge = replace_exact(bridge, 'mov $f5, #$cb', 'mov $f5, #$cc')
@@ -132,6 +137,8 @@ def build(*, multisong=False, uploaded_instrument=False, two_instruments=False,
         bridge = replace_exact(bridge, 'mov $f5, #$d6', 'mov $f5, #$d7')
     if instrument_envelope:
         bridge = replace_exact(bridge, 'mov $f5, #$d7', 'mov $f5, #$d8')
+    if initial_score_tick:
+        bridge = replace_exact(bridge, 'mov $f5, #$d8', 'mov $f5, #$d9')
     branch_number = 0
     def bridge_branch(match):
         nonlocal branch_number
@@ -192,6 +199,8 @@ def build(*, multisong=False, uploaded_instrument=False, two_instruments=False,
                 recovery = replace_exact(recovery, 'mov $f5, #$d6', 'mov $f5, #$d7')
             if instrument_envelope:
                 recovery = replace_exact(recovery, 'mov $f5, #$d7', 'mov $f5, #$d8')
+            if initial_score_tick:
+                recovery = replace_exact(recovery, 'mov $f5, #$d8', 'mov $f5, #$d9')
             helper += '\n' + recovery
         if instrument_mapping:
             helper += '\n' + (ROOT / 'firmware/sgb/score_instrument_mapping.asm').read_text()
@@ -199,6 +208,8 @@ def build(*, multisong=False, uploaded_instrument=False, two_instruments=False,
             helper += '\n' + (ROOT / 'firmware/sgb/score_instrument_tuning.asm').read_text()
         if instrument_envelope:
             helper += '\n' + (ROOT / 'firmware/sgb/score_instrument_envelope.asm').read_text()
+        if initial_score_tick:
+            helper += '\n' + (ROOT / 'firmware/sgb/score_initial_tick.asm').read_text()
         source += '\n' + helper
     payload = bytes(assemble(source, 'spc', 0x0200))
     if len(payload) > (0x1a00 if uploaded_instrument else 0x1600):
@@ -264,6 +275,8 @@ def build(*, multisong=False, uploaded_instrument=False, two_instruments=False,
         host = replace_exact(host, 'cmp #$d6', 'cmp #$d7', count=5)
     if instrument_envelope:
         host = replace_exact(host, 'cmp #$d7', 'cmp #$d8', count=5)
+    if initial_score_tick:
+        host = replace_exact(host, 'cmp #$d8', 'cmp #$d9', count=5)
     # Expanded diagnostic guards need absolute failure jumps in the host variant.
     guard_number = 0
     def far_guard(match):
@@ -306,12 +319,13 @@ if __name__ == '__main__':
     parser.add_argument('--instrument-mapping', action='store_true')
     parser.add_argument('--instrument-tuning', action='store_true')
     parser.add_argument('--instrument-envelope', action='store_true')
+    parser.add_argument('--initial-score-tick', action='store_true')
     args = parser.parse_args()
     try:
         image = build(multisong=args.multisong, uploaded_instrument=args.uploaded_instrument,
                       two_instruments=args.two_instruments, multiblock=args.multiblock,
                       instrument_profiles=args.instrument_profiles, one_shot=args.one_shot,
-                      brr_profiles=args.brr_profiles, relocatable=args.relocatable, atomic_upload=args.atomic_upload, upload_recovery=args.upload_recovery, instrument_mapping=args.instrument_mapping, instrument_tuning=args.instrument_tuning, instrument_envelope=args.instrument_envelope)
+                      brr_profiles=args.brr_profiles, relocatable=args.relocatable, atomic_upload=args.atomic_upload, upload_recovery=args.upload_recovery, instrument_mapping=args.instrument_mapping, instrument_tuning=args.instrument_tuning, instrument_envelope=args.instrument_envelope, initial_score_tick=args.initial_score_tick)
         with args.output.open('xb') as output:
             output.write(image)
     except (OSError, ValueError) as error:

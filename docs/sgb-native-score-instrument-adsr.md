@@ -157,6 +157,7 @@ now measures a held voice while its peer retriggers, rests or changes instrument
 including reversed voices and clipped endings. The new
 [D8 whole-host checks](sgb-native-asynchronous-adsr.md) cover owned held/peer
 envelopes and exact reset/save-load/PCM replay, while retaining an explicit
-clipped song-end timing mismatch. Next, correct that scheduling offset in a
-bounded successor before broader instrument/sample compatibility or production
-integration.
+clipped song-end timing mismatch. The [D9 initial-tick successor](sgb-native-score-initial-tick.md)
+corrects that offset while keeping D8 frozen. Next, extend fresh direct original
+timing comparisons across the remaining asymmetric cases before broader
+instrument/sample compatibility or production integration.
