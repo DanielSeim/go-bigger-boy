@@ -125,5 +125,5 @@ Echo, broader controls, eight-channel scheduling and real-title qualification
 remain separate unfinished contracts.
 
 The [D1 one-shot profile](sgb-native-score-one-shot.md) now covers bounded
-non-looping samples and natural completion. The next sample extension is
-bounded BRR filter/range profiles.
+non-looping samples and natural completion. The [D2 profile](sgb-native-score-brr-profiles.md) adds bounded BRR filters/ranges.
+Next add bounded relocatable sample-directory entries.

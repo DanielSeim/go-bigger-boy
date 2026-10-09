@@ -124,7 +124,7 @@ Partial uploads still lack atomic asset invalidation.
 
 ## Next step
 
-Add bounded BRR filter/range profiles for the owned sample windows. Validate
-admitted headers before readiness and exercise looping and one-shot sources
-with independently calculated decoded samples, physical PCM and lifecycle
-checks. General vendor sample banks remain a separate qualification boundary.
+The [D2 BRR profile](sgb-native-score-brr-profiles.md) adds bounded filters/ranges,
+independent decoded-sample arithmetic checks and physical playback evidence.
+Next add bounded relocatable sample-directory entries while retaining validated
+windows and lifecycle contracts.

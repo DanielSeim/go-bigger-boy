@@ -104,6 +104,6 @@ Partial uploads still lack atomic asset invalidation.
 ## Next step
 
 The [D1 diagnostic](sgb-native-score-one-shot.md) adds bounded non-looping BRR
-samples and natural-completion/gate/lifecycle evidence. Next add bounded BRR
-filter/range profiles while retaining prior image contracts and production
-qualification boundaries.
+samples and natural-completion/gate/lifecycle evidence. The [D2 profile](sgb-native-score-brr-profiles.md) adds bounded BRR filters/ranges.
+Next add bounded relocatable sample-directory entries while retaining prior image
+contracts and production qualification boundaries.
