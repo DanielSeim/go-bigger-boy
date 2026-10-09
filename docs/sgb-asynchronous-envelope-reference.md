@@ -143,10 +143,9 @@ reset/save-load and owned-PCM replay have not yet been qualified by these checks
 
 ## Next step
 
-Add these asynchronous streams to D8's owned-sample whole-host qualification.
-Check held-voice setup and ENVX across peer retriggers, rests and E0 changes;
-compare clipped KOF/release separately. Preserve exact descriptors and release
-cadence while documenting finite native/reference timing and phase bounds.
-Run both models with exact within-image reset/save-load state, observer and
-owned-PCM replay. Keep arbitrary envelopes, sample/timbre equivalence and
-production integration outside that bounded extension.
+The [D8 owned-sample whole-host checks](sgb-native-asynchronous-adsr.md) now add
+these streams, reversed slots, setup stability, bounded ENVX and exact
+reset/save-load/owned-PCM replay. They retain a clipped song-end scheduling
+mismatch against the original allowance and explicitly preserve native
+latch-transition observations. Next, correct the bounded scheduling offset
+before broader instrument/sample or production integration work.

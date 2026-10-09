@@ -15,12 +15,13 @@ struct ScoreAdsrObserver {
         unsigned voice{}, source{}, adsr1{}, adsr2{}, gain{}, tuning{}, pitch{};
         unsigned peak{}, peak_offset{}, active_last{}, release_start{255}, drops{}, cadence_bad{}, decay_bad{}, release_bad{}, missed{};
         std::uint64_t on_half{}, off_half{}, zero_half{}, on_sample{}, last_sample{}, last_drop{};
-        unsigned previous{};
+        unsigned previous{}, setup_changes{}, release_samples{};
+        std::array<unsigned,8> release_prefix{255,255,255,255,255,255,255,255};
         std::array<unsigned,11> points{255,255,255,255,255,255,255,255,255,255,255};
         auto fields() const {
             return std::tie(voice,source,adsr1,adsr2,gain,tuning,pitch,peak,peak_offset,active_last,
                 release_start,drops,cadence_bad,decay_bad,release_bad,missed,on_half,off_half,zero_half,
-                on_sample,last_sample,last_drop,previous,points);
+                on_sample,last_sample,last_drop,previous,setup_changes,release_samples,release_prefix,points);
         }
         bool operator==(const Note& other) const { return fields()==other.fields(); }
     };
@@ -62,6 +63,15 @@ struct ScoreAdsrObserver {
                 note.off_half=half;
                 ++checkpoints;
             }
+            if (!note.off_half && (host.debug_dsp_register(voice*16+4)!=note.source ||
+                    host.debug_dsp_register(voice*16+5)!=note.adsr1 ||
+                    host.debug_dsp_register(voice*16+6)!=note.adsr2 ||
+                    host.debug_dsp_register(voice*16+7)!=note.gain ||
+                    host.debug_spc_ram_byte(0xec+i)!=note.tuning ||
+                    (host.debug_dsp_register(voice*16+2)|(unsigned(host.debug_dsp_register(voice*16+3))<<8))!=note.pitch)) {
+                if (!note.setup_changes) ++checkpoints;
+                ++note.setup_changes;
+            }
             if (sample==previous_sample || sample<=note.on_sample || sample-note.on_sample>12000) continue;
             if (sample!=note.last_sample+1) ++note.missed;
             note.last_sample=sample;
@@ -79,6 +89,8 @@ struct ScoreAdsrObserver {
                 for (unsigned p=0;p<offsets.size();++p)
                     if (sample-note.on_sample==offsets[p]) { note.points[p]=env; ++checkpoints; }
             } else {
+                if (note.release_samples<note.release_prefix.size()) note.release_prefix[note.release_samples]=env;
+                ++note.release_samples;
                 if (note.release_start==255) note.release_start=env;
                 else if (env<note.previous) {
                     if (note.previous-env!=1) ++note.release_bad;
@@ -104,6 +116,15 @@ struct ScoreAdsrObserver {
                 << ',' << n.release_start << ',' << n.drops << ',' << n.cadence_bad << ',' << n.decay_bad << ',' << n.release_bad
                 << ',' << n.missed << ',' << n.on_half << ',' << n.off_half << ',' << n.zero_half;
             for (auto point:n.points) std::cout << ',' << point;
+            std::cout << ']';
+        }
+        std::cout << "],\"envelope_setup_changes\":[";
+        for (unsigned i=0;i<notes.size();++i) std::cout << (i?",":"") << notes[i].setup_changes;
+        std::cout << ']';
+        std::cout << ",\"envelope_release_prefix\":[";
+        for (unsigned i=0;i<notes.size();++i) {
+            std::cout << (i?",":"") << '[';
+            for (unsigned p=0;p<notes[i].release_prefix.size();++p) std::cout << (p?",":"") << notes[i].release_prefix[p];
             std::cout << ']';
         }
         std::cout << ']';

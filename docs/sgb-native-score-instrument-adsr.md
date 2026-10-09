@@ -154,8 +154,9 @@ expectations come from the preceding documented reference runs.
 
 The [asynchronous original reference](sgb-asynchronous-envelope-reference.md)
 now measures a held voice while its peer retriggers, rests or changes instrument,
-including reversed voices and clipped endings. Next, add corresponding owned
-D8 whole-host fixtures, check the held setup/ENVX and clipped KOF against those
-measurements, and qualify exact within-image reset/save-load state and owned PCM.
-This should precede broader instrument/sample compatibility or production
+including reversed voices and clipped endings. The new
+[D8 whole-host checks](sgb-native-asynchronous-adsr.md) cover owned held/peer
+envelopes and exact reset/save-load/PCM replay, while retaining an explicit
+clipped song-end timing mismatch. Next, correct that scheduling offset in a
+bounded successor before broader instrument/sample compatibility or production
 integration.
