@@ -110,5 +110,6 @@ inside fixed sample windows. The [D4 atomic-upload profile](sgb-native-score-ato
 stale score/sample reuse. The [D5 recovery profile](sgb-native-score-upload-recovery.md) now permits a
 fresh complete upload after rejection while keeping SOUND blocked until
 admission. The [D6 mapping profile](sgb-native-score-instrument-mapping.md) now
-separates score IDs from owned sample slots. Next qualify instrument-10
-chromatic pitch before extending the tuning contract.
+separates score IDs from owned sample slots. The [instrument-10 octave reference](sgb-instrument-chromatic-reference.md)
+now pins all thirteen notes on both voices/models. Next implement its bounded
+exact-table tuning selector while preserving the existing two modes.

@@ -40,8 +40,9 @@ Both original voices must use SRCN 2, ADSR1 `$8F`, ADSR2 `$6F`, GAIN `$B8`
 and no noise at every nonzero KON. These are register observations for one
 instrument and octave. They do not establish a universal tuning algorithm,
 other instrument mappings, transpose/fine tuning or samples' fundamental
-frequencies. Instrument-10 observations remain limited to the prior three
-notes.
+frequencies. The separate [register-only instrument-10 extension](sgb-instrument-chromatic-reference.md)
+now covers these thirteen notes on both voices and models; it does not extend
+this native renderer or its gate/timing contract.
 
 ## Native rendering
 

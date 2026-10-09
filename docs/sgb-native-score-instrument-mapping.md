@@ -125,8 +125,7 @@ are unchanged.
 
 ## Next step
 
-Extend the register-only instrument-10 reference fixture to notes 24 through 36
-on both voices and both original models. Instrument 2 already has that chromatic
-coverage, while instrument 10 has only three measured notes on voice 2. Use the
-new measurements to define the next bounded per-instrument tuning contract
-beyond normal/half pitch; keep sample and acoustic equivalence separate.
+The [register-only instrument-10 octave reference](sgb-instrument-chromatic-reference.md)
+now covers notes 24 through 36 on both voices and both original models, with
+instrument 2 as a fresh control. Next implement its bounded tuning-selector-2
+contract beyond normal/half pitch; keep sample and acoustic equivalence separate.
