@@ -2915,7 +2915,7 @@ if(GAMEBOY_BUILD_TESTS)
     get_property(_gbb_registered_tests DIRECTORY PROPERTY TESTS)
     foreach(_gbb_test IN LISTS _gbb_registered_tests)
         if((_gbb_test MATCHES "^gameboy_sgb_(score_|native_score_)" OR
-            _gbb_test MATCHES "^gameboy_sgb_(polyphony_audio|one_shot_audio|one_shot_interrupt|combined_sample_pitch|host_sample_pitch|owned_sample_pitch_transport)$") AND
+            _gbb_test MATCHES "^gameboy_sgb_(polyphony_audio|one_shot_audio|one_shot_interrupt|audio_transitions|combined_sample_pitch|host_sample_pitch|owned_sample_pitch_transport)$") AND
            NOT _gbb_test MATCHES "_contract$" AND
            NOT _gbb_test MATCHES "^gameboy_sgb_score_(demand_inventory|short_return_fixture|short_continue_fixture|short_pair_fixture|direct_return_fixture|scheduler)$")
             get_test_property(${_gbb_test} LABELS _gbb_test_labels)

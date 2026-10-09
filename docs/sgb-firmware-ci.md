@@ -13,10 +13,17 @@ the desktop and sanitizer job limits. The initial Linux run spent over three
 minutes on each of its first two acoustic matrices alone.
 
 The label covers native score playback, score upload/instrument/transport
-matrices, and full host polyphony, one-shot and sample-pitch diagnostics. Fast
+matrices, and full host polyphony, one-shot, audio-transition and sample-pitch diagnostics. Fast
 fixture generators, scheduler tests and tests ending in `_contract` stay in the
 regular suite. Tests labelled `local` or `private-reference` are never included.
 Unfiltered local CTest still runs the full suite.
+
+Sanitizer jobs allow 45 minutes for their build and shorter contracts. Instrumented
+host emulation is substantially slower: the initial ASan run took 391 seconds
+for the transfer contract that took 30 seconds in Linux Release. This budget
+retains those contracts under sanitizers without shortening their checks.
+Desktop jobs also allow 45 minutes for the growing probe builds and platform
+contracts; the full matrices remain in their separate Linux jobs.
 
 `tests/run_sgb_firmware_shard.py` discovers tests from CTest metadata, balances
 their declared timeout budgets deterministically, and builds the probes needed
