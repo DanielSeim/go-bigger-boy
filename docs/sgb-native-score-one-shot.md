@@ -126,5 +126,5 @@ Partial uploads still lack atomic asset invalidation.
 
 The [D2 BRR profile](sgb-native-score-brr-profiles.md) adds bounded filters/ranges,
 independent decoded-sample arithmetic checks and physical playback evidence.
-Next add bounded relocatable sample-directory entries while retaining validated
-windows and lifecycle contracts.
+The [D3 relocation profile](sgb-native-score-relocated.md) now validates starts/loops
+inside fixed sample windows. Next make replacement upload admission atomic.

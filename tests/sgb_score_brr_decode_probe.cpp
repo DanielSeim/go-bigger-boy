@@ -15,9 +15,13 @@ int main(int argc, char** argv) {
             input.peek() != std::char_traits<char>::eof()) throw std::runtime_error("asset length");
         std::cout << "[";
         for (unsigned source = 0; source < 2; ++source) {
-            const unsigned base = 64 + source * 64, count = asset[16 + source];
+            const unsigned window = 64 + source * 64, count = asset[16 + source];
+            const unsigned pointer = asset[8 + source*4] | (asset[9 + source*4] << 8);
+            if (pointer < 0x5000 + window || pointer >= 0x5000 + window + 64)
+                throw std::runtime_error("sample start");
+            const unsigned base = pointer - 0x5000;
             const unsigned loop = asset[10 + source*4] | (asset[11 + source*4] << 8);
-            if (count < 1 || count > 4 || loop < 0x5000 + base ||
+            if ((base-window) % 9 || count < 1 || count > 4 || base + 9*count > window + 64 || loop < 0x5000 + base ||
                 (loop - 0x5000 - base) % 9 || (loop - 0x5000 - base) / 9 >= count)
                 throw std::runtime_error("sample bound");
             gameboy::SnesBrrDecoder decoder;

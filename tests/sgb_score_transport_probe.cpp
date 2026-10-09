@@ -26,7 +26,7 @@ struct Result {
     unsigned interruptions = 0, active_env = 0, interrupt_tick = 0, interrupt_count = 0, kof = 0, flg = 0, score_tick = 0, selected_song = 0, admitted_roots = 0;
     unsigned instruments = 0, source2 = 0, source3 = 0;
     std::array<unsigned, 9> prefix_ids{}, prefix_counts{};
-    std::array<unsigned, 2> sample_counts{}, sample_loops{}, profile_env{}, profile_pitch{};
+    std::array<unsigned, 2> sample_counts{}, sample_loops{}, sample_starts{}, profile_env{}, profile_pitch{};
     std::array<unsigned, 8> voice_profiles{}, sample_headers{};
     std::array<unsigned, 2> voice_tuning{}, voice_env{}, voice_pitch{};
     unsigned end_windows = 0, natural_ends = 0;
@@ -36,12 +36,12 @@ struct Result {
     bool operator==(const Result& other) const {
         return std::tie(hash, frames, nonzero, clocks, last_nonzero_clock, status,
                         transfers, adoptions, version, bridge, signature, sounds,
-                        error, external, interruptions, active_env, interrupt_tick, interrupt_count, kof, flg, score_tick, selected_song, admitted_roots, instruments, source2, source3, prefix_ids, prefix_counts, sample_counts, sample_loops, profile_env, profile_pitch, voice_profiles, voice_tuning, voice_env, voice_pitch, end_windows, natural_ends, end_env, end_gates, end_sources, endx, end_kof, sample_modes, sample_headers, state) ==
+                        error, external, interruptions, active_env, interrupt_tick, interrupt_count, kof, flg, score_tick, selected_song, admitted_roots, instruments, source2, source3, prefix_ids, prefix_counts, sample_counts, sample_loops, sample_starts, profile_env, profile_pitch, voice_profiles, voice_tuning, voice_env, voice_pitch, end_windows, natural_ends, end_env, end_gates, end_sources, endx, end_kof, sample_modes, sample_headers, state) ==
                std::tie(other.hash, other.frames, other.nonzero, other.clocks,
                         other.last_nonzero_clock, other.status, other.transfers,
                         other.adoptions, other.version, other.bridge, other.signature,
                         other.sounds, other.error, other.external, other.interruptions, other.active_env,
-                        other.interrupt_tick, other.interrupt_count, other.kof, other.flg, other.score_tick, other.selected_song, other.admitted_roots, other.instruments, other.source2, other.source3, other.prefix_ids, other.prefix_counts, other.sample_counts, other.sample_loops, other.profile_env, other.profile_pitch, other.voice_profiles, other.voice_tuning, other.voice_env, other.voice_pitch, other.end_windows, other.natural_ends, other.end_env, other.end_gates, other.end_sources, other.endx, other.end_kof, other.sample_modes, other.sample_headers, other.state);
+                        other.interrupt_tick, other.interrupt_count, other.kof, other.flg, other.score_tick, other.selected_song, other.admitted_roots, other.instruments, other.source2, other.source3, other.prefix_ids, other.prefix_counts, other.sample_counts, other.sample_loops, other.sample_starts, other.profile_env, other.profile_pitch, other.voice_profiles, other.voice_tuning, other.voice_env, other.voice_pitch, other.end_windows, other.natural_ends, other.end_env, other.end_gates, other.end_sources, other.endx, other.end_kof, other.sample_modes, other.sample_headers, other.state);
     }
 };
 struct Restores { unsigned count = 0, phases = 0, commands = 0, roots = 0, instruments = 0, ends = 0; };
@@ -184,6 +184,8 @@ Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
     for (unsigned i = 0; i < 2; ++i) {
         for (unsigned block = 0; block < 4; ++block)
             result.sample_headers[4*i + block] = host.debug_spc_ram_byte(0x5040 + 64*i + 9*block);
+        result.sample_starts[i] = host.debug_spc_ram_byte(0x5008 + 4 * i) |
+                                 (unsigned(host.debug_spc_ram_byte(0x5009 + 4 * i)) << 8);
         result.sample_modes[i] = host.debug_spc_ram_byte(0x5013 + 4 * i);
         result.sample_counts[i] = host.debug_spc_ram_byte(0x5010 + i);
         result.sample_loops[i] = host.debug_spc_ram_byte(0x500a + 4 * i) |
@@ -238,6 +240,7 @@ int main(int argc, char** argv) {
                   << ",\"last_nonzero_clock\":" << result.last_nonzero_clock
                   << ",\"instruments\":" << result.instruments
                   << ",\"source2\":" << result.source2 << ",\"source3\":" << result.source3;
+        std::cout << ",\"sample_starts\":[" << result.sample_starts[0] << ',' << result.sample_starts[1] << ']';
         std::cout << ",\"sample_headers\":[";
         for (std::size_t i = 0; i < result.sample_headers.size(); ++i)
             std::cout << (i ? "," : "") << result.sample_headers[i];

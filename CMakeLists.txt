@@ -1319,6 +1319,11 @@ if(GAMEBOY_BUILD_TESTS)
                 --probe $<TARGET_FILE:gameboy_sgb_score_transport_probe>
                 --decode-probe $<TARGET_FILE:gameboy_sgb_score_brr_decode_probe>)
         set_tests_properties(gameboy_sgb_score_brr_profiles PROPERTIES TIMEOUT 1200 COST 650)
+        add_test(NAME gameboy_sgb_score_relocated
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_score_relocated_tests.py
+                --probe $<TARGET_FILE:gameboy_sgb_score_transport_probe>
+                --decode-probe $<TARGET_FILE:gameboy_sgb_score_brr_decode_probe>)
+        set_tests_properties(gameboy_sgb_score_relocated PROPERTIES TIMEOUT 1400 COST 700)
         add_test(NAME gameboy_sgb_score_decoder_contract
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_score_decoder_tests.py)
         add_test(NAME gameboy_sgb_score_demand_inventory

@@ -121,8 +121,8 @@ Partial uploads still lack atomic asset invalidation.
 
 ## Next step
 
-Add bounded relocatable sample-directory entries within validated uploaded data
-windows. Validate start/loop alignment and whole-chain bounds, reject overlap
-with code/score/cache regions, and test relocated looping/one-shot sources on
-both voices with upload and lifecycle replay. Keep broader vendor banks and
-production qualification separate.
+The [D3 relocation profile](sgb-native-score-relocated.md) now admits bounded
+relocatable starts/loops within the uploaded data windows, with complete-chain
+bounds, zero prefix/suffix padding and physical lifecycle replay. Next make
+replacement upload admission atomic so incomplete uploads cannot reuse stale
+assets. Broader vendor banks and production qualification remain separate.

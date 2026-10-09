@@ -16,7 +16,7 @@ def replace_exact(text, before, after, count=1):
 
 
 def build(*, multisong=False, uploaded_instrument=False, two_instruments=False,
-          multiblock=False, instrument_profiles=False, one_shot=False, brr_profiles=False):
+          multiblock=False, instrument_profiles=False, one_shot=False, brr_profiles=False, relocatable=False):
     if type(multisong) is not bool:
         raise ValueError("multisong flag must be boolean")
     if type(uploaded_instrument) is not bool or (uploaded_instrument and not multisong):
@@ -31,6 +31,8 @@ def build(*, multisong=False, uploaded_instrument=False, two_instruments=False,
         raise ValueError("one-shot requires a boolean flag and instrument profiles")
     if type(brr_profiles) is not bool or (brr_profiles and not one_shot):
         raise ValueError("BRR profiles require a boolean flag and one-shot")
+    if type(relocatable) is not bool or (relocatable and not brr_profiles):
+        raise ValueError("relocatable samples require a boolean flag and BRR profiles")
     engine = engine_source()
     hooks = {
         'clock_poll:\n    mov a, $fd\n': 'clock_poll:\n    call bridge_service\n',
@@ -89,6 +91,8 @@ def build(*, multisong=False, uploaded_instrument=False, two_instruments=False,
         bridge = replace_exact(bridge, 'mov $f5, #$d0', 'mov $f5, #$d1')
     if brr_profiles:
         bridge = replace_exact(bridge, 'mov $f5, #$d1', 'mov $f5, #$d2')
+    if relocatable:
+        bridge = replace_exact(bridge, 'mov $f5, #$d2', 'mov $f5, #$d3')
     branch_number = 0
     def bridge_branch(match):
         nonlocal branch_number
@@ -110,7 +114,8 @@ def build(*, multisong=False, uploaded_instrument=False, two_instruments=False,
             runtime = helper[helper.index('uploaded_setup:'):helper.index('dual_structure:')]
             helper = (ROOT / 'firmware/sgb/score_brr_chain.asm').read_text() + '\n' + runtime
             if instrument_profiles:
-                helper = (ROOT / ('firmware/sgb/score_brr_profiles.asm' if brr_profiles else
+                helper = (ROOT / ('firmware/sgb/score_relocated_samples.asm' if relocatable else
+                                  'firmware/sgb/score_brr_profiles.asm' if brr_profiles else
                                   'firmware/sgb/score_one_shot.asm' if one_shot else
                                   'firmware/sgb/score_instrument_profiles.asm')).read_text()
             helper = re.sub(r'    (bne|beq|bcc|bcs) (brr_bad)\n', bridge_branch, helper)
@@ -147,6 +152,8 @@ def build(*, multisong=False, uploaded_instrument=False, two_instruments=False,
         host = replace_exact(host, 'cmp #$d0', 'cmp #$d1', count=4)
     if brr_profiles:
         host = replace_exact(host, 'cmp #$d1', 'cmp #$d2', count=4)
+    if relocatable:
+        host = replace_exact(host, 'cmp #$d2', 'cmp #$d3', count=4)
     # Expanded diagnostic guards need absolute failure jumps in the host variant.
     guard_number = 0
     def far_guard(match):
@@ -183,12 +190,13 @@ if __name__ == '__main__':
     parser.add_argument('--instrument-profiles', action='store_true')
     parser.add_argument('--one-shot', action='store_true')
     parser.add_argument('--brr-profiles', action='store_true')
+    parser.add_argument('--relocatable', action='store_true')
     args = parser.parse_args()
     try:
         image = build(multisong=args.multisong, uploaded_instrument=args.uploaded_instrument,
                       two_instruments=args.two_instruments, multiblock=args.multiblock,
                       instrument_profiles=args.instrument_profiles, one_shot=args.one_shot,
-                      brr_profiles=args.brr_profiles)
+                      brr_profiles=args.brr_profiles, relocatable=args.relocatable)
         with args.output.open('xb') as output:
             output.write(image)
     except (OSError, ValueError) as error:
