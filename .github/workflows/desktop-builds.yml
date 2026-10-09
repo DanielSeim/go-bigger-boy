@@ -273,7 +273,7 @@ jobs:
   thread-sanitizer:
     name: ThreadSanitizer contracts
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 75
     steps:
       - name: Check out source
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
@@ -428,7 +428,7 @@ jobs:
   build:
     name: ${{ matrix.artifact }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -498,7 +498,7 @@ jobs:
           "-DCMAKE_PREFIX_PATH=${{ steps.sdl_retry.outputs.prefix || steps.sdl.outputs.prefix }}"
 
       - name: Build
-        run: cmake --build build --config Release --parallel
+        run: cmake --build build --config Release --parallel 2
 
       - name: Test (Linux)
         if: runner.os == 'Linux'
