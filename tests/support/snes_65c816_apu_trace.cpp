@@ -95,6 +95,7 @@ int main(int argc, char** argv) {
     bool apu_clock_set = false;
     bool host_bus_timing = false;
     bool timer_poll_trace = false;
+    bool voice_envelope_trace = false;
     bool native_gb_input = false;
     std::array<std::uint64_t, 2> history_window{};
     std::filesystem::path apu_bus_output_path;
@@ -156,6 +157,8 @@ int main(int argc, char** argv) {
                     apu_clock_hz < 1000000 || apu_clock_hz > 1100000 || apu_clock_hz % 32) {
                     std::cerr << "APU clock must be 1000000..1100000 Hz and divisible by 32\n"; return 2;
                 }
+            } else if (option == "--voice-envelope-trace" && !voice_envelope_trace) {
+                voice_envelope_trace = true;
             } else if (option == "--timer-poll-trace" && !timer_poll_trace) {
                 timer_poll_trace = true;
             } else if (option == "--native-gb-input" && !native_gb_input) {
@@ -201,6 +204,10 @@ int main(int argc, char** argv) {
             }
         }
     }
+    if (voice_envelope_trace && (!fractional_apu_sync || sound_event_trace_path.empty())) {
+        std::cerr << "voice envelope trace requires fractional sync and sound event output\n";
+        return 2;
+    }
     if (apu_clock_set && !cycle_apu_sync) {
         std::cerr << "APU clock profile requires cycle or fractional APU synchronization\n";
         return 2;
@@ -228,7 +235,7 @@ int main(int argc, char** argv) {
                      "--sync-gb-sgb1 GB-ROM GB-BOOT|"
                      "--sync-gb-sgb2 GB-ROM GB-BOOT"
                      " [--input-script PATH] [--pcm-output WAV] [--instruction-limit N]"
-                     " [--sound-event-trace-output CSV]"
+                     " [--sound-event-trace-output CSV] [--voice-envelope-trace]"
                      " [--clocked-dsp]"
                      " [--core-apu-engine]"
                      " [--core-apu-state-roundtrip]"
@@ -439,6 +446,7 @@ int main(int argc, char** argv) {
             std::optional<std::uint64_t> second_keyon_sample;
             unsigned state_checkpoints{};
             std::vector<SoundTraceEvent>* sound_trace{};
+            bool envelope_trace{};
             sgb_test::Snes65c816TraceCpu::SpcStepObserver advance{};
             void record_bus(char kind, std::uint64_t half_clock,
                             std::uint16_t address, std::uint8_t value) noexcept {
@@ -510,6 +518,7 @@ int main(int argc, char** argv) {
             dsp_observation.shared_bus = shared_bus_dsp;
             dsp_observation.fractional_bus = fractional_apu_sync;
             dsp_observation.timer_trace = timer_poll_trace;
+            dsp_observation.envelope_trace = voice_envelope_trace;
             dsp_observation.history_window = history_window;
             dsp_observation.boot_timeline = boot_timeline.enabled ? &boot_timeline : nullptr;
             dsp_observation.cpu = &cpu;
@@ -558,7 +567,7 @@ int main(int argc, char** argv) {
                     }
                     observed.pending_ram[observed.pending_ram_count++] =
                         {address, value};
-                    if (observed.sound_trace != nullptr &&
+                    if (observed.sound_trace != nullptr && !observed.envelope_trace &&
                         observed.first_keyon_sample &&
                         observed.pcm_samples >=
                             *observed.first_keyon_sample + 22400 &&
@@ -600,7 +609,20 @@ int main(int argc, char** argv) {
                             if (observed.pcm_export != nullptr)
                                 observed.pcm_export->push_back(*sample);
                             ++observed.pcm_samples;
-                            if (observed.sound_trace != nullptr &&
+                            // Published ENVX only: no sample, RAM or renderer-internal
+                            // state export. Fixed first-KON window: 12000 samples.
+                            if (observed.envelope_trace && observed.first_keyon_sample &&
+                                observed.pcm_samples <= *observed.first_keyon_sample + 12000) {
+                                if (observed.sound_trace->size() + 2 >= 32768) {
+                                    observed.unsupported = true;
+                                    break;
+                                }
+                                for (unsigned voice = 2; voice <= 3; ++voice)
+                                    observed.sound_trace->push_back({'E', 0, observed.next_sample_cycle,
+                                        observed.pcm_samples, static_cast<std::uint16_t>(16*voice+8),
+                                        observed.pcm_bus->dsp_register(static_cast<std::uint8_t>(16*voice+8))});
+                            }
+                            if (observed.sound_trace != nullptr && !observed.envelope_trace &&
                                 observed.first_keyon_sample &&
                                 observed.state_checkpoints < 3) {
                                 constexpr std::array<std::uint64_t, 2> offsets{
@@ -704,6 +726,8 @@ int main(int argc, char** argv) {
                             }
                             if (observed.sound_trace != nullptr &&
                                 observed.icd->audible_sound_packets_delivered() != 0 &&
+                                (!observed.envelope_trace || !observed.first_keyon_sample ||
+                                 observed.pcm_samples <= *observed.first_keyon_sample + 12000) &&
                                 observed.sound_trace->size() < 32768) {
                                 observed.sound_trace->push_back({
                                     'D', 0, cycle, observed.pcm_samples,
@@ -719,6 +743,8 @@ int main(int argc, char** argv) {
                                 observed.sound_trace != nullptr &&
                                 observed.address == 0x4c && observed.value != 0 &&
                                 observed.icd->audible_sound_packets_delivered() != 0 &&
+                                (!observed.envelope_trace || !observed.first_keyon_sample ||
+                                 observed.pcm_samples <= *observed.first_keyon_sample + 12000) &&
                                 observed.sound_trace->size() < 32768)
                                 observed.sound_trace->push_back({
                                     'Q', 0, cycle, observed.pcm_samples,

@@ -73,7 +73,7 @@ def check_contract(result, case):
 
 
 def run(trace, firmware_directory, model, case, *, fixture_builder=build,
-        observer=observe, contract=check_contract, pattern_durations=CASES):
+        observer=observe, contract=check_contract, pattern_durations=CASES, trace_options=()):
     program = firmware_directory / ('sgb1.program.rom' if model == 'sgb' else 'sgb2.program.rom')
     ipl = firmware_directory / 'spc700.rom'
     with tempfile.TemporaryDirectory(prefix='gbb-phrase-reference-') as directory:
@@ -91,7 +91,7 @@ def run(trace, firmware_directory, model, case, *, fixture_builder=build,
                    '--sync-gb-sgb1' if model == 'sgb' else '--sync-gb-sgb2', str(game), str(boot),
                    '--fractional-apu-sync', '--native-gb-input', '--input-script', str(inputs),
                    '--ppu-dma-timing', '--host-bus-timing', '--instruction-limit', '8000000',
-                   '--sound-event-trace-output', str(output)]
+                   '--sound-event-trace-output', str(output), *trace_options]
         completed = subprocess.run(command, capture_output=True, timeout=180)
         if completed.returncode != 4 or not output.exists():
             raise ValueError(f'{model}: reference did not finish at the instruction bound')

@@ -121,9 +121,9 @@ and the dedicated probe checks live D6 rejection and normal/half controls.
 
 ## Next step
 
-Measure instrument-10 envelope setup and bounded ENVX evolution with owned note
-fixtures on both original models. Its observed `$8E/$AF` descriptor lies outside
-the current allowlist. Use register-only results to define a bounded envelope
-extension, keeping sample/acoustic equivalence separate. Do not broaden envelope
-admission merely to accept those bytes without checking attack/decay/sustain,
-key-off, reset and save/load behavior.
+The [instrument-10 envelope reference](sgb-instrument-envelope-reference.md)
+now measures held notes, early release and retriggers on both voices/models,
+with instrument 2 as a control. Next implement its bounded D8 contract: add
+exactly the `$8E/$AF/$B8` descriptor combination and validate owned looping
+samples, voice inheritance and envelope/upload lifecycle. Sample and acoustic
+equivalence remain separate.
