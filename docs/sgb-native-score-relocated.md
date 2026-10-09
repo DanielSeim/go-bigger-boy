@@ -105,6 +105,7 @@ Original-decoder, hardware, acoustic and title qualification remain outstanding.
 
 The [D4 atomic-upload profile](sgb-native-score-atomic-upload.md) now preflights
 complete score/sample coverage, clears both regions before IPL and publishes
-readiness only after all roots validate. Next add bounded recovery after upload
-rejection, keeping SOUND unavailable until a later complete generation validates.
+readiness only after all roots validate. The [D5 recovery profile](sgb-native-score-upload-recovery.md) now
+allows a fresh complete generation after rejection while keeping SOUND blocked
+until admission. Next widen instrument-bank support using measured title demand.
 Broader sample banks and title qualification remain separate.

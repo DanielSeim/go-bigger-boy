@@ -135,7 +135,7 @@ unchanged.
 
 ## Next step
 
-Add bounded recovery after upload rejection: keep SOUND unavailable until a
-later complete generation validates, while allowing a fresh upload without a
-full host reset. Cover both preflight rejection and semantic failure, repeated
-retries, stop and save/load. Then widen bank support using measured title demand.
+The [D5 recovery profile](sgb-native-score-upload-recovery.md) now permits
+fresh complete uploads after preflight or semantic rejection without a host
+reset, covering repeated failures, blocked SOUND/STOP and save/load. Next widen
+instrument-bank support using measured title demand.

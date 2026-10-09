@@ -124,4 +124,6 @@ Partial uploads still lack atomic asset invalidation.
 The [D3 relocation profile](sgb-native-score-relocated.md) now admits bounded
 relocatable starts/loops within the uploaded data windows, with complete-chain
 bounds, zero prefix/suffix padding and physical lifecycle replay. The [D4 atomic-upload profile](sgb-native-score-atomic-upload.md) now prevents
-stale score/sample reuse. Next add bounded recovery after upload rejection. Broader vendor banks and production qualification remain separate.
+stale score/sample reuse. The [D5 recovery profile](sgb-native-score-upload-recovery.md) now permits a
+fresh complete upload after rejection while keeping SOUND blocked until
+admission. Next widen instrument-bank support using measured title demand. Broader vendor banks and production qualification remain separate.

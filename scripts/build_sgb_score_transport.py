@@ -16,7 +16,7 @@ def replace_exact(text, before, after, count=1):
 
 
 def build(*, multisong=False, uploaded_instrument=False, two_instruments=False,
-          multiblock=False, instrument_profiles=False, one_shot=False, brr_profiles=False, relocatable=False, atomic_upload=False):
+          multiblock=False, instrument_profiles=False, one_shot=False, brr_profiles=False, relocatable=False, atomic_upload=False, upload_recovery=False):
     if type(multisong) is not bool:
         raise ValueError("multisong flag must be boolean")
     if type(uploaded_instrument) is not bool or (uploaded_instrument and not multisong):
@@ -35,6 +35,8 @@ def build(*, multisong=False, uploaded_instrument=False, two_instruments=False,
         raise ValueError("relocatable samples require a boolean flag and BRR profiles")
     if type(atomic_upload) is not bool or (atomic_upload and not relocatable):
         raise ValueError("atomic upload requires a boolean flag and relocatable samples")
+    if type(upload_recovery) is not bool or (upload_recovery and not atomic_upload):
+        raise ValueError("upload recovery requires a boolean flag and atomic upload")
     engine = engine_source()
     hooks = {
         'clock_poll:\n    mov a, $fd\n': 'clock_poll:\n    call bridge_service\n',
@@ -101,6 +103,16 @@ def build(*, multisong=False, uploaded_instrument=False, two_instruments=False,
                                '    call atomic_upload_begin\n')
         bridge = replace_exact(bridge, 'directory_validated:\n    mov $d8, #$00\n    mov $d2, #$01',
                                'directory_validated:\n    mov $d8, #$00\n    call atomic_publish')
+    if upload_recovery:
+        bridge = replace_exact(bridge, 'mov $f5, #$d4', 'mov $f5, #$d5')
+        bridge = replace_exact(bridge, '    mov $d0, a\n',
+                               '    mov $d0, a\n    call recovery_dispatch\n')
+        bridge = replace_exact(bridge, 'bridge_bad:\n    mov $f5, #$00',
+                               'bridge_bad:\n    jmp recovery_bad')
+        bridge = replace_exact(bridge, 'bridge_stage:\n    mov a, $d2\n    beq bridge_bad',
+                               'bridge_stage:\n    mov a, $d2\n    beq recovery_blocked_ack')
+        bridge = replace_exact(bridge, '    mov $d2, #$01\n    mov $14, #$02\n    mov $f6, #$01',
+                               '    call recovery_stop\n    mov $14, #$02')
     branch_number = 0
     def bridge_branch(match):
         nonlocal branch_number
@@ -111,6 +123,8 @@ def build(*, multisong=False, uploaded_instrument=False, two_instruments=False,
     targets = 'bridge_bad|bridge_loader|bridge_stop'
     if multisong:
         targets += '|bridge_no_command|bridge_ack'
+    if upload_recovery:
+        targets += '|recovery_blocked_ack'
     bridge = re.sub(r'    (bne|beq) (' + targets + r')\n', bridge_branch, bridge)
     if multisong:
         bridge = re.sub(r'    (bne|beq|bcc|bcs) (directory_bad)\n', bridge_branch, bridge)
@@ -129,6 +143,8 @@ def build(*, multisong=False, uploaded_instrument=False, two_instruments=False,
             helper = re.sub(r'    (bne|beq|bcc|bcs) (brr_bad)\n', bridge_branch, helper)
         if atomic_upload:
             helper += '\n' + (ROOT / 'firmware/sgb/score_atomic_upload.asm').read_text()
+        if upload_recovery:
+            helper += '\n' + (ROOT / 'firmware/sgb/score_upload_recovery.asm').read_text()
         source += '\n' + helper
     payload = bytes(assemble(source, 'spc', 0x0200))
     if len(payload) > (0x1a00 if uploaded_instrument else 0x1600):
@@ -175,6 +191,19 @@ def build(*, multisong=False, uploaded_instrument=False, two_instruments=False,
         host += '\n' + (ROOT / 'firmware/sgb/host_atomic_upload.asm').read_text()
         host = replace_exact(host, 'unsupported_owned:\n',
             'unsupported_owned:\n    lda $2141\n    sta $30\n    lda $2142\n    sta $31\n    lda $2143\n    sta $32\n')
+    if upload_recovery:
+        host = replace_exact(host, 'cmp #$d4', 'cmp #$d5', count=4)
+        host = replace_exact(host, '    stz $2a\nready:',
+                             '    stz $2a\n    stz $56\n    stz $57\n    stz $59\nready:')
+        host = replace_exact(host, '    sta $32\n; Observe external drivers.',
+                             '    sta $32\n    jsr recovery_poll\n; Observe external drivers.')
+        host = replace_exact(host, 'sound:\n    lda $24',
+            'sound:\n    jsr recovery_sound_check\n    bcc recovery_sound_pass\n    jmp poll\nrecovery_sound_pass:\n    lda $24')
+        host = replace_exact(host, '    stz $24\n    inc $2a',
+                             '    stz $24\n    stz $56\n    inc $2a')
+        host = replace_exact(host, 'error_still_owned:\n    jmp unsupported',
+                             'error_still_owned:\n    jmp recovery_reject')
+        host += '\n' + (ROOT / 'firmware/sgb/host_upload_recovery.asm').read_text()
     # Expanded diagnostic guards need absolute failure jumps in the host variant.
     guard_number = 0
     def far_guard(match):
@@ -213,12 +242,13 @@ if __name__ == '__main__':
     parser.add_argument('--brr-profiles', action='store_true')
     parser.add_argument('--relocatable', action='store_true')
     parser.add_argument('--atomic-upload', action='store_true')
+    parser.add_argument('--upload-recovery', action='store_true')
     args = parser.parse_args()
     try:
         image = build(multisong=args.multisong, uploaded_instrument=args.uploaded_instrument,
                       two_instruments=args.two_instruments, multiblock=args.multiblock,
                       instrument_profiles=args.instrument_profiles, one_shot=args.one_shot,
-                      brr_profiles=args.brr_profiles, relocatable=args.relocatable, atomic_upload=args.atomic_upload)
+                      brr_profiles=args.brr_profiles, relocatable=args.relocatable, atomic_upload=args.atomic_upload, upload_recovery=args.upload_recovery)
         with args.output.open('xb') as output:
             output.write(image)
     except (OSError, ValueError) as error:

@@ -25,7 +25,9 @@ struct Result {
              bridge = 0, signature = 0, sounds = 0, error = 0, external = 0;
     unsigned interruptions = 0, active_env = 0, interrupt_tick = 0, interrupt_count = 0, kof = 0, flg = 0, score_tick = 0, selected_song = 0, admitted_roots = 0;
     unsigned atomic_clears = 0, atomic_invalidated = 0, atomic_phase = 0;
-    std::uint64_t score_hash = 0, asset_hash = 0;
+    std::uint64_t score_hash = 0, asset_hash = 0, blocked_frames = 0, blocked_nonzero = 0;
+    unsigned recovery_rejections = 0, suppressed_sound = 0, recovery_blocked = 0,
+             host_stack = 0, clear_events = 0, clear_verified = 0, clear_invalidated = 0;
     unsigned instruments = 0, source2 = 0, source3 = 0;
     std::array<unsigned, 9> prefix_ids{}, prefix_counts{};
     std::array<unsigned, 2> sample_counts{}, sample_loops{}, sample_starts{}, profile_env{}, profile_pitch{};
@@ -38,24 +40,29 @@ struct Result {
     bool operator==(const Result& other) const {
         return std::tie(hash, frames, nonzero, clocks, last_nonzero_clock, status,
                         transfers, adoptions, version, bridge, signature, sounds,
-                        error, external, interruptions, active_env, interrupt_tick, interrupt_count, kof, flg, score_tick, selected_song, admitted_roots, instruments, source2, source3, prefix_ids, prefix_counts, sample_counts, sample_loops, sample_starts, profile_env, profile_pitch, voice_profiles, voice_tuning, voice_env, voice_pitch, end_windows, natural_ends, end_env, end_gates, end_sources, endx, end_kof, sample_modes, sample_headers, atomic_clears, atomic_invalidated, atomic_phase, score_hash, asset_hash, state) ==
+                        error, external, interruptions, active_env, interrupt_tick, interrupt_count, kof, flg, score_tick, selected_song, admitted_roots, instruments, source2, source3, prefix_ids, prefix_counts, sample_counts, sample_loops, sample_starts, profile_env, profile_pitch, voice_profiles, voice_tuning, voice_env, voice_pitch, end_windows, natural_ends, end_env, end_gates, end_sources, endx, end_kof, sample_modes, sample_headers, atomic_clears, atomic_invalidated, atomic_phase, score_hash, asset_hash, blocked_frames, blocked_nonzero, recovery_rejections, suppressed_sound, recovery_blocked, host_stack, clear_events, clear_verified, clear_invalidated, state) ==
                std::tie(other.hash, other.frames, other.nonzero, other.clocks,
                         other.last_nonzero_clock, other.status, other.transfers,
                         other.adoptions, other.version, other.bridge, other.signature,
                         other.sounds, other.error, other.external, other.interruptions, other.active_env,
-                        other.interrupt_tick, other.interrupt_count, other.kof, other.flg, other.score_tick, other.selected_song, other.admitted_roots, other.instruments, other.source2, other.source3, other.prefix_ids, other.prefix_counts, other.sample_counts, other.sample_loops, other.sample_starts, other.profile_env, other.profile_pitch, other.voice_profiles, other.voice_tuning, other.voice_env, other.voice_pitch, other.end_windows, other.natural_ends, other.end_env, other.end_gates, other.end_sources, other.endx, other.end_kof, other.sample_modes, other.sample_headers, other.atomic_clears, other.atomic_invalidated, other.atomic_phase, other.score_hash, other.asset_hash, other.state);
+                        other.interrupt_tick, other.interrupt_count, other.kof, other.flg, other.score_tick, other.selected_song, other.admitted_roots, other.instruments, other.source2, other.source3, other.prefix_ids, other.prefix_counts, other.sample_counts, other.sample_loops, other.sample_starts, other.profile_env, other.profile_pitch, other.voice_profiles, other.voice_tuning, other.voice_env, other.voice_pitch, other.end_windows, other.natural_ends, other.end_env, other.end_gates, other.end_sources, other.endx, other.end_kof, other.sample_modes, other.sample_headers, other.atomic_clears, other.atomic_invalidated, other.atomic_phase, other.score_hash, other.asset_hash, other.blocked_frames, other.blocked_nonzero, other.recovery_rejections, other.suppressed_sound, other.recovery_blocked, other.host_stack, other.clear_events, other.clear_verified, other.clear_invalidated, other.state);
     }
 };
-struct Restores { unsigned count = 0, phases = 0, commands = 0, roots = 0, instruments = 0, ends = 0; };
+struct Restores { unsigned count = 0, phases = 0, commands = 0, roots = 0, instruments = 0, ends = 0, rejections = 0, suppressed = 0, clears = 0; };
 Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
     Result result;
-    unsigned steps = 0;
+    unsigned steps = 0, previous_atomic = 0, previous_rejections = 0,
+             previous_suppressed = 0, previous_clears = 0;
     std::uint64_t previous = ~std::uint64_t{0};
     Host::StereoSample sample;
     while (host.cpu().timing().clocks() < target) {
         require(host.step(), "whole-host execution fault");
         while (host.pop_sample(sample)) {
             ++result.frames;
+            if (host.cpu().debug_wram_byte(0x56)) {
+                ++result.blocked_frames;
+                if (sample.left || sample.right) ++result.blocked_nonzero;
+            }
             if (sample.left || sample.right) {
                 ++result.nonzero;
                 result.last_nonzero_clock = host.cpu().timing().clocks();
@@ -127,7 +134,24 @@ Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
                     result.atomic_invalidated |= 1U << generation;
             }
         }
+        if (atomic_phase == 0xa4 && previous_atomic != 0xa4) {
+            require(result.clear_events < 8, "clear-event bound");
+            const unsigned bit = 1U << result.clear_events++;
+            bool zero = true;
+            for (unsigned address = 0x2b00; zero && address < 0x3300; ++address)
+                zero = host.debug_spc_ram_byte(address) == 0;
+            for (unsigned address = 0x5000; zero && address < 0x50c0; ++address)
+                zero = host.debug_spc_ram_byte(address) == 0;
+            if (zero) result.clear_verified |= bit;
+            if (zero && host.debug_spc_ram_byte(0xd2) == 0 &&
+                host.debug_spc_ram_byte(0xdc) == 0 && host.debug_spc_ram_byte(0xdb) == 0 &&
+                (host.debug_dsp_register(0x6c) & 0xe0) == 0xe0)
+                result.clear_invalidated |= bit;
+        }
+        previous_atomic = atomic_phase;
         if (restores) {
+            const auto rejections = host.cpu().debug_wram_byte(0x57);
+            const auto suppressed = host.cpu().debug_wram_byte(0x59);
             auto status = host.cpu().debug_wram_byte(0x20);
             auto bridge = host.cpu().debug_wram_byte(0x31);
             unsigned commands = host.debug_spc_ram_byte(0xd3);
@@ -146,12 +170,19 @@ Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
                                   (std::uint64_t(result.instruments) << 48) |
                                   (std::uint64_t(result.natural_ends) << 52) |
                                   (std::uint64_t(sample_phase) << 56) |
-                                  (std::uint64_t(atomic_phase == 0xa4 ? 1 : atomic_phase == 0xa5 ? 2 : 0) << 60);
-            if (++steps % 100003 == 0 || phase != previous) {
+                                  (std::uint64_t(atomic_phase == 0xa4 ? 1 : atomic_phase == 0xa5 ? 2 : 0) << 60) |
+                                  (std::uint64_t(host.cpu().debug_wram_byte(0x56) != 0) << 62) |
+                                  (std::uint64_t(suppressed & 1U) << 63);
+            if (++steps % 100003 == 0 || phase != previous ||
+                rejections != previous_rejections || suppressed != previous_suppressed ||
+                result.clear_events != previous_clears) {
                 require(++restores->count <= 4096, "snapshot bound");
                 auto state = host.save_state();
                 require(host.load_state(state), "mid-execution restore");
                 require(host.save_state() == state, "exact state restoration");
+                restores->rejections = std::max(restores->rejections, unsigned(rejections));
+                restores->suppressed = std::max(restores->suppressed, unsigned(suppressed));
+                restores->clears |= result.clear_verified;
                 restores->commands |= commands;
                 restores->instruments |= result.instruments;
                 restores->ends |= result.natural_ends;
@@ -163,6 +194,9 @@ Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
                 if (bridge == 2) restores->phases |= 16; // completed
             }
             previous = phase;
+            previous_rejections = rejections;
+            previous_suppressed = suppressed;
+            previous_clears = result.clear_events;
         }
     }
     result.clocks = host.cpu().timing().clocks();
@@ -212,6 +246,10 @@ Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
         result.sample_loops[i] = host.debug_spc_ram_byte(0x500a + 4 * i) |
                                 (unsigned(host.debug_spc_ram_byte(0x500b + 4 * i)) << 8);
     }
+    result.recovery_rejections = host.cpu().debug_wram_byte(0x57);
+    result.suppressed_sound = host.cpu().debug_wram_byte(0x59);
+    result.recovery_blocked = host.cpu().debug_wram_byte(0x56);
+    result.host_stack = host.cpu().registers().s;
     result.atomic_phase = host.debug_spc_ram_byte(0x0504);
     auto region_hash = [&](unsigned begin, unsigned end) {
         std::uint64_t hash = 14695981039346656037ULL;
@@ -272,6 +310,18 @@ int main(int argc, char** argv) {
                   << ",\"last_nonzero_clock\":" << result.last_nonzero_clock
                   << ",\"instruments\":" << result.instruments
                   << ",\"source2\":" << result.source2 << ",\"source3\":" << result.source3;
+        std::cout << ",\"recovery_rejections\":" << result.recovery_rejections
+                  << ",\"suppressed_sound\":" << result.suppressed_sound
+                  << ",\"recovery_blocked\":" << result.recovery_blocked
+                  << ",\"host_stack\":" << result.host_stack
+                  << ",\"clear_events\":" << result.clear_events
+                  << ",\"clear_verified\":" << result.clear_verified
+                  << ",\"clear_invalidated\":" << result.clear_invalidated
+                  << ",\"blocked_frames\":" << result.blocked_frames
+                  << ",\"blocked_nonzero\":" << result.blocked_nonzero
+                  << ",\"restore_rejections\":" << restores.rejections
+                  << ",\"restore_suppressed\":" << restores.suppressed
+                  << ",\"restore_clears\":" << restores.clears;
         std::cout << ",\"atomic_clears\":" << result.atomic_clears
                   << ",\"atomic_invalidated\":" << result.atomic_invalidated
                   << ",\"atomic_phase\":" << result.atomic_phase
