@@ -127,5 +127,7 @@ are unchanged.
 
 The [register-only instrument-10 octave reference](sgb-instrument-chromatic-reference.md)
 now covers notes 24 through 36 on both voices and both original models, with
-instrument 2 as a fresh control. Next implement its bounded tuning-selector-2
-contract beyond normal/half pitch; keep sample and acoustic equivalence separate.
+instrument 2 as a fresh control. The [D7 tuning diagnostic](sgb-native-score-instrument-tuning.md) implements
+its bounded selector-2 contract beyond normal/half pitch. Next measure the
+instrument-10 envelope trajectory before extending the owned envelope allowlist;
+keep sample and acoustic equivalence separate.

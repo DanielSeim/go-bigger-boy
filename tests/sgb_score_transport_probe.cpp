@@ -36,8 +36,15 @@ struct Result {
     unsigned end_windows = 0, natural_ends = 0;
     std::array<unsigned, 4> end_env{}, end_gates{}, end_sources{};
     std::array<unsigned, 2> endx{}, end_kof{}, sample_modes{};
+#ifdef GBB_SCORE_TUNING_PROBE
+    unsigned tuning_seen = 0;
+    std::array<unsigned, 26> tuning_pitches{};
+#endif
     std::vector<std::uint8_t> state;
     bool operator==(const Result& other) const {
+#ifdef GBB_SCORE_TUNING_PROBE
+        if (tuning_seen != other.tuning_seen || tuning_pitches != other.tuning_pitches) return false;
+#endif
         return std::tie(hash, frames, nonzero, clocks, last_nonzero_clock, status,
                         transfers, adoptions, version, bridge, signature, sounds,
                         error, external, interruptions, active_env, interrupt_tick, interrupt_count, kof, flg, score_tick, selected_song, admitted_roots, instruments, source2, source3, prefix_ids, prefix_counts, sample_counts, sample_loops, sample_starts, profile_env, profile_pitch, voice_profiles, voice_tuning, voice_env, voice_pitch, end_windows, natural_ends, end_env, end_gates, end_sources, endx, end_kof, sample_modes, sample_headers, atomic_clears, atomic_invalidated, atomic_phase, score_hash, asset_hash, blocked_frames, blocked_nonzero, recovery_rejections, suppressed_sound, recovery_blocked, host_stack, clear_events, clear_verified, clear_invalidated, state) ==
@@ -54,6 +61,9 @@ Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
     unsigned steps = 0, previous_atomic = 0, previous_rejections = 0,
              previous_suppressed = 0, previous_clears = 0;
     std::uint64_t previous = ~std::uint64_t{0};
+#ifdef GBB_SCORE_TUNING_PROBE
+    unsigned previous_tuning_seen = 0;
+#endif
     Host::StereoSample sample;
     while (host.cpu().timing().clocks() < target) {
         require(host.step(), "whole-host execution fault");
@@ -76,6 +86,19 @@ Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
         }
         // Observe live source IDs only while this diagnostic bridge renders.
         if (host.debug_spc_ram_byte(0xd2) == 2) {
+#ifdef GBB_SCORE_TUNING_PROBE
+            // Settled actual DSP registers ten ticks into each authored 16-tick
+            // note, before its gate ends. No inferred pitch or timestamp edits.
+            const unsigned tuning_tick = host.debug_spc_ram_byte(0x10) |
+                (unsigned(host.debug_spc_ram_byte(0x11)) << 8);
+            if (host.debug_spc_ram_byte(0xdb) == 1 && tuning_tick < 208 && tuning_tick % 16 == 10) {
+                const unsigned index = tuning_tick / 16;
+                result.tuning_seen |= 1U << index;
+                for (unsigned voice = 2; voice <= 3; ++voice)
+                    result.tuning_pitches[2*index + voice-2] = host.debug_dsp_register(16*voice+2) |
+                        (unsigned(host.debug_dsp_register(16*voice+3)) << 8);
+            }
+#endif
             // First score, first note: observe a stable tick before its gate ends.
             if (host.debug_spc_ram_byte(0xdb) == 1 &&
                 host.debug_spc_ram_byte(0x10) == 10 && host.debug_spc_ram_byte(0x11) == 0) {
@@ -175,7 +198,11 @@ Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
                                   (std::uint64_t(suppressed & 1U) << 63);
             if (++steps % 100003 == 0 || phase != previous ||
                 rejections != previous_rejections || suppressed != previous_suppressed ||
-                result.clear_events != previous_clears) {
+                result.clear_events != previous_clears
+#ifdef GBB_SCORE_TUNING_PROBE
+                || result.tuning_seen != previous_tuning_seen
+#endif
+                ) {
                 require(++restores->count <= 4096, "snapshot bound");
                 auto state = host.save_state();
                 require(host.load_state(state), "mid-execution restore");
@@ -193,6 +220,9 @@ Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
                 if (bridge == 3) restores->phases |= 8; // rendering
                 if (bridge == 2) restores->phases |= 16; // completed
             }
+#ifdef GBB_SCORE_TUNING_PROBE
+            previous_tuning_seen = result.tuning_seen;
+#endif
             previous = phase;
             previous_rejections = rejections;
             previous_suppressed = suppressed;
@@ -327,6 +357,12 @@ int main(int argc, char** argv) {
                   << ",\"atomic_phase\":" << result.atomic_phase
                   << ",\"score_hash\":" << result.score_hash
                   << ",\"asset_hash\":" << result.asset_hash;
+#ifdef GBB_SCORE_TUNING_PROBE
+        std::cout << ",\"tuning_seen\":" << result.tuning_seen << ",\"tuning_pitches\":[";
+        for (std::size_t i = 0; i < result.tuning_pitches.size(); ++i)
+            std::cout << (i ? "," : "") << result.tuning_pitches[i];
+        std::cout << ']';
+#endif
         std::cout << ",\"sample_starts\":[" << result.sample_starts[0] << ',' << result.sample_starts[1] << ']';
         std::cout << ",\"sample_headers\":[";
         for (std::size_t i = 0; i < result.sample_headers.size(); ++i)

@@ -92,5 +92,6 @@ original models. Instrument 10 and general tuning remain outside that extension.
 The [register-only chromatic extension](sgb-instrument-chromatic-reference.md)
 now measures instrument 10 on both voices for all notes 24..36, with fresh
 instrument-2 controls on both original models. The three-note fixtures and
-their checker remain unchanged. The extension defines the next bounded tuning
-contract without claiming sample or audible equivalence.
+their checker remain unchanged. The extension defines the bounded tuning contract now implemented by the
+[D7 diagnostic](sgb-native-score-instrument-tuning.md), without claiming sample
+or audible equivalence.

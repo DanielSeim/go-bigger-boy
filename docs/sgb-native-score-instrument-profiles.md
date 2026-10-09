@@ -111,5 +111,6 @@ stale score/sample reuse. The [D5 recovery profile](sgb-native-score-upload-reco
 fresh complete upload after rejection while keeping SOUND blocked until
 admission. The [D6 mapping profile](sgb-native-score-instrument-mapping.md) now
 separates score IDs from owned sample slots. The [instrument-10 octave reference](sgb-instrument-chromatic-reference.md)
-now pins all thirteen notes on both voices/models. Next implement its bounded
-exact-table tuning selector while preserving the existing two modes.
+now pins all thirteen notes on both voices/models. The [D7 diagnostic](sgb-native-score-instrument-tuning.md) adds its bounded
+exact-table selector while preserving the existing two modes. Next measure
+instrument-10 envelope evolution before extending the envelope allowlist.

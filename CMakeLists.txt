@@ -1332,6 +1332,10 @@ if(GAMEBOY_BUILD_TESTS)
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_score_recovery_tests.py
                 --probe $<TARGET_FILE:gameboy_sgb_score_transport_probe>)
         set_tests_properties(gameboy_sgb_score_upload_recovery PROPERTIES TIMEOUT 2400 COST 800)
+        add_test(NAME gameboy_sgb_score_instrument_tuning
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_score_tuning_tests.py
+                --probe $<TARGET_FILE:gameboy_sgb_score_tuning_probe>)
+        set_tests_properties(gameboy_sgb_score_instrument_tuning PROPERTIES TIMEOUT 2400 COST 850)
         add_test(NAME gameboy_sgb_score_instrument_mapping
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_score_mapping_tests.py
                 --probe $<TARGET_FILE:gameboy_sgb_score_transport_probe>)
@@ -1603,6 +1607,9 @@ if(GAMEBOY_BUILD_TESTS)
     add_executable(gameboy_sgb_score_callgate_probe tests/sgb_score_polygate_probe.cpp)
     target_compile_definitions(gameboy_sgb_score_callgate_probe PRIVATE GBB_SCORE_CALLGATE_PROBE)
     target_link_libraries(gameboy_sgb_score_callgate_probe PRIVATE gameboy_core)
+    add_executable(gameboy_sgb_score_tuning_probe tests/sgb_score_transport_probe.cpp)
+    target_compile_definitions(gameboy_sgb_score_tuning_probe PRIVATE GBB_SCORE_TUNING_PROBE)
+    target_link_libraries(gameboy_sgb_score_tuning_probe PRIVATE gameboy_core)
     add_executable(gameboy_sgb_score_chromatic_probe tests/sgb_score_polygate_probe.cpp)
     target_compile_definitions(gameboy_sgb_score_chromatic_probe PRIVATE GBB_SCORE_CHROMATIC_PROBE)
     target_link_libraries(gameboy_sgb_score_chromatic_probe PRIVATE gameboy_core)

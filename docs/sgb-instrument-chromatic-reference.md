@@ -71,9 +71,10 @@ Notes outside 24..36 and other resident instruments remain unmeasured here.
 
 ## Next bounded tuning contract
 
-The next implementation should be an opt-in successor to
-[D6 score-ID mapping](sgb-native-score-instrument-mapping.md), keeping all
-previous artifact hashes and production defaults unchanged:
+The [D7 tuning diagnostic](sgb-native-score-instrument-tuning.md) implements
+this bounded contract as an opt-in successor to
+[D6 score-ID mapping](sgb-native-score-instrument-mapping.md), keeping previous
+artifact hashes and production defaults unchanged:
 
 - Preserve descriptor tuning selector 0 (the existing instrument-2 octave) and
   selector 1 (its existing full-word right shift). Admit selector 2 for the exact
