@@ -142,5 +142,9 @@ above. The separate [two-instrument profile](sgb-native-score-dual-instrument.md
 now adds owned uploaded samples, ordered E0 selection and voice-local inheritance.
 The [multi-block sample profile](sgb-native-score-brr-chain.md) now adds bounded
 BRR chains and checked loop points. The [D0 profile](sgb-native-score-instrument-profiles.md)
-adds bounded uploaded envelopes/direct GAIN and tuning. Next add non-looping BRR
-samples; general vendor-bank and real-title qualification remain open.
+adds bounded uploaded envelopes/direct GAIN and tuning. The D1 profile below adds non-looping BRR samples; general vendor-bank and
+real-title qualification remain open.
+
+The [D1 one-shot profile](sgb-native-score-one-shot.md) now covers bounded
+non-looping samples and natural completion. The next sample extension is
+bounded BRR filter/range profiles.

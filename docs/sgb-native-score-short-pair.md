@@ -131,7 +131,7 @@ multi-song selection. The separate [two-instrument profile](sgb-native-score-dua
 adds owned uploaded samples and voice-local selection/inheritance. The
 [multi-block sample profile](sgb-native-score-brr-chain.md) adds bounded BRR
 chains and checked loops. The [D0 profile](sgb-native-score-instrument-profiles.md)
-adds bounded uploaded envelopes/direct GAIN and tuning. The next boundary is
+adds bounded uploaded envelopes/direct GAIN and tuning. The D1 profile below adds
 non-looping BRR samples. Production selection and general vendor-bank compatibility remain
 unqualified.
 
@@ -142,3 +142,7 @@ channels, modulation and subroutine continuation. That inventory is historical,
 not a fresh title-validation run for this milestone. Passing an owned transport
 and selection test would establish integration before pursuing those remaining
 contracts; it would not yet qualify Donkey Kong playback.
+
+The [D1 one-shot profile](sgb-native-score-one-shot.md) now covers bounded
+non-looping samples and natural completion. The next sample extension is
+bounded BRR filter/range profiles.

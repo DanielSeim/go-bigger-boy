@@ -103,8 +103,7 @@ Partial uploads still lack atomic asset invalidation.
 
 ## Next step
 
-Add bounded non-looping BRR samples alongside the existing looping sources.
-Validate terminal end-without-loop headers, natural sample completion on both
-voices, interaction with note gates and instrument changes, malformed objects,
-and active upload/reset/save-load behavior. Keep all prior image profiles and
-production qualification boundaries intact.
+The [D1 diagnostic](sgb-native-score-one-shot.md) adds bounded non-looping BRR
+samples and natural-completion/gate/lifecycle evidence. Next add bounded BRR
+filter/range profiles while retaining prior image contracts and production
+qualification boundaries.

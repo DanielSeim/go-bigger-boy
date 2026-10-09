@@ -29,19 +29,22 @@ struct Result {
     std::array<unsigned, 2> sample_counts{}, sample_loops{}, profile_env{}, profile_pitch{};
     std::array<unsigned, 8> voice_profiles{};
     std::array<unsigned, 2> voice_tuning{}, voice_env{}, voice_pitch{};
+    unsigned end_windows = 0, natural_ends = 0;
+    std::array<unsigned, 4> end_env{}, end_gates{}, end_sources{};
+    std::array<unsigned, 2> endx{}, end_kof{}, sample_modes{};
     std::vector<std::uint8_t> state;
     bool operator==(const Result& other) const {
         return std::tie(hash, frames, nonzero, clocks, last_nonzero_clock, status,
                         transfers, adoptions, version, bridge, signature, sounds,
-                        error, external, interruptions, active_env, interrupt_tick, interrupt_count, kof, flg, score_tick, selected_song, admitted_roots, instruments, source2, source3, prefix_ids, prefix_counts, sample_counts, sample_loops, profile_env, profile_pitch, voice_profiles, voice_tuning, voice_env, voice_pitch, state) ==
+                        error, external, interruptions, active_env, interrupt_tick, interrupt_count, kof, flg, score_tick, selected_song, admitted_roots, instruments, source2, source3, prefix_ids, prefix_counts, sample_counts, sample_loops, profile_env, profile_pitch, voice_profiles, voice_tuning, voice_env, voice_pitch, end_windows, natural_ends, end_env, end_gates, end_sources, endx, end_kof, sample_modes, state) ==
                std::tie(other.hash, other.frames, other.nonzero, other.clocks,
                         other.last_nonzero_clock, other.status, other.transfers,
                         other.adoptions, other.version, other.bridge, other.signature,
                         other.sounds, other.error, other.external, other.interruptions, other.active_env,
-                        other.interrupt_tick, other.interrupt_count, other.kof, other.flg, other.score_tick, other.selected_song, other.admitted_roots, other.instruments, other.source2, other.source3, other.prefix_ids, other.prefix_counts, other.sample_counts, other.sample_loops, other.profile_env, other.profile_pitch, other.voice_profiles, other.voice_tuning, other.voice_env, other.voice_pitch, other.state);
+                        other.interrupt_tick, other.interrupt_count, other.kof, other.flg, other.score_tick, other.selected_song, other.admitted_roots, other.instruments, other.source2, other.source3, other.prefix_ids, other.prefix_counts, other.sample_counts, other.sample_loops, other.profile_env, other.profile_pitch, other.voice_profiles, other.voice_tuning, other.voice_env, other.voice_pitch, other.end_windows, other.natural_ends, other.end_env, other.end_gates, other.end_sources, other.endx, other.end_kof, other.sample_modes, other.state);
     }
 };
-struct Restores { unsigned count = 0, phases = 0, commands = 0, roots = 0, instruments = 0; };
+struct Restores { unsigned count = 0, phases = 0, commands = 0, roots = 0, instruments = 0, ends = 0; };
 Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
     Result result;
     unsigned steps = 0;
@@ -75,6 +78,29 @@ Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
                         (host.debug_dsp_register(voice * 16 + 3) << 8);
                 }
             }
+            // Observe settled first/second notes before their gates expire.
+            const auto tick = host.debug_spc_ram_byte(0x10);
+            if (host.debug_spc_ram_byte(0xdb) == 1 && host.debug_spc_ram_byte(0x11) == 0 &&
+                (tick == 10 || tick == 26)) {
+                const unsigned window = tick == 10 ? 0 : 1;
+                result.end_windows |= 1U << window;
+                result.endx[window] |= host.debug_dsp_register(0x7c) & 12;
+                result.end_kof[window] |= host.debug_dsp_register(0x5c) & 12;
+                for (unsigned voice = 2; voice <= 3; ++voice) {
+                    const auto index = window * 2 + voice - 2;
+                    const auto env = unsigned(host.debug_dsp_register(voice * 16 + 8));
+                    const auto gate = unsigned(host.debug_spc_ram_byte(0x72 + voice - 2));
+                    const auto source = unsigned(host.debug_dsp_register(voice * 16 + 4));
+                    result.end_env[index] = std::max(result.end_env[index], env);
+                    result.end_gates[index] = std::max(result.end_gates[index], gate);
+                    result.end_sources[index] = source;
+                    if ((source == 2 || source == 3) && env == 0 && gate > 0 &&
+                        (host.debug_dsp_register(0x7c) & (1U << voice)) != 0 &&
+                        (host.debug_dsp_register(0x5c) & (1U << voice)) == 0 &&
+                        host.debug_spc_ram_byte(0x5013 + 4 * (source - 2)) == 1)
+                        result.natural_ends |= 1U << ((voice - 2) * 2 + source - 2);
+                }
+            }
             for (unsigned voice = 2; voice <= 3; ++voice) {
                 const auto source = host.debug_dsp_register(voice * 16 + 4);
                 if ((source == 2 || source == 3) && host.debug_dsp_register(voice * 16 + 8) > 0)
@@ -86,11 +112,20 @@ Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
             auto bridge = host.cpu().debug_wram_byte(0x31);
             unsigned commands = host.debug_spc_ram_byte(0xd3);
             const auto admitted = host.debug_spc_ram_byte(0xdc);
+            // Save around physical sample-end/KON and envelope-zero transitions,
+            // in addition to settled natural ends observed before native gates.
+            const unsigned sample_phase = host.debug_spc_ram_byte(0xd2) == 2
+                ? ((host.debug_dsp_register(0x7c) >> 2) & 3U) |
+                  (unsigned(host.debug_dsp_register(0x28) == 0) << 2) |
+                  (unsigned(host.debug_dsp_register(0x38) == 0) << 3)
+                : 0;
             std::uint64_t phase = status | (bridge << 8) | (commands << 16) |
                                   (std::uint64_t(host.debug_spc_ram_byte(0xd6)) << 24) |
                                   (std::uint64_t(admitted) << 32) |
                                   (std::uint64_t(host.debug_spc_ram_byte(0xdb)) << 40) |
-                                  (std::uint64_t(result.instruments) << 48);
+                                  (std::uint64_t(result.instruments) << 48) |
+                                  (std::uint64_t(result.natural_ends) << 52) |
+                                  (std::uint64_t(sample_phase) << 56);
             if (++steps % 100003 == 0 || phase != previous) {
                 require(++restores->count <= 4096, "snapshot bound");
                 auto state = host.save_state();
@@ -98,6 +133,7 @@ Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
                 require(host.save_state() == state, "exact state restoration");
                 restores->commands |= commands;
                 restores->instruments |= result.instruments;
+                restores->ends |= result.natural_ends;
                 if (admitted > 0 && admitted <= 3) restores->roots |= (1U << admitted) - 1;
                 if (status == 4) restores->phases |= 1; // IPL upload
                 if (status == 2) restores->phases |= 2; // external restart
@@ -146,6 +182,7 @@ Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
         result.prefix_counts[i] = host.debug_spc_ram_byte(counts[i]);
     }
     for (unsigned i = 0; i < 2; ++i) {
+        result.sample_modes[i] = host.debug_spc_ram_byte(0x5013 + 4 * i);
         result.sample_counts[i] = host.debug_spc_ram_byte(0x5010 + i);
         result.sample_loops[i] = host.debug_spc_ram_byte(0x500a + 4 * i) |
                                 (unsigned(host.debug_spc_ram_byte(0x500b + 4 * i)) << 8);
@@ -185,7 +222,7 @@ int main(int argc, char** argv) {
                   << "\"playback\":false,\"reset_equal\":true,\"restore_equal\":true,"
                   << "\"restore_count\":" << restores.count << ",\"restore_phases\":" << restores.phases
                   << ",\"restore_commands\":" << restores.commands << ",\"restore_roots\":" << restores.roots
-                  << ",\"restore_instruments\":" << restores.instruments
+                  << ",\"restore_instruments\":" << restores.instruments << ",\"restore_ends\":" << restores.ends
                   << ",\"status\":" << result.status << ",\"transfers\":" << result.transfers
                   << ",\"adoptions\":" << result.adoptions << ",\"version\":" << result.version
                   << ",\"bridge\":" << result.bridge << ",\"signature\":" << result.signature
@@ -199,6 +236,20 @@ int main(int argc, char** argv) {
                   << ",\"last_nonzero_clock\":" << result.last_nonzero_clock
                   << ",\"instruments\":" << result.instruments
                   << ",\"source2\":" << result.source2 << ",\"source3\":" << result.source3;
+        std::cout << ",\"end_windows\":" << result.end_windows << ",\"natural_ends\":" << result.natural_ends
+                  << ",\"endx\":[" << result.endx[0] << ',' << result.endx[1] << ']'
+                  << ",\"end_kof\":[" << result.end_kof[0] << ',' << result.end_kof[1] << ']'
+                  << ",\"sample_modes\":[" << result.sample_modes[0] << ',' << result.sample_modes[1] << ']';
+        std::cout << ",\"end_env\":[";
+        for (std::size_t i = 0; i < result.end_env.size(); ++i)
+            std::cout << (i ? "," : "") << result.end_env[i];
+        std::cout << "],\"end_gates\":[";
+        for (std::size_t i = 0; i < result.end_gates.size(); ++i)
+            std::cout << (i ? "," : "") << result.end_gates[i];
+        std::cout << "],\"end_sources\":[";
+        for (std::size_t i = 0; i < result.end_sources.size(); ++i)
+            std::cout << (i ? "," : "") << result.end_sources[i];
+        std::cout << ']';
         std::cout << ",\"voice_profiles\":[";
         for (std::size_t i = 0; i < result.voice_profiles.size(); ++i)
             std::cout << (i ? "," : "") << result.voice_profiles[i];

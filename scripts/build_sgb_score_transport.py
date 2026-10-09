@@ -16,7 +16,7 @@ def replace_exact(text, before, after, count=1):
 
 
 def build(*, multisong=False, uploaded_instrument=False, two_instruments=False,
-          multiblock=False, instrument_profiles=False):
+          multiblock=False, instrument_profiles=False, one_shot=False):
     if type(multisong) is not bool:
         raise ValueError("multisong flag must be boolean")
     if type(uploaded_instrument) is not bool or (uploaded_instrument and not multisong):
@@ -27,6 +27,8 @@ def build(*, multisong=False, uploaded_instrument=False, two_instruments=False,
         raise ValueError("multiblock requires a boolean flag and two instruments")
     if type(instrument_profiles) is not bool or (instrument_profiles and not multiblock):
         raise ValueError("instrument profiles require a boolean flag and multiblock")
+    if type(one_shot) is not bool or (one_shot and not instrument_profiles):
+        raise ValueError("one-shot requires a boolean flag and instrument profiles")
     engine = engine_source()
     hooks = {
         'clock_poll:\n    mov a, $fd\n': 'clock_poll:\n    call bridge_service\n',
@@ -81,6 +83,8 @@ def build(*, multisong=False, uploaded_instrument=False, two_instruments=False,
     if instrument_profiles:
         bridge = replace_exact(bridge, 'mov $f5, #$cf', 'mov $f5, #$d0')
         engine = replace_exact(engine, 'duet_pitch:\n', 'duet_pitch:\n    call profile_pitch\n')
+    if one_shot:
+        bridge = replace_exact(bridge, 'mov $f5, #$d0', 'mov $f5, #$d1')
     branch_number = 0
     def bridge_branch(match):
         nonlocal branch_number
@@ -102,7 +106,8 @@ def build(*, multisong=False, uploaded_instrument=False, two_instruments=False,
             runtime = helper[helper.index('uploaded_setup:'):helper.index('dual_structure:')]
             helper = (ROOT / 'firmware/sgb/score_brr_chain.asm').read_text() + '\n' + runtime
             if instrument_profiles:
-                helper = (ROOT / 'firmware/sgb/score_instrument_profiles.asm').read_text()
+                helper = (ROOT / ('firmware/sgb/score_one_shot.asm' if one_shot else
+                                  'firmware/sgb/score_instrument_profiles.asm')).read_text()
             helper = re.sub(r'    (bne|beq|bcc|bcs) (brr_bad)\n', bridge_branch, helper)
         source += '\n' + helper
     payload = bytes(assemble(source, 'spc', 0x0200))
@@ -133,6 +138,8 @@ def build(*, multisong=False, uploaded_instrument=False, two_instruments=False,
         host = replace_exact(host, 'cmp #$ce', 'cmp #$cf', count=4)
     if instrument_profiles:
         host = replace_exact(host, 'cmp #$cf', 'cmp #$d0', count=4)
+    if one_shot:
+        host = replace_exact(host, 'cmp #$d0', 'cmp #$d1', count=4)
     # Expanded diagnostic guards need absolute failure jumps in the host variant.
     guard_number = 0
     def far_guard(match):
@@ -167,11 +174,12 @@ if __name__ == '__main__':
     parser.add_argument('--two-instruments', action='store_true')
     parser.add_argument('--multiblock', action='store_true')
     parser.add_argument('--instrument-profiles', action='store_true')
+    parser.add_argument('--one-shot', action='store_true')
     args = parser.parse_args()
     try:
         image = build(multisong=args.multisong, uploaded_instrument=args.uploaded_instrument,
                       two_instruments=args.two_instruments, multiblock=args.multiblock,
-                      instrument_profiles=args.instrument_profiles)
+                      instrument_profiles=args.instrument_profiles, one_shot=args.one_shot)
         with args.output.open('xb') as output:
             output.write(image)
     except (OSError, ValueError) as error:

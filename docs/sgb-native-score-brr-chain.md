@@ -126,7 +126,11 @@ qualification remain outstanding.
 ## Next step
 
 Bounded uploaded envelope/direct-GAIN and tuning profiles are covered by the
-[next D0 diagnostic](sgb-native-score-instrument-profiles.md). The next extension
-is bounded non-looping BRR samples with physical natural-completion, gate,
+[next D0 diagnostic](sgb-native-score-instrument-profiles.md). The D1 profile below
+adds bounded non-looping BRR samples with physical natural-completion, gate,
 instrument-selection and lifecycle evidence. General vendor instrument maps
 remain a separate qualification boundary.
+
+The [D1 one-shot profile](sgb-native-score-one-shot.md) now covers bounded
+non-looping samples and natural completion. The next sample extension is
+bounded BRR filter/range profiles.

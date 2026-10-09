@@ -126,5 +126,8 @@ hardware qualification remains outstanding.
 
 The [multi-block sample profile](sgb-native-score-brr-chain.md) now adds one to
 four BRR blocks per source and validated loop points. The [D0 profile](sgb-native-score-instrument-profiles.md)
-adds bounded uploaded envelopes/direct GAIN and tuning. Next add non-looping BRR
-samples while keeping the existing lifecycle and sample guards.
+adds bounded uploaded envelopes/direct GAIN and tuning. The D1 profile below adds non-looping BRR samples while retaining these guards.
+
+The [D1 one-shot profile](sgb-native-score-one-shot.md) now covers bounded
+non-looping samples and natural completion. The next sample extension is
+bounded BRR filter/range profiles.
