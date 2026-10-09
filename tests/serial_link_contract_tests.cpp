@@ -888,6 +888,29 @@ void test_packet_channel_rejects_profile_mismatch() {
           "profile negotiation rejects same-ID releases from different regions");
 }
 
+void test_tcp_link_channel_pending_connect() {
+#if defined(__linux__)
+    // Linux retains only backlog+1 completed connections without accept().
+    // Fill the channel's backlog of one so another nonblocking connect stays
+    // pending with SO_ERROR == 0. Polling must not report it as connected.
+    gameboy::TcpLinkChannel server;
+    if (!server.listen(0) || server.local_port() == 0) return;
+    std::array<gameboy::TcpLinkChannel, 4> clients;
+    for (auto& client : clients) {
+        check(client.connect("127.0.0.1", server.local_port()),
+              "pending-connect fixture starts a loopback connection");
+    }
+    auto& pending = clients.back();
+    check(pending.state() == gameboy::TcpLinkChannel::State::connecting,
+          "full accept queue leaves the final TCP connection pending");
+    pending.poll();
+    check(pending.state() == gameboy::TcpLinkChannel::State::connecting,
+          "zero socket error alone does not complete a pending TCP connect");
+    check(!pending.send({gameboy::LinkPacketType::bit, 7, 0xA5, 1}),
+          "pending TCP connection cannot send packets");
+#endif
+}
+
 void test_tcp_link_channel_loopback() {
     gameboy::TcpLinkChannel server;
     gameboy::TcpLinkChannel client;
@@ -1819,6 +1842,7 @@ int main() {
     test_packet_sustained_transfer_soak();
     test_packet_channel_rejects_profile_mismatch();
     test_tcp_link_channel_loopback();
+    test_tcp_link_channel_pending_connect();
     test_tcp_serial_endpoint_disconnect_mid_transfer();
     test_tcp_serial_endpoint_simultaneous_disconnect_and_reconnect();
     test_tcp_serial_endpoint_loopback();

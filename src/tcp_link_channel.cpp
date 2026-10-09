@@ -18,6 +18,7 @@
 #include <netdb.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #endif
@@ -44,6 +45,15 @@ bool set_nonblocking(const Socket socket) noexcept {
     u_long mode = 1;
     return ioctlsocket(socket, FIONBIO, &mode) == 0;
 }
+int connect_ready(const Socket socket) noexcept {
+    fd_set writable{};
+    fd_set errors{};
+    FD_SET(socket, &writable);
+    FD_SET(socket, &errors);
+    timeval timeout{};
+    const auto ready = select(0, nullptr, &writable, &errors, &timeout);
+    return ready == SOCKET_ERROR && socket_error() == WSAEINTR ? 0 : ready;
+}
 #else
 using Socket = int;
 constexpr Socket invalid_socket = -1;
@@ -56,6 +66,11 @@ void close_socket(const Socket socket) noexcept { close(socket); }
 bool set_nonblocking(const Socket socket) noexcept {
     const auto flags = fcntl(socket, F_GETFL, 0);
     return flags >= 0 && fcntl(socket, F_SETFL, flags | O_NONBLOCK) == 0;
+}
+int connect_ready(const Socket socket) noexcept {
+    pollfd descriptor{socket, POLLOUT, 0};
+    const auto ready = ::poll(&descriptor, 1, 0);
+    return ready < 0 && socket_error() == EINTR ? 0 : ready;
 }
 #endif
 
@@ -180,6 +195,13 @@ void TcpLinkChannel::poll() noexcept {
         }
     }
     if (state_ == State::connecting && peer_ != -1) {
+        // SO_ERROR can be zero while a nonblocking connect is still pending.
+        // Wait for write/error readiness before deciding it has completed.
+        const auto ready = connect_ready(as_socket(peer_));
+        if (ready <= 0) {
+            if (ready < 0) fail();
+            return;
+        }
         int error = 0;
 #if defined(_WIN32)
         int length = static_cast<int>(sizeof(error));
@@ -193,6 +215,8 @@ void TcpLinkChannel::poll() noexcept {
             } else if (!would_block(error)) {
                 fail();
             }
+        } else {
+            fail();
         }
     }
     if (state_ != State::connected || peer_ == -1) return;
