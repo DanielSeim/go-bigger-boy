@@ -4,7 +4,8 @@ Newly authored held-note, early-release and retrigger fixtures now measure
 published ENVX on voices 2 and 3 while both private original models execute.
 Instrument 2 is a fresh control. This defines the next bounded envelope
 extension after [D7 exact-octave tuning](sgb-native-score-instrument-tuning.md);
-it does not broaden the native envelope allowlist yet. Qualification and
+the [D8 diagnostic](sgb-native-score-instrument-adsr.md) now implements that
+exact descriptor with owned samples. Qualification and
 production playback remain false; SGB1/SGB2 program ROMs remain required.
 
 ## Observation and provenance
@@ -125,13 +126,14 @@ preceding phrase fixture/helper tests also pass. The bundled prototype hash
 check and `git diff --check` pass. Earlier long D7 physical matrices were not
 rerun because the D7 image and probe are unchanged.
 
-Reset/save-load envelope qualification for the next native profile is still
-outstanding. Physical-device, independent-DSP, acoustic and title checks were
+The subsequent D8 diagnostic adds native reset/save-load envelope qualification;
+this original-reference checker does not test original firmware reset/save-load. Physical-device, independent-DSP, acoustic and title checks were
 not performed. The D7 and bundled images are unchanged.
 
 ## Next bounded envelope contract
 
-Implement an opt-in D8 successor requiring D7 and preserving all earlier image
+The [D8 diagnostic](sgb-native-score-instrument-adsr.md) implements this contract
+as an opt-in successor requiring D7 and preserving all earlier image
 hashes, production defaults, fixed sample regions and the `$0200..1BFF` code cap.
 Admit exactly one additional uploaded descriptor combination per physical slot:
 ADSR1 `$8E`, ADSR2 `$AF`, GAIN `$B8`. Keep all preceding ADSR/direct-GAIN profiles.

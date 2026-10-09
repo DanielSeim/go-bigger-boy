@@ -6,6 +6,9 @@
 #include <stdexcept>
 #include <tuple>
 
+#ifdef GBB_SCORE_ADSR_PROBE
+#include "support/sgb_score_adsr_observer.hpp"
+#endif
 using Host = gameboy::SgbHost;
 namespace {
 void require(bool value, const char* message) {
@@ -40,10 +43,16 @@ struct Result {
     unsigned tuning_seen = 0;
     std::array<unsigned, 26> tuning_pitches{};
 #endif
+#ifdef GBB_SCORE_ADSR_PROBE
+    ScoreAdsrObserver envelopes;
+#endif
     std::vector<std::uint8_t> state;
     bool operator==(const Result& other) const {
 #ifdef GBB_SCORE_TUNING_PROBE
         if (tuning_seen != other.tuning_seen || tuning_pitches != other.tuning_pitches) return false;
+#endif
+#ifdef GBB_SCORE_ADSR_PROBE
+        if (!(envelopes == other.envelopes)) return false;
 #endif
         return std::tie(hash, frames, nonzero, clocks, last_nonzero_clock, status,
                         transfers, adoptions, version, bridge, signature, sounds,
@@ -63,6 +72,9 @@ Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
     std::uint64_t previous = ~std::uint64_t{0};
 #ifdef GBB_SCORE_TUNING_PROBE
     unsigned previous_tuning_seen = 0;
+#endif
+#ifdef GBB_SCORE_ADSR_PROBE
+    unsigned previous_envelope_checkpoints = 0;
 #endif
     Host::StereoSample sample;
     while (host.cpu().timing().clocks() < target) {
@@ -84,6 +96,9 @@ Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
                 }
             }
         }
+#ifdef GBB_SCORE_ADSR_PROBE
+        result.envelopes.capture(host);
+#endif
         // Observe live source IDs only while this diagnostic bridge renders.
         if (host.debug_spc_ram_byte(0xd2) == 2) {
 #ifdef GBB_SCORE_TUNING_PROBE
@@ -202,6 +217,9 @@ Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
 #ifdef GBB_SCORE_TUNING_PROBE
                 || result.tuning_seen != previous_tuning_seen
 #endif
+#ifdef GBB_SCORE_ADSR_PROBE
+                || result.envelopes.checkpoints != previous_envelope_checkpoints
+#endif
                 ) {
                 require(++restores->count <= 4096, "snapshot bound");
                 auto state = host.save_state();
@@ -222,6 +240,9 @@ Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
             }
 #ifdef GBB_SCORE_TUNING_PROBE
             previous_tuning_seen = result.tuning_seen;
+#endif
+#ifdef GBB_SCORE_ADSR_PROBE
+            previous_envelope_checkpoints = result.envelopes.checkpoints;
 #endif
             previous = phase;
             previous_rejections = rejections;
@@ -362,6 +383,9 @@ int main(int argc, char** argv) {
         for (std::size_t i = 0; i < result.tuning_pitches.size(); ++i)
             std::cout << (i ? "," : "") << result.tuning_pitches[i];
         std::cout << ']';
+#endif
+#ifdef GBB_SCORE_ADSR_PROBE
+        result.envelopes.print();
 #endif
         std::cout << ",\"sample_starts\":[" << result.sample_starts[0] << ',' << result.sample_starts[1] << ']';
         std::cout << ",\"sample_headers\":[";

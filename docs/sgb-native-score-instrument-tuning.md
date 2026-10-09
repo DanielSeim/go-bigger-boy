@@ -123,7 +123,8 @@ and the dedicated probe checks live D6 rejection and normal/half controls.
 
 The [instrument-10 envelope reference](sgb-instrument-envelope-reference.md)
 now measures held notes, early release and retriggers on both voices/models,
-with instrument 2 as a control. Next implement its bounded D8 contract: add
-exactly the `$8E/$AF/$B8` descriptor combination and validate owned looping
-samples, voice inheritance and envelope/upload lifecycle. Sample and acoustic
+with instrument 2 as a control. The [D8 diagnostic](sgb-native-score-instrument-adsr.md) adds exactly the
+`$8E/$AF/$B8` descriptor combination with owned looping samples, voice inheritance
+and envelope/upload lifecycle checks. Next qualify asynchronous reference
+envelopes while the peer voice retriggers or changes instruments. Sample and acoustic
 equivalence remain separate.
