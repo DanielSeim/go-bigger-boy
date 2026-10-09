@@ -10,7 +10,11 @@
 #include "support/sgb_score_adsr_observer.hpp"
 #endif
 #ifdef GBB_SCORE_ACOUSTIC_PROBE
+#ifdef GBB_SCORE_COMBINED_PITCH_PROBE
+#include "support/sgb_combined_sample_pitch_observer.hpp"
+#else
 #include "support/sgb_host_sample_pitch_observer.hpp"
+#endif
 #endif
 using Host = gameboy::SgbHost;
 namespace {
@@ -95,7 +99,11 @@ Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
         while (host.pop_sample(sample)) {
             ++result.frames;
 #ifdef GBB_SCORE_ACOUSTIC_PROBE
+#ifdef GBB_SCORE_COMBINED_PITCH_PROBE
+            result.acoustic.sample(result.frames,sample,host.apu_half_clocks());
+#else
             result.acoustic.sample(result.frames,sample);
+#endif
 #endif
             if (host.cpu().debug_wram_byte(0x56)) {
                 ++result.blocked_frames;
@@ -115,7 +123,11 @@ Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
 #ifdef GBB_SCORE_ADSR_PROBE
         result.envelopes.capture(host);
 #ifdef GBB_SCORE_ACOUSTIC_PROBE
+#ifdef GBB_SCORE_COMBINED_PITCH_PROBE
+        result.acoustic.sync(result.envelopes,result.frames,host.apu_half_clocks());
+#else
         result.acoustic.sync(result.envelopes);
+#endif
 #endif
 #endif
         // Observe live source IDs only while this diagnostic bridge renders.
@@ -338,6 +350,10 @@ Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
     result.score_hash = region_hash(0x2b00, 0x3300);
     result.asset_hash = region_hash(0x5000, 0x50c0);
 #ifdef GBB_SCORE_ACOUSTIC_PROBE
+#ifdef GBB_SCORE_COMBINED_PITCH_PROBE
+    result.acoustic.gb_samples=host.gb_samples_captured();
+    result.acoustic.clipped_samples=host.clipped_samples();
+#endif
     result.acoustic.validate(result.envelopes);
 #endif
     result.state = host.save_state();
@@ -360,10 +376,15 @@ int main(int argc, char** argv) {
         require(target > 0 && target <= 140000000, "clock bound");
         const auto mode = std::string(argv[5]);
         require(mode == "native" || mode == "combined" || mode == "scalar", "mode");
-#ifdef GBB_SCORE_ACOUSTIC_PROBE
+#if defined(GBB_SCORE_ACOUSTIC_PROBE) && !defined(GBB_SCORE_COMBINED_PITCH_PROBE)
         require(mode != "combined", "native pitch capture requires native/scalar output");
 #endif
+#ifdef GBB_SCORE_COMBINED_PITCH_PROBE
+        require(mode == "combined" || mode == "scalar", "combined pitch mode");
+        config.combined_audio = true;
+#else
         config.combined_audio = mode == "combined";
+#endif
         Host normal(config), restored(config);
         if (mode == "scalar") {
             normal.debug_set_apu_batch_enabled(false);

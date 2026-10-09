@@ -46,13 +46,15 @@ def render(runner,fixture):
     return [left for left,_ in samples],hashlib.sha256(child.stdout).hexdigest()
 
 
-def audible_pitch(samples, *, frames=FRAMES, warmup=WARMUP):
+def audible_pitch(samples, *, frames=FRAMES, warmup=WARMUP, sample_rate=RATE):
     """Measure known single-positive-crossing waves; reject irregular periods.
 
     This is deliberately not a general pitch detector for arbitrary BRR timbres.
     Flat zero runs yield only one rising crossing. End-to-end interpolation
     averages sample-grid quantization over at least twelve complete periods.
     """
+    if type(sample_rate) is not int or sample_rate not in (32000,48000):
+        raise ValueError('unsupported calibration sample rate')
     if type(frames) is not int or not 2048<=frames<=FRAMES or type(warmup) is not int or not 0<=warmup<frames:
         raise ValueError('invalid bounded PCM measurement window')
     if not isinstance(samples,list) or len(samples)!=frames or any(
@@ -67,9 +69,9 @@ def audible_pitch(samples, *, frames=FRAMES, warmup=WARMUP):
         raise ValueError('insufficient calibration periods')
     intervals=[b-a for a,b in zip(crossings,crossings[1:])]
     period=(crossings[-1]-crossings[0])/(len(crossings)-1)
-    if not 32<=period<=256 or max(abs(value-period) for value in intervals)>1:
+    if not 32*sample_rate/RATE<=period<=256*sample_rate/RATE or max(abs(value-period) for value in intervals)>1:
         raise ValueError('irregular or out-of-range calibration periods')
-    return {'frequency_hz':RATE/period,'period_samples':period,'periods':len(intervals),
+    return {'frequency_hz':sample_rate/period,'period_samples':period,'periods':len(intervals),
             'maximum_period_deviation_samples':max(abs(value-period) for value in intervals)}
 
 

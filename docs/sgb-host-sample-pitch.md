@@ -115,8 +115,9 @@ matrices and private-original/hardware/independent-DSP checks were not rerun.
 
 ## Next step
 
-Qualify audible pitch after combined-audio rate conversion, starting at the
-48-kHz frontend rate with the GB source silent. Keep the 10-cent limit, capture
-real output timestamps and exact replay, then test mixing with active GB audio.
-Broader sample banks and real-title acoustic compatibility remain separate work;
+The [combined whole-host pitch gate](sgb-combined-sample-pitch.md) extends this
+measurement to 48-kHz output with the GB source silent and with an active owned
+GB pulse. Next qualify combined-audio continuity through SOUND stop/restart and
+GB-APU mute/unmute, retaining actual PCM and exact transition replay. Broader
+sample banks and real-title acoustic compatibility remain separate work;
 performance optimization remains deferred.

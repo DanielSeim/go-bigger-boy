@@ -110,5 +110,7 @@ Performance optimization remains deferred.
 
 The [native whole-host pitch gate](sgb-host-sample-pitch.md) extends PCM
 measurement across the full octave, both models, both voices and reversed
-slot mapping. Combined-audio rate conversion and active GB mixing are the next
-acoustic gates before expanding the owned instrument bank.
+slot mapping. The [combined whole-host pitch gate](sgb-combined-sample-pitch.md)
+adds 48-kHz rate conversion with silent and active GB audio. Combined source
+transition continuity is the next acoustic gate before expanding the owned
+instrument bank.

@@ -29,7 +29,7 @@ def fnv(data):
     return value
 
 
-def observe(result,voice,instrument,reversed_map):
+def observe(result,voice,instrument,reversed_map, *, sample_rate=32000, frames=FRAMES, warmup=WARMUP):
     score,asset=objects(voice,instrument,reversed_map)
     expected={'schema':'gbb-score-transport-v1','qualification':False,'playback':False,
               'reset_equal':True,'restore_equal':True,'status':1,'version':0xDA,'error':0,'external':0,
@@ -40,8 +40,8 @@ def observe(result,voice,instrument,reversed_map):
             not 1<=result['restore_count']<=4096):
         raise ValueError('invalid native whole-host pitch metadata')
     acoustic=result.get('acoustic')
-    if not isinstance(acoustic,dict) or type(acoustic.get('sample_rate_hz')) is not int or acoustic['sample_rate_hz']!=32000 or (
-            type(acoustic.get('frames_per_window')) is not int or acoustic['frames_per_window']!=FRAMES):
+    if not isinstance(acoustic,dict) or type(acoustic.get('sample_rate_hz')) is not int or acoustic['sample_rate_hz']!=sample_rate or (
+            type(acoustic.get('frames_per_window')) is not int or acoustic['frames_per_window']!=frames):
         raise ValueError('invalid native PCM clock/window metadata')
     windows,notes=acoustic.get('windows'),result.get('envelope_notes')
     if not isinstance(windows,list) or len(windows)!=13 or not isinstance(notes,list) or len(notes)!=13:
@@ -57,12 +57,12 @@ def observe(result,voice,instrument,reversed_map):
                 note[17]<=note[16]+64*(FRAMES+2)) or note[15]!=0:
             raise ValueError('wrong voice/source/pitch or unordered/gated PCM window')
         previous=window['on_sample']
-        measured=audible_pitch(window.get('pcm'),frames=FRAMES,warmup=WARMUP)
+        measured=audible_pitch(window.get('pcm'),frames=frames,warmup=warmup,sample_rate=sample_rate)
         target=440*2**((index-9)/12)
         cents=1200*math.log2(measured['frequency_hz']/target)
         if abs(cents)>TOLERANCE_CENTS:
             raise ValueError(f'whole-host pitch exceeds tolerance: voice={voice} instrument={instrument} note={24+index}')
-        digest=hashlib.sha256(struct.pack('<'+'h'*FRAMES,*window['pcm'])).hexdigest()
+        digest=hashlib.sha256(struct.pack('<'+'h'*frames,*window['pcm'])).hexdigest()
         rows.append({'base_note':24+index,'voice':voice,'slot':slot,'pitch':pitch,
                      'on_sample':window['on_sample'],'target_hz':target,'error_cents':cents,
                      'pcm_sha256':digest,**measured})
