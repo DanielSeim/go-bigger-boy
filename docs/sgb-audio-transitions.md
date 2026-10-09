@@ -162,8 +162,8 @@ compatibility remain outside this milestone.
 
 ## Next step
 
-Qualify overlapping owned SNES voices with active GB audio at 48 kHz, including
-independent release and retrigger. Compare actual combined PCM with matched
-source controls so one voice cannot hide another voice's stale release or phase
-loss. Broader sample banks and title-level acoustic compatibility remain separate
-work.
+The [owned polyphony audio gate](sgb-polyphony-audio.md) now covers overlapping
+SNES voices with active GB audio, independent releases, peer retriggers and
+matched source superposition. Next qualify audible one-shot completion and
+retrigger with an owned transient sample alongside a looping peer. Broader
+sample banks and title-level acoustic compatibility remain separate work.
