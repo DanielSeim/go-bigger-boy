@@ -123,10 +123,9 @@ unchanged.
 
 ## Next step
 
-Decouple score instrument IDs from DSP sample slots. Start with an explicit
-owned mapping for the independently measured IDs 2 and 10, mapped to the two
-existing sample slots, with unknown-ID rejection and per-voice inheritance.
-Establish bounded storage and code space before implementing the mapping, then
-validate upload/recovery and reordered selection on both models. More samples,
-original instrument descriptors and acoustic/title qualification remain separate
-gates.
+The [D6 mapping profile](sgb-native-score-instrument-mapping.md) now decouples
+score IDs from the two owned sample slots, including IDs 2 and 10, unknown-ID
+rejection, inheritance and changed-map recovery. Next extend register-only
+instrument-10 pitch measurements across the supported chromatic notes and both
+voices, then define a bounded tuning contract beyond normal/half pitch. More
+samples and acoustic/title qualification remain separate gates.

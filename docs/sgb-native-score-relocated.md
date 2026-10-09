@@ -107,5 +107,7 @@ The [D4 atomic-upload profile](sgb-native-score-atomic-upload.md) now preflights
 complete score/sample coverage, clears both regions before IPL and publishes
 readiness only after all roots validate. The [D5 recovery profile](sgb-native-score-upload-recovery.md) now
 allows a fresh complete generation after rejection while keeping SOUND blocked
-until admission. Next widen instrument-bank support using measured title demand.
+until admission. The [D6 mapping profile](sgb-native-score-instrument-mapping.md) now
+separates score IDs from owned sample slots. Next qualify instrument-10
+chromatic pitch before extending the tuning contract.
 Broader sample banks and title qualification remain separate.

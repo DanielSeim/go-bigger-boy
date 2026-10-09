@@ -137,5 +137,6 @@ unchanged.
 
 The [D5 recovery profile](sgb-native-score-upload-recovery.md) now permits
 fresh complete uploads after preflight or semantic rejection without a host
-reset, covering repeated failures, blocked SOUND/STOP and save/load. Next widen
-instrument-bank support using measured title demand.
+reset, covering repeated failures, blocked SOUND/STOP and save/load. The [D6 mapping profile](sgb-native-score-instrument-mapping.md) now separates
+score IDs from owned sample slots. Next qualify instrument-10 chromatic pitch
+before extending the tuning contract.
