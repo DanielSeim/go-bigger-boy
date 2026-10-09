@@ -16,7 +16,7 @@ def replace_exact(text, before, after, count=1):
 
 
 def build(*, multisong=False, uploaded_instrument=False, two_instruments=False,
-          multiblock=False, instrument_profiles=False, one_shot=False, brr_profiles=False, relocatable=False):
+          multiblock=False, instrument_profiles=False, one_shot=False, brr_profiles=False, relocatable=False, atomic_upload=False):
     if type(multisong) is not bool:
         raise ValueError("multisong flag must be boolean")
     if type(uploaded_instrument) is not bool or (uploaded_instrument and not multisong):
@@ -33,6 +33,8 @@ def build(*, multisong=False, uploaded_instrument=False, two_instruments=False,
         raise ValueError("BRR profiles require a boolean flag and one-shot")
     if type(relocatable) is not bool or (relocatable and not brr_profiles):
         raise ValueError("relocatable samples require a boolean flag and BRR profiles")
+    if type(atomic_upload) is not bool or (atomic_upload and not relocatable):
+        raise ValueError("atomic upload requires a boolean flag and relocatable samples")
     engine = engine_source()
     hooks = {
         'clock_poll:\n    mov a, $fd\n': 'clock_poll:\n    call bridge_service\n',
@@ -93,6 +95,12 @@ def build(*, multisong=False, uploaded_instrument=False, two_instruments=False,
         bridge = replace_exact(bridge, 'mov $f5, #$d1', 'mov $f5, #$d2')
     if relocatable:
         bridge = replace_exact(bridge, 'mov $f5, #$d2', 'mov $f5, #$d3')
+    if atomic_upload:
+        bridge = replace_exact(bridge, 'mov $f5, #$d3', 'mov $f5, #$d4')
+        bridge = replace_exact(bridge, '    call bridge_save_observations\n',
+                               '    call atomic_upload_begin\n')
+        bridge = replace_exact(bridge, 'directory_validated:\n    mov $d8, #$00\n    mov $d2, #$01',
+                               'directory_validated:\n    mov $d8, #$00\n    call atomic_publish')
     branch_number = 0
     def bridge_branch(match):
         nonlocal branch_number
@@ -119,6 +127,8 @@ def build(*, multisong=False, uploaded_instrument=False, two_instruments=False,
                                   'firmware/sgb/score_one_shot.asm' if one_shot else
                                   'firmware/sgb/score_instrument_profiles.asm')).read_text()
             helper = re.sub(r'    (bne|beq|bcc|bcs) (brr_bad)\n', bridge_branch, helper)
+        if atomic_upload:
+            helper += '\n' + (ROOT / 'firmware/sgb/score_atomic_upload.asm').read_text()
         source += '\n' + helper
     payload = bytes(assemble(source, 'spc', 0x0200))
     if len(payload) > (0x1a00 if uploaded_instrument else 0x1600):
@@ -154,6 +164,17 @@ def build(*, multisong=False, uploaded_instrument=False, two_instruments=False,
         host = replace_exact(host, 'cmp #$d1', 'cmp #$d2', count=4)
     if relocatable:
         host = replace_exact(host, 'cmp #$d2', 'cmp #$d3', count=4)
+    if atomic_upload:
+        host = replace_exact(host, 'cmp #$d3', 'cmp #$d4', count=4)
+        host = replace_exact(host, '    inc $25\n',
+            '    inc $25\n    rep #$20\n    lda.w #$2b00\n    sta $52\n    lda.w #$5000\n    sta $54\n    sep #$20\n')
+        host = replace_exact(host, 'destination_valid:\n    sep #$20',
+                             'destination_valid:\n    jsr atomic_block\n    sep #$20')
+        host = replace_exact(host, 'jump_valid:\n    sta $44',
+                             'jump_valid:\n    jsr atomic_complete\n    sta $44')
+        host += '\n' + (ROOT / 'firmware/sgb/host_atomic_upload.asm').read_text()
+        host = replace_exact(host, 'unsupported_owned:\n',
+            'unsupported_owned:\n    lda $2141\n    sta $30\n    lda $2142\n    sta $31\n    lda $2143\n    sta $32\n')
     # Expanded diagnostic guards need absolute failure jumps in the host variant.
     guard_number = 0
     def far_guard(match):
@@ -191,12 +212,13 @@ if __name__ == '__main__':
     parser.add_argument('--one-shot', action='store_true')
     parser.add_argument('--brr-profiles', action='store_true')
     parser.add_argument('--relocatable', action='store_true')
+    parser.add_argument('--atomic-upload', action='store_true')
     args = parser.parse_args()
     try:
         image = build(multisong=args.multisong, uploaded_instrument=args.uploaded_instrument,
                       two_instruments=args.two_instruments, multiblock=args.multiblock,
                       instrument_profiles=args.instrument_profiles, one_shot=args.one_shot,
-                      brr_profiles=args.brr_profiles, relocatable=args.relocatable)
+                      brr_profiles=args.brr_profiles, relocatable=args.relocatable, atomic_upload=args.atomic_upload)
         with args.output.open('xb') as output:
             output.write(image)
     except (OSError, ValueError) as error:

@@ -103,8 +103,8 @@ Original-decoder, hardware, acoustic and title qualification remain outstanding.
 
 ## Next step
 
-Make uploaded asset admission atomic across replacement uploads. Invalidate
-previous readiness when a new upload begins, reject incomplete score/sample
-objects and confirm that stop, failed reupload, reset and save/load cannot reuse
-stale assets. Retain the external-image override and previous diagnostic hashes.
-Then widen sample-bank support using measured title requirements.
+The [D4 atomic-upload profile](sgb-native-score-atomic-upload.md) now preflights
+complete score/sample coverage, clears both regions before IPL and publishes
+readiness only after all roots validate. Next add bounded recovery after upload
+rejection, keeping SOUND unavailable until a later complete generation validates.
+Broader sample banks and title qualification remain separate.

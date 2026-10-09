@@ -131,4 +131,5 @@ adds bounded uploaded envelopes/direct GAIN and tuning. The D1 profile below add
 The [D1 one-shot profile](sgb-native-score-one-shot.md) now covers bounded
 non-looping samples and natural completion. The [D2 profile](sgb-native-score-brr-profiles.md) adds bounded BRR filters/ranges.
 The [D3 relocation profile](sgb-native-score-relocated.md) now validates starts/loops
-inside fixed sample windows. Next make replacement upload admission atomic.
+inside fixed sample windows. The [D4 atomic-upload profile](sgb-native-score-atomic-upload.md) now prevents
+stale score/sample reuse. Next add bounded recovery after upload rejection.

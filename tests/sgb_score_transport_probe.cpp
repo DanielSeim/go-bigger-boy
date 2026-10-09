@@ -24,6 +24,8 @@ struct Result {
     unsigned status = 0, transfers = 0, adoptions = 0, version = 0,
              bridge = 0, signature = 0, sounds = 0, error = 0, external = 0;
     unsigned interruptions = 0, active_env = 0, interrupt_tick = 0, interrupt_count = 0, kof = 0, flg = 0, score_tick = 0, selected_song = 0, admitted_roots = 0;
+    unsigned atomic_clears = 0, atomic_invalidated = 0, atomic_phase = 0;
+    std::uint64_t score_hash = 0, asset_hash = 0;
     unsigned instruments = 0, source2 = 0, source3 = 0;
     std::array<unsigned, 9> prefix_ids{}, prefix_counts{};
     std::array<unsigned, 2> sample_counts{}, sample_loops{}, sample_starts{}, profile_env{}, profile_pitch{};
@@ -36,12 +38,12 @@ struct Result {
     bool operator==(const Result& other) const {
         return std::tie(hash, frames, nonzero, clocks, last_nonzero_clock, status,
                         transfers, adoptions, version, bridge, signature, sounds,
-                        error, external, interruptions, active_env, interrupt_tick, interrupt_count, kof, flg, score_tick, selected_song, admitted_roots, instruments, source2, source3, prefix_ids, prefix_counts, sample_counts, sample_loops, sample_starts, profile_env, profile_pitch, voice_profiles, voice_tuning, voice_env, voice_pitch, end_windows, natural_ends, end_env, end_gates, end_sources, endx, end_kof, sample_modes, sample_headers, state) ==
+                        error, external, interruptions, active_env, interrupt_tick, interrupt_count, kof, flg, score_tick, selected_song, admitted_roots, instruments, source2, source3, prefix_ids, prefix_counts, sample_counts, sample_loops, sample_starts, profile_env, profile_pitch, voice_profiles, voice_tuning, voice_env, voice_pitch, end_windows, natural_ends, end_env, end_gates, end_sources, endx, end_kof, sample_modes, sample_headers, atomic_clears, atomic_invalidated, atomic_phase, score_hash, asset_hash, state) ==
                std::tie(other.hash, other.frames, other.nonzero, other.clocks,
                         other.last_nonzero_clock, other.status, other.transfers,
                         other.adoptions, other.version, other.bridge, other.signature,
                         other.sounds, other.error, other.external, other.interruptions, other.active_env,
-                        other.interrupt_tick, other.interrupt_count, other.kof, other.flg, other.score_tick, other.selected_song, other.admitted_roots, other.instruments, other.source2, other.source3, other.prefix_ids, other.prefix_counts, other.sample_counts, other.sample_loops, other.sample_starts, other.profile_env, other.profile_pitch, other.voice_profiles, other.voice_tuning, other.voice_env, other.voice_pitch, other.end_windows, other.natural_ends, other.end_env, other.end_gates, other.end_sources, other.endx, other.end_kof, other.sample_modes, other.sample_headers, other.state);
+                        other.interrupt_tick, other.interrupt_count, other.kof, other.flg, other.score_tick, other.selected_song, other.admitted_roots, other.instruments, other.source2, other.source3, other.prefix_ids, other.prefix_counts, other.sample_counts, other.sample_loops, other.sample_starts, other.profile_env, other.profile_pitch, other.voice_profiles, other.voice_tuning, other.voice_env, other.voice_pitch, other.end_windows, other.natural_ends, other.end_env, other.end_gates, other.end_sources, other.endx, other.end_kof, other.sample_modes, other.sample_headers, other.atomic_clears, other.atomic_invalidated, other.atomic_phase, other.score_hash, other.asset_hash, other.state);
     }
 };
 struct Restores { unsigned count = 0, phases = 0, commands = 0, roots = 0, instruments = 0, ends = 0; };
@@ -107,6 +109,24 @@ Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
                     result.instruments |= 1U << ((voice - 2) * 2 + source - 2);
             }
         }
+        // D4 archive phase is published only after both bounded regions clear.
+        // Observe once per generation, without changing RAM or execution.
+        const auto atomic_phase = host.debug_spc_ram_byte(0x0504);
+        const auto generation = host.cpu().debug_wram_byte(0x26);
+        if (atomic_phase == 0xa4 && generation < 3 &&
+            (result.atomic_clears & (1U << generation)) == 0) {
+            bool zero = true;
+            for (unsigned address = 0x2b00; zero && address < 0x3300; ++address)
+                zero = host.debug_spc_ram_byte(address) == 0;
+            for (unsigned address = 0x5000; zero && address < 0x50c0; ++address)
+                zero = host.debug_spc_ram_byte(address) == 0;
+            if (zero) {
+                result.atomic_clears |= 1U << generation;
+                if (host.debug_spc_ram_byte(0xd2) == 0 &&
+                    host.debug_spc_ram_byte(0xdc) == 0 && host.debug_spc_ram_byte(0xdb) == 0)
+                    result.atomic_invalidated |= 1U << generation;
+            }
+        }
         if (restores) {
             auto status = host.cpu().debug_wram_byte(0x20);
             auto bridge = host.cpu().debug_wram_byte(0x31);
@@ -125,7 +145,8 @@ Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
                                   (std::uint64_t(host.debug_spc_ram_byte(0xdb)) << 40) |
                                   (std::uint64_t(result.instruments) << 48) |
                                   (std::uint64_t(result.natural_ends) << 52) |
-                                  (std::uint64_t(sample_phase) << 56);
+                                  (std::uint64_t(sample_phase) << 56) |
+                                  (std::uint64_t(atomic_phase == 0xa4 ? 1 : atomic_phase == 0xa5 ? 2 : 0) << 60);
             if (++steps % 100003 == 0 || phase != previous) {
                 require(++restores->count <= 4096, "snapshot bound");
                 auto state = host.save_state();
@@ -191,6 +212,17 @@ Result run(Host& host, std::uint64_t target, Restores* restores = nullptr) {
         result.sample_loops[i] = host.debug_spc_ram_byte(0x500a + 4 * i) |
                                 (unsigned(host.debug_spc_ram_byte(0x500b + 4 * i)) << 8);
     }
+    result.atomic_phase = host.debug_spc_ram_byte(0x0504);
+    auto region_hash = [&](unsigned begin, unsigned end) {
+        std::uint64_t hash = 14695981039346656037ULL;
+        for (unsigned address = begin; address < end; ++address) {
+            hash ^= host.debug_spc_ram_byte(address);
+            hash *= 1099511628211ULL;
+        }
+        return hash;
+    };
+    result.score_hash = region_hash(0x2b00, 0x3300);
+    result.asset_hash = region_hash(0x5000, 0x50c0);
     result.state = host.save_state();
     return result;
 }
@@ -240,6 +272,11 @@ int main(int argc, char** argv) {
                   << ",\"last_nonzero_clock\":" << result.last_nonzero_clock
                   << ",\"instruments\":" << result.instruments
                   << ",\"source2\":" << result.source2 << ",\"source3\":" << result.source3;
+        std::cout << ",\"atomic_clears\":" << result.atomic_clears
+                  << ",\"atomic_invalidated\":" << result.atomic_invalidated
+                  << ",\"atomic_phase\":" << result.atomic_phase
+                  << ",\"score_hash\":" << result.score_hash
+                  << ",\"asset_hash\":" << result.asset_hash;
         std::cout << ",\"sample_starts\":[" << result.sample_starts[0] << ',' << result.sample_starts[1] << ']';
         std::cout << ",\"sample_headers\":[";
         for (std::size_t i = 0; i < result.sample_headers.size(); ++i)

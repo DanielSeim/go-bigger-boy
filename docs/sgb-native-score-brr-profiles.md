@@ -123,6 +123,5 @@ Partial uploads still lack atomic asset invalidation.
 
 The [D3 relocation profile](sgb-native-score-relocated.md) now admits bounded
 relocatable starts/loops within the uploaded data windows, with complete-chain
-bounds, zero prefix/suffix padding and physical lifecycle replay. Next make
-replacement upload admission atomic so incomplete uploads cannot reuse stale
-assets. Broader vendor banks and production qualification remain separate.
+bounds, zero prefix/suffix padding and physical lifecycle replay. The [D4 atomic-upload profile](sgb-native-score-atomic-upload.md) now prevents
+stale score/sample reuse. Next add bounded recovery after upload rejection. Broader vendor banks and production qualification remain separate.
