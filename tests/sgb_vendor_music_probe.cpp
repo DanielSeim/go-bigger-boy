@@ -45,16 +45,21 @@ Result run(Host& initial, std::uint64_t target, const gameboy::SgbHostConfig& co
     Result result;
     Host* host = &initial;
     std::unique_ptr<Host> continued;
-    unsigned steps = 0, previous = ~0U;
+    unsigned steps = 0;
+    std::uint64_t previous = ~std::uint64_t{0};
     while (host->cpu().timing().clocks() < target) {
         if (!host->step()) throw std::runtime_error("host execution fault status=" +
             std::to_string(unsigned(host->status())) + " pc=" + std::to_string(host->fault().pc) +
             " host=" + std::to_string(host->cpu().debug_wram_byte(0x20)) +
             " phase=" + std::to_string(host->debug_spc_ram_byte(0xd2)));
-        const unsigned phase = host->cpu().debug_wram_byte(0x20) |
+        const std::uint64_t phase = host->cpu().debug_wram_byte(0x20) |
             (unsigned(host->debug_spc_ram_byte(0xd2)) << 8) |
             (unsigned(host->debug_spc_ram_byte(0xd4)) << 16) |
-            (unsigned(host->debug_spc_ram_byte(0xd5)) << 24);
+            (std::uint64_t(host->debug_spc_ram_byte(0xd5)) << 24) |
+            (std::uint64_t(host->debug_spc_ram_byte(0x71)) << 32) |
+            (std::uint64_t(host->debug_spc_ram_byte(0x73)) << 40) |
+            (std::uint64_t(host->debug_spc_ram_byte(0x74)) << 48) |
+            (std::uint64_t(host->debug_dsp_register(0x5c)) << 56);
         if (restore_count && ((++steps % 65536) == 0 || phase != previous)) {
             require(*restore_count < 2048, "restore budget exceeded");
             auto snapshot = host->save_state();

@@ -30,6 +30,11 @@ def build():
     source = (ROOT / 'firmware/sgb/vendor_music.asm').read_text()
     source = replace(source, '    mov x, #$00\n', '    .byte $cd, $00\n')
     pitches = [min(16383, round(1068 * 2 ** ((note - 24) / 12))) for note in range(72)]
+    # Limited register observations from owned note fixtures, not a resident
+    # table extraction or a pitch law outside these fourteen notes.
+    measured = (1068,1132,1200,1272,1348,1428,1512,1604,1700,1800,1908,2020,2140,2268)
+    source = replace(source, 'vendor_measured_pitch:\n', 'vendor_measured_pitch:\n.byte ' +
+        ','.join(f'${byte:02x}' for pitch in measured for byte in pitch.to_bytes(2,'little')) + '\n')
     source += '.byte ' + ','.join(f'${byte:02x}' for pitch in pitches for byte in pitch.to_bytes(2, 'little')) + '\n'
     payload = assemble(long_branches(source), 'spc', 0x0200)
     if len(payload) > 0x1900:

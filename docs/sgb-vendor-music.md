@@ -22,21 +22,22 @@ Performance optimization remains deferred.
 python3 scripts/build_sgb_vendor_music.py --output /tmp/vendor-music.rom
 python3 scripts/build_sgb_vendor_music_fixture.py --output /tmp/vendor-music.gb
 cmake -S . -B build-dmg-firmware
-cmake --build build-dmg-firmware --target gameboy_sgb_vendor_music_probe
+cmake --build build-dmg-firmware --target \
+  gameboy_sgb_vendor_music_probe gameboy_sgb_music_timeline_probe
 ctest --test-dir build-dmg-firmware \
   -R '^gameboy_sgb_(vendor_music_contract|score_vendor_music)$' --output-on-failure
 ```
 
 The deterministic 256 KiB LoROM SHA-256 is
-`b465f6e7a2e4675fbbcdc1281b45cc2f788eac01f9a7f316481a549b427adc3c`.
-The host is 1622 bytes; its SPC payload is 4081 bytes starting at `$0200`.
+`5b64893a6cc81fb231e2e36fd36102770761ddfc21a738c2244577c87efaa47a`.
+The host is 1622 bytes; its SPC payload is 4512 bytes starting at `$0200`.
 The strict assembler rejects overlaps, out-of-range operands/branches and
 changed source hooks. Exporters refuse existing outputs. Neither this image
 nor private input data is checked in or automatically selected.
 
 | SPC region | Use |
 | --- | --- |
-| `$0200..11F0` | Code/padding, with reserved metadata and assets below |
+| `$0200..139F` | Code/padding, with reserved metadata and assets below |
 | `$0400` | Cooperative score restart |
 | `$0502..0508` | Counters retained across IPL |
 | `$0510..0514` | Trusted score end, asset-present flag and sample end |
@@ -76,9 +77,11 @@ the earlier assumption that its address represented instrument 10. Owned uploads
 executed on the opaque original establish the six-byte layout: source ID,
 ADSR1, ADSR2, GAIN, tuning high byte, tuning low byte. Source ID 2 is supported;
 zero tuning rejects. The driver applies the uploaded envelope and scales its
-authored pitch curve by the unsigned tuning word / `$0400`, flooring and
-saturating to `$3FFF`. This establishes parameter binding, not an exact vendor
-pitch interpolation algorithm.
+pitch scale by the unsigned tuning word / `$0400`, flooring and saturating to
+`$3FFF`. Uploaded instrument 2 uses explicit measured note words for notes
+24..37; other notes and both owned resident sources keep the authored scale.
+This bounds the correction to observed notes rather than inferring a universal
+vendor interpolation algorithm.
 
 Before publishing readiness, the SPC walks the complete BRR chain inside the
 trusted sample extent. Every nine-byte block must fit. A looping END must point
@@ -117,13 +120,15 @@ The timer uses target 16 and a tempo/256 fractional phase, servicing mailbox
 commands while waiting and reading scores. Tempo bytes 1..255 are experimental;
 only the earlier measured subsets have independent timing evidence. Timing
 starts at the first event after validation, and pending timer pulses carry into
-the next event. STOP, reselection and upload discard the prior playback stack.
+the next event. STOP, reselection and upload discard the prior playback stack. Calibrated
+intervals below have a separate bounded pulse-count policy.
 
 The following are **authored replacement policies**, not inferred vendor curves:
 
 - An equal-temperament pitch table with register anchor 1068 at base note 24,
   used with both owned 16-sample loops; uploaded instrument 2 additionally scales
-  it by its supplied tuning word. No exact pitch equivalence is claimed.
+  it by its supplied tuning word. Notes 24..37 substitute the measured uploaded
+  scale below; other notes remain provisional.
 - Linear pan points 0..20, multiplicative song/track volume, linear velocity and
   eight explicitly authored articulation fractions.
 - Echo send projects the supplied mask onto the sole active channel-2 bit.
@@ -131,9 +136,51 @@ The following are **authored replacement policies**, not inferred vendor curves:
   Filter IDs 0..3 select an identity and three authored low-pass FIR responses,
   each summing to 127; the proprietary resident filter bank is not reproduced.
 
-Natural completion and STOP mute/reset DSP output immediately. Echo release
-fidelity, buffer-change timing, original pan/volume/gate curves, accurate
-instrument tuning and fades need separate qualification.
+Natural completion now keys off all voices, holds KOF across a DSP polling
+phase, clears KOF, silences both echo returns, and leaves FLG and the DSP running.
+This preserves decoder/envelope release instead of resetting it. Explicit STOP,
+upload ownership and invalid-input rejection retain immediate mute/reset.
+Selection latency, a continuous phase model, arbitrary gate/pan/volume curves,
+other-note tuning, echo acoustics and fades remain unqualified.
+
+## Bounded pitch and gate corrections
+
+The uploaded note scale for 24..37 is 1068, 1132, 1200, 1272, 1348, 1428,
+1512, 1604, 1700, 1800, 1908, 2020, 2140, 2268 at tuning `$0400`. The first
+thirteen words come from the existing owned chromatic register observations;
+the last is constrained by the owned uploaded-binding fixtures. Fresh uploaded
+fixtures compare all fourteen notes at tuning 688 with the original, and retain
+base/half tuning and envelope-only controls. These are DSP register contracts,
+not copied resident tables, samples, or an acoustic-frequency guarantee.
+
+Two explicit calibrated profiles supersede the provisional gate for matching
+notes. Unmatched tuples retain the earlier experimental fractional policy.
+
+| Tempo | Articulation | Duration | Gate pulses | Event pulses |
+| --- | --- | --- | --- | --- |
+| 45 | 125 | 96 | 534 | 546 |
+| 96 | 127 | 16 | 37 | Existing fractional duration |
+
+A pulse is 2048 SPC cycles. The long profile uses independent 16-bit gate/event
+countdowns and restarts fractional phase at its calibrated event boundary.
+Following rests and unmatched events therefore start from that explicit phase.
+The short profile retains continuous fractional duration. Counts and phase
+policy are independently authored calibration choices, not recovered original
+implementation constants. Both gates clear KOF after about 0.611 ms; natural
+completion clears it after about 0.111 ms. Busy holds are bounded and do not
+reinitialize DSP state or discard pending timer pulses.
+
+The new owned fixture builder covers a long note with/without a following rest,
+a three-note chain, short-note control, notes 24..37, explicit STOP, reselection
+and active asset upload. The native register gate compares pitches exactly and
+gates, onsets and completion within four milliseconds (two timer pulses), with
+KOF-clear holds within 0.05 ms. This deliberately leaves phase differences
+visible instead of claiming exact timing.
+
+```sh
+python3 scripts/build_sgb_vendor_timing_fixture.py --case entry-chain \
+  --output /tmp/vendor-timing.gb
+```
 
 ## Public and private evidence
 
@@ -177,7 +224,14 @@ python3 scripts/check_sgb_vendor_music_title.py \
   --game 'roms/Donkey Kong (JU) (V1.1) [S][!].gb'
 ```
 
-Fresh final-image native runs on both models use the pinned unmodified game,
+The final bounded-timing image passes all twelve public methods. Coverage now
+includes 119 model/mode/scenario runs with uninterrupted, restored and reset
+execution, plus twelve single register captures. The full matrix and exporter
+CTest checks pass in 584.37 seconds; the short observer and shard-runner
+contracts also pass. The new completion/retain case confirms that a later
+music-0 request cannot restore stale echo volumes after natural completion.
+
+The preceding binding milestone used native runs on both models with the pinned unmodified game,
 bundled model-specific GB bootstrap and bundled original IPL, with the existing
 gameplay input script. Each runs to one billion master clocks, with uninterrupted,
 restored and reset executions. The checker validates the resulting aggregate
@@ -194,9 +248,9 @@ naturally complete or that later gameplay is supported.
 Both runs produce 1489947 native frames and exact PCM/final-state parity after
 reset and cross-instance restoration. No transfer or parser errors occur. Final
 nonzero output precedes the clock boundary by more than one million clocks.
-The uploaded binding selects SRCN 2 and ADSR1/ADSR2/GAIN 255/224/184 on both
-models, matching the opaque original's observed envelope setup. The replacement
-pitch is 1435 versus the original's 1437, so exact tuning remains unqualified.
+That milestone selected SRCN 2 and ADSR1/ADSR2/GAIN 255/224/184 on both
+models, matching the opaque original's observed envelope setup. Its replacement
+pitch was 1435 versus the original's 1437, so exact tuning remains unqualified.
 These checks establish execution of game-provided music through the independent
 firmware and DSP. The later register-only comparison below adds note-schedule observations;
 these lifecycle checks do not qualify acoustics, independent emulators or hardware. `qualification` remains false.
@@ -205,7 +259,7 @@ child diagnostics are sanitized and only explicitly allowed aggregate fields
 are forwarded. Private ROMs, uploaded banks/assets, traces, snapshots and PCM
 are never committed.
 
-## Register-only original comparison and next step
+## Register-only original comparison
 
 The new read-only DSP observer is a diagnostic binding outside snapshots. Public
 engine checks require identical PCM and complete machine state with and without
@@ -218,38 +272,62 @@ owned binding controls on both programs/models, then the pinned title if supplie
 ```sh
 python3 scripts/check_sgb_vendor_music_reference.py \
   --probe build-dmg-firmware/gameboy_sgb_music_timeline_probe \
-  --firmware-dir roms --game 'roms/Donkey Kong (JU) (V1.1) [S][!].gb'
+  --firmware-dir roms --timing --game 'roms/Donkey Kong (JU) (V1.1) [S][!].gb'
 ```
 
-The measured title sends music 1 twice. The second request interrupts the first
+The baseline measured title sends music 1 twice. The second request interrupts the first
 before its note gate, explaining two starts but only one natural completion.
 The original and replacement each key on twice. The original's final note gate
-is about 1065.7 ms; the replacement's provisional gate is about 1022.5 ms.
+is about 1065.7 ms; the preceding replacement gate was about 1022.5 ms.
 The original's stop sequence keys all voices off and clears KOF again, while the
-replacement immediately mutes/resets DSP. Selection latency also differs and
+preceding replacement immediately muted/reset DSP. Selection latency also differs and
 varies with the original model/driver phase. These are compatibility gaps,
 not reasons to change the separately measured DA diagnostic profiles.
 
-The complete optional comparison passes all 16 executions: three owned binding
+The preceding optional comparison passed all 16 executions: three owned binding
 controls on both programs and models, plus each program/model title window.
 Both originals produce pitches 4528/4800/9072 for the authored base binding and
-exactly half those words for half tuning. The replacement produces
+exactly half those words for half tuning. That replacement produced
 4528/4796/9052 and halves them, preserving envelope-only pitch independence.
 The source/envelope controls match while interpolation remains approximate.
 
-| Measured title interval | Original SGB1 | Original SGB2 | Replacement SGB1/SGB2 |
+| Baseline title interval | Original SGB1 | Original SGB2 | Replacement SGB1/SGB2 |
 | --- | --- | --- | --- |
 | Final note gate | 1065.694 ms | 1065.694 ms | 1022.528 ms |
 | All-voice key-off after final key-on | 1087.810 ms | 1087.817 ms | 1092.944 ms |
 | Second request to key-on | 58.981 ms | 64.435 ms | 14.980 / 15.054 ms |
+
+The bounded timing correction on 2026-10-10 matches all fourteen uploaded
+pitch words at tuning 688 and corrects the earlier base/half/envelope binding
+pitch differences. The expanded private checker passed 36 original/replacement
+executions across both models: binding controls, five owned timing fixtures and
+the title window. After the completion-state guard was added, the final image
+was rechecked against those original timing measurements, verifying unchanged
+original program hashes first.
+
+| Current title interval | Original SGB1 | Original SGB2 | Replacement SGB1/SGB2 |
+| --- | --- | --- | --- |
+| Final note gate | 1065.694 ms | 1065.694 ms | 1066.400 ms |
+| All-voice key-off after final key-on | 1087.810 ms | 1087.817 ms | 1090.854 ms |
+| Second request to key-on | 58.981 ms | 64.435 ms | 15.194 / 15.301 ms |
+| Final note pitch word | 1437 | 1437 | 1437 |
+
+The title gate difference falls from about 43.2 ms early to 0.7 ms late.
+Natural completion leaves FLG and KOF zero and silences echo returns. It does
+not reproduce the original selection delay or establish a general phase law.
+The final image's one-billion-clock title lifecycle checks also pass on both
+models, with exact PCM and final-state parity after reset and cross-instance
+restoration. SGB1/SGB2 respectively produce 59292/59942 nonzero native frames,
+with 637 restores each (34/20 containing unread output). Both retain the
+previous transfer, adoption, request and playback counters.
 
 These bounded windows use the same native `SgbHost`, bundled model bootstraps
 and input events. Packet spacing itself differs with host execution, so the
 report anchors key-ons to their own delivered requests and gates to their own
 key-ons. It does not present absolute cold-boot PCM alignment as sound parity.
 
-Next, replace the provisional gate/selection/completion policies with a bounded
-measured contract for this entry and owned fixtures. Include the original's
-release behavior and tune interpolation; uploaded sample binding alone does
-not qualify waveform matching. Broader multichannel scores, calls, ties,
-effects and production release qualification remain separate milestones.
+Next, measure selection/reselection latency and continuous phase across longer
+note/rest chains, replacing the calibrated phase policy only with a supported
+contract. Explicit STOP release, fades, multichannel scores, calls, ties,
+effects and production release qualification remain separate work. Uploaded
+binding and measured register pitches do not qualify waveform matching.

@@ -71,3 +71,8 @@ shards. `gameboy_sgb_music_observer_contract` is a short public lifecycle check;
 `gameboy_sgb_vendor_music_local_reference` requires caller-owned originals and is
 labelled `local;private-reference`, alongside the optional private title gate.
 The reference probe exports bounded register/timestamp metadata only.
+
+The DB matrix also executes owned timing/release fixtures and a bounded register
+probe (`--timeline-probe`). Its cost is 240 and timeout 900 seconds; the optional
+private gate adds `--timing` for exact uploaded pitch and bounded gate/release
+comparisons. Both probes are discovered as shard build dependencies.

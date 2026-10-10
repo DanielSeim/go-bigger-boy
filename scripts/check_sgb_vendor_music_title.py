@@ -22,9 +22,9 @@ def validate(report, model):
         raise ValueError('invalid private title evidence identity')
     for key, expected in dict(firmware_state=1, transfer_error=0, transfers=2,
                               adoptions=3, sounds=3, starts=2, completes=1,
-                              notes=2, selected=1, rejected=0, flg=0xE0,
+                              notes=2, selected=1, rejected=0, flg=0,
                               host_status=0, external=0, uploaded_instrument=1, srcn=2,
-                              pitch=1435, adsr1=255, adsr2=224, gain=184).items():
+                              pitch=1437, adsr1=255, adsr2=224, gain=184).items():
         if type(report.get(key)) is not int or report[key] != expected:
             raise ValueError('private title gate failed: ' + key)
     for key in ('clocks','frames','nonzero','last_nonzero_clock','restores','unread_restores','gb_frames','pcm_fnv64'):

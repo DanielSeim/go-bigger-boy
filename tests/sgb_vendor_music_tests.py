@@ -15,6 +15,7 @@ from build_sgb_vendor_music_fixture import build, bank, payload, assets
 from build_sgb_score_atomic_fixture import build_cartridge
 
 PROBE = None
+TIMELINE_PROBE = None
 
 
 class VendorMusicTests(unittest.TestCase):
@@ -29,11 +30,11 @@ class VendorMusicTests(unittest.TestCase):
     def tearDownClass(cls):
         cls.directory.cleanup()
 
-    def run_image(self, image, model='sgb2', mode='native'):
+    def run_image(self, image, model='sgb2', mode='native', clocks=30000000):
         game = self.root / 'game.gb'
         game.write_bytes(image)
         child = subprocess.run([str(PROBE), str(self.rom), str(game), model,
-                                '30000000', mode, 'fixture'], capture_output=True,
+                                str(clocks), mode, 'fixture'], capture_output=True,
                                text=True, timeout=90)
         self.assertEqual(child.returncode, 0, child.stderr)
         result = json.loads(child.stdout)
@@ -48,7 +49,7 @@ class VendorMusicTests(unittest.TestCase):
     def test_01_build_and_export(self):
         image = firmware()
         self.assertEqual(image, firmware())
-        self.assertEqual(hashlib.sha256(image).hexdigest(), 'b465f6e7a2e4675fbbcdc1281b45cc2f788eac01f9a7f316481a549b427adc3c')
+        self.assertEqual(hashlib.sha256(image).hexdigest(), '5b64893a6cc81fb231e2e36fd36102770761ddfc21a738c2244577c87efaa47a')
         self.assertEqual(len(image), 262144)
         self.assertEqual(int.from_bytes(image[0x7FDC:0x7FDE], 'little') ^
                          int.from_bytes(image[0x7FDE:0x7FE0], 'little'), 65535)
@@ -76,7 +77,7 @@ class VendorMusicTests(unittest.TestCase):
                 self.assertEqual(result['rejected'], 0)
                 self.assertGreater(result['nonzero'], 1000)
                 self.assertLess(result['last_nonzero_clock'], 20000000)
-                self.assertEqual(result['flg'], 0xE0)
+                self.assertEqual(result['flg'], 0)
             dry = self.run_image(build('dry'), model)
             self.assertNotEqual(native['pcm_fnv64'], dry['pcm_fnv64'])
 
@@ -94,7 +95,7 @@ class VendorMusicTests(unittest.TestCase):
                                  (starts, completes, selected), (case, result))
                 self.assertEqual(result['firmware_state'], 1)
                 self.assertGreater(result['nonzero'], 100)
-                self.assertEqual(result['flg'], 0xE0)
+                self.assertEqual(result['flg'], 0xE0 if case == 'stop' else 0)
             muted = self.run_image(build('mute'), model)
             self.assertEqual((muted['notes'], muted['completes'], muted['nonzero']), (3, 1, 0))
             unmuted = self.run_image(build('unmute'), model)
@@ -144,8 +145,8 @@ class VendorMusicTests(unittest.TestCase):
                       model='sgb2', mode='native', reset_equal=True, restore_equal=True,
                       firmware_state=1, transfer_error=0, transfers=2, adoptions=3,
                       sounds=3, starts=2, completes=1, notes=2, selected=1, rejected=0,
-                      flg=224, host_status=0, external=0, uploaded_instrument=1, srcn=2,
-                      pitch=1435, adsr1=255, adsr2=224, gain=184, clocks=1000000010,
+                      flg=0, host_status=0, external=0, uploaded_instrument=1, srcn=2,
+                      pitch=1437, adsr1=255, adsr2=224, gain=184, clocks=1000000010,
                       frames=1489947, nonzero=60000, last_nonzero_clock=966000000,
                       restores=612, unread_restores=18, gb_frames=2668, pcm_fnv64=123)
         self.assertEqual(validate(report,'sgb2')['completes'],1)
@@ -226,6 +227,64 @@ class VendorMusicTests(unittest.TestCase):
                 self.assertEqual((bad['firmware_state'],bad['starts'],bad['nonzero']), (255,0,0))
                 self.assertNotEqual(bad['transfer_error'],0)
 
+    def test_10_measured_timing_lifecycle(self):
+        from build_sgb_vendor_timing_fixture import build as timing
+        for model in ('sgb','sgb2'):
+            for case in ('entry','entry-no-rest','short','entry-chain','pitch','stop','switch','upload'):
+                with self.subTest(model=model,case=case):
+                    native=self.run_image(timing(case),model,clocks=90000000)
+                    self.assertEqual(native['rejected'],0)
+                    self.assertEqual(native['firmware_state'],1)
+                    self.assertGreater(native['nonzero'],100)
+                    self.assertEqual(native['flg'],0xE0 if case=='stop' else 0)
+                    self.assertEqual(native['starts'],2 if case in ('switch','upload') else 1)
+                    self.assertEqual(native['completes'],0 if case=='stop' else 1)
+                    self.assertEqual(native['uploaded_instrument'],1)
+                    self.assertEqual(native['srcn'],2)
+                    if case not in ('stop','switch','upload'):
+                        self.assertEqual(native['notes'],14 if case=='pitch' else (3 if case=='entry-chain' else 1))
+                    if case in ('entry','entry-chain'):
+                        scalar=self.run_image(timing(case),model,'scalar',clocks=90000000)
+                        self.assertEqual(native['pcm_fnv64'],scalar['pcm_fnv64'])
+                    if case=='entry-no-rest': self.assertEqual(native['pitch'],1437)
+
+    def test_11_public_timing_registers(self):
+        from build_sgb_vendor_timing_fixture import build as timing
+        from check_sgb_vendor_music_reference import timing_summary, check_timing
+        if TIMELINE_PROBE is None: self.skipTest('timeline probe not supplied')
+        inputs=self.root/'none.script'; inputs.write_text('GBB SGB input v1\n0 none\n')
+        for model in ('sgb','sgb2'):
+            for case in ('entry','entry-no-rest','short','entry-chain','pitch'):
+                game=self.root/'timing.gb'; game.write_bytes(timing(case))
+                child=subprocess.run([str(TIMELINE_PROBE),str(self.rom),str(game),model,'90000000',str(inputs),'fixture'],capture_output=True,text=True,timeout=90)
+                self.assertEqual(child.returncode,0,child.stderr)
+                summary=timing_summary(json.loads(child.stdout))
+                expected=[717,760,806,854,905,959,1015,1077,1142,1209,1281,1357,1437,1523]
+                self.assertEqual(summary['pitches'],expected if case=='pitch' else ([1437,717,760] if case=='entry-chain' else [1437]))
+                for value in summary['gates_ms']:
+                    self.assertLess(abs(value-(72.4 if case in ('short','pitch') else 1066.4)),2)
+                low,high={'entry':(1097,1105),'entry-no-rest':(1086,1095),'short':(86,95),'entry-chain':(1098,1108),'pitch':(80,90)}[case]
+                self.assertLess(low,summary['completion_ms']); self.assertLess(summary['completion_ms'],high)
+                for value in summary['gate_clear_ms']: self.assertLess(abs(value-0.611),0.02)
+                self.assertLess(abs(summary['completion_clear_ms']-0.111),0.02)
+                changed=dict(summary,pitches=[0])
+                with self.assertRaises(ValueError): check_timing(summary,changed)
+                changed=dict(summary,completion_ms=summary['completion_ms']+5)
+                with self.assertRaises(ValueError): check_timing(summary,changed)
+
+    def test_12_completed_retain_keeps_echo_silent(self):
+        from build_sgb_vendor_timing_fixture import build as timing
+        if TIMELINE_PROBE is None: self.skipTest('timeline probe not supplied')
+        inputs=self.root/'retain.script'; inputs.write_text('GBB SGB input v1\n0 none\n')
+        for model in ('sgb','sgb2'):
+            image=timing('retain')
+            result=self.run_image(image,model,clocks=60000000)
+            self.assertEqual((result['sounds'],result['starts'],result['completes']), (2,1,1))
+            game=self.root/'retain.gb'; game.write_bytes(image)
+            child=subprocess.run([str(TIMELINE_PROBE),str(self.rom),str(game),model,'60000000',str(inputs),'fixture'],capture_output=True,text=True,timeout=90)
+            self.assertEqual(child.returncode,0,child.stderr)
+            self.assertEqual(json.loads(child.stdout)['final'],dict(flg=0,kof=0,echo_left=0,echo_right=0))
+
     def test_05_native_execution_bounds(self):
         # A phrase-list loop made of nine valid references must reject, rather
         # than playing its first pattern. A control-only track reaches read cap.
@@ -251,6 +310,8 @@ class VendorMusicTests(unittest.TestCase):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--probe', type=Path, required=True)
+    parser.add_argument('--timeline-probe',type=Path)
     args, rest = parser.parse_known_args()
     PROBE = args.probe.resolve()
+    TIMELINE_PROBE = args.timeline_probe.resolve() if args.timeline_probe else None
     unittest.main(argv=[sys.argv[0]]+rest)

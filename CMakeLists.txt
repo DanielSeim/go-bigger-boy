@@ -1303,8 +1303,9 @@ if(GAMEBOY_BUILD_TESTS)
                 VendorMusicTests.test_01_build_and_export)
         add_test(NAME gameboy_sgb_score_vendor_music
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_vendor_music_tests.py
-                --probe $<TARGET_FILE:gameboy_sgb_vendor_music_probe>)
-        set_tests_properties(gameboy_sgb_score_vendor_music PROPERTIES TIMEOUT 600 COST 180)
+                --probe $<TARGET_FILE:gameboy_sgb_vendor_music_probe>
+                --timeline-probe $<TARGET_FILE:gameboy_sgb_music_timeline_probe>)
+        set_tests_properties(gameboy_sgb_score_vendor_music PROPERTIES TIMEOUT 900 COST 240)
         if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/Donkey Kong (JU) (V1.1) [S][!].gb")
             add_test(NAME gameboy_sgb_vendor_music_local_title
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_vendor_music_title.py
@@ -1319,7 +1320,7 @@ if(GAMEBOY_BUILD_TESTS)
             add_test(NAME gameboy_sgb_vendor_music_local_reference
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_vendor_music_reference.py
                     --probe $<TARGET_FILE:gameboy_sgb_music_timeline_probe>
-                    --firmware-dir "${CMAKE_CURRENT_SOURCE_DIR}/roms"
+                    --firmware-dir "${CMAKE_CURRENT_SOURCE_DIR}/roms" --timing
                     --game "${CMAKE_CURRENT_SOURCE_DIR}/roms/Donkey Kong (JU) (V1.1) [S][!].gb")
             set_tests_properties(gameboy_sgb_vendor_music_local_reference
                 PROPERTIES TIMEOUT 1800 LABELS "local;private-reference")

@@ -176,7 +176,8 @@ vendor_prepare:
     mov $d2, #$02
     mov $f6, #$03
     call vendor_song
-    call vendor_mute
+    call vendor_release
+    mov $3d, #$00
     inc $d5
     mov $d2, #$01
     mov $f6, #$02
@@ -508,6 +509,9 @@ vendor_play:
     mov a, $fd
     mov $4f, #$01
 vendor_timer_started:
+    mov $74, #$00
+    mov $75, #$00
+    mov $76, #$00
     mov a, $30
     mov $3f, a
     mov $f2, #$5c
@@ -515,6 +519,8 @@ vendor_timer_started:
     mov a, $42
     cmp a, #$c9
     beq vendor_rest
+    call vendor_gate_lookup
+    mov a, $42
     ; A fresh original pitch scale and velocity/gate curves, not vendor tables.
     and a, #$7f
     mov $4c, a
@@ -531,6 +537,21 @@ vendor_timer_started:
     mov a, $36
     cmp a, #$02
     bne vendor_resident_pitch
+    mov a, $4c
+    cmp a, #$18
+    bcc vendor_tuning_ready
+    cmp a, #$26
+    bcs vendor_tuning_ready
+    clrc
+    adc a, $4c
+    .byte $80, $a8, $30
+    mov x, a
+    mov a, vendor_measured_pitch+x
+    mov $60, a
+    .byte $3d
+    mov a, vendor_measured_pitch+x
+    mov $61, a
+vendor_tuning_ready:
     call vendor_tuned_pitch
     mov $f2, #$22
     mov a, $66
@@ -624,11 +645,14 @@ vendor_pulse:
     mov a, $3e
     beq vendor_wait
     dec $3e
+    call vendor_gate_pulse
     mov a, $41
     clrc
     adc a, $32
     mov $41, a
-    bcc vendor_pulse
+    bcc vendor_profile_boundary
+    mov a, $74
+    bne vendor_duration_tick
     mov a, $40
     beq vendor_gate_off
     dec $40
@@ -638,9 +662,18 @@ vendor_gate_off:
     mov $f2, #$5c
     mov $f3, #$04
 vendor_duration_tick:
+    mov a, $75
+    bne vendor_profile_boundary
     dec $3f
     mov a, $3f
-    bne vendor_pulse
+    beq vendor_event_done
+vendor_profile_boundary:
+    mov a, $76
+    beq vendor_pulse
+    ; This calibrated interval restarts the fractional phase for following
+    ; events. Other profiles retain their continuous fractional clock.
+    mov $41, #$00
+vendor_event_done:
     ret
 vendor_fir_addresses:
 .byte $1f,$2f,$3f,$4f,$5f,$6f,$7f
@@ -805,5 +838,117 @@ vendor_pitch_clamp:
     mov $67, #$3f
 vendor_pitch_ready:
     ret
+; Calibrated owned-fixture profiles, not a general original timing law.
+; 70/71 gate pulses; 72/73 event pulses; 74 gate flag; 75 end flag; 76 due.
+.org $1200
+vendor_gate_lookup:
+    mov $74, #$00
+    mov $75, #$00
+    mov $76, #$00
+    mov $78, #$00
+vendor_gate_record:
+    mov x, $78
+    mov a, vendor_gate_profiles+x
+    cmp a, $32
+    bne vendor_gate_next
+    .byte $3d
+    mov a, vendor_gate_profiles+x
+    cmp a, $31
+    bne vendor_gate_next
+    .byte $3d
+    mov a, vendor_gate_profiles+x
+    cmp a, $30
+    bne vendor_gate_next
+    .byte $3d
+    mov a, vendor_gate_profiles+x
+    mov $70, a
+    .byte $3d
+    mov a, vendor_gate_profiles+x
+    mov $71, a
+    .byte $3d
+    mov a, vendor_gate_profiles+x
+    mov $72, a
+    .byte $3d
+    mov a, vendor_gate_profiles+x
+    mov $73, a
+    or a, $72
+    beq vendor_gate_loaded
+    mov $75, #$01
+vendor_gate_loaded:
+    mov $74, #$01
+    ret
+vendor_gate_next:
+    mov a, $78
+    clrc
+    adc a, #$07
+    mov $78, a
+    cmp a, #$0e
+    bcc vendor_gate_record
+    ret
+vendor_gate_pulse:
+    mov a, $74
+    beq vendor_calibrated_done
+    mov a, $70
+    or a, $71
+    beq vendor_calibrated_end
+    mov a, $70
+    bne vendor_gate_decrement
+    dec $71
+vendor_gate_decrement:
+    dec $70
+    mov a, $70
+    or a, $71
+    bne vendor_calibrated_end
+    mov $f2, #$5c
+    mov $f3, #$04
+    call vendor_gate_clear
+vendor_calibrated_end:
+    mov a, $75
+    beq vendor_calibrated_done
+    mov a, $72
+    bne vendor_end_decrement
+    dec $73
+vendor_end_decrement:
+    dec $72
+    mov a, $72
+    or a, $73
+    bne vendor_calibrated_done
+    mov $76, #$01
+vendor_calibrated_done:
+    ret
+vendor_release:
+    mov $f1, #$80
+    mov $f2, #$4c
+    mov $f3, #$00
+    mov $f2, #$5c
+    mov $f3, #$ff
+    ; Hold across every DSP key-off polling phase, then clear the latch.
+    .byte $cd, $0c
+vendor_release_hold:
+    .byte $1d
+    cmp x, #$00
+    bne vendor_release_hold
+    mov $f3, #$00
+    ; Original completion observations silence echo returns without resetting
+    ; the DSP. Keep the echo RAM and decoder/envelope release running.
+    mov $f2, #$2c
+    mov $f3, #$00
+    mov $f2, #$3c
+    mov $f3, #$00
+    ret
+vendor_gate_clear:
+    .byte $cd, $44
+vendor_gate_hold:
+    .byte $1d
+    cmp x, #$00
+    bne vendor_gate_hold
+    mov $f3, #$00
+    ret
+vendor_gate_profiles:
+; tempo, articulation, duration, gate lo/hi, duration lo/hi (zero = fractional).
+.byte $2d,$7d,$60,$16,$02,$22,$02
+.byte $60,$7f,$10,$25,$00,$00,$00
+vendor_measured_pitch:
+; Filled from bounded owned-fixture DSP measurements; no private table bytes.
 vendor_pitch:
 ; Filled by the source builder from an explicitly authored equal-temperament scale.

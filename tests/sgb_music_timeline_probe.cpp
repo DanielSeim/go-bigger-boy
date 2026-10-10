@@ -75,6 +75,9 @@ int main(int argc,char** argv) {
         if (e.kind==0x4c) std::cout<<",\"pitch\":"<<e.pitch<<",\"srcn\":"<<e.srcn<<",\"adsr1\":"<<e.adsr1<<",\"adsr2\":"<<e.adsr2<<",\"gain\":"<<e.gain;
         std::cout<<"}";
     }
-    std::cout<<"]}\n";
+    std::cout<<"],\"final\":{\"flg\":"<<unsigned(host.debug_dsp_register(0x6c))
+             <<",\"kof\":"<<unsigned(host.debug_dsp_register(0x5c))
+             <<",\"echo_left\":"<<unsigned(host.debug_dsp_register(0x2c))
+             <<",\"echo_right\":"<<unsigned(host.debug_dsp_register(0x3c))<<"}}\n";
  } catch (const std::exception& e) { std::cerr<<e.what()<<'\n';return 2; }
 }

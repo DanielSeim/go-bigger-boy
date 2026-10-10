@@ -10,6 +10,7 @@ import tempfile
 from build_sgb_vendor_music import build, ROOT
 from build_sgb_vendor_music_fixture import bank, payload, assets
 from build_sgb_score_atomic_fixture import build_cartridge
+from build_sgb_vendor_timing_fixture import build as timing_game
 from check_sgb_vendor_music_title import TITLE_SHA256, SCRIPT_SHA256
 
 
@@ -60,6 +61,42 @@ def title_summary(data):
             'first_request_interrupted':True}
 
 
+def timing_summary(data):
+    notes=[e for e in data['events'] if e['register']==0x4C]
+    if not notes: raise ValueError('missing owned timing notes')
+    gates=[]; clears=[]
+    for index,note in enumerate(notes):
+        end=notes[index+1]['half'] if index+1<len(notes) else float('inf')
+        gate=next((e for e in data['events'] if note['half']<e['half']<end and e['register']==0x5C and e['value']==4),None)
+        clear=next((e for e in data['events'] if gate and gate['half']<e['half']<end and e['register']==0x5C and e['value']==0),None)
+        if not gate or not clear: raise ValueError('missing owned note gate or release clear')
+        gates.append((gate['half']-note['half'])/2048)
+        clears.append((clear['half']-gate['half'])/2048)
+    stop=next((e for e in data['events'] if e['half']>notes[-1]['half'] and e['register']==0x5C and e['value']==255),None)
+    clear=next((e for e in data['events'] if stop and e['half']>stop['half'] and e['register']==0x5C and e['value']==0),None)
+    if not stop or not clear: raise ValueError('missing owned completion release')
+    final=data.get('final')
+    if not isinstance(final,dict) or any(type(final.get(k)) is not int or final[k]!=0 for k in ('flg','kof','echo_left','echo_right')):
+        raise ValueError('owned completion must retain DSP operation and silence echo returns')
+    return dict(pitches=[n['pitch'] for n in notes],gates_ms=gates,gate_clear_ms=clears,
+                onsets_ms=[(b['half']-a['half'])/2048 for a,b in zip(notes,notes[1:])],
+                completion_ms=(stop['half']-notes[-1]['half'])/2048,
+                completion_clear_ms=(clear['half']-stop['half'])/2048,
+                final={key:final[key] for key in ('flg','kof','echo_left','echo_right')})
+
+
+def check_timing(original,replacement):
+    if original['pitches']!=replacement['pitches']:
+        raise ValueError('measured uploaded pitch words differ from original')
+    for key in ('gates_ms','onsets_ms'):
+        if len(original[key])!=len(replacement[key]) or any(abs(a-b)>4 for a,b in zip(original[key],replacement[key])):
+            raise ValueError('owned gate/onset comparison exceeds two timer pulses')
+    if abs(original['completion_ms']-replacement['completion_ms'])>4:
+        raise ValueError('owned completion comparison exceeds two timer pulses')
+    if any(abs(a-b)>0.05 for a,b in zip(original['gate_clear_ms'],replacement['gate_clear_ms'])) or abs(original['completion_clear_ms']-replacement['completion_clear_ms'])>0.05:
+        raise ValueError('bounded release latch hold differs from original')
+
+
 def binding_game(descriptor):
     score=bytearray(bank(echo=False)); score[0x91]=2
     return build_cartridge((payload(((0x2B00,bytes(score)),)),payload(assets(descriptor=descriptor))),
@@ -71,13 +108,15 @@ def main():
     parser.add_argument('--probe',type=Path,required=True)
     parser.add_argument('--firmware-dir',type=Path,required=True)
     parser.add_argument('--game',type=Path)
+    parser.add_argument('--timing',action='store_true')
+    parser.add_argument('--model',choices=('sgb','sgb2'),action='append')
     args=parser.parse_args()
     try:
         with tempfile.TemporaryDirectory(prefix='gbb-vendor-registers-') as directory:
             base=Path(directory); replacement=base/'owned.rom'; replacement.write_bytes(build())
             inputs=base/'none.script'; inputs.write_text('GBB SGB input v1\n0 none\n')
             reports=[]
-            for model in ('sgb','sgb2'):
+            for model in (args.model or ('sgb','sgb2')):
                 original=args.firmware_dir/('sgb1.program.rom' if model=='sgb' else 'sgb2.program.rom')
                 result={'model':model,'program_sha256':hashlib.sha256(original.read_bytes()).hexdigest()}
                 pitches={}
@@ -93,12 +132,24 @@ def main():
                     if pitches[kind,'base']!=pitches[kind,'envelope'] or any(abs(a/2-b)>1 for a,b in zip(pitches[kind,'base'],pitches[kind,'half'])):
                         raise ValueError('uploaded tuning scaling mismatch')
                 result['binding']={kind:{name:pitches[kind,name] for name in ('base','half','envelope')} for kind in ('original','replacement')}
+                if args.timing:
+                    result['timing']={}
+                    for case in ('entry','entry-no-rest','short','entry-chain','pitch'):
+                        game=base/(case+'.gb'); game.write_bytes(timing_game(case))
+                        compared={kind:timing_summary(capture(args.probe.resolve(),program.resolve(),game,model,300000000,inputs))
+                                  for kind,program in (('original',original),('replacement',replacement))}
+                        check_timing(compared['original'],compared['replacement'])
+                        result['timing'][case]=compared
                 if args.game:
                     script=ROOT/'tests/fixtures/sgb/titles/donkey-kong-gameplay.script'
                     if hashlib.sha256(args.game.read_bytes()).hexdigest()!=TITLE_SHA256 or hashlib.sha256(script.read_bytes()).hexdigest()!=SCRIPT_SHA256:
                         raise ValueError('private title/input identity mismatch')
                     result['title']={kind:title_summary(capture(args.probe.resolve(),program.resolve(),args.game.resolve(),model,1150000000,script))
                                      for kind,program in (('original',original),('replacement',replacement))}
+                    if args.timing:
+                        a,b=result['title']['original'],result['title']['replacement']
+                        if a['note_pitches']!=b['note_pitches'] or abs(a['last_gate_ms']-b['last_gate_ms'])>4 or abs(a['stop_after_last_keyon_ms']-b['stop_after_last_keyon_ms'])>4 or b['final_flg_write']!=0:
+                            raise ValueError('title measured pitch/gate/release contract failed')
                 reports.append(result)
     except (OSError,ValueError,KeyError,TypeError,subprocess.TimeoutExpired):
         parser.error('private reference comparison failed; child diagnostics suppressed')
