@@ -240,13 +240,12 @@ prevents the release.
 The [release checklist](docs/release-checklist.md) covers the manual link
 session smoke test and platform packaging checks to repeat before publishing.
 
-Windows SmartScreen may warn when an executable downloaded from GitHub has no
-trusted publisher signature. The release workflow supports Authenticode
-signing when the repository maintainer configures the encrypted
-`WINDOWS_SIGNING_CERTIFICATE_BASE64` (base64-encoded `.pfx`) and
-`WINDOWS_SIGNING_CERTIFICATE_PASSWORD` secrets. A publicly trusted code-signing
-certificate is required; self-signing the executable will not remove the
-warning for other users.
+Windows version-tag builds sign and timestamp both `gbb.exe` and
+`gbb-updater.exe` with Certum SimplySign before packaging. Signing uses the
+`CERTUM_USERNAME`, `CERTUM_OTP_URI` and `CERTUM_KEY_ID` GitHub Actions secrets;
+`CERTUM_KEY_ID` is the certificate's SHA-1 thumbprint. The build verifies both
+signatures, the expected signer and their timestamps, and fails if signing or
+verification fails. Branch and pull-request builds remain unsigned.
 
 ## Layout
 

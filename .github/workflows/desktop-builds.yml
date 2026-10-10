@@ -591,39 +591,57 @@ jobs:
         if: runner.os != 'Linux'
         run: cmake --install build --config Release --prefix package
 
-      - name: Sign Windows executable
-        if: runner.os == 'Windows'
+      - name: Set up Certum release signing
+        if: >-
+          runner.os == 'Windows' &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+          startsWith(github.ref, 'refs/tags/v')
+        timeout-minutes: 10
+        uses: dismine/windows-app-signing-setup-action@89ae3b032d4bc7a5b98d1a42a34e61ecb6faad64 # v1
+        with:
+          certum-username: ${{ secrets.CERTUM_USERNAME }}
+          certum-otp-uri: ${{ secrets.CERTUM_OTP_URI }}
+          certum-key-id: ${{ secrets.CERTUM_KEY_ID }}
+          capture-diagnostics: 'false'
+
+      - name: Sign and verify Windows release executables
+        if: >-
+          runner.os == 'Windows' &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+          startsWith(github.ref, 'refs/tags/v')
+        timeout-minutes: 10
         shell: pwsh
         env:
-          WINDOWS_SIGNING_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
-          WINDOWS_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
+          CERTUM_KEY_ID: ${{ secrets.CERTUM_KEY_ID }}
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_CERTIFICATE_BASE64)) {
-            Write-Warning "No Windows signing certificate configured; the executable will be unsigned."
-            exit 0
+          $ErrorActionPreference = "Stop"
+          if ($env:CERTUM_KEY_ID -notmatch '^[0-9a-fA-F]{40}$') {
+            throw "CERTUM_KEY_ID must be the certificate's 40-character SHA-1 thumbprint"
           }
-          $certificate = Join-Path $env:RUNNER_TEMP "gbb-signing.pfx"
-          [IO.File]::WriteAllBytes(
-            $certificate,
-            [Convert]::FromBase64String($env:WINDOWS_SIGNING_CERTIFICATE_BASE64))
-          $signtool = (Get-Command signtool.exe -ErrorAction SilentlyContinue).Source
+          $signtool = Get-ChildItem `
+            "${env:ProgramFiles(x86)}\Windows Kits\10\bin" `
+            -Filter signtool.exe -Recurse |
+            Where-Object { $_.Directory.Name -eq 'x64' } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1 -ExpandProperty FullName
           if ([string]::IsNullOrWhiteSpace($signtool)) {
-            $signtool = Get-ChildItem `
-              "${env:ProgramFiles(x86)}\Windows Kits\10\bin" `
-              -Filter signtool.exe -Recurse -ErrorAction SilentlyContinue |
-              Sort-Object FullName -Descending |
-              Select-Object -First 1 -ExpandProperty FullName
-          }
-          if ([string]::IsNullOrWhiteSpace($signtool)) {
-            throw "signtool.exe was not found on the Windows runner"
+            throw "x64 signtool.exe was not found on the Windows runner"
           }
           foreach ($file in @("package\gbb.exe", "package\gbb-updater.exe")) {
-            & $signtool sign /fd SHA256 /f $certificate `
-              /p $env:WINDOWS_SIGNING_CERTIFICATE_PASSWORD `
-              /tr http://timestamp.digicert.com /td SHA256 $file
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
+              throw "Release executable is missing: $file"
+            }
+            & $signtool sign /fd SHA256 /sha1 $env:CERTUM_KEY_ID `
+              /tr http://timestamp.certum.pl /td SHA256 $file
             if ($LASTEXITCODE -ne 0) { throw "Authenticode signing failed for $file" }
-            & $signtool verify /pa $file
+            & $signtool verify /pa /all /tw $file
             if ($LASTEXITCODE -ne 0) { throw "Signed executable verification failed for $file" }
+            $signature = Get-AuthenticodeSignature -LiteralPath $file
+            if ($signature.Status -ne 'Valid' -or
+                $signature.SignerCertificate.Thumbprint -ne $env:CERTUM_KEY_ID -or
+                $null -eq $signature.TimeStamperCertificate) {
+              throw "Release executable must have a valid signature from the configured certificate and a timestamp: $file"
+            }
           }
 
       - name: Package Windows artifact

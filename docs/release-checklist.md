@@ -20,8 +20,10 @@ below are release actions to perform deliberately, not part of a docs audit.
 - [ ] Confirm the Android signing key/`gbb` alias is retained, required signing
       secrets are configured, and tagged Play publishing has
       `GCP_WORKLOAD_IDENTITY_PROVIDER` and `GCP_SERVICE_ACCOUNT` configured.
-      Windows signing is conditional on its signing configuration; distinguish
-      unsigned packages from signed ones in the release evidence.
+      Confirm `CERTUM_USERNAME`, `CERTUM_OTP_URI` and `CERTUM_KEY_ID` are configured
+      for Windows release signing. Verify the tagged Windows build signs and
+      timestamps both `gbb.exe` and `gbb-updater.exe` before packaging; signing
+      or verification failures must block the release.
 - [ ] Review and stage only the intended release files, commit the changes
       including changelog and `VERSION`, and push the release commit to
       `main`. Record `git rev-parse HEAD` for the exact candidate SHA.
