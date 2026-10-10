@@ -1366,6 +1366,10 @@ if(GAMEBOY_BUILD_TESTS)
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_bank_replace_audio.py
                 --probe $<TARGET_FILE:gameboy_sgb_bank_replace_audio_probe>)
         set_tests_properties(gameboy_sgb_bank_replace_audio PROPERTIES TIMEOUT 3600 COST 1400)
+        add_test(NAME gameboy_sgb_active_bank_replace_audio
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_bank_replace_audio.py
+                --probe $<TARGET_FILE:gameboy_sgb_bank_replace_audio_probe> --active)
+        set_tests_properties(gameboy_sgb_active_bank_replace_audio PROPERTIES TIMEOUT 3600 COST 1400)
         add_test(NAME gameboy_sgb_audio_transition_contract
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_audio_transition_tests.py)
         add_test(NAME gameboy_sgb_audio_transitions
@@ -2931,7 +2935,7 @@ if(GAMEBOY_BUILD_TESTS)
     get_property(_gbb_registered_tests DIRECTORY PROPERTY TESTS)
     foreach(_gbb_test IN LISTS _gbb_registered_tests)
         if((_gbb_test MATCHES "^gameboy_sgb_(score_|native_score_)" OR
-            _gbb_test MATCHES "^gameboy_sgb_(polyphony_audio|one_shot_audio|one_shot_interrupt|instrument_change_audio|bank_replace_audio|audio_transitions|combined_sample_pitch|host_sample_pitch|owned_sample_pitch_transport)$") AND
+            _gbb_test MATCHES "^gameboy_sgb_(polyphony_audio|one_shot_audio|one_shot_interrupt|instrument_change_audio|bank_replace_audio|active_bank_replace_audio|audio_transitions|combined_sample_pitch|host_sample_pitch|owned_sample_pitch_transport)$") AND
            NOT _gbb_test MATCHES "_contract$" AND
            NOT _gbb_test MATCHES "^gameboy_sgb_score_(demand_inventory|short_return_fixture|short_continue_fixture|short_pair_fixture|direct_return_fixture|scheduler)$")
             get_test_property(${_gbb_test} LABELS _gbb_test_labels)

@@ -16,11 +16,13 @@ from check_sgb_polyphony_audio import SUM_TOLERANCE
 from check_sgb_audio_transitions import RATE,MASTER,FRAMES,pitch,digest
 
 
-def observe(meta,raw,profile,voice):
+def observe(meta,raw,profile,voice,active=False):
+    if type(active) is not bool:raise ValueError('requires boolean active-upload mode')
     expected=dict(schema='gbb-sgb-bank-replace-audio-v1',qualification=False,playback=False,
-                  reset_equal=True,restore_equal=True,sample_rate_hz=RATE,clipped=0,sounds=4,version=0xDA,
+                  reset_equal=True,restore_equal=True,sample_rate_hz=RATE,clipped=0,sounds=3 if active else 4,version=0xDA,
                   restore_edges=31,restore_releases=3,restore_zeros=3,queued_onsets=3,queued_offs=3,
                   restore_banks=3,restore_clears=3,queued_banks=3,queued_clears=3)
+    if active:expected.update(active_upload=True,restore_mute=1,queued_mute=1)
     if profile not in PROFILES or type(voice) is not int or voice not in (2,3) or not isinstance(meta,dict) or any(
             type(meta.get(k)) is not type(v) or meta[k]!=v for k,v in expected.items()):
         raise ValueError('invalid bank-replacement identity or replay coverage')
@@ -42,12 +44,15 @@ def observe(meta,raw,profile,voice):
     notes=meta.get('notes')
     if not isinstance(notes,list) or len(notes)!=2:raise ValueError('expected old and new bank notes')
     for index,n in enumerate(notes):
+        stop=2 if active and index==0 else 1 if index==0 else 4
+        budget=4096 if active and index==0 else 960
         if not isinstance(n,list) or len(n)!=11 or any(type(x) is not int for x in n) or (
                 n[:3]!=[voice,index+2,PITCHES[2][9 if index==0 else 12]] or not 0<n[3]<n[4]<=n[5] or
-                not edges[0 if index==0 else 3][2]<n[6]<edges[1 if index==0 else 4][2]<=n[7]<=n[8]<meta['frames'] or
-                n[7]-edges[1 if index==0 else 4][2]>960 or not 0<n[9]<=127 or n[10]!=1<<voice):
+                not edges[0 if index==0 else 3][2]<n[6]<edges[stop][2]<=n[7]<=n[8]<meta['frames'] or
+                n[7]-edges[stop][2]>budget or not 0<n[9]<=127 or n[10]!=1<<voice):
             raise ValueError('wrong source/pitch or stop did not release an active loop')
-    if not notes[0][8]<edges[2][2] or not notes[0][5]<notes[1][3]:raise ValueError('old audio did not settle before upload')
+    if not notes[0][5]<notes[1][3] or (not active and not notes[0][8]<edges[2][2]):
+        raise ValueError('old audio did not settle before fresh playback')
     banks=meta.get('banks');clears=meta.get('clears');fixtures=objects(profile,voice)
     if not isinstance(banks,list) or len(banks)!=2 or not isinstance(clears,list) or len(clears)!=2:
         raise ValueError('missing atomic replacement timeline')
@@ -60,11 +65,28 @@ def observe(meta,raw,profile,voice):
         if not lower<clear[1]<=bank[1]<upper or not clear[2]<=bank[2] or any(
                 not 0<=clock*RATE//MASTER-frame<=2 for frame,clock in ((clear[1],clear[2]),(bank[1],bank[2]))):
             raise ValueError('clearing/publication outside replacement interval')
+    if active:
+        mute=meta.get('mute')
+        if not isinstance(mute,list) or len(mute)!=6 or any(type(x) is not int for x in mute) or (
+                not notes[0][7]<=mute[0]<=notes[0][8]<=clears[1][1] or
+                not notes[0][4]<=mute[2]<=notes[0][5] or mute[3:5]!=[255,224] or
+                not 0<=mute[5]<=127 or not 0<=mute[1]*RATE//MASTER-mute[0]<=2):
+            raise ValueError('missing native active-upload mute before clearing')
+        gaps=meta.get('gaps')
+        if not isinstance(gaps,list) or not 1<=len(gaps)<=64:raise ValueError('missing bounded DMA observations')
+        previous_frame=edges[2][2];previous_sample=0
+        for gap in gaps:
+            if not isinstance(gap,list) or len(gap)!=6 or any(type(x) is not int for x in gap) or (
+                    not previous_frame<gap[0]<notes[0][7] or gap[4:]!=[3,0] or
+                    not previous_sample<gap[2]<gap[3]<=meta['native_samples'] or not 2<=gap[3]-gap[2]<=512 or
+                    not 0<=gap[1]*RATE//MASTER-gap[0]<=2+(3*(gap[3]-gap[2])+1)//2):
+                raise ValueError('native sampling gap outside pre-handoff DMA interval')
+            previous_frame=gap[0];previous_sample=gap[3]
     if any(a or b for a,b in pcm[edges[4][2]+3072:]):raise ValueError('final stop leaves stale audio')
     return dict(meta=meta,left=[x[0] for x in pcm],right=[x[1] for x in pcm])
 
 
-def compare(controls,model,voice):
+def compare(controls,model,voice,active=False):
     both=controls['both'];meta=both['meta']
     for profile in PROFILES[1:]:
         other=controls[profile]
@@ -72,6 +94,8 @@ def compare(controls,model,voice):
                 [b[:3]+b[5:] for b in meta['banks']]!=[b[:3]+b[5:] for b in other['meta']['banks']]):
             raise ValueError('source controls do not share exact replacement timeline')
         if both['left']!=other['left']:raise ValueError('replacement disturbs GB output')
+    if active and any(any(meta[k]!=controls[p]['meta'][k] for k in ('mute','gaps')) for p in PROFILES[1:]):
+        raise ValueError('active-upload mute timeline differs')
     if any(controls['gb']['right']):raise ValueError('silent bank control is audible')
     maxima={}
     for channel in ('left','right'):
@@ -102,19 +126,19 @@ def compare(controls,model,voice):
                 fresh_bank_bytes=True,uninterrupted_gb_equal=True,final_silent=True)
 
 
-def run(probe,host,directory,model,voice,profile,mode):
+def run(probe,host,directory,model,voice,profile,mode,active=False):
     game=directory/'game.gb';pcm=directory/'output.pcm';report=directory/'output.json'
-    image=build(profile,voice);game.write_bytes(image)
-    child=subprocess.run([str(probe),str(host),str(game),model,mode,str(pcm),str(report),str(voice)],
+    image=build(profile,voice,active);game.write_bytes(image)
+    child=subprocess.run([str(probe),str(host),str(game),model,mode,str(pcm),str(report),str(voice)]+(['active'] if active else []),
                          capture_output=True,text=True,timeout=150)
     if child.returncode or child.stdout or child.stderr:raise ValueError('bounded bank-replacement probe failed: '+child.stderr[:512])
     if pcm.stat().st_size>1000000 or report.stat().st_size>16384:raise ValueError('replacement output bound')
-    raw=pcm.read_bytes();meta=json.loads(report.read_text());observed=observe(meta,raw,profile,voice)
+    raw=pcm.read_bytes();meta=json.loads(report.read_text());observed=observe(meta,raw,profile,voice,active)
     return observed,dict(model=model,voice=voice,profile=profile,mode=mode,
                          fixture_sha256=hashlib.sha256(image).hexdigest(),pcm_sha256=hashlib.sha256(raw).hexdigest(),**meta)
 
 
-def measure(probe):
+def measure(probe,active=False):
     image=program(**OPTIONS)
     if hashlib.sha256(image).hexdigest()!=IMAGE_HASH:raise ValueError('DA image changed')
     runs=[];comparisons=[]
@@ -124,18 +148,19 @@ def measure(probe):
             for voice in (2,3):
                 controls={}
                 for profile in PROFILES:
-                    controls[profile],summary=run(probe,host,directory,model,voice,profile,'combined');runs.append(summary)
-                comparisons.append(dict(model=model,voice=voice,**compare(controls,model,voice)))
-                scalar,summary=run(probe,host,directory,model,voice,'both','scalar')
+                    controls[profile],summary=run(probe,host,directory,model,voice,profile,'combined',active);runs.append(summary)
+                comparisons.append(dict(model=model,voice=voice,**compare(controls,model,voice,active)))
+                scalar,summary=run(probe,host,directory,model,voice,'both','scalar',active)
                 if scalar!=controls['both']:raise ValueError('scalar bank-replacement PCM/timeline differs')
                 runs.append(summary)
     return dict(schema='gbb-sgb-bank-replace-audio-v1',qualification=False,playback=False,
-                evidence='owned_48k_whole_host_stopped_bank_replacement',image_sha256=IMAGE_HASH,runs=runs,comparisons=comparisons)
+                evidence='owned_48k_whole_host_active_bank_replacement' if active else 'owned_48k_whole_host_stopped_bank_replacement',image_sha256=IMAGE_HASH,runs=runs,comparisons=comparisons)
 
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--probe',type=Path,required=True)
+    parser.add_argument('--active',action='store_true')
     args=parser.parse_args()
-    try:report=measure(args.probe.resolve())
+    try:report=measure(args.probe.resolve(),args.active)
     except (OSError,ValueError,subprocess.TimeoutExpired) as error:parser.error(str(error))
     print(json.dumps(report,indent=2))

@@ -171,7 +171,8 @@ SGB1 voice-2 instrument-change run's complete metadata and PCM SHA-256
 including its reset and restored executions.
 
 CTest assigns this full matrix to exactly one of eight dedicated Linux shards;
-the extended set now contains 66 tests. The public contract stays unlabelled.
+the extended set contained 66 tests at this milestone. The public contract stays
+unlabelled.
 Probe build, Python compilation, shard planning and whitespace checks pass.
 The full checker used native results from this session, retaining temporary
 per-case results while executing independent voice assignments concurrently.
@@ -187,8 +188,9 @@ banks, command phases, clocks and presentation rates remain separate work.
 
 ## Next step
 
-Qualify replacement SOU_TRN while the old owned loop is still audible, without
-a preceding SOUND stop. Anchor interruption to native KOF/mute and clearing,
-then verify fresh remapped playback, uninterrupted GB audio and queued-output
-replay across the active ownership transition. General banks, private-original
-or hardware comparisons and title compatibility remain separate work.
+The [active replacement gate](sgb-active-bank-replacement-audio.md) extends this
+to SOU_TRN without a preceding SOUND stop, including native KOF/mute, bounded
+DMA observations, fresh remapped PCM and queued-output replay. Next, add audible
+fail-closed coverage for rejected replacement banks. General banks,
+private-original or hardware comparisons and title compatibility remain
+separate work.

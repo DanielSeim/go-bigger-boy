@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Owned stopped-bank replacement with a fresh waveform/map and continuous GB."""
+"""Owned stopped/active bank replacement with fresh waveform/map and continuous GB."""
 import argparse
 import hashlib
 from pathlib import Path
@@ -39,7 +39,8 @@ def objects(profile='both',voice=2):
     return tuple(result)
 
 
-def build(profile='both',voice=2):
+def build(profile='both',voice=2,active=False):
+    if type(active) is not bool:raise ValueError('requires boolean active-upload mode')
     payloads=[]
     for score,asset in objects(profile,voice):
         data=struct.pack('<HH',len(score),0x2B00)+score+struct.pack('<HH',len(asset),0x5000)+asset+struct.pack('<HH',0,0x0400)
@@ -48,19 +49,20 @@ def build(profile='both',voice=2):
     initial=[(0x26,0),(0x26,0x80),(0x24,0x77),(0x25,0x10),(0x10,0),(0x11,0x80),
              (0x12,0x40),(0x13,0),(0x14,0x87),(0x80,1)]
     sound=lambda song:bytes((0x41,0,0,0,song))
-    return build_cartridge(payloads,[(64,sound(1),None),(12,sound(128),None),(4,bytes((0x49,)),1),
+    return build_cartridge(payloads,[(64,sound(1),None),(12,None if active else sound(128),None),(4,bytes((0x49,)),1),
                                      (64,sound(1),None),(12,sound(128),None)],
                           io_writes=[initial,[(0x80,2)],[(0x80,3)],[(0x80,4)],[(0x25,0),(0x80,5)]])
 
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--active',action='store_true',help='upload while the old note is active')
     parser.add_argument('--profile',choices=PROFILES,default='both')
     parser.add_argument('--voice',type=int,choices=(2,3),default=2)
     parser.add_argument('--output',type=Path,required=True)
     args=parser.parse_args()
     try:
-        image=build(args.profile,args.voice)
+        image=build(args.profile,args.voice,args.active)
         with args.output.open('xb') as output:output.write(image)
     except (OSError,ValueError) as error:parser.error(str(error))
     print(hashlib.sha256(image).hexdigest())

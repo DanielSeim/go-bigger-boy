@@ -16,13 +16,13 @@ from check_sgb_bank_replace_audio import observe,compare,RATE,MASTER,fnv
 from check_sgb_instrument_chromatic_reference import PITCHES
 
 
-def synthetic(profile='both',voice=2,model='sgb'):
+def synthetic(profile='both',voice=2,model='sgb',active=False):
     clocks=100000016;frames=clocks*RATE//MASTER
     clock=lambda frame:((frame+1)*MASTER+RATE-1)//RATE
     positions=(60000,70000,75000,140000,155000)
     edges=[[i+1,0 if i==4 else 16,f,clock(f)] for i,f in enumerate(positions)]
     notes=[]
-    for index,(begin,end) in enumerate(((64000,70100),(144000,155100))):
+    for index,(begin,end) in enumerate(((64000,79000 if active else 70100),(144000,155100))):
         notes.append([voice,index+2,PITCHES[2][9 if index==0 else 12],begin*2048000//RATE,
                       end*2048000//RATE,(end+100)*2048000//RATE,begin,end,end+100,63,1<<voice])
     banks=[];clears=[]
@@ -35,6 +35,10 @@ def synthetic(profile='both',voice=2,model='sgb'):
               restore_banks=3,restore_clears=3,queued_banks=3,queued_clears=3,
               frames=frames,clocks=clocks,restore_count=800,pending_restores=200,
               gb_samples=200000,native_samples=150000,edges=edges,notes=notes,banks=banks,clears=clears)
+    if active:
+        meta.update(active_upload=True,sounds=3,restore_mute=1,queued_mute=1,
+                    mute=[79001,clock(79001),notes[0][4]+1,255,224,63],
+                    gaps=[[76000,clock(76000),60000,60005,3,0]])
     right=[0]*frames
     for index,note in enumerate(notes):
         if profile not in ('both','old' if index==0 else 'new'):continue
@@ -47,7 +51,8 @@ def synthetic(profile='both',voice=2,model='sgb'):
         right[i]) for i in range(frames))
 
 
-def controls(voice=2,model='sgb'):return {p:observe(*synthetic(p,voice,model),p,voice) for p in PROFILES}
+def controls(voice=2,model='sgb',active=False):
+    return {p:observe(*synthetic(p,voice,model,active),p,voice,active) for p in PROFILES}
 
 
 class BankReplaceAudioTests(unittest.TestCase):
@@ -78,6 +83,48 @@ class BankReplaceAudioTests(unittest.TestCase):
                 self.assertEqual(struct.unpack_from('>H',image,0x14E)[0],(sum(image)-sum(image[0x14E:0x150]))&65535)
         for args in (('missing',2),('both',True),('both',4)):
             with self.assertRaises(ValueError):build(*args)
+
+    def test_active_upload_continues_until_native_mute(self):
+        for model in ('sgb','sgb2'):
+            for voice in (2,3):
+                result=compare(controls(voice,model,True),model,voice,True)
+                self.assertTrue(result['uninterrupted_gb_equal'])
+                self.assertNotEqual(build('both',voice),build('both',voice,True))
+                image=build('both',voice,True)
+                self.assertEqual(image,build('both',voice,True))
+                for profile in PROFILES:
+                    self.assertEqual(image[0x150:0x4000],build(profile,voice,True)[0x150:0x4000])
+        with self.assertRaises(ValueError):build(active=1)
+
+    def test_active_upload_mute_and_ownership_mutations_reject(self):
+        original,raw=synthetic(active=True)
+        for mutation in ('mode','sound','early_stop','missing','kof','flg','half','clear','clock','env','restore','queued',
+                         'gaps','gap_stage','gap_release','gap_bound','gap_time'):
+            meta=copy.deepcopy(original)
+            if mutation=='mode':meta['active_upload']=False
+            elif mutation=='sound':meta['sounds']=4
+            elif mutation=='early_stop':meta['notes'][0][7]=70100
+            elif mutation=='missing':del meta['mute']
+            elif mutation=='kof':meta['mute'][3]=0
+            elif mutation=='flg':meta['mute'][4]=0
+            elif mutation=='half':meta['mute'][2]=meta['notes'][0][4]-1
+            elif mutation=='clear':meta['mute'][0]=meta['clears'][1][1]+1
+            elif mutation=='clock':meta['mute'][1]=0
+            elif mutation=='env':meta['mute'][5]=128
+            elif mutation=='restore':meta['restore_mute']=0
+            elif mutation=='queued':meta['queued_mute']=0
+            elif mutation=='gaps':meta['gaps']=[]
+            elif mutation=='gap_stage':meta['gaps'][0][4]=2
+            elif mutation=='gap_release':meta['gaps'][0][5]=1
+            elif mutation=='gap_bound':meta['gaps'][0][3]+=512
+            else:meta['gaps'][0][0]=meta['notes'][0][7]+1
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):observe(meta,raw,'both',2,True)
+        result=controls(active=True);result['new']['meta']['mute'][1]+=1
+        with self.assertRaises(ValueError):compare(result,'sgb',2,True)
+        # Removing the late old tone keeps source sums valid but must fail pitch.
+        result=controls(active=True)
+        for i in range(76000,79000):result['both']['right'][i]=result['old']['right'][i]=0
+        with self.assertRaises(ValueError):compare(result,'sgb',2,True)
 
     def test_export_refuses_overwrite(self):
         with tempfile.TemporaryDirectory() as name:

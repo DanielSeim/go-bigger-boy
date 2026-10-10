@@ -31,6 +31,8 @@ struct Result {
     std::vector<std::uint8_t> pcm,state;
     std::vector<Edge> edges;
     ScoreAdsrObserver envelopes;
+    std::vector<std::uint64_t> mute;
+    std::vector<std::array<std::uint64_t,6>> gaps;
     std::vector<std::array<std::uint64_t,7>> banks;
     std::vector<std::array<std::uint64_t,3>> clears;
     std::vector<std::uint64_t> onset_frames,off_frames,zero_frames;
@@ -38,12 +40,12 @@ struct Result {
     std::uint64_t gb_samples{},native_samples{},clipped{},clocks{},sounds{};
     unsigned version{},env2{},env3{};
     bool operator==(const Result& other) const {
-        return std::tie(pcm,state,edges,off_envs,off_endx,banks,clears,onset_frames,off_frames,zero_frames,gb_samples,native_samples,clipped,clocks,sounds,version,env2,env3)==
-            std::tie(other.pcm,other.state,other.edges,other.off_envs,other.off_endx,other.banks,other.clears,other.onset_frames,other.off_frames,other.zero_frames,other.gb_samples,other.native_samples,other.clipped,other.clocks,other.sounds,other.version,other.env2,other.env3) && envelopes==other.envelopes;
+        return std::tie(pcm,state,edges,off_envs,off_endx,mute,gaps,banks,clears,onset_frames,off_frames,zero_frames,gb_samples,native_samples,clipped,clocks,sounds,version,env2,env3)==
+            std::tie(other.pcm,other.state,other.edges,other.off_envs,other.off_endx,other.mute,other.gaps,other.banks,other.clears,other.onset_frames,other.off_frames,other.zero_frames,other.gb_samples,other.native_samples,other.clipped,other.clocks,other.sounds,other.version,other.env2,other.env3) && envelopes==other.envelopes;
     }
 };
-struct Restores { unsigned count{},pending{},edges{},releases{},zeros{},banks{},clears{},queued_onsets{},queued_offs{},queued_banks{},queued_clears{}; };
-Result run(Host& host,Restores* restores=nullptr,unsigned voice=2) {
+struct Restores { unsigned count{},pending{},edges{},releases{},zeros{},banks{},clears{},queued_onsets{},queued_offs{},queued_banks{},queued_clears{},mute{},queued_mute{}; };
+Result run(Host& host,Restores* restores=nullptr,bool active=false) {
     Result result;
     unsigned last_stage=0,last_checkpoint=0,last_envelope=0;
     bool previous_clear=false;
@@ -59,7 +61,15 @@ Result run(Host& host,Restores* restores=nullptr,unsigned voice=2) {
             result.edges.push_back({stage,bus.read8(0xff25),frames,host.cpu().timing().clocks()});
             last_stage=stage; since_edge=frames; edge=true;
         }
+        const auto missed=result.envelopes.notes.empty() ? 0 : result.envelopes.notes[0].missed;
+        const auto last_sample=result.envelopes.notes.empty() ? 0 : result.envelopes.notes[0].last_sample;
         result.envelopes.capture(host,host.cpu().debug_wram_byte(0x26));
+        if (!result.envelopes.notes.empty() && result.envelopes.notes[0].missed!=missed) {
+            const auto& note=result.envelopes.notes[0];
+            require(active && stage==3 && !note.off_half && result.gaps.size()<64 &&
+                    note.last_sample>last_sample+1 && note.last_sample-last_sample<=512,"unexpected native sampling gap");
+            result.gaps.push_back({frames,host.cpu().timing().clocks(),last_sample,note.last_sample,stage,note.off_half});
+        }
         while (result.onset_frames.size()<result.envelopes.notes.size()) {
             result.onset_frames.push_back(frames); result.off_frames.push_back(0); result.zero_frames.push_back(0);
             result.off_envs.push_back(0); result.off_endx.push_back(0);
@@ -92,9 +102,17 @@ Result run(Host& host,Restores* restores=nullptr,unsigned voice=2) {
             if (note.zero_half && result.envelopes.active[note.voice-2]==i)
                 result.envelopes.active[note.voice-2]=32;
         }
+        bool muted=false;
+        if (active && result.mute.empty() && result.envelopes.notes.size()==1 && result.off_frames[0] &&
+                host.debug_dsp_register(0x6c)==0xe0) {
+            result.mute={frames,host.cpu().timing().clocks(),host.apu_half_clocks(),
+                         host.debug_dsp_register(0x5c),host.debug_dsp_register(0x6c),
+                         host.debug_dsp_register(result.envelopes.notes[0].voice*16+8)};
+            muted=true;
+        }
         const auto offset=last_stage ? frames-since_edge : ~std::uint64_t{0};
         const unsigned checkpoint=unsigned(frames/512);
-        bool queued_event=false;
+        bool queued_event=host.pending_samples() && !result.mute.empty() && frames-result.mute[0]<=32;
         if (host.pending_samples()) {
             for (const auto& bank:result.banks) if (frames-bank[1]<=32) queued_event=true;
             for (const auto& clear:result.clears) if (frames-clear[1]<=32) queued_event=true;
@@ -103,7 +121,7 @@ Result run(Host& host,Restores* restores=nullptr,unsigned voice=2) {
             if (host.pending_samples() && (frames-result.onset_frames[i]<=32 ||
                 (result.off_frames[i] && frames-result.off_frames[i]<=32))) queued_event=true;
         // Save before draining, including queued output, at and around edges.
-        if (restores && (edge || release || zero || publication || clearing || queued_event || checkpoint!=last_checkpoint ||
+        if (restores && (edge || release || zero || muted || publication || clearing || queued_event || checkpoint!=last_checkpoint ||
             result.envelopes.checkpoints!=last_envelope ||
             (host.pending_samples() && (offset==1 || offset==2 || offset==3 || offset==4 ||
              offset==8 || offset==16 || offset==32 || offset==64 || offset==128)))) {
@@ -118,6 +136,8 @@ Result run(Host& host,Restores* restores=nullptr,unsigned voice=2) {
                 if (result.off_frames[i]==frames) restores->releases |= 1U<<i;
                 if (result.zero_frames[i]==frames) restores->zeros |= 1U<<i;
             }
+            if (muted) restores->mute=1;
+            if (host.pending_samples() && !result.mute.empty() && frames-result.mute[0]<=32) restores->queued_mute=1;
             if (publication) restores->banks |= 1U<<(result.banks.size()-1);
             if (clearing) restores->clears |= 1U<<(result.clears.size()-1);
             if (host.pending_samples()) {
@@ -150,14 +170,15 @@ Result run(Host& host,Restores* restores=nullptr,unsigned voice=2) {
         std::cerr << "lifecycle " << result.version << ' ' << result.env2 << ' ' << result.env3
                   << " error " << unsigned(host.cpu().debug_wram_byte(0x27))
                   << " notes " << result.envelopes.notes.size() << '\n';
-    require(result.clipped==0 && result.gb_samples && result.sounds==4 && result.version==0xda &&
+    require(result.clipped==0 && result.gb_samples && result.sounds==(active ? 3 : 4) && result.version==0xda &&
             !result.env2 && !result.env3 && !host.cpu().debug_wram_byte(0x27),"incomplete lifecycle");
     require(result.envelopes.notes.size()==2,"expected old and replacement onsets");
     for (const auto& note:result.envelopes.notes) {
-        if (!(note.off_half>note.on_half && note.zero_half>=note.off_half && !note.setup_changes && !note.missed))
+        const bool sampled=!note.missed || (active && &note==&result.envelopes.notes[0] && note.missed==result.gaps.size());
+        if (!(note.off_half>note.on_half && note.zero_half>=note.off_half && !note.setup_changes && sampled))
             std::cerr << "note " << note.voice << " source " << note.source << " on " << note.on_half << " off " << note.off_half
                       << " zero " << note.zero_half << " changes " << note.setup_changes << " missed " << note.missed << '\n';
-        require(note.off_half>note.on_half && note.zero_half>=note.off_half && !note.setup_changes && !note.missed,
+        require(note.off_half>note.on_half && note.zero_half>=note.off_half && !note.setup_changes && sampled,
                 "missing release or unstable held tone");
     }
     return result;
@@ -165,9 +186,11 @@ Result run(Host& host,Restores* restores=nullptr,unsigned voice=2) {
 }
 int main(int argc,char** argv) {
     try {
-        require(argc==8,"ROM GAME MODEL MODE PCM REPORT VOICE");
-        const unsigned voice=argc==8 ? (std::string(argv[7])=="2" ? 2 : std::string(argv[7])=="3" ? 3 : 0) : 0;
+        require(argc==8 || argc==9,"ROM GAME MODEL MODE PCM REPORT VOICE");
+        const unsigned voice=argc>=8 ? (std::string(argv[7])=="2" ? 2 : std::string(argv[7])=="3" ? 3 : 0) : 0;
         require(voice,"bank-replacement voice");
+        const bool active=argc==9;
+        require(!active || std::string(argv[8])=="active","upload mode");
         gameboy::SgbHostConfig config;
         config.program_rom=read(argv[1],262144); config.game_rom=read(argv[2],32768);
         const std::string model=argv[3],mode=argv[4];
@@ -178,12 +201,13 @@ int main(int argc,char** argv) {
         config.gb_boot_rom[0]=0xc3; config.gb_boot_rom[2]=1;
         Host normal(config),restored(config);
         if (mode=="scalar") { normal.debug_set_apu_batch_enabled(false); restored.debug_set_apu_batch_enabled(false); }
-        const auto result=run(normal,nullptr,voice);
+        const auto result=run(normal,nullptr,active);
         Restores restores;
-        require(result==run(restored,&restores,voice),"whole state/PCM/edge restore parity");
-        normal.reset(); require(result==run(normal,nullptr,voice),"cold reset parity");
+        require(result==run(restored,&restores,active),"whole state/PCM/edge restore parity");
+        normal.reset(); require(result==run(normal,nullptr,active),"cold reset parity");
         require(restores.pending && restores.edges==31 && restores.releases==3 && restores.zeros==3 && restores.queued_onsets==3 && restores.queued_offs==3 && restores.banks==3 && restores.clears==3 && restores.queued_banks==3 && restores.queued_clears==3,
                 "missing queued-output or release/zero restore coverage");
+        require(!active || (result.mute.size()==6 && restores.mute==1 && restores.queued_mute==1),"missing active mute restore coverage");
         require(result.banks.size()==2 && result.clears.size()==2 && restored.cpu().debug_wram_byte(0x26)==2,"missing bank replacement");
         require(result.envelopes.notes[0].voice==voice && result.envelopes.notes[1].voice==voice &&
                 result.envelopes.notes[0].source==2 && result.envelopes.notes[1].source==3,"replacement did not remap source");
@@ -222,6 +246,18 @@ int main(int argc,char** argv) {
             report << (i ? "," : "") << '[' << c[0] << ',' << c[1] << ',' << c[2] << ']';
         }
         report << ']';
+        if (active) {
+            report << ",\"active_upload\":true,\"restore_mute\":" << restores.mute
+                   << ",\"queued_mute\":" << restores.queued_mute << ",\"mute\":[";
+            for (unsigned i=0;i<result.mute.size();++i) report << (i ? "," : "") << result.mute[i];
+            report << "],\"gaps\":[";
+            for (unsigned i=0;i<result.gaps.size();++i) {
+                report << (i ? "," : "") << '[';
+                for (unsigned j=0;j<6;++j) report << (j ? "," : "") << result.gaps[i][j];
+                report << ']';
+            }
+            report << ']';
+        }
         report << '}';
         require(bool(pcm) && bool(report),"write failed");
     } catch (const std::exception& e) { std::cerr<<e.what()<<'\n'; return 1; }
