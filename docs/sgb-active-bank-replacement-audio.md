@@ -72,7 +72,7 @@ The twenty active cases use the same probe and shared contract as stopped
 mode. CTest registers `gameboy_sgb_active_bank_replace_audio` separately with a
 3600-second timeout and the `sgb-firmware-extended` label. Its full matrix runs
 on a dedicated Linux shard; the seven-method public contract exercises both
-modes in platform/sanitizer jobs. The extended set now has 67 tests.
+modes in platform/sanitizer jobs. The extended set had 67 tests at this milestone.
 
 ```sh
 cmake --build build-dmg-firmware --target gameboy_sgb_bank_replace_audio_probe
@@ -132,8 +132,8 @@ Performance optimization remains deferred.
 
 ## Next step
 
-Add audible fail-closed replacement cases: an active old loop followed by an
-incomplete transfer list or a complete bank with invalid contents. Verify the
-native stop/mute boundary, continued GB audio, absence of old/fallback sound,
-terminal rejection and cold-reset/queued-output replay. Protocol rejection
-already has bounded native coverage; this adds the missing acoustic evidence.
+The [rejected-bank audio gate](sgb-bank-rejection-audio.md) adds incomplete and
+invalid replacement banks, continued GB audio, no old/fallback sound and blocked
+SOUND attempts with reset/queued-output replay. Rejection is recoverable;
+playback remains blocked until a valid upload. Next, qualify audible fresh-bank
+recovery after those failures.

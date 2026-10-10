@@ -33,6 +33,7 @@ struct Result {
     ScoreAdsrObserver envelopes;
     std::vector<std::uint64_t> mute;
     std::vector<std::array<std::uint64_t,6>> gaps;
+    std::vector<std::array<std::uint64_t,17>> rejects;
     std::vector<std::array<std::uint64_t,7>> banks;
     std::vector<std::array<std::uint64_t,3>> clears;
     std::vector<std::uint64_t> onset_frames,off_frames,zero_frames;
@@ -40,12 +41,12 @@ struct Result {
     std::uint64_t gb_samples{},native_samples{},clipped{},clocks{},sounds{};
     unsigned version{},env2{},env3{};
     bool operator==(const Result& other) const {
-        return std::tie(pcm,state,edges,off_envs,off_endx,mute,gaps,banks,clears,onset_frames,off_frames,zero_frames,gb_samples,native_samples,clipped,clocks,sounds,version,env2,env3)==
-            std::tie(other.pcm,other.state,other.edges,other.off_envs,other.off_endx,other.mute,other.gaps,other.banks,other.clears,other.onset_frames,other.off_frames,other.zero_frames,other.gb_samples,other.native_samples,other.clipped,other.clocks,other.sounds,other.version,other.env2,other.env3) && envelopes==other.envelopes;
+        return std::tie(pcm,state,edges,off_envs,off_endx,mute,gaps,rejects,banks,clears,onset_frames,off_frames,zero_frames,gb_samples,native_samples,clipped,clocks,sounds,version,env2,env3)==
+            std::tie(other.pcm,other.state,other.edges,other.off_envs,other.off_endx,other.mute,other.gaps,other.rejects,other.banks,other.clears,other.onset_frames,other.off_frames,other.zero_frames,other.gb_samples,other.native_samples,other.clipped,other.clocks,other.sounds,other.version,other.env2,other.env3) && envelopes==other.envelopes;
     }
 };
-struct Restores { unsigned count{},pending{},edges{},releases{},zeros{},banks{},clears{},queued_onsets{},queued_offs{},queued_banks{},queued_clears{},mute{},queued_mute{}; };
-Result run(Host& host,Restores* restores=nullptr,bool active=false) {
+struct Restores { unsigned count{},pending{},edges{},releases{},zeros{},banks{},clears{},queued_onsets{},queued_offs{},queued_banks{},queued_clears{},mute{},queued_mute{},rejects{},queued_rejects{}; };
+Result run(Host& host,Restores* restores=nullptr,bool active=false,unsigned rejected=0) {
     Result result;
     unsigned last_stage=0,last_checkpoint=0,last_envelope=0;
     bool previous_clear=false;
@@ -110,10 +111,30 @@ Result run(Host& host,Restores* restores=nullptr,bool active=false) {
                          host.debug_dsp_register(result.envelopes.notes[0].voice*16+8)};
             muted=true;
         }
+        bool rejection=false;
+        if (rejected && !result.rejects.empty()) {
+            require(host.cpu().debug_wram_byte(0x56)==1 && host.cpu().debug_wram_byte(0x20)==9 &&
+                    generation==rejected && phase==0xa4 && !host.debug_spc_ram_byte(0xd1) &&
+                    !host.debug_spc_ram_byte(0xd2) && !host.debug_spc_ram_byte(0xd8) &&
+                    !host.debug_spc_ram_byte(0xdb) && !host.debug_spc_ram_byte(0xdc) &&
+                    host.debug_dsp_register(0x6c)==0xe0 && host.debug_dsp_register(0x5c)==0xff,
+                    "rejected playback escaped its blocked state");
+        }
+        if (rejected && host.cpu().debug_wram_byte(0x56)==1 && host.cpu().debug_wram_byte(0x20)==9 &&
+                (result.rejects.empty() || result.rejects.back()[1]!=host.cpu().debug_wram_byte(0x59))) {
+            require(result.rejects.size()<3 && host.cpu().debug_wram_byte(0x57)==1,"unexpected rejection counters");
+            result.rejects.push_back({1,host.cpu().debug_wram_byte(0x59),frames,host.cpu().timing().clocks(),
+                host.cpu().debug_wram_byte(0x56),host.cpu().debug_wram_byte(0x27),generation,phase,
+                host.debug_spc_ram_byte(0xd1),host.debug_spc_ram_byte(0xd2),host.debug_spc_ram_byte(0xd8),
+                host.debug_spc_ram_byte(0xdb),host.debug_spc_ram_byte(0xdc),host.debug_dsp_register(0x6c),
+                host.debug_dsp_register(0x5c),hash(host,0x2b00,2048),hash(host,0x5000,192)});
+            rejection=true;
+        }
         const auto offset=last_stage ? frames-since_edge : ~std::uint64_t{0};
         const unsigned checkpoint=unsigned(frames/512);
         bool queued_event=host.pending_samples() && !result.mute.empty() && frames-result.mute[0]<=32;
         if (host.pending_samples()) {
+            for (const auto& reject:result.rejects) if (frames-reject[2]<=32) queued_event=true;
             for (const auto& bank:result.banks) if (frames-bank[1]<=32) queued_event=true;
             for (const auto& clear:result.clears) if (frames-clear[1]<=32) queued_event=true;
         }
@@ -121,7 +142,7 @@ Result run(Host& host,Restores* restores=nullptr,bool active=false) {
             if (host.pending_samples() && (frames-result.onset_frames[i]<=32 ||
                 (result.off_frames[i] && frames-result.off_frames[i]<=32))) queued_event=true;
         // Save before draining, including queued output, at and around edges.
-        if (restores && (edge || release || zero || muted || publication || clearing || queued_event || checkpoint!=last_checkpoint ||
+        if (restores && (edge || release || zero || muted || rejection || publication || clearing || queued_event || checkpoint!=last_checkpoint ||
             result.envelopes.checkpoints!=last_envelope ||
             (host.pending_samples() && (offset==1 || offset==2 || offset==3 || offset==4 ||
              offset==8 || offset==16 || offset==32 || offset==64 || offset==128)))) {
@@ -136,6 +157,9 @@ Result run(Host& host,Restores* restores=nullptr,bool active=false) {
                 if (result.off_frames[i]==frames) restores->releases |= 1U<<i;
                 if (result.zero_frames[i]==frames) restores->zeros |= 1U<<i;
             }
+            if (rejection) restores->rejects |= 1U<<(result.rejects.size()-1);
+            if (host.pending_samples()) for (unsigned i=0;i<result.rejects.size();++i)
+                if (frames-result.rejects[i][2]<=32) restores->queued_rejects |= 1U<<i;
             if (muted) restores->mute=1;
             if (host.pending_samples() && !result.mute.empty() && frames-result.mute[0]<=32) restores->queued_mute=1;
             if (publication) restores->banks |= 1U<<(result.banks.size()-1);
@@ -166,13 +190,13 @@ Result run(Host& host,Restores* restores=nullptr,bool active=false) {
     result.version=host.cpu().debug_wram_byte(0x2b);
     result.env2=host.debug_dsp_register(0x28); result.env3=host.debug_dsp_register(0x38);
     result.state=host.save_state();
-    if (result.version!=0xda || result.env2 || result.env3 || host.cpu().debug_wram_byte(0x27))
+    if (result.version!=0xda || result.env2 || result.env3 || (!rejected && host.cpu().debug_wram_byte(0x27)))
         std::cerr << "lifecycle " << result.version << ' ' << result.env2 << ' ' << result.env3
                   << " error " << unsigned(host.cpu().debug_wram_byte(0x27))
                   << " notes " << result.envelopes.notes.size() << '\n';
     require(result.clipped==0 && result.gb_samples && result.sounds==(active ? 3 : 4) && result.version==0xda &&
-            !result.env2 && !result.env3 && !host.cpu().debug_wram_byte(0x27),"incomplete lifecycle");
-    require(result.envelopes.notes.size()==2,"expected old and replacement onsets");
+            !result.env2 && !result.env3 && (rejected || !host.cpu().debug_wram_byte(0x27)),"incomplete lifecycle");
+    require(result.envelopes.notes.size()==(rejected ? 1 : 2),"expected old and replacement onsets");
     for (const auto& note:result.envelopes.notes) {
         const bool sampled=!note.missed || (active && &note==&result.envelopes.notes[0] && note.missed==result.gaps.size());
         if (!(note.off_half>note.on_half && note.zero_half>=note.off_half && !note.setup_changes && sampled))
@@ -190,7 +214,11 @@ int main(int argc,char** argv) {
         const unsigned voice=argc>=8 ? (std::string(argv[7])=="2" ? 2 : std::string(argv[7])=="3" ? 3 : 0) : 0;
         require(voice,"bank-replacement voice");
         const bool active=argc==9;
-        require(!active || std::string(argv[8])=="active","upload mode");
+        const std::string fault=active ? argv[8] : "";
+        // The rejection value also names its expected completed handoff count:
+        // preflight rejects before handoff 2; semantic rejection follows it.
+        const unsigned rejected=fault=="asset-gap" ? 1 : fault=="bad-root" ? 2 : 0;
+        require(!active || fault=="active" || rejected,"upload mode");
         gameboy::SgbHostConfig config;
         config.program_rom=read(argv[1],262144); config.game_rom=read(argv[2],32768);
         const std::string model=argv[3],mode=argv[4];
@@ -201,16 +229,23 @@ int main(int argc,char** argv) {
         config.gb_boot_rom[0]=0xc3; config.gb_boot_rom[2]=1;
         Host normal(config),restored(config);
         if (mode=="scalar") { normal.debug_set_apu_batch_enabled(false); restored.debug_set_apu_batch_enabled(false); }
-        const auto result=run(normal,nullptr,active);
+        const auto result=run(normal,nullptr,active,rejected);
         Restores restores;
-        require(result==run(restored,&restores,active),"whole state/PCM/edge restore parity");
-        normal.reset(); require(result==run(normal,nullptr,active),"cold reset parity");
-        require(restores.pending && restores.edges==31 && restores.releases==3 && restores.zeros==3 && restores.queued_onsets==3 && restores.queued_offs==3 && restores.banks==3 && restores.clears==3 && restores.queued_banks==3 && restores.queued_clears==3,
+        require(result==run(restored,&restores,active,rejected),"whole state/PCM/edge restore parity");
+        normal.reset(); require(result==run(normal,nullptr,active,rejected),"cold reset parity");
+        const unsigned note_mask=rejected ? 1 : 3;
+        require(restores.pending && restores.edges==31 && restores.releases==note_mask && restores.zeros==note_mask && restores.queued_onsets==note_mask && restores.queued_offs==note_mask && restores.banks==note_mask && restores.clears==3 && restores.queued_banks==note_mask && restores.queued_clears==3,
                 "missing queued-output or release/zero restore coverage");
         require(!active || (result.mute.size()==6 && restores.mute==1 && restores.queued_mute==1),"missing active mute restore coverage");
-        require(result.banks.size()==2 && result.clears.size()==2 && restored.cpu().debug_wram_byte(0x26)==2,"missing bank replacement");
-        require(result.envelopes.notes[0].voice==voice && result.envelopes.notes[1].voice==voice &&
-                result.envelopes.notes[0].source==2 && result.envelopes.notes[1].source==3,"replacement did not remap source");
+        require(result.banks.size()==(rejected ? 1 : 2) && result.clears.size()==2 && restored.cpu().debug_wram_byte(0x26)==(rejected ? rejected : 2),"missing bank replacement");
+        require(result.envelopes.notes[0].voice==voice && result.envelopes.notes[0].source==2 &&
+                (rejected || (result.envelopes.notes[1].voice==voice && result.envelopes.notes[1].source==3)),"replacement did not remap source");
+        require(!rejected || (result.rejects.size()==3 && restores.rejects==7 && restores.queued_rejects==7 &&
+                restored.cpu().debug_wram_byte(0x56)==1 && restored.cpu().debug_wram_byte(0x57)==1 &&
+                restored.cpu().debug_wram_byte(0x59)==2 && restored.cpu().debug_wram_byte(0x27)==(fault=="asset-gap" ? 1 : 2)),
+                "missing blocked SOUND/rejection restore coverage");
+        require(!rejected || (hash(restored,0x2b00,2048)==result.rejects.back()[15] &&
+                hash(restored,0x5000,192)==result.rejects.back()[16]),"rejected bank changed after suppression");
         std::ofstream pcm(argv[5],std::ios::binary),report(argv[6]);
         require(bool(pcm) && bool(report),"output files");
         pcm.write(reinterpret_cast<const char*>(result.pcm.data()),result.pcm.size());
@@ -254,6 +289,16 @@ int main(int argc,char** argv) {
             for (unsigned i=0;i<result.gaps.size();++i) {
                 report << (i ? "," : "") << '[';
                 for (unsigned j=0;j<6;++j) report << (j ? "," : "") << result.gaps[i][j];
+                report << ']';
+            }
+            report << ']';
+        }
+        if (rejected) {
+            report << ",\"rejected_upload\":\"" << fault << "\",\"restore_rejects\":" << restores.rejects
+                   << ",\"queued_rejects\":" << restores.queued_rejects << ",\"rejects\":[";
+            for (unsigned i=0;i<result.rejects.size();++i) {
+                report << (i ? "," : "") << '[';
+                for (unsigned j=0;j<17;++j) report << (j ? "," : "") << result.rejects[i][j];
                 report << ']';
             }
             report << ']';
