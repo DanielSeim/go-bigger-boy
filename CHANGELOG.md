@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.36.1] - 2026-10-10
+
+- Sign and timestamp Windows release executables with Certum SimplySign and
+  verify the signatures before packaging.
+- Embed the product name and version in both Windows executables, and label
+  pinned taskbar shortcuts with the Go Bigger Boy name and build version.
+- Publish Google Play update news from the GitHub Release description after
+  release publication, with bounded English excerpts linking to the full notes.
+
 - Add five measured articulation-127 profiles to isolated independent voice
   gates, with native pulse caches, selective expiry and counter cancellation.
   Check peer continuity, settled silence, clipping and reset/save-load PCM.
