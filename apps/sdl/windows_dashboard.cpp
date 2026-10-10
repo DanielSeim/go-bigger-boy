@@ -8,6 +8,7 @@
 #include "windows_dashboard_artwork.hpp"
 #include "windows_dashboard_smoke.hpp"
 #include "windows_dashboard_state.hpp"
+#include "windows_taskbar.hpp"
 #include "resource.h"
 #include "update_checker.hpp"
 
@@ -2521,6 +2522,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam,
         }
         return 0;
     } else if (message == WM_DESTROY) {
+        clear_windows_taskbar(window);
         KillTimer(window, 1);
         if (state->logo_bitmap != nullptr) {
             DeleteObject(state->logo_bitmap);
@@ -3081,6 +3083,7 @@ DashboardResult show_windows_dashboard(
         return state.result;
     }
 
+    configure_windows_taskbar(state.window);
     SendMessageW(state.window, WM_SETICON, ICON_BIG,
                  reinterpret_cast<LPARAM>(type.hIcon));
     SendMessageW(state.window, WM_SETICON, ICON_SMALL,

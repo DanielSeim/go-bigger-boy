@@ -62,6 +62,10 @@ below are release actions to perform deliberately, not part of a docs audit.
 - [ ] Perform the applicable frontend/save/update smoke checks on available
       platforms and record their scope. Back up saves first. Include settings
       persistence, ROM start, input/audio, save/load, clean exit and relaunch.
+      On Windows, pin the running library or game window and confirm the
+      closed application's taskbar tooltip reads `Go Bigger Boy vX.Y.Z`;
+      launch it from the pin and confirm it reuses the same taskbar button.
+      Remove and recreate older pins before checking the new display name.
       Private firmware and physical-device qualification are separate checks;
       do not infer them from host CI or historical passing measurements.
 

@@ -419,6 +419,7 @@ if(GAMEBOY_BUILD_SDL)
                 apps/sdl/windows_dashboard_artwork.cpp
                 apps/sdl/windows_dashboard_smoke.cpp
                 apps/sdl/windows_menu_bar.cpp
+                apps/sdl/windows_taskbar.cpp
                 apps/sdl/update_checker.cpp
                 packaging/windows/go-bigger-boy.rc
             )
@@ -529,8 +530,28 @@ if(GAMEBOY_BUILD_SDL)
                 GBB_VERSION="${GAMEBOY_DESKTOP_VERSION}"
             )
             if(WIN32)
+                string(REPLACE "." "," GBB_WINDOWS_NUMERIC_VERSION
+                       "${GAMEBOY_DESKTOP_VERSION}")
+                foreach(GBB_WINDOWS_TARGET IN ITEMS gameboy_sdl gbb_updater)
+                    if(GBB_WINDOWS_TARGET STREQUAL "gameboy_sdl")
+                        set(GBB_WINDOWS_INTERNAL_NAME "gbb")
+                        set(GBB_WINDOWS_FILE_DESCRIPTION "Go Bigger Boy")
+                    else()
+                        set(GBB_WINDOWS_INTERNAL_NAME "gbb-updater")
+                        set(GBB_WINDOWS_FILE_DESCRIPTION "Go Bigger Boy Updater")
+                    endif()
+                    configure_file(packaging/windows/version.rc.in
+                        "${CMAKE_CURRENT_BINARY_DIR}/${GBB_WINDOWS_INTERNAL_NAME}-version.rc"
+                        @ONLY)
+                    target_sources(${GBB_WINDOWS_TARGET} PRIVATE
+                        "${CMAKE_CURRENT_BINARY_DIR}/${GBB_WINDOWS_INTERNAL_NAME}-version.rc")
+                endforeach()
+                configure_file(packaging/windows/taskbar.rc.in
+                    "${CMAKE_CURRENT_BINARY_DIR}/gbb-taskbar.rc" @ONLY)
+                target_sources(gameboy_sdl PRIVATE
+                    "${CMAKE_CURRENT_BINARY_DIR}/gbb-taskbar.rc")
                 target_link_libraries(gameboy_sdl PRIVATE
-                    winhttp bcrypt comctl32 comdlg32 ole32 shell32
+                    winhttp bcrypt comctl32 comdlg32 ole32 shell32 uuid
                     windowscodecs winmm)
                 target_include_directories(gameboy_sdl PRIVATE
                     "${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows"

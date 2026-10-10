@@ -591,6 +591,26 @@ jobs:
         if: runner.os != 'Linux'
         run: cmake --install build --config Release --prefix package
 
+      - name: Verify Windows executable metadata
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $expectedVersion = (Get-Content -LiteralPath VERSION -TotalCount 1).Trim()
+          if ($env:GITHUB_REF_NAME -match '^v([0-9]+\.[0-9]+\.[0-9]+)$') {
+            $expectedVersion = $Matches[1]
+          }
+          foreach ($file in @("package\gbb.exe", "package\gbb-updater.exe")) {
+            $version = (Get-Item -LiteralPath $file).VersionInfo
+            if ($version.ProductName -cne 'Go Bigger Boy' -or
+                $version.ProductVersion -cne $expectedVersion -or
+                $version.FileVersion -cne $expectedVersion -or
+                $version.OriginalFilename -cne (Split-Path -Leaf $file)) {
+              throw "Incorrect product or version metadata in $file"
+            }
+            Write-Host "$file : $($version.ProductName) $($version.ProductVersion)"
+          }
+
       - name: Set up Certum release signing
         if: >-
           runner.os == 'Windows' &&

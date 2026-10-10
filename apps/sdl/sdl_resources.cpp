@@ -1,5 +1,6 @@
 #include "sdl_resources.hpp"
 #include "tool_window_support.hpp"
+#include "windows_taskbar.hpp"
 
 #include <stdexcept>
 #include <string>
@@ -33,6 +34,11 @@ SdlResources::SdlResources(const std::string_view version,
             "Go Bigger Boy (GBB) - Drop a ROM here or press Ctrl+O", 640, 576,
             window_flags);
         if (window == nullptr) sdl_error("Could not create window");
+#ifdef _WIN32
+        gbb_desktop::configure_windows_taskbar(static_cast<HWND>(
+            SDL_GetPointerProperty(SDL_GetWindowProperties(window),
+                                   SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr)));
+#endif
         // SDL normally selects the first available renderer, but the order
         // can vary with the DLL/runtime location on Windows. Prefer the
         // hardware Direct3D11 backend explicitly so a local copy cannot
@@ -175,6 +181,11 @@ void SdlResources::release() noexcept {
         renderer = nullptr;
     }
     if (window != nullptr) {
+#ifdef _WIN32
+        gbb_desktop::clear_windows_taskbar(static_cast<HWND>(
+            SDL_GetPointerProperty(SDL_GetWindowProperties(window),
+                                   SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr)));
+#endif
         SDL_DestroyWindow(window);
         window = nullptr;
     }
