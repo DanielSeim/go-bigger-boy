@@ -177,8 +177,8 @@ settings and presentation rates remain separate qualification work.
 
 ## Next step
 
-Qualify audible instrument changes from looping to one-shot and back on one
-voice while its peer and GB audio continue. Verify fresh source selection,
-transient completion and return to sustained PCM through real uploaded scores,
-including reset/save-load and scalar parity. Broader banks and independent
-hardware/DSP comparisons remain separate qualification work.
+The [instrument-change gate](sgb-instrument-change-audio.md) covers looping to
+one-shot and back on one voice while its peer and GB audio continue, including
+reset/save-load and scalar parity. Next, qualify audible replacement of an
+owned uploaded bank with fresh samples and instrument mappings. Broader banks
+and independent hardware/DSP comparisons remain separate qualification work.
