@@ -16,14 +16,14 @@ def row(value,length):
     return isinstance(value,list) and len(value)==length and all(type(x) is int for x in value)
 
 
-def observe(meta,raw,kind,profile,voice,*,semantic_tail=False,repeat=False):
-    if any(type(x) is not bool for x in (semantic_tail,repeat)) or (semantic_tail and kind!='bad-root') or (repeat and not semantic_tail):
+def observe(meta,raw,kind,profile,voice,*,semantic_tail=False,repeat=False,mixed=False):
+    if any(type(x) is not bool for x in (semantic_tail,repeat,mixed)) or (semantic_tail and kind!='bad-root') or (repeat and not (semantic_tail or mixed)) or (mixed and (semantic_tail or not repeat)):
         raise ValueError('invalid cold tail case')
     retry=5 if repeat else 3
     stages=8 if repeat else 6
     failures=5 if repeat else 3
     clears_count=3 if repeat else 2
-    generation=(1 if kind=='asset-gap' else 2)+(1 if repeat else 0)
+    generation=2 if mixed else (1 if kind=='asset-gap' else 2)+(1 if repeat else 0)
     expected=dict(schema='gbb-sgb-bank-replace-audio-v1',qualification=False,playback=False,
         cold_rejection=True,recovery_upload=True,rejected_upload=kind,reset_equal=True,restore_equal=True,
         sample_rate_hz=RATE,clipped=0,sounds=5 if repeat else 4,version=0xDA,restore_edges=(1<<stages)-1,
@@ -34,6 +34,7 @@ def observe(meta,raw,kind,profile,voice,*,semantic_tail=False,repeat=False):
     if kind not in FAULTS or profile not in PROFILES or type(voice) is not int or voice not in (2,3) or (
             not isinstance(meta,dict) or any(type(meta.get(k)) is not type(v) or meta[k]!=v for k,v in expected.items())):
         raise ValueError('invalid cold recovery identity or replay')
+    if mixed and meta.get('mixed_rejection') is not True:raise ValueError('missing cold mixed rejection identity')
     if semantic_tail:
         tokens=meta.get('consumed_tokens')
         if meta.get('semantic_tail') is not True or type(meta.get('repeated_rejection')) is not bool or meta['repeated_rejection']!=repeat or (
@@ -72,18 +73,20 @@ def observe(meta,raw,kind,profile,voice,*,semantic_tail=False,repeat=False):
     for i,c in enumerate(clears):
         lower=0 if i==0 else edges[clear_stages[i]][2]
         upper=edges[0][2] if i==0 else edges[4][2] if repeat and i==1 else b[1]
-        if c[0]!=(error+i-2 if i else 0) or not lower<c[1]<upper or not timed(c[1],c[2]):
+        if c[0]!=(1 if mixed and i==2 else error+i-2 if i else 0) or not lower<c[1]<upper or not timed(c[1],c[2]):
             raise ValueError('invalid cold clear generation/timing')
     if not isinstance(events,list) or len(events)!=failures:raise ValueError('missing cold failure/suppression')
     score,asset=objects('both',voice)[1]
     failed=[fnv(bytes(2048)),fnv(bytes(192))] if kind=='asset-gap' else [fnv(bytes(2)+score[2:]),fnv(asset)]
+    second_error=3-error if mixed else error
+    second_failed=[fnv(bytes(2048)),fnv(bytes(192))] if second_error==1 else [fnv(bytes(2)+score[2:]),fnv(asset)]
     for i,e in enumerate(events):
         second=repeat and i>=3
         rejection=i in (0,3)
         lower=clears[0 if i==0 else 1][1] if rejection else edges[i][2]
         upper=edges[0 if i==0 else 4][2] if rejection else min(edges[i+1][2],lower+960)
         if not row(e,17) or e[:2]!=([2,2 if i==3 else 3] if second else [1,i]) or (
-                e[4:]!=[1,error,error-1+int(second),164,0,0,0,0,0,224,255,*failed] or
+                e[4:]!=[1,second_error if second else error,1 if mixed and second else error-1+int(second),164,0,0,0,0,0,224,255,*(second_failed if second else failed)] or
                 not lower<=e[2]<upper or not timed(e[2],e[3]) or (i and not events[i-1][2]<e[2])):
             raise ValueError('stale cold error, readiness, RAM or suppression')
     if not row(adopt,18) or adopt[2:]!=[generation,2 if repeat else 1,3 if repeat else 2,0,1,0,165,0,1,0,0,3,224,255,*fresh] or (

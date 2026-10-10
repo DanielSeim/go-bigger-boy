@@ -175,5 +175,6 @@ remains SHA-256
 failures in both orders. [Cold rejection recovery](sgb-bank-cold-audio.md) now covers startup without an
 earlier valid bank or native note. [Cold one-byte recovery](sgb-bank-cold-tail-audio.md) adds single/repeated
 semantic rejection and consumed-token checks before the first valid bank.
-Next, cover cold mixed preflight/semantic failure orders with the same acoustic
-and replay requirements.
+[Cold mixed recovery](sgb-bank-cold-mixed-audio.md) covers both orders before the
+first valid bank. Next, combine those cold mixed orders with a one-byte semantic
+tail, retaining consumed-token, acoustic and replay checks.

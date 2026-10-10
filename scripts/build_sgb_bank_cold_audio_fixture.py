@@ -10,9 +10,9 @@ from build_sgb_score_atomic_fixture import build_cartridge
 PROFILES=('both','native','gb')
 
 
-def build(kind='asset-gap',profile='both',voice=2,*,semantic_tail=False,repeat=False):
-    if any(type(x) is not bool for x in (semantic_tail,repeat)) or (semantic_tail and kind!='bad-root') or (repeat and not semantic_tail):
-        raise ValueError('cold tail requires semantic failure; repeat requires tail')
+def build(kind='asset-gap',profile='both',voice=2,*,semantic_tail=False,repeat=False,mixed=False):
+    if any(type(x) is not bool for x in (semantic_tail,repeat,mixed)) or (semantic_tail and kind!='bad-root') or (repeat and not (semantic_tail or mixed)) or (mixed and (semantic_tail or not repeat)):
+        raise ValueError('cold repeat requires tail or mixed failure; mixed excludes tail')
     if profile not in PROFILES:raise ValueError('requires admitted cold source control')
     fresh=objects('gb' if profile=='gb' else 'both',voice)[1]
     initial=[(0x26,0),(0x26,0x80),(0x24,0x77),(0x25,0 if profile=='native' else 0x10),
@@ -22,7 +22,12 @@ def build(kind='asset-gap',profile='both',voice=2,*,semantic_tail=False,repeat=F
               (64,sound(1),None),(12,sound(128),None)]
     if repeat:commands[3:3]=[(4,bytes((0x49,)),0),(16,sound(1),None)]
     count=len(commands)
-    return build_cartridge([semantic_payload(voice) if semantic_tail else replacement(kind,voice),pack(*fresh)],commands,
+    payloads=[semantic_payload(voice) if semantic_tail else replacement(kind,voice),pack(*fresh)]
+    if mixed:
+        payloads.insert(1,replacement('bad-root' if kind=='asset-gap' else 'asset-gap',voice))
+        commands[3]=(4,bytes((0x49,)),1)
+        commands[5]=(4,bytes((0x49,)),2)
+    return build_cartridge(payloads,commands,
         io_writes=[initial]+[[(0x80,i)] for i in range(2,count)]+[[(0x25,0),(0x80,count)]])
 
 

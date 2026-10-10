@@ -47,12 +47,12 @@ struct Result {
 };
 struct Restores { unsigned count{},pending{},edges{},releases{},zeros{},banks{},clears{},queued_onsets{},queued_offs{},queued_banks{},queued_clears{},mute{},queued_mute{},rejects{},queued_rejects{},recovered{},queued_recovered{}; };
 Result run(Host& host,Restores* restores=nullptr,bool active=false,unsigned rejected=0,bool recover=false,bool repeat=false,bool tail=false,bool mixed=false,bool cold=false) {
-    // Both repeated and mixed failures use the same second-upload stage layout.
+    // Cold sequences omit the initial valid bank and its note stages.
     const unsigned retry_stage=cold ? (repeat ? 6 : 4) : repeat ? 8 : 6;
     const unsigned stages=recover ? retry_stage+2 : 5;
     const unsigned failures=repeat ? 5 : 3;
-    const unsigned second_generation=mixed ? 2 : 3;
-    const unsigned final_generation=cold ? rejected+(repeat ? 1 : 0) : mixed ? 3 : rejected+1+(repeat ? 1 : 0);
+    const unsigned second_generation=mixed ? (cold ? 1 : 2) : 3;
+    const unsigned final_generation=cold ? (mixed ? 2 : rejected+(repeat ? 1 : 0)) : mixed ? 3 : rejected+1+(repeat ? 1 : 0);
     Result result;
     unsigned last_stage=0,last_checkpoint=0,last_envelope=0;
     bool previous_clear=false;
@@ -121,7 +121,7 @@ Result run(Host& host,Restores* restores=nullptr,bool active=false,unsigned reje
         bool rejection=false;
         if (rejected && !result.rejects.empty() && (!recover || stage<(cold ? 4 : 6) || (repeat && stage==(cold ? 5 : 7) && result.rejects.size()==failures))) {
             require(host.cpu().debug_wram_byte(0x56)==1 && host.cpu().debug_wram_byte(0x20)==9 &&
-                    generation==(cold ? rejected-1+(repeat && stage==5 ? 1 : 0) : repeat && stage==7 ? second_generation : rejected) && phase==0xa4 && !host.debug_spc_ram_byte(0xd1) &&
+                    generation==(cold ? (repeat && stage==5 ? (mixed ? 1 : rejected) : rejected-1) : repeat && stage==7 ? second_generation : rejected) && phase==0xa4 && !host.debug_spc_ram_byte(0xd1) &&
                     !host.debug_spc_ram_byte(0xd2) && !host.debug_spc_ram_byte(0xd8) &&
                     !host.debug_spc_ram_byte(0xdb) && !host.debug_spc_ram_byte(0xdc) &&
                     host.debug_dsp_register(0x6c)==0xe0 && host.debug_dsp_register(0x5c)==0xff,
@@ -259,11 +259,11 @@ int main(int argc,char** argv) {
         const bool recover=argc==10;
         const std::string recovery= recover ? argv[9] : "";
         const bool tail=recovery=="tail" || recovery=="repeat-tail" || recovery=="cold-tail" || recovery=="cold-repeat-tail";
-        const bool cold=recovery=="cold" || recovery=="cold-tail" || recovery=="cold-repeat-tail";
-        const bool mixed=recovery=="mixed";
+        const bool cold=recovery=="cold" || recovery=="cold-tail" || recovery=="cold-repeat-tail" || recovery=="cold-mixed";
+        const bool mixed=recovery=="mixed" || recovery=="cold-mixed";
         const bool repeat=recovery=="repeat-tail" || recovery=="cold-repeat-tail" || mixed;
         const unsigned stages=cold ? (repeat ? 8 : 6) : recover ? (repeat ? 10 : 8) : 5;
-        const unsigned final_generation=cold ? rejected+(repeat ? 1 : 0) : mixed ? 3 : rejected+1+(repeat ? 1 : 0);
+        const unsigned final_generation=cold ? (mixed ? 2 : rejected+(repeat ? 1 : 0)) : mixed ? 3 : rejected+1+(repeat ? 1 : 0);
         const unsigned failures=repeat ? 5 : 3;
         const unsigned reject_mask=(1U<<failures)-1;
         require(!recover || (rejected && (recovery=="recover" || mixed || (cold && !tail) || (tail && rejected==2))),"recovery mode");
