@@ -162,5 +162,6 @@ The [audible recovery gate](sgb-bank-recovery-audio.md) adds valid changed-bank
 retry, fresh source-3 playback, continuous GB audio, silent blocked intervals
 and queued replay across admission/restart. The [one-byte semantic tail gate](sgb-bank-tail-audio.md)
 also covers single/repeated semantic rejection across consumed-token
-synchronization. Next, cover mixed preflight/semantic failures in both orders
-with the same acoustic and replay requirements.
+synchronization, and [mixed-failure recovery](sgb-bank-mixed-audio.md) covers both
+preflight/semantic orders. Next, cover cold rejection without an earlier
+admitted bank, with the same acoustic and replay requirements.

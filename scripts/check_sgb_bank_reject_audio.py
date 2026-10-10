@@ -13,9 +13,13 @@ from build_sgb_bank_replace_audio_fixture import PROFILES as SOURCE_PROFILES
 from check_sgb_bank_replace_audio import program,OPTIONS,IMAGE_HASH,fnv,RATE,MASTER,FRAMES,pitch,digest
 
 
-def observe(meta,raw,kind,profile,voice,recover=False,repeat=False):
+def observe(meta,raw,kind,profile,voice,recover=False,repeat=False,mixed=False):
     if type(recover) is not bool:raise ValueError('requires boolean recovery mode')
-    if type(repeat) is not bool or (repeat and (not recover or kind!='bad-root')):raise ValueError('invalid repeated semantic recovery')
+    if type(mixed) is not bool or (mixed and (not recover or not repeat)):raise ValueError('invalid mixed recovery')
+    if type(repeat) is not bool or (repeat and (not recover or (kind!='bad-root' and not mixed))):raise ValueError('invalid repeated semantic recovery')
+    second_kind=('bad-root' if kind=='asset-gap' else 'asset-gap') if mixed else kind
+    first_generation=1 if kind=='asset-gap' else 2
+    second_generation=first_generation+(second_kind=='bad-root')
     stages=10 if repeat else 8 if recover else 5
     failures=5 if repeat else 3
     reject_mask=(1<<failures)-1
@@ -82,12 +86,17 @@ def observe(meta,raw,kind,profile,voice,recover=False,repeat=False):
         frame=g[0];sample=g[3]
     events=meta.get('rejects')
     if not isinstance(events,list) or len(events)!=failures:raise ValueError('missing rejection or suppressed SOUND')
-    if kind=='asset-gap':hashes=[fnv(bytes(2048)),fnv(bytes(192))]
-    else:
-        score,asset=objects('both',voice)[1];hashes=[fnv(bytes(2)+score[2:]),fnv(asset)]
+    def rejected_hashes(fault):
+        if fault=='asset-gap':return [fnv(bytes(2048)),fnv(bytes(192))]
+        score,asset=objects('both',voice)[1]
+        return [fnv(bytes(2)+score[2:]),fnv(asset)]
     for i,e in enumerate(events):
+        fault=second_kind if i>=3 else kind
+        error=1 if fault=='asset-gap' else 2
+        generation=second_generation if i>=3 else first_generation
+        hashes=rejected_hashes(fault)
         if not isinstance(e,list) or len(e)!=17 or any(type(x) is not int for x in e) or (
-                e[:2]!=([2,i-1] if i>=3 else [1,i]) or e[4:]!=[1,1 if kind=='asset-gap' else 2,(3 if i>=3 else 1 if kind=='asset-gap' else 2),0xA4,0,0,0,0,0,224,255,*hashes] or
+                e[:2]!=([2,i-1] if i>=3 else [1,i]) or e[4:]!=[1,error,generation,0xA4,0,0,0,0,0,224,255,*hashes] or
                 not 0<=e[3]*RATE//MASTER-e[2]<=2):raise ValueError('rejection readiness, counters or bank contents are stale')
         lower=clears[1][1] if i==0 else clears[2][1] if i==3 else edges[6 if i==4 else i+2][2]
         upper=edges[6 if i==3 else 3][2] if i in (0,3) else lower+960
@@ -95,7 +104,7 @@ def observe(meta,raw,kind,profile,voice,recover=False,repeat=False):
     begin=n[8]+32
     if recover:
         fresh=notes[1];b=banks[1];c=clears[-1];adopt=meta.get('recovered')
-        generation=4 if repeat else 2 if kind=='asset-gap' else 3
+        generation=(second_generation if repeat else first_generation)+1
         score,asset=objects(profile,voice)[1]
         hashes=[fnv(score),fnv(asset)]
         if not isinstance(fresh,list) or len(fresh)!=11 or any(type(x) is not int for x in fresh) or (
@@ -116,7 +125,7 @@ def observe(meta,raw,kind,profile,voice,recover=False,repeat=False):
         if repeat:
             c=clears[2]
             if not isinstance(c,list) or len(c)!=3 or any(type(x) is not int for x in c) or (
-                    c[0]!=2 or not edges[5][2]<c[1]<=events[3][2]<edges[6][2] or
+                    c[0]!=first_generation or not edges[5][2]<c[1]<=events[3][2]<edges[6][2] or
                     not 0<=c[2]*RATE//MASTER-c[1]<=2):raise ValueError('repeated rejection did not clear its generation')
         end=fresh[6]-4
         if end-begin<4096 or any(b for _,b in pcm[begin:end]):raise ValueError('blocked interval contains stale/fallback PCM')

@@ -158,14 +158,15 @@ acoustic, private reference and title matrices were not rerun.
 
 Owned same-renderer controls establish internal consistency. Independent DSP
 arithmetic, hardware timing, private-original acoustics and broad title
-compatibility remain unqualified. Other transaction shapes/semantic defects,
-repeated or mixed rejection sequences, command phases, banks, clocks and
+compatibility remain unqualified. Further transaction shapes/semantic defects, command phases, banks, clocks and
 presentation rates remain separate work. The DA firmware image remains SHA-256
 `1cf5d56ed87e9407d7d3e3e8753157f23544a29f2876587c41771496ee0b5d82`.
 
 ## Next step
 
-[One-byte semantic upload tails](sgb-bank-tail-audio.md) now add single and
-repeated rejection across the consumed-token synchronization boundary. Next,
-cover mixed preflight/semantic failures in both orders with silent blocked
-intervals, fresh remapped playback, continuous GB audio and queued-output replay.
+[One-byte semantic upload tails](sgb-bank-tail-audio.md) add single/repeated
+rejection across consumed-token synchronization, and
+[mixed-failure recovery](sgb-bank-mixed-audio.md) covers preflight/semantic
+failures in both orders. Next, cover cold rejection without an earlier admitted
+bank, with silence before admission, fresh playback, continuous GB audio and
+queued-output replay.

@@ -46,11 +46,13 @@ struct Result {
     }
 };
 struct Restores { unsigned count{},pending{},edges{},releases{},zeros{},banks{},clears{},queued_onsets{},queued_offs{},queued_banks{},queued_clears{},mute{},queued_mute{},rejects{},queued_rejects{},recovered{},queued_recovered{}; };
-Result run(Host& host,Restores* restores=nullptr,bool active=false,unsigned rejected=0,bool recover=false,bool repeat=false,bool tail=false) {
+Result run(Host& host,Restores* restores=nullptr,bool active=false,unsigned rejected=0,bool recover=false,bool repeat=false,bool tail=false,bool mixed=false) {
+    // Both repeated and mixed failures use the same second-upload stage layout.
     const unsigned retry_stage=repeat ? 8 : 6;
     const unsigned stages=recover ? retry_stage+2 : 5;
     const unsigned failures=repeat ? 5 : 3;
-    const unsigned final_generation=rejected+1+(repeat ? 1 : 0);
+    const unsigned second_generation=mixed ? 2 : 3;
+    const unsigned final_generation=mixed ? 3 : rejected+1+(repeat ? 1 : 0);
     Result result;
     unsigned last_stage=0,last_checkpoint=0,last_envelope=0;
     bool previous_clear=false;
@@ -119,7 +121,7 @@ Result run(Host& host,Restores* restores=nullptr,bool active=false,unsigned reje
         bool rejection=false;
         if (rejected && !result.rejects.empty() && (!recover || stage<6 || (repeat && stage==7 && result.rejects.size()==failures))) {
             require(host.cpu().debug_wram_byte(0x56)==1 && host.cpu().debug_wram_byte(0x20)==9 &&
-                    generation==(repeat && stage==7 ? 3 : rejected) && phase==0xa4 && !host.debug_spc_ram_byte(0xd1) &&
+                    generation==(repeat && stage==7 ? second_generation : rejected) && phase==0xa4 && !host.debug_spc_ram_byte(0xd1) &&
                     !host.debug_spc_ram_byte(0xd2) && !host.debug_spc_ram_byte(0xd8) &&
                     !host.debug_spc_ram_byte(0xdb) && !host.debug_spc_ram_byte(0xdc) &&
                     host.debug_dsp_register(0x6c)==0xe0 && host.debug_dsp_register(0x5c)==0xff,
@@ -256,12 +258,13 @@ int main(int argc,char** argv) {
         const bool recover=argc==10;
         const std::string recovery= recover ? argv[9] : "";
         const bool tail=recovery=="tail" || recovery=="repeat-tail";
-        const bool repeat=recovery=="repeat-tail";
+        const bool mixed=recovery=="mixed";
+        const bool repeat=recovery=="repeat-tail" || mixed;
         const unsigned stages=recover ? (repeat ? 10 : 8) : 5;
-        const unsigned final_generation=rejected+1+(repeat ? 1 : 0);
+        const unsigned final_generation=mixed ? 3 : rejected+1+(repeat ? 1 : 0);
         const unsigned failures=repeat ? 5 : 3;
         const unsigned reject_mask=(1U<<failures)-1;
-        require(!recover || (rejected && (recovery=="recover" || (tail && rejected==2))),"recovery mode");
+        require(!recover || (rejected && (recovery=="recover" || mixed || (tail && rejected==2))),"recovery mode");
         gameboy::SgbHostConfig config;
         config.program_rom=read(argv[1],262144); config.game_rom=read(argv[2],32768);
         const std::string model=argv[3],mode=argv[4];
@@ -272,10 +275,10 @@ int main(int argc,char** argv) {
         config.gb_boot_rom[0]=0xc3; config.gb_boot_rom[2]=1;
         Host normal(config),restored(config);
         if (mode=="scalar") { normal.debug_set_apu_batch_enabled(false); restored.debug_set_apu_batch_enabled(false); }
-        const auto result=run(normal,nullptr,active,rejected,recover,repeat,tail);
+        const auto result=run(normal,nullptr,active,rejected,recover,repeat,tail,mixed);
         Restores restores;
-        require(result==run(restored,&restores,active,rejected,recover,repeat,tail),"whole state/PCM/edge restore parity");
-        normal.reset(); require(result==run(normal,nullptr,active,rejected,recover,repeat,tail),"cold reset parity");
+        require(result==run(restored,&restores,active,rejected,recover,repeat,tail,mixed),"whole state/PCM/edge restore parity");
+        normal.reset(); require(result==run(normal,nullptr,active,rejected,recover,repeat,tail,mixed),"cold reset parity");
         const unsigned note_mask=rejected && !recover ? 1 : 3;
         const unsigned clear_mask=recover ? (repeat ? 15 : 7) : 3;
         require(restores.pending && restores.edges==((1U<<stages)-1) && restores.releases==note_mask && restores.zeros==note_mask && restores.queued_onsets==note_mask && restores.queued_offs==note_mask && restores.banks==note_mask && restores.clears==clear_mask && restores.queued_banks==note_mask && restores.queued_clears==clear_mask,
@@ -357,6 +360,7 @@ int main(int argc,char** argv) {
             for (unsigned i=0;i<result.consumed_tokens.size();++i) report << (i ? "," : "") << result.consumed_tokens[i];
             report << ']';
         }
+        if (mixed) report << ",\"mixed_rejection\":true";
         if (tail) report << ",\"semantic_tail\":true,\"repeated_rejection\":" << (repeat ? "true" : "false");
         if (recover) {
             report << ",\"recovery_upload\":true,\"restore_recovered\":" << restores.recovered

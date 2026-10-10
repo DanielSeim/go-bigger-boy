@@ -29,7 +29,7 @@ def compare(controls,model,voice):
                         (meta['rejects'][2][2]+128,meta['edges'][5][2]),
                         (meta['clears'][-1][1]+128,meta['edges'][-2][2]),
                         (meta['notes'][1][6]+128,meta['edges'][-1][2])]
-    if meta.get('repeated_rejection'):
+    if meta.get('repeated_rejection') or meta.get('mixed_rejection'):
         windows.extend(((meta['clears'][2][1]+128,meta['edges'][6][2]),
                         (meta['rejects'][4][2]+128,meta['edges'][7][2])))
     for begin,limit in windows:
