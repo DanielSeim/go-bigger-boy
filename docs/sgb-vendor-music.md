@@ -1,14 +1,16 @@
-# Experimental uploaded game music with owned instruments
+# Experimental uploaded game music and instrument binding
 
 The separate DB diagnostic now plays a bounded single-channel N-SPC score
 uploaded by an unmodified caller-owned Donkey Kong game. The Game Boy supplies
 its own score and data through real JOYP/SOU_TRN transactions, the independent
 SNES host uploads them through the bundled SPC IPL, and an independently written
-SPC interpreter renders music through the existing DSP. No host-side score
+SPC interpreter renders music through the existing DSP. Instrument 2 can now
+bind the game's uploaded BRR, directory, envelope and tuning; instrument 10
+retains an independently authored resident source. No host-side score
 conversion, patched game, pre-extracted score, injected SPC state or generated
 host-side PCM is used.
 
-This is experimental playback of one game entry with replacement timbres. It
+This is experimental playback of one game entry with uploaded and replacement timbres. It
 is not production qualification or a proprietary sound match. The original
 bundled prototype, the DA diagnostics, production selection and external-image
 overrides remain unchanged. SGB1/SGB2 program ROMs remain required in production.
@@ -26,20 +28,22 @@ ctest --test-dir build-dmg-firmware \
 ```
 
 The deterministic 256 KiB LoROM SHA-256 is
-`0267b319ad503ea9ec57bb2ce9cbbbfb8ee0dd16ea872e63ec63e63e7a19ee28`.
-The host is 1422 bytes; its SPC payload is 2919 bytes starting at `$0200`.
+`b465f6e7a2e4675fbbcdc1281b45cc2f788eac01f9a7f316481a549b427adc3c`.
+The host is 1622 bytes; its SPC payload is 4081 bytes starting at `$0200`.
 The strict assembler rejects overlaps, out-of-range operands/branches and
 changed source hooks. Exporters refuse existing outputs. Neither this image
 nor private input data is checked in or automatically selected.
 
 | SPC region | Use |
 | --- | --- |
-| `$0200..0D66` | Code/padding, with reserved metadata and assets below |
+| `$0200..11F0` | Code/padding, with reserved metadata and assets below |
 | `$0400` | Cooperative score restart |
-| `$0500..0508` | Trusted exclusive score end and counters retained across IPL |
-| `$0600/$0700` | Owned sample directory and two authored looping BRR blocks |
+| `$0502..0508` | Counters retained across IPL |
+| `$0510..0514` | Trusted score end, asset-present flag and sample end |
+| `$0600/$0700` | Owned directory/samples; uploaded source-2 directory at `$0608` |
 | `$2B00..3AFF` | Uploaded score pool, with explicit supplied end |
-| `$3B00..4CFF` | Caller-uploaded data retained separately, unused by this instrument profile |
+| `$3B00..4AFF` | Caller-uploaded BRR pool |
+| `$4B08..4B0B/$4C3C..4C41` | Uploaded source-2 directory and instrument-2 descriptor |
 | `$8000..F7FF` | Echo pool, fixed ESA `$80`, EDL 0..15 |
 | `$FFC0..FFFF` | Bundled IPL overlay |
 
@@ -52,20 +56,38 @@ old trailing data. Asset updates preserve the admitted transport extent of the
 score. This is an explicit incremental data transport contract, separate from
 DA's complete owned score/sample transaction contract.
 
+Each asset transaction must provide a four-byte directory at `$4B08`, a six-byte
+instrument descriptor at `$4C3C`, and contiguous sample chunks beginning at
+`$3B00` and ending no later than `$4B00`. Duplicated metadata, gaps, missing fields
+and other destinations reject. Score replacement invalidates prior asset binding;
+a complete same-transaction binding may replace it. A data-only update preserves
+the score extent. No absent asset bytes are read as a new instrument.
+
 Every transfer is preflighted before releasing ownership. Destinations outside
 the score/data pools, source/destination overflow, score gaps/overlaps and entries
-other than `$0400` reject before upload. The host appends a two-byte trusted end
-descriptor at `$0500` using IPL transport; games cannot write that region.
+other than `$0400` reject before upload. The host appends a five-byte trusted extent/asset
+descriptor at `$0510` using IPL transport; games cannot write that region.
 Read bounds use that extent, never the contents of unprovided RAM. The driver
 archives counters/mute state before cooperative IPL return and republishes its
 DB signature only after restart and a fresh token-0 adoption handshake.
 
-The uploaded caller assets **are not interpreted or admitted as instruments**.
-IDs 2 and 10 map to the authored square and triangle blocks, respectively. That
-policy enables a distributable resident sound source without copying original
-resident samples, instrument tables or firmware. Supporting the game's uploaded
-sample/descriptor bindings is a separate compatibility task. No proprietary
-input is required to build or run the public tests.
+The independently authored binding maps `$4C3C` to instrument **2**, correcting
+the earlier assumption that its address represented instrument 10. Owned uploads
+executed on the opaque original establish the six-byte layout: source ID,
+ADSR1, ADSR2, GAIN, tuning high byte, tuning low byte. Source ID 2 is supported;
+zero tuning rejects. The driver applies the uploaded envelope and scales its
+authored pitch curve by the unsigned tuning word / `$0400`, flooring and
+saturating to `$3FFF`. This establishes parameter binding, not an exact vendor
+pitch interpolation algorithm.
+
+Before publishing readiness, the SPC walks the complete BRR chain inside the
+trusted sample extent. Every nine-byte block must fit. A looping END must point
+to a visited header; a one-shot END ignores its unused loop word, including zero.
+Nonterminal loop flags reject in this restricted profile. Prefix/trailing bytes
+may exist but are never decoded. The validated four-byte directory is copied to
+owned `$0608`; DSP DIR remains `$06` and SRCN becomes 2. No sample bytes are copied
+from the original firmware or embedded in this repository. Without an admitted
+upload, instruments 2/10 retain the authored square/triangle resident sources.
 
 ## Supported rendering policy
 
@@ -100,7 +122,8 @@ the next event. STOP, reselection and upload discard the prior playback stack.
 The following are **authored replacement policies**, not inferred vendor curves:
 
 - An equal-temperament pitch table with register anchor 1068 at base note 24,
-  used with both owned 16-sample loops. No sample-frequency equivalence is claimed.
+  used with both owned 16-sample loops; uploaded instrument 2 additionally scales
+  it by its supplied tuning word. No exact pitch equivalence is claimed.
 - Linear pan points 0..20, multiplicative song/track volume, linear velocity and
   eight explicitly authored articulation fractions.
 - Echo send projects the supplied mask onto the sole active channel-2 bit.
@@ -123,14 +146,25 @@ Every physical run compares full cold reset and actual cross-instance restored
 continuation, including snapshots with unread output. Reports contain aggregate
 counts and hashes; no PCM or snapshots are exported.
 
-Validation on 2026-10-10: all seven public test methods pass, covering 59
+The preceding owned-instrument milestone on 2026-10-10 passed seven public
+test methods covering 59
 model/mode/scenario runs, each with uninterrupted, restored and reset execution.
-The final full-matrix CTest passes in 130.10 seconds. Six additional selected
+That milestone's full-matrix CTest passed in 130.10 seconds. Six additional selected
 CTest checks pass, including the prior original-firmware/transfer contracts,
 build/reproducibility, the new short exporter contract and shard-runner contract.
 CTest discovery assigns the new complete matrix to shard 0 among 85 full public
 matrices. The original bundled prototype and DA image retain their hashes.
 Python compilation, probe build and whitespace checks also pass.
+
+The uploaded-binding extension passes eight matrix methods covering 97 physical
+model/mode/scenario runs with normal, restored and reset execution. The complete
+matrix and exporter CTests pass in 177.81 seconds. A ninth public method separately
+checks the reference summary, including a reselection KOF immediately before the
+second key-on. Four earlier firmware/transfer and APU contract/PCM CTests pass;
+the new short host-observer lifecycle contract also passes. New cases cover
+uploaded envelopes, half/saturated tuning, relocated looping chains, fragmented
+sample transport, one-shot samples with unused zero loop words, stale-binding
+invalidation and silent rejection of malformed or incomplete assets.
 
 The full public matrix runs in dedicated Linux firmware shards; the short
 build/export contract retains ordinary platform/sanitizer coverage. The optional
@@ -154,25 +188,68 @@ naturally complete or that later gameplay is supported.
 
 | Model | GB frames | Nonzero native frames | Restores / with unread output | Final output |
 | --- | --- | --- | --- | --- |
-| SGB1 | 2735 | 60373 | 612 / 27 | Muted |
-| SGB2 | 2668 | 61025 | 612 / 18 | Muted |
+| SGB1 | 2733 | 59329 | 612 / 39 | Muted |
+| SGB2 | 2666 | 59983 | 612 / 32 | Muted |
 
 Both runs produce 1489947 native frames and exact PCM/final-state parity after
 reset and cross-instance restoration. No transfer or parser errors occur. Final
 nonzero output precedes the clock boundary by more than one million clocks.
+The uploaded binding selects SRCN 2 and ADSR1/ADSR2/GAIN 255/224/184 on both
+models, matching the opaque original's observed envelope setup. The replacement
+pitch is 1435 versus the original's 1437, so exact tuning remains unqualified.
 These checks establish execution of game-provided music through the independent
-firmware and DSP. They do not compare original-program note schedules, acoustics,
-independent emulators or physical hardware. `qualification` remains false.
+firmware and DSP. The later register-only comparison below adds note-schedule observations;
+these lifecycle checks do not qualify acoustics, independent emulators or hardware. `qualification` remains false.
 The game hash and input-script pin are checked before the optional gate runs;
 child diagnostics are sanitized and only explicitly allowed aggregate fields
 are forwarded. Private ROMs, uploaded banks/assets, traces, snapshots and PCM
 are never committed.
 
-## Next substantive step
+## Register-only original comparison and next step
 
-Compare this entry's selection, note onsets, gates and completion/stop behavior
-against the private original as a black-box reference. Use those differences to
-replace the provisional timing/control policies with measured contracts. Then
-implement the uploaded instrument-10 descriptor/sample binding with owned public
-fixtures and title evidence. Broader multichannel scores, calls, ties, effects
-and release qualification remain separate milestones.
+The new read-only DSP observer is a diagnostic binding outside snapshots. Public
+engine checks require identical PCM and complete machine state with and without
+the observer and preserve destination bindings across load. The timeline probe
+bounds requests to 16 and changed gate/reset/key-on events to 128. It exports
+only timestamps, command IDs and note setup registers; no RAM, samples, programs,
+snapshots or PCM. The optional checker sanitizes child failures and compares
+owned binding controls on both programs/models, then the pinned title if supplied:
+
+```sh
+python3 scripts/check_sgb_vendor_music_reference.py \
+  --probe build-dmg-firmware/gameboy_sgb_music_timeline_probe \
+  --firmware-dir roms --game 'roms/Donkey Kong (JU) (V1.1) [S][!].gb'
+```
+
+The measured title sends music 1 twice. The second request interrupts the first
+before its note gate, explaining two starts but only one natural completion.
+The original and replacement each key on twice. The original's final note gate
+is about 1065.7 ms; the replacement's provisional gate is about 1022.5 ms.
+The original's stop sequence keys all voices off and clears KOF again, while the
+replacement immediately mutes/resets DSP. Selection latency also differs and
+varies with the original model/driver phase. These are compatibility gaps,
+not reasons to change the separately measured DA diagnostic profiles.
+
+The complete optional comparison passes all 16 executions: three owned binding
+controls on both programs and models, plus each program/model title window.
+Both originals produce pitches 4528/4800/9072 for the authored base binding and
+exactly half those words for half tuning. The replacement produces
+4528/4796/9052 and halves them, preserving envelope-only pitch independence.
+The source/envelope controls match while interpolation remains approximate.
+
+| Measured title interval | Original SGB1 | Original SGB2 | Replacement SGB1/SGB2 |
+| --- | --- | --- | --- |
+| Final note gate | 1065.694 ms | 1065.694 ms | 1022.528 ms |
+| All-voice key-off after final key-on | 1087.810 ms | 1087.817 ms | 1092.944 ms |
+| Second request to key-on | 58.981 ms | 64.435 ms | 14.980 / 15.054 ms |
+
+These bounded windows use the same native `SgbHost`, bundled model bootstraps
+and input events. Packet spacing itself differs with host execution, so the
+report anchors key-ons to their own delivered requests and gates to their own
+key-ons. It does not present absolute cold-boot PCM alignment as sound parity.
+
+Next, replace the provisional gate/selection/completion policies with a bounded
+measured contract for this entry and owned fixtures. Include the original's
+release behavior and tune interpolation; uploaded sample binding alone does
+not qualify waveform matching. Broader multichannel scores, calls, ties,
+effects and production release qualification remain separate milestones.

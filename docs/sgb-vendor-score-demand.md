@@ -138,10 +138,12 @@ ctest --test-dir build-dmg-firmware -R 'gameboy_sgb_(score_demand_inventory|scor
 ## First bounded uploaded-title playback
 
 The separate [DB interpreter](sgb-vendor-music.md) now executes a short game
-entry using authored square/triangle instruments and FIR responses. The bundled
+entry using an admitted uploaded instrument-2 binding, authored resident
+fallbacks and FIR responses. The bundled
 prototype retains the rejection policy above. DB accepts the actual two-stage
 score/data transport, validates the selected single-channel score before notes,
 and produces PCM on both models with reset/save-load parity. Its provisional
 pitch, volume, articulation and echo policies are not original-sound equivalence.
-Black-box title behavior comparison and uploaded instrument binding are the next
-compatibility gates; larger scores remain unsupported.
+Register-only original comparisons now establish instrument-2 source/envelope
+and tuning-word binding. They also expose selection/gate/release timing gaps,
+which are the next compatibility work; larger scores remain unsupported.

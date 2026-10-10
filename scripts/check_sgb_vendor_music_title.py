@@ -23,7 +23,8 @@ def validate(report, model):
     for key, expected in dict(firmware_state=1, transfer_error=0, transfers=2,
                               adoptions=3, sounds=3, starts=2, completes=1,
                               notes=2, selected=1, rejected=0, flg=0xE0,
-                              host_status=0, external=0).items():
+                              host_status=0, external=0, uploaded_instrument=1, srcn=2,
+                              pitch=1435, adsr1=255, adsr2=224, gain=184).items():
         if type(report.get(key)) is not int or report[key] != expected:
             raise ValueError('private title gate failed: ' + key)
     for key in ('clocks','frames','nonzero','last_nonzero_clock','restores','unread_restores','gb_frames','pcm_fnv64'):
@@ -39,7 +40,8 @@ def validate(report, model):
     # Forward only this explicit aggregate allowlist, never arbitrary child data.
     fields = ('model','clocks','gb_frames','transfers','adoptions','sounds','starts',
               'completes','notes','frames','nonzero','last_nonzero_clock','pcm_fnv64',
-              'restores','unread_restores','reset_equal','restore_equal')
+              'restores','unread_restores','reset_equal','restore_equal',
+              'uploaded_instrument','srcn','pitch','adsr1','adsr2','gain')
     return {key: report[key] for key in fields}
 
 

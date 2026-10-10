@@ -53,14 +53,16 @@ def payload(chunks, entry=0x0400):
     return result+bytes(4096-len(result))
 
 
+def assets(*, descriptor=(2,0x8E,0xAF,0,0x10,0), sample=bytes((0xA3,))+bytes((0x22,))*8,
+           start=0x3B00, loop=0x3B00):
+    return ((0x4B08, struct.pack('<HH',start,loop)), (0x4C3C,bytes(descriptor)), (0x3B00,sample))
+
+
 def build(case='complete', fault=None):
     score = bank(fault=fault, echo=case != 'dry')
     score_frame = payload(((0x2B00, score),))
-    # Authored bytes in the title's data address ranges, never used as samples
-    # by this owned-instrument profile. Deliberately different from built-ins.
-    asset_frame = payload(((0x4B08, bytes((0x00,0x3B,0x00,0x3B))),
-                           (0x4C3C, bytes((2,0x8E,0xAF,0,0x10,0))),
-                           (0x3B00, bytes((0xA3,))+bytes((0x22,))*8)))
+    # Authored instrument-2 binding and looping BRR, different from residents.
+    asset_frame = payload(assets())
     sound = lambda song, attr=0: bytes((0x41,0,0,attr,song))
     if case in ('complete', 'dry'):
         return build_cartridge((score_frame,), ((16,sound(1),None),))

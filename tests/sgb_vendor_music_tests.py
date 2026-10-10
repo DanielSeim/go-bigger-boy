@@ -11,7 +11,7 @@ import tempfile
 import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 from build_sgb_vendor_music import build as firmware
-from build_sgb_vendor_music_fixture import build, bank, payload
+from build_sgb_vendor_music_fixture import build, bank, payload, assets
 from build_sgb_score_atomic_fixture import build_cartridge
 
 PROBE = None
@@ -48,7 +48,7 @@ class VendorMusicTests(unittest.TestCase):
     def test_01_build_and_export(self):
         image = firmware()
         self.assertEqual(image, firmware())
-        self.assertEqual(hashlib.sha256(image).hexdigest(), '0267b319ad503ea9ec57bb2ce9cbbbfb8ee0dd16ea872e63ec63e63e7a19ee28')
+        self.assertEqual(hashlib.sha256(image).hexdigest(), 'b465f6e7a2e4675fbbcdc1281b45cc2f788eac01f9a7f316481a549b427adc3c')
         self.assertEqual(len(image), 262144)
         self.assertEqual(int.from_bytes(image[0x7FDC:0x7FDE], 'little') ^
                          int.from_bytes(image[0x7FDE:0x7FE0], 'little'), 65535)
@@ -144,20 +144,87 @@ class VendorMusicTests(unittest.TestCase):
                       model='sgb2', mode='native', reset_equal=True, restore_equal=True,
                       firmware_state=1, transfer_error=0, transfers=2, adoptions=3,
                       sounds=3, starts=2, completes=1, notes=2, selected=1, rejected=0,
-                      flg=224, host_status=0, external=0, clocks=1000000010,
+                      flg=224, host_status=0, external=0, uploaded_instrument=1, srcn=2,
+                      pitch=1435, adsr1=255, adsr2=224, gain=184, clocks=1000000010,
                       frames=1489947, nonzero=60000, last_nonzero_clock=966000000,
                       restores=612, unread_restores=18, gb_frames=2668, pcm_fnv64=123)
         self.assertEqual(validate(report,'sgb2')['completes'],1)
         report['private_data'] = 'not forwarded'
         self.assertNotIn('private_data',validate(report,'sgb2'))
         for key in ('qualification','restore_equal','reset_equal','transfer_error','notes',
-                    'completes','starts','rejected','nonzero','unread_restores','clocks','frames'):
+                    'completes','starts','rejected','uploaded_instrument','srcn','pitch','adsr1','gain','nonzero','unread_restores','clocks','frames'):
             changed = report.copy()
             changed[key] = True if key == 'qualification' else (1 if report[key] == 0 else 0)
             with self.subTest(key=key), self.assertRaises(ValueError): validate(changed,'sgb2')
         with self.assertRaises(ValueError): validate(report,'sgb')
         changed = report.copy(); changed['notes'] = True
         with self.assertRaises(ValueError): validate(changed,'sgb2')
+
+    def test_09_reference_summary(self):
+        from check_sgb_vendor_music_reference import title_summary
+        events = [dict(half=120,register=0x4C,value=4,request=2,pitch=100,srcn=2),
+                  dict(half=205,register=0x5C,value=255,request=3),
+                  # Reselection's pre-key-on KOF is not the prior note's gate.
+                  dict(half=208,register=0x5C,value=4,request=3),
+                  dict(half=220,register=0x4C,value=4,request=3,pitch=100,srcn=2),
+                  dict(half=300,register=0x5C,value=4,request=3),
+                  dict(half=310,register=0x5C,value=255,request=3),
+                  dict(half=312,register=0x6C,value=224,request=3)]
+        report=dict(requests=[0,100,200],music=[0,1,1],events=events,private_data='discard')
+        summary=title_summary(report)
+        self.assertIs(summary['first_request_interrupted'],True)
+        self.assertEqual(summary['last_gate_ms'],round(80/2048,6))
+        self.assertNotIn('private_data',summary)
+        for bad in (dict(report,music=[0,1,2]),dict(report,events=events[:4]),
+                    dict(report,events=[events[0],dict(half=140,register=0x5C,value=4,request=2)]+events[1:])):
+            with self.assertRaises(ValueError): title_summary(bad)
+
+    def test_08_uploaded_instrument_binding(self):
+        sound = bytes((0x41,0,0,0,1))
+        def image(chunks, replacement=False):
+            frames = [payload(((0x2B00,bank(echo=False)),)),payload(chunks)]
+            events = [(4,bytes((0x49,)),1),(16,sound,None)]
+            if replacement:
+                frames.append(frames[0]); events = [(4,bytes((0x49,)),1),(4,bytes((0x49,)),2),(16,sound,None)]
+            return build_cartridge(tuple(frames),tuple(events))
+        for model in ('sgb','sgb2'):
+            native = self.run_image(image(assets()),model)
+            scalar = self.run_image(image(assets()),model,'scalar')
+            self.assertEqual(native['pcm_fnv64'],scalar['pcm_fnv64'])
+            self.assertEqual((native['uploaded_instrument'],native['srcn'],native['adsr1'],native['adsr2'],native['gain']), (1,2,0x8E,0xAF,0))
+            self.assertEqual((native['notes'],native['completes']), (3,1))
+            self.assertGreater(native['nonzero'],1000)
+            half = self.run_image(image(assets(descriptor=(2,0x8E,0xAF,0,8,0))),model)
+            self.assertEqual(half['pitch'],native['pitch']//2)
+            self.assertNotEqual(half['pcm_fnv64'],native['pcm_fnv64'])
+            oneshot = self.run_image(image(assets(sample=bytes((0xA1,))+bytes((0x22,))*8,loop=0)),model)
+            self.assertEqual((oneshot['uploaded_instrument'],oneshot['completes']), (1,1))
+            clipped = self.run_image(image(assets(descriptor=(2,0x8E,0xAF,0,255,255))),model)
+            self.assertEqual(clipped['pitch'],16383)
+            relocated = self.run_image(image(assets(start=0x3B04,loop=0x3B0D,
+                sample=bytes(4)+bytes((0xA0,))+bytes((0x22,))*8+bytes((0xA3,))+bytes((0x33,))*8+bytes(3))),model)
+            self.assertEqual((relocated['uploaded_instrument'],relocated['completes']), (1,1))
+            chunked = list(assets(sample=bytes((0xA0,))+bytes((0x22,))*8+bytes((0xA3,))+bytes((0x33,))*8))
+            chunked[-1:] = [(0x3B00,chunked[-1][1][:8]),(0x3B08,chunked[-1][1][8:])]
+            fragmented = self.run_image(image(tuple(chunked)),model)
+            self.assertEqual((fragmented['uploaded_instrument'],fragmented['completes']), (1,1))
+            changed = self.run_image(image(assets(descriptor=(2,0x8F,0x6F,48,0x10,0))),model)
+            self.assertEqual((changed['adsr1'],changed['adsr2'],changed['gain']), (0x8F,0x6F,48))
+            resident = self.run_image(image(assets(),replacement=True),model)
+            self.assertEqual((resident['uploaded_instrument'],resident['srcn']), (0,0))
+            self.assertEqual(resident['completes'],1)
+            faults = (assets(loop=0x3B01),assets(start=0x3AFF),assets(start=0x3B09),
+                      assets(sample=bytes((0xA0,))+bytes(8)),
+                      assets(sample=bytes((0xA2,))+bytes(8)),
+                      assets(descriptor=(3,0x8E,0xAF,0,0x10,0)),
+                      assets(descriptor=(2,0x8E,0xAF,0,0,0)))
+            for chunks in faults:
+                bad = self.run_image(image(chunks),model)
+                self.assertEqual((bad['firmware_state'],bad['rejected'],bad['starts'],bad['nonzero']), (255,0xE2,0,0))
+            for chunks in (assets()[:2],assets()[1:],assets()+assets()[:1]):
+                bad = self.run_image(image(chunks),model)
+                self.assertEqual((bad['firmware_state'],bad['starts'],bad['nonzero']), (255,0,0))
+                self.assertNotEqual(bad['transfer_error'],0)
 
     def test_05_native_execution_bounds(self):
         # A phrase-list loop made of nine valid references must reject, rather

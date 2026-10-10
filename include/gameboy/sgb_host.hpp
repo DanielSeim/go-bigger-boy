@@ -64,6 +64,10 @@ public:
     // Read-only physical RAM/DSP observations for diagnostic firmware tests.
     [[nodiscard]] std::uint8_t debug_spc_ram_byte(std::uint16_t address) const noexcept;
     [[nodiscard]] std::uint8_t debug_dsp_register(std::uint8_t index) const noexcept;
+    // Diagnostic binding, excluded from snapshots; retained by reset/load.
+    // The caller owns the context lifetime and must not mutate this host in callbacks.
+    void debug_set_dsp_write_observer(SnesApuAudioEngine::DspWriteObserver observer,
+                                      void* context) noexcept;
     // Exact scalar scheduling oracle for tests; not a playback quality option.
     void debug_set_apu_batch_enabled(bool enabled) noexcept;
     void debug_set_spc_idle_tail_cache_enabled(bool enabled) noexcept;

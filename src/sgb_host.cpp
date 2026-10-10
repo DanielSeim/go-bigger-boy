@@ -12,6 +12,8 @@ struct SgbHost::Impl {
     SgbIcdGbSource icd;
     SnesHostCpu cpu;
     std::unique_ptr<SgbAudioMixer> mixer;
+    SnesApuAudioEngine::DspWriteObserver diagnostic_observer{};
+    void* diagnostic_context{};
     bool combined;
     unsigned apu_hz;
     std::uint64_t maximum_step_start{}; // Derived from immutable oscillator.
@@ -134,6 +136,11 @@ SgbHost::SgbHost(SgbHostConfig config) : config_(std::move(config)) {
     reset();
 }
 SgbHost::~SgbHost() = default;
+void SgbHost::debug_set_dsp_write_observer(SnesApuAudioEngine::DspWriteObserver observer,
+                                         void* context) noexcept {
+    impl_->diagnostic_observer=observer; impl_->diagnostic_context=context;
+    impl_->apu.debug_set_dsp_write_observer(observer, context);
+}
 std::uint8_t SgbHost::debug_spc_ram_byte(std::uint16_t address) const noexcept {
     return impl_->apu.bus().dsp_read_ram(address);
 }
@@ -160,6 +167,11 @@ void SgbHost::reset() {
     fresh->apu.debug_set_direct_dsp_clock_enabled(fresh->direct_dsp_clock_enabled);
     fresh->dsp_phase_dispatch_enabled=impl_ ? impl_->dsp_phase_dispatch_enabled : true;
     fresh->apu.debug_set_dsp_phase_dispatch_enabled(fresh->dsp_phase_dispatch_enabled);
+    if (impl_) {
+        fresh->diagnostic_observer=impl_->diagnostic_observer;
+        fresh->diagnostic_context=impl_->diagnostic_context;
+        fresh->apu.debug_set_dsp_write_observer(fresh->diagnostic_observer,fresh->diagnostic_context);
+    }
     impl_.swap(fresh);
 }
 bool SgbHost::step() noexcept {
@@ -437,6 +449,9 @@ public:
             candidate->apu.debug_set_direct_dsp_clock_enabled(candidate->direct_dsp_clock_enabled);
             candidate->dsp_phase_dispatch_enabled=host.impl_->dsp_phase_dispatch_enabled;
             candidate->apu.debug_set_dsp_phase_dispatch_enabled(candidate->dsp_phase_dispatch_enabled);
+            candidate->diagnostic_observer=host.impl_->diagnostic_observer;
+            candidate->diagnostic_context=host.impl_->diagnostic_context;
+            candidate->apu.debug_set_dsp_write_observer(candidate->diagnostic_observer,candidate->diagnostic_context);
             components(r,*candidate);
             std::vector<std::uint8_t> apu,gb; r(apu,gb); r.in.finish();
             if(!candidate->apu.load_state(apu)) return false;

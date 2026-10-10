@@ -76,6 +76,28 @@ std::vector<Sample> run(Engine& e, unsigned halves) {
     return output;
 }
 
+void diagnostic_observer_tests() {
+    Engine observed, plain; setup(observed); setup(plain);
+    struct Capture { unsigned count{}, address{}, value{}; std::uint64_t half{}; } capture;
+    observed.debug_set_dsp_write_observer([](void* context, std::uint64_t half,
+                                            std::uint8_t address, std::uint8_t value) noexcept {
+        auto& c=*static_cast<Capture*>(context); ++c.count; c.half=half; c.address=address; c.value=value;
+    }, &capture);
+    const auto before=observed.save_state();
+    check(before==plain.save_state(), "diagnostic binding excluded from snapshots");
+    const auto actual=run(observed,4096), expected=run(plain,4096);
+    check(capture.count==1 && capture.address==0x4c && capture.value==0xff && capture.half>0,
+          "diagnostic observes actual timestamped key-on");
+    check(actual.size()==expected.size() && std::equal(actual.begin(),actual.end(),expected.begin(),same) &&
+          observed.save_state()==plain.save_state(), "observer preserves complete PCM and machine state");
+    check(observed.load_state(before), "restore with diagnostic binding");
+    (void)run(observed,4096);
+    check(capture.count==2, "snapshot restore retains destination observer binding");
+    observed.debug_set_dsp_write_observer(nullptr,nullptr);
+    check(observed.load_state(before), "restore after removing observer"); (void)run(observed,4096);
+    check(capture.count==2, "diagnostic observer can be detached");
+}
+
 void restore_tests() {
     Engine e; setup(e);
     for (unsigned offset = 0; offset < 256; ++offset) {
@@ -373,7 +395,7 @@ int main(int argc, char** argv) {
     if (argc == 2 && std::string_view(argv[1]) == "--fixture") return export_synthetic(true);
     if (argc == 2 && std::string_view(argv[1]) == "--pcm") return export_synthetic(false);
     if (argc != 1) return 2;
-    restore_tests(); direct_clock_equivalence(); integrated_clock_opcode_equivalence();
+    diagnostic_observer_tests(); restore_tests(); direct_clock_equivalence(); integrated_clock_opcode_equivalence();
     boundaries(); malformed_cpu_and_realtime(); benchmark();
     return failures ? 1 : 0;
 }

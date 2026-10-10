@@ -65,3 +65,9 @@ To reproduce the shorter CI suite after building all targets:
 ctest --test-dir build-firmware --label-exclude sgb-firmware-extended \
   --output-on-failure
 ```
+
+The uploaded instrument-2 extension keeps the DB full matrix in the firmware
+shards. `gameboy_sgb_music_observer_contract` is a short public lifecycle check;
+`gameboy_sgb_vendor_music_local_reference` requires caller-owned originals and is
+labelled `local;private-reference`, alongside the optional private title gate.
+The reference probe exports bounded register/timestamp metadata only.

@@ -371,7 +371,8 @@ The driver now resides at `$1000`, with a legacy `$0200` trampoline. The `$0400`
 silent and external with E1/E2 diagnostics. Vendor title-score rendering remains
 unsupported by this bundled prototype.
 The separate [DB music experiment](sgb-vendor-music.md) now renders a bounded
-unmodified Donkey Kong entry with owned instruments; it does not qualify
+unmodified Donkey Kong entry with its uploaded instrument-2 sample/envelope
+binding and owned resident fallbacks; it does not qualify
 production compatibility or original acoustics.
 
 A [title-demand audit and bounded native probe](sgb-original-title-demand.md)

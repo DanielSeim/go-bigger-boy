@@ -1277,6 +1277,11 @@ if(GAMEBOY_BUILD_TESTS)
     add_test(NAME gameboy_snes_audio_host_contract
              COMMAND gameboy_snes_audio_host_tests)
     add_executable(gameboy_sgb_host_tests tests/sgb_host_tests.cpp)
+    add_executable(gameboy_sgb_music_observer_tests tests/sgb_music_observer_tests.cpp)
+    target_link_libraries(gameboy_sgb_music_observer_tests PRIVATE gameboy_core)
+    add_test(NAME gameboy_sgb_music_observer_contract COMMAND gameboy_sgb_music_observer_tests)
+    add_executable(gameboy_sgb_music_timeline_probe tests/sgb_music_timeline_probe.cpp)
+    target_link_libraries(gameboy_sgb_music_timeline_probe PRIVATE gameboy_core)
     add_executable(gameboy_sgb_vendor_music_probe tests/sgb_vendor_music_probe.cpp)
     target_link_libraries(gameboy_sgb_vendor_music_probe PRIVATE gameboy_core)
     add_executable(gameboy_sgb_original_title_probe tests/support/sgb_original_title_probe.cpp)
@@ -1307,6 +1312,17 @@ if(GAMEBOY_BUILD_TESTS)
                     --game "${CMAKE_CURRENT_SOURCE_DIR}/roms/Donkey Kong (JU) (V1.1) [S][!].gb")
             set_tests_properties(gameboy_sgb_vendor_music_local_title
                 PROPERTIES TIMEOUT 750 LABELS "local;private-reference")
+        endif()
+        if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb1.program.rom" AND
+           EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.program.rom" AND
+           EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/Donkey Kong (JU) (V1.1) [S][!].gb")
+            add_test(NAME gameboy_sgb_vendor_music_local_reference
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_vendor_music_reference.py
+                    --probe $<TARGET_FILE:gameboy_sgb_music_timeline_probe>
+                    --firmware-dir "${CMAKE_CURRENT_SOURCE_DIR}/roms"
+                    --game "${CMAKE_CURRENT_SOURCE_DIR}/roms/Donkey Kong (JU) (V1.1) [S][!].gb")
+            set_tests_properties(gameboy_sgb_vendor_music_local_reference
+                PROPERTIES TIMEOUT 1800 LABELS "local;private-reference")
         endif()
         add_test(NAME gameboy_sgb_score_transport
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_score_transport_tests.py

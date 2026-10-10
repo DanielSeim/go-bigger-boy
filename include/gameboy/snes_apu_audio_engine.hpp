@@ -45,11 +45,19 @@ public:
     void debug_set_dsp_phase_dispatch_enabled(bool enabled) noexcept {
         dsp_.debug_set_phase_dispatch_enabled(enabled);
     }
+    using DspWriteObserver = void (*)(void*, std::uint64_t, std::uint8_t, std::uint8_t) noexcept;
+    // Read-only diagnostic binding, excluded from snapshots. The scheduler
+    // retains ownership of the physical bus observer.
+    void debug_set_dsp_write_observer(DspWriteObserver observer, void* context) noexcept {
+        diagnostic_observer_ = observer; diagnostic_context_ = context;
+    }
     // Atomic component state includes CPU replay/half clocks, bus, DSP and
     // FIFO. Excludes the SNES CPU, ICD/GB scheduler and frontend DAC/resampler.
     [[nodiscard]] std::vector<std::uint8_t> save_state() const;
     [[nodiscard]] bool load_state(const std::vector<std::uint8_t>& bytes) noexcept;
 private:
+    DspWriteObserver diagnostic_observer_{};
+    void* diagnostic_context_{};
     friend class SgbHost;
     friend class SnesDspStateCodec;
     SnesApuBus owned_bus_;

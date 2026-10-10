@@ -35,7 +35,7 @@ def build():
     if len(payload) > 0x1900:
         raise ValueError('vendor payload overlaps reserved score space')
     host = (ROOT / 'firmware/sgb/host.asm').read_text()
-    host = replace(host, '    stz $2a\n', '    stz $2a\n    stz $5a\n    stz $5b\n')
+    host = replace(host, '    stz $2a\n', '    stz $2a\n    stz $5a\n    stz $5b\n    stz $60\n    stz $61\n    stz $62\n')
     host = replace(host, '    cmp #$c4\n    bne driver_ready\n', '    cmp #$db\n    bne driver_ready\n')
     host = replace(host, '    cmp #$ca\n    bne poll_packets\n',
                    '    cmp #$ca\n    beq driver_version_known\n    cmp #$db\n    bne poll_packets\n')
@@ -76,14 +76,15 @@ poll:
 vendor_host_poll:
 ''')
     host = replace(host, '    inc $25\n',
-                   '    inc $25\n    stz $54\n    rep #$20\n    lda.w #$2b00\n    sta $52\n    sep #$20\n')
+                   '    inc $25\n    stz $54\n    stz $5c\n    rep #$20\n    lda.w #$2b00\n    sta $52\n    lda.w #$3b00\n    sta $5e\n    sep #$20\n')
     host = replace(host, 'destination_valid:\n    sep #$20',
                    'destination_valid:\n    jsr vendor_block\n    sep #$20')
     host = replace(host, 'jump_valid:\n    sta $44', 'jump_valid:\n    jsr vendor_complete\n    sta $44')
     host = replace(host, 'transfer_jump:\n    stz $2141\n', '''transfer_jump:
 ; Supply a trusted exclusive source end, outside the score/code/sample regions.
 ; The game cannot upload this descriptor or resident code.
-    stz $2142
+    lda #$10
+    sta $2142
     lda #$05
     sta $2143
     lda #$01
@@ -101,10 +102,25 @@ vendor_host_poll:
     lda #$01
     sta $2140
     jsr wait_echo
+    lda $60
+    sta $2141
+    lda #$02
+    sta $2140
+    jsr wait_echo
+    lda $62
+    sta $2141
+    lda #$03
+    sta $2140
+    jsr wait_echo
+    lda $63
+    sta $2141
+    lda #$04
+    sta $2140
+    jsr wait_echo
     stz $2142
     lda #$04
     sta $2143
-    lda #$05
+    lda #$07
     sta $47
     stz $2141
 ''')
@@ -124,12 +140,42 @@ vendor_block:
     sta $54
     rts
 vendor_asset_block:
-    cmp.w #$4d00
-    bcs vendor_invalid
+    cmp.w #$4b08
+    beq vendor_directory_block
+    cmp.w #$4c3c
+    beq vendor_descriptor_block
+    cmp $5e
+    bne vendor_invalid
     clc
     adc $40
-    cmp.w #$4d01
+    cmp.w #$4b01
     bcs vendor_invalid
+    sta $5e
+    lda $5c
+    .byte $09, $01, $00
+    sta $5c
+    rts
+vendor_directory_block:
+    lda $40
+    cmp.w #$0004
+    bne vendor_invalid
+    lda $5c
+    .byte $29, $02, $00
+    bne vendor_invalid
+    lda $5c
+    .byte $09, $02, $00
+    sta $5c
+    rts
+vendor_descriptor_block:
+    lda $40
+    cmp.w #$0006
+    bne vendor_invalid
+    lda $5c
+    .byte $29, $04, $00
+    bne vendor_invalid
+    lda $5c
+    .byte $09, $04, $00
+    sta $5c
     rts
 vendor_complete:
     lda $42
@@ -141,10 +187,21 @@ vendor_complete:
     cmp.w #$2b06
     bcc vendor_invalid
     sta $5a
+    stz $60
+    stz $61
 vendor_previous_bank:
     lda $5a
     cmp.w #$2b06
     bcc vendor_invalid
+    lda $5c
+    beq vendor_manifest_done
+    cmp.w #$0007
+    bne vendor_invalid
+    lda.w #$0001
+    sta $60
+    lda $5e
+    sta $62
+vendor_manifest_done:
     lda $42
     rts
 vendor_invalid:
@@ -159,6 +216,7 @@ vendor_invalid:
         label = f'vendor_host_guard_{guard}'
         return f'    {inverse} {label}\n    jmp unsupported\n{label}:\n'
     host = re.sub(r'    (bne|beq|bcs|bcc) unsupported_early\n', far, host)
+    host = re.sub(r'    (bne|beq|bcs|bcc) vendor_invalid\n', lambda m: far(m).replace('jmp unsupported', 'jmp vendor_invalid'), host)
     host = host.replace('    bra poll\n', '    jmp poll\n')
     host = assemble(host, 'host', 0x8000, {'payload_size': len(payload), 'entry_token': ((len(payload)+2)|1)&255})
     if len(host) > 4096:

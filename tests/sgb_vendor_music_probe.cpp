@@ -145,6 +145,12 @@ int main(int argc, char** argv) {
                   << ",\"completes\":" << result.completes << ",\"notes\":" << result.notes
                   << ",\"selected\":" << result.selected << ",\"rejected\":" << result.rejected
                   << ",\"flg\":" << result.flg << ",\"host_status\":" << result.status
+                  << ",\"uploaded_instrument\":" << unsigned(host.debug_spc_ram_byte(0x54))
+                  << ",\"srcn\":" << unsigned(host.debug_dsp_register(0x24))
+                  << ",\"pitch\":" << (unsigned(host.debug_dsp_register(0x22)) | (unsigned(host.debug_dsp_register(0x23)) << 8))
+                  << ",\"adsr1\":" << unsigned(host.debug_dsp_register(0x25))
+                  << ",\"adsr2\":" << unsigned(host.debug_dsp_register(0x26))
+                  << ",\"gain\":" << unsigned(host.debug_dsp_register(0x27))
                   << ",\"external\":" << result.external << ",\"gb_frames\":" << result.models_frames << "}\n";
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 2; }
 }

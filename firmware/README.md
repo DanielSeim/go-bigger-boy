@@ -422,7 +422,8 @@ it is not a bundled program-ROM default. The original
 SPC700 IPL replacement is described in [IPL validation](../docs/spc700-ipl-validation.md).
 
 The separate [uploaded game-music experiment](../docs/sgb-vendor-music.md) builds
-an independent DB diagnostic firmware with owned instruments. Bounded private
+an independent DB diagnostic firmware with owned resident instruments and a
+bounded caller-uploaded instrument-2 binding. Bounded private
 Donkey Kong runs now produce music on both models through real SOU_TRN/SOUND,
 with exact reset/save-load continuation. It is unbundled and uses provisional
 sound policies; full sound-bank compatibility and acoustic qualification remain open.

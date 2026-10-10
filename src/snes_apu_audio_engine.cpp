@@ -19,7 +19,10 @@ void SnesApuAudioEngine::reset() noexcept {
     bus_.reset();
     bus_.set_dsp_write_observer([](void* context, std::uint8_t address,
                                   std::uint8_t value) noexcept {
-        static_cast<SnesApuAudioEngine*>(context)->dsp_.accept_dsp_write(address, value);
+        auto& self = *static_cast<SnesApuAudioEngine*>(context);
+        self.dsp_.accept_dsp_write(address, value);
+        if (self.diagnostic_observer_)
+            self.diagnostic_observer_(self.diagnostic_context_, self.cpu_.half_cycles(), address, value);
     }, this);
     cpu_.reset();
     cpu_.set_cycle_bus_enabled(true);

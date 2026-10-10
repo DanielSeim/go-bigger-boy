@@ -1,6 +1,7 @@
 ; SPDX-License-Identifier: GPL-3.0-or-later
 ; Independent experimental single-channel uploaded music interpreter.
-; Own square/triangle instruments; no vendor code, tables or samples.
+; Owned resident square/triangle; admitted caller-uploaded source 2.
+; No vendor program code, resident tables or resident samples.
 ; DB is a separate diagnostic protocol, never a production advertisement.
 .org $0200
 vendor_cold:
@@ -12,6 +13,7 @@ vendor_cold:
     mov $d8, #$00
     mov $d9, #$00
     mov $df, #$7f
+    mov $54, #$00
     jmp vendor_publish
 vendor_publish:
     call vendor_mute
@@ -147,14 +149,15 @@ vendor_restart:
     mov $d9, a
     mov a, $0508
     mov $df, a
-    mov a, $0500
+    mov a, $0510
     mov $26, a
-    mov a, $0501
+    mov a, $0511
     mov $27, a
     mov $d2, #$01
     inc $d9
+    call vendor_assets
     jmp vendor_publish
-; Host supplies an exclusive source end at $0500; no unprovided byte is read.
+; Host supplies exclusive source end at $0510; no unprovided byte is read.
 ; Directory/sample locations are separated from score and echo RAM.
 .org $0600
 .byte $00,$07,$00,$07,$09,$07,$09,$07
@@ -519,11 +522,40 @@ vendor_timer_started:
     adc a, $4c
     mov x, a
     mov a, vendor_pitch+x
-    mov $f2, #$22
-    mov $f3, a
+    mov $60, a
     .byte $3d
     mov a, vendor_pitch+x
+    mov $61, a
+    mov a, $54
+    beq vendor_resident_pitch
+    mov a, $36
+    cmp a, #$02
+    bne vendor_resident_pitch
+    call vendor_tuned_pitch
+    mov $f2, #$22
+    mov a, $66
+    mov $f3, a
     mov $f2, #$23
+    mov a, $67
+    mov $f3, a
+    mov $f2, #$24
+    mov $f3, #$02
+    mov $f2, #$25
+    mov a, $4c3d
+    mov $f3, a
+    mov $f2, #$26
+    mov a, $4c3e
+    mov $f3, a
+    mov $f2, #$27
+    mov a, $4c3f
+    mov $f3, a
+    jmp vendor_voice_volume
+vendor_resident_pitch:
+    mov $f2, #$22
+    mov a, $60
+    mov $f3, a
+    mov $f2, #$23
+    mov a, $61
     mov $f3, a
     mov $f2, #$24
     mov $f3, #$00
@@ -629,5 +661,149 @@ vendor_pan_left:
 .byte $7f,$79,$72,$6c,$66,$5f,$59,$53,$4c,$46,$40,$39,$33,$2c,$26,$20,$19,$13,$0d,$06,$00
 vendor_pan_right:
 .byte $00,$06,$0d,$13,$19,$20,$26,$2c,$33,$39,$40,$46,$4c,$53,$59,$5f,$66,$6c,$72,$79,$7f
+; Caller asset admission. Trusted host manifest names complete uploaded bytes.
+.org $1000
+vendor_assets:
+    mov $54, #$00
+    mov a, $0512
+    beq vendor_assets_done
+    cmp a, #$01
+    bne vendor_bad
+    mov a, $4c3c
+    cmp a, #$02
+    bne vendor_bad
+    mov a, $4c40
+    mov $57, a
+    mov a, $4c41
+    mov $56, a
+    or a, $57
+    beq vendor_bad
+    mov a, $4b08
+    mov $60, a
+    mov a, $4b09
+    mov $61, a
+    mov a, $4b0a
+    mov $62, a
+    mov a, $4b0b
+    mov $63, a
+    mov $64, #$00
+vendor_asset_header:
+    mov a, $61
+    cmp a, #$3b
+    bcc vendor_bad
+    cmp a, #$4b
+    bcs vendor_bad
+    mov a, $60
+    clrc
+    adc a, #$09
+    mov $65, a
+    mov a, $61
+    adc a, #$00
+    mov $66, a
+    mov a, $0514
+    mov $67, a
+    mov a, $66
+    cmp a, $67
+    bcc vendor_asset_fits
+    bne vendor_bad
+    mov a, $0513
+    mov $67, a
+    mov a, $65
+    cmp a, $67
+    bcc vendor_asset_fits
+    beq vendor_asset_fits
+    jmp vendor_bad
+vendor_asset_fits:
+    mov a, $60
+    cmp a, $62
+    bne vendor_asset_read
+    mov a, $61
+    cmp a, $63
+    bne vendor_asset_read
+    mov $64, #$01
+vendor_asset_read:
+    .byte $8d, $00, $f7, $60
+    mov $67, a
+    and a, #$01
+    bne vendor_asset_end
+    mov a, $67
+    and a, #$02
+    bne vendor_bad
+    mov a, $65
+    mov $60, a
+    mov a, $66
+    mov $61, a
+    jmp vendor_asset_header
+vendor_asset_end:
+    mov a, $67
+    and a, #$02
+    beq vendor_asset_copy
+    mov a, $64
+    beq vendor_bad
+vendor_asset_copy:
+    ; Every decoded header fits the admitted extent, and the loop names a
+    ; visited header for a looping END. A one-shot loop word is unused.
+    ; Prefix/trailing bytes are permitted but never decoded.
+    .byte $cd, $00
+vendor_asset_directory:
+    mov a, $4b08+x
+    .byte $d5, $08, $06, $3d
+    cmp x, #$04
+    bne vendor_asset_directory
+    mov $54, #$01
+vendor_assets_done:
+    ret
+; Authored pitch curve scaled by the uploaded big-endian tuning word / $0400.
+; Full unsigned product, floor division and saturation; no wrap to low pitches.
+vendor_tuned_pitch:
+    mov $62, #$00
+    mov $63, #$00
+    mov a, $56
+    mov $64, a
+    mov a, $57
+    mov $65, a
+    mov $66, #$00
+    mov $67, #$00
+    mov $68, #$00
+    mov $69, #$00
+    mov $6a, #$10
+vendor_multiply:
+    .byte $4b, $65, $6b, $64
+    bcc vendor_product_shift
+    mov a, $66
+    clrc
+    adc a, $60
+    mov $66, a
+    mov a, $67
+    adc a, $61
+    mov $67, a
+    mov a, $68
+    adc a, $62
+    mov $68, a
+    mov a, $69
+    adc a, $63
+    mov $69, a
+vendor_product_shift:
+    .byte $0b, $60, $2b, $61, $2b, $62, $2b, $63
+    dec $6a
+    mov a, $6a
+    bne vendor_multiply
+    mov $6a, #$0a
+vendor_pitch_divide:
+    .byte $4b, $69, $6b, $68, $6b, $67, $6b, $66
+    dec $6a
+    mov a, $6a
+    bne vendor_pitch_divide
+    mov a, $68
+    or a, $69
+    bne vendor_pitch_clamp
+    mov a, $67
+    cmp a, #$40
+    bcc vendor_pitch_ready
+vendor_pitch_clamp:
+    mov $66, #$ff
+    mov $67, #$3f
+vendor_pitch_ready:
+    ret
 vendor_pitch:
 ; Filled by the source builder from an explicitly authored equal-temperament scale.
