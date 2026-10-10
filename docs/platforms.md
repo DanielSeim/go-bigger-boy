@@ -350,10 +350,12 @@ Play-ready Android App Bundle. The signing key must be kept permanently:
 Android will not accept future updates signed with a different key.
 Tagged builds attach both signed packages to the matching GitHub release so
 direct-download installations can discover and verify the APK through the
-in-app updater. After the initial manual Play Console upload, tagged builds
-also publish the signed App Bundle to the closed-testing track **GBB Beta**
-through GitHub Actions Workload Identity Federation; Play-installed copies
-update through Google Play.
+in-app updater. After the initial manual Play Console upload, **Publish release**
+uploads the published App Bundle to the closed-testing track **GBB Beta**
+through GitHub Actions Workload Identity Federation. Its English update news
+comes from the GitHub Release description, converted to plain text; long
+descriptions use a 500-character excerpt including a link to the full release.
+Play-installed copies update through Google Play.
 
 The native link end-to-end test also cross-compiles for Android. It exercises
 two real emulator cores over the deterministic local cable (the TCP leg remains

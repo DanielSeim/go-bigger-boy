@@ -105,8 +105,11 @@ assuming a transport handshake proves a trade or battle completed.
       The publisher is triggered when the tagged Desktop workflow completes;
       it waits for matching tag/SHA Desktop, Android, and Web runs, requires
       success, downloads their artifacts, and runs asset preflight before
-      creating/uploading the GitHub Release. Tagging also triggers Android's
-      Play upload, so Play configuration must be ready before pushing the tag.
+      creating/uploading the GitHub Release. Its dependent Play job then uploads
+      the published AAB with update news derived from that release's description.
+      Play configuration must be ready before pushing the tag; WIF restrictions
+      must allow the **Publish release** workflow and its default-branch ref
+      for automatic publication.
 - [ ] If publication fails or times out, fix/re-run the affected workflows
       and use **Publish release** manual dispatch with the same validated
       `tag` and `sha` when necessary. Its upload can replace existing assets
@@ -121,9 +124,12 @@ assuming a transport handshake proves a trade or battle completed.
       matching cache-busted JS/WASM. A tag Web run supplies release files but
       does not deploy Pages.
 - [ ] After the initial manual Play Console upload, confirm tagged Android
-      builds publish the signed AAB to closed-testing track `GBB Beta` through
-      Workload Identity Federation. Verify Play-installed copies update through
-      Play's flexible update flow; direct-download copies use the signed GitHub
+      releases publish the signed AAB to closed-testing track `GBB Beta` through
+      Workload Identity Federation. Check English (en-US) update news against
+      the GitHub Release description and the Play job summary. Descriptions
+      over 500 characters become a plain-text excerpt with a full-release link;
+      empty descriptions stop the upload. Verify Play-installed copies update
+      through Play's flexible update flow; direct-download copies use the signed GitHub
       APK/system installer. Preserve signing identity and test save/settings
       retention for applicable update paths before announcing availability.
 - [ ] Record final workflow URLs and manual results, including unperformed
