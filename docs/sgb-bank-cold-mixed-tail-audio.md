@@ -87,7 +87,7 @@ profiles and scalar `both`. Every case includes reset/restored execution.
 `gameboy_sgb_bank_cold_mixed_tail_audio_root_gap` each retain one complete
 16-case matrix, with 3600-second timeouts and the `sgb-firmware-extended` label.
 The four-method public contract remains in platform/sanitizer jobs. The
-extended set now has 82 tests across eight dedicated Linux shards.
+extended set had 82 tests at this milestone across eight dedicated Linux shards.
 
 ```sh
 cmake --build build-dmg-firmware --target gameboy_sgb_bank_replace_audio_probe
@@ -150,6 +150,6 @@ banks, clocks and presentation rates remain separate work. The DA image
 remains SHA-256
 `1cf5d56ed87e9407d7d3e3e8753157f23544a29f2876587c41771496ee0b5d82`.
 
-Next, vary subframe command timing around blocked SOUND and the first fresh
-restart in cold recovery, retaining exact counters, token synchronization,
-first-note silence, GB continuity and queued-output replay.
+[Staggered subframe recovery](sgb-bank-cold-phase-audio.md) adds observed LCD/GB
+command timing around blocked SOUND and the first fresh restart. Next, cover a
+complementary schedule with reversed offsets, retaining acoustic and replay checks.

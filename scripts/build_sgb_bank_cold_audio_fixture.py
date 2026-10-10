@@ -10,7 +10,7 @@ from build_sgb_score_atomic_fixture import build_cartridge
 PROFILES=('both','native','gb')
 
 
-def build(kind='asset-gap',profile='both',voice=2,*,semantic_tail=False,repeat=False,mixed=False):
+def build(kind='asset-gap',profile='both',voice=2,*,semantic_tail=False,repeat=False,mixed=False,spin_delays=None):
     if any(type(x) is not bool for x in (semantic_tail,repeat,mixed)) or (semantic_tail and kind!='bad-root' and not mixed) or (repeat and not (semantic_tail or mixed)) or (mixed and not repeat):
         raise ValueError('cold repeat requires tail or mixed failure')
     if profile not in PROFILES:raise ValueError('requires admitted cold source control')
@@ -28,7 +28,7 @@ def build(kind='asset-gap',profile='both',voice=2,*,semantic_tail=False,repeat=F
         payloads.insert(1,semantic_payload(voice) if semantic_tail and second=='bad-root' else replacement(second,voice))
         commands[3]=(4,bytes((0x49,)),1)
         commands[5]=(4,bytes((0x49,)),2)
-    return build_cartridge(payloads,commands,
+    return build_cartridge(payloads,commands,spin_delays=spin_delays,
         io_writes=[initial]+[[(0x80,i)] for i in range(2,count)]+[[(0x25,0),(0x80,count)]])
 
 

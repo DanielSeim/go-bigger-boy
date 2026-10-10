@@ -30,6 +30,7 @@ struct Edge {
 struct Result {
     std::vector<std::uint8_t> pcm,state;
     std::vector<Edge> edges;
+    std::vector<std::array<std::uint64_t,4>> command_phases;
     ScoreAdsrObserver envelopes;
     std::vector<std::uint64_t> mute,recovered,consumed_tokens;
     std::vector<std::array<std::uint64_t,6>> gaps;
@@ -41,12 +42,12 @@ struct Result {
     std::uint64_t gb_samples{},native_samples{},clipped{},clocks{},sounds{};
     unsigned version{},env2{},env3{};
     bool operator==(const Result& other) const {
-        return std::tie(pcm,state,edges,off_envs,off_endx,mute,recovered,consumed_tokens,gaps,rejects,banks,clears,onset_frames,off_frames,zero_frames,gb_samples,native_samples,clipped,clocks,sounds,version,env2,env3)==
-            std::tie(other.pcm,other.state,other.edges,other.off_envs,other.off_endx,other.mute,other.recovered,other.consumed_tokens,other.gaps,other.rejects,other.banks,other.clears,other.onset_frames,other.off_frames,other.zero_frames,other.gb_samples,other.native_samples,other.clipped,other.clocks,other.sounds,other.version,other.env2,other.env3) && envelopes==other.envelopes;
+        return std::tie(pcm,state,edges,command_phases,off_envs,off_endx,mute,recovered,consumed_tokens,gaps,rejects,banks,clears,onset_frames,off_frames,zero_frames,gb_samples,native_samples,clipped,clocks,sounds,version,env2,env3)==
+            std::tie(other.pcm,other.state,other.edges,other.command_phases,other.off_envs,other.off_endx,other.mute,other.recovered,other.consumed_tokens,other.gaps,other.rejects,other.banks,other.clears,other.onset_frames,other.off_frames,other.zero_frames,other.gb_samples,other.native_samples,other.clipped,other.clocks,other.sounds,other.version,other.env2,other.env3) && envelopes==other.envelopes;
     }
 };
 struct Restores { unsigned count{},pending{},edges{},releases{},zeros{},banks{},clears{},queued_onsets{},queued_offs{},queued_banks{},queued_clears{},mute{},queued_mute{},rejects{},queued_rejects{},recovered{},queued_recovered{}; };
-Result run(Host& host,Restores* restores=nullptr,bool active=false,unsigned rejected=0,bool recover=false,bool repeat=false,bool tail=false,bool mixed=false,bool cold=false) {
+Result run(Host& host,Restores* restores=nullptr,bool active=false,unsigned rejected=0,bool recover=false,bool repeat=false,bool tail=false,bool mixed=false,bool cold=false,bool phase_offsets=false) {
     // Cold sequences omit the initial valid bank and its note stages.
     const unsigned retry_stage=cold ? (repeat ? 6 : 4) : repeat ? 8 : 6;
     const unsigned stages=recover ? retry_stage+2 : 5;
@@ -66,6 +67,7 @@ Result run(Host& host,Restores* restores=nullptr,bool active=false,unsigned reje
         if (stage && stage!=last_stage) {
             require(stage==last_stage+1 && stage<=stages,"transition stage order");
             result.edges.push_back({stage,bus.read8(0xff25),frames,host.cpu().timing().clocks()});
+            if (phase_offsets) result.command_phases.push_back({stage,host.icd().gb_cycles(),bus.debug_ppu_scanline(),bus.debug_ppu_dot()});
             last_stage=stage; since_edge=frames; edge=true;
         }
         const auto missed=result.envelopes.notes.empty() ? 0 : result.envelopes.notes[0].missed;
@@ -259,9 +261,10 @@ int main(int argc,char** argv) {
         require(!active || fault=="active" || rejected,"upload mode");
         const bool recover=argc==10;
         const std::string recovery= recover ? argv[9] : "";
-        const bool tail=recovery=="tail" || recovery=="repeat-tail" || recovery=="cold-tail" || recovery=="cold-repeat-tail" || recovery=="cold-mixed-tail";
-        const bool cold=recovery=="cold" || recovery=="cold-tail" || recovery=="cold-repeat-tail" || recovery=="cold-mixed" || recovery=="cold-mixed-tail";
-        const bool mixed=recovery=="mixed" || recovery=="cold-mixed" || recovery=="cold-mixed-tail";
+        const bool phase_offsets=recovery=="cold-phase";
+        const bool tail=phase_offsets || recovery=="tail" || recovery=="repeat-tail" || recovery=="cold-tail" || recovery=="cold-repeat-tail" || recovery=="cold-mixed-tail";
+        const bool cold=phase_offsets || recovery=="cold" || recovery=="cold-tail" || recovery=="cold-repeat-tail" || recovery=="cold-mixed" || recovery=="cold-mixed-tail";
+        const bool mixed=phase_offsets || recovery=="mixed" || recovery=="cold-mixed" || recovery=="cold-mixed-tail";
         const bool repeat=recovery=="repeat-tail" || recovery=="cold-repeat-tail" || mixed;
         const unsigned stages=cold ? (repeat ? 8 : 6) : recover ? (repeat ? 10 : 8) : 5;
         const unsigned final_generation=cold ? (mixed ? 2 : rejected+(repeat ? 1 : 0)) : mixed ? 3 : rejected+1+(repeat ? 1 : 0);
@@ -278,10 +281,10 @@ int main(int argc,char** argv) {
         config.gb_boot_rom[0]=0xc3; config.gb_boot_rom[2]=1;
         Host normal(config),restored(config);
         if (mode=="scalar") { normal.debug_set_apu_batch_enabled(false); restored.debug_set_apu_batch_enabled(false); }
-        const auto result=run(normal,nullptr,active,rejected,recover,repeat,tail,mixed,cold);
+        const auto result=run(normal,nullptr,active,rejected,recover,repeat,tail,mixed,cold,phase_offsets);
         Restores restores;
-        require(result==run(restored,&restores,active,rejected,recover,repeat,tail,mixed,cold),"whole state/PCM/edge restore parity");
-        normal.reset(); require(result==run(normal,nullptr,active,rejected,recover,repeat,tail,mixed,cold),"cold reset parity");
+        require(result==run(restored,&restores,active,rejected,recover,repeat,tail,mixed,cold,phase_offsets),"whole state/PCM/edge restore parity");
+        normal.reset(); require(result==run(normal,nullptr,active,rejected,recover,repeat,tail,mixed,cold,phase_offsets),"cold reset parity");
         const unsigned note_mask=cold || (rejected && !recover) ? 1 : 3;
         const unsigned clear_mask=cold ? (repeat ? 7 : 3) : recover ? (repeat ? 15 : 7) : 3;
         require(restores.pending && restores.edges==((1U<<stages)-1) && restores.releases==note_mask && restores.zeros==note_mask && restores.queued_onsets==note_mask && restores.queued_offs==note_mask && restores.banks==note_mask && restores.clears==clear_mask && restores.queued_banks==note_mask && restores.queued_clears==clear_mask,
@@ -361,6 +364,16 @@ int main(int argc,char** argv) {
             require(result.consumed_tokens.size()==failures,"missing consumed-token evidence");
             report << ",\"consumed_tokens\":[";
             for (unsigned i=0;i<result.consumed_tokens.size();++i) report << (i ? "," : "") << result.consumed_tokens[i];
+            report << ']';
+        }
+        if (phase_offsets) {
+            require(result.command_phases.size()==8,"missing native command phase observations");
+            report << ",\"command_phase\":\"staggered\",\"phase_model\":\"" << model << "\",\"command_phases\":[";
+            for (unsigned i=0;i<result.command_phases.size();++i) {
+                report << (i ? "," : "") << '[';
+                for (unsigned j=0;j<4;++j) report << (j ? "," : "") << result.command_phases[i][j];
+                report << ']';
+            }
             report << ']';
         }
         if (cold) report << ",\"cold_rejection\":true";

@@ -180,5 +180,6 @@ earlier valid bank or native note. [Cold one-byte recovery](sgb-bank-cold-tail-a
 semantic rejection and consumed-token checks before the first valid bank.
 [Cold mixed recovery](sgb-bank-cold-mixed-audio.md) covers both orders before the
 first valid bank. [Cold mixed one-byte recovery](sgb-bank-cold-mixed-tail-audio.md) adds exact token
-transitions in both failure orders. Next, vary subframe command timing around
-blocked SOUND and the first fresh restart, retaining acoustic and replay checks.
+transitions in both failure orders. [Staggered subframe recovery](sgb-bank-cold-phase-audio.md) adds observed LCD/GB
+command timing around blocked SOUND and the first fresh restart. Next, cover a
+complementary schedule with reversed offsets, retaining acoustic and replay checks.

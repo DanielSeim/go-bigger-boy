@@ -160,5 +160,6 @@ presentation rates remain separate work. The DA image remains SHA-256
 `1cf5d56ed87e9407d7d3e3e8753157f23544a29f2876587c41771496ee0b5d82`.
 
 [Cold mixed one-byte recovery](sgb-bank-cold-mixed-tail-audio.md) adds exact token
-transitions in both failure orders. Next, vary subframe command timing around
-blocked SOUND and the first fresh restart, retaining acoustic and replay checks.
+transitions in both failure orders. [Staggered subframe recovery](sgb-bank-cold-phase-audio.md) adds observed LCD/GB
+command timing around blocked SOUND and the first fresh restart. Next, cover a
+complementary schedule with reversed offsets, retaining acoustic and replay checks.
