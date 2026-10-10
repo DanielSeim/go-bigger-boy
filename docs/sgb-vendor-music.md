@@ -328,9 +328,10 @@ key-ons. It does not present absolute cold-boot PCM alignment as sound parity.
 
 The subsequent [phase/selection measurements](sgb-vendor-phase.md) extend the
 owned sequences and expose cumulative phase and unmatched gate differences.
-Next, isolate selection delay against validation workload and timer phase,
-retaining the spacing and active/completed controls before changing the timing
-policy. Explicit STOP release,
+The subsequent [selection isolation](sgb-vendor-selection.md) identifies host
+port forwarding and validation workload as latency components. Next, establish
+host command/acknowledgment milestones for bounded SOUND dispatch pacing.
+Explicit STOP release,
 fades, multichannel scores, calls, ties,
 effects and production release qualification remain separate work. Uploaded
 binding and measured register pitches do not qualify waveform matching.

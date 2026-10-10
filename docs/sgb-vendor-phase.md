@@ -109,10 +109,11 @@ and 59.413 ms on SGB2 in the selection fixtures. The mixed sequence's maximum
 shorter-note gate difference is 11.960/13.546 ms on SGB1/SGB2. Neither those
 gates nor the longer rest-chain phase meet the earlier four-millisecond bound.
 
-Next, isolate score-validation workload and timer phase while holding the first
-note and selection state fixed. Existing spacing and active/completed controls
-should remain in the comparison. Use those delivery-to-key-on windows to identify
-a bounded rule before changing firmware. The unmatched
+The subsequent [selection workload and port observations](sgb-vendor-selection.md)
+hold the first note/state fixed and separate host writes from later key-on.
+They expose host/state-dependent port activity and validation workload. Host
+command/acknowledgment milestones are needed to implement dispatch pacing.
+The unmatched
 tempo-45/duration-16/articulation-127 gate
 needs a separate measured contract. Longer note/rest evidence must remain part
 of any subsequent phase-policy validation. Independent emulator/hardware and

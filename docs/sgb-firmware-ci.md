@@ -85,3 +85,11 @@ contract remains in ordinary platform/sanitizer jobs. The optional
 `gameboy_sgb_vendor_phase_local_reference` reports measured timing gaps and is
 labelled `local;private-reference`; successful observation does not qualify
 compatibility. See [the phase experiments](sgb-vendor-phase.md).
+
+The selection-isolation suite adds `gameboy_sgb_score_vendor_selection` (cost
+300, timeout 900 seconds), bringing the public total to 87 full matrices. It
+covers fixed-note prefix/tail workloads and subframe requests in active and
+completed states. Its short fixture/port-summary contract and the combined
+DSP/APU observer lifecycle contract retain platform/sanitizer coverage. The
+optional selection reference experiment is labelled `local;private-reference`.
+See [selection workload and port timing](sgb-vendor-selection.md).

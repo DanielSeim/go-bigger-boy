@@ -10,11 +10,26 @@
 #include <stdexcept>
 using Host = gameboy::SgbHost;
 struct Event { std::uint64_t half; unsigned kind, value, request, pitch, srcn, adsr1, adsr2, gain; };
+struct PortWindow {
+    std::uint64_t first{}, last{}, keyon{};
+    std::array<unsigned,4> writes{};
+};
 struct Observation {
     Host* host{};
     std::array<Event,128> events{};
     unsigned count{}, kof=256, flg=256;
     bool overflow{};
+    std::array<PortWindow,16> ports{};
+    static void port(void* context,std::uint64_t,char kind,std::uint16_t address,std::uint8_t) noexcept {
+        auto& self=*static_cast<Observation*>(context);
+        const auto request=self.host->icd().sound_packets_delivered();
+        if (kind!='H' || !request || request>self.ports.size() || address<0x2140 || address>0x2143) return;
+        auto& window=self.ports[request-1]; if (window.keyon) return;
+        // APU clock at the host write callback, not an exact fractional bus phase.
+        const auto half=self.host->apu_half_clocks();
+        if (!window.first) window.first=half;
+        window.last=half; ++window.writes[address-0x2140];
+    }
     static void write(void* context, std::uint64_t half, std::uint8_t address, std::uint8_t value) noexcept {
         auto& self=*static_cast<Observation*>(context);
         const auto requests=self.host->icd().sound_packets_delivered();
@@ -22,6 +37,10 @@ struct Observation {
         if (address==0x5c) { if (self.kof==value) return; self.kof=value; }
         else if (address==0x6c) { if (self.flg==value) return; self.flg=value; }
         else if (address!=0x4c || !value) return;
+        if (address==0x4c && requests && requests<=self.ports.size()) {
+            auto& window=self.ports[requests-1];
+            if (!window.keyon) window.keyon=half;
+        }
         if (self.count==self.events.size()) { self.overflow=true; return; }
         const auto reg=[&](unsigned a) { return unsigned(self.host->debug_dsp_register(a)); };
         self.events[self.count++]={half,address,value,static_cast<unsigned>(requests),reg(0x22)|(reg(0x23)<<8),reg(0x24),reg(0x25),reg(0x26),reg(0x27)};
@@ -53,6 +72,7 @@ int main(int argc,char** argv) {
     for (std::size_t i=0;i<inputs.count;++i) config.input_events.push_back({inputs.events[i].frame,inputs.events[i].mask});
     Host host(config); Observation observed; observed.host=&host;
     host.debug_set_dsp_write_observer(Observation::write,&observed);
+    host.debug_set_apu_port_observer(Observation::port,&observed);
     std::array<std::uint64_t,16> requests{}; std::array<unsigned,16> music{}; unsigned count{};
     while (host.cpu().timing().clocks()<target) {
         if (!host.step()) throw std::runtime_error("host execution fault");
@@ -74,6 +94,16 @@ int main(int argc,char** argv) {
         std::cout<<(i?",":"")<<"{\"half\":"<<e.half<<",\"register\":"<<e.kind<<",\"value\":"<<e.value<<",\"request\":"<<e.request;
         if (e.kind==0x4c) std::cout<<",\"pitch\":"<<e.pitch<<",\"srcn\":"<<e.srcn<<",\"adsr1\":"<<e.adsr1<<",\"adsr2\":"<<e.adsr2<<",\"gain\":"<<e.gain;
         std::cout<<"}";
+    }
+    std::cout<<"],\"port_windows\":[";
+    bool first=true;
+    for (unsigned i=0;i<count;++i) {
+        const auto& w=observed.ports[i]; if (!w.keyon) continue;
+        std::cout<<(first?"":",")<<"{\"request\":"<<i+1<<",\"first\":"<<w.first
+                 <<",\"last\":"<<w.last<<",\"keyon\":"<<w.keyon<<",\"writes\":[";
+        first=false;
+        for (unsigned j=0;j<4;++j) std::cout<<(j?",":"")<<w.writes[j];
+        std::cout<<"]}";
     }
     std::cout<<"],\"final\":{\"flg\":"<<unsigned(host.debug_dsp_register(0x6c))
              <<",\"kof\":"<<unsigned(host.debug_dsp_register(0x5c))

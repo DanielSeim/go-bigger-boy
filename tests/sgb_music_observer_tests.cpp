@@ -25,16 +25,26 @@ int main() {
     const auto callback=+[](void* context,std::uint64_t,std::uint8_t,std::uint8_t) noexcept {++*static_cast<unsigned*>(context);};
     observed.debug_set_dsp_write_observer(callback,&writes);
     restored.debug_set_dsp_write_observer(callback,&destination_writes);
+    unsigned ports{}, destination_ports{};
+    const auto port_callback=+[](void* context,std::uint64_t,char,std::uint16_t,std::uint8_t) noexcept {++*static_cast<unsigned*>(context);};
+    observed.debug_set_apu_port_observer(port_callback,&ports);
+    restored.debug_set_apu_port_observer(port_callback,&destination_ports);
     const auto initial=observed.save_state(); require(initial==plain.save_state());
     const auto audio=run(observed), expected=run(plain);
     const auto same=[](const auto& a,const auto& b) {return a.size()==b.size() && std::equal(a.begin(),a.end(),b.begin(),[](auto x,auto y){return x.left==y.left && x.right==y.right;});};
     require(writes>0 && same(audio,expected) && observed.save_state()==plain.save_state());
     const auto first=writes;
+    const auto first_ports=ports; require(first_ports>0);
     require(observed.load_state(initial)); require(same(audio,run(observed)) && writes==2*first);
+    require(ports==2*first_ports);
     require(restored.load_state(initial)); require(same(audio,run(restored)) && destination_writes==first && writes==2*first);
+    require(destination_ports==first_ports && ports==2*first_ports);
     observed.reset(); require(same(audio,run(observed)) && writes==3*first);
+    require(ports==3*first_ports);
     observed.debug_set_dsp_write_observer(nullptr,nullptr); observed.reset();
+    observed.debug_set_apu_port_observer(nullptr,nullptr);
     require(same(audio,run(observed)) && writes==3*first);
-    std::cout<<"DSP observation preserves host PCM/state and destination reset/load bindings\n";
+    require(ports==3*first_ports);
+    std::cout<<"DSP/port observation preserves host PCM/state and destination reset/load bindings\n";
  } catch(const std::exception& e) {std::cerr<<e.what()<<'\n';return 1;}
 }

@@ -68,6 +68,9 @@ public:
     // The caller owns the context lifetime and must not mutate this host in callbacks.
     void debug_set_dsp_write_observer(SnesApuAudioEngine::DspWriteObserver observer,
                                       void* context) noexcept;
+    // Host port reads/writes with the same diagnostic lifetime contract.
+    void debug_set_apu_port_observer(SnesHostCpu::ApuPortObserver observer,
+                                     void* context) noexcept;
     // Exact scalar scheduling oracle for tests; not a playback quality option.
     void debug_set_apu_batch_enabled(bool enabled) noexcept;
     void debug_set_spc_idle_tail_cache_enabled(bool enabled) noexcept;

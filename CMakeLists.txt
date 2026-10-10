@@ -1314,6 +1314,14 @@ if(GAMEBOY_BUILD_TESTS)
                 --probe $<TARGET_FILE:gameboy_sgb_vendor_music_probe>
                 --timeline-probe $<TARGET_FILE:gameboy_sgb_music_timeline_probe>)
         set_tests_properties(gameboy_sgb_score_vendor_phase PROPERTIES TIMEOUT 900 COST 300)
+        add_test(NAME gameboy_sgb_vendor_selection_contract
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_vendor_selection_tests.py
+                SelectionContracts.test_fixture_and_port_summary)
+        add_test(NAME gameboy_sgb_score_vendor_selection
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_vendor_selection_tests.py
+                --probe $<TARGET_FILE:gameboy_sgb_vendor_music_probe>
+                --timeline-probe $<TARGET_FILE:gameboy_sgb_music_timeline_probe>)
+        set_tests_properties(gameboy_sgb_score_vendor_selection PROPERTIES TIMEOUT 900 COST 300)
         if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb1.program.rom" AND
            EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/sgb2.program.rom")
             add_test(NAME gameboy_sgb_vendor_phase_local_reference
@@ -1321,6 +1329,12 @@ if(GAMEBOY_BUILD_TESTS)
                     --probe $<TARGET_FILE:gameboy_sgb_music_timeline_probe>
                     --firmware-dir "${CMAKE_CURRENT_SOURCE_DIR}/roms")
             set_tests_properties(gameboy_sgb_vendor_phase_local_reference
+                PROPERTIES TIMEOUT 2400 LABELS "local;private-reference")
+            add_test(NAME gameboy_sgb_vendor_selection_local_reference
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_vendor_selection_reference.py
+                    --probe $<TARGET_FILE:gameboy_sgb_music_timeline_probe>
+                    --firmware-dir "${CMAKE_CURRENT_SOURCE_DIR}/roms")
+            set_tests_properties(gameboy_sgb_vendor_selection_local_reference
                 PROPERTIES TIMEOUT 2400 LABELS "local;private-reference")
         endif()
         if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/Donkey Kong (JU) (V1.1) [S][!].gb")
