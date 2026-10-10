@@ -34,14 +34,14 @@ struct ScoreAdsrObserver {
             std::tie(other.notes,other.active,other.previous_kon,other.previous_kof,other.checkpoints,other.previous_sample);
     }
 
-    void capture(const gameboy::SgbHost& host) {
+    void capture(const gameboy::SgbHost& host, unsigned generation=1) {
         const auto sample = host.snes_samples_produced();
         const auto half = host.apu_half_clocks();
         const unsigned kon = host.debug_dsp_register(0x4c), kof = host.debug_dsp_register(0x5c);
         for (unsigned i=0;i<2;++i) {
             const unsigned voice=i+2, bit=1U<<voice;
             if ((kon & bit) && !(previous_kon & bit) && host.debug_spc_ram_byte(0xd2)==2 &&
-                host.debug_spc_ram_byte(0xdb)==1 && host.cpu().debug_wram_byte(0x26)==1) {
+                host.debug_spc_ram_byte(0xdb)==1 && host.cpu().debug_wram_byte(0x26)==generation) {
                 if (notes.size()>=32) throw std::runtime_error("ADSR note bound");
                 Note note;
                 note.voice=voice;

@@ -193,9 +193,8 @@ banks, command phases, clock settings and presentation rates remain separate.
 
 ## Next step
 
-Qualify audible replacement of an owned uploaded sound bank: stop or interrupt
-the old bank, upload changed sample data and instrument mappings, then restart
-and verify fresh PCM without stale tails while GB audio continues. Native
-transaction coverage already exists; combined acoustic, queued-output replay
-and scalar evidence should accompany it. Broader banks, independent hardware/
-DSP comparisons and title compatibility remain separate qualification work.
+The [stopped-bank replacement gate](sgb-bank-replacement-audio.md) checks changed
+samples and mappings, fresh PCM, continuous GB audio and queued-output replay.
+Next, qualify active replacement without a preceding SOUND stop. Broader banks,
+independent hardware/DSP comparisons and title compatibility remain separate
+qualification work.

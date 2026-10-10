@@ -13,8 +13,8 @@ the desktop and sanitizer job limits. The initial Linux run spent over three
 minutes on each of its first two acoustic matrices alone.
 
 The label covers native score playback, score upload/instrument/transport
-matrices, and full host polyphony, one-shot, instrument-change, audio-transition
-and sample-pitch diagnostics. Fast
+matrices, and full host polyphony, one-shot, instrument-change, bank-replacement,
+audio-transition and sample-pitch diagnostics. Fast
 fixture generators, scheduler tests and tests ending in `_contract` stay in the
 regular suite. Tests labelled `local` or `private-reference` are never included.
 Unfiltered local CTest still runs the full suite.
