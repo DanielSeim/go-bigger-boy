@@ -17,8 +17,8 @@ matrices, and full host polyphony, one-shot, instrument-change, stopped/active
 bank-replacement/rejection/recovery, one-byte semantic upload tails, audio-transition
 and sample-pitch diagnostics. Recovery's two failure types and tail recovery's
 single/repeated sequences each run as separate complete matrices. Mixed recovery's
-two failure orders and cold recovery's two failure types also run as separate
-complete matrices. Fast
+two failure orders, cold recovery's two failure types and cold one-byte recovery's
+single/repeated sequences also run as separate complete matrices. Fast
 fixture generators, scheduler tests and tests ending in `_contract` stay in the
 regular suite. Tests labelled `local` or `private-reference` are never included.
 Unfiltered local CTest still runs the full suite.

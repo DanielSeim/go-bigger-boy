@@ -163,11 +163,11 @@ private references and broad title playback were not rerun.
 
 Owned same-renderer controls establish internal consistency. Independent DSP
 arithmetic, hardware timing, private-original acoustics and broad title
-compatibility remain unqualified. Cold repeated/mixed failures, one-byte final
-chunks, other semantic defects, command phases, banks, clocks and presentation
-rates remain separate work. The DA image remains SHA-256
+compatibility remain unqualified. [Cold one-byte recovery](sgb-bank-cold-tail-audio.md) adds single/repeated
+semantic rejection with token synchronization. Cold mixed failures, other
+semantic defects, command phases, banks, clocks and presentation rates remain
+separate work. The DA image remains SHA-256
 `1cf5d56ed87e9407d7d3e3e8753157f23544a29f2876587c41771496ee0b5d82`.
 
-Next, cover cold one-byte semantic rejection, including repeated rejection,
-before the first valid bank. Require consumed-token synchronization, silence
-before admission, fresh playback, continuous GB audio and queued-output replay.
+Next, cover cold mixed preflight/semantic failure orders before the first valid
+bank, retaining silence, fresh playback, GB continuity and queued-output replay.

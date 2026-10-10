@@ -176,6 +176,7 @@ remain separate work. The DA image remains SHA-256
 `1cf5d56ed87e9407d7d3e3e8753157f23544a29f2876587c41771496ee0b5d82`.
 
 [Cold rejection recovery](sgb-bank-cold-audio.md) now covers startup without an
-earlier valid bank or native note. Next, cover cold one-byte semantic rejection,
-including repeated rejection, with silence before admission, fresh playback,
-continuous GB audio and queued-output replay.
+earlier valid bank or native note. [Cold one-byte recovery](sgb-bank-cold-tail-audio.md) adds single/repeated
+semantic rejection and consumed-token checks before the first valid bank.
+Next, cover cold mixed preflight/semantic failure orders with the same acoustic
+and replay requirements.

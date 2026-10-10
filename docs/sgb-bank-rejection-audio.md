@@ -164,6 +164,7 @@ and queued replay across admission/restart. The [one-byte semantic tail gate](sg
 also covers single/repeated semantic rejection across consumed-token
 synchronization, and [mixed-failure recovery](sgb-bank-mixed-audio.md) covers both
 preflight/semantic orders. [Cold rejection recovery](sgb-bank-cold-audio.md) now
-covers startup without an earlier admitted bank. Next, cover cold one-byte
-semantic rejection, including repeated rejection, with the same acoustic and
-replay requirements.
+covers startup without an earlier admitted bank. [Cold one-byte recovery](sgb-bank-cold-tail-audio.md) adds single/repeated
+semantic rejection and consumed-token checks before the first valid bank.
+Next, cover cold mixed preflight/semantic failure orders with the same acoustic
+and replay requirements.

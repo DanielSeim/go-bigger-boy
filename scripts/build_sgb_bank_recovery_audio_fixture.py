@@ -16,6 +16,14 @@ def pack(score,asset):
     return data+bytes(4096-len(data))
 
 
+def semantic_payload(voice):
+    score,asset=objects('both',voice)[1]
+    score=bytes(2)+score[2:]
+    data=(struct.pack('<HH',len(score),0x2B00)+score+struct.pack('<HH',191,0x5000)+asset[:191]+
+          struct.pack('<HH',1,0x50BF)+asset[191:]+struct.pack('<HH',0,0x0400))
+    return data+bytes(4096-len(data))
+
+
 def build(kind='asset-gap',profile='both',voice=2,*,semantic_tail=False,repeat=False):
     if any(type(x) is not bool for x in (semantic_tail,repeat)) or (semantic_tail and kind!='bad-root') or (repeat and not semantic_tail):
         raise ValueError('tail requires semantic failure; repeat requires tail')
@@ -25,11 +33,7 @@ def build(kind='asset-gap',profile='both',voice=2,*,semantic_tail=False,repeat=F
     sound=lambda song:bytes((0x41,0,0,0,song))
     bad=replacement(kind,voice)
     if semantic_tail:
-        score,asset=objects('both',voice)[1]
-        score=bytes(2)+score[2:]
-        data=(struct.pack('<HH',len(score),0x2B00)+score+struct.pack('<HH',191,0x5000)+asset[:191]+
-              struct.pack('<HH',1,0x50BF)+asset[191:]+struct.pack('<HH',0,0x0400))
-        bad=data+bytes(4096-len(data))
+        bad=semantic_payload(voice)
     commands=[(64,sound(1),None),(12,None,None),(4,bytes((0x49,)),1),(16,sound(1),None),
          (4,sound(128),None),(4,bytes((0x49,)),2),(64,sound(1),None),(12,sound(128),None)]
     if repeat:commands[5:5]=[(4,bytes((0x49,)),1),(16,sound(1),None)]

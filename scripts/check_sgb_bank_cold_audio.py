@@ -16,16 +16,29 @@ def row(value,length):
     return isinstance(value,list) and len(value)==length and all(type(x) is int for x in value)
 
 
-def observe(meta,raw,kind,profile,voice):
+def observe(meta,raw,kind,profile,voice,*,semantic_tail=False,repeat=False):
+    if any(type(x) is not bool for x in (semantic_tail,repeat)) or (semantic_tail and kind!='bad-root') or (repeat and not semantic_tail):
+        raise ValueError('invalid cold tail case')
+    retry=5 if repeat else 3
+    stages=8 if repeat else 6
+    failures=5 if repeat else 3
+    clears_count=3 if repeat else 2
+    generation=(1 if kind=='asset-gap' else 2)+(1 if repeat else 0)
     expected=dict(schema='gbb-sgb-bank-replace-audio-v1',qualification=False,playback=False,
         cold_rejection=True,recovery_upload=True,rejected_upload=kind,reset_equal=True,restore_equal=True,
-        sample_rate_hz=RATE,clipped=0,sounds=4,version=0xDA,restore_edges=63,
+        sample_rate_hz=RATE,clipped=0,sounds=5 if repeat else 4,version=0xDA,restore_edges=(1<<stages)-1,
         restore_releases=1,restore_zeros=1,queued_onsets=1,queued_offs=1,restore_banks=1,
-        queued_banks=1,restore_clears=3,queued_clears=3,restore_rejects=7,queued_rejects=7,
+        queued_banks=1,restore_clears=(1<<clears_count)-1,queued_clears=(1<<clears_count)-1,
+        restore_rejects=(1<<failures)-1,queued_rejects=(1<<failures)-1,
         restore_recovered=1,queued_recovered=1)
     if kind not in FAULTS or profile not in PROFILES or type(voice) is not int or voice not in (2,3) or (
             not isinstance(meta,dict) or any(type(meta.get(k)) is not type(v) or meta[k]!=v for k,v in expected.items())):
         raise ValueError('invalid cold recovery identity or replay')
+    if semantic_tail:
+        tokens=meta.get('consumed_tokens')
+        if meta.get('semantic_tail') is not True or type(meta.get('repeated_rejection')) is not bool or meta['repeated_rejection']!=repeat or (
+                not row(tokens,failures) or any(t!=3 for t in tokens)):
+            raise ValueError('missing cold one-byte consumed-token synchronization')
     bounds=dict(frames=(200000,250000),clocks=(100000000,100000100),restore_count=(1,1536),
                 pending_restores=(1,1536),gb_samples=(1,250000),native_samples=(1,250000))
     if any(type(meta.get(k)) is not int or not lo<=meta[k]<=hi for k,(lo,hi) in bounds.items()) or (
@@ -35,40 +48,46 @@ def observe(meta,raw,kind,profile,voice):
     if any(a in (-32768,32767) or b in (-32768,32767) for a,b in pcm):raise ValueError('clipped cold recovery PCM')
     def timed(frame,clock):return 0<=frame<meta['frames'] and 0<=clock*RATE//MASTER-frame<=2
     edges=meta.get('edges')
-    if not isinstance(edges,list) or len(edges)!=6:raise ValueError('missing cold command stages')
+    if not isinstance(edges,list) or len(edges)!=stages:raise ValueError('missing cold command stages')
     previous=-1
     for stage,e in enumerate(edges,1):
-        if not row(e,4) or e[:2]!=[stage,0 if stage==6 or profile=='native' else 16] or (
+        if not row(e,4) or e[:2]!=[stage,0 if stage==stages or profile=='native' else 16] or (
                 not previous<e[2] or not timed(e[2],e[3])):raise ValueError('invalid cold command timeline')
         previous=e[2]
     notes=meta.get('notes')
     if not isinstance(notes,list) or len(notes)!=1:raise ValueError('cold rejection started a note')
     n=notes[0]
     if not row(n,11) or n[:3]!=[voice,3,2140] or not 0<n[3]<n[4]<=n[5] or (
-            not edges[4][2]<n[6]<edges[5][2]<=n[7]<=n[8]<meta['frames'] or
-            n[7]-edges[5][2]>960 or not 0<n[9]<=127 or n[10]!=1<<voice):raise ValueError('invalid first admitted note/release')
+            not edges[retry+1][2]<n[6]<edges[retry+2][2]<=n[7]<=n[8]<meta['frames'] or
+            n[7]-edges[retry+2][2]>960 or not 0<n[9]<=127 or n[10]!=1<<voice):raise ValueError('invalid first admitted note/release')
     error=1 if kind=='asset-gap' else 2
     score,asset=objects('gb' if profile=='gb' else 'both',voice)[1];fresh=[fnv(score),fnv(asset)]
     banks=meta.get('banks');clears=meta.get('clears');events=meta.get('rejects');adopt=meta.get('recovered')
     if not isinstance(banks,list) or len(banks)!=1:raise ValueError('cold failure published a bank')
     b=banks[0]
-    if not row(b,7) or b[0]!=error or b[3:]!=[*fresh,10,2] or (
-            not edges[3][2]<b[1]<edges[4][2] or not timed(b[1],b[2])):raise ValueError('invalid first bank publication')
-    if not isinstance(clears,list) or len(clears)!=2 or any(not row(c,3) for c in clears):raise ValueError('missing cold clear')
+    if not row(b,7) or b[0]!=generation or b[3:]!=[*fresh,10,2] or (
+            not edges[retry][2]<b[1]<edges[retry+1][2] or not timed(b[1],b[2])):raise ValueError('invalid first bank publication')
+    if not isinstance(clears,list) or len(clears)!=clears_count or any(not row(c,3) for c in clears):raise ValueError('missing cold clear')
+    clear_stages=[None,3,retry] if repeat else [None,retry]
     for i,c in enumerate(clears):
-        if c[0]!=(error-1 if i else 0) or not (edges[3][2] if i else 0)<c[1]<(b[1] if i else edges[0][2]) or (
-                not timed(c[1],c[2])):raise ValueError('invalid cold clear generation/timing')
-    if not isinstance(events,list) or len(events)!=3:raise ValueError('missing cold failure/suppression')
+        lower=0 if i==0 else edges[clear_stages[i]][2]
+        upper=edges[0][2] if i==0 else edges[4][2] if repeat and i==1 else b[1]
+        if c[0]!=(error+i-2 if i else 0) or not lower<c[1]<upper or not timed(c[1],c[2]):
+            raise ValueError('invalid cold clear generation/timing')
+    if not isinstance(events,list) or len(events)!=failures:raise ValueError('missing cold failure/suppression')
     score,asset=objects('both',voice)[1]
     failed=[fnv(bytes(2048)),fnv(bytes(192))] if kind=='asset-gap' else [fnv(bytes(2)+score[2:]),fnv(asset)]
     for i,e in enumerate(events):
-        lower=clears[0][1] if i==0 else edges[i][2]
-        upper=edges[0][2] if i==0 else min(edges[i+1][2],lower+960)
-        if not row(e,17) or e[:2]!=[1,i] or e[4:]!=[1,error,error-1,164,0,0,0,0,0,224,255,*failed] or (
+        second=repeat and i>=3
+        rejection=i in (0,3)
+        lower=clears[0 if i==0 else 1][1] if rejection else edges[i][2]
+        upper=edges[0 if i==0 else 4][2] if rejection else min(edges[i+1][2],lower+960)
+        if not row(e,17) or e[:2]!=([2,2 if i==3 else 3] if second else [1,i]) or (
+                e[4:]!=[1,error,error-1+int(second),164,0,0,0,0,0,224,255,*failed] or
                 not lower<=e[2]<upper or not timed(e[2],e[3]) or (i and not events[i-1][2]<e[2])):
             raise ValueError('stale cold error, readiness, RAM or suppression')
-    if not row(adopt,18) or adopt[2:]!=[error,1,2,0,1,0,165,0,1,0,0,3,224,255,*fresh] or (
-            not b[1]<=adopt[0]<edges[4][2] or not timed(adopt[0],adopt[1])):raise ValueError('cold bank not admitted before first SOUND')
+    if not row(adopt,18) or adopt[2:]!=[generation,2 if repeat else 1,3 if repeat else 2,0,1,0,165,0,1,0,0,3,224,255,*fresh] or (
+            not b[1]<=adopt[0]<edges[retry+1][2] or not timed(adopt[0],adopt[1])):raise ValueError('cold bank not admitted before first SOUND')
     if any(b for _,b in pcm[:n[6]]):raise ValueError('native PCM before first admitted note')
     if profile=='gb' and any(b for _,b in pcm):raise ValueError('silent bank control is audible')
     if profile=='native' and any(a for a,_ in pcm):raise ValueError('native-only control leaks GB audio')
@@ -93,11 +112,16 @@ def compare(controls,model,voice):
     if start+FRAMES>=note[7] or late<=start:raise ValueError('first note too brief')
     tones=[pitch(native['right'][begin:begin+FRAMES],440*2**(3/12)) for begin in (start,late)]
     pulses=[]
-    for begin,limit in ((m['edges'][0][2]+128,m['edges'][1][2]),
+    retry=5 if len(m['edges'])==8 else 3
+    windows=[(m['edges'][0][2]+128,m['edges'][1][2]),
                         (m['rejects'][1][2]+128,m['edges'][2][2]),
                         (m['rejects'][2][2]+128,m['edges'][3][2]),
-                        (m['clears'][1][1]+128,m['edges'][4][2]),
-                        (note[6]+128,m['edges'][5][2])):
+                        (m['clears'][-1][1]+128,m['edges'][retry+1][2]),
+                        (note[6]+128,m['edges'][retry+2][2])]
+    if retry==5:
+        windows[3:3]=[(m['clears'][1][1]+128,m['edges'][4][2]),
+                      (m['rejects'][4][2]+128,m['edges'][5][2])]
+    for begin,limit in windows:
         if begin+FRAMES>=limit:raise ValueError('cold GB window crosses command')
         values=gb['left'][begin:begin+FRAMES];mid=(max(values)+min(values))//2
         pulses.append(pitch([x-mid for x in values],(MASTER/5 if model=='sgb' else 4194304)/8192))
