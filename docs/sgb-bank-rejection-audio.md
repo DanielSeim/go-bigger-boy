@@ -90,7 +90,7 @@ owned/silent source controls and scalar owned playback. Each includes reset
 and restored executions. `gameboy_sgb_bank_reject_audio` is labelled
 `sgb-firmware-extended`, with a 3600-second timeout, for dedicated Linux shards.
 The five-method `gameboy_sgb_bank_reject_audio_contract` remains in platform and
-sanitizer suites. The extended set now contains 68 tests.
+sanitizer suites. The extended set contained 68 tests at this milestone.
 
 ```sh
 cmake --build build-dmg-firmware --target gameboy_sgb_bank_replace_audio_probe
@@ -158,8 +158,8 @@ No proprietary artifacts are committed. The unchanged DA image has SHA-256
 
 ## Next step
 
-Add a valid changed-bank retry after each rejection, with audible fresh
-source-3 playback. Require continued GB audio, exact silent blocked intervals,
-no old/fallback output, cleared/admitted fresh bytes, scalar parity and queued
-replay across rejection, retry and restart. Native recovery already has bounded
-protocol coverage; this adds its missing acoustic evidence.
+The [audible recovery gate](sgb-bank-recovery-audio.md) adds valid changed-bank
+retry, fresh source-3 playback, continuous GB audio, silent blocked intervals
+and queued replay across admission/restart. Next, exercise the one-byte final
+chunk and repeated semantic-rejection boundary acoustically; the existing
+protocol synchronizes its consumed IPL token before a new loader request.
