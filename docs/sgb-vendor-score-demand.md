@@ -146,5 +146,7 @@ and produces PCM on both models with reset/save-load parity. Its provisional
 pitch, volume, articulation and echo policies are not original-sound equivalence.
 Register-only original comparisons now establish instrument-2 source/envelope
 and tuning-word binding. They also expose selection/gate/release timing gaps,
-with bounded pitch/gate/release corrections now implemented;
-selection and continuous-phase behavior remain open; larger scores remain unsupported.
+with bounded pitch/gate/release corrections now implemented.
+The subsequent [longer-chain and reselection measurements](sgb-vendor-phase.md)
+expose cumulative timing differences beyond the earlier calibration window.
+Selection and continuous-phase behavior remain open; larger scores remain unsupported.

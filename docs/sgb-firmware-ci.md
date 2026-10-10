@@ -76,3 +76,12 @@ The DB matrix also executes owned timing/release fixtures and a bounded register
 probe (`--timeline-probe`). Its cost is 240 and timeout 900 seconds; the optional
 private gate adds `--timing` for exact uploaded pitch and bounded gate/release
 comparisons. Both probes are discovered as shard build dependencies.
+
+The uploaded-score phase suite is a separate `gameboy_sgb_score_vendor_phase`
+full matrix (cost 300, timeout 900 seconds), bringing the public total to 86.
+It uses owned longer chains and repeated selections on both models, including
+reset/save/load replay of the long-note/rest sequence. Its fixture/report
+contract remains in ordinary platform/sanitizer jobs. The optional
+`gameboy_sgb_vendor_phase_local_reference` reports measured timing gaps and is
+labelled `local;private-reference`; successful observation does not qualify
+compatibility. See [the phase experiments](sgb-vendor-phase.md).
