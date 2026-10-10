@@ -79,8 +79,8 @@ def build_cartridge(payloads, commands, *, io_writes=None, spin_delays=None):
     if not isinstance(payloads, (tuple, list)) or not 1 <= len(payloads) <= 3 or any(
             not isinstance(p, bytes) or len(p) != 4096 for p in payloads):
         raise ValueError('requires 1..3 physical payloads')
-    if not isinstance(commands, (tuple, list)) or not 1 <= len(commands) <= 8:
-        raise ValueError('requires 1..8 commands')
+    if not isinstance(commands, (tuple, list)) or not 1 <= len(commands) <= 10:
+        raise ValueError('requires 1..10 commands')
     for command in commands:
         if not isinstance(command, (tuple, list)) or len(command) != 3:
             raise ValueError('command requires delay, packet and optional payload index')

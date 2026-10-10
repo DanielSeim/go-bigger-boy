@@ -13,15 +13,20 @@ from build_sgb_bank_replace_audio_fixture import PROFILES as SOURCE_PROFILES
 from check_sgb_bank_replace_audio import program,OPTIONS,IMAGE_HASH,fnv,RATE,MASTER,FRAMES,pitch,digest
 
 
-def observe(meta,raw,kind,profile,voice,recover=False):
+def observe(meta,raw,kind,profile,voice,recover=False,repeat=False):
     if type(recover) is not bool:raise ValueError('requires boolean recovery mode')
+    if type(repeat) is not bool or (repeat and (not recover or kind!='bad-root')):raise ValueError('invalid repeated semantic recovery')
+    stages=10 if repeat else 8 if recover else 5
+    failures=5 if repeat else 3
+    reject_mask=(1<<failures)-1
+    retry=7 if repeat else 5
     note_mask=3 if recover else 1
-    clear_mask=7 if recover else 3
+    clear_mask=15 if repeat else 7 if recover else 3
     expected=dict(schema='gbb-sgb-bank-replace-audio-v1',qualification=False,playback=False,
-        reset_equal=True,restore_equal=True,sample_rate_hz=RATE,clipped=0,sounds=5 if recover else 3,version=0xDA,
-        active_upload=True,rejected_upload=kind,restore_edges=255 if recover else 31,restore_releases=note_mask,restore_zeros=note_mask,
+        reset_equal=True,restore_equal=True,sample_rate_hz=RATE,clipped=0,sounds=6 if repeat else 5 if recover else 3,version=0xDA,
+        active_upload=True,rejected_upload=kind,restore_edges=(1<<stages)-1,restore_releases=note_mask,restore_zeros=note_mask,
         queued_onsets=note_mask,queued_offs=note_mask,restore_banks=note_mask,restore_clears=clear_mask,queued_banks=note_mask,queued_clears=clear_mask,
-        restore_mute=1,queued_mute=1,restore_rejects=7,queued_rejects=7)
+        restore_mute=1,queued_mute=1,restore_rejects=reject_mask,queued_rejects=reject_mask)
     if recover:expected.update(recovery_upload=True,restore_recovered=1,queued_recovered=1)
     if kind not in FAULTS or profile not in (SOURCE_PROFILES if recover else PROFILES) or type(voice) is not int or voice not in (2,3) or not isinstance(meta,dict) or any(
             type(meta.get(k)) is not type(v) or meta[k]!=v for k,v in expected.items()):
@@ -34,11 +39,11 @@ def observe(meta,raw,kind,profile,voice,recover=False):
     pcm=list(struct.iter_unpack('<hh',raw))
     if any(a in (-32768,32767) or b in (-32768,32767) for a,b in pcm):raise ValueError('hard-clipped rejection PCM')
     edges=meta.get('edges')
-    if not isinstance(edges,list) or len(edges)!=(8 if recover else 5):raise ValueError('missing rejection command stage')
+    if not isinstance(edges,list) or len(edges)!=stages:raise ValueError('missing rejection command stage')
     previous=-1
     for stage,e in enumerate(edges,1):
         if not isinstance(e,list) or len(e)!=4 or any(type(x) is not int for x in e) or (
-                e[:2]!=[stage,0 if stage==(8 if recover else 5) else 16] or not previous<e[2]<meta['frames'] or
+                e[:2]!=[stage,0 if stage==stages else 16] or not previous<e[2]<meta['frames'] or
                 not 0<=e[3]*RATE//MASTER-e[2]<=2):raise ValueError('invalid rejection command frame/clock')
         previous=e[2]
     notes=meta.get('notes')
@@ -55,7 +60,9 @@ def observe(meta,raw,kind,profile,voice,recover=False):
     if not isinstance(b,list) or len(b)!=7 or any(type(x) is not int for x in b) or (
             b[0]!=1 or b[3:]!=[fnv(score),fnv(asset),2,10] or
             not 0<b[1]<edges[0][2] or not 0<=b[2]*RATE//MASTER-b[1]<=2):raise ValueError('invalid old-bank publication')
-    if not isinstance(clears,list) or len(clears)!=(3 if recover else 2):raise ValueError('rejection did not clear old RAM')
+    if not isinstance(clears,list) or len(clears)!=(4 if repeat else 3 if recover else 2):raise ValueError('rejection did not clear old RAM')
+    if any(not isinstance(c,list) or len(c)!=3 or any(type(x) is not int for x in c) for c in clears):
+        raise ValueError('invalid clear observation')
     for i,c in enumerate(clears[:2]):
         if not isinstance(c,list) or len(c)!=3 or any(type(x) is not int for x in c) or c[0]!=i or (
                 not (n[8] if i else 0)<=c[1]<(edges[3][2] if i else b[1]) or
@@ -74,45 +81,50 @@ def observe(meta,raw,kind,profile,voice,recover=False):
             raise ValueError('sampling gap outside pre-KOF transfer interval')
         frame=g[0];sample=g[3]
     events=meta.get('rejects')
-    if not isinstance(events,list) or len(events)!=3:raise ValueError('missing rejection or suppressed SOUND')
+    if not isinstance(events,list) or len(events)!=failures:raise ValueError('missing rejection or suppressed SOUND')
     if kind=='asset-gap':hashes=[fnv(bytes(2048)),fnv(bytes(192))]
     else:
         score,asset=objects('both',voice)[1];hashes=[fnv(bytes(2)+score[2:]),fnv(asset)]
     for i,e in enumerate(events):
         if not isinstance(e,list) or len(e)!=17 or any(type(x) is not int for x in e) or (
-                e[:2]!=[1,i] or e[4:]!=[1,1 if kind=='asset-gap' else 2,1 if kind=='asset-gap' else 2,0xA4,0,0,0,0,0,224,255,*hashes] or
+                e[:2]!=([2,i-1] if i>=3 else [1,i]) or e[4:]!=[1,1 if kind=='asset-gap' else 2,(3 if i>=3 else 1 if kind=='asset-gap' else 2),0xA4,0,0,0,0,0,224,255,*hashes] or
                 not 0<=e[3]*RATE//MASTER-e[2]<=2):raise ValueError('rejection readiness, counters or bank contents are stale')
-        lower=clears[1][1] if i==0 else edges[i+2][2]
-        upper=edges[3][2] if i==0 else lower+960
+        lower=clears[1][1] if i==0 else clears[2][1] if i==3 else edges[6 if i==4 else i+2][2]
+        upper=edges[6 if i==3 else 3][2] if i in (0,3) else lower+960
         if not lower<=e[2]<upper or (i and not events[i-1][2]<e[2]):raise ValueError('suppression outside its SOUND interval')
     begin=n[8]+32
     if recover:
-        fresh=notes[1];b=banks[1];c=clears[2];adopt=meta.get('recovered')
-        generation=2 if kind=='asset-gap' else 3
+        fresh=notes[1];b=banks[1];c=clears[-1];adopt=meta.get('recovered')
+        generation=4 if repeat else 2 if kind=='asset-gap' else 3
         score,asset=objects(profile,voice)[1]
         hashes=[fnv(score),fnv(asset)]
         if not isinstance(fresh,list) or len(fresh)!=11 or any(type(x) is not int for x in fresh) or (
                 fresh[:3]!=[voice,3,2140] or not n[5]<fresh[3]<fresh[4]<=fresh[5] or
-                not edges[6][2]<fresh[6]<edges[7][2]<=fresh[7]<=fresh[8]<meta['frames'] or
-                fresh[7]-edges[7][2]>960 or not 0<fresh[9]<=127 or fresh[10]!=1<<voice):
+                not edges[retry+1][2]<fresh[6]<edges[retry+2][2]<=fresh[7]<=fresh[8]<meta['frames'] or
+                fresh[7]-edges[retry+2][2]>960 or not 0<fresh[9]<=127 or fresh[10]!=1<<voice):
             raise ValueError('recovery did not play/release the fresh remapped loop')
         if not isinstance(b,list) or len(b)!=7 or any(type(x) is not int for x in b) or (
-                b[0]!=generation or b[3:]!=[*hashes,10,2] or not edges[5][2]<b[1]<edges[6][2] or
+                b[0]!=generation or b[3:]!=[*hashes,10,2] or not edges[retry][2]<b[1]<edges[retry+1][2] or
                 not 0<=b[2]*RATE//MASTER-b[1]<=2):raise ValueError('fresh retry publication is stale')
         if not isinstance(c,list) or len(c)!=3 or any(type(x) is not int for x in c) or (
-                c[0]!=generation-1 or not edges[5][2]<c[1]<=b[1] or
+                c[0]!=generation-1 or not edges[retry][2]<c[1]<=b[1] or
                 not 0<=c[2]*RATE//MASTER-c[1]<=2):raise ValueError('retry did not clear before fresh publication')
         if not isinstance(adopt,list) or len(adopt)!=18 or any(type(x) is not int for x in adopt) or (
-                adopt[2:]!=[generation,1,2,0,1,0,165,0,1,0,0,3,224,255,*hashes] or
-                not b[1]<=adopt[0]<edges[6][2] or not 0<=adopt[1]*RATE//MASTER-adopt[0]<=2):
+                adopt[2:]!=[generation,2 if repeat else 1,3 if repeat else 2,0,1,0,165,0,1,0,0,3,224,255,*hashes] or
+                not b[1]<=adopt[0]<edges[retry+1][2] or not 0<=adopt[1]*RATE//MASTER-adopt[0]<=2):
             raise ValueError('retry was not completely admitted before restart')
+        if repeat:
+            c=clears[2]
+            if not isinstance(c,list) or len(c)!=3 or any(type(x) is not int for x in c) or (
+                    c[0]!=2 or not edges[5][2]<c[1]<=events[3][2]<edges[6][2] or
+                    not 0<=c[2]*RATE//MASTER-c[1]<=2):raise ValueError('repeated rejection did not clear its generation')
         end=fresh[6]-4
         if end-begin<4096 or any(b for _,b in pcm[begin:end]):raise ValueError('blocked interval contains stale/fallback PCM')
         if profile=='old' and any(b for _,b in pcm[begin:]):raise ValueError('old bank survives fresh restart')
         if profile=='new' and any(b for _,b in pcm[:fresh[6]]):raise ValueError('fresh bank sounds before restart')
     elif any(b for _,b in pcm[begin:]):raise ValueError('old or rejected bank sounds after mute')
     if profile=='gb' and any(b for _,b in pcm):raise ValueError('silent bank control is audible')
-    if any(a or b for a,b in pcm[edges[7 if recover else 4][2]+3072:]):raise ValueError('final stop left a tail')
+    if any(a or b for a,b in pcm[edges[-1][2]+3072:]):raise ValueError('final stop left a tail')
     return dict(meta=meta,left=[p[0] for p in pcm],right=[p[1] for p in pcm])
 
 

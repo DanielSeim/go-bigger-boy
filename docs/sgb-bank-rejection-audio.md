@@ -160,6 +160,7 @@ No proprietary artifacts are committed. The unchanged DA image has SHA-256
 
 The [audible recovery gate](sgb-bank-recovery-audio.md) adds valid changed-bank
 retry, fresh source-3 playback, continuous GB audio, silent blocked intervals
-and queued replay across admission/restart. Next, exercise the one-byte final
-chunk and repeated semantic-rejection boundary acoustically; the existing
-protocol synchronizes its consumed IPL token before a new loader request.
+and queued replay across admission/restart. The [one-byte semantic tail gate](sgb-bank-tail-audio.md)
+also covers single/repeated semantic rejection across consumed-token
+synchronization. Next, cover mixed preflight/semantic failures in both orders
+with the same acoustic and replay requirements.

@@ -102,7 +102,7 @@ executions. CI partitions these into complete 20-case tests
 `gameboy_sgb_bank_recovery_audio_gap` and `gameboy_sgb_bank_recovery_audio_root`,
 using `--kind`, each with a 3600-second timeout and `sgb-firmware-extended` label.
 They are assigned to different dedicated Linux shards. The five-method public
-contract stays in platform/sanitizer jobs. The extended set now has 70 tests.
+contract stays in platform/sanitizer jobs. The extended set had 70 tests at this milestone.
 
 ```sh
 cmake --build build-dmg-firmware --target gameboy_sgb_bank_replace_audio_probe
@@ -165,8 +165,7 @@ presentation rates remain separate work. The DA firmware image remains SHA-256
 
 ## Next step
 
-Add acoustic recovery coverage for semantic uploads ending in a one-byte final
-chunk, including repeated rejection. This exercises the existing consumed-token
-synchronization that prevents an IPL jump echo from aliasing the next loader
-request. Require silent blocked intervals, fresh remapped playback, continuous
-GB audio and exact queued-output replay through that boundary.
+[One-byte semantic upload tails](sgb-bank-tail-audio.md) now add single and
+repeated rejection across the consumed-token synchronization boundary. Next,
+cover mixed preflight/semantic failures in both orders with silent blocked
+intervals, fresh remapped playback, continuous GB audio and queued-output replay.

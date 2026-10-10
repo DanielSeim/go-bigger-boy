@@ -31,7 +31,7 @@ struct Result {
     std::vector<std::uint8_t> pcm,state;
     std::vector<Edge> edges;
     ScoreAdsrObserver envelopes;
-    std::vector<std::uint64_t> mute,recovered;
+    std::vector<std::uint64_t> mute,recovered,consumed_tokens;
     std::vector<std::array<std::uint64_t,6>> gaps;
     std::vector<std::array<std::uint64_t,17>> rejects;
     std::vector<std::array<std::uint64_t,7>> banks;
@@ -41,12 +41,16 @@ struct Result {
     std::uint64_t gb_samples{},native_samples{},clipped{},clocks{},sounds{};
     unsigned version{},env2{},env3{};
     bool operator==(const Result& other) const {
-        return std::tie(pcm,state,edges,off_envs,off_endx,mute,recovered,gaps,rejects,banks,clears,onset_frames,off_frames,zero_frames,gb_samples,native_samples,clipped,clocks,sounds,version,env2,env3)==
-            std::tie(other.pcm,other.state,other.edges,other.off_envs,other.off_endx,other.mute,other.recovered,other.gaps,other.rejects,other.banks,other.clears,other.onset_frames,other.off_frames,other.zero_frames,other.gb_samples,other.native_samples,other.clipped,other.clocks,other.sounds,other.version,other.env2,other.env3) && envelopes==other.envelopes;
+        return std::tie(pcm,state,edges,off_envs,off_endx,mute,recovered,consumed_tokens,gaps,rejects,banks,clears,onset_frames,off_frames,zero_frames,gb_samples,native_samples,clipped,clocks,sounds,version,env2,env3)==
+            std::tie(other.pcm,other.state,other.edges,other.off_envs,other.off_endx,other.mute,other.recovered,other.consumed_tokens,other.gaps,other.rejects,other.banks,other.clears,other.onset_frames,other.off_frames,other.zero_frames,other.gb_samples,other.native_samples,other.clipped,other.clocks,other.sounds,other.version,other.env2,other.env3) && envelopes==other.envelopes;
     }
 };
 struct Restores { unsigned count{},pending{},edges{},releases{},zeros{},banks{},clears{},queued_onsets{},queued_offs{},queued_banks{},queued_clears{},mute{},queued_mute{},rejects{},queued_rejects{},recovered{},queued_recovered{}; };
-Result run(Host& host,Restores* restores=nullptr,bool active=false,unsigned rejected=0,bool recover=false) {
+Result run(Host& host,Restores* restores=nullptr,bool active=false,unsigned rejected=0,bool recover=false,bool repeat=false,bool tail=false) {
+    const unsigned retry_stage=repeat ? 8 : 6;
+    const unsigned stages=recover ? retry_stage+2 : 5;
+    const unsigned failures=repeat ? 5 : 3;
+    const unsigned final_generation=rejected+1+(repeat ? 1 : 0);
     Result result;
     unsigned last_stage=0,last_checkpoint=0,last_envelope=0;
     bool previous_clear=false;
@@ -58,7 +62,7 @@ Result run(Host& host,Restores* restores=nullptr,bool active=false,unsigned reje
         const auto frames=result.pcm.size()/4;
         bool edge=false;
         if (stage && stage!=last_stage) {
-            require(stage==last_stage+1 && stage<=(recover ? 8 : 5),"transition stage order");
+            require(stage==last_stage+1 && stage<=stages,"transition stage order");
             result.edges.push_back({stage,bus.read8(0xff25),frames,host.cpu().timing().clocks()});
             last_stage=stage; since_edge=frames; edge=true;
         }
@@ -79,7 +83,7 @@ Result run(Host& host,Restores* restores=nullptr,bool active=false,unsigned reje
         const auto phase=host.debug_spc_ram_byte(0x0504);
         const auto generation=host.cpu().debug_wram_byte(0x26);
         if (phase==0xa4 && !previous_clear) {
-            require(result.clears.size()<(recover ? 3 : 2),"clear count");
+            require(result.clears.size()<(recover ? (repeat ? 4 : 3) : 2),"clear count");
             for (unsigned address=0x2b00;address<0x3300;++address)
                 require(!host.debug_spc_ram_byte(address),"old score survived clearing");
             for (unsigned address=0x5000;address<0x50c0;++address)
@@ -88,9 +92,9 @@ Result run(Host& host,Restores* restores=nullptr,bool active=false,unsigned reje
             result.clears.push_back({generation,frames,host.cpu().timing().clocks()});clearing=true;
         }
         previous_clear=phase==0xa4;
-        if (phase==0xa5 && generation>=1 && generation<=(recover ? rejected+1 : 2) &&
+        if (phase==0xa5 && generation>=1 && generation<=(recover ? final_generation : 2) &&
                 (result.banks.empty() || generation>result.banks.back()[0])) {
-            require(result.banks.size()<2 && generation==(result.banks.empty() ? 1 : recover ? rejected+1 : 2),"bank publication order");
+            require(result.banks.size()<2 && generation==(result.banks.empty() ? 1 : recover ? final_generation : 2),"bank publication order");
             result.banks.push_back({generation,frames,host.cpu().timing().clocks(),
                 hash(host,0x2b00,2048),hash(host,0x5000,192),host.debug_spc_ram_byte(0x5018),host.debug_spc_ram_byte(0x5019)});
             publication=true;
@@ -113,37 +117,42 @@ Result run(Host& host,Restores* restores=nullptr,bool active=false,unsigned reje
             muted=true;
         }
         bool rejection=false;
-        if (rejected && !result.rejects.empty() && (!recover || stage<6)) {
+        if (rejected && !result.rejects.empty() && (!recover || stage<6 || (repeat && stage==7 && result.rejects.size()==failures))) {
             require(host.cpu().debug_wram_byte(0x56)==1 && host.cpu().debug_wram_byte(0x20)==9 &&
-                    generation==rejected && phase==0xa4 && !host.debug_spc_ram_byte(0xd1) &&
+                    generation==(repeat && stage==7 ? 3 : rejected) && phase==0xa4 && !host.debug_spc_ram_byte(0xd1) &&
                     !host.debug_spc_ram_byte(0xd2) && !host.debug_spc_ram_byte(0xd8) &&
                     !host.debug_spc_ram_byte(0xdb) && !host.debug_spc_ram_byte(0xdc) &&
                     host.debug_dsp_register(0x6c)==0xe0 && host.debug_dsp_register(0x5c)==0xff,
                     "rejected playback escaped its blocked state");
         }
         if (rejected && host.cpu().debug_wram_byte(0x56)==1 && host.cpu().debug_wram_byte(0x20)==9 &&
-                (result.rejects.empty() || result.rejects.back()[1]!=host.cpu().debug_wram_byte(0x59))) {
-            require(result.rejects.size()<3 && host.cpu().debug_wram_byte(0x57)==1,"unexpected rejection counters");
-            result.rejects.push_back({1,host.cpu().debug_wram_byte(0x59),frames,host.cpu().timing().clocks(),
+                (result.rejects.empty() || (result.rejects.back()[1]!=host.cpu().debug_wram_byte(0x59) || result.rejects.back()[0]!=host.cpu().debug_wram_byte(0x57)))) {
+            require(result.rejects.size()<failures && host.cpu().debug_wram_byte(0x57)==(repeat && stage>=6 ? 2 : 1),"unexpected rejection counters");
+            result.rejects.push_back({host.cpu().debug_wram_byte(0x57),host.cpu().debug_wram_byte(0x59),frames,host.cpu().timing().clocks(),
                 host.cpu().debug_wram_byte(0x56),host.cpu().debug_wram_byte(0x27),generation,phase,
                 host.debug_spc_ram_byte(0xd1),host.debug_spc_ram_byte(0xd2),host.debug_spc_ram_byte(0xd8),
                 host.debug_spc_ram_byte(0xdb),host.debug_spc_ram_byte(0xdc),host.debug_dsp_register(0x6c),
                 host.debug_dsp_register(0x5c),hash(host,0x2b00,2048),hash(host,0x5000,192)});
+            if (tail) {
+                const auto token=host.cpu().debug_wram_byte(0x23);
+                require(token==3,"one-byte semantic tail lost consumed IPL token");
+                result.consumed_tokens.push_back(token);
+            }
             rejection=true;
         }
         bool recovery=false;
-        if (recover && result.rejects.size()==3 && !host.cpu().debug_wram_byte(0x56)) {
-            require(result.banks.size()==2 && phase==0xa5 && generation==rejected+1,
+        if (recover && result.rejects.size()>=3 && !host.cpu().debug_wram_byte(0x56)) {
+            require(result.banks.size()==2 && phase==0xa5 && generation==final_generation,
                     "retry unblocked playback before valid publication");
         }
         if (recover && !result.recovered.empty()) {
             require(!host.cpu().debug_wram_byte(0x56) && !host.cpu().debug_wram_byte(0x27) &&
-                    host.cpu().debug_wram_byte(0x57)==1 && host.cpu().debug_wram_byte(0x59)==2,
+                    host.cpu().debug_wram_byte(0x57)==(repeat ? 2 : 1) && host.cpu().debug_wram_byte(0x59)==(repeat ? 3 : 2),
                     "admitted recovery lost readiness or suppressed fresh SOUND");
         }
-        if (recover && result.recovered.empty() && result.rejects.size()==3 &&
+        if (recover && result.recovered.empty() && result.rejects.size()==failures &&
                 !host.cpu().debug_wram_byte(0x56) && host.cpu().debug_wram_byte(0x20)==1) {
-            require(stage==6 && result.clears.size()==3 && result.banks.size()==2,"recovery before complete publication");
+            require(stage==retry_stage && result.clears.size()==(repeat ? 4 : 3) && result.banks.size()==2,"recovery before complete publication");
             result.recovered={frames,host.cpu().timing().clocks(),generation,
                 host.cpu().debug_wram_byte(0x57),host.cpu().debug_wram_byte(0x59),
                 host.cpu().debug_wram_byte(0x56),host.cpu().debug_wram_byte(0x20),host.cpu().debug_wram_byte(0x27),phase,
@@ -206,7 +215,7 @@ Result run(Host& host,Restores* restores=nullptr,bool active=false,unsigned reje
             }
         }
     }
-    require(host.sample_rate()==48000 && result.edges.size()==(recover ? 8 : 5),"output rate or missing stage");
+    require(host.sample_rate()==48000 && result.edges.size()==stages,"output rate or missing stage");
     result.gb_samples=host.gb_samples_captured();
     result.native_samples=host.snes_samples_produced();
     result.clipped=host.clipped_samples();
@@ -219,7 +228,7 @@ Result run(Host& host,Restores* restores=nullptr,bool active=false,unsigned reje
         std::cerr << "lifecycle " << result.version << ' ' << result.env2 << ' ' << result.env3
                   << " error " << unsigned(host.cpu().debug_wram_byte(0x27))
                   << " notes " << result.envelopes.notes.size() << '\n';
-    require(result.clipped==0 && result.gb_samples && result.sounds==(recover ? 5 : active ? 3 : 4) && result.version==0xda &&
+    require(result.clipped==0 && result.gb_samples && result.sounds==(recover ? (repeat ? 6 : 5) : active ? 3 : 4) && result.version==0xda &&
             !result.env2 && !result.env3 && ((rejected && !recover) || !host.cpu().debug_wram_byte(0x27)),"incomplete lifecycle");
     require(result.envelopes.notes.size()==(rejected && !recover ? 1 : 2),"expected old and replacement onsets");
     for (const auto& note:result.envelopes.notes) {
@@ -245,7 +254,14 @@ int main(int argc,char** argv) {
         const unsigned rejected=fault=="asset-gap" ? 1 : fault=="bad-root" ? 2 : 0;
         require(!active || fault=="active" || rejected,"upload mode");
         const bool recover=argc==10;
-        require(!recover || (rejected && std::string(argv[9])=="recover"),"recovery mode");
+        const std::string recovery= recover ? argv[9] : "";
+        const bool tail=recovery=="tail" || recovery=="repeat-tail";
+        const bool repeat=recovery=="repeat-tail";
+        const unsigned stages=recover ? (repeat ? 10 : 8) : 5;
+        const unsigned final_generation=rejected+1+(repeat ? 1 : 0);
+        const unsigned failures=repeat ? 5 : 3;
+        const unsigned reject_mask=(1U<<failures)-1;
+        require(!recover || (rejected && (recovery=="recover" || (tail && rejected==2))),"recovery mode");
         gameboy::SgbHostConfig config;
         config.program_rom=read(argv[1],262144); config.game_rom=read(argv[2],32768);
         const std::string model=argv[3],mode=argv[4];
@@ -256,21 +272,21 @@ int main(int argc,char** argv) {
         config.gb_boot_rom[0]=0xc3; config.gb_boot_rom[2]=1;
         Host normal(config),restored(config);
         if (mode=="scalar") { normal.debug_set_apu_batch_enabled(false); restored.debug_set_apu_batch_enabled(false); }
-        const auto result=run(normal,nullptr,active,rejected,recover);
+        const auto result=run(normal,nullptr,active,rejected,recover,repeat,tail);
         Restores restores;
-        require(result==run(restored,&restores,active,rejected,recover),"whole state/PCM/edge restore parity");
-        normal.reset(); require(result==run(normal,nullptr,active,rejected,recover),"cold reset parity");
+        require(result==run(restored,&restores,active,rejected,recover,repeat,tail),"whole state/PCM/edge restore parity");
+        normal.reset(); require(result==run(normal,nullptr,active,rejected,recover,repeat,tail),"cold reset parity");
         const unsigned note_mask=rejected && !recover ? 1 : 3;
-        const unsigned clear_mask=recover ? 7 : 3;
-        require(restores.pending && restores.edges==(recover ? 255 : 31) && restores.releases==note_mask && restores.zeros==note_mask && restores.queued_onsets==note_mask && restores.queued_offs==note_mask && restores.banks==note_mask && restores.clears==clear_mask && restores.queued_banks==note_mask && restores.queued_clears==clear_mask,
+        const unsigned clear_mask=recover ? (repeat ? 15 : 7) : 3;
+        require(restores.pending && restores.edges==((1U<<stages)-1) && restores.releases==note_mask && restores.zeros==note_mask && restores.queued_onsets==note_mask && restores.queued_offs==note_mask && restores.banks==note_mask && restores.clears==clear_mask && restores.queued_banks==note_mask && restores.queued_clears==clear_mask,
                 "missing queued-output or release/zero restore coverage");
         require(!active || (result.mute.size()==6 && restores.mute==1 && restores.queued_mute==1),"missing active mute restore coverage");
-        require(result.banks.size()==(rejected && !recover ? 1 : 2) && result.clears.size()==(recover ? 3 : 2) && restored.cpu().debug_wram_byte(0x26)==(recover ? rejected+1 : rejected ? rejected : 2),"missing bank replacement");
+        require(result.banks.size()==(rejected && !recover ? 1 : 2) && result.clears.size()==(recover ? (repeat ? 4 : 3) : 2) && restored.cpu().debug_wram_byte(0x26)==(recover ? final_generation : rejected ? rejected : 2),"missing bank replacement");
         require(result.envelopes.notes[0].voice==voice && result.envelopes.notes[0].source==2 &&
                 ((rejected && !recover) || (result.envelopes.notes[1].voice==voice && result.envelopes.notes[1].source==3)),"replacement did not remap source");
-        require(!rejected || (result.rejects.size()==3 && restores.rejects==7 && restores.queued_rejects==7 &&
-                restored.cpu().debug_wram_byte(0x56)==(recover ? 0 : 1) && restored.cpu().debug_wram_byte(0x57)==1 &&
-                restored.cpu().debug_wram_byte(0x59)==2 && restored.cpu().debug_wram_byte(0x27)==(recover ? 0 : rejected)),
+        require(!rejected || (result.rejects.size()==failures && restores.rejects==reject_mask && restores.queued_rejects==reject_mask &&
+                restored.cpu().debug_wram_byte(0x56)==(recover ? 0 : 1) && restored.cpu().debug_wram_byte(0x57)==(repeat ? 2 : 1) &&
+                restored.cpu().debug_wram_byte(0x59)==(repeat ? 3 : 2) && restored.cpu().debug_wram_byte(0x27)==(recover ? 0 : rejected)),
                 "missing blocked SOUND/rejection restore coverage");
         require(!rejected || recover || (hash(restored,0x2b00,2048)==result.rejects.back()[15] &&
                 hash(restored,0x5000,192)==result.rejects.back()[16]),"rejected bank changed after suppression");
@@ -335,6 +351,13 @@ int main(int argc,char** argv) {
             }
             report << ']';
         }
+        if (tail) {
+            require(result.consumed_tokens.size()==failures,"missing consumed-token evidence");
+            report << ",\"consumed_tokens\":[";
+            for (unsigned i=0;i<result.consumed_tokens.size();++i) report << (i ? "," : "") << result.consumed_tokens[i];
+            report << ']';
+        }
+        if (tail) report << ",\"semantic_tail\":true,\"repeated_rejection\":" << (repeat ? "true" : "false");
         if (recover) {
             report << ",\"recovery_upload\":true,\"restore_recovered\":" << restores.recovered
                    << ",\"queued_recovered\":" << restores.queued_recovered << ",\"recovered\":[";

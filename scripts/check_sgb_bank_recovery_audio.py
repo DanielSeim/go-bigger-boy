@@ -25,10 +25,14 @@ def compare(controls,model,voice):
             raise ValueError('source controls change rejection/admission timeline')
     result=source_compare(controls,model,voice)
     pulses=[]
-    for begin,limit in ((meta['rejects'][1][2]+128,meta['edges'][4][2]),
+    windows=[(meta['rejects'][1][2]+128,meta['edges'][4][2]),
                         (meta['rejects'][2][2]+128,meta['edges'][5][2]),
-                        (meta['clears'][2][1]+128,meta['edges'][6][2]),
-                        (meta['notes'][1][6]+128,meta['edges'][7][2])):
+                        (meta['clears'][-1][1]+128,meta['edges'][-2][2]),
+                        (meta['notes'][1][6]+128,meta['edges'][-1][2])]
+    if meta.get('repeated_rejection'):
+        windows.extend(((meta['clears'][2][1]+128,meta['edges'][6][2]),
+                        (meta['rejects'][4][2]+128,meta['edges'][7][2])))
+    for begin,limit in windows:
         if begin+FRAMES>=limit:raise ValueError('GB recovery window crosses a command')
         values=both['left'][begin:begin+FRAMES];mid=(max(values)+min(values))//2
         pulses.append(pitch([x-mid for x in values],(MASTER/5 if model=='sgb' else 4194304)/8192))
