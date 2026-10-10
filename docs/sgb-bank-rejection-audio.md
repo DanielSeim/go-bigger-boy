@@ -167,5 +167,6 @@ preflight/semantic orders. [Cold rejection recovery](sgb-bank-cold-audio.md) now
 covers startup without an earlier admitted bank. [Cold one-byte recovery](sgb-bank-cold-tail-audio.md) adds single/repeated
 semantic rejection and consumed-token checks before the first valid bank.
 [Cold mixed recovery](sgb-bank-cold-mixed-audio.md) covers both orders before the
-first valid bank. Next, combine those cold mixed orders with a one-byte semantic
-tail, retaining consumed-token, acoustic and replay checks.
+first valid bank. [Cold mixed one-byte recovery](sgb-bank-cold-mixed-tail-audio.md) adds exact token
+transitions in both failure orders. Next, vary subframe command timing around
+blocked SOUND and the first fresh restart, retaining acoustic and replay checks.

@@ -96,7 +96,7 @@ profiles and scalar `both`. Each includes reset/restored execution.
 `gameboy_sgb_bank_cold_mixed_audio_root_gap` each retain one complete 16-case
 matrix, with 3600-second timeouts and the `sgb-firmware-extended` label. The
 four-method public guard contract stays in platform/sanitizer jobs. The
-extended set now has 80 tests across eight dedicated Linux shards.
+extended set had 80 tests at this milestone across eight dedicated Linux shards.
 
 ```sh
 cmake --build build-dmg-firmware --target gameboy_sgb_bank_replace_audio_probe
@@ -153,12 +153,11 @@ title checks were not rerun.
 Same-renderer owned controls establish internal consistency. Independent DSP
 arithmetic, hardware timing, private-original acoustics and broad title
 compatibility remain unqualified. These semantic transfers use a whole sample
-chunk. Mixed failures with one-byte semantic tails, other semantic defects,
-command phases, banks, clocks and presentation rates remain separate work.
+chunk. [Cold mixed one-byte recovery](sgb-bank-cold-mixed-tail-audio.md) adds
+consumed-token synchronization in both orders. Other semantic defects, command
+phases, banks, clocks and presentation rates remain separate work.
 The DA image remains SHA-256
 `1cf5d56ed87e9407d7d3e3e8753157f23544a29f2876587c41771496ee0b5d82`.
 
-Next, combine cold mixed failure orders with a one-byte semantic tail. Require
-consumed-token synchronization after semantic failure and the expected token
-state through the preflight rejection, preserving first-note silence, fresh
-playback, GB continuity and queued-output replay.
+Next, vary subframe command timing around blocked SOUND and the first fresh
+restart in cold recovery, retaining token, acoustic and queued-output checks.

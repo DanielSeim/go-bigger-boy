@@ -17,7 +17,7 @@ def row(value,length):
 
 
 def observe(meta,raw,kind,profile,voice,*,semantic_tail=False,repeat=False,mixed=False):
-    if any(type(x) is not bool for x in (semantic_tail,repeat,mixed)) or (semantic_tail and kind!='bad-root') or (repeat and not (semantic_tail or mixed)) or (mixed and (semantic_tail or not repeat)):
+    if any(type(x) is not bool for x in (semantic_tail,repeat,mixed)) or (semantic_tail and kind!='bad-root' and not mixed) or (repeat and not (semantic_tail or mixed)) or (mixed and not repeat):
         raise ValueError('invalid cold tail case')
     retry=5 if repeat else 3
     stages=8 if repeat else 6
@@ -37,8 +37,9 @@ def observe(meta,raw,kind,profile,voice,*,semantic_tail=False,repeat=False,mixed
     if mixed and meta.get('mixed_rejection') is not True:raise ValueError('missing cold mixed rejection identity')
     if semantic_tail:
         tokens=meta.get('consumed_tokens')
+        expected_tokens=([1,1,1,3,3] if kind=='asset-gap' else [3,3,3,4,4]) if mixed else [3]*failures
         if meta.get('semantic_tail') is not True or type(meta.get('repeated_rejection')) is not bool or meta['repeated_rejection']!=repeat or (
-                not row(tokens,failures) or any(t!=3 for t in tokens)):
+                not row(tokens,failures) or tokens!=expected_tokens):
             raise ValueError('missing cold one-byte consumed-token synchronization')
     bounds=dict(frames=(200000,250000),clocks=(100000000,100000100),restore_count=(1,1536),
                 pending_restores=(1,1536),gb_samples=(1,250000),native_samples=(1,250000))

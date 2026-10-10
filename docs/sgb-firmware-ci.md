@@ -19,7 +19,8 @@ and sample-pitch diagnostics. Recovery's two failure types and tail recovery's
 single/repeated sequences each run as separate complete matrices. Mixed recovery's
 two failure orders, cold recovery's two failure types and cold one-byte recovery's
 single/repeated sequences also run as separate complete matrices. Cold mixed
-recovery runs each failure order as a separate complete matrix. Fast
+recovery, with whole sample chunks or a one-byte semantic tail, runs each
+failure order as a separate complete matrix. Fast
 fixture generators, scheduler tests and tests ending in `_contract` stay in the
 regular suite. Tests labelled `local` or `private-reference` are never included.
 Unfiltered local CTest still runs the full suite.

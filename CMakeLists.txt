@@ -1436,6 +1436,16 @@ if(GAMEBOY_BUILD_TESTS)
                 --probe $<TARGET_FILE:gameboy_sgb_bank_replace_audio_probe> --order root-gap)
         set_tests_properties(gameboy_sgb_bank_cold_mixed_audio_gap_root gameboy_sgb_bank_cold_mixed_audio_root_gap
             PROPERTIES TIMEOUT 3600 COST 1400)
+        add_test(NAME gameboy_sgb_bank_cold_mixed_tail_audio_contract
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_bank_cold_mixed_tail_audio_tests.py)
+        add_test(NAME gameboy_sgb_bank_cold_mixed_tail_audio_gap_root
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_bank_cold_mixed_tail_audio.py
+                --probe $<TARGET_FILE:gameboy_sgb_bank_replace_audio_probe> --order gap-root)
+        add_test(NAME gameboy_sgb_bank_cold_mixed_tail_audio_root_gap
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_bank_cold_mixed_tail_audio.py
+                --probe $<TARGET_FILE:gameboy_sgb_bank_replace_audio_probe> --order root-gap)
+        set_tests_properties(gameboy_sgb_bank_cold_mixed_tail_audio_gap_root gameboy_sgb_bank_cold_mixed_tail_audio_root_gap
+            PROPERTIES TIMEOUT 3600 COST 1400)
         add_test(NAME gameboy_sgb_audio_transition_contract
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_audio_transition_tests.py)
         add_test(NAME gameboy_sgb_audio_transitions
@@ -3001,7 +3011,7 @@ if(GAMEBOY_BUILD_TESTS)
     get_property(_gbb_registered_tests DIRECTORY PROPERTY TESTS)
     foreach(_gbb_test IN LISTS _gbb_registered_tests)
         if((_gbb_test MATCHES "^gameboy_sgb_(score_|native_score_)" OR
-            _gbb_test MATCHES "^gameboy_sgb_(polyphony_audio|one_shot_audio|one_shot_interrupt|instrument_change_audio|bank_replace_audio|active_bank_replace_audio|bank_reject_audio|bank_recovery_audio_(gap|root)|bank_tail_audio_(single|repeat)|bank_mixed_audio_(gap_root|root_gap)|bank_cold_audio_(gap|root)|bank_cold_tail_audio_(single|repeat)|bank_cold_mixed_audio_(gap_root|root_gap)|audio_transitions|combined_sample_pitch|host_sample_pitch|owned_sample_pitch_transport)$") AND
+            _gbb_test MATCHES "^gameboy_sgb_(polyphony_audio|one_shot_audio|one_shot_interrupt|instrument_change_audio|bank_replace_audio|active_bank_replace_audio|bank_reject_audio|bank_recovery_audio_(gap|root)|bank_tail_audio_(single|repeat)|bank_mixed_audio_(gap_root|root_gap)|bank_cold_audio_(gap|root)|bank_cold_tail_audio_(single|repeat)|bank_cold_mixed_audio_(gap_root|root_gap)|bank_cold_mixed_tail_audio_(gap_root|root_gap)|audio_transitions|combined_sample_pitch|host_sample_pitch|owned_sample_pitch_transport)$") AND
            NOT _gbb_test MATCHES "_contract$" AND
            NOT _gbb_test MATCHES "^gameboy_sgb_score_(demand_inventory|short_return_fixture|short_continue_fixture|short_pair_fixture|direct_return_fixture|scheduler)$")
             get_test_property(${_gbb_test} LABELS _gbb_test_labels)

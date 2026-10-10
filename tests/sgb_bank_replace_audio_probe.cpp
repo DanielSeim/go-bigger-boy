@@ -137,7 +137,8 @@ Result run(Host& host,Restores* restores=nullptr,bool active=false,unsigned reje
                 host.debug_dsp_register(0x5c),hash(host,0x2b00,2048),hash(host,0x5000,192)});
             if (tail) {
                 const auto token=host.cpu().debug_wram_byte(0x23);
-                require(token==3,"one-byte semantic tail lost consumed IPL token");
+                const unsigned expected_token=mixed ? (rejected==1 ? (result.rejects.size()<=3 ? 1 : 3) : (result.rejects.size()<=3 ? 3 : 4)) : 3;
+                require(token==expected_token,"one-byte semantic tail lost consumed IPL token");
                 result.consumed_tokens.push_back(token);
             }
             rejection=true;
@@ -258,9 +259,9 @@ int main(int argc,char** argv) {
         require(!active || fault=="active" || rejected,"upload mode");
         const bool recover=argc==10;
         const std::string recovery= recover ? argv[9] : "";
-        const bool tail=recovery=="tail" || recovery=="repeat-tail" || recovery=="cold-tail" || recovery=="cold-repeat-tail";
-        const bool cold=recovery=="cold" || recovery=="cold-tail" || recovery=="cold-repeat-tail" || recovery=="cold-mixed";
-        const bool mixed=recovery=="mixed" || recovery=="cold-mixed";
+        const bool tail=recovery=="tail" || recovery=="repeat-tail" || recovery=="cold-tail" || recovery=="cold-repeat-tail" || recovery=="cold-mixed-tail";
+        const bool cold=recovery=="cold" || recovery=="cold-tail" || recovery=="cold-repeat-tail" || recovery=="cold-mixed" || recovery=="cold-mixed-tail";
+        const bool mixed=recovery=="mixed" || recovery=="cold-mixed" || recovery=="cold-mixed-tail";
         const bool repeat=recovery=="repeat-tail" || recovery=="cold-repeat-tail" || mixed;
         const unsigned stages=cold ? (repeat ? 8 : 6) : recover ? (repeat ? 10 : 8) : 5;
         const unsigned final_generation=cold ? (mixed ? 2 : rejected+(repeat ? 1 : 0)) : mixed ? 3 : rejected+1+(repeat ? 1 : 0);
