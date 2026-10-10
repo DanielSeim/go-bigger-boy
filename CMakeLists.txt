@@ -1277,6 +1277,8 @@ if(GAMEBOY_BUILD_TESTS)
     add_test(NAME gameboy_snes_audio_host_contract
              COMMAND gameboy_snes_audio_host_tests)
     add_executable(gameboy_sgb_host_tests tests/sgb_host_tests.cpp)
+    add_executable(gameboy_sgb_vendor_music_probe tests/sgb_vendor_music_probe.cpp)
+    target_link_libraries(gameboy_sgb_vendor_music_probe PRIVATE gameboy_core)
     add_executable(gameboy_sgb_original_title_probe tests/support/sgb_original_title_probe.cpp)
     target_link_libraries(gameboy_sgb_original_title_probe PRIVATE gameboy_core)
     add_executable(gameboy_sgb_score_brr_decode_probe tests/sgb_score_brr_decode_probe.cpp)
@@ -1290,6 +1292,22 @@ if(GAMEBOY_BUILD_TESTS)
     target_link_libraries(gameboy_sgb_original_firmware_tests PRIVATE gameboy_core)
     add_test(NAME gameboy_sgb_original_firmware_contract COMMAND gameboy_sgb_original_firmware_tests)
     if(Python3_Interpreter_FOUND)
+        add_test(NAME gameboy_sgb_vendor_music_contract
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_vendor_music_tests.py
+                --probe $<TARGET_FILE:gameboy_sgb_vendor_music_probe>
+                VendorMusicTests.test_01_build_and_export)
+        add_test(NAME gameboy_sgb_score_vendor_music
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_vendor_music_tests.py
+                --probe $<TARGET_FILE:gameboy_sgb_vendor_music_probe>)
+        set_tests_properties(gameboy_sgb_score_vendor_music PROPERTIES TIMEOUT 600 COST 180)
+        if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/Donkey Kong (JU) (V1.1) [S][!].gb")
+            add_test(NAME gameboy_sgb_vendor_music_local_title
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_vendor_music_title.py
+                    --probe $<TARGET_FILE:gameboy_sgb_vendor_music_probe>
+                    --game "${CMAKE_CURRENT_SOURCE_DIR}/roms/Donkey Kong (JU) (V1.1) [S][!].gb")
+            set_tests_properties(gameboy_sgb_vendor_music_local_title
+                PROPERTIES TIMEOUT 750 LABELS "local;private-reference")
+        endif()
         add_test(NAME gameboy_sgb_score_transport
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_score_transport_tests.py
                 --probe $<TARGET_FILE:gameboy_sgb_score_transport_probe>)

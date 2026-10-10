@@ -832,3 +832,9 @@ data-only handoff. It is not a
 production default: general driver/sound-bank compatibility, complete sound/music
 behavior and title validation remain required before removing the program-ROM
 dependency.
+
+The separate [DB vendor-music experiment](sgb-vendor-music.md) now executes one
+unmodified Donkey Kong music entry through real score/data uploads and the
+independent SPC interpreter, with owned instruments and two-model lifecycle
+checks. It remains opt-in and unbundled; proprietary sound matching, general
+uploaded instrument binding and broad title compatibility remain open.

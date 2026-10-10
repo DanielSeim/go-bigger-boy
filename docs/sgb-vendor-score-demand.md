@@ -134,3 +134,14 @@ must not acknowledge ownership or redirect `$0400` to diagnostic motifs.
 ```sh
 ctest --test-dir build-dmg-firmware -R 'gameboy_sgb_(score_demand_inventory|score_decoder_contract|original_compatibility_report)' --output-on-failure
 ```
+
+## First bounded uploaded-title playback
+
+The separate [DB interpreter](sgb-vendor-music.md) now executes a short game
+entry using authored square/triangle instruments and FIR responses. The bundled
+prototype retains the rejection policy above. DB accepts the actual two-stage
+score/data transport, validates the selected single-channel score before notes,
+and produces PCM on both models with reset/save-load parity. Its provisional
+pitch, volume, articulation and echo policies are not original-sound equivalence.
+Black-box title behavior comparison and uploaded instrument binding are the next
+compatibility gates; larger scores remain unsupported.

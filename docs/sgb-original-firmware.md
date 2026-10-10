@@ -369,7 +369,10 @@ Its acceptance does not establish SPC playback or mailbox ownership.
 The driver now resides at `$1000`, with a legacy `$0200` trampoline. The `$0400` entry validates the explicit
 [GBS1/GBS2 subsets](sgb-uploaded-score-v5.md) and [GBS3 two-track subset](sgb-uploaded-score-tracks.md) and [GBS4 phrase subset](sgb-uploaded-score-phrases.md) and [GBS5 bounded repeats](sgb-uploaded-score-repeats.md) and [GBS6 transpose](sgb-uploaded-score-transpose.md) before advertising v5/v6/v7/v8/v9/v10; other data remains
 silent and external with E1/E2 diagnostics. Vendor title-score rendering remains
-unsupported.
+unsupported by this bundled prototype.
+The separate [DB music experiment](sgb-vendor-music.md) now renders a bounded
+unmodified Donkey Kong entry with owned instruments; it does not qualify
+production compatibility or original acoustics.
 
 A [title-demand audit and bounded native probe](sgb-original-title-demand.md)
 cover local Donkey Kong, Kirby's Dream Land 2 and Tetris Attack runs on both

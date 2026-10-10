@@ -21,7 +21,9 @@ two failure orders, cold recovery's two failure types and cold one-byte recovery
 single/repeated sequences also run as separate complete matrices. Cold mixed
 recovery, with whole sample chunks or a one-byte semantic tail, runs each
 failure order as a separate complete matrix. Staggered subframe SOUND commands
-add a complete matrix for each cold mixed one-byte failure order. Fast
+add a complete matrix for each cold mixed one-byte failure order. The separate
+vendor-format music matrix also runs here using owned inputs; its optional
+private title gate stays outside public shards. Fast
 fixture generators, scheduler tests and tests ending in `_contract` stay in the
 regular suite. Tests labelled `local` or `private-reference` are never included.
 Unfiltered local CTest still runs the full suite.
