@@ -172,6 +172,7 @@ remains SHA-256
 `1cf5d56ed87e9407d7d3e3e8753157f23544a29f2876587c41771496ee0b5d82`.
 
 [Mixed-failure recovery](sgb-bank-mixed-audio.md) now covers preflight and semantic
-failures in both orders. Next, cover cold rejection without an earlier admitted
-bank, with silence before admission, fresh playback, continuous GB audio and
-queued-output replay.
+failures in both orders. [Cold rejection recovery](sgb-bank-cold-audio.md) now covers startup without an
+earlier valid bank or native note. Next, cover cold one-byte semantic rejection,
+including repeated rejection, with silence before admission, fresh playback,
+continuous GB audio and queued-output replay.

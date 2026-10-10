@@ -167,6 +167,7 @@ presentation rates remain separate work. The DA firmware image remains SHA-256
 [One-byte semantic upload tails](sgb-bank-tail-audio.md) add single/repeated
 rejection across consumed-token synchronization, and
 [mixed-failure recovery](sgb-bank-mixed-audio.md) covers preflight/semantic
-failures in both orders. Next, cover cold rejection without an earlier admitted
-bank, with silence before admission, fresh playback, continuous GB audio and
-queued-output replay.
+failures in both orders. [Cold rejection recovery](sgb-bank-cold-audio.md) now covers startup without an
+earlier valid bank or native note. Next, cover cold one-byte semantic rejection,
+including repeated rejection, with silence before admission, fresh playback,
+continuous GB audio and queued-output replay.

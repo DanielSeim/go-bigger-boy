@@ -116,7 +116,7 @@ restored execution. CI partitions it into complete 20-case tests
 `gameboy_sgb_bank_mixed_audio_root_gap`, each with a 3600-second timeout and
 `sgb-firmware-extended` label. They run on different dedicated Linux shards.
 The public four-method contract remains in platform/sanitizer jobs. The
-extended set now contains 74 tests across the existing eight Linux shards.
+extended set contained 74 tests at this milestone across the existing eight Linux shards.
 
 ```sh
 cmake --build build-dmg-firmware --target gameboy_sgb_bank_replace_audio_probe
@@ -170,12 +170,12 @@ private references and broad title playback were not rerun.
 
 Owned same-renderer controls establish internal consistency. Independent DSP
 arithmetic, hardware timing, private-original acoustics and broad title
-compatibility remain unqualified. Cold rejection before an admitted bank,
-longer/more varied failure sequences, combined mixed/one-byte-tail uploads,
+compatibility remain unqualified. Longer/more varied failure sequences, combined mixed/one-byte-tail uploads,
 other semantic defects, command phases, banks, clocks and presentation rates
 remain separate work. The DA image remains SHA-256
 `1cf5d56ed87e9407d7d3e3e8753157f23544a29f2876587c41771496ee0b5d82`.
 
-Next, cover audible recovery from a cold rejection without an earlier valid
-bank or native note. Require silence before admission, fresh remapped playback,
-continuous GB audio and exact queued-output replay on both models and voices.
+[Cold rejection recovery](sgb-bank-cold-audio.md) now covers startup without an
+earlier valid bank or native note. Next, cover cold one-byte semantic rejection,
+including repeated rejection, with silence before admission, fresh playback,
+continuous GB audio and queued-output replay.
