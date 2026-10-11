@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Add prior-song tempo controls and previously unmeasured request spacing to
+  SGB root-consumption diagnostics, with owned tempo-96 reset/save-load replay.
+
 - Add independent first-request and request-spacing frame sweeps for SGB
   score-root consumption, retaining owned banks, STOP controls and firmware.
 

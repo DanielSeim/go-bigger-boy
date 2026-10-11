@@ -857,3 +857,7 @@ between directory lookup and expected pitch setup.
 The [request-frame phase sweep](sgb-vendor-request-phase.md) varies the first
 SOUND wait and later request spacing independently while retaining the same
 bank, uploaded assets and combined effect-STOP control.
+
+The [preceding-song tempo controls](sgb-vendor-prior-tempo.md) vary the song
+before the unchanged selection and add a three-frame request-spacing offset,
+with exact owned tempo-96 reset/save-load PCM/state checks.

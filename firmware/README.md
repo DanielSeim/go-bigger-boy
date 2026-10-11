@@ -449,3 +449,8 @@ The [request-frame phase sweep](../docs/sgb-vendor-request-phase.md) varies
 initial selection timing separately from later request spacing, retaining
 the authored bank and combined STOP controls. It measures directory-to-root
 waits without changing dispatch pacing or firmware selection.
+
+The [preceding-song tempo experiment](../docs/sgb-vendor-prior-tempo.md)
+changes song 1's tempo while retaining songs 2 and 3 and adds a previously
+unmeasured three-frame request offset. Bounded traversal metadata and owned
+reset/save-load replays test the control without changing firmware pacing.

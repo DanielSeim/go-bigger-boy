@@ -11,7 +11,7 @@ PROFILES = ('change', 'repeat')
 STATES = ('active', 'completed')
 
 
-def build(profile='change', state='active', *, effects=(0,0), request_frames=None):
+def build(profile='change', state='active', *, effects=(0,0), request_frames=None, track_tempos=(45,45,45)):
     if profile not in PROFILES or state not in STATES:
         raise ValueError('invalid dispatch profile/state')
     if (not isinstance(effects,tuple) or len(effects)!=2 or
@@ -22,10 +22,13 @@ def build(profile='change', state='active', *, effects=(0,0), request_frames=Non
     if (not isinstance(request_frames,tuple) or len(request_frames)!=3 or
             any(type(n) is not int or not 1<=n<=104 for n in request_frames)):
         raise ValueError('invalid bounded request frame counts')
+    if (not isinstance(track_tempos,tuple) or len(track_tempos)!=3 or
+            any(type(n) is not int or not 1<=n<=255 for n in track_tempos)):
+        raise ValueError('invalid bounded track tempos')
     score = bytearray(bank(echo=False))
     for index, note in enumerate((0xA4, 0xA3, 0xA2)):
         start = 0x60 + 48*index
-        track = bytes((0xE0,2,0xE1,10,0xE5,160,0xED,127,0xE7,45,
+        track = bytes((0xE0,2,0xE1,10,0xE5,160,0xED,127,0xE7,track_tempos[index],
                        96,125,note,0))
         score[start:start+48] = track + bytes(48-len(track))
     frames = (payload(((0x2B00,bytes(score)),)),

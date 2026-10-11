@@ -1359,6 +1359,15 @@ if(GAMEBOY_BUILD_TESTS)
                 --probe $<TARGET_FILE:gameboy_sgb_vendor_music_probe>
                 --timeline-probe $<TARGET_FILE:gameboy_sgb_music_timeline_probe>)
         set_tests_properties(gameboy_sgb_score_vendor_reply PROPERTIES TIMEOUT 900 COST 300)
+        add_test(NAME gameboy_sgb_vendor_prior_tempo_contract
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_vendor_prior_tempo_tests.py
+                PriorTempoContracts.test_fixtures_and_export PriorTempoContracts.test_summary_and_comparison
+                PriorTempoContracts.test_filtered_reference_keeps_tempo_baselines)
+        add_test(NAME gameboy_sgb_score_vendor_prior_tempo
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_vendor_prior_tempo_tests.py
+                --probe $<TARGET_FILE:gameboy_sgb_vendor_music_probe>
+                --timeline-probe $<TARGET_FILE:gameboy_sgb_music_timeline_probe>)
+        set_tests_properties(gameboy_sgb_score_vendor_prior_tempo PROPERTIES TIMEOUT 1800 COST 600)
         add_test(NAME gameboy_sgb_vendor_request_phase_contract
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_vendor_request_phase_tests.py
                 RequestPhaseContracts.test_fixtures_and_export RequestPhaseContracts.test_phase_summary_and_guards
@@ -1415,6 +1424,12 @@ if(GAMEBOY_BUILD_TESTS)
                     --firmware-dir "${CMAKE_CURRENT_SOURCE_DIR}/roms")
             set_tests_properties(gameboy_sgb_vendor_reply_local_reference
                 PROPERTIES TIMEOUT 2400 LABELS "local;private-reference")
+            add_test(NAME gameboy_sgb_vendor_prior_tempo_local_reference
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_vendor_prior_tempo_reference.py
+                    --probe $<TARGET_FILE:gameboy_sgb_music_timeline_probe>
+                    --firmware-dir "${CMAKE_CURRENT_SOURCE_DIR}/roms")
+            set_tests_properties(gameboy_sgb_vendor_prior_tempo_local_reference
+                PROPERTIES TIMEOUT 4800 LABELS "local;private-reference")
             add_test(NAME gameboy_sgb_vendor_request_phase_local_reference
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_vendor_request_phase_reference.py
                     --probe $<TARGET_FILE:gameboy_sgb_music_timeline_probe>

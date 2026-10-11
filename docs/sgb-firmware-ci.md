@@ -146,3 +146,14 @@ both models, with forty observed timelines and forty ordinary controls.
 Its short fixture/report contract remains in platform and sanitizer jobs;
 the optional original comparison stays `local;private-reference` (timeout
 4800 seconds). See [request-frame phase](sgb-vendor-request-phase.md).
+
+
+The prior-tempo suite adds `gameboy_sgb_score_vendor_prior_tempo` (cost 600,
+timeout 1800 seconds), bringing the public total to 94 full matrices. It
+checks two first-track tempos and two request schedules while keeping the
+next songs fixed, across STOP/state profiles and both models. It compares
+32 observed timelines against 32 ordinary controls and adds four tempo-96
+reset/save-load PCM/state replays. Both probe targets are discovered. Short
+fixture/report contracts remain in platform and sanitizer jobs; the optional
+original comparison stays `local;private-reference` (timeout 4800 seconds).
+See [preceding-song tempo](sgb-vendor-prior-tempo.md).

@@ -126,3 +126,8 @@ Original instructions, proprietary score bytes and assets were not read as
 implementation inputs. Broad earlier matrices, pinned-title playback, Windows,
 independent emulators and hardware were not rerun. Performance work stays
 deferred and firmware selection stays unchanged.
+
+Follow-up: [preceding-song tempo controls](sgb-vendor-prior-tempo.md) now show
+that tempo 96 shortens the next selection's directory-to-root wait relative
+to tempo 45, including completed playback and the three-frame spacing offset.
+Bounded transition volume-write observations are next; pacing stays unchanged.
