@@ -20,11 +20,62 @@ from build_sgb_vendor_selection_wait_fixture import build,TEMPOS
 from check_sgb_vendor_selection_wait_reference import compare,waits,WAITS
 import check_sgb_vendor_selection_wait_reference as reference
 import check_sgb_vendor_selection_phase_reference as phase
+import check_sgb_vendor_timer_tempo_reference as timer_tempo
 
 TIMELINE=PROBE=INTERRUPT=None
 
 
 class SelectionWaitContracts(unittest.TestCase):
+    def test_matched_timer_tempo_controls_and_decomposition(self):
+        for tempo in timer_tempo.TEMPO_POINTS:
+            active=build(tempo,'active',first_duration=96,completed_frames=124)
+            completed=build(tempo,'completed',first_duration=96,completed_frames=124)
+            self.assertEqual(active[0x4000:],completed[0x4000:])
+            self.assertNotEqual(active[:0x4000],completed[:0x4000])
+        self.assertEqual(build(),build(completed_frames=100))
+        for frames in (True,99,125):
+            with self.assertRaises(ValueError): build(completed_frames=frames)
+        with self.assertRaises(ValueError): build(32,profile='stop',completed_frames=124)
+        access=dict(zero_count=100,nonzero_after_stage_ms=[1.5+2*i for i in range(8)])
+        measured=dict(root_wait_ms=15.6337890625,timers=[None,dict(wait=[access])])
+        report=timer_tempo.decomposition(measured)
+        self.assertEqual(report['timer0_nonzero_reads'],8)
+        self.assertEqual(report['min_nonzero_gap_ms'],2)
+        self.assertEqual(report['after_last_nonzero_ms'],.1337890625)
+        access['nonzero_after_stage_ms']=[]
+        report=timer_tempo.decomposition(measured)
+        self.assertIsNone(report['after_last_nonzero_ms']);self.assertEqual(report['timer0_nonzero_reads'],0)
+
+    def test_timer_tempo_reference_filters_and_failure(self):
+        def capture(probe,program,game,model,clocks,inputs,**flags):
+            state=game.stem.rsplit('-',1)[-1]
+            self.assertEqual(game.read_bytes(),build(64,state,request_offset=2,first_request_offset=2,
+                selection_spin=1536,first_duration=96,completed_frames=124))
+            self.assertEqual(flags,dict(selection_timer_results=True));self.assertEqual(clocks,300000000)
+            return dict(selection_timer_results=True,state=state,model=model)
+        def observation(data,state):
+            self.assertEqual(state,data['state'])
+            return dict(root_wait_ms=24 if data['model']=='sgb' else 25,
+                        timers=[None,dict(wait=[dict(zero_count=100,nonzero_after_stage_ms=[1,3])])])
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            for name in ('sgb1.program.rom','sgb2.program.rom'): (root/name).write_bytes(b'owned stub')
+            argv=['check','--probe',str(root/'probe'),'--firmware-dir',str(root),'--tempo','64','--tempo','64',
+                  '--state','active','--state','completed','--state','active','--request-offset','2',
+                  '--first-request-offset','2','--selection-spin','1536']
+            stdout=io.StringIO()
+            with patch.object(sys,'argv',argv),patch.object(timer_tempo,'capture',side_effect=capture) as run,patch.object(timer_tempo,'observation',side_effect=observation),contextlib.redirect_stdout(stdout):
+                timer_tempo.main()
+            report=json.loads(stdout.getvalue());self.assertEqual(run.call_count,4)
+            self.assertIs(report['qualification'],False);self.assertEqual(len(report['groups']),2)
+            self.assertEqual(report['completed_frames'],124);self.assertEqual(report['first_duration'],96)
+            for fault in (ValueError('private detail'),None):
+                stdout=io.StringIO();stderr=io.StringIO()
+                with patch.object(sys,'argv',argv),patch.object(timer_tempo,'capture',side_effect=fault,return_value={}),contextlib.redirect_stdout(stdout),contextlib.redirect_stderr(stderr):
+                    with self.assertRaises(SystemExit) as raised: timer_tempo.main()
+                self.assertEqual(raised.exception.code,2);self.assertEqual(stdout.getvalue(),'')
+                self.assertEqual(stderr.getvalue(),'bounded timer-tempo experiment failed; child diagnostics suppressed\n')
+
     def test_timer_window_bounds_and_stage_ownership(self):
         empty=lambda address:dict(address=address,count=0,first=0,last=0,min_gap=0,max_gap=0)
         window=dict(request=1,directory_half=2048,root_half=6144,
@@ -149,6 +200,10 @@ class SelectionWaitContracts(unittest.TestCase):
             guard.assert_called_once_with(data,'base','completed')
         with patch.object(phase,'summarize',side_effect=ValueError('incomplete playback')):
             with self.assertRaises(ValueError): phase.observation(data)
+        active=copy.deepcopy(data);active['events']=active['events'][:1]
+        with patch.object(phase,'summarize',return_value=stages) as guard:
+            self.assertIsNone(phase.observation(active,'active')['prior_release_to_request_ms'])
+            guard.assert_called_once_with(active,'base','active')
 
     def test_build_scope_and_export(self):
         self.assertEqual(hashlib.sha256(firmware()).hexdigest(),'0455c511726ec625afee474a90eba960f5eae2e156b4772d6f7b82b338d36ffd')
@@ -296,6 +351,33 @@ class SelectionWaitContracts(unittest.TestCase):
                         self.assertEqual(observed,results)
                         del observed['selection_timer_reads']
                         self.assertEqual(plain,observed)
+
+    def test_native_matched_timer_tempo_controls(self):
+        if TIMELINE is None: self.skipTest('timeline probe not supplied')
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);image=firmware(selection_wait=True)
+            controls=[(model,tempo,state) for model in ('sgb','sgb2')
+                      for tempo in timer_tempo.TEMPO_POINTS for state in ('active','completed')]
+            def run(control):
+                model,tempo,state=control;case=root/f'{model}-{tempo}-{state}';case.mkdir()
+                (case/'paced.rom').write_bytes(image);(case/'none.script').write_text('GBB SGB input v1\n0 none\n')
+                game=case/'game.gb';game.write_bytes(build(tempo,state,first_duration=96,completed_frames=124,
+                    request_offset=2,first_request_offset=2,selection_spin=1536))
+                data=reference.capture(TIMELINE,case/'paced.rom',game,model,300000000,
+                    case/'none.script',selection_timer_results=True)
+                return control,phase.observation(data,state)
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                for (model,tempo,state),measured in pool.map(run,controls):
+                    with self.subTest(model=model,tempo=tempo,state=state):
+                        self.assertEqual(measured['prior_release_to_request_ms'] is None,state=='active')
+                        self.assertLess(abs(measured['control_root_wait_ms']-27),.4)
+                        access=measured['timers'][1]['wait'][1]
+                        if tempo in WAITS:
+                            self.assertLess(abs(measured['root_wait_ms']-WAITS[tempo]),.4)
+                            self.assertGreater(access['nonzero_count'],0)
+                        else:
+                            self.assertLess(measured['root_wait_ms'],.4)
+                            self.assertEqual(access['nonzero_count'],0)
 
     def replay(self,root,model,tempo,mode='native',profile='normal',*,first_request_offset=0,selection_spin=0):
         game=root/'game.gb';game.write_bytes(build(tempo,profile=profile,

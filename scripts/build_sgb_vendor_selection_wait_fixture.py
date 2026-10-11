@@ -12,7 +12,7 @@ PROFILES=('normal','rapid','stop','upload')
 
 
 def build(tempo=45,state='active',holdout=True,profile='normal',*,request_offset=4,first_duration=None,
-          first_request_offset=0,selection_spin=0):
+          first_request_offset=0,selection_spin=0,completed_frames=100):
     if type(tempo) is not int or tempo not in (*TEMPOS,99,112) or state not in ('active','completed') or type(holdout) is not bool or profile not in PROFILES:
         raise ValueError('invalid selection-wait fixture')
     if profile!='normal' and (state!='active' or tempo!=32):
@@ -29,6 +29,10 @@ def build(tempo=45,state='active',holdout=True,profile='normal',*,request_offset
         raise ValueError('invalid bounded selection spin')
     if profile!='normal' and (first_request_offset or selection_spin):
         raise ValueError('phase controls require normal profile')
+    if type(completed_frames) is not int or completed_frames not in (100,124):
+        raise ValueError('invalid bounded completed frame count')
+    if profile!='normal' and completed_frames!=100:
+        raise ValueError('completed frame controls require normal profile')
     score=bytearray(bank(echo=False))
     for i,note in enumerate((0xA4,0xA3,0xA2)):
         stream=bytes((0xE0,2,0xE1,10,0xE5,160,0xED,127,0xE7,tempo if i==0 else 45,
@@ -36,7 +40,7 @@ def build(tempo=45,state='active',holdout=True,profile='normal',*,request_offset
         score[0x60+48*i:0x90+48*i]=stream+bytes(48-len(stream))
     frames=(payload(((0x2B00,bytes(score)),)),payload(assets(descriptor=(2,255,224,184,2,176))))
     sound=lambda music:bytes((0x41,0,0,0,music))
-    gap=(16 if state=='active' else 100)+(request_offset if holdout else 0)
+    gap=(16 if state=='active' else completed_frames)+(request_offset if holdout else 0)
     commands=[(4,bytes((0x49,)),1),(16+first_request_offset,sound(1),None)]
     if profile=='normal': commands += [(gap,sound(2),None),(gap,sound(3),None)]
     elif profile=='rapid': commands += [(1,sound(2),None),(1,sound(3),None)]

@@ -162,7 +162,86 @@ Python compilation and whitespace checks pass. Broad firmware matrices,
 Windows/sanitizers, physical hardware and independent emulators were not rerun.
 Default and opt-in firmware hashes remain unchanged.
 
-Next, measure these positive-read counts across the admitted preceding tempos
-and active/completed states before selecting a persistent tempo/phase model.
-Use those observations to test a candidate against reserved schedules rather
-than replacing the rejected fixed delay with another fitted constant.
+The matched-duration follow-up below compares the remaining tempos and states
+before selecting a persistent tempo/phase model.
+
+## Matched-duration tempo and state controls
+
+The new checker covers preceding tempos 32, 45, 64, 96, 112 and 128 on both
+models. All three songs have duration 96 in both playback states, so each
+active/completed pair has byte-identical score and asset payloads. Active
+requests retain 16-frame spacing; completed requests use 124 frames so the
+slow tempo-32 note has actually completed. Existing key-off guards verify the
+state before both later requests. Earlier controls used duration 48 in completed
+cases; those remain unchanged and are not substituted for these matched pairs.
+
+The baseline uses zero first/later offsets and no subframe spin. The held-out
+set shifts the first request by two frames, adds two frames to later spacing,
+and adds spin 1536 before SOUND 2. Each has 24 captures. All 48 pass ownership,
+instrument, playback-state, traversal and timer-result bounds. Only timer 0 is
+read between directory and root; no timer-output reads occur from root to KON.
+
+| Preceding tempo | Active nonzero reads | Completed nonzero reads | Root-wait range across both sets |
+| --- | --- | --- | --- |
+| 32 | 16 | 16 | 31.595703–32.000977 ms |
+| 45 | 13 or 14 | 13 or 14 | 25.549805–28.456055 ms |
+| 64 | 12 | 12 | 23.553711–24.008789 ms |
+| 96 | 9 or 10 | 10 | 18.001953–20.409180 ms |
+| 112 | 9 or 10 | 8 or 10 | 15.998047–20.409180 ms |
+| 128 | 10 | 10 | 19.597656–20.454102 ms |
+
+Consecutive positive reads remain 1.995117–2.006836 ms apart. The post-positive
+tail spans 0.130859–0.584961 ms, including active controls: the longer tail is
+not specific to natural completion. At held-out tempo 45, SGB1 active playback
+has 14 positive reads and a 0.584961-ms tail, while SGB2 has 13 and 0.539063 ms.
+At held-out tempo 112, completed SGB1 has ten positive reads and a 20.409180-ms
+wait, while completed SGB2 has eight and a 15.998047-ms wait. Duration is equal
+in these pairs. Model, tempo and active/completed state alone still do not
+provide a general wait predictor; a fixed positive-read count also fails.
+
+The report decomposes selection 2 into first/last positive-read times, minimum
+and maximum positive-read gaps, zero/nonzero counts and time after the final
+positive read. It retains all bounded per-selection timer observations and
+actual request/directory/root timestamps. Zero-positive-read cases remain
+reportable with null decomposition times rather than being mistaken for ticks.
+Nonzero reads are still not exact accumulated hardware tick counts.
+
+```sh
+python3 scripts/check_sgb_vendor_timer_tempo_reference.py \
+  --probe build-dmg-firmware/gameboy_sgb_music_timeline_probe --firmware-dir roms
+python3 scripts/check_sgb_vendor_timer_tempo_reference.py \
+  --probe build-dmg-firmware/gameboy_sgb_music_timeline_probe --firmware-dir roms \
+  --request-offset 2 --first-request-offset 2 --selection-spin 1536
+```
+
+Tempo/state filters repeat and deduplicate; all schedule parameters have bounded
+CLI choices. Each immutable fixture has a unique model/tempo/state filename,
+with at most four captures concurrent. The longer matched schedule uses a
+300-million-clock budget, retaining 240 seconds and 96 KiB per child. The
+initial 260-million-clock matched attempt was rejected before a complete third
+selection; it produced no report and is not behavior evidence. Failed captures
+or missing result markers suppress child diagnostics and produce no partial
+JSON. Successful reports retain `qualification: false`. Their per-group
+constant-delay feasibility ranges are diagnostic, not a candidate timing gate.
+
+The builder's optional `completed_frames=124` is used only by these controls;
+the default remains 100 and existing images are unchanged. The shared phase
+summary now accepts either playback state, retaining its authoritative guards;
+active reports have null prior-release age. Short methods check payload equality,
+invalid controls, decomposition, deduplication, state propagation and sanitized
+failure. All nine short methods pass. The 24 owned matched controls also pass
+on both models/states, retaining the admitted waits, unlisted tempo-112 fallback,
+next-selection tempo-45 wait and positive timer-1 observations in the candidate.
+
+Both original gates remain optional `local;private-reference`. The public
+controls extend the existing matrix, retaining all earlier cases and the total
+of 96 matrices. Python compilation, CMake configuration and whitespace checks
+pass. No new broad-matrix, hardware, independent-emulator or platform/sanitizer
+validation is claimed. No original instructions, private score/sample bytes,
+RAM snapshots or PCM are used as source or committed. Default and opt-in
+firmware hashes and the existing timing accuracy bound remain unchanged.
+
+Next, track timer phase through the preceding song and natural completion.
+Use that state to prototype a persistent accumulator and compare it against
+these frozen schedules, keeping the current waits until the candidate passes
+the direct timing and lifecycle gates. Tempo 112 remains excluded.

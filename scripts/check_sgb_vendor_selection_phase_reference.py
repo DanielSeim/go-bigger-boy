@@ -70,13 +70,13 @@ def timer_summary(data,selections):
     return result
 
 
-def observation(data):
-    # Retain all existing note ownership, completed-state and traversal guards.
-    selections=summarize(data,'base','completed')
+def observation(data,state='completed'):
+    # Retain all existing note ownership, playback-state and traversal guards.
+    selections=summarize(data,'base',state)
     notes=[e for e in data['events'] if e['register']==0x4C]
     request=data['requests'][1]
-    release=next(e['half'] for e in data['events'] if e['register']==0x5C and
-                 e['value']==255 and notes[0]['half']<e['half']<request)
+    release=next((e['half'] for e in data['events'] if e['register']==0x5C and
+                 e['value']==255 and notes[0]['half']<e['half']<request),None)
     directory=max(r['half'] for r in data['selection_directory_reads']
                   if r['request']==2 and r['address'] in (0x2B02,0x2B03))
     first_directory=max(r['half'] for r in data['selection_directory_reads']
@@ -89,7 +89,7 @@ def observation(data):
                 first_root_half=first_root,directory_half=directory,root_half=root,
                 request_gap_ms=(request-data['requests'][0])/2048,
                 prior_note_to_request_ms=(request-notes[0]['half'])/2048,
-                prior_release_to_request_ms=(request-release)/2048,
+                prior_release_to_request_ms=(request-release)/2048 if release is not None else None,
                 root_wait_ms=selections[1]['traversal_stages']['root']['after_previous_stage_ms'],
                 control_root_wait_ms=selections[2]['traversal_stages']['root']['after_previous_stage_ms'])
     if 'selection_timer_reads' in data:

@@ -194,3 +194,12 @@ The arrival gates also support `--timer-results`, now used by both optional
 CTest entries, to report zero/nonzero hardware timer reads. The ordinary bus,
 APU and host observer contracts verify read-clear and callback reset/load
 bindings; the same four owned comparisons include the result observer mode.
+
+The matched-duration timer-tempo extension adds 24 owned controls to that same
+matrix and two short methods (nine selection-wait contract methods in total).
+The optional `gameboy_sgb_vendor_timer_tempo_local_reference` and
+`gameboy_sgb_vendor_timer_tempo_holdout_local_reference` each execute 24 original
+captures and retain `local;private-reference` labels with timeout 2400 seconds.
+They use equal score durations and different active/completed request spacing;
+public matrix discovery remains at 96. See the
+[matched timer-tempo results](sgb-vendor-selection-timers.md#matched-duration-tempo-and-state-controls).

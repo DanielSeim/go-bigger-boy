@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Compare SGB timer consumption across six preceding tempos and matched-duration
+  active/completed playback, with held-out schedules and owned timer controls.
+
 - Distinguish zero/nonzero SGB hardware timer reads with read-clear, reset and
   destination-load transparency checks and bounded original timing reports.
 
