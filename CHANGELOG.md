@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Track bounded SGB timer phase through playback and natural completion, with
+  matched reference schedules and owned observer transparency checks.
+
 - Compare SGB timer consumption across six preceding tempos and matched-duration
   active/completed playback, with held-out schedules and owned timer controls.
 

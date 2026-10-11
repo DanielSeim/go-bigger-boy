@@ -245,3 +245,80 @@ Next, track timer phase through the preceding song and natural completion.
 Use that state to prototype a persistent accumulator and compare it against
 these frozen schedules, keeping the current waits until the candidate passes
 the direct timing and lifecycle gates. Tempo 112 remains excluded.
+
+## Timer phase through natural completion
+
+The timeline probe's opt-in `--timer-continuity` retains the existing selection
+observations and adds bounded post-KON timer aggregates. For each request it
+records all-read and positive-read counts, first/last timestamps and minimum/
+maximum gaps for FD, FE and FF, split at the first KOF-255 write after KON.
+That marker denotes score completion in these independently authored single-note
+fixtures; it does not assert that every DSP envelope has become silent. The
+window ends when the next packet arrives, or when the bounded capture ends.
+No timer output values, PCs, private RAM, score/sample bytes or PCM are exported.
+
+Each stage/register accepts at most one million reads. Storage stays fixed
+rather than retaining every positive timestamp during long playback. The
+Python validator checks field sets, strict integer types, count/gap consistency,
+positive-read subsets and the request/KON/completion anchors. A read immediately
+before packet delivery can share its recorded timestamp, so stage endpoints
+allow equality while ownership follows the delivered-packet count in the
+callback. Reads beyond that endpoint remain invalid. This boundary was caught
+by the first full run; the failed report was discarded and the bounded saved
+baseline captures were revalidated after adding a regression test.
+
+The matched-duration checker accepts `--continuity`, keeping duration 96,
+completed spacing 124 frames, the 300-million-clock limit, four concurrent
+captures, 240-second child timeout and 96-KiB output bound:
+
+```sh
+python3 scripts/check_sgb_vendor_timer_tempo_reference.py \
+  --probe build-dmg-firmware/gameboy_sgb_music_timeline_probe --firmware-dir roms \
+  --continuity
+python3 scripts/check_sgb_vendor_timer_tempo_reference.py \
+  --probe build-dmg-firmware/gameboy_sgb_music_timeline_probe --firmware-dir roms \
+  --continuity --request-offset 2 --first-request-offset 2 --selection-spin 1536
+```
+
+Baseline evidence covers both models, all six preceding tempos and both states
+(24 original captures). Every completed first song continues reading timer 0:
+185–812 positive reads occur after its completion marker and before the next
+request. Active first songs have no completion marker or idle reads. Playback
+positive-read maximum gaps are 2.006836 ms; completed idle maximum gaps are
+2.004883 ms. These are observed positive reads, not exact accumulated tick counts.
+
+The last positive FD read before reselection and the first after the selected
+directory are separated by 10.003906–63.996094 ms. Their distance to the nearest
+multiple of 2 ms is -0.004883 to +0.006836 ms. This is evidence of persistent
+hardware timer phase across the observed transition, including completed songs.
+The intervening dispatch reads are not retained by these aggregates, so the
+bridge is not a claim that every intervening tick was read once. All fields
+shared with the earlier matched baseline report remain identical.
+
+The held-out schedule adds another 24 original captures. Its completed first
+songs have 210–837 positive idle reads, with gaps of 1.994141–2.004883 ms.
+Across the completion boundary itself, the last playback positive and first
+idle positive are 1.997070–2.005859 ms apart over both schedules. Held-out
+reselection bridges span 23.998047–65.994141 ms, with residuals from the nearest
+2-ms multiple of -0.006836 to +0.005859 ms. All earlier held-out report fields
+also remain identical. Playback aggregates contain positive-read gaps as short
+as 0.795898 ms; they do not locate those gaps, so these results do not establish
+universal 2-ms spacing for every positive read during playback.
+
+All ten short selection-wait methods pass, including missing-continuity failure
+sanitization. The 24 owned matched controls pass with the new flag on both
+models and states. Four additional owned model/schedule cases compare plain
+traversal, timer addresses, timer results and continuity; removing the added
+fields leaves identical existing playback metadata in each case. The existing
+observer lifecycle contract also passes. The native probe rebuild, Python
+compilation, CMake configuration and whitespace checks pass. Full unrelated
+matrices, platform/sanitizer jobs, hardware and independent-emulator validation
+were not rerun. No original PCM comparison is claimed.
+
+This observation supports retaining timer phase after natural completion. It
+does not yet explain the variable number of positive reads consumed before
+score traversal, or establish a general software tempo accumulator. The five
+admitted waits, tempo-112 exclusion, default firmware and opt-in image remain
+unchanged. Next, prototype an independent persistent tempo accumulator against
+these frozen baseline and held-out schedules, requiring the direct accuracy,
+improvement and lifecycle gates before expanding the admitted tempo set.

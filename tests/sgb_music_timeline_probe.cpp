@@ -43,6 +43,11 @@ struct TimerWindow {
     struct Results { std::array<std::uint64_t,128> nonzero{};unsigned count{}; };
     std::array<std::array<Results,3>,2> results{};
 };
+struct TimerContinuity {
+    std::uint64_t completion{};
+    struct Reads { TimerAccess all{}, nonzero{}; };
+    std::array<std::array<Reads,3>,2> stages{};
+};
 struct Observation {
     Host* host{};
     std::array<Event,128> events{};
@@ -57,6 +62,8 @@ struct Observation {
     bool volume_enabled{};
     bool timers_enabled{};
     bool timer_results_enabled{};
+    bool timer_continuity_enabled{};
+    std::array<TimerContinuity,16> continuity{};
     std::array<TimerWindow,16> timers{};
     std::array<VolumeWrite,512> volumes{};
     unsigned volume_count{};
@@ -67,6 +74,14 @@ struct Observation {
     static void timer_result(void* context,std::uint64_t half,std::uint8_t timer,bool nonzero) noexcept {
         auto& self=*static_cast<Observation*>(context);
         const auto request=self.host->icd().sound_packets_delivered();
+        if (self.timer_continuity_enabled && timer<=2 && request && request<=self.ports.size() &&
+            self.host->icd().audible_sound_packets_delivered() && self.ports[request-1].keyon) {
+            auto& window=self.continuity[request-1];
+            auto& reads=window.stages[window.completion?1:0][timer];
+            if (reads.all.count==1000000) {self.overflow=true;return;}
+            reads.all.add(half);
+            if(nonzero) reads.nonzero.add(half);
+        }
         if (!nonzero || timer>2 || !request || request>self.ports.size() ||
             !self.host->icd().audible_sound_packets_delivered() || self.ports[request-1].keyon) return;
         auto& window=self.timers[request-1];if(!window.directory) return;
@@ -195,6 +210,9 @@ struct Observation {
                 (unsigned(self.host->debug_dsp_register(0x23))<<8);
             self.pitches[self.pitch_count++]={half,static_cast<unsigned>(requests),pitch};
         }
+        if (self.timer_continuity_enabled && address==0x5c && value==255 && requests &&
+            requests<=self.ports.size() && self.ports[requests-1].keyon &&
+            !self.continuity[requests-1].completion) self.continuity[requests-1].completion=half;
         if (address==0x5c) { if (self.kof==value) return; self.kof=value; }
         else if (address==0x6c) { if (self.flg==value) return; self.flg=value; }
         else if (address!=0x4c || !value) return;
@@ -216,8 +234,8 @@ std::vector<std::uint8_t> read(const char* path, std::size_t low, std::size_t hi
 }
 int main(int argc,char** argv) {
  try {
-    if (argc!=7 && (argc!=8 || (std::string(argv[7])!="--port-handshakes" && std::string(argv[7])!="--spc-replies" && std::string(argv[7])!="--selection-handoff" && std::string(argv[7])!="--selection-directory" && std::string(argv[7])!="--selection-traversal" && std::string(argv[7])!="--selection-volume" && std::string(argv[7])!="--selection-timers" && std::string(argv[7])!="--selection-timer-results")))
-        throw std::runtime_error("PROGRAM GAME sgb|sgb2 CLOCKS SCRIPT bundled|fixture [--port-handshakes|--spc-replies|--selection-handoff|--selection-directory|--selection-traversal|--selection-volume|--selection-timers|--selection-timer-results]");
+    if (argc!=7 && (argc!=8 || (std::string(argv[7])!="--port-handshakes" && std::string(argv[7])!="--spc-replies" && std::string(argv[7])!="--selection-handoff" && std::string(argv[7])!="--selection-directory" && std::string(argv[7])!="--selection-traversal" && std::string(argv[7])!="--selection-volume" && std::string(argv[7])!="--selection-timers" && std::string(argv[7])!="--selection-timer-results" && std::string(argv[7])!="--timer-continuity")))
+        throw std::runtime_error("PROGRAM GAME sgb|sgb2 CLOCKS SCRIPT bundled|fixture [--port-handshakes|--spc-replies|--selection-handoff|--selection-directory|--selection-traversal|--selection-volume|--selection-timers|--selection-timer-results|--timer-continuity]");
     gameboy::SgbHostConfig config;
     config.program_rom=read(argv[1],262144,524288); config.game_rom=read(argv[2],336,16*1024*1024);
     const std::string model=argv[3], boot=argv[6];
@@ -235,7 +253,8 @@ int main(int argc,char** argv) {
     Host host(config); Observation observed; observed.host=&host;
     observed.handshakes_enabled=argc==8;
     observed.volume_enabled=argc==8 && std::string(argv[7])=="--selection-volume";
-    observed.timer_results_enabled=argc==8 && std::string(argv[7])=="--selection-timer-results";
+    observed.timer_continuity_enabled=argc==8 && std::string(argv[7])=="--timer-continuity";
+    observed.timer_results_enabled=observed.timer_continuity_enabled || (argc==8 && std::string(argv[7])=="--selection-timer-results");
     observed.timers_enabled=observed.timer_results_enabled || (argc==8 && std::string(argv[7])=="--selection-timers");
     if (observed.timer_results_enabled) host.debug_set_timer_read_observer(Observation::timer_result,&observed);
     observed.traversal_enabled=observed.timers_enabled || observed.volume_enabled || (argc==8 && std::string(argv[7])=="--selection-traversal");
@@ -364,6 +383,36 @@ int main(int argc,char** argv) {
                         std::cout<<",\"nonzero\":[";
                         for(unsigned j=0;j<r.count;++j) std::cout<<(j?",":"")<<r.nonzero[j];
                         std::cout<<"]";
+                    }
+                    std::cout<<"}";
+                }
+                std::cout<<"]";
+            }
+            std::cout<<"}";
+        }
+        std::cout<<"]";
+    }
+    if (observed.timer_continuity_enabled) {
+        std::cout<<",\"timer_continuity\":[";
+        bool first=true;
+        for(unsigned i=0;i<count;++i) {
+            if(!observed.ports[i].keyon) continue;
+            const auto& w=observed.continuity[i];
+            std::cout<<(first?"":",")<<"{\"request\":"<<i+1
+                <<",\"keyon_half\":"<<observed.ports[i].keyon
+                <<",\"completion_half\":"<<w.completion
+                <<",\"end_half\":"<<(i+1<count?requests[i+1]:host.apu_half_clocks());
+            first=false;
+            for(unsigned stage=0;stage<2;++stage) {
+                std::cout<<(stage?",\"idle\":[":",\"playback\":[");
+                for(unsigned timer=0;timer<3;++timer) {
+                    const auto& r=w.stages[stage][timer];
+                    std::cout<<(timer?",":"")<<"{\"address\":"<<0xFD+timer;
+                    for(unsigned result=0;result<2;++result) {
+                        const auto& a=result?r.nonzero:r.all;
+                        std::cout<<(result?",\"nonzero\":{":",\"all\":{")
+                            <<"\"count\":"<<a.count<<",\"first\":"<<a.first<<",\"last\":"<<a.last
+                            <<",\"min_gap\":"<<a.min_gap<<",\"max_gap\":"<<a.max_gap<<"}";
                     }
                     std::cout<<"}";
                 }

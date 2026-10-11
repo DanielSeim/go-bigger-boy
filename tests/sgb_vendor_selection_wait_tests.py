@@ -26,6 +26,48 @@ TIMELINE=PROBE=INTERRUPT=None
 
 
 class SelectionWaitContracts(unittest.TestCase):
+    def test_timer_continuity_bounds_and_completion(self):
+        empty=lambda:dict(count=0,first=0,last=0,min_gap=0,max_gap=0)
+        registers=lambda:[dict(address=a,all=empty(),nonzero=empty()) for a in range(0xFD,0x100)]
+        first=dict(request=1,keyon_half=100,completion_half=200,end_half=300,
+                   playback=registers(),idle=registers())
+        first['playback'][0]['all']=dict(count=3,first=110,last=190,min_gap=40,max_gap=40)
+        first['playback'][0]['nonzero']=dict(count=1,first=150,last=150,min_gap=0,max_gap=0)
+        first['idle'][0]['all']=dict(count=2,first=210,last=290,min_gap=80,max_gap=80)
+        first['idle'][0]['nonzero']=dict(count=1,first=290,last=290,min_gap=0,max_gap=0)
+        second=dict(request=2,keyon_half=400,completion_half=0,end_half=500,
+                    playback=registers(),idle=registers())
+        data=dict(requests=[50,300],events=[dict(register=0x4C,request=1,half=100),
+            dict(register=0x5C,value=255,request=1,half=200),dict(register=0x4C,request=2,half=400)],
+            timer_continuity=[first,second])
+        result=timer_tempo.continuity(data)
+        self.assertEqual(result['prior_timer0_nonzero_to_request_ms'],10/2048)
+        # A read immediately before delivery can share the recorded request
+        # timestamp. Ownership comes from the callback's delivered count.
+        boundary=copy.deepcopy(data)
+        for kind in ('all','nonzero'):
+            boundary['timer_continuity'][0]['idle'][0][kind]=dict(count=1,first=300,last=300,min_gap=0,max_gap=0)
+        self.assertEqual(timer_tempo.continuity(boundary)['prior_timer0_nonzero_to_request_ms'],0)
+        crossing=copy.deepcopy(boundary)
+        crossing['timer_continuity'][0]['idle'][0]['all']['last']=301
+        with self.assertRaises(ValueError): timer_tempo.continuity(crossing)
+        faults=[]
+        for field,value in (('request',2),('completion_half',201),('end_half',301),('keyon_half',True)):
+            bad=copy.deepcopy(data);bad['timer_continuity'][0][field]=value;faults.append(bad)
+        for field,value in (('count',True),('count',1000001),('first',199),('last',300),('min_gap',79)):
+            bad=copy.deepcopy(data);bad['timer_continuity'][0]['idle'][0]['all'][field]=value;faults.append(bad)
+        bad=copy.deepcopy(data);bad['timer_continuity'][1]['idle'][0]['all']=first['idle'][0]['all'];faults.append(bad)
+        bad=copy.deepcopy(data);bad['timer_continuity'][0]['idle'][0]['nonzero']['count']=3;faults.append(bad)
+        bad=copy.deepcopy(data);bad['timer_continuity'][0]['idle'][0]['nonzero']['first']=205;faults.append(bad)
+        bad=copy.deepcopy(data);bad['timer_continuity'][0]['private_bytes']=[1];faults.append(bad)
+        faults.append({**data,'timer_continuity':[]})
+        for bad in faults:
+            with self.assertRaises(ValueError): timer_tempo.continuity(bad)
+        active=copy.deepcopy(data);active['events'].pop(1)
+        active['timer_continuity'][0]['completion_half']=0
+        active['timer_continuity'][0]['idle']=registers()
+        self.assertEqual(timer_tempo.continuity(active)['prior_timer0_nonzero_to_request_ms'],150/2048)
+
     def test_matched_timer_tempo_controls_and_decomposition(self):
         for tempo in timer_tempo.TEMPO_POINTS:
             active=build(tempo,'active',first_duration=96,completed_frames=124)
@@ -51,7 +93,7 @@ class SelectionWaitContracts(unittest.TestCase):
             state=game.stem.rsplit('-',1)[-1]
             self.assertEqual(game.read_bytes(),build(64,state,request_offset=2,first_request_offset=2,
                 selection_spin=1536,first_duration=96,completed_frames=124))
-            self.assertEqual(flags,dict(selection_timer_results=True));self.assertEqual(clocks,300000000)
+            self.assertEqual(flags,dict(timer_continuity=True) if '--continuity' in sys.argv else dict(selection_timer_results=True));self.assertEqual(clocks,300000000)
             return dict(selection_timer_results=True,state=state,model=model)
         def observation(data,state):
             self.assertEqual(state,data['state'])
@@ -69,6 +111,16 @@ class SelectionWaitContracts(unittest.TestCase):
             report=json.loads(stdout.getvalue());self.assertEqual(run.call_count,4)
             self.assertIs(report['qualification'],False);self.assertEqual(len(report['groups']),2)
             self.assertEqual(report['completed_frames'],124);self.assertEqual(report['first_duration'],96)
+            stdout=io.StringIO()
+            with patch.object(sys,'argv',argv+['--continuity']),patch.object(timer_tempo,'capture',side_effect=capture),patch.object(timer_tempo,'observation',side_effect=observation),patch.object(timer_tempo,'continuity',return_value={'windows':[]}) as guard,contextlib.redirect_stdout(stdout):
+                timer_tempo.main()
+            report=json.loads(stdout.getvalue());self.assertIs(report['timer_continuity'],True)
+            self.assertEqual(guard.call_count,4)
+            stdout=io.StringIO();stderr=io.StringIO()
+            with patch.object(sys,'argv',argv+['--continuity']),patch.object(timer_tempo,'capture',side_effect=capture),patch.object(timer_tempo,'observation',side_effect=observation),contextlib.redirect_stdout(stdout),contextlib.redirect_stderr(stderr):
+                with self.assertRaises(SystemExit) as raised: timer_tempo.main()
+            self.assertEqual(raised.exception.code,2);self.assertEqual(stdout.getvalue(),'')
+            self.assertEqual(stderr.getvalue(),'bounded timer-tempo experiment failed; child diagnostics suppressed\n')
             for fault in (ValueError('private detail'),None):
                 stdout=io.StringIO();stderr=io.StringIO()
                 with patch.object(sys,'argv',argv),patch.object(timer_tempo,'capture',side_effect=fault,return_value={}),contextlib.redirect_stdout(stdout),contextlib.redirect_stderr(stderr):
@@ -339,8 +391,12 @@ class SelectionWaitContracts(unittest.TestCase):
                             first_request_offset=2,selection_spin=spin))
                         captures=[reference.capture(TIMELINE,root/'paced.rom',game,model,260000000,
                             root/'none.script',**flags) for flags in
-                            (dict(selection_traversal=True),dict(selection_timers=True),dict(selection_timer_results=True))]
-                        plain,observed,results=captures;report=phase.observation(results)
+                            (dict(selection_traversal=True),dict(selection_timers=True),dict(selection_timer_results=True),dict(timer_continuity=True))]
+                        plain,observed,results,continuous=captures;report=phase.observation(results)
+                        continuity=timer_tempo.continuity(continuous)
+                        self.assertEqual(continuity['windows'][0]['completion_half']>0,True)
+                        del continuous['timer_continuity']
+                        self.assertEqual(results,continuous)
                         self.assertTrue(all(a['count']==0 for a in report['timers'][1]['wait']))
                         self.assertGreater(report['timers'][2]['wait'][1]['count'],0)
                         self.assertGreater(report['timers'][2]['wait'][1]['nonzero_count'],0)
@@ -364,7 +420,10 @@ class SelectionWaitContracts(unittest.TestCase):
                 game=case/'game.gb';game.write_bytes(build(tempo,state,first_duration=96,completed_frames=124,
                     request_offset=2,first_request_offset=2,selection_spin=1536))
                 data=reference.capture(TIMELINE,case/'paced.rom',game,model,300000000,
-                    case/'none.script',selection_timer_results=True)
+                    case/'none.script',timer_continuity=True)
+                continuity=timer_tempo.continuity(data)
+                if bool(continuity['windows'][0]['completion_half'])!=(state=='completed'):
+                    raise ValueError('continuity playback state changed')
                 return control,phase.observation(data,state)
             with ThreadPoolExecutor(max_workers=4) as pool:
                 for (model,tempo,state),measured in pool.map(run,controls):

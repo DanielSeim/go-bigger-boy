@@ -1371,7 +1371,8 @@ if(GAMEBOY_BUILD_TESTS)
                 SelectionWaitContracts.test_phase_observation_keeps_completed_traversal_guards
                 SelectionWaitContracts.test_timer_window_bounds_and_stage_ownership
                 SelectionWaitContracts.test_matched_timer_tempo_controls_and_decomposition
-                SelectionWaitContracts.test_timer_tempo_reference_filters_and_failure)
+                SelectionWaitContracts.test_timer_tempo_reference_filters_and_failure
+                SelectionWaitContracts.test_timer_continuity_bounds_and_completion)
         add_test(NAME gameboy_sgb_score_vendor_selection_wait
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_vendor_selection_wait_tests.py
                 --probe $<TARGET_FILE:gameboy_sgb_vendor_music_probe>
@@ -1491,14 +1492,14 @@ if(GAMEBOY_BUILD_TESTS)
             add_test(NAME gameboy_sgb_vendor_timer_tempo_local_reference
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_vendor_timer_tempo_reference.py
                     --probe $<TARGET_FILE:gameboy_sgb_music_timeline_probe>
-                    --firmware-dir "${CMAKE_CURRENT_SOURCE_DIR}/roms")
+                    --firmware-dir "${CMAKE_CURRENT_SOURCE_DIR}/roms" --continuity)
             set_tests_properties(gameboy_sgb_vendor_timer_tempo_local_reference
                 PROPERTIES TIMEOUT 2400 LABELS "local;private-reference")
             add_test(NAME gameboy_sgb_vendor_timer_tempo_holdout_local_reference
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_vendor_timer_tempo_reference.py
                     --probe $<TARGET_FILE:gameboy_sgb_music_timeline_probe>
                     --firmware-dir "${CMAKE_CURRENT_SOURCE_DIR}/roms"
-                    --request-offset 2 --first-request-offset 2 --selection-spin 1536)
+                    --request-offset 2 --first-request-offset 2 --selection-spin 1536 --continuity)
             set_tests_properties(gameboy_sgb_vendor_timer_tempo_holdout_local_reference
                 PROPERTIES TIMEOUT 2400 LABELS "local;private-reference")
             add_test(NAME gameboy_sgb_vendor_volume_local_reference
