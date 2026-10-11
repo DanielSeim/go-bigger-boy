@@ -179,3 +179,10 @@ that matrix with four owned completed controls and adds short report/fixture
 contracts. Its 30-capture original experiment stays `local;private-reference`
 as `gameboy_sgb_vendor_selection_duration_local_reference` (timeout 2400).
 Public matrix discovery remains at 96.
+
+The same matrix now includes independent first-request/subframe arrival controls
+and their native/scalar reset/save-load replay. The 20-capture arrival experiment
+and eight-capture holdout are optional `local;private-reference` tests named
+`gameboy_sgb_vendor_selection_arrival_local_reference` and
+`gameboy_sgb_vendor_selection_arrival_holdout_local_reference`; each has timeout
+2400. They require original program images and stay outside public shards.

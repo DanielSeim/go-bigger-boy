@@ -35,6 +35,14 @@ class SelectionWaitContracts(unittest.TestCase):
             self.assertEqual(image[0x14E:0x150],((sum(image)-sum(image[0x14E:0x150]))&65535).to_bytes(2,'big'))
         for duration in (True,0,25,256):
             with self.assertRaises(ValueError): build(first_duration=duration)
+        for first,spin in ((0,0),(2,1024),(4,2499)):
+            image=build(112,'completed',request_offset=2,first_request_offset=first,selection_spin=spin)
+            self.assertEqual(image[0x4000:],default[0x4000:])
+            self.assertEqual(image[0x14E:0x150],((sum(image)-sum(image[0x14E:0x150]))&65535).to_bytes(2,'big'))
+        self.assertEqual(default,build(112,'completed',request_offset=2,first_request_offset=0,selection_spin=0))
+        for first,spin in ((True,0),(-1,0),(5,0),(0,True),(0,-1),(0,2500)):
+            with self.assertRaises(ValueError): build(first_request_offset=first,selection_spin=spin)
+        with self.assertRaises(ValueError): build(32,profile='rapid',selection_spin=1)
         report=phase.constant_bound([15.599609375,20.0029296875])
         self.assertIs(report['constant_within_2ms_possible'],False)
         self.assertIsNone(report['admissible_constant_ms'])
@@ -44,20 +52,24 @@ class SelectionWaitContracts(unittest.TestCase):
 
     def test_phase_reference_filters_and_sanitization(self):
         def capture(probe,program,game,model,clocks,inputs,**flags):
-            self.assertEqual(game.read_bytes(),build(112,'completed',request_offset=2,first_duration=96))
+            self.assertEqual(game.read_bytes(),build(112,'completed',request_offset=2,first_duration=96,
+                                                     first_request_offset=2,selection_spin=1024))
             self.assertEqual(flags,dict(selection_traversal=True));self.assertEqual(clocks,260000000)
             return dict(root_wait_ms=16 if model=='sgb' else 21)
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)
             for name in ('sgb1.program.rom','sgb2.program.rom'): (root/name).write_bytes(b'owned stub')
             argv=['check','--probe',str(root/'probe'),'--firmware-dir',str(root),
-                  '--duration','96','--duration','96','--request-offset','2','--request-offset','2']
+                  '--duration','96','--duration','96','--request-offset','2','--request-offset','2',
+                  '--first-request-offset','2','--first-request-offset','2',
+                  '--selection-spin','1024','--selection-spin','1024']
             stdout=io.StringIO()
             with patch.object(sys,'argv',argv),patch.object(phase,'capture',side_effect=capture) as run,patch.object(phase,'observation',side_effect=lambda data:data),contextlib.redirect_stdout(stdout):
                 phase.main()
             report=json.loads(stdout.getvalue());self.assertEqual(run.call_count,2)
             self.assertIs(report['qualification'],False)
             self.assertIs(report['constant_bound']['constant_within_2ms_possible'],False)
+            self.assertTrue(all(r['first_request_offset']==2 and r['selection_spin']==1024 for r in report['runs']))
             stdout=io.StringIO();stderr=io.StringIO()
             with patch.object(sys,'argv',argv),patch.object(phase,'capture',side_effect=ValueError('private detail')),contextlib.redirect_stdout(stdout),contextlib.redirect_stderr(stderr):
                 with self.assertRaises(SystemExit) as raised: phase.main()
@@ -66,11 +78,17 @@ class SelectionWaitContracts(unittest.TestCase):
 
     def test_phase_observation_keeps_completed_traversal_guards(self):
         data=dict(requests=[2048,20480],events=[dict(register=0x4C,half=4096),
-                  dict(register=0x5C,value=255,half=8192)])
+                  dict(register=0x5C,value=255,half=8192)],
+                  selection_directory_reads=[dict(request=1,address=0x2B01,half=2500),
+                                             dict(request=2,address=0x2B03,half=22528)],
+                  selection_traversal_reads=[dict(request=1,address=0x2B10,half=3000),
+                                             dict(request=2,address=0x2B14,half=57344)])
         stages=[None,dict(traversal_stages=dict(root=dict(after_previous_stage_ms=17))),
                 dict(traversal_stages=dict(root=dict(after_previous_stage_ms=27)))]
         with patch.object(phase,'summarize',return_value=stages) as guard:
-            self.assertEqual(phase.observation(data),dict(request_gap_ms=9,prior_note_to_request_ms=8,
+            self.assertEqual(phase.observation(data),dict(first_request_half=2048,request_half=20480,
+                first_root_half=3000,directory_half=22528,root_half=57344,
+                request_gap_ms=9,prior_note_to_request_ms=8,
                 prior_release_to_request_ms=6,root_wait_ms=17,control_root_wait_ms=27))
             guard.assert_called_once_with(data,'base','completed')
         with patch.object(phase,'summarize',side_effect=ValueError('incomplete playback')):
@@ -178,8 +196,29 @@ class SelectionWaitContracts(unittest.TestCase):
                         self.assertLess(report['root_wait_ms'],.4)
                         self.assertLess(abs(report['control_root_wait_ms']-27),.4)
 
-    def replay(self,root,model,tempo,mode='native',profile='normal'):
-        game=root/'game.gb';game.write_bytes(build(tempo,profile=profile))
+    def test_native_arrival_phase_controls(self):
+        if TIMELINE is None or PROBE is None: self.skipTest('both probes not supplied')
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);(root/'paced.rom').write_bytes(firmware(selection_wait=True))
+            (root/'none.script').write_text('GBB SGB input v1\n0 none\n')
+            for model in ('sgb','sgb2'):
+                for spin in (512,1536):
+                    with self.subTest(model=model,spin=spin):
+                        game=root/'game.gb';game.write_bytes(build(112,'completed',request_offset=2,
+                            first_request_offset=2,selection_spin=spin))
+                        report=phase.observation(reference.capture(TIMELINE,root/'paced.rom',game,model,
+                            260000000,root/'none.script',selection_traversal=True))
+                        self.assertLess(report['root_wait_ms'],.4)
+                        self.assertLess(abs(report['control_root_wait_ms']-27),.4)
+                        self.assertEqual(report['root_half']-report['directory_half'],report['root_wait_ms']*2048)
+                native=self.replay(root,model,112,first_request_offset=2,selection_spin=1536)
+                scalar=self.replay(root,model,112,'scalar',first_request_offset=2,selection_spin=1536)
+                self.assertEqual(native['pcm_fnv64'],scalar['pcm_fnv64'])
+                self.assertEqual((native['starts'],native['notes']),(3,3))
+
+    def replay(self,root,model,tempo,mode='native',profile='normal',*,first_request_offset=0,selection_spin=0):
+        game=root/'game.gb';game.write_bytes(build(tempo,profile=profile,
+            first_request_offset=first_request_offset,selection_spin=selection_spin))
         child=subprocess.run([str(PROBE),str(root/'paced.rom'),str(game),model,'100000000',mode,'fixture'],
             capture_output=True,timeout=180)
         self.assertEqual(child.returncode,0,child.stderr);d=json.loads(child.stdout)

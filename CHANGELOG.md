@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Add independent first-request and subframe arrival controls for SGB tempo-112
+  selection timing, with held-out original captures and owned audio replay.
+
 - Separate SGB tempo-112 note duration from request phase with bounded original
   observations and owned completed controls, retaining its pacing exclusion.
 

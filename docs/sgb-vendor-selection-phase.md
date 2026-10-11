@@ -65,7 +65,80 @@ the excluded-point fallback and the admitted tempo-45 next selection. No new
 public matrix is introduced. The four owned controls and six short contracts
 pass locally; Python compilation and whitespace checks pass.
 
-Next, vary the first request independently of later spacing and compare actual
-directory-read arrival phase across both models. Reserve unseen schedules
-before testing a phase-aware candidate. Keep tempo 112 excluded until a
-predictor passes the original timing bound and owned interruption/replay gates.
+The independent-arrival follow-up below varies the first request separately
+from later spacing and reserves unseen schedules. Tempo 112 stays excluded
+until a predictor passes the original timing bound and owned replay gates.
+
+## Independent first-request and subframe arrival controls
+
+The follow-up fixes duration 48 and later spacing at 102 frames. First-request
+offsets 0 and 2 combine with selection-2 spin counts 0, 512, 1024, 1536 and 2048
+for 20 original captures. Eight held-out captures use first offsets 1 and 3
+with spin counts 0 and 1536. All pass the existing completed/traversal guards.
+Only authored GB scheduling code changes; score and asset bytes are identical.
+The builder's default output is unchanged. Non-normal interruption profiles
+reject these extra phase controls.
+
+| Model | First offset | Spin count | Second-selection root wait |
+| --- | --- | --- | --- |
+| SGB1 | 0 | 0 | 20.002930 ms |
+| SGB1 | 0 | 512–2048 | 20.002930 ms |
+| SGB1 | 2 | 0 | 20.002930 ms |
+| SGB1 | 2 | 512–2048 | 15.599609 ms |
+| SGB2 | 0 | 0–512 | 15.599609 ms |
+| SGB2 | 0 | 1024–2048 | 17.598633 ms |
+| SGB2 | 2 | 0–512 | 16.005859 ms |
+| SGB2 | 2 | 1024–2048 | 18.003906 ms |
+
+SGB1 now crosses the same approximately 4.403-ms spread previously observed
+between models. With first offset 2, its first request arrives within 0.001 ms
+across spin controls, while selection 2 moves from approximately 9768.532 to
+9785.313 ms and its root wait drops from 20.003 to 15.600 ms. Model identity
+alone cannot explain the variation, and even a separate SGB1 constant fails
+the unchanged ±2-ms bound. Held-out SGB1 waits span 15.599609–20.409180 ms;
+held-out SGB2 waits span 15.998047–20.002930 ms.
+
+A spin count adds `28*n+8` GB clocks only before SOUND 2; it does not imply that
+same increment at the SPC. Observed request timestamps frequently collapse
+several spin settings onto nearly the same delivered frame. Absolute half-clock
+timestamps in report schema `gbb-sgb-vendor-selection-phase-v2` include first
+request, first authored root, second request, last selected-directory read and
+second authored root. They come from the existing address-only observer.
+No additional original RAM/code access or emulator instrumentation is added.
+
+A tentative 2-ms root cadence fits the first 20 captures to within 0.002 ms
+of each model's first measured second-root timestamp. Keeping those anchors
+fixed, the held-out SGB1 offset-3/spin-1536 case deviates by 0.405273 ms;
+SGB2's held-out maximum residual is 0.002930 ms. Thus the tempting shared
+cadence is rejected as a precise general scheduler. A cadence residual measures
+timestamp alignment, not prediction of directory-to-root latency or audio.
+
+Reproduce both sets separately, preserving the holdout separation:
+
+```sh
+python3 scripts/check_sgb_vendor_selection_phase_reference.py \
+  --probe build-dmg-firmware/gameboy_sgb_music_timeline_probe --firmware-dir roms \
+  --duration 48 --request-offset 2 --first-request-offset 0 --first-request-offset 2 \
+  --selection-spin 0 --selection-spin 512 --selection-spin 1024 \
+  --selection-spin 1536 --selection-spin 2048 > /tmp/arrival.json
+python3 scripts/check_sgb_vendor_selection_phase_reference.py \
+  --probe build-dmg-firmware/gameboy_sgb_music_timeline_probe --firmware-dir roms \
+  --duration 48 --request-offset 2 --first-request-offset 1 --first-request-offset 3 \
+  --selection-spin 0 --selection-spin 1536 > /tmp/arrival-holdout.json
+```
+
+For a model's frozen first-set root timestamp `anchor`, compute each later
+root's 2-ms grid residual as
+`abs((root_half-anchor+2048) % 4096-2048) / 2048` milliseconds. This is a
+diagnostic calculation; no cadence or model-specific wait enters the firmware.
+First-offset/spin CLI filters deduplicate controls. Distinct filenames include
+all scheduling parameters, preventing concurrent cases from replacing inputs.
+
+The four new owned completed-arrival controls pass. A separate native/scalar
+pair on each model with first offset 2/spin 1536 preserves exact PCM, reset and
+destination-load continuation, unread buffers and active-wait/pulse restores.
+Six short contracts, Python compilation and whitespace checks pass. The full
+existing matrix and other platform/sanitizer suites were not rerun locally.
+Both default and opt-in firmware hashes remain unchanged; tempo 112 remains
+excluded. Next, observe bounded public timer-register access timing around
+selection to distinguish persistent timer phase from queued dispatch behavior.
