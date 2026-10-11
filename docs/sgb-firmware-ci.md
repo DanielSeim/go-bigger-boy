@@ -101,3 +101,11 @@ models, unchanged ordinary timelines under readback collection, and exact
 reset/save-load replay. Its short fixture/report contract remains in platform
 and sanitizer jobs; its optional original comparison stays labelled
 `local;private-reference`. See [controlled dispatch](sgb-vendor-dispatch.md).
+
+The SPC-reply suite adds `gameboy_sgb_score_vendor_reply` (cost 300,
+timeout 900 seconds), bringing the public total to 89 full matrices. It reuses
+the distinct/repeated-ID fixtures while checking reply-publication bounds,
+unchanged ordinary timelines and exact reset/load playback. The short reply
+report and extended observer contracts retain platform/sanitizer coverage.
+The optional original comparison remains `local;private-reference`.
+See [SPC reply timing](sgb-vendor-reply.md).

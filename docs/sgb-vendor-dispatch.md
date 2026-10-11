@@ -118,10 +118,10 @@ were not rerun; no firmware image or production path changed.
 
 ## Next step
 
-Observe the SPC's outbound port writes without exposing private values or
-changing execution. Pair those reply-publication times with the host writes,
-host readback and distinct-note key-ons. That can distinguish actual command
-service from waiting for the host's next poll. Preserve the ownership and
+The [SPC reply-publication experiment](sgb-vendor-reply.md) now pairs outbound
+port-write times with host writes, readback and distinct-note key-ons. It
+separates a measured polling contribution from publication latency, while
+musical-handoff identification remains open. Preserve the ownership and
 snapshot/observer contracts, then use supported boundaries to design bounded
 experimental dispatch pacing and validate held-out phases, rapid reselection,
 STOP/upload ownership and the pinned title. No pacing law is accepted here.

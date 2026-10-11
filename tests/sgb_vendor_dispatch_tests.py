@@ -16,6 +16,7 @@ from build_sgb_vendor_music import build as firmware
 from check_sgb_vendor_dispatch_reference import summarize
 
 PROBE = TIMELINE = None
+REPLIES = False
 
 
 def synthetic():
@@ -99,10 +100,15 @@ class DispatchContracts(unittest.TestCase):
                         with self.subTest(model=model,profile=profile,state=state):
                             game = root/'game.gb'; game.write_bytes(build(profile,state))
                             command = [str(TIMELINE),str(rom),str(game),model,'200000000',str(inputs),'fixture']
-                            child = subprocess.run(command+['--port-handshakes'],capture_output=True,timeout=120)
+                            child = subprocess.run(command+['--spc-replies' if REPLIES else '--port-handshakes'],capture_output=True,timeout=120)
                             self.assertEqual(child.returncode,0,child.stderr)
                             data = json.loads(child.stdout)
-                            self.assertEqual(len(summarize(data,profile,state)),3)
+                            if REPLIES:
+                                from check_sgb_vendor_reply_reference import summarize as reply_summary
+                                self.assertEqual(len(reply_summary(data,profile,state)),3)
+                                data.pop('spc_reply_handshakes')
+                            else:
+                                self.assertEqual(len(summarize(data,profile,state)),3)
                             baseline = subprocess.run(command,capture_output=True,timeout=120)
                             self.assertEqual(baseline.returncode,0,baseline.stderr)
                             data.pop('port_handshakes')

@@ -840,5 +840,6 @@ owned resident fallbacks and two-model lifecycle checks. It remains opt-in and u
 instrument compatibility and broad title compatibility remain open.
 The [controlled dispatch observations](sgb-vendor-dispatch.md) compare distinct
 music IDs and bounded host write/readback milestones on both originals and
-the replacement. Host polling leaves reply-publication timing unresolved;
-dispatch pacing and the firmware image remain unchanged.
+the replacement. The [SPC reply-publication extension](sgb-vendor-reply.md) separates a measured
+polling contribution from reply latency; musical-handoff identification and
+dispatch pacing remain open. The firmware image remains unchanged.

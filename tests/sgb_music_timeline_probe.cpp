@@ -18,6 +18,8 @@ struct PortHandshake {
     std::uint64_t half{}, first_read{}, last_read{}, first_equal{}, last_equal{};
     unsigned request{}, port{}, equal_reads{}, unequal_reads{};
     std::uint8_t written{}; // Used only for equality; never exported.
+    std::uint64_t first_reply{}, last_reply{}, first_equal_reply{}, last_equal_reply{};
+    unsigned reply_writes{}, equal_reply_writes{};
 };
 struct Observation {
     Host* host{};
@@ -26,9 +28,25 @@ struct Observation {
     bool overflow{};
     std::array<PortWindow,16> ports{};
     bool handshakes_enabled{};
+    bool replies_enabled{};
     std::array<PortHandshake,128> handshakes{};
     unsigned handshake_count{};
     std::array<unsigned,4> latest{}; // One-based index of latest write per port.
+    static void reply(void* context,std::uint64_t half,std::uint8_t port,std::uint8_t value) noexcept {
+        auto& self=*static_cast<Observation*>(context);
+        const auto request=self.host->icd().sound_packets_delivered();
+        if (!self.replies_enabled || port>3 || !request || request>self.ports.size() ||
+            self.ports[request-1].keyon || !self.latest[port]) return;
+        auto& entry=self.handshakes[self.latest[port]-1];
+        if (entry.request!=request) return;
+        if (!entry.first_reply) entry.first_reply=half;
+        entry.last_reply=half; ++entry.reply_writes;
+        if (value==entry.written) {
+            if (!entry.first_equal_reply) entry.first_equal_reply=half;
+            entry.last_equal_reply=half; ++entry.equal_reply_writes;
+        }
+        if (entry.reply_writes>1000000) self.overflow=true;
+    }
     static void port(void* context,std::uint64_t,char kind,std::uint16_t address,std::uint8_t value) noexcept {
         auto& self=*static_cast<Observation*>(context);
         const auto request=self.host->icd().sound_packets_delivered();
@@ -87,8 +105,8 @@ std::vector<std::uint8_t> read(const char* path, std::size_t low, std::size_t hi
 }
 int main(int argc,char** argv) {
  try {
-    if (argc!=7 && (argc!=8 || std::string(argv[7])!="--port-handshakes"))
-        throw std::runtime_error("PROGRAM GAME sgb|sgb2 CLOCKS SCRIPT bundled|fixture [--port-handshakes]");
+    if (argc!=7 && (argc!=8 || (std::string(argv[7])!="--port-handshakes" && std::string(argv[7])!="--spc-replies")))
+        throw std::runtime_error("PROGRAM GAME sgb|sgb2 CLOCKS SCRIPT bundled|fixture [--port-handshakes|--spc-replies]");
     gameboy::SgbHostConfig config;
     config.program_rom=read(argv[1],262144,524288); config.game_rom=read(argv[2],336,16*1024*1024);
     const std::string model=argv[3], boot=argv[6];
@@ -105,6 +123,8 @@ int main(int argc,char** argv) {
     for (std::size_t i=0;i<inputs.count;++i) config.input_events.push_back({inputs.events[i].frame,inputs.events[i].mask});
     Host host(config); Observation observed; observed.host=&host;
     observed.handshakes_enabled=argc==8;
+    observed.replies_enabled=argc==8 && std::string(argv[7])=="--spc-replies";
+    if (observed.replies_enabled) host.debug_set_spc_port_write_observer(Observation::reply,&observed);
     host.debug_set_dsp_write_observer(Observation::write,&observed);
     host.debug_set_apu_port_observer(Observation::port,&observed);
     std::array<std::uint64_t,16> requests{}; std::array<unsigned,16> music{}; unsigned count{};
@@ -148,6 +168,17 @@ int main(int argc,char** argv) {
                 <<",\"half\":"<<h.half<<",\"first_read\":"<<h.first_read<<",\"last_read\":"<<h.last_read
                 <<",\"first_equal\":"<<h.first_equal<<",\"last_equal\":"<<h.last_equal
                 <<",\"equal_reads\":"<<h.equal_reads<<",\"unequal_reads\":"<<h.unequal_reads<<"}";
+        }
+        std::cout<<"]";
+    }
+    if (observed.replies_enabled) {
+        std::cout<<",\"spc_reply_handshakes\":[";
+        for (unsigned i=0;i<observed.handshake_count;++i) {
+            const auto& h=observed.handshakes[i];
+            std::cout<<(i?",":"")<<"{\"request\":"<<h.request<<",\"port\":"<<h.port<<",\"half\":"<<h.half
+                <<",\"first_reply\":"<<h.first_reply<<",\"last_reply\":"<<h.last_reply
+                <<",\"first_equal_reply\":"<<h.first_equal_reply<<",\"last_equal_reply\":"<<h.last_equal_reply
+                <<",\"reply_writes\":"<<h.reply_writes<<",\"equal_reply_writes\":"<<h.equal_reply_writes<<"}";
         }
         std::cout<<"]";
     }

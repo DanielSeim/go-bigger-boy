@@ -79,6 +79,8 @@ void SnesApuBus::reset() noexcept {
     dsp_write_context_ = nullptr;
     ram_write_observer_ = nullptr;
     ram_write_context_ = nullptr;
+    spc_port_write_observer_ = nullptr;
+    spc_port_write_context_ = nullptr;
 }
 
 void SnesApuBus::install_ipl(const IplRom& image) noexcept {
@@ -112,6 +114,8 @@ void SnesApuBus::spc_write(const std::uint16_t address,
     if (address >= 0xF4 && address <= 0xF7) {
         spc_to_host_[address - 0xF4] = value;
         ram_[address] = value;
+        if (spc_port_write_observer_)
+            spc_port_write_observer_(spc_port_write_context_, address - 0xF4, value);
         if (ram_write_observer_)
             ram_write_observer_(ram_write_context_, address, value);
         return;

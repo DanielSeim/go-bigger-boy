@@ -241,6 +241,34 @@ void test_timer_batching() {
           "large timer advances keep only the hardware four-bit output");
 }
 
+void test_spc_output_observer() {
+    gameboy::SnesApuBus bus;
+    bus.reset();
+    struct Seen { gameboy::SnesApuBus* bus; unsigned count{}, mask{}; bool published=true; } seen{&bus};
+    bus.set_spc_port_write_observer(+[](void* context,std::uint8_t port,std::uint8_t value) noexcept {
+        auto& s=*static_cast<Seen*>(context); ++s.count;
+        s.published=s.published && s.bus->host_read_port(port)==value &&
+            s.bus->dsp_read_ram(0xF4+port)==value;
+        if (port<4 && value==0x30+port) s.mask|=1U<<port;
+    },&seen);
+    for (unsigned port=0;port<4;++port) {
+        bus.host_write_port(port,0x80+port);
+        bus.spc_write(0xF4+port,0x30+port);
+        check(bus.host_read_port(port)==0x30+port,"SPC output is published before observation");
+    }
+    bus.spc_write(0x100,0x30); bus.dsp_write_ram(0xF4,0x30);
+    bus.spc_write(0xF2,0); bus.spc_write(0xF3,0x30);
+    check(seen.count==4 && seen.mask==15 && seen.published,
+          "only accepted SPC port writes notify after output/RAM publication");
+    bus.set_spc_port_write_observer(nullptr); bus.spc_write(0xF4,0x30);
+    check(seen.count==4,"SPC output observer detaches");
+    bus.set_spc_port_write_observer(+[](void* context,std::uint8_t,std::uint8_t) noexcept {
+        ++static_cast<Seen*>(context)->count;
+    },&seen);
+    bus.reset(); bus.spc_write(0xF4,0x30);
+    check(seen.count==4,"bus reset clears output observer like other physical bus bindings");
+}
+
 void test_local_programs(const int argc, char** argv) {
     for (int index = 1; index < argc; ++index) {
         try {
@@ -262,6 +290,7 @@ int main(const int argc, char** argv) {
     test_spc_physical_ram_observer();
     test_dsp_register_publication();
     test_timer_batching();
+    test_spc_output_observer();
     test_local_programs(argc, argv);
     return failures == 0 ? 0 : 1;
 }

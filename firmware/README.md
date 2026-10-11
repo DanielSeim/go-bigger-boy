@@ -429,6 +429,7 @@ with exact reset/save-load continuation. It is unbundled and uses provisional
 sound policies; full sound-bank compatibility and acoustic qualification remain open.
 The [controlled dispatch experiment](../docs/sgb-vendor-dispatch.md) adds
 distinct-ID controls and host write/readback timing. All sixteen private
-captures and the public replay matrix pass, but SPC reply-publication timing
-must be isolated before choosing a dispatch pacing rule. The DB image stays
-unchanged.
+captures and the public replay matrix pass. The
+[SPC reply-publication extension](../docs/sgb-vendor-reply.md) separates host
+polling from publication latency; identifying the musical handoff remains
+necessary before choosing dispatch pacing. The DB image stays unchanged.

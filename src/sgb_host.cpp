@@ -15,6 +15,8 @@ struct SgbHost::Impl {
     SnesApuAudioEngine::DspWriteObserver diagnostic_observer{};
     SnesHostCpu::ApuPortObserver port_observer{};
     void* port_context{};
+    SnesApuAudioEngine::SpcPortWriteObserver spc_port_observer{};
+    void* spc_port_context{};
     void* diagnostic_context{};
     bool combined;
     unsigned apu_hz;
@@ -151,6 +153,11 @@ void SgbHost::debug_set_apu_port_observer(SnesHostCpu::ApuPortObserver observer,
 std::uint8_t SgbHost::debug_spc_ram_byte(std::uint16_t address) const noexcept {
     return impl_->apu.bus().dsp_read_ram(address);
 }
+void SgbHost::debug_set_spc_port_write_observer(SnesApuAudioEngine::SpcPortWriteObserver observer,
+                                               void* context) noexcept {
+    impl_->spc_port_observer=observer; impl_->spc_port_context=context;
+    impl_->apu.debug_set_spc_port_write_observer(observer,context);
+}
 std::uint8_t SgbHost::debug_dsp_register(std::uint8_t index) const noexcept {
     return impl_->apu.bus().dsp_register(index);
 }
@@ -181,6 +188,9 @@ void SgbHost::reset() {
         fresh->port_observer=impl_->port_observer;
         fresh->port_context=impl_->port_context;
         fresh->cpu.set_apu_port_observer(fresh->port_observer,fresh->port_context);
+        fresh->spc_port_observer=impl_->spc_port_observer;
+        fresh->spc_port_context=impl_->spc_port_context;
+        fresh->apu.debug_set_spc_port_write_observer(fresh->spc_port_observer,fresh->spc_port_context);
     }
     impl_.swap(fresh);
 }
@@ -465,6 +475,9 @@ public:
             candidate->port_observer=host.impl_->port_observer;
             candidate->port_context=host.impl_->port_context;
             candidate->cpu.set_apu_port_observer(candidate->port_observer,candidate->port_context);
+            candidate->spc_port_observer=host.impl_->spc_port_observer;
+            candidate->spc_port_context=host.impl_->spc_port_context;
+            candidate->apu.debug_set_spc_port_write_observer(candidate->spc_port_observer,candidate->spc_port_context);
             components(r,*candidate);
             std::vector<std::uint8_t> apu,gb; r(apu,gb); r.in.finish();
             if(!candidate->apu.load_state(apu)) return false;

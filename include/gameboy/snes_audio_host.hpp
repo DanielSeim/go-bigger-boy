@@ -41,6 +41,7 @@ public:
     using IplRom = std::array<std::uint8_t, 64>;
     using DspWriteObserver = void (*)(void*, std::uint8_t, std::uint8_t) noexcept;
     using RamWriteObserver = void (*)(void*, std::uint16_t, std::uint8_t) noexcept;
+    using SpcPortWriteObserver = DspWriteObserver;
 
     void reset() noexcept;
     void install_ipl(const IplRom& image) noexcept;
@@ -72,6 +73,11 @@ public:
         ram_write_observer_ = observer;
         ram_write_context_ = context;
     }
+    // Observe accepted SPC output-port writes, separately from RAM/DSP bindings.
+    void set_spc_port_write_observer(SpcPortWriteObserver observer,
+                                      void* context = nullptr) noexcept {
+        spc_port_write_observer_ = observer; spc_port_write_context_ = context;
+    }
     // S-DSP accesses physical APU RAM, bypassing SPC700 I/O and IPL overlays.
     [[nodiscard]] std::uint8_t dsp_read_ram(std::uint16_t address) const noexcept {
         return ram_[address];
@@ -100,6 +106,8 @@ private:
     void* dsp_write_context_{};
     RamWriteObserver ram_write_observer_{};
     void* ram_write_context_{};
+    SpcPortWriteObserver spc_port_write_observer_{};
+    void* spc_port_write_context_{};
 };
 
 // Original bundled port-protocol firmware; callers may install another image.

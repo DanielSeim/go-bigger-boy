@@ -14,9 +14,10 @@ from build_sgb_vendor_timing_fixture import build as timing_game
 from check_sgb_vendor_music_title import TITLE_SHA256, SCRIPT_SHA256
 
 
-def capture(probe, program, game, model, clocks, inputs, *, port_handshakes=False):
+def capture(probe, program, game, model, clocks, inputs, *, port_handshakes=False, spc_replies=False):
     command = [str(probe),str(program),str(game),model,str(clocks),str(inputs),'bundled']
-    if port_handshakes: command.append('--port-handshakes')
+    if spc_replies: command.append('--spc-replies')
+    elif port_handshakes: command.append('--port-handshakes')
     child = subprocess.run(command,
                            capture_output=True,timeout=240)
     if child.returncode or len(child.stdout)>32768:
