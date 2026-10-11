@@ -35,14 +35,28 @@ struct Observation {
     bool replies_enabled{};
     bool handoff_enabled{};
     bool directory_enabled{};
+    bool traversal_enabled{};
+    std::array<DirectoryRead,512> traversal{};
+    unsigned traversal_count{};
     std::array<DirectoryRead,128> directory{};
     unsigned directory_count{};
     static void read(void* context,std::uint64_t half,std::uint16_t address) noexcept {
         auto& self=*static_cast<Observation*>(context);
-        if (address<0x2B00 || address>0x2B05) return;
+        const bool directory=address>=0x2B00 && address<=0x2B05;
+        const bool traversal=(address>=0x2B10 && address<=0x2B1B) ||
+            (address>=0x2B20 && address<=0x2B4F) ||
+            (address>=0x2B60 && address<=0x2B6C) ||
+            (address>=0x2B90 && address<=0x2B9C) ||
+            (address>=0x2BC0 && address<=0x2BCC);
+        if (!directory && !(self.traversal_enabled && traversal)) return;
         const auto request=self.host->icd().sound_packets_delivered();
         if (!self.host->icd().audible_sound_packets_delivered() || !request ||
             request>self.ports.size() || self.ports[request-1].keyon) return;
+        if (!directory) {
+            if (self.traversal_count==self.traversal.size()) {self.overflow=true;return;}
+            self.traversal[self.traversal_count++]={half,static_cast<unsigned>(request),address};
+            return;
+        }
         if (self.directory_count==self.directory.size()) {self.overflow=true;return;}
         self.directory[self.directory_count++]={half,static_cast<unsigned>(request),address};
     }
@@ -140,8 +154,8 @@ std::vector<std::uint8_t> read(const char* path, std::size_t low, std::size_t hi
 }
 int main(int argc,char** argv) {
  try {
-    if (argc!=7 && (argc!=8 || (std::string(argv[7])!="--port-handshakes" && std::string(argv[7])!="--spc-replies" && std::string(argv[7])!="--selection-handoff" && std::string(argv[7])!="--selection-directory")))
-        throw std::runtime_error("PROGRAM GAME sgb|sgb2 CLOCKS SCRIPT bundled|fixture [--port-handshakes|--spc-replies|--selection-handoff|--selection-directory]");
+    if (argc!=7 && (argc!=8 || (std::string(argv[7])!="--port-handshakes" && std::string(argv[7])!="--spc-replies" && std::string(argv[7])!="--selection-handoff" && std::string(argv[7])!="--selection-directory" && std::string(argv[7])!="--selection-traversal")))
+        throw std::runtime_error("PROGRAM GAME sgb|sgb2 CLOCKS SCRIPT bundled|fixture [--port-handshakes|--spc-replies|--selection-handoff|--selection-directory|--selection-traversal]");
     gameboy::SgbHostConfig config;
     config.program_rom=read(argv[1],262144,524288); config.game_rom=read(argv[2],336,16*1024*1024);
     const std::string model=argv[3], boot=argv[6];
@@ -158,7 +172,8 @@ int main(int argc,char** argv) {
     for (std::size_t i=0;i<inputs.count;++i) config.input_events.push_back({inputs.events[i].frame,inputs.events[i].mask});
     Host host(config); Observation observed; observed.host=&host;
     observed.handshakes_enabled=argc==8;
-    observed.directory_enabled=argc==8 && std::string(argv[7])=="--selection-directory";
+    observed.traversal_enabled=argc==8 && std::string(argv[7])=="--selection-traversal";
+    observed.directory_enabled=observed.traversal_enabled || (argc==8 && std::string(argv[7])=="--selection-directory");
     if (observed.directory_enabled) host.debug_set_spc_read_observer(Observation::read,&observed);
     observed.handoff_enabled=observed.directory_enabled || (argc==8 && std::string(argv[7])=="--selection-handoff");
     observed.replies_enabled=observed.handoff_enabled || (argc==8 && std::string(argv[7])=="--spc-replies");
@@ -239,6 +254,15 @@ int main(int argc,char** argv) {
         std::cout<<",\"selection_directory_reads\":[";
         for (unsigned i=0;i<observed.directory_count;++i) {
             const auto& r=observed.directory[i];
+            std::cout<<(i?",":"")<<"{\"request\":"<<r.request<<",\"half\":"<<r.half
+                <<",\"address\":"<<r.address<<"}";
+        }
+        std::cout<<"]";
+    }
+    if (observed.traversal_enabled) {
+        std::cout<<",\"selection_traversal_reads\":[";
+        for (unsigned i=0;i<observed.traversal_count;++i) {
+            const auto& r=observed.traversal[i];
             std::cout<<(i?",":"")<<"{\"request\":"<<r.request<<",\"half\":"<<r.half
                 <<",\"address\":"<<r.address<<"}";
         }

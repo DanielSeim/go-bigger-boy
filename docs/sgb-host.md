@@ -849,3 +849,7 @@ rules out a last-matching-write acceptance rule. Dispatch pacing stays open.
 The [selected score-directory experiment](sgb-vendor-directory.md) adds bounded
 native read-address timing to the controlled SOUND/pitch observations without
 changing experimental firmware or production selection.
+
+The [authored score-traversal extension](sgb-vendor-traversal.md) observes
+fixed root, pattern-table and first-note addresses to narrow the interval
+between directory lookup and expected pitch setup.

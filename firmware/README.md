@@ -439,3 +439,8 @@ commit marker. The [native directory-read experiment](../docs/sgb-vendor-directo
 now observes that selection-specific boundary using only the fixed authored
 directory addresses and physical timestamps. No timing policy or firmware
 image changes here.
+
+The [authored score-traversal experiment](../docs/sgb-vendor-traversal.md)
+adds fixed root, pattern-table and first-note read-address milestones after
+directory lookup, preserving both validation and live reads. Timing policy
+and firmware selection remain unchanged.

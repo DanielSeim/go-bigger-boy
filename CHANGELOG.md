@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Trace fixed authored SGB score root, pattern and first-note read addresses
+  before pitch setup, retaining validation passes and bounded private reports.
+
 - Observe bounded owned SGB score-directory read addresses before pitch setup,
   with both-model dispatch controls and exact observer reset/save-load contracts.
 

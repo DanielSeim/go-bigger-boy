@@ -109,3 +109,7 @@ No private program instructions, proprietary score bytes or assets were read
 as implementation inputs. Broad earlier firmware matrices, pinned-title,
 Windows, independent-emulator and hardware playback were not rerun.
 Performance optimization remains deferred.
+
+Follow-up: [authored score traversal](sgb-vendor-traversal.md) now localizes
+most of that interval before the first root-pointer read. Request-phase
+controls are next; firmware pacing remains unchanged.

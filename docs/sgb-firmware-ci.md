@@ -127,3 +127,13 @@ removed. Observer lifecycle tests cover exact scalar/batched read traces and
 reset/save-load PCM/state. The short report contract remains in platform and
 sanitizer jobs; the optional original comparison remains
 `local;private-reference`. See [selected directory reads](sgb-vendor-directory.md).
+
+
+The traversal suite adds `gameboy_sgb_score_vendor_traversal` (cost 300,
+timeout 900 seconds), bringing the public total to 92 full matrices. It
+checks selected root/pattern/first-note consumption after directory lookup,
+retains validation reads, and compares sixteen observed timelines against
+sixteen ordinary controls across both models and all STOP/state profiles.
+The short report and shared-CLI compatibility contracts retain platform and
+sanitizer coverage; originals remain `local;private-reference`.
+See [authored score traversal](sgb-vendor-traversal.md).
