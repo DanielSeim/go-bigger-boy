@@ -81,6 +81,8 @@ void SnesApuBus::reset() noexcept {
     ram_write_context_ = nullptr;
     spc_read_observer_ = nullptr;
     spc_read_context_ = nullptr;
+    timer_read_observer_ = nullptr;
+    timer_read_context_ = nullptr;
     spc_port_write_observer_ = nullptr;
     spc_port_write_context_ = nullptr;
 }
@@ -105,6 +107,8 @@ std::uint8_t SnesApuBus::spc_read(const std::uint16_t address) noexcept {
         auto& output = timer_output_[address - 0xFD];
         const auto value = output;
         output = 0;
+        if (timer_read_observer_)
+            timer_read_observer_(timer_read_context_,static_cast<std::uint8_t>(address-0xFD),value!=0);
         return value;
     }
     if (address == 0xF0 || address == 0xF1 ||

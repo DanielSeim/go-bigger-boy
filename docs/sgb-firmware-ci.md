@@ -190,3 +190,7 @@ Both now enable bounded [timer-access timing](sgb-vendor-selection-timers.md).
 Seven short selection-wait contracts remain in platform/sanitizer jobs; four
 owned timer-on/off comparisons extend the existing full matrix. Public matrix
 discovery remains at 96.
+The arrival gates also support `--timer-results`, now used by both optional
+CTest entries, to report zero/nonzero hardware timer reads. The ordinary bus,
+APU and host observer contracts verify read-clear and callback reset/load
+bindings; the same four owned comparisons include the result observer mode.

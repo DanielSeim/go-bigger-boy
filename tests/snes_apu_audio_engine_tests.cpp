@@ -76,6 +76,56 @@ std::vector<Sample> run(Engine& e, unsigned halves) {
     return output;
 }
 
+void timer_result_observer_tests() {
+    struct Capture {
+        unsigned count{},nonzero[3]{};
+        std::uint64_t hash=14695981039346656037ULL;
+        static void read(void* context,std::uint64_t half,std::uint8_t timer,bool nonzero) noexcept {
+            auto& s=*static_cast<Capture*>(context);++s.count;if(nonzero) ++s.nonzero[timer];
+            for(auto value:{half,std::uint64_t(timer),std::uint64_t(nonzero)})
+                s.hash=(s.hash^value)*1099511628211ULL;
+        }
+    } captured,destination;
+    const auto configure=[](Engine& e) {
+        setup(e);gameboy::SnesApuBus::IplRom image{};
+        // Independently authored loop: read all three timer outputs, repeat.
+        constexpr std::uint8_t code[]{0xe4,0xfd,0xe4,0xfe,0xe4,0xff,0x2f,0xf8};
+        std::copy(std::begin(code),std::end(code),image.begin());e.install_ipl(image);
+        for(unsigned i=0;i<3;++i) e.bus().spc_write(0xFA+i,i+1);
+        e.bus().spc_write(0xF1,0x87);e.bus().spc_write(0xF2,0x4c);e.bus().spc_write(0xF3,0xff);
+    };
+    Engine observed,plain,restored;configure(observed);configure(plain);
+    observed.debug_set_timer_read_observer(Capture::read,&captured);
+    restored.debug_set_timer_read_observer(Capture::read,&destination);
+    const auto initial=observed.save_state();
+    check(initial==plain.save_state(),"timer result binding excluded from snapshots");
+    const auto audio=run(observed,4096),expected=run(plain,4096);
+    check(audio.size()==expected.size() && std::equal(audio.begin(),audio.end(),expected.begin(),same) &&
+          observed.save_state()==plain.save_state(),"timer results preserve exact PCM and APU state");
+    check(captured.count>100 && captured.nonzero[0] && captured.nonzero[1] && captured.nonzero[2],
+          "owned timer loop observes positive outputs on every timer");
+    check(std::any_of(audio.begin(),audio.end(),[](Sample s){return s.left || s.right;}),
+          "timer result transparency uses audible owned synthesis");
+    const auto first=captured;captured={};
+    check(observed.load_state(initial),"timer result initial restore");
+    (void)run(observed,1025);
+    for(unsigned i=0;i<64;++i) check(observed.clock_half(),"timer snapshot unread audio clock");
+    const auto middle=observed.save_state();captured={};
+    check(observed.pending_samples()>0,"timer snapshot includes unread PCM");
+    const auto continuation=run(observed,4096);
+    auto malformed=middle;malformed[0]^=1;
+    check(!restored.load_state(malformed) && destination.count==0,"failed APU load retains timer destination binding");
+    check(restored.load_state(middle),"timer destination restore");
+    const auto resumed=run(restored,4096);
+    check(continuation.size()==resumed.size() && std::equal(continuation.begin(),continuation.end(),resumed.begin(),same) &&
+          observed.save_state()==restored.save_state() && captured.count==destination.count && captured.hash==destination.hash,
+          "timer results preserve partial-clock destination replay and unread PCM");
+    observed.reset();configure(observed);captured={};(void)run(observed,4096);
+    check(captured.count==first.count && captured.hash==first.hash,"APU reset retains timer result binding");
+    observed.debug_set_timer_read_observer(nullptr,nullptr);observed.reset();configure(observed);(void)run(observed,4096);
+    check(captured.count==first.count && captured.hash==first.hash,"timer result binding detaches");
+}
+
 void diagnostic_observer_tests() {
     Engine observed, plain; setup(observed); setup(plain);
     struct Capture { unsigned count{}, address{}, value{}; std::uint64_t half{}; } capture;
@@ -395,7 +445,7 @@ int main(int argc, char** argv) {
     if (argc == 2 && std::string_view(argv[1]) == "--fixture") return export_synthetic(true);
     if (argc == 2 && std::string_view(argv[1]) == "--pcm") return export_synthetic(false);
     if (argc != 1) return 2;
-    diagnostic_observer_tests(); restore_tests(); direct_clock_equivalence(); integrated_clock_opcode_equivalence();
+    diagnostic_observer_tests(); timer_result_observer_tests(); restore_tests(); direct_clock_equivalence(); integrated_clock_opcode_equivalence();
     boundaries(); malformed_cpu_and_realtime(); benchmark();
     return failures ? 1 : 0;
 }

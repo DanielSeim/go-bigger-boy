@@ -21,6 +21,13 @@ struct Reads : Replies {
             self.hash=(self.hash^word)*1099511628211ULL;
     }
 };
+struct TimerReads : Replies {
+    static void read(void* context,std::uint64_t half,std::uint8_t timer,bool nonzero) noexcept {
+        auto& self=*static_cast<TimerReads*>(context);++self.count;
+        for (const auto word : {half,std::uint64_t(timer),std::uint64_t(nonzero)})
+            self.hash=(self.hash^word)*1099511628211ULL;
+    }
+};
 void require(bool value) {if(!value) throw std::runtime_error("APU observer lifecycle mismatch");}
 std::vector<Host::StereoSample> run(Host& host,std::uint64_t target=12000000) {
     std::vector<Host::StereoSample> output;
@@ -45,6 +52,9 @@ int main() {
     const auto port_callback=+[](void* context,std::uint64_t,char,std::uint16_t,std::uint8_t) noexcept {++*static_cast<unsigned*>(context);};
     observed.debug_set_apu_port_observer(port_callback,&ports);
     restored.debug_set_apu_port_observer(port_callback,&destination_ports);
+    TimerReads timer_reads,destination_timer_reads;
+    observed.debug_set_timer_read_observer(TimerReads::read,&timer_reads);
+    restored.debug_set_timer_read_observer(TimerReads::read,&destination_timer_reads);
     Reads reads, destination_reads;
     observed.debug_set_spc_read_observer(Reads::read,&reads);
     restored.debug_set_spc_read_observer(Reads::read,&destination_reads);
@@ -58,49 +68,66 @@ int main() {
     const auto first=writes;
     const auto first_ports=ports; require(first_ports>0);
     const auto first_reads=reads; require(first_reads.count>0); reads={};
+    const auto first_timer_reads=timer_reads; require(first_timer_reads.count>0);timer_reads={};
     const auto first_replies=replies; require(first_replies.count>0); replies={};
     Host scalar(config); Replies scalar_replies;
     Reads scalar_reads; scalar.debug_set_spc_read_observer(Reads::read,&scalar_reads);
+    TimerReads scalar_timer_reads;scalar.debug_set_timer_read_observer(TimerReads::read,&scalar_timer_reads);
     scalar.debug_set_apu_batch_enabled(false);
     scalar.debug_set_spc_port_write_observer(Replies::write,&scalar_replies);
     require(same(audio,run(scalar)) && scalar.save_state()==plain.save_state());
     require(scalar_replies.count==first_replies.count && scalar_replies.hash==first_replies.hash);
     require(scalar_reads.count==first_reads.count && scalar_reads.hash==first_reads.hash);
+    require(scalar_timer_reads.count==first_timer_reads.count && scalar_timer_reads.hash==first_timer_reads.hash);
     Host mid(config), continued(config); Replies mid_replies, continued_replies;
     Reads mid_reads, continued_reads;
+    TimerReads mid_timer_reads,continued_timer_reads;
+    mid.debug_set_timer_read_observer(TimerReads::read,&mid_timer_reads);
+    continued.debug_set_timer_read_observer(TimerReads::read,&continued_timer_reads);
     mid.debug_set_spc_read_observer(Reads::read,&mid_reads);
     continued.debug_set_spc_read_observer(Reads::read,&continued_reads);
     mid.debug_set_spc_port_write_observer(Replies::write,&mid_replies);
     (void)run(mid,100000);
-    const auto during_upload=mid.save_state(); mid_replies={}; mid_reads={};
+    // Include unread audio in the in-flight upload snapshot.
+    for(unsigned i=0;i<64;++i) require(mid.step());
+    const auto during_upload=mid.save_state(); mid_replies={}; mid_reads={};mid_timer_reads={};
     const auto continuation=run(mid);
     continued.debug_set_spc_port_write_observer(Replies::write,&continued_replies);
     require(continued.load_state(during_upload));
     require(same(continuation,run(continued)) && mid.save_state()==continued.save_state());
     require(mid_reads.count>0 && mid_reads.count==continued_reads.count && mid_reads.hash==continued_reads.hash);
+    require(mid_timer_reads.count>0 && mid_timer_reads.count==continued_timer_reads.count &&
+            mid_timer_reads.hash==continued_timer_reads.hash);
     require(mid_replies.count>0 && mid_replies.count==continued_replies.count &&
             mid_replies.hash==continued_replies.hash);
     require(observed.load_state(initial)); require(same(audio,run(observed)) && writes==2*first);
     require(ports==2*first_ports);
     require(replies.count==first_replies.count && replies.hash==first_replies.hash);
     require(reads.count==first_reads.count && reads.hash==first_reads.hash);
+    require(timer_reads.count==first_timer_reads.count && timer_reads.hash==first_timer_reads.hash);
+    auto malformed=initial;malformed[0]^=1;
+    require(!restored.load_state(malformed) && destination_timer_reads.count==0);
     require(restored.load_state(initial)); require(same(audio,run(restored)) && destination_writes==first && writes==2*first);
     require(destination_ports==first_ports && ports==2*first_ports);
     require(destination_replies.count==first_replies.count && destination_replies.hash==first_replies.hash);
     require(destination_reads.count==first_reads.count && destination_reads.hash==first_reads.hash);
-    replies={}; reads={};
+    require(destination_timer_reads.count==first_timer_reads.count && destination_timer_reads.hash==first_timer_reads.hash);
+    replies={}; reads={};timer_reads={};
     observed.reset(); require(same(audio,run(observed)) && writes==3*first);
     require(ports==3*first_ports);
     require(replies.count==first_replies.count && replies.hash==first_replies.hash);
     require(reads.count==first_reads.count && reads.hash==first_reads.hash);
+    require(timer_reads.count==first_timer_reads.count && timer_reads.hash==first_timer_reads.hash);
     observed.debug_set_dsp_write_observer(nullptr,nullptr); observed.reset();
     observed.debug_set_apu_port_observer(nullptr,nullptr);
     observed.debug_set_spc_port_write_observer(nullptr,nullptr);
     observed.debug_set_spc_read_observer(nullptr,nullptr);
+    observed.debug_set_timer_read_observer(nullptr,nullptr);
     require(same(audio,run(observed)) && writes==3*first);
     require(ports==3*first_ports);
     require(replies.count==first_replies.count && replies.hash==first_replies.hash);
     require(reads.count==first_reads.count && reads.hash==first_reads.hash);
+    require(timer_reads.count==first_timer_reads.count && timer_reads.hash==first_timer_reads.hash);
     std::cout<<"DSP/port/read observation preserves host PCM/state and destination reset/load bindings\n";
  } catch(const std::exception& e) {std::cerr<<e.what()<<'\n';return 1;}
 }

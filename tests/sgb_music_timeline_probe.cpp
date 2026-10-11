@@ -40,6 +40,8 @@ struct TimerAccess {
 struct TimerWindow {
     std::uint64_t directory{},root{};
     std::array<std::array<TimerAccess,3>,2> accesses{};
+    struct Results { std::array<std::uint64_t,128> nonzero{};unsigned count{}; };
+    std::array<std::array<Results,3>,2> results{};
 };
 struct Observation {
     Host* host{};
@@ -54,6 +56,7 @@ struct Observation {
     bool traversal_enabled{};
     bool volume_enabled{};
     bool timers_enabled{};
+    bool timer_results_enabled{};
     std::array<TimerWindow,16> timers{};
     std::array<VolumeWrite,512> volumes{};
     unsigned volume_count{};
@@ -61,6 +64,16 @@ struct Observation {
     unsigned traversal_count{};
     std::array<DirectoryRead,128> directory{};
     unsigned directory_count{};
+    static void timer_result(void* context,std::uint64_t half,std::uint8_t timer,bool nonzero) noexcept {
+        auto& self=*static_cast<Observation*>(context);
+        const auto request=self.host->icd().sound_packets_delivered();
+        if (!nonzero || timer>2 || !request || request>self.ports.size() ||
+            !self.host->icd().audible_sound_packets_delivered() || self.ports[request-1].keyon) return;
+        auto& window=self.timers[request-1];if(!window.directory) return;
+        auto& result=window.results[window.root?1:0][timer];
+        if(result.count==result.nonzero.size()) {self.overflow=true;return;}
+        result.nonzero[result.count++]=half;
+    }
     static void read(void* context,std::uint64_t half,std::uint16_t address) noexcept {
         auto& self=*static_cast<Observation*>(context);
         const bool directory=address>=0x2B00 && address<=0x2B05;
@@ -203,8 +216,8 @@ std::vector<std::uint8_t> read(const char* path, std::size_t low, std::size_t hi
 }
 int main(int argc,char** argv) {
  try {
-    if (argc!=7 && (argc!=8 || (std::string(argv[7])!="--port-handshakes" && std::string(argv[7])!="--spc-replies" && std::string(argv[7])!="--selection-handoff" && std::string(argv[7])!="--selection-directory" && std::string(argv[7])!="--selection-traversal" && std::string(argv[7])!="--selection-volume" && std::string(argv[7])!="--selection-timers")))
-        throw std::runtime_error("PROGRAM GAME sgb|sgb2 CLOCKS SCRIPT bundled|fixture [--port-handshakes|--spc-replies|--selection-handoff|--selection-directory|--selection-traversal|--selection-volume|--selection-timers]");
+    if (argc!=7 && (argc!=8 || (std::string(argv[7])!="--port-handshakes" && std::string(argv[7])!="--spc-replies" && std::string(argv[7])!="--selection-handoff" && std::string(argv[7])!="--selection-directory" && std::string(argv[7])!="--selection-traversal" && std::string(argv[7])!="--selection-volume" && std::string(argv[7])!="--selection-timers" && std::string(argv[7])!="--selection-timer-results")))
+        throw std::runtime_error("PROGRAM GAME sgb|sgb2 CLOCKS SCRIPT bundled|fixture [--port-handshakes|--spc-replies|--selection-handoff|--selection-directory|--selection-traversal|--selection-volume|--selection-timers|--selection-timer-results]");
     gameboy::SgbHostConfig config;
     config.program_rom=read(argv[1],262144,524288); config.game_rom=read(argv[2],336,16*1024*1024);
     const std::string model=argv[3], boot=argv[6];
@@ -222,7 +235,9 @@ int main(int argc,char** argv) {
     Host host(config); Observation observed; observed.host=&host;
     observed.handshakes_enabled=argc==8;
     observed.volume_enabled=argc==8 && std::string(argv[7])=="--selection-volume";
-    observed.timers_enabled=argc==8 && std::string(argv[7])=="--selection-timers";
+    observed.timer_results_enabled=argc==8 && std::string(argv[7])=="--selection-timer-results";
+    observed.timers_enabled=observed.timer_results_enabled || (argc==8 && std::string(argv[7])=="--selection-timers");
+    if (observed.timer_results_enabled) host.debug_set_timer_read_observer(Observation::timer_result,&observed);
     observed.traversal_enabled=observed.timers_enabled || observed.volume_enabled || (argc==8 && std::string(argv[7])=="--selection-traversal");
     observed.directory_enabled=observed.traversal_enabled || (argc==8 && std::string(argv[7])=="--selection-directory");
     if (observed.directory_enabled) host.debug_set_spc_read_observer(Observation::read,&observed);
@@ -329,6 +344,7 @@ int main(int argc,char** argv) {
         std::cout<<"]";
     }
     if (observed.timers_enabled) {
+        if(observed.timer_results_enabled) std::cout<<",\"selection_timer_results\":true";
         std::cout<<",\"selection_timer_reads\":[";
         bool first_window=true;
         for (unsigned i=0;i<count;++i) {
@@ -342,7 +358,14 @@ int main(int argc,char** argv) {
                     const auto& a=w.accesses[stage][timer];
                     std::cout<<(timer?",":"")<<"{\"address\":"<<0xFD+timer<<",\"count\":"<<a.count
                         <<",\"first\":"<<a.first<<",\"last\":"<<a.last
-                        <<",\"min_gap\":"<<a.min_gap<<",\"max_gap\":"<<a.max_gap<<"}";
+                        <<",\"min_gap\":"<<a.min_gap<<",\"max_gap\":"<<a.max_gap;
+                    if(observed.timer_results_enabled) {
+                        const auto& r=w.results[stage][timer];
+                        std::cout<<",\"nonzero\":[";
+                        for(unsigned j=0;j<r.count;++j) std::cout<<(j?",":"")<<r.nonzero[j];
+                        std::cout<<"]";
+                    }
+                    std::cout<<"}";
                 }
                 std::cout<<"]";
             }

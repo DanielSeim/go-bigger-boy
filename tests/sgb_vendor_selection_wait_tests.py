@@ -51,6 +51,18 @@ class SelectionWaitContracts(unittest.TestCase):
         with self.assertRaises(ValueError): phase.timer_summary(bad,selections)
         bad=copy.deepcopy(data);bad['selection_timer_reads']=[]
         with self.assertRaises(ValueError): phase.timer_summary(bad,selections)
+        positive=copy.deepcopy(data);positive['selection_timer_results']=True
+        for stage in ('wait','setup'):
+            for access in positive['selection_timer_reads'][0][stage]: access['nonzero']=[]
+        positive['selection_timer_reads'][0]['wait'][0]['nonzero']=[2100,6100]
+        result=phase.timer_summary(positive,selections)[0]['wait'][0]
+        self.assertEqual((result['zero_count'],result['nonzero_count']),(1,2))
+        self.assertEqual(result['nonzero_after_stage_ms'],[52/2048,4052/2048])
+        for pulses in ([True],[2099],[6101],[6100,2100],[2100,2100],[2100]*129):
+            bad=copy.deepcopy(positive);bad['selection_timer_reads'][0]['wait'][0]['nonzero']=pulses
+            with self.assertRaises(ValueError): phase.timer_summary(bad,selections)
+        bad=copy.deepcopy(positive);bad['selection_timer_results']=1
+        with self.assertRaises(ValueError): phase.timer_summary(bad,selections)
 
     def test_phase_duration_controls_and_constant_rejection(self):
         default=build(112,'completed',request_offset=2)
@@ -82,10 +94,12 @@ class SelectionWaitContracts(unittest.TestCase):
         def capture(probe,program,game,model,clocks,inputs,**flags):
             self.assertEqual(game.read_bytes(),build(112,'completed',request_offset=2,first_duration=96,
                                                      first_request_offset=2,selection_spin=1024))
-            self.assertEqual(flags,dict(selection_timers=True) if '--timers' in sys.argv else dict(selection_traversal=True))
+            self.assertEqual(flags,dict(selection_timer_results=True) if '--timer-results' in sys.argv else
+                             dict(selection_timers=True) if '--timers' in sys.argv else dict(selection_traversal=True))
             self.assertEqual(clocks,260000000)
             data=dict(root_wait_ms=16 if model=='sgb' else 21)
-            if '--timers' in sys.argv: data['selection_timer_reads']=[]
+            if '--timers' in sys.argv or '--timer-results' in sys.argv: data['selection_timer_reads']=[]
+            if '--timer-results' in sys.argv: data['selection_timer_results']=True
             return data
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)
@@ -104,6 +118,14 @@ class SelectionWaitContracts(unittest.TestCase):
             with patch.object(sys,'argv',argv+['--timers']),patch.object(phase,'capture',side_effect=capture) as run,patch.object(phase,'observation',side_effect=lambda data:data),contextlib.redirect_stdout(io.StringIO()):
                 phase.main()
             self.assertEqual(run.call_count,2)
+            with patch.object(sys,'argv',argv+['--timer-results']),patch.object(phase,'capture',side_effect=capture) as run,patch.object(phase,'observation',side_effect=lambda data:data),contextlib.redirect_stdout(io.StringIO()):
+                phase.main()
+            self.assertEqual(run.call_count,2)
+            stdout=io.StringIO();stderr=io.StringIO()
+            with patch.object(sys,'argv',argv+['--timer-results']),patch.object(phase,'capture',return_value=dict(selection_timer_reads=[])),contextlib.redirect_stdout(stdout),contextlib.redirect_stderr(stderr):
+                with self.assertRaises(SystemExit) as raised: phase.main()
+            self.assertEqual(raised.exception.code,2);self.assertEqual(stdout.getvalue(),'')
+            self.assertEqual(stderr.getvalue(),'bounded selection-phase experiment failed; child diagnostics suppressed\n')
             stdout=io.StringIO();stderr=io.StringIO()
             with patch.object(sys,'argv',argv),patch.object(phase,'capture',side_effect=ValueError('private detail')),contextlib.redirect_stdout(stdout),contextlib.redirect_stderr(stderr):
                 with self.assertRaises(SystemExit) as raised: phase.main()
@@ -262,10 +284,16 @@ class SelectionWaitContracts(unittest.TestCase):
                             first_request_offset=2,selection_spin=spin))
                         captures=[reference.capture(TIMELINE,root/'paced.rom',game,model,260000000,
                             root/'none.script',**flags) for flags in
-                            (dict(selection_traversal=True),dict(selection_timers=True))]
-                        plain,observed=captures;report=phase.observation(observed)
+                            (dict(selection_traversal=True),dict(selection_timers=True),dict(selection_timer_results=True))]
+                        plain,observed,results=captures;report=phase.observation(results)
                         self.assertTrue(all(a['count']==0 for a in report['timers'][1]['wait']))
                         self.assertGreater(report['timers'][2]['wait'][1]['count'],0)
+                        self.assertGreater(report['timers'][2]['wait'][1]['nonzero_count'],0)
+                        for window in results['selection_timer_reads']:
+                            for stage in ('wait','setup'):
+                                for access in window[stage]: del access['nonzero']
+                        del results['selection_timer_results']
+                        self.assertEqual(observed,results)
                         del observed['selection_timer_reads']
                         self.assertEqual(plain,observed)
 

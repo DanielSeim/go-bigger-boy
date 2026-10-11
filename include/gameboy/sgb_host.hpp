@@ -79,6 +79,10 @@ public:
     // Same diagnostic lifetime and reset/load contract; no RAM values exposed.
     void debug_set_spc_read_observer(SnesApuAudioEngine::SpcReadObserver observer,
                                       void* context) noexcept;
+    // Public hardware timer reads: timer index and zero/nonzero result only.
+    // Same diagnostic lifetime and reset/load contract; no exact output values.
+    void debug_set_timer_read_observer(SnesApuAudioEngine::TimerReadObserver observer,
+                                        void* context) noexcept;
     // Exact scalar scheduling oracle for tests; not a playback quality option.
     void debug_set_apu_batch_enabled(bool enabled) noexcept;
     void debug_set_spc_idle_tail_cache_enabled(bool enabled) noexcept;

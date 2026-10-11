@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Distinguish zero/nonzero SGB hardware timer reads with read-clear, reset and
+  destination-load transparency checks and bounded original timing reports.
+
 - Observe bounded SGB timer-register read timing around selected score traversal,
   with opaque-reference controls and owned observer transparency checks.
 

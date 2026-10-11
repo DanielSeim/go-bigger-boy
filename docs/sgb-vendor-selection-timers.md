@@ -90,7 +90,79 @@ Python compilation and whitespace checks pass. No original PCM comparison,
 hardware, independent emulator, Windows/sanitizer run or complete broad matrix
 rerun is claimed. Default and opt-in firmware hashes remain unchanged.
 
-Next, observe whether timer-0 reads consume zero or nonzero hardware output,
-without exporting exact counter values. Validate that dedicated observation's
-read-clear behavior and reset/save-load transparency before using consumed-tick
-timing to design a phase-aware candidate. Tempo 112 remains excluded.
+The zero/nonzero follow-up below adds the next observation, retaining the
+tempo-112 exclusion and all timing bounds.
+
+## Zero versus nonzero hardware reads
+
+`--selection-timer-results` adds a dedicated hardware callback and retains the
+address-only observations. The bus performs its ordinary output read and clear
+once, then reports timer index 0..2 and whether that returned value was nonzero.
+The CPU still receives the exact hardware output. The observer receives neither
+that exact value nor any RAM/code values and performs no extra bus read.
+The APU wrapper adds the accepted access's physical half-clock timestamp.
+
+Bindings are diagnostic state: bus reset detaches them; APU/host reset preserves
+the destination binding. APU and host save/load retain destination callbacks,
+including after a rejected load, without serializing pointers or changing the
+state format. The engine destructor detaches its physical bus binding.
+
+Each request/stage/register keeps at most 128 nonzero timestamps. Overflow
+fails the probe; there is no truncated successful report. Zero counts are the
+total accepted reads minus the number of nonzero timestamps. The summary
+requires strictly ordered integer timestamps within the existing access bounds,
+the result marker and exact fields. Ordinary address-only mode stays unchanged.
+
+All 16 focused original captures pass, including the eight held-out schedules.
+Removing only the result fields reproduces the complete earlier address-only
+reports exactly, including hashes, counts, gaps and selection timing. Selection
+2 contains 8, 9 or 10 nonzero timer-0 reads among 1077–1439 total reads:
+
+| Second-selection wait | Nonzero reads |
+| --- | --- |
+| 15.599609, 15.998047, 16.005859 ms | 8 |
+| 17.598633, 18.003906 ms | 9 |
+| 19.597656, 20.002930, 20.409180 ms | 10 |
+
+Consecutive nonzero reads are approximately 2 ms apart (observed range
+1.994141–2.006836 ms). The first positive read occurs 1.461914–1.875977 ms
+after the directory. This distinguishes the polling cadence from the thousands
+of mostly zero reads. It does not prove the exact number of consumed hardware
+ticks: a nonzero value may represent multiple accumulated increments, and
+four-bit output can wrap. The observer deliberately does not expose that value.
+
+The previously rejected held-out SGB1 root cadence now has a visible local
+explanation: offset 3/spin 1536 still has ten positive reads, but root traversal
+starts 0.539063 ms after the last, versus the usual 0.133789 ms. The extra
+0.405273 ms equals its earlier cadence residual. A fixed number of positive
+reads or a fixed post-read tail cannot cover these controls. The remaining
+predictor must account for both the differing positive-read count and this tail.
+
+Use `--timer-results` instead of `--timers` in the checker command above;
+each result capture retains the 260-million-clock and 240-second limits and
+uses a 96-KiB output bound. Missing requested result data fails with suppressed
+child diagnostics and no partial report. Both optional arrival CTests now use
+this mode; public matrix discovery remains at 96.
+
+The four owned three-mode comparisons pass: plain traversal, address-only
+timer timing and timer results have identical shared timeline metadata. The
+admitted next selection has positive timer-1 reads; the excluded tempo-112
+selection remains unpaced. Seven short report/fixture methods pass, including
+invalid/duplicate/out-of-window result timestamps, result counts and refusal
+to accept a missing result marker.
+
+Bus tests preserve exact CPU return values and single read-clear behavior on
+all three timers, while excluding other IO/RAM inspection and checking detach.
+An authored APU loop exercises every timer with audible synthesis and unread
+audio at a partial-clock snapshot. APU and host tests preserve exact PCM/state,
+callback sequences, reset, destination load and failed-load bindings; host
+scalar/batched sequences also match. The authored loop explicitly retains its
+IPL overlay and requires sustained timer reads. All four focused CTests pass;
+Python compilation and whitespace checks pass. Broad firmware matrices,
+Windows/sanitizers, physical hardware and independent emulators were not rerun.
+Default and opt-in firmware hashes remain unchanged.
+
+Next, measure these positive-read counts across the admitted preceding tempos
+and active/completed states before selecting a persistent tempo/phase model.
+Use those observations to test a candidate against reserved schedules rather
+than replacing the rejected fixed delay with another fitted constant.

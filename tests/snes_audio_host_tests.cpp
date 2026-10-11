@@ -263,6 +263,31 @@ void test_spc_read_observer() {
     check(seen.count==5,"bus reset clears SPC read binding");
 }
 
+void test_timer_read_observer() {
+    gameboy::SnesApuBus bus; bus.reset();
+    struct Seen { unsigned count{},timer{}; bool nonzero{}; } seen;
+    const auto callback=+[](void* context,std::uint8_t timer,bool nonzero) noexcept {
+        auto& s=*static_cast<Seen*>(context);++s.count;s.timer=timer;s.nonzero=nonzero;
+    };
+    bus.set_timer_read_observer(callback,&seen);
+    for (unsigned timer=0;timer<3;++timer) {
+        bus.spc_write(0xFA+timer,1);bus.spc_write(0xF1,1U<<timer);
+        bus.tick(timer==2?48:384); // Multiple ticks still report only nonzero.
+        const auto value=bus.spc_read(0xFD+timer);
+        check(value==3 && seen.count==2*timer+1 && seen.timer==timer && seen.nonzero,
+              "timer observer preserves exact CPU output but reports only nonzero");
+        check(bus.spc_read(0xFD+timer)==0 && seen.count==2*timer+2 && !seen.nonzero,
+              "timer observation clears output exactly once");
+    }
+    bus.dsp_write_ram(0xFD,0x42);
+    (void)bus.dsp_read_ram(0xFD);(void)bus.spc_read(0x2B00);(void)bus.spc_read(0xF4);
+    check(seen.count==6,"timer observer excludes RAM inspection and other IO");
+    bus.set_timer_read_observer(nullptr);(void)bus.spc_read(0xFD);
+    check(seen.count==6,"timer observer detaches");
+    bus.set_timer_read_observer(callback,&seen);bus.reset();(void)bus.spc_read(0xFD);
+    check(seen.count==6,"bus reset detaches timer observer");
+}
+
 void test_spc_output_observer() {
     gameboy::SnesApuBus bus;
     bus.reset();
@@ -314,6 +339,7 @@ int main(const int argc, char** argv) {
     test_timer_batching();
     test_spc_output_observer();
     test_spc_read_observer();
+    test_timer_read_observer();
     test_local_programs(argc, argv);
     return failures == 0 ? 0 : 1;
 }

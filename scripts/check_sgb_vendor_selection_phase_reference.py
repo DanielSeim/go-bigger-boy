@@ -15,6 +15,9 @@ from check_sgb_vendor_traversal_reference import summarize
 
 def timer_summary(data,selections):
     records=data.get('selection_timer_reads')
+    results=data.get('selection_timer_results',False)
+    if type(results) is not bool:
+        raise ValueError('invalid timer result marker')
     notes=[e for e in data['events'] if e['register']==0x4C]
     if not isinstance(records,list) or len(records)!=len(notes):
         raise ValueError('missing bounded timer windows')
@@ -36,8 +39,9 @@ def timer_summary(data,selections):
                 raise ValueError('invalid timer register windows')
             item[stage]=[]
             for address,access in zip(range(0xFD,0x100),accesses):
-                if (not isinstance(access,dict) or set(access)!={'address','count','first','last','min_gap','max_gap'} or
-                        any(type(v) is not int or v<0 for v in access.values()) or
+                fields={'address','count','first','last','min_gap','max_gap'}
+                if (not isinstance(access,dict) or set(access)!=fields|({'nonzero'} if results else set()) or
+                        any(type(access[k]) is not int or access[k]<0 for k in fields) or
                         access['address']!=address or access['count']>1000000):
                     raise ValueError('invalid timer access fields/count')
                 count=access['count'];first=access['first'];last=access['last']
@@ -54,6 +58,14 @@ def timer_summary(data,selections):
                     last_after_stage_ms=(last-low)/2048 if count else None,
                     min_gap_ms=minimum/2048 if count>1 else None,
                     max_gap_ms=maximum/2048 if count>1 else None))
+                if results:
+                    pulses=access['nonzero']
+                    if (not isinstance(pulses,list) or len(pulses)>min(128,count) or
+                            any(type(t) is not int or not first<=t<=last for t in pulses) or
+                            pulses!=sorted(set(pulses))):
+                        raise ValueError('invalid bounded nonzero timer reads')
+                    item[stage][-1].update(zero_count=count-len(pulses),nonzero_count=len(pulses),
+                                          nonzero_after_stage_ms=[(t-low)/2048 for t in pulses])
         result.append(item)
     return result
 
@@ -103,6 +115,7 @@ def main():
     parser.add_argument('--first-request-offset',type=int,choices=range(5),action='append')
     parser.add_argument('--selection-spin',type=int,choices=(0,512,1024,1536,2048),action='append')
     parser.add_argument('--timers',action='store_true',help='bounded address-only timer access timing')
+    parser.add_argument('--timer-results',action='store_true',help='bounded zero/nonzero hardware timer reads')
     args=parser.parse_args()
     try:
         with tempfile.TemporaryDirectory(prefix='gbb-selection-phase-') as tmp:
@@ -118,11 +131,14 @@ def main():
                 image=build(112,'completed',request_offset=offset,first_duration=duration,
                             first_request_offset=first,selection_spin=spin)
                 game=root/f'{model}-{duration}-{offset}-{first}-{spin}.gb';game.write_bytes(image)
-                flags=dict(selection_timers=True) if args.timers else dict(selection_traversal=True)
+                flags=(dict(selection_timer_results=True) if args.timer_results else
+                       dict(selection_timers=True) if args.timers else dict(selection_traversal=True))
                 data=capture(args.probe.resolve(),(args.firmware_dir/name).resolve(),game,model,
                              260000000,inputs,**flags)
-                if args.timers and 'selection_timer_reads' not in data:
+                if (args.timers or args.timer_results) and 'selection_timer_reads' not in data:
                     raise ValueError('missing requested timer observation')
+                if args.timer_results and data.get('selection_timer_results') is not True:
+                    raise ValueError('missing requested timer result observation')
                 return dict(model=model,first_duration=duration,request_offset=offset,
                             first_request_offset=first,selection_spin=spin,
                             fixture_sha256=hashlib.sha256(image).hexdigest(),**observation(data))
