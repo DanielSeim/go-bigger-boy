@@ -57,6 +57,8 @@ public:
     }
     using SpcReadObserver = void (*)(void*, std::uint64_t, std::uint16_t) noexcept;
     void debug_set_spc_read_observer(SpcReadObserver observer, void* context) noexcept;
+    using TimerWriteObserver = DspWriteObserver;
+    void debug_set_timer_write_observer(TimerWriteObserver observer, void* context) noexcept;
     using TimerReadObserver = void (*)(void*, std::uint64_t, std::uint8_t, bool) noexcept;
     void debug_set_timer_read_observer(TimerReadObserver observer, void* context) noexcept;
     // Atomic component state includes CPU replay/half clocks, bus, DSP and
@@ -68,6 +70,8 @@ private:
     void* diagnostic_context_{};
     SpcReadObserver read_observer_{};
     void* read_context_{};
+    TimerWriteObserver timer_write_observer_{};
+    void* timer_write_context_{};
     TimerReadObserver timer_read_observer_{};
     void* timer_read_context_{};
     SpcPortWriteObserver port_observer_{};

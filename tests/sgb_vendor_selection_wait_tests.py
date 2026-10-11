@@ -26,6 +26,7 @@ from build_sgb_vendor_tick_fixture import build as tick_fixture
 import check_sgb_vendor_tick_reference as tick_reference
 from build_sgb_vendor_tick_selection_fixture import build as tick_selection_fixture
 import check_sgb_vendor_tick_selection_reference as tick_selection_reference
+import check_sgb_vendor_timer_writes_reference as timer_write_reference
 
 TIMELINE=PROBE=INTERRUPT=None
 
@@ -90,6 +91,74 @@ def tick_selection_timeline(tempo=45,state='active'):
 
 
 class SelectionWaitContracts(unittest.TestCase):
+    def timer_configuration(self, data):
+        initial=[1,16,-1,-1]
+        data['timer_configuration']=dict(end_half=data['timer_continuity'][-1]['end_half'],
+            boot_write_counts=[1,1,0,0],requests=[dict(request=i+1,initial=initial.copy())
+            for i in range(len(data['requests']))],writes=[],final=initial.copy())
+        return data
+
+    def test_timer_configuration_bounds_and_replay(self):
+        data=self.timer_configuration(tick_selection_timeline())
+        self.assertEqual(timer_write_reference.configuration(data)['writes'],[])
+        record=data['timer_configuration'];root=data['selection_timer_reads'][1]['root_half']
+        record['writes']=[dict(half=root-10+j,request=2,address=a,value=v)
+                          for j,(a,v) in enumerate(((241,1),(241,0),(241,1),(250,8),(250,16),(251,9)))]
+        record['final']=[1,16,9,-1]
+        measured=timer_write_reference.configuration(data)['requests'][1]['stages']['wait']
+        self.assertEqual(measured,dict(writes=6,enable_rises=1,target_changes=2,target_initializations=1))
+        faults=[]
+        for key,value in (('address',242),('value',8),('request',True),('half',0)):
+            bad=copy.deepcopy(data);bad['timer_configuration']['writes'][0][key]=value;faults.append(bad)
+        for key,value in (('final',[1,16,-1,-1]),('boot_write_counts',[0,1,0,0]),('end_half',True)):
+            bad=copy.deepcopy(data);bad['timer_configuration'][key]=value;faults.append(bad)
+        bad=copy.deepcopy(data);bad['timer_configuration']['requests'][1]['initial'][1]=8;faults.append(bad)
+        bad=copy.deepcopy(data);bad['timer_configuration']['writes'].reverse();faults.append(bad)
+        bad=copy.deepcopy(data);bad['timer_configuration']['writes']*=86;faults.append(bad)
+        bad=copy.deepcopy(data);bad['timer_configuration']['unexpected']=0;faults.append(bad)
+        for bad in faults:
+            with self.assertRaises(ValueError): timer_write_reference.configuration(bad)
+
+    def test_timer_write_reference_filters_and_failure(self):
+        def capture(probe,program,game,model,clocks,inputs,**flags):
+            state=game.stem.split('-')[-2];holdout=bool(int(game.stem.rsplit('-',1)[-1]))
+            self.assertEqual(game.read_bytes(),tick_selection_fixture(64,state,holdout=holdout))
+            self.assertEqual(clocks,300000000);self.assertEqual(flags,dict(timer_writes=True))
+            return self.timer_configuration(tick_selection_timeline(64,state))
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            for name in ('sgb1.program.rom','sgb2.program.rom'): (root/name).write_bytes(b'owned stub')
+            argv=['check','--probe',str(root/'probe'),'--firmware-dir',str(root),'--tempo','64','--tempo','64']
+            stdout=io.StringIO()
+            with patch.object(sys,'argv',argv),patch.object(timer_write_reference,'capture',side_effect=capture) as run,contextlib.redirect_stdout(stdout):
+                timer_write_reference.main()
+            report=json.loads(stdout.getvalue());self.assertEqual(run.call_count,8)
+            self.assertIs(report['qualification'],False)
+            for row in report['runs']:
+                self.assertEqual(row['fixture_sha256'],hashlib.sha256(tick_selection_fixture(64,row['state'],holdout=row['holdout'])).hexdigest())
+            for fault in (ValueError('private detail'),None):
+                stdout=io.StringIO();stderr=io.StringIO()
+                with patch.object(sys,'argv',argv),patch.object(timer_write_reference,'capture',side_effect=fault,return_value=tick_selection_timeline(64)),contextlib.redirect_stdout(stdout),contextlib.redirect_stderr(stderr):
+                    with self.assertRaises(SystemExit) as raised: timer_write_reference.main()
+                self.assertEqual(raised.exception.code,2);self.assertEqual(stdout.getvalue(),'')
+                self.assertEqual(stderr.getvalue(),'bounded timer-write experiment failed; child diagnostics suppressed\n')
+
+    def test_native_timer_write_transparency(self):
+        if TIMELINE is None: self.skipTest('timeline probe not supplied')
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);(root/'owned.rom').write_bytes(firmware(selection_wait=True))
+            inputs=root/'none.script';inputs.write_text('GBB SGB input v1\n0 none\n')
+            def run(case):
+                model,state=case;game=root/f'{model}-{state}.gb'
+                game.write_bytes(tick_selection_fixture(112,state,holdout=True))
+                plain=reference.capture(TIMELINE,root/'owned.rom',game,model,300000000,inputs,timer_continuity=True)
+                observed=reference.capture(TIMELINE,root/'owned.rom',game,model,300000000,inputs,timer_writes=True)
+                config=timer_write_reference.configuration(observed)
+                self.assertGreater(len(config['writes']),0)
+                observed.pop('timer_configuration');self.assertEqual(plain,observed)
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                list(pool.map(run,[(m,s) for m in ('sgb','sgb2') for s in ('active','completed')]))
+
     def test_tick_selection_witness_and_state(self):
         for tempo in timer_tempo.TEMPO_POINTS:
             for state in ('active','completed'):
@@ -165,7 +234,8 @@ class SelectionWaitContracts(unittest.TestCase):
             def run(case):
                 model,tempo,state,holdout=case;game=root/f'{model}-{tempo}-{state}-{int(holdout)}.gb'
                 game.write_bytes(tick_selection_fixture(tempo,state,holdout=holdout))
-                data=reference.capture(TIMELINE,root/'owned.rom',game,model,300000000,inputs,timer_continuity=True)
+                data=reference.capture(TIMELINE,root/'owned.rom',game,model,300000000,inputs,timer_writes=True)
+                timer_write_reference.configuration(data)
                 return case,tick_selection_reference.summarize(data,tempo,state)
             with ThreadPoolExecutor(max_workers=4) as pool:
                 for (model,tempo,state,holdout),measured in pool.map(run,cases):

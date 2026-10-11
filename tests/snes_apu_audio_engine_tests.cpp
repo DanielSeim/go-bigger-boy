@@ -86,10 +86,18 @@ void timer_result_observer_tests() {
                 s.hash=(s.hash^value)*1099511628211ULL;
         }
     } captured,destination;
+    struct Writes {
+        unsigned count{}; std::uint64_t hash=14695981039346656037ULL;
+        static void write(void* context,std::uint64_t half,std::uint8_t address,std::uint8_t value) noexcept {
+            auto& s=*static_cast<Writes*>(context);++s.count;
+            for(auto word:{half,std::uint64_t(address),std::uint64_t(value)}) s.hash=(s.hash^word)*1099511628211ULL;
+        }
+    } writes,destination_writes;
     const auto configure=[](Engine& e) {
         setup(e);gameboy::SnesApuBus::IplRom image{};
-        // Independently authored loop: read all three timer outputs, repeat.
-        constexpr std::uint8_t code[]{0xe4,0xfd,0xe4,0xfe,0xe4,0xff,0x2f,0xf8};
+        // Authored loop: repeat unchanged timer settings, then read all outputs.
+        constexpr std::uint8_t code[]{0x8f,0x87,0xf1,0x8f,1,0xfa,0x8f,2,0xfb,0x8f,3,0xfc,
+                                      0xe4,0xfd,0xe4,0xfe,0xe4,0xff,0x2f,0xec};
         std::copy(std::begin(code),std::end(code),image.begin());e.install_ipl(image);
         for(unsigned i=0;i<3;++i) e.bus().spc_write(0xFA+i,i+1);
         e.bus().spc_write(0xF1,0x87);e.bus().spc_write(0xF2,0x4c);e.bus().spc_write(0xF3,0xff);
@@ -97,6 +105,8 @@ void timer_result_observer_tests() {
     Engine observed,plain,restored;configure(observed);configure(plain);
     observed.debug_set_timer_read_observer(Capture::read,&captured);
     restored.debug_set_timer_read_observer(Capture::read,&destination);
+    observed.debug_set_timer_write_observer(Writes::write,&writes);
+    restored.debug_set_timer_write_observer(Writes::write,&destination_writes);
     const auto initial=observed.save_state();
     check(initial==plain.save_state(),"timer result binding excluded from snapshots");
     const auto audio=run(observed,4096),expected=run(plain,4096);
@@ -106,24 +116,31 @@ void timer_result_observer_tests() {
           "owned timer loop observes positive outputs on every timer");
     check(std::any_of(audio.begin(),audio.end(),[](Sample s){return s.left || s.right;}),
           "timer result transparency uses audible owned synthesis");
+    check(writes.count>100,"owned timer loop observes repeated timer writes");
+    const auto first_writes=writes;writes={};
     const auto first=captured;captured={};
     check(observed.load_state(initial),"timer result initial restore");
     (void)run(observed,1025);
     for(unsigned i=0;i<64;++i) check(observed.clock_half(),"timer snapshot unread audio clock");
-    const auto middle=observed.save_state();captured={};
+    const auto middle=observed.save_state();captured={};writes={};
     check(observed.pending_samples()>0,"timer snapshot includes unread PCM");
     const auto continuation=run(observed,4096);
     auto malformed=middle;malformed[0]^=1;
-    check(!restored.load_state(malformed) && destination.count==0,"failed APU load retains timer destination binding");
+    check(!restored.load_state(malformed) && destination.count==0 && destination_writes.count==0,"failed APU load retains timer destination binding");
     check(restored.load_state(middle),"timer destination restore");
     const auto resumed=run(restored,4096);
     check(continuation.size()==resumed.size() && std::equal(continuation.begin(),continuation.end(),resumed.begin(),same) &&
           observed.save_state()==restored.save_state() && captured.count==destination.count && captured.hash==destination.hash,
           "timer results preserve partial-clock destination replay and unread PCM");
-    observed.reset();configure(observed);captured={};(void)run(observed,4096);
+    check(writes.count>0 && writes.count==destination_writes.count && writes.hash==destination_writes.hash,
+          "timer writes retain partial-clock destination binding");
+    observed.reset();configure(observed);captured={};writes={};(void)run(observed,4096);
     check(captured.count==first.count && captured.hash==first.hash,"APU reset retains timer result binding");
+    check(writes.count==first_writes.count && writes.hash==first_writes.hash,"APU reset retains timer write binding");
+    observed.debug_set_timer_write_observer(nullptr,nullptr);
     observed.debug_set_timer_read_observer(nullptr,nullptr);observed.reset();configure(observed);(void)run(observed,4096);
     check(captured.count==first.count && captured.hash==first.hash,"timer result binding detaches");
+    check(writes.count==first_writes.count && writes.hash==first_writes.hash,"timer write binding detaches");
 }
 
 void diagnostic_observer_tests() {

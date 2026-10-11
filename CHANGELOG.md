@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Observe bounded public SGB timer-enable and target writes, with transparent
+  reset/save-load bindings and matched original reselection comparisons.
+
 - Compare measured SGB music phase with reselection delays using authored
   short-note prefixes, long tails and active/completed playback controls.
 

@@ -43,6 +43,7 @@ public:
     using RamWriteObserver = void (*)(void*, std::uint16_t, std::uint8_t) noexcept;
     using SpcPortWriteObserver = DspWriteObserver;
     using SpcReadObserver = void (*)(void*, std::uint16_t) noexcept;
+    using TimerWriteObserver = DspWriteObserver;
     using TimerReadObserver = void (*)(void*, std::uint8_t, bool) noexcept;
 
     void reset() noexcept;
@@ -91,6 +92,11 @@ public:
     void set_timer_read_observer(TimerReadObserver observer, void* context = nullptr) noexcept {
         timer_read_observer_ = observer; timer_read_context_ = context;
     }
+    // Accepted writes to F1 (timer-enable bits only) and FA..FC targets.
+    // Called after normal write effects; never reports RAM or timer outputs.
+    void set_timer_write_observer(TimerWriteObserver observer, void* context = nullptr) noexcept {
+        timer_write_observer_ = observer; timer_write_context_ = context;
+    }
     // S-DSP accesses physical APU RAM, bypassing SPC700 I/O and IPL overlays.
     [[nodiscard]] std::uint8_t dsp_read_ram(std::uint16_t address) const noexcept {
         return ram_[address];
@@ -121,6 +127,8 @@ private:
     void* ram_write_context_{};
     SpcReadObserver spc_read_observer_{};
     void* spc_read_context_{};
+    TimerWriteObserver timer_write_observer_{};
+    void* timer_write_context_{};
     TimerReadObserver timer_read_observer_{};
     void* timer_read_context_{};
     SpcPortWriteObserver spc_port_write_observer_{};

@@ -43,6 +43,7 @@ struct TimerWindow {
     struct Results { std::array<std::uint64_t,128> nonzero{};unsigned count{}; };
     std::array<std::array<Results,3>,2> results{};
 };
+struct TimerWrite { std::uint64_t half; unsigned request,address,value; };
 struct TimerContinuity {
     std::uint64_t completion{};
     struct Reads { TimerAccess all{}, nonzero{}; };
@@ -63,6 +64,34 @@ struct Observation {
     bool timers_enabled{};
     bool timer_results_enabled{};
     bool timer_continuity_enabled{};
+    bool timer_writes_enabled{};
+    std::array<int,4> timer_configuration{{-1,-1,-1,-1}};
+    std::array<unsigned,4> boot_timer_writes{};
+    std::array<std::array<int,4>,16> initial_timer_configuration{};
+    std::array<bool,16> initial_timer_recorded{};
+    std::array<TimerWrite,512> timer_writes{};
+    unsigned timer_write_count{};
+    void begin_timer_request(unsigned request) noexcept {
+        if(!timer_writes_enabled || !request) return;
+        if(request>initial_timer_recorded.size()) {overflow=true;return;}
+        if(!initial_timer_recorded[request-1]) {
+            initial_timer_recorded[request-1]=true;
+            initial_timer_configuration[request-1]=timer_configuration;
+        }
+    }
+    static void timer_write(void* context,std::uint64_t half,std::uint8_t address,std::uint8_t value) noexcept {
+        auto& self=*static_cast<Observation*>(context);
+        const auto request=self.host->icd().sound_packets_delivered();
+        self.begin_timer_request(request);
+        const auto slot=address==0xF1?0:address-0xF9;
+        self.timer_configuration[slot]=value;
+        if(!request) {
+            if(self.boot_timer_writes[slot]==1000000) {self.overflow=true;return;}
+            ++self.boot_timer_writes[slot];return;
+        }
+        if(self.timer_write_count==self.timer_writes.size()) {self.overflow=true;return;}
+        self.timer_writes[self.timer_write_count++]={half,static_cast<unsigned>(request),address,value};
+    }
     std::array<TimerContinuity,16> continuity{};
     std::array<TimerWindow,16> timers{};
     std::array<VolumeWrite,512> volumes{};
@@ -234,8 +263,8 @@ std::vector<std::uint8_t> read(const char* path, std::size_t low, std::size_t hi
 }
 int main(int argc,char** argv) {
  try {
-    if (argc!=7 && (argc!=8 || (std::string(argv[7])!="--port-handshakes" && std::string(argv[7])!="--spc-replies" && std::string(argv[7])!="--selection-handoff" && std::string(argv[7])!="--selection-directory" && std::string(argv[7])!="--selection-traversal" && std::string(argv[7])!="--selection-volume" && std::string(argv[7])!="--selection-timers" && std::string(argv[7])!="--selection-timer-results" && std::string(argv[7])!="--timer-continuity")))
-        throw std::runtime_error("PROGRAM GAME sgb|sgb2 CLOCKS SCRIPT bundled|fixture [--port-handshakes|--spc-replies|--selection-handoff|--selection-directory|--selection-traversal|--selection-volume|--selection-timers|--selection-timer-results|--timer-continuity]");
+    if (argc!=7 && (argc!=8 || (std::string(argv[7])!="--port-handshakes" && std::string(argv[7])!="--spc-replies" && std::string(argv[7])!="--selection-handoff" && std::string(argv[7])!="--selection-directory" && std::string(argv[7])!="--selection-traversal" && std::string(argv[7])!="--selection-volume" && std::string(argv[7])!="--selection-timers" && std::string(argv[7])!="--selection-timer-results" && std::string(argv[7])!="--timer-continuity" && std::string(argv[7])!="--timer-writes")))
+        throw std::runtime_error("PROGRAM GAME sgb|sgb2 CLOCKS SCRIPT bundled|fixture [--port-handshakes|--spc-replies|--selection-handoff|--selection-directory|--selection-traversal|--selection-volume|--selection-timers|--selection-timer-results|--timer-continuity|--timer-writes]");
     gameboy::SgbHostConfig config;
     config.program_rom=read(argv[1],262144,524288); config.game_rom=read(argv[2],336,16*1024*1024);
     const std::string model=argv[3], boot=argv[6];
@@ -253,7 +282,9 @@ int main(int argc,char** argv) {
     Host host(config); Observation observed; observed.host=&host;
     observed.handshakes_enabled=argc==8;
     observed.volume_enabled=argc==8 && std::string(argv[7])=="--selection-volume";
-    observed.timer_continuity_enabled=argc==8 && std::string(argv[7])=="--timer-continuity";
+    observed.timer_writes_enabled=argc==8 && std::string(argv[7])=="--timer-writes";
+    if(observed.timer_writes_enabled) host.debug_set_timer_write_observer(Observation::timer_write,&observed);
+    observed.timer_continuity_enabled=observed.timer_writes_enabled || (argc==8 && std::string(argv[7])=="--timer-continuity");
     observed.timer_results_enabled=observed.timer_continuity_enabled || (argc==8 && std::string(argv[7])=="--selection-timer-results");
     observed.timers_enabled=observed.timer_results_enabled || (argc==8 && std::string(argv[7])=="--selection-timers");
     if (observed.timer_results_enabled) host.debug_set_timer_read_observer(Observation::timer_result,&observed);
@@ -272,6 +303,7 @@ int main(int argc,char** argv) {
         const auto delivered=host.icd().sound_packets_delivered();
         if (delivered>count) {
             if (delivered!=count+1 || count==requests.size()) throw std::runtime_error("request bound exceeded");
+            observed.begin_timer_request(delivered);
             music[count]=host.icd().last_delivered_sound_packet()[4];
             requests[count++]=host.apu_half_clocks();
         }
@@ -391,6 +423,25 @@ int main(int argc,char** argv) {
             std::cout<<"}";
         }
         std::cout<<"]";
+    }
+    if(observed.timer_writes_enabled) {
+        std::cout<<",\"timer_configuration\":{\"end_half\":"<<host.apu_half_clocks()<<",\"boot_write_counts\":[";
+        for(unsigned i=0;i<4;++i) std::cout<<(i?",":"")<<observed.boot_timer_writes[i];
+        std::cout<<"],\"requests\":[";
+        for(unsigned i=0;i<count;++i) {
+            std::cout<<(i?",":"")<<"{\"request\":"<<i+1<<",\"initial\":[";
+            for(unsigned j=0;j<4;++j) std::cout<<(j?",":"")<<observed.initial_timer_configuration[i][j];
+            std::cout<<"]}";
+        }
+        std::cout<<"],\"writes\":[";
+        for(unsigned i=0;i<observed.timer_write_count;++i) {
+            const auto& w=observed.timer_writes[i];
+            std::cout<<(i?",":"")<<"{\"half\":"<<w.half<<",\"request\":"<<w.request
+                <<",\"address\":"<<w.address<<",\"value\":"<<w.value<<"}";
+        }
+        std::cout<<"],\"final\":[";
+        for(unsigned i=0;i<4;++i) std::cout<<(i?",":"")<<observed.timer_configuration[i];
+        std::cout<<"]}";
     }
     if (observed.timer_continuity_enabled) {
         std::cout<<",\"timer_continuity\":[";

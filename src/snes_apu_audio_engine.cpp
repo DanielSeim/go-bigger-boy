@@ -14,6 +14,7 @@ SnesApuAudioEngine::~SnesApuAudioEngine() {
     bus_.set_spc_port_write_observer(nullptr);
     bus_.set_spc_read_observer(nullptr);
     bus_.set_timer_read_observer(nullptr);
+    bus_.set_timer_write_observer(nullptr);
     cpu_.set_bus_cycle_observer(nullptr);
     cpu_.dsp_clock_driver_=nullptr;
 }
@@ -36,10 +37,20 @@ void SnesApuAudioEngine::debug_set_timer_read_observer(TimerReadObserver observe
     },this);
 }
 
+void SnesApuAudioEngine::debug_set_timer_write_observer(TimerWriteObserver observer, void* context) noexcept {
+    timer_write_observer_=observer; timer_write_context_=context;
+    if (!observer) {bus_.set_timer_write_observer(nullptr);return;}
+    bus_.set_timer_write_observer([](void* binding,std::uint8_t address,std::uint8_t value) noexcept {
+        auto& self=*static_cast<SnesApuAudioEngine*>(binding);
+        self.timer_write_observer_(self.timer_write_context_,self.cpu_.half_cycles(),address,value);
+    },this);
+}
+
 void SnesApuAudioEngine::reset() noexcept {
     bus_.reset();
     debug_set_spc_read_observer(read_observer_, read_context_);
     debug_set_timer_read_observer(timer_read_observer_,timer_read_context_);
+    debug_set_timer_write_observer(timer_write_observer_,timer_write_context_);
     bus_.set_spc_port_write_observer([](void* context, std::uint8_t port,
                                        std::uint8_t value) noexcept {
         auto& self = *static_cast<SnesApuAudioEngine*>(context);

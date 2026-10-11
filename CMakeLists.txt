@@ -1378,7 +1378,9 @@ if(GAMEBOY_BUILD_TESTS)
                 SelectionWaitContracts.test_tick_fixture_and_music_ownership
                 SelectionWaitContracts.test_tick_reference_filters_fit_and_sanitization
                 SelectionWaitContracts.test_tick_selection_witness_and_state
-                SelectionWaitContracts.test_tick_selection_reference_fitting_and_failure)
+                SelectionWaitContracts.test_tick_selection_reference_fitting_and_failure
+                SelectionWaitContracts.test_timer_configuration_bounds_and_replay
+                SelectionWaitContracts.test_timer_write_reference_filters_and_failure)
         add_test(NAME gameboy_sgb_score_vendor_selection_wait
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_vendor_selection_wait_tests.py
                 --probe $<TARGET_FILE:gameboy_sgb_vendor_music_probe>
@@ -1494,6 +1496,12 @@ if(GAMEBOY_BUILD_TESTS)
                     --duration 48 --request-offset 2 --first-request-offset 1 --first-request-offset 3
                     --selection-spin 0 --selection-spin 1536 --timer-results)
             set_tests_properties(gameboy_sgb_vendor_selection_arrival_holdout_local_reference
+                PROPERTIES TIMEOUT 2400 LABELS "local;private-reference")
+            add_test(NAME gameboy_sgb_vendor_timer_writes_local_reference
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_vendor_timer_writes_reference.py
+                    --probe $<TARGET_FILE:gameboy_sgb_music_timeline_probe>
+                    --firmware-dir "${CMAKE_CURRENT_SOURCE_DIR}/roms")
+            set_tests_properties(gameboy_sgb_vendor_timer_writes_local_reference
                 PROPERTIES TIMEOUT 2400 LABELS "local;private-reference")
             add_test(NAME gameboy_sgb_vendor_tick_selection_local_reference
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_vendor_tick_selection_reference.py

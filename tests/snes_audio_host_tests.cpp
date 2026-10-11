@@ -263,6 +263,33 @@ void test_spc_read_observer() {
     check(seen.count==5,"bus reset clears SPC read binding");
 }
 
+void test_timer_write_observer() {
+    gameboy::SnesApuBus bus,plain;bus.reset();plain.reset();
+    struct Seen { gameboy::SnesApuBus* bus; unsigned count{},address{},value{}; bool after=true; } seen{&bus};
+    const auto callback=+[](void* context,std::uint8_t address,std::uint8_t value) noexcept {
+        auto& s=*static_cast<Seen*>(context);++s.count;s.address=address;s.value=value;
+        s.after=s.after && (s.bus->dsp_read_ram(address)&(address==0xF1?7:255))==value;
+    };
+    bus.set_timer_write_observer(callback,&seen);
+    for(unsigned i=0;i<3;++i) {
+        const auto target=static_cast<std::uint8_t>(i==0?0:i==1?1:255);
+        bus.spc_write(0xFA+i,target);plain.spc_write(0xFA+i,target);
+        check(seen.count==i+1 && seen.address==0xFA+i && seen.value==target,"timer target writes observed exactly");
+    }
+    bus.spc_write(0xFA,0);plain.spc_write(0xFA,0);
+    bus.host_write_port(0,42);plain.host_write_port(0,42);
+    bus.spc_write(0xF1,0xB7);plain.spc_write(0xF1,0xB7);
+    check(seen.count==5 && seen.address==0xF1 && seen.value==7 && seen.after,"timer enable mask only, after accepted effects");
+    check(bus.spc_read(0xF4)==0,"control port-clear effect retained");
+    bus.tick(32768);plain.tick(32768);
+    for(unsigned a=0xFD;a<=0xFF;++a) check(bus.spc_read(a)==plain.spc_read(a),"timer write observer preserves counters");
+    for(unsigned a:{0xF0,0xF2,0xF3,0xF4,0xFD,0x2B00}) bus.spc_write(a,42);
+    bus.dsp_write_ram(0xF1,42);check(seen.count==5,"timer observer excludes other IO and DSP RAM writes");
+    bus.set_timer_write_observer(nullptr);bus.spc_write(0xF1,0);
+    bus.set_timer_write_observer(callback,&seen);bus.reset();bus.spc_write(0xFA,1);
+    check(seen.count==5,"timer write observer detaches explicitly and on bus reset");
+}
+
 void test_timer_read_observer() {
     gameboy::SnesApuBus bus; bus.reset();
     struct Seen { unsigned count{},timer{}; bool nonzero{}; } seen;
@@ -340,6 +367,7 @@ int main(const int argc, char** argv) {
     test_spc_output_observer();
     test_spc_read_observer();
     test_timer_read_observer();
+    test_timer_write_observer();
     test_local_programs(argc, argv);
     return failures == 0 ? 0 : 1;
 }

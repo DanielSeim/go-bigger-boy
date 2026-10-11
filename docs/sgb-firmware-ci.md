@@ -231,3 +231,12 @@ owned controls to that same matrix and two short methods (sixteen total).
 original timelines across both models, tempos, playback states and start
 schedules, retaining timeout 2400 and `local;private-reference`. It remains
 outside public shards; public matrix count stays 96.
+
+The [timer-configuration experiment](sgb-vendor-timer-writes.md) upgrades those
+48 owned controls to include timer-enable/target writes and adds four exact
+metadata transparency comparisons. Two short methods (eighteen total) cover
+configuration replay, masks, bounds and sanitized failures. Bus/APU/host contracts
+also cover PCM/state transparency and destination observer bindings. The optional
+`gameboy_sgb_vendor_timer_writes_local_reference` runs 48 original captures with
+timeout 2400 and labels `local;private-reference`. Public matrix discovery remains
+96; existing public matrix timeout remains 1800 seconds.
