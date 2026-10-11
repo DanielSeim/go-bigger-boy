@@ -337,6 +337,33 @@ The headless runner can also capture a deterministic framebuffer without SDL:
   --model dmg --frames 60 --frame-output capture.ppm
 ```
 
+For a snapshot after a fixed CPU duration, including games that disable the LCD,
+use the independent cycle-based mode:
+
+```sh
+./build-conformance/gbb_test_runner test.gb \
+  --model dmg --cycle-frame-capture 600 --frame-output capture.ppm
+```
+
+This runs until `Cpu::total_cycles()` reaches `N * 70,224` T-cycles from startup
+(42,134,400 for 600 intervals), then writes the current framebuffer even without
+a PPU frame-ready signal. Capture occurs after the CPU instruction or idle step
+that reaches the target, so a small instruction-sized overshoot is possible.
+Any selected boot-ROM execution counts toward this duration. At normal speed,
+each interval has the duration of a nominal Game Boy frame (about 59.7 Hz).
+CGB double speed still counts CPU T-cycles: the PPU advances half as far per
+interval. This is a CPU-duration regression snapshot, not a precise PPU-frame
+boundary or a speed-normalized clock.
+
+`--frames` continues to wait for completed emulator frames. The new mode requires
+`--frame-output` and is mutually exclusive with `--frames`, `--frame-series`,
+`--frame-on-ld-bb` and `--replay-sgb-trace`. It supports `--sgb-frame` for an SGB
+border snapshot and ignores protocol pass/fail markers until capture.
+`--max-cycles` remains a hard budget (default 100,000,000); if it is below the
+target, the runner times out with no snapshot. Raise it for longer runs.
+Input-script frame positions and SGB trace frame counters retain their existing
+emulator-frame semantics; they do not advance on these virtual intervals.
+
 For SGB investigations, capture an opt-in JOYP trace from a bounded real ROM
 run, then replay it against the same legally obtained ROM:
 

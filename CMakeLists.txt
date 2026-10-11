@@ -715,6 +715,11 @@ if(GAMEBOY_BUILD_TESTS)
             set_tests_properties(gameboy_${boot_model}_animated_firmware_source PROPERTIES LABELS "firmware;boot")
         endforeach()
         if(TARGET gameboy_test_runner)
+            add_test(NAME gameboy_cycle_frame_capture
+                     COMMAND ${Python3_EXECUTABLE}
+                             ${CMAKE_CURRENT_SOURCE_DIR}/tests/cycle_frame_capture_tests.py
+                             $<TARGET_FILE:gameboy_test_runner>)
+            set_tests_properties(gameboy_cycle_frame_capture PROPERTIES TIMEOUT 90)
             add_test(NAME gameboy_dmg_boot_cli
                      COMMAND ${Python3_EXECUTABLE}
                              ${CMAKE_CURRENT_SOURCE_DIR}/tests/dmg_boot_cli_tests.py

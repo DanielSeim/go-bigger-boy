@@ -12,6 +12,7 @@
 #include <iomanip>
 #include <iostream>
 #include <iterator>
+#include <limits>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -19,6 +20,9 @@
 #include <vector>
 
 namespace {
+
+// Cpu::total_cycles() counts T-cycles, including at CGB double speed.
+constexpr std::uint64_t cycle_frame_t_cycles = 70'224;
 
 enum class Protocol {
     automatic,
@@ -35,6 +39,7 @@ struct Options {
     Protocol protocol = Protocol::automatic;
     gameboy::HardwareModel model = gameboy::HardwareModel::automatic;
     std::uint64_t frames{};
+    std::uint64_t cycle_frame_capture{};
     std::filesystem::path frame_output;
     std::uint64_t frame_series_first{};
     std::uint64_t frame_series_last{};
@@ -64,6 +69,7 @@ void usage() {
                  "mooneye-wilbertpol|serial|blargg|gbmicrotest] "
                  "[--model auto|dmg0|dmg|mgb|sgb|sgb2|cgb0|cgb-c|cgb-e|agb0|agb] "
                  "[--frames N --frame-output capture.ppm [--sgb-frame]] "
+                 "[--cycle-frame-capture N --frame-output capture.ppm [--sgb-frame]] "
                  "[--frame-series FIRST LAST PREFIX [--sgb-frame]] "
                  "[--frame-state-series] "
                  "[--watch-wram 0xC000..0xDFFF] "
@@ -126,6 +132,18 @@ Options parse_options(const int argc, char** argv) {
             options.model = parse_model(argv[++index]);
         } else if (argument == "--frames" && index + 1 < argc) {
             options.frames = parse_cycles(argv[++index]);
+        } else if (argument == "--cycle-frame-capture" && index + 1 < argc) {
+            const std::string value = argv[++index];
+            if (options.cycle_frame_capture != 0 || value.empty() ||
+                value.find_first_not_of("0123456789") != std::string::npos) {
+                throw std::invalid_argument(
+                    "--cycle-frame-capture requires one positive integer");
+            }
+            options.cycle_frame_capture = parse_cycles(value);
+            if (options.cycle_frame_capture >
+                std::numeric_limits<std::uint64_t>::max() / cycle_frame_t_cycles) {
+                throw std::invalid_argument("--cycle-frame-capture cycle budget overflows");
+            }
         } else if (argument == "--frame-series" && index + 3 < argc) {
             options.frame_series_first = parse_cycles(argv[++index]);
             options.frame_series_last = parse_cycles(argv[++index]);
@@ -183,12 +201,14 @@ Options parse_options(const int argc, char** argv) {
     if (options.dmg_boot && options.diagnostic_boot) {
         throw std::invalid_argument("--dmg-boot and --diagnostic-boot are mutually exclusive");
     }
-    if ((options.frames != 0 && options.frame_on_ld_bb) ||
-        (options.frame_series_last != 0 &&
-         (options.frames != 0 || options.frame_on_ld_bb ||
-          !options.frame_output.empty()))) {
+    const auto capture_modes = (options.frames != 0 ? 1 : 0) +
+        (options.cycle_frame_capture != 0 ? 1 : 0) +
+        (options.frame_on_ld_bb ? 1 : 0) +
+        (options.frame_series_last != 0 ? 1 : 0);
+    if (capture_modes > 1 ||
+        (options.frame_series_last != 0 && !options.frame_output.empty())) {
         throw std::invalid_argument(
-            "--frame-series, --frames, and --frame-on-ld-bb are mutually exclusive");
+            "--frame-series, --frames, --cycle-frame-capture, and --frame-on-ld-bb are mutually exclusive");
     }
     if (options.frame_series_last != 0 &&
         (options.frame_series_last < options.frame_series_first ||
@@ -205,8 +225,13 @@ Options parse_options(const int argc, char** argv) {
         throw std::invalid_argument(
             "--input-script and --replay-sgb-trace are mutually exclusive");
     }
+    if (options.cycle_frame_capture != 0 && !options.sgb_replay_input.empty()) {
+        throw std::invalid_argument(
+            "--cycle-frame-capture and --replay-sgb-trace are mutually exclusive");
+    }
     const auto captures_single_frame =
-        options.frames != 0 || options.frame_on_ld_bb;
+        options.frames != 0 || options.cycle_frame_capture != 0 ||
+        options.frame_on_ld_bb;
     const auto captures_frame = captures_single_frame ||
                                 options.frame_series_last != 0;
     if (captures_single_frame && options.frame_output.empty()) {
@@ -214,11 +239,11 @@ Options parse_options(const int argc, char** argv) {
     }
     if (!captures_single_frame && !options.frame_output.empty()) {
         throw std::invalid_argument(
-            "--frame-output requires --frames or --frame-on-ld-bb");
+            "--frame-output requires --frames, --cycle-frame-capture or --frame-on-ld-bb");
     }
     if (options.sgb_frame && !captures_frame) {
         throw std::invalid_argument(
-            "--sgb-frame requires --frames or --frame-on-ld-bb");
+            "--sgb-frame requires --frames, --cycle-frame-capture, --frame-series or --frame-on-ld-bb");
     }
     if (options.frame_state_series && options.frame_series_last == 0) {
         throw std::invalid_argument(
@@ -767,8 +792,10 @@ int main(int argc, char** argv) {
         std::uint64_t sound_transfer_revision = 0;
         std::uint64_t sound_request_revision = 0;
         const bool captures_frame = options.frames != 0 ||
+                                    options.cycle_frame_capture != 0 ||
                                     options.frame_on_ld_bb ||
                                     options.frame_series_last != 0;
+        const auto cycle_capture_target = options.cycle_frame_capture * cycle_frame_t_cycles;
         const bool tracks_input = !options.input_script.empty();
 
         if (sgb_recorder.has_value()) {
@@ -1012,13 +1039,24 @@ int main(int argc, char** argv) {
                     emulator.consume_frame();
                 }
             }
+            if (options.cycle_frame_capture != 0 &&
+                cycle_capture_target <= options.max_cycles &&
+                emulator.cpu().total_cycles() >= cycle_capture_target) {
+                write_capture(options.frame_output, emulator, options.sgb_frame);
+                std::cout << "Captured cycle framebuffer after "
+                          << options.cycle_frame_capture << " intervals (target_t_cycles="
+                          << cycle_capture_target << ", cycles=" << emulator.cpu().total_cycles()
+                          << ") to " << options.frame_output << '\n';
+                return finish_run(EXIT_SUCCESS);
+            }
             auto bytes = emulator.bus().take_serial_output();
             if (!bytes.empty()) {
                 serial_output += bytes;
                 std::cout << bytes << std::flush;
             }
 
-            if (options.protocol == Protocol::gbmicrotest &&
+            if (options.cycle_frame_capture == 0 &&
+                options.protocol == Protocol::gbmicrotest &&
                 has_gbmicrotest_result(emulator.bus())) {
                 const auto result = emulator.bus().read8(0xFF80);
                 const auto expected = emulator.bus().read8(0xFF81);

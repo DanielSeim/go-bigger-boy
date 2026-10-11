@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Add `--cycle-frame-capture N` to the headless test runner for framebuffer
+  snapshots after N × 70,224 CPU T-cycles, including while the LCD is disabled.
+
 - Correlate authored SGB tempo reads with public APU music writes and matching
   replies, retaining ambiguous observations and existing timing guards.
 
