@@ -152,6 +152,8 @@ as implementation source. Performance optimization remains deferred.
 Next, explain the phase/state dependence at tempo 112 and the distinct cold
 first-selection interval before expanding or enabling the policy by default.
 Root pacing alone does not qualify audio equivalence or a production ROM.
+The [completed duration/phase follow-up](sgb-vendor-selection-phase.md) narrows
+the tempo-112 variation toward request phase while retaining its exclusion.
 
 ## Local validation evidence
 

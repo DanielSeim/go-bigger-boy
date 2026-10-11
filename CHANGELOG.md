@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Separate SGB tempo-112 note duration from request phase with bounded original
+  observations and owned completed controls, retaining its pacing exclusion.
+
 - Add opt-in SGB prior-tempo selection pacing with direct timing/error gates,
   interruptible waits and destination save/load checks during the wait.
 

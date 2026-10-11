@@ -1365,7 +1365,10 @@ if(GAMEBOY_BUILD_TESTS)
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_vendor_selection_wait_tests.py
                 SelectionWaitContracts.test_build_scope_and_export
                 SelectionWaitContracts.test_comparison_requires_accuracy_and_improvement
-                SelectionWaitContracts.test_reference_filters_and_failure_sanitization)
+                SelectionWaitContracts.test_reference_filters_and_failure_sanitization
+                SelectionWaitContracts.test_phase_duration_controls_and_constant_rejection
+                SelectionWaitContracts.test_phase_reference_filters_and_sanitization
+                SelectionWaitContracts.test_phase_observation_keeps_completed_traversal_guards)
         add_test(NAME gameboy_sgb_score_vendor_selection_wait
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_vendor_selection_wait_tests.py
                 --probe $<TARGET_FILE:gameboy_sgb_vendor_music_probe>
@@ -1458,6 +1461,12 @@ if(GAMEBOY_BUILD_TESTS)
                     --firmware-dir "${CMAKE_CURRENT_SOURCE_DIR}/roms"
                     --state completed --request-offset 2)
             set_tests_properties(gameboy_sgb_vendor_selection_wait_phase_local_reference
+                PROPERTIES TIMEOUT 2400 LABELS "local;private-reference")
+            add_test(NAME gameboy_sgb_vendor_selection_duration_local_reference
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_vendor_selection_phase_reference.py
+                    --probe $<TARGET_FILE:gameboy_sgb_music_timeline_probe>
+                    --firmware-dir "${CMAKE_CURRENT_SOURCE_DIR}/roms")
+            set_tests_properties(gameboy_sgb_vendor_selection_duration_local_reference
                 PROPERTIES TIMEOUT 2400 LABELS "local;private-reference")
             add_test(NAME gameboy_sgb_vendor_volume_local_reference
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_vendor_volume_reference.py

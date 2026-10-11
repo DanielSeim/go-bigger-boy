@@ -18,11 +18,64 @@ from build_sgb_vendor_music import build as firmware
 from build_sgb_vendor_selection_wait_fixture import build,TEMPOS
 from check_sgb_vendor_selection_wait_reference import compare,waits,WAITS
 import check_sgb_vendor_selection_wait_reference as reference
+import check_sgb_vendor_selection_phase_reference as phase
 
 TIMELINE=PROBE=INTERRUPT=None
 
 
 class SelectionWaitContracts(unittest.TestCase):
+    def test_phase_duration_controls_and_constant_rejection(self):
+        default=build(112,'completed',request_offset=2)
+        self.assertEqual(default,build(112,'completed',request_offset=2,first_duration=48))
+        for duration in (24,96):
+            image=build(112,'completed',request_offset=2,first_duration=duration)
+            differences=[i for i,(a,b) in enumerate(zip(default,image)) if a!=b]
+            self.assertEqual([i for i in differences if i not in (0x14E,0x14F)],[0x406E])
+            self.assertEqual(image[0x406E],duration)
+            self.assertEqual(image[0x14E:0x150],((sum(image)-sum(image[0x14E:0x150]))&65535).to_bytes(2,'big'))
+        for duration in (True,0,25,256):
+            with self.assertRaises(ValueError): build(first_duration=duration)
+        report=phase.constant_bound([15.599609375,20.0029296875])
+        self.assertIs(report['constant_within_2ms_possible'],False)
+        self.assertIsNone(report['admissible_constant_ms'])
+        self.assertEqual(phase.constant_bound([16,20])['admissible_constant_ms'],[18,18])
+        for values in ([],[True],[float('nan')],[float('inf')],[-1],[101]):
+            with self.assertRaises(ValueError): phase.constant_bound(values)
+
+    def test_phase_reference_filters_and_sanitization(self):
+        def capture(probe,program,game,model,clocks,inputs,**flags):
+            self.assertEqual(game.read_bytes(),build(112,'completed',request_offset=2,first_duration=96))
+            self.assertEqual(flags,dict(selection_traversal=True));self.assertEqual(clocks,260000000)
+            return dict(root_wait_ms=16 if model=='sgb' else 21)
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            for name in ('sgb1.program.rom','sgb2.program.rom'): (root/name).write_bytes(b'owned stub')
+            argv=['check','--probe',str(root/'probe'),'--firmware-dir',str(root),
+                  '--duration','96','--duration','96','--request-offset','2','--request-offset','2']
+            stdout=io.StringIO()
+            with patch.object(sys,'argv',argv),patch.object(phase,'capture',side_effect=capture) as run,patch.object(phase,'observation',side_effect=lambda data:data),contextlib.redirect_stdout(stdout):
+                phase.main()
+            report=json.loads(stdout.getvalue());self.assertEqual(run.call_count,2)
+            self.assertIs(report['qualification'],False)
+            self.assertIs(report['constant_bound']['constant_within_2ms_possible'],False)
+            stdout=io.StringIO();stderr=io.StringIO()
+            with patch.object(sys,'argv',argv),patch.object(phase,'capture',side_effect=ValueError('private detail')),contextlib.redirect_stdout(stdout),contextlib.redirect_stderr(stderr):
+                with self.assertRaises(SystemExit) as raised: phase.main()
+            self.assertEqual(raised.exception.code,2);self.assertEqual(stdout.getvalue(),'')
+            self.assertEqual(stderr.getvalue(),'bounded selection-phase experiment failed; child diagnostics suppressed\n')
+
+    def test_phase_observation_keeps_completed_traversal_guards(self):
+        data=dict(requests=[2048,20480],events=[dict(register=0x4C,half=4096),
+                  dict(register=0x5C,value=255,half=8192)])
+        stages=[None,dict(traversal_stages=dict(root=dict(after_previous_stage_ms=17))),
+                dict(traversal_stages=dict(root=dict(after_previous_stage_ms=27)))]
+        with patch.object(phase,'summarize',return_value=stages) as guard:
+            self.assertEqual(phase.observation(data),dict(request_gap_ms=9,prior_note_to_request_ms=8,
+                prior_release_to_request_ms=6,root_wait_ms=17,control_root_wait_ms=27))
+            guard.assert_called_once_with(data,'base','completed')
+        with patch.object(phase,'summarize',side_effect=ValueError('incomplete playback')):
+            with self.assertRaises(ValueError): phase.observation(data)
+
     def test_build_scope_and_export(self):
         self.assertEqual(hashlib.sha256(firmware()).hexdigest(),'0455c511726ec625afee474a90eba960f5eae2e156b4772d6f7b82b338d36ffd')
         candidate=firmware(selection_wait=True);self.assertEqual(candidate,firmware(selection_wait=True))
@@ -108,6 +161,22 @@ class SelectionWaitContracts(unittest.TestCase):
                         if tempo in WAITS: self.assertLess(abs(observed[1]-WAITS[tempo]),.4)
                         else: self.assertLess(observed[1],.4)
                         self.assertLess(abs(observed[2]-27),.4)
+
+    def test_native_duration_phase_controls(self):
+        if TIMELINE is None: self.skipTest('timeline probe not supplied')
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);(root/'paced.rom').write_bytes(firmware(selection_wait=True))
+            (root/'none.script').write_text('GBB SGB input v1\n0 none\n')
+            for model in ('sgb','sgb2'):
+                for duration in (24,96):
+                    with self.subTest(model=model,duration=duration):
+                        game=root/'game.gb';game.write_bytes(build(112,'completed',request_offset=2,first_duration=duration))
+                        data=reference.capture(TIMELINE,root/'paced.rom',game,model,260000000,
+                                               root/'none.script',selection_traversal=True)
+                        report=phase.observation(data)
+                        self.assertGreater(report['prior_release_to_request_ms'],0)
+                        self.assertLess(report['root_wait_ms'],.4)
+                        self.assertLess(abs(report['control_root_wait_ms']-27),.4)
 
     def replay(self,root,model,tempo,mode='native',profile='normal'):
         game=root/'game.gb';game.write_bytes(build(tempo,profile=profile))

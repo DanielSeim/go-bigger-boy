@@ -173,3 +173,9 @@ cover admitted/unlisted tempos, active/completed playback, scalar/native PCM,
 wait snapshots and interruption ownership. The short builder/error contract
 remains in platform/sanitizer jobs; original timing comparisons remain private.
 See [selection pacing](sgb-vendor-selection-wait.md).
+
+The [tempo-112 duration/phase follow-up](sgb-vendor-selection-phase.md) extends
+that matrix with four owned completed controls and adds short report/fixture
+contracts. Its 30-capture original experiment stays `local;private-reference`
+as `gameboy_sgb_vendor_selection_duration_local_reference` (timeout 2400).
+Public matrix discovery remains at 96.

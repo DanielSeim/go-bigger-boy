@@ -11,17 +11,21 @@ TEMPOS=(32,45,64,96,128)
 PROFILES=('normal','rapid','stop','upload')
 
 
-def build(tempo=45,state='active',holdout=True,profile='normal',*,request_offset=4):
+def build(tempo=45,state='active',holdout=True,profile='normal',*,request_offset=4,first_duration=None):
     if type(tempo) is not int or tempo not in (*TEMPOS,99,112) or state not in ('active','completed') or type(holdout) is not bool or profile not in PROFILES:
         raise ValueError('invalid selection-wait fixture')
     if profile!='normal' and (state!='active' or tempo!=32):
         raise ValueError('interruptions use active tempo 32')
     if type(request_offset) is not int or not 0<=request_offset<=4:
         raise ValueError('invalid bounded request offset')
+    if first_duration is None:
+        first_duration=48 if state=='completed' else 96
+    if type(first_duration) is not int or first_duration not in (24,48,96):
+        raise ValueError('invalid authored first duration')
     score=bytearray(bank(echo=False))
     for i,note in enumerate((0xA4,0xA3,0xA2)):
         stream=bytes((0xE0,2,0xE1,10,0xE5,160,0xED,127,0xE7,tempo if i==0 else 45,
-                      48 if state=='completed' and i==0 else 96,125,note,0))
+                      first_duration if i==0 else 96,125,note,0))
         score[0x60+48*i:0x90+48*i]=stream+bytes(48-len(stream))
     frames=(payload(((0x2B00,bytes(score)),)),payload(assets(descriptor=(2,255,224,184,2,176))))
     sound=lambda music:bytes((0x41,0,0,0,music))
