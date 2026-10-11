@@ -233,9 +233,10 @@ icon. ROM files are never included in CI artifacts.
 Pushing a version tag such as `vX.Y.Z` starts platform builds. The release
 workflow waits for matching Desktop, Android and Web/Pages runs to succeed,
 checks their packaged assets, then creates a GitHub Release with desktop,
-Android and web artifacts and generated release notes. Tagged builds derive their displayed version from the
-tag so the startup update comparison remains accurate. A failed platform build
-prevents the release.
+Android and web artifacts and the matching `CHANGELOG.md` entry as the release
+description. Missing, empty or duplicate entries stop publication. Tagged builds
+derive their displayed version from the tag so the startup update comparison
+remains accurate. A failed platform build prevents the release.
 
 The [release checklist](docs/release-checklist.md) covers the manual link
 session smoke test and platform packaging checks to repeat before publishing.

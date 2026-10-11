@@ -215,10 +215,8 @@ bool copy_tree(const std::filesystem::path& source,
     for (const auto& entry : std::filesystem::directory_iterator(source,
                                                                    status_error)) {
         if (status_error) break;
-        // The helper is the process currently doing the copy, so Windows
-        // keeps its image file locked. It is already present in the install
-        // directory; leave it in place while the rest of the package updates.
-        if (entry.path().filename() == L"gbb-updater.exe") continue;
+        // The running helper lives in the download cache, so the installed
+        // helper can be replaced along with the rest of the release.
         const auto target = destination / entry.path().filename();
         std::filesystem::copy(entry.path(), target,
                               std::filesystem::copy_options::recursive |

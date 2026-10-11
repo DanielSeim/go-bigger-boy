@@ -3091,6 +3091,23 @@ if(GAMEBOY_BUILD_TESTS)
     if(TARGET gameboy_sdl)
         add_test(NAME gameboy_sdl_version COMMAND gameboy_sdl --version)
         if(WIN32)
+            if(Python3_Interpreter_FOUND)
+                add_executable(gameboy_windows_update_launch_probe
+                    tests/windows_update_launch_probe.cpp
+                    apps/sdl/update_checker.cpp)
+                target_include_directories(gameboy_windows_update_launch_probe
+                    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/apps/sdl)
+                target_link_libraries(gameboy_windows_update_launch_probe
+                    PRIVATE gameboy_core winhttp bcrypt shell32)
+                add_dependencies(gameboy_windows_update_launch_probe gbb_updater)
+                add_test(NAME gameboy_windows_updater_contract
+                    COMMAND ${Python3_EXECUTABLE}
+                        ${CMAKE_CURRENT_SOURCE_DIR}/tests/windows_updater_contract_tests.py
+                        --launcher $<TARGET_FILE:gameboy_windows_update_launch_probe>
+                        --updater $<TARGET_FILE:gbb_updater>)
+                set_tests_properties(gameboy_windows_updater_contract
+                    PROPERTIES TIMEOUT 120)
+            endif()
             # This launches the real native dashboard in an isolated smoke
             # mode. The test drives the Win32 controls and message boxes, so
             # regressions in modal lifecycle, owner-draw controls, layout

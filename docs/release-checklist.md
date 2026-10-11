@@ -62,6 +62,11 @@ below are release actions to perform deliberately, not part of a docs audit.
 - [ ] Perform the applicable frontend/save/update smoke checks on available
       platforms and record their scope. Back up saves first. Include settings
       persistence, ROM start, input/audio, save/load, clean exit and relaunch.
+      On Windows, confirm an application update also replaces
+      `gbb-updater.exe` with the release's signed helper, preserves settings
+      and saves, and relaunches the application. The native
+      `gameboy_windows_updater_contract` CTest covers replacement and relaunch
+      with owned fixtures, plus changed archives and missing package helpers.
       On Windows, pin the running library or game window and confirm the
       closed application's taskbar tooltip reads `Go Bigger Boy vX.Y.Z`;
       launch it from the pin and confirm it reuses the same taskbar button.
@@ -117,9 +122,11 @@ assuming a transport handshake proves a trade or battle completed.
 - [ ] Verify the published GitHub Release contains the Windows x64 ZIP,
       Linux x64 AppImage, macOS arm64 and x64 archives, signed Android APK/AAB,
       and Web files. Confirm versions and updater-visible asset names/digests
-      agree with the release. Review generated release notes against the
-      changelog; publication uses `--generate-notes`, not automatic changelog
-      copying. Announce only after publication and validation finish.
+      agree with the release. Verify the description contains the complete
+      matching `CHANGELOG.md` entry from the validated source, preserving its
+      Markdown. Publication and retries set the description from that entry;
+      missing, empty or duplicate entries stop publication. Announce only after
+      publication and validation finish.
 - [ ] Verify the `main` Web run deployed GitHub Pages and the page loads the
       matching cache-busted JS/WASM. A tag Web run supplies release files but
       does not deploy Pages.

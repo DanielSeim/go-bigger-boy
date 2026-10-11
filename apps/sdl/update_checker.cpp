@@ -728,9 +728,58 @@ bool launch_update_installer(const DownloadedUpdate& update,
     const auto settings = installation_root / "settings.ini";
     const auto settings_backup = directory / "settings.ini.user";
 #ifdef _WIN32
-    const auto helper = installation_root / "gbb-updater.exe";
-    if (!std::filesystem::exists(helper)) {
-        error = "the native Windows update helper is missing";
+    // Run the new release's helper outside the installation. Running the
+    // installed helper locks its image, and older helpers skip replacing it.
+    // Recheck the archive before executing any code extracted from it.
+    if (!verify_asset(update.release, update.archive, error)) {
+        if (error.empty()) error = "the Windows update archive failed SHA-256 verification";
+        return false;
+    }
+    const auto helper_directory = directory /
+        (L"helper-" + std::to_wstring(GetCurrentProcessId()) + L"-" +
+         std::to_wstring(GetTickCount64()));
+    std::error_code filesystem_error;
+    if (!std::filesystem::create_directory(helper_directory, filesystem_error)) {
+        error = "could not create the Windows update helper directory";
+        return false;
+    }
+    const auto cleanup = [&] {
+        std::error_code ignored;
+        std::filesystem::remove_all(helper_directory, ignored);
+    };
+    std::array<wchar_t, MAX_PATH> system_directory{};
+    const auto system_length = GetSystemDirectoryW(system_directory.data(),
+                                                   system_directory.size());
+    if (system_length == 0 || system_length >= system_directory.size()) {
+        error = "could not locate the Windows archive tool";
+        cleanup();
+        return false;
+    }
+    const auto tar = std::filesystem::path(system_directory.data()) / L"tar.exe";
+    auto extract_command = quote_windows_argument(tar.wstring()) + L" -xf " +
+        quote_windows_argument(update.archive.wstring()) + L" -C " +
+        quote_windows_argument(helper_directory.wstring());
+    STARTUPINFOW extraction_startup{};
+    extraction_startup.cb = sizeof(extraction_startup);
+    PROCESS_INFORMATION extraction{};
+    if (!CreateProcessW(tar.c_str(), extract_command.data(), nullptr, nullptr,
+                        FALSE, CREATE_NO_WINDOW, nullptr, nullptr,
+                        &extraction_startup, &extraction)) {
+        error = "could not start the Windows archive tool";
+        cleanup();
+        return false;
+    }
+    const auto waited = WaitForSingleObject(extraction.hProcess, INFINITE);
+    DWORD extraction_result = 1;
+    const bool extracted = waited == WAIT_OBJECT_0 &&
+        GetExitCodeProcess(extraction.hProcess, &extraction_result) &&
+        extraction_result == 0;
+    CloseHandle(extraction.hThread);
+    CloseHandle(extraction.hProcess);
+    const auto helper = helper_directory / L"gbb-updater.exe";
+    if (!extracted || !std::filesystem::is_regular_file(helper, filesystem_error)) {
+        error = "the Windows update archive could not supply its native helper";
+        cleanup();
         return false;
     }
     const auto helper_string = helper.wstring();
@@ -748,10 +797,12 @@ bool launch_update_installer(const DownloadedUpdate& update,
                         nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr,
                         &startup, &process)) {
         error = "could not start the native Windows update helper";
+        cleanup();
         return false;
     }
     CloseHandle(process.hThread);
     CloseHandle(process.hProcess);
+    // Keep the cached package while its helper is running (including DLLs).
     return true;
 #else
     const auto script_path = directory / "install-update.sh";

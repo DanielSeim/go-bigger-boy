@@ -238,8 +238,10 @@ GBB can download the matching release asset and verify GitHub's published
 SHA-256 digest. Nothing is downloaded without confirmation. Network failures
 remain non-blocking and do not display a dialog. On desktop, a user-writable
 installation is replaced after the emulator exits and the updated executable
-restarts. Windows uses the system HTTP service and a native update helper
-(signed when release signing is configured);
+restarts. Windows uses the system HTTP service and runs the native update
+helper from the SHA-256-verified release archive in the download cache. This
+allows both `gbb.exe` and the installed `gbb-updater.exe` to be replaced while
+preserving user settings;
 Linux and macOS use the system `curl` and archive tools. Direct-download
 Android builds download the signed APK, then open the system package installer;
 Android may require enabling “Allow from this source” and always controls the
@@ -249,6 +251,11 @@ download the update through Google Play without downloading or installing
 GitHub APKs. After a successful direct APK installation, Android
 relaunches the updated emulator. System-wide read-only desktop installations
 must still be updated through their package manager or replaced manually.
+
+Older Windows frontends still run their installed helper for the first update
+to a release containing this change. The new frontend replaces the installed
+helper on its next update; manually extracting the new ZIP replaces both
+executables immediately.
 
 Desktop update downloads run asynchronously and show progress in the window
 title; press Escape to cancel. Library artwork and metadata are resolved in

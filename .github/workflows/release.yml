@@ -49,6 +49,12 @@ jobs:
         with:
           ref: ${{ env.TAG_SHA }}
 
+      - name: Prepare release description from changelog
+        run: |
+          python3 tests/test_changelog_release_notes.py
+          python3 scripts/extract_changelog_release.py CHANGELOG.md "$TAG" \
+            "$RUNNER_TEMP/release-notes.md"
+
       - name: Wait for platform workflows
         id: workflows
         shell: bash
@@ -175,11 +181,13 @@ jobs:
           for attempt in 1 2 3; do
             if gh release view "$TAG" --repo "$REPOSITORY" >/dev/null 2>&1; then
               gh release upload "$TAG" "${assets[@]}" \
-                --repo "$REPOSITORY" --clobber && exit 0
+                --repo "$REPOSITORY" --clobber &&
+              gh release edit "$TAG" --repo "$REPOSITORY" \
+                --notes-file "$RUNNER_TEMP/release-notes.md" && exit 0
             elif gh release create "$TAG" "${assets[@]}" \
                 --repo "$REPOSITORY" \
                 --verify-tag \
-                --generate-notes \
+                --notes-file "$RUNNER_TEMP/release-notes.md" \
                 --title "Go Bigger Boy $TAG"; then
               exit 0
             fi

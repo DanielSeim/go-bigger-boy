@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Update the Windows updater alongside the application by running the helper
+  from the verified release download outside the installation directory.
+
 ## [0.36.1] - 2026-10-10
 
 - Sign and timestamp Windows release executables with Certum SimplySign and

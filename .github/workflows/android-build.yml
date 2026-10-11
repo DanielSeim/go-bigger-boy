@@ -66,8 +66,10 @@ jobs:
       - name: Fetch pinned SDL3 Android archive
         run: android/fetch-sdl.sh
 
-      - name: Test Play release note formatting
-        run: python3 tests/test_play_release_notes.py
+      - name: Test release note formatting
+        run: |
+          python3 tests/test_changelog_release_notes.py
+          python3 tests/test_play_release_notes.py
 
       - name: Run Android settings regression tests
         working-directory: android
