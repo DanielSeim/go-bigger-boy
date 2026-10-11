@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Compare measured SGB music phase with reselection delays using authored
+  short-note prefixes, long tails and active/completed playback controls.
+
 - Measure SGB music-tick timing with independently authored repeated short notes,
   separating first-note startup timing from subsequent accumulator cadence.
 

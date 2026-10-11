@@ -224,3 +224,10 @@ The optional `gameboy_sgb_vendor_tick_local_reference` covers both start schedul
 models and six tempos in 24 original captures, with timeout 2400 and labels
 `local;private-reference`. It stays outside public shards. Public matrix count
 remains 96 and the existing matrix timeout remains 1800 seconds.
+
+The [tick-phase reselection experiment](sgb-vendor-tick-selection.md) adds 48
+owned controls to that same matrix and two short methods (sixteen total).
+`gameboy_sgb_vendor_tick_selection_local_reference` optionally captures 48
+original timelines across both models, tempos, playback states and start
+schedules, retaining timeout 2400 and `local;private-reference`. It remains
+outside public shards; public matrix count stays 96.
