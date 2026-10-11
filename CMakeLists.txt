@@ -1372,7 +1372,9 @@ if(GAMEBOY_BUILD_TESTS)
                 SelectionWaitContracts.test_timer_window_bounds_and_stage_ownership
                 SelectionWaitContracts.test_matched_timer_tempo_controls_and_decomposition
                 SelectionWaitContracts.test_timer_tempo_reference_filters_and_failure
-                SelectionWaitContracts.test_timer_continuity_bounds_and_completion)
+                SelectionWaitContracts.test_timer_continuity_bounds_and_completion
+                SelectionWaitContracts.test_persistent_accumulator_arithmetic
+                SelectionWaitContracts.test_accumulator_frozen_fit_and_failure)
         add_test(NAME gameboy_sgb_score_vendor_selection_wait
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_vendor_selection_wait_tests.py
                 --probe $<TARGET_FILE:gameboy_sgb_vendor_music_probe>

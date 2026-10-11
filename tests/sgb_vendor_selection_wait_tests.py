@@ -21,11 +21,81 @@ from check_sgb_vendor_selection_wait_reference import compare,waits,WAITS
 import check_sgb_vendor_selection_wait_reference as reference
 import check_sgb_vendor_selection_phase_reference as phase
 import check_sgb_vendor_timer_tempo_reference as timer_tempo
+import check_sgb_vendor_accumulator_model as accumulator_model
 
 TIMELINE=PROBE=INTERRUPT=None
 
 
 class SelectionWaitContracts(unittest.TestCase):
+    def test_persistent_accumulator_arithmetic(self):
+        for tempo in timer_tempo.TEMPO_POINTS:
+            for phase_value in (0,80,255):
+                joined=accumulator_model.Accumulator(tempo,phase_value)
+                split=accumulator_model.Accumulator(tempo,phase_value)
+                carries=joined.advance(1027)
+                self.assertEqual(carries,split.advance(27)+split.advance(1000))
+                self.assertEqual(joined.phase,split.phase)
+                self.assertEqual((carries,joined.phase),divmod(phase_value+1027*tempo,256))
+                until=joined.until_carry()
+                self.assertEqual(joined.advance(until),1)
+        for tempo,seed in ((True,0),(0,0),(256,0),(32,True),(32,256)):
+            with self.assertRaises(ValueError): accumulator_model.Accumulator(tempo,seed)
+        for ticks in (-1,True,1.5):
+            with self.assertRaises(ValueError): accumulator_model.Accumulator(32,0).advance(ticks)
+
+    def test_accumulator_frozen_fit_and_failure(self):
+        def corpus(schedule):
+            runs=[]
+            for model in ('sgb','sgb2'):
+                for tempo in timer_tempo.TEMPO_POINTS:
+                    for state in ('active','completed'):
+                        case=dict(tempo=tempo,keyon=10000,anchor=20000,directory=24096)
+                        observed=accumulator_model.predict(case,0,8)
+                        image=build(tempo,state,first_duration=96,completed_frames=124,
+                            request_offset=schedule[0],first_request_offset=schedule[1],selection_spin=schedule[2])
+                        stats=lambda:dict(address=253,nonzero=dict(count=1,last=20000))
+                        prior=dict(request=1,keyon_half=10000,end_half=20000,
+                            completion_half=15000 if state=='completed' else 0,
+                            playback=[dict(address=253,nonzero=dict(count=1,last=14000))] if state=='completed' else [stats()],
+                            idle=[stats()] if state=='completed' else [dict(address=253,nonzero=dict(count=0,last=0))])
+                        runs.append(dict(model=model,tempo=tempo,state=state,
+                            fixture_sha256=hashlib.sha256(image).hexdigest(),request_half=20000,
+                            directory_half=24096,root_half=24096+observed,root_wait_ms=observed/2048,
+                            continuity=dict(windows=[prior,{},{}])))
+            return dict(schema='gbb-sgb-vendor-timer-tempo-v1',qualification=False,timer_continuity=True,
+                first_duration=96,completed_frames=124,request_offset=schedule[0],first_request_offset=schedule[1],
+                selection_spin=schedule[2],program_sha256={n:'0'*64 for n in ('sgb1.program.rom','sgb2.program.rom')},runs=runs)
+        baseline=corpus((0,0,0));holdout=corpus((2,2,1536))
+        report=accumulator_model.compare(baseline,holdout)
+        self.assertIs(report['qualification'],False);self.assertIs(report['accuracy_passed'],True)
+        changed=copy.deepcopy(holdout)
+        changed['runs'][0]['root_half']+=16384;changed['runs'][0]['root_wait_ms']+=8
+        rejected=accumulator_model.compare(baseline,changed)
+        self.assertEqual(rejected['parameters'],report['parameters'])
+        self.assertEqual(rejected['baseline'],report['baseline'])
+        self.assertIs(rejected['accuracy_passed'],False)
+        invalid=[]
+        for key,value in (('request_offset',True),('qualification',True),('timer_continuity',False)):
+            bad=copy.deepcopy(baseline);bad[key]=value;invalid.append(bad)
+        for key,value in (('fixture_sha256','0'*64),('tempo',True),('root_wait_ms',float('nan'))):
+            bad=copy.deepcopy(baseline);bad['runs'][0][key]=value;invalid.append(bad)
+        bad=copy.deepcopy(baseline);bad['runs'][1]=bad['runs'][0];invalid.append(bad)
+        for bad in invalid:
+            with self.assertRaises(ValueError): accumulator_model.compare(bad,holdout)
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);training=root/'baseline.json';testing=root/'holdout.json'
+            training.write_text(json.dumps(baseline));testing.write_text(json.dumps(holdout))
+            argv=['check','--baseline',str(training),'--holdout',str(testing)]
+            stdout=io.StringIO()
+            with patch.object(sys,'argv',argv),contextlib.redirect_stdout(stdout): accumulator_model.main()
+            self.assertEqual(json.loads(stdout.getvalue()),report)
+            for contents in ('{"private_detail":1}','x'*1048577):
+                testing.write_text(contents);stdout=io.StringIO();stderr=io.StringIO()
+                with patch.object(sys,'argv',argv),contextlib.redirect_stdout(stdout),contextlib.redirect_stderr(stderr):
+                    with self.assertRaises(SystemExit) as raised: accumulator_model.main()
+                self.assertEqual(raised.exception.code,2);self.assertEqual(stdout.getvalue(),'')
+                self.assertEqual(stderr.getvalue(),'bounded accumulator experiment failed; input diagnostics suppressed\n')
+
     def test_timer_continuity_bounds_and_completion(self):
         empty=lambda:dict(count=0,first=0,last=0,min_gap=0,max_gap=0)
         registers=lambda:[dict(address=a,all=empty(),nonzero=empty()) for a in range(0xFD,0x100)]

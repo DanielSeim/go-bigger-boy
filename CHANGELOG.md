@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Screen an independent persistent SGB tempo accumulator against frozen baseline
+  and held-out timing reports, rejecting its unsupported general wait model.
+
 - Track bounded SGB timer phase through playback and natural completion, with
   matched reference schedules and owned observer transparency checks.
 

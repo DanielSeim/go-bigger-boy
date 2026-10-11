@@ -322,3 +322,72 @@ admitted waits, tempo-112 exclusion, default firmware and opt-in image remain
 unchanged. Next, prototype an independent persistent tempo accumulator against
 these frozen baseline and held-out schedules, requiring the direct accuracy,
 improvement and lifecycle gates before expanding the admitted tempo set.
+
+## Persistent accumulator prototype
+
+`scripts/check_sgb_vendor_accumulator_model.py` implements an independently
+written diagnostic hypothesis: a modulo-256 phase advances by the authored
+preceding tempo on each inferred 2-ms hardware opportunity. It persists through
+natural completion. Reselection waits for the next accumulator carry plus a
+single global number of guard opportunities. A fixed 274-half-clock
+(0.133789-ms) handling allowance represents the previously observed short tail.
+The hardware phase anchor is the latest positive FD read before the next
+request; the initial software phase is defined at the first song's KON.
+
+This uses public timestamps, authored tempo and fixture identity. It does not
+use timer output magnitudes, positive-read counts as tick increments, original
+instructions or private memory. Inferring regular opportunities from the last
+hardware anchor is an explicit hypothesis, not proof that all original reads
+or ticks follow this schedule. The model does not reproduce host dispatch or
+claim that a candidate would reach the same selected-directory timestamp.
+
+The finite fit enumerates initial phases 0–255 and guard counts 0–16. It chooses
+one global pair across the 24 baseline cases, minimizing maximum absolute error,
+then total absolute error, then phase/guard for deterministic ties. No per-model,
+per-state or per-tempo parameters are fitted. All arithmetic and comparisons
+use integer APU half clocks. The held-out schedule cannot influence parameters.
+
+The input loader requires the complete 24-case matrices, the fixed schedules
+(0,0,0) and (2,2,1536), matched duration/spacing, identical original program hashes,
+independently rebuilt fixture hashes and consistent public ownership/timing
+anchors. Each report is bounded to 1 MiB. Malformed input produces no partial
+report and suppresses input diagnostics. This is an offline analysis of the
+previously validated reports; no new original execution is needed:
+
+```sh
+python3 scripts/check_sgb_vendor_accumulator_model.py \
+  --baseline /tmp/gbb-selection-wait/continuity-baseline.json \
+  --holdout /tmp/gbb-selection-wait/continuity-holdout.json
+```
+
+The final integer fit selects phase 69 and eight guard opportunities. It fails
+the existing 2-ms bound:
+
+| Schedule | Cases within 2 ms | Maximum absolute error |
+| --- | --- | --- |
+| Baseline used for fitting | 18 / 24 | 4.004883 ms |
+| Held out after fitting | 17 / 24 | 10.447266 ms |
+
+The largest held-out miss is active SGB1 tempo 45: 18.008789 ms predicted versus
+28.456055 ms observed. Completed SGB1 tempo 45 misses by 8 ms. Even the fitted
+baseline fails, so this particular one-carry-plus-guard model is rejected.
+Changing or resetting its initial phase is not a supported firmware fix. The
+report retains `qualification: false` and `accuracy_passed: false`. Exit zero
+means the analysis completed, not that the model passed a candidate gate.
+
+Twelve short contracts pass. New checks cover split versus continuous phase
+advancement, carry arithmetic, invalid inputs, exact synthetic fits, unchanged
+parameters when held-out outcomes change, rejection of held-out inaccuracies,
+fixture/schedule identity, duplicate cases and sanitized oversized/malformed
+reports. Python compilation, CMake configuration and whitespace checks pass.
+This step reruns no native audio, lifecycle or unrelated full matrices because
+it changes only the offline model, tests and documentation. Default and opt-in
+firmware hashes and the tempo-112 exclusion remain unchanged.
+
+Next, author bounded repeated short-note fixtures that expose software music-tick
+intervals through public KON/KOF writes, alongside timer phase. That can test
+whether music processing advances at the predicted accumulator carries before
+another scheduler is tried. Compare both models and independent arrival
+schedules with the existing event bounds; use authored score/assets and public
+register/timestamp observations. A failed simple hypothesis does not establish
+that all persistent-accumulator approaches are impossible.

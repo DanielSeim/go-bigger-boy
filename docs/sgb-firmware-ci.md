@@ -210,3 +210,10 @@ their ownership and completion markers, and timer transparency compares four
 observation modes. A tenth short contract covers the aggregate bounds, positive
 read subsets, completion ownership and shared request timestamps. Public matrix
 count remains 96; these optional original gates retain `local;private-reference`.
+
+The offline [persistent accumulator experiment](sgb-vendor-selection-timers.md#persistent-accumulator-prototype)
+adds two short methods (twelve total), covering arithmetic, frozen baseline-only
+parameter fitting, held-out rejection, corpus identity and bounded sanitized
+input failures. It reads existing diagnostic reports and adds no native captures,
+private input requirements or public matrices. Successful analysis can report
+`accuracy_passed: false`; its exit status does not qualify a firmware candidate.
