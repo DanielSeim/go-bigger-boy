@@ -273,3 +273,13 @@ pending old-track ownership, read ambiguity and sanitized failures. The optional
 with timeout 2400 and labels `local;private-reference`. Public matrix discovery
 remains 96. To accommodate the accumulated native controls, the public
 selection-wait matrix timeout is now 2400 seconds and its scheduling cost 1200.
+
+The [tempo handoff correlation](sgb-vendor-tempo-handoff.md) reuses those 32 owned
+boundary captures, validating bounded host-write/read and SPC-reply metadata
+without additional probe modes or executions. Two short methods (twenty-seven
+total) cover chronological ownership, field equality, ambiguous publications,
+missing replies and sanitized failures. The optional
+`gameboy_sgb_vendor_tempo_handoff_local_reference` captures the same 32 original
+coordinates with timeout 2400 and labels `local;private-reference`. Public matrix
+discovery remains 96; the selection-wait timeout and cost stay 2400/1200. Earlier
+observer transparency and native/scalar lifecycle controls remain in that matrix.

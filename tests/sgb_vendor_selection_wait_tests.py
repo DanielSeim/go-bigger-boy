@@ -30,6 +30,7 @@ import check_sgb_vendor_timer_writes_reference as timer_write_reference
 import check_sgb_vendor_tempo_change_reference as tempo_change_reference
 import check_sgb_vendor_tempo_age_reference as tempo_age_reference
 import check_sgb_vendor_tempo_boundary_reference as tempo_boundary_reference
+import check_sgb_vendor_tempo_handoff_reference as tempo_handoff_reference
 
 TIMELINE=PROBE=INTERRUPT=None
 
@@ -394,6 +395,88 @@ class SelectionWaitContracts(unittest.TestCase):
                 self.assertEqual(raised.exception.code,2);self.assertEqual(stdout.getvalue(),'')
                 self.assertEqual(stderr.getvalue(),'bounded tempo-boundary experiment failed; child diagnostics suppressed\n')
 
+    def handoff_timeline(self,live=32,position='before'):
+        data=self.boundary_timeline(live,pending=True)
+        operand=data['tempo_operand_reads'][0]['half']
+        write=operand+20 if position=='before' else operand-20
+        reply=operand-10 if position=='after' else operand if position=='shared' else operand+30
+        data.update(port_handshakes=[],spc_reply_handshakes=[],handoff_writes=[])
+        for request,half,answer in ((1,55000,55010),(2,write,reply)):
+            data['port_handshakes'].append(dict(request=request,port=0,half=half,first_read=answer+1,
+                last_read=answer+1,first_equal=answer+1,last_equal=answer+1,equal_reads=1,unequal_reads=0))
+            data['spc_reply_handshakes'].append(dict(request=request,port=0,half=half,first_reply=answer,
+                last_reply=answer,first_equal_reply=answer,last_equal_reply=answer,reply_writes=1,equal_reply_writes=1))
+            data['handoff_writes'].append(dict(request=request,port=0,half=half,fields=1,
+                first_music_reply=answer,music_reply_writes=1))
+        return data
+
+    def test_tempo_handoff_ordering_and_bounds(self):
+        for position,category in (('before','operand_before_write'),('between','operand_between_write_and_reply'),
+                                  ('after','operand_after_reply'),('shared','shared_timestamp')):
+            measured=tempo_handoff_reference.summarize(self.handoff_timeline(position=position),32)
+            self.assertEqual(measured['handoff']['category'],category)
+            self.assertEqual(len(measured['handoff']['music_writes']),1)
+        data=self.handoff_timeline()
+        # Keep every publication rather than selecting a convenient candidate.
+        multiple=copy.deepcopy(data)
+        for key in ('port_handshakes','spc_reply_handshakes','handoff_writes'):
+            multiple[key].append({**multiple[key][-1],'port':1})
+        self.assertEqual(tempo_handoff_reference.summarize(multiple,32)['handoff']['category'],'ambiguous_music_writes')
+        ambiguous=copy.deepcopy(data);ambiguous['tempo_operand_reads']*=2
+        self.assertEqual(tempo_handoff_reference.summarize(ambiguous,32)['handoff']['category'],'ambiguous_operand')
+        # A second write on the same port ends the first observation interval.
+        crossing=copy.deepcopy(data)
+        for key in ('port_handshakes','spc_reply_handshakes','handoff_writes'):
+            crossing[key].append({**crossing[key][-1],'half':crossing[key][-1]['half']+1})
+        with self.assertRaises(ValueError):tempo_handoff_reference.summarize(crossing,32)
+        absent=copy.deepcopy(data)
+        absent['handoff_writes'][-1].update(first_music_reply=0,music_reply_writes=0)
+        absent['spc_reply_handshakes'][-1].update(first_equal_reply=0,last_equal_reply=0,equal_reply_writes=0)
+        self.assertEqual(tempo_handoff_reference.summarize(absent,32)['handoff']['category'],'missing_matching_reply')
+        missing=copy.deepcopy(data)
+        missing['handoff_writes'][-1].update(fields=0,first_music_reply=0,music_reply_writes=0)
+        self.assertEqual(tempo_handoff_reference.summarize(missing,32)['handoff']['category'],'missing_music_write')
+        for key,field,value in (('port_handshakes','private_value',1),('handoff_writes','fields',3),
+                ('handoff_writes','first_music_reply',0),('spc_reply_handshakes','half',0),
+                ('spc_reply_handshakes','reply_writes',1000001),('port_handshakes','request',True),
+                ('port_handshakes','first_equal',0),('spc_reply_handshakes','last_reply',10**9)):
+            bad=copy.deepcopy(data);bad[key][-1][field]=value
+            with self.assertRaises(ValueError):tempo_handoff_reference.summarize(bad,32)
+        for key in ('port_handshakes','spc_reply_handshakes','handoff_writes'):
+            bad=copy.deepcopy(data);bad[key]=[]
+            with self.assertRaises(ValueError):tempo_handoff_reference.summarize(bad,32)
+        # A matching reply can follow the directory read. Do not impose acceptance semantics.
+        late=copy.deepcopy(data);answer=data['selection_directory_reads'][-2]['half']+100
+        late['port_handshakes'][-1].update(first_read=answer+1,last_read=answer+1,first_equal=answer+1,last_equal=answer+1)
+        late['spc_reply_handshakes'][-1].update(first_reply=answer,last_reply=answer,first_equal_reply=answer,last_equal_reply=answer)
+        late['handoff_writes'][-1]['first_music_reply']=answer
+        self.assertLess(tempo_handoff_reference.summarize(late,32)['handoff']['music_writes'][0]['directory_after_reply_ms'],0)
+
+    def test_tempo_handoff_reference_and_failure(self):
+        def capture(probe,program,game,model,clocks,inputs,**flags):
+            _,live,gap,spin=game.stem.split('-');live=int(live)
+            self.assertEqual(game.read_bytes(),tick_selection_fixture(128,live_tempo=live,change_after=3,
+                boundary=True,request_gap=int(gap),selection_spin=int(spin)))
+            self.assertEqual(clocks,300000000);self.assertEqual(flags,dict(tempo_boundary=True))
+            return self.handoff_timeline(live)
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            for name in ('sgb1.program.rom','sgb2.program.rom'):(root/name).write_bytes(b'owned stub')
+            argv=['check','--probe',str(root/'probe'),'--firmware-dir',str(root)]
+            stdout=io.StringIO()
+            with patch.object(sys,'argv',argv),patch.object(tempo_boundary_reference,'capture',side_effect=capture) as run,contextlib.redirect_stdout(stdout):
+                tempo_handoff_reference.main()
+            report=json.loads(stdout.getvalue());self.assertEqual(run.call_count,32)
+            self.assertEqual(report['schema'],'gbb-sgb-vendor-tempo-handoff-v1')
+            self.assertIs(report['qualification'],False);self.assertIs(report['parameters_fitted'],False)
+            self.assertTrue(all(r['handoff']['category']=='operand_before_write' for r in report['runs']))
+            for fault in (ValueError('private detail'),None):
+                stdout=io.StringIO();stderr=io.StringIO()
+                with patch.object(sys,'argv',argv),patch.object(tempo_boundary_reference,'capture',side_effect=fault,return_value={}),contextlib.redirect_stdout(stdout),contextlib.redirect_stderr(stderr):
+                    with self.assertRaises(SystemExit) as raised:tempo_handoff_reference.main()
+                self.assertEqual(raised.exception.code,2);self.assertEqual(stdout.getvalue(),'')
+                self.assertEqual(stderr.getvalue(),'bounded tempo-handoff experiment failed; child diagnostics suppressed\n')
+
     def test_native_tempo_boundary_controls(self):
         if TIMELINE is None:self.skipTest('timeline probe not supplied')
         with tempfile.TemporaryDirectory() as tmp:
@@ -405,7 +488,7 @@ class SelectionWaitContracts(unittest.TestCase):
                 model,live,gap,spin=case;game=root/f'{model}-{live}-{gap}-{spin}.gb'
                 game.write_bytes(tick_selection_fixture(128,live_tempo=live,change_after=3,boundary=True,request_gap=gap,selection_spin=spin))
                 data=reference.capture(TIMELINE,program,game,model,300000000,inputs,tempo_boundary=True)
-                return tempo_boundary_reference.summarize(data,live)
+                return tempo_handoff_reference.summarize(data,live)
             with ThreadPoolExecutor(max_workers=4) as pool:runs=list(pool.map(run,cases))
             self.assertEqual(len(runs),32)
             for run in runs:

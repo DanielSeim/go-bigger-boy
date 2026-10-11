@@ -92,7 +92,7 @@ notes under request counter 2, reads on either side of delivery, absent/ambiguou
 reads, invalid bindings, missing gates and sanitized failures. Both firmware
 images remain unchanged; this is a timing experiment, not firmware qualification.
 
-Next, correlate the operand read with the public APU music-value publication
-and its first matching SPC reply. This can distinguish GB delivery from later
-APU command acceptance without inspecting original software state or changing
-the selection timing model prematurely.
+The [handoff correlation](sgb-vendor-tempo-handoff.md) now retains public APU
+music-value writes and matching replies from these same coordinates. Every
+candidate publication follows the operand read, so earlier GB delivery alone
+does not establish the tempo state when the APU command is published.

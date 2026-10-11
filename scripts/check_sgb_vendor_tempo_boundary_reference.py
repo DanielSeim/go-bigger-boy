@@ -104,8 +104,12 @@ def summarize(data,live):
         configuration=config)
 
 
-def main():
-    parser=argparse.ArgumentParser(description=__doc__)
+def main(*,handoff=False):
+    summary=summarize
+    if handoff:
+        from check_sgb_vendor_tempo_handoff_reference import summarize as summary
+    name='tempo-handoff' if handoff else 'tempo-boundary'
+    parser=argparse.ArgumentParser(description='Correlate authored tempo reads with public APU handoff timestamps.' if handoff else __doc__)
     parser.add_argument('--probe',type=Path,required=True)
     parser.add_argument('--firmware-dir',type=Path,required=True)
     args=parser.parse_args()
@@ -119,14 +123,14 @@ def main():
                 image=build(128,live_tempo=live,change_after=3,boundary=True,request_gap=gap,selection_spin=spin)
                 game=root/f'{model}-{live}-{gap}-{spin}.gb';game.write_bytes(image)
                 data=capture(args.probe.resolve(),(args.firmware_dir/name).resolve(),game,model,300000000,inputs,tempo_boundary=True)
-                return dict(model=model,live=live,gap=gap,spin=spin,fixture_sha256=hashlib.sha256(image).hexdigest(),**summarize(data,live))
+                return dict(model=model,live=live,gap=gap,spin=spin,fixture_sha256=hashlib.sha256(image).hexdigest(),**summary(data,live))
             with ThreadPoolExecutor(max_workers=4) as pool: runs=list(pool.map(run,cases))
-            report=dict(schema='gbb-sgb-vendor-tempo-boundary-v1',qualification=False,parameters_fitted=False,
+            report=dict(schema='gbb-sgb-vendor-'+name+'-v1',qualification=False,parameters_fitted=False,
                 program_sha256={name:hashlib.sha256((args.firmware_dir/name).read_bytes()).hexdigest()
                                 for name in ('sgb1.program.rom','sgb2.program.rom')},runs=runs)
         print(json.dumps(report))
     except (OSError,ValueError,KeyError,TypeError,IndexError,StopIteration,subprocess.SubprocessError):
-        parser.exit(2,'bounded tempo-boundary experiment failed; child diagnostics suppressed\n')
+        parser.exit(2,'bounded '+name+' experiment failed; child diagnostics suppressed\n')
 
 
 if __name__=='__main__': main()

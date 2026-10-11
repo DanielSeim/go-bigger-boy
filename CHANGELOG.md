@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Correlate authored SGB tempo reads with public APU music writes and matching
+  replies, retaining ambiguous observations and existing timing guards.
+
 - Sweep SGB reselection around an authored tempo change while distinguishing
   pending old-track notes from the newly selected song.
 
