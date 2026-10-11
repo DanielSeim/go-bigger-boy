@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <tuple>
 using Host = gameboy::SgbHost;

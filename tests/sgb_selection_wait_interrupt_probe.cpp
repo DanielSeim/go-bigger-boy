@@ -5,6 +5,7 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include <string>
 #include <vector>
 namespace {
 void checked(bool ok,int line) { if (!ok) throw std::runtime_error("owned mid-wait reload contract failed at line "+std::to_string(line)); }
