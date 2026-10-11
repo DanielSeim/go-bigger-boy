@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Cross authored starting and live SGB song tempos to distinguish retained
+  selection state, with matched controls and scalar/reset/save-load replay.
+
 - Observe bounded public SGB timer-enable and target writes, with transparent
   reset/save-load bindings and matched original reselection comparisons.
 

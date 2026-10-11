@@ -240,3 +240,11 @@ also cover PCM/state transparency and destination observer bindings. The optiona
 `gameboy_sgb_vendor_timer_writes_local_reference` runs 48 original captures with
 timeout 2400 and labels `local;private-reference`. Public matrix discovery remains
 96; existing public matrix timeout remains 1800 seconds.
+
+The [crossed-tempo experiment](sgb-vendor-tempo-change.md) adds 32 owned timelines
+and four native/scalar playback pairs to the same selection-wait matrix. Two
+short methods (twenty total) validate fixture scope, tempo witnesses, matched
+comparisons, corpus completeness and sanitized failures. The optional
+`gameboy_sgb_vendor_tempo_change_local_reference` captures 32 original timelines,
+with timeout 2400 and labels `local;private-reference`. Public matrix discovery
+remains 96 and the selection-wait matrix timeout remains 1800 seconds.

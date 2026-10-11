@@ -27,6 +27,7 @@ import check_sgb_vendor_tick_reference as tick_reference
 from build_sgb_vendor_tick_selection_fixture import build as tick_selection_fixture
 import check_sgb_vendor_tick_selection_reference as tick_selection_reference
 import check_sgb_vendor_timer_writes_reference as timer_write_reference
+import check_sgb_vendor_tempo_change_reference as tempo_change_reference
 
 TIMELINE=PROBE=INTERRUPT=None
 
@@ -53,9 +54,14 @@ def tick_timeline(tempo=45):
             playback=registers(start+100,completion-100),idle=registers(completion+100,999900))])
 
 
-def tick_selection_timeline(tempo=45,state='active'):
+def tick_selection_timeline(tempo=45,state='active',start_tempo=None):
     original=tick_timeline(tempo);events=original['events'][:13]
     events[-1]['pitch']=1281
+    if start_tempo is not None:
+        delta=tick_reference.expected(start_tempo,0)[0]-tick_reference.expected(tempo,0)[0]
+        for event in events[3:]: event['half']+=delta
+        events[1]['half']=(events[0]['half']+events[3]['half'])//2
+        events[2]['half']=events[1]['half']+20
     start=events[0]['half'];tail=events[-1]['half']
     completion=tail+96*256*4096//tempo if state=='completed' else 0
     request=(completion or tail)+50000;directory=request+100;root=directory+32768;onset=root+1000
@@ -91,6 +97,112 @@ def tick_selection_timeline(tempo=45,state='active'):
 
 
 class SelectionWaitContracts(unittest.TestCase):
+    def test_tempo_change_scope_witnesses_and_contrasts(self):
+        runs=[]
+        for model in ('sgb','sgb2'):
+            for start in tempo_change_reference.TEMPOS:
+                for live in tempo_change_reference.TEMPOS:
+                    for state in ('active','completed'):
+                        for holdout in (False,True):
+                            image=tick_selection_fixture(start,state,holdout=holdout,live_tempo=live)
+                            self.assertEqual(image,tick_selection_fixture(start,state,holdout=holdout,live_tempo=live))
+                            self.assertIn(bytes((2,125,0xA4,0xE7,live,0xA3,0xA4,0xA3,96,0xA2,0)),image)
+                            other=tick_selection_fixture(start,'completed' if state=='active' else 'active',holdout=not holdout,live_tempo=live)
+                            self.assertEqual(image[0x4000:],other[0x4000:])
+                            data=self.timer_configuration(tick_selection_timeline(live,state,start))
+                            measured=tempo_change_reference.summarize(data,start,live,state)
+                            self.assertEqual(measured['prefix_max_error_ms'],0)
+                            runs.append(dict(model=model,start_tempo=start,live_tempo=live,state=state,holdout=holdout,
+                                             observed=WAITS[live]*2048))
+        compared=tempo_change_reference.compare(runs)
+        self.assertIs(compared['parameters_fitted'],False)
+        self.assertTrue(all(c['live_within_2ms'] and not c['starting_within_2ms'] for c in compared['cases']))
+        changed=copy.deepcopy(runs)
+        for row in changed:
+            if row['holdout'] and row['start_tempo']!=row['live_tempo']: row['observed']+=16384
+        after=tempo_change_reference.compare(changed)
+        self.assertEqual([c for c in compared['cases'] if not c['holdout']],[c for c in after['cases'] if not c['holdout']])
+        self.assertTrue(all(not c['live_within_2ms'] for c in after['cases'] if c['holdout']))
+        for bad in (runs[:-1],runs+[runs[0]],runs[:-1]+[runs[0]]):
+            with self.assertRaises(ValueError): tempo_change_reference.compare(bad)
+        for live in (True,99):
+            with self.assertRaises(ValueError): tick_selection_fixture(live_tempo=live)
+        data=self.timer_configuration(tick_selection_timeline(128,'active',32))
+        with self.assertRaises(ValueError): tempo_change_reference.summarize(data,128,128,'active')
+        with self.assertRaises(ValueError): tempo_change_reference.summarize(data,32,32,'active')
+        data['events'][0]['pitch']=1357
+        with self.assertRaises(ValueError): tempo_change_reference.summarize(data,32,128,'active')
+
+    def test_tempo_change_reference_filters_and_failure(self):
+        def capture(probe,program,game,model,clocks,inputs,**flags):
+            _,start,live,state,holdout=game.stem.split('-');start=int(start);live=int(live);holdout=bool(int(holdout))
+            image=tick_selection_fixture(start,state,holdout=holdout,live_tempo=live)
+            self.assertEqual(game.read_bytes(),image)
+            self.assertEqual(clocks,300000000);self.assertEqual(flags,dict(timer_writes=True))
+            return self.timer_configuration(tick_selection_timeline(live,state,start))
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            for name in ('sgb1.program.rom','sgb2.program.rom'): (root/name).write_bytes(b'owned stub')
+            argv=['check','--probe',str(root/'probe'),'--firmware-dir',str(root)]
+            stdout=io.StringIO()
+            with patch.object(sys,'argv',argv),patch.object(tempo_change_reference,'capture',side_effect=capture) as run,contextlib.redirect_stdout(stdout):
+                tempo_change_reference.main()
+            report=json.loads(stdout.getvalue());self.assertEqual(run.call_count,32)
+            self.assertIs(report['qualification'],False)
+            for row in report['runs']:
+                self.assertEqual(row['fixture_sha256'],hashlib.sha256(tick_selection_fixture(row['start_tempo'],row['state'],holdout=row['holdout'],live_tempo=row['live_tempo'])).hexdigest())
+            for fault in (ValueError('private detail'),None):
+                stdout=io.StringIO();stderr=io.StringIO()
+                with patch.object(sys,'argv',argv),patch.object(tempo_change_reference,'capture',side_effect=fault,return_value={}),contextlib.redirect_stdout(stdout),contextlib.redirect_stderr(stderr):
+                    with self.assertRaises(SystemExit) as raised: tempo_change_reference.main()
+                self.assertEqual(raised.exception.code,2);self.assertEqual(stdout.getvalue(),'')
+                self.assertEqual(stderr.getvalue(),'bounded tempo-change experiment failed; child diagnostics suppressed\n')
+
+    def test_native_tempo_change_controls(self):
+        if TIMELINE is None: self.skipTest('timeline probe not supplied')
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);(root/'owned.rom').write_bytes(firmware(selection_wait=True))
+            inputs=root/'none.script';inputs.write_text('GBB SGB input v1\n0 none\n')
+            cases=[(model,start,live,state,holdout) for model in ('sgb','sgb2')
+                   for start in tempo_change_reference.TEMPOS for live in tempo_change_reference.TEMPOS
+                   for state in ('active','completed') for holdout in (False,True)]
+            def run(case):
+                model,start,live,state,holdout=case;game=root/f'{model}-{start}-{live}-{state}-{int(holdout)}.gb'
+                game.write_bytes(tick_selection_fixture(start,state,holdout=holdout,live_tempo=live))
+                data=reference.capture(TIMELINE,root/'owned.rom',game,model,300000000,inputs,timer_writes=True)
+                return dict(model=model,start_tempo=start,live_tempo=live,state=state,holdout=holdout,
+                            **tempo_change_reference.summarize(data,start,live,state))
+            with ThreadPoolExecutor(max_workers=4) as pool: runs=list(pool.map(run,cases))
+            for row in runs:
+                self.assertLess(abs(row['observed']/2048-WAITS[row['live_tempo']]),.4)
+            for row in tempo_change_reference.compare(runs)['cases']:
+                self.assertTrue(row['live_within_2ms']);self.assertFalse(row['starting_within_2ms'])
+
+    def test_native_tempo_change_replay(self):
+        if PROBE is None: self.skipTest('playback probe not supplied')
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);program=root/'owned.rom';program.write_bytes(firmware(selection_wait=True))
+            def run(case):
+                model,start,live=case;game=root/f'{model}-{start}-{live}.gb'
+                game.write_bytes(tick_selection_fixture(start,'active',holdout=True,live_tempo=live))
+                results=[]
+                for mode in ('native','scalar'):
+                    child=subprocess.run([str(PROBE),str(program),str(game),model,'100000000',mode,'bundled'],
+                                         capture_output=True,timeout=180)
+                    self.assertEqual(child.returncode,0,child.stderr)
+                    self.assertLess(len(child.stdout),8192);data=json.loads(child.stdout)
+                    self.assertIs(data['reset_equal'],True);self.assertIs(data['restore_equal'],True)
+                    self.assertGreater(data['selection_wait_restores'],0)
+                    self.assertGreater(data['selection_wait_pulse_restores'],0)
+                    self.assertGreater(data['unread_restores'],0);self.assertGreater(data['nonzero'],100)
+                    self.assertEqual((data['starts'],data['completes'],data['notes'],data['selected'],data['rejected']),
+                                     (2,1,6,2,0))
+                    results.append(data)
+                for key in ('pcm_fnv64','frames','clocks','last_nonzero_clock','nonzero'):
+                    self.assertEqual(results[0][key],results[1][key])
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                list(pool.map(run,[(m,a,b) for m in ('sgb','sgb2') for a,b in ((32,128),(128,32))]))
+
     def timer_configuration(self, data):
         initial=[1,16,-1,-1]
         data['timer_configuration']=dict(end_half=data['timer_continuity'][-1]['end_half'],

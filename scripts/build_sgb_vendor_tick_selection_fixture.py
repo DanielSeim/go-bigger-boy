@@ -11,12 +11,16 @@ from build_sgb_vendor_tick_fixture import TEMPO_POINTS
 PREFIX=(0xA4,0xA3,0xA4,0xA3)
 
 
-def build(tempo=45,state='active',*,holdout=False):
+def build(tempo=45,state='active',*,holdout=False,live_tempo=None):
     if type(tempo) is not int or tempo not in TEMPO_POINTS or state not in ('active','completed') or type(holdout) is not bool:
         raise ValueError('invalid tick-selection controls')
+    if live_tempo is not None and (type(live_tempo) is not int or live_tempo not in TEMPO_POINTS):
+        raise ValueError('invalid live tempo')
     score=bytearray(bank(echo=False))
     header=lambda t:bytes((0xE0,2,0xE1,10,0xE5,160,0xED,127,0xE7,t))
-    first=header(tempo)+bytes((2,125,*PREFIX,96,0xA2,0))
+    first=header(tempo)+bytes((2,125,PREFIX[0]))
+    if live_tempo is not None: first+=bytes((0xE7,live_tempo))
+    first+=bytes((*PREFIX[1:],96,0xA2,0))
     second=header(45)+bytes((96,125,0xA3,0))
     for offset,stream in ((0x60,first),(0x90,second)):
         score[offset:offset+48]=stream+bytes(48-len(stream))
@@ -32,10 +36,11 @@ if __name__=='__main__':
     parser.add_argument('--tempo',type=int,choices=TEMPO_POINTS,default=45)
     parser.add_argument('--state',choices=('active','completed'),default='active')
     parser.add_argument('--holdout',action='store_true')
+    parser.add_argument('--live-tempo',type=int,choices=TEMPO_POINTS)
     parser.add_argument('--output',type=Path,required=True)
     args=parser.parse_args()
     try:
-        image=build(args.tempo,args.state,holdout=args.holdout)
+        image=build(args.tempo,args.state,holdout=args.holdout,live_tempo=args.live_tempo)
         with args.output.open('xb') as stream: stream.write(image)
     except (OSError,ValueError) as error: parser.error(str(error))
     print(hashlib.sha256(image).hexdigest())
