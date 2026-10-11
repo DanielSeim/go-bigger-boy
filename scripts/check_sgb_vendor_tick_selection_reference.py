@@ -16,9 +16,11 @@ from check_sgb_vendor_tick_reference import expected
 from check_sgb_vendor_accumulator_model import predict
 
 
-def summarize(data,tempo,state):
+def summarize(data,tempo,state,*,witness_note=1):
     if tempo not in TEMPO_POINTS or type(tempo) is not int or state not in ('active','completed'):
         raise ValueError('invalid phase witness controls')
+    if type(witness_note) is not int or witness_note not in (1,3):
+        raise ValueError('invalid live witness note')
     if data['music']!=[1,2] or len(data['requests'])!=2 or data.get('selection_timer_results') is not True:
         raise ValueError('phase witness request contract changed')
     notes=[e for e in data['events'] if e['register']==0x4C]
@@ -65,9 +67,9 @@ def summarize(data,tempo,state):
         selections.append(dict(traversal_stages=dict(root=dict(after_previous_stage_ms=(root-directory)/2048))))
         anchors.append((directory,root))
     timers=timer_summary(collapsed,selections)
-    onset=notes[1]['half']
-    witnesses=[e['half']-onset for e in notes[2:5]]
-    def error(phase): return [abs(a-b) for a,b in zip(expected(tempo,phase)[:3],witnesses)]
+    onset=notes[witness_note]['half']
+    witnesses=[e['half']-onset for e in notes[witness_note+1:5]]
+    def error(phase): return [abs(a-b) for a,b in zip(expected(tempo,phase)[:len(witnesses)],witnesses)]
     phase=min(range(256),key=lambda p:(max(error(p)),sum(error(p)),p))
     compatible=[p for p in range(256) if max(error(p))<=2048]
     prior=windows[0]

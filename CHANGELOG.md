@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Bound SGB selection tempo adoption with late authored tempo commands,
+  confirmed playback ownership and matched request-age controls.
+
 - Cross authored starting and live SGB song tempos to distinguish retained
   selection state, with matched controls and scalar/reset/save-load replay.
 

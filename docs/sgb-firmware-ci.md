@@ -248,3 +248,11 @@ comparisons, corpus completeness and sanitized failures. The optional
 `gameboy_sgb_vendor_tempo_change_local_reference` captures 32 original timelines,
 with timeout 2400 and labels `local;private-reference`. Public matrix discovery
 remains 96 and the selection-wait matrix timeout remains 1800 seconds.
+
+The [late-tempo adoption experiment](sgb-vendor-tempo-age.md) adds 32 owned
+active timelines and four native/scalar replay pairs to that matrix. Two short
+methods (twenty-two total) cover the later change position, both tempo witnesses,
+request-age bounds, matched controls, corpus completeness and sanitized failures.
+`gameboy_sgb_vendor_tempo_age_local_reference` optionally captures 32 original
+timelines, with timeout 2400 and labels `local;private-reference`. Public matrix
+discovery remains 96; the selection-wait matrix timeout remains 1800 seconds.
