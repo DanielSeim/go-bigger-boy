@@ -264,3 +264,12 @@ compare all earlier timeline metadata exactly with observation on/off. One short
 method (twenty-three total) rejects malformed fields, values, addresses, order,
 ownership and counts. The same optional 32-case private gate is retained, with
 report schema `gbb-sgb-vendor-tempo-age-v2`. Public matrix discovery remains 96.
+
+The [tempo-boundary sweep](sgb-vendor-tempo-boundary.md) adds 32 owned timelines,
+four observation-mode pairs and four native/scalar reset/save-load pairs to the
+selection-wait matrix. Two short methods (twenty-five total) check fixture scope,
+pending old-track ownership, read ambiguity and sanitized failures. The optional
+`gameboy_sgb_vendor_tempo_boundary_local_reference` runs 32 original captures,
+with timeout 2400 and labels `local;private-reference`. Public matrix discovery
+remains 96. To accommodate the accumulated native controls, the public
+selection-wait matrix timeout is now 2400 seconds and its scheduling cost 1200.

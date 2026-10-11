@@ -29,6 +29,7 @@ import check_sgb_vendor_tick_selection_reference as tick_selection_reference
 import check_sgb_vendor_timer_writes_reference as timer_write_reference
 import check_sgb_vendor_tempo_change_reference as tempo_change_reference
 import check_sgb_vendor_tempo_age_reference as tempo_age_reference
+import check_sgb_vendor_tempo_boundary_reference as tempo_boundary_reference
 
 TIMELINE=PROBE=INTERRUPT=None
 
@@ -181,14 +182,14 @@ class SelectionWaitContracts(unittest.TestCase):
             for row in tempo_change_reference.compare(runs)['cases']:
                 self.assertTrue(row['live_within_2ms']);self.assertFalse(row['starting_within_2ms'])
 
-    def tempo_change_replay(self,*,change_after=1,request_gap=None):
+    def tempo_change_replay(self,*,change_after=1,request_gap=None,boundary=False):
         if PROBE is None: self.skipTest('playback probe not supplied')
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);program=root/'owned.rom';program.write_bytes(firmware(selection_wait=True))
             def run(case):
                 model,start,live=case;game=root/f'{model}-{start}-{live}.gb'
                 game.write_bytes(tick_selection_fixture(start,'active',holdout=True,live_tempo=live,
-                    change_after=change_after,request_gap=request_gap))
+                    change_after=change_after,request_gap=request_gap,boundary=boundary))
                 results=[]
                 for mode in ('native','scalar'):
                     child=subprocess.run([str(PROBE),str(program),str(game),model,'100000000',mode,'bundled'],
@@ -205,7 +206,7 @@ class SelectionWaitContracts(unittest.TestCase):
                 for key in ('pcm_fnv64','frames','clocks','last_nonzero_clock','nonzero'):
                     self.assertEqual(results[0][key],results[1][key])
             with ThreadPoolExecutor(max_workers=4) as pool:
-                list(pool.map(run,[(m,a,b) for m in ('sgb','sgb2') for a,b in ((32,128),(128,32))]))
+                list(pool.map(run,[(m,a,b) for m in ('sgb','sgb2') for a,b in (((128,32),(128,128)) if boundary else ((32,128),(128,32)))]))
 
     def test_native_tempo_change_replay(self):
         self.tempo_change_replay()
@@ -297,6 +298,119 @@ class SelectionWaitContracts(unittest.TestCase):
             for r in runs: self.assertLess(abs(r['observed']/2048-WAITS[r['live']]),.4)
             for r in tempo_age_reference.compare(runs)['cases']:
                 self.assertTrue(r['live_within_2ms']);self.assertFalse(r['starting_within_2ms'])
+
+    def test_native_tempo_boundary_replay(self):
+        self.tempo_change_replay(change_after=3,request_gap=12,boundary=True)
+
+    def test_native_tempo_boundary_transparency(self):
+        if TIMELINE is None:self.skipTest('timeline probe not supplied')
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);program=root/'owned.rom';program.write_bytes(firmware(selection_wait=True))
+            inputs=root/'none.script';inputs.write_text('GBB SGB input v1\n0 none\n')
+            def run(case):
+                model,live=case;game=root/f'{model}-{live}.gb'
+                game.write_bytes(tick_selection_fixture(128,live_tempo=live,change_after=3,boundary=True,request_gap=12,holdout=True))
+                plain=reference.capture(TIMELINE,program,game,model,300000000,inputs,tempo_operands=True)
+                observed=reference.capture(TIMELINE,program,game,model,300000000,inputs,tempo_boundary=True)
+                tempo_boundary_reference.summarize(observed,live)
+                plain.pop('tempo_operand_reads');observed.pop('tempo_operand_reads')
+                self.assertEqual(plain,observed)
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                list(pool.map(run,[(m,l) for m in ('sgb','sgb2') for l in (32,128)]))
+
+    def boundary_timeline(self,live=32,pending=False):
+        data=self.tempo_operand_configuration(tick_selection_timeline(live,start_tempo=128,change_after=3))
+        notes=[e for e in data['events'] if e['register']==0x4C];notes[-1]['pitch']=717
+        if pending:
+            request=notes[2]['half']+1000;data['requests'][1]=request
+            data['timer_continuity'][0]['end_half']=request
+            for access in data['timer_continuity'][0]['playback']:
+                for kind in ('all','nonzero'):
+                    stats=access[kind]
+                    if stats['count']:
+                        stats['last']=request-100;stats['min_gap']=stats['max_gap']=stats['last']-stats['first']
+            for event in data['events']:
+                if event['half']>=request:event['request']=2
+            data['tempo_operand_reads'][0]['request']=2
+        return data
+
+    def test_tempo_boundary_scope_and_pending_ownership(self):
+        images=[]
+        for model,gaps in tempo_boundary_reference.GAPS.items():
+            for live in (32,128):
+                for gap in gaps:
+                    for spin in tempo_boundary_reference.SPINS:
+                        image=tick_selection_fixture(128,live_tempo=live,change_after=3,boundary=True,request_gap=gap,selection_spin=spin)
+                        self.assertIn(bytes((96,125,0x98,0)),image);images.append(image)
+        self.assertEqual(len(images),32)
+        self.assertTrue(all(image[0x4000:]==images[0][0x4000:] for image in images[:8]))
+        for pending in (False,True):
+            data=self.boundary_timeline(pending=pending);summary=tempo_boundary_reference.summarize(data,32)
+            self.assertEqual(summary['category'],'request_before_operand' if pending else 'operand_before_request')
+            self.assertEqual(summary['old_note_requests'],[1,1,1,2,2] if pending else [1]*5)
+            self.assertEqual(summary['operand_age_ms']<0,pending)
+        tied=self.boundary_timeline(pending=True)
+        tied['tempo_operand_reads'][0]['half']=tied['requests'][1]
+        self.assertEqual(tempo_boundary_reference.summarize(tied,32)['category'],'request_before_operand')
+        data=self.boundary_timeline();bad=copy.deepcopy(data);bad['tempo_operand_reads']*=2
+        self.assertEqual(tempo_boundary_reference.summarize(bad,32)['category'],'ambiguous_reads')
+        missing=self.boundary_timeline(pending=True)
+        old=[e for e in missing['events'] if e['register']==0x4C and e['pitch']!=717]
+        missing['events']=[e for e in missing['events'] if e is not old[3] and e is not old[4]]
+        missing['tempo_operand_reads']=[]
+        self.assertEqual(tempo_boundary_reference.summarize(missing,32)['category'],'not_observed')
+        for fault in ('selected','read','value','bounds','gate'):
+            bad=copy.deepcopy(data)
+            if fault=='selected':bad['events'][-2]['pitch']=1357
+            elif fault=='read':bad['tempo_operand_reads']=[]
+            elif fault=='value':bad['tempo_operand_reads'][0]['value']=32
+            elif fault=='bounds':bad['tempo_operand_reads'][0]['half']=0
+            else:bad['events'].pop(1)
+            with self.assertRaises(ValueError):tempo_boundary_reference.summarize(bad,32)
+        for flags in (dict(boundary=1),dict(boundary=True),dict(boundary=True,live_tempo=32,change_after=3,request_gap=3),
+                      dict(selection_spin=1024),dict(boundary=True,live_tempo=32,change_after=3,selection_spin=1)):
+            with self.assertRaises(ValueError):tick_selection_fixture(**flags)
+
+    def test_tempo_boundary_reference_filters_and_failure(self):
+        def capture(probe,program,game,model,clocks,inputs,**flags):
+            _,live,gap,spin=game.stem.split('-');live=int(live);gap=int(gap);spin=int(spin)
+            self.assertEqual(game.read_bytes(),tick_selection_fixture(128,live_tempo=live,change_after=3,boundary=True,request_gap=gap,selection_spin=spin))
+            self.assertEqual(clocks,300000000);self.assertEqual(flags,dict(tempo_boundary=True))
+            return self.boundary_timeline(live,pending=bool(spin))
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            for name in ('sgb1.program.rom','sgb2.program.rom'):(root/name).write_bytes(b'owned stub')
+            argv=['check','--probe',str(root/'probe'),'--firmware-dir',str(root)]
+            stdout=io.StringIO()
+            with patch.object(sys,'argv',argv),patch.object(tempo_boundary_reference,'capture',side_effect=capture) as run,contextlib.redirect_stdout(stdout):
+                tempo_boundary_reference.main()
+            report=json.loads(stdout.getvalue());self.assertEqual(run.call_count,32)
+            self.assertIs(report['qualification'],False);self.assertIs(report['parameters_fitted'],False)
+            self.assertEqual({r['category'] for r in report['runs']},{'operand_before_request','request_before_operand'})
+            for fault in (ValueError('private detail'),None):
+                stdout=io.StringIO();stderr=io.StringIO()
+                with patch.object(sys,'argv',argv),patch.object(tempo_boundary_reference,'capture',side_effect=fault,return_value={}),contextlib.redirect_stdout(stdout),contextlib.redirect_stderr(stderr):
+                    with self.assertRaises(SystemExit) as raised:tempo_boundary_reference.main()
+                self.assertEqual(raised.exception.code,2);self.assertEqual(stdout.getvalue(),'')
+                self.assertEqual(stderr.getvalue(),'bounded tempo-boundary experiment failed; child diagnostics suppressed\n')
+
+    def test_native_tempo_boundary_controls(self):
+        if TIMELINE is None:self.skipTest('timeline probe not supplied')
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);program=root/'owned.rom';program.write_bytes(firmware(selection_wait=True))
+            inputs=root/'none.script';inputs.write_text('GBB SGB input v1\n0 none\n')
+            cases=[(m,l,g,s) for m in ('sgb','sgb2') for l in (32,128)
+                   for g in tempo_boundary_reference.GAPS[m] for s in tempo_boundary_reference.SPINS]
+            def run(case):
+                model,live,gap,spin=case;game=root/f'{model}-{live}-{gap}-{spin}.gb'
+                game.write_bytes(tick_selection_fixture(128,live_tempo=live,change_after=3,boundary=True,request_gap=gap,selection_spin=spin))
+                data=reference.capture(TIMELINE,program,game,model,300000000,inputs,tempo_boundary=True)
+                return tempo_boundary_reference.summarize(data,live)
+            with ThreadPoolExecutor(max_workers=4) as pool:runs=list(pool.map(run,cases))
+            self.assertEqual(len(runs),32)
+            for run in runs:
+                self.assertIn(run['category'],('not_observed','ambiguous_reads','operand_before_request','request_before_operand'))
+                self.assertGreater(run['selected_half'],run['request_half'])
 
     def tempo_operand_configuration(self,data):
         self.timer_configuration(data)

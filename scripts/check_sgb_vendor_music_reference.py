@@ -14,9 +14,10 @@ from build_sgb_vendor_timing_fixture import build as timing_game
 from check_sgb_vendor_music_title import TITLE_SHA256, SCRIPT_SHA256
 
 
-def capture(probe, program, game, model, clocks, inputs, *, port_handshakes=False, spc_replies=False, selection_handoff=False, selection_directory=False, selection_traversal=False, selection_volume=False, selection_timers=False, selection_timer_results=False, timer_continuity=False, timer_writes=False, tempo_operands=False):
+def capture(probe, program, game, model, clocks, inputs, *, port_handshakes=False, spc_replies=False, selection_handoff=False, selection_directory=False, selection_traversal=False, selection_volume=False, selection_timers=False, selection_timer_results=False, timer_continuity=False, timer_writes=False, tempo_operands=False, tempo_boundary=False):
     command = [str(probe),str(program),str(game),model,str(clocks),str(inputs),'bundled']
-    if tempo_operands: command.append('--tempo-operands')
+    if tempo_boundary: command.append('--tempo-boundary')
+    elif tempo_operands: command.append('--tempo-operands')
     elif timer_writes: command.append('--timer-writes')
     elif timer_continuity: command.append('--timer-continuity')
     elif selection_timer_results: command.append('--selection-timer-results')
@@ -29,7 +30,7 @@ def capture(probe, program, game, model, clocks, inputs, *, port_handshakes=Fals
     elif port_handshakes: command.append('--port-handshakes')
     child = subprocess.run(command,
                            capture_output=True,timeout=240)
-    if child.returncode or len(child.stdout)>(98304 if selection_volume or selection_timer_results or timer_continuity or timer_writes or tempo_operands else 65536 if selection_traversal or selection_timers else 49152 if selection_handoff or selection_directory else 32768):
+    if child.returncode or len(child.stdout)>(98304 if selection_volume or selection_timer_results or timer_continuity or timer_writes or tempo_operands or tempo_boundary else 65536 if selection_traversal or selection_timers else 49152 if selection_handoff or selection_directory else 32768):
         raise ValueError('bounded register-only observation failed')
     data = json.loads(child.stdout)
     if (data.get('schema')!='gbb-sgb-music-timeline-v1' or data.get('qualification') is not False or

@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Sweep SGB reselection around an authored tempo change while distinguishing
+  pending old-track notes from the newly selected song.
+
 - Timestamp bounded reads of an authored SGB tempo operand after playback begins,
   with ownership guards and observation transparency comparisons.
 
