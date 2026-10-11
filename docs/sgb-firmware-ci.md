@@ -157,3 +157,11 @@ reset/save-load PCM/state replays. Both probe targets are discovered. Short
 fixture/report contracts remain in platform and sanitizer jobs; the optional
 original comparison stays `local;private-reference` (timeout 4800 seconds).
 See [preceding-song tempo](sgb-vendor-prior-tempo.md).
+
+The measured-volume suite adds `gameboy_sgb_score_vendor_volume` (cost 600,
+timeout 1800 seconds), bringing discovery to 95 full public matrices. It gates
+exact measured voice pairs, held-out setup, provisional fallback, observer
+transparency and scalar/native PCM with reset/save-load on both models. The
+short `gameboy_sgb_vendor_volume_contract` stays in platform/sanitizer jobs;
+the optional original comparison stays private. See
+[measured voice volumes](sgb-vendor-volume.md).

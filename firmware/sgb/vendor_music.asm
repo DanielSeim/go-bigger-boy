@@ -606,11 +606,16 @@ vendor_voice_volume:
     mov x, $33
     mov a, vendor_pan_left+x
     .byte $eb, $4b, $cf, $dd
-    mov $f2, #$20
-    mov $f3, a
+    mov $79, a
     mov a, vendor_pan_right+x
     .byte $eb, $4b, $cf, $dd
+    mov $7a, a
+    call vendor_measured_volume
+    mov $f2, #$20
+    mov a, $79
+    mov $f3, a
     mov $f2, #$21
+    mov a, $7a
     mov $f3, a
     mov a, $31
     lsr a
@@ -948,6 +953,78 @@ vendor_gate_profiles:
 ; tempo, articulation, duration, gate lo/hi, duration lo/hi (zero = fractional).
 .byte $2d,$7d,$60,$16,$02,$22,$02
 .byte $60,$7f,$10,$25,$00,$00,$00
+; Exact measured setup points for caller-uploaded instrument 2 only.
+; These are bounded observations, not a vendor curve or a fade algorithm.
+; 79/7a initially contain the provisional linear-policy result.
+vendor_measured_volume:
+    mov a, $54
+    beq vendor_volume_done
+    mov a, $36
+    cmp a, #$02
+    bne vendor_volume_done
+    mov a, $31
+    cmp a, #$7f
+    beq vendor_volume_full_velocity
+    cmp a, #$7d
+    bne vendor_volume_done
+    mov a, $33
+    cmp a, #$0a
+    bne vendor_volume_done
+    mov a, $35
+    cmp a, #$a0
+    bne vendor_volume_done
+    mov a, $34
+    cmp a, #$7f
+    bne vendor_volume_done
+    mov $79, #$06
+    mov $7a, #$06
+    ret
+vendor_volume_full_velocity:
+    mov a, $33
+    cmp a, #$0a
+    bne vendor_volume_endpoint
+    mov a, $35
+    cmp a, #$a0
+    beq vendor_volume_track
+    cmp a, #$50
+    bne vendor_volume_done
+    mov a, $34
+    cmp a, #$7f
+    bne vendor_volume_done
+    bra vendor_volume_reduced
+vendor_volume_track:
+    mov a, $34
+    cmp a, #$7f
+    beq vendor_volume_center
+    cmp a, #$40
+    bne vendor_volume_done
+vendor_volume_reduced:
+    mov $79, #$01
+    mov $7a, #$01
+    ret
+vendor_volume_center:
+    mov $79, #$07
+    mov $7a, #$07
+    ret
+vendor_volume_endpoint:
+    mov a, $35
+    cmp a, #$a0
+    bne vendor_volume_done
+    mov a, $34
+    cmp a, #$7f
+    bne vendor_volume_done
+    mov a, $33
+    beq vendor_volume_right
+    cmp a, #$14
+    bne vendor_volume_done
+    mov $79, #$0b
+    mov $7a, #$00
+    ret
+vendor_volume_right:
+    mov $79, #$00
+    mov $7a, #$0b
+vendor_volume_done:
+    ret
 vendor_measured_pitch:
 ; Filled from bounded owned-fixture DSP measurements; no private table bytes.
 vendor_pitch:

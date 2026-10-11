@@ -454,3 +454,8 @@ The [preceding-song tempo experiment](../docs/sgb-vendor-prior-tempo.md)
 changes song 1's tempo while retaining songs 2 and 3 and adds a previously
 unmeasured three-frame request offset. Bounded traversal metadata and owned
 reset/save-load replays test the control without changing firmware pacing.
+
+The [measured voice-volume correction](../docs/sgb-vendor-volume.md) updates the experimental DB
+renderer at six exact uploaded-instrument setup points, validated against both
+originals with held-out notes and timing. General volume curves, selection
+pacing and startup master-volume behavior remain open.

@@ -49,7 +49,7 @@ class VendorMusicTests(unittest.TestCase):
     def test_01_build_and_export(self):
         image = firmware()
         self.assertEqual(image, firmware())
-        self.assertEqual(hashlib.sha256(image).hexdigest(), '5b64893a6cc81fb231e2e36fd36102770761ddfc21a738c2244577c87efaa47a')
+        self.assertEqual(hashlib.sha256(image).hexdigest(), '0455c511726ec625afee474a90eba960f5eae2e156b4772d6f7b82b338d36ffd')
         self.assertEqual(len(image), 262144)
         self.assertEqual(int.from_bytes(image[0x7FDC:0x7FDE], 'little') ^
                          int.from_bytes(image[0x7FDE:0x7FE0], 'little'), 65535)

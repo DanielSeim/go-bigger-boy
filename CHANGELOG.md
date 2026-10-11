@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Match six measured uploaded-instrument SGB voice-volume/pan setup points,
+  with direct original comparisons, held-out notes/timing and owned audio replay.
+
 - Add prior-song tempo controls and previously unmeasured request spacing to
   SGB root-consumption diagnostics, with owned tempo-96 reset/save-load replay.
 

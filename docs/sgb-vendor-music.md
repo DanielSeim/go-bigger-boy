@@ -129,8 +129,10 @@ The following are **authored replacement policies**, not inferred vendor curves:
   used with both owned 16-sample loops; uploaded instrument 2 additionally scales
   it by its supplied tuning word. Notes 24..37 substitute the measured uploaded
   scale below; other notes remain provisional.
-- Linear pan points 0..20, multiplicative song/track volume, linear velocity and
-  eight explicitly authored articulation fractions.
+- Provisional linear pan points 0..20, multiplicative song/track volume, linear
+  velocity and eight authored articulation fractions. Uploaded instrument 2
+  substitutes six exact [measured volume/pan points](sgb-vendor-volume.md);
+  these observations do not establish a continuous curve.
 - Echo send projects the supplied mask onto the sole active channel-2 bit.
   Delay 0..15 uses the fixed owned echo pool and signed DSP volume/feedback bytes.
   Filter IDs 0..3 select an identity and three authored low-pass FIR responses,

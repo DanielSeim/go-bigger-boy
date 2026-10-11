@@ -861,3 +861,8 @@ bank, uploaded assets and combined effect-STOP control.
 The [preceding-song tempo controls](sgb-vendor-prior-tempo.md) vary the song
 before the unchanged selection and add a three-frame request-spacing offset,
 with exact owned tempo-96 reset/save-load PCM/state checks.
+
+The [measured voice-volume correction](sgb-vendor-volume.md) updates the experimental DB
+renderer at six exact uploaded-instrument setup points, validated against both
+originals with held-out notes and timing. General volume curves, selection
+pacing and startup master-volume behavior remain open.

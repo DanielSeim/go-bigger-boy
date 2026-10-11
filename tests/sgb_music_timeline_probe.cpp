@@ -24,6 +24,7 @@ struct PortHandshake {
     std::uint64_t first_music_reply{};
 };
 struct PitchWrite { std::uint64_t half; unsigned request, pitch; };
+struct VolumeWrite { std::uint64_t half; unsigned request, address, value; };
 struct DirectoryRead { std::uint64_t half; unsigned request, address; };
 struct Observation {
     Host* host{};
@@ -36,6 +37,9 @@ struct Observation {
     bool handoff_enabled{};
     bool directory_enabled{};
     bool traversal_enabled{};
+    bool volume_enabled{};
+    std::array<VolumeWrite,512> volumes{};
+    unsigned volume_count{};
     std::array<DirectoryRead,512> traversal{};
     unsigned traversal_count{};
     std::array<DirectoryRead,128> directory{};
@@ -126,6 +130,12 @@ struct Observation {
         auto& self=*static_cast<Observation*>(context);
         const auto requests=self.host->icd().sound_packets_delivered();
         if (!self.host->icd().audible_sound_packets_delivered()) return;
+        if (self.volume_enabled && requests && requests<=self.ports.size() &&
+            !self.ports[requests-1].keyon &&
+            (address==0x0c || address==0x1c || address==0x20 || address==0x21)) {
+            if (self.volume_count==self.volumes.size()) {self.overflow=true;return;}
+            self.volumes[self.volume_count++]={half,static_cast<unsigned>(requests),address,value};
+        }
         if (self.handoff_enabled && (address==0x22 || address==0x23) && requests &&
             requests<=self.ports.size() && !self.ports[requests-1].keyon) {
             if (self.pitch_count==self.pitches.size()) {self.overflow=true;return;}
@@ -154,8 +164,8 @@ std::vector<std::uint8_t> read(const char* path, std::size_t low, std::size_t hi
 }
 int main(int argc,char** argv) {
  try {
-    if (argc!=7 && (argc!=8 || (std::string(argv[7])!="--port-handshakes" && std::string(argv[7])!="--spc-replies" && std::string(argv[7])!="--selection-handoff" && std::string(argv[7])!="--selection-directory" && std::string(argv[7])!="--selection-traversal")))
-        throw std::runtime_error("PROGRAM GAME sgb|sgb2 CLOCKS SCRIPT bundled|fixture [--port-handshakes|--spc-replies|--selection-handoff|--selection-directory|--selection-traversal]");
+    if (argc!=7 && (argc!=8 || (std::string(argv[7])!="--port-handshakes" && std::string(argv[7])!="--spc-replies" && std::string(argv[7])!="--selection-handoff" && std::string(argv[7])!="--selection-directory" && std::string(argv[7])!="--selection-traversal" && std::string(argv[7])!="--selection-volume")))
+        throw std::runtime_error("PROGRAM GAME sgb|sgb2 CLOCKS SCRIPT bundled|fixture [--port-handshakes|--spc-replies|--selection-handoff|--selection-directory|--selection-traversal|--selection-volume]");
     gameboy::SgbHostConfig config;
     config.program_rom=read(argv[1],262144,524288); config.game_rom=read(argv[2],336,16*1024*1024);
     const std::string model=argv[3], boot=argv[6];
@@ -172,7 +182,8 @@ int main(int argc,char** argv) {
     for (std::size_t i=0;i<inputs.count;++i) config.input_events.push_back({inputs.events[i].frame,inputs.events[i].mask});
     Host host(config); Observation observed; observed.host=&host;
     observed.handshakes_enabled=argc==8;
-    observed.traversal_enabled=argc==8 && std::string(argv[7])=="--selection-traversal";
+    observed.volume_enabled=argc==8 && std::string(argv[7])=="--selection-volume";
+    observed.traversal_enabled=observed.volume_enabled || (argc==8 && std::string(argv[7])=="--selection-traversal");
     observed.directory_enabled=observed.traversal_enabled || (argc==8 && std::string(argv[7])=="--selection-directory");
     if (observed.directory_enabled) host.debug_set_spc_read_observer(Observation::read,&observed);
     observed.handoff_enabled=observed.directory_enabled || (argc==8 && std::string(argv[7])=="--selection-handoff");
@@ -265,6 +276,15 @@ int main(int argc,char** argv) {
             const auto& r=observed.traversal[i];
             std::cout<<(i?",":"")<<"{\"request\":"<<r.request<<",\"half\":"<<r.half
                 <<",\"address\":"<<r.address<<"}";
+        }
+        std::cout<<"]";
+    }
+    if (observed.volume_enabled) {
+        std::cout<<",\"selection_volume_writes\":[";
+        for (unsigned i=0;i<observed.volume_count;++i) {
+            const auto& v=observed.volumes[i];
+            std::cout<<(i?",":"")<<"{\"request\":"<<v.request<<",\"half\":"<<v.half
+                <<",\"register\":"<<v.address<<",\"value\":"<<v.value<<"}";
         }
         std::cout<<"]";
     }
