@@ -165,3 +165,11 @@ transparency and scalar/native PCM with reset/save-load on both models. The
 short `gameboy_sgb_vendor_volume_contract` stays in platform/sanitizer jobs;
 the optional original comparison stays private. See
 [measured voice volumes](sgb-vendor-volume.md).
+
+The opt-in selection-wait suite adds `gameboy_sgb_score_vendor_selection_wait`
+(cost 900, timeout 1800 seconds), bringing discovery to 96 public matrices. It
+builds the playback, timeline and direct mid-wait reload probes. Public controls
+cover admitted/unlisted tempos, active/completed playback, scalar/native PCM,
+wait snapshots and interruption ownership. The short builder/error contract
+remains in platform/sanitizer jobs; original timing comparisons remain private.
+See [selection pacing](sgb-vendor-selection-wait.md).

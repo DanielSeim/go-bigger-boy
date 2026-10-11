@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Add opt-in SGB prior-tempo selection pacing with direct timing/error gates,
+  interruptible waits and destination save/load checks during the wait.
+
 - Match six measured uploaded-instrument SGB voice-volume/pan setup points,
   with direct original comparisons, held-out notes/timing and owned audio replay.
 

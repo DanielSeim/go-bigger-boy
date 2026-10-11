@@ -41,11 +41,13 @@ struct Result {
     }
 };
 Result run(Host& initial, std::uint64_t target, const gameboy::SgbHostConfig& config,
-           unsigned* restore_count = nullptr, unsigned* unread_count = nullptr, bool scalar = false) {
+           unsigned* restore_count = nullptr, unsigned* unread_count = nullptr, bool scalar = false, unsigned* wait_count = nullptr, unsigned* pulse_count = nullptr) {
     Result result;
     Host* host = &initial;
     std::unique_ptr<Host> continued;
     unsigned steps = 0;
+    bool previous_waiting = false;
+    unsigned previous_remaining = 0;
     std::uint64_t previous = ~std::uint64_t{0};
     while (host->cpu().timing().clocks() < target) {
         if (!host->step()) throw std::runtime_error("host execution fault status=" +
@@ -60,7 +62,10 @@ Result run(Host& initial, std::uint64_t target, const gameboy::SgbHostConfig& co
             (std::uint64_t(host->debug_spc_ram_byte(0x73)) << 40) |
             (std::uint64_t(host->debug_spc_ram_byte(0x74)) << 48) |
             (std::uint64_t(host->debug_dsp_register(0x5c)) << 56);
-        if (restore_count && ((++steps % 65536) == 0 || phase != previous)) {
+        const bool waiting = host->debug_spc_ram_byte(0x7c) == 1;
+        const auto remaining = host->debug_spc_ram_byte(0x7d);
+        const bool wait_pulse = waiting && previous_waiting && remaining != previous_remaining;
+        if (restore_count && ((++steps % 65536) == 0 || phase != previous || waiting != previous_waiting || wait_pulse)) {
             require(*restore_count < 2048, "restore budget exceeded");
             auto snapshot = host->save_state();
             // Load into a separately initialized instance before continuing this run.
@@ -72,8 +77,12 @@ Result run(Host& initial, std::uint64_t target, const gameboy::SgbHostConfig& co
             host = continued.get();
             ++*restore_count;
             if (host->pending_samples()) ++*unread_count;
+            if (waiting && wait_count) ++*wait_count;
+            if (wait_pulse && pulse_count) ++*pulse_count;
         }
         previous = phase;
+        previous_waiting = waiting;
+        previous_remaining = remaining;
         Host::StereoSample sample;
         while (host->pop_sample(sample)) {
             ++result.frames;
@@ -133,14 +142,16 @@ int main(int argc, char** argv) {
         Host host(config), restored(config);
         if (mode == "scalar") { host.debug_set_apu_batch_enabled(false); restored.debug_set_apu_batch_enabled(false); }
         const auto result = run(host, target, config);
-        unsigned restores = 0, unread = 0;
-        require(result == run(restored, target, config, &restores, &unread, mode == "scalar"), "restored state/PCM mismatch");
+        unsigned restores = 0, unread = 0, waits = 0, pulses = 0;
+        require(result == run(restored, target, config, &restores, &unread, mode == "scalar", &waits, &pulses), "restored state/PCM mismatch");
         host.reset();
         require(result == run(host, target, config), "reset state/PCM mismatch");
         // Aggregate metadata only: no private score, waveform, sample or state export.
         std::cout << "{\"schema\":\"gbb-sgb-vendor-music-v1\",\"qualification\":false,"
                   << "\"model\":\"" << model << "\",\"mode\":\"" << mode
                   << "\",\"reset_equal\":true,\"restore_equal\":true,\"restores\":" << restores
+                  << ",\"selection_wait_pulse_restores\":" << pulses
+                  << ",\"selection_wait_restores\":" << waits
                   << ",\"unread_restores\":" << unread << ",\"clocks\":" << result.clocks
                   << ",\"frames\":" << result.frames << ",\"nonzero\":" << result.nonzero
                   << ",\"pcm_fnv64\":" << result.hash << ",\"last_nonzero_clock\":" << result.last_nonzero

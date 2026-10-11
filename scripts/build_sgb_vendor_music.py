@@ -26,8 +26,22 @@ def replace(source, old, new):
     return source.replace(old, new)
 
 
-def build():
+def build(*, selection_wait=False):
+    if type(selection_wait) is not bool:
+        raise ValueError('selection_wait must be boolean')
     source = (ROOT / 'firmware/sgb/vendor_music.asm').read_text()
+    if selection_wait:
+        source = replace(source, 'vendor_cold:\n', 'vendor_cold:\n    mov $7b, #$00\n    mov $7c, #$00\n')
+        source = replace(source, 'vendor_restart:\n', 'vendor_restart:\n    mov $7b, #$00\n    mov $7c, #$00\n')
+        source = replace(source, 'vendor_prepare:\n', 'vendor_prepare:\n    mov $7c, #$00\n')
+        for label in ('vendor_stop', 'vendor_loader', 'vendor_bad'):
+            source = replace(source, label+':\n', label+':\n    mov $7b, #$00\n    mov $7c, #$00\n')
+        source = replace(source, '    call vendor_word\n    mov a, $43\n    mov $20, a\n',
+            '    call vendor_word\n    call vendor_selection_wait\n    mov a, $43\n    mov $20, a\n')
+        source = replace(source, '    mov $32, a\n    jmp vendor_track\n',
+            '    mov $32, a\n    mov a, $3d\n    beq vendor_selection_tempo_done\n    mov a, $32\n    mov $7b, a\nvendor_selection_tempo_done:\n    jmp vendor_track\n')
+        source = replace(source, 'vendor_measured_pitch:\n',
+            (ROOT / 'firmware/sgb/vendor_selection_wait.asm').read_text()+'\nvendor_measured_pitch:\n')
     source = replace(source, '    mov x, #$00\n', '    .byte $cd, $00\n')
     pitches = [min(16383, round(1068 * 2 ** ((note - 24) / 12))) for note in range(72)]
     # Limited register observations from owned note fixtures, not a resident
@@ -240,9 +254,11 @@ vendor_invalid:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--selection-wait', action='store_true',
+                        help='enable the bounded experimental prior-tempo wait')
     args = parser.parse_args()
     try:
-        image = build()
+        image = build(selection_wait=args.selection_wait)
         with args.output.open('xb') as output:
             output.write(image)
     except (OSError, ValueError) as error:

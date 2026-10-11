@@ -459,3 +459,8 @@ The [measured voice-volume correction](../docs/sgb-vendor-volume.md) updates the
 renderer at six exact uploaded-instrument setup points, validated against both
 originals with held-out notes and timing. General volume curves, selection
 pacing and startup master-volume behavior remain open.
+
+The [opt-in selection-wait experiment](../docs/sgb-vendor-selection-wait.md) adds bounded prior-tempo
+pacing at five measured points. A separate unseen-phase gate rejected tempo
+112; it remains provisional. Default DB firmware and production selection
+stay unchanged while the candidate is tested against timing and ownership gates.

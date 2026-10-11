@@ -49,6 +49,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--probe', type=Path, required=True)
     parser.add_argument('--game', type=Path, required=True)
+    parser.add_argument('--selection-wait', action='store_true')
     parser.add_argument('--input-script', type=Path,
                         default=ROOT/'tests/fixtures/sgb/titles/donkey-kong-gameplay.script')
     args = parser.parse_args()
@@ -58,7 +59,7 @@ def main():
             raise ValueError('title does not match the pinned caller-owned game')
         if args.input_script.stat().st_size > 4096 or hashlib.sha256(args.input_script.read_bytes()).hexdigest() != SCRIPT_SHA256:
             raise ValueError('input script does not match the pinned sequence')
-        image = build()
+        image = build(selection_wait=args.selection_wait)
         with tempfile.TemporaryDirectory(prefix='gbb-vendor-title-') as directory:
             firmware = Path(directory)/'owned.rom'
             firmware.write_bytes(image)
