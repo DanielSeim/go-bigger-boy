@@ -18,6 +18,32 @@ from check_sgb_vendor_tempo_change_reference import TEMPOS
 GAPS=(16,20)
 
 
+def operand_reads(data):
+    reads=data.get('tempo_operand_reads')
+    if not isinstance(reads,list) or not 1<=len(reads)<=64:
+        raise ValueError('missing or excessive operand observations')
+    first={}
+    for event in data['events']:
+        if event['register']==0x4C: first.setdefault(event['request'],event['half'])
+    end=data['timer_configuration']['end_half'];previous=(-1,0)
+    for read in reads:
+        if (not isinstance(read,dict) or set(read)!={'half','request','address'} or
+                any(type(v) is not int for v in read.values()) or read['address']!=0x2B70 or
+                not 1<=read['request']<=len(data['requests'])):
+            raise ValueError('invalid operand observation')
+        request=read['request'];half=read['half']
+        if not first[request]<=half<=(data['requests'][request] if request<len(data['requests']) else end) or (half,request)<previous:
+            raise ValueError('invalid operand ownership/order')
+        previous=(half,request)
+    notes=[e for e in data['events'] if e['register']==0x4C and e['request']==1]
+    consumed=[r['half'] for r in reads if r['request']==1]
+    if len(notes)!=5 or not consumed or any(not notes[2]['half']<t<notes[3]['half'] for t in consumed):
+        raise ValueError('operand was not consumed between authored notes')
+    return dict(reads=reads,last_operand_half=consumed[-1],
+        operand_to_new_note_ms=(notes[3]['half']-consumed[-1])/2048,
+        operand_age_ms=(data['requests'][1]-consumed[-1])/2048)
+
+
 def summarize(data,start,live):
     if any(type(t) is not int or t not in TEMPOS for t in (start,live)):
         raise ValueError('invalid adoption tempo controls')
@@ -30,7 +56,7 @@ def summarize(data,start,live):
         raise ValueError('late tempo witnesses changed')
     # The fourth KON follows the authored E7. Its age is a conservative lower
     # bound on command age, not an observation of original instruction timing.
-    return dict(configuration=configuration(data),starting_phase=phase,
+    return dict(configuration=configuration(data),operand=operand_reads(data),starting_phase=phase,
         starting_prefix_error_ms=max(errors(phase))/2048,
         new_tempo_note_age_ms=(measured['request_half']-measured['keyon'])/2048,**measured)
 
@@ -87,11 +113,11 @@ def main():
                 image=build(start,'active',live_tempo=live,change_after=3,request_gap=gap,holdout=holdout)
                 game=root/f'{model}-{start}-{live}-{gap}-{int(holdout)}.gb';game.write_bytes(image)
                 data=capture(args.probe.resolve(),(args.firmware_dir/name).resolve(),game,model,
-                             300000000,inputs,timer_writes=True)
+                             300000000,inputs,tempo_operands=True)
                 return dict(model=model,start=start,live=live,gap=gap,holdout=holdout,
                     fixture_sha256=hashlib.sha256(image).hexdigest(),**summarize(data,start,live))
             with ThreadPoolExecutor(max_workers=4) as pool: runs=list(pool.map(run,cases))
-            report=dict(schema='gbb-sgb-vendor-tempo-age-v1',qualification=False,
+            report=dict(schema='gbb-sgb-vendor-tempo-age-v2',qualification=False,
                 program_sha256={name:hashlib.sha256((args.firmware_dir/name).read_bytes()).hexdigest()
                                 for name in ('sgb1.program.rom','sgb2.program.rom')},
                 comparison=compare(runs),runs=runs)

@@ -1384,7 +1384,8 @@ if(GAMEBOY_BUILD_TESTS)
                 SelectionWaitContracts.test_tempo_change_scope_witnesses_and_contrasts
                 SelectionWaitContracts.test_tempo_change_reference_filters_and_failure
                 SelectionWaitContracts.test_tempo_age_controls_and_witnesses
-                SelectionWaitContracts.test_tempo_age_reference_filters_and_failure)
+                SelectionWaitContracts.test_tempo_age_reference_filters_and_failure
+                SelectionWaitContracts.test_tempo_operand_bounds_and_ownership)
         add_test(NAME gameboy_sgb_score_vendor_selection_wait
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_vendor_selection_wait_tests.py
                 --probe $<TARGET_FILE:gameboy_sgb_vendor_music_probe>

@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Timestamp bounded reads of an authored SGB tempo operand after playback begins,
+  with ownership guards and observation transparency comparisons.
+
 - Bound SGB selection tempo adoption with late authored tempo commands,
   confirmed playback ownership and matched request-age controls.
 

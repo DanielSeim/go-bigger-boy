@@ -92,9 +92,41 @@ contracts cover fixture scope, bad witnesses, duplicate/missing controls and
 sanitized failures. Both firmware image hashes remain unchanged; program
 replacement and complete audio equivalence remain unfinished.
 
-Next, add a bounded opt-in timestamp for reads of the authored E7 operand after
-playback begins. This would confirm command consumption directly and permit
-requests within a few milliseconds of the change without requiring the whole
-live-tempo witness interval to finish. Keep the observation limited to the
-owned address and timestamp, without exporting original instruction addresses
-or memory values.
+## Authored tempo operand observation
+
+The opt-in native flag `--tempo-operands` now extends `--timer-writes` with
+post-KON reads of address `$2B70`, the tempo operand in this independently
+written late-E7 score. It retains at most 64 address/timestamp/request tuples;
+overflow rejects the capture before JSON output. It reports no memory values,
+original PCs, instructions or RAM snapshots. The ordinary traversal observer
+keeps its existing pre-KON bounds. Other modes remain unchanged.
+
+The tempo-age gate uses this mode and emits schema
+`gbb-sgb-vendor-tempo-age-v2`. The new `operand` object retains validated reads,
+the last operand-read half-clock, its age at the second request, and its delay
+to the first new-tempo note. Validation requires exact integer fields, the fixed
+owned address, chronological order, valid request ownership and post-KON
+capture bounds. Every request-1 operand read must lie strictly between the
+third and fourth authored notes. Existing old/live tempo witnesses and selected
+song completion guards still apply. A read timestamp is a bus observation;
+it does not expose the original driver's software-state update instruction.
+
+The existing 32-case public and private corpora use identical fixture bytes.
+Four owned paired captures compare every earlier timeline field exactly with
+the new mode enabled/disabled. Short contracts reject unexpected fields
+(including memory values), wrong addresses, invalid ordering/ownership, absent
+reads and count overflow. Existing host observer lifecycle contracts remain
+applicable because this uses the existing SPC-read callback binding.
+
+All 32 original captures contained exactly one operand read, strictly between
+the third and fourth notes. The read preceded the first new-tempo KON by
+1.6484375 ms in every case on both models. Measured operand age at selection
+was 61.243652–287.179199 ms. Every earlier per-run summary and selection/age-pair
+comparison matched the preceding 32-case report exactly. This supplies a direct
+bus anchor for a future closer request sweep, without identifying the original
+software-state update instruction or proving immediate tempo adoption.
+
+Next, use the measured operand age to design a request sweep around the change.
+Keep cases where the operand was read before the request separate from requests
+that arrived while the old track was still pending; preserve explicit ownership
+guards instead of inferring command timing from requested frame counts.

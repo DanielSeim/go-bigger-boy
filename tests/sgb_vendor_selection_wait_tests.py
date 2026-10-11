@@ -224,7 +224,7 @@ class SelectionWaitContracts(unittest.TestCase):
                             self.assertIn(bytes((2,125,0xA4,0xA3,0xA4,0xE7,live,0xA3,96,0xA2,0)),image)
                             other=tick_selection_fixture(start,live_tempo=live,change_after=3,request_gap=20 if gap==16 else 16,holdout=not holdout)
                             self.assertEqual(image[0x4000:],other[0x4000:]);self.assertNotEqual(image,other)
-                            data=self.timer_configuration(tick_selection_timeline(live,start_tempo=start,change_after=3,request_extra_half=(gap-16)*33792))
+                            data=self.tempo_operand_configuration(tick_selection_timeline(live,start_tempo=start,change_after=3,request_extra_half=(gap-16)*33792))
                             measured=tempo_age_reference.summarize(data,start,live)
                             self.assertEqual(measured['starting_prefix_error_ms'],0)
                             self.assertEqual(measured['prefix_max_error_ms'],0)
@@ -247,7 +247,7 @@ class SelectionWaitContracts(unittest.TestCase):
         for controls in (dict(change_after=True),dict(change_after=2),dict(change_after=3),
                          dict(request_gap=True),dict(request_gap=8),dict(state='completed',request_gap=16)):
             with self.assertRaises(ValueError): tick_selection_fixture(**controls)
-        data=self.timer_configuration(tick_selection_timeline(128,start_tempo=32,change_after=3))
+        data=self.tempo_operand_configuration(tick_selection_timeline(128,start_tempo=32,change_after=3))
         for start,live in ((128,128),(32,32),(True,128)):
             with self.assertRaises(ValueError): tempo_age_reference.summarize(data,start,live)
         for note in (True,2):
@@ -259,8 +259,8 @@ class SelectionWaitContracts(unittest.TestCase):
         def capture(probe,program,game,model,clocks,inputs,**flags):
             _,start,live,gap,holdout=game.stem.split('-');start=int(start);live=int(live);gap=int(gap);holdout=bool(int(holdout))
             self.assertEqual(game.read_bytes(),tick_selection_fixture(start,live_tempo=live,change_after=3,request_gap=gap,holdout=holdout))
-            self.assertEqual(clocks,300000000);self.assertEqual(flags,dict(timer_writes=True))
-            return self.timer_configuration(tick_selection_timeline(live,start_tempo=start,change_after=3,request_extra_half=(gap-16)*33792))
+            self.assertEqual(clocks,300000000);self.assertEqual(flags,dict(tempo_operands=True))
+            return self.tempo_operand_configuration(tick_selection_timeline(live,start_tempo=start,change_after=3,request_extra_half=(gap-16)*33792))
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)
             for name in ('sgb1.program.rom','sgb2.program.rom'): (root/name).write_bytes(b'owned stub')
@@ -270,6 +270,7 @@ class SelectionWaitContracts(unittest.TestCase):
                 tempo_age_reference.main()
             report=json.loads(stdout.getvalue());self.assertEqual(run.call_count,32)
             self.assertIs(report['qualification'],False)
+            self.assertEqual(report['schema'],'gbb-sgb-vendor-tempo-age-v2')
             for r in report['runs']:
                 self.assertEqual(r['fixture_sha256'],hashlib.sha256(tick_selection_fixture(r['start'],live_tempo=r['live'],change_after=3,request_gap=r['gap'],holdout=r['holdout'])).hexdigest())
             for fault in (ValueError('private detail'),None):
@@ -289,13 +290,51 @@ class SelectionWaitContracts(unittest.TestCase):
             def run(case):
                 model,start,live,gap,holdout=case;game=root/f'{model}-{start}-{live}-{gap}-{int(holdout)}.gb'
                 game.write_bytes(tick_selection_fixture(start,live_tempo=live,change_after=3,request_gap=gap,holdout=holdout))
-                data=reference.capture(TIMELINE,program,game,model,300000000,inputs,timer_writes=True)
+                data=reference.capture(TIMELINE,program,game,model,300000000,inputs,tempo_operands=True)
                 return dict(model=model,start=start,live=live,gap=gap,holdout=holdout,
                             **tempo_age_reference.summarize(data,start,live))
             with ThreadPoolExecutor(max_workers=4) as pool: runs=list(pool.map(run,cases))
             for r in runs: self.assertLess(abs(r['observed']/2048-WAITS[r['live']]),.4)
             for r in tempo_age_reference.compare(runs)['cases']:
                 self.assertTrue(r['live_within_2ms']);self.assertFalse(r['starting_within_2ms'])
+
+    def tempo_operand_configuration(self,data):
+        self.timer_configuration(data)
+        notes=[e for e in data['events'] if e['register']==0x4C and e['request']==1]
+        data['tempo_operand_reads']=[dict(half=notes[3]['half']-100,request=1,address=0x2B70)]
+        return data
+
+    def test_tempo_operand_bounds_and_ownership(self):
+        data=self.tempo_operand_configuration(tick_selection_timeline(128,start_tempo=32,change_after=3))
+        measured=tempo_age_reference.summarize(data,32,128)
+        self.assertGreater(measured['operand']['operand_age_ms'],measured['new_tempo_note_age_ms'])
+        self.assertEqual(measured['operand']['operand_to_new_note_ms'],100/2048)
+        faults=[]
+        for key,value in (('address',0x2B71),('request',True),('half',0),('request',3)):
+            bad=copy.deepcopy(data);bad['tempo_operand_reads'][0][key]=value;faults.append(bad)
+        for value in (None,[],data['tempo_operand_reads']*65):
+            bad=copy.deepcopy(data);bad['tempo_operand_reads']=value;faults.append(bad)
+        bad=copy.deepcopy(data);bad['tempo_operand_reads'][0]['value']=128;faults.append(bad)
+        bad=copy.deepcopy(data);bad['tempo_operand_reads'][0]['half']=data['events'][9]['half'];faults.append(bad)
+        bad=copy.deepcopy(data);bad['tempo_operand_reads'].append({**bad['tempo_operand_reads'][0],'half':bad['tempo_operand_reads'][0]['half']-1});faults.append(bad)
+        for bad in faults:
+            with self.assertRaises(ValueError): tempo_age_reference.summarize(bad,32,128)
+
+    def test_native_tempo_operand_transparency(self):
+        if TIMELINE is None: self.skipTest('timeline probe not supplied')
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);program=root/'owned.rom';program.write_bytes(firmware(selection_wait=True))
+            inputs=root/'none.script';inputs.write_text('GBB SGB input v1\n0 none\n')
+            def run(case):
+                model,start,live=case;game=root/f'{model}-{start}-{live}.gb'
+                game.write_bytes(tick_selection_fixture(start,live_tempo=live,change_after=3,holdout=True,request_gap=16))
+                plain=reference.capture(TIMELINE,program,game,model,300000000,inputs,timer_writes=True)
+                observed=reference.capture(TIMELINE,program,game,model,300000000,inputs,tempo_operands=True)
+                measured=tempo_age_reference.summarize(observed,start,live)
+                self.assertGreater(len(measured['operand']['reads']),0)
+                observed.pop('tempo_operand_reads');self.assertEqual(plain,observed)
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                list(pool.map(run,[(m,a,b) for m in ('sgb','sgb2') for a,b in ((32,128),(128,32))]))
 
     def timer_configuration(self, data):
         initial=[1,16,-1,-1]
