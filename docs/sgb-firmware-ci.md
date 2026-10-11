@@ -186,3 +186,7 @@ and eight-capture holdout are optional `local;private-reference` tests named
 `gameboy_sgb_vendor_selection_arrival_local_reference` and
 `gameboy_sgb_vendor_selection_arrival_holdout_local_reference`; each has timeout
 2400. They require original program images and stay outside public shards.
+Both now enable bounded [timer-access timing](sgb-vendor-selection-timers.md).
+Seven short selection-wait contracts remain in platform/sanitizer jobs; four
+owned timer-on/off comparisons extend the existing full matrix. Public matrix
+discovery remains at 96.

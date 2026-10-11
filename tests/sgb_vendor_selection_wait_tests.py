@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Opt-in root pacing, direct error gates and interruptible snapshot continuation."""
 import argparse
+import copy
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import contextlib
@@ -24,6 +25,33 @@ TIMELINE=PROBE=INTERRUPT=None
 
 
 class SelectionWaitContracts(unittest.TestCase):
+    def test_timer_window_bounds_and_stage_ownership(self):
+        empty=lambda address:dict(address=address,count=0,first=0,last=0,min_gap=0,max_gap=0)
+        window=dict(request=1,directory_half=2048,root_half=6144,
+                    wait=[empty(a) for a in range(0xFD,0x100)],setup=[empty(a) for a in range(0xFD,0x100)])
+        window['wait'][0].update(count=3,first=2100,last=6100,min_gap=2000,max_gap=2000)
+        window['setup'][1].update(count=2,first=6200,last=6600,min_gap=400,max_gap=400)
+        data=dict(music=[1],events=[dict(register=0x4C,request=1,half=10000)],
+                  selection_directory_reads=[dict(request=1,address=0x2B00,half=2048)],
+                  selection_timer_reads=[window])
+        selections=[dict(traversal_stages=dict(root=dict(after_previous_stage_ms=2)))]
+        report=phase.timer_summary(data,selections)[0]
+        self.assertEqual(report['wait'][0]['count'],3)
+        self.assertEqual(report['wait'][0]['max_gap_ms'],2000/2048)
+        self.assertIsNone(report['wait'][1]['first_after_stage_ms'])
+        for field,value in (('request',True),('request',2),('root_half',6145),('directory_half',2047)):
+            bad=copy.deepcopy(data);bad['selection_timer_reads'][0][field]=value
+            with self.assertRaises(ValueError): phase.timer_summary(bad,selections)
+        for field,value in (('address',0xFC),('count',True),('count',1000001),('first',2047),
+                            ('last',6144),('min_gap',2001),('max_gap',1999),('max_gap',4001),
+                            ('count',2),('private_value',1)):
+            bad=copy.deepcopy(data);bad['selection_timer_reads'][0]['wait'][0][field]=value
+            with self.assertRaises(ValueError): phase.timer_summary(bad,selections)
+        bad=copy.deepcopy(data);bad['selection_timer_reads'][0]['wait'][1]['first']=2050
+        with self.assertRaises(ValueError): phase.timer_summary(bad,selections)
+        bad=copy.deepcopy(data);bad['selection_timer_reads']=[]
+        with self.assertRaises(ValueError): phase.timer_summary(bad,selections)
+
     def test_phase_duration_controls_and_constant_rejection(self):
         default=build(112,'completed',request_offset=2)
         self.assertEqual(default,build(112,'completed',request_offset=2,first_duration=48))
@@ -54,8 +82,11 @@ class SelectionWaitContracts(unittest.TestCase):
         def capture(probe,program,game,model,clocks,inputs,**flags):
             self.assertEqual(game.read_bytes(),build(112,'completed',request_offset=2,first_duration=96,
                                                      first_request_offset=2,selection_spin=1024))
-            self.assertEqual(flags,dict(selection_traversal=True));self.assertEqual(clocks,260000000)
-            return dict(root_wait_ms=16 if model=='sgb' else 21)
+            self.assertEqual(flags,dict(selection_timers=True) if '--timers' in sys.argv else dict(selection_traversal=True))
+            self.assertEqual(clocks,260000000)
+            data=dict(root_wait_ms=16 if model=='sgb' else 21)
+            if '--timers' in sys.argv: data['selection_timer_reads']=[]
+            return data
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)
             for name in ('sgb1.program.rom','sgb2.program.rom'): (root/name).write_bytes(b'owned stub')
@@ -70,6 +101,9 @@ class SelectionWaitContracts(unittest.TestCase):
             self.assertIs(report['qualification'],False)
             self.assertIs(report['constant_bound']['constant_within_2ms_possible'],False)
             self.assertTrue(all(r['first_request_offset']==2 and r['selection_spin']==1024 for r in report['runs']))
+            with patch.object(sys,'argv',argv+['--timers']),patch.object(phase,'capture',side_effect=capture) as run,patch.object(phase,'observation',side_effect=lambda data:data),contextlib.redirect_stdout(io.StringIO()):
+                phase.main()
+            self.assertEqual(run.call_count,2)
             stdout=io.StringIO();stderr=io.StringIO()
             with patch.object(sys,'argv',argv),patch.object(phase,'capture',side_effect=ValueError('private detail')),contextlib.redirect_stdout(stdout),contextlib.redirect_stderr(stderr):
                 with self.assertRaises(SystemExit) as raised: phase.main()
@@ -215,6 +249,25 @@ class SelectionWaitContracts(unittest.TestCase):
                 scalar=self.replay(root,model,112,'scalar',first_request_offset=2,selection_spin=1536)
                 self.assertEqual(native['pcm_fnv64'],scalar['pcm_fnv64'])
                 self.assertEqual((native['starts'],native['notes']),(3,3))
+
+    def test_native_timer_observation_transparency(self):
+        if TIMELINE is None: self.skipTest('timeline probe not supplied')
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);(root/'paced.rom').write_bytes(firmware(selection_wait=True))
+            (root/'none.script').write_text('GBB SGB input v1\n0 none\n')
+            for model in ('sgb','sgb2'):
+                for spin in (0,1536):
+                    with self.subTest(model=model,spin=spin):
+                        game=root/'game.gb';game.write_bytes(build(112,'completed',request_offset=2,
+                            first_request_offset=2,selection_spin=spin))
+                        captures=[reference.capture(TIMELINE,root/'paced.rom',game,model,260000000,
+                            root/'none.script',**flags) for flags in
+                            (dict(selection_traversal=True),dict(selection_timers=True))]
+                        plain,observed=captures;report=phase.observation(observed)
+                        self.assertTrue(all(a['count']==0 for a in report['timers'][1]['wait']))
+                        self.assertGreater(report['timers'][2]['wait'][1]['count'],0)
+                        del observed['selection_timer_reads']
+                        self.assertEqual(plain,observed)
 
     def replay(self,root,model,tempo,mode='native',profile='normal',*,first_request_offset=0,selection_spin=0):
         game=root/'game.gb';game.write_bytes(build(tempo,profile=profile,

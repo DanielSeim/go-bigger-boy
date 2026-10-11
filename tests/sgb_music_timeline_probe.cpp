@@ -26,6 +26,21 @@ struct PortHandshake {
 struct PitchWrite { std::uint64_t half; unsigned request, pitch; };
 struct VolumeWrite { std::uint64_t half; unsigned request, address, value; };
 struct DirectoryRead { std::uint64_t half; unsigned request, address; };
+struct TimerAccess {
+    std::uint64_t first{},last{},min_gap{},max_gap{};
+    unsigned count{};
+    void add(std::uint64_t half) noexcept {
+        if (count) { const auto gap=half-last;
+            if (count==1 || gap<min_gap) min_gap=gap;
+            if (gap>max_gap) max_gap=gap;
+        } else first=half;
+        last=half; ++count;
+    }
+};
+struct TimerWindow {
+    std::uint64_t directory{},root{};
+    std::array<std::array<TimerAccess,3>,2> accesses{};
+};
 struct Observation {
     Host* host{};
     std::array<Event,128> events{};
@@ -38,6 +53,8 @@ struct Observation {
     bool directory_enabled{};
     bool traversal_enabled{};
     bool volume_enabled{};
+    bool timers_enabled{};
+    std::array<TimerWindow,16> timers{};
     std::array<VolumeWrite,512> volumes{};
     unsigned volume_count{};
     std::array<DirectoryRead,512> traversal{};
@@ -47,15 +64,37 @@ struct Observation {
     static void read(void* context,std::uint64_t half,std::uint16_t address) noexcept {
         auto& self=*static_cast<Observation*>(context);
         const bool directory=address>=0x2B00 && address<=0x2B05;
+        const bool timer=self.timers_enabled && address>=0xFD && address<=0xFF;
         const bool traversal=(address>=0x2B10 && address<=0x2B1B) ||
             (address>=0x2B20 && address<=0x2B4F) ||
             (address>=0x2B60 && address<=0x2B6C) ||
             (address>=0x2B90 && address<=0x2B9C) ||
             (address>=0x2BC0 && address<=0x2BCC);
-        if (!directory && !(self.traversal_enabled && traversal)) return;
+        if (!directory && !timer && !(self.traversal_enabled && traversal)) return;
         const auto request=self.host->icd().sound_packets_delivered();
         if (!self.host->icd().audible_sound_packets_delivered() || !request ||
             request>self.ports.size() || self.ports[request-1].keyon) return;
+        if (self.timers_enabled) {
+            auto& window=self.timers[request-1];
+            const auto music=self.host->icd().last_delivered_sound_packet()[4];
+            if (music>=1 && music<=3) {
+                const auto slot=music-1U;
+                if (address==0x2B00+2*slot || address==0x2B01+2*slot) {
+                    // Keep only the final directory pass, including owned
+                    // firmware that prevalidates the same score first.
+                    window={}; window.directory=half;
+                } else if (!window.root && window.directory &&
+                           address>=0x2B10+4*slot && address<=0x2B13+4*slot) window.root=half;
+            }
+            if (timer) {
+                if (window.directory) {
+                    auto& access=window.accesses[window.root?1:0][address-0xFD];
+                    if (access.count==1000000) {self.overflow=true;return;}
+                    access.add(half);
+                }
+                return;
+            }
+        }
         if (!directory) {
             if (self.traversal_count==self.traversal.size()) {self.overflow=true;return;}
             self.traversal[self.traversal_count++]={half,static_cast<unsigned>(request),address};
@@ -164,8 +203,8 @@ std::vector<std::uint8_t> read(const char* path, std::size_t low, std::size_t hi
 }
 int main(int argc,char** argv) {
  try {
-    if (argc!=7 && (argc!=8 || (std::string(argv[7])!="--port-handshakes" && std::string(argv[7])!="--spc-replies" && std::string(argv[7])!="--selection-handoff" && std::string(argv[7])!="--selection-directory" && std::string(argv[7])!="--selection-traversal" && std::string(argv[7])!="--selection-volume")))
-        throw std::runtime_error("PROGRAM GAME sgb|sgb2 CLOCKS SCRIPT bundled|fixture [--port-handshakes|--spc-replies|--selection-handoff|--selection-directory|--selection-traversal|--selection-volume]");
+    if (argc!=7 && (argc!=8 || (std::string(argv[7])!="--port-handshakes" && std::string(argv[7])!="--spc-replies" && std::string(argv[7])!="--selection-handoff" && std::string(argv[7])!="--selection-directory" && std::string(argv[7])!="--selection-traversal" && std::string(argv[7])!="--selection-volume" && std::string(argv[7])!="--selection-timers")))
+        throw std::runtime_error("PROGRAM GAME sgb|sgb2 CLOCKS SCRIPT bundled|fixture [--port-handshakes|--spc-replies|--selection-handoff|--selection-directory|--selection-traversal|--selection-volume|--selection-timers]");
     gameboy::SgbHostConfig config;
     config.program_rom=read(argv[1],262144,524288); config.game_rom=read(argv[2],336,16*1024*1024);
     const std::string model=argv[3], boot=argv[6];
@@ -183,7 +222,8 @@ int main(int argc,char** argv) {
     Host host(config); Observation observed; observed.host=&host;
     observed.handshakes_enabled=argc==8;
     observed.volume_enabled=argc==8 && std::string(argv[7])=="--selection-volume";
-    observed.traversal_enabled=observed.volume_enabled || (argc==8 && std::string(argv[7])=="--selection-traversal");
+    observed.timers_enabled=argc==8 && std::string(argv[7])=="--selection-timers";
+    observed.traversal_enabled=observed.timers_enabled || observed.volume_enabled || (argc==8 && std::string(argv[7])=="--selection-traversal");
     observed.directory_enabled=observed.traversal_enabled || (argc==8 && std::string(argv[7])=="--selection-directory");
     if (observed.directory_enabled) host.debug_set_spc_read_observer(Observation::read,&observed);
     observed.handoff_enabled=observed.directory_enabled || (argc==8 && std::string(argv[7])=="--selection-handoff");
@@ -285,6 +325,28 @@ int main(int argc,char** argv) {
             const auto& v=observed.volumes[i];
             std::cout<<(i?",":"")<<"{\"request\":"<<v.request<<",\"half\":"<<v.half
                 <<",\"register\":"<<v.address<<",\"value\":"<<v.value<<"}";
+        }
+        std::cout<<"]";
+    }
+    if (observed.timers_enabled) {
+        std::cout<<",\"selection_timer_reads\":[";
+        bool first_window=true;
+        for (unsigned i=0;i<count;++i) {
+            const auto& w=observed.timers[i]; if (!w.directory || !w.root) continue;
+            std::cout<<(first_window?"":",")<<"{\"request\":"<<i+1
+                <<",\"directory_half\":"<<w.directory<<",\"root_half\":"<<w.root;
+            first_window=false;
+            for (unsigned stage=0;stage<2;++stage) {
+                std::cout<<(stage?",\"setup\":[":",\"wait\":[");
+                for (unsigned timer=0;timer<3;++timer) {
+                    const auto& a=w.accesses[stage][timer];
+                    std::cout<<(timer?",":"")<<"{\"address\":"<<0xFD+timer<<",\"count\":"<<a.count
+                        <<",\"first\":"<<a.first<<",\"last\":"<<a.last
+                        <<",\"min_gap\":"<<a.min_gap<<",\"max_gap\":"<<a.max_gap<<"}";
+                }
+                std::cout<<"]";
+            }
+            std::cout<<"}";
         }
         std::cout<<"]";
     }

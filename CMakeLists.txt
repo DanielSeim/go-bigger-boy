@@ -1368,7 +1368,8 @@ if(GAMEBOY_BUILD_TESTS)
                 SelectionWaitContracts.test_reference_filters_and_failure_sanitization
                 SelectionWaitContracts.test_phase_duration_controls_and_constant_rejection
                 SelectionWaitContracts.test_phase_reference_filters_and_sanitization
-                SelectionWaitContracts.test_phase_observation_keeps_completed_traversal_guards)
+                SelectionWaitContracts.test_phase_observation_keeps_completed_traversal_guards
+                SelectionWaitContracts.test_timer_window_bounds_and_stage_ownership)
         add_test(NAME gameboy_sgb_score_vendor_selection_wait
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_vendor_selection_wait_tests.py
                 --probe $<TARGET_FILE:gameboy_sgb_vendor_music_probe>
@@ -1474,7 +1475,7 @@ if(GAMEBOY_BUILD_TESTS)
                     --firmware-dir "${CMAKE_CURRENT_SOURCE_DIR}/roms"
                     --duration 48 --request-offset 2 --first-request-offset 0 --first-request-offset 2
                     --selection-spin 0 --selection-spin 512 --selection-spin 1024
-                    --selection-spin 1536 --selection-spin 2048)
+                    --selection-spin 1536 --selection-spin 2048 --timers)
             set_tests_properties(gameboy_sgb_vendor_selection_arrival_local_reference
                 PROPERTIES TIMEOUT 2400 LABELS "local;private-reference")
             add_test(NAME gameboy_sgb_vendor_selection_arrival_holdout_local_reference
@@ -1482,7 +1483,7 @@ if(GAMEBOY_BUILD_TESTS)
                     --probe $<TARGET_FILE:gameboy_sgb_music_timeline_probe>
                     --firmware-dir "${CMAKE_CURRENT_SOURCE_DIR}/roms"
                     --duration 48 --request-offset 2 --first-request-offset 1 --first-request-offset 3
-                    --selection-spin 0 --selection-spin 1536)
+                    --selection-spin 0 --selection-spin 1536 --timers)
             set_tests_properties(gameboy_sgb_vendor_selection_arrival_holdout_local_reference
                 PROPERTIES TIMEOUT 2400 LABELS "local;private-reference")
             add_test(NAME gameboy_sgb_vendor_volume_local_reference

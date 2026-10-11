@@ -140,5 +140,6 @@ destination-load continuation, unread buffers and active-wait/pulse restores.
 Six short contracts, Python compilation and whitespace checks pass. The full
 existing matrix and other platform/sanitizer suites were not rerun locally.
 Both default and opt-in firmware hashes remain unchanged; tempo 112 remains
-excluded. Next, observe bounded public timer-register access timing around
-selection to distinguish persistent timer phase from queued dispatch behavior.
+excluded. The [timer-access follow-up](sgb-vendor-selection-timers.md) locates
+timer-0 polling inside the variable interval and identifies the next missing
+observation: which reads actually consume hardware timer output.

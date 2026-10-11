@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Observe bounded SGB timer-register read timing around selected score traversal,
+  with opaque-reference controls and owned observer transparency checks.
+
 - Add independent first-request and subframe arrival controls for SGB tempo-112
   selection timing, with held-out original captures and owned audio replay.
 
