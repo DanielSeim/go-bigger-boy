@@ -12,12 +12,23 @@ SnesApuAudioEngine::SnesApuAudioEngine(SnesSpc700& cpu) noexcept
 SnesApuAudioEngine::~SnesApuAudioEngine() {
     bus_.set_dsp_write_observer(nullptr);
     bus_.set_spc_port_write_observer(nullptr);
+    bus_.set_spc_read_observer(nullptr);
     cpu_.set_bus_cycle_observer(nullptr);
     cpu_.dsp_clock_driver_=nullptr;
 }
 
+void SnesApuAudioEngine::debug_set_spc_read_observer(SpcReadObserver observer, void* context) noexcept {
+    read_observer_ = observer; read_context_ = context;
+    if (!observer) { bus_.set_spc_read_observer(nullptr); return; }
+    bus_.set_spc_read_observer([](void* binding, std::uint16_t address) noexcept {
+        auto& self = *static_cast<SnesApuAudioEngine*>(binding);
+        self.read_observer_(self.read_context_, self.cpu_.half_cycles(), address);
+    }, this);
+}
+
 void SnesApuAudioEngine::reset() noexcept {
     bus_.reset();
+    debug_set_spc_read_observer(read_observer_, read_context_);
     bus_.set_spc_port_write_observer([](void* context, std::uint8_t port,
                                        std::uint8_t value) noexcept {
         auto& self = *static_cast<SnesApuAudioEngine*>(context);

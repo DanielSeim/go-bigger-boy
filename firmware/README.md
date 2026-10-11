@@ -435,5 +435,7 @@ polling from publication latency; identifying the musical handoff remains
 necessary before choosing dispatch pacing. The DB image stays unchanged.
 The [controlled field/pitch-setup experiment](../docs/sgb-vendor-handoff.md)
 adds effect-STOP controls and rules out last-value-equality as a selection
-commit marker. Actual native score-directory reads are the next boundary
-to observe; no timing policy or firmware image changes here.
+commit marker. The [native directory-read experiment](../docs/sgb-vendor-directory.md)
+now observes that selection-specific boundary using only the fixed authored
+directory addresses and physical timestamps. No timing policy or firmware
+image changes here.

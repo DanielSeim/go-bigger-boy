@@ -80,8 +80,12 @@ def summarize(data, profile, state):
     return result
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+def main(*, directory=False):
+    if directory:
+        from check_sgb_vendor_directory_reference import summarize as summary
+    else:
+        summary = summarize
+    parser = argparse.ArgumentParser(description='Observe owned score-directory reads before distinct-note key-on.' if directory else __doc__)
     parser.add_argument('--probe',type=Path,required=True)
     parser.add_argument('--firmware-dir',type=Path,required=True)
     parser.add_argument('--model',choices=('sgb','sgb2'),action='append')
@@ -89,8 +93,8 @@ def main():
     parser.add_argument('--state',choices=STATES,action='append')
     args = parser.parse_args()
     try:
-        with tempfile.TemporaryDirectory(prefix='gbb-handoff-') as directory:
-            root = Path(directory)
+        with tempfile.TemporaryDirectory(prefix='gbb-directory-' if directory else 'gbb-handoff-') as temporary:
+            root = Path(temporary)
             owned = root/'owned.rom'; owned.write_bytes(firmware())
             inputs = root/'none.script'; inputs.write_text('GBB SGB input v1\n0 none\n')
             fixtures = {(p,s):build(p,s) for p in args.profile or PROFILES for s in args.state or STATES}
@@ -100,14 +104,15 @@ def main():
                 cases = {}
                 for (profile,state),image in fixtures.items():
                     game = root/'game.gb'; game.write_bytes(image)
-                    measured = {kind:summarize(capture(args.probe.resolve(),program.resolve(),game,model,
-                                260000000,inputs,selection_handoff=True),profile,state)
+                    measured = {kind:summary(capture(args.probe.resolve(),program.resolve(),game,model,
+                                260000000,inputs,selection_handoff=not directory,selection_directory=directory),profile,state)
                                 for kind,program in (('original',original),('replacement',owned))}
                     cases[profile+'-'+state] = dict(fixture_sha256=hashlib.sha256(image).hexdigest(),**measured)
                 reports.append(dict(model=model,program_sha256=hashlib.sha256(original.read_bytes()).hexdigest(),cases=cases))
     except (OSError,ValueError,KeyError,TypeError,subprocess.SubprocessError):
-        parser.error('private handoff experiment failed; child diagnostics suppressed')
-    print(json.dumps(dict(schema='gbb-sgb-vendor-handoff-v1',qualification=False,
+        parser.error('private directory experiment failed; child diagnostics suppressed' if directory else
+                     'private handoff experiment failed; child diagnostics suppressed')
+    print(json.dumps(dict(schema='gbb-sgb-vendor-directory-v1' if directory else 'gbb-sgb-vendor-handoff-v1',qualification=False,
                           firmware_sha256=hashlib.sha256(firmware()).hexdigest(),runs=reports)))
 
 

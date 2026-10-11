@@ -241,6 +241,28 @@ void test_timer_batching() {
           "large timer advances keep only the hardware four-bit output");
 }
 
+void test_spc_read_observer() {
+    gameboy::SnesApuBus bus; bus.reset();
+    struct Seen { unsigned count{}; std::uint16_t address{}; } seen;
+    const auto callback=+[](void* context,std::uint16_t address) noexcept {
+        auto& s=*static_cast<Seen*>(context); ++s.count; s.address=address;
+    };
+    bus.set_spc_read_observer(callback,&seen);
+    bus.spc_write(0x2B00,0x42); bus.dsp_write_ram(0x2B01,0x43);
+    check(bus.dsp_read_ram(0x2B00)==0x42 && seen.count==0,"DSP inspection and writes bypass SPC reads");
+    check(bus.spc_read(0x2B00)==0x42 && seen.count==1 && seen.address==0x2B00,"SPC read reports address only");
+    bus.spc_write(0xFC,1); bus.spc_write(0xF1,4); bus.tick(16);
+    check(bus.spc_read(0xFF)==1 && bus.spc_read(0xFF)==0 && seen.count==3,"read observation preserves timer read-clear");
+    bus.host_write_port(0,0x55);
+    check(bus.spc_read(0xF4)==0x55 && seen.count==4,"SPC port reads observed once");
+    gameboy::SnesApuBus::IplRom ipl{}; ipl[0]=0x66; bus.install_ipl(ipl);
+    check(bus.spc_read(0xFFC0)==0x66 && seen.count==5,"IPL overlay reads observed once");
+    bus.set_spc_read_observer(nullptr); (void)bus.spc_read(0x2B00);
+    check(seen.count==5,"SPC read observer detaches");
+    bus.set_spc_read_observer(callback,&seen); bus.reset(); (void)bus.spc_read(0x2B00);
+    check(seen.count==5,"bus reset clears SPC read binding");
+}
+
 void test_spc_output_observer() {
     gameboy::SnesApuBus bus;
     bus.reset();
@@ -291,6 +313,7 @@ int main(const int argc, char** argv) {
     test_dsp_register_publication();
     test_timer_batching();
     test_spc_output_observer();
+    test_spc_read_observer();
     test_local_programs(argc, argv);
     return failures == 0 ? 0 : 1;
 }

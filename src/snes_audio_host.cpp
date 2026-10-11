@@ -79,6 +79,8 @@ void SnesApuBus::reset() noexcept {
     dsp_write_context_ = nullptr;
     ram_write_observer_ = nullptr;
     ram_write_context_ = nullptr;
+    spc_read_observer_ = nullptr;
+    spc_read_context_ = nullptr;
     spc_port_write_observer_ = nullptr;
     spc_port_write_context_ = nullptr;
 }
@@ -90,6 +92,7 @@ void SnesApuBus::install_ipl(const IplRom& image) noexcept {
 }
 
 std::uint8_t SnesApuBus::spc_read(const std::uint16_t address) noexcept {
+    if (spc_read_observer_) spc_read_observer_(spc_read_context_, address);
     if (address >= 0xFFC0 && ipl_enabled_ && has_ipl_) {
         return ipl_[address - 0xFFC0];
     }

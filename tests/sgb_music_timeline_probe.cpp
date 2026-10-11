@@ -24,6 +24,7 @@ struct PortHandshake {
     std::uint64_t first_music_reply{};
 };
 struct PitchWrite { std::uint64_t half; unsigned request, pitch; };
+struct DirectoryRead { std::uint64_t half; unsigned request, address; };
 struct Observation {
     Host* host{};
     std::array<Event,128> events{};
@@ -33,6 +34,18 @@ struct Observation {
     bool handshakes_enabled{};
     bool replies_enabled{};
     bool handoff_enabled{};
+    bool directory_enabled{};
+    std::array<DirectoryRead,128> directory{};
+    unsigned directory_count{};
+    static void read(void* context,std::uint64_t half,std::uint16_t address) noexcept {
+        auto& self=*static_cast<Observation*>(context);
+        if (address<0x2B00 || address>0x2B05) return;
+        const auto request=self.host->icd().sound_packets_delivered();
+        if (!self.host->icd().audible_sound_packets_delivered() || !request ||
+            request>self.ports.size() || self.ports[request-1].keyon) return;
+        if (self.directory_count==self.directory.size()) {self.overflow=true;return;}
+        self.directory[self.directory_count++]={half,static_cast<unsigned>(request),address};
+    }
     std::array<PitchWrite,128> pitches{};
     unsigned pitch_count{};
     std::array<PortHandshake,128> handshakes{};
@@ -127,8 +140,8 @@ std::vector<std::uint8_t> read(const char* path, std::size_t low, std::size_t hi
 }
 int main(int argc,char** argv) {
  try {
-    if (argc!=7 && (argc!=8 || (std::string(argv[7])!="--port-handshakes" && std::string(argv[7])!="--spc-replies" && std::string(argv[7])!="--selection-handoff")))
-        throw std::runtime_error("PROGRAM GAME sgb|sgb2 CLOCKS SCRIPT bundled|fixture [--port-handshakes|--spc-replies|--selection-handoff]");
+    if (argc!=7 && (argc!=8 || (std::string(argv[7])!="--port-handshakes" && std::string(argv[7])!="--spc-replies" && std::string(argv[7])!="--selection-handoff" && std::string(argv[7])!="--selection-directory")))
+        throw std::runtime_error("PROGRAM GAME sgb|sgb2 CLOCKS SCRIPT bundled|fixture [--port-handshakes|--spc-replies|--selection-handoff|--selection-directory]");
     gameboy::SgbHostConfig config;
     config.program_rom=read(argv[1],262144,524288); config.game_rom=read(argv[2],336,16*1024*1024);
     const std::string model=argv[3], boot=argv[6];
@@ -145,7 +158,9 @@ int main(int argc,char** argv) {
     for (std::size_t i=0;i<inputs.count;++i) config.input_events.push_back({inputs.events[i].frame,inputs.events[i].mask});
     Host host(config); Observation observed; observed.host=&host;
     observed.handshakes_enabled=argc==8;
-    observed.handoff_enabled=argc==8 && std::string(argv[7])=="--selection-handoff";
+    observed.directory_enabled=argc==8 && std::string(argv[7])=="--selection-directory";
+    if (observed.directory_enabled) host.debug_set_spc_read_observer(Observation::read,&observed);
+    observed.handoff_enabled=observed.directory_enabled || (argc==8 && std::string(argv[7])=="--selection-handoff");
     observed.replies_enabled=observed.handoff_enabled || (argc==8 && std::string(argv[7])=="--spc-replies");
     if (observed.replies_enabled) host.debug_set_spc_port_write_observer(Observation::reply,&observed);
     host.debug_set_dsp_write_observer(Observation::write,&observed);
@@ -217,6 +232,15 @@ int main(int argc,char** argv) {
         for (unsigned i=0;i<observed.pitch_count;++i) {
             const auto& p=observed.pitches[i];
             std::cout<<(i?",":"")<<"{\"request\":"<<p.request<<",\"half\":"<<p.half<<",\"pitch\":"<<p.pitch<<"}";
+        }
+        std::cout<<"]";
+    }
+    if (observed.directory_enabled) {
+        std::cout<<",\"selection_directory_reads\":[";
+        for (unsigned i=0;i<observed.directory_count;++i) {
+            const auto& r=observed.directory[i];
+            std::cout<<(i?",":"")<<"{\"request\":"<<r.request<<",\"half\":"<<r.half
+                <<",\"address\":"<<r.address<<"}";
         }
         std::cout<<"]";
     }

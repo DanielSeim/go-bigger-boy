@@ -1359,6 +1359,13 @@ if(GAMEBOY_BUILD_TESTS)
                 --probe $<TARGET_FILE:gameboy_sgb_vendor_music_probe>
                 --timeline-probe $<TARGET_FILE:gameboy_sgb_music_timeline_probe>)
         set_tests_properties(gameboy_sgb_score_vendor_reply PROPERTIES TIMEOUT 900 COST 300)
+        add_test(NAME gameboy_sgb_vendor_directory_contract
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_vendor_directory_tests.py
+                DirectoryContracts.test_summary_and_guards)
+        add_test(NAME gameboy_sgb_score_vendor_directory
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_vendor_directory_tests.py
+                --timeline-probe $<TARGET_FILE:gameboy_sgb_music_timeline_probe>)
+        set_tests_properties(gameboy_sgb_score_vendor_directory PROPERTIES TIMEOUT 900 COST 300)
         add_test(NAME gameboy_sgb_vendor_handoff_contract
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_vendor_handoff_tests.py
                 HandoffContracts.test_fixtures_and_export HandoffContracts.test_handoff_summary_and_guards)
@@ -1392,6 +1399,12 @@ if(GAMEBOY_BUILD_TESTS)
                     --probe $<TARGET_FILE:gameboy_sgb_music_timeline_probe>
                     --firmware-dir "${CMAKE_CURRENT_SOURCE_DIR}/roms")
             set_tests_properties(gameboy_sgb_vendor_reply_local_reference
+                PROPERTIES TIMEOUT 2400 LABELS "local;private-reference")
+            add_test(NAME gameboy_sgb_vendor_directory_local_reference
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_vendor_directory_reference.py
+                    --probe $<TARGET_FILE:gameboy_sgb_music_timeline_probe>
+                    --firmware-dir "${CMAKE_CURRENT_SOURCE_DIR}/roms")
+            set_tests_properties(gameboy_sgb_vendor_directory_local_reference
                 PROPERTIES TIMEOUT 2400 LABELS "local;private-reference")
             add_test(NAME gameboy_sgb_vendor_handoff_local_reference
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_vendor_handoff_reference.py

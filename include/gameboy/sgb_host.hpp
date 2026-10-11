@@ -75,6 +75,10 @@ public:
     // Same read-only diagnostic lifetime and reset/load contract as above.
     void debug_set_spc_port_write_observer(SnesApuAudioEngine::SpcPortWriteObserver observer,
                                            void* context) noexcept;
+    // Accepted SPC bus read addresses, with physical half-clock timestamps.
+    // Same diagnostic lifetime and reset/load contract; no RAM values exposed.
+    void debug_set_spc_read_observer(SnesApuAudioEngine::SpcReadObserver observer,
+                                      void* context) noexcept;
     // Exact scalar scheduling oracle for tests; not a playback quality option.
     void debug_set_apu_batch_enabled(bool enabled) noexcept;
     void debug_set_spc_idle_tail_cache_enabled(bool enabled) noexcept;

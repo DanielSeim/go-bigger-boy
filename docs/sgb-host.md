@@ -844,5 +844,8 @@ the replacement. The [SPC reply-publication extension](sgb-vendor-reply.md) sepa
 polling contribution from reply latency; musical-handoff identification and
 dispatch pacing remain open. The firmware image remains unchanged.
 The [controlled SOUND-field/pitch-setup experiment](sgb-vendor-handoff.md)
-rules out a last-matching-write acceptance rule. Native score-directory read
-timing is the next selection-specific observation; dispatch pacing stays open.
+rules out a last-matching-write acceptance rule. Dispatch pacing stays open.
+
+The [selected score-directory experiment](sgb-vendor-directory.md) adds bounded
+native read-address timing to the controlled SOUND/pitch observations without
+changing experimental firmware or production selection.

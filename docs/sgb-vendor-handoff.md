@@ -159,3 +159,8 @@ assets or proprietary score bytes were implementation inputs. Earlier full
 firmware matrices, pinned private title playback, Windows execution,
 independent emulators and physical hardware were not rerun. The firmware
 image, production selection and performance policy remain unchanged.
+
+Follow-up: [selected score-directory reads](sgb-vendor-directory.md) now
+measure that boundary and retain both replacement traversals. The original
+still spends 28–50 ms between directory lookup and expected pitch setup;
+fixed authored pattern/track read observations are next.

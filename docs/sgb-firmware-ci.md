@@ -117,3 +117,13 @@ unchanged ordinary timelines and exact reset/load playback. The short
 fixture/report contract retains platform/sanitizer coverage; the optional
 original comparison remains `local;private-reference`.
 See [controlled SOUND fields and pitch setup](sgb-vendor-handoff.md).
+
+
+The directory-read suite adds `gameboy_sgb_score_vendor_directory` (cost
+300, timeout 900 seconds), bringing the public total to 91 full matrices.
+It reuses the eight handoff fixtures on both models, checks selected-word
+reads before pitch setup and compares ordinary timelines with observation
+removed. Observer lifecycle tests cover exact scalar/batched read traces and
+reset/save-load PCM/state. The short report contract remains in platform and
+sanitizer jobs; the optional original comparison remains
+`local;private-reference`. See [selected directory reads](sgb-vendor-directory.md).

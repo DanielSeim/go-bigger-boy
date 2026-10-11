@@ -14,7 +14,7 @@ public:
     enum class Status : std::uint8_t { ready, buffer_full, unsupported_instruction, invalid_target, missing_ipl };
     explicit SnesApuAudioEngine() noexcept;
     // Attach to a caller-owned bus/CPU at reset. Both must outlive the engine;
-    // this resets them and reserves their DSP/port-write observer/clock bindings.
+    // this resets them and reserves their DSP/port-write/read observer/clock bindings.
     explicit SnesApuAudioEngine(SnesSpc700& cpu) noexcept;
     ~SnesApuAudioEngine();
     SnesApuAudioEngine(const SnesApuAudioEngine&) = delete;
@@ -23,7 +23,7 @@ public:
     // Resets CPU, bus and DSP together. Installed IPL is retained by bus reset.
     void reset() noexcept;
     void install_ipl(const SnesApuBus::IplRom& image) noexcept { bus_.install_ipl(image); }
-    // Diagnostic/setup access only. Do not replace DSP/port-write observers:
+    // Diagnostic/setup access only. Do not replace DSP/port-write/read observers:
     // they are owned by this scheduler. No mutable CPU/DSP is exposed.
     SnesApuBus& bus() noexcept { return bus_; }
     const SnesSpc700& cpu() const noexcept { return cpu_; }
@@ -55,6 +55,8 @@ public:
     void debug_set_spc_port_write_observer(SpcPortWriteObserver observer, void* context) noexcept {
         port_observer_ = observer; port_context_ = context;
     }
+    using SpcReadObserver = void (*)(void*, std::uint64_t, std::uint16_t) noexcept;
+    void debug_set_spc_read_observer(SpcReadObserver observer, void* context) noexcept;
     // Atomic component state includes CPU replay/half clocks, bus, DSP and
     // FIFO. Excludes the SNES CPU, ICD/GB scheduler and frontend DAC/resampler.
     [[nodiscard]] std::vector<std::uint8_t> save_state() const;
@@ -62,6 +64,8 @@ public:
 private:
     DspWriteObserver diagnostic_observer_{};
     void* diagnostic_context_{};
+    SpcReadObserver read_observer_{};
+    void* read_context_{};
     SpcPortWriteObserver port_observer_{};
     void* port_context_{};
     friend class SgbHost;

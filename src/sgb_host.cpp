@@ -17,6 +17,8 @@ struct SgbHost::Impl {
     void* port_context{};
     SnesApuAudioEngine::SpcPortWriteObserver spc_port_observer{};
     void* spc_port_context{};
+    SnesApuAudioEngine::SpcReadObserver spc_read_observer{};
+    void* spc_read_context{};
     void* diagnostic_context{};
     bool combined;
     unsigned apu_hz;
@@ -153,6 +155,12 @@ void SgbHost::debug_set_apu_port_observer(SnesHostCpu::ApuPortObserver observer,
 std::uint8_t SgbHost::debug_spc_ram_byte(std::uint16_t address) const noexcept {
     return impl_->apu.bus().dsp_read_ram(address);
 }
+void SgbHost::debug_set_spc_read_observer(SnesApuAudioEngine::SpcReadObserver observer,
+                                          void* context) noexcept {
+    impl_->spc_read_observer=observer; impl_->spc_read_context=context;
+    impl_->apu.debug_set_spc_read_observer(observer,context);
+}
+
 void SgbHost::debug_set_spc_port_write_observer(SnesApuAudioEngine::SpcPortWriteObserver observer,
                                                void* context) noexcept {
     impl_->spc_port_observer=observer; impl_->spc_port_context=context;
@@ -188,6 +196,9 @@ void SgbHost::reset() {
         fresh->port_observer=impl_->port_observer;
         fresh->port_context=impl_->port_context;
         fresh->cpu.set_apu_port_observer(fresh->port_observer,fresh->port_context);
+        fresh->spc_read_observer=impl_->spc_read_observer;
+        fresh->spc_read_context=impl_->spc_read_context;
+        fresh->apu.debug_set_spc_read_observer(fresh->spc_read_observer,fresh->spc_read_context);
         fresh->spc_port_observer=impl_->spc_port_observer;
         fresh->spc_port_context=impl_->spc_port_context;
         fresh->apu.debug_set_spc_port_write_observer(fresh->spc_port_observer,fresh->spc_port_context);
@@ -475,6 +486,9 @@ public:
             candidate->port_observer=host.impl_->port_observer;
             candidate->port_context=host.impl_->port_context;
             candidate->cpu.set_apu_port_observer(candidate->port_observer,candidate->port_context);
+            candidate->spc_read_observer=host.impl_->spc_read_observer;
+            candidate->spc_read_context=host.impl_->spc_read_context;
+            candidate->apu.debug_set_spc_read_observer(candidate->spc_read_observer,candidate->spc_read_context);
             candidate->spc_port_observer=host.impl_->spc_port_observer;
             candidate->spc_port_context=host.impl_->spc_port_context;
             candidate->apu.debug_set_spc_port_write_observer(candidate->spc_port_observer,candidate->spc_port_context);

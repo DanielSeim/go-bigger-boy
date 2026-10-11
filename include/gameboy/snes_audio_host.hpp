@@ -42,6 +42,7 @@ public:
     using DspWriteObserver = void (*)(void*, std::uint8_t, std::uint8_t) noexcept;
     using RamWriteObserver = void (*)(void*, std::uint16_t, std::uint8_t) noexcept;
     using SpcPortWriteObserver = DspWriteObserver;
+    using SpcReadObserver = void (*)(void*, std::uint16_t) noexcept;
 
     void reset() noexcept;
     void install_ipl(const IplRom& image) noexcept;
@@ -78,6 +79,11 @@ public:
                                       void* context = nullptr) noexcept {
         spc_port_write_observer_ = observer; spc_port_write_context_ = context;
     }
+    // Accepted SPC bus reads, including overlays; address only, no read data.
+    // DSP RAM inspection bypasses this binding. Detach before context destruction.
+    void set_spc_read_observer(SpcReadObserver observer, void* context = nullptr) noexcept {
+        spc_read_observer_ = observer; spc_read_context_ = context;
+    }
     // S-DSP accesses physical APU RAM, bypassing SPC700 I/O and IPL overlays.
     [[nodiscard]] std::uint8_t dsp_read_ram(std::uint16_t address) const noexcept {
         return ram_[address];
@@ -106,6 +112,8 @@ private:
     void* dsp_write_context_{};
     RamWriteObserver ram_write_observer_{};
     void* ram_write_context_{};
+    SpcReadObserver spc_read_observer_{};
+    void* spc_read_context_{};
     SpcPortWriteObserver spc_port_write_observer_{};
     void* spc_port_write_context_{};
 };

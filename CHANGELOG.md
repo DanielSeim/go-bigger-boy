@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Observe bounded owned SGB score-directory read addresses before pitch setup,
+  with both-model dispatch controls and exact observer reset/save-load contracts.
+
 - Add controlled SGB effect-STOP fields and distinct-note pitch-setup markers
   to bounded dispatch observations, retaining firmware and production selection.
 
