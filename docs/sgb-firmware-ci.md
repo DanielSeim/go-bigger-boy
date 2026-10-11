@@ -217,3 +217,10 @@ parameter fitting, held-out rejection, corpus identity and bounded sanitized
 input failures. It reads existing diagnostic reports and adds no native captures,
 private input requirements or public matrices. Successful analysis can report
 `accuracy_passed: false`; its exit status does not qualify a firmware candidate.
+
+The [repeated-note tick experiment](sgb-vendor-music-ticks.md) adds 24 owned
+controls to the selection-wait matrix and two short methods (fourteen total).
+The optional `gameboy_sgb_vendor_tick_local_reference` covers both start schedules,
+models and six tempos in 24 original captures, with timeout 2400 and labels
+`local;private-reference`. It stays outside public shards. Public matrix count
+remains 96 and the existing matrix timeout remains 1800 seconds.

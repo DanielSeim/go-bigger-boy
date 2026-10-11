@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Measure SGB music-tick timing with independently authored repeated short notes,
+  separating first-note startup timing from subsequent accumulator cadence.
+
 - Screen an independent persistent SGB tempo accumulator against frozen baseline
   and held-out timing reports, rejecting its unsupported general wait model.
 

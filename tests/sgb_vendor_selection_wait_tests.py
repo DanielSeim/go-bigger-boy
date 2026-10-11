@@ -22,11 +22,105 @@ import check_sgb_vendor_selection_wait_reference as reference
 import check_sgb_vendor_selection_phase_reference as phase
 import check_sgb_vendor_timer_tempo_reference as timer_tempo
 import check_sgb_vendor_accumulator_model as accumulator_model
+from build_sgb_vendor_tick_fixture import build as tick_fixture
+import check_sgb_vendor_tick_reference as tick_reference
 
 TIMELINE=PROBE=INTERRUPT=None
 
 
+def tick_timeline(tempo=45):
+    start=100000;times=[0,*tick_reference.expected(tempo,0)]
+    events=[]
+    for i,pitch in enumerate([1437,1357]*4):
+        onset=start+times[i];gate=start+(times[i]+times[i+1])//2
+        events.extend([dict(half=onset,register=0x4C,value=4,request=1,pitch=pitch,
+                           srcn=2,adsr1=255,adsr2=224,gain=184),
+                       dict(half=gate,register=0x5C,value=4,request=1),
+                       dict(half=gate+20,register=0x5C,value=0,request=1)])
+    completion=start+times[-1]+100
+    events.extend([dict(half=completion,register=0x5C,value=255,request=1),
+                   dict(half=completion+20,register=0x5C,value=0,request=1)])
+    def registers(low,high):
+        stats=dict(count=2,first=low,last=high,min_gap=high-low,max_gap=high-low)
+        empty=dict(count=0,first=0,last=0,min_gap=0,max_gap=0)
+        return [dict(address=a,all=stats.copy() if a==253 else empty.copy(),
+                     nonzero=stats.copy() if a==253 else empty.copy()) for a in range(253,256)]
+    return dict(music=[1],requests=[50000],events=events,selection_timer_results=True,
+        timer_continuity=[dict(request=1,keyon_half=start,completion_half=completion,end_half=1000000,
+            playback=registers(start+100,completion-100),idle=registers(completion+100,999900))])
+
+
 class SelectionWaitContracts(unittest.TestCase):
+    def test_tick_fixture_and_music_ownership(self):
+        for tempo in timer_tempo.TEMPO_POINTS:
+            baseline=tick_fixture(tempo);holdout=tick_fixture(tempo,holdout=True)
+            self.assertEqual(baseline,tick_fixture(tempo));self.assertNotEqual(baseline,holdout)
+            self.assertEqual(baseline[0x4000:],holdout[0x4000:])
+            measured=tick_reference.summarize(tick_timeline(tempo))
+            self.assertEqual(measured['onsets_half'][1:],tick_reference.expected(tempo,0)[:-1])
+            self.assertEqual(measured['gate_clear_half'],[20]*8)
+        for tempo,holdout in ((True,False),(99,False),(32,1)):
+            with self.assertRaises(ValueError): tick_fixture(tempo,holdout=holdout)
+        data=tick_timeline();faults=[]
+        final_clear=copy.deepcopy(data);final_clear['events'].pop(-3)
+        self.assertIsNone(tick_reference.summarize(final_clear)['gate_clear_half'][-1])
+        for key,value in (('pitch',1436),('srcn',3),('request',2)):
+            bad=copy.deepcopy(data);bad['events'][0][key]=value;faults.append(bad)
+        bad=copy.deepcopy(data);bad['events'].pop(1);faults.append(bad)
+        bad=copy.deepcopy(data);bad['music']=[2];faults.append(bad)
+        bad=copy.deepcopy(data);bad['events'].pop(-2);faults.append(bad)
+        bad=copy.deepcopy(data);bad['timer_continuity'][0]['completion_half']+=1;faults.append(bad)
+        for bad in faults:
+            with self.assertRaises(ValueError): tick_reference.summarize(bad)
+
+    def test_tick_reference_filters_fit_and_sanitization(self):
+        def capture(probe,program,game,model,clocks,inputs,**flags):
+            holdout=bool(int(game.stem.rsplit('-',1)[-1]))
+            self.assertEqual(game.read_bytes(),tick_fixture(64,holdout=holdout))
+            self.assertEqual(clocks,200000000);self.assertEqual(flags,dict(timer_continuity=True))
+            return tick_timeline(64)
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            for name in ('sgb1.program.rom','sgb2.program.rom'): (root/name).write_bytes(b'owned stub')
+            argv=['check','--probe',str(root/'probe'),'--firmware-dir',str(root),'--tempo','64','--tempo','64']
+            stdout=io.StringIO()
+            with patch.object(sys,'argv',argv),patch.object(tick_reference,'capture',side_effect=capture) as run,contextlib.redirect_stdout(stdout):
+                tick_reference.main()
+            report=json.loads(stdout.getvalue());self.assertEqual(run.call_count,4)
+            self.assertIs(report['qualification'],False);self.assertEqual(len(report['runs']),4)
+            before=report['comparisons']
+            report['runs'][1]['onsets_half'][1]+=16384
+            after=tick_reference.compare(report['runs'])
+            self.assertEqual(before[0]['baseline_phase'],after[0]['baseline_phase'])
+            self.assertEqual(before[0]['baseline_steady_phase'],after[0]['baseline_steady_phase'])
+            self.assertFalse(after[0]['cases'][1]['onsets_within_2ms'])
+            for fault in (ValueError('private detail'),None):
+                stdout=io.StringIO();stderr=io.StringIO()
+                with patch.object(sys,'argv',argv),patch.object(tick_reference,'capture',side_effect=fault,return_value={}),contextlib.redirect_stdout(stdout),contextlib.redirect_stderr(stderr):
+                    with self.assertRaises(SystemExit) as raised: tick_reference.main()
+                self.assertEqual(raised.exception.code,2);self.assertEqual(stdout.getvalue(),'')
+                self.assertEqual(stderr.getvalue(),'bounded music-tick experiment failed; child diagnostics suppressed\n')
+
+    def test_native_repeated_music_ticks(self):
+        if TIMELINE is None: self.skipTest('timeline probe not supplied')
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);(root/'owned.rom').write_bytes(firmware())
+            inputs=root/'none.script';inputs.write_text('GBB SGB input v1\n0 none\n')
+            cases=[(model,tempo,holdout) for model in ('sgb','sgb2')
+                   for tempo in timer_tempo.TEMPO_POINTS for holdout in (False,True)]
+            def run(case):
+                model,tempo,holdout=case;game=root/f'{model}-{tempo}-{int(holdout)}.gb'
+                game.write_bytes(tick_fixture(tempo,holdout=holdout))
+                data=reference.capture(TIMELINE,root/'owned.rom',game,model,200000000,inputs,timer_continuity=True)
+                return dict(model=model,tempo=tempo,holdout=holdout,**tick_reference.summarize(data))
+            with ThreadPoolExecutor(max_workers=4) as pool: runs=list(pool.map(run,cases))
+            for pair in tick_reference.compare(runs):
+                for case in pair['cases']:
+                    with self.subTest(model=pair['model'],tempo=pair['tempo'],holdout=case['holdout']):
+                        self.assertTrue(case['onsets_within_2ms'])
+                        self.assertTrue(case['steady_onsets_within_2ms'])
+                        self.assertLessEqual(case['completion_error_ms'],2)
+
     def test_persistent_accumulator_arithmetic(self):
         for tempo in timer_tempo.TEMPO_POINTS:
             for phase_value in (0,80,255):
