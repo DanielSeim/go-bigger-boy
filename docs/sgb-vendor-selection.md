@@ -138,9 +138,11 @@ replacement by only about 4.7 ms, versus about 31.8 ms for its active baseline.
 The evidence supports a host/state-dependent dispatch contract rather than one
 universal SPC delay.
 
-Next, establish host command/acknowledgment milestones using controlled owned
-music-ID changes. Use those boundaries to implement bounded experimental SOUND
-dispatch pacing, retaining immediate STOP/upload ownership and testing rapid
+The [controlled dispatch experiment](sgb-vendor-dispatch.md) adds distinct
+owned music IDs and bounded readback-equality observations. Next, establish
+host command/acknowledgment milestones using those controls. Use supported
+boundaries to implement bounded experimental SOUND dispatch pacing, retaining
+immediate STOP/upload ownership and testing rapid
 reselection and save/load. Compare held-out phases and the pinned title before
 accepting it. Port activity alone is not sufficient to identify every musical
 handoff. Continuous note/rest phase, the unmatched short gate,

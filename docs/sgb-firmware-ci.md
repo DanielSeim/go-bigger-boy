@@ -93,3 +93,11 @@ completed states. Its short fixture/port-summary contract and the combined
 DSP/APU observer lifecycle contract retain platform/sanitizer coverage. The
 optional selection reference experiment is labelled `local;private-reference`.
 See [selection workload and port timing](sgb-vendor-selection.md).
+
+The controlled dispatch suite adds `gameboy_sgb_score_vendor_dispatch` (cost
+300, timeout 900 seconds), bringing the public total to 88 full matrices.
+It covers distinct and repeated music IDs in active/completed states on both
+models, unchanged ordinary timelines under readback collection, and exact
+reset/save-load replay. Its short fixture/report contract remains in platform
+and sanitizer jobs; its optional original comparison stays labelled
+`local;private-reference`. See [controlled dispatch](sgb-vendor-dispatch.md).

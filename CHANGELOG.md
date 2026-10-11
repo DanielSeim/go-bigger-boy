@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Add controlled SGB music-ID dispatch fixtures and bounded host-port readback
+  observations, with original comparisons and reset/save-load contracts.
+  Keep replacement firmware and production selection unchanged.
+
 - Update the Windows updater alongside the application by running the helper
   from the verified release download outside the installation directory.
 

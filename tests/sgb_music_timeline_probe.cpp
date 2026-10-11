@@ -14,19 +14,51 @@ struct PortWindow {
     std::uint64_t first{}, last{}, keyon{};
     std::array<unsigned,4> writes{};
 };
+struct PortHandshake {
+    std::uint64_t half{}, first_read{}, last_read{}, first_equal{}, last_equal{};
+    unsigned request{}, port{}, equal_reads{}, unequal_reads{};
+    std::uint8_t written{}; // Used only for equality; never exported.
+};
 struct Observation {
     Host* host{};
     std::array<Event,128> events{};
     unsigned count{}, kof=256, flg=256;
     bool overflow{};
     std::array<PortWindow,16> ports{};
-    static void port(void* context,std::uint64_t,char kind,std::uint16_t address,std::uint8_t) noexcept {
+    bool handshakes_enabled{};
+    std::array<PortHandshake,128> handshakes{};
+    unsigned handshake_count{};
+    std::array<unsigned,4> latest{}; // One-based index of latest write per port.
+    static void port(void* context,std::uint64_t,char kind,std::uint16_t address,std::uint8_t value) noexcept {
         auto& self=*static_cast<Observation*>(context);
         const auto request=self.host->icd().sound_packets_delivered();
-        if (kind!='H' || !request || request>self.ports.size() || address<0x2140 || address>0x2143) return;
+        if (!self.host->icd().audible_sound_packets_delivered()) return;
+        if (!request || request>self.ports.size() || address<0x2140 || address>0x2143) return;
         auto& window=self.ports[request-1]; if (window.keyon) return;
-        // APU clock at the host write callback, not an exact fractional bus phase.
+        // APU clock at the host bus callback, not an exact fractional bus phase.
         const auto half=self.host->apu_half_clocks();
+        const auto index=address-0x2140;
+        if (self.handshakes_enabled) {
+            if (kind=='H') {
+                if (self.handshake_count==self.handshakes.size()) {self.overflow=true;return;}
+                auto& entry=self.handshakes[self.handshake_count++];
+                entry.half=half; entry.request=static_cast<unsigned>(request);
+                entry.port=index; entry.written=value;
+                self.latest[index]=self.handshake_count;
+            } else if (kind=='h' && self.latest[index]) {
+                auto& entry=self.handshakes[self.latest[index]-1];
+                // Do not attribute reads in a new request to an older write.
+                if (entry.request!=request) return;
+                if (!entry.first_read) entry.first_read=half;
+                entry.last_read=half;
+                if (value==entry.written) {
+                    if (!entry.first_equal) entry.first_equal=half;
+                    entry.last_equal=half; ++entry.equal_reads;
+                } else ++entry.unequal_reads;
+                if (entry.equal_reads+entry.unequal_reads>1000000) self.overflow=true;
+            }
+        }
+        if (kind!='H') return;
         if (!window.first) window.first=half;
         window.last=half; ++window.writes[address-0x2140];
     }
@@ -55,7 +87,8 @@ std::vector<std::uint8_t> read(const char* path, std::size_t low, std::size_t hi
 }
 int main(int argc,char** argv) {
  try {
-    if (argc!=7) throw std::runtime_error("PROGRAM GAME sgb|sgb2 CLOCKS SCRIPT bundled|fixture");
+    if (argc!=7 && (argc!=8 || std::string(argv[7])!="--port-handshakes"))
+        throw std::runtime_error("PROGRAM GAME sgb|sgb2 CLOCKS SCRIPT bundled|fixture [--port-handshakes]");
     gameboy::SgbHostConfig config;
     config.program_rom=read(argv[1],262144,524288); config.game_rom=read(argv[2],336,16*1024*1024);
     const std::string model=argv[3], boot=argv[6];
@@ -71,6 +104,7 @@ int main(int argc,char** argv) {
     if (!gbb_sgb_input_load(argv[5],&inputs,error,sizeof(error))) throw std::runtime_error("invalid inputs");
     for (std::size_t i=0;i<inputs.count;++i) config.input_events.push_back({inputs.events[i].frame,inputs.events[i].mask});
     Host host(config); Observation observed; observed.host=&host;
+    observed.handshakes_enabled=argc==8;
     host.debug_set_dsp_write_observer(Observation::write,&observed);
     host.debug_set_apu_port_observer(Observation::port,&observed);
     std::array<std::uint64_t,16> requests{}; std::array<unsigned,16> music{}; unsigned count{};
@@ -105,7 +139,19 @@ int main(int argc,char** argv) {
         for (unsigned j=0;j<4;++j) std::cout<<(j?",":"")<<w.writes[j];
         std::cout<<"]}";
     }
-    std::cout<<"],\"final\":{\"flg\":"<<unsigned(host.debug_dsp_register(0x6c))
+    std::cout<<"]";
+    if (observed.handshakes_enabled) {
+        std::cout<<",\"port_handshakes\":[";
+        for (unsigned i=0;i<observed.handshake_count;++i) {
+            const auto& h=observed.handshakes[i];
+            std::cout<<(i?",":"")<<"{\"request\":"<<h.request<<",\"port\":"<<h.port
+                <<",\"half\":"<<h.half<<",\"first_read\":"<<h.first_read<<",\"last_read\":"<<h.last_read
+                <<",\"first_equal\":"<<h.first_equal<<",\"last_equal\":"<<h.last_equal
+                <<",\"equal_reads\":"<<h.equal_reads<<",\"unequal_reads\":"<<h.unequal_reads<<"}";
+        }
+        std::cout<<"]";
+    }
+    std::cout<<",\"final\":{\"flg\":"<<unsigned(host.debug_dsp_register(0x6c))
              <<",\"kof\":"<<unsigned(host.debug_dsp_register(0x5c))
              <<",\"echo_left\":"<<unsigned(host.debug_dsp_register(0x2c))
              <<",\"echo_right\":"<<unsigned(host.debug_dsp_register(0x3c))<<"}}\n";

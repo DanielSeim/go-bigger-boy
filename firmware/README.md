@@ -427,3 +427,8 @@ bounded caller-uploaded instrument-2 binding. Bounded private
 Donkey Kong runs now produce music on both models through real SOU_TRN/SOUND,
 with exact reset/save-load continuation. It is unbundled and uses provisional
 sound policies; full sound-bank compatibility and acoustic qualification remain open.
+The [controlled dispatch experiment](../docs/sgb-vendor-dispatch.md) adds
+distinct-ID controls and host write/readback timing. All sixteen private
+captures and the public replay matrix pass, but SPC reply-publication timing
+must be isolated before choosing a dispatch pacing rule. The DB image stays
+unchanged.
