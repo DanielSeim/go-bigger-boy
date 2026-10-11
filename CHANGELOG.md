@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Add controlled SGB effect-STOP fields and distinct-note pitch-setup markers
+  to bounded dispatch observations, retaining firmware and production selection.
+
 - Observe accepted SGB SPC reply publications separately from host polling,
   with bounded metadata reports and scalar/batched reset/save-load contracts.
   Leave the replacement firmware image and production selection unchanged.

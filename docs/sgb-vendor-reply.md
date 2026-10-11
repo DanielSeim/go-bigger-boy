@@ -117,9 +117,10 @@ the original wire protocol, or imposing a universal added delay.
 
 ## Next step
 
-Identify the exchange that commits music selection using controlled changes
-to owned SOUND command fields and distinct-note key-ons. Correlate it with
-the reply publications and host readback before designing bounded
+The [controlled field/pitch-setup experiment](sgb-vendor-handoff.md) now
+provides counterexamples to treating a matching port value as acceptance.
+Identify the selection boundary using actual score-directory reads and
+correlate it with reply publication and host readback before designing bounded
 experimental dispatch pacing. Validate that policy against held-out phases,
 rapid reselection, immediate STOP/upload ownership, exact reset/save-load and
 the pinned title. No pacing law or firmware change is accepted here.

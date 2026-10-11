@@ -14,13 +14,14 @@ from build_sgb_vendor_timing_fixture import build as timing_game
 from check_sgb_vendor_music_title import TITLE_SHA256, SCRIPT_SHA256
 
 
-def capture(probe, program, game, model, clocks, inputs, *, port_handshakes=False, spc_replies=False):
+def capture(probe, program, game, model, clocks, inputs, *, port_handshakes=False, spc_replies=False, selection_handoff=False):
     command = [str(probe),str(program),str(game),model,str(clocks),str(inputs),'bundled']
-    if spc_replies: command.append('--spc-replies')
+    if selection_handoff: command.append('--selection-handoff')
+    elif spc_replies: command.append('--spc-replies')
     elif port_handshakes: command.append('--port-handshakes')
     child = subprocess.run(command,
                            capture_output=True,timeout=240)
-    if child.returncode or len(child.stdout)>32768:
+    if child.returncode or len(child.stdout)>(49152 if selection_handoff else 32768):
         raise ValueError('bounded register-only observation failed')
     data = json.loads(child.stdout)
     if (data.get('schema')!='gbb-sgb-music-timeline-v1' or data.get('qualification') is not False or

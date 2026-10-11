@@ -109,3 +109,11 @@ unchanged ordinary timelines and exact reset/load playback. The short reply
 report and extended observer contracts retain platform/sanitizer coverage.
 The optional original comparison remains `local;private-reference`.
 See [SPC reply timing](sgb-vendor-reply.md).
+
+The controlled handoff suite adds `gameboy_sgb_score_vendor_handoff` (cost
+300, timeout 900 seconds), bringing the public total to 90 full matrices.
+It checks separate effect-STOP fields against distinct-note pitch setup,
+unchanged ordinary timelines and exact reset/load playback. The short
+fixture/report contract retains platform/sanitizer coverage; the optional
+original comparison remains `local;private-reference`.
+See [controlled SOUND fields and pitch setup](sgb-vendor-handoff.md).

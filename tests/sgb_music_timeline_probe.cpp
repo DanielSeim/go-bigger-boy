@@ -20,7 +20,10 @@ struct PortHandshake {
     std::uint8_t written{}; // Used only for equality; never exported.
     std::uint64_t first_reply{}, last_reply{}, first_equal_reply{}, last_equal_reply{};
     unsigned reply_writes{}, equal_reply_writes{};
+    unsigned fields{}, music_reply_writes{};
+    std::uint64_t first_music_reply{};
 };
+struct PitchWrite { std::uint64_t half; unsigned request, pitch; };
 struct Observation {
     Host* host{};
     std::array<Event,128> events{};
@@ -29,6 +32,9 @@ struct Observation {
     std::array<PortWindow,16> ports{};
     bool handshakes_enabled{};
     bool replies_enabled{};
+    bool handoff_enabled{};
+    std::array<PitchWrite,128> pitches{};
+    unsigned pitch_count{};
     std::array<PortHandshake,128> handshakes{};
     unsigned handshake_count{};
     std::array<unsigned,4> latest{}; // One-based index of latest write per port.
@@ -41,6 +47,10 @@ struct Observation {
         if (entry.request!=request) return;
         if (!entry.first_reply) entry.first_reply=half;
         entry.last_reply=half; ++entry.reply_writes;
+        if (self.handoff_enabled && value==self.host->icd().last_delivered_sound_packet()[4]) {
+            if (!entry.first_music_reply) entry.first_music_reply=half;
+            ++entry.music_reply_writes;
+        }
         if (value==entry.written) {
             if (!entry.first_equal_reply) entry.first_equal_reply=half;
             entry.last_equal_reply=half; ++entry.equal_reply_writes;
@@ -62,6 +72,11 @@ struct Observation {
                 auto& entry=self.handshakes[self.handshake_count++];
                 entry.half=half; entry.request=static_cast<unsigned>(request);
                 entry.port=index; entry.written=value;
+                if (self.handoff_enabled) {
+                    const auto& packet=self.host->icd().last_delivered_sound_packet();
+                    for (unsigned field=0;field<4;++field)
+                        if (value==packet[std::array<unsigned,4>{4,1,2,3}[field]]) entry.fields|=1U<<field;
+                }
                 self.latest[index]=self.handshake_count;
             } else if (kind=='h' && self.latest[index]) {
                 auto& entry=self.handshakes[self.latest[index]-1];
@@ -84,6 +99,13 @@ struct Observation {
         auto& self=*static_cast<Observation*>(context);
         const auto requests=self.host->icd().sound_packets_delivered();
         if (!self.host->icd().audible_sound_packets_delivered()) return;
+        if (self.handoff_enabled && (address==0x22 || address==0x23) && requests &&
+            requests<=self.ports.size() && !self.ports[requests-1].keyon) {
+            if (self.pitch_count==self.pitches.size()) {self.overflow=true;return;}
+            const auto pitch=unsigned(self.host->debug_dsp_register(0x22)) |
+                (unsigned(self.host->debug_dsp_register(0x23))<<8);
+            self.pitches[self.pitch_count++]={half,static_cast<unsigned>(requests),pitch};
+        }
         if (address==0x5c) { if (self.kof==value) return; self.kof=value; }
         else if (address==0x6c) { if (self.flg==value) return; self.flg=value; }
         else if (address!=0x4c || !value) return;
@@ -105,8 +127,8 @@ std::vector<std::uint8_t> read(const char* path, std::size_t low, std::size_t hi
 }
 int main(int argc,char** argv) {
  try {
-    if (argc!=7 && (argc!=8 || (std::string(argv[7])!="--port-handshakes" && std::string(argv[7])!="--spc-replies")))
-        throw std::runtime_error("PROGRAM GAME sgb|sgb2 CLOCKS SCRIPT bundled|fixture [--port-handshakes|--spc-replies]");
+    if (argc!=7 && (argc!=8 || (std::string(argv[7])!="--port-handshakes" && std::string(argv[7])!="--spc-replies" && std::string(argv[7])!="--selection-handoff")))
+        throw std::runtime_error("PROGRAM GAME sgb|sgb2 CLOCKS SCRIPT bundled|fixture [--port-handshakes|--spc-replies|--selection-handoff]");
     gameboy::SgbHostConfig config;
     config.program_rom=read(argv[1],262144,524288); config.game_rom=read(argv[2],336,16*1024*1024);
     const std::string model=argv[3], boot=argv[6];
@@ -123,7 +145,8 @@ int main(int argc,char** argv) {
     for (std::size_t i=0;i<inputs.count;++i) config.input_events.push_back({inputs.events[i].frame,inputs.events[i].mask});
     Host host(config); Observation observed; observed.host=&host;
     observed.handshakes_enabled=argc==8;
-    observed.replies_enabled=argc==8 && std::string(argv[7])=="--spc-replies";
+    observed.handoff_enabled=argc==8 && std::string(argv[7])=="--selection-handoff";
+    observed.replies_enabled=observed.handoff_enabled || (argc==8 && std::string(argv[7])=="--spc-replies");
     if (observed.replies_enabled) host.debug_set_spc_port_write_observer(Observation::reply,&observed);
     host.debug_set_dsp_write_observer(Observation::write,&observed);
     host.debug_set_apu_port_observer(Observation::port,&observed);
@@ -179,6 +202,21 @@ int main(int argc,char** argv) {
                 <<",\"first_reply\":"<<h.first_reply<<",\"last_reply\":"<<h.last_reply
                 <<",\"first_equal_reply\":"<<h.first_equal_reply<<",\"last_equal_reply\":"<<h.last_equal_reply
                 <<",\"reply_writes\":"<<h.reply_writes<<",\"equal_reply_writes\":"<<h.equal_reply_writes<<"}";
+        }
+        std::cout<<"]";
+    }
+    if (observed.handoff_enabled) {
+        std::cout<<",\"handoff_writes\":[";
+        for (unsigned i=0;i<observed.handshake_count;++i) {
+            const auto& h=observed.handshakes[i];
+            std::cout<<(i?",":"")<<"{\"request\":"<<h.request<<",\"port\":"<<h.port<<",\"half\":"<<h.half
+                <<",\"fields\":"<<h.fields<<",\"first_music_reply\":"<<h.first_music_reply
+                <<",\"music_reply_writes\":"<<h.music_reply_writes<<"}";
+        }
+        std::cout<<"],\"selection_pitch_writes\":[";
+        for (unsigned i=0;i<observed.pitch_count;++i) {
+            const auto& p=observed.pitches[i];
+            std::cout<<(i?",":"")<<"{\"request\":"<<p.request<<",\"half\":"<<p.half<<",\"pitch\":"<<p.pitch<<"}";
         }
         std::cout<<"]";
     }

@@ -843,3 +843,6 @@ music IDs and bounded host write/readback milestones on both originals and
 the replacement. The [SPC reply-publication extension](sgb-vendor-reply.md) separates a measured
 polling contribution from reply latency; musical-handoff identification and
 dispatch pacing remain open. The firmware image remains unchanged.
+The [controlled SOUND-field/pitch-setup experiment](sgb-vendor-handoff.md)
+rules out a last-matching-write acceptance rule. Native score-directory read
+timing is the next selection-specific observation; dispatch pacing stays open.
