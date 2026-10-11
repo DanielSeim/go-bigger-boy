@@ -444,3 +444,8 @@ The [authored score-traversal experiment](../docs/sgb-vendor-traversal.md)
 adds fixed root, pattern-table and first-note read-address milestones after
 directory lookup, preserving both validation and live reads. Timing policy
 and firmware selection remain unchanged.
+
+The [request-frame phase sweep](../docs/sgb-vendor-request-phase.md) varies
+initial selection timing separately from later request spacing, retaining
+the authored bank and combined STOP controls. It measures directory-to-root
+waits without changing dispatch pacing or firmware selection.

@@ -137,3 +137,12 @@ sixteen ordinary controls across both models and all STOP/state profiles.
 The short report and shared-CLI compatibility contracts retain platform and
 sanitizer coverage; originals remain `local;private-reference`.
 See [authored score traversal](sgb-vendor-traversal.md).
+
+
+The request-phase suite adds `gameboy_sgb_score_vendor_request_phase` (cost
+600, timeout 1800 seconds), bringing the public total to 93 full matrices.
+It checks five request schedules, two STOP profiles, two playback states and
+both models, with forty observed timelines and forty ordinary controls.
+Its short fixture/report contract remains in platform and sanitizer jobs;
+the optional original comparison stays `local;private-reference` (timeout
+4800 seconds). See [request-frame phase](sgb-vendor-request-phase.md).

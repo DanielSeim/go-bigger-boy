@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Add independent first-request and request-spacing frame sweeps for SGB
+  score-root consumption, retaining owned banks, STOP controls and firmware.
+
 - Trace fixed authored SGB score root, pattern and first-note read addresses
   before pitch setup, retaining validation passes and bounded private reports.
 

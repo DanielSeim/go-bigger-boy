@@ -11,12 +11,17 @@ PROFILES = ('change', 'repeat')
 STATES = ('active', 'completed')
 
 
-def build(profile='change', state='active', *, effects=(0,0)):
+def build(profile='change', state='active', *, effects=(0,0), request_frames=None):
     if profile not in PROFILES or state not in STATES:
         raise ValueError('invalid dispatch profile/state')
     if (not isinstance(effects,tuple) or len(effects)!=2 or
             any(type(value) is not int or value not in (0,128) for value in effects)):
         raise ValueError('invalid owned effect-stop controls')
+    if request_frames is None:
+        request_frames = (16,16,16) if state == 'active' else (16,100,100)
+    if (not isinstance(request_frames,tuple) or len(request_frames)!=3 or
+            any(type(n) is not int or not 1<=n<=104 for n in request_frames)):
+        raise ValueError('invalid bounded request frame counts')
     score = bytearray(bank(echo=False))
     for index, note in enumerate((0xA4, 0xA3, 0xA2)):
         start = 0x60 + 48*index
@@ -27,9 +32,8 @@ def build(profile='change', state='active', *, effects=(0,0)):
               payload(assets(descriptor=(2,255,224,184,2,176))))
     ids = (1,2,3) if profile == 'change' else (1,1,1)
     commands = [(4,bytes((0x49,)),1)]
-    commands += [(16 if index == 0 or state == 'active' else 100,
-                  bytes((0x41,*effects,0,music)),None)
-                 for index,music in enumerate(ids)]
+    commands += [(delay,bytes((0x41,*effects,0,music)),None)
+                 for delay,music in zip(request_frames,ids)]
     return build_cartridge(frames,tuple(commands))
 
 

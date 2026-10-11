@@ -853,3 +853,7 @@ changing experimental firmware or production selection.
 The [authored score-traversal extension](sgb-vendor-traversal.md) observes
 fixed root, pattern-table and first-note addresses to narrow the interval
 between directory lookup and expected pitch setup.
+
+The [request-frame phase sweep](sgb-vendor-request-phase.md) varies the first
+SOUND wait and later request spacing independently while retaining the same
+bank, uploaded assets and combined effect-STOP control.

@@ -121,3 +121,8 @@ and SGB2
 Broad earlier firmware matrices, pinned-title playback, Windows execution,
 independent emulators and hardware were not rerun. Original program
 instructions, proprietary score data and assets were not implementation inputs.
+
+Follow-up: the [request-frame sweep](sgb-vendor-request-phase.md) now covers
+one- and two-frame initial/spacing offsets. The later root wait remains near
+25–28 ms, with the SGB1 initial-state exception near 48 ms. Preceding-tempo
+controls and held-out request gaps are next.
