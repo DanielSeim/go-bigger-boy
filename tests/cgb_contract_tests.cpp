@@ -40,6 +40,55 @@ std::vector<std::uint8_t> cgb_test_rom(
     return rom;
 }
 
+// Independently authored standard HRAM DMA delay: 40 DEC/JR iterations.
+void test_hram_dma_return() {
+    for (const auto model : {gameboy::HardwareModel::dmg, gameboy::HardwareModel::sgb,
+                             gameboy::HardwareModel::sgb2, gameboy::HardwareModel::cgb_e}) {
+        for (const bool fast : {false, true}) {
+            if (fast && model != gameboy::HardwareModel::cgb_e) continue;
+            auto rom = cgb_test_rom({0xCD, 0x80, 0xFF}); // CALL FF80; return to 0103
+            gameboy::Emulator emulator{gameboy::Cartridge{std::move(rom)}, model};
+            auto& bus = emulator.bus();
+            if (fast) {
+                bus.write8(0xFF4D, 1);
+                // Execute STOP in HRAM so ROM contents and return site stay fixed.
+                bus.write8(0xFF90, 0x10); bus.write8(0xFF91, 0);
+                auto r = emulator.cpu().registers(); r.pc = 0xFF90;
+                emulator.set_cpu_registers(r);
+                static_cast<void>(emulator.step());
+                check(bus.double_speed(), "DMA return fixture enters double speed");
+            }
+            bus.write8(0xFF46, 0xC0);
+            bus.tick(8); // Existing startup delay, expressed in CPU T-cycles.
+            bus.tick(639);
+            check(bus.debug_oam_dma().active && bus.debug_oam_dma().bytes_copied == 159,
+                  "OAM DMA remains active until the 160th CPU machine cycle");
+            bus.tick(1);
+            check(!bus.debug_oam_dma().active && bus.debug_oam_dma().bytes_copied == 160,
+                  "OAM DMA completes after 640 CPU T-cycles at either speed");
+            // Finish even with the old bug, isolating the CALL/RET reproduction.
+            bus.tick(648);
+            const std::uint8_t routine[]{0x3E,0xC0,0xE0,0x46,0x3E,40,0x3D,0x20,0xFD,0xC9};
+            for (unsigned i = 0; i < sizeof(routine); ++i) bus.write8(0xFF80 + i, routine[i]);
+            auto r = emulator.cpu().registers(); r.pc = 0x0100; r.sp = 0xCFE1;
+            emulator.set_cpu_registers(r);
+            static_cast<void>(emulator.step());
+            check(bus.read8(0xCFDF) == 3 && bus.read8(0xCFE0) == 1,
+                  "CALL stores little-endian return word in WRAM");
+            unsigned steps = 0;
+            while (emulator.cpu().registers().pc != 0xFF89 && steps++ < 100)
+                static_cast<void>(emulator.step());
+            check(steps < 100, "DMA delay reaches HRAM RET");
+            check(bus.read8(0xCFDF) == 3 && bus.read8(0xCFE0) == 1,
+                  "OAM DMA never modifies the physical return word");
+            static_cast<void>(emulator.step());
+            check(!bus.debug_oam_dma().active, "DMA is complete after the standard delay and RET");
+            check(emulator.cpu().registers().pc == 0x0103 && emulator.cpu().registers().sp == 0xCFE1,
+                  fast ? "double-speed RET returns to caller, not FFFF" : "normal-speed RET returns to caller");
+        }
+    }
+}
+
 void test_cgb_memory_and_rendering() {
     gameboy::Emulator speed{gameboy::Cartridge{cgb_test_rom({
         0x3E, 0x01, // LD A,1
@@ -271,6 +320,7 @@ void test_cgb_memory_and_rendering() {
 
 int main() {
     try {
+        test_hram_dma_return();
         test_cgb_memory_and_rendering();
     } catch (const std::exception& error) {
         std::cerr << "Unexpected exception: " << error.what() << '\n';

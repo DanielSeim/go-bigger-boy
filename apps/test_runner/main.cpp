@@ -360,12 +360,57 @@ void write_cpu_flow(const char* prefix, const CpuFlowRecord& record,
     std::cerr << line.str();
 }
 
+struct CpuStackSnapshot {
+    std::array<std::uint8_t, 8> visible{}, raw{}, raw_after{};
+    gameboy::MemoryBus::OamDmaDiagnostics dma{};
+    bool double_speed{}, has_bank{};
+    std::uint16_t bank{};
+};
+
+void write_cpu_stack(const CpuFlowRecord& record, const CpuStackSnapshot& stack) {
+    const auto& r = record.after;
+    std::ostringstream line;
+    line << "CPU_STACK_DIAGNOSTICS cycle=" << record.cycle
+         << std::hex << std::setfill('0')
+         << " pc=" << std::setw(4) << record.pc
+         << " opcode=" << std::setw(2) << unsigned(record.opcode)
+         << " next_pc=" << std::setw(4) << r.pc
+         << " sp_before=" << std::setw(4) << record.sp_before
+         << " sp_after=" << std::setw(4) << r.sp
+         << " af=" << std::setw(4) << ((unsigned(r.a) << 8) | r.f)
+         << " bc=" << std::setw(4) << ((unsigned(r.b) << 8) | r.c)
+         << " de=" << std::setw(4) << ((unsigned(r.d) << 8) | r.e)
+         << " hl=" << std::setw(4) << ((unsigned(r.h) << 8) | r.l);
+    const auto bytes = [&line](const char* name, const auto& values) {
+        line << ' ' << name << '=';
+        for (const auto value : values) line << std::setw(2) << unsigned(value);
+    };
+    bytes("stack_bytes", stack.visible);
+    line << " return_address=" << std::setw(4)
+         << (unsigned(stack.visible[0]) | (unsigned(stack.visible[1]) << 8));
+    bytes("raw_stack_bytes", stack.raw);
+    bytes("raw_stack_after", stack.raw_after);
+    line << " rom_bank=";
+    if (stack.has_bank) line << std::setw(3) << stack.bank;
+    else line << "unavailable";
+    line << " dma_source=" << std::setw(4) << stack.dma.source
+         << std::dec << " dma_active=" << (stack.dma.active ? "true" : "false")
+         << " dma_bytes_copied=" << stack.dma.bytes_copied
+         << " dma_start_delay=" << stack.dma.start_delay
+         << " double_speed=" << (stack.double_speed ? "true" : "false")
+         << " snapshot=before_step raw_access=bypasses_dma raw_after_sp=original\n";
+    std::cerr << line.str();
+}
+
 struct CpuFlowDiagnostics {
     explicit CpuFlowDiagnostics(const Options& options)
         : records(static_cast<std::size_t>(options.trace_recent_cpu)),
-          history(options.trace_first_pc.has_value() ? 64 : 0), target(options.trace_first_pc) {}
+          history(options.trace_first_pc.has_value() ? 64 : 0),
+          stacks(history.size()), target(options.trace_first_pc) {}
     std::vector<CpuFlowRecord> records;
     std::vector<CpuFlowRecord> history;
+    std::vector<CpuStackSnapshot> stacks;
+    CpuStackSnapshot pending_stack{};
     std::optional<std::uint16_t> target;
     std::optional<CpuFlowRecord> previous;
     std::size_t next{}, count{};
@@ -374,6 +419,17 @@ struct CpuFlowDiagnostics {
     std::uint16_t pc{};
     std::uint8_t opcode{};
 
+    void before_step(const gameboy::MemoryBus& bus, std::uint16_t sp) {
+        if (!target || reached) return;
+        for (unsigned i = 0; i < 8; ++i) {
+            const auto address = static_cast<std::uint16_t>(sp + i);
+            pending_stack.visible[i] = bus.debug_cpu_read8(address);
+            pending_stack.raw[i] = bus.read8(address);
+        }
+        pending_stack.dma = bus.debug_oam_dma();
+        pending_stack.double_speed = bus.double_speed();
+        pending_stack.has_bank = bus.cartridge().debug_mbc5_rom_bank(pending_stack.bank);
+    }
     static void observe(void* context, std::uint16_t pc, std::uint8_t opcode) noexcept {
         auto& self = *static_cast<CpuFlowDiagnostics*>(context);
         self.fetched = true;
@@ -392,9 +448,13 @@ struct CpuFlowDiagnostics {
             write_cpu_flow("CPU_FIRST_PC_HISTORY",
                 history[(history_next + history.size() - history_count + i) % history.size()],
                 nullptr, true, true);
+        for (std::size_t i = 0; i < history_count; ++i) {
+            const auto index = (history_next + history.size() - history_count + i) % history.size();
+            write_cpu_stack(history[index], stacks[index]);
+        }
     }
     void stepped(const gameboy::Cpu& cpu, std::uint64_t cycle, unsigned duration,
-                 std::uint16_t sp_before) {
+                 std::uint16_t sp_before, const gameboy::MemoryBus& bus) {
         if (fetched) {
             previous = CpuFlowRecord{cycle, duration, pc, opcode, cpu.registers(), sp_before};
             if (!records.empty()) {
@@ -403,6 +463,9 @@ struct CpuFlowDiagnostics {
                 count = std::min(count + 1, records.size());
             }
             if (!history.empty() && !reached) {
+                for (unsigned i = 0; i < 8; ++i)
+                    pending_stack.raw_after[i] = bus.read8(static_cast<std::uint16_t>(sp_before + i));
+                stacks[history_next] = pending_stack;
                 history[history_next] = *previous;
                 history_next = (history_next + 1) % history.size();
                 history_count = std::min(history_count + 1, history.size());
@@ -1065,8 +1128,9 @@ int main(int argc, char** argv) {
                                           : std::uint8_t{};
             cpu_flow.fetched = false;
             const auto flow_sp_before = traces_flow ? registers.sp : std::uint16_t{};
+            if (traces_flow) cpu_flow.before_step(emulator.bus(), flow_sp_before);
             const auto stepped_cycles = emulator.step();
-            if (traces_flow) cpu_flow.stepped(emulator.cpu(), trace_cycle, stepped_cycles, flow_sp_before);
+            if (traces_flow) cpu_flow.stepped(emulator.cpu(), trace_cycle, stepped_cycles, flow_sp_before, emulator.bus());
             if (sound_report) {
                 const auto request =
                     emulator.bus().debug_sgb_sound_request_revision();

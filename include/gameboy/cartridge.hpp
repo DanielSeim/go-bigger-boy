@@ -33,6 +33,12 @@ public:
 
     [[nodiscard]] std::string title() const;
     [[nodiscard]] std::uint8_t type() const noexcept;
+    // MBC5 latch (including bit 8); false for other mapper types.
+    [[nodiscard]] bool debug_mbc5_rom_bank(std::uint16_t& bank) const noexcept {
+        if (controller_ != Controller::mbc5) return false;
+        bank = selected_rom_bank_;
+        return true;
+    }
     [[nodiscard]] bool supports_cgb() const noexcept;
     // Header 0x146 advertises software that can use Super Game Boy
     // enhancements.  This is a capability flag, not a requirement: the

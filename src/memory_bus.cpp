@@ -422,7 +422,9 @@ void MemoryBus::write8(const std::uint16_t address, const std::uint8_t value) no
 void MemoryBus::tick(const unsigned cycles) noexcept {
     debug_bus_cycles_ += cycles;
     const auto peripheral_cycles = double_speed_ ? cycles / 2 : cycles;
-    tick_oam_dma(peripheral_cycles);
+    // OAM DMA takes 160 CPU M-cycles at either speed (320 PPU dots in
+    // CGB double speed). HRAM delay routines must finish before WRAM RETs.
+    tick_oam_dma(cycles);
     serial_.tick(cycles);
     io_[0x01] = serial_.read_data();
     io_[0x02] = static_cast<std::uint8_t>(

@@ -268,10 +268,12 @@ class CycleFrameCaptureTests(unittest.TestCase):
         row, = self.flow_lines(initial, 'CPU_FIRST_PC')
         self.assertEqual((row['pc'],row['opcode'],row['transition']), ('none','none','initial'))
         self.assertEqual(self.flow_lines(initial, 'CPU_FIRST_PC_HISTORY'), [])
+        self.assertNotIn('CPU_STACK_DIAGNOSTICS', initial.stderr)
         for address in ('0xffff', '0'):
             absent = self.capture(2, '--trace-first-pc', address)
             self.assertEqual(self.flow_lines(absent, 'CPU_FIRST_PC'), [])
             self.assertEqual(self.flow_lines(absent, 'CPU_FIRST_PC_HISTORY'), [])
+            self.assertNotIn('CPU_STACK_DIAGNOSTICS', absent.stderr)
 
     def test_first_pc_history_wrap_and_return_through_zero(self):
         # Return through an authored zero stack word, then execute RST 38h
@@ -303,6 +305,15 @@ class CycleFrameCaptureTests(unittest.TestCase):
             self.assertEqual(first['cycle'], '484')
             history = self.flow_lines(result, 'CPU_FIRST_PC_HISTORY')
             self.assertEqual(len(history), 64)
+            stacks = [dict(item.split('=') for item in line.split()[1:])
+                      for line in result.stderr.splitlines()
+                      if line.startswith('CPU_STACK_DIAGNOSTICS ')]
+            self.assertEqual(len(stacks), 64)
+            for stack, instruction in zip(stacks, history):
+                for key in ('cycle','pc','opcode','next_pc','sp_before','sp_after','af','bc','de','hl'):
+                    self.assertEqual(stack[key], instruction[key])
+                for key in ('stack_bytes','raw_stack_bytes','raw_stack_after'):
+                    self.assertRegex(stack[key], r'^[0-9a-f]{16}$')
             actual = [(int(r['cycle']), *(int(r[k],16) for k in
                        ('pc','opcode','next_pc','sp_before','sp_after'))) for r in history]
             self.assertEqual(actual, expected)
@@ -313,6 +324,80 @@ class CycleFrameCaptureTests(unittest.TestCase):
             self.assertTrue(all(line.startswith('CPU_FIRST_PC_HISTORY ') for line in lines[begin+1:begin+65]))
         # Only explicitly requested captures exist; diagnostics create no files.
         self.assertEqual({p.name for p in self.root.iterdir()}, {'authored.gb','capture.ppm'})
+
+    def test_stack_snapshot_distinguishes_dma_blocking_from_corruption(self):
+        # No wait on purpose: RET while WRAM DMA is active must read FF.
+        routine = bytes((0x3E,0xC0,0xE0,0x46,0,0,0xC9))
+        program = LCD_OFF + bytes((0x31,0x02,0xD0,0x21,0x80,0xFF))
+        for value in routine:
+            program += bytes((0x3E,value,0x22))  # LD A,value; LD [HL+],A
+        call_pc = 0x150 + len(program)
+        program += bytes((0xCD,0x80,0xFF)) + LOOP
+        rom = cartridge(program, color=True)
+        rom[0x147] = 0x19  # MBC5; default ROM bank 1
+        self.rom.write_bytes(rom)
+        baseline = self.capture(2, '--model','cgb-e')
+        self.assertEqual(baseline.returncode, 0, baseline.stderr)
+        image = self.output.read_bytes()
+        traced = self.capture(2, '--model','cgb-e','--trace-first-pc','0xffff')
+        self.assertEqual(traced.returncode, 0, traced.stderr)
+        self.assertEqual(traced.stdout, baseline.stdout)
+        self.assertEqual(self.output.read_bytes(), image)
+        self.assertEqual(traced.stderr.splitlines()[-1], baseline.stderr.strip())
+        lines = [line for line in traced.stderr.splitlines()
+                 if line.startswith('CPU_STACK_DIAGNOSTICS ')]
+        self.assertGreater(len(lines), 0)
+        self.assertLessEqual(len(lines), 64)
+        fields = [dict(item.split('=') for item in line.split()[1:]) for line in lines]
+        ret = next(r for r in fields if r['pc'] == 'ff86')
+        for key, value in {'opcode':'c9', 'next_pc':'ffff', 'sp_before':'d000',
+                           'sp_after':'d002', 'stack_bytes':'ffffffffffffffff',
+                           'return_address':'ffff', 'dma_active':'true',
+                           'dma_source':'c000', 'rom_bank':'001',
+                           'double_speed':'false', 'snapshot':'before_step',
+                           'raw_access':'bypasses_dma', 'raw_after_sp':'original'}.items():
+            self.assertEqual(ret[key], value, ret)
+        word = call_pc + 3
+        expected = bytes((word & 255, word >> 8)).hex()
+        self.assertTrue(ret['raw_stack_bytes'].startswith(expected))
+        self.assertEqual(ret['raw_stack_bytes'], ret['raw_stack_after'])
+        call = next(r for r in fields if r['pc'] == f'{call_pc:04x}')
+        self.assertEqual((call['opcode'],call['next_pc'],call['sp_before'],call['sp_after']),
+                         ('cd','ff80','d002','d000'))
+        # Wrapping eight-byte snapshots at FFFF remain bounded and read only.
+        self.rom.write_bytes(cartridge(LCD_OFF + bytes((0x31,0xFF,0xFF,0xFF))))
+        wrapped = self.capture(2, '--trace-first-pc','0x38')
+        self.assertEqual(wrapped.returncode, 0, wrapped.stderr)
+        entries = [dict(item.split('=') for item in line.split()[1:])
+                   for line in wrapped.stderr.splitlines()
+                   if line.startswith('CPU_STACK_DIAGNOSTICS ')]
+        self.assertEqual(entries[-1]['sp_before'], 'ffff')
+        self.assertEqual(len(entries[-1]['stack_bytes']), 16)
+        self.assertEqual(entries[-1]['rom_bank'], 'unavailable')
+
+    def test_stack_snapshot_labels_dma_boundary_before_ret(self):
+        routine = bytes((0x3E,0xC0,0xE0,0x46,0x3E,40,0x3D,0x20,0xFD,0xC9))
+        program = LCD_OFF + bytes((0x31,0x02,0xD0,0x21,0x80,0xFF))
+        for value in routine:
+            program += bytes((0x3E,value,0x22))
+        return_pc = 0x150 + len(program) + 3
+        program += bytes((0xCD,0x80,0xFF)) + LOOP
+        self.rom.write_bytes(cartridge(program, color=True))
+        result = self.capture(2, '--model','cgb-e','--trace-first-pc',hex(return_pc))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rows = [dict(item.split('=') for item in line.split()[1:])
+                for line in result.stderr.splitlines()
+                if line.startswith('CPU_STACK_DIAGNOSTICS ')]
+        ret = rows[-1]
+        self.assertEqual((ret['pc'],ret['opcode'],ret['next_pc']),
+                         ('ff89','c9',f'{return_pc:04x}'))
+        # Snapshot precedes the opcode fetch. DMA finishes during RET, before
+        # either actual stack read: the snapshot is not a bus transaction log.
+        self.assertEqual(ret['snapshot'], 'before_step')
+        self.assertEqual(ret['dma_active'], 'true')
+        self.assertEqual(ret['dma_bytes_copied'], '159')
+        self.assertEqual(ret['return_address'], 'ffff')
+        self.assertEqual(ret['raw_stack_bytes'], ret['raw_stack_after'])
 
     def test_first_pc_history_excludes_idle_and_interrupt_steps(self):
         # HALT until a timer IRQ. Its many idle steps must not evict history.

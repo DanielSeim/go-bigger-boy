@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Clock CGB double-speed OAM DMA in CPU cycles so HRAM wait routines can return
+  through WRAM safely; add bounded, read-only stack/DMA snapshots to first-PC
+  diagnostics and independent DMA timing and return regressions.
+
 - Include the last 64 executed instructions and changes to the stack pointer when
   `--trace-first-pc` first reaches its target, without creating trace files.
 

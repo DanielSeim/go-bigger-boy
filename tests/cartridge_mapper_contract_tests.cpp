@@ -352,11 +352,18 @@ void test_mbc5_banking_and_rumble() {
     gameboy::Cartridge cartridge{banked_rom(512, 0x1B, 0x08, 0x04)};
     check(cartridge.has_battery() && cartridge.read(0x4000) == 1,
           "MBC5 battery cartridges load with ROM bank one selected");
+    std::uint16_t debug_bank{};
+    check(cartridge.debug_mbc5_rom_bank(debug_bank) && debug_bank == 1,
+          "read-only MBC5 diagnostics expose the initial switchable bank");
     cartridge.write(0x2000, 0);
+    check(cartridge.debug_mbc5_rom_bank(debug_bank) && debug_bank == 0,
+          "MBC5 diagnostics retain valid bank zero");
     check(cartridge.read(0x4000) == 0,
           "MBC5 permits ROM bank zero in the switchable window");
     cartridge.write(0x2000, 1);
     cartridge.write(0x3000, 1);
+    check(cartridge.debug_mbc5_rom_bank(debug_bank) && debug_bank == 0x101,
+          "MBC5 diagnostics retain the ninth ROM-bank bit");
     check(cartridge.read(0x4000) == 1 && cartridge.read(0x4001) == 1,
           "MBC5 combines its low eight and high one ROM-bank bits");
     check(cartridge.read(0x0001) == 0,

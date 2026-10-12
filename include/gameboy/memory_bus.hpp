@@ -77,6 +77,19 @@ public:
         return last_ppu_requests_;
     }
     [[nodiscard]] bool double_speed() const noexcept;
+    struct OamDmaDiagnostics {
+        bool active;
+        std::uint16_t source;
+        std::uint16_t bytes_copied;
+        unsigned start_delay;
+    };
+    [[nodiscard]] OamDmaDiagnostics debug_oam_dma() const noexcept {
+        return {oam_dma_active_, oam_dma_source_, oam_dma_index_, oam_dma_start_delay_};
+    }
+    // Read without advancing time, applying the same DMA/PPU restrictions as CPU reads.
+    [[nodiscard]] std::uint8_t debug_cpu_read8(std::uint16_t address) const noexcept {
+        return cpu_read8(address);
+    }
     // Diagnostic view of the CGB APU's 1 MHz phase.  The phase advances only
     // while the CPU is in double-speed mode; normal-speed APU clocks already
     // run once per bus cycle and must not perturb this half-cycle alignment.

@@ -422,6 +422,32 @@ post-instruction `af`, `bc`, `de`, `hl`. The history is emitted once, directly
 to stderr, without writing a CPU trace file. It can expose a return or jump to
 `0000` followed by a `RST 38h`, including the associated stack changes.
 
+The same first-hit event then emits up to 64 `CPU_STACK_DIAGNOSTICS` lines,
+one per retained instruction, in execution order. Each repeats `cycle`, `pc`,
+`opcode`, `next_pc`, `sp_before`, `sp_after`, and the post-instruction registers.
+`stack_bytes` contains eight CPU-visible bytes starting at the original SP,
+with 16-bit address wrapping; `return_address` decodes its first two bytes in
+little-endian order. `snapshot=before_step` means these bytes and the DMA/bank
+metadata were sampled **before the instruction's opcode fetch**. They are not
+a log of the later stack bus transactions: DMA can finish during `RET`, so a
+snapshot containing `ffff` does not imply that `RET` actually read `ffff`.
+
+`raw_stack_bytes` and `raw_stack_after` read the same original-SP addresses
+before and after the step, bypassing DMA arbitration; the line explicitly
+labels this `raw_access=bypasses_dma raw_after_sp=original`. `dma_active`,
+`dma_source`, `dma_bytes_copied`, `dma_start_delay` (CPU T-cycles), and
+`double_speed` describe the pre-step DMA state. `rom_bank` is the selected
+MBC5 switchable-window latch (all nine bits), not the bank containing every
+reported PC; other mappers report `unavailable`. Numeric formatting follows
+the instruction history, with DMA counters in decimal and bytes, addresses,
+and bank values in hexadecimal. Snapshots do not advance hardware or change
+emulated state. Their 64-entry ring is allocated only for `--trace-first-pc`,
+stops collecting at the first hit, and writes only to stderr; an initial-PC
+match or an unreached target emits no stack history.
+
+See [the Shantae OAM-DMA investigation](shantae-dma-stack-analysis.md) for the
+proven double-speed timing failure and its independent regression tests.
+
 `--frames` continues to wait for completed emulator frames. The new mode requires
 `--frame-output` and is mutually exclusive with `--frames`, `--frame-series`,
 `--frame-on-ld-bb` and `--replay-sgb-trace`. It supports `--sgb-frame` for an SGB
