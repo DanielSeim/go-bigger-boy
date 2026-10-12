@@ -53,11 +53,35 @@ class CycleFrameCaptureTests(unittest.TestCase):
         image = self.output.read_bytes()
         self.assertTrue(image.startswith(header))
         self.assertEqual(len(image), len(header) + width * height * 3)
+        lines = result.stderr.splitlines()
+        self.assertEqual(len(lines), 1, result.stderr)
+        diagnostic = re.fullmatch(
+            r'CAPTURE_DIAGNOSTICS cycles=(\d+) pc=([0-9a-f]{4}) '
+            r'lcdc=([0-9a-f]{2}) stat=([0-9a-f]{2}) ly=([0-9a-f]{2}) '
+            r'dot=(\d+) mode=([0-3]) completed_frames=(\d+) '
+            r'unique_colors=(\d+) blank_frame=(true|false)', lines[0])
+        self.assertIsNotNone(diagnostic, result.stderr)
+        fields = dict(part.split('=') for part in lines[0].split()[1:])
+        self.assertEqual(int(fields['cycles']), actual)
+        self.assertEqual(int(fields['stat'], 16) & 3, int(fields['mode']))
+        self.assertLess(int(fields['dot']), 456)
+        self.assertLessEqual(int(fields['ly'], 16), 153)
+        pixels = image[len(header):]
+        colors = {pixels[i:i + 3] for i in range(0, len(pixels), 3)}
+        self.assertEqual(int(fields['unique_colors']), len(colors))
+        self.assertEqual(fields['blank_frame'], str(len(colors) == 1).lower())
         return actual
 
     def test_disabled_lcd_captures_at_cpu_budget(self):
         trace = self.root / 'cpu.txt'
-        actual = self.check_capture(self.capture(2, '--trace-cpu', trace), 2)
+        result = self.capture(2, '--trace-cpu', trace)
+        actual = self.check_capture(result, 2)
+        fields = dict(part.split('=') for part in result.stderr.split()[1:])
+        self.assertEqual(fields['pc'], '0154')
+        for field in ('lcdc', 'ly', 'dot', 'mode', 'completed_frames'):
+            self.assertEqual(int(fields[field], 16 if field in ('lcdc', 'ly') else 10), 0)
+        self.assertEqual(fields['unique_colors'], '1')
+        self.assertEqual(fields['blank_frame'], 'true')
         last = trace.read_text().splitlines()[-1]
         match = re.search(r'cycle=(\d+) duration=(\d+)', last)
         start, duration = map(int, match.groups())
@@ -69,6 +93,7 @@ class CycleFrameCaptureTests(unittest.TestCase):
                            '--max-cycles', 2 * FRAME_CYCLES)
         self.assertEqual(old.returncode, 2)
         self.assertIn('TIMEOUT', old.stderr)
+        self.assertNotIn('CAPTURE_DIAGNOSTICS', old.stderr)
         self.assertFalse(old_output.exists())
 
     def test_lcd_reenable_and_existing_frame_capture(self):
@@ -88,6 +113,30 @@ class CycleFrameCaptureTests(unittest.TestCase):
                               '--max-cycles', 4 * FRAME_CYCLES)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('Captured frame 1', result.stdout)
+        self.assertNotIn('CAPTURE_DIAGNOSTICS', result.stderr)
+        self.assertEqual(timed, self.output.read_bytes())
+
+    def test_multicolor_capture_and_completed_frames(self):
+        # Alternate color-3 and color-0 tile rows, then enable the LCD.
+        program = LCD_OFF + bytes((
+            0x21, 0x00, 0x80, 0x06, 8, 0x3E, 0xFF,
+            0x22, 0x05, 0x20, 0xFC,
+            0x06, 8, 0xAF, 0x22, 0x05, 0x20, 0xFC,
+            0x3E, 0xE4, 0xE0, 0x47,
+            0x3E, 0x91, 0xE0, 0x40)) + LOOP
+        self.rom.write_bytes(cartridge(program))
+        result = self.capture(3)
+        self.check_capture(result, 3)
+        fields = dict(part.split('=') for part in result.stderr.split()[1:])
+        self.assertEqual(fields['lcdc'], '91')
+        self.assertEqual(fields['unique_colors'], '2')
+        self.assertEqual(fields['blank_frame'], 'false')
+        self.assertEqual(int(fields['completed_frames']), 3)
+        timed = self.output.read_bytes()
+        old = self.run_rom('--frames', 3, '--frame-output', self.output,
+                           '--max-cycles', 4 * FRAME_CYCLES)
+        self.assertEqual(old.returncode, 0, old.stderr)
+        self.assertNotIn('CAPTURE_DIAGNOSTICS', old.stderr)
         self.assertEqual(timed, self.output.read_bytes())
 
     def test_cgb_double_speed_uses_cpu_t_cycles(self):
@@ -101,6 +150,17 @@ class CycleFrameCaptureTests(unittest.TestCase):
         af = int(re.search(r'af=([0-9a-f]+)', last).group(1), 16)
         self.assertTrue(af & 0x8000, 'KEY1 must confirm double speed')
 
+    def test_cgb_disabled_lcd_after_600_intervals(self):
+        self.rom.write_bytes(cartridge(LCD_OFF + LOOP, color=True))
+        result = self.capture(600, '--model', 'cgb-e')
+        self.check_capture(result, 600)
+        fields = dict(part.split('=') for part in result.stderr.split()[1:])
+        self.assertEqual(fields['cycles'], str(600 * FRAME_CYCLES))
+        self.assertEqual(fields['lcdc'], '00')
+        self.assertEqual(fields['completed_frames'], '0')
+        self.assertEqual(fields['unique_colors'], '1')
+        self.assertEqual(fields['blank_frame'], 'true')
+
     def test_sgb_border_and_stopped_cpu(self):
         self.check_capture(self.capture(2, '--model', 'sgb2', '--sgb-frame'), 2, 256, 224)
         self.rom.write_bytes(cartridge(LCD_OFF + bytes((0x10, 0)) + LOOP))
@@ -110,6 +170,7 @@ class CycleFrameCaptureTests(unittest.TestCase):
         result = self.capture(2, '--max-cycles', 2 * FRAME_CYCLES - 1)
         self.assertEqual(result.returncode, 2)
         self.assertIn('TIMEOUT', result.stderr)
+        self.assertNotIn('CAPTURE_DIAGNOSTICS', result.stderr)
         self.assertFalse(self.output.exists())
         # A target equal to the guard is still a successful capture.
         self.check_capture(self.capture(2, '--max-cycles', 2 * FRAME_CYCLES), 2)
@@ -139,6 +200,10 @@ class CycleFrameCaptureTests(unittest.TestCase):
         result = self.capture(2, '--protocol', 'gbmicrotest')
         self.check_capture(result, 2)
         self.assertNotIn('PASS (GBMicrotest)', result.stdout)
+        protocol = self.run_rom('--protocol', 'gbmicrotest')
+        self.assertEqual(protocol.returncode, 0, protocol.stderr)
+        self.assertIn('PASS (GBMicrotest)', protocol.stdout)
+        self.assertNotIn('CAPTURE_DIAGNOSTICS', protocol.stderr)
 
 
 if __name__ == '__main__':

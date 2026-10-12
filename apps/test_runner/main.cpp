@@ -14,9 +14,11 @@
 #include <iterator>
 #include <limits>
 #include <optional>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <unordered_set>
 #include <vector>
 
 namespace {
@@ -295,6 +297,32 @@ void write_capture(const std::filesystem::path& path,
         write_frame(path, frame.data(), gameboy::Ppu::screen_width,
                     gameboy::Ppu::screen_height);
     }
+}
+
+void write_capture_diagnostics(const gameboy::Emulator& emulator,
+                               const bool sgb_frame,
+                               const std::uint64_t completed_frames) {
+    std::unordered_set<std::uint32_t> colors;
+    const auto collect = [&colors](const auto& frame) {
+        for (const auto pixel : frame) colors.insert(pixel & 0x00FFFFFF);
+    };
+    if (sgb_frame) collect(emulator.sgb_framebuffer());
+    else collect(emulator.framebuffer());
+
+    const auto& bus = emulator.bus();
+    std::ostringstream line;
+    line << "CAPTURE_DIAGNOSTICS cycles=" << emulator.cpu().total_cycles()
+         << std::hex << std::setfill('0')
+         << " pc=" << std::setw(4) << emulator.cpu().registers().pc
+         << " lcdc=" << std::setw(2) << static_cast<unsigned>(bus.read8(0xFF40))
+         << " stat=" << std::setw(2) << static_cast<unsigned>(bus.read8(0xFF41))
+         << " ly=" << std::setw(2) << static_cast<unsigned>(bus.read8(0xFF44))
+         << std::dec << " dot=" << bus.debug_ppu_dot()
+         << " mode=" << static_cast<unsigned>(bus.debug_ppu_mode())
+         << " completed_frames=" << completed_frames
+         << " unique_colors=" << colors.size()
+         << " blank_frame=" << (colors.size() == 1 ? "true" : "false") << '\n';
+    std::cerr << line.str();
 }
 
 void write_frame_state(const std::filesystem::path& path,
@@ -1042,6 +1070,7 @@ int main(int argc, char** argv) {
             if (options.cycle_frame_capture != 0 &&
                 cycle_capture_target <= options.max_cycles &&
                 emulator.cpu().total_cycles() >= cycle_capture_target) {
+                write_capture_diagnostics(emulator, options.sgb_frame, completed_frames);
                 write_capture(options.frame_output, emulator, options.sgb_frame);
                 std::cout << "Captured cycle framebuffer after "
                           << options.cycle_frame_capture << " intervals (target_t_cycles="

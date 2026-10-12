@@ -355,6 +355,16 @@ CGB double speed still counts CPU T-cycles: the PPU advances half as far per
 interval. This is a CPU-duration regression snapshot, not a precise PPU-frame
 boundary or a speed-normalized clock.
 
+Immediately before writing a cycle capture, the runner emits one
+`CAPTURE_DIAGNOSTICS` line on stderr with `cycles`, `pc`, `lcdc`, `stat`, `ly`,
+`dot`, `mode`, `completed_frames`, `unique_colors` and `blank_frame` as
+space-separated `key=value` fields. PC and the three LCD registers use
+zero-padded hexadecimal without a prefix; counts, dot and mode use decimal.
+`unique_colors` counts RGB values in the selected output framebuffer, including
+the border with `--sgb-frame`. `blank_frame=true` means every pixel has the same
+RGB color and still returns success. Diagnostics also work with the LCD off;
+`completed_frames` counts actual PPU frames rather than virtual intervals.
+
 `--frames` continues to wait for completed emulator frames. The new mode requires
 `--frame-output` and is mutually exclusive with `--frames`, `--frame-series`,
 `--frame-on-ld-bb` and `--replay-sgb-trace`. It supports `--sgb-frame` for an SGB

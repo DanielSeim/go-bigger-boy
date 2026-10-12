@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Report CPU/LCD state, completed PPU frames and RGB color counts on stderr
+  before cycle-based framebuffer captures, including with the LCD disabled.
+
 - Extend SGB APU publication comparisons with earlier request arrivals and fine
   offsets, explicitly validating interrupted startup and missing tempo reads.
 
