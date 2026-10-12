@@ -1,4 +1,5 @@
 #include "gameboy/cartridge.hpp"
+#include "cartridge_extra.hpp"
 
 #include <algorithm>
 #include <array>
@@ -97,13 +98,25 @@ std::uint64_t fingerprint_rom(const std::vector<std::uint8_t>& rom) noexcept {
 }
 } // namespace
 
+std::size_t Cartridge::boot_header_offset(const std::vector<std::uint8_t>& rom) noexcept {
+    if (rom.size() < 0x8000) return 0;
+    const auto menu = rom.size() - 0x8000;
+    const auto type = rom[menu + 0x147];
+    if (type >= 0x0B && type <= 0x0D &&
+        std::equal(nintendo_logo.begin(), nintendo_logo.end(), rom.begin() + menu + 0x104)) {
+        return menu;
+    }
+    return 0;
+}
+
 Cartridge::Cartridge(std::vector<std::uint8_t> rom) : rom_(std::move(rom)) {
     if (rom_.size() < minimum_header_size) {
         throw std::invalid_argument("ROM is too small to contain a Game Boy header");
     }
     rom_fingerprint_ = fingerprint_rom(rom_);
+    header_offset_ = boot_header_offset(rom_);
 
-    const auto expected_rom_size = header_rom_size(rom_[0x148]);
+    const auto expected_rom_size = header_rom_size(rom_[header_offset_ + 0x148]);
     if (rom_.size() < expected_rom_size) {
         throw std::invalid_argument("ROM is smaller than its header-declared size");
     }
@@ -142,11 +155,11 @@ Cartridge::Cartridge(std::vector<std::uint8_t> rom) : rom_(std::move(rom)) {
         break;
     case 0x02:
         controller_ = Controller::mbc1;
-        ram_capacity = header_ram_size(rom_[0x149]);
+        ram_capacity = header_ram_size(rom_[header_offset_ + 0x149]);
         break;
     case 0x03:
         controller_ = Controller::mbc1;
-        ram_capacity = header_ram_size(rom_[0x149]);
+        ram_capacity = header_ram_size(rom_[header_offset_ + 0x149]);
         battery_ = true;
         break;
     case 0x05:
@@ -160,14 +173,47 @@ Cartridge::Cartridge(std::vector<std::uint8_t> rom) : rom_(std::move(rom)) {
         break;
     case 0x08:
         controller_ = Controller::rom_only;
-        ram_capacity = header_ram_size(rom_[0x149]);
+        ram_capacity = header_ram_size(rom_[header_offset_ + 0x149]);
         ram_enabled_ = true;
         break;
     case 0x09:
         controller_ = Controller::rom_only;
-        ram_capacity = header_ram_size(rom_[0x149]);
+        ram_capacity = header_ram_size(rom_[header_offset_ + 0x149]);
         ram_enabled_ = true;
         battery_ = true;
+        break;
+    case 0x0B:
+    case 0x0C:
+    case 0x0D:
+        controller_ = Controller::mmm01;
+        if (type() != 0x0B) ram_capacity = header_ram_size(rom_[header_offset_ + 0x149]);
+        battery_ = type() == 0x0D;
+        extra_ = std::make_unique<CartridgeExtraState>();
+        break;
+    case 0x22:
+        controller_ = Controller::mbc7;
+        ram_capacity = 256; // 128 x 16-bit EEPROM; generic RAM header is not SRAM.
+        battery_ = true;
+        extra_ = std::make_unique<CartridgeExtraState>();
+        break;
+    case 0xFF:
+        controller_ = Controller::huc1;
+        ram_capacity = header_ram_size(rom_[header_offset_ + 0x149]);
+        battery_ = true;
+        ram_enabled_ = true; // HuC1 selects RAM/IR, never disables RAM.
+        extra_ = std::make_unique<CartridgeExtraState>();
+        break;
+    case 0xFE:
+        controller_ = Controller::huc3;
+        ram_capacity = header_ram_size(rom_[header_offset_ + 0x149]);
+        battery_ = rtc_present_ = true;
+        extra_ = std::make_unique<CartridgeExtraState>();
+        break;
+    case 0xFD:
+        controller_ = Controller::tama5;
+        ram_capacity = 32;
+        battery_ = rtc_present_ = true;
+        extra_ = std::make_unique<CartridgeExtraState>();
         break;
     case 0x0F:
         controller_ = Controller::mbc3;
@@ -177,7 +223,7 @@ Cartridge::Cartridge(std::vector<std::uint8_t> rom) : rom_(std::move(rom)) {
     case 0x10:
         controller_ = Controller::mbc3;
         rtc_present_ = true;
-        ram_capacity = header_ram_size(rom_[0x149]);
+        ram_capacity = header_ram_size(rom_[header_offset_ + 0x149]);
         battery_ = true;
         break;
     case 0x11:
@@ -185,11 +231,11 @@ Cartridge::Cartridge(std::vector<std::uint8_t> rom) : rom_(std::move(rom)) {
         break;
     case 0x12:
         controller_ = Controller::mbc3;
-        ram_capacity = header_ram_size(rom_[0x149]);
+        ram_capacity = header_ram_size(rom_[header_offset_ + 0x149]);
         break;
     case 0x13:
         controller_ = Controller::mbc3;
-        ram_capacity = header_ram_size(rom_[0x149]);
+        ram_capacity = header_ram_size(rom_[header_offset_ + 0x149]);
         battery_ = true;
         break;
     case 0x19:
@@ -197,14 +243,14 @@ Cartridge::Cartridge(std::vector<std::uint8_t> rom) : rom_(std::move(rom)) {
         break;
     case 0x1A:
         controller_ = Controller::mbc5;
-        ram_capacity = header_ram_size(rom_[0x149]);
+        ram_capacity = header_ram_size(rom_[header_offset_ + 0x149]);
         break;
     case 0x1B:
         if (is_mbc_type_camera_hack) {
             configure_camera();
         } else {
             controller_ = Controller::mbc5;
-            ram_capacity = header_ram_size(rom_[0x149]);
+            ram_capacity = header_ram_size(rom_[header_offset_ + 0x149]);
             battery_ = true;
         }
         break;
@@ -214,12 +260,12 @@ Cartridge::Cartridge(std::vector<std::uint8_t> rom) : rom_(std::move(rom)) {
         break;
     case 0x1D:
         controller_ = Controller::mbc5;
-        ram_capacity = header_ram_size(rom_[0x149]);
+        ram_capacity = header_ram_size(rom_[header_offset_ + 0x149]);
         rumble_present_ = true;
         break;
     case 0x1E:
         controller_ = Controller::mbc5;
-        ram_capacity = header_ram_size(rom_[0x149]);
+        ram_capacity = header_ram_size(rom_[header_offset_ + 0x149]);
         battery_ = true;
         rumble_present_ = true;
         break;
@@ -276,7 +322,17 @@ Cartridge::Cartridge(std::vector<std::uint8_t> rom) : rom_(std::move(rom)) {
             throw std::invalid_argument("MBC5 RAM exceeds the 128 KiB address limit");
         }
     }
-    ram_.resize(ram_capacity, 0);
+    if (controller_ == Controller::mmm01 && rom_.size() != expected_rom_size)
+        throw std::invalid_argument("MMM01 ROM size does not match its menu header");
+    if (extra_) {
+        const auto max_rom = controller_ == Controller::mmm01 ? 0x800000U :
+                             controller_ == Controller::tama5 ? 0x80000U :
+                             controller_ == Controller::huc1 ? 0x100000U : 0x200000U;
+        const auto max_ram = controller_ == Controller::huc1 ? 0x8000U : 0x20000U;
+        if (expected_rom_size > max_rom || ram_capacity > max_ram)
+            throw std::invalid_argument("Cartridge exceeds controller address limits");
+    }
+    ram_.resize(ram_capacity, controller_ == Controller::mbc7 ? 0xFF : 0);
     if (rtc_present_) {
         rtc_last_update_ = current_unix_seconds();
         latched_rtc_ = rtc_;
@@ -292,13 +348,16 @@ Cartridge::~Cartridge() {
 }
 
 Cartridge::Cartridge(Cartridge&& other) noexcept
-    : rom_(std::move(other.rom_)),
+    : extra_(std::move(other.extra_)),
+      rtc_clock_(other.rtc_clock_), rtc_clock_context_(other.rtc_clock_context_),
+      rom_(std::move(other.rom_)),
       rom_fingerprint_(other.rom_fingerprint_),
       ram_(std::move(other.ram_)),
       save_path_(std::move(other.save_path_)),
       rtc_path_(std::move(other.rtc_path_)),
       controller_(other.controller_),
       rom_bank_count_(other.rom_bank_count_),
+      header_offset_(other.header_offset_),
       battery_(other.battery_),
       rtc_present_(other.rtc_present_),
       rumble_present_(other.rumble_present_),
@@ -347,6 +406,7 @@ Cartridge Cartridge::from_file(const std::filesystem::path& path) {
 }
 
 std::uint8_t Cartridge::read(const std::uint16_t address) const noexcept {
+    if (extra_) return read_extra(address);
     if (address <= 0x3FFF) {
         const auto bank = controller_ == Controller::mbc1 && banking_mode_ != 0
                               ? static_cast<std::size_t>(bank_upper_)
@@ -401,6 +461,7 @@ std::uint8_t Cartridge::read(const std::uint16_t address) const noexcept {
 
 void Cartridge::write(const std::uint16_t address,
                       const std::uint8_t value) noexcept {
+    if (extra_) { write_extra(address, value); return; }
     if (controller_ == Controller::mbc1 && address <= 0x7FFF) {
         if (address <= 0x1FFF) {
             ram_enabled_ = (value & 0x0F) == 0x0A;
@@ -509,43 +570,43 @@ void Cartridge::write(const std::uint16_t address,
 }
 
 std::string Cartridge::title() const {
-    constexpr std::size_t title_begin = 0x134;
-    const auto title_end = supports_cgb() ? std::size_t{0x143}
-                                          : std::size_t{0x144};
+    const std::size_t title_begin = header_offset_ + 0x134;
+    const auto title_end = header_offset_ + (supports_cgb() ? std::size_t{0x143}
+                                          : std::size_t{0x144});
     const auto end = std::find(rom_.begin() + title_begin,
                                rom_.begin() + title_end, 0);
     return {rom_.begin() + title_begin, end};
 }
 
-std::uint8_t Cartridge::type() const noexcept { return rom_[0x147]; }
+std::uint8_t Cartridge::type() const noexcept { return rom_[header_offset_ + 0x147]; }
 
 bool Cartridge::supports_cgb() const noexcept {
-    return (rom_[0x143] & 0x80) != 0;
+    return (rom_[header_offset_ + 0x143] & 0x80) != 0;
 }
 
 bool Cartridge::supports_sgb() const noexcept {
-    return rom_.size() > 0x146 && rom_[0x146] == 0x03;
+    return rom_.size() > 0x146 && rom_[header_offset_ + 0x146] == 0x03;
 }
 
 bool Cartridge::requires_cgb() const noexcept {
-    return (rom_[0x143] & 0xC0) == 0xC0;
+    return (rom_[header_offset_ + 0x143] & 0xC0) == 0xC0;
 }
 
 std::uint8_t Cartridge::cgb_compatibility_palette_id() const noexcept {
-    const auto old_licensee = rom_[0x14B];
+    const auto old_licensee = rom_[header_offset_ + 0x14B];
     const auto is_nintendo = old_licensee == 0x01 ||
-                             (old_licensee == 0x33 && rom_[0x144] == '0' &&
-                              rom_[0x145] == '1');
+                             (old_licensee == 0x33 && rom_[header_offset_ + 0x144] == '0' &&
+                              rom_[header_offset_ + 0x145] == '1');
     if (!is_nintendo) return 0;
 
     std::uint8_t checksum = 0;
     for (std::size_t address = 0x134; address <= 0x143; ++address) {
-        checksum = static_cast<std::uint8_t>(checksum + rom_[address]);
+        checksum = static_cast<std::uint8_t>(checksum + rom_[header_offset_ + address]);
     }
     for (std::size_t index = 0; index < title_checksums.size(); ++index) {
         if (title_checksums[index] != checksum) continue;
         if (index >= first_duplicate_checksum &&
-            rom_[0x137] != duplicate_title_letters[index -
+            rom_[header_offset_ + 0x137] != duplicate_title_letters[index -
                                                     first_duplicate_checksum]) {
             continue;
         }
@@ -594,7 +655,7 @@ LinkCompatibilityProfile Cartridge::link_compatibility_profile() const noexcept 
         // underscore separator; Crystal uses the legacy ``PM_`` prefix.
         "POKEMON_GLD", "POKEMON_SLV", "PM_CRYSTAL"};
     const auto matches_title = [this](const std::string_view expected) {
-        constexpr std::size_t title_begin = 0x134;
+        const std::size_t title_begin = header_offset_ + 0x134;
         if (rom_.size() < title_begin + expected.size()) return false;
         for (std::size_t index = 0; index < expected.size(); ++index) {
             auto byte = rom_[title_begin + index];
@@ -605,7 +666,7 @@ LinkCompatibilityProfile Cartridge::link_compatibility_profile() const noexcept 
         }
         return true;
     };
-    const auto region = rom_.size() > 0x14A && rom_[0x14A] == 0
+    const auto region = rom_.size() > 0x14A && rom_[header_offset_ + 0x14A] == 0
                             ? LinkRegion::japanese
                             : LinkRegion::western;
     for (const auto title : gen1_titles) {
@@ -648,7 +709,7 @@ std::uint64_t Cartridge::link_compatibility_id() const noexcept {
         "POKEMON S", "POKEMON C", "POKEMON_GLD", "POKEMON_SLV",
         "PM_CRYSTAL"};
     const auto matches_title = [this](const std::string_view expected) {
-        constexpr std::size_t title_begin = 0x134;
+        const std::size_t title_begin = header_offset_ + 0x134;
         if (rom_.size() < title_begin + expected.size()) return false;
         for (std::size_t index = 0; index < expected.size(); ++index) {
             auto byte = rom_[title_begin + index];
@@ -659,7 +720,7 @@ std::uint64_t Cartridge::link_compatibility_id() const noexcept {
         }
         return true;
     };
-    const auto japanese = rom_.size() > 0x14A && rom_[0x14A] == 0;
+    const auto japanese = rom_.size() > 0x14A && rom_[header_offset_ + 0x14A] == 0;
     for (const auto title : gen1_titles) {
         if (matches_title(title)) {
             return family_id(japanese ? "pokemon-gen1-gen2-japanese-link-v1"

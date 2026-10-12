@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Add MMM01, MBC7 EEPROM/neutral tilt, TAMA5 RTC, HuC3 RTC and HuC1 IR-pin
+  controller interfaces, synthetic mapper/persistence contracts and an offline
+  header inspector; document peripheral limits and pending private validation.
+  Save-state version 43 retains loading of existing controllers from older states.
+
 - Clock CGB double-speed OAM DMA in CPU cycles so HRAM wait routines can return
   through WRAM safely; add bounded, read-only stack/DMA snapshots to first-PC
   diagnostics and independent DMA timing and return regressions.

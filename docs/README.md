@@ -27,6 +27,7 @@ IPL is bundled; see [replacement IPL validation](spc700-ipl-validation.md).
 
 | Guide | Scope |
 | --- | --- |
+| [Cartridge controllers](cartridge-controllers.md) | Mapper features, peripheral limits, persistence and offline NAS validation |
 | [Accuracy](accuracy.md) | Registered conformance gate, model/revision scope, reference methods and remaining limitations |
 | [Frontend end-to-end checks](frontend-e2e.md) | Browser, Android and desktop runners and their coverage |
 | [Link cable](link-cable.md) | Local/TCP/Bluetooth setup, protocol diagnostics and troubleshooting |

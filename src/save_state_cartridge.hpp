@@ -10,6 +10,8 @@ class SaveStateCartridgeCodec final {
 public:
     static void write(save_state_format::Writer& writer,
                       const Cartridge& cartridge);
+    static void write_extra(save_state_format::Writer& writer, const Cartridge& cartridge);
+    static void read_extra(save_state_format::Reader& reader, Cartridge& cartridge);
     static void read(save_state_format::Reader& reader,
                      Cartridge& cartridge);
 };

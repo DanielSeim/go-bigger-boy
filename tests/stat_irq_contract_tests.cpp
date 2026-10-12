@@ -75,7 +75,7 @@ void test_save_and_reset() {
     // Version 42 appends flags and three u64 startup-presentation fields
     // after the version-41 acknowledgment boolean. Mutate that boolean,
     // not the last byte of the presentation audio cursor.
-    constexpr std::size_t presentation_bytes = 1 + 3 * sizeof(std::uint64_t);
+    constexpr std::size_t presentation_bytes = 1 + 3 * sizeof(std::uint64_t) + 1; // v43 mapper marker
     decoded.payload[decoded.payload.size() - presentation_bytes - 1] = 2;
     const auto malformed = gameboy::save_state_container::encode(
         emulator.rom_fingerprint(), decoded.payload);

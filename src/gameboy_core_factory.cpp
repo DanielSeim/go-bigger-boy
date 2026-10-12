@@ -18,7 +18,7 @@ CoreProbeResult probe_game_boy(
     const std::vector<std::uint8_t>& rom,
     const CoreLoadOptions&) noexcept {
     if (rom.size() < 0x150) return {};
-    const auto cgb_flag = rom[0x143];
+    const auto cgb_flag = rom[gameboy::Cartridge::boot_header_offset(rom) + 0x143];
     return {50, (cgb_flag & 0x80) != 0 ? SystemId::game_boy_color
                                        : SystemId::game_boy};
 }

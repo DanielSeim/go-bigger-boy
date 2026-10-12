@@ -6,6 +6,7 @@
 #include <array>
 #include <cstdint>
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -14,6 +15,7 @@ namespace gameboy {
 class SaveStateCodec;
 class SaveStateCartridgeCodec;
 class SaveStateBusCodec;
+struct CartridgeExtraState;
 
 class Cartridge {
 public:
@@ -25,6 +27,8 @@ public:
     Cartridge(Cartridge&& other) noexcept;
     Cartridge& operator=(Cartridge&&) = delete;
 
+    // MMM01 boots from the menu header in the last 32 KiB; ordinary ROMs use zero.
+    [[nodiscard]] static std::size_t boot_header_offset(const std::vector<std::uint8_t>& rom) noexcept;
     static Cartridge from_file(const std::filesystem::path& path);
     void set_persistence_path(const std::filesystem::path& base_path);
 
@@ -70,6 +74,17 @@ public:
     [[nodiscard]] std::vector<std::uint8_t> export_rtc_data() const;
     void import_rtc_data(const std::vector<std::uint8_t>& data);
     void flush_battery();
+    using RtcClock = std::int64_t (*)(void*) noexcept;
+    // nullptr restores the system clock. Host clock sources are not serialized.
+    void set_rtc_clock(RtcClock clock, void* context = nullptr) noexcept;
+    [[nodiscard]] bool has_accelerometer() const noexcept;
+    void set_accelerometer(std::uint16_t x, std::uint16_t y) noexcept;
+    [[nodiscard]] bool has_infrared() const noexcept;
+    void set_infrared_input(bool light) noexcept;
+    [[nodiscard]] bool infrared_output() const noexcept;
+    // Independent cartridge time in normal-speed T-cycles (EEPROM programming).
+    void tick(unsigned cycles) noexcept;
+
 
 private:
     friend class SaveStateCodec;
@@ -83,6 +98,11 @@ private:
         mbc3,
         mbc5,
         camera,
+        mmm01,
+        mbc7,
+        huc1,
+        huc3,
+        tama5,
     };
 
     [[nodiscard]] std::uint8_t read_rom_bank(std::size_t bank,
@@ -101,6 +121,20 @@ private:
                                std::uint8_t value) noexcept;
     void capture_camera_image() noexcept;
 
+    [[nodiscard]] std::uint8_t read_extra(std::uint16_t address) const noexcept;
+    void write_extra(std::uint16_t address, std::uint8_t value) noexcept;
+    [[nodiscard]] std::size_t extra_rom_bank(bool upper) const noexcept;
+    [[nodiscard]] std::size_t extra_ram_bank() const noexcept;
+    void write_eeprom(std::uint8_t value) noexcept;
+    void execute_huc_command() noexcept;
+    void execute_tama_command() noexcept;
+    [[nodiscard]] std::int64_t rtc_now() const noexcept;
+    [[nodiscard]] std::vector<std::uint8_t> export_extra_rtc() const;
+    void import_extra_rtc(const std::vector<std::uint8_t>& data);
+    std::unique_ptr<CartridgeExtraState> extra_;
+    RtcClock rtc_clock_{};
+    void* rtc_clock_context_{};
+
     std::vector<std::uint8_t> rom_;
     std::uint64_t rom_fingerprint_{};
     std::vector<std::uint8_t> ram_;
@@ -108,6 +142,7 @@ private:
     std::filesystem::path rtc_path_;
     Controller controller_ = Controller::rom_only;
     std::size_t rom_bank_count_{};
+    std::size_t header_offset_{};
     bool battery_{};
     bool rtc_present_{};
     bool rumble_present_{};

@@ -1,4 +1,5 @@
 #include "gameboy/rom_library.hpp"
+#include <array>
 
 #include <algorithm>
 #include <cstdint>
@@ -90,9 +91,25 @@ void test_metadata_and_deduplication() {
     std::filesystem::remove_all(directory);
 }
 
+void test_mmm01_menu_metadata() {
+    std::vector<std::uint8_t> bytes(0x10000);
+    constexpr std::array<std::uint8_t,48> logo{
+        0xCE,0xED,0x66,0x66,0xCC,0x0D,0,0x0B,3,0x73,0,0x83,0,0x0C,0,0x0D,
+        0,8,0x11,0x1F,0x88,0x89,0,0x0E,0xDC,0xCC,0x6E,0xE6,0xDD,0xDD,0xD9,0x99,
+        0xBB,0xBB,0x67,0x63,0x6E,0x0E,0xEC,0xCC,0xDD,0xDC,0x99,0x9F,0xBB,0xB9,0x33,0x3E};
+    std::copy(logo.begin(),logo.end(),bytes.begin()+0x8104);
+    bytes[0x8147]=0x0B; bytes[0x8143]=0x80; bytes[0x814A]=1;
+    constexpr std::string_view title="MENU";
+    std::copy(title.begin(),title.end(),bytes.begin()+0x8134);
+    const auto metadata=gameboy::inspect_rom(bytes,"multi.gb");
+    check(metadata.title=="MENU" && metadata.platform==gameboy::RomPlatform::game_boy_color &&
+          metadata.language=="International", "MMM01 library metadata uses boot menu header");
+}
+
 } // namespace
 
 int main() {
     test_metadata_and_deduplication();
+    test_mmm01_menu_metadata();
     return failures == 0 ? 0 : 1;
 }

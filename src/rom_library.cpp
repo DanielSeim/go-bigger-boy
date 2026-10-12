@@ -1,4 +1,5 @@
 #include "gbb/rom_library.hpp"
+#include "gameboy/cartridge.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -28,10 +29,11 @@ std::string source_stem(const std::filesystem::path& source_name) {
 }
 
 std::string trimmed_ascii_title(const std::vector<std::uint8_t>& bytes) {
-    const auto cgb = (bytes[0x143] & 0x80) != 0;
-    const auto end = cgb ? std::size_t{0x143} : std::size_t{0x144};
+    const auto offset = gameboy::Cartridge::boot_header_offset(bytes);
+    const auto cgb = (bytes[offset + 0x143] & 0x80) != 0;
+    const auto end = offset + (cgb ? std::size_t{0x143} : std::size_t{0x144});
     std::string title;
-    for (auto index = std::size_t{0x134}; index < end; ++index) {
+    for (auto index = offset + std::size_t{0x134}; index < end; ++index) {
         const auto byte = bytes[index];
         if (byte == 0) break;
         title.push_back(byte >= 32 && byte <= 126
@@ -142,10 +144,11 @@ RomMetadata inspect_rom(const std::vector<std::uint8_t>& bytes,
     metadata.title = trimmed_ascii_title(bytes);
     if (metadata.title.empty()) metadata.title = filename_title(source_name);
     if (metadata.title.empty()) metadata.title = "Unknown game";
-    metadata.platform = (bytes[0x143] & 0x80) != 0
+    const auto offset = gameboy::Cartridge::boot_header_offset(bytes);
+    metadata.platform = (bytes[offset + 0x143] & 0x80) != 0
                             ? RomPlatform::game_boy_color
                             : RomPlatform::game_boy;
-    metadata.language = language_from_filename(source_name, bytes[0x14A] == 0);
+    metadata.language = language_from_filename(source_name, bytes[offset + 0x14A] == 0);
     metadata.cover_name = cover_name(source_name, metadata.title);
     return metadata;
 }

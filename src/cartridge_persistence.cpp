@@ -1,8 +1,9 @@
 #include "gameboy/cartridge.hpp"
+#include "cartridge_extra.hpp"
+#include "save_state_format.hpp"
 
 #include <algorithm>
 #include <array>
-#include <chrono>
 #include <fstream>
 #include <stdexcept>
 
@@ -13,13 +14,6 @@ constexpr std::uint64_t rtc_day_seconds = 24 * 60 * 60;
 constexpr std::uint64_t rtc_period_seconds = 512 * rtc_day_seconds;
 constexpr std::array<char, 8> rtc_magic{'G', 'B', 'B', 'R', 'T', 'C', '1', 0};
 constexpr std::array<char, 8> camera_save_magic{'G', 'B', 'B', 'C', 'A', 'M', '1', 0};
-
-std::int64_t current_unix_seconds() noexcept {
-    return std::chrono::duration_cast<std::chrono::seconds>(
-               std::chrono::system_clock::now().time_since_epoch())
-        .count();
-}
-
 } // namespace
 
 void Cartridge::set_persistence_path(const std::filesystem::path& base_path) {
@@ -92,6 +86,7 @@ void Cartridge::import_battery_save(const std::vector<std::uint8_t>& data) {
 
 std::vector<std::uint8_t> Cartridge::export_rtc_data() const {
     if (!rtc_present_) return {};
+    if (extra_) return export_extra_rtc();
     update_rtc();
 
     std::vector<std::uint8_t> data;
@@ -108,6 +103,7 @@ std::vector<std::uint8_t> Cartridge::export_rtc_data() const {
 }
 
 void Cartridge::import_rtc_data(const std::vector<std::uint8_t>& data) {
+    if (extra_ && rtc_present_) { import_extra_rtc(data); return; }
     constexpr auto rtc_data_size = rtc_magic.size() + 5 + sizeof(std::uint64_t);
     if (!rtc_present_) {
         throw std::invalid_argument("Cartridge has no real-time clock");
@@ -199,7 +195,16 @@ void Cartridge::load_battery() {
 void Cartridge::update_rtc() const noexcept {
     if (!rtc_present_) return;
 
-    const auto now = current_unix_seconds();
+    const auto now = rtc_now();
+    if (extra_) {
+        if (now > rtc_last_update_) {
+            advance_cartridge_clock(*extra_, controller_ == Controller::tama5,
+                static_cast<std::uint64_t>(now - rtc_last_update_));
+            rtc_dirty_ = true;
+        }
+        rtc_last_update_ = now;
+        return;
+    }
     if (rtc_last_update_ == 0 || now <= rtc_last_update_) {
         rtc_last_update_ = now;
         return;
@@ -251,16 +256,25 @@ void Cartridge::write_rtc_register(const std::uint8_t value) noexcept {
     case 4: rtc_[index] = static_cast<std::uint8_t>(value & 0xC1); break;
     default: return;
     }
-    rtc_last_update_ = current_unix_seconds();
+    rtc_last_update_ = rtc_now();
     rtc_dirty_ = true;
 }
 
 void Cartridge::load_rtc() {
-    if (!std::filesystem::exists(rtc_path_)) return;
+    if (!std::filesystem::exists(rtc_path_)) {
+        if (extra_) rtc_dirty_ = true;
+        return;
+    }
 
     std::ifstream input(rtc_path_, std::ios::binary);
     if (!input) {
         throw std::runtime_error("Could not open RTC file: " + rtc_path_.string());
+    }
+    if (extra_) {
+        const std::vector<std::uint8_t> data{std::istreambuf_iterator<char>{input}, {}};
+        import_extra_rtc(data);
+        rtc_dirty_ = false;
+        return;
     }
     std::array<char, 8> magic{};
     input.read(magic.data(), static_cast<std::streamsize>(magic.size()));
@@ -296,6 +310,14 @@ void Cartridge::flush_rtc() {
     if (!output) {
         throw std::runtime_error("Could not open RTC file: " + rtc_path_.string());
     }
+    if (extra_) {
+        const auto data = export_extra_rtc();
+        output.write(reinterpret_cast<const char*>(data.data()), static_cast<std::streamsize>(data.size()));
+        output.flush();
+        if (!output) throw std::runtime_error("Could not write RTC file: " + rtc_path_.string());
+        rtc_dirty_ = false;
+        return;
+    }
     output.write(rtc_magic.data(), static_cast<std::streamsize>(rtc_magic.size()));
     output.write(reinterpret_cast<const char*>(rtc_.data()),
                  static_cast<std::streamsize>(rtc_.size()));
@@ -311,6 +333,36 @@ void Cartridge::flush_rtc() {
         throw std::runtime_error("Could not write RTC file: " + rtc_path_.string());
     }
     rtc_dirty_ = false;
+}
+
+std::vector<std::uint8_t> Cartridge::export_extra_rtc() const {
+    update_rtc();
+    save_state_format::Writer w;
+    constexpr std::array<std::uint8_t, 8> magic{'G','B','B','X','R','T','C',1};
+    w.bytes(magic.data(),magic.size()); w.u8(type());
+    w.u64(static_cast<std::uint64_t>(rtc_last_update_));
+    w.bytes(extra_->huc_clock.data(),extra_->huc_clock.size());
+    w.u8(extra_->subminute);
+    w.bytes(extra_->tama_clock.data(),extra_->tama_clock.size());
+    w.boolean(extra_->tama_running);
+    return w.take();
+}
+
+void Cartridge::import_extra_rtc(const std::vector<std::uint8_t>& data) {
+    if (data.size() != 339 || !std::equal(data.begin(),data.begin() + 7,"GBBXRTC") ||
+        data[7] != 1 || data[8] != type())
+        throw std::invalid_argument("Invalid controller-specific RTC data");
+    save_state_format::Reader r(data,9);
+    const auto timestamp = r.u64();
+    auto next = *extra_;
+    r.bytes(next.huc_clock.data(),next.huc_clock.size()); next.subminute = r.u8();
+    r.bytes(next.tama_clock.data(),next.tama_clock.size()); next.tama_running = r.boolean(); r.finish();
+    if (timestamp > static_cast<std::uint64_t>(INT64_MAX) || next.subminute >= 60 ||
+        std::any_of(next.huc_clock.begin(),next.huc_clock.end(),[](auto v){return v > 15;}) ||
+        std::any_of(next.tama_clock.begin(),next.tama_clock.end(),[](auto v){return v > 15;}))
+        throw std::invalid_argument("Invalid controller-specific RTC registers");
+    *extra_ = next; rtc_last_update_ = static_cast<std::int64_t>(timestamp);
+    update_rtc(); rtc_dirty_ = true;
 }
 
 } // namespace gameboy

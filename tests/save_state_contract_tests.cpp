@@ -198,7 +198,7 @@ void test_save_state_round_trip_and_validation() {
     // No SOU_TRN has completed in this fixture, so version 39 adds two
     // revisions and the last four-byte SOUND request to the payload.
     auto version_forty = saved;
-    version_forty.resize(version_forty.size() - 25); // Version 42 splash metadata.
+    version_forty.resize(version_forty.size() - 26); // Version 43 mapper marker and version 42 splash metadata.
     auto version_forty_one = version_forty;
     version_forty_one[8] = 41;
     const auto v41_size = static_cast<std::uint32_t>(version_forty_one.size() - state_header_size);

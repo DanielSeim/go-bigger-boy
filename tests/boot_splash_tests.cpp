@@ -31,7 +31,7 @@ void same_hardware(gameboy::Emulator& a, gameboy::Emulator& b) {
     std::fill(left.begin() + 52, left.begin() + 60, 0);
     std::fill(right.begin() + 52, right.begin() + 60, 0);
     require(left.size() == right.size(), "state sizes differ");
-    require(std::equal(left.begin() + 28, left.end() - 25, right.begin() + 28),
+    require(std::equal(left.begin() + 28, left.end() - 26, right.begin() + 28),
             "animation changed hardware state");
 }
 }
@@ -101,13 +101,13 @@ int main() {
                     require(receiver.take_audio_samples() == animated.take_audio_samples(), "restore repeated undrained chime");
                     const auto saved = receiver.save_state();
                     auto decoded = save_state_container::decode(saved, receiver.rom_fingerprint());
-                    decoded.payload[decoded.payload.size() - 25] = 0x80;
+                    decoded.payload[decoded.payload.size() - 26] = 0x80;
                     bool rejected = false;
                     try { receiver.load_state(save_state_container::encode(receiver.rom_fingerprint(), decoded.payload)); }
                     catch (const SaveStateError&) { rejected = true; }
                     require(rejected && receiver.save_state() == saved, "malformed splash state not rejected atomically");
                     decoded = save_state_container::decode(saved, receiver.rom_fingerprint());
-                    decoded.payload.resize(decoded.payload.size() - 25);
+                    decoded.payload.resize(decoded.payload.size() - 26);
                     auto legacy = save_state_container::encode(receiver.rom_fingerprint(), decoded.payload);
                     legacy[8] = 41;
                     receiver.load_state(legacy);

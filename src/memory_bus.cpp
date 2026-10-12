@@ -425,6 +425,7 @@ void MemoryBus::tick(const unsigned cycles) noexcept {
     // OAM DMA takes 160 CPU M-cycles at either speed (320 PPU dots in
     // CGB double speed). HRAM delay routines must finish before WRAM RETs.
     tick_oam_dma(cycles);
+    cartridge_.tick(peripheral_cycles);
     serial_.tick(cycles);
     io_[0x01] = serial_.read_data();
     io_[0x02] = static_cast<std::uint8_t>(

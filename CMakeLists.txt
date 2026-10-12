@@ -156,6 +156,7 @@ add_library(gameboy_core
     src/sgb_sound.cpp
     src/boot_rom.cpp
     src/cartridge.cpp
+    src/cartridge_extra.cpp
     src/cartridge_persistence.cpp
     src/cpu.cpp
     src/dmg_palette.cpp
@@ -714,6 +715,8 @@ if(GAMEBOY_BUILD_TESTS)
                              --model ${boot_model} --animated --check-source)
             set_tests_properties(gameboy_${boot_model}_animated_firmware_source PROPERTIES LABELS "firmware;boot")
         endforeach()
+        add_test(NAME gameboy_cartridge_header_inspection
+                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/cartridge_header_inspection_tests.py)
         if(TARGET gameboy_test_runner)
             add_test(NAME gameboy_cycle_frame_capture
                      COMMAND ${Python3_EXECUTABLE}
@@ -1119,6 +1122,10 @@ if(GAMEBOY_BUILD_TESTS)
     add_test(NAME gameboy_cartridge_file_contract
              COMMAND gameboy_cartridge_file_contract_tests)
 
+    add_executable(gameboy_cartridge_extra_contract_tests tests/cartridge_extra_contract_tests.cpp)
+    target_include_directories(gameboy_cartridge_extra_contract_tests PRIVATE src)
+    target_link_libraries(gameboy_cartridge_extra_contract_tests PRIVATE gameboy_core)
+    add_test(NAME gameboy_cartridge_extra_contract COMMAND gameboy_cartridge_extra_contract_tests)
     add_executable(gameboy_cartridge_mapper_contract_tests
         tests/cartridge_mapper_contract_tests.cpp)
     target_link_libraries(gameboy_cartridge_mapper_contract_tests PRIVATE gameboy_core)

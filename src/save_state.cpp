@@ -3,6 +3,7 @@
 #include "save_state_bus.hpp"
 #include "save_state_container.hpp"
 #include "save_state_cpu.hpp"
+#include "save_state_cartridge.hpp"
 #include "save_state_format.hpp"
 
 #include <string>
@@ -34,6 +35,7 @@ public:
         // the interval since the source last drained its pending queue.
         payload.u64(emulator.splash_enabled_
             ? boot_splash_sample_time(emulator.cpu_.total_cycles()) : 0);
+        SaveStateCartridgeCodec::write_extra(payload, emulator.bus_.cartridge_);
         return save_state_container::encode(emulator.rom_fingerprint(),
                                             payload.data());
     }
@@ -67,6 +69,9 @@ public:
                     emulator.splash_handoff_cycles_ || emulator.splash_audio_cursor_)))
                 throw SaveStateError("Invalid startup presentation state");
         }
+        if (decoded.version >= 43) SaveStateCartridgeCodec::read_extra(payload, emulator.bus_.cartridge_);
+        else if (emulator.bus_.cartridge_.extra_)
+            throw SaveStateError("Save state predates this cartridge controller implementation");
         payload.finish();
         if (emulator.splash_enabled_) {
             if (!emulator.splash_pixels_)

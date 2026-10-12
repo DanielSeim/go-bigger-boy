@@ -64,7 +64,9 @@ What works well:
   a synthesized chime on monochrome/color models; SGB uses its header bootstrap
   without that intro ([firmware guide](firmware/README.md)).
 - ROM-only, MBC1/MBC1M, MBC2, MBC3 (including RTC), and MBC5 banking
-- Persistent battery-backed `.sav` RAM and MBC3 `.rtc` clock state
+- MMM01, MBC7, TAMA5, HuC3 and HuC1 controller interfaces; see
+  [tested features and peripheral limitations](docs/cartridge-controllers.md)
+- Persistent battery-backed `.sav` memory and MBC3/HuC3/TAMA5 `.rtc` clock state
 - Table-driven CPU tests for opcode matrices, timing, flags, PC, stack, and memory effects
 - Headless command-line runner
 - Headless Mooneye/serial conformance test runner
