@@ -329,10 +329,12 @@ struct CpuFlowRecord {
     std::uint16_t pc{};
     std::uint8_t opcode{};
     gameboy::CpuRegisters after{};
+    std::uint16_t sp_before{};
 };
 
 void write_cpu_flow(const char* prefix, const CpuFlowRecord& record,
-                    const char* transition = nullptr, const bool has_previous = true) {
+                    const char* transition = nullptr, const bool has_previous = true,
+                    const bool history = false) {
     const auto& r = record.after;
     std::ostringstream line;
     line << prefix << " cycle=" << record.cycle << " duration=" << record.duration
@@ -342,9 +344,14 @@ void write_cpu_flow(const char* prefix, const CpuFlowRecord& record,
     line << " opcode=";
     if (has_previous) line << std::setw(2) << static_cast<unsigned>(record.opcode);
     else line << "none";
-    line << " next_pc=" << std::setw(4) << r.pc
-         << " sp=" << std::setw(4) << r.sp
-         << " af=" << std::setw(4) << ((unsigned(r.a) << 8) | r.f)
+    line << " next_pc=" << std::setw(4) << r.pc;
+    if (history) {
+        line << " sp_before=" << std::setw(4) << record.sp_before
+             << " sp_after=" << std::setw(4) << r.sp;
+    } else {
+        line << " sp=" << std::setw(4) << r.sp;
+    }
+    line << " af=" << std::setw(4) << ((unsigned(r.a) << 8) | r.f)
          << " bc=" << std::setw(4) << ((unsigned(r.b) << 8) | r.c)
          << " de=" << std::setw(4) << ((unsigned(r.d) << 8) | r.e)
          << " hl=" << std::setw(4) << ((unsigned(r.h) << 8) | r.l);
@@ -355,11 +362,14 @@ void write_cpu_flow(const char* prefix, const CpuFlowRecord& record,
 
 struct CpuFlowDiagnostics {
     explicit CpuFlowDiagnostics(const Options& options)
-        : records(static_cast<std::size_t>(options.trace_recent_cpu)), target(options.trace_first_pc) {}
+        : records(static_cast<std::size_t>(options.trace_recent_cpu)),
+          history(options.trace_first_pc.has_value() ? 64 : 0), target(options.trace_first_pc) {}
     std::vector<CpuFlowRecord> records;
+    std::vector<CpuFlowRecord> history;
     std::optional<std::uint16_t> target;
     std::optional<CpuFlowRecord> previous;
     std::size_t next{}, count{};
+    std::size_t history_next{}, history_count{};
     bool fetched{}, reached{};
     std::uint16_t pc{};
     std::uint8_t opcode{};
@@ -378,14 +388,24 @@ struct CpuFlowDiagnostics {
         record.duration = duration;
         record.after = cpu.registers();
         write_cpu_flow("CPU_FIRST_PC", record, transition, previous.has_value());
+        for (std::size_t i = 0; i < history_count; ++i)
+            write_cpu_flow("CPU_FIRST_PC_HISTORY",
+                history[(history_next + history.size() - history_count + i) % history.size()],
+                nullptr, true, true);
     }
-    void stepped(const gameboy::Cpu& cpu, std::uint64_t cycle, unsigned duration) {
+    void stepped(const gameboy::Cpu& cpu, std::uint64_t cycle, unsigned duration,
+                 std::uint16_t sp_before) {
         if (fetched) {
-            previous = CpuFlowRecord{cycle, duration, pc, opcode, cpu.registers()};
+            previous = CpuFlowRecord{cycle, duration, pc, opcode, cpu.registers(), sp_before};
             if (!records.empty()) {
                 records[next] = *previous;
                 next = (next + 1) % records.size();
                 count = std::min(count + 1, records.size());
+            }
+            if (!history.empty() && !reached) {
+                history[history_next] = *previous;
+                history_next = (history_next + 1) % history.size();
+                history_count = std::min(history_count + 1, history.size());
             }
         }
         first(cpu, fetched ? "instruction" : "interrupt", duration);
@@ -1044,8 +1064,9 @@ int main(int argc, char** argv) {
                                           ? emulator.bus().read8(trace_pc)
                                           : std::uint8_t{};
             cpu_flow.fetched = false;
+            const auto flow_sp_before = traces_flow ? registers.sp : std::uint16_t{};
             const auto stepped_cycles = emulator.step();
-            if (traces_flow) cpu_flow.stepped(emulator.cpu(), trace_cycle, stepped_cycles);
+            if (traces_flow) cpu_flow.stepped(emulator.cpu(), trace_cycle, stepped_cycles, flow_sp_before);
             if (sound_report) {
                 const auto request =
                     emulator.bus().debug_sgb_sound_request_revision();

@@ -411,6 +411,17 @@ that address nor a white capture is automatically classified as an error.
 The optional fetch observer reads the actual CPU opcode, including DMA bus
 blocking, without extra emulated reads, clock advances or state writes.
 
+When `--trace-first-pc` reaches its target, the first-hit line is immediately
+followed by up to 64 `CPU_FIRST_PC_HISTORY` lines in execution order. This
+separate ring exists only with `--trace-first-pc` enabled and is independent of
+`--trace-recent-cpu N`. It includes the instruction that reaches the target;
+an initial-PC match has no preceding history. HALT/STOP idle steps and interrupt
+entry are excluded. Each history entry contains instruction-start `cycle`,
+`duration`, `pc`, the fetched `opcode`, `next_pc`, `sp_before`, `sp_after` and
+post-instruction `af`, `bc`, `de`, `hl`. The history is emitted once, directly
+to stderr, without writing a CPU trace file. It can expose a return or jump to
+`0000` followed by a `RST 38h`, including the associated stack changes.
+
 `--frames` continues to wait for completed emulator frames. The new mode requires
 `--frame-output` and is mutually exclusive with `--frames`, `--frame-series`,
 `--frame-on-ld-bb` and `--replay-sgb-trace`. It supports `--sgb-frame` for an SGB

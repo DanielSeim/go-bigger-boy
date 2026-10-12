@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Include the last 64 executed instructions and changes to the stack pointer when
+  `--trace-first-pc` first reaches its target, without creating trace files.
+
 - Keep Windows ROM-launch errors visible until dismissed before returning to
   the library, and save error details in the desktop log in release builds.
 

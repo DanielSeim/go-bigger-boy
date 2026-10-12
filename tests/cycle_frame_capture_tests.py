@@ -213,7 +213,7 @@ class CycleFrameCaptureTests(unittest.TestCase):
                 continue
             self.assertRegex(line, r'^' + prefix + r' cycle=\d+ duration=\d+ '
                              r'pc=(?:[0-9a-f]{4}|none) opcode=(?:[0-9a-f]{2}|none) '
-                             r'next_pc=[0-9a-f]{4} sp=[0-9a-f]{4} af=[0-9a-f]{4} '
+                             r'next_pc=[0-9a-f]{4} (?:sp=[0-9a-f]{4}|sp_before=[0-9a-f]{4} sp_after=[0-9a-f]{4}) af=[0-9a-f]{4} '
                              r'bc=[0-9a-f]{4} de=[0-9a-f]{4} hl=[0-9a-f]{4}'
                              r'(?: transition=(?:instruction|interrupt|initial))?$')
             rows.append(dict(part.split('=') for part in line.split()[1:]))
@@ -239,6 +239,10 @@ class CycleFrameCaptureTests(unittest.TestCase):
                          dict(pc='0160',opcode='ff',next_pc='0038',sp='cffe',af='0080',
                               bc='1234',de='5678',hl='9abc',transition='instruction'))
         recent = self.flow_lines(combined, 'CPU_RECENT')
+        history = self.flow_lines(combined, 'CPU_FIRST_PC_HISTORY')
+        self.assertEqual(len(history), 9)
+        self.assertEqual((history[-1]['pc'], history[-1]['sp_before'], history[-1]['sp_after']),
+                         ('0160', 'd000', 'cffe'))
         self.assertEqual(len(recent), 3)
         for row, line in zip(recent, trace.read_text().splitlines()[-3:]):
             expected = dict(part.split('=') for part in line.split())
@@ -263,9 +267,67 @@ class CycleFrameCaptureTests(unittest.TestCase):
         initial = self.capture(2, '--trace-first-pc', '0x0100')
         row, = self.flow_lines(initial, 'CPU_FIRST_PC')
         self.assertEqual((row['pc'],row['opcode'],row['transition']), ('none','none','initial'))
+        self.assertEqual(self.flow_lines(initial, 'CPU_FIRST_PC_HISTORY'), [])
         for address in ('0xffff', '0'):
             absent = self.capture(2, '--trace-first-pc', address)
             self.assertEqual(self.flow_lines(absent, 'CPU_FIRST_PC'), [])
+            self.assertEqual(self.flow_lines(absent, 'CPU_FIRST_PC_HISTORY'), [])
+
+    def test_first_pc_history_wrap_and_return_through_zero(self):
+        # Return through an authored zero stack word, then execute RST 38h
+        # at address 0000. More than 64 instructions exercise ring wrap.
+        program = LCD_OFF + bytes((0x31,0,0xD0,0x01,0x34,0x12,
+                                    0x11,0x78,0x56,0x21,0xBC,0x9A))
+        program += bytes(80) + bytes((0xAF,0xEA,0xFE,0xCF,0xEA,0xFF,0xCF,
+                                     0x31,0xFE,0xCF,0xC9))
+        rom = cartridge(program, color=True)
+        rom[0] = 0xFF;rom[0x38:0x3A] = LOOP
+        self.rom.write_bytes(rom)
+        baseline = self.capture(2, '--model', 'cgb-e')
+        self.check_capture(baseline, 2);image = self.output.read_bytes()
+        expected = []
+        for index in range(22,80):
+            expected.append((84+index*4, 0x160+index, 0, 0x161+index, 0xD000, 0xD000))
+        expected += [(404,0x1B0,0xAF,0x1B1,0xD000,0xD000),
+                     (408,0x1B1,0xEA,0x1B4,0xD000,0xD000),
+                     (424,0x1B4,0xEA,0x1B7,0xD000,0xD000),
+                     (440,0x1B7,0x31,0x1BA,0xD000,0xCFFE),
+                     (452,0x1BA,0xC9,0,0xCFFE,0xD000),
+                     (468,0,0xFF,0x38,0xD000,0xCFFE)]
+        for extra in ((), ('--trace-recent-cpu',3), ('--trace-recent-cpu',128)):
+            result = self.capture(2, '--model','cgb-e','--trace-first-pc','0x38',*extra)
+            self.assertEqual(result.stdout, baseline.stdout)
+            self.assertEqual(self.output.read_bytes(), image)
+            self.assertEqual(result.stderr.splitlines()[-1], baseline.stderr.strip())
+            first, = self.flow_lines(result, 'CPU_FIRST_PC')
+            self.assertEqual(first['cycle'], '484')
+            history = self.flow_lines(result, 'CPU_FIRST_PC_HISTORY')
+            self.assertEqual(len(history), 64)
+            actual = [(int(r['cycle']), *(int(r[k],16) for k in
+                       ('pc','opcode','next_pc','sp_before','sp_after'))) for r in history]
+            self.assertEqual(actual, expected)
+            for r in history:
+                self.assertEqual([r[k] for k in ('af','bc','de','hl')], ['0080','1234','5678','9abc'])
+            lines = result.stderr.splitlines()
+            begin = next(i for i,line in enumerate(lines) if line.startswith('CPU_FIRST_PC '))
+            self.assertTrue(all(line.startswith('CPU_FIRST_PC_HISTORY ') for line in lines[begin+1:begin+65]))
+        # Only explicitly requested captures exist; diagnostics create no files.
+        self.assertEqual({p.name for p in self.root.iterdir()}, {'authored.gb','capture.ppm'})
+
+    def test_first_pc_history_excludes_idle_and_interrupt_steps(self):
+        # HALT until a timer IRQ. Its many idle steps must not evict history.
+        program = LCD_OFF + bytes((0x3E,4,0xEA,0xFF,0xFF,0xAF,0xE0,0x0F,
+                                    0xE0,0x05,0x3E,5,0xE0,0x07,0xFB,0,0x76)) + LOOP
+        rom = cartridge(program);rom[0x50:0x52] = bytes((0xF3,0x76))
+        self.rom.write_bytes(rom)
+        result = self.capture(2, '--trace-first-pc','0x50')
+        first, = self.flow_lines(result, 'CPU_FIRST_PC')
+        self.assertEqual(first['transition'], 'interrupt')
+        history = self.flow_lines(result, 'CPU_FIRST_PC_HISTORY')
+        self.assertEqual([r['opcode'] for r in history],
+                         ['c3','f3','af','e0','3e','ea','af','e0','e0','3e','e0','fb','00','76'])
+        self.assertEqual(history[-1]['sp_before'], history[-1]['sp_after'])
+        self.assertNotEqual(history[-1]['next_pc'], '0050')
 
     def test_flow_interrupt_and_dma_fetch(self):
         program = LCD_OFF + bytes((0x3E,1,0xEA,0xFF,0xFF,0xE0,0x0F,0xFB,0x00)) + LOOP
