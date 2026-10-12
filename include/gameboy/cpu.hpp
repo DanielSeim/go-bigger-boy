@@ -43,6 +43,12 @@ public:
     [[nodiscard]] bool stopped() const noexcept;
     [[nodiscard]] bool interrupts_enabled() const noexcept;
     [[nodiscard]] std::uint64_t total_cycles() const noexcept;
+    // Called only for an actual opcode fetch, never idle/interrupt steps.
+    using InstructionObserver = void (*)(void*, std::uint16_t, std::uint8_t) noexcept;
+    void debug_set_instruction_observer(InstructionObserver observer, void* context) noexcept {
+        instruction_observer_ = observer;
+        instruction_observer_context_ = context;
+    }
 
 private:
     friend class SaveStateCodec;
@@ -101,6 +107,8 @@ private:
     // Standalone DMG STAT reset remains effective until the first vector fetch.
     bool stat_acknowledgment_{};
     std::uint64_t total_cycles_{};
+    InstructionObserver instruction_observer_{};
+    void* instruction_observer_context_{};
 };
 
 } // namespace gameboy

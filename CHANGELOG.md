@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Add bounded recent-instruction and first-PC diagnostics to the headless runner,
+  preserving actual opcode fetches and distinguishing interrupt/idle steps.
+
 - Report CPU/LCD state, completed PPU frames and RGB color counts on stderr
   before cycle-based framebuffer captures, including with the LCD disabled.
 

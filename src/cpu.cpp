@@ -133,6 +133,7 @@ unsigned Cpu::step(MemoryBus& bus) {
 unsigned Cpu::execute_instruction(MemoryBus& bus) {
     const auto opcode_address = registers_.pc;
     const auto opcode = fetch8(bus);
+    if (instruction_observer_) instruction_observer_(instruction_observer_context_, opcode_address, opcode);
 
     if (opcode >= 0x40 && opcode <= 0x7F && opcode != 0x76) {
         const auto destination = static_cast<unsigned>((opcode >> 3) & 0x07);

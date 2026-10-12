@@ -365,6 +365,41 @@ the border with `--sgb-frame`. `blank_frame=true` means every pixel has the same
 RGB color and still returns success. Diagnostics also work with the LCD off;
 `completed_frames` counts actual PPU frames rather than virtual intervals.
 
+For bounded CPU control-flow diagnostics, add either or both options:
+
+```sh
+./build-conformance/gbb_test_runner test.gbc --model cgb-e \\
+  --cycle-frame-capture 600 --frame-output capture.ppm \\
+  --trace-recent-cpu 128 --trace-first-pc 0x0038
+```
+
+`--trace-recent-cpu N` retains the last 1–4096 executed instructions in a ring
+buffer and emits one `CPU_RECENT` line per retained instruction, oldest first,
+immediately before the cycle capture diagnostics. Idle HALT/STOP steps and
+interrupt entry do not consume ring entries. The ring uses at most 128 KiB;
+output is bounded to 4096 instruction lines, independent of emulation duration.
+It is dumped only on a successful cycle-capture path, not on timeout or in other
+capture modes. `--trace-limit` does not control this separate ring.
+
+`--trace-first-pc ADDRESS` accepts decimal or `0x` hexadecimal addresses from
+0 through 65535. It emits at most one `CPU_FIRST_PC` line when the architectural
+PC first equals the address, including in protocol modes. Both line formats
+contain `cycle`, `duration`, the previous instruction's original `pc` and actual
+fetched `opcode`, and `next_pc`, `sp`, `af`, `bc`, `de`, `hl`. Addresses, opcodes
+and register values are zero-padded hexadecimal without prefixes; cycles and
+durations are decimal T-cycles. Register snapshots describe the resulting state.
+Recent records use instruction-start cycles; first-hit records use arrival
+cycles and the duration of the step that reached the address.
+
+First-hit lines additionally distinguish `transition=instruction`, `interrupt`
+or `initial`. Interrupt arrival retains the last executed instruction's PC and
+opcode, rather than inventing an interrupt opcode. At initial PC arrival there
+is no previous instruction (`pc=none opcode=none`, duration zero). A legitimate
+`RST 38h` is reported as `opcode=ff next_pc=0038 transition=instruction`; neither
+that address nor a white capture is automatically classified as an error.
+The optional fetch observer reads the actual CPU opcode, including DMA bus
+blocking, without extra emulated reads, clock advances or state writes.
+
 `--frames` continues to wait for completed emulator frames. The new mode requires
 `--frame-output` and is mutually exclusive with `--frames`, `--frame-series`,
 `--frame-on-ld-bb` and `--replay-sgb-trace`. It supports `--sgb-frame` for an SGB

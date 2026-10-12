@@ -205,6 +205,102 @@ class CycleFrameCaptureTests(unittest.TestCase):
         self.assertIn('PASS (GBMicrotest)', protocol.stdout)
         self.assertNotIn('CAPTURE_DIAGNOSTICS', protocol.stderr)
 
+    def flow_lines(self, result, prefix):
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        rows = []
+        for line in result.stderr.splitlines():
+            if not line.startswith(prefix + ' '):
+                continue
+            self.assertRegex(line, r'^' + prefix + r' cycle=\d+ duration=\d+ '
+                             r'pc=(?:[0-9a-f]{4}|none) opcode=(?:[0-9a-f]{2}|none) '
+                             r'next_pc=[0-9a-f]{4} sp=[0-9a-f]{4} af=[0-9a-f]{4} '
+                             r'bc=[0-9a-f]{4} de=[0-9a-f]{4} hl=[0-9a-f]{4}'
+                             r'(?: transition=(?:instruction|interrupt|initial))?$')
+            rows.append(dict(part.split('=') for part in line.split()[1:]))
+        return rows
+
+    def test_flow_rst_first_hit_and_ring_transparency(self):
+        program = LCD_OFF + bytes((0x31, 0x00, 0xD0, 0x01, 0x34, 0x12,
+                                    0x11, 0x78, 0x56, 0x21, 0xBC, 0x9A,
+                                    0xFF, 0x18, 0xFD))
+        rom = cartridge(program);rom[0x38] = 0xC9  # RET from legitimate RST 38h.
+        self.rom.write_bytes(rom)
+        baseline_trace = self.root / 'baseline-cpu.txt'
+        baseline = self.capture(2, '--trace-cpu', baseline_trace);image = self.output.read_bytes()
+        trace = self.root / 'flow-reference.txt'
+        combined = self.capture(2, '--trace-recent-cpu', 3, '--trace-first-pc', '0x0038',
+                                '--trace-cpu', trace)
+        self.assertEqual(combined.stdout, baseline.stdout)
+        self.assertEqual(self.output.read_bytes(), image)
+        self.assertEqual(trace.read_bytes(), baseline_trace.read_bytes())
+        self.assertEqual(combined.stderr.splitlines()[-1], baseline.stderr.strip())
+        first, = self.flow_lines(combined, 'CPU_FIRST_PC')
+        self.assertEqual({k:first[k] for k in ('pc','opcode','next_pc','sp','af','bc','de','hl','transition')},
+                         dict(pc='0160',opcode='ff',next_pc='0038',sp='cffe',af='0080',
+                              bc='1234',de='5678',hl='9abc',transition='instruction'))
+        recent = self.flow_lines(combined, 'CPU_RECENT')
+        self.assertEqual(len(recent), 3)
+        for row, line in zip(recent, trace.read_text().splitlines()[-3:]):
+            expected = dict(part.split('=') for part in line.split())
+            for key, value in row.items():self.assertEqual(value, expected[key])
+        self.assertTrue(all(line.startswith('CPU_RECENT ') for line in combined.stderr.splitlines()[-4:-1]))
+        for args, prefix in ((('--trace-recent-cpu', 1), 'CPU_RECENT'),
+                             (('--trace-first-pc', '56'), 'CPU_FIRST_PC')):
+            result = self.capture(2, *args)
+            self.assertEqual(len(self.flow_lines(result, prefix)), 1)
+            self.assertEqual(self.output.read_bytes(), image)
+        cgb = self.capture(2, '--model', 'cgb-e', '--trace-first-pc', '0x38')
+        first, = self.flow_lines(cgb, 'CPU_FIRST_PC')
+        self.assertEqual((first['pc'], first['opcode'], first['next_pc']), ('0160', 'ff', '0038'))
+
+    def test_flow_idle_steps_and_initial_or_unreached_pc(self):
+        for idle in (bytes((0x76,)), bytes((0x10, 0))):
+            self.rom.write_bytes(cartridge(LCD_OFF + idle + LOOP))
+            result = self.capture(2, '--trace-recent-cpu', 4096)
+            rows = self.flow_lines(result, 'CPU_RECENT')
+            self.assertEqual([r['opcode'] for r in rows], ['c3','f3','af','e0',f'{idle[0]:02x}'])
+            self.assertLess(len(result.stderr), 2048)
+        initial = self.capture(2, '--trace-first-pc', '0x0100')
+        row, = self.flow_lines(initial, 'CPU_FIRST_PC')
+        self.assertEqual((row['pc'],row['opcode'],row['transition']), ('none','none','initial'))
+        for address in ('0xffff', '0'):
+            absent = self.capture(2, '--trace-first-pc', address)
+            self.assertEqual(self.flow_lines(absent, 'CPU_FIRST_PC'), [])
+
+    def test_flow_interrupt_and_dma_fetch(self):
+        program = LCD_OFF + bytes((0x3E,1,0xEA,0xFF,0xFF,0xE0,0x0F,0xFB,0x00)) + LOOP
+        rom = cartridge(program);rom[0x40:0x42] = bytes((0xF3,0x76))
+        self.rom.write_bytes(rom)
+        result = self.capture(2, '--trace-first-pc', '0x40', '--trace-recent-cpu', 32)
+        first, = self.flow_lines(result, 'CPU_FIRST_PC')
+        self.assertEqual(first['transition'], 'interrupt')
+        self.assertEqual(first['opcode'], '00')  # Previous instruction, not a fictional interrupt opcode.
+        rows = self.flow_lines(result, 'CPU_RECENT')
+        self.assertFalse(any(r['next_pc']=='0040' for r in rows))
+        # After DMA's startup delay, actual FF differs from the stored NOP.
+        self.rom.write_bytes(cartridge(LCD_OFF + bytes((0x3E,0xC0,0xE0,0x46,0x00,0x00)) + LOOP))
+        dma = self.capture(2, '--trace-first-pc', '0x38')
+        first, = self.flow_lines(dma, 'CPU_FIRST_PC')
+        self.assertEqual((first['pc'],first['opcode'],first['transition']), ('0159','ff','instruction'))
+
+    def test_flow_option_validation_and_protocol_mode(self):
+        for args in (('--trace-recent-cpu','0'),('--trace-recent-cpu','4097'),
+                     ('--trace-recent-cpu','-1'),('--trace-recent-cpu','1x'),
+                     ('--trace-recent-cpu','1','--trace-recent-cpu','2'),
+                     ('--trace-first-pc','0x10000'),('--trace-first-pc','-1'),
+                     ('--trace-first-pc','0x'),('--trace-first-pc','12x'),
+                     ('--trace-first-pc','0','--trace-first-pc','1'),
+                     ('--trace-first-pc',),('--trace-recent-cpu',)):
+            result = self.capture(2, *args)
+            self.assertEqual(result.returncode, 2, args)
+            self.assertFalse(self.output.exists())
+        self.rom.write_bytes(cartridge(LCD_OFF + bytes((0x3E,1,0xE0,0x82)) + LOOP))
+        baseline = self.run_rom('--protocol','gbmicrotest')
+        traced = self.run_rom('--protocol','gbmicrotest','--trace-first-pc','0x0150')
+        self.assertEqual(traced.returncode, baseline.returncode)
+        self.assertEqual(traced.stdout, baseline.stdout)
+        self.assertEqual(len(self.flow_lines(traced, 'CPU_FIRST_PC')), 1)
+
 
 if __name__ == '__main__':
     unittest.main()

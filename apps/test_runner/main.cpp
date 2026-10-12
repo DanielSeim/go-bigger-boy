@@ -25,6 +25,7 @@ namespace {
 
 // Cpu::total_cycles() counts T-cycles, including at CGB double speed.
 constexpr std::uint64_t cycle_frame_t_cycles = 70'224;
+constexpr std::uint64_t max_recent_cpu = 4096;
 
 enum class Protocol {
     automatic,
@@ -55,6 +56,8 @@ struct Options {
     std::filesystem::path sgb_sound_report_output;
     std::filesystem::path sgb_replay_input;
     std::uint64_t trace_limit{};
+    std::uint64_t trace_recent_cpu{};
+    std::optional<std::uint16_t> trace_first_pc;
     std::optional<std::uint16_t> watched_wram;
     bool watch_wram_from_start{};
     bool dmg_compatibility_colors{};
@@ -79,6 +82,7 @@ void usage() {
                  "[--input-script PATH] "
                  "[--trace-apu PATH] [--trace-ppu PATH] [--trace-io PATH] "
                  "[--trace-cpu PATH] [--trace-limit N] "
+                 "[--trace-recent-cpu N] [--trace-first-pc ADDRESS] "
                  "[--sgb-trace PATH] [--replay-sgb-trace PATH] "
                  "[--sgb-sound-report PATH] "
                  "[--frame-on-ld-bb --frame-output capture.ppm] "
@@ -170,6 +174,26 @@ Options parse_options(const int argc, char** argv) {
             options.sgb_replay_input = argv[++index];
         } else if (argument == "--trace-limit" && index + 1 < argc) {
             options.trace_limit = parse_cycles(argv[++index]);
+        } else if (argument == "--trace-recent-cpu" && index + 1 < argc) {
+            const std::string value = argv[++index];
+            if (options.trace_recent_cpu || value.empty() ||
+                value.find_first_not_of("0123456789") != std::string::npos) {
+                throw std::invalid_argument("--trace-recent-cpu requires one integer from 1 to 4096");
+            }
+            options.trace_recent_cpu = parse_cycles(value);
+            if (options.trace_recent_cpu > max_recent_cpu)
+                throw std::invalid_argument("--trace-recent-cpu exceeds 4096");
+        } else if (argument == "--trace-first-pc" && index + 1 < argc) {
+            const std::string value = argv[++index];
+            const bool hex = value.size() > 2 && value[0] == '0' &&
+                             (value[1] == 'x' || value[1] == 'X');
+            const auto digits = value.substr(hex ? 2 : 0);
+            if (options.trace_first_pc.has_value() || digits.empty() ||
+                digits.find_first_not_of(hex ? "0123456789abcdefABCDEF" : "0123456789") != std::string::npos)
+                throw std::invalid_argument("--trace-first-pc requires one decimal or 0x hexadecimal address");
+            const auto address = std::stoull(digits, nullptr, hex ? 16 : 10);
+            if (address > 0xFFFF) throw std::invalid_argument("--trace-first-pc address exceeds 0xFFFF");
+            options.trace_first_pc = static_cast<std::uint16_t>(address);
         } else if (argument == "--dmg-compatibility-colors") {
             options.dmg_compatibility_colors = true;
         } else if (argument == "--frame-on-ld-bb") {
@@ -298,6 +322,79 @@ void write_capture(const std::filesystem::path& path,
                     gameboy::Ppu::screen_height);
     }
 }
+
+struct CpuFlowRecord {
+    std::uint64_t cycle{};
+    unsigned duration{};
+    std::uint16_t pc{};
+    std::uint8_t opcode{};
+    gameboy::CpuRegisters after{};
+};
+
+void write_cpu_flow(const char* prefix, const CpuFlowRecord& record,
+                    const char* transition = nullptr, const bool has_previous = true) {
+    const auto& r = record.after;
+    std::ostringstream line;
+    line << prefix << " cycle=" << record.cycle << " duration=" << record.duration
+         << std::hex << std::setfill('0') << " pc=";
+    if (has_previous) line << std::setw(4) << record.pc;
+    else line << "none";
+    line << " opcode=";
+    if (has_previous) line << std::setw(2) << static_cast<unsigned>(record.opcode);
+    else line << "none";
+    line << " next_pc=" << std::setw(4) << r.pc
+         << " sp=" << std::setw(4) << r.sp
+         << " af=" << std::setw(4) << ((unsigned(r.a) << 8) | r.f)
+         << " bc=" << std::setw(4) << ((unsigned(r.b) << 8) | r.c)
+         << " de=" << std::setw(4) << ((unsigned(r.d) << 8) | r.e)
+         << " hl=" << std::setw(4) << ((unsigned(r.h) << 8) | r.l);
+    if (transition) line << " transition=" << transition;
+    line << '\n';
+    std::cerr << line.str();
+}
+
+struct CpuFlowDiagnostics {
+    explicit CpuFlowDiagnostics(const Options& options)
+        : records(static_cast<std::size_t>(options.trace_recent_cpu)), target(options.trace_first_pc) {}
+    std::vector<CpuFlowRecord> records;
+    std::optional<std::uint16_t> target;
+    std::optional<CpuFlowRecord> previous;
+    std::size_t next{}, count{};
+    bool fetched{}, reached{};
+    std::uint16_t pc{};
+    std::uint8_t opcode{};
+
+    static void observe(void* context, std::uint16_t pc, std::uint8_t opcode) noexcept {
+        auto& self = *static_cast<CpuFlowDiagnostics*>(context);
+        self.fetched = true;
+        self.pc = pc;
+        self.opcode = opcode;
+    }
+    void first(const gameboy::Cpu& cpu, const char* transition, unsigned duration = 0) {
+        if (!target || reached || cpu.registers().pc != *target) return;
+        reached = true;
+        auto record = previous.value_or(CpuFlowRecord{});
+        record.cycle = cpu.total_cycles();
+        record.duration = duration;
+        record.after = cpu.registers();
+        write_cpu_flow("CPU_FIRST_PC", record, transition, previous.has_value());
+    }
+    void stepped(const gameboy::Cpu& cpu, std::uint64_t cycle, unsigned duration) {
+        if (fetched) {
+            previous = CpuFlowRecord{cycle, duration, pc, opcode, cpu.registers()};
+            if (!records.empty()) {
+                records[next] = *previous;
+                next = (next + 1) % records.size();
+                count = std::min(count + 1, records.size());
+            }
+        }
+        first(cpu, fetched ? "instruction" : "interrupt", duration);
+    }
+    void dump() const {
+        for (std::size_t i = 0; i < count; ++i)
+            write_cpu_flow("CPU_RECENT", records[(next + records.size() - count + i) % records.size()]);
+    }
+};
 
 void write_capture_diagnostics(const gameboy::Emulator& emulator,
                                const bool sgb_frame,
@@ -825,6 +922,12 @@ int main(int argc, char** argv) {
                                     options.frame_series_last != 0;
         const auto cycle_capture_target = options.cycle_frame_capture * cycle_frame_t_cycles;
         const bool tracks_input = !options.input_script.empty();
+        CpuFlowDiagnostics cpu_flow(options);
+        const bool traces_flow = options.trace_recent_cpu || options.trace_first_pc.has_value();
+        if (traces_flow) {
+            emulator.debug_set_cpu_instruction_observer(CpuFlowDiagnostics::observe, &cpu_flow);
+            cpu_flow.first(emulator.cpu(), "initial");
+        }
 
         if (sgb_recorder.has_value()) {
             if (!sgb_recorder->checkpoint(0, 0, emulator)) {
@@ -940,7 +1043,9 @@ int main(int argc, char** argv) {
             const auto trace_opcode = cpu_trace
                                           ? emulator.bus().read8(trace_pc)
                                           : std::uint8_t{};
+            cpu_flow.fetched = false;
             const auto stepped_cycles = emulator.step();
+            if (traces_flow) cpu_flow.stepped(emulator.cpu(), trace_cycle, stepped_cycles);
             if (sound_report) {
                 const auto request =
                     emulator.bus().debug_sgb_sound_request_revision();
@@ -1070,6 +1175,7 @@ int main(int argc, char** argv) {
             if (options.cycle_frame_capture != 0 &&
                 cycle_capture_target <= options.max_cycles &&
                 emulator.cpu().total_cycles() >= cycle_capture_target) {
+                cpu_flow.dump();
                 write_capture_diagnostics(emulator, options.sgb_frame, completed_frames);
                 write_capture(options.frame_output, emulator, options.sgb_frame);
                 std::cout << "Captured cycle framebuffer after "
