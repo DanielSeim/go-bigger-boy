@@ -1,3 +1,4 @@
+
 name: Publish release
 
 on:
@@ -21,8 +22,9 @@ permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.event.workflow_run.head_branch }}
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.workflow_run.head_branch }}
   cancel-in-progress: false
+  queue: max
 
 env:
   GH_TOKEN: ${{ github.token }}
@@ -31,8 +33,8 @@ env:
   TAG_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.sha || github.event.workflow_run.head_sha }}
 
 jobs:
-  publish:
-    name: Publish tagged desktop and Android artifacts
+  validate-private:
+    name: Verify private ROM regression
     if: >-
       (github.event_name == 'workflow_dispatch' &&
        startsWith(inputs.tag, 'v') && contains(inputs.tag, '.') &&
@@ -42,7 +44,38 @@ jobs:
        startsWith(github.event.workflow_run.head_branch, 'v') &&
        contains(github.event.workflow_run.head_branch, '.'))
     runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    environment: private-rom-trigger
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout validation client
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Validate release tag and private ROM regression
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GBB_PRIVATE_ACTIONS_TOKEN }}
+          PUBLIC_TOKEN: ${{ github.token }}
+          GBB_COMMIT: ${{ github.event_name == 'workflow_dispatch' && inputs.sha || github.event.workflow_run.head_sha }}
+          GBB_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.workflow_run.head_branch }}
+          CORRELATION_ID: ${{ github.repository_id }}-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          python3 scripts/private_rom_validation.py \
+            --commit "$GBB_COMMIT" --correlation "$CORRELATION_ID" \
+            --state-file "$RUNNER_TEMP/private-rom-dispatch-$CORRELATION_ID.json" \
+            --public-repo "$GITHUB_REPOSITORY" --tag "$GBB_TAG"
+
+  publish:
+    name: Publish tagged desktop and Android artifacts
+    needs: validate-private
+    runs-on: ubuntu-24.04
     timeout-minutes: 35
+
     steps:
       - name: Check out validated source
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
@@ -64,33 +97,46 @@ jobs:
           find_run() {
             local workflow="$1"
             local response
+
             for retry in 1 2 3; do
               if response="$(gh run list \
                   --repo "$REPOSITORY" \
                   --workflow "$workflow" \
                   --limit 100 \
                   --json databaseId,status,conclusion,headBranch,headSha,url)"; then
+
                 printf '%s' "$response" | python3 -c '
           import json
           import sys
 
           tag, sha = sys.argv[1:]
           runs = json.load(sys.stdin)
+
           matches = [
               run for run in runs
-              if run.get("headBranch") == tag and run.get("headSha") == sha
+              if run.get("headBranch") == tag
+              and run.get("headSha") == sha
           ]
-          matches.sort(key=lambda run: run.get("databaseId", 0), reverse=True)
+
+          matches.sort(
+              key=lambda run: run.get("databaseId", 0),
+              reverse=True
+          )
+
           if matches:
               run = matches[0]
-              print("|".join(str(run.get(key, "")) for key in
-                              ("databaseId", "status", "conclusion", "url")))
+              print("|".join(
+                  str(run.get(key, ""))
+                  for key in ("databaseId", "status", "conclusion", "url")
+              ))
           ' "$TAG" "$TAG_SHA"
                 return 0
               fi
-              echo "GitHub API lookup for $workflow failed; retry $retry/3." >&2
+
+              echo "GitHub API lookup for $workflow failed" >&2
               sleep $((retry * 5))
             done
+
             return 1
           }
 
@@ -98,8 +144,9 @@ jobs:
             desktop="$(find_run 'Desktop builds' || true)"
             android="$(find_run 'Android build' || true)"
             web="$(find_run 'Web build and Pages' || true)"
+
             if [[ -z "$desktop" || -z "$android" || -z "$web" ]]; then
-              echo "Waiting for Desktop, Android, and Web builds for $TAG ($attempt/90)."
+              echo "Waiting for platform builds ($attempt/90)"
               sleep 20
               continue
             fi
@@ -107,30 +154,38 @@ jobs:
             IFS='|' read -r desktop_id desktop_status desktop_conclusion desktop_url <<< "$desktop"
             IFS='|' read -r android_id android_status android_conclusion android_url <<< "$android"
             IFS='|' read -r web_id web_status web_conclusion web_url <<< "$web"
+
             if [[ "$desktop_status" == completed && "$desktop_conclusion" != success ]]; then
               echo "Desktop workflow failed: $desktop_url" >&2
               exit 1
             fi
+
             if [[ "$android_status" == completed && "$android_conclusion" != success ]]; then
               echo "Android workflow failed: $android_url" >&2
               exit 1
             fi
+
             if [[ "$web_status" == completed && "$web_conclusion" != success ]]; then
               echo "Web workflow failed: $web_url" >&2
               exit 1
             fi
-            if [[ "$desktop_status" == completed && "$android_status" == completed &&
+
+            if [[ "$desktop_status" == completed &&
+                  "$android_status" == completed &&
                   "$web_status" == completed ]]; then
+
               echo "desktop_run=$desktop_id" >> "$GITHUB_OUTPUT"
               echo "android_run=$android_id" >> "$GITHUB_OUTPUT"
               echo "web_run=$web_id" >> "$GITHUB_OUTPUT"
-              echo "Desktop, Android, and Web workflows succeeded for $TAG."
+
+              echo "All platform workflows succeeded"
               exit 0
             fi
-            echo "Desktop: $desktop_status; Android: $android_status; Web: $web_status ($attempt/90)."
+
             sleep 20
           done
-          echo "Timed out waiting for Desktop, Android, and Web workflows for $TAG." >&2
+
+          echo "Timed out waiting for platform builds" >&2
           exit 1
 
       - name: Download release artifacts
@@ -141,9 +196,11 @@ jobs:
           WEB_RUN: ${{ steps.workflows.outputs.web_run }}
         run: |
           set -euo pipefail
+
           for attempt in 1 2 3; do
             rm -rf release-assets
             mkdir -p release-assets/desktop release-assets/android release-assets/web
+
             if gh run download "$DESKTOP_RUN" \
                 --repo "$REPOSITORY" \
                 --pattern 'go-bigger-boy-*' \
@@ -159,10 +216,12 @@ jobs:
               && find release-assets -type f -print -quit | grep -q .; then
               exit 0
             fi
-            echo "Artifact download attempt $attempt failed; retrying." >&2
+
+            echo "Artifact download attempt $attempt failed"
             sleep $((attempt * 10))
           done
-          echo "Unable to download release artifacts." >&2
+
+          echo "Unable to download release artifacts" >&2
           exit 1
 
       - name: Run release asset preflight
@@ -172,18 +231,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -d '' assets < <(find release-assets -type f -print0 | sort -z)
+
+          mapfile -d '' assets < <(
+            find release-assets -type f -print0 | sort -z
+          )
+
           if [[ "${#assets[@]}" -eq 0 ]]; then
-            echo "No release assets were downloaded." >&2
+            echo "No release assets were downloaded" >&2
             exit 1
           fi
 
           for attempt in 1 2 3; do
             if gh release view "$TAG" --repo "$REPOSITORY" >/dev/null 2>&1; then
               gh release upload "$TAG" "${assets[@]}" \
-                --repo "$REPOSITORY" --clobber &&
+                --repo "$REPOSITORY" --clobber && \
               gh release edit "$TAG" --repo "$REPOSITORY" \
                 --notes-file "$RUNNER_TEMP/release-notes.md" && exit 0
+
             elif gh release create "$TAG" "${assets[@]}" \
                 --repo "$REPOSITORY" \
                 --verify-tag \
@@ -191,10 +255,12 @@ jobs:
                 --title "Go Bigger Boy $TAG"; then
               exit 0
             fi
-            echo "Release publication attempt $attempt failed; retrying." >&2
+
+            echo "Release publication attempt $attempt failed"
             sleep $((attempt * 10))
           done
-          echo "Unable to publish release $TAG." >&2
+
+          echo "Unable to publish release $TAG" >&2
           exit 1
 
   publish-play:
@@ -202,9 +268,11 @@ jobs:
     needs: publish
     runs-on: ubuntu-24.04
     timeout-minutes: 25
+
     permissions:
       contents: read
       id-token: write
+
     steps:
       - name: Check out validated source
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
@@ -217,23 +285,32 @@ jobs:
           GBB_PLAY_SERVICE_ACCOUNT: ${{ vars.GCP_SERVICE_ACCOUNT }}
         run: |
           test -n "$GBB_WIF_PROVIDER" || {
-            echo "GCP_WORKLOAD_IDENTITY_PROVIDER repository variable is missing" >&2
+            echo "GCP_WORKLOAD_IDENTITY_PROVIDER is missing" >&2
             exit 1
           }
+
           test -n "$GBB_PLAY_SERVICE_ACCOUNT" || {
-            echo "GCP_SERVICE_ACCOUNT repository variable is missing" >&2
+            echo "GCP_SERVICE_ACCOUNT is missing" >&2
             exit 1
           }
 
       - name: Download published bundle and release description
         run: |
           set -euo pipefail
+
           mkdir -p android/play-artifacts
+
           gh release download "$TAG" --repo "$REPOSITORY" \
-            --pattern go-bigger-boy-android.aab --dir android/play-artifacts
-          gh api "repos/$REPOSITORY/releases/tags/$TAG" > play-release.json
-          python3 scripts/prepare_play_release_notes.py play-release.json \
+            --pattern go-bigger-boy-android.aab \
+            --dir android/play-artifacts
+
+          gh api "repos/$REPOSITORY/releases/tags/$TAG" \
+            > play-release.json
+
+          python3 scripts/prepare_play_release_notes.py \
+            play-release.json \
             android/app/src/main/play/release-notes/en-US/default.txt
+
           {
             echo '### Google Play update news (en-US)'
             echo
@@ -270,9 +347,11 @@ jobs:
                 --artifact-dir play-artifacts; then
               exit 0
             fi
+
             if [ "$attempt" -lt 3 ]; then
-              echo "Google Play upload attempt $attempt failed; retrying."
+              echo "Google Play upload attempt $attempt failed"
               sleep $((attempt * 10))
             fi
           done
+
           exit 1

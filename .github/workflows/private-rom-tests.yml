@@ -1,4 +1,3 @@
-
 name: Private ROM regression
 
 on:
@@ -8,112 +7,31 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
-concurrency:
-  group: private-rom-${{ github.sha }}
-  cancel-in-progress: false
-
+# Each trigger must reach the private durable queue. No public concurrency group:
+# GitHub's default single pending slot can replace a waiting validation request.
 jobs:
   private-regression:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     environment: private-rom-trigger
-    timeout-minutes: 65
-
-    env:
-      GH_TOKEN: ${{ secrets.GBB_PRIVATE_ACTIONS_TOKEN }}
-      PRIVATE_REPO: DanielSeim/gbb-private-tests
-      PRIVATE_WORKFLOW: gbb-validation.yml
-      GBB_COMMIT: ${{ github.sha }}
-      CORRELATION_ID: ${{ github.run_id }}-${{ github.run_attempt }}
-
+    timeout-minutes: 240
     steps:
-      - name: Start private validation
+      - name: Checkout validation client
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Validate private ROM regression
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GBB_PRIVATE_ACTIONS_TOKEN }}
+          PUBLIC_TOKEN: ${{ github.token }}
+          GBB_COMMIT: ${{ github.sha }}
+          CORRELATION_ID: ${{ github.repository_id }}-${{ github.run_id }}
         run: |
           set -euo pipefail
-
-          gh api \
-            --method POST \
-            "repos/$PRIVATE_REPO/actions/workflows/$PRIVATE_WORKFLOW/dispatches" \
-            -f ref=main \
-            -f "inputs[commit]=$GBB_COMMIT" \
-            -f "inputs[correlation_id]=$CORRELATION_ID"
-
-      - name: Wait for private validation
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          RUN_ID=""
-
-          for attempt in $(seq 1 60); do
-            gh api \
-              "repos/$PRIVATE_REPO/actions/workflows/$PRIVATE_WORKFLOW/runs?event=workflow_dispatch&per_page=100" \
-              > private-runs.json
-
-            RUN_ID="$(python3 - "$CORRELATION_ID" <<'PY'
-          import json
-          import sys
-
-          title = "GBB validation / " + sys.argv[1]
-          with open("private-runs.json") as f:
-              runs = json.load(f)["workflow_runs"]
-
-          matches = [
-              r for r in runs
-              if r.get("display_title") == title
-              and r.get("event") == "workflow_dispatch"
-          ]
-          matches.sort(key=lambda r: r["id"], reverse=True)
-          if matches:
-              print(matches[0]["id"])
-          PY
-          )"
-
-            if [[ -n "$RUN_ID" ]]; then
-              break
-            fi
-
-            echo "Waiting for private run registration..."
-            sleep 10
-          done
-
-          if [[ -z "$RUN_ID" ]]; then
-            echo "Private workflow run could not be identified" >&2
-            exit 1
-          fi
-
-          echo "Private run identified."
-
-          for attempt in $(seq 1 360); do
-            gh api \
-              "repos/$PRIVATE_REPO/actions/runs/$RUN_ID" \
-              > private-run.json
-
-            read -r STATUS CONCLUSION < <(
-              python3 - <<'PY'
-          import json
-          with open("private-run.json") as f:
-              run = json.load(f)
-          print(run["status"], run.get("conclusion") or "pending")
-          PY
-            )
-
-            if [[ "$STATUS" == completed ]]; then
-              if [[ "$CONCLUSION" == success ]]; then
-                echo "Private ROM regression passed"
-                exit 0
-              fi
-              echo "Private ROM regression failed: $CONCLUSION" >&2
-              exit 1
-            fi
-
-            if (( attempt % 6 == 0 )); then
-              echo "Private ROM regression still running..."
-            fi
-            sleep 10
-          done
-
-          echo "Timed out waiting for private regression" >&2
-          exit 1
+          python3 scripts/private_rom_validation.py \
+            --commit "$GBB_COMMIT" --correlation "$CORRELATION_ID" \
+            --state-file "$RUNNER_TEMP/private-rom-dispatch-$CORRELATION_ID.json"

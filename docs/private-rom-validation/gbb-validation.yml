@@ -1,0 +1,88 @@
+# Install as .github/workflows/gbb-validation.yml in the PRIVATE repository.
+name: GBB commit validation
+run-name: GBB validation / ${{ inputs.correlation_id }} / ${{ inputs.commit }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Exact lowercase public source commit SHA
+        required: true
+        type: string
+      correlation_id:
+        description: Public repository ID and workflow run ID, separated by a dash
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# Shared by EVERY deployment and ROM regression workflow in this private repo.
+# queue:max is essential: cancel-in-progress:false alone keeps only one pending run.
+concurrency:
+  group: gbb-private-rom-execution
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  validate:
+    name: Private ROM deployment and regression
+    runs-on: [self-hosted, Linux, X64, gbb-rom-tests]
+    environment: private-rom-tests
+    timeout-minutes: 75
+    env:
+      GBB_COMMIT: ${{ inputs.commit }}
+      CORRELATION_ID: ${{ inputs.correlation_id }}
+    steps:
+      - name: Validate parameters
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GBB_COMMIT" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$CORRELATION_ID" =~ ^[0-9]+-[0-9]+$ ]]
+      - name: Checkout private configuration
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+      - name: Checkout exact public commit
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          repository: DanielSeim/go-bigger-boy
+          ref: ${{ inputs.commit }}
+          path: gbb-source
+          persist-credentials: false
+      - name: Verify source and build
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git -C gbb-source rev-parse HEAD)" == "$GBB_COMMIT" ]]
+          cmake -S gbb-source -B gbb-source/build-nas -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DGAMEBOY_BUILD_TESTS=ON -DGAMEBOY_BUILD_SDL=OFF
+          cmake --build gbb-source/build-nas --target gbb_test_runner --parallel 2
+      - name: Serialized NAS deployment and ROM regression
+        shell: bash
+        env:
+          GBB_DEPLOY_TOKEN: ${{ secrets.GBB_DEPLOY_TOKEN }}
+          GBB_TEST_TOKEN: ${{ secrets.GBB_TEST_TOKEN }}
+        run: |
+          set -euo pipefail
+          python3 tools/serialized_validation.py
+      - name: Publish private summary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f regression-summary.md ]]; then
+            cat regression-summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload private artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gbb-private-validation-report
+          path: |
+            rom-report.json
+            regression-summary.md
+            candidate-baseline.json
+          if-no-files-found: ignore
+          retention-days: 14

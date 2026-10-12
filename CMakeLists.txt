@@ -665,6 +665,8 @@ if(GAMEBOY_BUILD_TESTS)
     set_target_properties(gameboy_stat_irq_probe PROPERTIES OUTPUT_NAME gbb_stat_irq_probe)
     find_package(Python3 COMPONENTS Interpreter QUIET)
     if(Python3_Interpreter_FOUND)
+        add_test(NAME gameboy_private_rom_validation_contract
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/private_rom_validation_tests.py)
         add_test(NAME gameboy_sgb_firmware_shard_contract
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_firmware_shard_tests.py)
     endif()
