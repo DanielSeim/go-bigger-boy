@@ -74,8 +74,11 @@ public:
     [[nodiscard]] std::vector<std::string> recent_records() const;
 
     // Replaces the current file sink. Passing an empty path disables file
-    // output. The operation is safe while another thread is logging.
+    // output. A failed replacement retains the existing sink. The operation
+    // is safe while another thread is logging.
     [[nodiscard]] bool set_file(const std::filesystem::path& path) noexcept;
+    // Installs a fallback without replacing an explicitly configured sink.
+    [[nodiscard]] bool set_default_file(const std::filesystem::path& path) noexcept;
     void close_file() noexcept;
     void flush() noexcept;
 
@@ -86,6 +89,7 @@ public:
 private:
     Logger() noexcept;
     ~Logger();
+    bool open_file(const std::filesystem::path& path, bool only_if_unset) noexcept;
 
     struct State;
     State* state_{};

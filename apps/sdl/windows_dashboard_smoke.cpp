@@ -3,6 +3,7 @@
 #ifdef _WIN32
 
 #include "windows_dashboard.hpp"
+#include "dialogs.hpp"
 
 #include "gbb/core_registry.hpp"
 
@@ -691,14 +692,42 @@ bool check_unreachable_rom_error() {
                       "gbb-dashboard-smoke-missing-rom.gb";
     std::error_code error;
     std::filesystem::remove(path, error);
+    std::string detail;
     try {
         static_cast<void>(gbb::built_in_core_registry().create_from_file(path));
     } catch (const std::exception& exception) {
-        return std::strlen(exception.what()) != 0;
+        detail = exception.what();
     } catch (...) {
-        return true;
+        return false;
     }
-    return false;
+    if (detail.empty() || !SDL_InitSubSystem(SDL_INIT_VIDEO)) return false;
+    auto* window = SDL_CreateWindow("ROM launch error regression", 640, 480, 0);
+    auto* renderer = window ? SDL_CreateRenderer(window, "software") : nullptr;
+    bool passed = window && renderer;
+    if (passed) {
+        gbb::sdl::show_error(window, detail);
+        for (unsigned tick = 0; tick < 60; ++tick) {
+            SDL_PumpEvents();
+            passed &= gbb::sdl::desktop_dialog_visible(window) &&
+                !should_open_windows_dashboard(true, false, gbb::sdl::desktop_dialog_visible(window)) &&
+                !(SDL_GetWindowFlags(window) & SDL_WINDOW_HIDDEN);
+            SDL_RenderClear(renderer);
+            gbb::sdl::present_desktop_dialog(renderer, window);
+            SDL_RenderPresent(renderer);
+            Sleep(10);
+        }
+        SDL_Event dismiss{};
+        dismiss.type = SDL_EVENT_KEY_DOWN;
+        dismiss.key.windowID = SDL_GetWindowID(window);
+        dismiss.key.key = SDLK_ESCAPE;
+        passed &= gbb::sdl::handle_desktop_dialog_event(dismiss);
+        passed &= !gbb::sdl::desktop_dialog_visible(window) &&
+            should_open_windows_dashboard(true, false, false);
+    }
+    if (renderer) SDL_DestroyRenderer(renderer);
+    if (window) SDL_DestroyWindow(window);
+    SDL_QuitSubSystem(SDL_INIT_VIDEO);
+    return passed;
 }
 
 bool check_firmware_settings(HWND dashboard) {

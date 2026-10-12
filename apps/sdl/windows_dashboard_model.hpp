@@ -24,6 +24,13 @@ enum class DashboardResultAction {
     update_available,
 };
 
+// Native dashboard entry hides the SDL window. Keep modal SDL errors visible
+// until the user dismisses them, even when returning to the library.
+[[nodiscard]] constexpr bool should_open_windows_dashboard(
+    bool library_visible, bool update_active, bool dialog_visible) noexcept {
+    return library_visible && !update_active && !dialog_visible;
+}
+
 // Settings are modal to the dashboard. Returning from settings should keep a
 // running emulator visible, while the startup dashboard must remain available
 // when there is no emulator to resume. Keeping this decision in the value-only

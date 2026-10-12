@@ -894,6 +894,7 @@ if(GAMEBOY_BUILD_TESTS)
 
     add_executable(gameboy_windows_dashboard_contract_tests
         tests/windows_dashboard_contract_tests.cpp)
+    target_link_libraries(gameboy_windows_dashboard_contract_tests PRIVATE gbb_core_api)
     target_include_directories(gameboy_windows_dashboard_contract_tests
         PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/apps/sdl
                 ${CMAKE_CURRENT_SOURCE_DIR}/include)

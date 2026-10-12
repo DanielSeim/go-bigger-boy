@@ -149,9 +149,41 @@ void test_logging_contract() {
     std::filesystem::remove_all(directory, cleanup_error);
 }
 
+void test_frontend_file_failures_and_unicode() {
+    auto& logger = gbb::Logger::instance();
+    logger.close_file();
+    const auto directory = std::filesystem::temp_directory_path() / "gbb-logger-unicode-contract";
+    std::error_code ignored;
+    std::filesystem::remove_all(directory, ignored);
+    const auto unicode = directory / std::filesystem::u8path("\xE7\x94\xA8\xE6\x88\xB7-\xC3\xA9") / "release.log";
+    check(logger.set_file(unicode), "Unicode user-profile paths support file logging");
+    check(gbb::initialize_frontend_file_logging(directory), "default setup retains an explicit sink");
+    check(!std::filesystem::exists(directory / "logs" / "gbb.log"), "default log does not replace the explicit file");
+    const auto blocked = directory / "not-a-directory";
+    { std::ofstream output(blocked); output << "block directory creation"; }
+    check(!logger.set_file(blocked / "failed.log"), "unwritable log target fails safely");
+    gbb::log_rom_launch_error("game.gbc", "cgb-e", "ROM could not be read");
+    {
+        std::ifstream input(unicode, std::ios::binary);
+        const std::string contents((std::istreambuf_iterator<char>(input)), {});
+        check(contents.find("ROM launch failed: rom=game.gbc model=cgb-e error=ROM could not be read") != std::string::npos,
+              "failed sink replacement preserves the old log and errors flush immediately");
+    }
+    logger.close_file();
+    check(!gbb::initialize_frontend_file_logging(blocked), "failed default log setup does not throw or terminate");
+    logger.set_memory_capacity(2);
+    gbb::log_rom_launch_error("game.gbc", "cgb-e", "still reportable without a file");
+    const auto recent = logger.recent_records();
+    check(!recent.empty() && recent.back().find("still reportable without a file") != std::string::npos,
+          "launch diagnostics survive unavailable file logging");
+    logger.set_memory_capacity(0);
+    std::filesystem::remove_all(directory, ignored);
+}
+
 } // namespace
 
 int main() {
     test_logging_contract();
+    test_frontend_file_failures_and_unicode();
     return failures == 0 ? 0 : 1;
 }

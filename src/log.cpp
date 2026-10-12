@@ -103,17 +103,21 @@ Logger::Logger() noexcept : state_(new (std::nothrow) State{}) {
     if (state_ == nullptr) return;
     const auto* configured_level = std::getenv("GBB_LOG_LEVEL");
     state_->minimum_level = parse_level(configured_level);
-    const auto* trace_path = std::getenv("GBB_TRACE_WX");
-    if (trace_path != nullptr && *trace_path != '\0' &&
-        std::strcmp(trace_path, "0") != 0) {
-        state_->minimum_level = LogLevel::trace;
-        if (std::strcmp(trace_path, "1") != 0 &&
-            std::strcmp(trace_path, "stderr") != 0) {
-            static_cast<void>(set_file(std::filesystem::u8path(trace_path)));
+    try {
+        const auto* trace_path = std::getenv("GBB_TRACE_WX");
+        if (trace_path != nullptr && *trace_path != '\0' &&
+            std::strcmp(trace_path, "0") != 0) {
+            state_->minimum_level = LogLevel::trace;
+            if (std::strcmp(trace_path, "1") != 0 &&
+                std::strcmp(trace_path, "stderr") != 0) {
+                static_cast<void>(set_file(std::filesystem::u8path(trace_path)));
+            }
+        } else if (const auto* log_path = std::getenv("GBB_LOG_FILE");
+                   log_path != nullptr && *log_path != '\0') {
+            static_cast<void>(set_file(std::filesystem::u8path(log_path)));
         }
-    } else if (const auto* log_path = std::getenv("GBB_LOG_FILE");
-               log_path != nullptr && *log_path != '\0') {
-        static_cast<void>(set_file(std::filesystem::u8path(log_path)));
+    } catch (...) {
+        // Invalid paths or allocation failures must not terminate startup.
     }
 }
 
@@ -158,20 +162,40 @@ std::vector<std::string> Logger::recent_records() const {
 }
 
 bool Logger::set_file(const std::filesystem::path& path) noexcept {
+    return open_file(path, false);
+}
+
+bool Logger::set_default_file(const std::filesystem::path& path) noexcept {
+    return open_file(path, true);
+}
+
+bool Logger::open_file(const std::filesystem::path& path, const bool only_if_unset) noexcept {
     if (state_ == nullptr) return false;
-    std::lock_guard<std::mutex> lock(state_->mutex);
-    if (state_->file != nullptr) {
-        std::fclose(state_->file);
-        state_->file = nullptr;
+    try {
+        std::lock_guard<std::mutex> lock(state_->mutex);
+        if (only_if_unset && state_->file != nullptr) return true;
+        if (path.empty()) {
+            if (state_->file != nullptr) std::fclose(state_->file);
+            state_->file = nullptr;
+            return true;
+        }
+        if (const auto parent = path.parent_path(); !parent.empty()) {
+            std::error_code error;
+            std::filesystem::create_directories(parent, error);
+            if (error) return false;
+        }
+#ifdef _WIN32
+        auto* file = _wfopen(path.c_str(), L"a");
+#else
+        auto* file = std::fopen(path.c_str(), "a");
+#endif
+        if (file == nullptr) return false;
+        if (state_->file != nullptr) std::fclose(state_->file);
+        state_->file = file;
+        return true;
+    } catch (...) {
+        return false;
     }
-    if (path.empty()) return true;
-    if (const auto parent = path.parent_path(); !parent.empty()) {
-        std::error_code error;
-        std::filesystem::create_directories(parent, error);
-        if (error) return false;
-    }
-    state_->file = std::fopen(path.string().c_str(), "a");
-    return state_->file != nullptr;
 }
 
 void Logger::close_file() noexcept {
@@ -240,6 +264,7 @@ void Logger::write(const LogLevel level, const LogCategory category,
         std::fprintf(stderr, "%s\n", record.c_str());
         if (state_->file != nullptr && state_->file != stderr) {
             std::fprintf(state_->file, "%s\n", record.c_str());
+            if (level == LogLevel::error) std::fflush(state_->file);
         }
         if (state_->memory_capacity != 0) {
             state_->memory.push_back(record);

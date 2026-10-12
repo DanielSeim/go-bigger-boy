@@ -330,6 +330,17 @@ Individual discovered-suite CTest cases are available with
 `-DGAMEBOY_ENABLE_DISCOVERED_CONFORMANCE=ON`; this bring-up mode is
 intentionally separate from the normal release baseline.
 
+Desktop ROM-launch errors remain visible until dismissed. On Windows, returning
+to the native library waits for the error dialog to close so that hiding the
+emulator window cannot hide the message. Launch failures record the requested
+ROM, hardware model and exception detail in `logs/gbb.log` below the SDL user
+settings directory (`SDL_GetPrefPath("Go Bigger Boy", "GBB")`). This file sink
+is enabled in release builds too; error records are flushed immediately. An
+explicit `GBB_LOG_FILE` or file-based `GBB_TRACE_WX` sink takes precedence.
+Windows Unicode profile paths are supported. If the log cannot be opened,
+the UI error remains available and logging falls back to stderr and the bounded
+in-memory sink. Log files append across launches.
+
 The headless runner can also capture a deterministic framebuffer without SDL:
 
 ```sh

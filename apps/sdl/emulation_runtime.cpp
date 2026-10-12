@@ -836,6 +836,9 @@ int run_emulation(int argc, char** argv) {
             }
             return preference_directory();
         }();
+#ifndef __ANDROID__
+        static_cast<void>(gbb::initialize_frontend_file_logging(preference_path));
+#endif
         const auto frame_timing_enabled = frame_timing_trace_enabled();
         FrameTimingTrace frame_timing_trace(frame_timing_enabled);
         if (frame_timing_enabled) {
@@ -1101,7 +1104,8 @@ int run_emulation(int argc, char** argv) {
             // dashboard has its own modal message loop, so handling this
             // first ensures a startup update is not deferred until a ROM is
             // selected.
-            if (available_update && !dialog_active(dialog) && !configuring) {
+            if (available_update && !dialog_active(dialog) && !configuring &&
+                !desktop_dialog_visible(sdl.window)) {
                 if (pending_rom_from_dashboard) {
                     SDL_ShowWindow(sdl.window);
                     SDL_RaiseWindow(sdl.window);
@@ -1138,7 +1142,9 @@ int run_emulation(int argc, char** argv) {
             }
 #endif
 #ifdef _WIN32
-            if (dashboard_visible && !update_download) {
+            if (gbb_desktop::should_open_windows_dashboard(
+                    dashboard_visible, static_cast<bool>(update_download),
+                    desktop_dialog_visible(sdl.window))) {
                 save_game_window_geometry(sdl.window, preference_path);
                 SDL_HideWindow(sdl.window);
                 gbb_desktop::KeyboardBindings dashboard_bindings{};
@@ -1633,6 +1639,12 @@ int run_emulation(int argc, char** argv) {
                 }
 #endif
                 const auto handle_rom_load_error = [&](const std::string& message) {
+                    gbb::log_rom_launch_error(*pending_rom,
+                        gameboy::hardware_model_id(hardware_model), message);
+                    // A later launch-setup operation may fail after replacing
+                    // the core. Refresh non-owning views before reporting it.
+                    emulator = gbb::gameboy_emulator(core.get());
+                    services = {core.get(), emulator};
 #ifndef __ANDROID__
                     if (!emulator) {
 #ifdef _WIN32

@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Keep Windows ROM-launch errors visible until dismissed before returning to
+  the library, and save error details in the desktop log in release builds.
+
 - Add bounded recent-instruction and first-PC diagnostics to the headless runner,
   preserving actual opcode fetches and distinguishing interrupt/idle steps.
 
