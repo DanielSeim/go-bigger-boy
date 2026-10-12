@@ -67,8 +67,8 @@ latest-write interval violations, strict fields and sanitized failures. The
 existing observer transparency and native/scalar lifecycle controls are retained.
 Both generated firmware images remain byte-identical.
 
-Next, advance request arrival far enough to publish the music value before the
-operand read, then use finer arrival offsets to bracket the transition. Retain
-interrupted tracks and missing reads as outcomes. That experiment can test the
-publication boundary that this corpus does not cross, before choosing a new
-selection timing model.
+The [earlier publication sweep](sgb-vendor-tempo-publication.md) now advances
+arrival with finer offsets. Earlier arrivals interrupt startup without an
+observed tempo read; the remaining cases still publish after the operand read.
+A delayed authored tempo change is the next experiment needed to cross the
+publication boundary during established playback.

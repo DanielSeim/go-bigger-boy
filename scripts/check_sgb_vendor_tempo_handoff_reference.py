@@ -8,14 +8,17 @@ from check_sgb_vendor_tempo_boundary_reference import summarize as boundary_summ
 
 
 def summarize(data,live):
-    result=boundary_summary(data,live)
+    return handoff(data,boundary_summary(data,live))
+
+
+def handoff(data,result):
     hosts=data.get('port_handshakes');replies=data.get('spc_reply_handshakes');music=data.get('handoff_writes')
     if (not isinstance(hosts,list) or not 1<=len(hosts)<=128 or
             not isinstance(replies,list) or not isinstance(music,list) or
             len(hosts)!=len(replies) or len(hosts)!=len(music)):
         raise ValueError('missing bounded handoff observations')
     first=next(e['half'] for e in data['events'] if e['register']==0x4C)
-    ends={1:first,2:result['selected_half']};last=(-1,0);seen=set();candidates=[]
+    ends={1:min(first,data['requests'][1]),2:result['selected_half']};last=(-1,0);seen=set();candidates=[]
     for i,(host,reply,field) in enumerate(zip(hosts,replies,music)):
         for record,keys in ((host,HOST_FIELDS),(reply,REPLY_FIELDS),(field,MUSIC_FIELDS)):
             if (not isinstance(record,dict) or set(record)!=keys or

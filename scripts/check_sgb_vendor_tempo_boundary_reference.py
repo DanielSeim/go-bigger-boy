@@ -70,7 +70,19 @@ def summarize(data,live):
         anchors.append((directory,root))
         selections.append(dict(traversal_stages=dict(root=dict(after_previous_stage_ms=(root-directory)/2048))))
     timer_summary(collapsed,selections)
-    config=configuration(collapsed);reads=data.get('tempo_operand_reads')
+    config=configuration(collapsed)
+    operands=operand_summary(data,old,selected,request,anchors[1][0])
+    observed=(anchors[1][1]-anchors[1][0])/2048
+    return dict(**operands,
+        old_note_requests=[n['request'] for n in old],old_note_count=len(old),
+        selected_half=selected['half'],request_half=request,directory_half=anchors[1][0],root_half=anchors[1][1],
+        wait_ms=observed,starting_error_ms=abs(observed-WAITS[128]),live_error_ms=abs(observed-WAITS[live]),
+        starting_within_2ms=abs(observed-WAITS[128])<=2,live_within_2ms=abs(observed-WAITS[live])<=2,
+        configuration=config)
+
+
+def operand_summary(data,old,selected,request,directory):
+    reads=data.get('tempo_operand_reads')
     if not isinstance(reads,list) or len(reads)>64:
         raise ValueError('invalid boundary operand bounds')
     previous=(-1,0)
@@ -93,15 +105,9 @@ def summarize(data,live):
             raise ValueError('operand not bracketed by old-track notes')
         age=(request-half)/2048
         category='operand_before_request' if reads[0]['request']==1 else 'request_before_operand'
-    observed=(anchors[1][1]-anchors[1][0])/2048
     return dict(category=category,operand_age_ms=age,operand_reads=reads,
-        operand_before_directory=reads[0]['half']<anchors[1][0] if len(reads)==1 else None,
-        near_boundary=age is not None and abs(age)<=4,
-        old_note_requests=[n['request'] for n in old],old_note_count=len(old),
-        selected_half=selected['half'],request_half=request,directory_half=anchors[1][0],root_half=anchors[1][1],
-        wait_ms=observed,starting_error_ms=abs(observed-WAITS[128]),live_error_ms=abs(observed-WAITS[live]),
-        starting_within_2ms=abs(observed-WAITS[128])<=2,live_within_2ms=abs(observed-WAITS[live])<=2,
-        configuration=config)
+        operand_before_directory=reads[0]['half']<directory if len(reads)==1 else None,
+        near_boundary=age is not None and abs(age)<=4)
 
 
 def main(*,handoff=False):

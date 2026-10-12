@@ -283,3 +283,14 @@ missing replies and sanitized failures. The optional
 coordinates with timeout 2400 and labels `local;private-reference`. Public matrix
 discovery remains 96; the selection-wait timeout and cost stay 2400/1200. Earlier
 observer transparency and native/scalar lifecycle controls remain in that matrix.
+
+The [earlier publication sweep](sgb-vendor-tempo-publication.md) adds a separate
+`gameboy_sgb_score_vendor_tempo_publication` matrix (timeout 900 seconds, cost
+300), bringing public discovery to 97 matrices. It covers 56 owned timelines,
+four observation-mode pairs and four native/scalar reset/save-load playback
+pairs. Two short methods run in `gameboy_sgb_vendor_tempo_publication_contract`,
+checking startup ownership, publication ordering, exact corpus scope, malformed
+metadata and sanitized failures. The optional
+`gameboy_sgb_vendor_tempo_publication_local_reference` runs 56 original captures
+with timeout 2400 and labels `local;private-reference`. The existing selection-
+wait matrix keeps its 2400-second timeout and cost 1200.

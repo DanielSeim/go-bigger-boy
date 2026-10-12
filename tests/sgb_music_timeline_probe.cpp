@@ -67,6 +67,8 @@ struct Observation {
     bool timer_writes_enabled{};
     bool tempo_operands_enabled{};
     bool tempo_boundary_enabled{};
+    bool tempo_publication_enabled{};
+    std::uint64_t first_old_keyon{};
     std::array<DirectoryRead,64> tempo_operands{};
     unsigned tempo_operand_count{};
     std::array<int,4> timer_configuration{{-1,-1,-1,-1}};
@@ -128,7 +130,7 @@ struct Observation {
         // Unlike setup traversal, this observation is restricted to post-KON.
         if(self.tempo_operands_enabled && address==0x2B70) {
             const auto request=self.host->icd().sound_packets_delivered();
-            if(request && request<=self.ports.size() && (self.tempo_boundary_enabled?self.ports[0].keyon:self.ports[request-1].keyon)) {
+            if(request && request<=self.ports.size() && (self.tempo_boundary_enabled?(self.tempo_publication_enabled?self.first_old_keyon:self.ports[0].keyon):self.ports[request-1].keyon)) {
                 if(self.tempo_operand_count==self.tempo_operands.size()) {self.overflow=true;return;}
                 self.tempo_operands[self.tempo_operand_count++]={half,static_cast<unsigned>(request),address};
             }
@@ -258,6 +260,9 @@ struct Observation {
         if (address==0x5c) { if (self.kof==value) return; self.kof=value; }
         else if (address==0x6c) { if (self.flg==value) return; self.flg=value; }
         else if (address!=0x4c || !value) return;
+        if (self.tempo_publication_enabled && address==0x4c && !self.first_old_keyon &&
+            (unsigned(self.host->debug_dsp_register(0x22)) | (unsigned(self.host->debug_dsp_register(0x23))<<8))==1437)
+            self.first_old_keyon=half;
         if (address==0x4c && requests && requests<=self.ports.size() &&
             (!self.tempo_boundary_enabled || requests!=2 ||
              (unsigned(self.host->debug_dsp_register(0x22)) | (unsigned(self.host->debug_dsp_register(0x23))<<8))==717)) {
@@ -278,8 +283,8 @@ std::vector<std::uint8_t> read(const char* path, std::size_t low, std::size_t hi
 }
 int main(int argc,char** argv) {
  try {
-    if (argc!=7 && (argc!=8 || (std::string(argv[7])!="--port-handshakes" && std::string(argv[7])!="--spc-replies" && std::string(argv[7])!="--selection-handoff" && std::string(argv[7])!="--selection-directory" && std::string(argv[7])!="--selection-traversal" && std::string(argv[7])!="--selection-volume" && std::string(argv[7])!="--selection-timers" && std::string(argv[7])!="--selection-timer-results" && std::string(argv[7])!="--timer-continuity" && std::string(argv[7])!="--timer-writes" && std::string(argv[7])!="--tempo-operands" && std::string(argv[7])!="--tempo-boundary")))
-        throw std::runtime_error("PROGRAM GAME sgb|sgb2 CLOCKS SCRIPT bundled|fixture [--port-handshakes|--spc-replies|--selection-handoff|--selection-directory|--selection-traversal|--selection-volume|--selection-timers|--selection-timer-results|--timer-continuity|--timer-writes|--tempo-operands|--tempo-boundary]");
+    if (argc!=7 && (argc!=8 || (std::string(argv[7])!="--port-handshakes" && std::string(argv[7])!="--spc-replies" && std::string(argv[7])!="--selection-handoff" && std::string(argv[7])!="--selection-directory" && std::string(argv[7])!="--selection-traversal" && std::string(argv[7])!="--selection-volume" && std::string(argv[7])!="--selection-timers" && std::string(argv[7])!="--selection-timer-results" && std::string(argv[7])!="--timer-continuity" && std::string(argv[7])!="--timer-writes" && std::string(argv[7])!="--tempo-operands" && std::string(argv[7])!="--tempo-boundary" && std::string(argv[7])!="--tempo-publication")))
+        throw std::runtime_error("PROGRAM GAME sgb|sgb2 CLOCKS SCRIPT bundled|fixture [--port-handshakes|--spc-replies|--selection-handoff|--selection-directory|--selection-traversal|--selection-volume|--selection-timers|--selection-timer-results|--timer-continuity|--timer-writes|--tempo-operands|--tempo-boundary|--tempo-publication]");
     gameboy::SgbHostConfig config;
     config.program_rom=read(argv[1],262144,524288); config.game_rom=read(argv[2],336,16*1024*1024);
     const std::string model=argv[3], boot=argv[6];
@@ -297,7 +302,8 @@ int main(int argc,char** argv) {
     Host host(config); Observation observed; observed.host=&host;
     observed.handshakes_enabled=argc==8;
     observed.volume_enabled=argc==8 && std::string(argv[7])=="--selection-volume";
-    observed.tempo_boundary_enabled=argc==8 && std::string(argv[7])=="--tempo-boundary";
+    observed.tempo_publication_enabled=argc==8 && std::string(argv[7])=="--tempo-publication";
+    observed.tempo_boundary_enabled=observed.tempo_publication_enabled || (argc==8 && std::string(argv[7])=="--tempo-boundary");
     observed.tempo_operands_enabled=observed.tempo_boundary_enabled || (argc==8 && std::string(argv[7])=="--tempo-operands");
     observed.timer_writes_enabled=observed.tempo_operands_enabled || (argc==8 && std::string(argv[7])=="--timer-writes");
     if(observed.timer_writes_enabled) host.debug_set_timer_write_observer(Observation::timer_write,&observed);

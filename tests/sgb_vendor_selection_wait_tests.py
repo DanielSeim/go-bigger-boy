@@ -368,8 +368,8 @@ class SelectionWaitContracts(unittest.TestCase):
             elif fault=='bounds':bad['tempo_operand_reads'][0]['half']=0
             else:bad['events'].pop(1)
             with self.assertRaises(ValueError):tempo_boundary_reference.summarize(bad,32)
-        for flags in (dict(boundary=1),dict(boundary=True),dict(boundary=True,live_tempo=32,change_after=3,request_gap=3),
-                      dict(selection_spin=1024),dict(boundary=True,live_tempo=32,change_after=3,selection_spin=1)):
+        for flags in (dict(boundary=1),dict(boundary=True),dict(boundary=True,live_tempo=32,change_after=3,request_gap=1),
+                      dict(selection_spin=1024),dict(boundary=True,live_tempo=32,change_after=3,selection_spin=2500)):
             with self.assertRaises(ValueError):tick_selection_fixture(**flags)
 
     def test_tempo_boundary_reference_filters_and_failure(self):

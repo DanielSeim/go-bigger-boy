@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Extend SGB APU publication comparisons with earlier request arrivals and fine
+  offsets, explicitly validating interrupted startup and missing tempo reads.
+
 - Add `--cycle-frame-capture N` to the headless test runner for framebuffer
   snapshots after N × 70,224 CPU T-cycles, including while the LCD is disabled.
 

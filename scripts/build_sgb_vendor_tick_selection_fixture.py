@@ -20,9 +20,9 @@ def build(tempo=45,state='active',*,holdout=False,live_tempo=None,change_after=1
         raise ValueError('invalid tempo change position')
     if type(boundary) is not bool or boundary and (live_tempo is None or change_after!=3 or state!='active'):
         raise ValueError('invalid boundary fixture')
-    if type(selection_spin) is not int or selection_spin not in (0,1024) or selection_spin and (not boundary or holdout):
+    if type(selection_spin) is not int or not 0<=selection_spin<=2499 or selection_spin and (not boundary or holdout):
         raise ValueError('invalid boundary spin')
-    if request_gap is not None and (type(request_gap) is not int or request_gap not in (range(4,13) if boundary else (16,20)) or state!='active'):
+    if request_gap is not None and (type(request_gap) is not int or request_gap not in (range(3,13) if boundary else (16,20)) or state!='active'):
         raise ValueError('invalid active request gap')
     score=bytearray(bank(echo=False))
     header=lambda t:bytes((0xE0,2,0xE1,10,0xE5,160,0xED,127,0xE7,t))
@@ -48,9 +48,9 @@ if __name__=='__main__':
     parser.add_argument('--holdout',action='store_true')
     parser.add_argument('--live-tempo',type=int,choices=TEMPO_POINTS)
     parser.add_argument('--change-after',type=int,choices=(1,3),default=1)
-    parser.add_argument('--request-gap',type=int,choices=(*range(4,13),16,20))
+    parser.add_argument('--request-gap',type=int,choices=(*range(3,13),16,20))
     parser.add_argument('--boundary',action='store_true')
-    parser.add_argument('--selection-spin',type=int,choices=(0,1024),default=0)
+    parser.add_argument('--selection-spin',type=int,default=0)
     parser.add_argument('--output',type=Path,required=True)
     args=parser.parse_args()
     try:
