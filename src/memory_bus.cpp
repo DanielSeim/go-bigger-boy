@@ -316,7 +316,10 @@ void MemoryBus::cpu_write8(const std::uint16_t address,
         ppu_.cpu_write_vram(address, value);
         return;
     }
+    const bool observed = control_write_observer_ && (address < 0x8000 || address == 0xFF40);
+    if (observed) control_write_observer_(control_write_context_, *this, address, value, true);
     write8(address, value);
+    if (observed) control_write_observer_(control_write_context_, *this, address, value, false);
 }
 
 bool MemoryBus::oam_dma_blocks(const std::uint16_t address) const noexcept {

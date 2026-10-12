@@ -376,6 +376,12 @@ the border with `--sgb-frame`. `blank_frame=true` means every pixel has the same
 RGB color and still returns success. Diagnostics also work with the LCD off;
 `completed_frames` counts actual PPU frames rather than virtual intervals.
 
+For MMM01 mapping, long NOP sequences and the first LCD-off write, optional
+`--trace-mmm01 PATH`, `--trace-nop-run N` and `--trace-first-lcd-off` diagnostics
+are available. Their fixed histories, output ceilings, write/fetch timing and
+Synology commands are documented in the
+[MMM01 investigation](mmm01-dump-layout-analysis.md).
+
 For bounded CPU control-flow diagnostics, add either or both options:
 
 ```sh

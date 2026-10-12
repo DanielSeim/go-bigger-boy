@@ -35,16 +35,27 @@ def inspect(path, expected_type=None):
             return result
         offset = 0
         header = first
+        layout = 'ordinary'
         if size >= 32768:
             menu_offset = size - 32768
             stream.seek(menu_offset)
             menu = stream.read(0x150)
             if menu[0x147] in (0x0B,0x0C,0x0D) and menu[0x104:0x134] == LOGO:
                 offset, header = menu_offset, menu
+                layout = 'physical_menu_last'
                 if first[0x147] != menu[0x147]:
                     warnings.append('MMM01_menu_header_differs_from_contained_game_header')
             elif first[0x147] in (0x0B,0x0C,0x0D):
-                warnings.append('MMM01_power_on_menu_header_not_verified')
+                checksum = (-sum(first[0x134:0x14D]) - 25) & 255
+                code=first[0x148]
+                declared=32768 << code if code<=8 else {0x52:72*16384,0x53:80*16384,0x54:96*16384}.get(code)
+                if size>32768 and first[0x104:0x134]==LOGO and checksum==first[0x14D] and declared==size:
+                    layout='menu_first_normalized_on_load'
+                elif size==32768 and first[0x104:0x134]==LOGO:
+                    layout='physical_menu_last'
+                else:
+                    layout='unverified_MMM01'
+                    warnings.append('MMM01_power_on_menu_header_not_verified')
         kind, color, rom_code, ram_code = (header[i] for i in (0x147,0x143,0x148,0x149))
         declared_rom = 32768 << rom_code if rom_code <= 8 else {0x52:72*16384,0x53:80*16384,0x54:96*16384}.get(rom_code)
         declared_ram = RAM.get(ram_code)
@@ -54,7 +65,8 @@ def inspect(path, expected_type=None):
         while chunk := stream.read(65536):
             total = (total + sum(chunk)) & 65535
         global_checksum = (total - header[0x14E] - header[0x14F]) & 65535
-        result.update(header_offset=offset, title=header[0x134:0x143 if color & 128 else 0x144].split(b'\0')[0].decode('ascii','replace'),
+        result.update(header_offset=offset, dump_layout=layout,
+                      normalized_header_offset=size-32768 if layout=='menu_first_normalized_on_load' else offset, title=header[0x134:0x143 if color & 128 else 0x144].split(b'\0')[0].decode('ascii','replace'),
                       controller_type=f'0x{kind:02X}', controller_name=TYPES.get(kind,'unsupported'),
                       cgb_flag=f'0x{color:02X}', cgb_mode='required' if color & 192 == 192 else 'supported' if color & 128 else 'DMG',
                       rom_size_code=f'0x{rom_code:02X}', declared_rom_bytes=declared_rom,

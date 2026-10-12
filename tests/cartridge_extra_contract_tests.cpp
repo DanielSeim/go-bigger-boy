@@ -47,6 +47,63 @@ void test_mmm01() {
     bytes[menu+0x134]='M'; bytes[menu+0x135]=0;
     bytes[0x143]=0; bytes[menu+0x143]=0x80; bytes[menu+0x147]=0x0D;
     bytes[menu+0x148]=8; bytes[menu+0x149]=4;
+    // A menu-first dump contains the same chip bytes in cyclic file order.
+    // Authored 32-bank fixture: valid menu header, distinct bank markers.
+    auto physical = rom(1,32,0);
+    const auto tail = physical.size()-0x8000;
+    std::copy(logo.begin(),logo.end(),physical.begin()+tail+0x104);
+    physical[tail+0x147]=0x0B; physical[tail+0x148]=4;
+    physical[tail+0x149]=0;
+    unsigned checksum=0;
+    for (unsigned i=0x134;i<=0x14C;++i) checksum=checksum-physical[tail+i]-1;
+    physical[tail+0x14D]=checksum;
+    auto menu_first=physical;
+    std::rotate(menu_first.begin(),menu_first.end()-0x8000,menu_first.end());
+    const auto unchanged=menu_first;
+    gameboy::Cartridge first{menu_first}, last{physical};
+    check(first.read(0)==30 && first.read(0x4000)==31,
+          "Menu-first MMM01 dump boots the menu, not the file's trailing game banks");
+    check(menu_first==unchanged,"Loading does not modify source dump bytes");
+    for (unsigned b=0;b<32;++b) {
+        first.write(0x2000,b); last.write(0x2000,b);
+        first.write(0,0x40); last.write(0,0x40);
+        check(first.read(0)==last.read(0) && first.read(0x4000)==last.read(0x4000),
+              "Both MMM01 dump layouts expose identical physical banks after mapping");
+    }
+    std::uint64_t expected_fingerprint=UINT64_C(14695981039346656037);
+    for (auto value:unchanged) { expected_fingerprint^=value; expected_fingerprint*=UINT64_C(1099511628211); }
+    check(first.rom_fingerprint()==expected_fingerprint,"MMM01 state identity uses original dump bytes");
+    auto invalid=unchanged; invalid[0x14D]^=1;
+    gameboy::Cartridge unverified{invalid};
+    check(unverified.read(0)==28,"Invalid menu-first checksum does not trigger normalization");
+    auto ambiguous=physical;
+    std::copy(physical.begin()+tail+0x104,physical.begin()+tail+0x150,ambiguous.begin()+0x104);
+    gameboy::Cartridge preferred{ambiguous};
+    check(preferred.read(0)==30,"Verified trailing MMM01 menu takes precedence over first header");
+    for (bool rotated : {false,true}) {
+        gameboy::Emulator normalized{gameboy::Cartridge{rotated?unchanged:physical}};
+        auto& mapper=normalized.bus().cartridge();
+        auto state=normalized.save_state();
+        gameboy::Cartridge::Mmm01Diagnostics snapshot;
+        check(mapper.debug_mmm01(snapshot) && snapshot.bank0==30 && snapshot.bank1==31 &&
+              !snapshot.mapped && snapshot.menu_first==rotated && snapshot.registers==std::array<std::uint8_t,4>{},
+              "MMM01 snapshot exposes authoritative reset state and dump provenance");
+        check(normalized.save_state()==state,"Readonly mapper diagnostics leave save-state bytes unchanged");
+        mapper.write(0x2000,0x48); mapper.write(0x4000,0x30); mapper.write(0x6000,0x30); mapper.write(0,0x40);
+        check(mapper.debug_mmm01(snapshot) && snapshot.requested_bank0==456 && snapshot.bank0==8 &&
+              snapshot.requested_bank1==457 && snapshot.bank1==9,
+              "MMM01 32-bank ROM wraps requested nine-bit banks through real selectors");
+        roundtrip(normalized,"Both MMM01 dump layouts preserve mapped state and locks on load");
+        state=normalized.save_state();
+        gameboy::Emulator again{gameboy::Cartridge{rotated?unchanged:physical}};
+        again.load_state(state);
+        check(again.save_state()==state,"Normalized MMM01 state loads into a fresh cartridge with same file identity");
+        // The old unmapped state remains readable; it uses the corrected ROM layout.
+        gameboy::Emulator reset{gameboy::Cartridge{rotated?unchanged:physical}};
+        normalized.load_state(reset.save_state());
+        check(mapper.debug_mmm01(snapshot) && !snapshot.mapped && snapshot.bank0==30,
+              "MMM01 save/load restores unmapped menu selectors");
+    }
     gameboy::Emulator e{gameboy::Cartridge{bytes}}; auto& c=e.bus().cartridge();
     check(c.type()==0x0D && c.title()=="M" && c.has_battery() && c.ram_size()==0x20000,
           "MMM01 uses its menu header rather than a contained MBC1 game's header");
@@ -74,6 +131,43 @@ void test_mmm01() {
     locked.write(0x4000,0x40); locked.write(0x6000,1); locked.write(0,0x4A);
     locked.write(0x4000,1); locked.write(0xA000,0x63); locked.write(0x4000,2);
     check(locked.read(0xA000)==0x63,"MMM01 mode write lock retains disabled RAM banking");
+}
+
+void test_control_write_observer() {
+    struct Event { std::uint64_t cycle{}; std::uint16_t address{}; std::uint8_t value{}; bool before{}; };
+    struct Capture { std::array<Event,16> events{}; unsigned count{}; };
+    for (bool fast : {false,true}) {
+        auto bytes=rom(0x0B,32,0);
+        const std::array<std::uint8_t,17> program{
+            0xF3,0x10,0, // DI; STOP (speed switch only when requested)
+            0x31,0x34,0x12,0x08,0,0x20, // SP=1234; LD [2000],SP (two writes)
+            0x3E,0,0xE0,0x40, // LCD off
+            0x18,0xFE,0,0};
+        const auto tail=bytes.size()-0x8000;
+        std::copy(program.begin(),program.end(),bytes.begin()+tail+0x100);
+        // Remain monochrome in the normal-speed case; CGB permits STOP speed switching.
+        bytes[0x143]=fast?0x80:0;
+        if (!fast) { bytes[tail+0x101]=0; bytes[tail+0x102]=0; }
+        gameboy::Emulator plain{gameboy::Cartridge{bytes}}, observed{gameboy::Cartridge{bytes}};
+        if (fast) { plain.bus().write8(0xFF4D,1); observed.bus().write8(0xFF4D,1); }
+        Capture capture;
+        observed.bus().debug_set_control_write_observer(
+            [](void* context,const gameboy::MemoryBus& bus,std::uint16_t address,std::uint8_t value,bool before) noexcept {
+                auto& result=*static_cast<Capture*>(context);
+                if (result.count<result.events.size()) result.events[result.count++]={bus.debug_bus_cycles(),address,value,before};
+                gameboy::Cartridge::Mmm01Diagnostics snapshot;
+                (void)bus.cartridge().debug_mmm01(snapshot);
+                (void)bus.debug_cpu_read8(0x100);
+            },&capture);
+        for (unsigned i=0;i<50;++i) { (void)plain.step(); (void)observed.step(); }
+        check(plain.save_state()==observed.save_state(),"Control write observer preserves exact state at either CPU speed");
+        check(capture.count==6 && capture.events[0].address==0x2000 && capture.events[2].address==0x2001 &&
+              capture.events[4].address==0xFF40,"Observer reports both writes of LD [a16],SP and LCDC");
+        check(capture.events[0].before && !capture.events[1].before &&
+              capture.events[0].cycle==capture.events[1].cycle &&
+              capture.events[2].cycle-capture.events[0].cycle==4,
+              "Observer brackets actual CPU writes without advancing the clock");
+    }
 }
 
 void test_huc1() {
@@ -332,7 +426,7 @@ void test_persistence_and_legacy_states() {
 }
 } // namespace
 int main() {
-    try { test_mmm01(); test_huc1(); test_mbc7(); test_huc3(); test_tama5(); test_eeprom_bus_clock(); test_hardware_initialization(); test_persistence_and_legacy_states(); }
+    try { test_mmm01(); test_control_write_observer(); test_huc1(); test_mbc7(); test_huc3(); test_tama5(); test_eeprom_bus_clock(); test_hardware_initialization(); test_persistence_and_legacy_states(); }
     catch(const std::exception& e) {std::cerr<<"Unexpected exception: "<<e.what()<<'\n';return 1;}
     if(!failures) std::cout<<"All rare cartridge controller contracts passed\n";
     return failures ? 1 : 0;

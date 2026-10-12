@@ -2,6 +2,7 @@
 #include "gameboy/sgb_trace.hpp"
 #include "gameboy/sgb_sound.hpp"
 #include "sgb_input_script.h"
+#include "mapper_diagnostics.hpp"
 
 #include <array>
 #include <cstdint>
@@ -13,6 +14,7 @@
 #include <iostream>
 #include <iterator>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -58,6 +60,9 @@ struct Options {
     std::uint64_t trace_limit{};
     std::uint64_t trace_recent_cpu{};
     std::optional<std::uint16_t> trace_first_pc;
+    std::filesystem::path trace_mmm01;
+    std::uint64_t trace_nop_run{};
+    bool trace_first_lcd_off{};
     std::optional<std::uint16_t> watched_wram;
     bool watch_wram_from_start{};
     bool dmg_compatibility_colors{};
@@ -82,6 +87,7 @@ void usage() {
                  "[--input-script PATH] "
                  "[--trace-apu PATH] [--trace-ppu PATH] [--trace-io PATH] "
                  "[--trace-cpu PATH] [--trace-limit N] "
+                 "[--trace-mmm01 PATH] [--trace-nop-run N] [--trace-first-lcd-off] "
                  "[--trace-recent-cpu N] [--trace-first-pc ADDRESS] "
                  "[--sgb-trace PATH] [--replay-sgb-trace PATH] "
                  "[--sgb-sound-report PATH] "
@@ -183,6 +189,17 @@ Options parse_options(const int argc, char** argv) {
             options.trace_recent_cpu = parse_cycles(value);
             if (options.trace_recent_cpu > max_recent_cpu)
                 throw std::invalid_argument("--trace-recent-cpu exceeds 4096");
+        } else if (argument == "--trace-mmm01" && index + 1 < argc) {
+            if(!options.trace_mmm01.empty()) throw std::invalid_argument("--trace-mmm01 specified twice");
+            options.trace_mmm01=argv[++index];
+            if(options.trace_mmm01.empty()) throw std::invalid_argument("--trace-mmm01 requires a path");
+        } else if (argument == "--trace-nop-run" && index + 1 < argc) {
+            const std::string value=argv[++index];
+            if(options.trace_nop_run || value.empty() || value.find_first_not_of("0123456789")!=std::string::npos)
+                throw std::invalid_argument("--trace-nop-run requires one positive integer");
+            options.trace_nop_run=parse_cycles(value);
+        } else if (argument == "--trace-first-lcd-off") {
+            options.trace_first_lcd_off=true;
         } else if (argument == "--trace-first-pc" && index + 1 < argc) {
             const std::string value = argv[++index];
             const bool hex = value.size() > 2 && value[0] == '0' &&
@@ -1007,8 +1024,25 @@ int main(int argc, char** argv) {
         const bool tracks_input = !options.input_script.empty();
         CpuFlowDiagnostics cpu_flow(options);
         const bool traces_flow = options.trace_recent_cpu || options.trace_first_pc.has_value();
+        std::unique_ptr<runner_diagnostics::Diagnostics> mapper_diagnostics;
+        if(!options.trace_mmm01.empty() || options.trace_nop_run || options.trace_first_lcd_off) {
+            mapper_diagnostics=std::make_unique<runner_diagnostics::Diagnostics>(emulator,
+                options.trace_mmm01,options.trace_limit,options.trace_nop_run,options.trace_first_lcd_off);
+            emulator.bus().debug_set_control_write_observer(
+                runner_diagnostics::Diagnostics::observe_write,mapper_diagnostics.get());
+        }
+        struct Observers {
+            CpuFlowDiagnostics* flow;
+            runner_diagnostics::Diagnostics* mapper;
+            static void observe(void* context, std::uint16_t pc, std::uint8_t opcode) noexcept {
+                auto& self=*static_cast<Observers*>(context);
+                if(self.flow) CpuFlowDiagnostics::observe(self.flow,pc,opcode);
+                if(self.mapper) self.mapper->fetch(pc,opcode);
+            }
+        } observers{traces_flow?&cpu_flow:nullptr,mapper_diagnostics.get()};
+        if(traces_flow || mapper_diagnostics)
+            emulator.debug_set_cpu_instruction_observer(Observers::observe,&observers);
         if (traces_flow) {
-            emulator.debug_set_cpu_instruction_observer(CpuFlowDiagnostics::observe, &cpu_flow);
             cpu_flow.first(emulator.cpu(), "initial");
         }
 
@@ -1018,6 +1052,7 @@ int main(int argc, char** argv) {
             }
         }
         const auto finish_run = [&](const int status) {
+            if(mapper_diagnostics) mapper_diagnostics->finish();
             if (sound_report.is_open()) {
                 sound_report.flush();
                 if (!sound_report) {
@@ -1129,7 +1164,9 @@ int main(int argc, char** argv) {
             cpu_flow.fetched = false;
             const auto flow_sp_before = traces_flow ? registers.sp : std::uint16_t{};
             if (traces_flow) cpu_flow.before_step(emulator.bus(), flow_sp_before);
+            if(mapper_diagnostics) mapper_diagnostics->before_step();
             const auto stepped_cycles = emulator.step();
+            if(mapper_diagnostics) mapper_diagnostics->stepped(stepped_cycles);
             if (traces_flow) cpu_flow.stepped(emulator.cpu(), trace_cycle, stepped_cycles, flow_sp_before, emulator.bus());
             if (sound_report) {
                 const auto request =

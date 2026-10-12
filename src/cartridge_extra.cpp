@@ -122,6 +122,25 @@ std::size_t Cartridge::extra_ram_bank() const noexcept {
     return (((r[2] >> 2) & 3) << 2) | low;
 }
 
+bool Cartridge::debug_mmm01(Mmm01Diagnostics& out) const noexcept {
+    out = {};
+    if (controller_ != Controller::mmm01) return false;
+    out.registers = extra_->mmm;
+    out.requested_bank0 = extra_rom_bank(false);
+    out.requested_bank1 = extra_rom_bank(true);
+    out.bank0 = out.requested_bank0 % rom_bank_count_;
+    out.bank1 = out.requested_bank1 % rom_bank_count_;
+    out.requested_ram_bank = extra_ram_bank();
+    out.ram_present = !ram_.empty();
+    out.ram_bank = out.ram_present ? (out.requested_ram_bank * 0x2000 % ram_.size()) / 0x2000 : 0;
+    out.rom_banks = rom_bank_count_;
+    out.mapped = (out.registers[0] & 0x40) != 0;
+    out.mode_locked = (out.registers[2] & 0x40) != 0;
+    out.ram_enabled = ram_enabled_;
+    out.menu_first = mmm01_menu_first_;
+    return true;
+}
+
 std::uint8_t Cartridge::read_extra(std::uint16_t address) const noexcept {
     const auto& state = *extra_;
     if (address < 0x8000) return read_rom_bank(extra_rom_bank(address >= 0x4000), address & 0x3FFF);

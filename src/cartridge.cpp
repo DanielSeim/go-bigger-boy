@@ -88,6 +88,19 @@ std::size_t header_ram_size(const std::uint8_t code) {
     }
 }
 
+bool valid_menu_first_header(const std::vector<std::uint8_t>& rom) noexcept {
+    if (rom.size() <= 0x8000 || rom[0x147] < 0x0B || rom[0x147] > 0x0D ||
+        !std::equal(nintendo_logo.begin(),nintendo_logo.end(),rom.begin()+0x104)) return false;
+    std::uint8_t checksum=0;
+    for (std::size_t i=0x134;i<=0x14C;++i) checksum=static_cast<std::uint8_t>(checksum-rom[i]-1);
+    if (checksum!=rom[0x14D]) return false;
+    const auto code=rom[0x148];
+    const auto size=code<=8 ? (std::size_t{0x8000}<<code) :
+                    code==0x52 ? 72*rom_bank_size : code==0x53 ? 80*rom_bank_size :
+                    code==0x54 ? 96*rom_bank_size : 0;
+    return size==rom.size();
+}
+
 std::uint64_t fingerprint_rom(const std::vector<std::uint8_t>& rom) noexcept {
     auto hash = UINT64_C(14695981039346656037);
     for (const auto byte : rom) {
@@ -115,6 +128,14 @@ Cartridge::Cartridge(std::vector<std::uint8_t> rom) : rom_(std::move(rom)) {
     }
     rom_fingerprint_ = fingerprint_rom(rom_);
     header_offset_ = boot_header_offset(rom_);
+    if (header_offset_ == 0 && valid_menu_first_header(rom_)) {
+        // Some dumps start with the power-on menu instead of physical bank zero.
+        // Restore chip order in memory; mapper reset still selects the last 32 KiB.
+        // Keep the fingerprint of the original file for state/save identity.
+        std::rotate(rom_.begin(),rom_.begin()+0x8000,rom_.end());
+        header_offset_ = rom_.size()-0x8000;
+        mmm01_menu_first_ = true;
+    }
 
     const auto expected_rom_size = header_rom_size(rom_[header_offset_ + 0x148]);
     if (rom_.size() < expected_rom_size) {
@@ -352,6 +373,7 @@ Cartridge::Cartridge(Cartridge&& other) noexcept
       rtc_clock_(other.rtc_clock_), rtc_clock_context_(other.rtc_clock_context_),
       rom_(std::move(other.rom_)),
       rom_fingerprint_(other.rom_fingerprint_),
+      mmm01_menu_first_(other.mmm01_menu_first_),
       ram_(std::move(other.ram_)),
       save_path_(std::move(other.save_path_)),
       rtc_path_(std::move(other.rtc_path_)),

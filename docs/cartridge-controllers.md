@@ -3,13 +3,18 @@
 GBB dispatches from the cartridge header, never from a game title or hash.
 MMM01 has a separate power-on menu header in the last 32 KiB: core loading,
 model detection and library metadata use that header when its type and logo
-identify it. An ordinary header remains at offset zero. No commercial ROMs or
+identify it. Validated menu-first MMM01 dumps are normalized in memory before
+mapping; the source file and its fingerprint remain unchanged. See the
+[MMM01 investigation](mmm01-dump-layout-analysis.md) for detection rules,
+local private-ROM evidence and bounded diagnostics. An ordinary header remains
+at offset zero. No commercial ROMs or
 saves are part of the new tests.
 
 ## Implementation status
 
-Successful loading is not evidence of complete game compatibility. The five
-private NAS cartridges have **not yet been run** with these implementations.
+Successful loading is not evidence of complete game compatibility. A local
+Taito Variety Pack menu and game-selection replay has now been checked; the
+other private NAS cartridges were not revalidated during this investigation.
 
 | Controller | Implemented and covered by synthetic contracts | Remaining limits / unknown behavior |
 | --- | --- | --- |

@@ -69,6 +69,18 @@ class HeaderTests(unittest.TestCase):
         self.assertEqual(result['header_offset'],98304)
         self.assertIn('MMM01_menu_header_differs_from_contained_game_header',result['warnings'])
 
+    def test_mmm01_dump_order_and_validation(self):
+        data=rom(0x0B,524288)
+        result=self.inspect(data)
+        self.assertEqual(result['dump_layout'],'menu_first_normalized_on_load')
+        self.assertEqual(result['header_offset'],0)
+        self.assertEqual(result['normalized_header_offset'],491520)
+        data[0x14D]^=1
+        self.assertEqual(self.inspect(data)['dump_layout'],'unverified_MMM01')
+        physical=rom(1,524288)
+        physical[-32768:-32768+0x150]=rom(0x0B,524288)[:0x150]
+        self.assertEqual(self.inspect(physical)['dump_layout'],'physical_menu_last')
+
     def test_cli_json_exit_codes_and_no_files_written(self):
         self.path.write_bytes(rom(0xFD))
         before=set(self.path.parent.iterdir())

@@ -90,6 +90,14 @@ public:
     [[nodiscard]] std::uint8_t debug_cpu_read8(std::uint16_t address) const noexcept {
         return cpu_read8(address);
     }
+    // Host-only observer for accepted CPU writes to cartridge control and LCDC.
+    // Called immediately before/after the write; blocked DMA writes are excluded.
+    using ControlWriteObserver = void (*)(void*, const MemoryBus&, std::uint16_t,
+                                          std::uint8_t, bool before) noexcept;
+    void debug_set_control_write_observer(ControlWriteObserver observer, void* context) noexcept {
+        control_write_observer_ = observer; control_write_context_ = context;
+    }
+    [[nodiscard]] std::uint64_t debug_bus_cycles() const noexcept { return debug_bus_cycles_; }
     // Diagnostic view of the CGB APU's 1 MHz phase.  The phase advances only
     // while the CPU is in double-speed mode; normal-speed APU clocks already
     // run once per bus cycle and must not perturb this half-cycle alignment.
@@ -218,6 +226,8 @@ private:
     bool speed_switch_requested_{};
     std::uint8_t last_ppu_requests_{};
     std::uint64_t debug_bus_cycles_{};
+    ControlWriteObserver control_write_observer_{};
+    void* control_write_context_{};
     bool debug_io_trace_enabled_{};
     bool peripheral_batch_enabled_{true}; // Derived execution choice, not serialized.
     bool timer_paused_{};

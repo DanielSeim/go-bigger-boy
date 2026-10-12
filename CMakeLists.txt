@@ -718,6 +718,11 @@ if(GAMEBOY_BUILD_TESTS)
         add_test(NAME gameboy_cartridge_header_inspection
                  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/cartridge_header_inspection_tests.py)
         if(TARGET gameboy_test_runner)
+            add_test(NAME gameboy_mmm01_diagnostics
+                     COMMAND ${Python3_EXECUTABLE}
+                             ${CMAKE_CURRENT_SOURCE_DIR}/tests/mmm01_diagnostics_tests.py
+                             $<TARGET_FILE:gameboy_test_runner>)
+            set_tests_properties(gameboy_mmm01_diagnostics PROPERTIES TIMEOUT 90)
             add_test(NAME gameboy_cycle_frame_capture
                      COMMAND ${Python3_EXECUTABLE}
                              ${CMAKE_CURRENT_SOURCE_DIR}/tests/cycle_frame_capture_tests.py

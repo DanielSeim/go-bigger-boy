@@ -43,6 +43,14 @@ public:
         bank = selected_rom_bank_;
         return true;
     }
+    struct Mmm01Diagnostics {
+        std::array<std::uint8_t,4> registers{};
+        std::size_t requested_bank0{}, requested_bank1{}, bank0{}, bank1{};
+        std::size_t requested_ram_bank{}, ram_bank{}, rom_banks{};
+        bool mapped{}, mode_locked{}, ram_enabled{}, ram_present{}, menu_first{};
+    };
+    // Uses the same bank selectors and physical address wrapping as read().
+    [[nodiscard]] bool debug_mmm01(Mmm01Diagnostics& state) const noexcept;
     [[nodiscard]] bool supports_cgb() const noexcept;
     // Header 0x146 advertises software that can use Super Game Boy
     // enhancements.  This is a capability flag, not a requirement: the
@@ -137,6 +145,7 @@ private:
 
     std::vector<std::uint8_t> rom_;
     std::uint64_t rom_fingerprint_{};
+    bool mmm01_menu_first_{};
     std::vector<std::uint8_t> ram_;
     std::filesystem::path save_path_;
     std::filesystem::path rtc_path_;
