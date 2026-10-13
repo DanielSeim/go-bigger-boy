@@ -1381,6 +1381,19 @@ if(GAMEBOY_BUILD_TESTS)
                 --probe $<TARGET_FILE:gameboy_sgb_vendor_music_probe>
                 --timeline-probe $<TARGET_FILE:gameboy_sgb_music_timeline_probe>)
         set_tests_properties(gameboy_sgb_score_vendor_reply PROPERTIES TIMEOUT 900 COST 300)
+        add_test(NAME gameboy_sgb_vendor_delayed_tempo_contract
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_vendor_delayed_tempo_tests.py
+                DelayedTempoContracts.test_fixture_layout_duration_and_defaults
+                DelayedTempoContracts.test_ordering_and_predictions_require_observed_crossing
+                DelayedTempoContracts.test_repeated_publications_keep_the_first_write_hypothesis_separate
+                DelayedTempoContracts.test_corpus_scope_and_sanitized_failures)
+        add_test(NAME gameboy_sgb_score_vendor_delayed_tempo
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_vendor_delayed_tempo_tests.py
+                --timeline-probe $<TARGET_FILE:gameboy_sgb_music_timeline_probe>
+                --probe $<TARGET_FILE:gameboy_sgb_vendor_music_probe>
+                DelayedTempoContracts.test_native_controls
+                DelayedTempoContracts.test_native_transparency_and_replay)
+        set_tests_properties(gameboy_sgb_score_vendor_delayed_tempo PROPERTIES TIMEOUT 1200 COST 600)
         add_test(NAME gameboy_sgb_vendor_tempo_publication_contract
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_vendor_tempo_publication_tests.py
                 PublicationContracts.test_scope_ordering_and_startup
@@ -1537,6 +1550,12 @@ if(GAMEBOY_BUILD_TESTS)
                     --duration 48 --request-offset 2 --first-request-offset 1 --first-request-offset 3
                     --selection-spin 0 --selection-spin 1536 --timer-results)
             set_tests_properties(gameboy_sgb_vendor_selection_arrival_holdout_local_reference
+                PROPERTIES TIMEOUT 2400 LABELS "local;private-reference")
+            add_test(NAME gameboy_sgb_vendor_delayed_tempo_local_reference
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_vendor_delayed_tempo_reference.py
+                    --probe $<TARGET_FILE:gameboy_sgb_music_timeline_probe>
+                    --firmware-dir "${CMAKE_CURRENT_SOURCE_DIR}/roms")
+            set_tests_properties(gameboy_sgb_vendor_delayed_tempo_local_reference
                 PROPERTIES TIMEOUT 2400 LABELS "local;private-reference")
             add_test(NAME gameboy_sgb_vendor_tempo_publication_local_reference
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_vendor_tempo_publication_reference.py

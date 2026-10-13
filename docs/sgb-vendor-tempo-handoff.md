@@ -70,5 +70,7 @@ Both generated firmware images remain byte-identical.
 The [earlier publication sweep](sgb-vendor-tempo-publication.md) now advances
 arrival with finer offsets. Earlier arrivals interrupt startup without an
 observed tempo read; the remaining cases still publish after the operand read.
-A delayed authored tempo change is the next experiment needed to cross the
-publication boundary during established playback.
+The [delayed authored tempo experiment](sgb-vendor-delayed-tempo.md) now crosses
+the first-publication boundary during established playback. Changed-tempo
+cases retain repeated-write ambiguity, prioritizing a separate publication/retry
+behavioral gate rather than a timing-policy change.

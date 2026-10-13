@@ -73,7 +73,7 @@ original observer comparisons preserved earlier metadata exactly. Both generated
 firmware images remain byte-identical. These results do not qualify a new
 selection timing model or justify a production timing change.
 
-Next, delay the authored E7 within the old score while preserving its fixed
-operand address. A longer pre-change note should leave enough established
-playback to publish request 2 before the tempo read without overlapping initial
-startup. That would isolate the publication boundary this sweep still misses.
+The [delayed-tempo follow-up](sgb-vendor-delayed-tempo.md) now lengthens the
+authored pre-change notes while preserving the operand address. It retains
+missing reads and repeated publications separately, testing the first-write
+hypothesis without relabeling an ambiguous handoff as uniquely accepted.

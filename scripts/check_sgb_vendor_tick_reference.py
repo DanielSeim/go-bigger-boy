@@ -50,11 +50,13 @@ def summarize(data):
                 timers=windows[0])
 
 
-def expected(tempo,phase):
+def expected(tempo,phase,*,duration=DURATION):
     if type(tempo) is not int or tempo not in TEMPO_POINTS or type(phase) is not int or not 0<=phase<=255:
         raise ValueError('invalid tick model parameters')
+    if type(duration) is not int or not 1<=duration<=96:
+        raise ValueError('invalid tick duration')
     # A continuous modulo-256 accumulator; no per-note fractional reset.
-    return [((DURATION*i*256-phase+tempo-1)//tempo)*4096 for i in range(1,len(NOTES)+1)]
+    return [((duration*i*256-phase+tempo-1)//tempo)*4096 for i in range(1,len(NOTES)+1)]
 
 
 def compare(runs):

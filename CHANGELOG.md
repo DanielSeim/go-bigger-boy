@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Add delayed SGB tempo-boundary comparisons with fixed authored operand addresses,
+  paired first-publication evidence and regression checks that preserve ambiguous
+  handoffs; keep replacement firmware timing unchanged pending acceptance evidence.
+
 - Add MMM01, MBC7 EEPROM/neutral tilt, TAMA5 RTC, HuC3 RTC and HuC1 IR-pin
   controller interfaces, synthetic mapper/persistence contracts and an offline
   header inspector; document peripheral limits and pending private validation.

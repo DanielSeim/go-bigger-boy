@@ -11,7 +11,7 @@ from build_sgb_vendor_tick_fixture import TEMPO_POINTS
 PREFIX=(0xA4,0xA3,0xA4,0xA3)
 
 
-def build(tempo=45,state='active',*,holdout=False,live_tempo=None,change_after=1,request_gap=None,boundary=False,selection_spin=0):
+def build(tempo=45,state='active',*,holdout=False,live_tempo=None,change_after=1,request_gap=None,boundary=False,selection_spin=0,prefix_duration=2):
     if type(tempo) is not int or tempo not in TEMPO_POINTS or state not in ('active','completed') or type(holdout) is not bool:
         raise ValueError('invalid tick-selection controls')
     if live_tempo is not None and (type(live_tempo) is not int or live_tempo not in TEMPO_POINTS):
@@ -24,9 +24,11 @@ def build(tempo=45,state='active',*,holdout=False,live_tempo=None,change_after=1
         raise ValueError('invalid boundary spin')
     if request_gap is not None and (type(request_gap) is not int or request_gap not in (range(3,13) if boundary else (16,20)) or state!='active'):
         raise ValueError('invalid active request gap')
+    if type(prefix_duration) is not int or prefix_duration not in (2,4,8,16) or prefix_duration!=2 and not boundary:
+        raise ValueError('invalid boundary prefix duration')
     score=bytearray(bank(echo=False))
     header=lambda t:bytes((0xE0,2,0xE1,10,0xE5,160,0xED,127,0xE7,t))
-    first=header(tempo)+bytes((2,125))
+    first=header(tempo)+bytes((prefix_duration,125))
     for i,note in enumerate(PREFIX):
         if live_tempo is not None and i==change_after: first+=bytes((0xE7,live_tempo))
         first+=bytes((note,))
@@ -51,10 +53,11 @@ if __name__=='__main__':
     parser.add_argument('--request-gap',type=int,choices=(*range(3,13),16,20))
     parser.add_argument('--boundary',action='store_true')
     parser.add_argument('--selection-spin',type=int,default=0)
+    parser.add_argument('--prefix-duration',type=int,choices=(2,4,8,16),default=2)
     parser.add_argument('--output',type=Path,required=True)
     args=parser.parse_args()
     try:
-        image=build(args.tempo,args.state,holdout=args.holdout,live_tempo=args.live_tempo,change_after=args.change_after,request_gap=args.request_gap,boundary=args.boundary,selection_spin=args.selection_spin)
+        image=build(args.tempo,args.state,holdout=args.holdout,live_tempo=args.live_tempo,change_after=args.change_after,request_gap=args.request_gap,boundary=args.boundary,selection_spin=args.selection_spin,prefix_duration=args.prefix_duration)
         with args.output.open('xb') as stream: stream.write(image)
     except (OSError,ValueError) as error: parser.error(str(error))
     print(hashlib.sha256(image).hexdigest())

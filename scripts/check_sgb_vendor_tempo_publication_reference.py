@@ -25,7 +25,7 @@ def cases():
     return [(m,l,g,s) for m in GAPS for l in (32,128) for g in GAPS[m] for s in SPINS]
 
 
-def startup_summary(data,live):
+def startup_summary(data,live,*,prefix_duration=2):
     if type(live) is not int or live not in (32,128) or data['music']!=[1,2] or len(data['requests'])!=2:
         raise ValueError('invalid startup request controls')
     notes=[e for e in data['events'] if e['register']==0x4C]
@@ -37,7 +37,7 @@ def startup_summary(data,live):
         raise ValueError('invalid startup note ownership/binding')
     if len(old)>1:
         interval=old[1]['half']-old[0]['half']
-        if not min(expected(128,p)[0] for p in range(256))-8192<=interval<=max(expected(128,p)[0] for p in range(256))+8192:
+        if not min(expected(128,p,duration=prefix_duration)[0] for p in range(256))-8192<=interval<=max(expected(128,p,duration=prefix_duration)[0] for p in range(256))+8192:
             raise ValueError('startup prefix cadence changed')
     for key,bound in (('selection_directory_reads',128),('selection_traversal_reads',512)):
         reads=data[key]
@@ -105,10 +105,10 @@ def startup_summary(data,live):
         configuration=dict(boot_write_counts=config['boot_write_counts'],initial=initial,writes=[]))
 
 
-def summarize(data,live):
+def summarize(data,live,*,prefix_duration=2):
     notes=[e for e in data['events'] if e['register']==0x4C]
     overlap=bool(notes and notes[0]['request']==2)
-    result=handoff(data,startup_summary(data,live) if overlap else boundary_summary(data,live))
+    result=handoff(data,startup_summary(data,live,prefix_duration=prefix_duration) if overlap else boundary_summary(data,live,prefix_duration=prefix_duration))
     writes=result['handoff']['music_writes'];reads=result['operand_reads']
     order='operand_not_observed' if not reads else 'ambiguous_operand'
     if len(reads)==1:

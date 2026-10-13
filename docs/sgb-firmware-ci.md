@@ -294,3 +294,14 @@ metadata and sanitized failures. The optional
 `gameboy_sgb_vendor_tempo_publication_local_reference` runs 56 original captures
 with timeout 2400 and labels `local;private-reference`. The existing selection-
 wait matrix keeps its 2400-second timeout and cost 1200.
+
+The [delayed-tempo follow-up](sgb-vendor-delayed-tempo.md) adds the separate
+`gameboy_sgb_score_vendor_delayed_tempo` matrix (timeout 1200 seconds, cost 600),
+bringing public discovery to 98 matrices. It covers 96 owned timelines, eight
+observation-transparency pairs and eight native/scalar reset/save-load pairs.
+Four short methods in `gameboy_sgb_vendor_delayed_tempo_contract` check the fixed
+operand address, unchanged defaults, prefix cadence, paired prediction guards,
+repeated-publication ambiguity, strict corpus scope and sanitized failures. The
+optional `gameboy_sgb_vendor_delayed_tempo_local_reference` captures 96 original
+coordinates with timeout 2400 and labels `local;private-reference`. Existing
+publication and selection-wait matrices retain their prior budgets and coverage.

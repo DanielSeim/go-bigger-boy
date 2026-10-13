@@ -20,7 +20,9 @@ GAPS={'sgb':(8,9,10,11),'sgb2':(4,5,6,7)}
 SPINS=(0,1024)
 
 
-def summarize(data,live):
+def summarize(data,live,*,prefix_duration=2):
+    if type(prefix_duration) is not int or prefix_duration not in (2,4,8,16):
+        raise ValueError('invalid boundary prefix duration')
     if type(live) is not int or live not in (32,128) or data['music']!=[1,2] or len(data['requests'])!=2:
         raise ValueError('invalid boundary request controls')
     notes=[e for e in data['events'] if e['register']==0x4C]
@@ -39,11 +41,11 @@ def summarize(data,live):
             raise ValueError('old-track gate or clear missing')
     if len(old)>1:
         interval=old[1]['half']-old[0]['half']
-        if not min(expected(128,p)[0] for p in range(256))-8192<=interval<=max(expected(128,p)[0] for p in range(256))+8192:
+        if not min(expected(128,p,duration=prefix_duration)[0] for p in range(256))-8192<=interval<=max(expected(128,p,duration=prefix_duration)[0] for p in range(256))+8192:
             raise ValueError('starting tempo witness changed')
     if len(old)>=4:
         observed=[old[i]['half']-old[1]['half'] for i in (2,3)]
-        if min(max(abs(a-b) for a,b in zip(expected(128,p)[:2],observed)) for p in range(256))>4096:
+        if min(max(abs(a-b) for a,b in zip(expected(128,p,duration=prefix_duration)[:2],observed)) for p in range(256))>4096:
             raise ValueError('starting prefix cadence changed')
     # Delivery counters remain untouched on every event. Only the distinct
     # selected pitch starts request 2's setup/continuity window in this mode.
