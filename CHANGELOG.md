@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Add authored HALT/NOP wait controls with IME enabled/disabled, direct timer-IF
+  edge reads and DIV-boundary observations; retain reference service-phase
+  differences without changing core timing.
+
 - Add independent timer-start/read phase sweeps and single-case captures to the
   authored CGB boundary probe, preserving existing ROMs and reporting foreground
   reload-read differences without assuming HALT is their cause.

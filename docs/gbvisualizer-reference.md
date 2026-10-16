@@ -656,11 +656,77 @@ equivalence, read-time calculations, case validation and CLI forwarding. Optiona
 native tests cover the original matrix plus uncoupled reload/control cases without
 requiring today's reference mismatch to remain forever.
 
-Next compare interrupt-enabled busy waiting with HALT at the same timer overflow,
-then add an IME-disabled HALT wake-up control. That will separate wake-up from
-dispatch effects. Validate those observations against pinned HALT/interrupt timing
-conformance tests before changing core timing; keep STAT and double-speed LY
-questions separate.
+## HALT, busy waiting and request visibility
+
+`scripts/cgb_halt_wake_probe.py` compares NOP waiting with HALT at a fixed first
+timer overflow, with IME either enabled or disabled. TIMA starts at FF, timer
+enable completes at predicted DIV-relative T20, overflow is predicted at T32 and
+reload/request at T36. HALT begins before the request is pending, avoiding the
+HALT bug. IE=4 in these wait controls; with IME off, HALT wakes without vector
+entry. The fixed-cost NOP controls reach the same predicted request boundary.
+TMA=00 supplies an IF-acknowledgement witness because it cannot overflow again
+during recording; TMA=FE supplies the repeated fast reload/read boundary.
+
+```sh
+python3 scripts/cgb_halt_wake_probe.py \
+  --runner ./build/gbb_test_runner \
+  --sameboy-capture /external/sameboy-cgb-capture \
+  --output /external/cgb-halt-wake-results
+```
+
+The same pins, fresh runner and new output-directory requirements apply. Thirty-two
+wait/read controls, four IME-off/IE-zero IF-edge controls, and eight DIV-observer
+controls run at both speeds: **88 paired cases, 352 captures**. The IF-edge variants
+read IF before TIMA directly in foreground code, observing the first request
+without HALT or dispatch. The DIV variants replace STAT reads with DIV reads at
+the same instruction cost. An observation tuple contains sequential reads, not a
+simultaneous snapshot: normally IF follows TIMA by 20 CPU T-cycles and DIV/STAT
+by 60; in the IF-edge variants IF precedes TIMA by 20. Predicted times and raw
+field order are retained in the report.
+
+Local results on 2026-10-16:
+
+- All capture guards, completion and acknowledgement witnesses passed; every
+  result repeated and event sequences agreed between CPU speeds within each core.
+- **68/88 paired cases matched.** All IME-disabled wait and IF-edge cases matched;
+  the 20 differences were in IME-enabled interrupt-service cases.
+- Busy and HALT event logs matched within each emulator for all 64 base wait
+  relations. Busy waiting reproduces the IME-enabled difference too, so the
+  earlier foreground-only experiment did not establish a HALT-specific cause.
+- Both cores read IF=0 at the predicted T32 edge, then IF=4 at T36, T40 and T44.
+  This foreground observation agrees on the request's visibility at the tested
+  read phases; it does not establish its exact internal acceptance time.
+- At read padding 8, the second DIV observation is predicted at T256. GBB reads
+  DIV=1 and SameBoy reads DIV=0, for both busy and HALT service and either TMA.
+  Read padding 9 adds one NOP and both read DIV=1. The difference therefore
+  extends beyond TIMA's special reload value, into the service/read phase seen by
+  another register. This brackets a phase boundary; it is not an exact latency
+  measurement or a hardware verdict.
+
+The finite model matches GBB's observations; SameBoy differs in the 20 cases
+above. Model assumptions are the same next-four-cycle request sample, 20-cycle
+entry and end-of-bus-cycle reads used earlier; they remain subject to independent
+validation. The report preserves paired differences, predicted/observed sequences,
+within-core wait relations, IF/DIV read times, hashes and commands. The comparison
+returns **1** with `qualification=false`; no core timing has changed.
+
+Offline CTest registers `gameboy_cgb_halt_wake_probe_contract`. Tests check owned
+ROM headers, preservation of the original HALT controls, IME acknowledgement,
+IF-edge and DIV calculations, complete logs and truthful failure reporting.
+Optional native tests validate repeatability, within-core wait equivalence and
+the report's correspondence to observed values; they do not require today's
+cross-core disagreement to persist:
+
+```sh
+GBB_TEST_RUNNER=./build/gbb_test_runner \
+GBB_SAMEBOY_CGB_CAPTURE=/external/sameboy-cgb-capture \
+  python3 tests/cgb_halt_wake_probe_tests.py
+```
+
+Next calibrate timer-driven vector entry and its first instruction with DIV-based
+clock witnesses, comparing hardware-requested and software-requested service.
+Use pinned interrupt/DIV timing conformance evidence before changing acceptance
+or bus sampling; keep STAT arbitration and double-speed LY as separate questions.
 
 Keep three results separate: GBB's own deterministic screenshot regression,
 GBB-versus-SameBoy frame/PCM behavior, and audio waveform comparison. In

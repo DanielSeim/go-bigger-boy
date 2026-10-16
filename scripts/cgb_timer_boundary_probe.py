@@ -34,7 +34,7 @@ def read_times(mode, phase, read_phase=None):
     return [first_read + 80 * i for i in range(8)]
 
 
-def expected_timer(mode, modulo, phase, read_phase=None):
+def expected_timer(mode, modulo, phase, read_phase=None, if_read_offset=20):
     """CPU T-cycle oracle: bit-3 falls, four-cycle reload, IF latched until cleared.
 
     Register reads occur at the end of LDH's third machine cycle. HALT prediction
@@ -43,7 +43,7 @@ def expected_timer(mode, modulo, phase, read_phase=None):
     enable = 20 + 4 * phase
     first_fall = (enable // 16 + 1) * 16
     reads = {time: (i, 0) for i, time in enumerate(read_times(mode, phase, read_phase))}
-    reads.update({time + 20: (i, 1) for i, time in enumerate(read_times(mode, phase, read_phase))})
+    reads.update({time + if_read_offset: (i, 1) for i, time in enumerate(read_times(mode, phase, read_phase))})
     result = [[0, 0] for _ in range(8)]
     counter, reload_delay, flags = 255, 0, 0
     for time in range(1, max(reads) + 1):

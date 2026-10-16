@@ -348,6 +348,10 @@ separate fast-timer HALT read collision. Public CI needs no external checkouts.
 The boundary tool also offers `--independent-phases` and `--case` for a foreground
 DI phase matrix and minimal reproductions. Its 96 paired foreground cases match;
 the original HALT distinction remains separate and unresolved.
+`gameboy_cgb_halt_wake_probe_contract` adds HALT/NOP waiting with IME on/off,
+direct IF-edge reads and DIV-boundary observations. Busy waiting reproduces the
+service-phase discrepancy, while IME-disabled controls agree; the guide records
+this refinement without qualifying either emulator's timing.
 
 ## Hardware-model matrix
 
