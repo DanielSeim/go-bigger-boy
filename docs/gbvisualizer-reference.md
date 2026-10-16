@@ -475,8 +475,67 @@ The external GBVisualizer capture still differs at frames 60, 300 and 600:
 Visual agreement did not improve uniformly; it was not used to select this fix.
 No external assets or newly accepted golden screenshots are committed.
 
-Next trace the timer-overflow/reload and STAT-service boundary at the first remaining
-divergence, keeping double-speed LY/STAT behavior as a separate question.
+## Overflow/reload read boundaries
+
+`scripts/cgb_timer_boundary_probe.py` separates foreground timer reads from HALT
+wake-up and interrupt entry, with hardware STAT interrupts disabled. Each owned
+ROM starts TIMA at FF and selects TMA=00, E2 or FE, one of four NOP phases, and
+either straight-line recording or HALT waiting. Eight tuples record TIMA, IF,
+LY and STAT before disabling timer/interrupts and freezing WRAM. Both CPU speeds
+are tested: 48 paired cases and 192 captures.
+
+```sh
+python3 scripts/cgb_timer_boundary_probe.py \
+  --runner ./build/gbb_test_runner \
+  --sameboy-capture /external/sameboy-cgb-capture \
+  --output /external/cgb-timer-boundary-results
+```
+
+Use the same pins and newly built runner as above. The comparison key includes
+TIMA and low IF bits; LY/STAT remain explicitly recorded diagnostics. A small
+independent timer model predicts bit-3 falling edges, a four-CPU-T-cycle reload
+delay and latched IF. The report retains the predicted read times and assumptions:
+reads at the end of the bus cycle, HALT wake-up at the next four-cycle sample,
+20-cycle interrupt entry, and IF acknowledgement at entry T16. These assumptions
+are **not a hardware-qualified bus sampling oracle**. Structural/completion checks
+and timing-model agreement are reported separately; missing guards/logs fail closed.
+
+Local results on 2026-10-16: all captures repeated and completed correctly.
+All 24 foreground cases matched both the model and SameBoy. Across the full sweep,
+46/48 paired cases matched. Both remaining cases use HALT, TMA=FE and phase 0,
+one at each CPU speed. At sample indices 1, 3, 5 and 7, GBB reads FE while SameBoy
+reads 00; the intervening samples read FF in both. All sampled IF values are 4.
+The model places those reads on its reload instants, at 164, 324, 484 and 644
+CPU T-cycles after the DIV write. GBB matches its end-of-cycle prediction; SameBoy
+does not. That observation does not establish which bus sampling assumption is
+correct. The tool returns **1**, retains `qualification=false`, and preserves the
+reference disagreement rather than shifting phases to hide it.
+
+The pinned SameBoy `Core/memory.c` TIMA read path explicitly returns zero in its
+reloading state. [Pan Docs' timer description](https://github.com/gbdev/pandocs/blob/master/src/Timer_Obscure_Behaviour.md)
+documents the delayed reload/IF behavior, while
+[Mooneye's `tima_reload` test](https://github.com/Gekkio/mooneye-test-suite/blob/main/acceptance/timer/tima_reload.s)
+records hardware-verified TIMA reads on either side of reload, including CGB.
+Those references motivate independent validation; the Mooneye test uses a
+64-cycle timer and does not itself establish the exact HALT/16-cycle collision
+reproduced here. No new hardware run or external conformance run is claimed.
+This step changes no CPU, PPU or timer behavior.
+
+Offline CTest registers `gameboy_cgb_timer_boundary_probe_contract`. The optional
+native contract validates foreground predictions, repeatability, structural
+checks, speed consistency and truthful mismatch reporting; it does not require
+either emulator to preserve today's reload-cycle difference forever:
+
+```sh
+GBB_TEST_RUNNER=./build/gbb_test_runner \
+GBB_SAMEBOY_CGB_CAPTURE=/external/sameboy-cgb-capture \
+  python3 tests/cgb_timer_boundary_probe_tests.py
+```
+
+Next validate the exact reload-cycle CPU read against pinned hardware-backed
+conformance evidence, adding the 16-cycle/HALT boundary case where needed, before
+changing bus sampling. Keep the remaining STAT arbitration and double-speed LY
+boundaries separate from this isolated timer-register question.
 
 Keep three results separate: GBB's own deterministic screenshot regression,
 GBB-versus-SameBoy frame/PCM behavior, and audio waveform comparison. In

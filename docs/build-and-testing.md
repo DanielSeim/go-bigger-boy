@@ -337,6 +337,10 @@ findings, documented in the same guide.
 phase sweeps and an equal-cost direct-call control. These exposed and verify a
 CGB timer-entry clock correction; the guide distinguishes the now-matching
 software dispatch cases from remaining combined and demo differences.
+`gameboy_cgb_timer_boundary_probe_contract` checks the independent overflow/reload
+prediction and foreground/HALT read controls. Its unresolved reload-cycle sampling
+distinction is explicitly reported, with bus-phase assumptions and hardware
+validation limits documented in the same guide.
 
 ## Hardware-model matrix
 

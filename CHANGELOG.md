@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Add authored CGB overflow/reload boundary probes with an independent timer
+  prediction, straight-line and HALT controls, separate LY/STAT diagnostics and
+  explicit reporting of unresolved reload-cycle reads.
+
 - Clock the CGB timer through all 20 interrupt-entry cycles, including a pending
   timer alongside higher-priority STAT; retain the DMG boundary exception. Add
   software-requested phase sweeps, RETI/RET/EI controls and a direct-call baseline.
