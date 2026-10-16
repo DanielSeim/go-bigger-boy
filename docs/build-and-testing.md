@@ -524,7 +524,9 @@ CGB-applicable interrupt/DIV tests; the timer suite remains the default. See
 commands and the limits of these conformance results. The authored
 `gameboy_cgb_irq_div_probe_contract` checks first-vector DIV witnesses without
 external tools. Set `GBB_TEST_RUNNER` and `GBB_SAMEBOY_CGB_CAPTURE` when running
-`tests/cgb_irq_div_probe_tests.py` to enable the native 96-pair comparison.
+`tests/cgb_irq_div_probe_tests.py` to enable the native 192-pair request-phase comparison. The probe CLI retains
+the 96-pair default; `--request-phase-sweep` adds software IF one machine cycle
+before and after the predicted hardware request.
 
 Compare captures from two builds or devices without rerunning the ROM:
 

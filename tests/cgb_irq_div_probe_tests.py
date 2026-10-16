@@ -15,7 +15,7 @@ import cgb_irq_div_probe as probe
 class Contracts(unittest.TestCase):
     def test_roms_and_first_vector_instruction(self):
         for speed in (False, True):
-            for scenario in probe.SCENARIOS:
+            for scenario in probe.PHASE_SCENARIOS:
                 source, phase, read = probe.split(scenario)
                 rom = probe.probe_rom(scenario, speed)
                 self.assertEqual(len(rom), 32768)
@@ -37,6 +37,37 @@ class Contracts(unittest.TestCase):
         for phase in (43, 44, 47, 48, 51, 52):
             request, _ = probe.times(phase, 0)
             self.assertEqual(4 * ((request - 20) // 4) + 20, request)
+
+    def test_software_request_phase_sweep(self):
+        self.assertEqual(len(probe.SCENARIOS), 48)
+        self.assertEqual(len(probe.PHASE_SCENARIOS), 96)
+        for source, offset in probe.SOFTWARE_OFFSETS.items():
+            case = f'{source}-start-44-read-3'
+            data = self.memory()
+            data[0x100] = 0 if offset < 0 else 1
+            result = probe.analyze(data, case, 2)
+            self.assertEqual(result['software_request_offset_t_cycles'], offset)
+            self.assertEqual(result['predicted_request_t_cycles'], 212 + offset)
+            self.assertEqual(result['predicted_div_read_t_cycles'], 256 + offset)
+            self.assertTrue(result['div_prediction_match'])
+            rom = probe.probe_rom(case)
+            reset = rom.index(bytes.fromhex('fb 00 af e0 04'), 0x150) + 5
+            assertion = rom.index(bytes.fromhex('3e 04 e0 0f'), reset)
+            self.assertEqual((assertion - reset) * 4 + 20, 212 + offset)
+        capture = dict(repeatable=True, authored_constraints_match=True)
+        rows = [dict(scenario=scenario, double_speed=speed, match=True,
+                     captures=dict(gbb=capture, sameboy=capture))
+                for scenario in probe.PHASE_SCENARIOS for speed in (False, True)]
+        report = dict(request_phase_sweep=True, rows=rows,
+                      request_relations=[dict(match=True) for _ in range(288)])
+        self.assertTrue(probe.passes(report))
+        report['request_relations'][0]['match'] = False
+        self.assertFalse(probe.passes(report))
+        report['request_relations'][0]['software_request_offset_t_cycles'] = -4
+        self.assertTrue(probe.passes(report))
+        report['request_relations'][0]['match'] = True
+        report['rows'] = rows[:-1]
+        self.assertFalse(probe.passes(report))
 
     @staticmethod
     def memory():
@@ -89,8 +120,8 @@ class NativeContracts(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             report = probe.run_probe(Path(os.environ['GBB_TEST_RUNNER']).resolve(),
                                     Path(os.environ['GBB_SAMEBOY_CGB_CAPTURE']).resolve(),
-                                    Path(tmp) / 'results')
-            self.assertEqual(len(report['rows']), 96)
+                                    Path(tmp) / 'results', request_phase_sweep=True)
+            self.assertEqual(len(report['rows']), 192)
             self.assertFalse(report['qualification'])
             for row in report['rows']:
                 a, b = (row['captures'][e]['events'] for e in ('gbb', 'sameboy'))
@@ -99,9 +130,14 @@ class NativeContracts(unittest.TestCase):
                     self.assertTrue(c['repeatable'])
                     self.assertTrue(c['record_structure_match'])
                     self.assertEqual(c['div_prediction_match'], c['events'][0][0] == c['expected_div'])
-            self.assertEqual(len(report['request_relations']), 96)
+            self.assertEqual(len(report['request_relations']), 288)
             for relation in report['request_relations']:
                 self.assertEqual(relation['match'], relation['timer'] == relation['software'])
+            for scenario in probe.PHASE_SCENARIOS:
+                rows = [r for r in report['rows'] if r['scenario'] == scenario]
+                for name in ('gbb', 'sameboy'):
+                    self.assertEqual(rows[0]['captures'][name]['events'], rows[1]['captures'][name]['events'])
+
 
 
 if __name__ == '__main__':

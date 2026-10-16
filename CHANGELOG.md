@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Add an opt-in first-vector DIV sweep with software timer-IF requests one
+  machine cycle before and after the predicted hardware reload, preserving
+  existing probe ROMs and keeping shifted controls separate from parity gates.
+
 - Add pinned external interrupt/DIV conformance comparisons and authored first-vector
   DIV witnesses for hardware timer and software IF requests; preserve the observed
   acceptance-phase difference without changing emulator timing.

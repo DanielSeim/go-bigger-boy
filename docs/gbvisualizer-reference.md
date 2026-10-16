@@ -796,10 +796,52 @@ CTest registers `gameboy_cgb_irq_div_probe_contract`. Native tests require
 truthful comparisons, and do not enshrine the current disagreement as expected
 hardware behavior.
 
-Next isolate the timer reload/request acceptance boundary with matched
-software-request phases one machine cycle either side, and obtain an independent
-hardware timer-vector DIV witness before changing core timing. Keep STAT
-arbitration and double-speed LY separate from this remaining timer question.
+The optional `--request-phase-sweep` adds software IF requests four CPU T-cycles
+before and after the predicted timer request:
+
+```sh
+python3 scripts/cgb_irq_div_probe.py --request-phase-sweep \
+  --runner ./build/gbb_test_runner --sameboy-capture /external/sameboy-cgb-capture \
+  --output /external/cgb-irq-div-request-phase-results
+```
+
+This expands the matrix to **192 paired cases / 768 captures**, retaining every
+original ROM byte-for-byte. The report uses schema
+`gbb-cgb-irq-div-request-phase-probe-v1`. Each capture and request relation records
+`software_request_offset_t_cycles` (-4, 0 or +4); predicted request and DIV-read
+times include the chosen offset. There are 288 within-core request relations.
+Intentionally shifted request relations are diagnostic controls and need not
+match. The exit status still requires complete, repeatable cross-core parity
+and matching zero-offset timer/software relations; missing cases and genuine
+reference differences cannot pass. The original command and matrix remain the
+default. Optional native tests now cover this expanded matrix.
+
+On 2026-10-16, **188/192 paired cases matched**. All 768 captures repeated,
+all completion/guard/IF witnesses passed, and each scenario's events agreed
+between normal and double CPU speed within each core. Only the four original
+hardware-timer boundary cases differed across cores; all software-offset
+captures matched across cores.
+
+Within each emulator, matching timer/software DIV-and-IF observations were:
+
+| Software IF offset (CPU T-cycles) | GBB | SameBoy 1.0.3 |
+| --- | --- | --- |
+| -4 | 44/48 | 48/48 |
+| 0 | 48/48 | 44/48 |
+| +4 | 44/48 | 40/48 |
+
+Thus the earlier software request reproduces every tested SameBoy timer
+observation, while the nominal request reproduces every GBB timer observation.
+This is a one-machine-cycle observational bracket in this matrix, not an exact
+hardware latency measurement: DIV distinguishes only its crossing boundary and
+many samples are insensitive to the offset. Predicted request alignment still
+assumes the reload and bus-sampling phases described above. Core timing remains
+unchanged, `qualification=false`, and the complete comparison returns **1**.
+
+Next turn the minimal first-vector witness into a hardware-runnable conformance
+ROM with a bounded result protocol and visible outcome, then obtain independent
+hardware results before changing core timing. Keep STAT arbitration and double-speed LY separate from this
+remaining timer question.
 
 Keep three results separate: GBB's own deterministic screenshot regression,
 GBB-versus-SameBoy frame/PCM behavior, and audio waveform comparison. In

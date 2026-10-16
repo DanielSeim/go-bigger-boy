@@ -13,11 +13,17 @@ import cgb_timer_boundary_probe as boundary
 SCENARIOS = tuple(f'{source}-start-{phase}-read-{read}' for source in ('timer', 'software')
                   for phase in (43, 44, 47, 48, 51, 52) for read in range(4))
 
+SOFTWARE_OFFSETS = {'software-early': -4, 'software': 0, 'software-late': 4}
+PHASE_SCENARIOS = SCENARIOS + tuple(
+    f'{source}-start-{phase}-read-{read}' for source in ('software-early', 'software-late')
+    for phase in (43, 44, 47, 48, 51, 52) for read in range(4))
+
 
 def split(scenario):
-    if scenario not in SCENARIOS:
+    if scenario not in PHASE_SCENARIOS:
         raise ValueError('unknown vector DIV control')
-    source, _, phase, _, read = scenario.split('-')
+    source, tail = scenario.split('-start-')
+    phase, read = tail.split('-read-')
     return source, int(phase), int(read)
 
 
@@ -41,8 +47,9 @@ def probe_rom(scenario, double_speed=False):
         code += bytes(phase) + bytes.fromhex('3e 05 e0 07')
     else:
         request, _ = times(phase, read)
-        # LD A,4 / LDH IF consumes 20T, asserting software IF at the same
-        # predicted T-cycle as the hardware reload. NOPs never touch DIV.
+        request += SOFTWARE_OFFSETS[source]
+        # LD A,4 / LDH IF consumes 20T. Shift its assertion around the
+        # predicted hardware reload cycle; NOPs never touch DIV.
         code += bytes((request - 20) // 4) + bytes.fromhex('3e 04 e0 0f')
     code += bytes(16) + bytes.fromhex('18 fe')
     if start + len(code) > 0x300:
@@ -70,11 +77,14 @@ def analyze(memory, scenario, frame):
         raise ValueError('incomplete vector DIV log or damaged guard')
     div, tima, flags = memory[0x100:0x103]
     request, sample = times(phase, read)
+    offset = SOFTWARE_OFFSETS.get(source, 0)
+    request, sample = request + offset, sample + offset
     events = [[div, flags & 31]]
     valid = flags & 31 == 0 and (source == 'timer' or tima == 255)
     return dict(events=events, observations=[[div, tima, flags]],
                 event_fields=['div', 'if_low5'], observation_fields=['div', 'tima', 'if'],
-                request_source=source, start_phase_nops=phase, read_phase_nops=read,
+                request_source=source, software_request_offset_t_cycles=offset,
+                start_phase_nops=phase, read_phase_nops=read,
                 predicted_request_t_cycles=request, predicted_div_read_t_cycles=sample,
                 prediction_assumptions='DIV_reset_T0; reload_plus_4T; next_4T_request_sample; 20T_entry; end_of_bus_cycle',
                 expected_div=(sample // 256) & 255, div_prediction_match=div == ((sample // 256) & 255),
@@ -82,10 +92,13 @@ def analyze(memory, scenario, frame):
                 event_sha256=hashlib.sha256(bytes(events[0])).hexdigest())
 
 
-def run_probe(runner, adapter, output):
-    report = isolated.run_probe(runner, adapter, output, scenarios=SCENARIOS, checkpoints=(2,),
+def run_probe(runner, adapter, output, request_phase_sweep=False):
+    scenarios = PHASE_SCENARIOS if request_phase_sweep else SCENARIOS
+    schema = ('gbb-cgb-irq-div-request-phase-probe-v1' if request_phase_sweep
+              else 'gbb-cgb-irq-div-probe-v1')
+    report = isolated.run_probe(runner, adapter, output, scenarios=scenarios, checkpoints=(2,),
         rom_builder=probe_rom, analyzer=analyze, comparison_key='event_sha256',
-        comparison_name='first_vector_div', write_report=False, schema='gbb-cgb-irq-div-probe-v1')
+        comparison_name='first_vector_div', write_report=False, schema=schema)
     relations = []
     for emulator in ('gbb', 'sameboy'):
         for speed in (False, True):
@@ -94,21 +107,29 @@ def run_probe(runner, adapter, output):
             for phase in (43, 44, 47, 48, 51, 52):
                 for read in range(4):
                     suffix = f'-start-{phase}-read-{read}'
-                    a, b = lookup['timer' + suffix], lookup['software' + suffix]
-                    relations.append(dict(emulator=emulator, double_speed=speed,
-                        start_phase_nops=phase, read_phase_nops=read,
-                        timer=a, software=b, match=a == b))
+                    sources = SOFTWARE_OFFSETS if request_phase_sweep else ('software',)
+                    for source in sources:
+                        a, b = lookup['timer' + suffix], lookup[source + suffix]
+                        relations.append(dict(emulator=emulator, double_speed=speed,
+                            start_phase_nops=phase, read_phase_nops=read,
+                            software_request_offset_t_cycles=SOFTWARE_OFFSETS[source],
+                            timer=a, software=b, match=a == b))
+    report['request_phase_sweep'] = request_phase_sweep
     report['request_relations'] = relations
     (output / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
     return report
 
 
 def passes(report):
-    expected = {(scenario, speed) for scenario in SCENARIOS for speed in (False, True)}
+    scenarios = PHASE_SCENARIOS if report.get('request_phase_sweep', False) else SCENARIOS
+    expected = {(scenario, speed) for scenario in scenarios for speed in (False, True)}
     rows = report['rows']
     complete = len(rows) == len(expected) and {(r['scenario'], r['double_speed']) for r in rows} == expected
-    return complete and isolated.passes(report) and len(report['request_relations']) == 96 and all(
-        row['match'] for row in report['request_relations'])
+    relation_count = 288 if report.get('request_phase_sweep', False) else 96
+    # Intentionally shifted requests are diagnostic controls, not parity gates.
+    return complete and isolated.passes(report) and len(report['request_relations']) == relation_count and all(
+        row['match'] for row in report['request_relations']
+        if row.get('software_request_offset_t_cycles', 0) == 0)
 
 
 def main():
@@ -116,9 +137,12 @@ def main():
     parser.add_argument('--runner', type=Path, required=True)
     parser.add_argument('--sameboy-capture', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--request-phase-sweep', action='store_true',
+                        help='also assert software IF one machine cycle early and late')
     args = parser.parse_args()
     try:
-        report = run_probe(args.runner.resolve(), args.sameboy_capture.resolve(), args.output.resolve())
+        report = run_probe(args.runner.resolve(), args.sameboy_capture.resolve(), args.output.resolve(),
+                           args.request_phase_sweep)
         print(json.dumps(report))
         return 0 if passes(report) else 1
     except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
