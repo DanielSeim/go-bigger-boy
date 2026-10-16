@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Add authored CGB timer/PCM and STAT/SCX probes with separate sample and pixel
+  comparisons, normal/double-speed controls, bounded snapshots and optional
+  SameBoy WRAM capture; keep emulator timing and external demo assets unchanged.
+
 - Add authored CGB VBlank palette-marker probes for normal/double speed and
   LCD-off startup delays, preserving and reporting first-frame reference
   differences without offsetting captures or changing emulation behavior.

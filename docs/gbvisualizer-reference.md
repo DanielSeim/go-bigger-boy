@@ -116,6 +116,11 @@ not GBB CPU T-cycles. A watchdog failure returns 1 without writing a capture;
 argument errors return 2 and load/output errors return 4. Existing output files
 are never overwritten. Successful metadata is JSON on stdout; Core logs go to
 stderr. The existing SGB adapter is unchanged.
+An optional final positional argument after the clock budget writes exactly 8 KiB
+of CPU-visible WRAM (`C000`–`DFFF`) using read-only public API accesses. The new
+snapshot is created exclusively; if it fails, the new PPM is removed and exit 4
+is returned without success metadata. An existing snapshot is preserved. Omitting
+this argument keeps the original PPM and JSON behavior.
 
 Run the offline contracts, or additionally exercise the compiled adapter using
 only an independently authored synthetic ROM and GBB's owned boot:
@@ -207,9 +212,69 @@ GBB_SAMEBOY_CGB_CAPTURE=/external/sameboy-cgb-capture \
   python3 tests/cgb_frame_anchor_probe_tests.py
 ```
 
-Next isolate timer-driven PCM sampling and STAT/SCX rendering with authored probes;
-keep the LCD-turn-on presentation difference as a separate hardware-validation
+Keep the LCD-turn-on presentation difference as a separate hardware-validation
 question rather than offsetting the demo's captures.
+
+## Isolated timer/PCM and STAT/SCX probes
+
+`scripts/cgb_pcm_stat_probe.py` independently authors six ROM scenarios, each in
+normal and double speed. They require no assembler, upstream demo code or music:
+
+- Timer reads with powered-on silent channels, CH1 constant-volume pulse, or CH3
+  alternating wave samples. The timer reload is 226 with TAC=5, giving 480 CPU
+  T-cycles between overflows. The ISR freezes after 64 tuples containing PCM12,
+  PCM34, LY and DIV; a completion flag and guard byte catch incomplete or excess
+  writes. Authored constraints require the expected channels and amplitudes,
+  with both active and inactive samples in the pulse/wave controls.
+- A known repeating four-color tile with SCX=0 or SCX=3, plus a mode-2 STAT handler
+  setting SCX to LY modulo 8. The pixel oracle is calculated from the authored
+  tile, palette and scanline shift. The direct handler writes SCX before mode 3;
+  these cases do not yet exercise a late write during pixel transfer.
+
+```sh
+python3 scripts/cgb_pcm_stat_probe.py \
+  --runner ./build/gbb_test_runner \
+  --sameboy-capture /external/sameboy-cgb-capture \
+  --output /external/cgb-pcm-stat-results
+```
+
+Recompile the adapter with optional WRAM output support before running this tool.
+Use the pinned library, a freshly built GBB runner and a new output directory as
+above. Each scenario captures frames 2 and 4 twice per emulator: 96 captures in
+total. First-frame presentation is deliberately a separate probe, not a frame
+offset. GBB's existing frame-state-series supplies WRAM; the adapter's optional
+snapshot supplies the matching reference region. No emulator implementation or
+timing has changed.
+
+The bounded report records executable, ROM and boot hashes, commands, reference
+metadata, recorded samples, sample mismatch indices, authored constraints and
+repeatability. PCM cases compare the ordered PCM12/PCM34 values, retaining LY/DIV
+as diagnostics; scrolling cases compare RGB pixels against both the authored
+oracle and the other emulator. Exit 0 requires all comparisons, constraints and
+repeatability to pass; differences return 1 and execution/metadata failures return
+2. Reports retain `qualification=false` because agreement with SameBoy does not
+establish hardware accuracy. Record the dynamic library build separately.
+
+Local evidence on 2026-10-16 with the same CGB-E/boot/reference pins: all 24 paired
+checkpoints passed and all 96 captures were repeatable. PCM sequences matched at
+both CPU speeds, including the retained LY/DIV tuples in this run. Frozen sample
+buffers were unchanged between frames 2 and 4. All static and per-line scrolling
+images matched the authored oracle and SameBoy exactly. These isolated cases
+therefore do not reproduce the later GBVisualizer differences. They do not cover
+combined timer/STAT/VBlank contention, music updates, noise or arbitrary APU phase.
+
+Offline CTest registers `gameboy_cgb_pcm_stat_probe_contract`; optional paired
+native validation is available without external ROM assets:
+
+```sh
+GBB_TEST_RUNNER=./build/gbb_test_runner \
+GBB_SAMEBOY_CGB_CAPTURE=/external/sameboy-cgb-capture \
+  python3 tests/cgb_pcm_stat_probe_tests.py
+```
+
+Next combine the authored timer sample producer with a STAT scroll consumer, then
+add controlled VBlank APU updates. That will test interrupt interaction and data
+handoff before attributing the full demo's differences to an individual subsystem.
 
 Keep three results separate: GBB's own deterministic screenshot regression,
 GBB-versus-SameBoy frame/PCM behavior, and audio waveform comparison. In

@@ -146,6 +146,27 @@ class NativeCaptureContracts(unittest.TestCase):
         self.assertEqual(self.capture('missing.ppm').returncode, 4)
         self.assertFalse((self.work / 'missing.ppm').exists())
 
+    def test_optional_wram_snapshot_and_failure_preserve_existing_files(self):
+        memory = self.work / 'memory.bin'
+        image = self.work / 'memory.ppm'
+        command = [ADAPTER, str(self.rom), str(self.boot), '3', str(image),
+                   'cgb-e', '20000000', str(memory)]
+        result = subprocess.run(command, capture_output=True, text=True, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(memory.stat().st_size, 8192)
+        self.assertEqual(json.loads(result.stdout)['completed_ppu_frames'], 3)
+        baseline = self.capture('baseline.ppm')
+        self.assertEqual(baseline.returncode, 0, baseline.stderr)
+        self.assertEqual(result.stdout, baseline.stdout)
+        self.assertEqual(image.read_bytes(), (self.work / 'baseline.ppm').read_bytes())
+        saved = memory.read_bytes()
+        image.unlink()
+        result = subprocess.run(command, capture_output=True, text=True, timeout=20)
+        self.assertEqual(result.returncode, 4)
+        self.assertFalse(image.exists())
+        self.assertEqual(memory.read_bytes(), saved)
+        self.assertEqual(result.stdout, '')
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -321,6 +321,10 @@ contract is registered as `gameboy_gbvisualizer_reference_tools_contract`.
 The authored normal/double-speed LCD/VBlank marker probes have their own offline
 `gameboy_cgb_frame_anchor_probe_contract` and optional paired native tests;
 see the same guide for the reported first-frame distinction.
+Isolated timer/PCM and STAT/SCX comparisons are covered by
+`gameboy_cgb_pcm_stat_probe_contract`, with optional paired native tests and an
+authored pixel oracle; the guide records the tested cases and remaining combined
+interrupt coverage.
 
 ## Hardware-model matrix
 
